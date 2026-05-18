@@ -85,5 +85,11 @@ Portuguese (default), English (secondary). All user-facing strings via i18n keys
 - Anything that changes the V1 vs V1.1 scope line
 - Anything that introduces a new third-party vendor
 
+## Supabase setup
+- Project linked: `jaxmkwoxjcgzkwxgbayx`, region Central EU (Frankfurt).
+- Use the `supabase` CLI for all migrations and schema operations (`supabase db push`, `supabase migration new`).
+- `supabase-js` is used only for auth flows. Application-layer queries go through Drizzle ORM via `packages/db`.
+- `supabase/.branches/` and `supabase/.temp/` are gitignored. `supabase/migrations/` and `supabase/config.toml` are tracked.
+
 ## Out of scope for V1 (do not build, ignore in PR reviews)
 Patient portal, WhatsApp, mobile app, telehealth, insurance, waitlist, loyalty, pilates module, Formação module, CID-10 mandatory enforcement, full historical archive migration.
