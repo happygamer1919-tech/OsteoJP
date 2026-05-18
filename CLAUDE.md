@@ -91,5 +91,13 @@ Portuguese (default), English (secondary). All user-facing strings via i18n keys
 - `supabase-js` is used only for auth flows. Application-layer queries go through Drizzle ORM via `packages/db`.
 - `supabase/.branches/` and `supabase/.temp/` are gitignored. `supabase/migrations/` and `supabase/config.toml` are tracked.
 
+## Vercel project setup checklist
+Apply to every new Vercel project created under the OsteoJP platform.
+
+- Settings → General → Data Preferences → disable "Improve models with this project's data". Per-project on Hobby tier; disable both the project toggle AND the team toggle on Pro.
+- Settings → Build and Deployment → Node.js Version → set to 22.x (match local dev environment).
+
+Healthcare data sensitivity (GDPR, clinical records). Defense in depth from project creation.
+
 ## Out of scope for V1 (do not build, ignore in PR reviews)
 Patient portal, WhatsApp, mobile app, telehealth, insurance, waitlist, loyalty, pilates module, Formação module, CID-10 mandatory enforcement, full historical archive migration.
