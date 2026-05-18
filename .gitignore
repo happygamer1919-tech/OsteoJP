@@ -28,3 +28,7 @@ pnpm-debug.log*
 
 # OS
 Thumbs.db
+
+# Supabase — local runtime state only; keep migrations/ and config.toml tracked
+supabase/.branches/
+supabase/.temp/
