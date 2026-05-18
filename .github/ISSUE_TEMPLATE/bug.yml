@@ -1,0 +1,110 @@
+name: Bug report
+description: Something is broken or behaving incorrectly
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please fill in every required field so the bug can be reproduced and triaged quickly.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence describing what's wrong.
+      placeholder: e.g. Patient search returns no results when searching by NIF
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. Be specific — assume the reader has no prior context.
+      placeholder: |
+        1. Go to /patients
+        2. Type "123456789" in the search box
+        3. Press Enter
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include any error messages verbatim.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How urgent is this?
+      options:
+        - P0 — Blocking, production down or data loss
+        - P1 — Major feature broken, no workaround
+        - P2 — Feature broken, workaround exists
+        - P3 — Minor issue, cosmetic, or low-frequency
+      default: 2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      description: Where did you observe this?
+      options:
+        - Production (osteojp.pt platform)
+        - Staging / preview URL
+        - Local dev
+      default: 1
+    validations:
+      required: true
+
+  - type: input
+    id: url
+    attributes:
+      label: URL or preview link
+      description: Direct link to the page where the bug occurred (if applicable).
+      placeholder: https://...
+
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      description: Which browser?
+      options:
+        - Chrome
+        - Safari
+        - Firefox
+        - Edge
+        - Mobile Safari (iOS)
+        - Mobile Chrome (Android)
+        - Other / N/A
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or recording
+      description: Drop images or a short Loom link here. Strongly preferred for UI bugs.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Anything else that might help — affected user role, tenant, time window, related PRs.
