@@ -1,0 +1,108 @@
+name: Content / Docs
+description: Documentation, copy, translation, form templates, or any content/text deliverable
+title: "[Content]: "
+labels: ["content", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for any content work — docs, UI copy, email/SMS templates, form templates, translations, or brand assets. For code/infra work use the Task template.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What content should exist when this is done?
+      placeholder: e.g. SMS reminder template in PT and EN, 160-char compliant, on brand.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: content_type
+    attributes:
+      label: Content type
+      options:
+        - Documentation (docs/)
+        - UI copy / microcopy / i18n strings
+        - Email template
+        - SMS template
+        - Form template (JSON Schema)
+        - Brand asset (tokens, voice, logo work)
+        - Wireframe or design spec
+        - PDF template (invoice, report, declaration)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: target_path
+    attributes:
+      label: Target file path
+      description: Where in the repo should this land?
+      placeholder: e.g. docs/staff-faq.md or packages/i18n/strings.pt.json
+    validations:
+      required: true
+
+  - type: dropdown
+    id: languages
+    attributes:
+      label: Languages
+      description: Which languages does this content need?
+      multiple: true
+      options:
+        - Portuguese (PT)
+        - English (EN)
+        - N/A (not user-facing)
+    validations:
+      required: true
+
+  - type: textarea
+    id: source_material
+    attributes:
+      label: Source material
+      description: Links to references, sample documents, existing copy to translate, PDFs to convert. Anything the author needs to do the work.
+      placeholder: |
+        - osteojp.pt/sobre-nos
+        - Sample PDF attached
+        - Existing copy in Stylus.pt to mirror
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know this is done and on-brand?
+      value: |
+        - [ ] Content follows brand voice guide (docs/brand-voice.md)
+        - [ ] PT and EN versions if user-facing
+        - [ ] PT-PT vocabulary, not PT-BR
+        - [ ] No emojis in patient-facing copy
+        - [ ] Filed at the correct path
+        - [ ] Reviewed against the source material
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: Word limits, character limits, format requirements, legal/regulatory considerations.
+      placeholder: e.g. SMS must be ≤160 chars; invoice must include NIF and fiscal data per PT law.
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0 — Blocks a launch milestone
+        - P1 — Needed this sprint
+        - P2 — Should happen, next sprint
+        - P3 — Nice to have
+      default: 1
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Anything else the content author should know.

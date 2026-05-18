@@ -1,0 +1,99 @@
+name: Task
+description: A discrete unit of work — feature, refactor, infra, or anything that isn't a bug or content task
+title: "[Task]: "
+labels: ["task", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for any task that produces code, configuration, or infrastructure changes. For bugs use the Bug Report template. For content, copy, or docs work use the Content template.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One or two sentences. What should exist when this is done?
+      placeholder: e.g. The agenda view loads in under 1 second for a full week of appointments.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why this matters. Links to related discussions, prior PRs, or design docs.
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checkboxes of what "done" looks like. The PR closing this issue must satisfy every item.
+      value: |
+        - [ ]
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Out of scope
+      description: Explicitly call out anything that's NOT part of this task, especially adjacent work that could creep in.
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      description: Which phase from the mega plan?
+      options:
+        - Phase 0 — Foundations
+        - Phase 1 — Discovery & Design
+        - Phase 2 — Infrastructure
+        - Phase 3 — Core Build
+        - Phase 4 — External Integrations
+        - Phase 5 — Data Migration
+        - Phase 6 — Testing & Polish
+        - Phase 7 — Soft Launch
+        - Phase 8 — Full Launch
+        - Phase 9 — Post-Launch
+    validations:
+      required: true
+
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Assigned to
+      description: Who owns this task?
+      options:
+        - Lead
+        - Max
+        - Either
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0 — Must ship now, blocks other work
+        - P1 — Important, this sprint
+        - P2 — Should happen, next sprint
+        - P3 — Nice to have
+      default: 1
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Implementation notes
+      description: Technical approach, file paths, or anything that helps whoever picks this up. Optional.
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Other issues or PRs that must land before this can start.
+      placeholder: e.g. Blocked by #42
