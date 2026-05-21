@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "packageManager": "pnpm@11.1.3",
   "engines": {
-    "node": ">=22.0.0"
+    "node": "22.x"
   },
   "scripts": {
     "build": "turbo run build",
@@ -17,5 +17,11 @@
   "devDependencies": {
     "turbo": "2.9.14",
     "typescript": "5.9.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp",
+      "unrs-resolver"
+    ]
   }
 }
