@@ -33,3 +33,8 @@ Thumbs.db
 supabase/.branches/
 supabase/.temp/
 .vercel
+
+# Monorepo build artifacts
+.turbo/
+dist/
+*.tsbuildinfo
