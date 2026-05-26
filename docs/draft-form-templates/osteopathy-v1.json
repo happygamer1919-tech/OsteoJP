@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "osteojp/form-templates/osteopathy-v1",
+  "title": "Osteopathy Episode / Evaluation",
+  "version": "1.0.0-draft",
+  "description": "Clinical intake + evaluation form for an osteopathy episode. Field structure transcribed from the current Fisiozero osteopathy episode form (NOVO EPISODIO). PT is the source language; EN labels are provided for the bilingual UI. ai_extractable is set to false on every field pending the AI-partner contract; flip to true per-field once the ingestion contract is signed off.",
+  "x-meta": {
+    "tenant_scoped": true,
+    "clinical_domain": "osteopathy",
+    "source": "Fisiozero osteopathy episode form (screenshots, 2026-05-25)",
+    "status": "draft — staging in docs/draft-form-templates/, canonical home packages/db/seed/form-templates/osteopathy-v1.json once monorepo scaffold lands",
+    "notes": "Field types/options inferred from the live form UI. Open questions tracked at end of this file under x-open-questions."
+  },
+  "type": "object",
+  "required": [
+    "episode_date",
+    "consultation_reason"
+  ],
+  "properties": {
+    "episode_date": {
+      "type": "string",
+      "format": "date",
+      "x-label": { "pt": "Data do Episódio", "en": "Episode Date" },
+      "x-required": true,
+      "ai_extractable": false
+    },
+    "weight_kg": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "x-label": { "pt": "Peso (kg)", "en": "Weight (kg)" },
+      "ai_extractable": false
+    },
+    "height_cm": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "x-label": { "pt": "Altura (cm)", "en": "Height (cm)" },
+      "ai_extractable": false
+    },
+    "linked_appointment": {
+      "type": ["string", "null"],
+      "x-label": { "pt": "Marcação respectiva", "en": "Linked Appointment" },
+      "x-widget": "appointment_picker",
+      "x-note": "References an existing appointment; resolved by the app, not free text.",
+      "ai_extractable": false
+    },
+    "red_flags": {
+      "type": ["string", "null"],
+      "x-label": { "pt": "Alertas (Red Flags)", "en": "Alerts (Red Flags)" },
+      "x-widget": "textarea",
+      "ai_extractable": false
+    },
+    "cid_codes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "x-label": { "pt": "Códigos CID associados", "en": "Associated CID Codes" },
+      "x-note": "ICD/CID-10 codes associated to the episode.",
+      "ai_extractable": false
+    },
+    "health_problems": {
+      "type": "object",
+      "x-label": { "pt": "Problemas de Saúde", "en": "Health Problems" },
+      "x-widget": "checkbox_group",
+      "description": "Boolean checkbox grid from the live form, plus a free-text 'Outros' field.",
+      "properties": {
+        "smoker":               { "type": "boolean", "x-label": { "pt": "Fumador", "en": "Smoker" }, "ai_extractable": false },
+        "pregnancy":            { "type": "boolean", "x-label": { "pt": "Gravidez", "en": "Pregnancy" }, "ai_extractable": false },
+        "osteoporosis":         { "type": "boolean", "x-label": { "pt": "Osteoporose", "en": "Osteoporosis" }, "ai_extractable": false },
+        "anemia":               { "type": "boolean", "x-label": { "pt": "Anemia", "en": "Anemia" }, "ai_extractable": false },
+        "lupus":                { "type": "boolean", "x-label": { "pt": "Lúpus", "en": "Lupus" }, "ai_extractable": false },
+        "neoplasia":            { "type": "boolean", "x-label": { "pt": "Neoplasia", "en": "Neoplasia" }, "ai_extractable": false },
+        "dementia_alzheimer":   { "type": "boolean", "x-label": { "pt": "Demência / Alzheimer", "en": "Dementia / Alzheimer" }, "ai_extractable": false },
+        "parkinson":            { "type": "boolean", "x-label": { "pt": "Parkinson", "en": "Parkinson's" }, "ai_extractable": false },
+        "depression":           { "type": "boolean", "x-label": { "pt": "Depressão", "en": "Depression" }, "ai_extractable": false },
+        "epilepsy":             { "type": "boolean", "x-label": { "pt": "Epilepsia", "en": "Epilepsy" }, "ai_extractable": false },
+        "multiple_sclerosis":   { "type": "boolean", "x-label": { "pt": "Esclerose múltipla", "en": "Multiple Sclerosis" }, "ai_extractable": false },
+        "rheumatoid_arthritis": { "type": "boolean", "x-label": { "pt": "Artrite reumatóide", "en": "Rheumatoid Arthritis" }, "ai_extractable": false },
+        "food_allergies":       { "type": "boolean", "x-label": { "pt": "Alergias Alimentares", "en": "Food Allergies" }, "ai_extractable": false },
+        "medication_allergies": { "type": "boolean", "x-label": { "pt": "Alergias Medicamentosas", "en": "Medication Allergies" }, "ai_extractable": false },
+        "hypertension":         { "type": "boolean", "x-label": { "pt": "Hipertensão", "en": "Hypertension" }, "ai_extractable": false },
+        "hypotension":          { "type": "boolean", "x-label": { "pt": "Hipotensão", "en": "Hypotension" }, "ai_extractable": false },
+        "diabetes":             { "type": "boolean", "x-label": { "pt": "Diabetes", "en": "Diabetes" }, "ai_extractable": false },
+        "respiratory_problems": { "type": "boolean", "x-label": { "pt": "Problemas Respiratórios", "en": "Respiratory Problems" }, "ai_extractable": false },
+        "covid_19":             { "type": "boolean", "x-label": { "pt": "COVID-19", "en": "COVID-19" }, "ai_extractable": false },
+        "other": {
+          "type": ["string", "null"],
+          "x-label": { "pt": "Outros", "en": "Other" },
+          "x-widget": "text",
+          "ai_extractable": false
+        }
+      }
+    },
+    "consultation_reason": {
+      "type": "string",
+      "x-label": {
+        "pt": "Motivos da Consulta / Início / Contexto em que ocorre",
+        "en": "Reason for Consultation / Onset / Context"
+      },
+      "x-required": true,
+      "x-widget": "textarea",
+      "ai_extractable": false
+    },
+    "relief_aggravation": {
+      "type": ["string", "null"],
+      "x-label": {
+        "pt": "Condições Alívio / Agravamento",
+        "en": "Relieving / Aggravating Factors"
+      },
+      "x-widget": "textarea",
+      "ai_extractable": false
+    },
+    "clinical_history": {
+      "type": ["string", "null"],
+      "x-label": {
+        "pt": "Antecedentes Clínicos / Cirurgia / Medicação",
+        "en": "Clinical History / Surgery / Medication"
+      },
+      "x-hint": {
+        "pt": "Colesterol, hipertensão, ácido úrico, diabetes, quedas, acidentes de viação",
+        "en": "Cholesterol, hypertension, uric acid, diabetes, falls, road accidents"
+      },
+      "x-widget": "textarea",
+      "ai_extractable": false
+    },
+    "systems_review": {
+      "type": "object",
+      "x-label": { "pt": "Anamnese por Sistemas", "en": "Systems Review" },
+      "description": "Free-text review per body system.",
+      "properties": {
+        "neurological":          { "type": ["string", "null"], "x-label": { "pt": "Neurológico", "en": "Neurological" }, "x-widget": "textarea", "ai_extractable": false },
+        "cardiovascular":        { "type": ["string", "null"], "x-label": { "pt": "Cardiovascular", "en": "Cardiovascular" }, "x-widget": "textarea", "ai_extractable": false },
+        "respiratory":           { "type": ["string", "null"], "x-label": { "pt": "Respiratório", "en": "Respiratory" }, "x-widget": "textarea", "ai_extractable": false },
+        "gastrointestinal":      { "type": ["string", "null"], "x-label": { "pt": "Gastrointestinal", "en": "Gastrointestinal" }, "x-widget": "textarea", "ai_extractable": false },
+        "urological_gynecological": { "type": ["string", "null"], "x-label": { "pt": "Urológico / Ginecológico", "en": "Urological / Gynecological" }, "x-widget": "textarea", "ai_extractable": false },
+        "endocrine":             { "type": ["string", "null"], "x-label": { "pt": "Endócrino", "en": "Endocrine" }, "x-widget": "textarea", "ai_extractable": false }
+      }
+    },
+    "bodychart": {
+      "type": "array",
+      "x-label": { "pt": "Bodychart", "en": "Bodychart" },
+      "x-hint": {
+        "pt": "Clique no bodychart e seleccione o marcador pretendido. Pode inserir tantos pontos quantos desejar.",
+        "en": "Click on the bodychart and select the desired marker. Insert as many points as needed."
+      },
+      "description": "Array of markers placed on the body diagram. Each marker has a type and coordinates.",
+      "items": {
+        "type": "object",
+        "required": ["marker_type", "x", "y"],
+        "properties": {
+          "marker_type": {
+            "type": "string",
+            "x-label": { "pt": "Tipo de marcador", "en": "Marker type" },
+            "enum": [
+              "blockage_dysfunction",
+              "scar",
+              "hypertonicity",
+              "hypotonicity",
+              "pain_radiation",
+              "pain_location",
+              "paresthesia",
+              "rotation_right",
+              "rotation_left"
+            ],
+            "x-enum-labels": {
+              "blockage_dysfunction": { "pt": "Bloqueio / Disfunção", "en": "Blockage / Dysfunction" },
+              "scar":                 { "pt": "Cicatriz", "en": "Scar" },
+              "hypertonicity":        { "pt": "Hipertonicidade", "en": "Hypertonicity" },
+              "hypotonicity":         { "pt": "Hipotonicidade", "en": "Hypotonicity" },
+              "pain_radiation":       { "pt": "Irradiação da dor", "en": "Pain radiation" },
+              "pain_location":        { "pt": "Local da dor", "en": "Pain location" },
+              "paresthesia":          { "pt": "Parestesia", "en": "Paresthesia" },
+              "rotation_right":       { "pt": "Rotação direita", "en": "Rotation right" },
+              "rotation_left":        { "pt": "Rotação esquerda", "en": "Rotation left" }
+            },
+            "ai_extractable": false
+          },
+          "x": { "type": "number", "x-note": "Normalized X coordinate on the bodychart (0–1).", "ai_extractable": false },
+          "y": { "type": "number", "x-note": "Normalized Y coordinate on the bodychart (0–1).", "ai_extractable": false },
+          "view": {
+            "type": ["string", "null"],
+            "x-note": "Which of the 4 body views the marker sits on.",
+            "enum": ["anterior", "lateral_left", "lateral_right", "posterior", null],
+            "ai_extractable": false
+          }
+        }
+      },
+      "ai_extractable": false
+    },
+    "treatment_objectives": {
+      "type": ["string", "null"],
+      "x-label": { "pt": "Objectivos do Tratamento", "en": "Treatment Objectives" },
+      "x-widget": "textarea",
+      "ai_extractable": false
+    },
+    "treatment_plan": {
+      "type": ["string", "null"],
+      "x-label": { "pt": "Plano de Tratamento", "en": "Treatment Plan" },
+      "x-widget": "textarea",
+      "ai_extractable": false
+    },
+    "observations": {
+      "type": ["string", "null"],
+      "x-label": { "pt": "Observações", "en": "Observations" },
+      "x-widget": "textarea",
+      "ai_extractable": false
+    }
+  },
+  "x-open-questions": [
+    "Bodychart coordinate model: confirm whether the existing system stores normalized (0–1) coords + view, or pixel coords against a fixed image. Modelled here as normalized + 4-view enum (anterior / lateral_left / lateral_right / posterior).",
+    "Are weight_kg / height_cm required for osteopathy episodes, or optional as modelled? Live form does not mark them required.",
+    "CID codes — single or multiple per episode? Modelled as array.",
+    "'NOTAS PESSOAIS' (private practitioner notes) appears on the physio form (image 3) and is described as not shared with other users. It does NOT clearly appear on the osteopathy form. Omitted here — confirm whether osteopathy episodes also need a private-notes field, and if so whether it belongs in the clinical template or is handled separately at the app/permissions layer (likely the latter).",
+    "ai_extractable is false on every field. The AI partner runs an ambient-recording → transcription → LLM-extraction pipeline. When the contract is signed, decide which narrative fields (consultation_reason, relief_aggravation, clinical_history, systems_review.*, treatment_objectives, treatment_plan, observations) get flipped to true. Structured/coded fields (booleans, coordinates, dates) are probably better left app-driven.",
+    "Lupus/COVID-19 etc. label casing and accents normalized to PT-PT (e.g. 'Lúpus'). Confirm acceptable."
+  ]
+}
