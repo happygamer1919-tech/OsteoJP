@@ -1,6 +1,6 @@
 export * from "./src/schema";
 export {
-  dbAdmin,
+  getDbAdmin,
   withTenantContext,
   type DbTx,
   type TenantClaims,

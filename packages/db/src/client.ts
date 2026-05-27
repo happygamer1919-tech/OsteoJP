@@ -47,10 +47,10 @@ function getDb(): Db {
 }
 
 /**
- * Direct drizzle handle that BYPASSES per-request claims — no SET ROLE, no
- * JWT claim injection. Connects as the owning role (e.g. supabase_admin /
- * postgres), which has BYPASSRLS, so policies do not apply to queries
- * issued through this handle.
+ * Lazy accessor for the drizzle handle that BYPASSES per-request claims —
+ * no SET ROLE, no JWT claim injection. Connects as the owning role (e.g.
+ * supabase_admin / postgres), which has BYPASSRLS, so policies do not apply
+ * to queries issued through it.
  *
  * Use ONLY for:
  *   - migrations,
@@ -59,12 +59,15 @@ function getDb(): Db {
  *
  * NEVER use for tenant-scoped request handling. Request paths go through
  * withTenantContext below.
+ *
+ * Returned as a function (not a Proxy) because drizzle's database object
+ * relies on private (#) fields whose access semantics break under Proxy
+ * forwarding — `dbAdmin.select()` would throw at runtime. Call getDbAdmin()
+ * at the use site instead.
  */
-export const dbAdmin: Db = new Proxy({} as Db, {
-  get(_t, prop, receiver) {
-    return Reflect.get(getDb() as object, prop, receiver);
-  },
-});
+export function getDbAdmin(): Db {
+  return getDb();
+}
 
 /* ================================================================== */
 /* Per-request tenant context                                         */
