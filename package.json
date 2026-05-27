@@ -8,11 +8,14 @@
   },
   "scripts": {
     "build": "turbo run build",
+    "db:check": "pnpm --filter @osteojp/db exec drizzle-kit check",
+    "db:migrate": "pnpm --filter @osteojp/db exec drizzle-kit migrate",
+    "db:studio": "pnpm --filter @osteojp/db exec drizzle-kit studio",
     "dev": "turbo run dev",
+    "format": "prettier --write .",
     "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "format": "prettier --write ."
+    "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
     "turbo": "2.9.14",
