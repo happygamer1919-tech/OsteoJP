@@ -1,0 +1,1581 @@
+openapi: 3.1.0
+info:
+  title: OsteoJP Platform API
+  version: 1.0.0
+  summary: V1 core resource surface for the OsteoJP clinic platform.
+  description: |
+    REST API for the OsteoJP clinic platform (https://osteojp.pt).
+
+    ## Tenancy
+    Every request is scoped to a single tenant. The tenant is derived from the
+    `tenant_id` claim in the bearer JWT and is **never** taken from path,
+    query, or body parameters. Postgres RLS enforces the tenant wall as
+    defense in depth.
+
+    ## Authorization
+    Authorization is role-based. Every operation declares the
+    [capability](../../packages/auth/permissions.ts) required to call it. The
+    server checks `can(role, capability)` before any DB access; RLS is the
+    second line of defense. Roles: `owner`, `admin`, `therapist`,
+    `reception`.
+
+    Reception is **fully denied** on `clinical_records` (no read, author, or
+    sign) — this matches the RLS policy in `packages/db`.
+
+    ## Pagination
+    List endpoints use opaque cursor pagination via `cursor` and `limit` query
+    params and return `nextCursor` in the response.
+
+    ## Identifiers, money, and time
+    - IDs are UUID v4.
+    - Money is stored as integer cents alongside an ISO 4217 currency code.
+    - Timestamps are RFC 3339 / ISO 8601 in UTC; display localization is
+      client-side (Europe/Lisbon).
+  contact:
+    name: OsteoJP Engineering
+    url: https://osteojp.pt
+servers:
+  - url: https://api.osteojp.pt/v1
+    description: Production (eu-central / fra1)
+  - url: https://api.dev.osteojp.pt/v1
+    description: Development
+security:
+  - bearerAuth: []
+tags:
+  - name: Patients
+    description: Patient records. Soft-deleted; `deleted_at` set on delete.
+  - name: Appointments
+    description: Scheduling, including recurring series.
+  - name: Services
+    description: Catalogue of bookable services (Osteopatia, Fisioterapia, RPG, NESA, ...).
+  - name: Locations
+    description: Physical clinic locations.
+  - name: ClinicalRecords
+    description: Clinical encounter records. Reception fully denied.
+  - name: Invoices
+    description: Internal billing ledger. PT fiscal docs are issued by the AT-certified provider.
+  - name: Users
+    description: Staff accounts (1:1 with Supabase auth.users).
+  - name: Roles
+    description: Tenant-scoped role definitions keyed to the in-code permission matrix.
+  - name: Settings
+    description: Tenant settings (JSON blob on `tenants.settings`).
+  - name: AuditLog
+    description: Append-only audit trail. Read-only via this API.
+  - name: Ingestion
+    description: AI partner ingestion. STUB — contract pending.
+
+paths:
+  # ----------------------------------------------------------------------
+  # Patients
+  # ----------------------------------------------------------------------
+  /patients:
+    get:
+      tags: [Patients]
+      summary: List or search patients
+      description: |
+        Returns patients in the caller's tenant. Pass `q` to search by name,
+        email, phone, or NIF (server-side substring match).
+
+        **Required capability:** `patients:read` (owner, admin, therapist, reception).
+      operationId: listPatients
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Free-text search across name, email, phone, NIF.
+        - in: query
+          name: includeDeleted
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Paginated patient list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientList'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Patients]
+      summary: Create patient
+      description: |
+        **Required capability:** `patients:write` (owner, admin, therapist, reception).
+      operationId: createPatient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientCreate'
+      responses:
+        '201':
+          description: Patient created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Patient' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /patients/{patientId}:
+    parameters:
+      - $ref: '#/components/parameters/PatientId'
+    get:
+      tags: [Patients]
+      summary: Get patient
+      description: '**Required capability:** `patients:read`.'
+      operationId: getPatient
+      responses:
+        '200':
+          description: Patient.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Patient' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Patients]
+      summary: Update patient
+      description: '**Required capability:** `patients:write`.'
+      operationId: updatePatient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatientUpdate' }
+      responses:
+        '200':
+          description: Patient updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Patient' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Patients]
+      summary: Soft-delete patient
+      description: |
+        Sets `deletedAt`. Patients are never hard-deleted (clinical-record
+        retention requirements).
+
+        **Required capability:** `patients:delete` (owner, admin only).
+      operationId: deletePatient
+      responses:
+        '204':
+          description: Patient soft-deleted.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ----------------------------------------------------------------------
+  # Appointments
+  # ----------------------------------------------------------------------
+  /appointments:
+    get:
+      tags: [Appointments]
+      summary: List appointments
+      description: |
+        Filter by date range (`from`, `to`), practitioner, patient, location,
+        or status.
+
+        **Required capability:** `appointments:read` (owner, admin, therapist, reception).
+      operationId: listAppointments
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+          description: Inclusive lower bound on `startsAt`.
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+          description: Exclusive upper bound on `startsAt`.
+        - in: query
+          name: practitionerId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: patientId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: locationId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: status
+          schema: { $ref: '#/components/schemas/AppointmentStatus' }
+      responses:
+        '200':
+          description: Paginated appointment list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Appointments]
+      summary: Create appointment
+      description: '**Required capability:** `appointments:write` (owner, admin, therapist, reception).'
+      operationId: createAppointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppointmentCreate' }
+      responses:
+        '201':
+          description: Appointment created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /appointments/{appointmentId}:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    get:
+      tags: [Appointments]
+      summary: Get appointment
+      description: '**Required capability:** `appointments:read`.'
+      operationId: getAppointment
+      responses:
+        '200':
+          description: Appointment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Appointments]
+      summary: Update appointment
+      description: '**Required capability:** `appointments:write`.'
+      operationId: updateAppointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppointmentUpdate' }
+      responses:
+        '200':
+          description: Appointment updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Appointments]
+      summary: Delete (cancel) appointment
+      description: |
+        Hard-deletes the appointment row. To preserve history, prefer setting
+        `status` to `cancelled` via PATCH instead.
+
+        **Required capability:** `appointments:delete` (owner, admin, reception).
+      operationId: deleteAppointment
+      responses:
+        '204':
+          description: Appointment deleted.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ----------------------------------------------------------------------
+  # Services
+  # ----------------------------------------------------------------------
+  /services:
+    get:
+      tags: [Services]
+      summary: List services
+      description: '**Required capability:** `services:read` (all roles).'
+      operationId: listServices
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - in: query
+          name: locationId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: activeOnly
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: Paginated service list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Services]
+      summary: Create service
+      description: '**Required capability:** `services:write` (owner, admin).'
+      operationId: createService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceCreate' }
+      responses:
+        '201':
+          description: Service created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Service' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /services/{serviceId}:
+    parameters:
+      - $ref: '#/components/parameters/ServiceId'
+    get:
+      tags: [Services]
+      summary: Get service
+      description: '**Required capability:** `services:read`.'
+      operationId: getService
+      responses:
+        '200':
+          description: Service.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Service' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Services]
+      summary: Update service
+      description: '**Required capability:** `services:write`.'
+      operationId: updateService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceUpdate' }
+      responses:
+        '200':
+          description: Service updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Service' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ----------------------------------------------------------------------
+  # Locations
+  # ----------------------------------------------------------------------
+  /locations:
+    get:
+      tags: [Locations]
+      summary: List locations
+      description: '**Required capability:** `locations:read` (all roles).'
+      operationId: listLocations
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - in: query
+          name: activeOnly
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: Paginated location list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LocationList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Locations]
+      summary: Create location
+      description: '**Required capability:** `locations:write` (owner, admin).'
+      operationId: createLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LocationCreate' }
+      responses:
+        '201':
+          description: Location created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Location' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /locations/{locationId}:
+    parameters:
+      - $ref: '#/components/parameters/LocationId'
+    get:
+      tags: [Locations]
+      summary: Get location
+      description: '**Required capability:** `locations:read`.'
+      operationId: getLocation
+      responses:
+        '200':
+          description: Location.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Location' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Locations]
+      summary: Update location
+      description: '**Required capability:** `locations:write`.'
+      operationId: updateLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LocationUpdate' }
+      responses:
+        '200':
+          description: Location updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Location' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ----------------------------------------------------------------------
+  # Clinical records
+  # ----------------------------------------------------------------------
+  /clinical-records:
+    get:
+      tags: [ClinicalRecords]
+      summary: List clinical records
+      description: |
+        Reception is fully denied on this resource (the RLS policy in
+        `packages/db` also denies access). A 403 is returned to reception
+        callers; admins/owners/therapists pass.
+
+        **Required capability:** `clinical_records:read` (owner, admin, therapist).
+      operationId: listClinicalRecords
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - in: query
+          name: patientId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: episodeId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: status
+          schema: { $ref: '#/components/schemas/RecordStatus' }
+      responses:
+        '200':
+          description: Paginated clinical-record list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClinicalRecordList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [ClinicalRecords]
+      summary: Author clinical record (draft)
+      description: |
+        Creates a new clinical record in `draft` status. Records may be
+        edited while in `draft`; transitioning to `locked` or `signed` is
+        terminal — subsequent corrections must be filed as addenda.
+
+        Reception is fully denied. **Required capability:**
+        `clinical_records:author` (owner, therapist).
+      operationId: createClinicalRecord
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClinicalRecordCreate' }
+      responses:
+        '201':
+          description: Clinical record created (status = draft).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClinicalRecord' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /clinical-records/{recordId}:
+    parameters:
+      - $ref: '#/components/parameters/RecordId'
+    get:
+      tags: [ClinicalRecords]
+      summary: Get clinical record
+      description: |
+        Reception is fully denied. **Required capability:**
+        `clinical_records:read` (owner, admin, therapist).
+      operationId: getClinicalRecord
+      responses:
+        '200':
+          description: Clinical record.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClinicalRecord' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [ClinicalRecords]
+      summary: Update clinical record (draft only)
+      description: |
+        Only records in `draft` may be edited; editing a `locked` or
+        `signed` record returns 409. Reception is fully denied.
+
+        **Required capability:** `clinical_records:author` (owner, therapist).
+      operationId: updateClinicalRecord
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClinicalRecordUpdate' }
+      responses:
+        '200':
+          description: Clinical record updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClinicalRecord' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /clinical-records/{recordId}/sign:
+    parameters:
+      - $ref: '#/components/parameters/RecordId'
+    post:
+      tags: [ClinicalRecords]
+      summary: Sign clinical record
+      description: |
+        Transitions the record from `draft` (or `locked`) to `signed`,
+        stamping `signedAt` and `signedBy` from the JWT subject. Signed
+        records are immutable. Reception is fully denied.
+
+        **Required capability:** `clinical_records:sign` (owner, therapist).
+      operationId: signClinicalRecord
+      responses:
+        '200':
+          description: Clinical record signed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClinicalRecord' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Record is already signed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ----------------------------------------------------------------------
+  # Invoices
+  # ----------------------------------------------------------------------
+  /invoices:
+    get:
+      tags: [Invoices]
+      summary: List invoices
+      description: '**Required capability:** `invoices:read` (all roles).'
+      operationId: listInvoices
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - in: query
+          name: patientId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: status
+          schema: { $ref: '#/components/schemas/InvoiceStatus' }
+      responses:
+        '200':
+          description: Paginated invoice list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Invoices]
+      summary: Issue invoice
+      description: |
+        Creates and issues an invoice on the internal ledger. PT fiscal
+        documents are issued by the AT-certified provider (InvoiceXpress
+        relay lands in Phase 4). On creation, `status` is set to `issued`
+        and `issuedAt` stamped.
+
+        **Required capability:** `invoices:issue` (owner, admin, reception).
+      operationId: issueInvoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvoiceIssue' }
+      responses:
+        '201':
+          description: Invoice issued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /invoices/{invoiceId}:
+    parameters:
+      - $ref: '#/components/parameters/InvoiceId'
+    get:
+      tags: [Invoices]
+      summary: Get invoice
+      description: '**Required capability:** `invoices:read`.'
+      operationId: getInvoice
+      responses:
+        '200':
+          description: Invoice.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /invoices/{invoiceId}/void:
+    parameters:
+      - $ref: '#/components/parameters/InvoiceId'
+    post:
+      tags: [Invoices]
+      summary: Void invoice
+      description: |
+        Transitions the invoice to `void`. Voiding an already-paid invoice
+        returns 409.
+
+        **Required capability:** `invoices:void` (owner, admin).
+      operationId: voidInvoice
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: Invoice voided.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ----------------------------------------------------------------------
+  # Users
+  # ----------------------------------------------------------------------
+  /users:
+    get:
+      tags: [Users]
+      summary: List users
+      description: '**Required capability:** `users:read` (owner, admin).'
+      operationId: listUsers
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - in: query
+          name: roleId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: activeOnly
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: Paginated user list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Users]
+      summary: Create user
+      description: |
+        Provisions a staff account. The user is created in Supabase Auth and
+        mirrored into `users` with the chosen role.
+
+        **Required capability:** `users:manage` (owner, admin).
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserCreate' }
+      responses:
+        '201':
+          description: User created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /users/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Users]
+      summary: Get user
+      description: '**Required capability:** `users:read`.'
+      operationId: getUser
+      responses:
+        '200':
+          description: User.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Users]
+      summary: Update user
+      description: '**Required capability:** `users:manage`.'
+      operationId: updateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdate' }
+      responses:
+        '200':
+          description: User updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Users]
+      summary: Deactivate user
+      description: |
+        Sets `isActive=false`. Users are not hard-deleted (audit-log
+        referential integrity).
+
+        **Required capability:** `users:manage`.
+      operationId: deactivateUser
+      responses:
+        '204':
+          description: User deactivated.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ----------------------------------------------------------------------
+  # Roles
+  # ----------------------------------------------------------------------
+  /roles:
+    get:
+      tags: [Roles]
+      summary: List roles
+      description: '**Required capability:** `roles:read` (owner, admin).'
+      operationId: listRoles
+      responses:
+        '200':
+          description: Role list (small; not paginated).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Role' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Roles]
+      summary: Create role
+      description: |
+        Creates a tenant-scoped role. The `slug` MUST match a role key in the
+        in-code permission matrix (`owner`, `admin`, `therapist`, `reception`)
+        — the API will not create roles the matrix doesn't recognise.
+
+        **Required capability:** `roles:manage` (owner only — prevents
+        privilege escalation by a compromised admin).
+      operationId: createRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleCreate' }
+      responses:
+        '201':
+          description: Role created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Role' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /roles/{roleId}:
+    parameters:
+      - $ref: '#/components/parameters/RoleId'
+    get:
+      tags: [Roles]
+      summary: Get role
+      description: '**Required capability:** `roles:read`.'
+      operationId: getRole
+      responses:
+        '200':
+          description: Role.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Role' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Roles]
+      summary: Update role
+      description: '**Required capability:** `roles:manage` (owner only).'
+      operationId: updateRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleUpdate' }
+      responses:
+        '200':
+          description: Role updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Role' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      tags: [Roles]
+      summary: Delete role
+      description: |
+        Returns 409 if any users still reference this role.
+
+        **Required capability:** `roles:manage` (owner only).
+      operationId: deleteRole
+      responses:
+        '204':
+          description: Role deleted.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ----------------------------------------------------------------------
+  # Settings
+  # ----------------------------------------------------------------------
+  /settings:
+    get:
+      tags: [Settings]
+      summary: Get tenant settings
+      description: '**Required capability:** `settings:read` (owner, admin).'
+      operationId: getSettings
+      responses:
+        '200':
+          description: Settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      tags: [Settings]
+      summary: Update tenant settings
+      description: '**Required capability:** `settings:manage` (owner, admin).'
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettingsUpdate' }
+      responses:
+        '200':
+          description: Settings updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ----------------------------------------------------------------------
+  # Audit log
+  # ----------------------------------------------------------------------
+  /audit-log:
+    get:
+      tags: [AuditLog]
+      summary: List audit-log entries
+      description: |
+        Append-only; entries cannot be created, updated, or deleted via this
+        API (writes are emitted server-side on permission-sensitive actions).
+
+        **Required capability:** `audit_log:read` (owner, admin).
+      operationId: listAuditLog
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - in: query
+          name: actorUserId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: entityType
+          schema: { type: string }
+        - in: query
+          name: entityId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Paginated audit-log list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ----------------------------------------------------------------------
+  # Ingestion (STUB)
+  # ----------------------------------------------------------------------
+  /ingestion/clinical-records:
+    post:
+      tags: [Ingestion]
+      summary: '[STUB] AI partner clinical-record ingestion'
+      description: |
+        **STUB — contract pending.**
+
+        TODO: finalize once the AI partner ingestion contract is signed off.
+        The expected shape includes the external `aiPayloadId`, the target
+        `patientId` / `formTemplateId`, the extracted `data` JSON, and a
+        signed source attestation. On accept, a `clinical_records` row will
+        be inserted with `source = 'ai_ingested'`, `status = 'draft'`, and
+        `aiReviewState = 'pending_review'`.
+
+        Authentication is **not** a normal user JWT — this endpoint requires
+        a signed partner credential (HMAC or asymmetric, TBD with partner).
+        Capability semantics deliberately omitted until the contract lands.
+      operationId: ingestClinicalRecord
+      security:
+        - partnerSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: '[STUB] Shape to be defined.'
+              additionalProperties: true
+      responses:
+        '202':
+          description: '[STUB] Accepted for review.'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Supabase-issued JWT. Required claims: `sub`, `tenant_id`, `user_role`.
+        The server resolves `user_role` via `parseRole()` and runs
+        `can(role, capability)` for every operation.
+    partnerSignature:
+      type: apiKey
+      in: header
+      name: X-Partner-Signature
+      description: '[STUB] AI partner credential. Final scheme TBD.'
+
+  parameters:
+    Cursor:
+      in: query
+      name: cursor
+      schema: { type: string }
+      description: Opaque cursor from a previous `nextCursor`.
+    Limit:
+      in: query
+      name: limit
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    PatientId:
+      in: path
+      name: patientId
+      required: true
+      schema: { type: string, format: uuid }
+    AppointmentId:
+      in: path
+      name: appointmentId
+      required: true
+      schema: { type: string, format: uuid }
+    ServiceId:
+      in: path
+      name: serviceId
+      required: true
+      schema: { type: string, format: uuid }
+    LocationId:
+      in: path
+      name: locationId
+      required: true
+      schema: { type: string, format: uuid }
+    RecordId:
+      in: path
+      name: recordId
+      required: true
+      schema: { type: string, format: uuid }
+    InvoiceId:
+      in: path
+      name: invoiceId
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      in: path
+      name: userId
+      required: true
+      schema: { type: string, format: uuid }
+    RoleId:
+      in: path
+      name: roleId
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer JWT.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authenticated, but the caller's role lacks the required capability.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource does not exist (or is not visible to the caller's tenant).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Request conflicts with the resource's current state (e.g. editing a signed clinical record, voiding a paid invoice).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unprocessable:
+      description: Payload failed validation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationError' }
+
+  schemas:
+    # ------------------------------ Enums ------------------------------
+    AppointmentStatus:
+      type: string
+      enum: [scheduled, confirmed, completed, cancelled, no_show]
+    RecordStatus:
+      type: string
+      description: |
+        `draft` — editable. `locked` — finalized, no edits. `signed` —
+        locked + practitioner signature stamped. Transitions are
+        one-directional; corrections after `locked`/`signed` are filed as
+        addenda.
+      enum: [draft, locked, signed]
+    RecordSource:
+      type: string
+      enum: [manual, ai_ingested]
+    AiReviewState:
+      type: string
+      description: PLACEHOLDER — finalised with the AI partner contract.
+      enum: [pending_review, in_review, approved, rejected]
+    InvoiceStatus:
+      type: string
+      enum: [draft, issued, paid, void]
+    PaymentProvider:
+      type: string
+      enum: [cash, mbway, multibanco, stripe, ifthenpay, other]
+    RoleSlug:
+      type: string
+      enum: [owner, admin, therapist, reception]
+
+    # ------------------------------ Common -----------------------------
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable machine code (e.g. `unauthorized`, `forbidden`, `not_found`, `conflict`, `validation_failed`).
+        message:
+          type: string
+          description: Human-readable detail. Never contains PII.
+        requestId:
+          type: string
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            fieldErrors:
+              type: array
+              items:
+                type: object
+                required: [path, message]
+                properties:
+                  path: { type: string }
+                  message: { type: string }
+
+    # ------------------------------ Patient ----------------------------
+    Patient:
+      type: object
+      required: [id, fullName, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        fullName: { type: string }
+        dateOfBirth: { type: [string, 'null'], format: date }
+        sex: { type: [string, 'null'], maxLength: 16 }
+        nif: { type: [string, 'null'], maxLength: 20 }
+        email: { type: [string, 'null'], format: email }
+        phone: { type: [string, 'null'], maxLength: 32 }
+        address: { type: [string, 'null'] }
+        postalCode: { type: [string, 'null'], maxLength: 16 }
+        city: { type: [string, 'null'] }
+        notes: { type: [string, 'null'] }
+        mergedIntoId: { type: [string, 'null'], format: uuid }
+        createdBy: { type: [string, 'null'], format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        deletedAt: { type: [string, 'null'], format: date-time }
+    PatientCreate:
+      type: object
+      required: [fullName]
+      properties:
+        fullName: { type: string, minLength: 1 }
+        dateOfBirth: { type: string, format: date }
+        sex: { type: string, maxLength: 16 }
+        nif: { type: string, maxLength: 20 }
+        email: { type: string, format: email }
+        phone: { type: string, maxLength: 32 }
+        address: { type: string }
+        postalCode: { type: string, maxLength: 16 }
+        city: { type: string }
+        notes: { type: string }
+    PatientUpdate:
+      type: object
+      properties:
+        fullName: { type: string, minLength: 1 }
+        dateOfBirth: { type: [string, 'null'], format: date }
+        sex: { type: [string, 'null'], maxLength: 16 }
+        nif: { type: [string, 'null'], maxLength: 20 }
+        email: { type: [string, 'null'], format: email }
+        phone: { type: [string, 'null'], maxLength: 32 }
+        address: { type: [string, 'null'] }
+        postalCode: { type: [string, 'null'], maxLength: 16 }
+        city: { type: [string, 'null'] }
+        notes: { type: [string, 'null'] }
+    PatientList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Patient' }
+        nextCursor: { type: [string, 'null'] }
+
+    # ----------------------------- Appointment -------------------------
+    Appointment:
+      type: object
+      required: [id, patientId, practitionerId, locationId, startsAt, endsAt, status, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        patientId: { type: string, format: uuid }
+        practitionerId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        serviceId: { type: [string, 'null'], format: uuid }
+        room: { type: [string, 'null'] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/AppointmentStatus' }
+        recurrenceRule:
+          type: [string, 'null']
+          description: RFC 5545 RRULE. Null on one-off appointments.
+        recurrenceParentId: { type: [string, 'null'], format: uuid }
+        notes: { type: [string, 'null'] }
+        createdBy: { type: [string, 'null'], format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AppointmentCreate:
+      type: object
+      required: [patientId, practitionerId, locationId, startsAt, endsAt]
+      properties:
+        patientId: { type: string, format: uuid }
+        practitionerId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        serviceId: { type: string, format: uuid }
+        room: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/AppointmentStatus' }
+        recurrenceRule: { type: string }
+        notes: { type: string }
+    AppointmentUpdate:
+      type: object
+      properties:
+        practitionerId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        serviceId: { type: [string, 'null'], format: uuid }
+        room: { type: [string, 'null'] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/AppointmentStatus' }
+        recurrenceRule: { type: [string, 'null'] }
+        notes: { type: [string, 'null'] }
+    AppointmentList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Appointment' }
+        nextCursor: { type: [string, 'null'] }
+
+    # ----------------------------- Service -----------------------------
+    Service:
+      type: object
+      required: [id, name, durationMin, currency, isActive, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        locationId:
+          type: [string, 'null']
+          format: uuid
+          description: Null means the service is offered at all locations.
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        durationMin: { type: integer, minimum: 1 }
+        priceCents: { type: [integer, 'null'], format: int64, minimum: 0 }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        isActive: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ServiceCreate:
+      type: object
+      required: [name]
+      properties:
+        locationId: { type: string, format: uuid }
+        name: { type: string, minLength: 1 }
+        description: { type: string }
+        durationMin: { type: integer, minimum: 1, default: 60 }
+        priceCents: { type: integer, format: int64, minimum: 0 }
+        currency: { type: string, minLength: 3, maxLength: 3, default: EUR }
+        isActive: { type: boolean, default: true }
+    ServiceUpdate:
+      type: object
+      properties:
+        locationId: { type: [string, 'null'], format: uuid }
+        name: { type: string, minLength: 1 }
+        description: { type: [string, 'null'] }
+        durationMin: { type: integer, minimum: 1 }
+        priceCents: { type: [integer, 'null'], format: int64, minimum: 0 }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        isActive: { type: boolean }
+    ServiceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Service' }
+        nextCursor: { type: [string, 'null'] }
+
+    # ----------------------------- Location ----------------------------
+    Location:
+      type: object
+      required: [id, name, isActive, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        address: { type: [string, 'null'] }
+        phone: { type: [string, 'null'], maxLength: 32 }
+        isActive: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    LocationCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        address: { type: string }
+        phone: { type: string, maxLength: 32 }
+        isActive: { type: boolean, default: true }
+    LocationUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        address: { type: [string, 'null'] }
+        phone: { type: [string, 'null'], maxLength: 32 }
+        isActive: { type: boolean }
+    LocationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Location' }
+        nextCursor: { type: [string, 'null'] }
+
+    # -------------------------- Clinical record ------------------------
+    ClinicalRecord:
+      type: object
+      required: [id, patientId, data, status, version, source, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        episodeId: { type: [string, 'null'], format: uuid }
+        patientId: { type: string, format: uuid }
+        practitionerId: { type: [string, 'null'], format: uuid }
+        formTemplateId: { type: [string, 'null'], format: uuid }
+        appointmentId: { type: [string, 'null'], format: uuid }
+        data:
+          type: object
+          additionalProperties: true
+          description: Filled form response, shape governed by the linked form template.
+        status: { $ref: '#/components/schemas/RecordStatus' }
+        version: { type: integer, minimum: 1 }
+        source: { $ref: '#/components/schemas/RecordSource' }
+        aiReviewState:
+          oneOf:
+            - { $ref: '#/components/schemas/AiReviewState' }
+            - { type: 'null' }
+        aiPayloadId: { type: [string, 'null'] }
+        signedAt: { type: [string, 'null'], format: date-time }
+        signedBy: { type: [string, 'null'], format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ClinicalRecordCreate:
+      type: object
+      required: [patientId, data]
+      properties:
+        episodeId: { type: string, format: uuid }
+        patientId: { type: string, format: uuid }
+        formTemplateId: { type: string, format: uuid }
+        appointmentId: { type: string, format: uuid }
+        data:
+          type: object
+          additionalProperties: true
+    ClinicalRecordUpdate:
+      type: object
+      description: Patches the `data` blob. Only allowed while status = draft.
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+        episodeId: { type: [string, 'null'], format: uuid }
+        formTemplateId: { type: [string, 'null'], format: uuid }
+        appointmentId: { type: [string, 'null'], format: uuid }
+    ClinicalRecordList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ClinicalRecord' }
+        nextCursor: { type: [string, 'null'] }
+
+    # ----------------------------- Invoice -----------------------------
+    Invoice:
+      type: object
+      required: [id, amountCents, currency, status, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        patientId: { type: [string, 'null'], format: uuid }
+        appointmentId: { type: [string, 'null'], format: uuid }
+        amountCents: { type: integer, format: int64, minimum: 0 }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        status: { $ref: '#/components/schemas/InvoiceStatus' }
+        externalInvoiceId:
+          type: [string, 'null']
+          description: ID at the AT-certified fiscal provider (e.g. InvoiceXpress). Null until Phase 4 relay.
+        paymentProvider:
+          oneOf:
+            - { $ref: '#/components/schemas/PaymentProvider' }
+            - { type: 'null' }
+        paymentRef: { type: [string, 'null'] }
+        issuedAt: { type: [string, 'null'], format: date-time }
+        paidAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    InvoiceIssue:
+      type: object
+      required: [amountCents, currency]
+      properties:
+        patientId: { type: string, format: uuid }
+        appointmentId: { type: string, format: uuid }
+        amountCents: { type: integer, format: int64, minimum: 0 }
+        currency: { type: string, minLength: 3, maxLength: 3, default: EUR }
+        paymentProvider: { $ref: '#/components/schemas/PaymentProvider' }
+        paymentRef: { type: string }
+    InvoiceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Invoice' }
+        nextCursor: { type: [string, 'null'] }
+
+    # ------------------------------ User -------------------------------
+    User:
+      type: object
+      required: [id, email, fullName, isActive, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 1:1 with the Supabase auth.users.id.
+        roleId: { type: [string, 'null'], format: uuid }
+        email: { type: string, format: email }
+        fullName: { type: string }
+        isActive: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    UserCreate:
+      type: object
+      required: [email, fullName, roleId]
+      properties:
+        email: { type: string, format: email }
+        fullName: { type: string, minLength: 1 }
+        roleId: { type: string, format: uuid }
+        isActive: { type: boolean, default: true }
+    UserUpdate:
+      type: object
+      properties:
+        fullName: { type: string, minLength: 1 }
+        roleId: { type: string, format: uuid }
+        isActive: { type: boolean }
+    UserList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        nextCursor: { type: [string, 'null'] }
+
+    # ------------------------------ Role -------------------------------
+    Role:
+      type: object
+      required: [id, slug, name, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { $ref: '#/components/schemas/RoleSlug' }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    RoleCreate:
+      type: object
+      required: [slug, name]
+      properties:
+        slug: { $ref: '#/components/schemas/RoleSlug' }
+        name: { type: string, minLength: 1 }
+        description: { type: string }
+    RoleUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        description: { type: [string, 'null'] }
+
+    # ---------------------------- Settings -----------------------------
+    Settings:
+      type: object
+      required: [tenantId, settings, updatedAt]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+          description: Returned for client confirmation; not accepted on writes (taken from JWT).
+        settings:
+          type: object
+          additionalProperties: true
+          description: Free-form tenant settings blob (`tenants.settings` JSONB).
+        updatedAt: { type: string, format: date-time }
+    SettingsUpdate:
+      type: object
+      required: [settings]
+      properties:
+        settings:
+          type: object
+          additionalProperties: true
+
+    # --------------------------- Audit log -----------------------------
+    AuditLogEntry:
+      type: object
+      required: [id, action, entityType, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        actorUserId: { type: [string, 'null'], format: uuid }
+        action:
+          type: string
+          description: Dotted verb, e.g. `patient.update`, `clinical_record.sign`.
+        entityType: { type: string }
+        entityId: { type: [string, 'null'], format: uuid }
+        metadata:
+          type: object
+          additionalProperties: true
+        ip:
+          type: [string, 'null']
+          maxLength: 45
+          description: IPv4 or IPv6.
+        createdAt: { type: string, format: date-time }
+    AuditLogList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AuditLogEntry' }
+        nextCursor: { type: [string, 'null'] }
