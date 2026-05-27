@@ -4,7 +4,10 @@
 --   * auth.jwt() carries two custom claims, injected by the Supabase
 --     Custom Access Token Hook (see 0002_auth_token_hook.sql):
 --       - tenant_id (uuid)
---       - role      (text slug: owner | admin | therapist | reception)
+--       - user_role (text slug: owner | admin | therapist | reception)
+--     NOTE: the app-role claim is `user_role`, NOT `role`. Supabase reserves
+--     `role` — PostgREST consumes it to SET ROLE per request, so writing a
+--     slug like 'therapist' there would break every authenticated request.
 --   * Two STABLE helpers wrap the claim reads. In policies they are referenced
 --     as (select public.jwt_tenant_id()) / (select public.jwt_role()) so
 --     Postgres treats them as initPlans evaluated once per query, not per row.
@@ -38,7 +41,7 @@ CREATE OR REPLACE FUNCTION public.jwt_role()
   LANGUAGE sql
   STABLE
 AS $$
-  SELECT auth.jwt() ->> 'role'
+  SELECT auth.jwt() ->> 'user_role'
 $$;
 --> statement-breakpoint
 

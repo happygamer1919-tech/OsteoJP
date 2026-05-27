@@ -2,7 +2,13 @@
 --
 -- Injects two custom claims into every issued access token:
 --   * tenant_id  (uuid, from public.users.tenant_id)
---   * role       (text slug, from public.roles.slug joined via users.role_id)
+--   * user_role  (text slug, from public.roles.slug joined via users.role_id)
+--
+-- The app-role claim is named `user_role`, NOT `role`. Supabase reserves the
+-- `role` claim — PostgREST reads it and performs SET ROLE per request — so
+-- writing a slug like 'therapist' there would break every authenticated
+-- request. We leave the reserved `role` claim untouched and merge onto the
+-- existing claims object rather than rebuilding it.
 --
 -- These are the same claims that RLS reads via public.jwt_tenant_id() /
 -- public.jwt_role() (see 0001_rls.sql). Tenant isolation and role-based
@@ -56,7 +62,7 @@ BEGIN
   END IF;
 
   IF v_role IS NOT NULL THEN
-    v_claims := jsonb_set(v_claims, '{role}', to_jsonb(v_role));
+    v_claims := jsonb_set(v_claims, '{user_role}', to_jsonb(v_role));
   END IF;
 
   RETURN jsonb_set(event, '{claims}', v_claims);
