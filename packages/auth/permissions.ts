@@ -7,7 +7,21 @@
 // rules live here and are enforced by server actions / API routes before any
 // DB call.
 
-export type Role = "owner" | "admin" | "therapist" | "reception";
+export const ROLES = ["owner", "admin", "therapist", "reception"] as const;
+
+export type Role = (typeof ROLES)[number];
+
+export function isRole(value: unknown): value is Role {
+  return typeof value === "string" && (ROLES as readonly string[]).includes(value);
+}
+
+// Validates the untyped `user_role` JWT claim. Returns null on anything
+// invalid (missing claim, typo, unknown role). Caller decides whether that's
+// a 401/403 (untrusted input) or a 500 (server-issued JWT we don't recognize).
+// Never throws — fail-closed at the call site, not here.
+export function parseRole(value: unknown): Role | null {
+  return isRole(value) ? value : null;
+}
 
 export type Capability =
   | "patients:read"
