@@ -19,7 +19,7 @@ Reference site: https://osteojp.pt — brand and tone source of truth.
 8. EU data residency: Supabase EU (Frankfurt), Vercel `fra1`, Resend EU. No US-region resources for stored data.
 
 ## Stack
-- Next.js 15 App Router, TypeScript strict
+- Next.js 16 App Router, TypeScript strict
 - shadcn/ui + Tailwind v4
 - Drizzle ORM + PostgreSQL (Supabase EU)
 - Supabase Auth (JWT with tenant_id + role claims)

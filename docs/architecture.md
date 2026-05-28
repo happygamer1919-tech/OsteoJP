@@ -14,7 +14,7 @@ OsteoJP is a Portuguese osteopathy and physiotherapy clinic with locations in Li
 
 The platform replaces two legacy systems — Fisiozero (clinical) and Stylus.pt (scheduling) — with a single multi-tenant application covering scheduling, patient records, clinical forms, invoicing, and payments. The system is multi-tenant from day 1 to support a future licensing path beyond OsteoJP.
 
-The platform is API-first for clinical record ingestion: an external AI partner runs ambient recording → Whisper → LLM and pushes completed clinical reports into a signed endpoint. The platform owns the review queue, state machine, finalization, and immutability of finalized records.
+The platform is API-first for clinical record ingestion: an external AI partner runs ambient recording → Whisper → LLM and pushes completed clinical reports into a signed endpoint. The platform owns the AI-ingestion review queue (`ai_review_state`, placeholder pending the partner contract), the clinical record lifecycle (`record_status`: `draft` → `locked` → `signed`), and the immutability of locked/signed records.
 
 Target launch: end of June 2026.
 
@@ -27,7 +27,9 @@ These are non-negotiable constraints applied across the codebase. Sourced from `
 1. Every domain table has `tenant_id uuid not null`. No exceptions.
 2. Every domain table has an RLS policy keyed on the JWT `tenant_id` claim.
 3. Service-role queries (migrations, ingestion, jobs) must set `tenant_id` explicitly. Never global.
-4. Clinical records use a state machine: `ai_draft` → `under_review` → `finalized`. Finalized records are immutable; changes create addendum versions.
+4. Clinical records have two orthogonal state machines, defined in `packages/db/src/schema.ts`:
+   - `record_status` — lifecycle of every clinical record regardless of origin: `draft` → `locked` → `signed`. Locking makes content immutable (enforced by the BEFORE UPDATE OR DELETE trigger); signing attaches the therapist signature. Changes after locking create addendum versions.
+   - `ai_review_state` — review queue for records arriving via the AI ingestion endpoint only. PLACEHOLDER values (`pending_review`, `in_review`, `approved`, `rejected`) pending the AI partner auth contract; refine in schema once signed off. AI ingestion never produces a `locked` or `signed` record directly — a human reviewer must accept the AI payload, after which the resulting `clinical_record` follows the standard `record_status` lifecycle.
 5. Form templates are JSON Schema-driven. Templates are versioned and immutable once referenced by a record.
 6. Audit log writes on every clinical record mutation and every permission-sensitive action. No exceptions.
 7. PII never appears in logs, error messages, or Sentry events. Sanitize before logging.
@@ -39,7 +41,7 @@ These are non-negotiable constraints applied across the codebase. Sourced from `
 
 | Layer | Technology |
 |---|---|
-| Framework | Next.js 15 (App Router), TypeScript strict |
+| Framework | Next.js 16 (App Router), TypeScript strict |
 | UI | shadcn/ui + Tailwind v4 |
 | ORM | Drizzle |
 | Database | PostgreSQL via Supabase EU (Frankfurt) |
@@ -139,7 +141,7 @@ Server-enforced. Client-side checks exist for UX but are never the security boun
 |---|---|---|---|
 | View any patient | ✓ | ✓ (own only) | ✓ |
 | View clinical records | ✓ | ✓ (own patients only) | ✗ |
-| Edit clinical records | ✓ | ✓ (own, until finalized) | ✗ |
+| Edit clinical records | ✓ | ✓ (own, until locked) | ✗ |
 | Schedule appointments | ✓ | ✓ (own calendar) | ✓ |
 | Issue invoices | ✓ | ✗ | ✓ |
 | Manage users/roles | ✓ | ✗ | ✗ |
@@ -151,27 +153,55 @@ Enforcement model: every API route runs a server-side check via `packages/auth`,
 
 ## 7. Clinical record state machine
 
-Per architecture rule 4, clinical records flow through three states:
+Per architecture rule 4, `clinical_records` rows carry **two orthogonal state machines**, both defined in `packages/db/src/schema.ts`:
+
+1. **`record_status`** — lifecycle of every clinical record regardless of origin: `draft` → `locked` → `signed`. Mandatory column, defaults to `draft`.
+2. **`ai_review_state`** — review queue for records arriving via the AI ingestion endpoint only. Nullable; populated only on AI-ingested rows. **PLACEHOLDER** values pending the AI partner auth contract (see §16.1).
+
+These axes are independent: an AI-ingested record carries both columns and progresses through each separately. Manual records leave `ai_review_state` NULL.
+
+### 7.1 `record_status` — record lifecycle (all records)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ai_draft: AI partner ingests
-    [*] --> under_review: Therapist creates manually
-    ai_draft --> under_review: Therapist opens for review
-    under_review --> ai_draft: Reject (back to AI partner)
-    under_review --> finalized: Therapist signs
-    finalized --> [*]: Immutable
-    finalized --> addendum: Addendum version created
-    addendum --> finalized: Addendum signed (new immutable version)
+    [*] --> draft: Therapist creates (or human reviewer accepts AI payload)
+    draft --> locked: Therapist locks (content frozen)
+    locked --> signed: Therapist attaches signature
+    signed --> [*]: Immutable
+    signed --> addendum: Addendum version created
+    addendum --> signed: Addendum signed (new immutable version)
 ```
 
 Rules:
 
-- A record in `ai_draft` is invisible to non-reviewing roles.
-- A record in `under_review` is editable by the assigned therapist only (or admin).
-- Finalization requires therapist signature. After finalization, the row is immutable at the database level (enforced via constraint + RLS).
-- Any change to a finalized record creates a new addendum version. The original is preserved; the addendum is signed independently and chained via a `parent_record_id` reference.
+- A record in `draft` is editable by the assigned therapist (or admin), subject to the permission matrix in §6.
+- Locking makes content immutable. A `BEFORE UPDATE OR DELETE` trigger on `clinical_records` (see `packages/db/migrations/0001_rls.sql`) rejects any mutation of rows where `status IN ('locked', 'signed')`. The trigger fires regardless of RLS / `BYPASSRLS`, so even `service_role` cannot mutate a locked or signed row.
+- Signing requires therapist signature and transitions the row to `signed`. The row remains immutable.
+- Any change to a locked or signed record creates a new addendum version. The original is preserved; the addendum is signed independently and chained via a `parent_record_id` reference.
 - Every state transition writes to `audit_log` with actor, timestamp, and from/to states.
+
+### 7.2 `ai_review_state` — AI ingestion review queue (PLACEHOLDER, pending partner contract)
+
+> The enum below is a **placeholder**. Exact values, transitions, and audit semantics depend on the AI partner auth contract (open item §16.1) and will be refined in `packages/db/src/schema.ts` once the contract is signed off. Do not build product flows on the specific names until then.
+
+Applies only to records arriving via the AI ingestion endpoint (§9). Current placeholder values: `pending_review`, `in_review`, `approved`, `rejected`.
+
+```mermaid
+stateDiagram-v2
+    note right of pending_review: PLACEHOLDER — pending partner contract
+    [*] --> pending_review: AI partner ingests
+    pending_review --> in_review: Reviewer opens
+    in_review --> approved: Reviewer accepts payload
+    in_review --> rejected: Reviewer rejects payload
+    approved --> [*]: clinical_record proceeds via record_status (§7.1)
+    rejected --> [*]
+```
+
+Rules:
+
+- AI ingestion **never produces a `locked` or `signed` record directly**. A row inserted via the AI endpoint enters with `record_status = 'draft'` and `ai_review_state = 'pending_review'`. Only a human reviewer accepting the payload (`ai_review_state` → `approved`) allows the record to follow the standard `record_status` lifecycle from §7.1.
+- Rejection (`ai_review_state` → `rejected`) terminates the row; it does not silently roll back into the standard lifecycle.
+- A record with `ai_review_state` set is gated to reviewing roles (admin, assigned therapist); receptionists are denied per §6.
 
 ---
 
@@ -232,23 +262,24 @@ sequenceDiagram
     Ingest->>Ingest: Verify signature
     Ingest->>Validate: Validate against form_template version
     Validate-->>Ingest: OK / errors
-    Ingest->>DB: Insert clinical_record (state: ai_draft)
+    Ingest->>DB: Insert clinical_record (record_status: draft, ai_review_state: pending_review — PLACEHOLDER)
     Ingest->>DB: Write audit_log entry
     Ingest->>Queue: Enqueue review notification
     Ingest-->>Partner: 202 Accepted (record_id)
     Queue->>Therapist: Notify (in-app + email)
     Therapist->>Web: Open review queue
-    Web->>DB: Fetch ai_draft records (RLS-scoped)
-    Therapist->>Web: Open record, edit, finalize
-    Web->>DB: Update state ai_draft → under_review → finalized
+    Web->>DB: Fetch records pending review (ai_review_state filter, RLS-scoped)
+    Therapist->>Web: Open record, accept (or reject) AI payload
+    Web->>DB: Update ai_review_state (pending_review → in_review → approved/rejected)
+    Web->>DB: On approval, record proceeds via record_status (draft → locked → signed) per §7.1
     Web->>DB: Write audit_log entries
 ```
 
 Notes:
 
 - Authentication contract between partner and platform is **unresolved** — see §16. CLAUDE.md specifies API key + HMAC; the partner has recommended a service-account bearer token. Decision pending lead + partner sign-off.
-- Validation in step 3 uses the JSON Schema in `packages/db/seed/form-templates/` for the referenced `(key, version)`. Records that fail validation are rejected with a structured error response to the partner — no `ai_draft` row is created.
-- Records ingested via this path always start in `ai_draft`. They cannot be pushed directly into `under_review` or `finalized`.
+- Validation in step 3 uses the JSON Schema in `packages/db/seed/form-templates/` for the referenced `(key, version)`. Records that fail validation are rejected with a structured error response to the partner — no `clinical_record` row is created.
+- Records ingested via this path always enter the `ai_review_state` review queue (PLACEHOLDER values pending the partner contract — see §7.2). The endpoint cannot produce a `clinical_record` whose `record_status` is `locked` or `signed`; only a human reviewer accepting the payload can advance the record through the standard `record_status` lifecycle.
 - Attachments are uploaded via signed URLs issued by the platform on partner request, never proxied through the Next.js server.
 - Per-field `ai_extractable` flags on form templates control which fields the partner is permitted to populate. Fields marked `ai_extractable: false` (including `physiotherapy_v1.private_notes`) reject any partner-supplied value at validation time.
 
@@ -266,7 +297,7 @@ Inngest schedules and runs background jobs. All job code lives in functions regi
 | Post-visit feedback | Cron (+3 days post-appointment) | Send feedback request email. |
 | InvoiceXpress retry | Event (invoice issue failure) | Retry with exponential backoff. |
 | IfThenPay reconciliation | Cron (hourly) | Reconcile pending payments against IfThenPay API. |
-| Review queue notification | Event (ai_draft inserted) | Notify assigned therapist of pending review. |
+| Review queue notification | Event (`ai_review_state` queue insertion — PLACEHOLDER, pending partner contract) | Notify assigned therapist of pending review. |
 
 Notes:
 
@@ -396,7 +427,7 @@ Per `CLAUDE.md`. Do not build, ignore in PR reviews.
 
 ## 16. Open questions
 
-Items that need a decision from the lead, the owner, or the AI partner before they're locked in. None of these are blocking V1 scaffolding but each needs resolution before the relevant subsystem is finalized.
+Items that need a decision from the lead, the owner, or the AI partner before they're locked in. None of these are blocking V1 scaffolding but each needs resolution before the relevant subsystem can ship.
 
 1. **AI ingestion authentication contract.** `CLAUDE.md` specifies API key + HMAC. The partner has recommended a service-account bearer token. Decision pending; affects `packages/ingestion` and the partner-side client. Per handoff brief, lead has open clarifying questions with the partner.
 2. **Seed loader contract.** `packages/db/seed/README.md` flags the loader as TODO. Until the loader lands, form templates in `packages/db/seed/form-templates/` are source-of-truth files only and are not wired into migrations. Form-template relocation from `docs/draft-form-templates/` is blocked on this.
