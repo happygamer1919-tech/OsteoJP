@@ -1,0 +1,174 @@
+{
+  "key": "physiotherapy",
+  "version": 1,
+  "title": {
+    "pt": "Fisioterapia — Avaliação de Episódio",
+    "en": "Physiotherapy — Episode Evaluation"
+  },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "Clinical intake + evaluation form for a physiotherapy episode. Field structure transcribed from the current Fisiozero physiotherapy episode form (NOVO EPISODIO, FISIOTERAPIA). PT is the source language; EN labels are provided for the bilingual UI. ai_extractable is set to false on every field pending the AI-partner contract; flip to true per-field once the ingestion contract is signed off.",
+    "type": "object",
+    "required": [
+      "episode_date",
+      "main_complaints"
+    ],
+    "properties": {
+      "episode_date": {
+        "type": "string",
+        "format": "date",
+        "x-label": { "pt": "Data do Episódio", "en": "Episode Date" },
+        "x-required": true,
+        "ai_extractable": false
+      },
+      "weight_kg": {
+        "type": ["number", "null"],
+        "minimum": 0,
+        "x-label": { "pt": "Peso (kg)", "en": "Weight (kg)" },
+        "ai_extractable": false
+      },
+      "height_cm": {
+        "type": ["number", "null"],
+        "minimum": 0,
+        "x-label": { "pt": "Altura (cm)", "en": "Height (cm)" },
+        "ai_extractable": false
+      },
+      "linked_appointment": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Marcação respectiva", "en": "Linked Appointment" },
+        "x-widget": "appointment_picker",
+        "x-note": "References an existing appointment; resolved by the app, not free text.",
+        "ai_extractable": false
+      },
+      "cid_codes": {
+        "type": "array",
+        "items": { "type": "string" },
+        "x-label": { "pt": "Códigos CID associados", "en": "Associated CID Codes" },
+        "x-note": "ICD/CID-10 codes associated to the episode.",
+        "ai_extractable": false
+      },
+      "red_flags": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Alertas (Red Flags)", "en": "Alerts (Red Flags)" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "main_complaints": {
+        "type": "string",
+        "x-label": { "pt": "Principais Queixas", "en": "Main Complaints" },
+        "x-required": true,
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "history": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Antecedentes", "en": "History" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "medication": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Medicação", "en": "Medication" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "diagnosis": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Diagnóstico", "en": "Diagnosis" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "bodychart": {
+        "type": "array",
+        "x-label": { "pt": "Bodychart", "en": "Bodychart" },
+        "x-hint": {
+          "pt": "Clique no bodychart e seleccione o marcador pretendido. Pode inserir tantos pontos quantos desejar.",
+          "en": "Click on the bodychart and select the desired marker. Insert as many points as needed."
+        },
+        "description": "Array of markers placed on the body diagram. Identical marker set to the osteopathy template. Each marker has a type and coordinates.",
+        "items": {
+          "type": "object",
+          "required": ["marker_type", "x", "y"],
+          "properties": {
+            "marker_type": {
+              "type": "string",
+              "x-label": { "pt": "Tipo de marcador", "en": "Marker type" },
+              "enum": [
+                "blockage_dysfunction",
+                "scar",
+                "hypertonicity",
+                "hypotonicity",
+                "pain_radiation",
+                "pain_location",
+                "paresthesia",
+                "rotation_right",
+                "rotation_left"
+              ],
+              "x-enum-labels": {
+                "blockage_dysfunction": { "pt": "Bloqueio / Disfunção", "en": "Blockage / Dysfunction" },
+                "scar":                 { "pt": "Cicatriz", "en": "Scar" },
+                "hypertonicity":        { "pt": "Hipertonicidade", "en": "Hypertonicity" },
+                "hypotonicity":         { "pt": "Hipotonicidade", "en": "Hypotonicity" },
+                "pain_radiation":       { "pt": "Irradiação da dor", "en": "Pain radiation" },
+                "pain_location":        { "pt": "Local da dor", "en": "Pain location" },
+                "paresthesia":          { "pt": "Parestesia", "en": "Paresthesia" },
+                "rotation_right":       { "pt": "Rotação direita", "en": "Rotation right" },
+                "rotation_left":        { "pt": "Rotação esquerda", "en": "Rotation left" }
+              },
+              "ai_extractable": false
+            },
+            "x":    { "type": "number", "x-note": "Normalized X coordinate on the bodychart (0–1).", "ai_extractable": false },
+            "y":    { "type": "number", "x-note": "Normalized Y coordinate on the bodychart (0–1).", "ai_extractable": false },
+            "view": {
+              "type": ["string", "null"],
+              "x-note": "Which of the 4 body views the marker sits on.",
+              "enum": ["anterior", "lateral_left", "lateral_right", "posterior", null],
+              "ai_extractable": false
+            }
+          }
+        },
+        "ai_extractable": false
+      },
+      "treatment_objectives": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Objectivos do Tratamento", "en": "Treatment Objectives" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "treatment_plan": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Plano de Tratamento", "en": "Treatment Plan" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "observations": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Observações", "en": "Observations" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "private_notes": {
+        "type": ["string", "null"],
+        "x-label": {
+          "pt": "Notas Pessoais sobre o Utente neste Episódio / Consulta",
+          "en": "Private Notes about the Patient in this Episode / Consultation"
+        },
+        "x-hint": {
+          "pt": "Este campo não é partilhado com nenhum outro utilizador da sua conta.",
+          "en": "This field is not shared with any other user on your account."
+        },
+        "x-widget": "textarea",
+        "x-access": "private_to_author",
+        "x-note": "Access-controlled: visible only to the practitioner who authored it. Enforcement is an app/RLS concern, not a schema concern — flagged for lead. Must NOT be exposed to the AI ingestion pipeline regardless of how ai_extractable evolves.",
+        "ai_extractable": false
+      }
+    },
+    "x-open-questions": [
+      "private_notes is marked 'not shared with any other user' in the live form. This needs row-level-security / access-control enforcement at the db + app layer (lead-owned). It is hard-set ai_extractable:false and should stay that way — private clinical notes must never be fed to the AI extraction pipeline. Confirm the lead models this as a restricted column / separate table with RLS.",
+      "Bodychart coordinate model: same open question as osteopathy — confirm normalized (0–1) + view enum vs pixel coords. Kept identical to osteopathy template for consistency; both should resolve the same way.",
+      "Field overlap with osteopathy: episode_date, weight, height, linked_appointment, cid_codes, red_flags, bodychart, treatment_objectives/plan, observations are shared between both templates. Worth the lead deciding whether these live in a shared base schema that both templates extend, vs duplicated per template. Modelled as duplicated for now since the two forms diverge in the middle (physio: queixas/antecedentes/medicação/diagnóstico; osteopathy: problemas de saúde grid + anamnese por sistemas).",
+      "Required fields: only episode_date + main_complaints marked required, matching the '•' markers on the live form. Confirm.",
+      "Are weight_kg / height_cm relevant to physio episodes, or vestigial from a shared form? Live form shows them; modelled as optional."
+    ]
+  }
+}
