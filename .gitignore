@@ -38,3 +38,6 @@ supabase/.temp/
 .turbo/
 dist/
 *.tsbuildinfo
+
+*storybook.log
+storybook-static

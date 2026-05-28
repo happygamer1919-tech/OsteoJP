@@ -3,3 +3,6 @@ export const PACKAGE_NAME = "@osteojp/auth" as const;
 
 export { PERMISSIONS, ROLES, can, isRole, parseRole } from "./permissions.js";
 export type { Role, Capability } from "./permissions.js";
+
+export { ForbiddenError, assertCan, toClaims } from "./guard.js";
+export type { RequestContext } from "./guard.js";
