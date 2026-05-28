@@ -10,14 +10,16 @@ Reference site: https://osteojp.pt — brand and tone source of truth.
 1. Every domain table has `tenant_id uuid not null`. No exceptions.
 2. Every domain table has an RLS policy keyed on the JWT `tenant_id` claim.
 3. Service-role queries (migrations, ingestion, jobs) MUST set `tenant_id` explicitly. Never global.
-4. Clinical records use a state machine: `ai_draft` → `under_review` → `finalized`. Finalized records are immutable; changes create addendum versions.
+4. Clinical records have two orthogonal state machines, defined in `packages/db/src/schema.ts`:
+   - `record_status` — lifecycle of every clinical record regardless of origin: `draft` → `locked` → `signed`. Locking makes content immutable (enforced by the BEFORE UPDATE OR DELETE trigger); signing attaches the therapist signature. Changes after locking create addendum versions.
+   - `ai_review_state` — review queue for records arriving via the AI ingestion endpoint only. PLACEHOLDER values (`pending_review`, `in_review`, `approved`, `rejected`) pending the AI partner auth contract; refine in schema once signed off. AI ingestion never produces a `locked` or `signed` record directly — a human reviewer must accept the AI payload, after which the resulting `clinical_record` follows the standard `record_status` lifecycle.
 5. Form templates are JSON-Schema-driven. Templates are versioned and immutable once referenced by a record.
 6. Audit log writes on every clinical record mutation and every permission-sensitive action. No exceptions.
 7. PII never appears in logs, error messages, or Sentry events. Sanitize before logging.
 8. EU data residency: Supabase EU (Frankfurt), Vercel `fra1`, Resend EU. No US-region resources for stored data.
 
 ## Stack
-- Next.js 15 App Router, TypeScript strict
+- Next.js 16 App Router, TypeScript strict
 - shadcn/ui + Tailwind v4
 - Drizzle ORM + PostgreSQL (Supabase EU)
 - Supabase Auth (JWT with tenant_id + role claims)
@@ -42,7 +44,7 @@ Reference site: https://osteojp.pt — brand and tone source of truth.
 |---|---|---|---|
 | View any patient | ✓ | ✓ (own only) | ✓ |
 | View clinical records | ✓ | ✓ (own patients only) | ✗ |
-| Edit clinical records | ✓ | ✓ (own, until finalized) | ✗ |
+| Edit clinical records | ✓ | ✓ (own, until locked) | ✗ |
 | Schedule appointments | ✓ | ✓ (own calendar) | ✓ |
 | Issue invoices | ✓ | ✗ | ✓ |
 | Manage users/roles | ✓ | ✗ | ✗ |
