@@ -9,11 +9,13 @@
     ".": "./index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "seed:form-templates": "tsx seed/form-templates.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "drizzle-kit": "^0.31.10",
+    "tsx": "^4.22.3",
     "typescript": "5.9.3"
   },
   "dependencies": {
