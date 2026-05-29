@@ -276,9 +276,16 @@ max_frequency = "5s"
 # uri = "pg-functions://postgres/auth/before-user-created-hook"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
-# [auth.hook.custom_access_token]
-# enabled = true
-# uri = "pg-functions://<database>/<schema>/<hook_name>"
+# CONTRACT 2 — enablement as config-as-code. The custom_access_token_hook
+# FUNCTION is created by migration 0002_auth_token_hook.sql, so every DB branch
+# inherits it automatically. But the *enablement* toggle (Dashboard → Auth →
+# Hooks) is project-level and does NOT propagate to ephemeral DB branches.
+# Declaring it here makes local dev AND every preview branch activate the hook
+# consistently. Without this, branch logins issue tokens with empty tenant_id /
+# user_role claims and getRequestContext() returns null. Do not remove.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/custom_access_token_hook"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]

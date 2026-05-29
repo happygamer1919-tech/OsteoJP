@@ -15,7 +15,9 @@
     "format": "prettier --write .",
     "db:check": "pnpm --filter @osteojp/db exec drizzle-kit check",
     "db:migrate": "pnpm --filter @osteojp/db exec drizzle-kit migrate",
-    "db:studio": "pnpm --filter @osteojp/db exec drizzle-kit studio"
+    "db:studio": "pnpm --filter @osteojp/db exec drizzle-kit studio",
+    "db:sync-supabase": "node scripts/sync-supabase-migrations.mjs",
+    "db:sync-supabase:check": "node scripts/sync-supabase-migrations.mjs --check"
   },
   "devDependencies": {
     "turbo": "2.9.14",

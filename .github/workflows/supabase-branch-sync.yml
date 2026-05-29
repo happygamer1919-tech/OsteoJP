@@ -1,0 +1,54 @@
+name: supabase-branch-sync
+
+# Guards the Supabase branching contract: the SQL that builds every preview DB
+# branch (supabase/migrations/*.sql) must stay byte-identical to the drizzle
+# source of truth (packages/db/migrations/*.sql). If they drift, preview
+# branches would be built from stale schema — silently diverging from prod.
+#
+# Also validates supabase/config.toml so a malformed config can't reach the
+# branching pipeline (where it would break every preview).
+
+on:
+  pull_request:
+    paths:
+      - "packages/db/migrations/**"
+      - "supabase/migrations/**"
+      - "supabase/config.toml"
+      - "supabase/seed.sql"
+      - "scripts/sync-supabase-migrations.mjs"
+      - ".github/workflows/supabase-branch-sync.yml"
+  push:
+    branches: [main]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: supabase/migrations matches drizzle source
+        run: node scripts/sync-supabase-migrations.mjs --check
+
+      # CONTRACT 2: assert the hook stays enabled as config-as-code. Pure
+      # awk/grep — no runtime deps — so the guard can never break the pipeline
+      # it protects. Extracts the [auth.hook.custom_access_token] table and
+      # checks enabled + uri.
+      - name: Assert custom_access_token hook is enabled in config.toml
+        run: |
+          set -euo pipefail
+          stanza="$(awk '
+            /^\[auth\.hook\.custom_access_token\]/ {f=1; next}
+            /^\[/ {f=0}
+            f' supabase/config.toml)"
+          if [ -z "$stanza" ]; then
+            echo "::error::[auth.hook.custom_access_token] stanza missing (CONTRACT 2)"; exit 1
+          fi
+          echo "$stanza" | grep -Eq '^[[:space:]]*enabled[[:space:]]*=[[:space:]]*true[[:space:]]*$' \
+            || { echo "::error::auth.hook.custom_access_token.enabled must be true (CONTRACT 2)"; exit 1; }
+          echo "$stanza" | grep -Eq '^[[:space:]]*uri[[:space:]]*=[[:space:]]*"pg-functions://postgres/public/custom_access_token_hook"[[:space:]]*$' \
+            || { echo "::error::unexpected or missing hook uri (want pg-functions://postgres/public/custom_access_token_hook)"; exit 1; }
+          echo "custom_access_token hook enabled as config-as-code ✓"
