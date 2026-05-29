@@ -1,14 +1,20 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
-import { assertCan, toClaims, type RequestContext, type Role } from "@osteojp/auth";
+import { assertCan, toClaims, type Role } from "@osteojp/auth";
 import { getDbAdmin, withTenantContext, roles, users, tenants } from "@osteojp/db";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { writeAudit } from "@/lib/admin/audit";
+import type { Actor } from "./context";
 
 type NewStaff = { email: string; fullName: string; roleSlug: Role; password: string };
 
-/** Owner/admin invites a staff member. Capability-gated, RLS-scoped insert. */
+/**
+ * Owner/admin invites a staff member. Capability-gated, RLS-scoped insert.
+ * The staff.invite audit row is written in the SAME transaction as the users
+ * insert, so the new staff row never lands without its audit entry.
+ */
 export async function provisionStaffUser(
-  actor: RequestContext,
+  actor: Actor,
   staff: NewStaff,
 ): Promise<{ userId: string }> {
   assertCan(actor.role, "users:manage");
@@ -43,6 +49,13 @@ export async function provisionStaffUser(
         roleId,
         email: staff.email,
         fullName: staff.fullName,
+      });
+      await writeAudit(tx, actor, {
+        action: "staff.invite",
+        entityType: "user",
+        entityId: userId,
+        // PII-free: role slug only, never the email/name.
+        metadata: { role: staff.roleSlug },
       });
     });
   } catch (e) {
