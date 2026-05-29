@@ -28,17 +28,21 @@ Two URIs matter; both go in local `.env`, never in commits:
   ```
   postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
   ```
-- **Direct connection (port 5432)** — migrations path.
+- **Session pooler (port 5432)** — migrations path.
   Used by `pnpm db:migrate` (`drizzle-kit migrate`). drizzle-kit takes
   session-level advisory locks, which the transaction pooler does not
-  support — migrations must hit the direct endpoint.
+  support — the session pooler holds the connection for the whole session,
+  so those locks work. This is the pooler host (`...pooler.supabase.com`) on
+  port 5432, **not** the `db.<project-ref>.supabase.co` direct host (that one
+  is IPv4-gated and not reachable from most CI / IPv6 networks).
   ```
-  postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
+  postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
   ```
 
-Local convention: put the pooled URI under `DATABASE_URL` and the direct
-URI under `DATABASE_URL_DIRECT`. Wire `drizzle.config.ts` to read
-`DATABASE_URL_DIRECT` for migrations.
+Local convention: put the transaction-pooler URI (port 6543) under
+`DATABASE_URL` and the session-pooler URI (port 5432) under
+`DATABASE_URL_DIRECT`. Wire `drizzle.config.ts` to read `DATABASE_URL_DIRECT`
+for migrations.
 
 ## 3. Enable the Custom Access Token hook
 
@@ -54,7 +58,7 @@ backed by an issued token in production traffic.
 ## 4. Apply migrations
 
 ```bash
-# .env: DATABASE_URL_DIRECT=postgresql://postgres:...@db.<project-ref>.supabase.co:5432/postgres
+# .env: DATABASE_URL_DIRECT=postgresql://postgres.<project-ref>:...@aws-0-<region>.pooler.supabase.com:5432/postgres
 pnpm db:migrate
 ```
 
