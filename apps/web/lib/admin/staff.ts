@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { assertCan, isRole, type Role } from "@osteojp/auth";
 import { roles, users, type DbTx } from "@osteojp/db";
-import { runScoped, type Actor } from "@/lib/auth/context";
+import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { provisionStaffUser } from "@/lib/auth/provision";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
@@ -17,7 +17,7 @@ export type StaffMember = {
   isActive: boolean;
 };
 
-export async function listStaff(actor: Actor): Promise<StaffMember[]> {
+export async function listStaff(actor: RequestContext): Promise<StaffMember[]> {
   assertCan(actor.role, "users:read");
 
   return runScoped(actor, (tx) =>
@@ -51,7 +51,7 @@ export async function listStaff(actor: Actor): Promise<StaffMember[]> {
  * of band. Email-based invite (set-password link) is a deliberate follow-up.
  */
 export async function inviteStaff(
-  actor: Actor,
+  actor: RequestContext,
   input: { email: string; fullName: string; roleSlug: string },
 ): Promise<{ userId: string; tempPassword: string }> {
   assertCan(actor.role, "users:manage");
@@ -81,7 +81,7 @@ export async function inviteStaff(
 }
 
 export async function setStaffActive(
-  actor: Actor,
+  actor: RequestContext,
   userId: string,
   active: boolean,
 ): Promise<void> {
@@ -121,7 +121,7 @@ export async function setStaffActive(
 }
 
 export async function changeStaffRole(
-  actor: Actor,
+  actor: RequestContext,
   userId: string,
   newRoleSlug: string,
 ): Promise<void> {

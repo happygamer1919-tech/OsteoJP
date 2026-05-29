@@ -2,7 +2,7 @@ import "server-only";
 import { asc, eq } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { services } from "@osteojp/db";
-import { runScoped, type Actor } from "@/lib/auth/context";
+import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 
@@ -24,7 +24,7 @@ export type ServiceInput = {
   priceCents: number | null;
 };
 
-export async function listServices(actor: Actor): Promise<ServiceView[]> {
+export async function listServices(actor: RequestContext): Promise<ServiceView[]> {
   assertCan(actor.role, "services:read");
   return runScoped(actor, (tx) =>
     tx
@@ -53,7 +53,7 @@ function validate(input: ServiceInput): { name: string; durationMin: number } {
   return { name, durationMin: input.durationMin };
 }
 
-export async function createService(actor: Actor, input: ServiceInput): Promise<void> {
+export async function createService(actor: RequestContext, input: ServiceInput): Promise<void> {
   assertCan(actor.role, "services:write");
   const { name, durationMin } = validate(input);
 
@@ -73,7 +73,7 @@ export async function createService(actor: Actor, input: ServiceInput): Promise<
 }
 
 export async function updateService(
-  actor: Actor,
+  actor: RequestContext,
   id: string,
   input: ServiceInput,
 ): Promise<void> {
@@ -98,7 +98,7 @@ export async function updateService(
 /** Soft archive (is_active=false). Hard delete is avoided to preserve the FK
  *  references from appointments.service_id and clinical history. */
 export async function setServiceActive(
-  actor: Actor,
+  actor: RequestContext,
   id: string,
   active: boolean,
 ): Promise<void> {

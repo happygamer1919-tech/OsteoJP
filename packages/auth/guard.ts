@@ -33,6 +33,10 @@ export function assertCan(role: Role, capability: Capability): void {
 export type RequestContext = {
   tenantId: string;
   role: Role;
+  // Supabase auth user id (the verified JWT `sub`). The audit actor written on
+  // every mutation (audit_log.actor_user_id). Not an RLS claim, so toClaims()
+  // does not forward it — RLS keys only on tenant_id + user_role.
+  userId: string;
 };
 
 // Maps the camelCase app-layer context to the snake_case claim shape that

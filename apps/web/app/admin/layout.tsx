@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { can } from "@osteojp/auth";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
-import { getActor } from "@/lib/auth/context";
+import { getRequestContext } from "@/lib/auth/context";
 
 const s = getStrings(DEFAULT_LOCALE);
 
@@ -19,7 +19,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const actor = await getActor();
+  const actor = await getRequestContext();
   if (!actor) redirect("/login");
   // Area gate: only roles that can read tenant settings (owner, admin) may
   // enter admin. Each action re-checks its own capability (defense in depth).

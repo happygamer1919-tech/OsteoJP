@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { assertCan, ForbiddenError } from "@osteojp/auth";
-import { requireActor, type Actor } from "@/lib/scheduling/actor";
+import { assertCan, ForbiddenError, type RequestContext } from "@osteojp/auth";
+import { requireRequestContext } from "@/lib/auth/context";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
 import {
   rangeForView,
@@ -24,10 +24,10 @@ export default async function AgendaPage({
 }: {
   searchParams: SearchParams;
 }) {
-  // requireActor verifies the session and gives us tenantId + role + userId.
-  let actor: Actor;
+  // requireRequestContext verifies the session and gives us tenantId + role + userId.
+  let actor: RequestContext;
   try {
-    actor = await requireActor();
+    actor = await requireRequestContext();
   } catch {
     redirect("/login");
   }

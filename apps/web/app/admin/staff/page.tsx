@@ -1,6 +1,6 @@
 import { ROLES, type Role } from "@osteojp/auth";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
-import { requireActor } from "@/lib/auth/context";
+import { requireRequestContext } from "@/lib/auth/context";
 import { listStaff } from "@/lib/admin/staff";
 import { StaffInviteForm } from "./StaffInviteForm";
 import { changeRoleAction, setActiveAction } from "./actions";
@@ -19,7 +19,7 @@ export default async function StaffPage({
 }: {
   searchParams: Promise<{ m?: string }>;
 }) {
-  const actor = await requireActor();
+  const actor = await requireRequestContext();
   const staff = await listStaff(actor);
   const { m } = await searchParams;
 

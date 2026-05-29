@@ -4,7 +4,7 @@ import { assertCan, toClaims, type Role } from "@osteojp/auth";
 import { getDbAdmin, withTenantContext, roles, users, tenants } from "@osteojp/db";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/admin/audit";
-import type { Actor } from "./context";
+import type { RequestContext } from "./context";
 
 type NewStaff = { email: string; fullName: string; roleSlug: Role; password: string };
 
@@ -14,7 +14,7 @@ type NewStaff = { email: string; fullName: string; roleSlug: Role; password: str
  * insert, so the new staff row never lands without its audit entry.
  */
 export async function provisionStaffUser(
-  actor: Actor,
+  actor: RequestContext,
   staff: NewStaff,
 ): Promise<{ userId: string }> {
   assertCan(actor.role, "users:manage");
