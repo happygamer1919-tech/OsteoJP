@@ -26,6 +26,7 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 /* ================================================================== */
@@ -347,9 +348,12 @@ export const clinicalRecords = pgTable(
     practitionerId: uuid("practitioner_id").references(() => users.id),
     formTemplateId: uuid("form_template_id").references(() => formTemplates.id),
     appointmentId: uuid("appointment_id").references(() => appointments.id),
-    data: jsonb("data").notNull().default({}), // filled form response
+    data: jsonb("data").notNull().default({}), // filled form response (incl. bodychart markers under data.bodychart)
     status: recordStatus("status").notNull().default("draft"),
     version: integer("version").notNull().default(1), // versioning (Stream C)
+    // Addendum chain (Stream C): a new version points at the finalized record it
+    // supersedes. null = first version. Self-FK; walk it to reconstruct history.
+    supersedesId: uuid("supersedes_id").references((): AnyPgColumn => clinicalRecords.id),
     source: recordSource("source").notNull().default("manual"),
     // AI ingestion (Stream D) — review-queue state machine; refine with the contract.
     aiReviewState: aiReviewState("ai_review_state"),
@@ -367,6 +371,7 @@ export const clinicalRecords = pgTable(
     index("clinical_records_patient_idx").on(t.patientId),
     index("clinical_records_episode_idx").on(t.episodeId),
     index("clinical_records_ai_review_idx").on(t.tenantId, t.aiReviewState),
+    index("clinical_records_supersedes_idx").on(t.supersedesId),
   ],
 );
 

@@ -1,0 +1,62 @@
+import Link from "next/link";
+import { s, locale } from "@/lib/i18n";
+import { requireRequestContext } from "@/lib/auth/context";
+import { listRecords, type RecordStatus } from "@/lib/clinical/records";
+
+function statusLabel(status: RecordStatus): string {
+  return status === "signed" ? s["clinical.statusSigned"]
+    : status === "locked" ? s["clinical.statusLocked"]
+    : s["clinical.statusDraft"];
+}
+
+export default async function ClinicalListPage() {
+  const ctx = await requireRequestContext();
+  const records = await listRecords(ctx);
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold">{s["clinical.title"]}</h2>
+        <Link href="/clinical/new" className="rounded border px-3 py-1.5 text-sm font-medium">
+          {s["clinical.new"]}
+        </Link>
+      </div>
+
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b text-left">
+            <th className="py-2 pr-4 font-medium">{s["clinical.colPatient"]}</th>
+            <th className="py-2 pr-4 font-medium">{s["clinical.colTemplate"]}</th>
+            <th className="py-2 pr-4 font-medium">{s["clinical.colStatus"]}</th>
+            <th className="py-2 pr-4 font-medium">{s["clinical.colVersion"]}</th>
+            <th className="py-2 pr-4 font-medium">{s["clinical.colUpdated"]}</th>
+            <th className="py-2 pr-4 font-medium"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {records.length === 0 && (
+            <tr>
+              <td colSpan={6} className="py-3 text-neutral-500">
+                {s["clinical.empty"]}
+              </td>
+            </tr>
+          )}
+          {records.map((r) => (
+            <tr key={r.id} className="border-b">
+              <td className="py-2 pr-4">{r.patientName}</td>
+              <td className="py-2 pr-4">{r.templateTitle?.[locale] ?? "—"}</td>
+              <td className="py-2 pr-4">{statusLabel(r.status)}</td>
+              <td className="py-2 pr-4">{r.version}</td>
+              <td className="py-2 pr-4">{new Date(r.updatedAt).toLocaleDateString("pt-PT")}</td>
+              <td className="py-2 pr-4">
+                <Link href={`/clinical/${r.id}`} className="underline">
+                  {s["clinical.open"]}
+                </Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
