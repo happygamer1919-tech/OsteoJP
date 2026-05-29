@@ -41,6 +41,19 @@ export function addDays(dateStr: string, n: number): string {
   return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }
 
+/**
+ * Calendar date `n` months from `dateStr`, clamping the day to the target
+ * month's length (e.g. Jan 31 + 1 month → Feb 28). Used for monthly recurrence.
+ */
+export function addMonths(dateStr: string, n: number): string {
+  const [y, m, d] = parse(dateStr);
+  const total = y * 12 + (m - 1) + n;
+  const ny = Math.floor(total / 12);
+  const nm = total % 12; // 0–11
+  const daysInMonth = new Date(Date.UTC(ny, nm + 1, 0)).getUTCDate();
+  return `${ny}-${pad(nm + 1)}-${pad(Math.min(d, daysInMonth))}`;
+}
+
 /** 0 = Monday … 6 = Sunday, for a calendar date. */
 export function isoWeekdayMon0(dateStr: string): number {
   const [y, m, d] = parse(dateStr);

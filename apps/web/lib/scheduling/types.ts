@@ -6,8 +6,10 @@
 
 import { appointmentStatus } from "@osteojp/db";
 import type { AgendaView } from "./time";
+import type { RecurrenceSpec, SeriesScope } from "./recurrence";
 
 export type { AgendaView };
+export type { RecurrenceSpec, SeriesScope, Frequency } from "./recurrence";
 
 export type AppointmentStatusValue =
   (typeof appointmentStatus.enumValues)[number];
@@ -28,6 +30,10 @@ export type AgendaAppointment = {
   endsAt: string; // ISO UTC
   status: AppointmentStatusValue;
   notes: string | null;
+  // Recurring series: RRULE on the parent, parent pointer on children.
+  // Either being set means this appointment belongs to a series.
+  recurrenceRule: string | null;
+  recurrenceParentId: string | null;
 };
 
 export type Option = { id: string; label: string };
@@ -56,6 +62,8 @@ export type CreateAppointmentInput = {
   status: AppointmentStatusValue;
   notes: string | null;
   allowConflict?: boolean;
+  // When set (count >= 2), create a materialized recurring series.
+  recurrence?: RecurrenceSpec | null;
 };
 
 /** Non-temporal field edits. Time/therapist/location changes go via reschedule. */
@@ -71,15 +79,27 @@ export type RescheduleInput = {
   endsAt: string; // ISO UTC
   practitionerId: string;
   locationId: string;
+  room?: string | null;
+  allowConflict?: boolean;
+  scope?: SeriesScope;
+};
+
+/** Options for series-aware mutations (update / cancel). */
+export type SeriesOptions = {
+  scope?: SeriesScope;
   allowConflict?: boolean;
 };
 
+export type ConflictKind = "therapist" | "room";
+
 /** A blocking/overlapping appointment surfaced back to the UI (no PII beyond name). */
 export type ConflictInfo = {
+  kind: ConflictKind;
   id: string;
   patientName: string;
   startsAt: string;
   endsAt: string;
+  room: string | null;
 };
 
 export type ActionErrorCode =

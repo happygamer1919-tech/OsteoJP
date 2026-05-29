@@ -38,6 +38,8 @@ function mapAppointment(r: {
   endsAt: Date;
   status: AgendaAppointment["status"];
   notes: string | null;
+  recurrenceRule: string | null;
+  recurrenceParentId: string | null;
 }): AgendaAppointment {
   return {
     ...r,
@@ -61,6 +63,8 @@ const appointmentSelection = {
   endsAt: appointments.endsAt,
   status: appointments.status,
   notes: appointments.notes,
+  recurrenceRule: appointments.recurrenceRule,
+  recurrenceParentId: appointments.recurrenceParentId,
 } as const;
 
 function baseAppointmentQuery(tx: DbTx) {
