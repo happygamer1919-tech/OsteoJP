@@ -2,7 +2,7 @@ import "server-only";
 import { asc, eq } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { locations } from "@osteojp/db";
-import { runScoped, type Actor } from "@/lib/auth/context";
+import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 
@@ -20,7 +20,7 @@ export type LocationInput = {
   phone: string;
 };
 
-export async function listLocations(actor: Actor): Promise<LocationView[]> {
+export async function listLocations(actor: RequestContext): Promise<LocationView[]> {
   assertCan(actor.role, "locations:read");
   return runScoped(actor, (tx) =>
     tx
@@ -50,7 +50,7 @@ function validate(input: LocationInput): {
   };
 }
 
-export async function createLocation(actor: Actor, input: LocationInput): Promise<void> {
+export async function createLocation(actor: RequestContext, input: LocationInput): Promise<void> {
   assertCan(actor.role, "locations:write");
   const v = validate(input);
   await runScoped(actor, async (tx) => {
@@ -69,7 +69,7 @@ export async function createLocation(actor: Actor, input: LocationInput): Promis
 }
 
 export async function updateLocation(
-  actor: Actor,
+  actor: RequestContext,
   id: string,
   input: LocationInput,
 ): Promise<void> {
@@ -92,7 +92,7 @@ export async function updateLocation(
 
 /** Soft archive (is_active=false) — appointments.location_id references these. */
 export async function setLocationActive(
-  actor: Actor,
+  actor: RequestContext,
   id: string,
   active: boolean,
 ): Promise<void> {

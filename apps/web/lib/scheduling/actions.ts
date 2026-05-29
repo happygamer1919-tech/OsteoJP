@@ -6,10 +6,11 @@ import {
   assertCan,
   ForbiddenError,
   type Capability,
+  type RequestContext,
 } from "@osteojp/auth";
 import { appointments } from "@osteojp/db";
-import { runScoped } from "@/lib/auth/context";
-import { clientIp, requireActor, type Actor } from "./actor";
+import { requireRequestContext, runScoped } from "@/lib/auth/context";
+import { clientIp } from "./actor";
 import { writeAppointmentAudit } from "./audit";
 import { findTherapistConflicts } from "./conflict";
 import { isValidInterval } from "./overlap";
@@ -22,16 +23,16 @@ import type {
 
 const AGENDA_PATH = "/agenda";
 
-type Authorized = { actor: Actor };
+type Authorized = { actor: RequestContext };
 type Denied = Extract<ActionResult<never>, { ok: false }>;
 
 /** Resolve the acting user and assert the capability. Returns a Denied result on failure. */
 async function authorize(
   capability: Capability,
 ): Promise<Authorized | Denied> {
-  let actor: Actor;
+  let actor: RequestContext;
   try {
-    actor = await requireActor();
+    actor = await requireRequestContext();
   } catch {
     return { ok: false, error: "unauthenticated" };
   }

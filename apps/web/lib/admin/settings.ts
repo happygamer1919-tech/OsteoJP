@@ -1,7 +1,7 @@
 import "server-only";
 import { assertCan } from "@osteojp/auth";
 import { tenants } from "@osteojp/db";
-import { runScoped, type Actor } from "@/lib/auth/context";
+import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 
@@ -23,7 +23,7 @@ export type TenantSettingsInput = {
   address: string;
 };
 
-export async function getTenantSettings(actor: Actor): Promise<TenantSettingsView> {
+export async function getTenantSettings(actor: RequestContext): Promise<TenantSettingsView> {
   assertCan(actor.role, "settings:read");
 
   const row = await runScoped(actor, async (tx) => {
@@ -44,7 +44,7 @@ export async function getTenantSettings(actor: Actor): Promise<TenantSettingsVie
 }
 
 export async function updateTenantSettings(
-  actor: Actor,
+  actor: RequestContext,
   input: TenantSettingsInput,
 ): Promise<void> {
   assertCan(actor.role, "settings:manage");

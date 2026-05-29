@@ -1,5 +1,5 @@
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
-import { requireActor } from "@/lib/auth/context";
+import { requireRequestContext } from "@/lib/auth/context";
 import { listServices } from "@/lib/admin/services";
 import {
   createServiceAction,
@@ -18,7 +18,7 @@ export default async function ServicesPage({
 }: {
   searchParams: Promise<{ m?: string }>;
 }) {
-  const actor = await requireActor();
+  const actor = await requireRequestContext();
   const services = await listServices(actor);
   const { m } = await searchParams;
 

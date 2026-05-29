@@ -1,12 +1,12 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireActor } from "@/lib/auth/context";
+import { requireRequestContext } from "@/lib/auth/context";
 import { updateTenantSettings } from "@/lib/admin/settings";
 import { isAdminError } from "@/lib/admin/errors";
 
 export async function saveSettings(formData: FormData): Promise<void> {
-  const actor = await requireActor();
+  const actor = await requireRequestContext();
 
   let code = "ok";
   try {

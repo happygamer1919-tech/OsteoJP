@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireActor } from "@/lib/auth/context";
+import { requireRequestContext } from "@/lib/auth/context";
 import { createLocation, setLocationActive, updateLocation } from "@/lib/admin/locations";
 import { isAdminError } from "@/lib/admin/errors";
 
@@ -17,7 +17,7 @@ async function run(fn: () => Promise<void>): Promise<never> {
 }
 
 export async function createLocationAction(formData: FormData): Promise<void> {
-  const actor = await requireActor();
+  const actor = await requireRequestContext();
   await run(() =>
     createLocation(actor, {
       name: String(formData.get("name") ?? ""),
@@ -28,7 +28,7 @@ export async function createLocationAction(formData: FormData): Promise<void> {
 }
 
 export async function updateLocationAction(formData: FormData): Promise<void> {
-  const actor = await requireActor();
+  const actor = await requireRequestContext();
   const id = String(formData.get("id") ?? "");
   await run(() =>
     updateLocation(actor, id, {
@@ -40,7 +40,7 @@ export async function updateLocationAction(formData: FormData): Promise<void> {
 }
 
 export async function setLocationActiveAction(formData: FormData): Promise<void> {
-  const actor = await requireActor();
+  const actor = await requireRequestContext();
   const id = String(formData.get("id") ?? "");
   const active = String(formData.get("active") ?? "") === "true";
   await run(() => setLocationActive(actor, id, active));

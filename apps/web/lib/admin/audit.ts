@@ -1,6 +1,6 @@
 import "server-only";
 import { auditLog, type DbTx } from "@osteojp/db";
-import type { Actor } from "@/lib/auth/context";
+import type { RequestContext } from "@/lib/auth/context";
 
 /**
  * Append one audit_log row. MUST be called with the same `tx` as the mutation
@@ -14,7 +14,7 @@ import type { Actor } from "@/lib/auth/context";
  */
 export async function writeAudit(
   tx: DbTx,
-  actor: Actor,
+  actor: RequestContext,
   entry: {
     action: string;
     entityType: string;

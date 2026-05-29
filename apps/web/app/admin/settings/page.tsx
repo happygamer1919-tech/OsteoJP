@@ -1,5 +1,5 @@
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
-import { requireActor } from "@/lib/auth/context";
+import { requireRequestContext } from "@/lib/auth/context";
 import { getTenantSettings } from "@/lib/admin/settings";
 import { saveSettings } from "./actions";
 
@@ -10,7 +10,7 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{ m?: string }>;
 }) {
-  const actor = await requireActor();
+  const actor = await requireRequestContext();
   const settings = await getTenantSettings(actor);
   const { m } = await searchParams;
 

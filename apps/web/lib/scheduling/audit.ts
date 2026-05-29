@@ -20,7 +20,8 @@ export async function writeAppointmentAudit(
   tx: DbTx,
   args: {
     tenantId: string;
-    actorUserId: string | null;
+    // Non-null: every appointment mutation records its actor (ctx.userId).
+    actorUserId: string;
     action: AppointmentAuditAction;
     appointmentId: string;
     metadata: Record<string, unknown>;

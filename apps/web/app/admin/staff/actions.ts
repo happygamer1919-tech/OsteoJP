@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireActor } from "@/lib/auth/context";
+import { requireRequestContext } from "@/lib/auth/context";
 import { changeStaffRole, inviteStaff, setStaffActive } from "@/lib/admin/staff";
 import { isAdminError } from "@/lib/admin/errors";
 
@@ -11,7 +11,7 @@ export async function inviteAction(
   _prev: InviteState,
   formData: FormData,
 ): Promise<InviteState> {
-  const actor = await requireActor();
+  const actor = await requireRequestContext();
   try {
     const { tempPassword } = await inviteStaff(actor, {
       email: String(formData.get("email") ?? ""),
@@ -26,7 +26,7 @@ export async function inviteAction(
 }
 
 export async function changeRoleAction(formData: FormData): Promise<void> {
-  const actor = await requireActor();
+  const actor = await requireRequestContext();
   let code = "ok";
   try {
     await changeStaffRole(
@@ -42,7 +42,7 @@ export async function changeRoleAction(formData: FormData): Promise<void> {
 }
 
 export async function setActiveAction(formData: FormData): Promise<void> {
-  const actor = await requireActor();
+  const actor = await requireRequestContext();
   const active = String(formData.get("active") ?? "") === "true";
   let code = "ok";
   try {
