@@ -8,7 +8,7 @@
 // Pure functions only. No framework/session/header reading here; that lives
 // in the app layer and produces a RequestContext to feed into these.
 
-import { can, type Capability, type Role } from "./permissions.js";
+import { can, type Capability, type Role } from "./permissions";
 
 export class ForbiddenError extends Error {
   // Stable discriminator for route error handlers (instanceof breaks across

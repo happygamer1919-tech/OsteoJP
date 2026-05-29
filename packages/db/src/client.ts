@@ -41,7 +41,7 @@ function getDb(): Db {
         "set DATABASE_URL before the first query.",
     );
   }
-  _client = postgres(url);
+  _client = postgres(url, { prepare: false });
   _db = drizzle(_client, { schema });
   return _db;
 }
