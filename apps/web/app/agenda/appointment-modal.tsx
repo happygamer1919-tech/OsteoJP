@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { s } from "@/lib/i18n";
+import { s, locale } from "@/lib/i18n";
 import {
   cancelAppointment,
   createAppointment,
@@ -13,26 +13,59 @@ import {
   lisbonDateTimeToUtc,
   lisbonParts,
 } from "@/lib/scheduling/time";
-import { locale } from "@/lib/i18n";
 import type {
   AgendaAppointment,
   AgendaOptions,
   AppointmentStatusValue,
   ConflictInfo,
+  Frequency,
+  SeriesScope,
 } from "@/lib/scheduling/types";
 
 export type ModalState =
   | { mode: "create"; slot?: { date: string; time: string } }
   | { mode: "edit"; appt: AgendaAppointment };
 
+type StringKey = keyof typeof s;
+type FormState = {
+  patientId: string;
+  serviceId: string;
+  practitionerId: string;
+  locationId: string;
+  room: string;
+  date: string;
+  time: string;
+  durationMin: number;
+  status: AppointmentStatusValue;
+  notes: string;
+  repeatFreq: "none" | Frequency;
+  occurrences: number;
+  scope: SeriesScope;
+};
+
 const DURATIONS = [30, 45, 60, 90];
-const STATUS_RADIOS: { value: AppointmentStatusValue; key: string }[] = [
+const TEAL = "#45B9A7";
+
+const STATUS_OPTIONS: { value: AppointmentStatusValue; key: StringKey }[] = [
   { value: "scheduled", key: "appointment.statusPending" },
   { value: "confirmed", key: "appointment.statusConfirmed" },
+  { value: "completed", key: "appointment.statusCompleted" },
   { value: "cancelled", key: "appointment.statusCancelled" },
+  { value: "no_show", key: "appointment.statusNoShow" },
 ];
 
-const TEAL = "#45B9A7";
+const FREQ_OPTIONS: { value: Frequency; key: StringKey }[] = [
+  { value: "daily", key: "appointment.repeatDaily" },
+  { value: "weekly", key: "appointment.repeatWeekly" },
+  { value: "biweekly", key: "appointment.repeatBiweekly" },
+  { value: "monthly", key: "appointment.repeatMonthly" },
+];
+
+const SCOPE_OPTIONS: { value: SeriesScope; key: StringKey }[] = [
+  { value: "one", key: "appointment.scopeOne" },
+  { value: "following", key: "appointment.scopeFollowing" },
+  { value: "series", key: "appointment.scopeSeries" },
+];
 
 export function AppointmentModal({
   state,
@@ -48,8 +81,12 @@ export function AppointmentModal({
   onDone: () => void;
 }) {
   const editing = state.mode === "edit" ? state.appt : null;
+  const isRecurring = !!(
+    editing &&
+    (editing.recurrenceRule || editing.recurrenceParentId)
+  );
 
-  const init = useMemo(() => {
+  const init = useMemo<FormState>(() => {
     if (editing) {
       const start = new Date(editing.startsAt);
       const parts = lisbonParts(start);
@@ -65,8 +102,11 @@ export function AppointmentModal({
         date: parts.date,
         time: `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`,
         durationMin: durationMin > 0 ? durationMin : 60,
-        status: editing.status as AppointmentStatusValue,
+        status: editing.status,
         notes: editing.notes ?? "",
+        repeatFreq: "none",
+        occurrences: 4,
+        scope: "one",
       };
     }
     const slot = state.mode === "create" ? state.slot : undefined;
@@ -79,17 +119,20 @@ export function AppointmentModal({
       date: slot?.date ?? anchor,
       time: slot?.time ?? "09:00",
       durationMin: 60,
-      status: "scheduled" as AppointmentStatusValue,
+      status: "scheduled",
       notes: "",
+      repeatFreq: "none",
+      occurrences: 4,
+      scope: "one",
     };
   }, [editing, state, anchor, options.locations]);
 
-  const [form, setForm] = useState(init);
+  const [form, setForm] = useState<FormState>(init);
   const [error, setError] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
@@ -125,6 +168,10 @@ export function AppointmentModal({
     setConflicts(null);
     try {
       if (!editing) {
+        const recurrence =
+          form.repeatFreq !== "none"
+            ? { freq: form.repeatFreq, count: form.occurrences }
+            : null;
         const r = await createAppointment({
           patientId: form.patientId,
           practitionerId: form.practitionerId,
@@ -135,6 +182,7 @@ export function AppointmentModal({
           endsAt: endISO,
           status: form.status,
           notes: form.notes || null,
+          recurrence,
           allowConflict,
         });
         if (!handleResult(r)) return;
@@ -142,31 +190,20 @@ export function AppointmentModal({
         return;
       }
 
-      // Edit mode. Cancelling routes through the delete-capability action.
+      const scope = form.scope;
+
+      // Cancelling routes through the delete-capability action.
       if (form.status === "cancelled" && editing.status !== "cancelled") {
-        const r = await cancelAppointment(editing.id, form.notes || undefined);
+        const r = await cancelAppointment(editing.id, form.notes || undefined, {
+          scope,
+        });
         if (!handleResult(r)) return;
         onDone();
         return;
       }
 
-      const temporalChanged =
-        startISO !== editing.startsAt ||
-        endISO !== editing.endsAt ||
-        form.practitionerId !== editing.practitionerId ||
-        form.locationId !== editing.locationId;
-
-      if (temporalChanged) {
-        const r = await rescheduleAppointment(editing.id, {
-          startsAt: startISO,
-          endsAt: endISO,
-          practitionerId: form.practitionerId,
-          locationId: form.locationId,
-          allowConflict,
-        });
-        if (!handleResult(r)) return;
-      }
-
+      // Non-temporal edits first (incl. room) so a later reschedule sees the
+      // persisted room when checking room conflicts at the new time.
       const patch: Parameters<typeof updateAppointment>[1] = {};
       if (form.serviceId !== (editing.serviceId ?? "")) {
         patch.serviceId = form.serviceId || null;
@@ -177,7 +214,35 @@ export function AppointmentModal({
         patch.status = form.status;
       }
       if (Object.keys(patch).length > 0) {
-        const r = await updateAppointment(editing.id, patch);
+        const r = await updateAppointment(editing.id, patch, {
+          scope,
+          allowConflict,
+        });
+        if (!handleResult(r)) return;
+      }
+
+      // Temporal change. For scope one a date change counts; for following/
+      // series only time-of-day / duration / therapist / location propagate.
+      const timeOfDayChanged =
+        form.time !== init.time || form.durationMin !== init.durationMin;
+      const practOrLocChanged =
+        form.practitionerId !== editing.practitionerId ||
+        form.locationId !== editing.locationId;
+      const dateChanged = form.date !== init.date;
+      const temporalChanged =
+        scope === "one"
+          ? dateChanged || timeOfDayChanged || practOrLocChanged
+          : timeOfDayChanged || practOrLocChanged;
+
+      if (temporalChanged) {
+        const r = await rescheduleAppointment(editing.id, {
+          startsAt: startISO,
+          endsAt: endISO,
+          practitionerId: form.practitionerId,
+          locationId: form.locationId,
+          scope,
+          allowConflict,
+        });
         if (!handleResult(r)) return;
       }
       onDone();
@@ -207,6 +272,9 @@ export function AppointmentModal({
     return false;
   }
 
+  const therapistConflicts = conflicts?.filter((c) => c.kind === "therapist") ?? [];
+  const roomConflicts = conflicts?.filter((c) => c.kind === "room") ?? [];
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
@@ -221,6 +289,11 @@ export function AppointmentModal({
         <div className="flex items-center justify-between border-b border-[#E2E8EE] px-5 py-3">
           <h2 className="text-base font-semibold text-[#1A2733]">
             {editing ? s["appointment.editTitle"] : s["appointment.newTitle"]}
+            {isRecurring && (
+              <span className="ml-2 align-middle text-xs font-normal text-[#8E2C7A]">
+                ⟳ {s["appointment.recurring"]}
+              </span>
+            )}
           </h2>
           <button
             type="button"
@@ -239,6 +312,25 @@ export function AppointmentModal({
             void submit(false);
           }}
         >
+          {/* Series scope — only for an appointment that belongs to a series. */}
+          {editing && isRecurring && (
+            <Field label={s["appointment.applyTo"]}>
+              <div className="flex flex-col gap-1">
+                {SCOPE_OPTIONS.map((o) => (
+                  <label key={o.value} className="flex items-center gap-1.5 text-sm">
+                    <input
+                      type="radio"
+                      name="scope"
+                      checked={form.scope === o.value}
+                      onChange={() => set("scope", o.value)}
+                    />
+                    {s[o.key]}
+                  </label>
+                ))}
+              </div>
+            </Field>
+          )}
+
           <Field label={s["appointment.patient"]} required>
             <Select
               value={form.patientId}
@@ -318,20 +410,56 @@ export function AppointmentModal({
             </Field>
           </div>
 
-          <Field label={s["appointment.status"]}>
-            <div className="flex gap-4">
-              {STATUS_RADIOS.map((r) => (
-                <label key={r.value} className="flex items-center gap-1.5 text-sm">
+          {/* Recurrence — create only. */}
+          {!editing && (
+            <div className="flex gap-3">
+              <Field label={s["appointment.repeat"]}>
+                <select
+                  value={form.repeatFreq}
+                  onChange={(e) =>
+                    set("repeatFreq", e.target.value as FormState["repeatFreq"])
+                  }
+                  className="w-full rounded border border-[#C7D1DA] px-2 py-1.5 text-sm"
+                >
+                  <option value="none">{s["appointment.repeatNone"]}</option>
+                  {FREQ_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {s[o.key]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {form.repeatFreq !== "none" && (
+                <Field label={s["appointment.occurrences"]}>
                   <input
-                    type="radio"
-                    name="status"
-                    checked={form.status === r.value}
-                    onChange={() => set("status", r.value)}
+                    type="number"
+                    min={2}
+                    max={52}
+                    value={form.occurrences}
+                    onChange={(e) =>
+                      set("occurrences", Math.max(2, Number(e.target.value) || 2))
+                    }
+                    className="w-full rounded border border-[#C7D1DA] px-2 py-1.5 text-sm"
                   />
-                  {s[r.key as keyof typeof s]}
-                </label>
-              ))}
+                </Field>
+              )}
             </div>
+          )}
+
+          <Field label={s["appointment.status"]}>
+            <select
+              value={form.status}
+              onChange={(e) =>
+                set("status", e.target.value as AppointmentStatusValue)
+              }
+              className="w-full rounded border border-[#C7D1DA] px-2 py-1.5 text-sm"
+            >
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {s[o.key]}
+                </option>
+              ))}
+            </select>
           </Field>
 
           <Field label={s["appointment.notes"]}>
@@ -344,16 +472,21 @@ export function AppointmentModal({
           </Field>
 
           {conflicts && (
-            <div className="rounded border border-[#B47A14] bg-[#FBF1DD] px-3 py-2 text-sm text-[#1A2733]">
-              <p className="font-medium">⚠ {s["appointment.conflictTherapistDetail"]}</p>
-              <ul className="mt-1 list-disc pl-5 text-xs">
-                {conflicts.map((c) => (
-                  <li key={c.id}>
-                    {c.patientName}: {formatInstantTime(new Date(c.startsAt), locale)}–
-                    {formatInstantTime(new Date(c.endsAt), locale)}
-                  </li>
-                ))}
-              </ul>
+            <div className="space-y-2">
+              {therapistConflicts.length > 0 && (
+                <ConflictBlock
+                  heading={s["agenda.conflictTherapist"]}
+                  detail={s["appointment.conflictTherapistDetail"]}
+                  items={therapistConflicts}
+                />
+              )}
+              {roomConflicts.length > 0 && (
+                <ConflictBlock
+                  heading={s["agenda.conflictRoom"]}
+                  detail={s["appointment.conflictRoomDetail"]}
+                  items={roomConflicts}
+                />
+              )}
             </div>
           )}
 
@@ -392,6 +525,33 @@ export function AppointmentModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+function ConflictBlock({
+  heading,
+  detail,
+  items,
+}: {
+  heading: string;
+  detail: string;
+  items: ConflictInfo[];
+}) {
+  return (
+    <div className="rounded border border-[#B47A14] bg-[#FBF1DD] px-3 py-2 text-sm text-[#1A2733]">
+      <p className="font-medium">
+        ⚠ {heading}: {detail}
+      </p>
+      <ul className="mt-1 list-disc pl-5 text-xs">
+        {items.map((c) => (
+          <li key={`${c.kind}:${c.id}`}>
+            {c.patientName}
+            {c.room ? ` · ${c.room}` : ""}: {formatInstantTime(new Date(c.startsAt), locale)}–
+            {formatInstantTime(new Date(c.endsAt), locale)}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

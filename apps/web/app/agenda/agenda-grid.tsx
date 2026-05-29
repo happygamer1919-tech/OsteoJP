@@ -29,15 +29,25 @@ const STATUS_STYLE: Record<AppointmentStatusValue, string> = {
   no_show: "border-[#B47A14] bg-[#FBF1DD] text-[#1A2733]",
 };
 
-/** Ids of appointments that overlap another with the same therapist on a day. */
+/** Same room (case-insensitive) at the same location — the room-conflict key. */
+function sameRoom(a: AgendaAppointment, b: AgendaAppointment): boolean {
+  const ra = a.room?.trim().toLowerCase();
+  const rb = b.room?.trim().toLowerCase();
+  return !!ra && !!rb && ra === rb && a.locationId === b.locationId;
+}
+
+/**
+ * Ids of appointments that overlap another on the same day with either the
+ * same therapist or the same room — the two conflict kinds enforced server-side.
+ */
 function conflictingIds(appts: AgendaAppointment[]): Set<string> {
   const flagged = new Set<string>();
   for (let i = 0; i < appts.length; i++) {
     for (let j = i + 1; j < appts.length; j++) {
       const a = appts[i];
       const b = appts[j];
-      if (a.practitionerId !== b.practitionerId) continue;
       if (a.status === "cancelled" || b.status === "cancelled") continue;
+      if (a.practitionerId !== b.practitionerId && !sameRoom(a, b)) continue;
       if (
         intervalsOverlap(
           new Date(a.startsAt),
@@ -192,7 +202,14 @@ function AppointmentBlock({
           {s["agenda.conflict"]}
         </span>
       )}
-      <span className="block font-medium">{appt.patientName}</span>
+      <span className="block font-medium">
+        {(appt.recurrenceRule || appt.recurrenceParentId) && (
+          <span className="mr-0.5 text-[#8E2C7A]" title={s["appointment.recurring"]}>
+            ⟳
+          </span>
+        )}
+        {appt.patientName}
+      </span>
       {appt.serviceName && <span className="block">{appt.serviceName}</span>}
       <span className="block text-[10px] opacity-80">
         {formatInstantTime(new Date(appt.startsAt), locale)}–
