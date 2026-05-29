@@ -2,8 +2,11 @@ import { defineConfig } from "drizzle-kit";
 
 // drizzle-kit migrate needs session-level advisory locks, which Supabase's
 // transaction pooler (port 6543) does not support. Use DATABASE_URL_DIRECT
-// for migrations (direct connection, port 5432); fall back to DATABASE_URL
-// for local-Postgres setups where there's no pooler split.
+// for migrations — the Supabase SESSION pooler (host ...pooler.supabase.com,
+// port 5432), which holds the connection for the whole session and supports
+// those locks. (It is NOT the db.<ref>.supabase.co host; that one is
+// IPv4-gated.) Fall back to DATABASE_URL for local-Postgres setups where
+// there's no pooler split.
 const url = process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL;
 
 // `check`, `generate`, and `drop` operate purely on local snapshot files and
@@ -15,8 +18,8 @@ const needsConnection = !command || !snapshotOnly.has(command);
 if (needsConnection && !url) {
   throw new Error(
     "drizzle-kit: neither DATABASE_URL_DIRECT nor DATABASE_URL is set. " +
-      "Set DATABASE_URL_DIRECT (preferred — direct 5432 connection for " +
-      "session advisory locks) or DATABASE_URL. See .env.example at the repo root.",
+      "Set DATABASE_URL_DIRECT (preferred — Supabase session pooler on port " +
+      "5432, for session advisory locks) or DATABASE_URL. See .env.example at the repo root.",
   );
 }
 
