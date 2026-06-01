@@ -20,7 +20,7 @@
  */
 
 import { test, expect } from "@playwright/test";
-import { goToClinical, createPatient } from "../helpers";
+import { goToClinical } from "../helpers";
 import path from "path";
 
 // ---------------------------------------------------------------------------

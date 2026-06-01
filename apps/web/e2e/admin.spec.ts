@@ -10,6 +10,7 @@
  *  2. Edit tenant settings (clinic name) and save
  *  3. Invite a new staff member by email
  *  4. Invited staff member appears in the staff list
+ *  4b. Change a staff member to any non-owner role; owner tier stays protected
  *  5. Create a new service
  *  6. Edit an existing service's price
  *  7. Create a new location
@@ -18,7 +19,7 @@
  * 10. Receptionist is blocked from /admin
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { goToAdmin } from "../helpers";
 
 // ---------------------------------------------------------------------------
@@ -93,6 +94,78 @@ test("invited staff member appears in the staff list", async ({ page }) => {
 
   // The email should appear in the staff table.
   await expect(page.getByText(uniqueEmail)).toBeVisible({ timeout: 8_000 });
+});
+
+// ---------------------------------------------------------------------------
+// 4b. Change an existing staff member's role (admin actor).
+//
+// Owner-tier protection lives in lib/admin/staff.ts (changeStaffRole): only an
+// owner may grant the owner role or modify an existing owner, otherwise the
+// server throws AdminError("owner_tier"). The /admin/staff UI enforces the same
+// invariant up front for an admin actor — page.tsx builds the role <select>
+// from ROLES *without* "owner", and renders owner rows as non-manageable. These
+// two tests assert both halves: a non-owner role change succeeds, and the owner
+// tier is never assignable/modifiable by an admin.
+// ---------------------------------------------------------------------------
+
+/** Invites a fresh member (as therapist) so role-change has a known target. */
+async function inviteTherapist(page: Page): Promise<string> {
+  await page.goto("/admin/staff");
+  const email = `e2e.role.${Date.now()}@osteojp.test`;
+  await page.getByLabel(/Nome completo|Full name/i).fill("E2E RoleChange");
+  await page.getByLabel("Email", { exact: true }).fill(email);
+  await page.getByLabel(/Função|Role/i).selectOption({ label: /Terapeuta|Therapist/i });
+  await page.getByRole("button", { name: /Convidar|Invite/i }).click();
+  await expect(page.getByText(/Membro convidado|Member invited/i)).toBeVisible({
+    timeout: 10_000,
+  });
+  return email;
+}
+
+test("admin can change a staff member to any non-owner role", async ({ page }) => {
+  const email = await inviteTherapist(page);
+
+  // Therapist -> Reception (a non-owner role): row <select> + Apply.
+  const row = page.getByRole("row", { hasText: email });
+  await row.locator("select[name='role']").selectOption({ label: /Receção|Reception/i });
+  await row.getByRole("button", { name: /Aplicar|Apply/i }).click();
+
+  // changeRoleAction redirects back to /admin/staff?m=ok; the role cell updates.
+  await page.waitForURL(/\/admin\/staff/);
+  await expect(
+    page.getByRole("row", { hasText: email }).getByRole("cell", { name: /Receção|Reception/i }),
+  ).toBeVisible({ timeout: 8_000 });
+
+  // ...and on to Administrator, proving "any non-owner role" is reachable.
+  const row2 = page.getByRole("row", { hasText: email });
+  await row2.locator("select[name='role']").selectOption({ label: /Administrador|Administrator/i });
+  await row2.getByRole("button", { name: /Aplicar|Apply/i }).click();
+  await page.waitForURL(/\/admin\/staff/);
+  await expect(
+    page
+      .getByRole("row", { hasText: email })
+      .getByRole("cell", { name: /Administrador|Administrator/i }),
+  ).toBeVisible({ timeout: 8_000 });
+});
+
+test("admin cannot assign or modify the owner role", async ({ page }) => {
+  await page.goto("/admin/staff");
+
+  // The owner tier is never offered to an admin in ANY role <select> (the invite
+  // form or any per-row select), so an admin cannot assign owner to anyone.
+  await expect(page.getByRole("option", { name: /Proprietário|Owner/i })).toHaveCount(0);
+
+  // Defense in depth: any existing owner row exposes no role-change control to an
+  // admin — page.tsx renders "—" instead of the Apply form for owner rows.
+  const ownerRows = page
+    .getByRole("row")
+    .filter({ has: page.getByRole("cell", { name: /Proprietário|Owner/i }) });
+  const ownerRowCount = await ownerRows.count();
+  for (let i = 0; i < ownerRowCount; i++) {
+    await expect(
+      ownerRows.nth(i).getByRole("button", { name: /Aplicar|Apply/i }),
+    ).toHaveCount(0);
+  }
 });
 
 // ---------------------------------------------------------------------------
