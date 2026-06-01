@@ -1,116 +1,169 @@
 {
   "key": "physiotherapy",
-  "version": 2,
+  "version": 3,
   "title": {
     "pt": "Fisioterapia — Avaliação de Episódio",
     "en": "Physiotherapy — Episode Evaluation"
   },
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "description": "Clinical intake form for a physiotherapy episode. Field structure transcribed from the Fisiozero physiotherapy episode form (NOVO EPISODIO, Fisioterapia) as seen in production screenshots (2026-05-25). This form is deliberately simpler than the osteopathy form — no Problemas de Saúde checkboxes and no Anamnese por Sistemas. PT is the source language; EN labels provided for the bilingual UI. ai_extractable is false on every field pending the AI-partner contract.",
+    "description": "Clinical intake form for a physiotherapy episode. Field structure transcribed from the Fisiozero physiotherapy episode form (op=av) confirmed by two independent browser extractions (2026-05-25 and 2026-06-01). This form is shared by all physio therapy types — RPG, massagem terapêutica, pilates terapêutico all use this identical form. Therapy type is appointment metadata (tipo_evento_dinamico), not a form selector. 16 fields in document order.",
     "type": "object",
-    "required": ["episode_date", "main_complaints"],
+    "required": ["episode_date"],
     "properties": {
       "episode_date": {
         "type": "string",
         "format": "date",
         "x-label": { "pt": "Data do Episódio", "en": "Episode Date" },
+        "x-fisiozero-field": "data_avalia",
         "x-required": true,
+        "x-order": 1,
         "ai_extractable": false
       },
       "weight_kg": {
         "type": ["number", "null"],
         "minimum": 0,
-        "x-label": { "pt": "Peso (kg)", "en": "Weight (kg)" },
+        "x-label": { "pt": "Peso (em kg)", "en": "Weight (kg)" },
+        "x-fisiozero-field": "peso",
+        "x-order": 2,
         "ai_extractable": false
       },
       "height_cm": {
         "type": ["number", "null"],
         "minimum": 0,
-        "x-label": { "pt": "Altura (cm)", "en": "Height (cm)" },
+        "x-label": { "pt": "Altura (em cm)", "en": "Height (cm)" },
+        "x-fisiozero-field": "altura",
+        "x-order": 3,
         "ai_extractable": false
       },
       "linked_appointment": {
         "type": ["string", "null"],
         "x-label": { "pt": "Marcação respectiva", "en": "Linked Appointment" },
+        "x-fisiozero-field": "marca_epi",
         "x-widget": "appointment_picker",
+        "x-order": 4,
         "ai_extractable": false
       },
       "cid_codes": {
         "type": "array",
         "items": { "type": "string" },
         "x-label": { "pt": "Códigos CID associados", "en": "Associated ICD Codes" },
+        "x-placeholder": { "pt": "Associar códigos CID a este episódio...", "en": "Associate ICD codes to this episode..." },
+        "x-order": 5,
         "ai_extractable": false
       },
       "red_flags": {
         "type": ["string", "null"],
-        "x-label": { "pt": "Alertas Red Flags", "en": "Red Flags" },
+        "x-label": { "pt": "Alertas (Red Flags)", "en": "Red Flags" },
+        "x-fisiozero-field": "alertas",
         "x-widget": "textarea",
+        "x-order": 6,
         "ai_extractable": false
       },
       "main_complaints": {
-        "type": "string",
+        "type": ["string", "null"],
         "x-label": { "pt": "Principais Queixas", "en": "Main Complaints" },
+        "x-label-followup": { "pt": "Queixas Atuais", "en": "Current Complaints" },
+        "x-note": "Label changes to 'Queixas Atuais' on continuation evaluations (subav).",
+        "x-fisiozero-field": "queixas",
         "x-widget": "textarea",
-        "x-required": true,
+        "x-order": 7,
         "ai_extractable": false
       },
       "background": {
         "type": ["string", "null"],
         "x-label": { "pt": "Antecedentes", "en": "Background / History" },
+        "x-fisiozero-field": "antecedentes",
         "x-widget": "textarea",
+        "x-order": 8,
         "ai_extractable": false
       },
       "medication": {
         "type": ["string", "null"],
         "x-label": { "pt": "Medicação", "en": "Medication" },
+        "x-fisiozero-field": "medicacao",
         "x-widget": "textarea",
+        "x-order": 9,
         "ai_extractable": false
       },
       "diagnosis": {
         "type": ["string", "null"],
         "x-label": { "pt": "Diagnóstico", "en": "Diagnosis" },
+        "x-fisiozero-field": "diag",
         "x-widget": "textarea",
+        "x-order": 10,
         "ai_extractable": false
       },
       "bodychart": {
         "type": ["object", "null"],
         "x-label": { "pt": "Bodychart", "en": "Body Chart" },
+        "x-fisiozero-field": "tipo_sintoma",
         "x-widget": "bodychart",
+        "x-hint": { "pt": "Clique no bodychart e seleccione o marcador pretendido", "en": "Click the body chart and select the desired marker" },
+        "x-bodychart-markers": [
+          "Bloqueio / Disfunção",
+          "Cicatriz",
+          "Hipertonicidade",
+          "Hipotonicidade",
+          "Irradiação da dor",
+          "Local da dor",
+          "Parestesia",
+          "Rotação direita",
+          "Rotação esquerda"
+        ],
+        "x-order": 11,
         "ai_extractable": false
       },
       "treatment_goals": {
         "type": ["string", "null"],
         "x-label": { "pt": "Objectivos do Tratamento", "en": "Treatment Goals" },
+        "x-fisiozero-field": "ot",
         "x-widget": "textarea",
+        "x-order": 12,
         "ai_extractable": false
       },
       "treatment_plan": {
         "type": ["string", "null"],
         "x-label": { "pt": "Plano de Tratamento", "en": "Treatment Plan" },
+        "x-fisiozero-field": "pt",
         "x-widget": "textarea",
+        "x-order": 13,
         "ai_extractable": false
       },
       "observations": {
         "type": ["string", "null"],
         "x-label": { "pt": "Observações", "en": "Observations" },
+        "x-fisiozero-field": "obs",
         "x-widget": "textarea",
+        "x-order": 14,
         "ai_extractable": false
       },
       "private_notes": {
         "type": ["string", "null"],
         "x-label": { "pt": "Notas Pessoais sobre o Utente neste Episódio / Consulta", "en": "Personal Notes (this episode)" },
+        "x-fisiozero-field": "notas_pessoais",
         "x-widget": "textarea",
         "x-private": true,
         "x-note": "Este campo não é partilhado com nenhum outro utilizador da sua conta.",
+        "x-order": 15,
+        "ai_extractable": false
+      },
+      "consent_in_report": {
+        "type": "boolean",
+        "default": false,
+        "x-label": { "pt": "Inserir Consentimento no Relatório", "en": "Include Consent in Report" },
+        "x-fisiozero-field": "inser_conse",
+        "x-widget": "checkbox",
+        "x-hint": { "pt": "Deverá configurar o seu Consentimento no Menu Definições Gerais — Consentimento Informado nos Relatórios", "en": "Configure your consent template in General Settings — Informed Consent in Reports" },
+        "x-order": 16,
         "ai_extractable": false
       }
     }
   },
   "_meta": {
-    "source": "Fisiozero production screenshot 2026-05-25 — Fisioterapia NOVO EPISODIO form",
+    "source": "Fisiozero production — confirmed by two independent browser extractions: Max (2026-05-25) and Claude browser agent (2026-06-01). URL: app.fisiozero.pt op=av.",
     "reviewed_by": "Max (sm33xy)",
-    "version_note": "v2 corrects v1 which had erroneously included the full Osteopatia field set. Physio form is intentionally simpler: no Problemas de Saúde checkboxes, no Anamnese por Sistemas.",
-    "pending_owner": ["Confirm field order is correct", "RPG, massagem terapêutica, pilates terapêutico forms still outstanding"]
+    "version_note": "v3 — adds field #16 consent_in_report (inser_conse checkbox), missed in v2. All 16 Fisiozero fields now present. Also adds x-fisiozero-field mappings and x-order on every field.",
+    "fisiozero_note": "This form is shared by ALL physio therapy types. RPG, massagem terapêutica (Tratamento terapeutico), and pilates terapêutico use this identical form. Therapy type is set as appointment metadata (tipo_evento_dinamico), not as a form selector."
   }
 }
