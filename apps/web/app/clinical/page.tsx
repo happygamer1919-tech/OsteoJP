@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { can } from "@osteojp/auth";
 import { s, locale } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { listRecords, type RecordStatus } from "@/lib/clinical/records";
@@ -12,14 +13,21 @@ function statusLabel(status: RecordStatus): string {
 export default async function ClinicalListPage() {
   const ctx = await requireRequestContext();
   const records = await listRecords(ctx);
+  // BUG-06: only authors (owner/therapist) can create a record. /clinical/new
+  // redirects non-authors back here, so showing "Nova Ficha" to a read-only
+  // role (admin) produced a dead button. Gate the button on the same
+  // capability the create flow enforces.
+  const canAuthor = can(ctx.role, "clinical_records:author");
 
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">{s["clinical.title"]}</h2>
-        <Link href="/clinical/new" className="rounded border px-3 py-1.5 text-sm font-medium">
-          {s["clinical.new"]}
-        </Link>
+        {canAuthor && (
+          <Link href="/clinical/new" className="rounded border px-3 py-1.5 text-sm font-medium">
+            {s["clinical.new"]}
+          </Link>
+        )}
       </div>
 
       <table className="w-full border-collapse text-sm">
