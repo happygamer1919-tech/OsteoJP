@@ -3,6 +3,7 @@ import { loadReminderData } from "./data";
 import { resolveLocale, formatTime, formatDateLong, formatDateShort } from "./locale";
 import { renderEmail, renderSms, type ReminderContext, type ReminderOffsetId } from "./templates";
 import { sendEmail, sendSms, type SendResult } from "./clients";
+import { signRescheduleToken, rescheduleTokenExpiry } from "./link-token";
 
 // Reminder dispatch: load (tenant-scoped) → resolve locale → render PT/EN →
 // send (sandbox-gated). One function, called from the Inngest step. Kept thin
@@ -26,12 +27,22 @@ function tenantPhone(settings: unknown): string {
   return typeof phone === "string" ? phone : "";
 }
 
-function rescheduleLink(appointmentId: string): string {
-  // The short-link route/shortener does not exist yet (see docs/sms-templates.md
-  // open question 2). Build a stable placeholder URL from env so the copy reads
-  // correctly; the real route is wired in a later stream.
+function rescheduleLink(args: {
+  tenantId: string;
+  appointmentId: string;
+  startsAt: Date;
+}): string {
+  // Stateless, HMAC-signed token (see link-token.ts) — the URL carries only the
+  // opaque token, never patient data or a raw id path. Resolves at /r/<token>.
+  // EMAIL only: the token is too long for a single-segment SMS, so the SMS copy
+  // points to the clinic phone instead.
   const base = process.env.REMINDERS_RESCHEDULE_BASE_URL ?? "https://osteojp.pt";
-  return `${base.replace(/\/$/, "")}/r/${appointmentId}`;
+  const token = signRescheduleToken({
+    tenantId: args.tenantId,
+    appointmentId: args.appointmentId,
+    exp: rescheduleTokenExpiry(args.startsAt),
+  });
+  return `${base.replace(/\/$/, "")}/r/${token}`;
 }
 
 /**
@@ -40,6 +51,7 @@ function rescheduleLink(appointmentId: string): string {
  */
 export function buildReminderContext(
   data: {
+    tenantId: string;
     startsAt: Date;
     patientName: string;
     practitionerName: string;
@@ -58,7 +70,11 @@ export function buildReminderContext(
     practitionerName: data.practitionerName,
     clinicLocation: data.locationName,
     clinicPhone: data.locationPhone || tenantPhone(data.tenantSettings),
-    rescheduleLink: rescheduleLink(data.appointmentId),
+    rescheduleLink: rescheduleLink({
+      tenantId: data.tenantId,
+      appointmentId: data.appointmentId,
+      startsAt: data.startsAt,
+    }),
   };
 }
 
@@ -83,7 +99,7 @@ export async function dispatchReminder(
   }
 
   const locale = resolveLocale(data.tenantSettings);
-  const ctx = buildReminderContext(data, locale);
+  const ctx = buildReminderContext({ ...data, tenantId }, locale);
 
   const channels: SendResult[] = [];
   if (data.patientEmail) {

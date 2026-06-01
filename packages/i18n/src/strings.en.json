@@ -322,5 +322,15 @@
   "clinical.bodychartViewPosterior": "Posterior",
   "clinical.bodychartViewLateralLeft": "Lateral Left",
   "clinical.bodychartViewLateralRight": "Lateral Right",
-  "clinical.bodychartEmpty": "No markers."
+  "clinical.bodychartEmpty": "No markers.",
+  "reschedule.title": "Your appointment",
+  "reschedule.dateLabel": "Date",
+  "reschedule.timeLabel": "Time",
+  "reschedule.clinicianLabel": "Clinician",
+  "reschedule.locationLabel": "Location",
+  "reschedule.changeHeading": "Need to reschedule or cancel?",
+  "reschedule.changeBody": "For now, appointment changes are handled by phone. Contact the clinic and our team will take care of it.",
+  "reschedule.callCta": "Call the clinic",
+  "reschedule.invalidTitle": "Invalid or expired link",
+  "reschedule.invalidBody": "This link is no longer valid. For any change to your appointment, please contact the clinic directly."
 }

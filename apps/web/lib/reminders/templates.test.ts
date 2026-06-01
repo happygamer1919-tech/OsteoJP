@@ -77,14 +77,14 @@ describe("sms rendering", () => {
   it("renders the PT 48h SMS verbatim, accent-free", () => {
     const msg = renderSms("48h", "pt", ctx);
     expect(msg).toBe(
-      "OsteoJP: lembrete da sua consulta a 23/05 as 14:30 em Linda-a-Velha. Para remarcar: https://osteojp.pt/r/abc123",
+      "OsteoJP: lembrete da sua consulta a 23/05 as 14:30 em Linda-a-Velha. Para remarcar ligue +351 210 000 000",
     );
   });
 
   it("renders the EN 48h SMS verbatim", () => {
     const msg = renderSms("48h", "en", ctx);
     expect(msg).toBe(
-      "OsteoJP: reminder of your appointment on 23/05 at 14:30 in Linda-a-Velha. To reschedule: https://osteojp.pt/r/abc123",
+      "OsteoJP: reminder of your appointment on 23/05 at 14:30 in Linda-a-Velha. To reschedule call +351 210 000 000",
     );
   });
 

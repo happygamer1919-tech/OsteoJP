@@ -111,15 +111,21 @@ Or contact us: {{clinic_phone}}
 // the per-segment limit 160 → 70 (see the Constraints block in the doc). The
 // copy below is already accent-free; renderSms() additionally asserts the
 // finished message stays GSM-7 and inside one segment.
+//
+// Go-live deviation from the doc (Stream E): SMS points to the clinic PHONE, not
+// the reschedule short-link. The signed reschedule token (see link-token.ts) is
+// far too long to fit a single GSM-7 segment alongside this copy, and a
+// two-segment SMS doubles cost. The reschedule LINK lives in the email reminder;
+// SMS keeps the phone CTA. (docs/sms-templates.md to be updated to match.)
 
 const SMS: Record<ReminderOffsetId, Record<Locale, string>> = {
   "48h": {
-    pt: "OsteoJP: lembrete da sua consulta a {date} as {time} em {clinic}. Para remarcar: {link}",
-    en: "OsteoJP: reminder of your appointment on {date} at {time} in {clinic}. To reschedule: {link}",
+    pt: "OsteoJP: lembrete da sua consulta a {date} as {time} em {clinic}. Para remarcar ligue {phone}",
+    en: "OsteoJP: reminder of your appointment on {date} at {time} in {clinic}. To reschedule call {phone}",
   },
   "24h": {
-    pt: "OsteoJP: a sua consulta e amanha, {date}, as {time} em {clinic}. Para remarcar: {link}",
-    en: "OsteoJP: your appointment is tomorrow, {date}, at {time} in {clinic}. To reschedule: {link}",
+    pt: "OsteoJP: a sua consulta e amanha, {date}, as {time} em {clinic}. Para remarcar ligue {phone}",
+    en: "OsteoJP: your appointment is tomorrow, {date}, at {time} in {clinic}. To reschedule call {phone}",
   },
 };
 
@@ -178,7 +184,7 @@ export function renderSms(
     date: ctx.appointmentDateShort,
     time: ctx.appointmentTime,
     clinic: ctx.clinicLocation,
-    link: ctx.rescheduleLink,
+    phone: ctx.clinicPhone,
   });
   assertNoUnfilledPlaceholders("sms", message);
   assertSmsCompliant(message);

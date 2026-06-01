@@ -322,5 +322,15 @@
   "clinical.bodychartViewPosterior": "Posterior",
   "clinical.bodychartViewLateralLeft": "Lateral Esq.",
   "clinical.bodychartViewLateralRight": "Lateral Dir.",
-  "clinical.bodychartEmpty": "Sem marcadores."
+  "clinical.bodychartEmpty": "Sem marcadores.",
+  "reschedule.title": "A sua consulta",
+  "reschedule.dateLabel": "Data",
+  "reschedule.timeLabel": "Hora",
+  "reschedule.clinicianLabel": "Terapeuta",
+  "reschedule.locationLabel": "Local",
+  "reschedule.changeHeading": "Precisa de remarcar ou cancelar?",
+  "reschedule.changeBody": "Por agora, as alterações à marcação são feitas por telefone. Contacte a clínica e a nossa equipa trata de tudo.",
+  "reschedule.callCta": "Ligar para a clínica",
+  "reschedule.invalidTitle": "Ligação inválida ou expirada",
+  "reschedule.invalidBody": "Esta ligação já não é válida. Para qualquer alteração à sua marcação, contacte diretamente a clínica."
 }
