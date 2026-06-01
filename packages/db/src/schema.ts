@@ -13,6 +13,7 @@
 //   - JSONB for form definitions and filled clinical data (flexible, AI-extractable)
 //   - money stored as integer cents + ISO currency
 
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   pgEnum,
@@ -21,11 +22,15 @@ import {
   varchar,
   boolean,
   integer,
+  smallint,
   jsonb,
   date,
+  time,
   timestamp,
   index,
   uniqueIndex,
+  unique,
+  check,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
@@ -77,6 +82,14 @@ export const paymentProvider = pgEnum("payment_provider", [
   "multibanco",
   "stripe",
   "ifthenpay",
+  "other",
+]);
+
+// Stream B — reason for a therapist absence block (time_off).
+export const timeOffReason = pgEnum("time_off_reason", [
+  "vacation",
+  "sick",
+  "holiday",
   "other",
 ]);
 
@@ -304,6 +317,84 @@ export const appointments = pgTable(
     index("appointments_tenant_start_idx").on(t.tenantId, t.startsAt),
     index("appointments_practitioner_start_idx").on(t.practitionerId, t.startsAt),
     index("appointments_patient_idx").on(t.patientId),
+  ],
+);
+
+/* ================================================================== */
+/* Availability + time off (Stream B)                                 */
+/* Defines WHEN a therapist works; enforcement (blocking out-of-hours */
+/* or during time_off bookings) is wired in a later feature PR.        */
+/* ================================================================== */
+
+// A therapist's recurring weekly working hours, per location (a therapist may
+// work different hours at each clinic — multi-location landed in 0005).
+export const availabilityTemplates = pgTable(
+  "availability_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    // Weekday: 0 = Sunday .. 6 = Saturday (matches JS Date.getDay()). Range
+    // enforced by the weekday_range CHECK below.
+    weekday: smallint("weekday").notNull(),
+    startTime: time("start_time").notNull(),
+    endTime: time("end_time").notNull(),
+    // Optional validity window for seasonal/temporary schedules. NULL = open-ended.
+    validFrom: date("valid_from"),
+    validUntil: date("valid_until"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("availability_templates_user_weekday_idx").on(t.tenantId, t.userId, t.weekday),
+    index("availability_templates_tenant_location_idx").on(t.tenantId, t.locationId),
+    // Prevent exact-duplicate rows. NULLS NOT DISTINCT so two rows that are
+    // identical including NULL validity windows still collide.
+    unique("availability_templates_dedupe_uq")
+      .on(
+        t.tenantId,
+        t.userId,
+        t.locationId,
+        t.weekday,
+        t.startTime,
+        t.endTime,
+        t.validFrom,
+        t.validUntil,
+      )
+      .nullsNotDistinct(),
+    check("availability_templates_weekday_range", sql`${t.weekday} between 0 and 6`),
+    check("availability_templates_start_before_end", sql`${t.startTime} < ${t.endTime}`),
+  ],
+);
+
+// Therapist absence blocks — therapist-wide across all locations. timestamptz
+// so partial-day and multi-day absences both work.
+export const timeOff = pgTable(
+  "time_off",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    reason: timeOffReason("reason").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("time_off_user_starts_idx").on(t.tenantId, t.userId, t.startsAt),
+    check("time_off_starts_before_ends", sql`${t.startsAt} < ${t.endsAt}`),
   ],
 );
 
