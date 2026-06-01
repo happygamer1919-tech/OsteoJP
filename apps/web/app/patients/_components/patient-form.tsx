@@ -153,13 +153,13 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
         />
       </Field>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-error">{error}</p>}
 
       <div className="flex gap-3">
         <button
           type="submit"
           disabled={pending}
-          className="rounded bg-[#45B9A7] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded bg-brand-teal px-4 py-2 text-sm font-medium text-text-inverse disabled:opacity-50"
         >
           {pending
             ? s["patients.saving"]
@@ -170,7 +170,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
         <button
           type="button"
           onClick={() => router.back()}
-          className="rounded border border-zinc-300 px-4 py-2 text-sm"
+          className="rounded border border-border-strong px-4 py-2 text-sm"
         >
           {s["common.cancel"]}
         </button>
@@ -180,7 +180,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
 }
 
 const inputCls =
-  "w-full rounded border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-[#45B9A7]";
+  "w-full rounded border border-border-strong px-3 py-2 text-sm outline-none focus:border-brand-teal";
 
 function Field({
   label,
@@ -193,7 +193,7 @@ function Field({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-zinc-600">
+      <span className="text-xs font-medium text-text-secondary">
         {label}
         {required ? " *" : ""}
       </span>

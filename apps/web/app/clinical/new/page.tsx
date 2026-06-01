@@ -30,7 +30,7 @@ export default async function NewRecordPage({
   return (
     <section className="max-w-xl space-y-4">
       <h2 className="text-base font-semibold">{s["clinical.newTitle"]}</h2>
-      {m === "err" && <p className="text-sm text-red-700">{s["clinical.error"]}</p>}
+      {m === "err" && <p className="text-sm text-error">{s["clinical.error"]}</p>}
 
       <form action={createRecordAction} className="space-y-3">
         <label className="block space-y-1">

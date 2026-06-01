@@ -38,7 +38,7 @@ export default async function StaffPage({
     <section className="space-y-6">
       <h2 className="text-base font-semibold">{s["admin.staff.title"]}</h2>
 
-      {errorText && <p className="text-sm text-red-700">{errorText}</p>}
+      {errorText && <p className="text-sm text-error">{errorText}</p>}
 
       <StaffInviteForm roles={roleOptions} />
 
@@ -59,7 +59,7 @@ export default async function StaffPage({
               <tr key={u.id} className="border-b align-top">
                 <td className="py-2 pr-4">{u.fullName}</td>
                 <td className="py-2 pr-4">{u.email}</td>
-                <td className="py-2 pr-4">{u.roleSlug ? ROLE_LABEL[u.roleSlug] : "—"}</td>
+                <td className="py-2 pr-4">{u.roleSlug ? ROLE_LABEL[u.roleSlug] : "-"}</td>
                 <td className="py-2 pr-4">
                   {u.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
                 </td>
@@ -92,7 +92,7 @@ export default async function StaffPage({
                       </form>
                     </div>
                   ) : (
-                    "—"
+                    "-"
                   )}
                 </td>
               </tr>

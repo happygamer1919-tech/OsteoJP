@@ -32,7 +32,7 @@ export default async function ServicesPage({
       <h2 className="text-base font-semibold">{s["admin.services.title"]}</h2>
 
       {banner && (
-        <p className={`text-sm ${banner.ok ? "text-green-700" : "text-red-700"}`}>
+        <p className={`text-sm ${banner.ok ? "text-success" : "text-error"}`}>
           {banner.text}
         </p>
       )}
@@ -71,7 +71,7 @@ export default async function ServicesPage({
                   <input name="name" defaultValue={svc.name} required className="rounded border px-2 py-1 text-sm" />
                   <input name="durationMin" type="number" min={1} defaultValue={svc.durationMin} required className="w-20 rounded border px-2 py-1 text-sm" />
                   <input name="price" type="text" inputMode="decimal" defaultValue={euros(svc.priceCents)} placeholder="0.00" className="w-24 rounded border px-2 py-1 text-sm" />
-                  <span className="text-xs text-neutral-500">
+                  <span className="text-xs text-text-secondary">
                     {svc.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
                   </span>
                   <button type="submit" className="rounded border px-2 py-1 text-sm">

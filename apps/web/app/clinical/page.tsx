@@ -44,7 +44,7 @@ export default async function ClinicalListPage() {
         <tbody>
           {records.length === 0 && (
             <tr>
-              <td colSpan={6} className="py-3 text-neutral-500">
+              <td colSpan={6} className="py-3 text-text-secondary">
                 {s["clinical.empty"]}
               </td>
             </tr>
@@ -52,7 +52,7 @@ export default async function ClinicalListPage() {
           {records.map((r) => (
             <tr key={r.id} className="border-b">
               <td className="py-2 pr-4">{r.patientName}</td>
-              <td className="py-2 pr-4">{r.templateTitle?.[locale] ?? "—"}</td>
+              <td className="py-2 pr-4">{r.templateTitle?.[locale] ?? "-"}</td>
               <td className="py-2 pr-4">{statusLabel(r.status)}</td>
               <td className="py-2 pr-4">{r.version}</td>
               <td className="py-2 pr-4">{new Date(r.updatedAt).toLocaleDateString("pt-PT")}</td>

@@ -38,14 +38,14 @@ export function PatientActions({
   }
 
   return (
-    <div className="flex flex-col gap-3 border-t border-zinc-200 pt-4">
+    <div className="flex flex-col gap-3 border-t border-border pt-4">
       <div className="flex flex-wrap gap-3">
         {isDeleted ? (
           <button
             type="button"
             disabled={pending}
             onClick={() => run(() => restorePatient(patientId))}
-            className="rounded border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50"
+            className="rounded border border-border-strong px-3 py-1.5 text-sm disabled:opacity-50"
           >
             {s["patients.restore"]}
           </button>
@@ -58,7 +58,7 @@ export function PatientActions({
                 run(() => softDeletePatient(patientId));
               }
             }}
-            className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-700 disabled:opacity-50"
+            className="rounded border border-error px-3 py-1.5 text-sm text-error disabled:opacity-50"
           >
             {s["patients.delete"]}
           </button>
@@ -78,18 +78,18 @@ export function PatientActions({
           }}
           className="flex flex-col gap-1.5"
         >
-          <span className="text-xs text-zinc-500">{s["patients.mergeHint"]}</span>
+          <span className="text-xs text-text-secondary">{s["patients.mergeHint"]}</span>
           <div className="flex gap-2">
             <input
               value={survivorId}
               onChange={(e) => setSurvivorId(e.target.value)}
               placeholder={s["patients.mergeIntoLabel"]}
-              className="flex-1 rounded border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-[#45B9A7]"
+              className="flex-1 rounded border border-border-strong px-3 py-1.5 text-sm outline-none focus:border-brand-teal"
             />
             <button
               type="submit"
               disabled={pending || survivorId.trim().length === 0}
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50"
+              className="rounded border border-border-strong px-3 py-1.5 text-sm disabled:opacity-50"
             >
               {s["patients.mergeSubmit"]}
             </button>
@@ -97,7 +97,7 @@ export function PatientActions({
         </form>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-error">{error}</p>}
     </div>
   );
 }

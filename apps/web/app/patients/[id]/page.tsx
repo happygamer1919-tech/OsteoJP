@@ -26,7 +26,7 @@ export default async function PatientProfilePage({
   if (!ctx) {
     return (
       <main className="mx-auto w-full max-w-4xl px-6 py-16 text-center">
-        <p className="text-sm text-zinc-500">{s["common.signIn"]}</p>
+        <p className="text-sm text-text-secondary">{s["common.signIn"]}</p>
       </main>
     );
   }
@@ -39,12 +39,12 @@ export default async function PatientProfilePage({
 
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-8">
-      <Link href="/patients" className="text-sm text-[#45B9A7]">
+      <Link href="/patients" className="text-sm text-brand-teal">
         ← {s["patients.back"]}
       </Link>
 
       {/* Header card */}
-      <section className="mt-3 rounded border border-zinc-200 p-5">
+      <section className="mt-3 rounded border border-border p-5">
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -55,19 +55,19 @@ export default async function PatientProfilePage({
                 <Badge tone="red">{s["patients.deletedBadge"]}</Badge>
               ) : null}
             </div>
-            <p className="mt-1 text-sm text-zinc-600">{identityLine(patient)}</p>
-            <p className="text-sm text-zinc-600">{contactLine(patient)}</p>
+            <p className="mt-1 text-sm text-text-secondary">{identityLine(patient)}</p>
+            <p className="text-sm text-text-secondary">{contactLine(patient)}</p>
           </div>
           <Link
             href={`/patients/${patient.id}/edit`}
-            className="rounded border border-zinc-300 px-3 py-1.5 text-sm"
+            className="rounded border border-border-strong px-3 py-1.5 text-sm"
           >
             {s["patients.editRecord"]}
           </Link>
         </div>
 
         {m === "episodeErr" && (
-          <p className="mt-3 text-sm text-red-700">{s["patients.episodeError"]}</p>
+          <p className="mt-3 text-sm text-error">{s["patients.episodeError"]}</p>
         )}
 
         <div className="mt-4 flex gap-3">
@@ -77,7 +77,7 @@ export default async function PatientProfilePage({
               <input type="hidden" name="patientId" value={patient.id} />
               <button
                 type="submit"
-                className="rounded border border-[#3DAEB3] px-3 py-1.5 text-sm font-medium text-[#3DAEB3] hover:bg-[#EAF7F6]"
+                className="rounded border border-brand-teal px-3 py-1.5 text-sm font-medium text-brand-teal hover:bg-surface-muted"
               >
                 + {s["patients.newEpisode"]}
               </button>
@@ -89,21 +89,21 @@ export default async function PatientProfilePage({
       </section>
 
       {/* Tabs */}
-      <nav className="mt-5 flex gap-4 border-b border-zinc-200 text-sm">
-        <span className="border-b-2 border-[#45B9A7] pb-2 font-medium text-[#45B9A7]">
+      <nav className="mt-5 flex gap-4 border-b border-border text-sm">
+        <span className="border-b-2 border-brand-teal pb-2 font-medium text-brand-teal">
           {s["patients.tabSummary"]}
         </span>
-        <span className="pb-2 text-zinc-400">{s["patients.tabEpisodes"]}</span>
-        <span className="pb-2 text-zinc-400">{s["patients.tabAppointments"]}</span>
-        <span className="pb-2 text-zinc-400">{s["patients.tabDocuments"]}</span>
-        <span className="pb-2 text-zinc-400">{s["patients.tabInvoicing"]}</span>
+        <span className="pb-2 text-text-muted">{s["patients.tabEpisodes"]}</span>
+        <span className="pb-2 text-text-muted">{s["patients.tabAppointments"]}</span>
+        <span className="pb-2 text-text-muted">{s["patients.tabDocuments"]}</span>
+        <span className="pb-2 text-text-muted">{s["patients.tabInvoicing"]}</span>
       </nav>
 
       {/* Summary (Resumo) — related streams (agenda/clinical/invoicing) populate
           these panels later; shown as empty states for now. */}
       <section className="mt-5 grid grid-cols-2 gap-5">
         <Panel title={s["patients.alertsRedFlags"]}>
-          <Empty>{patient.notes ? patient.notes : "—"}</Empty>
+          <Empty>{patient.notes ? patient.notes : "-"}</Empty>
         </Panel>
         <Panel title={s["patients.nextAppointment"]}>
           <Empty>{s["patients.noUpcoming"]}</Empty>
@@ -134,11 +134,11 @@ function identityLine(p: Patient): string {
   if (age !== null) parts.push(`${age} ${s["patients.ageSuffix"]}`);
   if (p.sex) parts.push(p.sex);
   if (p.nif) parts.push(`${s["patients.fieldNif"]} ${p.nif}`);
-  return parts.join(" · ") || "—";
+  return parts.join(" · ") || "-";
 }
 
 function contactLine(p: Patient): string {
-  return [p.phone, p.email].filter(Boolean).join(" · ") || "—";
+  return [p.phone, p.email].filter(Boolean).join(" · ") || "-";
 }
 
 function ageFrom(dob: string | null): number | null {
@@ -154,22 +154,22 @@ function ageFrom(dob: string | null): number | null {
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded border border-zinc-200 p-4">
-      <h2 className="mb-2 text-sm font-semibold text-zinc-700">{title}</h2>
+    <div className="rounded border border-border p-4">
+      <h2 className="mb-2 text-sm font-semibold text-text-primary">{title}</h2>
       {children}
     </div>
   );
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="text-sm text-zinc-500">{children}</p>;
+  return <p className="text-sm text-text-secondary">{children}</p>;
 }
 
 function Badge({ children, tone }: { children: React.ReactNode; tone: "red" | "zinc" }) {
   const cls =
     tone === "red"
-      ? "bg-red-100 text-red-700"
-      : "bg-zinc-100 text-zinc-600";
+      ? "bg-error-bg text-error"
+      : "bg-surface-muted text-text-secondary";
   return (
     <span className={`rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
       {children}
@@ -182,7 +182,7 @@ function PlaceholderButton({ children }: { children: React.ReactNode }) {
     <button
       type="button"
       disabled
-      className="cursor-not-allowed rounded border border-zinc-200 px-3 py-1.5 text-sm text-zinc-400"
+      className="cursor-not-allowed rounded border border-border px-3 py-1.5 text-sm text-text-muted"
     >
       + {children}
     </button>

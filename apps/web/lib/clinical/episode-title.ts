@@ -13,10 +13,11 @@ export function normalizeEpisodeTitle(raw: string): string {
 }
 
 /**
- * Default title for a one-click "+ New Episode": "<word> — dd/mm/yyyy" in the
- * clinic's Lisbon calendar day, e.g. "Episódio — 08/06/2026". `word` is the
- * only localized part (an i18n string passed in); the date uses a fixed
- * dd/mm/yyyy so the result is deterministic across ICU builds and locales.
+ * Default title for a one-click "+ New Episode": "<word> (dd/mm/yyyy)" in the
+ * clinic's Lisbon calendar day, e.g. "Episódio (08/06/2026)". `word` is the only
+ * localized part (an i18n string passed in); the date uses a fixed dd/mm/yyyy so
+ * the result is deterministic across ICU builds and locales. No em/en dashes —
+ * the date is parenthesised instead.
  */
 export function defaultEpisodeTitle(word: string, now: Date): string {
   // en-CA yields a stable ISO "yyyy-mm-dd"; reorder to dd/mm/yyyy.
@@ -27,5 +28,5 @@ export function defaultEpisodeTitle(word: string, now: Date): string {
     timeZone: LISBON_TZ,
   }).format(now);
   const [y, m, d] = iso.split("-");
-  return `${word} — ${d}/${m}/${y}`;
+  return `${word} (${d}/${m}/${y})`;
 }
