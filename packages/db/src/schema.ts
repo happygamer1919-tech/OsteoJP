@@ -67,6 +67,15 @@ export const aiReviewState = pgEnum("ai_review_state", [
   "rejected",
 ]);
 
+// Lifecycle of one AI ingestion request (Stream D), tracked per idempotency_key:
+// `received` (logged), `accepted` (a draft clinical_record was created),
+// `rejected` (validation/auth failed, no draft).
+export const ingestionStatus = pgEnum("ingestion_status", [
+  "received",
+  "accepted",
+  "rejected",
+]);
+
 export const invoiceStatus = pgEnum("invoice_status", [
   "draft",
   "issued",
@@ -552,6 +561,43 @@ export const attachments = pgTable(
   (t) => [
     index("attachments_tenant_idx").on(t.tenantId),
     index("attachments_record_idx").on(t.clinicalRecordId),
+  ],
+);
+
+// AI ingestion request log (Stream D). One row per request from the AI partner,
+// keyed by the partner's idempotency_key. The unique (tenant_id, idempotency_key)
+// constraint is what lets the future endpoint do 24h dedupe (same key + same
+// payload_hash -> replay the prior result) and 409-on-mismatch (same key,
+// different payload_hash). Writes come from the ingestion job as service_role
+// (BYPASSRLS); RLS keeps rows tenant-scoped and fail-closed for the authenticated
+// review queue. No app/endpoint code in this PR — schema only.
+export const aiIngestionRequests = pgTable(
+  "ai_ingestion_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestId: text("request_id").notNull(), // partner-supplied correlation id
+    payloadHash: text("payload_hash").notNull(), // hash of the canonical payload, for mismatch detection
+    // The draft clinical_record created from this request. Null until/unless a
+    // draft is produced (e.g. a rejected request). FK is NO ACTION on delete —
+    // clinical_records are immutable and never deleted.
+    clinicalRecordId: uuid("clinical_record_id").references(() => clinicalRecords.id),
+    status: ingestionStatus("status").notNull().default("received"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    // Dedupe / 409 key: one ingestion row per (tenant, idempotency_key).
+    unique("ai_ingestion_requests_tenant_idempotency_uq").on(t.tenantId, t.idempotencyKey),
+    index("ai_ingestion_requests_tenant_idx").on(t.tenantId),
+    index("ai_ingestion_requests_tenant_status_idx").on(t.tenantId, t.status),
+    index("ai_ingestion_requests_record_idx").on(t.clinicalRecordId),
   ],
 );
 
