@@ -44,6 +44,29 @@ test("search by name narrows the patient list", async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
+// 2b. Search by NIF (prefix match) — seeded "Maria Silva" has NIF 123456789.
+// searchPatients() matches patients.nif as a prefix on the digits of `q`.
+// ---------------------------------------------------------------------------
+test("search by NIF returns the matching patient", async ({ page }) => {
+  await goToPatients(page);
+  await page.getByRole("searchbox").fill("123456789");
+  await page.waitForURL(/q=123456789/);
+  await expect(page.getByText("Maria Silva")).toBeVisible({ timeout: 8_000 });
+});
+
+// ---------------------------------------------------------------------------
+// 2c. Search by phone — seeded "Maria Silva" has phone "+351 912 345 678".
+// searchPatients() strips non-digits from the column and from `q`, then does a
+// substring match, so the national-number fragment must resolve to her row.
+// ---------------------------------------------------------------------------
+test("search by phone returns the matching patient", async ({ page }) => {
+  await goToPatients(page);
+  await page.getByRole("searchbox").fill("912345678");
+  await page.waitForURL(/q=912345678/);
+  await expect(page.getByText("Maria Silva")).toBeVisible({ timeout: 8_000 });
+});
+
+// ---------------------------------------------------------------------------
 // 3. Search with no results
 // ---------------------------------------------------------------------------
 test("search with no results shows empty state message", async ({ page }) => {
