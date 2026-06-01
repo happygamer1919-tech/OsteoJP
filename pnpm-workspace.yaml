@@ -8,3 +8,12 @@ allowBuilds:
   protobufjs: false
   sharp: true
   unrs-resolver: true
+
+# Pin a single Playwright across the workspace. apps/web (@playwright/test, E2E)
+# and packages/ui (playwright + @vitest/browser-playwright, component tests) each
+# pull Playwright; without this they can drift to different versions, yielding two
+# playwright-core copies and mismatched browser binaries. Keep all three in lockstep.
+overrides:
+  playwright: 1.60.0
+  playwright-core: 1.60.0
+  '@playwright/test': 1.60.0

@@ -21,7 +21,7 @@
  */
 
 import { test, expect } from "@playwright/test";
-import { createPatient, fillPatientForm, goToPatients } from "../helpers";
+import { createPatient, fillPatientForm, goToPatients } from "./helpers";
 
 // ---------------------------------------------------------------------------
 // 1. Patient list loads

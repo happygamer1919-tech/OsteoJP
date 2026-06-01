@@ -20,7 +20,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { goToAdmin } from "../helpers";
+import { goToAdmin } from "./helpers";
 
 // ---------------------------------------------------------------------------
 // 1. Admin panel loads
