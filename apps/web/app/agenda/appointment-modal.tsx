@@ -274,6 +274,9 @@ export function AppointmentModal({
 
   const therapistConflicts = conflicts?.filter((c) => c.kind === "therapist") ?? [];
   const roomConflicts = conflicts?.filter((c) => c.kind === "room") ?? [];
+  const availabilityConflicts =
+    conflicts?.filter((c) => c.kind === "availability") ?? [];
+  const timeOffConflicts = conflicts?.filter((c) => c.kind === "time_off") ?? [];
 
   return (
     <div
@@ -487,6 +490,20 @@ export function AppointmentModal({
                   items={roomConflicts}
                 />
               )}
+              {availabilityConflicts.length > 0 && (
+                <ConflictBlock
+                  heading={s["agenda.conflictAvailability"]}
+                  detail={s["appointment.conflictAvailabilityDetail"]}
+                  items={availabilityConflicts}
+                />
+              )}
+              {timeOffConflicts.length > 0 && (
+                <ConflictBlock
+                  heading={s["agenda.conflictTimeOff"]}
+                  detail={s["appointment.conflictTimeOffDetail"]}
+                  items={timeOffConflicts}
+                />
+              )}
             </div>
           )}
 
@@ -529,6 +546,13 @@ export function AppointmentModal({
   );
 }
 
+const TIME_OFF_REASON_KEY: Record<string, StringKey> = {
+  vacation: "appointment.timeOffReasonVacation",
+  sick: "appointment.timeOffReasonSick",
+  holiday: "appointment.timeOffReasonHoliday",
+  other: "appointment.timeOffReasonOther",
+};
+
 function ConflictBlock({
   heading,
   detail,
@@ -544,13 +568,17 @@ function ConflictBlock({
         ⚠ {heading}: {detail}
       </p>
       <ul className="mt-1 list-disc pl-5 text-xs">
-        {items.map((c) => (
-          <li key={`${c.kind}:${c.id}`}>
-            {c.patientName}
-            {c.room ? ` · ${c.room}` : ""}: {formatInstantTime(new Date(c.startsAt), locale)}–
-            {formatInstantTime(new Date(c.endsAt), locale)}
-          </li>
-        ))}
+        {items.map((c) => {
+          // therapist/room → patient name; time_off → reason; availability → none.
+          const lead =
+            c.patientName ??
+            (c.reason ? s[TIME_OFF_REASON_KEY[c.reason] ?? "appointment.timeOffReasonOther"] : null);
+          const prefix = [lead, c.room].filter(Boolean).join(" · ");
+          const time = `${formatInstantTime(new Date(c.startsAt), locale)}–${formatInstantTime(new Date(c.endsAt), locale)}`;
+          return (
+            <li key={`${c.kind}:${c.id}`}>{prefix ? `${prefix}: ${time}` : time}</li>
+          );
+        })}
       </ul>
     </div>
   );
