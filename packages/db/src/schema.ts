@@ -24,6 +24,7 @@ import {
   integer,
   smallint,
   jsonb,
+  char,
   date,
   time,
   timestamp,
@@ -206,6 +207,42 @@ export const services = pgTable(
   (t) => [
     index("services_tenant_idx").on(t.tenantId),
     index("services_tenant_location_idx").on(t.tenantId, t.locationId),
+  ],
+);
+
+// Stream F — per-location service pricing. This is an OVERRIDE layer over
+// services.price_cents (the base/catalog price): when a row exists here for a
+// (service, location) pair it wins for that location; otherwise the location
+// inherits services.price_cents. Lets a clinic price the same service
+// differently per location without duplicating the catalog. is_active toggles
+// an override off (falling back to the base) without deleting it.
+export const serviceLocationPrices = pgTable(
+  "service_location_prices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    serviceId: uuid("service_id")
+      .notNull()
+      .references(() => services.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    priceCents: integer("price_cents").notNull(), // minor units (cents), never float
+    currency: char("currency", { length: 3 }).notNull().default("EUR"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One price row per (tenant, service, location).
+    unique("service_location_prices_tenant_service_location_uq").on(
+      t.tenantId,
+      t.serviceId,
+      t.locationId,
+    ),
+    index("service_location_prices_tenant_location_idx").on(t.tenantId, t.locationId),
+    check("service_location_prices_price_nonneg", sql`${t.priceCents} >= 0`),
   ],
 );
 

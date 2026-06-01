@@ -12,7 +12,7 @@ import { appointments, type DbTx } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { clientIp } from "./actor";
 import { writeAppointmentAudit } from "./audit";
-import { findConflicts } from "./conflict";
+import { findConflicts, findConflictsForWindow } from "./conflict";
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
 import { lisbonDateTimeToUtc, lisbonParts } from "./time";
@@ -142,7 +142,7 @@ async function collectConflicts(
 ): Promise<ConflictInfo[]> {
   const conflicts: ConflictInfo[] = [];
   for (const w of windows) {
-    const c = await findConflicts(tx, {
+    const c = await findConflictsForWindow(tx, {
       practitionerId: fixed.practitionerId,
       locationId: fixed.locationId,
       room: fixed.room,
@@ -411,7 +411,7 @@ export async function rescheduleAppointment(
         if (!input.allowConflict) {
           const conflicts: ConflictInfo[] = [];
           for (const t of targets) {
-            const c = await findConflicts(tx, {
+            const c = await findConflictsForWindow(tx, {
               practitionerId: input.practitionerId,
               locationId: input.locationId,
               room: t.room,
