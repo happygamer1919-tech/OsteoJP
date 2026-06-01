@@ -1,8 +1,15 @@
-@import "tailwindcss";
+/* Brand tokens (docs/brand-tokens.md) live in @osteojp/ui/theme.css; importing
+   it here pulls in Tailwind plus the OsteoJP @theme so every screen can use the
+   brand palette. */
+@import "@osteojp/ui/theme.css";
 
+/* Drive the global background/foreground from the brand tokens: the page
+   background is the brand light neutral (`bg` = #F7F9FB), never pure white or
+   the create-next-app dark default. Set once here so every screen inherits it
+   rather than each page setting its own. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: var(--color-bg);
+  --foreground: var(--color-text-primary);
 }
 
 @theme inline {
@@ -10,13 +17,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
