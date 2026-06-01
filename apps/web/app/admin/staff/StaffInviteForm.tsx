@@ -52,15 +52,15 @@ export function StaffInviteForm({
       </button>
 
       {state.ok && state.tempPassword && (
-        <div className="rounded border border-green-700 bg-green-50 p-3 text-sm">
-          <p className="font-medium text-green-800">{s["admin.staff.invited"]}</p>
+        <div className="rounded border border-success bg-success-bg p-3 text-sm">
+          <p className="font-medium text-success">{s["admin.staff.invited"]}</p>
           <p className="mt-1">{s["admin.staff.tempPasswordNotice"]}</p>
-          <code className="mt-1 block break-all rounded bg-white px-2 py-1 font-mono">
+          <code className="mt-1 block break-all rounded bg-surface px-2 py-1 font-mono">
             {state.tempPassword}
           </code>
         </div>
       )}
-      {errorText && <p className="text-sm text-red-700">{errorText}</p>}
+      {errorText && <p className="text-sm text-error">{errorText}</p>}
     </form>
   );
 }

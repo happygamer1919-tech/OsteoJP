@@ -44,7 +44,7 @@ Reference site: https://osteojp.pt — brand and tone source of truth.
 |---|---|---|---|
 | View any patient | ✓ | ✓ (own only) | ✓ |
 | View clinical records | ✓ | ✓ (own patients only) | ✗ |
-| Edit clinical records | ✓ | ✓ (own, until locked) | ✗ |
+| Edit clinical records | ✗ (read only) | ✓ (own, until locked) | ✗ |
 | Schedule appointments | ✓ | ✓ (own calendar) | ✓ |
 | Issue invoices | ✓ | ✗ | ✓ |
 | Manage users/roles | ✓ | ✗ | ✗ |

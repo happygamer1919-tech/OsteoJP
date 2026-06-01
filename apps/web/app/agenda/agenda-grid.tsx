@@ -6,7 +6,7 @@ import {
   DAY_START_HOUR,
   daySlots,
   formatDayHeader,
-  formatInstantTime,
+  formatTimeOfDay,
   lisbonMinutesFromMidnight,
   lisbonParts,
   slotLabel,
@@ -22,11 +22,11 @@ const SLOT_HEIGHT = 48; // px per 30-min slot
 const DAY_START_MIN = DAY_START_HOUR * 60;
 
 const STATUS_STYLE: Record<AppointmentStatusValue, string> = {
-  scheduled: "border-[#45B9A7] bg-[#E6F4EE] text-[#1A2733]",
-  confirmed: "border-[#2F8F6B] bg-[#E6F4EE] text-[#1A2733]",
-  completed: "border-[#98B2C2] bg-[#F0F3F6] text-[#56697A]",
-  cancelled: "border-[#C7D1DA] bg-[#F0F3F6] text-[#8A98A6] line-through opacity-70",
-  no_show: "border-[#B47A14] bg-[#FBF1DD] text-[#1A2733]",
+  scheduled: "border-brand-teal bg-success-bg text-text-primary",
+  confirmed: "border-success bg-success-bg text-text-primary",
+  completed: "border-brand-grey bg-surface-muted text-text-secondary",
+  cancelled: "border-border-strong bg-surface-muted text-text-muted line-through opacity-70",
+  no_show: "border-warning bg-warning-bg text-text-primary",
 };
 
 /** Same room (case-insensitive) at the same location — the room-conflict key. */
@@ -92,17 +92,17 @@ export function AgendaGrid({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-[#E2E8EE] bg-white">
+    <div className="overflow-hidden rounded-lg border border-border bg-surface">
       {/* Column headers */}
       <div
-        className="grid border-b border-[#E2E8EE]"
+        className="grid border-b border-border"
         style={{ gridTemplateColumns: `64px repeat(${dates.length}, 1fr)` }}
       >
-        <div className="border-r border-[#E2E8EE]" />
+        <div className="border-r border-border" />
         {dates.map((d) => (
           <div
             key={d}
-            className="border-r border-[#E2E8EE] px-2 py-2 text-center text-sm font-medium text-[#1A2733]"
+            className="border-r border-border px-2 py-2 text-center text-sm font-medium text-text-primary"
           >
             {formatDayHeader(d, locale)}
           </div>
@@ -115,14 +115,14 @@ export function AgendaGrid({
         style={{ gridTemplateColumns: `64px repeat(${dates.length}, 1fr)` }}
       >
         {/* Time gutter */}
-        <div className="border-r border-[#E2E8EE]" style={{ height: totalHeight }}>
+        <div className="border-r border-border" style={{ height: totalHeight }}>
           {slots.map((m) => (
             <div
               key={m}
-              className="relative border-b border-[#F0F3F6] pr-2 text-right text-xs text-[#8A98A6]"
+              className="relative border-b border-surface-muted pr-2 text-right text-xs text-text-muted"
               style={{ height: SLOT_HEIGHT }}
             >
-              <span className="absolute right-2 -top-1.5 bg-white px-0.5">
+              <span className="absolute right-2 -top-1.5 bg-surface px-0.5">
                 {slotLabel(m)}
               </span>
             </div>
@@ -133,7 +133,7 @@ export function AgendaGrid({
         {dates.map((d) => (
           <div
             key={d}
-            className="relative border-r border-[#E2E8EE]"
+            className="relative border-r border-border"
             style={{ height: totalHeight }}
           >
             {/* Clickable empty slots */}
@@ -143,7 +143,7 @@ export function AgendaGrid({
                 type="button"
                 aria-label={`${formatDayHeader(d, locale)} ${slotLabel(m)}`}
                 onClick={() => onSelectSlot(d, slotLabel(m))}
-                className="absolute inset-x-0 border-b border-[#F0F3F6] hover:bg-[#F0F3F6]"
+                className="absolute inset-x-0 border-b border-surface-muted hover:bg-surface-muted"
                 style={{ top: (m - DAY_START_MIN) / 30 * SLOT_HEIGHT, height: SLOT_HEIGHT }}
               />
             ))}
@@ -163,7 +163,7 @@ export function AgendaGrid({
       </div>
 
       {appointments.length === 0 && (
-        <p className="border-t border-[#E2E8EE] px-4 py-6 text-center text-sm text-[#8A98A6]">
+        <p className="border-t border-border px-4 py-6 text-center text-sm text-text-muted">
           {s["agenda.noAppointments"]}
         </p>
       )}
@@ -193,18 +193,18 @@ function AppointmentBlock({
       type="button"
       onClick={onClick}
       className={`absolute inset-x-1 overflow-hidden rounded border px-1.5 py-1 text-left text-xs leading-tight ${STATUS_STYLE[appt.status]} ${
-        conflicting ? "ring-2 ring-[#B23A3A]" : ""
+        conflicting ? "ring-2 ring-error" : ""
       }`}
       style={{ top, height }}
     >
       {conflicting && (
-        <span className="block font-semibold uppercase text-[#B23A3A]">
+        <span className="block font-semibold uppercase text-error">
           {s["agenda.conflict"]}
         </span>
       )}
       <span className="block font-medium">
         {(appt.recurrenceRule || appt.recurrenceParentId) && (
-          <span className="mr-0.5 text-[#8B1863]" title={s["appointment.recurring"]}>
+          <span className="mr-0.5 text-brand-magenta" title={s["appointment.recurring"]}>
             ⟳
           </span>
         )}
@@ -212,8 +212,8 @@ function AppointmentBlock({
       </span>
       {appt.serviceName && <span className="block">{appt.serviceName}</span>}
       <span className="block text-[10px] opacity-80">
-        {formatInstantTime(new Date(appt.startsAt), locale)}–
-        {formatInstantTime(new Date(appt.endsAt), locale)}
+        {formatTimeOfDay(new Date(appt.startsAt))}-
+        {formatTimeOfDay(new Date(appt.endsAt))}
       </span>
     </button>
   );

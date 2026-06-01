@@ -35,7 +35,7 @@ export default async function EpisodePage({
 
   return (
     <section className="max-w-3xl space-y-5">
-      <Link href={`/patients/${episode.patientId}`} className="text-sm text-[#3DAEB3]">
+      <Link href={`/patients/${episode.patientId}`} className="text-sm text-brand-teal">
         ← {s["clinical.episodeBackToPatient"]}
       </Link>
 
@@ -46,8 +46,8 @@ export default async function EpisodePage({
             <span
               className={`rounded px-2 py-0.5 text-xs font-medium ${
                 episode.status === "open"
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "bg-zinc-100 text-zinc-600"
+                  ? "bg-success-bg text-success"
+                  : "bg-surface-muted text-text-secondary"
               }`}
             >
               {episode.status === "open"
@@ -55,7 +55,7 @@ export default async function EpisodePage({
                 : s["clinical.episodeStatusClosed"]}
             </span>
           </div>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="mt-1 text-sm text-text-secondary">
             {episode.patientName} · {s["clinical.episodeOpened"]} {openedLabel}
             {episode.primaryPractitionerName
               ? ` · ${s["clinical.episodePractitioner"]}: ${episode.primaryPractitionerName}`
@@ -65,7 +65,7 @@ export default async function EpisodePage({
         {canAuthor && (
           <Link
             href={newRecordHref}
-            className="rounded border border-[#3DAEB3] px-3 py-1.5 text-sm font-medium text-[#3DAEB3] hover:bg-[#EAF7F6]"
+            className="rounded border border-brand-teal px-3 py-1.5 text-sm font-medium text-brand-teal hover:bg-surface-muted"
           >
             + {s["clinical.episodeAddRecord"]}
           </Link>
@@ -73,11 +73,11 @@ export default async function EpisodePage({
       </div>
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold text-zinc-700">
+        <h3 className="mb-2 text-sm font-semibold text-text-primary">
           {s["clinical.episodeRecords"]}
         </h3>
         {episode.records.length === 0 ? (
-          <p className="text-sm text-zinc-500">{s["clinical.episodeNoRecords"]}</p>
+          <p className="text-sm text-text-secondary">{s["clinical.episodeNoRecords"]}</p>
         ) : (
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -92,7 +92,7 @@ export default async function EpisodePage({
             <tbody>
               {episode.records.map((r) => (
                 <tr key={r.id} className="border-b">
-                  <td className="py-2 pr-4">{r.templateTitle?.[locale] ?? "—"}</td>
+                  <td className="py-2 pr-4">{r.templateTitle?.[locale] ?? "-"}</td>
                   <td className="py-2 pr-4">{statusLabel(r.status)}</td>
                   <td className="py-2 pr-4">{r.version}</td>
                   <td className="py-2 pr-4">

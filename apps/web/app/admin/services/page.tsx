@@ -50,7 +50,7 @@ export default async function ServicesPage({
       <h2 className="text-base font-semibold">{s["admin.services.title"]}</h2>
 
       {banner && (
-        <p className={`text-sm ${banner.ok ? "text-green-700" : "text-red-700"}`}>
+        <p className={`text-sm ${banner.ok ? "text-success" : "text-error"}`}>
           {banner.text}
         </p>
       )}
@@ -90,7 +90,7 @@ export default async function ServicesPage({
                     <input name="name" defaultValue={svc.name} required className="rounded border px-2 py-1 text-sm" />
                     <input name="durationMin" type="number" min={1} defaultValue={svc.durationMin} required className="w-20 rounded border px-2 py-1 text-sm" />
                     <input name="price" type="text" inputMode="decimal" defaultValue={euros(svc.priceCents)} placeholder="0.00" className="w-24 rounded border px-2 py-1 text-sm" />
-                    <span className="text-xs text-neutral-500">
+                    <span className="text-xs text-text-secondary">
                       {svc.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
                     </span>
                     <button type="submit" className="rounded border px-2 py-1 text-sm">
@@ -111,11 +111,11 @@ export default async function ServicesPage({
               <tr className="border-b">
                 <td colSpan={5} className="pb-3 pr-4">
                   <details className="text-sm">
-                    <summary className="cursor-pointer text-xs text-neutral-600">
+                    <summary className="cursor-pointer text-xs text-text-secondary">
                       {s["admin.services.locationPrices"]}
                     </summary>
                     {activeLocations.length === 0 ? (
-                      <p className="mt-2 text-xs text-neutral-500">
+                      <p className="mt-2 text-xs text-text-secondary">
                         {s["admin.services.noLocations"]}
                       </p>
                     ) : (
@@ -124,7 +124,7 @@ export default async function ServicesPage({
                         className="mt-2 flex flex-wrap items-end gap-3"
                       >
                         <input type="hidden" name="serviceId" value={svc.id} />
-                        <p className="w-full text-xs text-neutral-500">
+                        <p className="w-full text-xs text-text-secondary">
                           {s["admin.services.basePrice"]}:{" "}
                           {svc.priceCents === null
                             ? s["admin.services.noBasePrice"]
@@ -144,7 +144,7 @@ export default async function ServicesPage({
                                 placeholder={euros(svc.priceCents) || "0.00"}
                                 className="w-24 rounded border px-2 py-1 text-sm"
                               />
-                              <span className="block text-xs text-neutral-500">
+                              <span className="block text-xs text-text-secondary">
                                 {override === null
                                   ? s["admin.services.usesBasePrice"]
                                   : `${s["admin.services.effective"]}: ${euros(effective)}`}

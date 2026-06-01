@@ -13,13 +13,13 @@ const CARDS = [
 export default function AdminOverviewPage() {
   return (
     <section className="space-y-4">
-      <p className="text-sm text-neutral-600">{s["admin.overview.intro"]}</p>
+      <p className="text-sm text-text-secondary">{s["admin.overview.intro"]}</p>
       <ul className="grid gap-3 sm:grid-cols-2 max-w-2xl">
         {CARDS.map((c) => (
           <li key={c.href}>
             <Link
               href={c.href}
-              className="block rounded border px-4 py-3 text-sm font-medium hover:bg-neutral-50"
+              className="block rounded border px-4 py-3 text-sm font-medium hover:bg-surface-muted"
             >
               {c.label}
             </Link>

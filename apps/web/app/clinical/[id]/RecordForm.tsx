@@ -49,13 +49,13 @@ export function RecordForm({
       <input type="hidden" name="data" value={JSON.stringify(data)} />
 
       {state.code && !state.ok && (
-        <p className="text-sm text-red-700">
+        <p className="text-sm text-error">
           {state.code === "validation" ? s["clinical.validationFailed"]
             : state.code === "finalized" ? s["clinical.finalized"]
             : s["clinical.error"]}
         </p>
       )}
-      {state.ok && <p className="text-sm text-green-700">{s["clinical.saved"]}</p>}
+      {state.ok && <p className="text-sm text-success">{s["clinical.saved"]}</p>}
 
       {topLevelFields(schema).map(([key, field]) => {
         const widget = widgetOf(key, field);
@@ -67,9 +67,9 @@ export function RecordForm({
           <div key={key} className="space-y-1">
             <label className="block text-sm font-medium">
               {label}
-              {isRequired && <span className="text-red-600"> *</span>}
+              {isRequired && <span className="text-error"> *</span>}
             </label>
-            {hint && <p className="text-xs text-neutral-500">{hint}</p>}
+            {hint && <p className="text-xs text-text-secondary">{hint}</p>}
 
             <FieldWidget
               widget={widget}
@@ -79,7 +79,7 @@ export function RecordForm({
               onChange={(v) => setField(key, v)}
             />
 
-            {err && <p className="text-xs text-red-700">{s["clinical.required"]}</p>}
+            {err && <p className="text-xs text-error">{s["clinical.required"]}</p>}
           </div>
         );
       })}
@@ -110,7 +110,7 @@ function FieldWidget({
   readOnly: boolean;
   onChange: (v: unknown) => void;
 }) {
-  const baseInput = "block w-full rounded border px-2 py-1.5 text-sm disabled:bg-neutral-100";
+  const baseInput = "block w-full rounded border px-2 py-1.5 text-sm disabled:bg-surface-muted";
 
   switch (widget) {
     case "textarea":
@@ -176,7 +176,7 @@ function FieldWidget({
             if (isText) {
               return (
                 <label key={sub} className="col-span-2 flex flex-col gap-1 text-sm sm:col-span-3">
-                  <span className="text-xs text-neutral-600">{subLabel}</span>
+                  <span className="text-xs text-text-secondary">{subLabel}</span>
                   <input
                     type="text"
                     disabled={readOnly}
@@ -209,7 +209,7 @@ function FieldWidget({
         <div className="space-y-2 border-l pl-3">
           {Object.entries(props).map(([sub, subField]) => (
             <label key={sub} className="block space-y-1">
-              <span className="text-xs text-neutral-600">{labelOf(subField, locale, sub)}</span>
+              <span className="text-xs text-text-secondary">{labelOf(subField, locale, sub)}</span>
               <textarea
                 rows={2}
                 disabled={readOnly}

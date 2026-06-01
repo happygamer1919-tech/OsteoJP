@@ -24,7 +24,7 @@ export default async function SettingsPage({
       <h2 className="text-base font-semibold">{s["admin.settings.title"]}</h2>
 
       {banner && (
-        <p className={`text-sm ${banner.ok ? "text-green-700" : "text-red-700"}`}>
+        <p className={`text-sm ${banner.ok ? "text-success" : "text-error"}`}>
           {banner.text}
         </p>
       )}

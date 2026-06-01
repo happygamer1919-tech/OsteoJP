@@ -28,7 +28,7 @@ export default async function LocationsPage({
       <h2 className="text-base font-semibold">{s["admin.locations.title"]}</h2>
 
       {banner && (
-        <p className={`text-sm ${banner.ok ? "text-green-700" : "text-red-700"}`}>
+        <p className={`text-sm ${banner.ok ? "text-success" : "text-error"}`}>
           {banner.text}
         </p>
       )}
@@ -67,7 +67,7 @@ export default async function LocationsPage({
                   <input name="name" defaultValue={loc.name} required className="rounded border px-2 py-1 text-sm" />
                   <input name="address" defaultValue={loc.address ?? ""} className="w-56 rounded border px-2 py-1 text-sm" />
                   <input name="phone" defaultValue={loc.phone ?? ""} className="w-36 rounded border px-2 py-1 text-sm" />
-                  <span className="text-xs text-neutral-500">
+                  <span className="text-xs text-text-secondary">
                     {loc.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
                   </span>
                   <button type="submit" className="rounded border px-2 py-1 text-sm">
