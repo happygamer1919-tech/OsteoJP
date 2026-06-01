@@ -36,6 +36,13 @@
       "when": 1780078966252,
       "tag": "0004_clinical_record_supersedes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780319877795,
+      "tag": "0005_patient_merge_multilocation",
+      "breakpoints": true
     }
   ]
 }
