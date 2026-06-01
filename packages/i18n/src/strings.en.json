@@ -1,16 +1,13 @@
 {
   "app.name": "OsteoJP",
-
   "nav.dashboard": "Home",
   "nav.agenda": "Agenda",
   "nav.patients": "Patients",
   "nav.clinical": "Clinical Records",
   "nav.admin": "Administration",
   "nav.invoicing": "Invoicing",
-
   "header.location": "Location",
   "header.userMenu": "User menu",
-
   "common.save": "Save",
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
@@ -25,13 +22,11 @@
   "common.signIn": "Sign in",
   "common.signOut": "Sign out",
   "common.settings": "Settings",
-
   "dashboard.upcomingToday": "Today's Upcoming Appointments",
   "dashboard.quickActions": "Quick Actions",
   "dashboard.todayStats": "Today's Statistics",
   "dashboard.recentActivity": "Recent Activity",
   "dashboard.dailyRevenue": "Daily revenue",
-
   "agenda.viewDay": "Day",
   "agenda.viewWeek": "Week",
   "agenda.filterTherapists": "Therapists",
@@ -48,7 +43,6 @@
   "agenda.noAppointments": "No appointments in this period",
   "agenda.conflictTherapist": "Therapist conflict",
   "agenda.conflictRoom": "Room conflict",
-
   "patients.back": "Back",
   "patients.editRecord": "Edit Record",
   "patients.newAppointment": "New Appointment",
@@ -82,6 +76,10 @@
   "patients.fieldFullName": "Full name",
   "patients.fieldDateOfBirth": "Date of birth",
   "patients.fieldSex": "Biological sex",
+  "patients.sexMale": "Male",
+  "patients.sexFemale": "Female",
+  "patients.sexOther": "Other",
+  "patients.sexNotSpecified": "Not specified",
   "patients.fieldNif": "NIF",
   "patients.fieldEmail": "Email",
   "patients.fieldPhone": "Phone",
@@ -94,7 +92,6 @@
   "patients.noEpisodes": "No episodes yet.",
   "patients.noPayments": "No pending payments.",
   "patients.saving": "Saving…",
-
   "clinicalRecord.newEpisode": "New Episode",
   "clinicalRecord.save": "Save",
   "clinicalRecord.saveEpisode": "Save Episode",
@@ -126,7 +123,6 @@
   "clinicalRecord.observations": "Observations",
   "clinicalRecord.privateNotes": "Private Notes",
   "clinicalRecord.privateNotesHint": "Not shared with other users",
-
   "appointment.newTitle": "New Appointment",
   "appointment.editTitle": "Edit Appointment",
   "appointment.close": "Close",
@@ -178,7 +174,6 @@
   "errors.forbidden": "You don't have permission for this action.",
   "errors.generic": "Something went wrong. Please try again.",
   "errors.unauthenticated": "Your session expired. Please sign in again.",
-
   "invoicing.title": "Invoicing",
   "invoicing.newInvoice": "New Invoice",
   "invoicing.filterStatus": "Status",
@@ -196,7 +191,6 @@
   "invoicing.totalPending": "Pending",
   "invoicing.totalOverdue": "Overdue",
   "invoicing.integrationNote": "Issued via InvoiceXpress · payment via IfThenPay/Stripe",
-
   "admin.title": "Administration",
   "admin.nav.overview": "Overview",
   "admin.nav.settings": "Clinic Settings",
@@ -204,7 +198,6 @@
   "admin.nav.services": "Services",
   "admin.nav.locations": "Locations",
   "admin.overview.intro": "Manage clinic, staff, services and locations.",
-
   "admin.settings.title": "Clinic Settings",
   "admin.settings.clinicName": "Clinic name",
   "admin.settings.nif": "Tax ID (NIF)",
@@ -213,7 +206,6 @@
   "admin.settings.address": "Address",
   "admin.settings.saved": "Settings saved.",
   "admin.settings.error": "Could not save settings.",
-
   "admin.staff.title": "Staff",
   "admin.staff.colName": "Name",
   "admin.staff.colEmail": "Email",
@@ -236,12 +228,10 @@
   "admin.staff.lastOwnerBlocked": "The clinic must keep at least one active owner.",
   "admin.staff.ownerTierBlocked": "Only an owner can assign or change the owner role.",
   "admin.staff.error": "The operation failed.",
-
   "admin.role.owner": "Owner",
   "admin.role.admin": "Administrator",
   "admin.role.therapist": "Therapist",
   "admin.role.reception": "Reception",
-
   "admin.services.title": "Services",
   "admin.services.name": "Name",
   "admin.services.duration": "Duration (min)",
@@ -252,7 +242,6 @@
   "admin.services.restore": "Restore",
   "admin.services.saved": "Service saved.",
   "admin.services.error": "Could not save the service.",
-
   "admin.locations.title": "Locations",
   "admin.locations.name": "Name",
   "admin.locations.address": "Address",
@@ -263,7 +252,6 @@
   "admin.locations.restore": "Restore",
   "admin.locations.saved": "Location saved.",
   "admin.locations.error": "Could not save the location.",
-
   "clinical.title": "Clinical Records",
   "clinical.new": "New Record",
   "clinical.newTitle": "New Clinical Record",

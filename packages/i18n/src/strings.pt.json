@@ -1,16 +1,13 @@
 {
   "app.name": "OsteoJP",
-
   "nav.dashboard": "Início",
   "nav.agenda": "Agenda",
   "nav.patients": "Pacientes",
   "nav.clinical": "Fichas Clínicas",
   "nav.admin": "Administração",
   "nav.invoicing": "Faturação",
-
   "header.location": "Localização",
   "header.userMenu": "Menu de utilizador",
-
   "common.save": "Guardar",
   "common.cancel": "Cancelar",
   "common.confirm": "Confirmar",
@@ -25,13 +22,11 @@
   "common.signIn": "Iniciar sessão",
   "common.signOut": "Terminar sessão",
   "common.settings": "Definições",
-
   "dashboard.upcomingToday": "Próximas Consultas Hoje",
   "dashboard.quickActions": "Ações Rápidas",
   "dashboard.todayStats": "Estatísticas de Hoje",
   "dashboard.recentActivity": "Atividade Recente",
   "dashboard.dailyRevenue": "Receita do dia",
-
   "agenda.viewDay": "Dia",
   "agenda.viewWeek": "Semana",
   "agenda.filterTherapists": "Terapeutas",
@@ -48,7 +43,6 @@
   "agenda.noAppointments": "Sem marcações neste período",
   "agenda.conflictTherapist": "Conflito de terapeuta",
   "agenda.conflictRoom": "Conflito de sala",
-
   "patients.back": "Voltar",
   "patients.editRecord": "Editar Ficha",
   "patients.newAppointment": "Nova Marcação",
@@ -82,6 +76,10 @@
   "patients.fieldFullName": "Nome completo",
   "patients.fieldDateOfBirth": "Data de nascimento",
   "patients.fieldSex": "Sexo",
+  "patients.sexMale": "Masculino",
+  "patients.sexFemale": "Feminino",
+  "patients.sexOther": "Outro",
+  "patients.sexNotSpecified": "Não especificado",
   "patients.fieldNif": "NIF",
   "patients.fieldEmail": "Email",
   "patients.fieldPhone": "Telefone",
@@ -94,7 +92,6 @@
   "patients.noEpisodes": "Sem episódios registados.",
   "patients.noPayments": "Sem pagamentos pendentes.",
   "patients.saving": "A guardar…",
-
   "clinicalRecord.newEpisode": "Novo Episódio",
   "clinicalRecord.save": "Gravar",
   "clinicalRecord.saveEpisode": "Gravar Episódio",
@@ -126,7 +123,6 @@
   "clinicalRecord.observations": "Observações",
   "clinicalRecord.privateNotes": "Notas Pessoais (privadas)",
   "clinicalRecord.privateNotesHint": "Não partilhado com outros utilizadores",
-
   "appointment.newTitle": "Nova Marcação",
   "appointment.editTitle": "Editar Marcação",
   "appointment.close": "Fechar",
@@ -178,7 +174,6 @@
   "errors.forbidden": "Não tem permissão para esta ação.",
   "errors.generic": "Ocorreu um erro. Tente novamente.",
   "errors.unauthenticated": "Sessão expirada. Inicie sessão novamente.",
-
   "invoicing.title": "Faturação",
   "invoicing.newInvoice": "Nova Fatura",
   "invoicing.filterStatus": "Estado",
@@ -196,7 +191,6 @@
   "invoicing.totalPending": "Pendente",
   "invoicing.totalOverdue": "Vencido",
   "invoicing.integrationNote": "Emissão via InvoiceXpress · pagamento via IfThenPay/Stripe",
-
   "admin.title": "Administração",
   "admin.nav.overview": "Resumo",
   "admin.nav.settings": "Definições da Clínica",
@@ -204,7 +198,6 @@
   "admin.nav.services": "Serviços",
   "admin.nav.locations": "Locais",
   "admin.overview.intro": "Gestão da clínica, equipa, serviços e locais.",
-
   "admin.settings.title": "Definições da Clínica",
   "admin.settings.clinicName": "Nome da clínica",
   "admin.settings.nif": "NIF",
@@ -213,7 +206,6 @@
   "admin.settings.address": "Morada",
   "admin.settings.saved": "Definições guardadas.",
   "admin.settings.error": "Não foi possível guardar as definições.",
-
   "admin.staff.title": "Equipa",
   "admin.staff.colName": "Nome",
   "admin.staff.colEmail": "Email",
@@ -236,12 +228,10 @@
   "admin.staff.lastOwnerBlocked": "A clínica tem de manter pelo menos um proprietário ativo.",
   "admin.staff.ownerTierBlocked": "Apenas um proprietário pode atribuir ou alterar a função de proprietário.",
   "admin.staff.error": "A operação falhou.",
-
   "admin.role.owner": "Proprietário",
   "admin.role.admin": "Administrador",
   "admin.role.therapist": "Terapeuta",
   "admin.role.reception": "Receção",
-
   "admin.services.title": "Serviços",
   "admin.services.name": "Nome",
   "admin.services.duration": "Duração (min)",
@@ -252,7 +242,6 @@
   "admin.services.restore": "Restaurar",
   "admin.services.saved": "Serviço guardado.",
   "admin.services.error": "Não foi possível guardar o serviço.",
-
   "admin.locations.title": "Locais",
   "admin.locations.name": "Nome",
   "admin.locations.address": "Morada",
@@ -263,7 +252,6 @@
   "admin.locations.restore": "Restaurar",
   "admin.locations.saved": "Local guardado.",
   "admin.locations.error": "Não foi possível guardar o local.",
-
   "clinical.title": "Fichas Clínicas",
   "clinical.new": "Nova Ficha",
   "clinical.newTitle": "Nova Ficha Clínica",
