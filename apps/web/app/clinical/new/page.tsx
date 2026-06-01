@@ -13,7 +13,7 @@ import { createRecordAction } from "./actions";
 export default async function NewRecordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string }>;
+  searchParams: Promise<{ m?: string; patientId?: string; episodeId?: string }>;
 }) {
   const ctx = await requireRequestContext();
   // Authoring is owner/therapist only; admins can read but not create.
@@ -24,7 +24,8 @@ export default async function NewRecordPage({
     listActiveTemplates(ctx),
     listEpisodesForPicker(ctx),
   ]);
-  const { m } = await searchParams;
+  // Prefill when arriving from an episode ("+ New record in this episode").
+  const { m, patientId, episodeId } = await searchParams;
 
   return (
     <section className="max-w-xl space-y-4">
@@ -34,7 +35,7 @@ export default async function NewRecordPage({
       <form action={createRecordAction} className="space-y-3">
         <label className="block space-y-1">
           <span className="text-sm font-medium">{s["clinical.patient"]} *</span>
-          <select name="patientId" required className="block w-full rounded border px-2 py-1.5 text-sm">
+          <select name="patientId" required defaultValue={patientId ?? ""} className="block w-full rounded border px-2 py-1.5 text-sm">
             {patients.map((p) => (
               <option key={p.id} value={p.id}>{p.fullName}</option>
             ))}
@@ -54,7 +55,7 @@ export default async function NewRecordPage({
 
         <label className="block space-y-1">
           <span className="text-sm font-medium">{s["clinical.episode"]}</span>
-          <select name="episodeId" className="block w-full rounded border px-2 py-1.5 text-sm">
+          <select name="episodeId" defaultValue={episodeId ?? ""} className="block w-full rounded border px-2 py-1.5 text-sm">
             <option value="">{s["clinical.episodeNone"]}</option>
             {episodes.map((e) => (
               <option key={e.id} value={e.id}>{e.label}</option>
