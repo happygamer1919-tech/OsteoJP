@@ -1,0 +1,153 @@
+{
+  "key": "nesa",
+  "version": 1,
+  "title": {
+    "pt": "NESA — Avaliação de Episódio",
+    "en": "NESA — Episode Evaluation"
+  },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "Clinical intake form for a NESA (neuroestimulação sensitiva acupuntural) episode. NESA is a neurostimulation therapy used at OsteoJP. Field structure is based on the osteopathy episode form as the closest clinical analogue — owner must confirm whether any fields should be added, removed, or renamed for NESA specifically. ai_extractable is false on every field pending the AI-partner contract.",
+    "type": "object",
+    "required": ["episode_date", "consultation_reason"],
+    "properties": {
+      "episode_date": {
+        "type": "string",
+        "format": "date",
+        "x-label": { "pt": "Data do Episódio", "en": "Episode Date" },
+        "x-required": true,
+        "ai_extractable": false
+      },
+      "weight_kg": {
+        "type": ["number", "null"],
+        "minimum": 0,
+        "x-label": { "pt": "Peso (kg)", "en": "Weight (kg)" },
+        "ai_extractable": false
+      },
+      "height_cm": {
+        "type": ["number", "null"],
+        "minimum": 0,
+        "x-label": { "pt": "Altura (cm)", "en": "Height (cm)" },
+        "ai_extractable": false
+      },
+      "linked_appointment": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Marcação respectiva", "en": "Linked Appointment" },
+        "x-widget": "appointment_picker",
+        "ai_extractable": false
+      },
+      "cid_codes": {
+        "type": "array",
+        "items": { "type": "string" },
+        "x-label": { "pt": "Códigos CID associados", "en": "Associated ICD Codes" },
+        "ai_extractable": false
+      },
+      "health_conditions": {
+        "type": "object",
+        "x-label": { "pt": "Problemas de Saúde", "en": "Health Conditions" },
+        "x-widget": "checkbox_group",
+        "properties": {
+          "fumador":             { "type": "boolean", "x-label": { "pt": "Fumador", "en": "Smoker" } },
+          "lupus":               { "type": "boolean", "x-label": { "pt": "Lúpus", "en": "Lupus" } },
+          "depressao":          { "type": "boolean", "x-label": { "pt": "Depressão", "en": "Depression" } },
+          "gravidez":           { "type": "boolean", "x-label": { "pt": "Gravidez", "en": "Pregnancy" } },
+          "neoplasia":          { "type": "boolean", "x-label": { "pt": "Neoplasia", "en": "Neoplasia" } },
+          "epilepsia":          { "type": "boolean", "x-label": { "pt": "Epilépsia", "en": "Epilepsy" } },
+          "alergias_alimentares": { "type": "boolean", "x-label": { "pt": "Alergias Alimentares", "en": "Food Allergies" } },
+          "alergias_medicamento": { "type": "boolean", "x-label": { "pt": "Alergias Medicament.", "en": "Drug Allergies" } },
+          "osteoporose":        { "type": "boolean", "x-label": { "pt": "Osteoporose", "en": "Osteoporosis" } },
+          "demencia_alzheimer": { "type": "boolean", "x-label": { "pt": "Demência / Alzheimer", "en": "Dementia / Alzheimer" } },
+          "esclerose_multipla": { "type": "boolean", "x-label": { "pt": "Esclerose múltipla", "en": "Multiple Sclerosis" } },
+          "hipertensao":        { "type": "boolean", "x-label": { "pt": "Hipertensão", "en": "Hypertension" } },
+          "covid19":            { "type": "boolean", "x-label": { "pt": "COVID-19", "en": "COVID-19" } },
+          "anemia":             { "type": "boolean", "x-label": { "pt": "Anemia", "en": "Anaemia" } },
+          "parkinson":          { "type": "boolean", "x-label": { "pt": "Parkinson", "en": "Parkinson's" } },
+          "artrite_reumatoide": { "type": "boolean", "x-label": { "pt": "Artrite reumatóide", "en": "Rheumatoid Arthritis" } },
+          "hipotensao":         { "type": "boolean", "x-label": { "pt": "Hipotensão", "en": "Hypotension" } },
+          "diabetes":           { "type": "boolean", "x-label": { "pt": "Diabetes", "en": "Diabetes" } },
+          "problemas_respiratorios": { "type": "boolean", "x-label": { "pt": "Problemas Respira.", "en": "Respiratory Issues" } },
+          "outros":             { "type": ["string", "null"], "x-label": { "pt": "Outros", "en": "Other" }, "x-widget": "text" }
+        },
+        "ai_extractable": false
+      },
+      "red_flags": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Alertas Red Flags", "en": "Red Flags" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "consultation_reason": {
+        "type": "string",
+        "x-label": { "pt": "Motivos da Consulta / Início / Contexto em que Ocorre", "en": "Consultation Reason / Onset / Context" },
+        "x-widget": "textarea",
+        "x-required": true,
+        "ai_extractable": false
+      },
+      "relief_aggravation": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Condições Alívio / Agravamento", "en": "Relief / Aggravation Conditions" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "clinical_background": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Antecedentes Clínicos / Cirurgia / Medicação", "en": "Clinical Background / Surgery / Medication" },
+        "x-widget": "textarea",
+        "x-hint": { "pt": "Colesterol, hipertensão, ácido úrico, diabetes, quedas, acidentes vários", "en": "Cholesterol, hypertension, uric acid, diabetes, falls, other accidents" },
+        "ai_extractable": false
+      },
+      "systems_review": {
+        "type": "object",
+        "x-label": { "pt": "Anamnese por Sistemas", "en": "Systems Review" },
+        "x-widget": "section",
+        "properties": {
+          "neurologico":       { "type": ["string", "null"], "x-label": { "pt": "Neurológico", "en": "Neurological" }, "x-widget": "textarea" },
+          "cardiovascular":    { "type": ["string", "null"], "x-label": { "pt": "Cardiovascular", "en": "Cardiovascular" }, "x-widget": "textarea" },
+          "respiratorio":      { "type": ["string", "null"], "x-label": { "pt": "Respiratório", "en": "Respiratory" }, "x-widget": "textarea" },
+          "gastrointestinal":  { "type": ["string", "null"], "x-label": { "pt": "Gastrointestinal", "en": "Gastrointestinal" }, "x-widget": "textarea" },
+          "urologico_ginecologico": { "type": ["string", "null"], "x-label": { "pt": "Urológico / Ginecológico", "en": "Urological / Gynaecological" }, "x-widget": "textarea" },
+          "endocrino":         { "type": ["string", "null"], "x-label": { "pt": "Endócrino", "en": "Endocrine" }, "x-widget": "textarea" }
+        },
+        "ai_extractable": false
+      },
+      "bodychart": {
+        "type": ["object", "null"],
+        "x-label": { "pt": "Bodychart", "en": "Body Chart" },
+        "x-widget": "bodychart",
+        "ai_extractable": false
+      },
+      "treatment_goals": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Objectivos do Tratamento", "en": "Treatment Goals" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "treatment_plan": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Plano de Tratamento", "en": "Treatment Plan" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "observations": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Observações", "en": "Observations" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "private_notes": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Notas Pessoais sobre o Utente neste Episódio / Consulta", "en": "Personal Notes (this episode)" },
+        "x-widget": "textarea",
+        "x-private": true,
+        "x-note": "Este campo não é partilhado com nenhum outro utilizador da sua conta.",
+        "ai_extractable": false
+      }
+    }
+  },
+  "_meta": {
+    "source": "Derived from Fisiozero osteopathy form (closest clinical analogue). NESA confirmed as a therapy type at OsteoJP from scheduler screenshot 2026-05-25.",
+    "reviewed_by": "Max (sm33xy)",
+    "version_note": "v1 — OWNER MUST CONFIRM: (1) Is the Problemas de Saúde / Anamnese por Sistemas structure appropriate for NESA sessions, or should this use the simpler Fisioterapia structure? (2) Any NESA-specific fields to add (e.g. NESA protocol, stimulation parameters)?",
+    "pending_owner": ["NESA form field confirmation", "RPG, massagem terapêutica, pilates terapêutico forms still outstanding"]
+  }
+}
