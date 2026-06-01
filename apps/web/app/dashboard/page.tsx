@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { sql } from "drizzle-orm";
 import { patients } from "@osteojp/db";
 import { getRequestContext, runScoped } from "@/lib/auth/context";
-import { logout } from "@/app/logout/actions";
 
 export default async function DashboardPage() {
   const ctx = await getRequestContext();
@@ -21,9 +20,6 @@ export default async function DashboardPage() {
         <div><dt className="inline font-medium">Função: </dt><dd className="inline">{ctx.role}</dd></div>
         <div><dt className="inline font-medium">Pacientes visíveis: </dt><dd className="inline">{patientCount}</dd></div>
       </dl>
-      <form action={logout}>
-        <button type="submit" className="rounded border px-3 py-2 text-sm">Sair</button>
-      </form>
     </main>
   );
 }
