@@ -43,6 +43,18 @@ export function liveSendEnabled(): boolean {
   return process.env.REMINDERS_LIVE_SEND === "true";
 }
 
+/** Why a send was suppressed in dry-run. Used only for the intent log. */
+type DryRunReason = "live_send_disabled" | "missing_provider_config";
+
+/**
+ * Log the INTENT of a suppressed (dry-run) send. PII rule (#7): channel + reason
+ * only — never the recipient, subject, or body. This is the "logs intent
+ * instead of sending" behaviour that makes the default safe and observable.
+ */
+function logDryRun(channel: SendChannel, reason: DryRunReason): void {
+  console.info(`[reminders] dry-run: ${channel} not sent (${reason})`);
+}
+
 function fromEmail(): string {
   // Pending Resend domain verification — see docs/dns-records-pending.md. Never
   // hardcode a verified sender; read from env so prod can flip without a deploy.
@@ -55,7 +67,12 @@ function fromEmail(): string {
 
 export async function sendEmail(msg: EmailMessage): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY;
-  if (!liveSendEnabled() || !apiKey) {
+  if (!liveSendEnabled()) {
+    logDryRun("email", "live_send_disabled");
+    return { channel: "email", sandbox: true, id: "sandbox:email" };
+  }
+  if (!apiKey) {
+    logDryRun("email", "missing_provider_config");
     return { channel: "email", sandbox: true, id: "sandbox:email" };
   }
 
@@ -82,7 +99,12 @@ export async function sendSms(msg: SmsMessage): Promise<SendResult> {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_SMS_FROM ?? process.env.TWILIO_MESSAGING_SERVICE_SID;
-  if (!liveSendEnabled() || !sid || !token || !from) {
+  if (!liveSendEnabled()) {
+    logDryRun("sms", "live_send_disabled");
+    return { channel: "sms", sandbox: true, id: "sandbox:sms" };
+  }
+  if (!sid || !token || !from) {
+    logDryRun("sms", "missing_provider_config");
     return { channel: "sms", sandbox: true, id: "sandbox:sms" };
   }
 

@@ -103,6 +103,41 @@ describe("sandbox mode (default — zero network)", () => {
   });
 });
 
+describe("dry-run intent logging (PII-safe)", () => {
+  it("logs channel + reason and NEVER the recipient/subject/body", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      await sendEmail({ to: "patient@example.com", subject: "Secret subject", body: "Secret body" });
+      await sendSms({ to: "+351912345678", body: "Secret sms body" });
+
+      const lines = info.mock.calls.map((c) => String(c[0]));
+      expect(lines).toContain("[reminders] dry-run: email not sent (live_send_disabled)");
+      expect(lines).toContain("[reminders] dry-run: sms not sent (live_send_disabled)");
+
+      const all = lines.join("\n");
+      expect(all).not.toMatch(/patient@example\.com/);
+      expect(all).not.toMatch(/\+351912345678/);
+      expect(all).not.toMatch(/Secret/);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("logs missing_provider_config when the live flag is on but keys are absent", async () => {
+    process.env.REMINDERS_LIVE_SEND = "true"; // no provider keys set
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      await sendEmail({ to: "p@example.com", subject: "s", body: "b" });
+      await sendSms({ to: "+351900000000", body: "b" });
+      const lines = info.mock.calls.map((c) => String(c[0]));
+      expect(lines).toContain("[reminders] dry-run: email not sent (missing_provider_config)");
+      expect(lines).toContain("[reminders] dry-run: sms not sent (missing_provider_config)");
+    } finally {
+      info.mockRestore();
+    }
+  });
+});
+
 describe("live mode (mocked SDKs — verifies wiring, no real network)", () => {
   beforeEach(() => {
     process.env.REMINDERS_LIVE_SEND = "true";
