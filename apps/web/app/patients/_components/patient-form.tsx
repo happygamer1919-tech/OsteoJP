@@ -77,19 +77,28 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
       </Field>
       <div className="grid grid-cols-2 gap-4">
         <Field label={s["patients.fieldDateOfBirth"]}>
+          {/* BUG-08 fix: lang="pt-PT" ensures browser date picker uses
+              dd/mm/yyyy format on all machines, not the tester's OS locale */}
           <input
             type="date"
+            lang="pt-PT"
             value={fields.dateOfBirth}
             onChange={(e) => set("dateOfBirth", e.target.value)}
             className={inputCls}
           />
         </Field>
         <Field label={s["patients.fieldSex"]}>
-          <input
+          {/* BUG-07 fix: was a plain <input type="text">; now a <select> */}
+          <select
             value={fields.sex}
             onChange={(e) => set("sex", e.target.value)}
             className={inputCls}
-          />
+          >
+            <option value="">{s["patients.sexNotSpecified"]}</option>
+            <option value="male">{s["patients.sexMale"]}</option>
+            <option value="female">{s["patients.sexFemale"]}</option>
+            <option value="other">{s["patients.sexOther"]}</option>
+          </select>
         </Field>
         <Field label={s["patients.fieldNif"]}>
           <input
