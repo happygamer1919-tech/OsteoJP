@@ -5,6 +5,7 @@ import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
 import { getPatient } from "../../../lib/patients/queries";
 import { getRequestContext } from "../../../lib/auth/context";
 import { PatientActions } from "../_components/patient-actions";
+import { createEpisodeAction } from "./episode-actions";
 import type { Patient } from "../../../lib/patients/types";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +14,13 @@ const s = getStrings(DEFAULT_LOCALE);
 
 export default async function PatientProfilePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ m?: string }>;
 }) {
   const { id } = await params;
+  const { m } = await searchParams;
 
   const ctx = await getRequestContext();
   if (!ctx) {
@@ -31,6 +35,7 @@ export default async function PatientProfilePage({
   if (!patient) notFound();
 
   const canDelete = can(ctx.role, "patients:delete");
+  const canStartEpisode = can(ctx.role, "clinical_records:author");
 
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-8">
@@ -61,9 +66,25 @@ export default async function PatientProfilePage({
           </Link>
         </div>
 
+        {m === "episodeErr" && (
+          <p className="mt-3 text-sm text-red-700">{s["patients.episodeError"]}</p>
+        )}
+
         <div className="mt-4 flex gap-3">
           <PlaceholderButton>{s["patients.newAppointment"]}</PlaceholderButton>
-          <PlaceholderButton>{s["patients.newEpisode"]}</PlaceholderButton>
+          {canStartEpisode ? (
+            <form action={createEpisodeAction}>
+              <input type="hidden" name="patientId" value={patient.id} />
+              <button
+                type="submit"
+                className="rounded border border-[#3DAEB3] px-3 py-1.5 text-sm font-medium text-[#3DAEB3] hover:bg-[#EAF7F6]"
+              >
+                + {s["patients.newEpisode"]}
+              </button>
+            </form>
+          ) : (
+            <PlaceholderButton>{s["patients.newEpisode"]}</PlaceholderButton>
+          )}
         </div>
       </section>
 
