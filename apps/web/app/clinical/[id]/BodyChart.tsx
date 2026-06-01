@@ -86,7 +86,7 @@ export function BodyChart({
             key={i}
             title={labelFor(m.marker_type)}
             className="absolute -ml-1.5 -mt-1.5 h-3 w-3 rounded-full border border-white bg-magenta-600"
-            style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, backgroundColor: "#8E2C7A" }}
+            style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, backgroundColor: "#8B1863" }}
           />
         ))}
       </div>

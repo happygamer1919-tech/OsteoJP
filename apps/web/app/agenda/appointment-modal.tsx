@@ -293,7 +293,7 @@ export function AppointmentModal({
           <h2 className="text-base font-semibold text-[#1A2733]">
             {editing ? s["appointment.editTitle"] : s["appointment.newTitle"]}
             {isRecurring && (
-              <span className="ml-2 align-middle text-xs font-normal text-[#8E2C7A]">
+              <span className="ml-2 align-middle text-xs font-normal text-[#8B1863]">
                 ⟳ {s["appointment.recurring"]}
               </span>
             )}

@@ -34,7 +34,7 @@ export default async function PatientProfilePage({
 
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-8">
-      <Link href="/patients" className="text-sm text-[#3DAEB3]">
+      <Link href="/patients" className="text-sm text-[#45B9A7]">
         ← {s["patients.back"]}
       </Link>
 
@@ -69,7 +69,7 @@ export default async function PatientProfilePage({
 
       {/* Tabs */}
       <nav className="mt-5 flex gap-4 border-b border-zinc-200 text-sm">
-        <span className="border-b-2 border-[#3DAEB3] pb-2 font-medium text-[#3DAEB3]">
+        <span className="border-b-2 border-[#45B9A7] pb-2 font-medium text-[#45B9A7]">
           {s["patients.tabSummary"]}
         </span>
         <span className="pb-2 text-zinc-400">{s["patients.tabEpisodes"]}</span>

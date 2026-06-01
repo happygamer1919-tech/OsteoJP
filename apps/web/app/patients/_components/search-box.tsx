@@ -25,12 +25,12 @@ export function SearchBox({ initialQuery }: { initialQuery: string }) {
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder={s["patients.searchPlaceholder"]}
-        className="w-80 rounded border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-[#3DAEB3]"
+        className="w-80 rounded border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-[#45B9A7]"
       />
       <button
         type="submit"
         disabled={pending}
-        className="rounded bg-[#3DAEB3] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="rounded bg-[#45B9A7] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
       >
         {s["common.search"]}
       </button>
