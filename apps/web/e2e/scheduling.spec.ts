@@ -24,7 +24,7 @@
  */
 
 import { test, expect } from "@playwright/test";
-import { goToAgenda, openNewAppointmentModal, createPatient } from "../helpers";
+import { goToAgenda, openNewAppointmentModal, createPatient } from "./helpers";
 
 // ---------------------------------------------------------------------------
 // 1. Agenda loads
