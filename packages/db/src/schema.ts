@@ -233,6 +233,36 @@ export const patients = pgTable(
   ],
 );
 
+// Stream A — multi-location patient assignment. A patient can be seen at more
+// than one of the clinic's locations; this junction links them many-to-many.
+// Fully tenant-scoped (RLS mirrors the standard tenant_isolation policy).
+export const patientLocations = pgTable(
+  "patient_locations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One link per (tenant, patient, location).
+    uniqueIndex("patient_locations_tenant_patient_location_uq").on(
+      t.tenantId,
+      t.patientId,
+      t.locationId,
+    ),
+    index("patient_locations_patient_idx").on(t.patientId),
+    index("patient_locations_location_idx").on(t.locationId),
+  ],
+);
+
 /* ================================================================== */
 /* Scheduling                                                         */
 /* ================================================================== */
