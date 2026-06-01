@@ -111,7 +111,14 @@ $$;
 /* predicates, not from RLS. The immutability trigger still fires.     */
 /* ================================================================== */
 
-CREATE OR REPLACE FUNCTION public.merge_patients(p_source_id uuid, p_target_id uuid)
+-- Drop the prior 2-arg form (pre actor-param) if present; no-op on fresh DBs.
+DROP FUNCTION IF EXISTS public.merge_patients(uuid, uuid);--> statement-breakpoint
+
+-- p_actor_id is the audit actor, supplied by the calling server action
+-- (ctx.userId); it falls back to the JWT `sub` claim when not passed. The
+-- TENANT is still derived from the JWT (never a param) — that is the
+-- tenant-scope guard and the cross-tenant rejection.
+CREATE OR REPLACE FUNCTION public.merge_patients(p_source_id uuid, p_target_id uuid, p_actor_id uuid DEFAULT NULL)
   RETURNS jsonb
   LANGUAGE plpgsql
   SECURITY DEFINER
@@ -134,10 +141,11 @@ BEGIN
       USING ERRCODE = 'insufficient_privilege';
   END IF;
 
-  -- Audit actor = JWT `sub` (the Supabase auth user id), if present.
-  v_actor := NULLIF(
-    (current_setting('request.jwt.claims', true)::jsonb) ->> 'sub', ''
-  )::uuid;
+  -- Audit actor: explicit param from the server action, else the JWT `sub`.
+  v_actor := COALESCE(
+    p_actor_id,
+    NULLIF((current_setting('request.jwt.claims', true)::jsonb) ->> 'sub', '')::uuid
+  );
 
   IF p_source_id = p_target_id THEN
     RAISE EXCEPTION 'merge_patients: source and target are the same patient (%)', p_source_id
@@ -244,5 +252,5 @@ $$;
 
 -- Least privilege: only the authenticated role (inside a tenant-scoped
 -- transaction) may call it. Revoke the implicit PUBLIC execute grant.
-REVOKE EXECUTE ON FUNCTION public.merge_patients(uuid, uuid) FROM PUBLIC;--> statement-breakpoint
-GRANT  EXECUTE ON FUNCTION public.merge_patients(uuid, uuid) TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.merge_patients(uuid, uuid, uuid) FROM PUBLIC;--> statement-breakpoint
+GRANT  EXECUTE ON FUNCTION public.merge_patients(uuid, uuid, uuid) TO authenticated;
