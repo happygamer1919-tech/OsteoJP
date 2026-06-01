@@ -65,20 +65,20 @@
 
 Six parallel streams, all `[YOU]` for implementation. Max takes the horizontal QA + content layer.
 
-- `[YOU]` Stream A — **Patients**: CRUD, search, merge, multi-location assignment, audit log
-- `[YOU]` Stream B — **Scheduling**: agenda UI, recurring, conflict detection, vacation/availability templates, room conflicts
-- `[YOU]` Stream C — **Clinical records**: form engine, body chart, image uploads, versioning, signature
-- `[YOU]` Stream D — **AI ingestion**: endpoint, HMAC, validation, review queue, state machine
-- `[YOU]` Stream E — **Reminders**: Resend templates + Twilio SMS + Inngest schedulers
-- `[YOU]` Stream F — **Admin**: tenant settings, users, roles, services per location, prices
-- `[MAX]` Seed data — 50 fake patients, realistic PT names/addresses, varied appointment history
-- `[MAX]` Test scenarios in plain English for every workflow (you turn into Playwright)
-- `[MAX]` Manual QA pass on every PR — load preview URL, run workflow, write findings as issues
-- `[MAX]` Bug triage: repro steps, severity, screenshots
-- `[MAX]` Form template authoring as new therapy types arrive (RPG, NESA, massagem, pilates terapêutico)
-- `[MAX]` UI copy review — every screen, every modal, every error state, PT + EN
-- `[MAX]` Maintain `docs/` as features ship
-- `[MAX]` Weekly demo prep: 3-min Loom walking through what shipped
+- `[YOU]` ~~Stream A — **Patients**: CRUD, search, merge, multi-location assignment, audit log~~ ✅ **Shipped** (PR #47)
+- `[YOU]` ~~Stream B — **Scheduling**: agenda UI, recurring, conflict detection, vacation/availability templates, room conflicts~~ ✅ **Shipped** (PRs #43, #49)
+- `[YOU]` ~~Stream C — **Clinical records**: form engine, body chart, image uploads, versioning, signature~~ ✅ **Shipped** (PR #51)
+- `[YOU]` Stream D — **AI ingestion**: endpoint, HMAC, validation, review queue, state machine — ⏳ pending AI partner auth contract
+- `[YOU]` Stream E — **Reminders**: Resend templates + Twilio SMS + Inngest schedulers — ⏳ in progress (branch: `stream-e-reminders`)
+- `[YOU]` ~~Stream F — **Admin**: tenant settings, users, roles, services per location, prices~~ ✅ **Shipped** (PR #41)
+- `[MAX]` ~~Seed data — 50 fake patients, realistic PT names/addresses, varied appointment history~~ ✅ **Shipped** (PR #52)
+- `[MAX]` ~~Test scenarios in plain English for every workflow (you turn into Playwright)~~ ✅ **Shipped** (PR #53 — 51 Playwright scenarios)
+- `[MAX]` Manual QA pass on every PR — load preview URL, run workflow, write findings as issues — ⏳ pending QA user credentials
+- `[MAX]` Bug triage: repro steps, severity, screenshots — ⏳ follows QA pass
+- `[MAX]` Form template authoring as new therapy types arrive (RPG, NESA, massagem, pilates terapêutico) — ⏳ blocked on owner intake form PDFs
+- `[MAX]` ~~UI copy review — every screen, every modal, every error state, PT + EN~~ ✅ **Shipped** (PR #55 — 12 fixes, see `docs/i18n-copy-review.md`)
+- `[MAX]` ~~Maintain `docs/` as features ship~~ ✅ **This PR**
+- `[MAX]` Weekly demo prep: 3-min Loom walking through what shipped — ⏳ pending demoable login
 
 ---
 

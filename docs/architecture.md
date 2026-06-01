@@ -82,9 +82,9 @@ supabase/
 
 Notes:
 
-- `packages/db/seed/form-templates/` holds JSON Schema seed templates (osteopathy, physiotherapy) authored as one file per `(key, version)` row. Seed loader is TODO; see `packages/db/seed/README.md`.
-- `packages/i18n/` is the canonical home for `strings.pt.json` and `strings.en.json`. Population begins once wireframes 3–6 are signed off and the package directory is initialized.
-- Tests live next to code: `foo.ts` + `foo.test.ts`.
+- `packages/db/seed/form-templates/` holds JSON Schema seed templates (osteopathy, physiotherapy v1). Loader is live (`packages/db/seed/form-templates.ts`) — idempotent upsert on `(tenant_id, key, version)`. Patient seed data in `packages/db/seed/patients.json` (50 PT-realistic records).
+- `packages/i18n/` is the canonical home for `strings.pt.json` and `strings.en.json`. Both files are fully populated (112+ keys each, typecheck-clean). PT is primary.
+- Tests live next to code: `foo.ts` + `foo.test.ts`. E2E tests in `apps/web/e2e/` (Playwright, 51 scenarios across auth, patients, scheduling, clinical, admin).
 
 ---
 
@@ -427,16 +427,23 @@ Per `CLAUDE.md`. Do not build, ignore in PR reviews.
 
 ## 16. Open questions
 
-Items that need a decision from the lead, the owner, or the AI partner before they're locked in. None of these are blocking V1 scaffolding but each needs resolution before the relevant subsystem can ship.
+Items that need a decision from the lead, the owner, or the AI partner before they're locked in.
 
-1. **AI ingestion authentication contract.** `CLAUDE.md` specifies API key + HMAC. The partner has recommended a service-account bearer token. Decision pending; affects `packages/ingestion` and the partner-side client. Per handoff brief, lead has open clarifying questions with the partner.
-2. **Seed loader contract.** `packages/db/seed/README.md` flags the loader as TODO. Until the loader lands, form templates in `packages/db/seed/form-templates/` are source-of-truth files only and are not wired into migrations. Form-template relocation from `docs/draft-form-templates/` is blocked on this.
-3. **Per-field `ai_extractable` flag values.** Form templates currently set every flag to `false` pending the AI partner contract. Once the contract is signed, narrative textareas (consultation_reason, relief_aggravation, clinical_history, systems_review.*, treatment_objectives, treatment_plan, observations) will likely flip to `true`. Structured fields (booleans, coordinates, dates) likely stay `false`. `physiotherapy_v1.private_notes` stays `false` permanently and is also enforced via `x-access: private_to_author` (RLS / restricted-column enforcement at db + app layer is a separate open item — lead's domain).
-4. **Email format.** PR #20 (appointment reminders) and PR #21 (post-visit) flagged plain-text vs HTML+plain-text as an open decision. Sender display name and reply-to address are also pending.
-5. **Resend DNS verification.** `[from-address]@osteojp.pt` is placeholder pending DNS records (SPF, DKIM, DMARC) — DNS access required from the owner per `docs/dns-records-pending.md`.
-6. **Twilio PT sender registration.** SMS sender ID "OsteoJP" needs PT registration before SMS templates can ship.
-7. **No-show charge policy.** PR #21 flagged whether the no-show email should mention a charge / late-cancellation fee. Owner/lead decision.
-8. **Locations table content for Montemor-o-Novo.** Opening date and contacts pending owner confirmation.
+1. **AI ingestion authentication contract.** `CLAUDE.md` specifies API key + HMAC. The partner has recommended a service-account bearer token. Decision pending; affects `packages/ingestion` and the partner-side client.
+2. **Per-field `ai_extractable` flag values.** Form templates currently set every flag to `false` pending the AI partner contract. Once signed, narrative textareas will likely flip to `true`; structured fields and `private_notes` stay `false` permanently.
+3. **Email sender details.** Sender display name, reply-to address, and 48h vs 24h reminder timing pending owner decision.
+4. **Resend DNS verification.** `[from-address]@osteojp.pt` is placeholder pending DNS records (SPF, DKIM, DMARC) — DNS access required from the owner per `docs/dns-records-pending.md`.
+5. **Twilio PT sender registration.** SMS sender ID "OsteoJP" needs PT registration before SMS templates can send.
+6. **No-show charge policy.** Whether the no-show email mentions a charge / late-cancellation fee. Owner decision.
+7. **Montemor-o-Novo opening date + contacts.** Pending owner confirmation.
+8. **`invoicing.total*` string deduplication.** `invoicing.totalPaid/Pending/Overdue` duplicate the status labels — consolidate if they render in the same context. Flagged in i18n copy review (#55).
+9. **`patients.fieldSex` EN label.** Current: `"Biological sex"`. Confirm clinically acceptable to owner (vs `"Sex"`). Flagged in i18n copy review (#55).
+
+**Resolved since last update:**
+- ~~Seed loader contract~~ — loader shipped in `packages/db/seed/form-templates.ts` (PR #31). Form templates relocated and validated (PR #36). Patient seed data added (PR #52).
+- ~~i18n package initialization~~ — `packages/i18n/` fully populated, typecheck-clean (PR #32).
+- ~~Supabase branching setup~~ — per-PR Supabase branches live (PR #39). See `docs/supabase-branching.md`.
+- ~~Storybook scaffold~~ — `packages/ui` Storybook working with brand tokens wired (PRs #33–#35).
 
 ---
 
@@ -453,5 +460,9 @@ Items that need a decision from the lead, the owner, or the AI partner before th
 - [`email-templates-post-visit.md`](./email-templates-post-visit.md) — post-visit emails (PR #21)
 - [`wireframes/README.md`](./wireframes/README.md) — wireframe index
 - [`dns-records-pending.md`](./dns-records-pending.md) — pending DNS items for Resend
+- [`supabase-branching.md`](./supabase-branching.md) — per-PR Supabase branch setup and CI guard
+- [`supabase-setup.md`](./supabase-setup.md) — Supabase project configuration
+- [`i18n-copy-review.md`](./i18n-copy-review.md) — PT/EN copy review findings (PR #55)
 - [`packages/db/src/schema.ts`](../packages/db/src/schema.ts) — schema source of truth
-- [`packages/db/seed/README.md`](../packages/db/seed/README.md) — seed strategy
+- [`packages/db/seed/README.md`](../packages/db/seed/README.md) — seed strategy and loader contract
+- [`apps/web/e2e/`](../apps/web/e2e/) — Playwright E2E test suite (PR #53)
