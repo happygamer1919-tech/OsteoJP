@@ -9,6 +9,10 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Exclude `/api/inngest` (and its subpaths): the Inngest serve endpoint
+    // authenticates server-to-server via INNGEST_SIGNING_KEY, not the Supabase
+    // user session, so it must not be redirected to /login in deployed envs.
+    // All other routes (app pages and other /api/* routes) stay session-gated.
+    "/((?!_next/static|_next/image|favicon.ico|api/inngest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
