@@ -1,0 +1,2 @@
+# Auth state files contain session tokens — never commit
+.auth/*.json
