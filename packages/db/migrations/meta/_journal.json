@@ -43,6 +43,13 @@
       "when": 1780319877795,
       "tag": "0005_patient_merge_multilocation",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780324715145,
+      "tag": "0006_availability_timeoff",
+      "breakpoints": true
     }
   ]
 }
