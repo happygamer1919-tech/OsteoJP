@@ -159,7 +159,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
         <button
           type="submit"
           disabled={pending}
-          className="rounded bg-[#3DAEB3] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded bg-[#45B9A7] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {pending
             ? s["patients.saving"]
@@ -180,7 +180,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
 }
 
 const inputCls =
-  "w-full rounded border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-[#3DAEB3]";
+  "w-full rounded border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-[#45B9A7]";
 
 function Field({
   label,

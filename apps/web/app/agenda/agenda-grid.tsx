@@ -204,7 +204,7 @@ function AppointmentBlock({
       )}
       <span className="block font-medium">
         {(appt.recurrenceRule || appt.recurrenceParentId) && (
-          <span className="mr-0.5 text-[#8E2C7A]" title={s["appointment.recurring"]}>
+          <span className="mr-0.5 text-[#8B1863]" title={s["appointment.recurring"]}>
             ⟳
           </span>
         )}

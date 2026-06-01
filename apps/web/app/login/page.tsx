@@ -17,7 +17,7 @@ export default function LoginPage() {
           className="w-full rounded border px-3 py-2" />
         {state.error ? <p className="text-sm text-red-600">{state.error}</p> : null}
         <button type="submit" disabled={pending}
-          className="w-full rounded bg-[#3DAEB3] px-3 py-2 text-white disabled:opacity-50">
+          className="w-full rounded bg-[#45B9A7] px-3 py-2 text-white disabled:opacity-50">
           {pending ? "A entrar..." : "Entrar"}
         </button>
       </form>

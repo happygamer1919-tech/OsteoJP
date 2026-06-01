@@ -32,7 +32,7 @@ export default async function PatientsPage({
         </h1>
         <Link
           href="/patients/new"
-          className="rounded bg-[#8E2C7A] px-4 py-2 text-sm font-medium text-white"
+          className="rounded bg-[#8B1863] px-4 py-2 text-sm font-medium text-white"
         >
           {s["patients.new"]}
         </Link>

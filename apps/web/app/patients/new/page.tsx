@@ -7,7 +7,7 @@ const s = getStrings(DEFAULT_LOCALE);
 export default function NewPatientPage() {
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-8">
-      <Link href="/patients" className="text-sm text-[#3DAEB3]">
+      <Link href="/patients" className="text-sm text-[#45B9A7]">
         ← {s["patients.back"]}
       </Link>
       <h1 className="mb-6 mt-2 text-2xl font-semibold tracking-tight">
