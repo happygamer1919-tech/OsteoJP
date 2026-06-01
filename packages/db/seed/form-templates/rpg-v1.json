@@ -1,0 +1,19 @@
+{
+  "key": "rpg",
+  "version": 1,
+  "title": {
+    "pt": "RPG — Avaliação de Episódio",
+    "en": "RPG — Episode Evaluation"
+  },
+  "x-therapy-type": {
+    "pt": "RPG",
+    "fisiozero-tipo_evento_dinamico": "Campo - R.P.G."
+  },
+  "x-form-ref": "physiotherapy",
+  "x-form-note": "This therapy type uses the identical Fisiozero clinical form as all other physiotherapy types. The form fields are defined in physiotherapy-v1.json. Therapy type is appointment metadata only (tipo_evento_dinamico = 'Campo - R.P.G.'), not a form selector. This file exists as a named entry point so the scheduler can associate the correct form template when booking a 'RPG' appointment.",
+  "_meta": {
+    "source": "Fisiozero production — confirmed by Claude browser agent extraction 2026-06-01. Fisiozero does not have separate forms per therapy type; all physio types share one form (op=av).",
+    "reviewed_by": "Max (sm33xy)",
+    "version_note": "v1 — thin wrapper referencing physiotherapy-v1.json. No independent field list; see x-form-ref."
+  }
+}
