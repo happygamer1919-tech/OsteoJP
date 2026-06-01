@@ -69,7 +69,7 @@ Six parallel streams, all `[YOU]` for implementation. Max takes the horizontal Q
 - `[YOU]` ~~Stream B — **Scheduling**: agenda UI, recurring, conflict detection, vacation/availability templates, room conflicts~~ ✅ **Shipped** (PRs #43, #49)
 - `[YOU]` ~~Stream C — **Clinical records**: form engine, body chart, image uploads, versioning, signature~~ ✅ **Shipped** (PR #51)
 - `[YOU]` Stream D — **AI ingestion**: endpoint, HMAC, validation, review queue, state machine — ⏳ pending AI partner auth contract
-- `[YOU]` Stream E — **Reminders**: Resend templates + Twilio SMS + Inngest schedulers — ⏳ in progress (branch: `stream-e-reminders`)
+- `[YOU]` ~~Stream E — **Reminders**: Resend templates + Twilio SMS + Inngest schedulers~~ ✅ **Shipped** (PR #57)
 - `[YOU]` ~~Stream F — **Admin**: tenant settings, users, roles, services per location, prices~~ ✅ **Shipped** (PR #41)
 - `[MAX]` ~~Seed data — 50 fake patients, realistic PT names/addresses, varied appointment history~~ ✅ **Shipped** (PR #52)
 - `[MAX]` ~~Test scenarios in plain English for every workflow (you turn into Playwright)~~ ✅ **Shipped** (PR #53 — 51 Playwright scenarios)
