@@ -16,6 +16,7 @@
     "@osteojp/auth": "workspace:*",
     "@osteojp/db": "workspace:*",
     "@osteojp/i18n": "workspace:*",
+    "@osteojp/ui": "workspace:*",
     "@sentry/nextjs": "^10.54.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
