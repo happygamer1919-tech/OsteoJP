@@ -34,22 +34,9 @@
  * stays green without a database.
  */
 import { randomUUID } from "node:crypto";
-import postgres, { type Sql, type TransactionSql } from "postgres";
+import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-
-const url = process.env.DATABASE_URL;
-const live = Boolean(url);
-
-// JWT claims blob jwt_tenant_id()/jwt_role() read. user_role is irrelevant to
-// this policy (it has no role gate) but is set for realism.
-const claimsFor = (tenantId: string) =>
-  JSON.stringify({ tenant_id: tenantId, user_role: "admin" });
-
-// Sentinel used to force a ROLLBACK after a successful assertion so nothing the
-// tests write (or the seed under service_role) ever persists.
-class Rollback<T> {
-  constructor(readonly value: T) {}
-}
+import { asRole, claimsFor, connect, live } from "./rls-harness";
 
 describe.skipIf(!live)("ai_ingestion_requests RLS tenant isolation (migration 0008)", () => {
   // Constructed in beforeAll, not at module scope: the describe callback is
@@ -64,36 +51,8 @@ describe.skipIf(!live)("ai_ingestion_requests RLS tenant isolation (migration 00
   const rowA = randomUUID();
   const rowB = randomUUID();
 
-  /**
-   * Run `fn` inside a transaction under `role`, with the tenant JWT claim set,
-   * then ALWAYS roll back. Returns fn's value. This is how we exercise the
-   * policy: under `authenticated` the policy applies; under `service_role` it is
-   * bypassed (BYPASSRLS).
-   */
-  async function asRole<T>(
-    role: "authenticated" | "service_role",
-    tenantId: string | null,
-    fn: (tx: TransactionSql) => Promise<T>,
-  ): Promise<T> {
-    try {
-      await sql.begin(async (tx) => {
-        // `role` is a closed string-literal union — no injection surface.
-        await tx.unsafe(`set local role ${role}`);
-        if (tenantId !== null) {
-          await tx`select set_config('request.jwt.claims', ${claimsFor(tenantId)}, true)`;
-        }
-        const value = await fn(tx);
-        throw new Rollback(value);
-      });
-      throw new Error("unreachable: transaction committed without rollback");
-    } catch (err) {
-      if (err instanceof Rollback) return err.value as T;
-      throw err;
-    }
-  }
-
   beforeAll(async () => {
-    sql = postgres(url!, { prepare: false, max: 1 });
+    sql = connect();
     // Seed on the privileged (owner) connection — bypasses RLS by ownership.
     await sql`
       insert into tenants (id, name, slug)
@@ -117,7 +76,7 @@ describe.skipIf(!live)("ai_ingestion_requests RLS tenant isolation (migration 00
 
   // --- SELECT (+ the RLS-is-really-on sanity assertion) --------------------
   it("SELECT under tenant-A JWT returns only tenant-A rows, never tenant-B's", async () => {
-    const rows = await asRole("authenticated", tenantA, (tx) =>
+    const rows = await asRole(sql, "authenticated", claimsFor(tenantA), (tx) =>
       tx<{ id: string; tenant_id: string }[]>`
         select id, tenant_id from ai_ingestion_requests
       `,
@@ -136,19 +95,17 @@ describe.skipIf(!live)("ai_ingestion_requests RLS tenant isolation (migration 00
   // --- INSERT: WITH CHECK rejects cross-tenant, allows own-tenant ----------
   it("INSERT of a tenant-B row under tenant-A JWT is rejected by WITH CHECK", async () => {
     await expect(
-      sql.begin(async (tx) => {
-        await tx.unsafe("set local role authenticated");
-        await tx`select set_config('request.jwt.claims', ${claimsFor(tenantA)}, true)`;
-        await tx`
+      asRole(sql, "authenticated", claimsFor(tenantA), (tx) =>
+        tx`
           insert into ai_ingestion_requests (tenant_id, idempotency_key, request_id, payload_hash)
           values (${tenantB}, ${`xtenant-${randomUUID()}`}, 'r', 'h')
-        `;
-      }),
+        `,
+      ),
     ).rejects.toThrow(/row-level security/i);
   });
 
   it("INSERT of a tenant-A row under tenant-A JWT succeeds", async () => {
-    const inserted = await asRole("authenticated", tenantA, (tx) =>
+    const inserted = await asRole(sql, "authenticated", claimsFor(tenantA), (tx) =>
       tx<{ id: string }[]>`
         insert into ai_ingestion_requests (tenant_id, idempotency_key, request_id, payload_hash)
         values (${tenantA}, ${`own-${randomUUID()}`}, 'r', 'h')
@@ -160,7 +117,7 @@ describe.skipIf(!live)("ai_ingestion_requests RLS tenant isolation (migration 00
 
   // --- UPDATE / DELETE: USING filters cross-tenant rows out SILENTLY -------
   it("UPDATE of a tenant-B row under tenant-A JWT affects 0 rows (no error)", async () => {
-    const updated = await asRole("authenticated", tenantA, (tx) =>
+    const updated = await asRole(sql, "authenticated", claimsFor(tenantA), (tx) =>
       tx<{ id: string }[]>`
         update ai_ingestion_requests set request_id = 'mutated'
         where id = ${rowB}
@@ -171,7 +128,7 @@ describe.skipIf(!live)("ai_ingestion_requests RLS tenant isolation (migration 00
   });
 
   it("DELETE of a tenant-B row under tenant-A JWT affects 0 rows (no error)", async () => {
-    const deleted = await asRole("authenticated", tenantA, (tx) =>
+    const deleted = await asRole(sql, "authenticated", claimsFor(tenantA), (tx) =>
       tx<{ id: string }[]>`
         delete from ai_ingestion_requests where id = ${rowB} returning id
       `,
@@ -187,7 +144,7 @@ describe.skipIf(!live)("ai_ingestion_requests RLS tenant isolation (migration 00
     // the request payload — so this bypass is the designed write path, and this
     // case is where it is acknowledged. Even with a mismatching tenant-A JWT set,
     // the tenant-B insert goes through.
-    const inserted = await asRole("service_role", tenantA, (tx) =>
+    const inserted = await asRole(sql, "service_role", claimsFor(tenantA), (tx) =>
       tx<{ id: string; tenant_id: string }[]>`
         insert into ai_ingestion_requests (tenant_id, idempotency_key, request_id, payload_hash)
         values (${tenantB}, ${`svc-${randomUUID()}`}, 'r', 'h')
