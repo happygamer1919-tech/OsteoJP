@@ -87,7 +87,7 @@ Sent when an appointment is cancelled (by either side) or marked no-show.
 ### 6. Post-visit follow-up
 Sent a few hours after the visit. No link — closes warmly without a CTA.
 
-- **PT:** `OsteoJP: obrigada pela sua visita. Em caso de duvidas, contacte-nos. Cuide-se.`
+- **PT:** `OsteoJP: agradecemos a sua visita. Em caso de duvidas, contacte-nos. Cuide-se.`
 - **EN:** `OsteoJP: thank you for your visit. If you have any questions, contact us. Take care.`
 
 ---
@@ -108,6 +108,6 @@ Sent a few hours after the visit. No link — closes warmly without a CTA.
    (`{phone}`) and the reschedule link is email-only. SMS templates updated accordingly.
 3. **Cancellation vs no-show** — currently one template. If no-show needs different wording
    (e.g. referencing a missed-appointment policy), split into two.
-4. **"obrigada" (feminine)** — post-visit uses feminine "obrigada" assuming the clinic
-   voice is feminine first-person. If the clinic signs as a neutral entity, switch to
-   "obrigado/a" or rephrase. Tied to the open first-person-mode question in the voice guide §8.
+4. **"obrigada" (feminine) — RESOLVED (copy review SMS-02).** Switched to the
+   institutional, gender-neutral "agradecemos a sua visita" (post-visit, scenario 6). EN
+   ("thank you") was already neutral and is unchanged.

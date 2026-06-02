@@ -116,8 +116,6 @@ Olá {{patient_first_name}},
 
 A sua consulta foi remarcada para {{appointment_date}} às {{appointment_time}}, em {{clinic_location}}, com {{practitioner_name}}.
 
-Pedimos que chegue 10 minutos antes.
-
 Para alterar novamente ou cancelar: {{reschedule_link}}
 Ou contacte: {{clinic_phone}}
 
@@ -130,8 +128,6 @@ Dear {{patient_first_name}},
 
 Your appointment has been rescheduled to {{appointment_date}} at {{appointment_time}}, at our {{clinic_location}} clinic, with {{practitioner_name}}.
 
-Please arrive 10 minutes early.
-
 To change again or cancel: {{reschedule_link}}
 Or contact us: {{clinic_phone}}
 
@@ -141,7 +137,7 @@ Or contact us: {{clinic_phone}}
 
 ### 5. Cancellation
 
-**PT — Subject:** Consulta cancelada — {{appointment_date}}, {{appointment_time}}
+**PT — Subject:** Consulta cancelada — {{appointment_date}}, {{appointment_time}}, {{clinic_location}}
 
 **PT — Body:**
 Olá {{patient_first_name}},
@@ -153,7 +149,7 @@ Ou contacte: {{clinic_phone}}
 
 — OsteoJP
 
-**EN — Subject:** Appointment cancelled — {{appointment_date}}, {{appointment_time}}
+**EN — Subject:** Appointment cancelled — {{appointment_date}}, {{appointment_time}}, {{clinic_location}}
 
 **EN — Body:**
 Dear {{patient_first_name}},
@@ -174,7 +170,7 @@ Or contact us: {{clinic_phone}}
 **PT — Body:**
 Olá {{patient_first_name}},
 
-Registámos que a sua consulta de {{appointment_date}} às {{appointment_time}}, em {{clinic_location}}, não foi realizada.
+Registámos que a sua consulta de {{appointment_date}} às {{appointment_time}}, em {{clinic_location}}, não foi realizada — não registámos a sua presença.
 
 Para agendar uma nova consulta: {{reschedule_link}}
 Ou contacte: {{clinic_phone}}
@@ -203,5 +199,6 @@ Or contact us: {{clinic_phone}}
 - 48h reminder: keep alongside 24h (matches SMS PR #18) or drop
 - No-show template: include a charge-policy/late-cancellation-fee line? (Owner/lead decision — currently neutral)
 - "10 minutes early" instruction: keep on every confirmation/reminder or only on first booking? Voice guide §6.2 uses it on the confirmation example; redundancy on reminders may be acceptable but worth confirming
+  - **Partially resolved (copy review EMAIL-03):** removed from scenario 4 (reschedule confirmation — the patient has already attended and knows the policy); kept on scenario 1 (booking) and scenario 3 (24h reminder).
 - Footer: unsubscribe link required for transactional? GDPR/clinic regs check needed
 - Phone fallback: `{{clinic_phone}}` resolved per-location — confirm placeholder name matches what lead will wire in the email service
