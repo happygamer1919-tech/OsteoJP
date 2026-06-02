@@ -11,7 +11,7 @@
  *   E2E_RECEPTION_EMAIL, E2E_RECEPTION_PASSWORD
  */
 
-import { test as setup, expect } from "@playwright/test";
+import { test as setup } from "@playwright/test";
 import path from "path";
 
 const AUTH_DIR = path.join(__dirname, ".auth");
@@ -60,8 +60,9 @@ for (const role of ROLES) {
     await page.getByPlaceholder("Palavra-passe").fill(password);
     await page.getByRole("button", { name: /Entrar/i }).click();
 
-    // After login, the app redirects away from /login.
-    await expect(page).not.toHaveURL(/\/login/);
+    // After login, the app redirects to /dashboard. Allow generous time for the
+    // dev server to compile the dashboard route on first hit.
+    await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
 
     await page.context().storageState({ path: role.storageFile });
   });
