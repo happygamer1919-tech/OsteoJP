@@ -42,15 +42,28 @@ follows the standard `draft → locked → signed` lifecycle.
 
 ### `ai_extractable` — current state
 
-**Every `ai_extractable` flag in every template is currently `false`.** This is
-deliberate: the flags are held at `false` pending sign-off of the AI-partner ingestion
-contract. Once the contract is signed, we will flip selected narrative fields (e.g.
-`consultation_reason`, `clinical_history`, `treatment_plan`, `observations`,
-`systems_review.*`) to `true` per template. Structured/coded fields (booleans, dates,
-coordinates, coded arrays) will most likely stay app-driven (`false`).
+João Pedro signed off the Group A/B split (see `ai-extractable-audit.md` §4) for
+**`osteopathy` and `physiotherapy` only**:
 
-The tables below report the flag **exactly as it stands in the seed JSON** — i.e. `false`
-on every field today. Do not treat any field as AI-fillable until this document says so.
+- **Group A — narrative free-text → `true`.** The session transcription naturally
+  captures these; low risk to pre-fill for a reviewer to edit.
+- **Group B — `false` (pending).** Dictated but safety-critical or coded
+  (`red_flags`, `diagnosis`, `medication`, `cid_codes`, health checkbox grids).
+- **Always `false`.** System/metadata, biometrics, spatial, private, legal-toggle
+  fields (`episode_date`, `weight_kg`, `height_cm`, `linked_appointment`, `bodychart`
+  (+items), `private_notes`, `consent_in_report`).
+
+This was applied by **bumping `osteopathy` v1 → v2 and `physiotherapy` v3 → v4** (form
+templates are immutable once referenced by a record). The wrappers
+(`massagem-terapeutica`, `pilates-terapeutico`, `rpg`) resolve to `physiotherapy` by key
+and inherit v4's flags.
+
+**`nesa` is unchanged — every NESA flag stays `false`.** NESA is being replaced by a form
+João Pedro is sending; its `ai_extractable` decision is deferred until that form lands
+(see §3.3).
+
+The tables below report the flag **exactly as it stands in the seed JSON**. Do not treat
+any field as AI-fillable unless this document shows it `true`.
 
 ---
 
@@ -101,12 +114,14 @@ fields beneath them and carry no `value` of their own.
 
 ---
 
-### 3.1 `osteopathy` (version 1)
+### 3.1 `osteopathy` (version 2)
 
-- **Template id:** `osteopathy` v1
-- **File:** `packages/db/seed/form-templates/osteopathy-v1.json`
+- **Template id:** `osteopathy` v2
+- **File:** `packages/db/seed/form-templates/osteopathy-v2.json`
 - **Title:** Osteopatia — Avaliação de Episódio / Osteopathy — Episode Evaluation
 - **Required:** `episode_date`, `consultation_reason`
+- **v2** applies JP's Group A/B split and the §2 placement normalization. v1 stays in
+  place (immutable); this is the current version.
 
 | Field key | Type | ai_extractable | PT label | EN label |
 |---|---|---|---|---|
@@ -137,24 +152,24 @@ fields beneath them and carry no `value` of their own.
 | `health_problems.respiratory_problems` | boolean | false | Problemas Respiratórios | Respiratory Problems |
 | `health_problems.covid_19` | boolean | false | COVID-19 | COVID-19 |
 | `health_problems.other` | string \| null | false | Outros | Other |
-| `consultation_reason` | string | false | Motivos da Consulta / Início / Contexto em que ocorre | Reason for Consultation / Onset / Context |
-| `relief_aggravation` | string \| null | false | Condições Alívio / Agravamento | Relieving / Aggravating Factors |
-| `clinical_history` | string \| null | false | Antecedentes Clínicos / Cirurgia / Medicação | Clinical History / Surgery / Medication |
+| `consultation_reason` | string | **true** | Motivos da Consulta / Início / Contexto em que ocorre | Reason for Consultation / Onset / Context |
+| `relief_aggravation` | string \| null | **true** | Condições Alívio / Agravamento | Relieving / Aggravating Factors |
+| `clinical_history` | string \| null | **true** | Antecedentes Clínicos / Cirurgia / Medicação | Clinical History / Surgery / Medication |
 | `systems_review` | object *(container)* | — | Anamnese por Sistemas | Systems Review |
-| `systems_review.neurological` | string \| null | false | Neurológico | Neurological |
-| `systems_review.cardiovascular` | string \| null | false | Cardiovascular | Cardiovascular |
-| `systems_review.respiratory` | string \| null | false | Respiratório | Respiratory |
-| `systems_review.gastrointestinal` | string \| null | false | Gastrointestinal | Gastrointestinal |
-| `systems_review.urological_gynecological` | string \| null | false | Urológico / Ginecológico | Urological / Gynecological |
-| `systems_review.endocrine` | string \| null | false | Endócrino | Endocrine |
+| `systems_review.neurological` | string \| null | **true** | Neurológico | Neurological |
+| `systems_review.cardiovascular` | string \| null | **true** | Cardiovascular | Cardiovascular |
+| `systems_review.respiratory` | string \| null | **true** | Respiratório | Respiratory |
+| `systems_review.gastrointestinal` | string \| null | **true** | Gastrointestinal | Gastrointestinal |
+| `systems_review.urological_gynecological` | string \| null | **true** | Urológico / Ginecológico | Urological / Gynecological |
+| `systems_review.endocrine` | string \| null | **true** | Endócrino | Endocrine |
 | `bodychart` | array | false | Bodychart | Bodychart |
-| `bodychart[].marker_type` | string (enum) | false | Tipo de marcador | Marker type |
-| `bodychart[].x` | number | false | — *(normalized X coord 0–1)* | — |
-| `bodychart[].y` | number | false | — *(normalized Y coord 0–1)* | — |
-| `bodychart[].view` | string \| null (enum) | false | — *(anterior / lateral_left / lateral_right / posterior)* | — |
-| `treatment_objectives` | string \| null | false | Objectivos do Tratamento | Treatment Objectives |
-| `treatment_plan` | string \| null | false | Plano de Tratamento | Treatment Plan |
-| `observations` | string \| null | false | Observações | Observations |
+| `bodychart[].marker_type` | string (enum) | — | Tipo de marcador | Marker type |
+| `bodychart[].x` | number | — | — *(normalized X coord 0–1)* | — |
+| `bodychart[].y` | number | — | — *(normalized Y coord 0–1)* | — |
+| `bodychart[].view` | string \| null (enum) | — | — *(anterior / lateral_left / lateral_right / posterior)* | — |
+| `treatment_objectives` | string \| null | **true** | Objectivos do Tratamento | Treatment Objectives |
+| `treatment_plan` | string \| null | **true** | Plano de Tratamento | Treatment Plan |
+| `observations` | string \| null | **true** | Observações | Observations |
 
 `bodychart[].marker_type` enum: `blockage_dysfunction` (Bloqueio / Disfunção),
 `scar` (Cicatriz), `hypertonicity` (Hipertonicidade), `hypotonicity` (Hipotonicidade),
@@ -162,19 +177,25 @@ fields beneath them and carry no `value` of their own.
 `paresthesia` (Parestesia), `rotation_right` (Rotação direita),
 `rotation_left` (Rotação esquerda).
 
-> Per the ingestion contract (§2), the partner sends bodychart as anatomical regions +
-> intensity descriptor, not the `x`/`y`/`view` coordinate shape stored internally above.
+> **Bodychart placement (v2, normalized per `ai-extractable-audit.md` §2):** the
+> `ai_extractable` flag lives **once on the `bodychart` field** (`false`). Its item
+> sub-properties (`marker_type`, `x`, `y`, `view`) carry **no flag** (shown as `—`) — the
+> double source of truth in v1 is removed. Per the ingestion contract (§2), the partner
+> sends bodychart as anatomical regions + intensity descriptor, not the `x`/`y`/`view`
+> coordinate shape stored internally.
 
 ---
 
-### 3.2 `physiotherapy` (version 3)
+### 3.2 `physiotherapy` (version 4)
 
-- **Template id:** `physiotherapy` v3
-- **File:** `packages/db/seed/form-templates/physiotherapy-v1.json`
+- **Template id:** `physiotherapy` v4
+- **File:** `packages/db/seed/form-templates/physiotherapy-v4.json`
 - **Title:** Fisioterapia — Avaliação de Episódio / Physiotherapy — Episode Evaluation
 - **Required:** `episode_date`
 - **Shared by all physio therapy types** (RPG, massagem terapêutica, pilates
   terapêutico). 16 fields in document order.
+- **v4** applies JP's Group A split. No placement change vs v3 (already conforms to the
+  §2 leaf-flag convention). v3 stays in place (immutable); this is the current version.
 
 | Field key | Type | ai_extractable | PT label | EN label |
 |---|---|---|---|---|
@@ -184,14 +205,14 @@ fields beneath them and carry no `value` of their own.
 | `linked_appointment` | string \| null | false | Marcação respectiva | Linked Appointment |
 | `cid_codes` | array<string> | false | Códigos CID associados | Associated ICD Codes |
 | `red_flags` | string \| null | false | Alertas (Red Flags) | Red Flags |
-| `main_complaints` | string \| null | false | Principais Queixas | Main Complaints |
-| `background` | string \| null | false | Antecedentes | Background / History |
+| `main_complaints` | string \| null | **true** | Principais Queixas | Main Complaints |
+| `background` | string \| null | **true** | Antecedentes | Background / History |
 | `medication` | string \| null | false | Medicação | Medication |
 | `diagnosis` | string \| null | false | Diagnóstico | Diagnosis |
 | `bodychart` | object \| null | false | Bodychart | Body Chart |
-| `treatment_goals` | string \| null | false | Objectivos do Tratamento | Treatment Goals |
-| `treatment_plan` | string \| null | false | Plano de Tratamento | Treatment Plan |
-| `observations` | string \| null | false | Observações | Observations |
+| `treatment_goals` | string \| null | **true** | Objectivos do Tratamento | Treatment Goals |
+| `treatment_plan` | string \| null | **true** | Plano de Tratamento | Treatment Plan |
+| `observations` | string \| null | **true** | Observações | Observations |
 | `private_notes` | string \| null | false | Notas Pessoais sobre o Utente neste Episódio / Consulta | Personal Notes (this episode) |
 | `consent_in_report` | boolean | false | Inserir Consentimento no Relatório | Include Consent in Report |
 
@@ -215,6 +236,12 @@ Notes:
 - Derived from the osteopathy form as closest clinical analogue. **Owner confirmation
   pending** on whether NESA needs added/removed/renamed fields (e.g. NESA protocol /
   stimulation parameters). Field keys here use PT-derived machine keys as in the seed.
+
+> **Status — PENDING JOÃO PEDRO'S INCOMING FORM.** NESA is being replaced by a form João
+> Pedro is sending. The Group A/B `ai_extractable` split signed off for osteopathy and
+> physiotherapy was **deliberately not applied to NESA** — every NESA flag stays exactly
+> as in the `nesa` v1 seed (the table below is unchanged). Re-audit and assign tiers once
+> the replacement form lands; do not flip any NESA flag before then.
 
 | Field key | Type | ai_extractable | PT label | EN label |
 |---|---|---|---|---|
@@ -273,7 +300,9 @@ Notes:
 
 These three files carry **no independent field list**. Each is a named scheduler entry
 point with `x-form-ref: "physiotherapy"` — booking one of these therapy types associates
-the `physiotherapy` v3 field set (§3.2). Therapy type is appointment metadata
+the `physiotherapy` field set (§3.2). The ref is **by key, not a pinned version**, so the
+wrappers inherit the current `physiotherapy` v4 flags automatically; the wrapper files
+themselves are unchanged (still v1). Therapy type is appointment metadata
 (`tipo_evento_dinamico`), not a form selector.
 
 | Template id | File | Resolves to | `tipo_evento_dinamico` |
@@ -286,14 +315,14 @@ the `physiotherapy` v3 field set (§3.2). Therapy type is appointment metadata
 
 ## 5. Summary — ai_extractable contribution per template
 
-All flags are `false` pending AI-partner contract sign-off, so **every template
-contributes 0 `ai_extractable: true` fields today.**
+Reflects JP's Group A/B sign-off applied to `osteopathy` v2 and `physiotherapy` v4.
+`nesa` stays at 0 (pending its replacement form). Wrappers inherit `physiotherapy` v4.
 
 | Template id | Field-bearing | `ai_extractable: true` fields |
 |---|---|---|
-| `osteopathy` v1 | yes | 0 |
-| `physiotherapy` v3 | yes | 0 |
-| `nesa` v1 | yes | 0 |
-| `massagem-terapeutica` v1 | wrapper → physiotherapy | 0 |
-| `pilates-terapeutico` v1 | wrapper → physiotherapy | 0 |
-| `rpg` v1 | wrapper → physiotherapy | 0 |
+| `osteopathy` v2 | yes | 12 — `consultation_reason`, `relief_aggravation`, `clinical_history`, `systems_review.*` (6), `treatment_objectives`, `treatment_plan`, `observations` |
+| `physiotherapy` v4 | yes | 5 — `main_complaints`, `background`, `treatment_goals`, `treatment_plan`, `observations` |
+| `nesa` v1 | yes | 0 — pending JP's incoming form |
+| `massagem-terapeutica` v1 | wrapper → physiotherapy v4 | 5 (inherited) |
+| `pilates-terapeutico` v1 | wrapper → physiotherapy v4 | 5 (inherited) |
+| `rpg` v1 | wrapper → physiotherapy v4 | 5 (inherited) |
