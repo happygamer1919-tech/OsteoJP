@@ -1,9 +1,11 @@
 import "server-only";
+import { parseTenantConfig, type ReminderConfig } from "@/lib/admin/settings-config";
 import { loadReminderData } from "./data";
 import { resolveLocale, formatTime, formatDateLong, formatDateShort } from "./locale";
 import { renderEmail, renderSms, type ReminderContext, type ReminderOffsetId } from "./templates";
 import { sendEmail, sendSms, type SendResult } from "./clients";
 import { signRescheduleToken, rescheduleTokenExpiry } from "./link-token";
+import { REMINDER_OFFSETS } from "./offsets";
 
 // Reminder dispatch: load (tenant-scoped) → resolve locale → render PT/EN →
 // send (sandbox-gated). One function, called from the Inngest step. Kept thin
@@ -14,8 +16,60 @@ import { signRescheduleToken, rescheduleTokenExpiry } from "./link-token";
 const REMINDABLE_STATUSES = new Set(["scheduled", "confirmed"]);
 
 export type DispatchOutcome =
-  | { dispatched: false; reason: "not_found" | "status" | "no_contact" }
+  | {
+      dispatched: false;
+      reason: "not_found" | "status" | "no_contact" | "lead_time_off" | "channels_off";
+    }
   | { dispatched: true; channels: SendResult[] };
+
+/**
+ * Lead-time (hours before start) for each scheduler offset id, derived from
+ * REMINDER_OFFSETS so the dispatch gate and the scheduler share one source of
+ * truth. The tenant config's REMINDER_LEAD_TIME_OPTIONS is deliberately the same
+ * 48/24 set, which is what makes the membership test in planReminderChannels
+ * meaningful — the UI can never select a lead time the pipeline can't honor.
+ */
+const OFFSET_LEAD_HOURS = new Map<ReminderOffsetId, number>(
+  REMINDER_OFFSETS.map((o) => [o.id, o.minutesBefore / 60]),
+);
+
+export type ReminderPlan =
+  | { send: false; reason: "lead_time_off" | "no_contact" | "channels_off" }
+  | { send: true; email: boolean; sms: boolean };
+
+/**
+ * Decide, from the tenant reminder config, which channels (if any) a reminder
+ * for this (offset, patient-contact) should go out on. Pure + exported for
+ * direct unit testing without the DB. Precedence, most decisive first:
+ *   1. lead_time_off — the tenant disabled this offset; nothing sends, contact
+ *      and channel toggles are irrelevant.
+ *   2. no_contact    — the patient has neither email nor phone on file.
+ *   3. channels_off  — contact exists, but every channel the patient could be
+ *      reached on is disabled in config.
+ * On the default config (both channels on, both lead times on) this collapses to
+ * the prior contact-presence behavior: email iff email-on-file, SMS iff phone —
+ * which is how "defaults preserve current behavior" holds for unset config.
+ */
+export function planReminderChannels(
+  reminders: ReminderConfig,
+  offsetId: ReminderOffsetId,
+  contact: { email: boolean; phone: boolean },
+): ReminderPlan {
+  const leadHours = OFFSET_LEAD_HOURS.get(offsetId);
+  if (
+    leadHours === undefined ||
+    !(reminders.leadTimeHours as readonly number[]).includes(leadHours)
+  ) {
+    return { send: false, reason: "lead_time_off" };
+  }
+  if (!contact.email && !contact.phone) {
+    return { send: false, reason: "no_contact" };
+  }
+  const email = reminders.emailEnabled && contact.email;
+  const sms = reminders.smsEnabled && contact.phone;
+  if (!email && !sms) return { send: false, reason: "channels_off" };
+  return { send: true, email, sms };
+}
 
 function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? fullName;
@@ -79,10 +133,17 @@ export function buildReminderContext(
 }
 
 /**
- * Render and send the reminder for one appointment + offset. Email goes out if
- * the patient has an email; SMS if they have a phone. Both are sandbox-gated in
- * the send wrappers, so by default this renders and returns without any network
- * call.
+ * Render and send the reminder for one appointment + offset, honoring the
+ * tenant's reminder config (channel toggles + selected lead times) read from
+ * tenants.settings. A channel goes out only when it is BOTH enabled in config
+ * AND the patient has that contact on file; an offset the tenant turned off is
+ * suppressed entirely. Config is read tolerantly (parseTenantConfig), so a
+ * tenant with no reminder config saved behaves exactly as before — all channels
+ * on, both lead times on. Sends stay sandbox-gated in the wrappers, so by
+ * default this renders and returns without any network call.
+ *
+ * The scheduler still enqueues every offset (it has no per-tenant config); the
+ * gate lives here so the scheduling math (#98/#99) stays untouched.
  */
 export async function dispatchReminder(
   tenantId: string,
@@ -94,15 +155,19 @@ export async function dispatchReminder(
   if (!REMINDABLE_STATUSES.has(data.status)) {
     return { dispatched: false, reason: "status" };
   }
-  if (!data.patientEmail && !data.patientPhone) {
-    return { dispatched: false, reason: "no_contact" };
-  }
+
+  const config = parseTenantConfig(data.tenantSettings).reminders;
+  const plan = planReminderChannels(config, offsetId, {
+    email: !!data.patientEmail,
+    phone: !!data.patientPhone,
+  });
+  if (!plan.send) return { dispatched: false, reason: plan.reason };
 
   const locale = resolveLocale(data.tenantSettings);
   const ctx = buildReminderContext({ ...data, tenantId }, locale);
 
   const channels: SendResult[] = [];
-  if (data.patientEmail) {
+  if (plan.email && data.patientEmail) {
     const email = renderEmail(offsetId, locale, ctx);
     channels.push(
       await sendEmail({
@@ -112,7 +177,7 @@ export async function dispatchReminder(
       }),
     );
   }
-  if (data.patientPhone) {
+  if (plan.sms && data.patientPhone) {
     const sms = renderSms(offsetId, locale, ctx);
     channels.push(await sendSms({ to: data.patientPhone, body: sms }));
   }
