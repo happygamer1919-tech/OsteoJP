@@ -15,3 +15,8 @@ export {
   type SeedRoleAction,
   type SeedRoleResult,
 } from "./seed/roles";
+
+// Shared tenant onboarding entry point — used by the staff platform and the
+// superadmin app. One implementation so the tenant + roles + audit invariant
+// cannot drift between callers.
+export { provisionTenant, type ProvisionTenantResult } from "./src/provision";

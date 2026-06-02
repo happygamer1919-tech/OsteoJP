@@ -1,18 +1,15 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
 import { assertCan, toClaims, type Role } from "@osteojp/auth";
-import {
-  getDbAdmin,
-  withTenantContext,
-  seedTenantRoles,
-  roles,
-  users,
-  tenants,
-  type SeedRoleResult,
-} from "@osteojp/db";
+import { getDbAdmin, withTenantContext, roles, users, tenants } from "@osteojp/db";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/admin/audit";
 import type { RequestContext } from "./context";
+
+// Tenant onboarding (tenant + roles + audit) now lives in @osteojp/db so the
+// superadmin app can call the same implementation. Re-exported here to keep the
+// staff-platform import path (#1) stable.
+export { provisionTenant, type ProvisionTenantResult } from "@osteojp/db";
 
 type NewStaff = { email: string; fullName: string; roleSlug: Role; password: string };
 
@@ -103,57 +100,6 @@ export async function generateSetPasswordLink(email: string): Promise<string | n
   } catch {
     return null;
   }
-}
-
-/**
- * Create a tenant and auto-provision its canonical role set so the tenant is
- * usable immediately — no manual role seeding before the first owner can be
- * bootstrapped. This is the tenant-create path; `bootstrapTenantOwner` below
- * assumes the 'owner' role this produces already exists.
- *
- * Uses the RLS-bypassing admin handle: a tenant being created has no JWT/user
- * context yet, so there is no tenant claim to scope through withTenantContext.
- * Both writes scope `tenant_id` explicitly (tenant id on the tenant row; the
- * seeder sets it on every role row) per the service-role rule.
- *
- * Idempotent: the tenant insert is keyed on its unique `slug` and the role
- * seed on (tenant_id, slug), both ON CONFLICT DO NOTHING — re-running with the
- * same slug never duplicates a tenant or its roles and never alters an
- * existing tenant's rows.
- *
- * NOTE: no audit row is written here, matching `bootstrapTenantOwner`. Tenant
- * creation is a system/superadmin action with no in-tenant actor to attribute,
- * and the audit module is out of this change's scope. Flagged for the audit
- * stream / owner: decide whether tenant lifecycle needs an audit trail.
- */
-export async function provisionTenant(params: {
-  name: string;
-  slug: string;
-  nif?: string | null;
-}): Promise<{ tenantId: string; created: boolean; roles: SeedRoleResult[] }> {
-  const db = getDbAdmin();
-
-  const inserted = await db
-    .insert(tenants)
-    .values({ name: params.name, slug: params.slug, nif: params.nif ?? null })
-    .onConflictDoNothing({ target: tenants.slug })
-    .returning({ id: tenants.id });
-
-  let tenantId = inserted[0]?.id;
-  const created = Boolean(tenantId);
-  if (!tenantId) {
-    const existing = await db
-      .select({ id: tenants.id })
-      .from(tenants)
-      .where(eq(tenants.slug, params.slug));
-    tenantId = existing[0]?.id;
-  }
-  if (!tenantId) {
-    throw new Error(`provisionTenant: failed to resolve tenant id for slug '${params.slug}'`);
-  }
-
-  const roleResults = await seedTenantRoles(db, tenantId);
-  return { tenantId, created, roles: roleResults };
 }
 
 /** One-time first-owner bootstrap. Requires tenant + 'owner' role already seeded. */

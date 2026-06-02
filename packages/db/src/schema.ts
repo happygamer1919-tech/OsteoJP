@@ -103,6 +103,11 @@ export const timeOffReason = pgEnum("time_off_reason", [
   "other",
 ]);
 
+// Stream F — platform-level tenant lifecycle. Managed ONLY by the superadmin
+// (platform operator) via the service-role path; not a tenant-role concern.
+// `suspended` is a platform flag; it does NOT alter tenant RLS isolation.
+export const tenantStatus = pgEnum("tenant_status", ["active", "suspended"]);
+
 /* ================================================================== */
 /* Core tenancy + identity                                            */
 /* ================================================================== */
@@ -114,6 +119,9 @@ export const tenants = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     nif: varchar("nif", { length: 20 }), // PT fiscal number of the clinic
+    // Platform-operator-managed lifecycle. Defaults to `active` so existing
+    // tenants and the role/tenant-create path need no backfill.
+    status: tenantStatus("status").notNull().default("active"),
     settings: jsonb("settings").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
