@@ -9,6 +9,7 @@ export type AdminErrorCode =
   | "last_owner" // would remove/demote/deactivate the last active owner
   | "owner_tier" // non-owner tried to assign or change the owner role
   | "email_taken" // edited email collides with another user in the tenant
+  | "already_invited" // invite target email already belongs to a staff member in the tenant
   | "not_found"
   | "invalid";
 

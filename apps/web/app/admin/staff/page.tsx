@@ -1,4 +1,4 @@
-import { ROLES, type Role } from "@osteojp/auth";
+import { assignableRoles, type Role } from "@osteojp/auth";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { listStaff } from "@/lib/admin/staff";
@@ -23,10 +23,14 @@ export default async function StaffPage({
   const staff = await listStaff(actor);
   const { m } = await searchParams;
 
-  // Only an owner may assign/modify the owner tier; hide it from admins.
+  // Only an owner may assign/modify the owner tier; hide it from admins. The
+  // assignable set is the matrix's single source of truth (assignableRoles),
+  // shared with the server-side reassignment gate (canReassignRole).
   const isOwner = actor.role === "owner";
-  const assignable: Role[] = isOwner ? [...ROLES] : ROLES.filter((r) => r !== "owner");
-  const roleOptions = assignable.map((slug) => ({ slug, label: ROLE_LABEL[slug] }));
+  const roleOptions = assignableRoles(actor.role).map((slug) => ({
+    slug,
+    label: ROLE_LABEL[slug],
+  }));
 
   const errorText =
     m === "err:last_owner" ? s["admin.staff.lastOwnerBlocked"]
