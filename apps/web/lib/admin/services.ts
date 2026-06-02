@@ -23,9 +23,10 @@ export type ServiceView = {
 export type ServiceInput = {
   name: string;
   durationMin: number;
-  // Single global price per service. Per-location price overrides are NOT
-  // modelled here — see the PR description's proposed service_location_prices
-  // join table. priceCents null means "price not set".
+  // The service base price. Per-location overrides sit on top of this in the
+  // service_location_prices table (see setServiceLocationPrices /
+  // resolveServicePriceCents below); effectivePriceCents resolves
+  // override-then-base. priceCents null means "no base price set".
   priceCents: number | null;
 };
 

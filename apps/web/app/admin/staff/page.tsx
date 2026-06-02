@@ -3,7 +3,7 @@ import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { listStaff } from "@/lib/admin/staff";
 import { StaffInviteForm } from "./StaffInviteForm";
-import { changeRoleAction, setActiveAction } from "./actions";
+import { changeRoleAction, editStaffAction, setActiveAction } from "./actions";
 
 const s = getStrings(DEFAULT_LOCALE);
 
@@ -31,6 +31,7 @@ export default async function StaffPage({
   const errorText =
     m === "err:last_owner" ? s["admin.staff.lastOwnerBlocked"]
     : m === "err:owner_tier" ? s["admin.staff.ownerTierBlocked"]
+    : m === "err:email_taken" ? s["admin.staff.emailTakenBlocked"]
     : m && m.startsWith("err") ? s["admin.staff.error"]
     : null;
 
@@ -66,6 +67,27 @@ export default async function StaffPage({
                 <td className="py-2 pr-4">
                   {manageable ? (
                     <div className="flex flex-wrap items-center gap-2">
+                      <form action={editStaffAction} className="flex items-center gap-1">
+                        <input type="hidden" name="userId" value={u.id} />
+                        <input
+                          name="fullName"
+                          defaultValue={u.fullName}
+                          required
+                          aria-label={s["admin.staff.fullName"]}
+                          className="rounded border px-1 py-1"
+                        />
+                        <input
+                          name="email"
+                          type="email"
+                          defaultValue={u.email}
+                          required
+                          aria-label={s["admin.staff.email"]}
+                          className="rounded border px-1 py-1"
+                        />
+                        <button type="submit" className="rounded border px-2 py-1">
+                          {s["admin.staff.save"]}
+                        </button>
+                      </form>
                       <form action={changeRoleAction} className="flex items-center gap-1">
                         <input type="hidden" name="userId" value={u.id} />
                         <select
