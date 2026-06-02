@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  WRAPPER_FORM_REFS,
   currentTemplateForKey,
+  isWrapperType,
   resolveCurrentTemplates,
+  resolveTemplateForType,
   type VersionedTemplate,
 } from "./template-version";
 
@@ -74,6 +77,53 @@ describe("currentTemplateForKey — by-key resolution seam (future wiring)", () 
 
   it("returns null for an unknown key", () => {
     expect(currentTemplateForKey(SEEDED, "massagem")).toBeNull();
+  });
+});
+
+describe("resolveTemplateForType — x-form-ref wrappers reuse the physiotherapy form", () => {
+  it("maps all three wrapper therapy types to physiotherapy", () => {
+    expect(WRAPPER_FORM_REFS).toEqual({
+      "massagem-terapeutica": "physiotherapy",
+      "pilates-terapeutico": "physiotherapy",
+      rpg: "physiotherapy",
+    });
+  });
+
+  it("resolves each wrapper type to the CURRENT physiotherapy template (v4)", () => {
+    for (const wrapper of ["massagem-terapeutica", "pilates-terapeutico", "rpg"]) {
+      const resolved = resolveTemplateForType(SEEDED, wrapper);
+      expect(resolved?.id).toBe("physio-4");
+      expect(resolved?.key).toBe("physiotherapy");
+      expect(resolved?.version).toBe(4);
+    }
+  });
+
+  it("follows the form-ref to the current version even as physiotherapy bumps", () => {
+    // Drop v4 → wrappers must fall back to the next-highest active physio row.
+    const withoutV4 = SEEDED.filter((r) => r.id !== "physio-4");
+    expect(resolveTemplateForType(withoutV4, "rpg")?.id).toBe("physio-3");
+  });
+
+  it("resolves a non-wrapper key directly (no indirection)", () => {
+    expect(resolveTemplateForType(SEEDED, "osteopathy")?.id).toBe("osteo-2");
+    expect(resolveTemplateForType(SEEDED, "nesa")?.id).toBe("nesa-1");
+  });
+
+  it("returns null when the target form is absent (e.g. tenant has no physio)", () => {
+    const noPhysio = SEEDED.filter((r) => r.key !== "physiotherapy");
+    expect(resolveTemplateForType(noPhysio, "rpg")).toBeNull();
+  });
+
+  it("returns null for an unknown, non-wrapper key", () => {
+    expect(resolveTemplateForType(SEEDED, "acupuncture")).toBeNull();
+  });
+
+  it("isWrapperType flags only the three reuse types", () => {
+    expect(isWrapperType("rpg")).toBe(true);
+    expect(isWrapperType("massagem-terapeutica")).toBe(true);
+    expect(isWrapperType("pilates-terapeutico")).toBe(true);
+    expect(isWrapperType("physiotherapy")).toBe(false);
+    expect(isWrapperType("osteopathy")).toBe(false);
   });
 });
 
