@@ -17,6 +17,7 @@ import {
   validateRecordData,
   type Localized,
 } from "./form-template";
+import { resolveCurrentTemplates } from "./template-version";
 
 export type RecordStatus = "draft" | "locked" | "signed";
 
@@ -178,6 +179,14 @@ export async function getRecordDetail(
   });
 }
 
+/**
+ * Templates for the "Modelo" picker: ONE entry per key — the current (highest)
+ * version among active rows. Without this collapse the picker would list every
+ * version (osteopathy v1+v2, physiotherapy v3+v4 since PR #91) as duplicates.
+ *
+ * This is the new-record path only. Existing records pin formTemplateId and are
+ * resolved by id elsewhere (immutability) — never through this resolver.
+ */
 export async function listActiveTemplates(ctx: RequestContext): Promise<TemplateOption[]> {
   assertCan(ctx.role, "clinical_records:read");
   return runScoped(ctx, async (tx) => {
@@ -190,13 +199,15 @@ export async function listActiveTemplates(ctx: RequestContext): Promise<Template
       })
       .from(formTemplates)
       .where(eq(formTemplates.isActive, true))
-      .orderBy(asc(formTemplates.key));
-    return rows.map((r) => ({
+      // key asc, version asc → resolveCurrentTemplates keeps the picker key-sorted.
+      .orderBy(asc(formTemplates.key), asc(formTemplates.version));
+    const options: TemplateOption[] = rows.map((r) => ({
       id: r.id,
       key: r.key,
       title: (r.title as Localized | null) ?? null,
       version: r.version,
     }));
+    return resolveCurrentTemplates(options);
   });
 }
 
