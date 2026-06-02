@@ -20,10 +20,10 @@ import { drizzleIngestionStore } from "@/lib/ingestion/store";
 // region→marker mapping — both wait on the partner field list. The draft stores
 // the raw payload verbatim for the human reviewer (see store.ts).
 //
-// TODO(hardening-lane): exclude this path from the Supabase session middleware
-// (apps/web/middleware.ts, owned by the hardening lane) — same as /api/inngest.
-// This route is HMAC-authed; the session middleware would otherwise redirect the
-// partner's unauthenticated server call to login. Do NOT edit that file here.
+// Session middleware: `/api/v1/ingestion` is excluded from the Supabase session
+// proxy (apps/web/proxy.ts matcher, same as /api/inngest), so this unauthenticated
+// server-to-server request reaches the handler instead of being redirected to
+// /login. The HMAC check below is the ONLY auth gate.
 
 export const runtime = "nodejs"; // node:crypto + server-only
 export const dynamic = "force-dynamic"; // signed, per-request; never cached

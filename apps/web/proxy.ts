@@ -9,10 +9,15 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Exclude `/api/inngest` (and its subpaths): the Inngest serve endpoint
-    // authenticates server-to-server via INNGEST_SIGNING_KEY, not the Supabase
-    // user session, so it must not be redirected to /login in deployed envs.
-    // All other routes (app pages and other /api/* routes) stay session-gated.
-    "/((?!_next/static|_next/image|favicon.ico|api/inngest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Exclude two server-to-server endpoints that authenticate themselves and
+    // must NOT be redirected to /login in deployed envs:
+    //   - `/api/inngest`        — Inngest serve endpoint (INNGEST_SIGNING_KEY).
+    //   - `/api/v1/ingestion`   — AI partner ingestion (HMAC over the raw body;
+    //                             see app/api/v1/ingestion/.../route.ts). The
+    //                             request is intentionally unauthenticated at the
+    //                             session layer; its own HMAC check is the gate.
+    // Both exclusions cover subpaths. Every other route — app pages and all other
+    // /api/* routes, including the rest of /api/v1 — stays session-gated.
+    "/((?!_next/static|_next/image|favicon.ico|api/inngest|api/v1/ingestion|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
