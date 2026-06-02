@@ -63,3 +63,50 @@ export function currentTemplateForKey<T extends VersionedTemplate>(
   }
   return winner;
 }
+
+/* ------------------------------------------------------------------ */
+/* x-form-ref wrappers — therapy types that reuse another form        */
+/* ------------------------------------------------------------------ */
+
+// Therapy types that carry NO clinical form of their own and reuse another
+// template's form by reference. Source of truth: the schema-less pointer-wrapper
+// seed files in packages/db/seed/form-templates/ — each declares
+// `x-form-ref: "physiotherapy"`. Those files are intentionally NOT seeded as
+// templates (the seed loader skips them), so the wrapper keys never appear as
+// form_templates rows; this map is how their therapy-type key resolves to the
+// form they point at. Keep in lockstep with the wrappers' `x-form-ref`.
+export const WRAPPER_FORM_REFS: Readonly<Record<string, string>> = {
+  "massagem-terapeutica": "physiotherapy",
+  "pilates-terapeutico": "physiotherapy",
+  rpg: "physiotherapy",
+};
+
+/** True if `typeKey` is a reuse-only therapy type that points at another form. */
+export function isWrapperType(typeKey: string): boolean {
+  return Object.prototype.hasOwnProperty.call(WRAPPER_FORM_REFS, typeKey);
+}
+
+/**
+ * Resolve the current form template for a therapy-type key. If the key is an
+ * x-form-ref wrapper (massagem-terapeutica / pilates-terapeutico / rpg) it
+ * follows the reference to its target form (physiotherapy); otherwise the key is
+ * resolved directly. Returns the current (highest-version) ACTIVE row for the
+ * resolved key, or null if absent.
+ *
+ * Tenant-safety: this is pure and operates only on `rows`. Pass the rows you
+ * already scoped to the tenant (e.g. listActiveTemplates' tenant-scoped, active
+ * set) — exactly the contract of currentTemplateForKey. It never widens scope.
+ *
+ * This is the decision-INDEPENDENT core the scheduler will call to associate a
+ * form when booking one of these therapy types. TODO(owner): whether these
+ * wrapper types ALSO surface as their own entries in the "Modelo" dropdown is an
+ * open decision — until then they reuse the physiotherapy entry and are not
+ * seeded/listed separately. This resolver does not depend on that outcome.
+ */
+export function resolveTemplateForType<T extends VersionedTemplate>(
+  rows: T[],
+  typeKey: string,
+): T | null {
+  const targetKey = WRAPPER_FORM_REFS[typeKey] ?? typeKey;
+  return currentTemplateForKey(rows, targetKey);
+}
