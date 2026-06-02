@@ -10,13 +10,15 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "seed:form-templates": "tsx seed/form-templates.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.22.3",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^4.1.7"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
