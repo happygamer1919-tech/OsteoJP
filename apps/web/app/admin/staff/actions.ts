@@ -5,7 +5,12 @@ import { requireRequestContext } from "@/lib/auth/context";
 import { changeStaffRole, editStaff, inviteStaff, setStaffActive } from "@/lib/admin/staff";
 import { isAdminError } from "@/lib/admin/errors";
 
-export type InviteState = { ok: boolean; tempPassword?: string; code?: string };
+export type InviteState = {
+  ok: boolean;
+  delivery?: "email" | "temp_password";
+  tempPassword?: string;
+  code?: string;
+};
 
 export async function inviteAction(
   _prev: InviteState,
@@ -13,13 +18,15 @@ export async function inviteAction(
 ): Promise<InviteState> {
   const actor = await requireRequestContext();
   try {
-    const { tempPassword } = await inviteStaff(actor, {
+    const result = await inviteStaff(actor, {
       email: String(formData.get("email") ?? ""),
       fullName: String(formData.get("fullName") ?? ""),
       roleSlug: String(formData.get("role") ?? ""),
     });
     revalidatePath("/admin/staff");
-    return { ok: true, tempPassword };
+    return result.delivery === "email"
+      ? { ok: true, delivery: "email" }
+      : { ok: true, delivery: "temp_password", tempPassword: result.tempPassword };
   } catch (e) {
     return { ok: false, code: isAdminError(e) ? e.code : "error" };
   }

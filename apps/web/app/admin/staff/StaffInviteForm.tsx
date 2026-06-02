@@ -16,9 +16,11 @@ export function StaffInviteForm({
   const errorText =
     state.code === "owner_tier"
       ? s["admin.staff.ownerTierBlocked"]
-      : state.code
-        ? s["admin.staff.error"]
-        : null;
+      : state.code === "already_invited"
+        ? s["admin.staff.alreadyInvitedBlocked"]
+        : state.code
+          ? s["admin.staff.error"]
+          : null;
 
   return (
     <form action={action} className="space-y-3 rounded border p-4 max-w-xl">
@@ -51,9 +53,17 @@ export function StaffInviteForm({
         {s["admin.staff.invite"]}
       </button>
 
-      {state.ok && state.tempPassword && (
+      {state.ok && state.delivery === "email" && (
         <div className="rounded border border-success bg-success-bg p-3 text-sm">
           <p className="font-medium text-success">{s["admin.staff.invited"]}</p>
+          <p className="mt-1">{s["admin.staff.inviteEmailSent"]}</p>
+        </div>
+      )}
+      {state.ok && state.delivery === "temp_password" && state.tempPassword && (
+        <div className="rounded border border-success bg-success-bg p-3 text-sm">
+          <p className="font-medium text-success">{s["admin.staff.invited"]}</p>
+          {/* Email could not be delivered — fall back to out-of-band hand-off. */}
+          <p className="mt-1">{s["admin.staff.inviteEmailFailed"]}</p>
           <p className="mt-1">{s["admin.staff.tempPasswordNotice"]}</p>
           <code className="mt-1 block break-all rounded bg-surface px-2 py-1 font-mono">
             {state.tempPassword}

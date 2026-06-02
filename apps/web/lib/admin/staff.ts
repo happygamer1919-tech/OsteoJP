@@ -1,10 +1,12 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
-import { assertCan, isRole, type Role } from "@osteojp/auth";
+import { assertCan, canReassignRole, isRole, type Role } from "@osteojp/auth";
+import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { roles, users, type DbTx } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
-import { provisionStaffUser } from "@/lib/auth/provision";
+import { provisionStaffUser, generateSetPasswordLink } from "@/lib/auth/provision";
+import { sendEmail, type SendResult } from "@/lib/reminders/clients";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import { countActiveOwners, wouldRemoveLastOwner } from "./guards";
@@ -42,18 +44,47 @@ export async function listStaff(actor: RequestContext): Promise<StaffMember[]> {
 }
 
 /**
+ * How a staff invite was delivered. `email` = a set-password link was actually
+ * sent; `temp_password` = the link could not be delivered and the admin must
+ * hand over the one-time password out of band.
+ */
+export type InviteResult =
+  | { userId: string; delivery: "email" }
+  | { userId: string; delivery: "temp_password"; tempPassword: string };
+
+/**
+ * Decide invite delivery from the email-send outcome. The temp password is the
+ * fallback whenever the invite mail did NOT actually leave the system: a failed
+ * send (caught upstream as `null`) OR a sandbox/suppressed send
+ * (REMINDERS_LIVE_SEND !== "true"). Only a real, live delivery counts as
+ * `email` — otherwise the new staff member would have no way to sign in. Pure
+ * so the rule is unit-testable without the IO.
+ */
+export function inviteDeliveryFromSend(
+  send: SendResult | null,
+): "email" | "temp_password" {
+  return send && !send.sandbox ? "email" : "temp_password";
+}
+
+/**
  * Invite a staff member. Capability + owner-tier gating happens here; the actual
  * privileged user creation goes ONLY through provisionStaffUser (the single
  * sanctioned admin-privilege path), which also writes the staff.invite audit row
  * inside its insert transaction.
  *
- * Returns a one-time temporary password for the inviting admin to hand over out
- * of band. Email-based invite (set-password link) is a deliberate follow-up.
+ * Delivery: a single-use, expiring set-password link is emailed via the shared
+ * Resend path so the new member sets their own password. The one-time temporary
+ * password is kept ONLY as a fallback for when the email is not delivered (send
+ * error or sandbox suppression) — see inviteDeliveryFromSend.
+ *
+ * Idempotent: an email already belonging to a staff member in this tenant is
+ * rejected with `already_invited` (no duplicate auth user created). A race with
+ * a concurrent invite is caught as the (tenant_id, email) unique violation.
  */
 export async function inviteStaff(
   actor: RequestContext,
   input: { email: string; fullName: string; roleSlug: string },
-): Promise<{ userId: string; tempPassword: string }> {
+): Promise<InviteResult> {
   assertCan(actor.role, "users:manage");
 
   const email = input.email.trim().toLowerCase();
@@ -70,14 +101,50 @@ export async function inviteStaff(
     throw new AdminError("owner_tier");
   }
 
+  // Idempotent invite: a staff member with this email already exists in the
+  // tenant → clean domain error, before any privileged auth-user creation.
+  const existing = await runScoped(actor, (tx) =>
+    tx.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1),
+  );
+  if (existing.length > 0) {
+    throw new AdminError("already_invited");
+  }
+
   const tempPassword = randomBytes(18).toString("base64url");
-  const { userId } = await provisionStaffUser(actor, {
-    email,
-    fullName,
-    roleSlug: input.roleSlug,
-    password: tempPassword,
-  });
-  return { userId, tempPassword };
+  let userId: string;
+  try {
+    ({ userId } = await provisionStaffUser(actor, {
+      email,
+      fullName,
+      roleSlug: input.roleSlug,
+      password: tempPassword,
+    }));
+  } catch (e) {
+    // Concurrent invite won the (tenant_id, email) unique index between the
+    // pre-check above and the insert — surface the same clean domain error.
+    if (isUniqueViolation(e)) throw new AdminError("already_invited");
+    throw e;
+  }
+
+  // Email the set-password link. Any failure (link generation or send) leaves
+  // `send` null and falls through to the temp-password hand-off.
+  let send: SendResult | null = null;
+  try {
+    const link = await generateSetPasswordLink(email);
+    if (link) {
+      // Staff invite copy uses the default (clinic) locale; there is no
+      // per-user locale preference at invite time.
+      const s = getStrings(DEFAULT_LOCALE);
+      const body = `${s["admin.invite.email.intro"]}\n\n${link}\n\n${s["admin.invite.email.outro"]}`;
+      send = await sendEmail({ to: email, subject: s["admin.invite.email.subject"], body });
+    }
+  } catch {
+    send = null;
+  }
+
+  return inviteDeliveryFromSend(send) === "email"
+    ? { userId, delivery: "email" }
+    : { userId, delivery: "temp_password", tempPassword };
 }
 
 export async function setStaffActive(
@@ -138,8 +205,10 @@ export async function changeStaffRole(
     const current = target.roleSlug;
     if (current === newRoleSlug) return; // no-op
 
-    // Owner-tier: only an owner may grant the owner role or modify an owner.
-    if ((newRoleSlug === "owner" || current === "owner") && actor.role !== "owner") {
+    // Owner-tier authority is defined once in the permission matrix (shared with
+    // the staff UI's role <select>): an admin may reassign any non-owner role,
+    // but granting owner or changing an owner is owner-only.
+    if (!canReassignRole(actor.role, current, newRoleSlug)) {
       throw new AdminError("owner_tier");
     }
 
