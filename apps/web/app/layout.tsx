@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { htmlLang } from "@osteojp/i18n";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -25,9 +26,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Document language drives native date-picker format (dd/mm/aaaa) in
+  // Firefox/Safari, screen-reader pronunciation, number formatting and
+  // hyphenation. Sourced from @osteojp/i18n (DEFAULT_LOCALE -> "pt-PT"); pass a
+  // resolved locale to htmlLang() here once per-tenant/per-request locale lands.
   return (
     <html
-      lang="en"
+      lang={htmlLang()}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
