@@ -3,13 +3,19 @@ import { sql } from "drizzle-orm";
 import { patients } from "@osteojp/db";
 import { s } from "@/lib/i18n";
 import { getRequestContext, runScoped } from "@/lib/auth/context";
+import { activePatientsOnly } from "@/lib/patients/filters";
 
 export default async function DashboardPage() {
   const ctx = await getRequestContext();
   if (!ctx) redirect("/login");
 
+  // BUG-12: exclude soft-deleted patients so the count reflects active patients
+  // (deleted_at IS NULL), matching the patients list/search.
   const rows = await runScoped(ctx, (tx) =>
-    tx.select({ count: sql<number>`count(*)::int` }).from(patients),
+    tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(patients)
+      .where(activePatientsOnly),
   );
   const patientCount = rows[0]?.count ?? 0;
 
