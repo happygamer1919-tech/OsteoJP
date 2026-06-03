@@ -23,6 +23,7 @@
     "drizzle-orm": "^0.45.2",
     "inngest": "^4.5.0",
     "next": "16.2.6",
+    "pdf-lib": "^1.17.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "resend": "^6.12.4",
