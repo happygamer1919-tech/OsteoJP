@@ -1,6 +1,6 @@
 {
   "key": "massagem-terapeutica",
-  "version": 1,
+  "version": 2,
   "title": {
     "pt": "Massagem Terapêutica — Avaliação de Episódio",
     "en": "Therapeutic Massage — Episode Evaluation"
@@ -10,10 +10,72 @@
     "fisiozero-tipo_evento_dinamico": "Tratamento terapeutico"
   },
   "x-form-ref": "physiotherapy",
-  "x-form-note": "This therapy type uses the identical Fisiozero clinical form as all other physiotherapy types. The form fields are defined in physiotherapy-v1.json. Therapy type is appointment metadata only (tipo_evento_dinamico = 'Tratamento terapeutico'), not a form selector. This file exists as a named entry point so the scheduler can associate the correct form template when booking a 'Massagem Terapêutica' appointment.",
+  "x-form-note": "Pointer-wrapper referencing physiotherapy-v1.json for main clinical fields. Adds a short contraindication screen specific to massage therapy, confirmed by owner 2026-06-03.",
+  "contraindication_screen": {
+    "title": {
+      "pt": "Rastreio de Contraindicações — Massagem Terapêutica",
+      "en": "Contraindication Screen — Therapeutic Massage"
+    },
+    "fields": [
+      {
+        "key": "skin_conditions",
+        "type": "checkbox",
+        "label": {
+          "pt": "Condições de pele (feridas abertas, infeções, dermatite ativa)",
+          "en": "Skin conditions (open wounds, infections, active dermatitis)"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "thrombosis_risk",
+        "type": "checkbox",
+        "label": {
+          "pt": "Risco de trombose / tromboflebite",
+          "en": "Thrombosis / thrombophlebitis risk"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "recent_surgery",
+        "type": "checkbox",
+        "label": {
+          "pt": "Cirurgia recente (menos de 6 semanas)",
+          "en": "Recent surgery (less than 6 weeks)"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "oncology_active",
+        "type": "checkbox",
+        "label": {
+          "pt": "Oncologia ativa ou em tratamento",
+          "en": "Active oncology or undergoing treatment"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "pregnancy",
+        "type": "checkbox",
+        "label": {
+          "pt": "Gravidez (primeiro trimestre ou complicações)",
+          "en": "Pregnancy (first trimester or complications)"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "contraindication_notes",
+        "type": "textarea",
+        "label": {
+          "pt": "Notas adicionais sobre contraindicações",
+          "en": "Additional contraindication notes"
+        },
+        "ai_extractable": true
+      }
+    ]
+  },
   "_meta": {
-    "source": "Fisiozero production — confirmed by Claude browser agent extraction 2026-06-01. Fisiozero does not have separate forms per therapy type; all physio types share one form (op=av).",
+    "source": "Fisiozero production + owner confirmation 2026-06-03",
     "reviewed_by": "Max (sm33xy)",
-    "version_note": "v1 — thin wrapper referencing physiotherapy-v1.json. No independent field list; see x-form-ref."
+    "version_note": "v2 — pointer wrapper + contraindication screen added per JP decision 2026-06-03"
   }
 }
