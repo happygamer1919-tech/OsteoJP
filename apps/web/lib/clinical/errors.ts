@@ -3,6 +3,7 @@ import "server-only";
 export type ClinicalErrorCode =
   | "not_found"
   | "finalized" // record is locked/signed and immutable
+  | "not_printable" // record is not finalized (draft / under AI review) — cannot print
   | "validation" // required fields missing
   | "invalid";
 
