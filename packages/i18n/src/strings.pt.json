@@ -343,6 +343,8 @@
   "clinical.validationFailed": "Verifique os campos obrigatórios.",
   "clinical.finalized": "Ficha já finalizada; não pode ser alterada.",
   "clinical.error": "A operação falhou.",
+  "clinical.downloadPdf": "Descarregar PDF",
+  "clinical.downloadPdfError": "Não foi possível gerar o PDF.",
   "clinical.attachments": "Anexos",
   "clinical.attachmentAdd": "Adicionar anexo",
   "clinical.attachmentUploading": "A carregar…",

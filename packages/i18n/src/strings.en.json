@@ -343,6 +343,8 @@
   "clinical.validationFailed": "Check the required fields.",
   "clinical.finalized": "Record already finalized; it cannot be changed.",
   "clinical.error": "The operation failed.",
+  "clinical.downloadPdf": "Download PDF",
+  "clinical.downloadPdfError": "Could not generate the PDF.",
   "clinical.attachments": "Attachments",
   "clinical.attachmentAdd": "Add attachment",
   "clinical.attachmentUploading": "Uploading…",
