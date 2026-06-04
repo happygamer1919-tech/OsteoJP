@@ -2,8 +2,10 @@ export * from "./src/schema";
 export {
   getDbAdmin,
   withTenantContext,
+  withPatientContext,
   type DbTx,
   type TenantClaims,
+  type PatientClaims,
 } from "./src/client";
 
 // Canonical-role seeder — consumed by the tenant-create path (apps/web

@@ -284,6 +284,14 @@ export const patients = pgTable(
     postalCode: varchar("postal_code", { length: 16 }),
     city: text("city"),
     notes: text("notes"),
+    // Patient identity layer — links a patient to their Supabase auth principal
+    // (the patient portal login at api.osteojp.pt). A patient is a DISTINCT
+    // principal from a staff `users` row: there is no users row for a patient.
+    // Nullable until the patient activates; UNIQUE so one auth account maps to at
+    // most one patient. The access-token hook resolves patient_id from this
+    // column, and patient-portal RLS self-scope keys on that claim.
+    authUserId: uuid("auth_user_id").unique(),
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
     // Stream A — patient merge: the losing record points at the survivor.
     mergedIntoId: uuid("merged_into_id"),
     createdBy: uuid("created_by").references(() => users.id),
