@@ -452,5 +452,17 @@
   "report.signature.heading": "Assinatura",
   "report.signature.practitioner": "Profissional",
   "report.signature.signedAt": "Assinado em",
-  "report.footer.notFiscalDocument": "Documento clínico. Não constitui fatura nem documento fiscal."
+  "report.footer.notFiscalDocument": "Documento clínico. Não constitui fatura nem documento fiscal.",
+  "intake.fichaGeral.title": "Ficha Geral",
+  "intake.supplement.title": "Suplemento por terapia",
+  "intake.therapy.osteopathy": "Osteopatia",
+  "intake.therapy.physiotherapy": "Fisioterapia",
+  "intake.therapy.rpg": "RPG",
+  "intake.therapy.nesa": "NESA",
+  "intake.therapy.massagem-terapeutica": "Massagem Terapêutica",
+  "intake.therapy.pilates-terapeutico": "Pilates Terapêutico",
+  "intake.state.pendingReview": "Em revisão",
+  "intake.submitted": "Formulário enviado para revisão.",
+  "fichas.title": "As Minhas Fichas",
+  "fichas.empty": "Ainda não há fichas finalizadas."
 }

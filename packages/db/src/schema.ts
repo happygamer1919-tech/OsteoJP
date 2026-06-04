@@ -55,7 +55,11 @@ export const recordStatus = pgEnum("record_status", [
   "signed", // locked + practitioner signature
 ]);
 
-export const recordSource = pgEnum("record_source", ["manual", "ai_ingested"]);
+// `patient` (Wave B) tags a record/submission originating from the patient
+// portal intake. Like `ai_ingested`, it NEVER auto-produces a finalized record:
+// a patient-submitted form lands in a review state and waits for therapist
+// finalize (a separate future wave). See patient_form_submissions below.
+export const recordSource = pgEnum("record_source", ["manual", "ai_ingested", "patient"]);
 
 // AI ingestion review states (Stream D). PLACEHOLDER — the exact states depend on
 // the AI partner ingestion contract, which is still being finalized. Refine here
@@ -672,5 +676,64 @@ export const invoices = pgTable(
   (t) => [
     index("invoices_tenant_idx").on(t.tenantId),
     index("invoices_patient_idx").on(t.patientId),
+  ],
+);
+
+/* ================================================================== */
+/* Patient form intake (Wave B)                                       */
+/* ================================================================== */
+
+// A form the PATIENT submits from the portal: the shared general anamnese
+// (Ficha Geral) or a per-therapy supplement. Mirrors the AI-ingestion boundary
+// (CLAUDE.md rule #4): it is source-tagged `patient`, lands in a review state
+// (`ai_review_state`, reusing the same review-before-finalize machine), and
+// NEVER auto-writes a finalized clinical_record. A therapist later reviews and
+// finalizes it into a clinical_record — that staff write path is a separate
+// future wave, NOT built here. Hence this table holds the raw submission only;
+// it has no clinical_record_id and no link into the immutable record lifecycle.
+//
+// RLS (migration 0011): self-scope for the `patient` role (a patient may INSERT
+// + SELECT only their OWN submissions, and only in the initial review state —
+// they can never self-finalize), plus the standard tenant-isolation policy for
+// `authenticated` staff (the future review wave reads/processes them).
+export const patientFormSubmissions = pgTable(
+  "patient_form_submissions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    // The submitting patient. ALWAYS derived from the verified principal, never
+    // from request payload (enforced again by the self-scope WITH CHECK policy).
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    // 'ficha_geral' (shared anamnese) or 'supplement' (per-therapy supplement).
+    formKey: text("form_key").notNull(),
+    // Therapy slug for a supplement (osteopathy, physiotherapy, …); null for the
+    // shared Ficha Geral.
+    therapy: text("therapy"),
+    // The submitted answers. Validated against the intake catalog in app code;
+    // stored raw for the therapist to review.
+    payload: jsonb("payload").notNull().default({}),
+    // Origin tag. Always 'patient' here (app-supplied). Not DB-defaulted: a
+    // DEFAULT would evaluate the new 'patient' enum label in the same migration
+    // that ADDs it, which Postgres forbids ("unsafe use of new value").
+    source: recordSource("source").notNull(),
+    // Review queue state — reuses ai_review_state (the review-before-finalize
+    // machine in apps/web lib/ingestion/review-state.ts). Lands as
+    // 'pending_review'; this table never reaches a finalized record on its own.
+    reviewState: aiReviewState("review_state").notNull().default("pending_review"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("patient_form_submissions_tenant_idx").on(t.tenantId),
+    index("patient_form_submissions_patient_idx").on(t.patientId),
+    index("patient_form_submissions_tenant_review_idx").on(t.tenantId, t.reviewState),
   ],
 );
