@@ -1,6 +1,9 @@
 "use server";
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { can, toClaims } from "@osteojp/auth";
+import { locale } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import {
   createAddendum,
@@ -11,7 +14,10 @@ import {
   confirmAttachment,
   createAttachmentDownloadUrl,
   createAttachmentUploadUrl,
+  ATTACHMENTS_BUCKET,
 } from "@/lib/clinical/storage";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { generateClinicalReportPdf } from "@/lib/clinical/report";
 import { isClinicalError } from "@/lib/clinical/errors";
 import type { SaveState } from "./RecordForm";
 
@@ -49,6 +55,46 @@ export async function signRecordAction(id: string): Promise<void> {
   }
   revalidatePath(`/clinical/${id}`);
   redirect(`/clinical/${id}?m=${m}`);
+}
+
+/**
+ * Render the branded clinical-report PDF for a FINALIZED record and return a
+ * short-lived SIGNED download URL. The PDF is generated server-side via the
+ * read-only lib/clinical/report engine (which itself gates draft/under-review),
+ * written to tenant-prefixed Storage, and handed back as a 60s Supabase signed
+ * URL — the URL carries an opaque token + expiry only, never fiscal data, and
+ * the bytes are never proxied through Next. Read-only on clinical_records.
+ */
+export async function downloadReportUrlAction(
+  id: string,
+): Promise<{ url: string | null }> {
+  const ctx = await requireRequestContext();
+  // Defense in depth beyond the layout gate: a direct action call still needs
+  // clinical read. Reception (no clinical_records:read) is refused here.
+  if (!can(ctx.role, "clinical_records:read")) return { url: null };
+
+  try {
+    // Tenant-scoped + finalized-only gate live inside the report engine (RLS in
+    // load, print gate in buildClinicalReportModel). Draft / under-review throw.
+    const pdf = await generateClinicalReportPdf(toClaims(ctx), id, locale);
+
+    // Tenant-prefixed object path; record id only — no PII, no fiscal data.
+    const path = `${ctx.tenantId}/reports/${id}/${randomUUID()}.pdf`;
+    const admin = createSupabaseAdminClient();
+    const up = await admin.storage
+      .from(ATTACHMENTS_BUCKET)
+      .upload(path, pdf.bytes, { contentType: "application/pdf", upsert: true });
+    if (up.error) return { url: null };
+
+    const signed = await admin.storage
+      .from(ATTACHMENTS_BUCKET)
+      .createSignedUrl(path, 60, { download: pdf.filename });
+    if (signed.error || !signed.data) return { url: null };
+    return { url: signed.data.signedUrl };
+  } catch {
+    // not_found / not_printable / render failure — never surface internals/PII.
+    return { url: null };
+  }
 }
 
 export async function versionRecordAction(id: string): Promise<void> {
