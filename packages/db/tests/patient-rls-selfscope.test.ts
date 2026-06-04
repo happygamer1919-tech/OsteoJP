@@ -93,8 +93,12 @@ async function seedPatientGraph(
           values (${g.appointment}, ${t.tenant}, ${g.patient}, ${t.user}, ${t.location}, ${t.service}, ${START}, ${END})`;
   await p`insert into clinical_episodes (id, tenant_id, patient_id, primary_practitioner_id, title)
           values (${g.episode}, ${t.tenant}, ${g.patient}, ${t.user}, 'Episode')`;
+  // status 'draft' (not 'signed'): the self-scope assertions are independent of
+  // record_status, and 'draft' keeps the row deletable so the afterAll tenant
+  // cascade-delete is not blocked by the clinical_records immutability trigger
+  // (a 'signed'/'locked' row cannot be deleted — by design, migration 0001).
   await p`insert into clinical_records (id, tenant_id, patient_id, episode_id, practitioner_id, status)
-          values (${g.record}, ${t.tenant}, ${g.patient}, ${g.episode}, ${t.user}, 'signed')`;
+          values (${g.record}, ${t.tenant}, ${g.patient}, ${g.episode}, ${t.user}, 'draft')`;
   await p`insert into attachments (id, tenant_id, patient_id, storage_path, file_name)
           values (${g.attachment}, ${t.tenant}, ${g.patient}, ${`path/${g.attachment}`}, 'doc.pdf')`;
   await p`insert into invoices (id, tenant_id, patient_id, amount_cents)
