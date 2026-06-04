@@ -467,5 +467,17 @@
   "report.signature.heading": "Signature",
   "report.signature.practitioner": "Practitioner",
   "report.signature.signedAt": "Signed on",
-  "report.footer.notFiscalDocument": "Clinical document. Not an invoice or fiscal document."
+  "report.footer.notFiscalDocument": "Clinical document. Not an invoice or fiscal document.",
+  "intake.fichaGeral.title": "General Intake Form",
+  "intake.supplement.title": "Per-therapy supplement",
+  "intake.therapy.osteopathy": "Osteopathy",
+  "intake.therapy.physiotherapy": "Physiotherapy",
+  "intake.therapy.rpg": "RPG",
+  "intake.therapy.nesa": "NESA",
+  "intake.therapy.massagem-terapeutica": "Therapeutic Massage",
+  "intake.therapy.pilates-terapeutico": "Therapeutic Pilates",
+  "intake.state.pendingReview": "Under review",
+  "intake.submitted": "Form submitted for review.",
+  "fichas.title": "My Records",
+  "fichas.empty": "No finalized records yet."
 }
