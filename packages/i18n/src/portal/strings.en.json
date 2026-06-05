@@ -19,7 +19,6 @@
     "no": "No",
     "call_clinic": "Call the clinic"
   },
-
   "nav": {
     "home": "Home",
     "appointments": "Appointments",
@@ -28,7 +27,6 @@
     "clinics": "Clinics",
     "account": "Account"
   },
-
   "auth": {
     "welcome_title": "Welcome to the OsteoJP portal",
     "welcome_subtitle": "Manage your appointments, forms and documents.",
@@ -55,7 +53,6 @@
     "logout": "Sign out",
     "session_expired": "Your session has expired. Please sign in again."
   },
-
   "dashboard": {
     "greeting": "Hello, {{name}}",
     "next_appointment_title": "Next appointment",
@@ -70,7 +67,6 @@
     "form_pending_banner": "You have a form to complete before your appointment.",
     "form_pending_cta": "Complete now"
   },
-
   "booking": {
     "title": "Book appointment",
     "step_location": "Choose clinic",
@@ -102,7 +98,6 @@
     "error_submit": "Could not submit booking. Please try again or call the clinic.",
     "rate_limit": "Too many attempts. Please wait a moment and try again."
   },
-
   "appointments": {
     "title": "My appointments",
     "tab_upcoming": "Upcoming",
@@ -129,7 +124,6 @@
     "detail_status": "Status",
     "detail_payment": "Payment"
   },
-
   "forms": {
     "title": "My forms",
     "empty": "No pending forms.",
@@ -174,7 +168,6 @@
     "field_consent_data": "I consent to the processing of my personal data for clinical purposes, under GDPR.",
     "consent_required": "Your consent is required to proceed."
   },
-
   "documents": {
     "title": "Documents",
     "tab_invoices": "Invoices",
@@ -188,7 +181,6 @@
     "download_error": "Could not download document. Please try again.",
     "phase4_notice": "Invoices will be available soon."
   },
-
   "clinics": {
     "title": "Our clinics",
     "address_label": "Address",
@@ -204,7 +196,6 @@
     "castelo_branco_address": "R. Fernando Namora, n.º 6, 6000-140",
     "castelo_branco_hours": "Monday to Friday, 9am–7pm"
   },
-
   "account": {
     "title": "My account",
     "section_personal": "Personal details",
@@ -238,7 +229,6 @@
     "delete_account_success": "Your account has been deleted.",
     "tarifa_protocolo": "Protocol rate"
   },
-
   "services": {
     "osteopatia": "Osteopathy",
     "fisioterapia": "Physiotherapy",
@@ -267,7 +257,6 @@
     "massagem_sub_drenagem_manual": "Manual Lymphatic Drainage",
     "massagem_sub_pressoterapia": "Pressotherapy"
   },
-
   "errors": {
     "404_title": "Page not found",
     "404_body": "The page you are looking for does not exist.",
@@ -278,5 +267,44 @@
     "500_body": "An unexpected error occurred. Please try again later.",
     "offline_title": "No connection",
     "offline_body": "Check your internet connection and try again."
+  },
+  "patientAppointments": {
+    "error": {
+      "unauthorized": "Invalid session. Please sign in again.",
+      "serverError": "An unexpected error occurred. Please try again.",
+      "notFound": "Appointment not found.",
+      "invalidInput": "Invalid data. Please check your input and try again.",
+      "serviceUnavailable": "This service is not available for online booking.",
+      "locationUnavailable": "This clinic is not available for online booking.",
+      "slotInPast": "You cannot book an appointment in the past.",
+      "noSlot": "No slots available for this combination. Try another day or contact the clinic.",
+      "cutoff": "Appointments cannot be cancelled or rescheduled less than 24 hours in advance. Please call the clinic.",
+      "notReschedulable": "This appointment cannot be rescheduled (it has already been cancelled or completed)."
+    }
+  },
+  "intake": {
+    "fichaGeral": {
+      "title": "General intake form",
+      "subtitle": "Personal details, health history and GDPR consent"
+    },
+    "therapy": {
+      "osteopathy": "Osteopathy",
+      "physiotherapy": "Physiotherapy",
+      "rpg": "RPG — Global Postural Re-education",
+      "nesa": "NESA — Non-Invasive Neuromodulation",
+      "massagem-terapeutica": "Therapeutic Massage",
+      "pilates-terapeutico": "Therapeutic Pilates"
+    },
+    "error": {
+      "unknownForm": "Unknown form.",
+      "therapyRequired": "Please indicate the therapy type.",
+      "unknownTherapy": "Unrecognised therapy type.",
+      "therapyNotAllowed": "The general intake form is not therapy-specific.",
+      "invalidPayload": "Invalid form data. Please try again."
+    },
+    "status": {
+      "underReview": "Your therapist will review the form before your appointment.",
+      "submitted": "Form submitted successfully."
+    }
   }
 }
