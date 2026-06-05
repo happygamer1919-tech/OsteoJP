@@ -71,6 +71,27 @@
       "when": 1780439439972,
       "tag": "0009_tenant_status",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780610073075,
+      "tag": "0010_patient_identity_layer",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1780613434617,
+      "tag": "0011_patient_form_intake",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1780617633308,
+      "tag": "0012_patient_jwt_security_definer",
+      "breakpoints": true
     }
   ]
 }

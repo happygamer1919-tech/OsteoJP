@@ -31,6 +31,14 @@ export const claimsFor = (tenantId: string, userRole: AppRole = "admin"): string
   JSON.stringify({ tenant_id: tenantId, user_role: userRole });
 
 /**
+ * Claims for a PATIENT principal — what public.jwt_tenant_id()/jwt_patient_id()
+ * read under the `patient` role. Deliberately carries NO user_role (a patient is
+ * not a staff role) so it mirrors a real patient token.
+ */
+export const patientClaims = (tenantId: string, patientId: string): string =>
+  JSON.stringify({ tenant_id: tenantId, patient_id: patientId });
+
+/**
  * Sentinel thrown to force a ROLLBACK after a successful assertion: postgres.js
  * rolls a transaction back when its callback throws. We catch the sentinel and
  * return the value the callback produced.
@@ -49,12 +57,13 @@ export function connect(): Sql {
  * request.jwt.claims (pass null to set no claims — simulates a missing JWT),
  * then ALWAYS roll back. Returns fn's value.
  *
- * Under `authenticated` the RLS policy applies; under `service_role` it is
- * bypassed (BYPASSRLS) — that distinction is the whole point of the harness.
+ * Under `authenticated` (staff) and `patient` (portal) the RLS policies apply;
+ * under `service_role` they are bypassed (BYPASSRLS) — that distinction is the
+ * whole point of the harness.
  */
 export async function asRole<T>(
   sql: Sql,
-  role: "authenticated" | "service_role",
+  role: "authenticated" | "service_role" | "patient",
   claims: string | null,
   fn: (tx: TransactionSql) => Promise<T>,
 ): Promise<T> {

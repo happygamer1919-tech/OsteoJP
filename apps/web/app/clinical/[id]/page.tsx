@@ -3,17 +3,19 @@ import Link from "next/link";
 import { can } from "@osteojp/auth";
 import { s, locale } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
-import { getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
+import { getRecordDetail } from "@/lib/clinical/records";
 import { parseTemplateSchema } from "@/lib/clinical/form-template";
 import { RecordForm } from "./RecordForm";
 import { Attachments } from "./Attachments";
+import { DownloadReportButton } from "./DownloadReportButton";
+import { statusLabel, canDownloadReport } from "./record-status";
 import { saveRecordAction, signRecordAction, versionRecordAction } from "./actions";
 
-function statusLabel(status: RecordStatus): string {
-  return status === "signed" ? s["clinical.statusSigned"]
-    : status === "locked" ? s["clinical.statusLocked"]
-    : s["clinical.statusDraft"];
-}
+// Always render dynamically: this page reflects live record_status (draft →
+// locked → signed). Without this, the post-sign redirect could serve a cached
+// render where the header subtitle still read "Rascunho" while the record was
+// already signed (BUG-15). Matches the sibling clinical/episodes/[id] route.
+export const dynamic = "force-dynamic";
 
 export default async function RecordDetailPage({
   params,
@@ -82,7 +84,8 @@ export default async function RecordDetailPage({
 
       <Attachments recordId={id} items={record.attachments} readOnly={readOnly} />
 
-      <div className="flex gap-2 border-t pt-4">
+      <div className="flex flex-wrap items-start gap-2 border-t pt-4">
+        {canDownloadReport(record.status) && <DownloadReportButton recordId={id} />}
         {canSign && (
           <form action={signRecordAction.bind(null, id)}>
             <button type="submit" className="rounded border px-3 py-2 text-sm font-medium">

@@ -14,3 +14,12 @@ export type { Role, Capability } from "./permissions";
 
 export { ForbiddenError, assertCan, toClaims } from "./guard";
 export type { RequestContext } from "./guard";
+
+// Patient principal — separate trust domain from the staff matrix above.
+export {
+  PATIENT_ROLE_CLAIM,
+  parsePatientPrincipal,
+  isPatientPrincipal,
+  toPatientClaims,
+} from "./patient";
+export type { PatientPrincipal } from "./patient";
