@@ -19,7 +19,6 @@
     "no": "Não",
     "call_clinic": "Ligar para a clínica"
   },
-
   "nav": {
     "home": "Início",
     "appointments": "Consultas",
@@ -28,7 +27,6 @@
     "clinics": "Clínicas",
     "account": "Conta"
   },
-
   "auth": {
     "welcome_title": "Bem-vindo ao portal OsteoJP",
     "welcome_subtitle": "Gerencie as suas consultas, fichas e documentos.",
@@ -55,7 +53,6 @@
     "logout": "Sair",
     "session_expired": "A sua sessão expirou. Por favor entre novamente."
   },
-
   "dashboard": {
     "greeting": "Olá, {{name}}",
     "next_appointment_title": "Próxima consulta",
@@ -70,7 +67,6 @@
     "form_pending_banner": "Tem uma ficha por preencher antes da sua consulta.",
     "form_pending_cta": "Preencher agora"
   },
-
   "booking": {
     "title": "Marcar consulta",
     "step_location": "Escolha a clínica",
@@ -102,7 +98,6 @@
     "error_submit": "Não foi possível enviar a marcação. Tente novamente ou ligue para a clínica.",
     "rate_limit": "Demasiadas tentativas. Aguarde um momento e tente novamente."
   },
-
   "appointments": {
     "title": "As minhas consultas",
     "tab_upcoming": "Próximas",
@@ -129,7 +124,6 @@
     "detail_status": "Estado",
     "detail_payment": "Pagamento"
   },
-
   "forms": {
     "title": "As minhas fichas",
     "empty": "Não tem fichas pendentes.",
@@ -174,7 +168,6 @@
     "field_consent_data": "Consinto o tratamento dos meus dados pessoais para fins clínicos, nos termos do RGPD.",
     "consent_required": "O seu consentimento é obrigatório para prosseguir."
   },
-
   "documents": {
     "title": "Documentos",
     "tab_invoices": "Faturas",
@@ -188,7 +181,6 @@
     "download_error": "Não foi possível transferir o documento. Tente novamente.",
     "phase4_notice": "As faturas estarão disponíveis em breve."
   },
-
   "clinics": {
     "title": "As nossas clínicas",
     "address_label": "Morada",
@@ -204,7 +196,6 @@
     "castelo_branco_address": "R. Fernando Namora, n.º 6, 6000-140",
     "castelo_branco_hours": "Segunda a sexta, 9h–19h"
   },
-
   "account": {
     "title": "A minha conta",
     "section_personal": "Dados pessoais",
@@ -238,7 +229,6 @@
     "delete_account_success": "A sua conta foi eliminada.",
     "tarifa_protocolo": "Tarifa protocolo"
   },
-
   "services": {
     "osteopatia": "Osteopatia",
     "fisioterapia": "Fisioterapia",
@@ -267,7 +257,6 @@
     "massagem_sub_drenagem_manual": "Drenagem Linfática Manual",
     "massagem_sub_pressoterapia": "Pressoterapia"
   },
-
   "errors": {
     "404_title": "Página não encontrada",
     "404_body": "A página que procura não existe.",
@@ -278,5 +267,44 @@
     "500_body": "Ocorreu um erro inesperado. Tente novamente mais tarde.",
     "offline_title": "Sem ligação",
     "offline_body": "Verifique a sua ligação à internet e tente novamente."
+  },
+  "patientAppointments": {
+    "error": {
+      "unauthorized": "Sessão inválida. Por favor entre novamente.",
+      "serverError": "Ocorreu um erro inesperado. Tente novamente.",
+      "notFound": "Consulta não encontrada.",
+      "invalidInput": "Dados inválidos. Verifique os campos e tente novamente.",
+      "serviceUnavailable": "Este serviço não está disponível para marcação online.",
+      "locationUnavailable": "Esta clínica não está disponível para marcação online.",
+      "slotInPast": "Não é possível marcar uma consulta no passado.",
+      "noSlot": "Não há horários disponíveis para esta combinação. Tente outro dia ou contacte a clínica.",
+      "cutoff": "Não é possível cancelar ou remarcar com menos de 24 horas de antecedência. Por favor ligue para a clínica.",
+      "notReschedulable": "Esta consulta não pode ser remarcada (já foi cancelada ou concluída)."
+    }
+  },
+  "intake": {
+    "fichaGeral": {
+      "title": "Ficha Geral",
+      "subtitle": "Dados pessoais, historial de saúde e consentimento RGPD"
+    },
+    "therapy": {
+      "osteopathy": "Osteopatia",
+      "physiotherapy": "Fisioterapia",
+      "rpg": "RPG — Reeducação Postural Global",
+      "nesa": "NESA — Neuromodulação Não Invasiva",
+      "massagem-terapeutica": "Massagem Terapêutica",
+      "pilates-terapeutico": "Pilates Terapêutico"
+    },
+    "error": {
+      "unknownForm": "Formulário desconhecido.",
+      "therapyRequired": "Indique o tipo de terapia.",
+      "unknownTherapy": "Tipo de terapia não reconhecido.",
+      "therapyNotAllowed": "A Ficha Geral não é específica de uma terapia.",
+      "invalidPayload": "Dados do formulário inválidos. Tente novamente."
+    },
+    "status": {
+      "underReview": "O seu terapeuta irá rever a ficha antes da consulta.",
+      "submitted": "Ficha submetida com sucesso."
+    }
   }
 }
