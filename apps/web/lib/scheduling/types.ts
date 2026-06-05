@@ -90,16 +90,28 @@ export type SeriesOptions = {
   allowConflict?: boolean;
 };
 
-export type ConflictKind = "therapist" | "room";
+export type ConflictKind = "therapist" | "room" | "availability" | "time_off";
 
-/** A blocking/overlapping appointment surfaced back to the UI (no PII beyond name). */
+/**
+ * A conflict surfaced back to the UI. All kinds share the same severity: they
+ * block a booking by default but are overridable via "Save anyway"
+ * (allowConflict). No PII beyond patientName.
+ *
+ *   therapist / room — `patientName` is the other appointment's patient; the
+ *     window is that appointment's time.
+ *   availability     — booking falls outside the therapist's working hours;
+ *     `patientName` is null and the window is the candidate booking itself.
+ *   time_off         — booking overlaps an absence block; `patientName` is null,
+ *     the window is the block, and `reason` is the time_off reason.
+ */
 export type ConflictInfo = {
   kind: ConflictKind;
   id: string;
-  patientName: string;
+  patientName: string | null;
   startsAt: string;
   endsAt: string;
   room: string | null;
+  reason?: string | null;
 };
 
 export type ActionErrorCode =

@@ -32,7 +32,7 @@ export default async function PatientsPage({
         </h1>
         <Link
           href="/patients/new"
-          className="rounded bg-[#8E2C7A] px-4 py-2 text-sm font-medium text-white"
+          className="rounded bg-brand-magenta px-4 py-2 text-sm font-medium text-text-inverse"
         >
           {s["patients.new"]}
         </Link>
@@ -43,23 +43,23 @@ export default async function PatientsPage({
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-text-secondary">
           {query ? s["patients.noResults"] : s["patients.empty"]}
         </p>
       ) : (
         <>
-          <p className="mb-2 text-xs text-zinc-400">
+          <p className="mb-2 text-xs text-text-muted">
             {rows.length} {s["patients.resultsCount"]}
           </p>
-          <ul className="divide-y divide-zinc-200 rounded border border-zinc-200">
+          <ul className="divide-y divide-border rounded border border-border">
             {rows.map((p) => (
               <li key={p.id}>
                 <Link
                   href={`/patients/${p.id}`}
-                  className="flex items-center justify-between px-4 py-3 hover:bg-zinc-50"
+                  className="flex items-center justify-between px-4 py-3 hover:bg-surface-muted"
                 >
                   <span className="font-medium">{p.fullName}</span>
-                  <span className="text-sm text-zinc-500">
+                  <span className="text-sm text-text-secondary">
                     {[p.nif, p.phone].filter(Boolean).join(" · ")}
                   </span>
                 </Link>

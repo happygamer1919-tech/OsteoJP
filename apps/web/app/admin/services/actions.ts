@@ -2,7 +2,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
-import { createService, setServiceActive, updateService } from "@/lib/admin/services";
+import {
+  createService,
+  setServiceActive,
+  setServiceLocationPrices,
+  updateService,
+} from "@/lib/admin/services";
 import { AdminError, isAdminError } from "@/lib/admin/errors";
 
 function parsePriceToCents(raw: string): number | null {
@@ -58,4 +63,20 @@ export async function setServiceActiveAction(formData: FormData): Promise<void> 
   const id = String(formData.get("id") ?? "");
   const active = String(formData.get("active") ?? "") === "true";
   await run(() => setServiceActive(actor, id, active));
+}
+
+export async function setServiceLocationPricesAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  const serviceId = String(formData.get("serviceId") ?? "");
+  // One input per location, named `price__<locationId>`. Empty clears the
+  // override (the location falls back to the service base price).
+  const entries: { locationId: string; priceCents: number | null }[] = [];
+  for (const [key, value] of formData.entries()) {
+    if (!key.startsWith("price__")) continue;
+    entries.push({
+      locationId: key.slice("price__".length),
+      priceCents: parsePriceToCents(String(value)),
+    });
+  }
+  await run(() => setServiceLocationPrices(actor, serviceId, entries));
 }

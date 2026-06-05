@@ -12,9 +12,10 @@ import { appointments, type DbTx } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { clientIp } from "./actor";
 import { writeAppointmentAudit } from "./audit";
-import { findConflicts } from "./conflict";
+import { findConflicts, findConflictsForWindow } from "./conflict";
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
+import { enqueueRemindersAfterCommit, type ReminderEnqueueTarget } from "./reminders";
 import { lisbonDateTimeToUtc, lisbonParts } from "./time";
 import type {
   ActionResult,
@@ -142,7 +143,7 @@ async function collectConflicts(
 ): Promise<ConflictInfo[]> {
   const conflicts: ConflictInfo[] = [];
   for (const w of windows) {
-    const c = await findConflicts(tx, {
+    const c = await findConflictsForWindow(tx, {
       practitionerId: fixed.practitionerId,
       locationId: fixed.locationId,
       room: fixed.room,
@@ -196,6 +197,8 @@ export async function createAppointment(
   };
 
   const ip = await clientIp();
+  // Captured inside the tx, enqueued AFTER commit (network out of the tx).
+  let reminderTargets: ReminderEnqueueTarget[] = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -263,10 +266,19 @@ export async function createAppointment(
           });
         }
 
+        reminderTargets = created.map((c) => ({
+          appointmentId: c.id,
+          startsAt: c.startsAt,
+        }));
         return { ok: true, data: { id: parent.id } };
       },
     );
-    if (result.ok) revalidatePath(AGENDA_PATH);
+    if (result.ok) {
+      revalidatePath(AGENDA_PATH);
+      // Stream E: schedule reminders for the new appointment(s). Best-effort,
+      // post-commit; safe with REMINDERS_LIVE_SEND off (sandbox downstream).
+      await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
+    }
     return result;
   } catch (e) {
     return fail("create", e);
@@ -377,6 +389,8 @@ export async function rescheduleAppointment(
   const scope: SeriesScope = input.scope ?? "one";
 
   const ip = await clientIp();
+  // Captured inside the tx, enqueued AFTER commit (network out of the tx).
+  let reminderTargets: ReminderEnqueueTarget[] = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -411,7 +425,7 @@ export async function rescheduleAppointment(
         if (!input.allowConflict) {
           const conflicts: ConflictInfo[] = [];
           for (const t of targets) {
-            const c = await findConflicts(tx, {
+            const c = await findConflictsForWindow(tx, {
               practitionerId: input.practitionerId,
               locationId: input.locationId,
               room: t.room,
@@ -456,10 +470,20 @@ export async function rescheduleAppointment(
             ip,
           });
         }
+        reminderTargets = targets.map((t) => ({
+          appointmentId: t.id,
+          startsAt: t.startsAt,
+        }));
         return { ok: true, data: { id } };
       },
     );
-    if (result.ok) revalidatePath(AGENDA_PATH);
+    if (result.ok) {
+      revalidatePath(AGENDA_PATH);
+      // Stream E: re-enqueue at the NEW time. The new appointment/scheduled event
+      // supersedes the prior sleeping run (cancelOn on appointment id), so the old
+      // time never fires. Best-effort, post-commit.
+      await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
+    }
     return result;
   } catch (e) {
     return fail("reschedule", e);

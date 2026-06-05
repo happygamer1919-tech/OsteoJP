@@ -3,10 +3,11 @@
 // never add a tenant_id filter here.
 
 import "server-only";
-import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, or, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { patients } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "../auth/context";
+import { activePatientsOnly } from "./filters";
 import { escapeLike, parseSearch } from "./validation";
 import type { Patient } from "./types";
 
@@ -27,7 +28,7 @@ export async function getPatient(
   return runScoped(ctx, async (tx) => {
     const where = opts.includeDeleted
       ? eq(patients.id, id)
-      : and(eq(patients.id, id), isNull(patients.deletedAt));
+      : and(eq(patients.id, id), activePatientsOnly);
     const [row] = await tx.select().from(patients).where(where).limit(1);
     return row ?? null;
   });
@@ -44,7 +45,7 @@ export async function listPatients(
     tx
       .select()
       .from(patients)
-      .where(isNull(patients.deletedAt))
+      .where(activePatientsOnly)
       .orderBy(asc(patients.fullName)) // uses patients_tenant_name_idx
       .limit(limit)
       .offset(offset),
@@ -81,7 +82,7 @@ export async function searchPatients(
     return tx
       .select()
       .from(patients)
-      .where(and(isNull(patients.deletedAt), or(...matchers)))
+      .where(and(activePatientsOnly, or(...matchers)))
       .orderBy(asc(patients.fullName))
       .limit(limit);
   });

@@ -22,7 +22,7 @@ export default async function EditPatientPage({
 
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-8">
-      <Link href={`/patients/${id}`} className="text-sm text-[#3DAEB3]">
+      <Link href={`/patients/${id}`} className="text-sm text-brand-teal">
         ← {s["patients.back"]}
       </Link>
       <h1 className="mb-6 mt-2 text-2xl font-semibold tracking-tight">

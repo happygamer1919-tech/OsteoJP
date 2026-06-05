@@ -1,6 +1,6 @@
 # Post-Visit Email Templates
 
-Status: Draft v1 — author: Max
+Status: Draft v2 — author: Max — copy review 2026-06-02
 Spec: brand voice guide (PT-PT register, institutional voice, clinical not cold)
 Sender: [from-address]@osteojp.pt (pending Resend domain verification)
 Locale: PT primary, EN secondary
@@ -8,16 +8,19 @@ Locale: PT primary, EN secondary
 ## Constraints
 
 - Encoding: UTF-8, full accents (no SMS-style stripping)
-- Format: <decide — plain text / HTML / both>
+- Format: HTML with plain-text fallback (multipart) — confirmed by lead 2026-06-02
 - Subject line: ≤ 60 chars where possible (mobile preview)
 - Placeholders: {{patient_first_name}}, {{appointment_date}}, {{practitioner_name}}, {{clinic_location}}, {{clinic_phone}}, {{booking_link}}, {{feedback_link}}
 - Generic v1 only — no per-treatment-type clinical specifics (per lead decision; practitioners layer specifics later)
 - Institutional voice — sender is OsteoJP, not the practitioner
 - No medical advice, no aftercare instructions specific to a modality
 
+---
+
 ## Scenarios
 
 ### 1. Post-visit thank you + general aftercare guidance
+Fires same day as the visit, a few hours after the appointment end time.
 
 **PT — Subject:** A sua consulta — recomendações gerais
 
@@ -60,6 +63,7 @@ For any clinical questions: {{clinic_phone}}
 ---
 
 ### 2. Feedback / satisfaction request
+Fires 3 days after the visit. Separate from scenario 1 to avoid a double send on the same day.
 
 **PT — Subject:** A sua opinião sobre a consulta
 
@@ -69,8 +73,6 @@ Olá {{patient_first_name}},
 A sua opinião ajuda-nos a melhorar o cuidado que oferecemos.
 
 Se tiver alguns minutos, partilhe a sua experiência da consulta de {{appointment_date}}: {{feedback_link}}
-
-Obrigado pelo seu tempo.
 
 — OsteoJP
 
@@ -83,13 +85,12 @@ Your feedback helps us improve the care we provide.
 
 If you have a few minutes, please share your experience from your appointment on {{appointment_date}}: {{feedback_link}}
 
-Thank you for your time.
-
 — OsteoJP
 
 ---
 
-### 3. Follow-up booking prompt (when treatment plan suggests recurring visits)
+### 3. Follow-up booking prompt
+Fires only when the treatment plan flags recurring visits and no next appointment is already booked. Not sent by default to every patient.
 
 **PT — Subject:** Próxima consulta — agendamento
 
@@ -117,14 +118,19 @@ Or contact us: {{clinic_phone}}
 
 ---
 
-## Open questions
+## Decisions resolved (2026-06-02)
 
-- Should scenarios 1 and 2 be merged (thank you + feedback in one email) or kept separate?
-- Timing: how long after the visit does each fire? Recommend: thank you same day, feedback +3 days, follow-up prompt only if treatment plan flags it
-- Feedback mechanism: Google review link, internal form, NPS-style rating — which? `{{feedback_link}}` is placeholder until decided
-- Follow-up prompt: opt-in by practitioner per patient, or default-on for all multi-session treatment plans?
-- Aftercare guidance (scenario 1): the 3 bullets are deliberately generic (hydration, moderate activity, contact-on-worsening). Confirm with clinical lead these are safe across all modalities — osteopathy, physiotherapy, massage, NESA, pilates. If any modality needs a different baseline, scenario 1 should be split per-treatment-type and content authored by the practitioner team
-- "Obrigado" sign-off (scenarios 1, 2): used masculine institutional form. Voice guide §8 still has an open question on first-person mode; institutional "OsteoJP" sign-off avoids the gender issue but "Obrigado" itself defaults masculine — flag if clinic prefers gender-neutral phrasing
-- Reply-to: monitored inbox for clinical follow-up questions, or noreply? Scenario 1 invites clinical questions via phone — should it invite email reply too?
-- Footer: unsubscribe link — required for transactional + marketing-adjacent post-visit emails (GDPR/clinic regs check)
-- Frequency limits: if a patient has 8 sessions in their plan, do we send the thank-you after every single one, or only the first? Recommend: every one for the first 3, then drop to first-and-last
+| Question | Decision |
+|---|---|
+| Scenarios 1 + 2 merged or separate? | Separate — different timing, different CTA, cleaner to maintain |
+| Timing | Scenario 1: same day. Scenario 2: +3 days. Scenario 3: only if treatment plan flags and no next appt booked |
+| Format | HTML + plain-text fallback (multipart) — confirmed by lead |
+| "Obrigado" gender | Kept as institutional masculine — OsteoJP signs as a clinic entity, masculine is the PT default for institutional sign-offs. If owner prefers neutral, rephrase to "A equipa OsteoJP agradece a sua visita" |
+| Frequency limits | Scenario 1 fires after every visit v1. Scenario 2 fires after first visit of each episode only — avoids feedback fatigue on multi-session plans |
+
+## Open questions (still pending owner/lead)
+
+- **Feedback mechanism:** Google review link, internal satisfaction form, or NPS-style rating? `{{feedback_link}}` is placeholder until decided.
+- **Aftercare guidance (scenario 1):** The 3 bullets are deliberately generic. Clinical lead to confirm these are safe across all modalities — osteopathy, physiotherapy, massage, NESA, pilates. If any modality needs different baseline guidance, scenario 1 should be split per-treatment-type.
+- **Reply-to address:** Monitored inbox or noreply? Scenario 1 invites clinical questions via phone — confirm whether email reply should also be enabled.
+- **GDPR / unsubscribe footer:** Required for post-visit emails? Scenarios 2 (feedback) and 3 (booking prompt) have a marketing-adjacent CTA — legal check needed on whether an unsubscribe link is required under Portuguese/EU regs.

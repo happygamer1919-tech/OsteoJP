@@ -1,43 +1,34 @@
 /**
- * helpers/index.ts
+ * helpers/index.ts — shared utilities for OsteoJP E2E specs.
  *
- * Shared utilities for OsteoJP E2E tests.
+ * Every selector here is grounded in the real app (PT-PT i18n strings and the
+ * actual component markup), not guessed.
  */
 
-import { type Page, expect } from "@playwright/test";
+import { type Page, type Locator, expect } from "@playwright/test";
 
 // ---------------------------------------------------------------------------
-// Navigation helpers
+// Navigation
 // ---------------------------------------------------------------------------
 
 export async function goToPatients(page: Page) {
   await page.goto("/patients");
-  await expect(page).toHaveURL(/\/patients/);
+  await expect(page).toHaveURL(/\/patients(\?|$)/);
 }
 
 export async function goToAgenda(page: Page) {
   await page.goto("/agenda");
-  await expect(page).toHaveURL(/\/agenda/);
-}
-
-export async function goToClinical(page: Page) {
-  await page.goto("/clinical");
-  await expect(page).toHaveURL(/\/clinical/);
-}
-
-export async function goToAdmin(page: Page) {
-  await page.goto("/admin");
-  await expect(page).toHaveURL(/\/admin/);
+  await expect(page).toHaveURL(/\/agenda(\?|$)/);
 }
 
 // ---------------------------------------------------------------------------
-// Patient helpers
+// Patients
 // ---------------------------------------------------------------------------
 
 export type PatientFields = {
   fullName: string;
   dateOfBirth?: string;
-  sex?: string;
+  sex?: "male" | "female" | "other";
   nif?: string;
   phone?: string;
   email?: string;
@@ -47,78 +38,58 @@ export type PatientFields = {
   notes?: string;
 };
 
-/** Fills and submits the patient form. Caller navigates to /patients/new first. */
-export async function fillPatientForm(page: Page, fields: PatientFields) {
-  // Full name is required.
-  await page.getByLabel(/Nome completo/i).fill(fields.fullName);
-
-  if (fields.dateOfBirth) {
-    await page.getByLabel(/Data de nascimento/i).fill(fields.dateOfBirth);
-  }
-  if (fields.sex) {
-    await page.getByLabel(/Sexo/i).fill(fields.sex);
-  }
-  if (fields.nif) {
-    await page.getByLabel(/NIF/i).fill(fields.nif);
-  }
-  if (fields.phone) {
-    await page.getByLabel(/Telefone/i).fill(fields.phone);
-  }
-  if (fields.email) {
-    await page.getByLabel(/Email/i).fill(fields.email);
-  }
-  if (fields.city) {
-    await page.getByLabel(/Cidade/i).fill(fields.city);
-  }
-  if (fields.postalCode) {
-    await page.getByLabel(/Código postal/i).fill(fields.postalCode);
-  }
-  if (fields.address) {
-    await page.getByLabel(/Morada/i).fill(fields.address);
-  }
-  if (fields.notes) {
-    await page.getByLabel(/Notas/i).fill(fields.notes);
-  }
+/** Fills the patient form (caller is already on /patients/new or /edit). */
+export async function fillPatientForm(page: Page, f: PatientFields) {
+  await page.getByLabel(/Nome completo/i).fill(f.fullName);
+  if (f.dateOfBirth) await page.getByLabel(/Data de nascimento/i).fill(f.dateOfBirth);
+  if (f.sex) await page.getByLabel(/Sexo/i).selectOption(f.sex); // <select>, not text
+  if (f.nif) await page.getByLabel(/NIF/i).fill(f.nif);
+  if (f.phone) await page.getByLabel(/Telefone/i).fill(f.phone);
+  if (f.email) await page.getByLabel(/^Email/i).fill(f.email);
+  if (f.city) await page.getByLabel(/Localidade/i).fill(f.city); // i18n: "Localidade"
+  if (f.postalCode) await page.getByLabel(/Código postal/i).fill(f.postalCode);
+  if (f.address) await page.getByLabel(/Morada/i).fill(f.address);
+  if (f.notes) await page.getByLabel(/Notas/i).fill(f.notes);
 }
 
-/** Creates a patient and returns the resulting patient ID from the URL. */
-export async function createPatient(
-  page: Page,
-  fields: PatientFields,
-): Promise<string> {
+/** Creates a patient and returns the new patient id (from the redirect URL). */
+export async function createPatient(page: Page, f: PatientFields): Promise<string> {
   await page.goto("/patients/new");
-  await fillPatientForm(page, fields);
-  await page.getByRole("button", { name: /Criar|Guardar/i }).click();
+  await fillPatientForm(page, f);
+  await page.getByRole("button", { name: "Criar Utente" }).click();
+  await expect(page).toHaveURL(/\/patients\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+  return page.url().split("/").at(-1)!;
+}
 
-  // Redirected to /patients/<id>
-  await expect(page).toHaveURL(/\/patients\/[a-z0-9-]+$/);
-  const url = page.url();
-  return url.split("/").at(-1)!;
+/** Runs a patient search via the search box (fill + submit) and waits for nav. */
+export async function searchPatients(page: Page, query: string) {
+  await goToPatients(page);
+  await page.getByPlaceholder(/Pesquisar por nome/i).fill(query);
+  await page.getByRole("button", { name: "Pesquisar" }).click();
+  await expect(page).toHaveURL(/\/patients\?q=/);
 }
 
 // ---------------------------------------------------------------------------
-// Appointment helpers
+// Scheduling
 // ---------------------------------------------------------------------------
 
-/** Opens the appointment modal via the agenda's "New" button. */
-export async function openNewAppointmentModal(page: Page) {
-  await goToAgenda(page);
-  await page.getByRole("button", { name: /Nova|New/i }).first().click();
-  await expect(
-    page.getByRole("dialog", { name: /Consulta|Appointment/i }),
-  ).toBeVisible();
+/** Opens the agenda in day view on a given date, then opens the New modal. */
+export async function openNewAppointment(page: Page, date: string): Promise<Locator> {
+  await page.goto(`/agenda?view=day&date=${date}`);
+  await page.getByRole("button", { name: /Nova Marcação/i }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible({ timeout: 8_000 });
+  return dialog;
 }
 
-// ---------------------------------------------------------------------------
-// Assertion helpers
-// ---------------------------------------------------------------------------
-
-/** Asserts that a toast / success message contains the given text. */
-export async function expectSuccess(page: Page, text: string | RegExp) {
-  await expect(page.getByText(text)).toBeVisible({ timeout: 8_000 });
-}
-
-/** Asserts that an error message is shown. */
-export async function expectError(page: Page, text: string | RegExp) {
-  await expect(page.getByText(text)).toBeVisible({ timeout: 8_000 });
+/** Fills the appointment modal's required fields. Caller clicks Save. */
+export async function fillAppointment(
+  dialog: Locator,
+  opts: { patient: string; therapist: string; location: string; date: string; time: string },
+) {
+  await dialog.getByLabel(/Utente/i).selectOption({ label: opts.patient });
+  await dialog.getByLabel(/Terapeuta/i).selectOption({ label: opts.therapist });
+  await dialog.getByLabel(/Localização/i).selectOption({ label: opts.location });
+  await dialog.locator('input[type="date"]').fill(opts.date);
+  await dialog.locator('input[type="time"]').fill(opts.time);
 }

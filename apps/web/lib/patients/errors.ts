@@ -16,23 +16,8 @@ export class InvalidMergeError extends Error {
   }
 }
 
-/**
- * Raised when a merge would have to repoint a `locked`/`signed` clinical record
- * from the loser to the survivor. The clinical_records immutability trigger
- * (packages/db/migrations/0001_rls.sql) blocks ANY update to finalized records
- * — even a patient_id reassignment, even for service_role — so the app layer
- * cannot perform this merge. Lifting this requires a DB-level merge function
- * (proposed in the PR for sign-off), not an app change.
- */
-export class PatientMergeBlockedError extends Error {
-  override readonly name = "PatientMergeBlockedError";
-  readonly finalizedRecordCount: number;
-  constructor(finalizedRecordCount: number) {
-    super(
-      `Cannot merge: the duplicate has ${finalizedRecordCount} finalized ` +
-        `clinical record(s) that are immutable and cannot be reassigned from ` +
-        `the application layer.`,
-    );
-    this.finalizedRecordCount = finalizedRecordCount;
-  }
-}
+// NOTE: merges with finalized (locked/signed) clinical records are no longer
+// blocked at the app layer. merge_patients() (packages/db/migrations/0005)
+// re-parents them through the re-parent-aware immutability trigger, which still
+// forbids any change to clinical content. The former PatientMergeBlockedError
+// is gone — there is one merge path now.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { s, locale } from "@/lib/i18n";
+import { s } from "@/lib/i18n";
 import {
   cancelAppointment,
   createAppointment,
@@ -9,7 +9,7 @@ import {
   updateAppointment,
 } from "@/lib/scheduling/actions";
 import {
-  formatInstantTime,
+  formatTimeOfDay,
   lisbonDateTimeToUtc,
   lisbonParts,
 } from "@/lib/scheduling/time";
@@ -44,7 +44,6 @@ type FormState = {
 };
 
 const DURATIONS = [30, 45, 60, 90];
-const TEAL = "#45B9A7";
 
 const STATUS_OPTIONS: { value: AppointmentStatusValue; key: StringKey }[] = [
   { value: "scheduled", key: "appointment.statusPending" },
@@ -274,6 +273,9 @@ export function AppointmentModal({
 
   const therapistConflicts = conflicts?.filter((c) => c.kind === "therapist") ?? [];
   const roomConflicts = conflicts?.filter((c) => c.kind === "room") ?? [];
+  const availabilityConflicts =
+    conflicts?.filter((c) => c.kind === "availability") ?? [];
+  const timeOffConflicts = conflicts?.filter((c) => c.kind === "time_off") ?? [];
 
   return (
     <div
@@ -283,14 +285,14 @@ export function AppointmentModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-md overflow-auto rounded-lg bg-white shadow-xl"
+        className="max-h-[90vh] w-full max-w-md overflow-auto rounded-lg bg-surface shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[#E2E8EE] px-5 py-3">
-          <h2 className="text-base font-semibold text-[#1A2733]">
+        <div className="flex items-center justify-between border-b border-border px-5 py-3">
+          <h2 className="text-base font-semibold text-text-primary">
             {editing ? s["appointment.editTitle"] : s["appointment.newTitle"]}
             {isRecurring && (
-              <span className="ml-2 align-middle text-xs font-normal text-[#8E2C7A]">
+              <span className="ml-2 align-middle text-xs font-normal text-brand-magenta">
                 ⟳ {s["appointment.recurring"]}
               </span>
             )}
@@ -299,7 +301,7 @@ export function AppointmentModal({
             type="button"
             aria-label={s["appointment.close"]}
             onClick={onClose}
-            className="rounded p-1 text-[#56697A] hover:bg-[#F0F3F6]"
+            className="rounded p-1 text-text-secondary hover:bg-surface-muted"
           >
             ✕
           </button>
@@ -363,7 +365,7 @@ export function AppointmentModal({
               type="text"
               value={form.room}
               onChange={(e) => set("room", e.target.value)}
-              className="w-full rounded border border-[#C7D1DA] px-2 py-1.5 text-sm"
+              className="w-full rounded border border-border-strong px-2 py-1.5 text-sm"
             />
           </Field>
 
@@ -382,7 +384,7 @@ export function AppointmentModal({
                 type="date"
                 value={form.date}
                 onChange={(e) => set("date", e.target.value)}
-                className="w-full rounded border border-[#C7D1DA] px-2 py-1.5 text-sm"
+                className="w-full rounded border border-border-strong px-2 py-1.5 text-sm"
               />
             </Field>
             <Field label={s["appointment.time"]} required>
@@ -390,14 +392,14 @@ export function AppointmentModal({
                 type="time"
                 value={form.time}
                 onChange={(e) => set("time", e.target.value)}
-                className="w-full rounded border border-[#C7D1DA] px-2 py-1.5 text-sm"
+                className="w-full rounded border border-border-strong px-2 py-1.5 text-sm"
               />
             </Field>
             <Field label={s["appointment.duration"]}>
               <select
                 value={form.durationMin}
                 onChange={(e) => set("durationMin", Number(e.target.value))}
-                className="w-full rounded border border-[#C7D1DA] px-2 py-1.5 text-sm"
+                className="w-full rounded border border-border-strong px-2 py-1.5 text-sm"
               >
                 {[...new Set([...DURATIONS, form.durationMin])]
                   .sort((a, b) => a - b)
@@ -419,7 +421,7 @@ export function AppointmentModal({
                   onChange={(e) =>
                     set("repeatFreq", e.target.value as FormState["repeatFreq"])
                   }
-                  className="w-full rounded border border-[#C7D1DA] px-2 py-1.5 text-sm"
+                  className="w-full rounded border border-border-strong px-2 py-1.5 text-sm"
                 >
                   <option value="none">{s["appointment.repeatNone"]}</option>
                   {FREQ_OPTIONS.map((o) => (
@@ -439,7 +441,7 @@ export function AppointmentModal({
                     onChange={(e) =>
                       set("occurrences", Math.max(2, Number(e.target.value) || 2))
                     }
-                    className="w-full rounded border border-[#C7D1DA] px-2 py-1.5 text-sm"
+                    className="w-full rounded border border-border-strong px-2 py-1.5 text-sm"
                   />
                 </Field>
               )}
@@ -452,7 +454,7 @@ export function AppointmentModal({
               onChange={(e) =>
                 set("status", e.target.value as AppointmentStatusValue)
               }
-              className="w-full rounded border border-[#C7D1DA] px-2 py-1.5 text-sm"
+              className="w-full rounded border border-border-strong px-2 py-1.5 text-sm"
             >
               {STATUS_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -467,7 +469,7 @@ export function AppointmentModal({
               value={form.notes}
               onChange={(e) => set("notes", e.target.value)}
               rows={2}
-              className="w-full rounded border border-[#C7D1DA] px-2 py-1.5 text-sm"
+              className="w-full rounded border border-border-strong px-2 py-1.5 text-sm"
             />
           </Field>
 
@@ -487,18 +489,32 @@ export function AppointmentModal({
                   items={roomConflicts}
                 />
               )}
+              {availabilityConflicts.length > 0 && (
+                <ConflictBlock
+                  heading={s["agenda.conflictAvailability"]}
+                  detail={s["appointment.conflictAvailabilityDetail"]}
+                  items={availabilityConflicts}
+                />
+              )}
+              {timeOffConflicts.length > 0 && (
+                <ConflictBlock
+                  heading={s["agenda.conflictTimeOff"]}
+                  detail={s["appointment.conflictTimeOffDetail"]}
+                  items={timeOffConflicts}
+                />
+              )}
             </div>
           )}
 
-          {error && <p className="text-sm text-[#B23A3A]">{error}</p>}
+          {error && <p className="text-sm text-error">{error}</p>}
 
-          <p className="text-xs text-[#8A98A6]">{s["appointment.deleteHint"]}</p>
+          <p className="text-xs text-text-muted">{s["appointment.deleteHint"]}</p>
 
-          <div className="flex justify-end gap-2 border-t border-[#E2E8EE] pt-3">
+          <div className="flex justify-end gap-2 border-t border-border pt-3">
             <button
               type="button"
               onClick={onClose}
-              className="rounded border border-[#C7D1DA] px-3 py-1.5 text-sm text-[#1A2733] hover:bg-[#F0F3F6]"
+              className="rounded border border-border-strong px-3 py-1.5 text-sm text-text-primary hover:bg-surface-muted"
             >
               {s["common.cancel"]}
             </button>
@@ -507,8 +523,7 @@ export function AppointmentModal({
                 type="button"
                 disabled={submitting}
                 onClick={() => void submit(true)}
-                className="rounded px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
-                style={{ backgroundColor: "#B47A14" }}
+                className="rounded bg-warning px-3 py-1.5 text-sm font-medium text-text-inverse disabled:opacity-60"
               >
                 {s["appointment.saveAnyway"]}
               </button>
@@ -516,8 +531,7 @@ export function AppointmentModal({
               <button
                 type="submit"
                 disabled={submitting}
-                className="rounded px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
-                style={{ backgroundColor: TEAL }}
+                className="rounded bg-brand-teal px-3 py-1.5 text-sm font-medium text-text-inverse hover:bg-brand-teal/90 disabled:opacity-60"
               >
                 {s["appointment.save"]}
               </button>
@@ -529,6 +543,13 @@ export function AppointmentModal({
   );
 }
 
+const TIME_OFF_REASON_KEY: Record<string, StringKey> = {
+  vacation: "appointment.timeOffReasonVacation",
+  sick: "appointment.timeOffReasonSick",
+  holiday: "appointment.timeOffReasonHoliday",
+  other: "appointment.timeOffReasonOther",
+};
+
 function ConflictBlock({
   heading,
   detail,
@@ -539,18 +560,22 @@ function ConflictBlock({
   items: ConflictInfo[];
 }) {
   return (
-    <div className="rounded border border-[#B47A14] bg-[#FBF1DD] px-3 py-2 text-sm text-[#1A2733]">
+    <div className="rounded border border-warning bg-warning-bg px-3 py-2 text-sm text-text-primary">
       <p className="font-medium">
         ⚠ {heading}: {detail}
       </p>
       <ul className="mt-1 list-disc pl-5 text-xs">
-        {items.map((c) => (
-          <li key={`${c.kind}:${c.id}`}>
-            {c.patientName}
-            {c.room ? ` · ${c.room}` : ""}: {formatInstantTime(new Date(c.startsAt), locale)}–
-            {formatInstantTime(new Date(c.endsAt), locale)}
-          </li>
-        ))}
+        {items.map((c) => {
+          // therapist/room → patient name; time_off → reason; availability → none.
+          const lead =
+            c.patientName ??
+            (c.reason ? s[TIME_OFF_REASON_KEY[c.reason] ?? "appointment.timeOffReasonOther"] : null);
+          const prefix = [lead, c.room].filter(Boolean).join(" · ");
+          const time = `${formatTimeOfDay(new Date(c.startsAt))}-${formatTimeOfDay(new Date(c.endsAt))}`;
+          return (
+            <li key={`${c.kind}:${c.id}`}>{prefix ? `${prefix}: ${time}` : time}</li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -567,9 +592,9 @@ function Field({
 }) {
   return (
     <label className="block flex-1 space-y-1">
-      <span className="text-sm font-medium text-[#56697A]">
+      <span className="text-sm font-medium text-text-secondary">
         {label}
-        {required && <span className="text-[#B23A3A]"> *</span>}
+        {required && <span className="text-error"> *</span>}
       </span>
       {children}
     </label>
@@ -591,7 +616,7 @@ function Select({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded border border-[#C7D1DA] bg-white px-2 py-1.5 text-sm text-[#1A2733]"
+      className="w-full rounded border border-border-strong bg-surface px-2 py-1.5 text-sm text-text-primary"
     >
       <option value="">{placeholder}</option>
       {options.map((o) => (

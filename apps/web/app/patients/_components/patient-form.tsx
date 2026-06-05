@@ -77,19 +77,28 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
       </Field>
       <div className="grid grid-cols-2 gap-4">
         <Field label={s["patients.fieldDateOfBirth"]}>
+          {/* BUG-08 fix: lang="pt-PT" ensures browser date picker uses
+              dd/mm/yyyy format on all machines, not the tester's OS locale */}
           <input
             type="date"
+            lang="pt-PT"
             value={fields.dateOfBirth}
             onChange={(e) => set("dateOfBirth", e.target.value)}
             className={inputCls}
           />
         </Field>
         <Field label={s["patients.fieldSex"]}>
-          <input
+          {/* BUG-07 fix: was a plain <input type="text">; now a <select> */}
+          <select
             value={fields.sex}
             onChange={(e) => set("sex", e.target.value)}
             className={inputCls}
-          />
+          >
+            <option value="">{s["patients.sexNotSpecified"]}</option>
+            <option value="male">{s["patients.sexMale"]}</option>
+            <option value="female">{s["patients.sexFemale"]}</option>
+            <option value="other">{s["patients.sexOther"]}</option>
+          </select>
         </Field>
         <Field label={s["patients.fieldNif"]}>
           <input
@@ -144,13 +153,13 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
         />
       </Field>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-error">{error}</p>}
 
       <div className="flex gap-3">
         <button
           type="submit"
           disabled={pending}
-          className="rounded bg-[#3DAEB3] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded bg-brand-teal px-4 py-2 text-sm font-medium text-text-inverse disabled:opacity-50"
         >
           {pending
             ? s["patients.saving"]
@@ -161,7 +170,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
         <button
           type="button"
           onClick={() => router.back()}
-          className="rounded border border-zinc-300 px-4 py-2 text-sm"
+          className="rounded border border-border-strong px-4 py-2 text-sm"
         >
           {s["common.cancel"]}
         </button>
@@ -171,7 +180,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
 }
 
 const inputCls =
-  "w-full rounded border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-[#3DAEB3]";
+  "w-full rounded border border-border-strong px-3 py-2 text-sm outline-none focus:border-brand-teal";
 
 function Field({
   label,
@@ -184,7 +193,7 @@ function Field({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-zinc-600">
+      <span className="text-xs font-medium text-text-secondary">
         {label}
         {required ? " *" : ""}
       </span>

@@ -9,12 +9,11 @@
 // Patients are NEVER hard-deleted (hard rule: soft delete via deleted_at).
 
 import { revalidatePath } from "next/cache";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { patients } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
-import { assertNoFinalizedRecords, repointDependents } from "./merge";
 import {
   InvalidMergeError,
   PatientNotFoundError,
@@ -159,51 +158,45 @@ export async function restorePatient(id: string): Promise<Patient> {
 }
 
 /**
- * Merge `loserId` into `survivorId`: repoint all dependent rows to the survivor,
- * then soft-delete the loser with merged_into_id pointing at the survivor — all
- * in one tenant-scoped transaction. Aborts (rolls back) if the loser has any
- * finalized clinical records (see PatientMergeBlockedError).
+ * Merge `loserId` into `survivorId`. This delegates to the DB function
+ * `merge_patients(source, target, actor)` (packages/db/migrations/0005) — the
+ * single, authoritative merge path. The function runs inside this scoped
+ * transaction, derives the tenant from the JWT claims (rejecting cross-tenant
+ * input), re-points every dependent INCLUDING locked/signed clinical_records
+ * (via the re-parent-aware immutability trigger, which still forbids any change
+ * to clinical content), soft-handles the loser (merged_into_id + deleted_at,
+ * never hard-deleted), and writes the one `patient.merge` audit row itself.
+ *
+ * There is deliberately no app-side repoint/finalized-record guard: the old
+ * path blocked merges whenever the loser had a finalized record. That divergent
+ * behaviour is gone — the trigger handles finalized records correctly.
  */
 export async function mergePatients(raw: MergePatientsInput): Promise<Patient> {
   const ctx = await requireRequestContext();
   assertCan(ctx.role, "patients:delete");
+  // survivor = target, loser = source. parseMergeInput rejects self-merge.
   const { survivorId, loserId } = parseMergeInput(raw);
 
   const survivor = await runScoped(ctx, async (tx) => {
-    // Both must exist and be live within the tenant (RLS scopes the lookup).
-    const [survivorRow] = await tx
-      .select({ id: patients.id })
-      .from(patients)
-      .where(and(eq(patients.id, survivorId), isNull(patients.deletedAt)))
-      .limit(1);
-    if (!survivorRow) {
-      throw new InvalidMergeError("Survivor patient not found or deleted");
+    try {
+      // Audit row is written inside the function, in THIS transaction.
+      await tx.execute(
+        sql`select public.merge_patients(${loserId}, ${survivorId}, ${ctx.userId})`,
+      );
+    } catch (err) {
+      // The function raises no_data_found (P0002) when either patient is not a
+      // live member of the caller's tenant — including cross-tenant input.
+      const code = (err as { code?: string } | null)?.code;
+      if (code === "P0002") {
+        throw new InvalidMergeError("Patient not found, deleted, or in another tenant");
+      }
+      if (code === "23514") {
+        throw new InvalidMergeError("Cannot merge a patient into itself");
+      }
+      throw err;
     }
-    const [loserRow] = await tx
-      .select({ id: patients.id })
-      .from(patients)
-      .where(and(eq(patients.id, loserId), isNull(patients.deletedAt)))
-      .limit(1);
-    if (!loserRow) {
-      throw new InvalidMergeError("Duplicate patient not found or deleted");
-    }
 
-    await assertNoFinalizedRecords(tx, loserId);
-    const repointed = await repointDependents(tx, loserId, survivorId);
-
-    const [merged] = await tx
-      .update(patients)
-      .set({ deletedAt: new Date(), mergedIntoId: survivorId })
-      .where(and(eq(patients.id, loserId), isNull(patients.deletedAt)))
-      .returning();
-    if (!merged) throw new PatientNotFoundError();
-
-    await writeAudit(tx, ctx, {
-      action: "patient.merge",
-      entityId: survivorId,
-      metadata: { mergedFrom: loserId, repointed },
-    });
-
+    // Return the survivor (RLS-scoped read in the same tx).
     const [survivorRowFull] = await tx
       .select()
       .from(patients)

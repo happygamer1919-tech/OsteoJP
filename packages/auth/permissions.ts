@@ -139,3 +139,40 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
 export function can(role: Role, capability: Capability): boolean {
   return PERMISSIONS[role].has(capability);
 }
+
+/* ================================================================== */
+/* Role-assignment authority                                          */
+/* ================================================================== */
+//
+// Who may assign or change WHICH role on a staff member. This is distinct from
+// the capability matrix above: `users:manage` says you may manage staff at all;
+// the rules here add the owner-tier protection on top. Centralised so the staff
+// UI (the role <select>) and the server action enforce one definition, not
+// three inline copies of `role === "owner"`.
+
+/**
+ * Roles `actorRole` may assign as a staff member's role. Only an owner may
+ * grant `owner` (anti-escalation); any other `users:manage` holder may assign
+ * any non-owner role. Returns [] for roles without `users:manage`. Drives the
+ * role <select> options in the staff UI.
+ */
+export function assignableRoles(actorRole: Role): Role[] {
+  if (!can(actorRole, "users:manage")) return [];
+  return actorRole === "owner" ? [...ROLES] : ROLES.filter((r) => r !== "owner");
+}
+
+/**
+ * Whether `actorRole` may reassign a staff member FROM `fromRole` TO `toRole`.
+ * Owner-tier protected on BOTH sides: only an owner may grant the owner role or
+ * change a user who currently holds it. Requires `users:manage`. `fromRole` is
+ * null for a user with no role yet. The server gate for role reassignment.
+ */
+export function canReassignRole(
+  actorRole: Role,
+  fromRole: Role | null,
+  toRole: Role,
+): boolean {
+  if (!can(actorRole, "users:manage")) return false;
+  if (toRole === "owner" || fromRole === "owner") return actorRole === "owner";
+  return true;
+}

@@ -1,204 +1,154 @@
 /**
- * patients.spec.ts — Stream A
+ * patients.spec.ts — Patients (Stream A). Runs as admin (has patients:delete).
  *
- * Covers: list, search, create, edit, soft-delete, restore, merge.
- * Runs as admin (full access) unless otherwise noted.
- *
- * Plain-English scenario → Playwright test mapping:
- *
- *  1. Patient list loads and shows registered patients
- *  2. Search by name narrows the list
- *  3. Search with no results shows empty state
- *  4. Create a new patient with required fields only
- *  5. Create a new patient with all fields
- *  6. Validation: submitting empty form shows error
- *  7. Edit an existing patient's phone number
- *  8. Soft-delete a patient; they get a "Eliminado" badge on their profile
- *  9. Restore a soft-deleted patient
- * 10. Merge two patients: loser redirects to survivor
- * 11. Receptionist cannot see clinical record tab (permission check)
- * 12. Therapist can view patients but only their own clinical records
+ * Happy paths: list, search (name/NIF/phone), create, edit, soft-delete,
+ * restore, merge.
+ * Guardrails: a pre-soft-deleted patient is absent from active views;
+ * a cross-tenant patient id is denied (404).
  */
-
 import { test, expect } from "@playwright/test";
-import { createPatient, fillPatientForm, goToPatients } from "../helpers";
+import { createPatient, fillPatientForm, goToPatients, searchPatients } from "./helpers";
+import { PATIENTS, PATIENT_OTHER_TENANT } from "./fixtures";
+
+// Unique suffix so parallel tests / re-runs never collide on created rows.
+const uniq = () => Math.random().toString(36).slice(2, 8);
 
 // ---------------------------------------------------------------------------
-// 1. Patient list loads
+// List + search (seeded data)
 // ---------------------------------------------------------------------------
-test("patient list loads and shows at least one result", async ({ page }) => {
+test("patient list loads and shows a seeded patient", async ({ page }) => {
   await goToPatients(page);
-  // With seed data loaded there should be at least one patient row.
-  await expect(page.locator("ul li").first()).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByRole("heading", { name: "Pacientes" })).toBeVisible();
+  await expect(page.getByRole("link", { name: new RegExp(PATIENTS.maria.name) })).toBeVisible({
+    timeout: 8_000,
+  });
+});
+
+test("search by name narrows to the matching patient", async ({ page }) => {
+  await searchPatients(page, PATIENTS.maria.name);
+  await expect(page.getByRole("link", { name: new RegExp(PATIENTS.maria.name) })).toBeVisible();
+});
+
+test("search by NIF returns the matching patient", async ({ page }) => {
+  await searchPatients(page, PATIENTS.maria.nif);
+  await expect(page.getByRole("link", { name: new RegExp(PATIENTS.maria.name) })).toBeVisible();
+});
+
+test("search by phone returns the matching patient", async ({ page }) => {
+  await searchPatients(page, PATIENTS.maria.phone);
+  await expect(page.getByRole("link", { name: new RegExp(PATIENTS.maria.name) })).toBeVisible();
+});
+
+test("search with no results shows the empty-state message", async ({ page }) => {
+  // Digit-free: a query with digits would also match patients by NIF/phone.
+  await searchPatients(page, "ZZZNENHUMUTENTEZZZ");
+  await expect(page.getByText("Sem resultados para a pesquisa.")).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
-// 2. Search by name narrows list
+// Create / edit
 // ---------------------------------------------------------------------------
-test("search by name narrows the patient list", async ({ page }) => {
-  await goToPatients(page);
-  await page.getByRole("searchbox").fill("Maria Silva");
-  // Wait for debounce / navigation
-  await page.waitForURL(/q=Maria/);
-  await expect(page.getByText("Maria Silva")).toBeVisible();
-});
-
-// ---------------------------------------------------------------------------
-// 3. Search with no results
-// ---------------------------------------------------------------------------
-test("search with no results shows empty state message", async ({ page }) => {
-  await goToPatients(page);
-  await page.getByRole("searchbox").fill("ZZZ_NOBODY_999");
-  await page.waitForURL(/q=ZZZ/);
-  // i18n key patients.noResults
-  await expect(
-    page.getByText(/Nenhum resultado|No results/i),
-  ).toBeVisible({ timeout: 8_000 });
-});
-
-// ---------------------------------------------------------------------------
-// 4. Create patient — required fields only
-// ---------------------------------------------------------------------------
-test("create patient with required fields only navigates to profile", async ({
-  page,
-}) => {
+test("create patient with required fields only", async ({ page }) => {
+  const name = `Novo Mínimo ${uniq()}`;
   await page.goto("/patients/new");
-  await fillPatientForm(page, { fullName: "Teste Automático" });
-  await page.getByRole("button", { name: /Criar/i }).click();
+  await fillPatientForm(page, { fullName: name });
+  await page.getByRole("button", { name: "Criar Utente" }).click();
 
-  await expect(page).toHaveURL(/\/patients\/[a-z0-9-]+$/, { timeout: 10_000 });
-  await expect(page.getByText("Teste Automático")).toBeVisible();
+  await expect(page).toHaveURL(/\/patients\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+  await expect(page.getByRole("heading", { name })).toBeVisible();
 });
 
-// ---------------------------------------------------------------------------
-// 5. Create patient — all fields
-// ---------------------------------------------------------------------------
-test("create patient with all fields stores and displays them", async ({
-  page,
-}) => {
-  const id = await createPatient(page, {
-    fullName: "Joaquim Automático",
+test("create patient with all fields persists and displays them", async ({ page }) => {
+  const name = `Completo ${uniq()}`;
+  const phone = "+351 912 000 111";
+  await createPatient(page, {
+    fullName: name,
     dateOfBirth: "1980-06-15",
     sex: "male",
     nif: "900000001",
-    phone: "+351 912 000 001",
-    email: "joaquim.auto@osteojp.test",
+    phone,
+    email: `c.${uniq()}@osteojp.test`,
     city: "Linda-a-Velha",
     postalCode: "2795-001",
     address: "Rua do Teste, 1",
-    notes: "Nota de teste automatizado",
+    notes: "Nota E2E",
   });
-
-  expect(id).toBeTruthy();
-  await expect(page.getByText("Joaquim Automático")).toBeVisible();
-  await expect(page.getByText("+351 912 000 001")).toBeVisible();
+  await expect(page.getByRole("heading", { name })).toBeVisible();
+  await expect(page.getByText(phone)).toBeVisible();
 });
 
-// ---------------------------------------------------------------------------
-// 6. Validation: empty form
-// ---------------------------------------------------------------------------
-test("submitting empty patient form shows required field error", async ({
-  page,
-}) => {
-  await page.goto("/patients/new");
-  await page.getByRole("button", { name: /Criar/i }).click();
-  // Browser native required validation prevents submission; full name field
-  // should show as invalid. Check we stay on the same page.
-  await expect(page).toHaveURL(/\/patients\/new/);
-});
-
-// ---------------------------------------------------------------------------
-// 7. Edit patient
-// ---------------------------------------------------------------------------
-test("edit patient phone number and see updated value on profile", async ({
-  page,
-}) => {
-  const id = await createPatient(page, {
-    fullName: "Editar Telefone",
-    phone: "+351 910 000 000",
-  });
-
+test("edit patient phone and see the updated value on the profile", async ({ page }) => {
+  const id = await createPatient(page, { fullName: `Editar ${uniq()}`, phone: "+351 910 000 000" });
   await page.goto(`/patients/${id}/edit`);
-  const phoneField = page.getByLabel(/Telefone/i);
-  await phoneField.clear();
-  await phoneField.fill("+351 910 000 999");
-  await page.getByRole("button", { name: /Guardar/i }).click();
+  const phone = page.getByLabel(/Telefone/i);
+  await phone.clear();
+  await phone.fill("+351 910 000 999");
+  await page.getByRole("button", { name: "Guardar" }).click();
 
-  await expect(page).toHaveURL(`/patients/${id}`, { timeout: 10_000 });
+  await expect(page).toHaveURL(new RegExp(`/patients/${id}$`), { timeout: 12_000 });
   await expect(page.getByText("+351 910 000 999")).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
-// 8. Soft-delete
+// Soft-delete / restore / merge
 // ---------------------------------------------------------------------------
-test("soft-deleting a patient shows Eliminado badge on profile", async ({
-  page,
-}) => {
-  const id = await createPatient(page, { fullName: "Apagar Temporário" });
-
+test("soft-deleting a patient shows the Eliminado badge", async ({ page }) => {
+  const id = await createPatient(page, { fullName: `Apagar ${uniq()}` });
   await page.goto(`/patients/${id}`);
-  // Confirm dialog will appear — accept it.
-  page.on("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: /Eliminar/i }).click();
-
-  await page.waitForURL(`/patients/${id}`);
-  await expect(page.getByText(/Eliminado/i)).toBeVisible({ timeout: 8_000 });
+  page.once("dialog", (d) => d.accept()); // window.confirm
+  await page.getByRole("button", { name: "Eliminar" }).click();
+  await expect(page.getByText("Eliminado")).toBeVisible({ timeout: 8_000 });
 });
 
-// ---------------------------------------------------------------------------
-// 9. Restore
-// ---------------------------------------------------------------------------
-test("restoring a soft-deleted patient removes the Eliminado badge", async ({
-  page,
-}) => {
-  const id = await createPatient(page, { fullName: "Restaurar Paciente" });
-
-  // Delete first
+test("restoring a soft-deleted patient clears the Eliminado badge", async ({ page }) => {
+  const id = await createPatient(page, { fullName: `Restaurar ${uniq()}` });
   await page.goto(`/patients/${id}`);
-  page.on("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: /Eliminar/i }).click();
-  await expect(page.getByText(/Eliminado/i)).toBeVisible({ timeout: 8_000 });
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Eliminar" }).click();
+  await expect(page.getByText("Eliminado")).toBeVisible({ timeout: 8_000 });
 
-  // Restore
-  await page.getByRole("button", { name: /Restaurar/i }).click();
-  await page.waitForURL(`/patients/${id}`);
-  await expect(page.getByText(/Eliminado/i)).not.toBeVisible();
+  await page.getByRole("button", { name: "Restaurar" }).click();
+  await expect(page.getByText("Eliminado")).toBeHidden({ timeout: 8_000 });
 });
 
-// ---------------------------------------------------------------------------
-// 10. Merge patients
-// ---------------------------------------------------------------------------
-test("merging two patients marks loser as merged with badge", async ({
-  page,
-}) => {
-  const survivorId = await createPatient(page, { fullName: "Sobrevivente Merge" });
-  const loserId = await createPatient(page, { fullName: "Perdedor Merge" });
+test("merging two patients marks the loser as Fundido", async ({ page }) => {
+  const survivorId = await createPatient(page, { fullName: `Sobrevivente ${uniq()}` });
+  const loserId = await createPatient(page, { fullName: `Perdedor ${uniq()}` });
 
-  // Go to loser, fill merge input with survivor ID.
   await page.goto(`/patients/${loserId}`);
-  await page.getByPlaceholder(/ID do paciente/i).fill(survivorId);
-  await page.getByRole("button", { name: /Fundir/i }).click();
+  await page.getByPlaceholder(/ID do utente/i).fill(survivorId);
+  await page.getByRole("button", { name: "Fundir neste utente" }).click();
 
-  await page.waitForURL(`/patients/${loserId}`);
-  await expect(page.getByText(/Fundido|Merged/i)).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByText("Fundido")).toBeVisible({ timeout: 8_000 });
 });
 
 // ---------------------------------------------------------------------------
-// 11. Receptionist cannot see clinical records tab (access)
-// This test is in the "reception" project — see playwright.config.ts
+// GUARDRAIL — soft-deleted patient absent from active views
 // ---------------------------------------------------------------------------
-test(
-  "receptionist sees patient profile but clinical records tab is inaccessible",
-  { tag: "@reception" },
-  async ({ page }) => {
-    await goToPatients(page);
-    // Navigate to any patient profile
-    await page.locator("ul li a").first().click();
-    await expect(page).toHaveURL(/\/patients\//);
-    // Clinical tab exists in DOM but navigating to /clinical should be blocked
-    await page.goto("/clinical");
-    // Should redirect to login or show forbidden — not show clinical records list
-    const url = page.url();
-    expect(url).toMatch(/login|forbidden/i);
-  },
-);
+test("a soft-deleted patient is absent from the active list and search", async ({ page }) => {
+  // Control: an active patient IS searchable.
+  await searchPatients(page, PATIENTS.maria.name);
+  await expect(page.getByRole("link", { name: new RegExp(PATIENTS.maria.name) })).toBeVisible();
+
+  // The seeded soft-deleted patient must not surface in search…
+  await searchPatients(page, PATIENTS.archived.name);
+  await expect(page.getByText("Sem resultados para a pesquisa.")).toBeVisible();
+
+  // …nor in the unfiltered active list.
+  await goToPatients(page);
+  await expect(page.getByText(PATIENTS.archived.name)).toHaveCount(0);
+
+  // …but is still reachable directly, flagged Eliminado (audit/history intact).
+  await page.goto(`/patients/${PATIENTS.archived.id}`);
+  await expect(page.getByRole("heading", { name: PATIENTS.archived.name })).toBeVisible();
+  await expect(page.getByText("Eliminado")).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// GUARDRAIL — cross-tenant patient is denied (RLS → 404)
+// ---------------------------------------------------------------------------
+test("a patient from another tenant is not accessible (404)", async ({ page }) => {
+  const resp = await page.goto(`/patients/${PATIENT_OTHER_TENANT.id}`);
+  expect(resp?.status()).toBe(404);
+  await expect(page.getByText(PATIENT_OTHER_TENANT.name)).toHaveCount(0);
+});

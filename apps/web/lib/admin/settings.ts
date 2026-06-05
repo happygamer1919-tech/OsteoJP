@@ -4,15 +4,32 @@ import { tenants } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
+import {
+  parseTenantConfig,
+  validateConfigInput,
+  type TenantConfig,
+  type TenantConfigInput,
+} from "./settings-config";
 
 /** Contacts have no dedicated columns; they live in tenants.settings (jsonb). */
 type TenantContacts = { email: string; phone: string; address: string };
-type TenantSettingsJson = { contacts?: Partial<TenantContacts> };
+/**
+ * Shape of the tenants.settings jsonb blob. `locale`, `reminders` and `billing`
+ * are read/written through settings-config.ts; we only type them as the raw
+ * jsonb seam (`unknown`) here and let that module narrow.
+ */
+type TenantSettingsJson = {
+  contacts?: Partial<TenantContacts>;
+  locale?: unknown;
+  reminders?: unknown;
+  billing?: unknown;
+};
 
 export type TenantSettingsView = {
   name: string;
   nif: string;
   contacts: TenantContacts;
+  config: TenantConfig;
 };
 
 export type TenantSettingsInput = {
@@ -21,6 +38,7 @@ export type TenantSettingsInput = {
   email: string;
   phone: string;
   address: string;
+  config: TenantConfigInput;
 };
 
 export async function getTenantSettings(actor: RequestContext): Promise<TenantSettingsView> {
@@ -40,6 +58,8 @@ export async function getTenantSettings(actor: RequestContext): Promise<TenantSe
     name: row.name,
     nif: row.nif ?? "",
     contacts: { email: c.email ?? "", phone: c.phone ?? "", address: c.address ?? "" },
+    // Tolerant parse: existing tenants with no config blob read back full defaults.
+    config: parseTenantConfig(settings),
   };
 }
 
@@ -53,6 +73,14 @@ export async function updateTenantSettings(
   if (!name) throw new AdminError("invalid", "clinic name is required");
   const nif = input.nif.trim();
 
+  // Validate config up front so a bad field fails the whole save atomically,
+  // before we open the transaction.
+  const result = validateConfigInput(input.config);
+  if (!result.ok) {
+    throw new AdminError("invalid", `invalid settings field: ${result.field}`);
+  }
+  const config = result.value;
+
   await runScoped(actor, async (tx) => {
     // Read-merge-write so we never clobber other keys in the settings blob.
     const current = await tx.select({ settings: tenants.settings }).from(tenants);
@@ -64,6 +92,10 @@ export async function updateTenantSettings(
         phone: input.phone.trim(),
         address: input.address.trim(),
       },
+      // locale stays top-level (reminders/locale.ts resolves it from there).
+      locale: config.locale,
+      reminders: config.reminders,
+      billing: config.billing,
     };
 
     await tx.update(tenants).set({ name, nif: nif || null, settings });
@@ -73,7 +105,7 @@ export async function updateTenantSettings(
       entityType: "tenant",
       entityId: actor.tenantId,
       // PII-free: field names only, never the values.
-      metadata: { fields: ["name", "nif", "contacts"] },
+      metadata: { fields: ["name", "nif", "contacts", "locale", "reminders", "billing"] },
     });
   });
 }

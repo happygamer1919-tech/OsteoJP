@@ -1,0 +1,112 @@
+name: E2E
+
+# Runs the Playwright suite (#105 — auth / patients / scheduling / clinical) on
+# every PR against a full local Supabase stack seeded with the deterministic
+# fixture. This is a SEPARATE gate from ci.yml (lint + typecheck + vitest); that
+# one stays fast and unit-only. The suite drives one `next dev` server talking to
+# local Supabase, serially (workers: 1) — see apps/web/playwright.config.ts.
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  playwright:
+    name: Playwright E2E (seeded DB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      # Local Supabase fixed defaults. The seed, the app (next dev), and the
+      # Playwright config all read these. ANON_KEY / SERVICE_ROLE_KEY are NOT
+      # fixed — they are captured from `supabase status` after the stack is up.
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_URL: http://127.0.0.1:54321
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      # Seeded credentials — must match e2e/seed/seed-e2e.mjs (E2E_PASSWORD).
+      E2E_ADMIN_EMAIL: e2e-admin@osteojp.test
+      E2E_ADMIN_PASSWORD: E2ePassw0rd!
+      E2E_THERAPIST_EMAIL: e2e-therapist@osteojp.test
+      E2E_THERAPIST_PASSWORD: E2ePassw0rd!
+      E2E_RECEPTION_EMAIL: e2e-reception@osteojp.test
+      E2E_RECEPTION_PASSWORD: E2ePassw0rd!
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve pinned Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright Chromium (+ system deps)
+        # Browser binary is cached; --with-deps still (re)installs the apt system
+        # libraries Chromium needs, which are not part of the cached directory.
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase (lean stack)
+        # The suite needs only the data plane: db + Auth (gotrue) + REST
+        # (PostgREST via Kong). No spec uploads to Storage, none use Realtime.
+        # Excluding the rest cuts image pulls AND avoids the analytics/vector
+        # containers, which go unhealthy on first boot and cascade the start to
+        # failure (reproduced locally). Auth cannot be excluded — it always runs.
+        run: >
+          supabase start
+          -x analytics,vector,studio,realtime,storage,imgproxy,edge-runtime,functions,inbucket,meta
+
+      - name: Apply migrations + base seed
+        # Re-applies supabase/migrations/* and supabase/seed.sql (tenant A + role
+        # rows) deterministically. The custom_access_token_hook is enabled in
+        # config.toml, so logins issue tenant_id + user_role claims.
+        run: supabase db reset
+
+      - name: Capture Supabase keys for app + seed
+        run: |
+          STATUS="$(supabase status -o json)"
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(echo "$STATUS" | jq -r '.ANON_KEY')" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$(echo "$STATUS" | jq -r '.SERVICE_ROLE_KEY')" >> "$GITHUB_ENV"
+
+      - name: Seed deterministic E2E fixture
+        # Provisions tenant A users (admin/therapist/reception via Auth admin),
+        # location, service, patients (incl. one pre-soft-deleted), form
+        # templates, and tenant B for the cross-tenant guardrail. Idempotent.
+        run: node apps/web/e2e/seed/seed-e2e.mjs
+
+      - name: Run Playwright E2E
+        # Playwright starts `pnpm dev` itself (webServer in playwright.config.ts)
+        # and inherits the env above. CI=true → forbidOnly + retries: 2.
+        run: pnpm --filter web e2e
+
+      - name: Upload Playwright HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7

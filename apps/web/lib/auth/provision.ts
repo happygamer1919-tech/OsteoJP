@@ -6,6 +6,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/admin/audit";
 import type { RequestContext } from "./context";
 
+// Tenant onboarding (tenant + roles + audit) now lives in @osteojp/db so the
+// superadmin app can call the same implementation. Re-exported here to keep the
+// staff-platform import path (#1) stable.
+export { provisionTenant, type ProvisionTenantResult } from "@osteojp/db";
+
 type NewStaff = { email: string; fullName: string; roleSlug: Role; password: string };
 
 /**
@@ -64,6 +69,37 @@ export async function provisionStaffUser(
   }
 
   return { userId };
+}
+
+/**
+ * Generate a single-use, expiring set-password link for an already-created
+ * staff auth user, via Supabase's recovery flow. Single-use and expiry are
+ * enforced by Supabase Auth (the project's OTP expiry config) — we do not mint
+ * or track the token ourselves.
+ *
+ * Returns null (never throws) on any failure, so the invite path can fall back
+ * to the temporary-password hand-off rather than failing the whole invite.
+ *
+ * The link verifies at Supabase, then redirects to STAFF_INVITE_REDIRECT_URL,
+ * where the staff member sets their password. NOTE: that landing page is not
+ * part of this change's files; without it the redirect has nowhere to land —
+ * see the PR notes. When the env var is unset, Supabase uses the project's
+ * configured Site URL.
+ */
+export async function generateSetPasswordLink(email: string): Promise<string | null> {
+  try {
+    const admin = createSupabaseAdminClient();
+    const redirectTo = process.env.STAFF_INVITE_REDIRECT_URL;
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: "recovery",
+      email,
+      ...(redirectTo ? { options: { redirectTo } } : {}),
+    });
+    if (error || !data?.properties?.action_link) return null;
+    return data.properties.action_link;
+  } catch {
+    return null;
+  }
 }
 
 /** One-time first-owner bootstrap. Requires tenant + 'owner' role already seeded. */

@@ -44,7 +44,7 @@ Reference site: https://osteojp.pt — brand and tone source of truth.
 |---|---|---|---|
 | View any patient | ✓ | ✓ (own only) | ✓ |
 | View clinical records | ✓ | ✓ (own patients only) | ✗ |
-| Edit clinical records | ✓ | ✓ (own, until locked) | ✗ |
+| Edit clinical records | ✗ (read only) | ✓ (own, until locked) | ✗ |
 | Schedule appointments | ✓ | ✓ (own calendar) | ✓ |
 | Issue invoices | ✓ | ✗ | ✓ |
 | Manage users/roles | ✓ | ✗ | ✗ |
@@ -70,7 +70,7 @@ Portuguese (default), English (secondary). All user-facing strings via i18n keys
 - Routes: `/api/v1/...` with explicit versioning.
 
 ## Brand
-- Logo: teal #3DAEB3, magenta #8E2C7A, soft grey wordmark.
+- Logo: teal #45B9A7, magenta #8B1863, soft grey wordmark.
 - Typography: clinical, generous spacing. Inter or similar.
 - Tone: serious, precise, not warm. "Padrão ouro." No emoji in product UI.
 - Print branding on every report, declaration, invoice: logo + location contacts + fiscal info.

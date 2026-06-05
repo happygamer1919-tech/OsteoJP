@@ -45,7 +45,7 @@ export function BodyChart({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-neutral-500">{s["clinical.bodychartHint"]}</p>
+      <p className="text-xs text-text-secondary">{s["clinical.bodychartHint"]}</p>
 
       <div className="flex flex-wrap gap-2">
         {VIEWS.map((v) => (
@@ -53,7 +53,7 @@ export function BodyChart({
             key={v.value}
             type="button"
             onClick={() => setView(v.value)}
-            className={`rounded border px-2 py-1 text-xs ${view === v.value ? "bg-neutral-900 text-white" : ""}`}
+            className={`rounded border px-2 py-1 text-xs ${view === v.value ? "bg-text-primary text-text-inverse" : ""}`}
           >
             {s[v.labelKey]}
           </button>
@@ -79,25 +79,25 @@ export function BodyChart({
 
       <div
         onClick={place}
-        className={`relative h-80 w-56 rounded border bg-neutral-50 ${readOnly ? "" : "cursor-crosshair"}`}
+        className={`relative h-80 w-56 rounded border bg-surface-muted ${readOnly ? "" : "cursor-crosshair"}`}
       >
         {inView.map(({ m, i }) => (
           <span
             key={i}
             title={labelFor(m.marker_type)}
-            className="absolute -ml-1.5 -mt-1.5 h-3 w-3 rounded-full border border-white bg-magenta-600"
-            style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, backgroundColor: "#8E2C7A" }}
+            className="absolute -ml-1.5 -mt-1.5 h-3 w-3 rounded-full border border-surface bg-brand-magenta"
+            style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%` }}
           />
         ))}
       </div>
 
       <ul className="space-y-1 text-sm">
         {markers.length === 0 && (
-          <li className="text-xs text-neutral-500">{s["clinical.bodychartEmpty"]}</li>
+          <li className="text-xs text-text-secondary">{s["clinical.bodychartEmpty"]}</li>
         )}
         {markers.map((m, i) => (
           <li key={i} className="flex items-center gap-2">
-            <span className="text-xs text-neutral-500">[{m.view}]</span>
+            <span className="text-xs text-text-secondary">[{m.view}]</span>
             <span>{labelFor(m.marker_type)}</span>
             {!readOnly && (
               <button
