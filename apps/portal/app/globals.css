@@ -1,0 +1,24 @@
+@import 'tailwindcss';
+
+@theme {
+  /* OsteoJP brand tokens */
+  --color-brand-teal: #45B9A7;
+  --color-brand-teal-dark: #1D9E75;
+  --color-brand-magenta: #8B1863;
+
+  /* Semantic */
+  --color-background: #ffffff;
+  --color-foreground: #111827;
+  --color-muted: #6B7280;
+  --color-border: #E5E7EB;
+
+  /* Status */
+  --color-success: #1D9E75;
+  --color-warning: #EF9F27;
+  --color-danger: #E24B4A;
+  --color-info: #378ADD;
+}
+
+body {
+  font-family: var(--font-geist-sans, system-ui, sans-serif);
+}
