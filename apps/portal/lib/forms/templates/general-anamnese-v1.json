@@ -1,0 +1,185 @@
+{
+  "key": "ficha_geral",
+  "version": 1,
+  "title": { "pt": "Ficha Geral", "en": "General Intake Form" },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "Shared general anamnese filled once per new patient or new episode. Covers identity, contacts, RGPD consent, health history, medication, allergies. Confirmed by owner 2026-06-03 Q5. Does NOT include therapy-specific clinical fields — those are in the therapy supplement forms.",
+    "type": "object",
+    "required": ["full_name", "date_of_birth", "sex", "phone", "consent_treatment", "consent_data"],
+    "x-fires-on": "first_visit_or_new_episode",
+    "properties": {
+      "full_name": {
+        "type": "string",
+        "x-label": { "pt": "Nome completo", "en": "Full name" },
+        "x-required": true,
+        "ai_extractable": false
+      },
+      "date_of_birth": {
+        "type": "string",
+        "format": "date",
+        "x-label": { "pt": "Data de nascimento", "en": "Date of birth" },
+        "x-required": true,
+        "ai_extractable": false
+      },
+      "sex": {
+        "type": "string",
+        "enum": ["male", "female", "other", "not_specified"],
+        "x-label": { "pt": "Sexo biológico", "en": "Biological sex" },
+        "x-required": true,
+        "x-options": [
+          { "value": "male", "label": { "pt": "Masculino", "en": "Male" } },
+          { "value": "female", "label": { "pt": "Feminino", "en": "Female" } },
+          { "value": "other", "label": { "pt": "Outro", "en": "Other" } },
+          { "value": "not_specified", "label": { "pt": "Não especificado", "en": "Not specified" } }
+        ],
+        "ai_extractable": false
+      },
+      "nif": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "NIF", "en": "NIF (tax number)" },
+        "x-hint": { "pt": "Necessário para emissão de fatura.", "en": "Required for invoice generation." },
+        "ai_extractable": false
+      },
+      "profession": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Profissão", "en": "Profession" },
+        "ai_extractable": false
+      },
+      "phone": {
+        "type": "string",
+        "x-label": { "pt": "Telemóvel", "en": "Mobile" },
+        "x-required": true,
+        "ai_extractable": false
+      },
+      "email": {
+        "type": ["string", "null"],
+        "format": "email",
+        "x-label": { "pt": "Email", "en": "Email" },
+        "ai_extractable": false
+      },
+      "address": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Morada", "en": "Address" },
+        "ai_extractable": false
+      },
+      "emergency_contact_name": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Contacto de emergência — Nome", "en": "Emergency contact — Name" },
+        "ai_extractable": false
+      },
+      "emergency_contact_phone": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Contacto de emergência — Telemóvel", "en": "Emergency contact — Mobile" },
+        "ai_extractable": false
+      },
+      "general_health": {
+        "type": ["string", "null"],
+        "enum": ["excellent", "good", "fair", "poor", null],
+        "x-label": { "pt": "Estado geral de saúde", "en": "General health status" },
+        "x-options": [
+          { "value": "excellent", "label": { "pt": "Excelente", "en": "Excellent" } },
+          { "value": "good", "label": { "pt": "Bom", "en": "Good" } },
+          { "value": "fair", "label": { "pt": "Razoável", "en": "Fair" } },
+          { "value": "poor", "label": { "pt": "Mau", "en": "Poor" } }
+        ],
+        "ai_extractable": false
+      },
+      "chronic_conditions": {
+        "type": "array",
+        "items": { "type": "string" },
+        "x-label": { "pt": "Condições de saúde crónicas", "en": "Chronic health conditions" },
+        "x-widget": "checkbox_group",
+        "x-options": [
+          { "value": "diabetes", "label": { "pt": "Diabetes", "en": "Diabetes" } },
+          { "value": "hypertension", "label": { "pt": "Hipertensão", "en": "Hypertension" } },
+          { "value": "heart_disease", "label": { "pt": "Doença cardíaca", "en": "Heart disease" } },
+          { "value": "respiratory", "label": { "pt": "Doença respiratória", "en": "Respiratory disease" } },
+          { "value": "osteoporosis", "label": { "pt": "Osteoporose", "en": "Osteoporosis" } },
+          { "value": "cancer", "label": { "pt": "Oncologia (atual ou passada)", "en": "Oncology (current or past)" } },
+          { "value": "neurological", "label": { "pt": "Doença neurológica", "en": "Neurological condition" } },
+          { "value": "autoimmune", "label": { "pt": "Doença autoimune", "en": "Autoimmune condition" } },
+          { "value": "none", "label": { "pt": "Nenhuma", "en": "None" } }
+        ],
+        "ai_extractable": false
+      },
+      "previous_surgeries": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Cirurgias anteriores", "en": "Previous surgeries" },
+        "x-widget": "textarea",
+        "ai_extractable": true
+      },
+      "fractures_injuries": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Fraturas ou lesões relevantes", "en": "Relevant fractures or injuries" },
+        "x-widget": "textarea",
+        "ai_extractable": true
+      },
+      "pregnancy": {
+        "type": ["string", "null"],
+        "enum": ["na", "t1", "t2", "t3", "postpartum", null],
+        "x-label": { "pt": "Gravidez", "en": "Pregnancy" },
+        "x-options": [
+          { "value": "na", "label": { "pt": "Não aplicável", "en": "Not applicable" } },
+          { "value": "t1", "label": { "pt": "1.º trimestre", "en": "1st trimester" } },
+          { "value": "t2", "label": { "pt": "2.º trimestre", "en": "2nd trimester" } },
+          { "value": "t3", "label": { "pt": "3.º trimestre", "en": "3rd trimester" } },
+          { "value": "postpartum", "label": { "pt": "Pós-parto (menos de 6 semanas)", "en": "Postpartum (less than 6 weeks)" } }
+        ],
+        "ai_extractable": false
+      },
+      "implants": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Implantes ou próteses", "en": "Implants or prosthetics" },
+        "x-hint": { "pt": "Ex: pacemaker, prótese da anca.", "en": "E.g. pacemaker, hip prosthesis." },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "medication": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Medicação atual", "en": "Current medication" },
+        "x-placeholder": { "pt": "Ex: Metformina 500mg", "en": "E.g. Metformin 500mg" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "medication_none": {
+        "type": "boolean",
+        "x-label": { "pt": "Não tomo medicação", "en": "I am not taking any medication" },
+        "x-widget": "checkbox",
+        "ai_extractable": false
+      },
+      "allergies": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Alergias conhecidas", "en": "Known allergies" },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "allergies_none": {
+        "type": "boolean",
+        "x-label": { "pt": "Sem alergias conhecidas", "en": "No known allergies" },
+        "x-widget": "checkbox",
+        "ai_extractable": false
+      },
+      "consent_treatment": {
+        "type": "boolean",
+        "x-label": { "pt": "Consinto a realização do tratamento proposto.", "en": "I consent to the proposed treatment." },
+        "x-required": true,
+        "x-widget": "checkbox",
+        "ai_extractable": false
+      },
+      "consent_data": {
+        "type": "boolean",
+        "x-label": { "pt": "Consinto o tratamento dos meus dados pessoais para fins clínicos, nos termos do RGPD.", "en": "I consent to the processing of my personal data for clinical purposes, under GDPR." },
+        "x-required": true,
+        "x-widget": "checkbox",
+        "ai_extractable": false
+      },
+      "consent_reminders": {
+        "type": "boolean",
+        "x-label": { "pt": "Autorizo o envio de lembretes de consulta por SMS e/ou email.", "en": "I authorise the sending of appointment reminders by SMS and/or email." },
+        "x-widget": "checkbox",
+        "ai_extractable": false
+      }
+    }
+  }
+}
