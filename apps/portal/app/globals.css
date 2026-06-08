@@ -1,24 +1,80 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
-@theme {
-  /* OsteoJP brand tokens */
-  --color-brand-teal: #45B9A7;
-  --color-brand-teal-dark: #1D9E75;
-  --color-brand-magenta: #8B1863;
+/* ── Focus visible ── */
+/* Consistent teal focus ring across all interactive elements */
+:focus-visible {
+  outline: 2px solid #45B9A7;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
-  /* Semantic */
-  --color-background: #ffffff;
-  --color-foreground: #111827;
-  --color-muted: #6B7280;
-  --color-border: #E5E7EB;
+/* Remove default outline only when focus-visible is supported */
+:focus:not(:focus-visible) {
+  outline: none;
+}
 
-  /* Status */
-  --color-success: #1D9E75;
-  --color-warning: #EF9F27;
-  --color-danger: #E24B4A;
-  --color-info: #378ADD;
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Tap target minimum size ── */
+/* WCAG 2.5.8: minimum 24×24px; we aim for 44×44px on touch */
+button,
+a,
+[role="checkbox"],
+[role="switch"] {
+  min-height: 24px;
+  min-width: 24px;
+}
+
+/* ── Screen reader only utility ── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.focus\:not-sr-only:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: revert;
+  margin: revert;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+/* ── Base ── */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
-  font-family: var(--font-geist-sans, system-ui, sans-serif);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #111827;
+  background-color: #F9FAFB;
+}
+
+/* ── Scrollbar ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #D1D5DB transparent;
 }
