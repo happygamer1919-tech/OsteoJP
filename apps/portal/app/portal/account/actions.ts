@@ -1,0 +1,55 @@
+'use server'
+
+import { cookies } from 'next/headers'
+import { revalidatePath } from 'next/cache'
+import { ApiError } from '@/lib/api/client'
+
+type Patch = {
+  phone?: string
+  address?: string
+  postalCode?: string
+  city?: string
+}
+
+function apiBase(): string {
+  return process.env.NEXT_PUBLIC_API_URL ?? ''
+}
+
+export async function updateProfileAction(
+  patch: Patch,
+): Promise<{ error: string } | void> {
+  // Strip empty strings to null so the API clears them
+  const body: Record<string, string | null> = {}
+  if (patch.phone !== undefined) body.phone = patch.phone.trim() || null
+  if (patch.address !== undefined) body.address = patch.address.trim() || null
+  if (patch.postalCode !== undefined) body.postalCode = patch.postalCode.trim() || null
+  if (patch.city !== undefined) body.city = patch.city.trim() || null
+
+  const cookieStore = await cookies()
+  const cookieHeader = cookieStore.getAll()
+    .map(({ name, value }) => `${name}=${value}`)
+    .join('; ')
+
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/patient/profile`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookieHeader,
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({})) as { error?: string }
+      if (err.error === 'invalid_phone') {
+        return { error: 'Número de telemóvel inválido. Use o formato +351 912 345 678.' }
+      }
+      return { error: 'Não foi possível actualizar os dados. Tente novamente.' }
+    }
+
+    revalidatePath('/portal/account')
+  } catch {
+    return { error: 'Erro de ligação. Verifique a sua internet e tente novamente.' }
+  }
+}
