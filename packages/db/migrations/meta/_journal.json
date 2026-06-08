@@ -36,6 +36,62 @@
       "when": 1780078966252,
       "tag": "0004_clinical_record_supersedes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780319877795,
+      "tag": "0005_patient_merge_multilocation",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780324715145,
+      "tag": "0006_availability_timeoff",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780327723529,
+      "tag": "0007_service_location_prices",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780341810427,
+      "tag": "0008_ai_ingestion_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1780439439972,
+      "tag": "0009_tenant_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1780610073075,
+      "tag": "0010_patient_identity_layer",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1780613434617,
+      "tag": "0011_patient_form_intake",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1780617633308,
+      "tag": "0012_patient_jwt_security_definer",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,81 @@
+{
+  "key": "rpg",
+  "version": 2,
+  "title": {
+    "pt": "RPG — Avaliação de Episódio",
+    "en": "RPG — Episode Evaluation"
+  },
+  "x-therapy-type": {
+    "pt": "RPG",
+    "fisiozero-tipo_evento_dinamico": "Campo - R.P.G."
+  },
+  "x-form-ref": "physiotherapy",
+  "x-form-note": "Pointer-wrapper referencing physiotherapy-v1.json for main clinical fields. Adds a short contraindication screen specific to RPG (Reeducação Postural Global), confirmed by owner 2026-06-03.",
+  "contraindication_screen": {
+    "title": {
+      "pt": "Rastreio de Contraindicações — RPG",
+      "en": "Contraindication Screen — RPG"
+    },
+    "fields": [
+      {
+        "key": "acute_inflammatory",
+        "type": "checkbox",
+        "label": {
+          "pt": "Processo inflamatório agudo em fase ativa",
+          "en": "Active acute inflammatory process"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "severe_osteoporosis",
+        "type": "checkbox",
+        "label": {
+          "pt": "Osteoporose grave com risco de fratura",
+          "en": "Severe osteoporosis with fracture risk"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "recent_fracture",
+        "type": "checkbox",
+        "label": {
+          "pt": "Fratura recente não consolidada",
+          "en": "Recent unconsolidated fracture"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "neurological_instability",
+        "type": "checkbox",
+        "label": {
+          "pt": "Instabilidade neurológica aguda",
+          "en": "Acute neurological instability"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "pregnancy",
+        "type": "checkbox",
+        "label": {
+          "pt": "Gravidez (primeiro trimestre ou complicações)",
+          "en": "Pregnancy (first trimester or complications)"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "contraindication_notes",
+        "type": "textarea",
+        "label": {
+          "pt": "Notas adicionais sobre contraindicações",
+          "en": "Additional contraindication notes"
+        },
+        "ai_extractable": true
+      }
+    ]
+  },
+  "_meta": {
+    "source": "Fisiozero production + owner confirmation 2026-06-03",
+    "reviewed_by": "Max (sm33xy)",
+    "version_note": "v2 — pointer wrapper + contraindication screen added per JP decision 2026-06-03"
+  }
+}

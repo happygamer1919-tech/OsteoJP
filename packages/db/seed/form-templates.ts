@@ -37,7 +37,7 @@ export type FormTemplateSeed = {
   schema: Record<string, unknown>;
 };
 
-export type LoadAction = "inserted" | "updated" | "unchanged";
+export type LoadAction = "inserted" | "updated" | "unchanged" | "skipped";
 
 export type LoadResult = {
   file: string;
@@ -83,7 +83,25 @@ export async function loadFormTemplates(
 
   const results: LoadResult[] = [];
   for (const file of files) {
-    const seed = await readSeed(join(dir, file), file);
+    const parsed = await readJson(join(dir, file), file);
+    const classified = classifySeed(parsed, file);
+
+    if (classified.kind === "wrapper") {
+      // Schema-less pointer-wrapper (x-form-ref): a therapy type that reuses
+      // another template's form. NOT a template — skip cleanly, do not upsert.
+      results.push({
+        file,
+        key: classified.key,
+        version: classified.version,
+        action: "skipped",
+      });
+      log(
+        `skipped   ${classified.key} -> ${classified.formRef} (x-form-ref wrapper, ${file})`,
+      );
+      continue;
+    }
+
+    const seed = classified.seed;
     const action = await upsertOne(db as SeedDb, tenantId, seed);
     results.push({ file, key: seed.key, version: seed.version, action });
     log(`${action.padEnd(9)} ${seed.key} v${seed.version} (${file})`);
@@ -112,17 +130,53 @@ async function listSeedFiles(
   return json;
 }
 
-async function readSeed(path: string, file: string): Promise<FormTemplateSeed> {
+async function readJson(path: string, file: string): Promise<unknown> {
   const raw = await readFile(path, "utf8");
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    return JSON.parse(raw);
   } catch (err) {
-    throw new Error(
-      `${file}: invalid JSON — ${(err as Error).message}`,
-    );
+    throw new Error(`${file}: invalid JSON — ${(err as Error).message}`);
   }
-  return validateSeed(parsed, file);
+}
+
+/** Either a real template (carries `schema`) or a schema-less pointer-wrapper. */
+type ClassifiedSeed =
+  | { kind: "template"; seed: FormTemplateSeed }
+  | { kind: "wrapper"; key: string; version: number; formRef: string };
+
+/**
+ * A pointer-wrapper declares `x-form-ref` (a non-empty string) and carries NO
+ * `schema` of its own — it reuses another template's form (e.g. the massagem /
+ * pilates / rpg therapy types -> "physiotherapy"). These are NOT templates and
+ * must be skipped by the seeder, not aborted on. A file carrying BOTH a `schema`
+ * and an `x-form-ref` is treated as a template (schema wins); a file with
+ * neither falls through to validateSeed and errors as before.
+ */
+function classifySeed(value: unknown, file: string): ClassifiedSeed {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${file}: top-level JSON must be an object`);
+  }
+  const v = value as Record<string, unknown>;
+
+  const formRef = v["x-form-ref"];
+  const hasSchema = v.schema !== undefined && v.schema !== null;
+  if (typeof formRef === "string" && formRef.trim().length > 0 && !hasSchema) {
+    // Validate just enough to make the skip intentional (clean errors, not a
+    // silent swallow of a typo'd wrapper).
+    if (typeof v.key !== "string" || v.key.trim().length === 0) {
+      throw new Error(`${file}: pointer-wrapper \`key\` must be a non-empty string`);
+    }
+    if (
+      typeof v.version !== "number" ||
+      !Number.isInteger(v.version) ||
+      v.version < 1
+    ) {
+      throw new Error(`${file}: pointer-wrapper \`version\` must be a positive integer`);
+    }
+    return { kind: "wrapper", key: v.key, version: v.version, formRef };
+  }
+
+  return { kind: "template", seed: validateSeed(v, file) };
 }
 
 function validateSeed(value: unknown, file: string): FormTemplateSeed {
@@ -253,11 +307,12 @@ async function main(): Promise<void> {
     const results = await loadFormTemplates(db, tenantId);
     const counts = results.reduce<Record<LoadAction, number>>(
       (acc, r) => ({ ...acc, [r.action]: acc[r.action] + 1 }),
-      { inserted: 0, updated: 0, unchanged: 0 },
+      { inserted: 0, updated: 0, unchanged: 0, skipped: 0 },
     );
     console.log(
       `[seed:form-templates] done — inserted=${counts.inserted} ` +
-        `updated=${counts.updated} unchanged=${counts.unchanged}`,
+        `updated=${counts.updated} unchanged=${counts.unchanged} ` +
+        `skipped=${counts.skipped}`,
     );
   } finally {
     await client.end({ timeout: 5 });

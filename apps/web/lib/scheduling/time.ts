@@ -181,36 +181,35 @@ export function formatDayHeader(dateStr: string, locale: Locale): string {
   return `${cap} ${day}`;
 }
 
-/** Label for the toolbar date range. */
-export function formatAnchorLabel(
-  view: AgendaView,
-  anchor: string,
-  locale: Locale,
-): string {
-  const full = new Intl.DateTimeFormat(BCP47[locale], {
+/**
+ * Toolbar date-range label. Always rendered in pt-PT (the clinic locale) and
+ * with NO hyphen/en-dash separator: Intl's range dash is swapped for the
+ * Portuguese connector "a" (e.g. "8 a 12 de junho de 2026").
+ */
+export function formatAnchorLabel(view: AgendaView, anchor: string): string {
+  const fmt = new Intl.DateTimeFormat("pt-PT", {
     day: "numeric",
     month: "long",
     year: "numeric",
     timeZone: "UTC",
   });
-  if (view === "day") return full.format(utcNoon(anchor));
+  if (view === "day") return fmt.format(utcNoon(anchor));
   const dates = viewDates(view, anchor);
-  const first = new Intl.DateTimeFormat(BCP47[locale], {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  }).format(utcNoon(dates[0]));
-  return `${first} – ${full.format(utcNoon(dates[dates.length - 1]))}`;
+  return fmt
+    .formatRange(utcNoon(dates[0]), utcNoon(dates[dates.length - 1]))
+    // Replace the locale range separator (en/em dash, etc.) with the PT
+    // connector "a"; the brand forbids em/en dashes in copy.
+    .replace(/\s*[‐‑‒–—―−-]\s*/u, " a ");
 }
 
-/** "09:30" in Lisbon time for a UTC instant. */
-export function formatInstantTime(instant: Date, locale: Locale): string {
-  return new Intl.DateTimeFormat(BCP47[locale], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-    timeZone: LISBON_TZ,
-  }).format(instant);
+/**
+ * "09:30" Lisbon wall-clock, 24-hour, locale-independent. Used for every time on
+ * the agenda (gutter, blocks, conflict list) so the axis is uniformly 24h and
+ * never resolves to a 12-hour locale.
+ */
+export function formatTimeOfDay(instant: Date): string {
+  const { hour, minute } = lisbonParts(instant);
+  return `${pad(hour)}:${pad(minute)}`;
 }
 
 /** "HH:mm" for a slot row index. */

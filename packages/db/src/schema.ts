@@ -13,6 +13,7 @@
 //   - JSONB for form definitions and filled clinical data (flexible, AI-extractable)
 //   - money stored as integer cents + ISO currency
 
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   pgEnum,
@@ -21,11 +22,16 @@ import {
   varchar,
   boolean,
   integer,
+  smallint,
   jsonb,
+  char,
   date,
+  time,
   timestamp,
   index,
   uniqueIndex,
+  unique,
+  check,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
@@ -49,7 +55,11 @@ export const recordStatus = pgEnum("record_status", [
   "signed", // locked + practitioner signature
 ]);
 
-export const recordSource = pgEnum("record_source", ["manual", "ai_ingested"]);
+// `patient` (Wave B) tags a record/submission originating from the patient
+// portal intake. Like `ai_ingested`, it NEVER auto-produces a finalized record:
+// a patient-submitted form lands in a review state and waits for therapist
+// finalize (a separate future wave). See patient_form_submissions below.
+export const recordSource = pgEnum("record_source", ["manual", "ai_ingested", "patient"]);
 
 // AI ingestion review states (Stream D). PLACEHOLDER — the exact states depend on
 // the AI partner ingestion contract, which is still being finalized. Refine here
@@ -58,6 +68,15 @@ export const aiReviewState = pgEnum("ai_review_state", [
   "pending_review",
   "in_review",
   "approved",
+  "rejected",
+]);
+
+// Lifecycle of one AI ingestion request (Stream D), tracked per idempotency_key:
+// `received` (logged), `accepted` (a draft clinical_record was created),
+// `rejected` (validation/auth failed, no draft).
+export const ingestionStatus = pgEnum("ingestion_status", [
+  "received",
+  "accepted",
   "rejected",
 ]);
 
@@ -80,6 +99,19 @@ export const paymentProvider = pgEnum("payment_provider", [
   "other",
 ]);
 
+// Stream B — reason for a therapist absence block (time_off).
+export const timeOffReason = pgEnum("time_off_reason", [
+  "vacation",
+  "sick",
+  "holiday",
+  "other",
+]);
+
+// Stream F — platform-level tenant lifecycle. Managed ONLY by the superadmin
+// (platform operator) via the service-role path; not a tenant-role concern.
+// `suspended` is a platform flag; it does NOT alter tenant RLS isolation.
+export const tenantStatus = pgEnum("tenant_status", ["active", "suspended"]);
+
 /* ================================================================== */
 /* Core tenancy + identity                                            */
 /* ================================================================== */
@@ -91,6 +123,9 @@ export const tenants = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     nif: varchar("nif", { length: 20 }), // PT fiscal number of the clinic
+    // Platform-operator-managed lifecycle. Defaults to `active` so existing
+    // tenants and the role/tenant-create path need no backfill.
+    status: tenantStatus("status").notNull().default("active"),
     settings: jsonb("settings").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -196,6 +231,42 @@ export const services = pgTable(
   ],
 );
 
+// Stream F — per-location service pricing. This is an OVERRIDE layer over
+// services.price_cents (the base/catalog price): when a row exists here for a
+// (service, location) pair it wins for that location; otherwise the location
+// inherits services.price_cents. Lets a clinic price the same service
+// differently per location without duplicating the catalog. is_active toggles
+// an override off (falling back to the base) without deleting it.
+export const serviceLocationPrices = pgTable(
+  "service_location_prices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    serviceId: uuid("service_id")
+      .notNull()
+      .references(() => services.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    priceCents: integer("price_cents").notNull(), // minor units (cents), never float
+    currency: char("currency", { length: 3 }).notNull().default("EUR"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One price row per (tenant, service, location).
+    unique("service_location_prices_tenant_service_location_uq").on(
+      t.tenantId,
+      t.serviceId,
+      t.locationId,
+    ),
+    index("service_location_prices_tenant_location_idx").on(t.tenantId, t.locationId),
+    check("service_location_prices_price_nonneg", sql`${t.priceCents} >= 0`),
+  ],
+);
+
 /* ================================================================== */
 /* Patients                                                           */
 /* ================================================================== */
@@ -217,6 +288,14 @@ export const patients = pgTable(
     postalCode: varchar("postal_code", { length: 16 }),
     city: text("city"),
     notes: text("notes"),
+    // Patient identity layer — links a patient to their Supabase auth principal
+    // (the patient portal login at api.osteojp.pt). A patient is a DISTINCT
+    // principal from a staff `users` row: there is no users row for a patient.
+    // Nullable until the patient activates; UNIQUE so one auth account maps to at
+    // most one patient. The access-token hook resolves patient_id from this
+    // column, and patient-portal RLS self-scope keys on that claim.
+    authUserId: uuid("auth_user_id").unique(),
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
     // Stream A — patient merge: the losing record points at the survivor.
     mergedIntoId: uuid("merged_into_id"),
     createdBy: uuid("created_by").references(() => users.id),
@@ -230,6 +309,36 @@ export const patients = pgTable(
   (t) => [
     index("patients_tenant_idx").on(t.tenantId),
     index("patients_tenant_name_idx").on(t.tenantId, t.fullName),
+  ],
+);
+
+// Stream A — multi-location patient assignment. A patient can be seen at more
+// than one of the clinic's locations; this junction links them many-to-many.
+// Fully tenant-scoped (RLS mirrors the standard tenant_isolation policy).
+export const patientLocations = pgTable(
+  "patient_locations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One link per (tenant, patient, location).
+    uniqueIndex("patient_locations_tenant_patient_location_uq").on(
+      t.tenantId,
+      t.patientId,
+      t.locationId,
+    ),
+    index("patient_locations_patient_idx").on(t.patientId),
+    index("patient_locations_location_idx").on(t.locationId),
   ],
 );
 
@@ -274,6 +383,84 @@ export const appointments = pgTable(
     index("appointments_tenant_start_idx").on(t.tenantId, t.startsAt),
     index("appointments_practitioner_start_idx").on(t.practitionerId, t.startsAt),
     index("appointments_patient_idx").on(t.patientId),
+  ],
+);
+
+/* ================================================================== */
+/* Availability + time off (Stream B)                                 */
+/* Defines WHEN a therapist works; enforcement (blocking out-of-hours */
+/* or during time_off bookings) is wired in a later feature PR.        */
+/* ================================================================== */
+
+// A therapist's recurring weekly working hours, per location (a therapist may
+// work different hours at each clinic — multi-location landed in 0005).
+export const availabilityTemplates = pgTable(
+  "availability_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    // Weekday: 0 = Sunday .. 6 = Saturday (matches JS Date.getDay()). Range
+    // enforced by the weekday_range CHECK below.
+    weekday: smallint("weekday").notNull(),
+    startTime: time("start_time").notNull(),
+    endTime: time("end_time").notNull(),
+    // Optional validity window for seasonal/temporary schedules. NULL = open-ended.
+    validFrom: date("valid_from"),
+    validUntil: date("valid_until"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("availability_templates_user_weekday_idx").on(t.tenantId, t.userId, t.weekday),
+    index("availability_templates_tenant_location_idx").on(t.tenantId, t.locationId),
+    // Prevent exact-duplicate rows. NULLS NOT DISTINCT so two rows that are
+    // identical including NULL validity windows still collide.
+    unique("availability_templates_dedupe_uq")
+      .on(
+        t.tenantId,
+        t.userId,
+        t.locationId,
+        t.weekday,
+        t.startTime,
+        t.endTime,
+        t.validFrom,
+        t.validUntil,
+      )
+      .nullsNotDistinct(),
+    check("availability_templates_weekday_range", sql`${t.weekday} between 0 and 6`),
+    check("availability_templates_start_before_end", sql`${t.startTime} < ${t.endTime}`),
+  ],
+);
+
+// Therapist absence blocks — therapist-wide across all locations. timestamptz
+// so partial-day and multi-day absences both work.
+export const timeOff = pgTable(
+  "time_off",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    reason: timeOffReason("reason").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("time_off_user_starts_idx").on(t.tenantId, t.userId, t.startsAt),
+    check("time_off_starts_before_ends", sql`${t.startsAt} < ${t.endsAt}`),
   ],
 );
 
@@ -397,6 +584,43 @@ export const attachments = pgTable(
   ],
 );
 
+// AI ingestion request log (Stream D). One row per request from the AI partner,
+// keyed by the partner's idempotency_key. The unique (tenant_id, idempotency_key)
+// constraint is what lets the future endpoint do 24h dedupe (same key + same
+// payload_hash -> replay the prior result) and 409-on-mismatch (same key,
+// different payload_hash). Writes come from the ingestion job as service_role
+// (BYPASSRLS); RLS keeps rows tenant-scoped and fail-closed for the authenticated
+// review queue. No app/endpoint code in this PR — schema only.
+export const aiIngestionRequests = pgTable(
+  "ai_ingestion_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestId: text("request_id").notNull(), // partner-supplied correlation id
+    payloadHash: text("payload_hash").notNull(), // hash of the canonical payload, for mismatch detection
+    // The draft clinical_record created from this request. Null until/unless a
+    // draft is produced (e.g. a rejected request). FK is NO ACTION on delete —
+    // clinical_records are immutable and never deleted.
+    clinicalRecordId: uuid("clinical_record_id").references(() => clinicalRecords.id),
+    status: ingestionStatus("status").notNull().default("received"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    // Dedupe / 409 key: one ingestion row per (tenant, idempotency_key).
+    unique("ai_ingestion_requests_tenant_idempotency_uq").on(t.tenantId, t.idempotencyKey),
+    index("ai_ingestion_requests_tenant_idx").on(t.tenantId),
+    index("ai_ingestion_requests_tenant_status_idx").on(t.tenantId, t.status),
+    index("ai_ingestion_requests_record_idx").on(t.clinicalRecordId),
+  ],
+);
+
 /* ================================================================== */
 /* Audit + billing                                                    */
 /* ================================================================== */
@@ -452,5 +676,64 @@ export const invoices = pgTable(
   (t) => [
     index("invoices_tenant_idx").on(t.tenantId),
     index("invoices_patient_idx").on(t.patientId),
+  ],
+);
+
+/* ================================================================== */
+/* Patient form intake (Wave B)                                       */
+/* ================================================================== */
+
+// A form the PATIENT submits from the portal: the shared general anamnese
+// (Ficha Geral) or a per-therapy supplement. Mirrors the AI-ingestion boundary
+// (CLAUDE.md rule #4): it is source-tagged `patient`, lands in a review state
+// (`ai_review_state`, reusing the same review-before-finalize machine), and
+// NEVER auto-writes a finalized clinical_record. A therapist later reviews and
+// finalizes it into a clinical_record — that staff write path is a separate
+// future wave, NOT built here. Hence this table holds the raw submission only;
+// it has no clinical_record_id and no link into the immutable record lifecycle.
+//
+// RLS (migration 0011): self-scope for the `patient` role (a patient may INSERT
+// + SELECT only their OWN submissions, and only in the initial review state —
+// they can never self-finalize), plus the standard tenant-isolation policy for
+// `authenticated` staff (the future review wave reads/processes them).
+export const patientFormSubmissions = pgTable(
+  "patient_form_submissions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    // The submitting patient. ALWAYS derived from the verified principal, never
+    // from request payload (enforced again by the self-scope WITH CHECK policy).
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    // 'ficha_geral' (shared anamnese) or 'supplement' (per-therapy supplement).
+    formKey: text("form_key").notNull(),
+    // Therapy slug for a supplement (osteopathy, physiotherapy, …); null for the
+    // shared Ficha Geral.
+    therapy: text("therapy"),
+    // The submitted answers. Validated against the intake catalog in app code;
+    // stored raw for the therapist to review.
+    payload: jsonb("payload").notNull().default({}),
+    // Origin tag. Always 'patient' here (app-supplied). Not DB-defaulted: a
+    // DEFAULT would evaluate the new 'patient' enum label in the same migration
+    // that ADDs it, which Postgres forbids ("unsafe use of new value").
+    source: recordSource("source").notNull(),
+    // Review queue state — reuses ai_review_state (the review-before-finalize
+    // machine in apps/web lib/ingestion/review-state.ts). Lands as
+    // 'pending_review'; this table never reaches a finalized record on its own.
+    reviewState: aiReviewState("review_state").notNull().default("pending_review"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("patient_form_submissions_tenant_idx").on(t.tenantId),
+    index("patient_form_submissions_patient_idx").on(t.patientId),
+    index("patient_form_submissions_tenant_review_idx").on(t.tenantId, t.reviewState),
   ],
 );

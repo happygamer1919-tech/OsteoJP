@@ -3,17 +3,19 @@ import Link from "next/link";
 import { can } from "@osteojp/auth";
 import { s, locale } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
-import { getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
+import { getRecordDetail } from "@/lib/clinical/records";
 import { parseTemplateSchema } from "@/lib/clinical/form-template";
 import { RecordForm } from "./RecordForm";
 import { Attachments } from "./Attachments";
+import { DownloadReportButton } from "./DownloadReportButton";
+import { statusLabel, canDownloadReport } from "./record-status";
 import { saveRecordAction, signRecordAction, versionRecordAction } from "./actions";
 
-function statusLabel(status: RecordStatus): string {
-  return status === "signed" ? s["clinical.statusSigned"]
-    : status === "locked" ? s["clinical.statusLocked"]
-    : s["clinical.statusDraft"];
-}
+// Always render dynamically: this page reflects live record_status (draft →
+// locked → signed). Without this, the post-sign redirect could serve a cached
+// render where the header subtitle still read "Rascunho" while the record was
+// already signed (BUG-15). Matches the sibling clinical/episodes/[id] route.
+export const dynamic = "force-dynamic";
 
 export default async function RecordDetailPage({
   params,
@@ -42,8 +44,8 @@ export default async function RecordDetailPage({
             {record.patientName}
             {record.episodeTitle ? ` · ${record.episodeTitle}` : ""}
           </h2>
-          <p className="text-xs text-neutral-500">
-            {record.template?.title?.[locale] ?? "—"} · {s["clinical.version"]} {record.version} ·{" "}
+          <p className="text-xs text-text-secondary">
+            {record.template?.title?.[locale] ?? "-"} · {s["clinical.version"]} {record.version} ·{" "}
             {statusLabel(record.status)}
           </p>
         </div>
@@ -52,14 +54,14 @@ export default async function RecordDetailPage({
         </Link>
       </div>
 
-      {m === "err:finalized" && <p className="text-sm text-red-700">{s["clinical.finalized"]}</p>}
-      {m === "signed" && <p className="text-sm text-green-700">{s["clinical.statusSigned"]}</p>}
+      {m === "err:finalized" && <p className="text-sm text-error">{s["clinical.finalized"]}</p>}
+      {m === "signed" && <p className="text-sm text-success">{s["clinical.statusSigned"]}</p>}
 
       {readOnly && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">
+        <div className="rounded border border-warning bg-warning-bg p-3 text-sm text-text-primary">
           <p>{s["clinical.lockedNotice"]}</p>
           {record.signedByName && (
-            <p className="mt-1 text-xs text-neutral-600">
+            <p className="mt-1 text-xs text-text-secondary">
               {s["clinical.signedBy"]}: {record.signedByName}
               {record.signedAt
                 ? ` · ${s["clinical.signedAt"]}: ${new Date(record.signedAt).toLocaleString("pt-PT")}`
@@ -77,12 +79,13 @@ export default async function RecordDetailPage({
           saveAction={saveRecordAction.bind(null, id)}
         />
       ) : (
-        <p className="text-sm text-neutral-500">—</p>
+        <p className="text-sm text-text-secondary">-</p>
       )}
 
       <Attachments recordId={id} items={record.attachments} readOnly={readOnly} />
 
-      <div className="flex gap-2 border-t pt-4">
+      <div className="flex flex-wrap items-start gap-2 border-t pt-4">
+        {canDownloadReport(record.status) && <DownloadReportButton recordId={id} />}
         {canSign && (
           <form action={signRecordAction.bind(null, id)}>
             <button type="submit" className="rounded border px-3 py-2 text-sm font-medium">

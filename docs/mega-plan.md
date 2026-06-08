@@ -17,11 +17,11 @@
 - `[YOU]` Onboard Max: GitHub collaborator, repo clone, machine setup verified
 - `[YOU]` Commit OsteoJP `CLAUDE.md` to repo root
 - `[YOU]` Set branch protection on `main` (PR + 1 approval + status checks required)
-- `[MAX]` Complete machine setup (brew, git, node, python, VS Code, Claude Code, GitHub Desktop)
-- `[MAX]` Extract brand tokens from OsteoJP logo (palette hex, typography recs) → `docs/brand-tokens.md`
-- `[MAX]` Scrape osteojp.pt + write brand voice guide (tone, PT/EN vocabulary) → `docs/brand-voice.md`
-- `[MAX]` Seed `docs/` folder with handoff brief, mega plan, CLAUDE.md reference
-- `[MAX]` Create `.github/PULL_REQUEST_TEMPLATE.md` + issue templates (bug, task, content)
+- `[MAX]` ~~Complete machine setup (brew, git, node, python, VS Code, Claude Code, GitHub Desktop)~~ ✅
+- `[MAX]` ~~Extract brand tokens from OsteoJP logo (palette hex, typography recs) → `docs/brand-tokens.md`~~ ✅ **Shipped** (`docs/brand-tokens.md`)
+- `[MAX]` ~~Scrape osteojp.pt + write brand voice guide (tone, PT/EN vocabulary) → `docs/brand-voice.md`~~ ✅ **Shipped** (`docs/brand-voice.md`)
+- `[MAX]` ~~Seed `docs/` folder with handoff brief, mega plan, CLAUDE.md reference~~ ✅
+- `[MAX]` ~~Create `.github/PULL_REQUEST_TEMPLATE.md` + issue templates (bug, task, content)~~ ✅
 
 ---
 
@@ -33,14 +33,14 @@
 - `[YOU]` API surface spec — OpenAPI doc covering all V1 endpoints
 - `[YOU]` AI ingestion endpoint contract finalized + signed off with partner
 - `[YOU]` Wireframe sign-off for 6 critical screens (dashboard, agenda, patient profile, clinical record editor, appointment modal, invoicing view)
-- `[MAX]` Wireframes for the 6 critical screens (Excalidraw or Figma, low-fi)
-- `[MAX]` Author osteopathy form template as JSON Schema → `packages/db/seed/form-templates/osteopathy-v1.json` (PT + EN labels, `ai_extractable` flags)
-- `[MAX]` Author physiotherapy form template once owner provides sample
-- `[MAX]` Extract every user-facing string → `packages/i18n/strings.pt.json` + `strings.en.json`
-- `[MAX]` Author appointment reminder email templates PT + EN
-- `[MAX]` Author post-visit email templates PT + EN
-- `[MAX]` Author SMS templates PT + EN (160-char compliant)
-- `[MAX]` Write `docs/architecture.md` from the mega plan
+- `[MAX]` ~~Wireframes for the 6 critical screens (Excalidraw or Figma, low-fi)~~ ✅ **Shipped** (`docs/wireframes/`)
+- `[MAX]` ~~Author osteopathy form template as JSON Schema → `packages/db/seed/form-templates/osteopathy-v1.json`~~ ✅ **Shipped** (PR #64)
+- `[MAX]` ~~Author physiotherapy form template once owner provides sample~~ ✅ **Shipped** (PR #64, v3)
+- `[MAX]` ~~Extract every user-facing string → `packages/i18n/strings.pt.json` + `strings.en.json`~~ ✅ **Shipped** (PR #55)
+- `[MAX]` ~~Author appointment reminder email templates PT + EN~~ ✅ **Shipped** (`docs/email-templates-reminders.md`)
+- `[MAX]` ~~Author post-visit email templates PT + EN~~ ✅ **Shipped** (`docs/email-templates-post-visit.md`)
+- `[MAX]` ~~Author SMS templates PT + EN (160-char compliant)~~ ✅ **Shipped** (`docs/sms-templates.md`)
+- `[MAX]` ~~Write `docs/architecture.md` from the mega plan~~ ✅ **Shipped** (`docs/architecture.md`)
 
 ---
 
@@ -65,20 +65,20 @@
 
 Six parallel streams, all `[YOU]` for implementation. Max takes the horizontal QA + content layer.
 
-- `[YOU]` Stream A — **Patients**: CRUD, search, merge, multi-location assignment, audit log
-- `[YOU]` Stream B — **Scheduling**: agenda UI, recurring, conflict detection, vacation/availability templates, room conflicts
-- `[YOU]` Stream C — **Clinical records**: form engine, body chart, image uploads, versioning, signature
-- `[YOU]` Stream D — **AI ingestion**: endpoint, HMAC, validation, review queue, state machine
-- `[YOU]` Stream E — **Reminders**: Resend templates + Twilio SMS + Inngest schedulers
-- `[YOU]` Stream F — **Admin**: tenant settings, users, roles, services per location, prices
-- `[MAX]` Seed data — 50 fake patients, realistic PT names/addresses, varied appointment history
-- `[MAX]` Test scenarios in plain English for every workflow (you turn into Playwright)
-- `[MAX]` Manual QA pass on every PR — load preview URL, run workflow, write findings as issues
-- `[MAX]` Bug triage: repro steps, severity, screenshots
-- `[MAX]` Form template authoring as new therapy types arrive (RPG, NESA, massagem, pilates terapêutico)
-- `[MAX]` UI copy review — every screen, every modal, every error state, PT + EN
-- `[MAX]` Maintain `docs/` as features ship
-- `[MAX]` Weekly demo prep: 3-min Loom walking through what shipped
+- `[YOU]` ~~Stream A — **Patients**: CRUD, search, merge, multi-location assignment, audit log~~ ✅ **Shipped** (PR #47)
+- `[YOU]` ~~Stream B — **Scheduling**: agenda UI, recurring, conflict detection, vacation/availability templates, room conflicts~~ ✅ **Shipped** (PRs #43, #49)
+- `[YOU]` ~~Stream C — **Clinical records**: form engine, body chart, image uploads, versioning, signature~~ ✅ **Shipped** (PR #51)
+- `[YOU]` Stream D — **AI ingestion**: endpoint, HMAC, validation, review queue, state machine — ⏳ pending AI partner auth contract
+- `[YOU]` ~~Stream E — **Reminders**: Resend templates + Twilio SMS + Inngest schedulers~~ ✅ **Shipped** (PR #57)
+- `[YOU]` ~~Stream F — **Admin**: tenant settings, users, roles, services per location, prices~~ ✅ **Shipped** (PR #41)
+- `[MAX]` ~~Seed data — 50 fake patients, realistic PT names/addresses, varied appointment history~~ ✅ **Shipped** (PR #52)
+- `[MAX]` ~~Test scenarios in plain English for every workflow (you turn into Playwright)~~ ✅ **Shipped** (PR #53 — 51 Playwright scenarios)
+- `[MAX]` Manual QA pass on every PR — load preview URL, run workflow, write findings as issues — ⏳ pending QA user credentials
+- `[MAX]` Bug triage: repro steps, severity, screenshots — ⏳ follows QA pass
+- `[MAX]` Form template authoring as new therapy types arrive (RPG, NESA, massagem, pilates terapêutico) — ⏳ blocked on owner intake form PDFs
+- `[MAX]` ~~UI copy review — every screen, every modal, every error state, PT + EN~~ ✅ **Shipped** (PR #55 — 12 fixes, see `docs/i18n-copy-review.md`)
+- `[MAX]` ~~Maintain `docs/` as features ship~~ ✅ **This PR**
+- `[MAX]` Weekly demo prep: 3-min Loom walking through what shipped — ⏳ script ready (`docs/loom-demo-script-phase3.md`), recording pending BUG-11 seed
 
 ---
 
@@ -132,7 +132,7 @@ Six parallel streams, all `[YOU]` for implementation. Max takes the horizontal Q
 - `[YOU]` Parallel run config: which workflows dual-entered, which already migrated
 - `[MAX]` Train-the-trainer documentation: short videos for staff (record with Loom)
 - `[MAX]` In-app help text + tooltips authored
-- `[MAX]` FAQ doc for staff (`docs/staff-faq.md`)
+- `[MAX]` ~~FAQ doc for staff (`docs/staff-faq.md`)~~ ✅ **Shipped** (PR #86)
 - `[MAX]` Daily staff feedback log during parallel run
 
 ---

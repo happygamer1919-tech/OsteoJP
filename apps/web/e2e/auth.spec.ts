@@ -1,87 +1,78 @@
 /**
- * auth.spec.ts — Authentication flows
- *
- * Plain-English scenario → test mapping:
+ * auth.spec.ts — Authentication (login + tenant/role in session)
  *
  *  1. Unauthenticated user is redirected to /login
- *  2. Login with valid credentials succeeds
- *  3. Login with wrong password shows error
- *  4. Login with unknown email shows error
- *  5. Empty login form shows required-field validation
- *  6. After login, navigating to /login redirects to the app
+ *  2. Login with valid credentials lands in the app (session established)
+ *  3. Wrong password / unknown email shows the invalid-credentials error
+ *  4. Empty form stays on /login (native required validation)
+ *  5. An authenticated session carries tenant + role: an admin reaches the app,
+ *     and visiting /login while authenticated bounces back into it.
+ *
+ * Role-specific session enforcement (reception has no clinical access) is proven
+ * in clinical.spec.ts.
  */
-
 import { test, expect } from "@playwright/test";
-
-// These tests run without any storageState — they need a fresh session.
-test.use({ storageState: { cookies: [], origins: [] } });
+import { USERS, E2E_PASSWORD } from "./fixtures";
 
 // ---------------------------------------------------------------------------
-// 1. Unauthenticated redirect
+// Unauthenticated — fresh context, no stored session.
 // ---------------------------------------------------------------------------
-test("unauthenticated user accessing /patients is redirected to /login", async ({
-  page,
-}) => {
+test.describe("unauthenticated", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test("accessing /patients redirects to /login", async ({ page }) => {
+    await page.goto("/patients");
+    await expect(page).toHaveURL(/\/login/, { timeout: 8_000 });
+  });
+
+  test("accessing /agenda redirects to /login", async ({ page }) => {
+    await page.goto("/agenda");
+    await expect(page).toHaveURL(/\/login/, { timeout: 8_000 });
+  });
+
+  test("login with valid admin credentials establishes a session", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByPlaceholder("Email").fill(USERS.admin);
+    await page.getByPlaceholder("Palavra-passe").fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: /Entrar/i }).click();
+    // Login action redirects to /dashboard on success.
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 12_000 });
+  });
+
+  test("wrong password shows the invalid-credentials error", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByPlaceholder("Email").fill(USERS.admin);
+    await page.getByPlaceholder("Palavra-passe").fill("definitely-wrong-99999");
+    await page.getByRole("button", { name: /Entrar/i }).click();
+    await expect(page.getByText(/Credenciais inválidas/i)).toBeVisible({ timeout: 8_000 });
+    await expect(page).toHaveURL(/\/login/);
+  });
+
+  test("unknown email shows the invalid-credentials error", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByPlaceholder("Email").fill("nobody@nowhere.test");
+    await page.getByPlaceholder("Palavra-passe").fill("whatever");
+    await page.getByRole("button", { name: /Entrar/i }).click();
+    await expect(page.getByText(/Credenciais inválidas/i)).toBeVisible({ timeout: 8_000 });
+  });
+
+  test("submitting an empty form stays on /login", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByRole("button", { name: /Entrar/i }).click();
+    await expect(page).toHaveURL(/\/login/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Authenticated session (default admin storage state from setup).
+// ---------------------------------------------------------------------------
+test("an authenticated admin session reaches the app and skips /login", async ({ page }) => {
+  // Tenant + role claims resolved from the stored session let admin read patients.
   await page.goto("/patients");
-  await expect(page).toHaveURL(/\/login/, { timeout: 8_000 });
-});
+  await expect(page).toHaveURL(/\/patients(\?|$)/);
+  await expect(page.getByRole("heading", { name: "Pacientes" })).toBeVisible();
 
-test("unauthenticated user accessing /agenda is redirected to /login", async ({
-  page,
-}) => {
-  await page.goto("/agenda");
-  await expect(page).toHaveURL(/\/login/, { timeout: 8_000 });
-});
-
-// ---------------------------------------------------------------------------
-// 2. Valid login
-// ---------------------------------------------------------------------------
-test("login with valid admin credentials succeeds", async ({ page }) => {
-  const email = process.env.E2E_ADMIN_EMAIL;
-  const password = process.env.E2E_ADMIN_PASSWORD;
-  if (!email || !password) test.skip(true, "E2E_ADMIN_* env vars not set");
-
-  await page.goto("/login");
-  await page.getByPlaceholder("Email").fill(email!);
-  await page.getByPlaceholder("Palavra-passe").fill(password!);
-  await page.getByRole("button", { name: /Entrar/i }).click();
-
-  await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
-});
-
-// ---------------------------------------------------------------------------
-// 3. Wrong password
-// ---------------------------------------------------------------------------
-test("login with wrong password shows error message", async ({ page }) => {
-  const email = process.env.E2E_ADMIN_EMAIL ?? "test@osteojp.test";
-
-  await page.goto("/login");
-  await page.getByPlaceholder("Email").fill(email);
-  await page.getByPlaceholder("Palavra-passe").fill("wrong_password_99999");
-  await page.getByRole("button", { name: /Entrar/i }).click();
-
-  await expect(page.locator(".text-red-600")).toBeVisible({ timeout: 8_000 });
-  await expect(page).toHaveURL(/\/login/);
-});
-
-// ---------------------------------------------------------------------------
-// 4. Unknown email
-// ---------------------------------------------------------------------------
-test("login with unknown email shows error message", async ({ page }) => {
-  await page.goto("/login");
-  await page.getByPlaceholder("Email").fill("nobody@nowhere.test");
-  await page.getByPlaceholder("Palavra-passe").fill("doesntmatter");
-  await page.getByRole("button", { name: /Entrar/i }).click();
-
-  await expect(page.locator(".text-red-600")).toBeVisible({ timeout: 8_000 });
-  await expect(page).toHaveURL(/\/login/);
-});
-
-// ---------------------------------------------------------------------------
-// 5. Empty form validation
-// ---------------------------------------------------------------------------
-test("submitting empty login form stays on /login", async ({ page }) => {
-  await page.goto("/login");
-  await page.getByRole("button", { name: /Entrar/i }).click();
-  await expect(page).toHaveURL(/\/login/);
+  // Already authenticated: the root dispatcher sends us into the app, not /login.
+  await page.goto("/");
+  await expect(page).not.toHaveURL(/\/login/);
 });

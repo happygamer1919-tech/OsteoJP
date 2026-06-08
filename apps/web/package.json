@@ -8,22 +8,30 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@osteojp/auth": "workspace:*",
     "@osteojp/db": "workspace:*",
     "@osteojp/i18n": "workspace:*",
+    "@osteojp/ui": "workspace:*",
     "@sentry/nextjs": "^10.54.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
     "drizzle-orm": "^0.45.2",
+    "inngest": "^4.5.0",
     "next": "16.2.6",
+    "pdf-lib": "^1.17.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "server-only": "^0.0.1"
+    "resend": "^6.12.4",
+    "server-only": "^0.0.1",
+    "twilio": "^6.0.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

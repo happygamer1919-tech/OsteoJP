@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { s } from "@/lib/i18n";
-import { locale } from "@/lib/i18n";
 import {
   addDays,
   formatAnchorLabel,
@@ -17,8 +16,6 @@ import type {
 } from "@/lib/scheduling/types";
 import { AgendaGrid } from "./agenda-grid";
 import { AppointmentModal, type ModalState } from "./appointment-modal";
-
-const TEAL = "#45B9A7";
 
 export function AgendaView({
   view,
@@ -60,17 +57,17 @@ export function AgendaView({
   const step = view === "week" ? 7 : 1;
 
   return (
-    <main className="flex min-h-dvh flex-col bg-[#F7F9FB]">
+    <main className="flex min-h-dvh flex-col bg-bg">
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-[#E2E8EE] bg-white px-6 py-3">
-        <h1 className="text-lg font-semibold text-[#1A2733]">
+      <header className="flex items-center justify-between border-b border-border bg-surface px-6 py-3">
+        <h1 className="text-lg font-semibold text-text-primary">
           {s["app.name"]} · {s["agenda.title"]}
         </h1>
       </header>
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-[#E2E8EE] bg-white px-6 py-3">
-        <div className="inline-flex overflow-hidden rounded border border-[#C7D1DA]">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border bg-surface px-6 py-3">
+        <div className="inline-flex overflow-hidden rounded border border-border-strong">
           <ToggleButton
             active={view === "day"}
             onClick={() => navigate({ view: "day" })}
@@ -95,7 +92,7 @@ export function AgendaView({
           <button
             type="button"
             onClick={() => navigate({ date: todayInLisbon() })}
-            className="rounded border border-[#C7D1DA] px-3 py-1.5 text-sm text-[#1A2733] hover:bg-[#F0F3F6]"
+            className="rounded border border-border-strong px-3 py-1.5 text-sm text-text-primary hover:bg-surface-muted"
           >
             {s["agenda.today"]}
           </button>
@@ -105,8 +102,8 @@ export function AgendaView({
           >
             →
           </NavButton>
-          <span className="ml-2 text-sm font-medium text-[#1A2733]">
-            {formatAnchorLabel(view, anchor, locale)}
+          <span className="ml-2 text-sm font-medium text-text-primary">
+            {formatAnchorLabel(view, anchor)}
           </span>
         </div>
 
@@ -118,7 +115,7 @@ export function AgendaView({
               onChange={(e) =>
                 navigate({ therapist: e.target.value || null })
               }
-              className="rounded border border-[#C7D1DA] bg-white px-2 py-1.5 text-sm text-[#1A2733]"
+              className="rounded border border-border-strong bg-surface px-2 py-1.5 text-sm text-text-primary"
             >
               <option value="">{s["agenda.allTherapists"]}</option>
               {options.therapists.map((o) => (
@@ -132,7 +129,7 @@ export function AgendaView({
             aria-label={s["header.location"]}
             value={filters.locationId ?? ""}
             onChange={(e) => navigate({ location: e.target.value || null })}
-            className="rounded border border-[#C7D1DA] bg-white px-2 py-1.5 text-sm text-[#1A2733]"
+            className="rounded border border-border-strong bg-surface px-2 py-1.5 text-sm text-text-primary"
           >
             <option value="">{s["agenda.allLocations"]}</option>
             {options.locations.map((o) => (
@@ -144,8 +141,7 @@ export function AgendaView({
           <button
             type="button"
             onClick={() => setModal({ mode: "create" })}
-            className="rounded px-3 py-1.5 text-sm font-medium text-white"
-            style={{ backgroundColor: TEAL }}
+            className="rounded bg-brand-teal px-3 py-1.5 text-sm font-medium text-text-inverse hover:bg-brand-teal/90"
           >
             + {s["agenda.newAppointment"]}
           </button>
@@ -196,8 +192,8 @@ function ToggleButton({
       onClick={onClick}
       className={`px-3 py-1.5 text-sm ${
         active
-          ? "bg-[#45B9A7] text-white"
-          : "bg-white text-[#1A2733] hover:bg-[#F0F3F6]"
+          ? "bg-brand-teal text-text-inverse"
+          : "bg-surface text-text-primary hover:bg-surface-muted"
       }`}
     >
       {children}
@@ -219,7 +215,7 @@ function NavButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="rounded border border-[#C7D1DA] px-2.5 py-1.5 text-sm text-[#1A2733] hover:bg-[#F0F3F6]"
+      className="rounded border border-border-strong px-2.5 py-1.5 text-sm text-text-primary hover:bg-surface-muted"
     >
       {children}
     </button>

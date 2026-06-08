@@ -3,6 +3,7 @@ import Link from "next/link";
 import { can } from "@osteojp/auth";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { getRequestContext } from "@/lib/auth/context";
+import { AppShell } from "@/components/app-shell";
 
 const s = getStrings(DEFAULT_LOCALE);
 
@@ -25,24 +26,24 @@ export default async function AdminLayout({
   // enter admin. Each action re-checks its own capability (defense in depth).
   if (!can(actor.role, "settings:read")) redirect("/dashboard");
 
+  // Global nav comes from AppShell; admin keeps its own sub-nav for the
+  // admin sub-sections.
   return (
-    <div className="min-h-dvh">
-      <header className="border-b">
-        <div className="flex items-center justify-between px-8 py-4">
-          <h1 className="text-lg font-semibold">{s["admin.title"]}</h1>
-          <Link href="/dashboard" className="text-sm underline">
-            {s["nav.dashboard"]}
-          </Link>
-        </div>
-        <nav className="flex gap-4 px-8 pb-3 text-sm">
+    <AppShell>
+      <main className="px-8 py-6">
+        <nav className="mb-6 flex gap-4 border-b border-border pb-3 text-body-sm">
           {NAV.map((item) => (
-            <Link key={item.href} href={item.href} className="hover:underline">
+            <Link
+              key={item.href}
+              href={item.href}
+              className="text-text-secondary hover:text-brand-magenta hover:underline"
+            >
               {item.label}
             </Link>
           ))}
         </nav>
-      </header>
-      <main className="px-8 py-6">{children}</main>
-    </div>
+        {children}
+      </main>
+    </AppShell>
   );
 }

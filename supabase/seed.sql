@@ -26,6 +26,8 @@ insert into public.tenants (id, name, slug, nif)
 values ('00000000-0000-0000-0000-0000000000a1', 'OsteoJP (preview)', 'osteojp-preview', null)
 on conflict (id) do nothing;
 
+-- Same canonical set the runtime tenant-create path seeds (packages/db/seed/
+-- roles.ts → CANONICAL_ROLES). Keep slug/name/description in sync with it.
 insert into public.roles (tenant_id, slug, name, description)
 values
   ('00000000-0000-0000-0000-0000000000a1', 'owner',      'Owner',        'Full access across the tenant.'),

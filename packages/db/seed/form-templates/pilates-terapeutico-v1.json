@@ -1,0 +1,87 @@
+{
+  "key": "pilates-terapeutico",
+  "version": 2,
+  "title": {
+    "pt": "Pilates Terapêutico — Avaliação de Episódio",
+    "en": "Therapeutic Pilates — Episode Evaluation"
+  },
+  "x-therapy-type": {
+    "pt": "Pilates Terapêutico",
+    "fisiozero-tipo_evento_dinamico": "Pilates"
+  },
+  "x-form-ref": "physiotherapy",
+  "x-form-note": "Pointer-wrapper referencing physiotherapy-v1.json for main clinical fields. Adds a short contraindication screen specific to therapeutic pilates, confirmed by owner 2026-06-03.",
+  "contraindication_screen": {
+    "title": {
+      "pt": "Rastreio de Contraindicações — Pilates Terapêutico",
+      "en": "Contraindication Screen — Therapeutic Pilates"
+    },
+    "fields": [
+      {
+        "key": "acute_pain",
+        "type": "checkbox",
+        "label": {
+          "pt": "Dor aguda não controlada",
+          "en": "Uncontrolled acute pain"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "recent_fracture",
+        "type": "checkbox",
+        "label": {
+          "pt": "Fratura recente ou instabilidade articular não consolidada",
+          "en": "Recent fracture or unconsolidated joint instability"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "cardiovascular_risk",
+        "type": "checkbox",
+        "label": {
+          "pt": "Risco cardiovascular descompensado (HTA grave, IC)",
+          "en": "Decompensated cardiovascular risk (severe hypertension, heart failure)"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "post_surgical",
+        "type": "checkbox",
+        "label": {
+          "pt": "Pós-operatório recente sem autorização médica para exercício",
+          "en": "Recent post-op without medical clearance for exercise"
+        },
+        "ai_extractable": false
+      },
+      {
+        "key": "pregnancy_trimester",
+        "type": "select",
+        "label": {
+          "pt": "Gravidez (indicar trimestre se aplicável)",
+          "en": "Pregnancy (indicate trimester if applicable)"
+        },
+        "options": [
+          { "value": "na", "label": { "pt": "Não aplicável", "en": "Not applicable" } },
+          { "value": "t1", "label": { "pt": "1.º trimestre", "en": "1st trimester" } },
+          { "value": "t2", "label": { "pt": "2.º trimestre", "en": "2nd trimester" } },
+          { "value": "t3", "label": { "pt": "3.º trimestre", "en": "3rd trimester" } }
+        ],
+        "ai_extractable": false
+      },
+      {
+        "key": "contraindication_notes",
+        "type": "textarea",
+        "label": {
+          "pt": "Notas adicionais sobre contraindicações",
+          "en": "Additional contraindication notes"
+        },
+        "ai_extractable": true
+      }
+    ]
+  },
+  "_meta": {
+    "source": "Fisiozero production + owner confirmation 2026-06-03",
+    "reviewed_by": "Max (sm33xy)",
+    "version_note": "v2 — pointer wrapper + contraindication screen added per JP decision 2026-06-03"
+  }
+}

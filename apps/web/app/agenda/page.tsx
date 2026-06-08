@@ -38,7 +38,7 @@ export default async function AgendaPage({
     if (e instanceof ForbiddenError) {
       return (
         <main className="min-h-dvh p-8">
-          <p className="text-sm text-[#B23A3A]">{s["errors.forbidden"]}</p>
+          <p className="text-sm text-error">{s["errors.forbidden"]}</p>
         </main>
       );
     }

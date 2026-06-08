@@ -7,6 +7,7 @@ export type ClinicalAuditAction =
   | "clinical_record.update"
   | "clinical_record.version"
   | "clinical_record.sign"
+  | "clinical_episode.create"
   | "attachment.create";
 
 /**
@@ -24,7 +25,7 @@ export async function writeClinicalAudit(
     tenantId: string;
     actorUserId: string;
     action: ClinicalAuditAction;
-    entityType: "clinical_record" | "attachment";
+    entityType: "clinical_record" | "clinical_episode" | "attachment";
     entityId: string;
     metadata: Record<string, unknown>;
     ip: string | null;

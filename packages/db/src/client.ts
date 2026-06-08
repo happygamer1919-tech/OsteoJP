@@ -122,3 +122,47 @@ export async function withTenantContext<T>(
     return fn(tx);
   });
 }
+
+/* ================================================================== */
+/* Per-request PATIENT context (patient-portal self-scope)            */
+/* ================================================================== */
+
+export type PatientClaims = {
+  tenant_id: string;
+  /** The patient's own id — the self-scope key. RLS reads it via
+   * public.jwt_patient_id(); policies confine the row set to this patient. */
+  patient_id: string;
+};
+
+/**
+ * Patient-portal counterpart to withTenantContext. The DISTINCT trust boundary:
+ *
+ *   1. `set local role patient` — drops to the dedicated, login-less `patient`
+ *      role (created in 0010). Staff RLS policies target `authenticated`, so a
+ *      patient connection NEVER matches them; only the `TO patient` self-scope
+ *      policies apply. This is the separation that keeps a patient off the staff
+ *      tenant-wide policies entirely — not a predicate bolted onto them.
+ *   2. `set_config('request.jwt.claims', …)` — sets tenant_id + patient_id
+ *      transaction-locally so public.jwt_patient_id()/jwt_tenant_id() resolve.
+ *      Claims JSON is a BOUND parameter, never string-interpolated.
+ *
+ * Role + claims reset on commit/rollback (SET LOCAL / set_config(..., true)).
+ *
+ * IMPORTANT: patient_id MUST come from the VERIFIED principal (the JWT claim
+ * resolved by the access-token hook), never from request payload — the caller in
+ * the patient API derives it from the session, not the body. Passing a
+ * caller-supplied patient_id here would defeat the boundary.
+ */
+export async function withPatientContext<T>(
+  claims: PatientClaims,
+  fn: (tx: DbTx) => Promise<T>,
+): Promise<T> {
+  const claimsJson = JSON.stringify(claims);
+  return getDb().transaction(async (tx) => {
+    await tx.execute(sql`set local role patient`);
+    await tx.execute(
+      sql`select set_config('request.jwt.claims', ${claimsJson}, true)`,
+    );
+    return fn(tx);
+  });
+}

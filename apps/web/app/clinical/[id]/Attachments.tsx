@@ -76,11 +76,11 @@ export function Attachments({
           <input type="file" className="hidden" onChange={onSelect} disabled={pending} />
         </label>
       )}
-      {error && <p className="text-xs text-red-700">{s["clinical.error"]}</p>}
+      {error && <p className="text-xs text-error">{s["clinical.error"]}</p>}
 
       <ul className="space-y-1 text-sm">
         {items.length === 0 && (
-          <li className="text-xs text-neutral-500">{s["clinical.attachmentEmpty"]}</li>
+          <li className="text-xs text-text-secondary">{s["clinical.attachmentEmpty"]}</li>
         )}
         {items.map((a) => (
           <li key={a.id} className="flex items-center gap-2">
