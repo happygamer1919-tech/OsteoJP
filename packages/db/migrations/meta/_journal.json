@@ -92,6 +92,13 @@
       "when": 1780617633308,
       "tag": "0012_patient_jwt_security_definer",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1780941980378,
+      "tag": "0013_review_finalize_audit",
+      "breakpoints": true
     }
   ]
 }

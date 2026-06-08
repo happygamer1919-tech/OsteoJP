@@ -26,8 +26,9 @@ import {
 const DENIED: Record<Role, Capability[]> = {
   owner: [], // owner is unrestricted within the tenant
   admin: [
-    // oversight role, not a clinician — cannot author/sign clinical records
+    // oversight role, not a clinician — cannot author/review/sign clinical records
     "clinical_records:author",
+    "clinical_records:review",
     "clinical_records:sign",
     // only the owner manages roles (no privilege escalation by an admin)
     "roles:manage",
@@ -51,6 +52,7 @@ const DENIED: Record<Role, Capability[]> = {
     // NO clinical access at all
     "clinical_records:read",
     "clinical_records:author",
+    "clinical_records:review",
     "clinical_records:sign",
     "patients:delete",
     "invoices:void",

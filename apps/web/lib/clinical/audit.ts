@@ -7,6 +7,8 @@ export type ClinicalAuditAction =
   | "clinical_record.update"
   | "clinical_record.version"
   | "clinical_record.sign"
+  | "clinical_record.review_claim" // therapist claimed a review-queue item (→ in_review)
+  | "clinical_record.review_finalize" // therapist finalized a review item (→ approved + locked/signed)
   | "clinical_episode.create"
   | "attachment.create";
 
