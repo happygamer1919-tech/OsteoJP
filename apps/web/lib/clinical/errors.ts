@@ -5,7 +5,12 @@ export type ClinicalErrorCode =
   | "finalized" // record is locked/signed and immutable
   | "not_printable" // record is not finalized (draft / under AI review) — cannot print
   | "validation" // required fields missing
-  | "invalid";
+  | "invalid"
+  // --- review / finalize write path ---
+  | "not_reviewable" // item is not an AI/patient review-queue item
+  | "not_under_review" // must be claimed (in_review) before edit/finalize
+  | "already_reviewed" // review decision is terminal (approved/rejected)
+  | "not_narrative_field"; // edit touched a coded/safety field (narrative-only)
 
 export class ClinicalError extends Error {
   override readonly name = "ClinicalError";

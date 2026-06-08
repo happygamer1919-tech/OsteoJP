@@ -36,6 +36,7 @@ export type Capability =
   | "locations:write"
   | "clinical_records:read"
   | "clinical_records:author"
+  | "clinical_records:review"
   | "clinical_records:sign"
   | "invoices:read"
   | "invoices:issue"
@@ -61,6 +62,7 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   "locations:write",
   "clinical_records:read",
   "clinical_records:author",
+  "clinical_records:review",
   "clinical_records:sign",
   "invoices:read",
   "invoices:issue",
@@ -79,8 +81,10 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
   // roles — prevents privilege escalation by a compromised admin.
   owner: new Set<Capability>(ALL_CAPABILITIES),
 
-  // Admin: full operational control, but does NOT author/sign clinical
-  // records (oversight role, not clinician) and CANNOT manage roles.
+  // Admin: full operational control, but does NOT author/review/sign clinical
+  // records (oversight role, not clinician) and CANNOT manage roles. Reviewing
+  // and finalizing the AI/patient intake queue is a clinician action, so it is
+  // therapist/owner only — admin keeps read-only clinical access.
   admin: new Set<Capability>([
     "patients:read",
     "patients:write",
@@ -105,8 +109,10 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
   ]),
 
   // Therapist (clinician): patient + appointment work, full clinical-record
-  // authoring + signing. Read-only on services/locations/invoices. No
-  // settings, no user/role admin, no destructive actions.
+  // authoring + signing, AND reviewing the queue of AI-ingested drafts /
+  // patient-submitted intake (claim → edit narrative → finalize). Read-only on
+  // services/locations/invoices. No settings, no user/role admin, no
+  // destructive actions.
   therapist: new Set<Capability>([
     "patients:read",
     "patients:write",
@@ -114,6 +120,7 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     "appointments:write",
     "clinical_records:read",
     "clinical_records:author",
+    "clinical_records:review",
     "clinical_records:sign",
     "services:read",
     "locations:read",
