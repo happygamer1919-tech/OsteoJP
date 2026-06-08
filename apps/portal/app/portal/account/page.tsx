@@ -18,7 +18,12 @@ export default async function AccountPage() {
 
   const fullName = profile?.fullName ?? (user?.user_metadata?.full_name as string | undefined) ?? 'Paciente'
   const email = profile?.email ?? user?.email ?? ''
-  const initials = fullName.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
+  const initials = fullName
+    .split(' ')
+    .map((n: string) => n[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
 
   return (
     <div>
