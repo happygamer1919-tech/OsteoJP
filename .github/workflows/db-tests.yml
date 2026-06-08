@@ -1,0 +1,116 @@
+name: DB Tests
+
+# Runs the packages/db RLS isolation vitest suites against a REAL, seeded Supabase
+# stack with DATABASE_URL set, so they actually EXECUTE instead of self-skipping.
+#
+# Why this gate exists
+#   The five RLS isolation suites all `describe.skipIf(!live)` where
+#   live = Boolean(DATABASE_URL). ci.yml runs vitest with NO DATABASE_URL, so they
+#   skip and report green; e2e.yml sets DATABASE_URL but runs only Playwright.
+#   Net result before this workflow: the RLS proofs ran on ZERO PRs. This job boots
+#   Supabase, applies migrations + base seed via `supabase db reset`, runs the
+#   packages/db vitest suite with DATABASE_URL set, then runs a skip-guard that
+#   turns the job RED if any of the five suites silently skips or collects zero
+#   tests. A real RLS execution must be PROVABLE, not assumed.
+#
+# Separate from ci.yml (fast unit-only, no DB) and e2e.yml (Playwright + app).
+# Deliberately uses a NON-privileged `supabase db reset` — the prod-equivalent
+# migration apply. No privileged GRANT and no branch DB: the gate must hold under
+# exactly what production runs.
+
+on:
+  pull_request:
+    branches: [main]
+  # Also run on push to main so the check registers as selectable in branch
+  # protection and is proven green on the default branch.
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  rls:
+    # Stable display name — wire branch protection to this exact string.
+    name: DB-gated tests (RLS isolation, seeded DB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # Local Supabase fixed default. The packages/db RLS suites connect ONLY
+      # through this (owner/postgres role over TCP); they do not use the Supabase
+      # JS client, ANON_KEY, or SERVICE_ROLE_KEY, so those are not captured here.
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase (lean stack)
+        # The RLS suites need only the data plane (Postgres). Auth (gotrue) cannot
+        # be excluded by the CLI — it always boots — but the suites never call it;
+        # they set request.jwt.claims directly in rolled-back transactions. Mirror
+        # e2e.yml's exclusions: dropping analytics/vector also avoids the
+        # containers that go unhealthy on first boot and cascade the start to fail.
+        run: >
+          supabase start
+          -x analytics,vector,studio,realtime,storage,imgproxy,edge-runtime,functions,inbucket,meta
+
+      - name: Apply migrations + base seed (supabase db reset)
+        # Re-applies supabase/migrations/* and supabase/seed.sql deterministically
+        # as the NON-privileged migration role (prod-equivalent). This is the apply
+        # under which migration 0010's `GRANT USAGE ON SCHEMA auth TO patient`
+        # silently no-ops — exactly why patient-form-intake-rls is the one suite
+        # permitted (for now) to skip with its documented reason. See the guard.
+        run: supabase db reset
+
+      - name: Run RLS isolation suite (DATABASE_URL set)
+        working-directory: packages/db
+        # pipefail (GitHub's default bash) ⇒ a real RLS failure (e.g. a broken
+        # policy) fails this step and reddens the job directly. The `json` reporter
+        # writes the machine-readable report the guard parses; `default` streams to
+        # the log we tee, which carries the patient-form-intake skip reason the
+        # guard matches. Tests vitest greenlit-with-skips are caught by the guard.
+        run: |
+          pnpm exec vitest run \
+            --reporter=default \
+            --reporter=json --outputFile.json=rls-results.json \
+            2>&1 | tee rls-run.log
+
+      - name: Assert RLS suites actually executed (skip-guard)
+        # Turns the job RED on a silent skip: any of the five suites skipping or
+        # collecting zero tests fails here. The ONLY tolerated skip is
+        # patient-form-intake-rls via its exact documented authReachable reason.
+        run: >
+          node .github/scripts/assert-rls-executed.mjs
+          packages/db/rls-results.json
+          packages/db/rls-run.log
+
+      - name: Upload RLS report + log
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rls-report
+          path: |
+            packages/db/rls-results.json
+            packages/db/rls-run.log
+          retention-days: 7
