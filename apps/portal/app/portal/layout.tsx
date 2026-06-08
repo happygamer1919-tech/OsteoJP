@@ -1,24 +1,29 @@
-import { redirect } from 'next/navigation'
-import { createServerClient } from '@/lib/supabase/server'
-import BottomNav from '@/components/layout/BottomNav'
+import type { Metadata } from 'next'
 import TopBar from '@/components/layout/TopBar'
+import BottomNav from '@/components/layout/BottomNav'
 
-export default async function PortalLayout({
+export const metadata: Metadata = {
+  title: {
+    template: '%s · OsteoJP',
+    default: 'OsteoJP',
+  },
+  description: 'O seu portal de saúde OsteoJP — marcações, fichas e documentos.',
+}
+
+export default function PortalLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-
-  if (!session) {
-    redirect('/auth/login')
-  }
-
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
       <TopBar />
-      <main className="flex-1 pb-20 max-w-lg mx-auto w-full px-4 pt-4">
+      {/* pb-20 leaves room for the fixed BottomNav */}
+      <main
+        id="main-content"
+        className="max-w-md mx-auto px-4 pt-5 pb-24"
+        tabIndex={-1}
+      >
         {children}
       </main>
       <BottomNav />

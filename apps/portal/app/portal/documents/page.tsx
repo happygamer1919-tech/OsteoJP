@@ -1,15 +1,33 @@
+import Link from 'next/link'
+
 export default function DocumentsPage() {
   return (
     <div>
-      <h1 className="font-medium text-gray-900 text-lg mb-4">Documentos</h1>
-      <div
-        className="rounded-lg px-4 py-3 text-sm mb-4"
-        style={{ backgroundColor: '#E6F1FB', color: '#185FA5' }}
-      >
-        As faturas estarão disponíveis brevemente.
+      <h1 className="text-lg font-medium text-gray-900 mb-5">Documentos</h1>
+
+      <div className="bg-white rounded-xl border border-gray-100 p-6 text-center">
+        <div
+          className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4"
+          style={{ backgroundColor: '#F3F4F6' }}
+          aria-hidden="true"
+        >
+          <span className="text-xl">📁</span>
+        </div>
+        <p className="font-medium text-gray-900 mb-1">Em breve</p>
+        <p className="text-sm text-gray-500 leading-relaxed">
+          Os seus documentos clínicos e faturas estarão disponíveis aqui em breve.
+        </p>
       </div>
-      <p className="text-sm text-gray-400">A carregar documentos...</p>
-      {/* TODO: Phase E — wire GET /documents?patient_id=me */}
+
+      <div className="mt-4">
+        <Link
+          href="/portal/dashboard"
+          className="block w-full text-center py-3 rounded-xl text-sm font-medium"
+          style={{ color: '#45B9A7' }}
+        >
+          ← Voltar ao início
+        </Link>
+      </div>
     </div>
   )
 }
