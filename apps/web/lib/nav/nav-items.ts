@@ -12,6 +12,7 @@ const ALL: (NavItem & { capability?: Capability })[] = [
   { href: "/agenda", label: s["nav.agenda"] },
   { href: "/patients", label: s["nav.patients"] },
   { href: "/clinical", label: s["nav.clinical"], capability: "clinical_records:read" },
+  { href: "/clinical/review", label: s["nav.review"], capability: "clinical_records:review" },
   { href: "/admin", label: s["nav.admin"], capability: "settings:read" },
 ];
 

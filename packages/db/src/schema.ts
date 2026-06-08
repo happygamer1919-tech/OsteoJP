@@ -724,6 +724,18 @@ export const patientFormSubmissions = pgTable(
     // machine in apps/web lib/ingestion/review-state.ts). Lands as
     // 'pending_review'; this table never reaches a finalized record on its own.
     reviewState: aiReviewState("review_state").notNull().default("pending_review"),
+    // Review/finalize write path (migration 0013). A patient submission is
+    // materialised into a draft clinical_record when a therapist CLAIMS it
+    // (review_state pending_review → in_review); this column links the
+    // submission to that record so the queue can show the outcome and a re-claim
+    // is idempotent. reviewed_by / reviewed_at record the finalize DECISION (who
+    // approved, when) on the submission row itself — distinct from the resulting
+    // clinical_record's signed_by/signed_at. All three are NULL until the staff
+    // review path touches the row; they are never patient-writable (patient RLS
+    // grants INSERT/SELECT only, migration 0011).
+    clinicalRecordId: uuid("clinical_record_id").references(() => clinicalRecords.id),
+    reviewedBy: uuid("reviewed_by").references(() => users.id),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
     submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
