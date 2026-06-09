@@ -27,13 +27,11 @@ import type { IftCallbackParams } from "@/lib/integrations/ifthenpay/types";
 // ids + the settled amount only (no payer phone/email). Nothing here logs the
 // query string.
 //
-// TODO(hardening-lane): this PUBLIC path must be excluded from the Supabase
-// session proxy or it is redirected to /login in deployed envs. The matcher
-// lives in apps/web/proxy.ts (owned by the hardening lane) — add
-// `api/webhooks/ifthenpay` to the negative lookahead, alongside `api/inngest`
-// and `api/v1/ingestion`. Do NOT edit that file from this stream. Until then the
-// route works against local dev but is intercepted when deployed. The
-// anti-phishing check below is the ONLY auth gate (no Supabase session).
+// Session middleware: this PUBLIC path is excluded from the Supabase session
+// proxy (apps/web/proxy.ts matcher negative lookahead, alongside `api/inngest`
+// and `api/v1/ingestion`) so it is not redirected to /login in deployed envs.
+// The anti-phishing check below is the ONLY auth gate — there is no Supabase
+// session on this route.
 
 export const runtime = "nodejs"; // node:crypto (timing-safe compare) + server-only deps
 export const dynamic = "force-dynamic"; // signed, per-request; never cached
