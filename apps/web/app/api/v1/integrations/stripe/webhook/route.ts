@@ -29,9 +29,9 @@ import type { SxPaymentIntent } from "@/lib/integrations/stripe/types";
 // constructEvent() throws StripeConfigError before any verification — surfaced
 // as a generic 500 (operator misconfiguration), never as an accepted event.
 //
-// Session middleware: `/api/v1/integrations/stripe/webhook` must be excluded
-// from the Supabase session proxy (apps/web/proxy.ts matcher, owned by the
-// hardening lane), same as /api/v1/ingestion — see the route TODO there.
+// Session middleware: `/api/v1/integrations/stripe/webhook` is excluded from
+// the Supabase session proxy (apps/web/proxy.ts matcher negative lookahead),
+// same as /api/v1/ingestion, so the signature check above is the only auth gate.
 
 export const runtime = "nodejs"; // node:crypto for signature verification
 export const dynamic = "force-dynamic"; // signed, per-request; never cached
