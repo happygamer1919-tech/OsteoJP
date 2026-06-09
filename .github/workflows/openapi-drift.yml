@@ -1,0 +1,34 @@
+name: OpenAPI drift
+
+# Keeps docs/api/openapi.yaml honest: validates the spec and fails if any
+# /api/v1 (or /api/health) route handler lacks a documented path/method.
+# Separate from ci.yml by design (do not fold into it).
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/api/app/api/**"
+      - "apps/web/app/api/v1/**"
+      - "docs/api/openapi.yaml"
+      - "scripts/check-openapi-drift.mjs"
+      - ".github/workflows/openapi-drift.yml"
+
+jobs:
+  openapi:
+    name: Validate spec + drift check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Lint the OpenAPI spec (3.1)
+        run: npx --yes @redocly/cli@latest lint docs/api/openapi.yaml
+
+      - name: Drift check (every route is documented)
+        run: node scripts/check-openapi-drift.mjs

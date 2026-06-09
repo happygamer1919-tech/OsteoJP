@@ -110,10 +110,6 @@ export default function LoginPage() {
           </div>
         )}
 
-        {mode === 'magic' && (
-          <div className="mb-5" />
-        )}
-
         <button
           type="submit"
           disabled={loading}
