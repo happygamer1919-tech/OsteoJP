@@ -4,13 +4,13 @@ name: DB Tests
 # stack with DATABASE_URL set, so they actually EXECUTE instead of self-skipping.
 #
 # Why this gate exists
-#   The five RLS isolation suites all `describe.skipIf(!live)` where
+#   The six RLS isolation suites all `describe.skipIf(!live)` where
 #   live = Boolean(DATABASE_URL). ci.yml runs vitest with NO DATABASE_URL, so they
 #   skip and report green; e2e.yml sets DATABASE_URL but runs only Playwright.
 #   Net result before this workflow: the RLS proofs ran on ZERO PRs. This job boots
 #   Supabase, applies migrations + base seed via `supabase db reset`, runs the
 #   packages/db vitest suite with DATABASE_URL set, then runs a skip-guard that
-#   turns the job RED if any of the five suites silently skips or collects zero
+#   turns the job RED if any of the six suites silently skips or collects zero
 #   tests. A real RLS execution must be PROVABLE, not assumed.
 #
 # Separate from ci.yml (fast unit-only, no DB) and e2e.yml (Playwright + app).
@@ -77,10 +77,11 @@ jobs:
 
       - name: Apply migrations + base seed (supabase db reset)
         # Re-applies supabase/migrations/* and supabase/seed.sql deterministically
-        # as the NON-privileged migration role (prod-equivalent). This is the apply
-        # under which migration 0010's `GRANT USAGE ON SCHEMA auth TO patient`
-        # silently no-ops — exactly why patient-form-intake-rls is the one suite
-        # permitted (for now) to skip with its documented reason. See the guard.
+        # as the NON-privileged migration role (prod-equivalent). Migration 0010's
+        # `GRANT USAGE ON SCHEMA auth TO patient` silently no-ops here, but
+        # migration 0012 made the patient jwt helpers SECURITY DEFINER, so every
+        # RLS suite — patient-form-intake-rls included — resolves and runs under
+        # this apply. No suite is permitted to skip; see the guard.
         run: supabase db reset
 
       - name: Run RLS isolation suite (DATABASE_URL set)
@@ -97,9 +98,9 @@ jobs:
             2>&1 | tee rls-run.log
 
       - name: Assert RLS suites actually executed (skip-guard)
-        # Turns the job RED on a silent skip: any of the five suites skipping or
-        # collecting zero tests fails here. The ONLY tolerated skip is
-        # patient-form-intake-rls via its exact documented authReachable reason.
+        # Turns the job RED on a silent skip: any of the six suites skipping or
+        # collecting zero tests fails here. No skip is tolerated — every suite is
+        # hard-required.
         run: >
           node .github/scripts/assert-rls-executed.mjs
           packages/db/rls-results.json

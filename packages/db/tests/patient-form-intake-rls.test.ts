@@ -23,35 +23,16 @@ import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { asRole, connect, live, patientClaims } from "./rls-harness";
 
-// The patient-role policies call public.jwt_patient_id() → auth.jwt(), which
-// needs the `patient` role to have USAGE on the gotrue-owned `auth` schema
-// (granted by migration 0010). Under a local `supabase db reset` that grant is a
-// silent no-op (migrations run as the non-privileged `postgres`, which lacks
-// GRANT OPTION on `auth`); on a real Supabase branch it applies privileged and
-// sticks. Probe once: if the patient role can't reach `auth`, SKIP cleanly
-// rather than fail on an environment limitation (Wave A's patient self-scope
-// test hits the same quirk). The boundary still runs wherever the grant holds.
-let authReachable = false;
-if (live) {
-  const probe = connect();
-  try {
-    const r = await probe<{ ok: boolean }[]>`
-      select has_schema_privilege('patient', 'auth', 'USAGE') as ok`;
-    authReachable = r[0]?.ok === true;
-  } catch {
-    authReachable = false;
-  } finally {
-    await probe.end();
-  }
-  if (!authReachable) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      "[patient-form-intake-rls] SKIPPED: `patient` role lacks USAGE on schema " +
-        "`auth` (local supabase db reset strips migration 0010's grant). Run on a " +
-        "Supabase branch to exercise the behavioral boundary.",
-    );
-  }
-}
+// The patient-role policies call public.jwt_patient_id()/jwt_tenant_id(), which
+// migration 0012 redefined as SECURITY DEFINER. They execute with their owner's
+// privileges and read auth.jwt() on the caller's behalf, so the `patient` role
+// no longer needs direct USAGE on the `auth` schema for these policies to
+// resolve. (Migration 0010's `GRANT USAGE ON SCHEMA auth TO patient` no-ops
+// under a non-privileged `supabase db reset`, but 0012 made that grant
+// irrelevant for the policy path.) This suite therefore runs non-privileged
+// exactly like the four other RLS suites — gated only on `!live`. The Wave A
+// patient self-scope suite (patient-rls-selfscope.test.ts) exercises the same
+// `patient` role through the same helpers and runs non-privileged identically.
 
 type T = { tenant: string; role: string; user: string; p1: string; p2: string; sub1: string; sub2: string };
 const mk = (): T => ({
@@ -77,7 +58,7 @@ async function seed(p: Sql, t: T, label: string): Promise<void> {
                  (${t.sub2}, ${t.tenant}, ${t.p2}, 'ficha_geral', 'patient')`;
 }
 
-describe.skipIf(!live || !authReachable)("patient_form_submissions RLS — intake boundary", () => {
+describe.skipIf(!live)("patient_form_submissions RLS — intake boundary", () => {
   let sql: Sql;
   beforeAll(async () => {
     sql = connect();
