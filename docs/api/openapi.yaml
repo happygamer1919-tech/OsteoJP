@@ -1,0 +1,1143 @@
+openapi: 3.1.0
+info:
+  title: OsteoJP API
+  version: "1.0.0"
+  summary: Patient portal API + AI-partner ingestion contract for the OsteoJP platform.
+  description: >
+    Canonical contract for the OsteoJP V1 API. Two audiences share this document:
+
+      * **Patient portal / external integrators** — the `api.osteojp.pt` patient
+        API. Every patient route is self-scoped: the caller's `patient_id` and
+        `tenant_id` are derived server-side from the verified token, never from
+        request payload, and RLS re-enforces self-scope as defense in depth.
+      * **AI ingestion partner** — the server-to-server
+        `POST /api/v1/ingestion/clinical-records` endpoint, authenticated by an
+        HMAC signature over the raw body (timestamp + signature header pair).
+
+    This spec DOCUMENTS existing behavior; it does not define new endpoints.
+    It is hand-authored (the handlers validate with hand-rolled guards, not
+    importable zod schemas) and kept honest by a CI drift check that fails if any
+    `/api/v1` route lacks a path here.
+
+    Notes that hold across the patient API:
+      * All timestamps are ISO 8601 UTC strings.
+      * Money is integer cents with an explicit currency; never a float.
+      * `force-dynamic`: responses are per-session and never cached.
+  license:
+    name: Proprietary
+    url: https://osteojp.pt
+  contact:
+    name: OsteoJP Platform
+    url: https://osteojp.pt
+
+servers:
+  - url: https://api.osteojp.pt
+    description: Patient API (apps/api). Default origin for every patient route + health.
+  - url: https://osteojp.pt
+    description: Staff platform (apps/web) — hosts AI ingestion + provider webhooks.
+
+tags:
+  - name: health
+    description: Unauthenticated liveness probe.
+  - name: auth
+    description: Patient session identity.
+  - name: booking
+    description: Bookable service + location catalog.
+  - name: appointments
+    description: The patient's own appointments (view / book / cancel / reschedule).
+  - name: profile
+    description: The patient's own profile.
+  - name: documents
+    description: The patient's own documents and declarations.
+  - name: fichas
+    description: The patient's own finalized clinical records (redacted, read-only).
+  - name: forms
+    description: Patient intake form catalog + submissions.
+  - name: ingestion
+    description: AI partner clinical-record ingestion (HMAC, server-to-server).
+  - name: webhooks
+    description: Inbound provider callbacks (provider-driven; not for integrators).
+
+# Default security: a patient bearer JWT. Routes that use a different gate
+# (health = none, ingestion = HMAC, webhook = provider signature) override this
+# at the operation level.
+security:
+  - patientBearer: []
+
+paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Liveness probe
+      description: Public, unauthenticated heartbeat. Carries no data.
+      security: []
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /api/v1/auth/session:
+    get:
+      operationId: getSession
+      tags: [auth]
+      summary: Current patient identity
+      description: >
+        Returns only WHO the caller is (their own `patientId` + `tenantId`),
+        resolved server-side from the verified token. No patient data is read.
+        Fail-closed: any non-patient (no session, staff token, malformed) → 401.
+      responses:
+        "200":
+          description: The authenticated patient's own identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionIdentity"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/booking/catalog:
+    get:
+      operationId: getBookingCatalog
+      tags: [booking]
+      summary: Bookable services + locations
+      description: >
+        The self-bookable service list and active locations for the patient's
+        tenant. Prices are display-only (integer cents); there is no
+        price/discount field in any booking input.
+      responses:
+        "200":
+          description: The tenant's bookable catalog.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookableCatalog"
+        "401":
+          $ref: "#/components/responses/UnauthorizedLocalized"
+        "500":
+          $ref: "#/components/responses/ServerErrorLocalized"
+
+  /api/v1/me/fichas:
+    get:
+      operationId: listOwnFichas
+      tags: [fichas]
+      summary: Own finalized clinical records (redacted)
+      description: >
+        The patient's own finalized (`locked`/`signed`) clinical records,
+        read-only and field-redacted (default-deny allow-list). The free-text
+        `data` allow-list is empty pending clinical sign-off, so the endpoint
+        returns record METADATA only — therapist-private content is never
+        serialized.
+      responses:
+        "200":
+          description: The patient's own fichas, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [fichas]
+                properties:
+                  fichas:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PatientFicha"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/me/forms:
+    get:
+      operationId: listOwnFormSubmissions
+      tags: [forms]
+      summary: Own form submissions
+      description: The patient's own intake submissions (self-scoped), newest first.
+      responses:
+        "200":
+          description: The patient's own submissions.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [submissions]
+                properties:
+                  submissions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PatientSubmission"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: submitForm
+      tags: [forms]
+      summary: Submit an intake form
+      description: >
+        Submit the Ficha Geral or a per-therapy supplement. Source-tagged
+        `patient`, lands in `pending_review`, and NEVER finalizes a clinical
+        record. `patient_id`/`tenant_id` come from the verified principal, never
+        the body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FormSubmissionInput"
+      responses:
+        "201":
+          description: Submission created (in `pending_review`).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [submission]
+                properties:
+                  submission:
+                    $ref: "#/components/schemas/PatientSubmission"
+        "400":
+          description: >
+            Malformed JSON (`invalid_json`) or a validation failure
+            (`unknown_form`, `therapy_required`, `unknown_therapy`,
+            `therapy_not_allowed`, `invalid_payload`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/me/forms/catalog:
+    get:
+      operationId: getFormCatalog
+      tags: [forms]
+      summary: Intake form catalog
+      description: >
+        The intake forms the patient may submit (Ficha Geral + one supplement per
+        therapy), localized PT-first. Read-only; still gated on a valid patient
+        session.
+      responses:
+        "200":
+          description: The localized intake catalog.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [forms]
+                properties:
+                  forms:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CatalogEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/patient/profile:
+    get:
+      operationId: getOwnProfile
+      tags: [profile]
+      summary: Own profile
+      responses:
+        "200":
+          description: The patient's own profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileEnvelope"
+        "401":
+          $ref: "#/components/responses/UnauthorizedLocalized"
+        "404":
+          description: Profile row not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerErrorLocalized"
+    patch:
+      operationId: updateOwnProfile
+      tags: [profile]
+      summary: Update own profile
+      description: >
+        Updates only the editable whitelist — `phone`, `address`, `postalCode`,
+        `city`. Any other key (including `fullName`, `email`, `nif`) is silently
+        ignored. Sending no editable field → 400 `no_editable_fields`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfilePatch"
+      responses:
+        "200":
+          description: The updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileEnvelope"
+        "400":
+          description: "`invalid_json`, `invalid_body`, or `no_editable_fields`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/UnauthorizedLocalized"
+        "404":
+          description: Profile row not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "`invalid_phone` — phone failed format validation."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/ServerErrorLocalized"
+
+  /api/v1/patient/documents:
+    get:
+      operationId: listOwnDocuments
+      tags: [documents]
+      summary: Own documents and declarations
+      description: >
+        Display metadata only — the storage path is never exposed; downloads go
+        through the download endpoint.
+      responses:
+        "200":
+          description: The patient's own documents, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [documents]
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PatientDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/patient/documents/{id}/download:
+    get:
+      operationId: downloadOwnDocument
+      tags: [documents]
+      summary: Signed download URL for an own document
+      description: >
+        Returns a short-lived Supabase SIGNED URL (opaque token + 60s expiry) for
+        one of the patient's own documents. Bytes are not proxied. A document
+        that is not the caller's own, cross-tenant, non-existent, or a malformed
+        id all return 404 (indistinguishable).
+      parameters:
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: A signed, short-lived download URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadUrl"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Not the caller's own / not found / malformed id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/appointments:
+    get:
+      operationId: listOwnAppointments
+      tags: [appointments]
+      summary: Own appointments
+      responses:
+        "200":
+          description: The patient's own appointments.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [appointments]
+                properties:
+                  appointments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Appointment"
+        "401":
+          $ref: "#/components/responses/UnauthorizedLocalized"
+        "500":
+          $ref: "#/components/responses/ServerErrorLocalized"
+    post:
+      operationId: bookAppointment
+      tags: [appointments]
+      summary: Book a slot
+      description: >
+        Books a slot for a server-assigned, conflict-checked therapist. No
+        payment, no fiscal document. `patient_id` is always the verified
+        principal's; `practitioner_id`/price/status in the body are ignored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingInput"
+      responses:
+        "201":
+          description: The newly booked appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentEnvelope"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/UnauthorizedLocalized"
+        "409":
+          description: "`no_slot` — no therapist available for the requested window."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "422":
+          description: >
+            `service_unavailable`, `location_unavailable`, or `slot_in_past`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "500":
+          $ref: "#/components/responses/ServerErrorLocalized"
+
+  /api/v1/appointments/{id}:
+    get:
+      operationId: getOwnAppointment
+      tags: [appointments]
+      summary: One own appointment
+      description: An id that is not the patient's own resolves to 404 (never another patient's row).
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+      responses:
+        "200":
+          description: The requested own appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentEnvelope"
+        "401":
+          $ref: "#/components/responses/UnauthorizedLocalized"
+        "404":
+          description: "`not_found` — not visible to this patient."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "500":
+          $ref: "#/components/responses/ServerErrorLocalized"
+
+  /api/v1/appointments/{id}/cancel:
+    post:
+      operationId: cancelOwnAppointment
+      tags: [appointments]
+      summary: Cancel an own appointment
+      description: >
+        Server-enforced 24h cutoff (from stored `startsAt` + server clock); inside
+        the window the request is rejected regardless of client state. Never
+        touches invoicing. No request body.
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+      responses:
+        "200":
+          description: Cancelled.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+        "401":
+          $ref: "#/components/responses/UnauthorizedLocalized"
+        "404":
+          description: "`not_found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "409":
+          description: "`cutoff` (inside 24h) or `not_reschedulable` (already cancelled/completed)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "500":
+          $ref: "#/components/responses/ServerErrorLocalized"
+
+  /api/v1/appointments/{id}/reschedule:
+    post:
+      operationId: rescheduleOwnAppointment
+      tags: [appointments]
+      summary: Reschedule an own appointment
+      description: >
+        Moves the appointment to a new start; duration is preserved and conflict
+        detection re-runs for the assigned therapist. 24h cutoff is checked on
+        the CURRENT start. Never touches invoicing.
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RescheduleInput"
+      responses:
+        "200":
+          description: The rescheduled appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentEnvelope"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/UnauthorizedLocalized"
+        "404":
+          description: "`not_found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "409":
+          description: "`no_slot`, `cutoff`, or `not_reschedulable`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "422":
+          description: "`slot_in_past` — the new start is not in the future."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "500":
+          $ref: "#/components/responses/ServerErrorLocalized"
+
+  /api/v1/ingestion/clinical-records:
+    servers:
+      - url: https://osteojp.pt
+        description: Staff platform origin (apps/web).
+    post:
+      operationId: ingestClinicalRecord
+      tags: [ingestion]
+      summary: AI partner clinical-record ingestion
+      description: >
+        Server-to-server. Authenticated by an HMAC-SHA256 signature over the RAW
+        body: the partner sends `X-OsteoJP-Timestamp` (unix seconds) and
+        `X-OsteoJP-Signature` (hex HMAC of `${timestamp}.${rawBody}`). The
+        timestamp is bound into the signed string and must be within ±300s
+        (replay window). `tenant_id` is resolved from the patient row, never the
+        payload. A successful request creates a DRAFT clinical record
+        (`source=ai_ingested`, unlocked) for human review — it never produces a
+        locked or signed record. Idempotent on `(tenant_id, idempotency_key)`.
+      security:
+        - ingestionTimestamp: []
+          ingestionHmac: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestionEnvelope"
+      responses:
+        "200":
+          description: Replay — the same `(tenant, idempotency_key)` with an identical payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionResult"
+        "201":
+          description: A new draft clinical record was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestionResult"
+        "400":
+          description: "`malformed_body` (not JSON) or `invalid_envelope` (bad transport shape)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Signature/timestamp verification failed (which check is never disclosed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`idempotency_key_conflict` — same key reused with a DIFFERENT payload."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "`unknown_patient` — `patient_id` does not resolve to a tenant."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "`server_error` — secret misconfiguration or an unexpected failure."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/integrations/stripe/webhook:
+    servers:
+      - url: https://osteojp.pt
+        description: Staff platform origin (apps/web).
+    post:
+      operationId: stripeWebhook
+      tags: [webhooks]
+      summary: Stripe webhook receiver
+      description: >
+        Inbound provider callback (NOT for integrators). Authenticated by the
+        Stripe signature over the raw body (`Stripe-Signature`). Handled event
+        types (`payment_intent.succeeded`, `payment_intent.payment_failed`,
+        `payment_intent.canceled`, `charge.refunded`) enqueue an Inngest event
+        carrying IDS ONLY; the durable job re-fetches authoritative payment state.
+        Unhandled types are acknowledged (200, `handled:false`) so Stripe stops
+        retrying. The webhook secret is owner-gated and unset by default, so a
+        live call surfaces as 500 until configured.
+      security:
+        - stripeSignature: []
+      requestBody:
+        required: true
+        description: A Stripe Event object (verified against the signature).
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StripeEvent"
+      responses:
+        "200":
+          description: Acknowledged. `handled:true` if enqueued, `handled:false` if ignored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StripeWebhookAck"
+        "400":
+          description: "`invalid_signature` — bad/missing/stale Stripe signature."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: "`server_error` (unset secret / unexpected) or `enqueue_failed` (Inngest send failed → Stripe redelivers)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  securitySchemes:
+    patientBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        The patient's Supabase access token (JWT) carrying `role=patient`,
+        `patient_id`, and `tenant_id` claims. The server derives identity from
+        the verified token only; a staff token can never satisfy a patient route.
+    ingestionHmac:
+      type: apiKey
+      in: header
+      name: X-OsteoJP-Signature
+      description: >
+        Hex HMAC-SHA256 of `${timestamp}.${rawBody}` under the shared ingestion
+        secret. MUST be sent together with `X-OsteoJP-Timestamp` (the
+        `ingestionTimestamp` scheme) — the two form the HMAC pair.
+    ingestionTimestamp:
+      type: apiKey
+      in: header
+      name: X-OsteoJP-Timestamp
+      description: Unix-seconds timestamp, bound into the signed string; must be within ±300s.
+    stripeSignature:
+      type: apiKey
+      in: header
+      name: Stripe-Signature
+      description: Stripe's webhook signature over the raw body (provider-managed).
+
+  parameters:
+    AppointmentId:
+      name: id
+      in: path
+      required: true
+      description: Appointment id (UUID). Not the caller's own → 404.
+      schema:
+        type: string
+        format: uuid
+    DocumentId:
+      name: id
+      in: path
+      required: true
+      description: Document (attachment) id (UUID). Not the caller's own → 404.
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Unauthorized:
+      description: 'No valid patient session (fail-closed). Body `{ "error": "unauthorized" }`.'
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnauthorizedLocalized:
+      description: No valid patient session (fail-closed), with a localized message.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorLocalized"
+    ServerErrorLocalized:
+      description: 'Unexpected server error; no internals leaked. `{ "error": "server_error", "message": "…" }`.'
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorLocalized"
+    InvalidInput:
+      description: "`invalid_input` — malformed/missing body fields."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorLocalized"
+
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      description: Stable machine-readable error code (no localized message).
+      properties:
+        error:
+          type: string
+          examples: ["unauthorized"]
+
+    ErrorLocalized:
+      type: object
+      additionalProperties: false
+      required: [error, message]
+      description: Stable error code plus a localized (PT-default) human message.
+      properties:
+        error:
+          type: string
+          examples: ["not_found"]
+        message:
+          type: string
+
+    HealthStatus:
+      type: object
+      additionalProperties: false
+      required: [status, service]
+      properties:
+        status:
+          type: string
+          const: ok
+        service:
+          type: string
+          const: api
+
+    SessionIdentity:
+      type: object
+      additionalProperties: false
+      required: [patientId, tenantId]
+      properties:
+        patientId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+
+    AppointmentStatus:
+      type: string
+      enum: [scheduled, confirmed, completed, cancelled, no_show]
+
+    Appointment:
+      type: object
+      additionalProperties: false
+      required:
+        [id, startsAt, endsAt, status, serviceName, locationName, practitionerName, room]
+      description: A patient-facing appointment row. Display names are tenant reference data.
+      properties:
+        id:
+          type: string
+          format: uuid
+        startsAt:
+          type: string
+          format: date-time
+          description: ISO 8601 UTC.
+        endsAt:
+          type: string
+          format: date-time
+        status:
+          $ref: "#/components/schemas/AppointmentStatus"
+        serviceName:
+          type: [string, "null"]
+        locationName:
+          type: [string, "null"]
+        practitionerName:
+          type: [string, "null"]
+        room:
+          type: [string, "null"]
+
+    AppointmentEnvelope:
+      type: object
+      additionalProperties: false
+      required: [appointment]
+      properties:
+        appointment:
+          $ref: "#/components/schemas/Appointment"
+
+    BookableLocation:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    BookableService:
+      type: object
+      additionalProperties: false
+      required: [id, name, durationMin, priceCents, currency, locationIds]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        durationMin:
+          type: integer
+        priceCents:
+          type: [integer, "null"]
+          description: Effective (override-then-base) price in integer cents; null = unpublished.
+        currency:
+          type: string
+          description: ISO 4217 currency code for priceCents.
+        locationIds:
+          type: array
+          description: Location ids where bookable; empty for a null-location (all-location) service.
+          items:
+            type: string
+            format: uuid
+
+    BookableCatalog:
+      type: object
+      additionalProperties: false
+      required: [locations, services]
+      properties:
+        locations:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookableLocation"
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookableService"
+
+    BookingInput:
+      type: object
+      additionalProperties: true
+      required: [serviceId, locationId, startsAt]
+      description: >
+        Only `serviceId`, `locationId`, `startsAt` are read; any other key
+        (patient_id, practitioner_id, price, status) is ignored server-side.
+      properties:
+        serviceId:
+          type: string
+          format: uuid
+        locationId:
+          type: string
+          format: uuid
+        startsAt:
+          type: string
+          format: date-time
+          description: Requested start (ISO 8601). Must be in the future.
+
+    RescheduleInput:
+      type: object
+      additionalProperties: true
+      required: [startsAt]
+      description: Only the new `startsAt` is read; duration is preserved server-side.
+      properties:
+        startsAt:
+          type: string
+          format: date-time
+
+    PatientProfile:
+      type: object
+      additionalProperties: false
+      required: [id, fullName, email, phone, address, postalCode, city]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        email:
+          type: [string, "null"]
+        phone:
+          type: [string, "null"]
+        address:
+          type: [string, "null"]
+        postalCode:
+          type: [string, "null"]
+        city:
+          type: [string, "null"]
+
+    ProfileEnvelope:
+      type: object
+      additionalProperties: false
+      required: [profile]
+      properties:
+        profile:
+          $ref: "#/components/schemas/PatientProfile"
+
+    ProfilePatch:
+      type: object
+      additionalProperties: true
+      description: >
+        Editable whitelist only. Each field may be a string or null. Non-listed
+        keys are ignored; an empty patch → 400 `no_editable_fields`.
+      properties:
+        phone:
+          type: [string, "null"]
+        address:
+          type: [string, "null"]
+        postalCode:
+          type: [string, "null"]
+        city:
+          type: [string, "null"]
+
+    PatientDocument:
+      type: object
+      additionalProperties: false
+      required: [id, fileName, mimeType, sizeBytes, createdAt]
+      description: Display metadata only — internal storage path/linkage are never exposed.
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        mimeType:
+          type: [string, "null"]
+        sizeBytes:
+          type: [integer, "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    DownloadUrl:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Short-lived (60s) Supabase signed URL. No PII, no fiscal data.
+
+    PatientFicha:
+      type: object
+      additionalProperties: false
+      required: [id, status, version, episodeId, createdAt, signedAt, data]
+      description: >
+        Redacted clinical record (metadata + allow-listed data keys). `data` is
+        currently always `{}` pending clinical sign-off of visible fields.
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [locked, signed]
+          description: Only finalized records are visible to the patient.
+        version:
+          type: integer
+        episodeId:
+          type: [string, "null"]
+        createdAt:
+          type: [string, "null"]
+          format: date-time
+        signedAt:
+          type: [string, "null"]
+          format: date-time
+        data:
+          type: object
+          description: Allow-listed keys only (currently empty).
+          additionalProperties: true
+
+    ReviewState:
+      type: string
+      enum: [pending_review, in_review, approved, rejected]
+
+    TherapySlug:
+      type: string
+      enum:
+        [osteopathy, physiotherapy, rpg, nesa, massagem-terapeutica, pilates-terapeutico]
+
+    FormSubmissionInput:
+      type: object
+      additionalProperties: true
+      required: [formKey]
+      description: >
+        `patient_id`/`tenant_id` are NEVER read from the body. For `ficha_geral`,
+        `therapy` must be omitted/null; for `supplement`, a valid `therapy` slug
+        is required. `payload` defaults to `{}`.
+      properties:
+        formKey:
+          type: string
+          enum: [ficha_geral, supplement]
+        therapy:
+          oneOf:
+            - $ref: "#/components/schemas/TherapySlug"
+            - type: "null"
+        payload:
+          type: object
+          additionalProperties: true
+
+    PatientSubmission:
+      type: object
+      additionalProperties: false
+      required: [id, formKey, therapy, source, reviewState, submittedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        formKey:
+          type: string
+          enum: [ficha_geral, supplement]
+        therapy:
+          oneOf:
+            - $ref: "#/components/schemas/TherapySlug"
+            - type: "null"
+        source:
+          type: string
+          description: Always `patient` for portal submissions.
+        reviewState:
+          $ref: "#/components/schemas/ReviewState"
+        submittedAt:
+          type: string
+          format: date-time
+
+    CatalogEntry:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [formKey, therapy, title]
+          properties:
+            formKey:
+              type: string
+              const: ficha_geral
+            therapy:
+              type: "null"
+            title:
+              type: string
+        - type: object
+          additionalProperties: false
+          required: [formKey, therapy, title]
+          properties:
+            formKey:
+              type: string
+              const: supplement
+            therapy:
+              $ref: "#/components/schemas/TherapySlug"
+            title:
+              type: string
+
+    IngestionStatus:
+      type: string
+      enum: [received, accepted, rejected]
+      description: A successful ingest reaches `accepted` (in the human review queue).
+
+    IngestionEnvelope:
+      type: object
+      additionalProperties: true
+      required: [idempotency_key, request_id, patient_id, payload]
+      description: >
+        Transport envelope (snake_case wire keys). Clinical content rides in the
+        opaque `payload`; per-field validation is out of scope for this shell.
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 1
+        request_id:
+          type: string
+          minLength: 1
+          description: Partner-supplied correlation id.
+        patient_id:
+          type: string
+          format: uuid
+        payload:
+          type: object
+          additionalProperties: true
+
+    IngestionResult:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, clinical_record_id, idempotent]
+      properties:
+        request_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/IngestionStatus"
+        clinical_record_id:
+          type: [string, "null"]
+          format: uuid
+        idempotent:
+          type: boolean
+          description: true on replay (200), false on first create (201).
+
+    StripeEvent:
+      type: object
+      additionalProperties: true
+      description: >
+        A Stripe Event object as delivered to the webhook. Only the verified
+        `id`, `type`, and `data.object` (PaymentIntent id + our metadata) are
+        consumed; the full schema is owned by Stripe.
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+
+    StripeWebhookAck:
+      type: object
+      additionalProperties: false
+      required: [received, handled]
+      properties:
+        received:
+          type: boolean
+          const: true
+        handled:
+          type: boolean
+          description: true if the event was enqueued for processing; false if acknowledged-and-ignored.
