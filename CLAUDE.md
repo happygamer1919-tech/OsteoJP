@@ -79,7 +79,7 @@ Portuguese (default), English (secondary). All user-facing strings via i18n keys
 - Direct. No motivational filler. No "great question."
 - Correction over validation. If a request is wrong, say so with reasoning.
 - Flag missing context explicitly rather than guessing.
-- When a decision touches owner-confirmable scope, flag it and stop.
+- When a decision touches owner-confirmable scope, log it to docs/QUESTIONS.md with a recommended default, mark the ticket blocked, and continue with the next unblocked ticket.
 
 ## Owner-confirmable items (do not auto-decide)
 - Anything touching invoicing legal compliance
@@ -103,3 +103,48 @@ Healthcare data sensitivity (GDPR, clinical records). Defense in depth from proj
 
 ## Out of scope for V1 (do not build, ignore in PR reviews)
 Patient portal, WhatsApp, mobile app, telehealth, insurance, waitlist, loyalty, pilates module, Formação module, CID-10 mandatory enforcement, full historical archive migration.
+
+## Definition of done (gates, all must pass before any commit)
+Run from repo root, in this order:
+
+- pnpm lint
+- pnpm typecheck
+- pnpm test (Vitest, includes RLS isolation tests)
+- pnpm build
+- pnpm test:e2e (Playwright) for any ticket touching user-facing flows
+
+A ticket is done only when: gates green, PR opened with the standard format,
+ticket status updated, DECISIONS.md appended.
+
+## Backlog
+
+- Tickets live in the task graph (streams D, E, F pattern: numbered tickets
+  with explicit dependencies and status).
+- Pick order: next unblocked ticket in the active stream. If the whole stream
+  is blocked, switch streams and note the switch in DECISIONS.md.
+- Never start work that has no ticket. If the owner gives an ad-hoc instruction,
+  create the ticket first, then execute.
+
+## RLS verification (project-specific, non-negotiable)
+
+- Every migration adding a domain table must ship with: tenant_id column,
+  RLS policy, and an isolation test in the same PR.
+- RLS isolation tests MUST run in CI (GitHub Actions). If they are skipped or
+  absent from the workflow, treat it as a red gate and fix before feature work.
+
+## Preview verification for PRs
+Every PR checklist must reference the Vercel preview deployment URL and include
+role-specific steps (test as Admin, Therapist, Receptionist where relevant),
+since the permission matrix is the core risk surface.
+
+## Human-only setup (do not attempt via CLI or automation)
+The "Vercel project setup checklist" section is executed manually by the owner
+in the Vercel dashboard. Do not attempt it. If a new Vercel project is created,
+open a QUESTIONS.md item reminding the owner to apply the checklist.
+
+## Environment and secrets
+
+- Local secrets live in .env.local (gitignored). Production secrets live in
+  Vercel and Supabase dashboards only.
+- If a required env var is missing, do not stub or hardcode it: log to
+  QUESTIONS.md, block the ticket, move on.
