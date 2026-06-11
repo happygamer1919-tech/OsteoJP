@@ -2,6 +2,33 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-04 Card, KpiCard, StatusChip (branch design/W1-04-card-kpi-statuschip)
+
+Design loop Wave 1, fourth task. Per SPEC-foundation §4.4–§4.5.
+
+- **Card** renders the right element explicitly (a/button/div) rather than a
+  polymorphic `ElementType`, which keeps `onClick`/`aria-*` fully typed. The
+  interactive variant is one tab stop; nesting other interactive elements inside
+  it is documented as unsupported.
+- **KpiCard** composes Card. Its loading state is an interim 32px `animate-pulse`
+  placeholder with `TODO(W1-07)` to swap for the real Skeleton once W1-07 merges
+  (PLAN cross-task rule).
+- **StatusChip AA fix (Q11):** the spec sets each tone's text to its semantic
+  color, but `success` (3.52:1) and `warning` (3.27:1) fail WCAG AA on their
+  tints (and on white). Those two tones keep the tint + colored 8px dot (graphical,
+  3:1) and use `text-primary` for the label; error/info/neutral pass and use
+  semantic text per spec.
+- **Review fixes:** a11y-reviewer flagged (1) KpiCard's comparison line in
+  `text-muted` (2.95:1) — spec said text-muted but that token is "deemphasized
+  labels", not body copy — changed to `text-secondary` (5.68:1); and (2) the
+  global focus ring `accent-2-500` at ~2.4:1 vs the 1.4.11 3:1 threshold. (1) is
+  fixed. (2) is **system-wide** (identical on all four merged components and
+  SPEC §2); changing it in Card alone would make its ring inconsistent with every
+  other control, so it is kept and logged as QUESTIONS Q12 for a single
+  coordinated token change. design-reviewer PASS; a11y re-review clears the
+  blocker, leaving only the documented Q12 ring item.
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
 ## 2026-06-11 — W1-03 Select, Checkbox, Switch (branch design/W1-03-select-checkbox-switch)
 
 Design loop Wave 1, third task. Implemented per SPEC-foundation §4.3.

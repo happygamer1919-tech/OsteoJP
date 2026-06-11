@@ -21,3 +21,10 @@ export { Textarea, type TextareaProps } from "./src/components/Textarea";
 export { Select, type SelectProps } from "./src/components/Select";
 export { Checkbox, type CheckboxProps } from "./src/components/Checkbox";
 export { Switch, type SwitchProps } from "./src/components/Switch";
+export { Card, type CardProps } from "./src/components/Card";
+export { KpiCard, type KpiCardProps } from "./src/components/KpiCard";
+export {
+  StatusChip,
+  type StatusChipProps,
+  type StatusTone,
+} from "./src/components/StatusChip";
