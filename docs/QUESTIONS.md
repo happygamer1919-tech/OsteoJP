@@ -35,7 +35,15 @@ Recommended default: treat `docs/mega-plan.md` as the SPEC and the existing
 stream/ticket graph as the backlog; rename or symlink only if the owner wants
 strict file-name compliance.
 
-## 2026-06-10 — Q3: How should local dev and e2e environments get credentials? (OPEN)
+## 2026-06-10 — Q3: How should local dev and e2e environments get credentials? (ANSWERED 2026-06-10)
+
+Resolution: owner chose a separate Supabase project for dev/staging (not
+production, not local Docker). Decision: never point local dev or e2e at the
+production Supabase instance. A dedicated non-production Supabase project will
+be used for Development-scoped env vars in both Vercel projects. The six E2E_*
+credentials (admin, therapist, reception email/password pairs) will be added to
+the Development environment once the dev Supabase project is created. Until
+then, local e2e remains reliant on CI's seeded DB workflow. Original entry:
 
 Context: the Vercel development environment is empty; the only env vars on the
 osteojp-platform project are Production-scoped (Supabase URL/keys, DATABASE_URL,
@@ -45,19 +53,18 @@ e2e additionally needs `E2E_ADMIN_EMAIL/PASSWORD`, `E2E_THERAPIST_EMAIL/PASSWORD
 `E2E_RECEPTION_EMAIL/PASSWORD` plus a seeded database (CI provides this via the
 "seeded DB" workflows; local does not).
 
-Recommended default: add Development-scoped env vars to the Vercel project
-pointing at a non-production Supabase instance (local `supabase start` stack or
-a Supabase branch), including the six E2E_* credentials for seeded test users.
-Then `vercel env pull` works as originally intended and both red gates should
-go green locally.
+## 2026-06-10 — Q4: apps/portal has no Vercel project (ANSWERED 2026-06-10)
 
-## 2026-06-10 — Q4: apps/portal has no Vercel project (OPEN)
+Resolution: Vercel project created manually by Max (2026-06-10). Project name:
+osteojp-portal. Root directory: apps/portal. Team: Ivan_Bong_420's projects
+(Hobby). Node.js version set to 22.x. Speed Insights and Web Analytics both
+disabled. Three env vars added (all environments, non-sensitive):
+  NEXT_PUBLIC_SUPABASE_URL=https://jaxmkwoxjcgzkwxgbayx.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key — public, in Vercel dashboard>
+  NEXT_PUBLIC_API_URL=https://api.osteojp.pt
+Production deployment confirmed green at osteojp-portal.vercel.app.
+Custom domain patient.osteojp.pt to be wired at go-live. Original entry:
 
 Context: the team has exactly one Vercel project (osteojp-platform, root
 directory apps/web). apps/portal cannot pull env vars and has no deployment
 target. Portal QA to date appears to have run locally.
-
-Recommended default: owner creates a second Vercel project for apps/portal in
-the dashboard and applies the human-only "Vercel project setup checklist" from
-CLAUDE.md (data preferences off, Node 22.x), then adds Development-scoped
-Supabase vars per Q3.
