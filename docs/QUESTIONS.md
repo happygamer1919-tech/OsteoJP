@@ -197,3 +197,51 @@ which approximates one/two steps without inventing a token.
 Recommended default: **add an `error` numeric scale** (`error-600`, `error-700`,
 optionally full 50–900) to brand-tokens.md §1.8/§7 and theme.css, then switch
 destructive hover/active to `error-600`/`error-700`. Not blocking for W1-01.
+
+## 2026-06-11 — Q11: `success` and `warning` semantic text fail WCAG AA on their tints (StatusChip)
+
+Context: SPEC-foundation §4.5 sets each StatusChip tone's text to the matching
+semantic color on its `-bg` tint. Measured contrast (12px text → needs 4.5:1):
+
+| Tone | text on -bg | AA |
+|---|---|---|
+| success `#2F8F6B` on `#E6F4EE` | 3.52:1 | FAIL |
+| warning `#B47A14` on `#FBF1DD` | 3.27:1 | FAIL |
+| error `#B23A3A` on `#F8E5E5` | 4.87:1 | pass |
+| info `#2E6FA8` on `#E4EEF7` | 4.52:1 | pass |
+| neutral `text-secondary` on `surface-muted` | 5.10:1 | pass |
+
+`success` and `warning` are accent/icon colors — they also fail AA as small text
+on plain white (3.67:1 / 3.66:1), so no light background rescues them. There is
+no darker semantic token to fall back to (same gap as Q10 for `error`).
+
+Interim implementation (W1-04): for the success and warning tones only, the chip
+keeps the tinted bg and the colored 8px dot (a graphical object, 3:1 — both pass)
+but renders the **label in `text-primary`** so it clears AA. error/info/neutral
+use the semantic text per spec. The dot + tint still carry the tone.
+
+Recommended default: **add AA-dark semantic text tokens** (e.g. `success-700`,
+`warning-700`, ideally full `50–900` scales for all four semantics) to
+brand-tokens.md §1.8/§7 and theme.css, then switch every StatusChip tone to its
+semantic `-700` text for a uniform colored-text treatment. Not blocking for W1-04.
+
+## 2026-06-11 — Q12: global focus-ring color (accent-2-500) is below the 3:1 focus-indicator threshold on white
+
+Context: SPEC-foundation §2 mandates the global focus ring as "2px ring in
+`accent-2-500`". `accent-2-500` (#45B9A7) measures ~2.4:1 against white /
+`surface`, below the WCAG 2.1 SC 1.4.11 (non-text contrast) 3:1 minimum for a
+focus indicator. This is **system-wide**: every interactive component built so
+far (Button W1-01, Input/Textarea/Select W1-02/W1-03, Checkbox/Switch W1-03,
+Card W1-04) uses `ring-accent-2-500`. The W1-01 a11y review explicitly judged the
+ring acceptable (reading the teal "trap" as applying only to text on teal fills,
+not to ring contrast); the W1-04 a11y review took the stricter 1.4.11 view.
+
+Decision taken: W1-04 keeps `accent-2-500` to stay identical to the four merged
+components and SPEC §2 — changing the ring in one new component would make its
+focus ring visibly inconsistent with every other control. The fix belongs at the
+token/spec level, applied to all components at once.
+
+Recommended default: **change the global focus-ring token to `accent-2-600`**
+(#3A9C8D, ~3.3:1 on white — clears 1.4.11) in SPEC §2 + a single coordinated PR
+updating every component's `ring-accent-2-500` → `ring-accent-2-600`. The visual
+change is a barely-perceptible one-step-darker teal. Not blocking for W1-04.
