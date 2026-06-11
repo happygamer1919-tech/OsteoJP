@@ -1,36 +1,104 @@
 @import "tailwindcss";
 
 /*
- * OsteoJP brand tokens — Tailwind v4 theme
- * Source of truth: docs/brand-tokens.md (sampled from Logotipo_OsteoJP_2023.pdf @ 300 DPI)
+ * OsteoJP brand token layer — Tailwind v4 @theme (CSS-first).
  *
- * NOTE: brand-teal/brand-magenta here use the logo-PDF-sampled values from
- * brand-tokens.md (#45B9A7 / #8B1863). These differ from the values in
- * CLAUDE.md (#3DAEB3 / #8E2C7A). brand-tokens.md is the visual-identity source
- * of truth, so its values are used here. If CLAUDE.md is canonical instead,
- * update the two --color-brand-* lines below.
+ * Single source of truth: docs/brand-tokens.md. Base hexes were sampled from
+ * Logotipo_OsteoJP_2023.pdf @ 300 DPI and are canonical until a vector source
+ * is provided (brand-tokens.md §0). Earlier teal/magenta approximations that
+ * appear in some files are superseded by the canonical values below; the token
+ * test guards against them being reintroduced here.
+ *
+ * This file is the implementation contract for brand-tokens.md §7. Every token
+ * in the doc is mirrored here as an @theme variable so Tailwind generates the
+ * matching utilities (bg-*, text-*, border-*, rounded-*, shadow-*, p-*, etc).
+ *
+ * Naming follows the doc (kebab-case): brand-teal, surface-muted,
+ * text-secondary, success-bg, etc. The 50–900 brand/neutral scales use the
+ * §7 names (primary, accent-1, accent-2, neutral).
+ *
+ * The `--text-h1`…`--text-display` block is a LEGACY alias set, NOT in
+ * brand-tokens.md. It is retained because existing screens already reference
+ * those utilities; removing them would break rendering. Migrate those call
+ * sites to the doc's xs–4xl scale in the redesign tickets, then delete the
+ * legacy block.
  */
 
 @theme {
-  /* ---- Brand colors (from logo) ---- */
-  --color-brand-teal: #45B9A7;
-  --color-brand-magenta: #8B1863;
-  --color-brand-grey: #98B2C2;
+  /* ============================================================== *
+   * 1. Color
+   * ============================================================== */
 
-  /* ---- Neutrals ---- */
+  /* ---- 1.1 Brand bases (logo) ---- */
+  --color-brand-teal: #45B9A7; /* accent-2-500 — logo right hand */
+  --color-brand-magenta: #8B1863; /* accent-1-700 — logo left hand */
+  --color-brand-grey: #98B2C2; /* primary-300 — wordmark, figure, spine */
+
+  /* ---- 1.2 Primary scale (grey-blue), base pinned at 300 ---- */
+  --color-primary-50: #F6F8F8;
+  --color-primary-100: #E8EBED;
+  --color-primary-200: #CED8DE;
+  --color-primary-300: #98B2C2; /* base */
+  --color-primary-400: #789AAF;
+  --color-primary-500: #5D859D;
+  --color-primary-600: #4E6F83;
+  --color-primary-700: #405C6D;
+  --color-primary-800: #334956;
+  --color-primary-900: #263640;
+  --color-primary: #98B2C2; /* DEFAULT */
+
+  /* ---- 1.3 Accent-1 scale (magenta), base pinned at 700 ---- */
+  --color-accent-1-50: #FAF4F8;
+  --color-accent-1-100: #F4E6EF;
+  --color-accent-1-200: #EDC5DF;
+  --color-accent-1-300: #E793CA;
+  --color-accent-1-400: #E25AB3;
+  --color-accent-1-500: #D9269B;
+  --color-accent-1-600: #AE1E7C;
+  --color-accent-1-700: #8B1863; /* base */
+  --color-accent-1-800: #6D134D;
+  --color-accent-1-900: #4E0E38;
+  --color-accent-1: #8B1863; /* DEFAULT */
+
+  /* ---- 1.4 Accent-2 scale (teal), base pinned at 500 ---- */
+  --color-accent-2-50: #F5F9F9;
+  --color-accent-2-100: #E5F0EE;
+  --color-accent-2-200: #C8E4E0;
+  --color-accent-2-300: #9ED6CE;
+  --color-accent-2-400: #6EC9BB;
+  --color-accent-2-500: #45B9A7; /* base */
+  --color-accent-2-600: #3A9C8D;
+  --color-accent-2-700: #2F7E72;
+  --color-accent-2-800: #25645B;
+  --color-accent-2-900: #1C4A43;
+  --color-accent-2: #45B9A7; /* DEFAULT */
+
+  /* ---- 1.6 Neutral greys (cool-tinted, hue ~205) ---- */
+  --color-neutral-50: #F7F9FB;
+  --color-neutral-100: #F0F3F6;
+  --color-neutral-200: #E2E8EE;
+  --color-neutral-300: #C7D1DA;
+  --color-neutral-400: #A9B6C2;
+  --color-neutral-500: #8A98A6;
+  --color-neutral-600: #6E7E8D;
+  --color-neutral-700: #56697A;
+  --color-neutral-800: #33424F;
+  --color-neutral-900: #1A2733;
+
+  /* ---- 1.7 Background and surface (light mode only) ---- */
   --color-bg: #F7F9FB;
-  --color-surface: #FFFFFF;
+  --color-surface: #FFFFFF; /* DEFAULT */
   --color-surface-muted: #F0F3F6;
   --color-border: #E2E8EE;
   --color-border-strong: #C7D1DA;
 
-  /* ---- Text ---- */
+  /* ---- text ---- */
   --color-text-primary: #1A2733;
   --color-text-secondary: #56697A;
   --color-text-muted: #8A98A6;
   --color-text-inverse: #FFFFFF;
 
-  /* ---- Semantic ---- */
+  /* ---- 1.8 Semantic (DEFAULT + bg variant) ---- */
   --color-success: #2F8F6B;
   --color-success-bg: #E6F4EE;
   --color-warning: #B47A14;
@@ -40,10 +108,42 @@
   --color-info: #2E6FA8;
   --color-info-bg: #E4EEF7;
 
-  /* ---- Typography ---- */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  /* ============================================================== *
+   * 2. Typography
+   * ============================================================== */
 
-  /* Type scale: --text-<token> sets size; paired --text-<token>--line-height sets leading */
+  /* Inter is loaded via next/font in apps/web (subsets latin + latin-ext for
+     pt-PT diacritics) and injected as --font-inter on <html>. The literal
+     'Inter' / system fallbacks cover apps that do not (yet) load the webfont. */
+  --font-sans: var(--font-inter, 'Inter'), -apple-system, BlinkMacSystemFont,
+    'Segoe UI', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+
+  /* ---- 2.2 Type scale (base 16px, ratio ~1.25) ---- */
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-xs--font-weight: 500;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 18px;
+  --text-lg--line-height: 26px;
+  --text-lg--font-weight: 500;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-xl--font-weight: 600;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+  --text-2xl--font-weight: 600;
+  --text-3xl: 32px;
+  --text-3xl--line-height: 40px;
+  --text-3xl--font-weight: 600;
+  --text-4xl: 40px;
+  --text-4xl--line-height: 48px;
+  --text-4xl--font-weight: 600;
+
+  /* ---- LEGACY type aliases (not in brand-tokens.md; see file header) ---- */
   --text-display: 2.5rem;
   --text-display--line-height: 3rem;
   --text-h1: 2rem;
@@ -63,13 +163,25 @@
   --text-caption: 0.75rem;
   --text-caption--line-height: 1rem;
 
-  /* Font weights */
+  /* ---- 2.3 Weights ---- */
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
 
-  /* ---- Spacing (4px base, named to match brand-tokens.md) ---- */
+  /* ============================================================== *
+   * 3. Radius
+   * ============================================================== */
+  --radius-sm: 4px; /* badges, tags, checkboxes */
+  --radius: 6px; /* DEFAULT — buttons, inputs, selects */
+  --radius-md: 8px; /* cards, popovers */
+  --radius-lg: 12px; /* modals, large panels */
+  --radius-xl: 16px; /* hero surfaces, feature cards */
+  --radius-full: 9999px; /* avatars, pills, status dots */
+
+  /* ============================================================== *
+   * 4. Spacing (4px base; named steps pinned to match Tailwind's grid)
+   * ============================================================== */
   --spacing-1: 4px;
   --spacing-2: 8px;
   --spacing-3: 12px;
@@ -78,4 +190,25 @@
   --spacing-8: 32px;
   --spacing-12: 48px;
   --spacing-16: 64px;
+
+  /* ============================================================== *
+   * 5. Shadow (cool-tinted, derived from neutral-900 = rgb 26 39 51)
+   * ============================================================== */
+  --shadow-xs: 0 1px 2px rgb(26 39 51 / 0.05);
+  --shadow-sm: 0 1px 3px rgb(26 39 51 / 0.08), 0 1px 2px rgb(26 39 51 / 0.04);
+  --shadow-md: 0 4px 8px -2px rgb(26 39 51 / 0.1), 0 2px 4px -2px rgb(26 39 51 / 0.06);
+  --shadow-lg: 0 12px 24px -4px rgb(26 39 51 / 0.12), 0 4px 8px -4px rgb(26 39 51 / 0.06);
+  --shadow-overlay: 0 24px 48px -12px rgb(26 39 51 / 0.18);
+}
+
+/* ================================================================ *
+ * 1.5 Brand gradients (decorative surfaces only — never behind data)
+ * v4 has no first-class background-image theme namespace, so these are
+ * exposed as explicit utilities matching the doc token names.
+ * ================================================================ */
+@utility bg-gradient-magenta {
+  background-image: linear-gradient(135deg, #8B1863 0%, #6D134D 100%);
+}
+@utility bg-gradient-teal {
+  background-image: linear-gradient(135deg, #45B9A7 0%, #2F7E72 100%);
 }

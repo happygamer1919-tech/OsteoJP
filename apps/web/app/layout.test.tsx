@@ -5,8 +5,7 @@ import { htmlLang } from "@osteojp/i18n";
 // next/font/google is a Next compile-time macro; calling it in a plain vitest
 // run throws. Stub it to a bare { variable } so RootLayout renders in node.
 vi.mock("next/font/google", () => ({
-  Geist: () => ({ variable: "--font-geist-sans" }),
-  Geist_Mono: () => ({ variable: "--font-geist-mono" }),
+  Inter: () => ({ variable: "--font-inter" }),
 }));
 
 import RootLayout from "./layout";
