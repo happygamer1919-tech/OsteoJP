@@ -1,0 +1,170 @@
+# Manual, gated application of pending Drizzle migrations to PRODUCTION.
+#
+# Why this exists
+#   Merging a PR to main does NOT apply its packages/db/migrations/*.sql to the
+#   production database — prod drifts behind main until someone applies them.
+#   This workflow is the single sanctioned mechanism for catching prod up.
+#
+# Safety model
+#   - workflow_dispatch ONLY. Never runs on push, PR, or schedule.
+#   - Requires typing the literal string MIGRATE-PROD into the confirmation
+#     input. Anything else fails immediately, before checkout.
+#   - Reads the connection string from the PROD_DATABASE_URL_DIRECT repo
+#     secret (Supabase SESSION pooler, port 5432 — drizzle-kit migrate needs
+#     session-level advisory locks, which the 6543 transaction pooler lacks).
+#     The secret value never appears in this file or in logs.
+#   - Idempotent: drizzle-kit tracks applied migrations in
+#     drizzle.__drizzle_migrations and re-applies nothing. Safe to re-run.
+#   - Concurrency group prevents two simultaneous runs racing each other.
+#
+# Hard preconditions before FIRST use (see docs/ops/prod-migrate.md):
+#   1. The prod DATABASE_URL_DIRECT credential has been rotated and the
+#      rotated value stored as the PROD_DATABASE_URL_DIRECT Actions secret.
+#   2. The Supabase project is on the Pro plan with PITR (point-in-time
+#      recovery) enabled, so a bad migration is recoverable.
+
+name: Prod Migrate (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type MIGRATE-PROD (exactly) to apply pending Drizzle migrations to PRODUCTION'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply pending Drizzle migrations to prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        # Explicit `bash` (unlike the implicit default) enables pipefail, so a
+        # failing `node ... | tee` pre-flight cannot be masked by tee's exit 0.
+        shell: bash
+
+    env:
+      # drizzle.config.ts reads DATABASE_URL_DIRECT first. Referenced by
+      # secret NAME only — the value lives exclusively in repo Actions secrets.
+      DATABASE_URL_DIRECT: ${{ secrets.PROD_DATABASE_URL_DIRECT }}
+
+    steps:
+      - name: Gate — confirmation input must equal MIGRATE-PROD
+        if: ${{ inputs.confirm != 'MIGRATE-PROD' }}
+        run: |
+          echo "::error::Confirmation input did not match the literal MIGRATE-PROD. Nothing was run against prod."
+          exit 1
+
+      - name: Gate — secret present and pointing at port 5432
+        run: |
+          if [ -z "$DATABASE_URL_DIRECT" ]; then
+            echo "::error::Repo secret PROD_DATABASE_URL_DIRECT is not set. Configure it in Settings → Secrets and variables → Actions before running."
+            exit 1
+          fi
+          # Never echo the URL. Only validate the port.
+          case "$DATABASE_URL_DIRECT" in
+            *:6543/*)
+              echo "::error::PROD_DATABASE_URL_DIRECT points at port 6543 (transaction pooler). drizzle-kit migrate needs the SESSION pooler on port 5432."
+              exit 1
+              ;;
+            *:5432/*)
+              echo "Secret present, port 5432 confirmed."
+              ;;
+            *)
+              echo "::error::PROD_DATABASE_URL_DIRECT does not contain an explicit :5432 port. Use the Supabase session pooler URL on port 5432."
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Small status reporter: compares the local migration journal against
+      # drizzle.__drizzle_migrations in prod (drizzle-kit matches entries by
+      # the journal `when` timestamp, stored as created_at). Written at
+      # runtime so the repo diff stays workflow + runbook only.
+      - name: Write migration-state reporter
+        run: |
+          cat > packages/db/migration-state.mjs <<'EOF'
+          import postgres from "postgres";
+          import { readFileSync } from "node:fs";
+
+          const url = process.env.DATABASE_URL_DIRECT;
+          if (!url) throw new Error("DATABASE_URL_DIRECT not set");
+          const sql = postgres(url, { max: 1, prepare: false });
+
+          const journal = JSON.parse(
+            readFileSync("migrations/meta/_journal.json", "utf8"),
+          );
+
+          const [{ exists }] = await sql`
+            select exists (
+              select from information_schema.tables
+              where table_schema = 'drizzle'
+                and table_name = '__drizzle_migrations'
+            ) as exists`;
+
+          let applied = [];
+          if (exists) {
+            applied = await sql`
+              select created_at from drizzle.__drizzle_migrations
+              order by created_at`;
+          } else {
+            console.log(
+              "drizzle.__drizzle_migrations does not exist yet (no migrations ever applied).",
+            );
+          }
+          const appliedWhens = new Set(applied.map((r) => Number(r.created_at)));
+
+          console.log(`Local journal entries: ${journal.entries.length}`);
+          console.log(`Applied in target DB:  ${applied.length}`);
+          for (const e of journal.entries) {
+            const status = appliedWhens.has(e.when) ? "applied" : "PENDING";
+            console.log(`  ${status.padEnd(8)} ${e.tag}`);
+          }
+          await sql.end();
+          EOF
+
+      - name: Pre-flight — current prod migration state
+        working-directory: packages/db
+        run: node migration-state.mjs | tee /tmp/pre-state.txt
+
+      - name: Apply pending migrations (drizzle-kit migrate)
+        run: pnpm db:migrate
+
+      - name: Post-flight — prod migration state after run
+        working-directory: packages/db
+        run: node migration-state.mjs | tee /tmp/post-state.txt
+
+      - name: Report which migrations this run applied
+        run: |
+          echo "Migrations applied by this run:"
+          grep -E '^  PENDING' /tmp/pre-state.txt | awk '{print "  " $2}' || echo "  (none — prod was already up to date)"
+          if grep -qE '^  PENDING' /tmp/post-state.txt; then
+            echo "::error::Migrations still PENDING after the run. Inspect the drizzle-kit output above."
+            exit 1
+          fi
+          echo "Prod is now fully migrated: no PENDING entries remain."
