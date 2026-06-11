@@ -34,3 +34,19 @@ export {
   type DrawerProps,
   type DrawerDiscardCopy,
 } from "./src/components/Drawer";
+export { Tabs, type TabsProps, type TabItem } from "./src/components/Tabs";
+export {
+  SegmentedControl,
+  type SegmentedControlProps,
+  type SegmentItem,
+} from "./src/components/SegmentedControl";
+export {
+  Table,
+  TableCardRow,
+  type TableProps,
+  type TableColumn,
+  type TableState,
+  type TableSort,
+  type TableCardRowProps,
+  type TableCardRowItem,
+} from "./src/components/Table";

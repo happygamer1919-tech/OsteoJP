@@ -2,6 +2,27 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-06 Table + TableCardRow, Tabs, SegmentedControl (branch design/W1-06-table-tabs-segmented)
+
+Design loop Wave 1, sixth task. Per SPEC-foundation §4.7–§4.8.
+
+- **Table is column-config driven and generic** over the row type. Built-in
+  loading/empty/error render inside the bordered frame. Loading uses placeholder
+  bars and empty/error use consumer slots, each marked `TODO(W1-07)` — Skeleton/
+  EmptyState/ErrorState are not merged yet (PLAN cross-task rule).
+- **Interactive rows use one stretched `<a>`** inside the first cell over a
+  `relative` row = a single tab stop, so such rows must not contain other
+  interactive cells. `getRowHref`/`getRowLabel` are **type-coupled** (a
+  both-or-neither union) so a row link can never be nameless (a11y review fix).
+- **Tabs / SegmentedControl** implement full roving-tabindex keyboard nav
+  (arrow/Home/End) with the correct roles (tablist/tab + aria-selected;
+  radiogroup/radio + aria-checked). SegmentedControl's active pill slides between
+  equal-width segments via an inline-styled transform at --duration-fast.
+- **Review fixes:** design-reviewer — TableCardRow label was on the text-xs
+  badge tier; moved to text-sm to match the value (both body-sm). a11y-reviewer —
+  the row-link name coupling above. Re-review: design PASS, a11y PASS.
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
 ## 2026-06-11 — W1-05 Drawer and Dialog (branch design/W1-05-drawer-dialog)
 
 Design loop Wave 1, fifth task. Per SPEC-foundation §4.6.
