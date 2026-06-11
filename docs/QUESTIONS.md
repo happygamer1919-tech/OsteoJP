@@ -69,6 +69,27 @@ Context: the team has exactly one Vercel project (osteojp-platform, root
 directory apps/web). apps/portal cannot pull env vars and has no deployment
 target. Portal QA to date appears to have run locally.
 
+docs/brand-tokens
+## 2026-06-11 — Q6: Brand tokens: vector logo source + Heritage theme sign-off
+
+Context: docs/brand-tokens.md was rewritten as the single source of truth for
+the UI redesign. Two items need owner/JP input.
+
+(a) No vector logo (SVG/EPS/AI) exists in the repo. Color scales were generated
+from the hexes sampled at 300 DPI from Logotipo_OsteoJP_2023.pdf (#98B2C2 grey,
+#8B1863 magenta, #45B9A7 teal), which match CLAUDE.md. The redesign brief
+supplied different approximations (#8FA8B8 / #8E2A6E / #17A398). All sets are
+listed in the doc's provenance table, marked "pending verification against
+vector source". Recommended default: keep the PDF-sampled values as canonical;
+when JP provides the logo SVG, extract exact fills and regenerate scales only
+if they differ.
+
+(b) Heritage theme (tenant-scoped Moldovan embroidery + azulejo decorative
+layer, recolored to brand palette, decorative surfaces only) is documented in
+brand-tokens.md section 6 but marked "pending JP sign-off for patient-facing
+surfaces". Recommended default: ship with the neutral (no-motif) default for
+all tenants; do not enable on any patient-facing surface until JP signs off.
+
 ## 2026-06-11 — Q5: Migrated clinical records: land as `draft` or `locked`, and do they need a dedicated source tag?
 
 Context: the migration pipeline foundation (branch migration-foundation) can
@@ -93,3 +114,4 @@ V1, add a `migrated` source value only if the UI later needs to badge
 migrated records. This touches clinical data retention semantics, so it is
 owner-confirmable (CLAUDE.md). Not blocking: the foundation supports both
 options; the decision is needed before the first real batch (Phase 5).
+main
