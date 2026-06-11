@@ -2,6 +2,81 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-06 Table + TableCardRow, Tabs, SegmentedControl (branch design/W1-06-table-tabs-segmented)
+
+Design loop Wave 1, sixth task. Per SPEC-foundation §4.7–§4.8.
+
+- **Table is column-config driven and generic** over the row type. Built-in
+  loading/empty/error render inside the bordered frame. Loading uses placeholder
+  bars and empty/error use consumer slots, each marked `TODO(W1-07)` — Skeleton/
+  EmptyState/ErrorState are not merged yet (PLAN cross-task rule).
+- **Interactive rows use one stretched `<a>`** inside the first cell over a
+  `relative` row = a single tab stop, so such rows must not contain other
+  interactive cells. `getRowHref`/`getRowLabel` are **type-coupled** (a
+  both-or-neither union) so a row link can never be nameless (a11y review fix).
+- **Tabs / SegmentedControl** implement full roving-tabindex keyboard nav
+  (arrow/Home/End) with the correct roles (tablist/tab + aria-selected;
+  radiogroup/radio + aria-checked). SegmentedControl's active pill slides between
+  equal-width segments via an inline-styled transform at --duration-fast.
+- **Review fixes:** design-reviewer — TableCardRow label was on the text-xs
+  badge tier; moved to text-sm to match the value (both body-sm). a11y-reviewer —
+  the row-link name coupling above. Re-review: design PASS, a11y PASS.
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
+## 2026-06-11 — W1-05 Drawer and Dialog (branch design/W1-05-drawer-dialog)
+
+Design loop Wave 1, fifth task. Per SPEC-foundation §4.6.
+
+- **Built on the native `<dialog>` element** (`showModal()`), deliberately, over
+  a hand-rolled portal+trap. Native dialog provides the focus trap, Escape,
+  inert background, top-layer stacking (so the Drawer's discard Dialog sits above
+  it), and focus restoration — all correctly and without bespoke code. A shared
+  `useAnimatedDialog` hook adds enter/exit transitions by keeping the element
+  open through the exit and `close()`-ing it one --duration-base later.
+- **Dirty-discard wiring:** every dismiss path (Escape via onCancel, the X,
+  footer Cancel, backdrop click where `e.target === e.currentTarget`) routes
+  through `requestClose()`, which opens the discard confirm Dialog when `dirty`
+  and `discard` copy are set, else closes. The discard Dialog is a destructive
+  confirm rendered inside the Drawer.
+- **Drawer-owned footer.** The Drawer renders its own ghost-cancel + primary
+  -confirm footer (via `onConfirm`/labels) rather than a free slot, so the
+  cancel button shares the same dirty-aware close path.
+- **Motion:** Drawer slides (translate-x), Dialog fades only — no scale, per
+  design principle 4 ("no scale-ups").
+- **SPEC dimensions** as dynamic spacing utilities: drawer 480px = `w-120`,
+  dialog max-width 400px = `max-w-100`; `h-dvh` for full-height mobile.
+- **Reviews:** design-reviewer PASS; a11y-reviewer one nit only (the 32px ghost
+  X close button is below 44px — acceptable on staff surfaces). Native dialog
+  satisfies the role=dialog/aria-modal + labelled-by-title requirement.
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
+## 2026-06-11 — W1-04 Card, KpiCard, StatusChip (branch design/W1-04-card-kpi-statuschip)
+
+Design loop Wave 1, fourth task. Per SPEC-foundation §4.4–§4.5.
+
+- **Card** renders the right element explicitly (a/button/div) rather than a
+  polymorphic `ElementType`, which keeps `onClick`/`aria-*` fully typed. The
+  interactive variant is one tab stop; nesting other interactive elements inside
+  it is documented as unsupported.
+- **KpiCard** composes Card. Its loading state is an interim 32px `animate-pulse`
+  placeholder with `TODO(W1-07)` to swap for the real Skeleton once W1-07 merges
+  (PLAN cross-task rule).
+- **StatusChip AA fix (Q11):** the spec sets each tone's text to its semantic
+  color, but `success` (3.52:1) and `warning` (3.27:1) fail WCAG AA on their
+  tints (and on white). Those two tones keep the tint + colored 8px dot (graphical,
+  3:1) and use `text-primary` for the label; error/info/neutral pass and use
+  semantic text per spec.
+- **Review fixes:** a11y-reviewer flagged (1) KpiCard's comparison line in
+  `text-muted` (2.95:1) — spec said text-muted but that token is "deemphasized
+  labels", not body copy — changed to `text-secondary` (5.68:1); and (2) the
+  global focus ring `accent-2-500` at ~2.4:1 vs the 1.4.11 3:1 threshold. (1) is
+  fixed. (2) is **system-wide** (identical on all four merged components and
+  SPEC §2); changing it in Card alone would make its ring inconsistent with every
+  other control, so it is kept and logged as QUESTIONS Q12 for a single
+  coordinated token change. design-reviewer PASS; a11y re-review clears the
+  blocker, leaving only the documented Q12 ring item.
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
 ## 2026-06-11 — W1-03 Select, Checkbox, Switch (branch design/W1-03-select-checkbox-switch)
 
 Design loop Wave 1, third task. Implemented per SPEC-foundation §4.3.
