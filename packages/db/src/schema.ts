@@ -107,6 +107,28 @@ export const timeOffReason = pgEnum("time_off_reason", [
   "other",
 ]);
 
+// Data migration (Phase 5 foundation) — lifecycle of one staged source row:
+// `pending` (raw payload landed), `validated` (passed intermediate-shape
+// validation), `imported` (target row written, imported_entity_id set),
+// `failed` (validation or import error, error_detail set). failed → pending is
+// allowed (re-stage after fixing the source); imported is terminal.
+export const migrationStagingStatus = pgEnum("migration_staging_status", [
+  "pending",
+  "validated",
+  "imported",
+  "failed",
+]);
+
+// Which target entity a staged row maps onto. Mirrors the intermediate types
+// in src/migration/types.ts (MigrationPatient → patients, ...).
+export const migrationEntityType = pgEnum("migration_entity_type", [
+  "patient",
+  "appointment",
+  "clinical_episode",
+  "clinical_record",
+  "attachment",
+]);
+
 // Stream F — platform-level tenant lifecycle. Managed ONLY by the superadmin
 // (platform operator) via the service-role path; not a tenant-role concern.
 // `suspended` is a platform flag; it does NOT alter tenant RLS isolation.
@@ -676,6 +698,65 @@ export const invoices = pgTable(
   (t) => [
     index("invoices_tenant_idx").on(t.tenantId),
     index("invoices_patient_idx").on(t.patientId),
+  ],
+);
+
+/* ================================================================== */
+/* Data migration staging (Phase 5 foundation)                        */
+/* ================================================================== */
+
+// One row per source record staged for import (Fisiozero → OsteoJP, but
+// source-agnostic: source_system discriminates). Two jobs in one table:
+//
+//   1. STAGING — the raw source payload (JSONB) plus a validate→import status
+//      machine, so a batch can be landed, checked, and imported in separate,
+//      resumable passes.
+//   2. IDEMPOTENCY LEDGER — unique (tenant_id, source_system, entity_type,
+//      source_id) with imported_entity_id pointing at the created target row.
+//      Target tables carry NO source_id column; this ledger is the single
+//      source_id → target-uuid map, and it is what makes re-running an import
+//      a no-op instead of a duplicate-creator.
+//
+// error_detail is STRUCTURED (code + field paths), never raw source values —
+// the raw payload already lives in `raw`, and error text must stay PII-free
+// because it is the part that gets surfaced in logs/reconciliation reports
+// (CLAUDE.md rule 7).
+export const migrationStagingRows = pgTable(
+  "migration_staging_rows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    // Groups one import run; reconciliation reports key on it.
+    batchId: uuid("batch_id").notNull(),
+    // 'fisiozero' | 'stylus' | ... — free text, the adapter supplies it.
+    sourceSystem: text("source_system").notNull(),
+    entityType: migrationEntityType("entity_type").notNull(),
+    // The record's id IN THE SOURCE SYSTEM (free text — formats unknown).
+    sourceId: text("source_id").notNull(),
+    raw: jsonb("raw").notNull().default({}),
+    status: migrationStagingStatus("status").notNull().default("pending"),
+    errorDetail: jsonb("error_detail"),
+    // Target-row uuid once imported. Deliberately NOT an FK: it points at a
+    // different table per entity_type (patients, appointments, ...).
+    importedEntityId: uuid("imported_entity_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    // The idempotency key: one staging row per source record per tenant.
+    unique("migration_staging_tenant_source_uq").on(
+      t.tenantId,
+      t.sourceSystem,
+      t.entityType,
+      t.sourceId,
+    ),
+    index("migration_staging_tenant_batch_idx").on(t.tenantId, t.batchId),
+    index("migration_staging_tenant_status_idx").on(t.tenantId, t.status),
   ],
 );
 

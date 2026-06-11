@@ -45,6 +45,7 @@ Append-only. Every session appends decisions made and reasoning.
 - i18n copy tweaks shipped as PR #158 (two login page strings, PT + EN).
   Awaiting Ivan review and merge.
 
+docs/brand-tokens
 ## 2026-06-11 — Brand tokens rewrite (docs/brand-tokens.md, PR: docs/brand-tokens)
 
 - docs/brand-tokens.md rewritten as the single source of truth for the UI
@@ -66,3 +67,84 @@ Append-only. Every session appends decisions made and reasoning.
 - Heritage theme defaults to neutral per tenant; patient-facing enablement is
   owner-confirmable and logged as Q6. No code, config, or packages/ui changes
   in this PR (docs only).
+
+migration-foundation
+## 2026-06-11 — Migration pipeline foundation (branch migration-foundation)
+
+- Built the source-agnostic Fisiozero → OsteoJP migration foundation in
+  packages/db/src/migration: normalized intermediate types (MigrationPatient,
+  MigrationAppointment, MigrationClinicalEpisode, MigrationClinicalRecord,
+  MigrationAttachment) grounded 1:1 in schema.ts target columns; staging
+  helpers; an idempotent importer; and a validation pass. No Fisiozero
+  scraping, adapter, or field mapping was built (blocked on the CSV+ZIP export
+  sample) — the seam is `interface FisiozeroSource` in src/migration/source.ts,
+  TODO only.
+- Idempotency design: target tables get NO source_id column. The new
+  migration_staging_rows table (migration 0014, the only migration this wave,
+  byte-mirrored to supabase/migrations) doubles as staging area and ledger:
+  unique (tenant_id, source_system, entity_type, source_id) with
+  imported_entity_id pointing at the created target row. Re-runs update (or,
+  for clinical records, skip) instead of inserting — proven by a live-DB test
+  that imports the same synthetic batch twice.
+- Status machine on staged rows: pending → validated → imported, with failed
+  + re-stage-to-pending. Transitions are guarded in SQL WHERE clauses; error
+  details are structured and PII-free (codes + field names, never values).
+- The importer runs ONLY through withTenantContext (authenticated role, RLS
+  applies); tenant_id is still set explicitly on every insert. Patient dedupe
+  delegates to the existing merge_patients() SQL function via a thin wrapper —
+  not reimplemented.
+- Cross-record references use source ids resolved through the ledger; refs to
+  platform-owned rows (locations, practitioners, services) use resolver maps
+  built per run. Free-text Fisiozero event-type → service mapping belongs to
+  the future adapter, not the pipeline.
+- migration_staging_rows has the standard tenant-isolation RLS policy + grant;
+  covered by a dedicated RLS isolation suite. Both new DB-gated suites were
+  added to .github/scripts/assert-rls-executed.mjs (now 8 hard-required
+  suites) so they can never silently skip in CI.
+- Opened Q5 (QUESTIONS.md): migrated records draft vs locked, and whether a
+  dedicated `migrated` record_source value is wanted. Foundation supports
+  both; decision needed before the first real batch.
+- Gates: lint, typecheck, test (197/197 in packages/db incl. both new suites
+  against a seeded local Supabase), build green for web/admin/api/db; portal
+  build fails on the known pre-existing missing-env issue (Q1/Q3). supabase
+  db reset applies 0000–0014 cleanly.
+
+## 2026-06-11 — Fix main's red DB gate (branch fix/ai-ingestion-rls)
+
+- Root cause of the DB-gate red streak on main: NOT a code change. Supabase
+  CLI v2.106.0 (released 2026-06-11) stopped applying the platform's default
+  Data API privileges on local start / db reset, so migration-created tables
+  get no implicit grants for service_role. Our migrations explicitly grant
+  `authenticated` (0003 + per-table) but never `service_role` — that role rode
+  entirely on the default ACLs. The db-tests workflow installs the CLI with
+  `version: latest`, so the first push run on 2026-06-11 (PR #158, i18n-only)
+  picked up v2.106.0 and went red. Every commit in the red streak
+  (#158–#164) is docs/i18n/CI-filter only; the introducing change is the
+  upstream CLI release, not a repo commit. (The earlier "red since #162" note
+  was off by four merges: #158's run at 12:44 UTC was the first failure;
+  #157's at 23:00 UTC the previous day was the last green, on CLI v2.103.2.)
+- Only one test asserts service_role CAN write (the sanctioned-bypass case in
+  ai-ingestion-rls-isolation.test.ts); every other service_role assertion
+  checks denials, which is why exactly 1/182 failed with `permission denied
+  for table ai_ingestion_requests` (table gate fails before BYPASSRLS
+  matters).
+- Classification: neither a test defect nor an RLS/policy defect — a missing
+  explicit GRANT exposed by upstream hardening. Production is unaffected: the
+  existing project keeps grandfathered default privileges.
+- Fix (no migration, per the migration-ownership boundary with PR #166):
+  explicit service_role grants appended to supabase/seed.sql, which runs
+  after ALL migrations on every reset/branch seed — restores prod parity on
+  disposable DBs, no-op where default ACLs still apply, and also covers
+  tables from future migrations (incl. #166's migration_staging_rows, whose
+  suite has the same sanctioned-bypass test).
+- Verified by simulation: revoking service_role's table grants locally
+  reproduced the exact CI failure (5/6, same error); applying only the new
+  seed grants restored 6/6; full reset + suite 182/182; skip-guard, lint,
+  typecheck green.
+- Follow-ups flagged (not done here, workflows are out of scope this wave):
+  (1) move service_role grants into a migration (0015+, after #166 lands) per
+  Supabase's recommended durable path, then drop the seed block; (2) consider
+  pinning the Supabase CLI version in db-tests.yml — `latest` made the gate
+  flip red with zero repo changes.
+ main
+main

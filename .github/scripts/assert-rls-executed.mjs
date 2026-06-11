@@ -3,13 +3,13 @@
  * assert-rls-executed.mjs — skip-guard for the DB-gated RLS isolation gate.
  *
  * WHY THIS EXISTS
- *   The six RLS isolation suites in packages/db all `describe.skipIf(!live)`
+ *   The DB-gated suites in packages/db (SUITES below) all `describe.skipIf(!live)`
  *   where live = Boolean(DATABASE_URL). ci.yml runs vitest WITHOUT a DATABASE_URL,
  *   so they silently SKIP and report green — the RLS proofs ran on zero PRs. This
  *   guard runs after the DB-gated vitest pass and FAILS LOUDLY (exit 1) unless the
  *   suites genuinely executed. A real RLS execution must be provable, not assumed:
  *   a skip, a silent skip, a renamed/missing file, or zero tests collected on any
- *   of the six turns the job RED.
+ *   of them turns the job RED.
  *
  * NO EXCEPTIONS
  *   Every suite is hard-required: each gates ONLY on `!live` and runs
@@ -57,6 +57,8 @@ const SUITES = [
   { file: "ai-ingestion-rls-isolation.test.ts", hard: true },
   { file: "patient-form-intake-rls.test.ts", hard: true },
   { file: "review-finalize-rls.test.ts", hard: true },
+  { file: "migration-staging-rls.test.ts", hard: true },
+  { file: "migration-upsert-idempotency.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.
@@ -161,4 +163,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("[32m✓ All six RLS suites executed non-privileged against the seeded DB.[0m");
+console.log(`[32m✓ All ${SUITES.length} DB-gated suites executed non-privileged against the seeded DB.[0m`);
