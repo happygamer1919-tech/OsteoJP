@@ -48,6 +48,8 @@ before the PR is opened. Never push to `main`.
 
 ## Wave 1 — Foundation components
 
+W1-01 is a hard gate: it must be merged into main before any other Wave 1 task starts; pause and wait for that merge after opening the W1-01 PR.
+
 - [ ] W1-01 — Foundation prerequisites + Button. Add lucide-react to packages/ui (the single approved new dependency), add motion tokens (duration-fast/base/slow, ease-standard, reduced-motion handling) to theme.css per spec section 2, build Button per section 4.1 with all four variants, three sizes, and all six states including loading. Storybook story covering every variant x size x state. Acceptance: gates green, design-reviewer PASS, a11y-reviewer PASS, no hex literals in the diff.
 - [ ] W1-02 — Field, Input, Textarea per section 4.2. Label association, required marker, helper and error rendering with role=alert, leading and trailing slots, all states. Story shows default, focus, invalid, disabled, with helper and with error.
 - [ ] W1-03 — Select, Checkbox, Switch per section 4.3. Native select skinned, checkbox with indeterminate, switch with role=switch and animated thumb. Story per control covering all states.
