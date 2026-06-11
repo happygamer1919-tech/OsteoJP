@@ -2,6 +2,42 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-01 Foundation prerequisites + Button (branch design/W1-01-foundation-button)
+
+Design loop Wave 1, first task. Implemented per docs/design/SPEC-foundation.md
+§2/§3/§4.1 and docs/brand-tokens.md.
+
+- **lucide-react** added to `packages/ui` as the single spec-approved Wave 1
+  dependency (SPEC §3). Logged in QUESTIONS.md Q8 per the new-dependency rule.
+  Resolved to v1.17.0 (React 19 peer; tree-shakeable per-icon).
+- **Motion tokens** added to `theme.css`: `--duration-fast/base/slow`,
+  `--ease-standard` (emits the `ease-standard` utility via the v4 `--ease-*`
+  namespace), three token-consuming `duration-*` utilities (v4 has no
+  `--duration-*` generator), and a global `prefers-reduced-motion` rule that
+  collapses every transition/animation to 0ms (design principle 4).
+- **Primary Button ships at `accent-2-700`, not the SPEC §4.1 table's
+  `accent-2-600`.** White on accent-2-600 is ~3.3:1, below WCAG AA 4.5:1 for the
+  12–16px label; accent-2-700 is ~4.8:1. SPEC §2/§5 mandate AA and the spec's
+  own hard rule resolves conflicts in favor of AA/brand-tokens, so the primary
+  steps 700/800/900 for fill/hover/active. Logged as QUESTIONS.md Q9
+  (recommend correcting the §4.1 table).
+- **Destructive hover/active darken via `brightness-90`/`brightness-75`** because
+  the `error` semantic token has no numeric scale to step down to (no
+  `error-600/700`). No off-document hex, no arbitrary value. Logged as
+  QUESTIONS.md Q10 (recommend adding an error scale).
+- **Loading preserves width:** with a leading icon the 20px spinner swaps in
+  place of it (label stays); without one the content is held at `opacity-0` and a
+  centered spinner overlays it. Sets `aria-busy`, blocks interaction (no greyed
+  disabled styling).
+- **Storybook:** new story titled `Components/Button`, kept separate from the
+  pre-existing Storybook scaffold demo (`Example/Button`, imported by the demo
+  `Header.tsx`), which was left untouched.
+- **Gates:** lint, typecheck, test (incl. the @osteojp/ui token hex-guard),
+  build (web, the consumer), and a Storybook build all green. design-reviewer
+  and a11y-reviewer both returned PASS (run via general-purpose agents loading
+  the `.claude/agents/*-reviewer.md` definitions, since those agent types are
+  not registered as spawnable subagents in this harness).
+
 ## 2026-06-10 — Workflow setup session
 
 - Added "Definition of done", "Backlog", "RLS verification", "Preview
