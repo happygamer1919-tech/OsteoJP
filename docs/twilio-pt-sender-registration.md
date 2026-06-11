@@ -1,6 +1,6 @@
 # Twilio — PT Alphanumeric Sender ID Registration
 
-**Status:** Pending submission  
+**Status:** ✅ Complete — OsteoJP approved as PT alphanumeric sender (2026-06-11)  
 **Action owner:** Max  
 **Why it matters:** Until this is approved, SMS reminders go out from a random US number (+1 xxx), not "OsteoJP". Twilio says PT approval takes 3–10 business days. Start now.
 
@@ -95,4 +95,4 @@ OsteoJP: Lembrete — tem consulta de Fisioterapia em 2 dias, 18 Jun às
 
 | Date | Action | Reference |
 |---|---|---|
-| — | Not yet submitted | — |
+| 2026-06-11 | Submitted and approved — OsteoJP added to PT sender pool in "My New Notifications Service" | Twilio console confirmed |

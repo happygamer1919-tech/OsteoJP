@@ -138,7 +138,7 @@ Backend integrations complete. UI + payment go-live blocked on João Pedro.
 - Protocol-discount invoicing decision
 - Protocol label visibility decision
 - `ai_extractable` Group A/B final sign-off
-- Sender display name (Resend/Twilio)
+- Sender display name (Resend/Twilio) — ✅ Twilio PT alphanumeric sender "OsteoJP" registered and approved 2026-06-11. Ivan to update `TWILIO_SENDER_ID` env var in Vercel from the test number to `OsteoJP`.
 
 ---
 
