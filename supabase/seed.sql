@@ -35,3 +35,44 @@ values
   ('00000000-0000-0000-0000-0000000000a1', 'therapist',  'Therapist',    'Clinical records for own patients.'),
   ('00000000-0000-0000-0000-0000000000a1', 'reception',  'Receptionist', 'Scheduling and invoicing; no clinical access.')
 on conflict (tenant_id, slug) do nothing;
+
+/* ================================================================== */
+/* service_role DML grants — local/CI parity with production          */
+/* ================================================================== */
+--
+-- WHY THIS EXISTS (added 2026-06-11)
+--   Supabase CLI v2.106.0 stopped auto-exposing new `public` schema objects:
+--   local start / db reset no longer applies the platform's default Data API
+--   privileges, so tables created by migrations get NO implicit grants for
+--   service_role. Our migrations explicitly grant `authenticated`
+--   (0003 + per-table) but never granted `service_role` — it rode entirely on
+--   those default ACLs. Result: under CLI >= 2.106 the sanctioned-bypass test
+--   (ai-ingestion-rls-isolation.test.ts: "service_role write into another
+--   tenant SUCCEEDS") fails with `permission denied for table
+--   ai_ingestion_requests` before BYPASSRLS is even reached. RLS = row gate,
+--   GRANT = table gate; service_role lost the table gate.
+--
+--   PRODUCTION is unaffected: the existing project (jaxmkwoxjcgzkwxgbayx)
+--   keeps its grandfathered default privileges, where service_role has full
+--   DML on public tables. These grants restore exactly that state on the
+--   disposable local/CI/branch databases this file seeds — parity with prod,
+--   no privilege beyond what prod already gives the role.
+--
+--   Seed (not migration) is deliberate: migration 0014 is owned by the
+--   in-flight PR #166, and seed.sql runs AFTER all migrations on every
+--   `supabase db reset`, so these blanket grants also cover tables added by
+--   future migrations. FOLLOW-UP: once migration ownership frees up, move
+--   explicit service_role grants into a migration (Supabase's recommended
+--   durable path) and drop this block.
+--
+--   Idempotent and a no-op on stacks where the default ACLs still apply.
+
+grant usage on schema public to service_role;
+
+grant select, insert, update, delete
+  on all tables in schema public
+  to service_role;
+
+grant usage, select
+  on all sequences in schema public
+  to service_role;
