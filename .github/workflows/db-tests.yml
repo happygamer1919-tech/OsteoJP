@@ -67,7 +67,7 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED"
           # Skip only if EVERY changed file is docs/markdown/excalidraw/config
-          NON_DOC=$(echo "$CHANGED" | grep -vE '^(docs/|\.github/workflows/|.*\.(md|excalidraw))' || true)
+          NON_DOC=$(echo "$CHANGED" | grep -vE '^(docs/|\.github/workflows/|.*\.(md|excalidraw)|packages/db/seed/)' || true)
           if [ -z "$NON_DOC" ]; then
             echo "code=false" >> "$GITHUB_OUTPUT"
           else
