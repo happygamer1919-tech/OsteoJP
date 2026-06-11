@@ -22,3 +22,7 @@ export {
 // superadmin app. One implementation so the tenant + roles + audit invariant
 // cannot drift between callers.
 export { provisionTenant, type ProvisionTenantResult } from "./src/provision";
+
+// Data migration pipeline foundation (Phase 5) — intermediate types, staging
+// + idempotency ledger, importer, and the unimplemented Fisiozero adapter seam.
+export * from "./src/migration";
