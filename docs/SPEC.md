@@ -99,7 +99,7 @@ Six parallel streams (Ivan) + horizontal QA/content layer (Max).
 | `general-anamnese-v1` | General anamnesis (23 fields, 6 sections) | ✅ |
 | `osteopathy-v2` | Osteopathy intake | ✅ |
 | `physiotherapy-v1` | Physiotherapy intake (v3, with consent + x-fisiozero-field mappings) | ✅ |
-| `nesa-v1` | NESA — structure complete, clinical fields pending JP sign-off | 🔶 |
+| `nesa-v1` | NESA — complete. 4 NESA-specific fields + 2 contraindications added (Ivan sign-off 2026-06-11). One item pending: epilepsy absolute/relative classification (JP) | 🔶 |
 | `massagem-terapeutica-v1` | Thin wrapper referencing physio structure | ✅ |
 | `pilates-terapeutico-v1` | Thin wrapper referencing physio structure | ✅ |
 | `rpg-v1` | Thin wrapper referencing physio structure | ✅ |
@@ -112,7 +112,7 @@ Six parallel streams (Ivan) + horizontal QA/content layer (Max).
 - `[MAX]` ~~Unauthenticated QA pass — all scenarios passing~~ ✅ **Shipped** (`docs/qa-pass-portal-2026-06-09.md`)
 - `[MAX]` ~~UI copy review — PT + EN, 12 fixes~~ ✅ **Shipped** (PR #55, `docs/i18n-copy-review.md`)
 - `[MAX]` Manual QA pass (authenticated flows) — ⏳ blocked on Ivan activating test patient **Maria João Silva**
-- `[MAX]` NESA form clinical fields — ⏳ blocked on João Pedro sign-off (questions sent via Ivan)
+- `[MAX]` ~~NESA form clinical fields~~ ✅ — structure + 4 NESA fields + 2 contraindications shipped (PR #163). One item remaining: epilepsy absolute/relative contraindication classification — pending JP ruling.
 - `[MAX]` Wave C full QA pass (45 scenarios) — ⏳ blocked on Ivan building Wave C UI screens
 
 ---
