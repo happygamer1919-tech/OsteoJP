@@ -172,3 +172,49 @@ migration-foundation
  main
 main
 main
+
+## 2026-06-11 — Brand token layer + Inter font wiring (feat/ui-design-tokens)
+
+Owner-directed work: implement docs/brand-tokens.md as the canonical Tailwind
+token layer in packages/ui, plus wire Inter as the default sans in apps/web.
+Token layer + font only; no component restyling.
+
+- **Tailwind version:** v4 (CSS-first). Tokens implemented as `@theme` CSS
+  variables in `packages/ui/theme.css`, not a JS config. brand-tokens.md §7 is
+  a v3-style block; values are the contract, mirrored as v4 `--color-*`,
+  `--text-*`, `--radius-*`, `--spacing-*`, `--shadow-*`.
+- **Full doc coverage:** primary / accent-1 / accent-2 50–900 scales (+ DEFAULT),
+  neutral 50–900, bg/surface/surface-muted/border/border-strong, text-*,
+  semantic colors with `-bg` variants, the xs–4xl type scale (with the doc's
+  per-step line-heights and default weights), 4px spacing scale, radius scale
+  (DEFAULT=6px), cool-tinted shadow scale, serif family, and the two brand
+  gradients (as `@utility bg-gradient-*` since v4 has no background-image theme
+  namespace).
+- **Legacy type aliases retained:** existing screens use custom type utilities
+  (`text-h1`…`text-display`, `text-body-sm`, `text-caption`) that are NOT in
+  brand-tokens.md. Removing them would break rendering (guardrail: no component
+  edits), so they are kept additively and flagged for migration to the xs–4xl
+  scale in the redesign tickets.
+- **Naming:** kebab-case per the doc (brand-teal, surface-muted, text-secondary,
+  success-bg). Spacing extends Tailwind's numeric scale (space-1=4px), no
+  default renames.
+- **Font:** Geist → Inter via `next/font/google` in `apps/web/app/layout.tsx`,
+  `subsets: ['latin','latin-ext']` (pt-PT diacritics), exposed as `--font-inter`
+  and consumed by the `--font-sans` token. `apps/web/app/globals.css` repointed
+  to Inter and the hardcoded `Arial` body font removed (font-only). font-mono
+  left to the Tailwind default (Geist Mono dropped; 2 web call sites fall back
+  to system mono). Other apps (admin/api/portal) keep Geist; out of scope here.
+- **Test:** `packages/ui/src/tokens.test.ts` asserts theme.css contains the
+  canonical hexes #45B9A7, #8B1863, #98B2C2, #1A2733 and rejects the superseded
+  approximations. Added a node `unit` vitest project + `test` script so it runs
+  under `pnpm test` without the Storybook browser stack.
+- **Known visual delta (see QUESTIONS Q7):** the doc's radius and type scales
+  reuse standard Tailwind utility names with shifted values, so in-scope web
+  screens render slightly rounder (rounded 4→6, rounded-md/lg/xl shifted) and
+  some headings carry the doc's default weights. This is the intended effect of
+  installing canonical tokens; no component was edited.
+- **Gates:** lint, typecheck, test, build all green. Full `pnpm build` requires
+  `NEXT_PUBLIC_SUPABASE_URL` / `_ANON_KEY` (CI-supplied; pre-existing portal
+  prerender dependency, unrelated to this PR) — verified green with placeholder
+  public values. e2e not run: no behavioral/flow change, not in this ticket's
+  acceptance.

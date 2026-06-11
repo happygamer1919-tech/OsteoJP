@@ -115,3 +115,33 @@ migrated records. This touches clinical data retention semantics, so it is
 owner-confirmable (CLAUDE.md). Not blocking: the foundation supports both
 options; the decision is needed before the first real batch (Phase 5).
 main
+
+## 2026-06-11 — Q7: Canonical radius/type scales shift existing screen rendering — confirm redesign direction
+
+Context: the new brand token layer (feat/ui-design-tokens) implements
+docs/brand-tokens.md exactly. The doc's **radius** scale and **type** scale
+reuse standard Tailwind utility names (`rounded`, `rounded-md/lg/xl`,
+`text-xs/lg/xl/2xl/3xl/4xl`) but with values shifted from Tailwind's defaults:
+
+- `rounded` 4px → 6px; `rounded-md` 6→8; `rounded-lg` 8→12; `rounded-xl` 12→16.
+- `text-xs` gains weight 500; `text-lg` line-height 28→26 + weight 500;
+  `text-xl/2xl/3xl/4xl` gain weight 600; `text-3xl` size 30→32; `text-4xl`
+  size 36→40.
+
+Because installing the canonical tokens necessarily redefines these utilities,
+in-scope `apps/web` screens render slightly rounder and some headings slightly
+heavier/larger — even though no component file was edited. This brushes against
+the ticket guardrail "existing screens render visually unchanged except the
+font swap." Patient portal usage is the heaviest but is out of V1 scope
+(CLAUDE.md) so excluded from review.
+
+Recommended default: **keep the doc values as canonical** (the doc is the single
+source of truth; this is the intended redesign direction) and verify per-screen
+in the redesign/restyle tickets rather than reverting. Alternative if pixel
+parity is required now: scope the doc's radius/type scales to opt-in classes
+(e.g. a `.brand` container) instead of overriding the global Tailwind scale —
+more code, defers the canonical switch.
+
+Not blocking: the token layer ships either way; this only decides whether the
+modest web visual drift is accepted now or deferred. No clinical/legal impact.
+main
