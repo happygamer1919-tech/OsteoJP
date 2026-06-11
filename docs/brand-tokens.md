@@ -109,13 +109,11 @@ data.
 | `gradient-magenta` | `#8B1863` (`accent-1-700`) | `#6D134D` (`accent-1-800`) |
 | `gradient-teal` | `#45B9A7` (`accent-2-500`) | `#2F7E72` (`accent-2-700`) |
 
-docs/session-8-closeout
 > **Canonical values confirmed:** the hex values above (`#45B9A7` teal, `#8B1863` magenta) are the canonical brand tokens, sampled from `Logotipo_OsteoJP_2023.pdf` at 300 DPI. Earlier values appearing in some files (`#3DAEB3` teal, `#8E2C7A` magenta) were incorrect approximations and must be replaced wherever found.
 >
 > The logo uses a single grey — `#98B2C2` — for figure, spine, wordmark, and tagline.
 
 ### 1.6 Neutral greys
- main
 
 Cool-tinted (hue ~205) to harmonize with the grey-blue primary.
 
