@@ -2,6 +2,32 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-03 Select, Checkbox, Switch (branch design/W1-03-select-checkbox-switch)
+
+Design loop Wave 1, third task. Implemented per SPEC-foundation §4.3.
+
+- **Switch is a native checkbox with `role="switch"`**, not a `<button>`. This
+  gets form participation, keyboard operation (Space), and controlled/
+  uncontrolled handling for free, and the browser exposes `aria-checked` from the
+  checkbox's checked state. The thumb is a sibling span driven purely by
+  `peer-checked` (no JS state). Screen owns the accessible name + status text.
+- **Checkbox is a native `<input>` styled with `appearance-none`** plus overlaid
+  Check / Minus icons toggled by `peer-checked` / `peer-indeterminate`. The
+  indeterminate property is set imperatively via a ref effect (it has no HTML
+  attribute). Verified `peer-indeterminate` generates the expected CSS.
+- **Select reuses W1-02's `control-skin`** (now on main) for an identical Input
+  look and Field-context wiring; `appearance-none` hides the native arrow and a
+  ChevronDown affordance is overlaid.
+- **White Check/Minus and the white thumb on accent-2-600 are graphical objects**
+  (WCAG 3:1, ~3.1:1) — not text — so they clear the bar; this is why the checkbox
+  fill stays at the spec's accent-2-600 rather than the darker button teal.
+- **All three are `"use client"`** (context/hooks/interactivity; the server shell
+  imports the barrel).
+- **Review fix:** design-reviewer flagged the Check/Minus icons at strokeWidth 2;
+  corrected to 1.75 per SPEC §3. Both reviewers then PASS.
+- **Gates:** lint, typecheck, test, build (web), Storybook all green. No
+  QUESTIONS opened.
+
 ## 2026-06-11 — W1-02 Field, Input, Textarea (branch design/W1-02-field-input-textarea)
 
 Design loop Wave 1, second task. Implemented per SPEC-foundation §4.2.
