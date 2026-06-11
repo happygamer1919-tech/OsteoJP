@@ -48,9 +48,20 @@ before the PR is opened. Never push to `main`.
 
 ## Wave 1 — Foundation components
 
-<!-- Tasks added in a later PR. Each: `- [ ] [W1-NN] <name> — SPEC: docs/design/SPEC-<x>.md` -->
+W1-01 is a hard gate: it must be merged into main before any other Wave 1 task starts; pause and wait for that merge after opening the W1-01 PR.
 
-_(no tasks yet)_
+- [ ] W1-01 — Foundation prerequisites + Button. Add lucide-react to packages/ui (the single approved new dependency), add motion tokens (duration-fast/base/slow, ease-standard, reduced-motion handling) to theme.css per spec section 2, build Button per section 4.1 with all four variants, three sizes, and all six states including loading. Storybook story covering every variant x size x state. Acceptance: gates green, design-reviewer PASS, a11y-reviewer PASS, no hex literals in the diff.
+- [ ] W1-02 — Field, Input, Textarea per section 4.2. Label association, required marker, helper and error rendering with role=alert, leading and trailing slots, all states. Story shows default, focus, invalid, disabled, with helper and with error.
+- [ ] W1-03 — Select, Checkbox, Switch per section 4.3. Native select skinned, checkbox with indeterminate, switch with role=switch and animated thumb. Story per control covering all states.
+- [ ] W1-04 — Card, KpiCard, StatusChip per sections 4.4 and 4.5. Card header and footer slots, interactive variant with single tab stop, KpiCard loading skeleton, StatusChip five tones with and without dot. Stories included.
+- [ ] W1-05 — Drawer and Dialog per section 4.6. Focus trap, restore, Escape, backdrop, dirty-state discard confirmation wiring between them, sticky header and footer, mobile full-width behavior. Story demonstrates open, close, and dirty-discard flow.
+- [ ] W1-06 — Table and TableCardRow, Tabs, SegmentedControl per sections 4.7 and 4.8. Table built-in loading, empty, and error states using Skeleton and EmptyState from W1-07 if merged, otherwise placeholder slots with a TODO referencing W1-07 and a follow-up note in the PR. Keyboard semantics for tabs and segments.
+- [ ] W1-07 — Skeleton, EmptyState, ErrorState per section 4.10. Shimmer with reduced-motion fallback, SkeletonText and SkeletonTable helpers, EmptyState heritage prop consuming HeritageDivider from W1-09 if merged, otherwise prop reserved with TODO. Stories for all shapes and compositions.
+- [ ] W1-08 — Toast and Banner per section 4.9. Single polite live region, assertive for error tone, max 3 stack, pause on hover and focus, Banner single-instance rule documented in the story. Story triggers each tone.
+- [ ] W1-09 — HeritageDivider per section 4.12, plus the allowed-hosts rule documented in the component docblock. Both variants, aria-hidden, tiling verified visually in the story at 3 widths.
+- [ ] W1-10 — AppShell (staff + portal layouts) per section 4.11. BrandLockup integrated, nav as data with role filtering left to callers, mobile collapse to drawer + persistent help button on staff, bottom tab bar on portal with 44px targets. Story renders both layouts with sample nav data. This task migrates apps/web to consume the shared shell with zero visual regression beyond the spec, and is the only Wave 1 task allowed to touch apps/web.
+
+Cross-task rules: never edit another task's component except through its exported API. If a dependency task has not merged, ship with the documented TODO pattern rather than blocking or building a private copy. Every PR ticks its own checkbox in PLAN.md.
 
 ---
 
