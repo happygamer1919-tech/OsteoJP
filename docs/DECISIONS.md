@@ -45,6 +45,29 @@ Append-only. Every session appends decisions made and reasoning.
 - i18n copy tweaks shipped as PR #158 (two login page strings, PT + EN).
   Awaiting Ivan review and merge.
 
+ docs/brand-voice
+## 2026-06-11 — Brand voice guide extension session
+
+- Task asked to author docs/brand-voice.md, but the guide already exists
+  (PR #5, referenced by SPEC.md, sms-templates.md, and the 2026-06-03 i18n
+  copy review). Extended it in place instead of replacing it, preserving all
+  established decisions (você register, paciente, consulta/marcação split).
+- Re-verified the voice evidence against the live osteojp.pt (homepage,
+  osteopatia, fisioterapia, sobre-nos, contactos) on 2026-06-11; findings
+  consistent with the original March 2026 scrape.
+- New canonical terminology locked in §3.1: terapeuta (platform role label),
+  fatura (never recibo/nota for invoices), "clínica de [localidade]" for
+  locations, remarcar for rescheduling. "Utente" explicitly rejected for
+  addressing patients (SNS/public-sector register; the site's own values copy
+  leads with "paciente").
+- New sections: §1 five-adjective voice summary, §2.8 staff-UI neutral
+  imperative (no "por favor" in staff apps), §6 microcopy patterns (buttons,
+  empty states, errors, confirmations, toasts, SMS, email) with PT+EN
+  examples, §7 do/don't list. SMS pattern defers to sms-templates.md for the
+  GSM-7/160-char constraint rather than duplicating it as a second source
+  of truth.
+- Docs-only diff; no code or packages/i18n strings touched.
+
 docs/brand-tokens
 ## 2026-06-11 — Brand tokens rewrite (docs/brand-tokens.md, PR: docs/brand-tokens)
 
@@ -147,4 +170,5 @@ migration-foundation
   pinning the Supabase CLI version in db-tests.yml — `latest` made the gate
   flip red with zero repo changes.
  main
+main
 main
