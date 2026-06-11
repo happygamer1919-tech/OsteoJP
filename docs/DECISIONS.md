@@ -2,6 +2,24 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-08 Toast and Banner (branch design/W1-08-toast-banner)
+
+Design loop Wave 1, eighth task. Per SPEC-foundation §4.9.
+
+- **Toast** is a provider + `useToast()` hook + a fixed viewport. The viewport is
+  one `aria-live="polite"` region; individual error toasts carry `role="alert"`
+  so they announce assertively without changing the region — satisfying "single
+  polite region, assertive for error" cleanly. Auto-dismiss is 5s with true
+  pause-on-hover/focus (remaining time tracked per item, not a full restart).
+  Stack is capped at 3 (oldest dropped) via `slice(-3)`.
+- **Banner** is a stateless bar; the "one banner per screen, collapse extras to a
+  count" rule is a screen responsibility (documented in the story) — the
+  component exposes an optional `count` and never self-stacks.
+- Both use `text-primary`/`text-accent-2-700` for text (AA-safe), semantic tints
+  for backgrounds, and semantic-colored icons.
+- **Reviews:** design-reviewer PASS, a11y-reviewer PASS (first pass).
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
 ## 2026-06-11 — W1-07 Skeleton, EmptyState, ErrorState (branch design/W1-07-skeleton-empty-error)
 
 Design loop Wave 1, seventh task. Per SPEC-foundation §4.10.
