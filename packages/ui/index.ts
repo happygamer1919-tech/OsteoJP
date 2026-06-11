@@ -18,3 +18,6 @@ export {
 export { Field, type FieldProps } from "./src/components/Field";
 export { Input, type InputProps } from "./src/components/Input";
 export { Textarea, type TextareaProps } from "./src/components/Textarea";
+export { Select, type SelectProps } from "./src/components/Select";
+export { Checkbox, type CheckboxProps } from "./src/components/Checkbox";
+export { Switch, type SwitchProps } from "./src/components/Switch";
