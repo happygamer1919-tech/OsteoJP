@@ -7,7 +7,7 @@
   },
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "description": "Clinical intake form for a NESA (neuroestimulação sensitiva acupuntural) episode. NESA is a neurostimulation therapy used at OsteoJP. Field structure is based on the osteopathy episode form as the closest clinical analogue — owner must confirm whether any fields should be added, removed, or renamed for NESA specifically. ai_extractable is false on every field pending the AI-partner contract.",
+    "description": "Clinical intake form for a NESA (neuroestimulação sensitiva acupuntural) episode. Structure follows the osteopathy episode form as confirmed by Ivan (2026-06-11). NESA-specific fields added per Ivan sign-off. Epilepsy absolute/relative contraindication status pending JP clinical ruling.",
     "type": "object",
     "required": ["episode_date", "consultation_reason"],
     "properties": {
@@ -49,24 +49,26 @@
         "properties": {
           "fumador":             { "type": "boolean", "x-label": { "pt": "Fumador", "en": "Smoker" } },
           "lupus":               { "type": "boolean", "x-label": { "pt": "Lúpus", "en": "Lupus" } },
-          "depressao":          { "type": "boolean", "x-label": { "pt": "Depressão", "en": "Depression" } },
-          "gravidez":           { "type": "boolean", "x-label": { "pt": "Gravidez", "en": "Pregnancy" } },
-          "neoplasia":          { "type": "boolean", "x-label": { "pt": "Neoplasia", "en": "Neoplasia" } },
-          "epilepsia":          { "type": "boolean", "x-label": { "pt": "Epilépsia", "en": "Epilepsy" } },
-          "alergias_alimentares": { "type": "boolean", "x-label": { "pt": "Alergias Alimentares", "en": "Food Allergies" } },
-          "alergias_medicamento": { "type": "boolean", "x-label": { "pt": "Alergias Medicament.", "en": "Drug Allergies" } },
-          "osteoporose":        { "type": "boolean", "x-label": { "pt": "Osteoporose", "en": "Osteoporosis" } },
-          "demencia_alzheimer": { "type": "boolean", "x-label": { "pt": "Demência / Alzheimer", "en": "Dementia / Alzheimer" } },
-          "esclerose_multipla": { "type": "boolean", "x-label": { "pt": "Esclerose múltipla", "en": "Multiple Sclerosis" } },
-          "hipertensao":        { "type": "boolean", "x-label": { "pt": "Hipertensão", "en": "Hypertension" } },
-          "covid19":            { "type": "boolean", "x-label": { "pt": "COVID-19", "en": "COVID-19" } },
-          "anemia":             { "type": "boolean", "x-label": { "pt": "Anemia", "en": "Anaemia" } },
-          "parkinson":          { "type": "boolean", "x-label": { "pt": "Parkinson", "en": "Parkinson's" } },
-          "artrite_reumatoide": { "type": "boolean", "x-label": { "pt": "Artrite reumatóide", "en": "Rheumatoid Arthritis" } },
-          "hipotensao":         { "type": "boolean", "x-label": { "pt": "Hipotensão", "en": "Hypotension" } },
-          "diabetes":           { "type": "boolean", "x-label": { "pt": "Diabetes", "en": "Diabetes" } },
+          "depressao":           { "type": "boolean", "x-label": { "pt": "Depressão", "en": "Depression" } },
+          "gravidez":            { "type": "boolean", "x-label": { "pt": "Gravidez", "en": "Pregnancy" } },
+          "neoplasia":           { "type": "boolean", "x-label": { "pt": "Neoplasia", "en": "Neoplasia" } },
+          "epilepsia":           { "type": "boolean", "x-label": { "pt": "Epilépsia", "en": "Epilepsy" }, "x-note": { "pt": "Classificação NESA (absoluta/relativa) pendente confirmação JP", "en": "NESA contraindication status (absolute/relative) pending JP clinical ruling" } },
+          "pacemaker_dispositivo_cardiaco": { "type": "boolean", "x-label": { "pt": "Pacemaker / Dispositivo Cardíaco Implantado", "en": "Pacemaker / Implanted Cardiac Device" }, "x-contraindication": true },
+          "implantes_metalicos_area_tratamento": { "type": "boolean", "x-label": { "pt": "Implantes Metálicos na Área de Tratamento", "en": "Metal Implants in Treatment Area" }, "x-contraindication": true },
+          "alergias_alimentares":  { "type": "boolean", "x-label": { "pt": "Alergias Alimentares", "en": "Food Allergies" } },
+          "alergias_medicamento":  { "type": "boolean", "x-label": { "pt": "Alergias Medicament.", "en": "Drug Allergies" } },
+          "osteoporose":           { "type": "boolean", "x-label": { "pt": "Osteoporose", "en": "Osteoporosis" } },
+          "demencia_alzheimer":    { "type": "boolean", "x-label": { "pt": "Demência / Alzheimer", "en": "Dementia / Alzheimer" } },
+          "esclerose_multipla":    { "type": "boolean", "x-label": { "pt": "Esclerose múltipla", "en": "Multiple Sclerosis" } },
+          "hipertensao":           { "type": "boolean", "x-label": { "pt": "Hipertensão", "en": "Hypertension" } },
+          "covid19":               { "type": "boolean", "x-label": { "pt": "COVID-19", "en": "COVID-19" } },
+          "anemia":                { "type": "boolean", "x-label": { "pt": "Anemia", "en": "Anaemia" } },
+          "parkinson":             { "type": "boolean", "x-label": { "pt": "Parkinson", "en": "Parkinson's" } },
+          "artrite_reumatoide":    { "type": "boolean", "x-label": { "pt": "Artrite reumatóide", "en": "Rheumatoid Arthritis" } },
+          "hipotensao":            { "type": "boolean", "x-label": { "pt": "Hipotensão", "en": "Hypotension" } },
+          "diabetes":              { "type": "boolean", "x-label": { "pt": "Diabetes", "en": "Diabetes" } },
           "problemas_respiratorios": { "type": "boolean", "x-label": { "pt": "Problemas Respira.", "en": "Respiratory Issues" } },
-          "outros":             { "type": ["string", "null"], "x-label": { "pt": "Outros", "en": "Other" }, "x-widget": "text" }
+          "outros":                { "type": ["string", "null"], "x-label": { "pt": "Outros", "en": "Other" }, "x-widget": "text" }
         },
         "ai_extractable": false
       },
@@ -110,6 +112,35 @@
         },
         "ai_extractable": false
       },
+      "nesa_protocol": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Protocolo NESA Utilizado", "en": "NESA Protocol Used" },
+        "x-widget": "textarea",
+        "x-section": "nesa_specific",
+        "ai_extractable": false
+      },
+      "nesa_stimulation_parameters": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Parâmetros de Estimulação", "en": "Stimulation Parameters" },
+        "x-hint": { "pt": "Intensidade, frequência, duração por zona", "en": "Intensity, frequency, duration per zone" },
+        "x-widget": "textarea",
+        "x-section": "nesa_specific",
+        "ai_extractable": false
+      },
+      "nesa_electrode_placement": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Zonas de Colocação dos Elétrodos", "en": "Electrode Placement Zones" },
+        "x-widget": "textarea",
+        "x-section": "nesa_specific",
+        "ai_extractable": false
+      },
+      "nesa_patient_response": {
+        "type": ["string", "null"],
+        "x-label": { "pt": "Resposta / Tolerância do Utente", "en": "Patient Response / Tolerance" },
+        "x-widget": "textarea",
+        "x-section": "nesa_specific",
+        "ai_extractable": false
+      },
       "bodychart": {
         "type": ["object", "null"],
         "x-label": { "pt": "Bodychart", "en": "Body Chart" },
@@ -147,7 +178,13 @@
   "_meta": {
     "source": "Derived from Fisiozero osteopathy form (closest clinical analogue). NESA confirmed as a therapy type at OsteoJP from scheduler screenshot 2026-05-25.",
     "reviewed_by": "Max (sm33xy)",
-    "version_note": "v1 — OWNER MUST CONFIRM: (1) Is the Problemas de Saúde / Anamnese por Sistemas structure appropriate for NESA sessions, or should this use the simpler Fisioterapia structure? (2) Any NESA-specific fields to add (e.g. NESA protocol, stimulation parameters)?",
-    "pending_owner": ["NESA form field confirmation", "RPG, massagem terapêutica, pilates terapêutico forms still outstanding"]
+    "sign_off": {
+      "structure": "Ivan 2026-06-11 — keep osteopathy structure, reuse form engine and review flow. v2 can simplify if JP requests.",
+      "nesa_specific_fields": "Ivan 2026-06-11 — add all four: protocol, stimulation parameters, electrode placement, patient response/tolerance. All ai_extractable: false (coded/safety fields).",
+      "contraindications": "Ivan 2026-06-11 — add pacemaker/implanted cardiac device and metal implants in treatment area. Epilepsy absolute/relative status pending JP clinical ruling.",
+      "epilepsy_pending": "JP must confirm whether epilepsy is absolute or relative contraindication for NESA. Field retained in health_conditions with x-note flagging this."
+    },
+    "version_note": "v1 — structure and NESA-specific fields confirmed by Ivan 2026-06-11. One open item: epilepsy contraindication classification (JP).",
+    "pending_owner": ["JP: epilepsy absolute vs relative contraindication for NESA"]
   }
 }

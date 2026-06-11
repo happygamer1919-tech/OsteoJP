@@ -1,9 +1,9 @@
 # Staff FAQ — OsteoJP Platform
 
-**Audience:** Reception staff and therapists at OsteoJP (Castelo Branco + Montemor-o-Novo)
+**Audience:** Reception staff and therapists at OsteoJP (Linda-a-Velha + Castelo Branco)
 **Purpose:** Quick answers to the questions staff will ask most during and after the transition from Fisiozero
 **Maintained by:** Max — update as new questions emerge during parallel run
-**Last updated:** 2026-06-02
+**Last updated:** 2026-06-11
 
 ---
 
@@ -88,7 +88,7 @@ Em **Administração → Serviços**. Cada serviço tem duração e preço base.
 **Como adiciono um novo membro de equipa?**
 Em **Administração → Equipa**, clica em **"Novo membro"**. O novo utilizador recebe uma password temporária por email — deve alterá-la no primeiro login.
 
-**Como vejo os dois consultórios (Castelo Branco e Montemor-o-Novo)?**
+**Como vejo os dois consultórios (Linda-a-Velha e Castelo Branco)?**
 Em **Administração → Locais**. Cada local tem a sua configuração de salas e disponibilidade. Na Agenda, usa o filtro **"Todas as localizações"** para ver ambos.
 
 ---
