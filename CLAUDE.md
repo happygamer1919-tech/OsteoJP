@@ -70,7 +70,8 @@ Portuguese (default), English (secondary). All user-facing strings via i18n keys
 - Routes: `/api/v1/...` with explicit versioning.
 
 ## Brand
-- Logo: teal #45B9A7, magenta #8B1863, soft grey wordmark.
+- Logo: teal #45B9A7, magenta #8B1863, soft grey wordmark #98B2C2.
+- Canonical palette source: `Logotipo_OsteoJP_2023.pdf`, sampled at 300 DPI (confirmed true vector). These sampled hexes are canonical and supersede any earlier approximations.
 - Typography: clinical, generous spacing. Inter or similar.
 - Tone: serious, precise, not warm. "Padrão ouro." No emoji in product UI.
 - Print branding on every report, declaration, invoice: logo + location contacts + fiscal info.

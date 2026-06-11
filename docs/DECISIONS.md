@@ -218,3 +218,23 @@ Token layer + font only; no component restyling.
   prerender dependency, unrelated to this PR) — verified green with placeholder
   public values. e2e not run: no behavioral/flow change, not in this ticket's
   acceptance.
+
+## 2026-06-11 — Lock canonical brand palette + repair brand-tokens conflict residue (branch docs/tokens-cleanup)
+
+- **Canonical palette locked** to the values sampled from
+  `Logotipo_OsteoJP_2023.pdf` at 300 DPI (confirmed true vector via PR #175):
+  teal `#45B9A7`, magenta `#8B1863`, grey `#98B2C2`. The earlier approximations
+  (`#3DAEB3` teal, `#8E2C7A` magenta) are superseded everywhere.
+- **CLAUDE.md corrected:** the Brand section now lists the canonical hexes
+  including grey `#98B2C2`, plus a line naming `Logotipo_OsteoJP_2023.pdf`
+  (300 DPI, true vector) as the canonical source. (CLAUDE.md already carried the
+  correct teal/magenta hexes; this adds the grey hex and the provenance line.)
+- **brand-tokens.md repaired:** removed the orphaned git-conflict residue around
+  §1.5/§1.6 — the stray label lines `docs/session-8-closeout` and ` main` left
+  behind when the `<<<<<<<`/`=======`/`>>>>>>>` markers were stripped. Both
+  content blocks kept: the "Canonical values confirmed" note and the
+  "### 1.6 Neutral greys" header. File now greps clean for all three markers.
+- **QUESTIONS Q6 item (a)** (vector logo existence) is resolved: the vector logo
+  assets were added by PR #175. Q6 item (b) (heritage motifs on patient-facing
+  surfaces) stays OPEN, pending JP sign-off — untouched here.
+- Docs only (brand-tokens.md, CLAUDE.md, DECISIONS.md). No code. No gate impact.
