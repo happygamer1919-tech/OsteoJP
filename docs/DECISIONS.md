@@ -2,6 +2,34 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-02 Field, Input, Textarea (branch design/W1-02-field-input-textarea)
+
+Design loop Wave 1, second task. Implemented per SPEC-foundation §4.2.
+
+- **Field owns accessibility wiring via React context.** Rather than make every
+  screen hand-wire `htmlFor`/`id`/`aria-describedby`/`aria-invalid`/
+  `aria-required`, Field generates the ids and a control placed as `children`
+  inherits them through a `FieldContext` (`useField`). Input/Textarea fall back
+  to their own props when used standalone (no Field). This keeps screen code to
+  `<Field label error><Input/></Field>`.
+- **Components are client (`"use client"`).** Field calls `createContext`, which
+  is client-only; the staff shell (`apps/web/components/app-shell.tsx`, a server
+  component) imports the `@osteojp/ui` barrel, so the build pulled Field into a
+  server module and failed until the directive was added. Input/Textarea also
+  carry it (they use context/hooks and are interactive by nature).
+- **Shared `control-skin.ts`** holds the common Input/Textarea visual treatment
+  (surface bg, border-strong, accent-2-500 focus border + global ring, error
+  border when invalid, muted surface when disabled) so the two controls cannot
+  drift apart.
+- **Required marker:** the visible `*` is `aria-hidden`; requiredness is conveyed
+  programmatically via native `required` / `aria-required` on the control.
+- **SPEC-mandated dimensions** kept as-is: input 40px (`h-10`), textarea 96px
+  min-height (`min-h-24`) — these are component dimensions the SPEC fixes, not
+  free spacing, same treatment as the W1-01 button heights.
+- **Gates:** lint, typecheck, test, build (web consumer), Storybook build all
+  green. design-reviewer and a11y-reviewer both PASS, zero blocker/fix findings.
+  No QUESTIONS opened (no token gaps this task).
+
 ## 2026-06-11 — W1-01 Foundation prerequisites + Button (branch design/W1-01-foundation-button)
 
 Design loop Wave 1, first task. Implemented per docs/design/SPEC-foundation.md
