@@ -14,3 +14,7 @@ export {
   type ButtonVariant,
   type ButtonSize,
 } from "./src/components/Button";
+
+export { Field, type FieldProps } from "./src/components/Field";
+export { Input, type InputProps } from "./src/components/Input";
+export { Textarea, type TextareaProps } from "./src/components/Textarea";
