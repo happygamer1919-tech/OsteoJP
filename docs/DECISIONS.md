@@ -44,3 +44,43 @@ Append-only. Every session appends decisions made and reasoning.
   patient.osteojp.pt deferred to go-live.
 - i18n copy tweaks shipped as PR #158 (two login page strings, PT + EN).
   Awaiting Ivan review and merge.
+
+## 2026-06-11 — Migration pipeline foundation (branch migration-foundation)
+
+- Built the source-agnostic Fisiozero → OsteoJP migration foundation in
+  packages/db/src/migration: normalized intermediate types (MigrationPatient,
+  MigrationAppointment, MigrationClinicalEpisode, MigrationClinicalRecord,
+  MigrationAttachment) grounded 1:1 in schema.ts target columns; staging
+  helpers; an idempotent importer; and a validation pass. No Fisiozero
+  scraping, adapter, or field mapping was built (blocked on the CSV+ZIP export
+  sample) — the seam is `interface FisiozeroSource` in src/migration/source.ts,
+  TODO only.
+- Idempotency design: target tables get NO source_id column. The new
+  migration_staging_rows table (migration 0014, the only migration this wave,
+  byte-mirrored to supabase/migrations) doubles as staging area and ledger:
+  unique (tenant_id, source_system, entity_type, source_id) with
+  imported_entity_id pointing at the created target row. Re-runs update (or,
+  for clinical records, skip) instead of inserting — proven by a live-DB test
+  that imports the same synthetic batch twice.
+- Status machine on staged rows: pending → validated → imported, with failed
+  + re-stage-to-pending. Transitions are guarded in SQL WHERE clauses; error
+  details are structured and PII-free (codes + field names, never values).
+- The importer runs ONLY through withTenantContext (authenticated role, RLS
+  applies); tenant_id is still set explicitly on every insert. Patient dedupe
+  delegates to the existing merge_patients() SQL function via a thin wrapper —
+  not reimplemented.
+- Cross-record references use source ids resolved through the ledger; refs to
+  platform-owned rows (locations, practitioners, services) use resolver maps
+  built per run. Free-text Fisiozero event-type → service mapping belongs to
+  the future adapter, not the pipeline.
+- migration_staging_rows has the standard tenant-isolation RLS policy + grant;
+  covered by a dedicated RLS isolation suite. Both new DB-gated suites were
+  added to .github/scripts/assert-rls-executed.mjs (now 8 hard-required
+  suites) so they can never silently skip in CI.
+- Opened Q5 (QUESTIONS.md): migrated records draft vs locked, and whether a
+  dedicated `migrated` record_source value is wanted. Foundation supports
+  both; decision needed before the first real batch.
+- Gates: lint, typecheck, test (197/197 in packages/db incl. both new suites
+  against a seeded local Supabase), build green for web/admin/api/db; portal
+  build fails on the known pre-existing missing-env issue (Q1/Q3). supabase
+  db reset applies 0000–0014 cleanly.
