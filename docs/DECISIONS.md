@@ -31,3 +31,16 @@ Append-only. Every session appends decisions made and reasoning.
 - Gates re-run: build still FAIL (portal only; web, admin, api build green),
   test:e2e still FAIL (missing E2E_* creds and seeded DB). Both purely
   environmental, no app code touched per session scope.
+
+## 2026-06-10 — Q3/Q4 resolution session (Max)
+
+- Q3 resolved: dev/e2e credentials will use a dedicated non-production Supabase
+  project, never production. Dev Supabase project creation is a follow-up task
+  for Ivan. Until then local e2e stays on CI's seeded DB workflow.
+- Q4 resolved: osteojp-portal Vercel project created under Ivan_Bong_420's
+  projects. Root: apps/portal. Node 22.x. Analytics off. Three NEXT_PUBLIC_*
+  env vars added across all environments (non-sensitive). First production
+  deployment confirmed green at osteojp-portal.vercel.app. Custom domain
+  patient.osteojp.pt deferred to go-live.
+- i18n copy tweaks shipped as PR #158 (two login page strings, PT + EN).
+  Awaiting Ivan review and merge.
