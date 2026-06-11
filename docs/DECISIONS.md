@@ -2,6 +2,24 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-07 Skeleton, EmptyState, ErrorState (branch design/W1-07-skeleton-empty-error)
+
+Design loop Wave 1, seventh task. Per SPEC-foundation §4.10.
+
+- **Skeleton** uses `animate-pulse` on a surface-muted block (consistent with the
+  KpiCard/Table loading placeholders), going static under prefers-reduced-motion
+  via the global rule, rather than a bespoke gradient "sweep" — same loading
+  affordance, no theme.css change, no arbitrary gradient values. Sized via
+  className so it mirrors real layout; helpers SkeletonText / SkeletonTable.
+- **EmptyState** `heritage` prop is reserved with a `TODO(W1-09)` (HeritageDivider
+  is not merged) per the PLAN cross-task rule.
+- **ErrorState** keeps codes out of the headline (separate `code` line) and uses
+  `text-secondary` for the de-emphasized code line because `text-muted` fails AA
+  on white (the systemic Q11/Q12 note).
+- These components unblock the W1-06 Table TODO (SkeletonTable/EmptyState/ErrorState).
+- **Reviews:** design-reviewer PASS, a11y-reviewer PASS (first pass).
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
 ## 2026-06-11 — W1-06 Table + TableCardRow, Tabs, SegmentedControl (branch design/W1-06-table-tabs-segmented)
 
 Design loop Wave 1, sixth task. Per SPEC-foundation §4.7–§4.8.
