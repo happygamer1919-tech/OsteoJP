@@ -199,6 +199,17 @@
   --shadow-md: 0 4px 8px -2px rgb(26 39 51 / 0.1), 0 2px 4px -2px rgb(26 39 51 / 0.06);
   --shadow-lg: 0 12px 24px -4px rgb(26 39 51 / 0.12), 0 4px 8px -4px rgb(26 39 51 / 0.06);
   --shadow-overlay: 0 24px 48px -12px rgb(26 39 51 / 0.18);
+
+  /* ============================================================== *
+   * 6. Motion (SPEC-foundation §2 — added in task W1-01)
+   * Durations + the standard easing curve. prefers-reduced-motion handling
+   * is the global rule below this @theme block, which collapses every
+   * transition and animation to 0ms platform-wide (design principle 4).
+   * ============================================================== */
+  --duration-fast: 150ms; /* hover, focus, chip changes */
+  --duration-base: 200ms; /* drawers, dialogs, toasts */
+  --duration-slow: 250ms; /* page-level skeleton fades */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1); /* --ease-* namespace → `ease-standard` utility */
 }
 
 /* ================================================================ *
@@ -211,4 +222,34 @@
 }
 @utility bg-gradient-teal {
   background-image: linear-gradient(135deg, #45B9A7 0%, #2F7E72 100%);
+}
+
+/* ================================================================ *
+ * Motion utilities + reduced-motion (SPEC-foundation §2, task W1-01)
+ * Tailwind v4 has no --duration-* theme namespace that emits utilities, so
+ * the three duration tokens are exposed as explicit token-consuming utilities
+ * (same pattern as the gradients above). The easing token emits the
+ * `ease-standard` utility automatically via the --ease-* namespace.
+ * ================================================================ */
+@utility duration-fast {
+  transition-duration: var(--duration-fast);
+}
+@utility duration-base {
+  transition-duration: var(--duration-base);
+}
+@utility duration-slow {
+  transition-duration: var(--duration-slow);
+}
+
+/* Design principle 4 / SPEC §5.6: prefers-reduced-motion collapses every
+ * transition and animation to an instant change, across all components. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
 }

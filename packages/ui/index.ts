@@ -7,3 +7,10 @@ export {
   type BrandLockupVariant,
   type BrandLockupSize,
 } from "./src/brand/BrandLockup";
+
+export {
+  Button,
+  type ButtonProps,
+  type ButtonVariant,
+  type ButtonSize,
+} from "./src/components/Button";
