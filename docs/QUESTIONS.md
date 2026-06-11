@@ -68,3 +68,28 @@ Custom domain patient.osteojp.pt to be wired at go-live. Original entry:
 Context: the team has exactly one Vercel project (osteojp-platform, root
 directory apps/web). apps/portal cannot pull env vars and has no deployment
 target. Portal QA to date appears to have run locally.
+
+## 2026-06-11 — Q5: Migrated clinical records: land as `draft` or `locked`, and do they need a dedicated source tag?
+
+Context: the migration pipeline foundation (branch migration-foundation) can
+import historical Fisiozero clinical records as either `draft` or `locked`
+(`signed` is excluded: a signature attests review in THIS system and cannot be
+carried over). Two owner decisions are pending before the real import runs:
+
+1. Default record_status for migrated history. `locked` makes imported history
+   immutable immediately (consistent with "migrated history is never
+   rewritten"; the importer already refuses to update an imported clinical
+   record on re-runs). `draft` would let therapists edit migrated records,
+   which risks silently altering historical clinical data.
+2. Provenance tag. record_source currently has `manual | ai_ingested |
+   patient`. Migrated records are imported as `manual` for now; provenance is
+   fully recoverable via the staging ledger (migration_staging_rows maps every
+   imported row back to its Fisiozero source id). Adding a dedicated
+   `migrated` enum value would make provenance visible in the UI/queries
+   without joining the ledger, at the cost of one more enum migration.
+
+Recommended default: (1) `locked`, (2) keep `manual` + ledger provenance for
+V1, add a `migrated` source value only if the UI later needs to badge
+migrated records. This touches clinical data retention semantics, so it is
+owner-confirmable (CLAUDE.md). Not blocking: the foundation supports both
+options; the decision is needed before the first real batch (Phase 5).
