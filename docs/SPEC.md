@@ -23,7 +23,7 @@
 - `[MAX]` ~~Seed `docs/` folder with handoff brief, mega plan, CLAUDE.md reference~~ ✅
 - `[MAX]` ~~Create `.github/PULL_REQUEST_TEMPLATE.md` + issue templates (bug, task, content)~~ ✅
 - `[MAX]` ~~Open service accounts: Resend, Sentry EU, Twilio, InvoiceXpress~~ ✅
-- `[MAX]` IfThenPay sandbox — ⏳ account created via website signup; awaiting reply with API keys
+- `[MAX]` IfThenPay sandbox — ⏳ account created by Max via website signup; awaiting reply with API keys → hand to Ivan as `IFTHENPAY_MBWAY_KEY`, `IFTHENPAY_ANTI_PHISHING_KEY`, `IFTHENPAY_CALLBACK_URL`
 
 ---
 
@@ -52,6 +52,7 @@
 - `[YOU]` ~~Drizzle migrations runner + first migration deployed to Supabase dev~~ ✅
 - `[YOU]` ~~CI/CD GitHub Actions: lint, typecheck, test on PR; deploy on merge~~ ✅
 - `[YOU]` ~~Vercel deploy preview wired per branch; production wired to `main`~~ ✅
+- `[MAX]` ~~Vercel project for `apps/portal` created (2026-06-10)~~ ✅ project `osteojp-portal`, Node 22.x, analytics off, env vars set, live at `osteojp-portal.vercel.app`. Custom domain `patient.osteojp.pt` deferred to go-live.
 - `[YOU]` ~~Auth flow end-to-end (signup, login, JWT with `tenant_id` + role)~~ ✅
 - `[YOU]` ~~Sentry SDK installed in `apps/web`; sourcemaps uploading~~ ✅
 - `[YOU]` ~~Env var management via Vercel; `.env.example` committed~~ ✅
