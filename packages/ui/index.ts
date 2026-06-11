@@ -28,3 +28,9 @@ export {
   type StatusChipProps,
   type StatusTone,
 } from "./src/components/StatusChip";
+export { Dialog, type DialogProps } from "./src/components/Dialog";
+export {
+  Drawer,
+  type DrawerProps,
+  type DrawerDiscardCopy,
+} from "./src/components/Drawer";

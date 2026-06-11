@@ -2,6 +2,33 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-05 Drawer and Dialog (branch design/W1-05-drawer-dialog)
+
+Design loop Wave 1, fifth task. Per SPEC-foundation §4.6.
+
+- **Built on the native `<dialog>` element** (`showModal()`), deliberately, over
+  a hand-rolled portal+trap. Native dialog provides the focus trap, Escape,
+  inert background, top-layer stacking (so the Drawer's discard Dialog sits above
+  it), and focus restoration — all correctly and without bespoke code. A shared
+  `useAnimatedDialog` hook adds enter/exit transitions by keeping the element
+  open through the exit and `close()`-ing it one --duration-base later.
+- **Dirty-discard wiring:** every dismiss path (Escape via onCancel, the X,
+  footer Cancel, backdrop click where `e.target === e.currentTarget`) routes
+  through `requestClose()`, which opens the discard confirm Dialog when `dirty`
+  and `discard` copy are set, else closes. The discard Dialog is a destructive
+  confirm rendered inside the Drawer.
+- **Drawer-owned footer.** The Drawer renders its own ghost-cancel + primary
+  -confirm footer (via `onConfirm`/labels) rather than a free slot, so the
+  cancel button shares the same dirty-aware close path.
+- **Motion:** Drawer slides (translate-x), Dialog fades only — no scale, per
+  design principle 4 ("no scale-ups").
+- **SPEC dimensions** as dynamic spacing utilities: drawer 480px = `w-120`,
+  dialog max-width 400px = `max-w-100`; `h-dvh` for full-height mobile.
+- **Reviews:** design-reviewer PASS; a11y-reviewer one nit only (the 32px ghost
+  X close button is below 44px — acceptable on staff surfaces). Native dialog
+  satisfies the role=dialog/aria-modal + labelled-by-title requirement.
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
 ## 2026-06-11 — W1-04 Card, KpiCard, StatusChip (branch design/W1-04-card-kpi-statuschip)
 
 Design loop Wave 1, fourth task. Per SPEC-foundation §4.4–§4.5.
