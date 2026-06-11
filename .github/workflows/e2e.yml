@@ -76,7 +76,9 @@ jobs:
       - name: Resolve pinned Playwright version
         if: steps.changes.outputs.code == 'true'
         id: pw
-        run: echo "version=$(node -p \"require('@playwright/test/package.json').version\")" >> "$GITHUB_OUTPUT"
+        # apps/web declares @playwright/test; it does not resolve from the root.
+        working-directory: apps/web
+        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
         if: steps.changes.outputs.code == 'true'
