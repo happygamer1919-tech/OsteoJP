@@ -255,10 +255,10 @@ Run any new string through this list:
 
 Items that need a decision from the lead or the clinic owner before they're locked in:
 
-1. **First-person mode in clinician-authored messages** — when a specific osteopath sends a message (not the system), do we allow "eu / I" or do we keep institutional "we" throughout? Recommendation: allow "eu" with the clinician's name in the signature, since suppressing it would feel artificial.
-2. **Patient nickname use** — do we address patients by first name only, full name, or with treatment ("Sr./Sra. + sobrenome")? Recommendation: first name in friendly contexts (reminders), full name in formal contexts (declarations, invoices).
-3. **Multilingual fallback** — if a string is only translated in PT, do we show PT to EN users or an English placeholder? Recommendation: show PT, since translating clinical copy badly is worse than showing the source.
-4. **Marketing tone vs product tone** — this guide leans product-tone. The marketing pages have slightly more flourish ("padrão ouro", "vida sem limitações"). Confirm whether product UI should suppress that flourish entirely or echo it in moderation.
+1. **First-person mode in clinician-authored messages** — when a specific osteopath sends a message (not the system), do we allow "eu / I" or do we keep institutional "we" throughout? Recommendation: allow "eu" with the clinician's name in the signature, since suppressing it would feel artificial. *Pending JP.*
+2. ~~**Patient nickname use**~~ — **Resolved:** first name in friendly contexts (reminders, in-app greetings), full name in formal contexts (declarations, invoices). Confirmed in practice across all i18n templates.
+3. ~~**Multilingual fallback**~~ — **Resolved:** show PT to EN users when a string is only translated in PT. Implemented in `packages/i18n`. Confirmed.
+4. **Marketing tone vs product tone** — this guide leans product-tone. The marketing pages have slightly more flourish ("padrão ouro", "vida sem limitações"). Confirm whether product UI should suppress that flourish entirely or echo it in moderation. *Pending JP.*
 
 ---
 

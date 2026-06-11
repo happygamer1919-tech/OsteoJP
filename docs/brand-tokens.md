@@ -17,9 +17,9 @@
 | `brand-magenta` | `#8B1863` | 139, 24, 99 | Secondary brand color. Left hand of the logo. Use sparingly: highlights, secondary CTAs, decorative accents. Avoid as dominant surface color. |
 | `brand-grey` | `#98B2C2` | 152, 178, 194 | Wordmark, figure, and tagline grey. Cool, slightly blue-tinted. Use for the wordmark and supporting brand elements only — **not** for body text. |
 
-> **Note for the lead:** the hex values sampled from the official logo PDF differ slightly from the values listed in the operating context doc (`#3DAEB3` teal, `#8E2C7A` magenta). The values above are what's actually in the file. Please confirm which set is canonical.
+> **Canonical values confirmed:** the hex values above (`#45B9A7` teal, `#8B1863` magenta) are the canonical brand tokens, sampled from `Logotipo_OsteoJP_2023.pdf` at 300 DPI. Earlier values appearing in some files (`#3DAEB3` teal, `#8E2C7A` magenta) were incorrect approximations and must be replaced wherever found.
 >
-> Also: the issue spec assumed two distinct greys (wordmark vs spine/figure). The logo uses a single grey — `#98B2C2` — for figure, spine, wordmark, and tagline.
+> The logo uses a single grey — `#98B2C2` — for figure, spine, wordmark, and tagline.
 
 ### Neutrals (recommended)
 
