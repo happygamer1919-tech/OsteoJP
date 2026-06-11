@@ -2,7 +2,7 @@
 
 > The reference for how OsteoJP sounds in writing. Every email, SMS, in-app message, error state, button label, and document the platform produces should be checked against this guide before shipping.
 >
-> Sources: institutional copy across https://osteojp.pt (homepage, sobre-nos, osteopatia, contactos) — March 2026.
+> Sources: institutional copy across https://osteojp.pt (homepage, sobre-nos, osteopatia, fisioterapia, contactos) — March 2026, re-verified against the live site June 2026.
 > Companion to: [`brand-tokens.md`](./brand-tokens.md) (visual identity).
 
 ---
@@ -14,6 +14,16 @@ OsteoJP's voice is **clinical, confident, and quietly authoritative**. The clini
 The voice reads like a **senior clinician who is thorough, unhurried, and respects the patient's intelligence**. It assumes the reader wants to be informed, not flattered. It cites formal regulation when relevant (e.g. Portaria 207-B/2014 on the osteopathy page) and lists conditions with clinical precision. When the clinic describes itself, the language is institutional ("os nossos princípios", "a nossa equipa", "a nossa abordagem") — never first-person singular, never casual.
 
 The same voice must hold across PT and EN. EN translations should match the clinical register of PT — not soften it for an Anglophone audience used to lighter healthcare copy.
+
+In five adjectives, each grounded in what the site actually sounds like:
+
+| Adjective | Definition |
+|---|---|
+| **Preciso** (precise) | Names things exactly. The site lists conditions and modalities specifically ("Reabilitação Desportiva", "Neuromodulação Não Invasiva"), never vaguely. |
+| **Respeitador** (respectful) | Formal address without exception: "Estamos aqui para cuidar de si", never "tu". Mirrors the stated value "Respeito pelo Paciente". |
+| **Sério** (serious) | Clinical register, no jokes, no emoji, no diminutives. The brand promise is "padrão ouro em cuidados de saúde de elevada qualidade"; the copy must sound like it. |
+| **Tranquilizador** (reassuring) | Calm even about problems. The site frames care as a solvable path ("Na OsteoJP, acreditamos que a recuperação é possível"); errors state the issue and the next step, never alarm. |
+| **Direto** (direct) | Action first. The site's CTAs are bare verb phrases ("Fazer marcação", "Contactar", "Saber mais"); UI copy leads with the action, not with framing. |
 
 ---
 
@@ -42,6 +52,12 @@ No throat-clearing ("We are delighted to inform you that..."). No padding ("Plea
 ### 2.7 Action verbs lead CTAs
 Booking, scheduling, and contact CTAs lead with the verb: **"Agende a sua consulta"**, **"Contacte-nos"**, **"Saber mais"**. Never "Click here", never "Learn more about how we can help you on your wellness journey".
 
+### 2.8 Staff UI: neutral imperative, no courtesy padding
+Staff-facing strings address the task, not the person. Buttons and menu actions use the **infinitive** (standard PT-PT software convention, and the site's own CTA pattern: "Fazer marcação", "Saber mais"). Instructions use the impersonal imperative. No "por favor" inside the staff apps: courtesy words are reserved for patient-facing copy, where they carry the formal register.
+
+- PT button: "Guardar registo" · PT instruction: "Selecione o paciente antes de criar a marcação."
+- EN button: "Save record" · EN instruction: "Select the patient before creating the booking."
+
 ---
 
 ## 3. PT/EN vocabulary
@@ -63,9 +79,13 @@ Preferred terminology for common platform copy, in both languages. Where multipl
 | Treatment plan | Plano de tratamento | Often "plano de tratamento personalizado". |
 | Clinical record | Registo clínico | Singular. "Histórico clínico" for the full longitudinal history. |
 | Practitioner / clinician | Profissional de saúde | Generic. Specific roles ("osteopata", "fisioterapeuta") preferred when known. |
-| Patient | Paciente | Not "cliente" in clinical contexts. Use "cliente" only when the context is clearly commercial (e.g. invoicing). |
+| Therapist | Terapeuta | Platform role label covering osteopaths and physiotherapists (matches the permission matrix). Use the specific title when the discipline matters clinically or on printed reports. |
+| Patient | Paciente | Canonical. The site mixes "paciente", "utente" and "cliente"; the product does not. "Paciente" leads the site's own values copy ("Respeito pelo Paciente") and matches the `patients` table. "Utente" is SNS/public-sector register: never use it to address a patient, acceptable only when quoting official documents. "Cliente" only in clearly commercial contexts (e.g. invoicing). |
 | Team | Equipa | Note: "equipa" (PT-PT), not "equipe" (PT-BR). |
 | Clinic | Clínica | |
+| Location (clinic site) | Clínica de [localidade] | The site says "clínicas em Linda-a-Velha e Castelo Branco". Refer to a location as "clínica de Linda-a-Velha", never "local", "unidade" or "instalação". |
+| Invoice | Fatura | Legal term. "Fatura-recibo" only when that is literally the fiscal document type issued. Never "recibo" or "nota" for an invoice. |
+| To reschedule | Remarcar | One word; prefer over "alterar a marcação". |
 
 ### 3.2 Treatments (proper-noun list — capitalize, do not translate)
 
@@ -178,9 +198,89 @@ The principles are constant; the register adjusts slightly across contexts.
 
 ---
 
-## 6. Examples — before and after
+## 6. Microcopy patterns
 
-### 6.1 Appointment reminder (SMS, PT)
+Concrete patterns per surface, with one PT and one EN example each. Vocabulary follows §3 (consulta = the appointment/encounter, marcação = the booking).
+
+### 6.1 Buttons
+Infinitive verb + object in PT, bare verb + object in EN. Two words is the target, four the ceiling.
+
+| Context | PT | EN |
+|---|---|---|
+| Primary action | Guardar registo | Save record |
+| Booking | Nova marcação | New booking |
+| Destructive | Cancelar marcação | Cancel booking |
+| Billing | Emitir fatura | Issue invoice |
+
+### 6.2 Empty states
+One line saying what is not here yet, plus the action that fills it. No apology, no illustration-driven whimsy.
+
+- PT: "Sem consultas hoje." + botão "Nova marcação"
+- EN: "No appointments today." + button "New booking"
+- PT: "Este paciente ainda não tem registos clínicos."
+- EN: "This patient has no clinical records yet."
+
+### 6.3 Error messages
+What failed + what to do next. Never blame the user, never expose technical detail or PII, never bare "Erro".
+
+- PT: "Não foi possível guardar o registo. Verifique a ligação e tente novamente."
+- EN: "The record could not be saved. Check your connection and try again."
+- PT (validation): "Indique a data de nascimento no formato DD/MM/AAAA."
+- EN (validation): "Enter the date of birth in DD/MM/YYYY format."
+
+### 6.4 Confirmation dialogs
+Title states the action as a question, body states the consequence, buttons repeat the verb. Never "Sim/Não", never bare "OK". For irreversible clinical actions, name the irreversibility.
+
+- PT: título "Cancelar esta marcação?" · corpo "O paciente será notificado por SMS." · botões "Cancelar marcação" / "Voltar"
+- EN: title "Cancel this booking?" · body "The patient will be notified by SMS." · buttons "Cancel booking" / "Go back"
+- PT (irreversible): "Assinar este registo? Depois de assinado, o registo fica imutável. Alterações futuras criam uma adenda."
+- EN (irreversible): "Sign this record? Once signed, the record becomes immutable. Future changes create an addendum."
+
+### 6.5 Success toasts
+Past participle + object. Short, factual, no celebration.
+
+- PT: "Marcação criada." · "Registo assinado." · "Fatura emitida."
+- EN: "Booking created." · "Record signed." · "Invoice issued."
+
+### 6.6 SMS
+Hard constraint: **one GSM-7 segment, 160 characters**. PT accented characters (ã, õ, á, í, ó, ú, â, ê, ô…) are not in GSM-7; a single one forces UCS-2 encoding and cuts the segment to 70 characters. SMS copy is therefore written **accent-free by design**. Full rules and the approved template set live in [`sms-templates.md`](./sms-templates.md); never author SMS copy outside that file's constraints. Always include clinic name, date, time, location, and one action path.
+
+- PT (110 chars): `OsteoJP: lembrete da sua consulta amanha, 19/03, as 10h00, clinica de Linda-a-Velha. Para alterar: 214 191 988`
+- EN (106 chars): `OsteoJP: reminder of your appointment tomorrow, 19/03, 10:00, Linda-a-Velha clinic. To change: 214 191 988`
+
+### 6.7 Email reminders
+Full diacritics, formal address, no marketing content in transactional email. Subject carries the facts (what, when, where); body gives logistics and one reschedule path; sign-off as the clinic, with contacts.
+
+- PT: assunto "Lembrete: consulta de Osteopatia, 19 de março às 10h00, Linda-a-Velha" · corpo abre "Caro(a) [Nome]," e fecha "Com os melhores cumprimentos, OsteoJP — Clínica de Linda-a-Velha".
+- EN: subject "Reminder: Osteopathy appointment, 19 March at 10:00, Linda-a-Velha" · body opens "Dear [Name]," and closes "Kind regards, OsteoJP — Linda-a-Velha clinic".
+
+---
+
+## 7. Do / don't
+
+Five of each. Every rewrite shows the PT fix and the EN fix.
+
+### Do
+
+1. **Lead with the action.** ✗ "Para criar uma nova marcação, clique aqui" → ✓ PT "Nova marcação" / ✓ EN "New booking"
+2. **Use the canonical term, every time.** ✗ "A sua sessão de osteopatia foi agendada" → ✓ PT "A sua consulta de Osteopatia foi marcada." / ✓ EN "Your Osteopathy appointment has been booked."
+3. **State the next step in every error.** ✗ "Erro ao emitir fatura" → ✓ PT "Não foi possível emitir a fatura. Tente novamente ou contacte o administrador." / ✓ EN "The invoice could not be issued. Try again or contact the administrator."
+4. **Name consequences in confirmations.** ✗ "Tem a certeza?" → ✓ PT "Eliminar este rascunho? Esta ação não pode ser anulada." / ✓ EN "Delete this draft? This action cannot be undone."
+5. **Keep formal address with patients everywhere, including SMS.** ✗ "Não te esqueças da tua consulta" → ✓ PT (SMS, accent-free) "Lembrete da sua consulta amanha as 10h00" / ✓ EN "Reminder of your appointment tomorrow at 10:00"
+
+### Don't
+
+1. **Don't use "tu" or emoji, ever.** ✗ "Olá! Tens uma consulta amanhã 😊" → ✓ PT "Lembrete: tem uma consulta amanhã às 14h30." / ✓ EN "Reminder: you have an appointment tomorrow at 14:30."
+2. **Don't import marketing flourish into product UI.** ✗ "Parabéns! A sua jornada para uma vida sem limitações começou!" → ✓ PT "Marcação confirmada." / ✓ EN "Booking confirmed."
+3. **Don't mix terms for the same concept on one screen.** ✗ "Cancelar consulta" num ecrã intitulado "As suas marcações" → ✓ PT "As suas marcações" / "Cancelar marcação" / ✓ EN "Your bookings" / "Cancel booking"
+4. **Don't expose internals or blame the user.** ✗ "Introduziu dados inválidos (FK violation: tenant_id)" → ✓ PT "Não foi possível guardar. Verifique os campos assinalados." / ✓ EN "Could not save. Check the highlighted fields."
+5. **Don't pad staff UI with filler courtesy.** ✗ "Por favor, aguarde um momento enquanto processamos o seu pedido…" → ✓ PT "A guardar…" / ✓ EN "Saving…"
+
+---
+
+## 8. Examples — before and after
+
+### 8.1 Appointment reminder (SMS, PT)
 
 **Before (too casual, too long):**
 > Olá Maria! 🙂 Só queríamos lembrar que tens uma marcação connosco amanhã às 10h00. Mal podemos esperar para te ver! Qualquer coisa, é só dizer. ❤️ Equipa OsteoJP
@@ -190,7 +290,7 @@ The principles are constant; the register adjusts slightly across contexts.
 
 **Why:** drops the emoji and "tu" form, leads with the actionable info, gives a single direct channel to act, signed by the clinic not a "team".
 
-### 6.2 Appointment confirmation (email subject + body, EN)
+### 8.2 Appointment confirmation (email subject + body, EN)
 
 **Before:**
 > Subject: Yay! Your appointment is booked 🎉
@@ -202,7 +302,7 @@ The principles are constant; the register adjusts slightly across contexts.
 
 **Why:** subject line carries the four facts that matter (what, when, where). Body gives logistics, not feeling.
 
-### 6.3 Form validation error (in-app, PT)
+### 8.3 Form validation error (in-app, PT)
 
 **Before:**
 > Ups! Algo correu mal. Por favor, verifique se preencheu todos os campos corretamente e tente novamente.
@@ -212,7 +312,7 @@ The principles are constant; the register adjusts slightly across contexts.
 
 **Why:** an error message is not the place for "ups". The user already knows something went wrong — they need to know what to fix. Point them at the fields.
 
-### 6.4 Clinical record entry header (PT, internal)
+### 8.4 Clinical record entry header (PT, internal)
 
 **Before:**
 > Sessão da Maria — 19 de março, dia super produtivo!
@@ -222,7 +322,7 @@ The principles are constant; the register adjusts slightly across contexts.
 
 **Why:** clinical records are formal documents. Date format standardized, modality named, practitioner identified. No commentary.
 
-### 6.5 Marketing CTA (homepage, PT)
+### 8.5 Marketing CTA (homepage, PT)
 
 **Before:**
 > Vem descobrir o teu caminho para uma vida incrível sem dor! Junta-te à família OsteoJP hoje!
@@ -234,7 +334,7 @@ The principles are constant; the register adjusts slightly across contexts.
 
 ---
 
-## 7. Quick checklist before publishing copy
+## 9. Quick checklist before publishing copy
 
 Run any new string through this list:
 
@@ -251,7 +351,7 @@ Run any new string through this list:
 
 ---
 
-## 8. Open questions for the lead / owner
+## 10. Open questions for the lead / owner
 
 Items that need a decision from the lead or the clinic owner before they're locked in:
 
@@ -262,7 +362,7 @@ Items that need a decision from the lead or the clinic owner before they're lock
 
 ---
 
-## 9. Future work
+## 11. Future work
 
 - **Social media voice (Instagram, LinkedIn)** — separate register, not in scope for v1. Add a §10 in a future version once social presence is reviewed.
 - **Voice samples per practitioner** — if individual clinicians sign clinical reports, capture each one's habitual phrasing so AI-drafted reports sound consistent per-author.
