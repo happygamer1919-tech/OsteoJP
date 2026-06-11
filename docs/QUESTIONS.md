@@ -145,3 +145,55 @@ more code, defers the canonical switch.
 Not blocking: the token layer ships either way; this only decides whether the
 modest web visual drift is accepted now or deferred. No clinical/legal impact.
 main
+
+## 2026-06-11 — Q8: lucide-react added to packages/ui (new runtime dependency)
+
+Context: task W1-01 (docs/design/PLAN.md) and SPEC-foundation §3 explicitly
+approve `lucide-react` as "the one new runtime dependency approved for Wave 1",
+added in `packages/ui` only. Logging it here because the global rule requires a
+QUESTIONS.md entry for any new third-party dependency before it lands.
+
+Scope of use: icon components only (`currentColor`, stroke-width 1.75, sizes
+16/20/24 per SPEC §3). No telemetry, no runtime services, MIT-licensed, tree
+-shakeable per-icon imports. EU-residency / PII rules unaffected (client-side
+SVG rendering only).
+
+Recommended default: **accept** (already spec-approved). No action needed unless
+the owner wants a different icon library. Not blocking.
+
+## 2026-06-11 — Q9: SPEC-foundation §4.1 primary Button fill fails WCAG AA — used accent-2-700
+
+Context: SPEC-foundation §4.1 specifies the primary Button as `accent-2-600`
+fill with `text-inverse` text, hover `accent-2-700`, active `accent-2-800`. But
+white text on `accent-2-600` measures ~3.3:1, below the WCAG AA 4.5:1 floor for
+normal text (Button labels are 12–16px, none qualify as "large text"). This
+contradicts SPEC §2 ("filled teal surfaces that carry text use accent-2-600 or
+darker"; the author assumed 600 cleared AA), SPEC §5.2, and the a11y-reviewer
+contract. `accent-2-700` on white measures ~4.8:1 and passes.
+
+Decision taken to keep the W1-01 a11y gate green: primary Button ships as fill
+`accent-2-700`, hover `accent-2-800`, active `accent-2-900` (all real tokens,
+each one step darker, preserving the spec's interaction-darkening intent).
+
+Recommended default: **correct SPEC-foundation §4.1** to start the primary teal
+button at `accent-2-700`. Per the spec's own hard rule (brand-tokens.md / AA
+wins on conflict, log it), this is the conforming resolution. Not blocking for
+W1-01; flag if the owner wants the lighter teal for brand reasons (would require
+a non-text-inverse foreground, re-opening contrast).
+
+## 2026-06-11 — Q10: `error` semantic token has no numeric scale for destructive hover/active
+
+Context: SPEC-foundation §4.1 destructive Button calls for hover "darken one
+step" and active "darken two steps", but brand-tokens.md §1.8/§7 define `error`
+only as a single value (`#B23A3A`) plus `error-bg` — there is no `error-600/700`
+to step down to, unlike the teal/magenta scales. Per the loop rule ("if a needed
+token does not exist … log it; the loop does not invent values") this gap is
+logged rather than filled with an off-document hex.
+
+Interim implementation: destructive hover/active darken via the standard
+`brightness-90` / `brightness-75` utilities (no new hex, no arbitrary value),
+which approximates one/two steps without inventing a token.
+
+Recommended default: **add an `error` numeric scale** (`error-600`, `error-700`,
+optionally full 50–900) to brand-tokens.md §1.8/§7 and theme.css, then switch
+destructive hover/active to `error-600`/`error-700`. Not blocking for W1-01.
