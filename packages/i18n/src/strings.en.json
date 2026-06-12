@@ -536,5 +536,6 @@
   "appointment.status.confirmed": "Confirmed",
   "appointment.status.completed": "Completed",
   "appointment.status.cancelled": "Cancelled",
-  "appointment.status.no_show": "No-show"
+  "appointment.status.no_show": "No-show",
+  "agenda.pickDate": "Choose date"
 }
