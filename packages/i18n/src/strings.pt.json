@@ -557,5 +557,14 @@
   "patients.emptyDocumentsHelp": "Os documentos do paciente aparecem aqui.",
   "patients.emptyInvoicingTitle": "Sem faturas",
   "patients.emptyInvoicingHelp": "As faturas deste paciente aparecem aqui.",
-  "patients.openRecord": "Abrir registo"
+  "patients.openRecord": "Abrir registo",
+  "invoicing.notLive": "Disponível após ativação da faturação",
+  "invoicing.colNumber": "Nº",
+  "invoicing.colDate": "Data",
+  "invoicing.colPatient": "Paciente",
+  "invoicing.colAmount": "Valor",
+  "invoicing.colStatus": "Estado",
+  "invoicing.tableCaption": "Faturas",
+  "invoicing.emptyTitle": "Sem faturas no período selecionado",
+  "invoicing.emptyHelp": "Ajuste o período selecionado."
 }
