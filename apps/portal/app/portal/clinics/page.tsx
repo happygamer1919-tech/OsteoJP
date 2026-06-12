@@ -105,7 +105,7 @@ export default function ClinicsPage() {
 
       <div className="rounded-lg border border-border bg-surface p-4">
         <p className="text-center text-sm leading-relaxed text-text-secondary">
-          Para urgências ou questões gerais, ligue directamente para a clínica. As marcações online
+          Para urgências ou questões gerais, ligue diretamente para a clínica. As marcações online
           estão disponíveis até 24 horas antes da consulta.
         </p>
       </div>

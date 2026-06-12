@@ -40,7 +40,7 @@ export default async function DashboardPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  const firstName = (user?.user_metadata?.first_name as string | undefined) ?? 'Paciente'
+  const firstName = (user?.user_metadata?.first_name as string | undefined) ?? ''
 
   // A hard fetch failure surfaces the route-level error.tsx (ErrorState + retry);
   // an empty list is the empty state below, not an error.
@@ -69,7 +69,7 @@ export default async function DashboardPage() {
     <div className="flex flex-col gap-6">
       {/* Greeting */}
       <div className="flex flex-col gap-1">
-        <h3 className="text-xl text-text-primary">Olá, {firstName}</h3>
+        <h3 className="text-xl text-text-primary">{firstName ? `Olá, ${firstName}` : 'Olá'}</h3>
         <p className="text-sm text-text-secondary first-letter:uppercase">{today}</p>
       </div>
 

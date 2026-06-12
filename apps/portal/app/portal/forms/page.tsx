@@ -7,8 +7,8 @@ const THERAPY_LABELS: Record<string, string> = {
   physiotherapy: 'Fisioterapia',
   rpg: 'RPG',
   nesa: 'NESA',
-  'massagem-terapeutica': 'Massagem terapêutica',
-  'pilates-terapeutico': 'Pilates terapêutico',
+  'massagem-terapeutica': 'Massagem Terapêutica',
+  'pilates-terapeutico': 'Pilates Terapêutico',
 }
 
 function formTitle(formKey: string, therapy: string | null): string {
