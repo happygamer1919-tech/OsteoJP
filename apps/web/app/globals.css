@@ -3,6 +3,12 @@
    brand palette. */
 @import "@osteojp/ui/theme.css";
 
+/* Scan the shared component library so Tailwind generates the utility classes
+   used inside @osteojp/ui components (e.g. the AppShell). Tailwind v4 does not
+   scan node_modules / workspace packages by default; without this the shell
+   renders unstyled. */
+@source "../../../packages/ui/src";
+
 /* Drive the global background/foreground from the brand tokens: the page
    background is the brand light neutral (`bg` = #F7F9FB), never pure white or
    the create-next-app dark default. Set once here so every screen inherits it

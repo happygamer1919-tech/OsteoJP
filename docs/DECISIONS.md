@@ -2,6 +2,96 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-10 AppShell (staff + portal) + apps/web migration (branch design/W1-10-appshell)
+
+Design loop Wave 1, final task. Per SPEC-foundation §4.11. The only Wave 1 task
+permitted to touch apps/web.
+
+- **Two shells in packages/ui.** StaffAppShell (64px top bar, icon+label nav,
+  right-side slots, hamburger→native-<dialog> slide-over under 768px, content
+  max-w-7xl) and PortalShell (56px top bar, 64px bottom tab bar with 44px
+  targets, desktop tabs-on-top at max-w-160). Both are presentational and
+  framework-agnostic: nav is data, role filtering stays with the caller, and a
+  `linkComponent` prop injects next/link (defaults to <a>).
+- **Content wrapper is a <div>, not <main>.** The existing app pages own their
+  <main> landmark, so the shell must not nest one — preserving the prior contract
+  and avoiding a nested-main a11y defect.
+- **apps/web migration.** app-shell.tsx now renders the shared shell through
+  StaffShellClient, a thin client wrapper that injects next/link, computes the
+  active item from usePathname, and maps each route to its canonical icon — the
+  icon map must live client-side because LucideIcon components can't cross the
+  server→client prop boundary. Role-gated nav (navItemsForRole) and the logout
+  server action are unchanged; nav-links.tsx (the old sidebar list) was removed.
+- **Tailwind @source.** apps/web/globals.css now @sources packages/ui/src so
+  Tailwind v4 generates the shell's utility classes (it does not scan workspace
+  packages by default; BrandLockup never needed it as it is class-free).
+- **lucide-react added to apps/web** (the already-approved Q8 dependency) for the
+  route→icon map.
+- **AA fix (Q13):** SPEC §4.11's portal nav colors (active accent-2-600, inactive
+  text-muted) fail AA at 12px; shipped accent-2-700 / text-secondary (both clear
+  4.5:1 text and 3:1 icon). Icon buttons aligned to the h-10 (40px) interactive
+  height. design + a11y reviewers PASS after the fix.
+- **Verification:** gates green (lint/typecheck/test/build/Storybook). The live
+  shell render is exercised by the CI Playwright e2e suite (login → app), since a
+  build cannot confirm Tailwind class generation.
+
+## 2026-06-11 — W1-09 HeritageDivider (branch design/W1-09-heritage-divider)
+
+Design loop Wave 1, ninth task. Per SPEC-foundation §4.12 + brand-tokens §6.
+
+- **HeritageDivider** renders the tileable motif as a repeating CSS
+  background-image. The motif SVGs (PR #175) are embedded as URL-encoded data
+  URIs (generated `heritage-svg.ts`) so they tile with no bundler-specific asset
+  import — the same bundler-agnostic rationale as BrandLockup's inline SVG. The
+  encoded colors are the canonical brand tokens; §4.12 says the color comes from
+  the asset, so there is no recoloring prop in Wave 1.
+- Decorative only: aria-hidden, not focusable, not animated. SPEC dimensions as
+  dynamic utilities: h-2.5 (10px), max-w-80 (320px), my-8 (space-8).
+- The allowed-hosts rule (auth / EmptyState / loading / settings dividers; never
+  behind data; off patient-facing portal until Q6) is documented in the docblock,
+  for the design reviewer to enforce at call sites.
+- **EmptyState's `heritage` wiring is intentionally left as a follow-up** — wiring
+  it would edit W1-07's component internals, which the PLAN cross-task rule
+  forbids (only edit another task's component through its exported API).
+- **Reviews:** design-reviewer PASS, a11y-reviewer PASS (first pass).
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
+## 2026-06-11 — W1-08 Toast and Banner (branch design/W1-08-toast-banner)
+
+Design loop Wave 1, eighth task. Per SPEC-foundation §4.9.
+
+- **Toast** is a provider + `useToast()` hook + a fixed viewport. The viewport is
+  one `aria-live="polite"` region; individual error toasts carry `role="alert"`
+  so they announce assertively without changing the region — satisfying "single
+  polite region, assertive for error" cleanly. Auto-dismiss is 5s with true
+  pause-on-hover/focus (remaining time tracked per item, not a full restart).
+  Stack is capped at 3 (oldest dropped) via `slice(-3)`.
+- **Banner** is a stateless bar; the "one banner per screen, collapse extras to a
+  count" rule is a screen responsibility (documented in the story) — the
+  component exposes an optional `count` and never self-stacks.
+- Both use `text-primary`/`text-accent-2-700` for text (AA-safe), semantic tints
+  for backgrounds, and semantic-colored icons.
+- **Reviews:** design-reviewer PASS, a11y-reviewer PASS (first pass).
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
+## 2026-06-11 — W1-07 Skeleton, EmptyState, ErrorState (branch design/W1-07-skeleton-empty-error)
+
+Design loop Wave 1, seventh task. Per SPEC-foundation §4.10.
+
+- **Skeleton** uses `animate-pulse` on a surface-muted block (consistent with the
+  KpiCard/Table loading placeholders), going static under prefers-reduced-motion
+  via the global rule, rather than a bespoke gradient "sweep" — same loading
+  affordance, no theme.css change, no arbitrary gradient values. Sized via
+  className so it mirrors real layout; helpers SkeletonText / SkeletonTable.
+- **EmptyState** `heritage` prop is reserved with a `TODO(W1-09)` (HeritageDivider
+  is not merged) per the PLAN cross-task rule.
+- **ErrorState** keeps codes out of the headline (separate `code` line) and uses
+  `text-secondary` for the de-emphasized code line because `text-muted` fails AA
+  on white (the systemic Q11/Q12 note).
+- These components unblock the W1-06 Table TODO (SkeletonTable/EmptyState/ErrorState).
+- **Reviews:** design-reviewer PASS, a11y-reviewer PASS (first pass).
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
 ## 2026-06-11 — W1-06 Table + TableCardRow, Tabs, SegmentedControl (branch design/W1-06-table-tabs-segmented)
 
 Design loop Wave 1, sixth task. Per SPEC-foundation §4.7–§4.8.
