@@ -144,7 +144,7 @@ Wave 3 binds to apps/portal per the parallel-loops path allowlist. Cross-wave pr
 - [x] W3-02 — Login and Activate per SPEC-portal sections 3 and 4: brand lockup, restyled credential and activation forms, inline validation, expired-token ErrorState, language switcher.
 - [x] W3-03 — Dashboard per SPEC-portal section 5: greeting, next-appointment hero card, single pending-forms banner, quick actions grid, all states.
 - [x] W3-04 — Appointments list and detail per SPEC-portal section 6: upcoming and history segments, appointment cards, detail with 24h-cutoff-aware cancel and email-only reschedule, all states.
-- [ ] W3-05 — Booking flow per SPEC-portal section 7: four steps with progress, inline DatePicker plus SlotPicker, confirm summary, honest pending status on success, slot-taken recovery without state loss.
+- [x] W3-05 — Booking flow per SPEC-portal section 7: four steps with progress, inline DatePicker plus SlotPicker, confirm summary, honest pending status on success, slot-taken recovery without state loss.
 - [ ] W3-06 — Clinics and Account per SPEC-portal section 8: clinic cards, grouped account rows, view-then-edit drawer, language preference, sign-out with confirm.
 - [ ] W3-07 — Documents and Forms per SPEC-portal sections 9 and 10: document list with download, pending-first forms list, restyled form filling, submit flow that always communicates pending_review.
 
