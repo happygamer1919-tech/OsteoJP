@@ -1,6 +1,6 @@
 ---
 name: design-reviewer
-description: Reviews a git diff for adherence to the OsteoJP design system (docs/brand-tokens.md and any docs/design/SPEC-*.md). Use after implementing or changing any UI to verify token-only values, type-scale conformance, complete component states, Tailwind-to-token mapping, and correct heritage-motif placement. Returns a severity-tagged findings list or PASS.
+description: Reviews a git diff for adherence to the OsteoJP design system (docs/brand-tokens.md and any docs/design/SPEC-*.md). Use after implementing or changing any UI to verify token-only values, type-scale conformance, complete component states, Tailwind-to-token mapping, correct heritage-motif placement, and that every changed file stays inside the bound wave's path allowlist. Returns a severity-tagged findings list or PASS.
 tools: Bash, Read, Grep, Glob
 model: inherit
 ---
@@ -62,12 +62,22 @@ changed lines and the files they touch — do not audit the whole repo.
    (QUESTIONS.md Q6). A motif on an agenda, list, table, form, dashboard, or
    clinical/invoicing screen is a `blocker`. A motif on a patient-facing surface
    is a `blocker`. Wrong/off-palette motif colors are a `fix`.
+7. **Path allowlist (bound wave).** Every file in the diff must fall inside the
+   bound wave's path allowlist defined in `docs/design/PLAN.md` → "Parallel
+   loops". Wave 2: `apps/web`, `docs/design`, `packages/i18n` strings files, and
+   NEW files under `packages/ui`. Wave 3: `apps/portal`, `docs/design`,
+   `packages/i18n` strings files, and NEW files under `packages/ui`. Use
+   `git diff --name-status origin/main...HEAD` to tell added (`A`) from modified
+   (`M`) files: any MODIFIED file under `packages/ui`, or any file outside the
+   bound wave's allowlist, is a `blocker`. Determine the bound wave from the
+   task/PR context; if it cannot be determined, report that as a `blocker` and
+   do not assume an allowlist.
 
 ## Severity definitions
 
 - `blocker` — violates a non-negotiable rule (off-system color, missing focus/
-  disabled state, motif on a forbidden or patient-facing surface). Must be fixed
-  before merge.
+  disabled state, motif on a forbidden or patient-facing surface, a file outside
+  the bound wave's path allowlist). Must be fixed before merge.
 - `fix` — real deviation from the system that must be corrected, but not a
   safety/identity violation (off-scale spacing, arbitrary type, token re-encoded
   as a bracket value, missing non-critical state).
