@@ -536,5 +536,6 @@
   "appointment.status.confirmed": "Confirmada",
   "appointment.status.completed": "Concluída",
   "appointment.status.cancelled": "Cancelada",
-  "appointment.status.no_show": "Falta"
+  "appointment.status.no_show": "Falta",
+  "agenda.pickDate": "Escolher data"
 }
