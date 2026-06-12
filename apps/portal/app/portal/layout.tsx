@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
-import TopBar from '@/components/layout/TopBar'
-import BottomNav from '@/components/layout/BottomNav'
+import PortalChrome from '@/components/layout/PortalChrome'
 
 export const metadata: Metadata = {
   title: {
@@ -15,18 +14,7 @@ export default function PortalLayout({
 }: {
   children: React.ReactNode
 }) {
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <TopBar />
-      {/* pb-20 leaves room for the fixed BottomNav */}
-      <main
-        id="main-content"
-        className="max-w-md mx-auto px-4 pt-5 pb-24"
-        tabIndex={-1}
-      >
-        {children}
-      </main>
-      <BottomNav />
-    </div>
-  )
+  // Shared @osteojp/ui PortalShell (top bar + bottom tabs) supplies the chrome;
+  // PortalChrome wires the per-screen title, active tab, skip-link and <main>.
+  return <PortalChrome>{children}</PortalChrome>
 }

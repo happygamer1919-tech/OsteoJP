@@ -44,42 +44,42 @@ export default function AccountEditForm({ profile }: Props) {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+    <div className="bg-surface rounded-xl border border-border divide-y divide-border">
       {/* Phone */}
       <div className="px-4 py-3">
-        <p className="text-xs text-gray-400 mb-1">Telemóvel</p>
+        <p className="text-xs text-text-secondary mb-1">Telemóvel</p>
         {editing ? (
           <input
             type="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="+351 912 345 678"
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
+            className="w-full text-sm bg-surface border border-border-strong rounded-lg px-3 py-2 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           />
         ) : (
-          <p className="text-sm text-gray-900">{phone || '—'}</p>
+          <p className="text-sm text-text-primary">{phone || '—'}</p>
         )}
       </div>
 
       {/* Address */}
       <div className="px-4 py-3">
-        <p className="text-xs text-gray-400 mb-1">Morada</p>
+        <p className="text-xs text-text-secondary mb-1">Morada</p>
         {editing ? (
           <input
             type="text"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             placeholder="Rua, número..."
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
+            className="w-full text-sm bg-surface border border-border-strong rounded-lg px-3 py-2 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           />
         ) : (
-          <p className="text-sm text-gray-900">{address || '—'}</p>
+          <p className="text-sm text-text-primary">{address || '—'}</p>
         )}
       </div>
 
       {/* Postal + City */}
       <div className="px-4 py-3">
-        <p className="text-xs text-gray-400 mb-1">Código postal / Localidade</p>
+        <p className="text-xs text-text-secondary mb-1">Código postal / Localidade</p>
         {editing ? (
           <div className="flex gap-2">
             <input
@@ -87,18 +87,18 @@ export default function AccountEditForm({ profile }: Props) {
               value={postalCode}
               onChange={(e) => setPostalCode(e.target.value)}
               placeholder="0000-000"
-              className="w-28 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
+              className="w-28 text-sm bg-surface border border-border-strong rounded-lg px-3 py-2 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
             />
             <input
               type="text"
               value={city}
               onChange={(e) => setCity(e.target.value)}
               placeholder="Localidade"
-              className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
+              className="flex-1 text-sm bg-surface border border-border-strong rounded-lg px-3 py-2 text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
             />
           </div>
         ) : (
-          <p className="text-sm text-gray-900">
+          <p className="text-sm text-text-primary">
             {[postalCode, city].filter(Boolean).join(' ') || '—'}
           </p>
         )}
@@ -107,10 +107,10 @@ export default function AccountEditForm({ profile }: Props) {
       {/* Actions */}
       <div className="px-4 py-3">
         {error && (
-          <p className="text-red-600 text-xs mb-2">{error}</p>
+          <p role="alert" className="text-error text-xs mb-2">{error}</p>
         )}
         {success && (
-          <p className="text-xs mb-2" style={{ color: '#0F6E56' }}>
+          <p role="status" className="text-xs mb-2 text-success-700">
             Dados actualizados.
           </p>
         )}
@@ -118,15 +118,14 @@ export default function AccountEditForm({ profile }: Props) {
           <div className="flex gap-3">
             <button
               onClick={handleCancel}
-              className="text-sm text-gray-400"
+              className="inline-flex items-center min-h-11 text-sm text-text-secondary"
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
               disabled={isPending}
-              className="text-sm font-medium disabled:opacity-50"
-              style={{ color: '#45B9A7' }}
+              className="inline-flex items-center min-h-11 text-sm font-medium disabled:opacity-50 text-accent-2-700"
             >
               {isPending ? 'A guardar...' : 'Guardar'}
             </button>
@@ -134,8 +133,7 @@ export default function AccountEditForm({ profile }: Props) {
         ) : (
           <button
             onClick={() => setEditing(true)}
-            className="text-sm font-medium"
-            style={{ color: '#45B9A7' }}
+            className="inline-flex items-center min-h-11 text-sm font-medium text-accent-2-700"
           >
             Editar dados
           </button>

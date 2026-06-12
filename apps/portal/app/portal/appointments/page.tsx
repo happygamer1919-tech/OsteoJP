@@ -1,3 +1,4 @@
+import { ArrowRight, Plus } from 'lucide-react'
 import { getMyAppointments } from '@/lib/api/client'
 import type { AppointmentView } from '@/lib/api/client'
 import Link from 'next/link'
@@ -31,8 +32,8 @@ export default async function AppointmentsPage() {
   if (fetchError) {
     return (
       <div>
-        <h1 className="text-lg font-medium text-gray-900 mb-4">As minhas consultas</h1>
-        <div className="bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3">
+        <h2 className="text-lg font-medium text-text-primary mb-4">As minhas consultas</h2>
+        <div role="alert" className="bg-error-bg text-error text-sm rounded-xl px-4 py-3">
           Não foi possível carregar as consultas. Tente novamente.
         </div>
       </div>
@@ -42,30 +43,30 @@ export default async function AppointmentsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
-        <h1 className="text-lg font-medium text-gray-900">As minhas consultas</h1>
+        <h2 className="text-lg font-medium text-text-primary">As minhas consultas</h2>
         <Link
           href="/portal/booking"
-          className="text-sm font-medium px-3 py-1.5 rounded-lg"
-          style={{ backgroundColor: '#E1F5EE', color: '#0F6E56' }}
+          className="inline-flex min-h-11 items-center gap-1 text-sm font-medium px-3 rounded-lg bg-accent-2-100 text-accent-2-800"
         >
-          + Marcar
+          <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
+          Marcar
         </Link>
       </div>
 
       {/* Upcoming */}
-      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">
+      <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-3">
         Próximas
       </p>
 
       {upcoming.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-100 p-6 text-center mb-6">
-          <p className="text-gray-500 text-sm mb-3">Não tem consultas marcadas.</p>
+        <div className="bg-surface rounded-xl border border-border p-6 text-center mb-6">
+          <p className="text-text-secondary text-sm mb-3">Não tem consultas marcadas.</p>
           <Link
             href="/portal/booking"
-            className="text-sm font-medium"
-            style={{ color: '#45B9A7' }}
+            className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-accent-2-700"
           >
-            Marcar consulta →
+            Marcar consulta
+            <ArrowRight size={16} strokeWidth={1.75} aria-hidden="true" />
           </Link>
         </div>
       ) : (
@@ -79,7 +80,7 @@ export default async function AppointmentsPage() {
       {/* Past */}
       {past.length > 0 && (
         <>
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">
+          <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-3">
             Anteriores
           </p>
           <div className="space-y-3">

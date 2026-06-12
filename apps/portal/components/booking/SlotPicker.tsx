@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { ArrowRight } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import type { BookableService, BookableLocation } from '@/lib/api/client'
 
@@ -51,28 +52,27 @@ export default function SlotPicker({ service, location, slots }: Props) {
         {[1, 2, 3, 4].map((s) => (
           <div
             key={s}
-            className="flex-1 h-1 rounded-full"
-            style={{ backgroundColor: s <= 3 ? '#45B9A7' : '#E5E7EB' }}
+            className={`flex-1 h-1 rounded-full ${s <= 3 ? 'bg-accent-2-700' : 'bg-neutral-200'}`}
           />
         ))}
       </div>
 
-      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">
+      <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-1">
         Passo 3 de 4
       </p>
-      <h1 className="text-lg font-medium text-gray-900 mb-1">
+      <h2 className="text-lg font-medium text-text-primary mb-1">
         Escolha a data e hora
-      </h1>
-      <p className="text-sm text-gray-500 mb-5">
+      </h2>
+      <p className="text-sm text-text-secondary mb-5">
         {service.name} · {location.name}
       </p>
 
       {slots.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-100 p-6 text-center">
-          <p className="text-gray-500 text-sm mb-3">
+        <div className="bg-surface rounded-xl border border-border p-6 text-center">
+          <p className="text-text-secondary text-sm mb-3">
             Não há horários disponíveis nos próximos dias.
           </p>
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-text-secondary">
             Por favor ligue para a clínica para marcar directamente.
           </p>
         </div>
@@ -80,7 +80,7 @@ export default function SlotPicker({ service, location, slots }: Props) {
         <div className="space-y-5">
           {Object.entries(byDate).map(([date, dateSlots]) => (
             <div key={date}>
-              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2 capitalize">
+              <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2 capitalize">
                 {date}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -88,20 +88,12 @@ export default function SlotPicker({ service, location, slots }: Props) {
                   <button
                     key={slot}
                     onClick={() => setSelected(slot)}
-                    className="px-4 py-2 rounded-lg text-sm font-medium border transition-colors"
-                    style={
+                    aria-pressed={selected === slot}
+                    className={`inline-flex min-h-11 items-center justify-center px-4 py-2 rounded-lg text-sm font-medium border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${
                       selected === slot
-                        ? {
-                            backgroundColor: '#45B9A7',
-                            color: '#fff',
-                            borderColor: '#45B9A7',
-                          }
-                        : {
-                            backgroundColor: '#fff',
-                            color: '#374151',
-                            borderColor: '#E5E7EB',
-                          }
-                    }
+                        ? 'bg-accent-2-700 text-text-inverse border-accent-2-700'
+                        : 'bg-surface text-text-primary border-border-strong'
+                    }`}
                   >
                     {formatTime(slot)}
                   </button>
@@ -116,10 +108,10 @@ export default function SlotPicker({ service, location, slots }: Props) {
         <div className="mt-6">
           <button
             onClick={handleContinue}
-            className="w-full py-3 rounded-xl text-white font-medium text-sm"
-            style={{ backgroundColor: '#45B9A7' }}
+            className="inline-flex w-full items-center justify-center gap-1 py-3 rounded-xl text-text-inverse font-medium text-sm bg-accent-2-700"
           >
-            Continuar →
+            Continuar
+            <ArrowRight size={16} strokeWidth={1.75} aria-hidden="true" />
           </button>
         </div>
       )}

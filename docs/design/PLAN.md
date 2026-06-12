@@ -140,7 +140,7 @@ Wave 2 binds to apps/web per the parallel-loops path allowlist. W2-01 is a hard 
 
 Wave 3 binds to apps/portal per the parallel-loops path allowlist. Cross-wave prerequisite: do not start any Wave 3 task until the Wave 2 task W2-01 PR is merged to main (poll per the shared gate pattern). W3-01 is then this wave's own hard gate: merge it before starting W3-02 onward. Heritage motifs are forbidden in apps/portal this wave (QUESTIONS Q6 item b, pending JP).
 
-- [ ] W3-01 — Migration gate per SPEC-portal section 1: portal consumes packages/ui theme.css, all hardcoded hexes migrated with grep proof, every emoji replaced with the canonical lucide icons, portal AppShell adopted with bottom tabs, Inter loaded. Existing portal e2e flows stay green.
+- [x] W3-01 — Migration gate per SPEC-portal section 1: portal consumes packages/ui theme.css, all hardcoded hexes migrated with grep proof, every emoji replaced with the canonical lucide icons, portal AppShell adopted with bottom tabs, Inter loaded. Existing portal e2e flows stay green.
 - [ ] W3-02 — Login and Activate per SPEC-portal sections 3 and 4: brand lockup, restyled credential and activation forms, inline validation, expired-token ErrorState, language switcher.
 - [ ] W3-03 — Dashboard per SPEC-portal section 5: greeting, next-appointment hero card, single pending-forms banner, quick actions grid, all states.
 - [ ] W3-04 — Appointments list and detail per SPEC-portal section 6: upcoming and history segments, appointment cards, detail with 24h-cutoff-aware cancel and email-only reschedule, all states.
