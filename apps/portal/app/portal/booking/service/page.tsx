@@ -40,7 +40,7 @@ export default async function BookingServicePage({
       <div className="flex items-center gap-3 mb-5">
         <Link
           href="/portal/booking"
-          className="inline-flex items-center gap-1 text-text-muted hover:text-text-secondary text-sm"
+          className="inline-flex min-h-11 items-center gap-1 text-text-secondary hover:text-text-primary text-sm"
         >
           <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
           Voltar
@@ -75,7 +75,7 @@ export default async function BookingServicePage({
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium text-text-primary">{svc.name}</p>
-                <p className="text-sm text-text-muted mt-0.5">
+                <p className="text-sm text-text-muted mt-1">
                   {svc.durationMin} min
                   {svc.priceCents !== null && (
                     <> · {formatPrice(svc.priceCents, svc.currency)}</>

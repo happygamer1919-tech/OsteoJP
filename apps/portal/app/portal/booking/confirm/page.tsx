@@ -55,7 +55,7 @@ export default async function BookingConfirmPage({
       <div className="flex items-center gap-3 mb-5">
         <Link
           href={`/portal/booking/slot?location=${locationId}&service=${serviceId}`}
-          className="inline-flex items-center gap-1 text-text-muted hover:text-text-secondary text-sm"
+          className="inline-flex min-h-11 items-center gap-1 text-text-secondary hover:text-text-primary text-sm"
         >
           <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
           Voltar
@@ -86,17 +86,17 @@ export default async function BookingConfirmPage({
         <div>
           <p className="text-xs text-text-muted">Serviço</p>
           <p className="text-sm font-medium text-text-primary">{service.name}</p>
-          <p className="text-xs text-text-muted mt-0.5">{service.durationMin} min</p>
+          <p className="text-xs text-text-muted mt-1">{service.durationMin} min</p>
         </div>
         <div className="h-px bg-border" />
         <div>
           <p className="text-xs text-text-muted">Data e hora</p>
           <p className="text-sm font-medium text-text-primary capitalize">{date}</p>
-          <p className="text-xs text-text-muted mt-0.5">{time}</p>
+          <p className="text-xs text-text-muted mt-1">{time}</p>
         </div>
       </div>
 
-      <p className="text-xs text-text-muted text-center mb-5 leading-relaxed">
+      <p className="text-xs text-text-secondary text-center mb-5 leading-relaxed">
         A marcação será confirmada pela receção. Receberá uma notificação quando for confirmada.
       </p>
 

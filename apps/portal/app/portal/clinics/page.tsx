@@ -63,7 +63,7 @@ export default function ClinicsPage() {
                 <p className="font-medium text-sm text-accent-2-800">
                   {clinic.name}
                 </p>
-                <p className="text-xs text-accent-2-700">{clinic.area}</p>
+                <p className="text-xs text-accent-2-800">{clinic.area}</p>
               </div>
             </div>
 
@@ -81,7 +81,7 @@ export default function ClinicsPage() {
                   href={clinic.mapsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-medium mt-1.5 text-accent-2-700"
+                  className="inline-flex min-h-11 items-center gap-1 text-xs font-medium mt-2 text-accent-2-700"
                   aria-label={`Ver ${clinic.name} no Google Maps`}
                 >
                   Ver no mapa
@@ -102,7 +102,7 @@ export default function ClinicsPage() {
                     <a
                       key={p.number}
                       href={`tel:${p.number}`}
-                      className="block text-sm font-medium text-accent-2-700"
+                      className="flex items-center min-h-11 text-sm font-medium text-accent-2-700"
                       aria-label={`Ligar para ${p.display}`}
                     >
                       {p.display}
@@ -149,7 +149,7 @@ export default function ClinicsPage() {
               {/* CTA */}
               <Link
                 href="/portal/booking"
-                className="block w-full text-center py-2.5 rounded-lg text-sm font-medium text-text-inverse mt-2 bg-accent-2-700"
+                className="flex w-full items-center justify-center min-h-11 text-center rounded-lg text-sm font-medium text-text-inverse mt-2 bg-accent-2-700"
                 aria-label={`Marcar consulta em ${clinic.name}`}
               >
                 Marcar consulta aqui

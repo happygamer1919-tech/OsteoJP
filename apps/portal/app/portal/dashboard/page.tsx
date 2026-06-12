@@ -70,7 +70,7 @@ export default async function DashboardPage() {
       {next ? (
         <div className="bg-surface rounded-xl border border-border border-l-4 border-l-accent-2-700 p-4 mb-5">
           <p className="font-medium text-text-primary">{next.serviceName ?? 'Consulta'}</p>
-          <p className="text-sm text-text-secondary mt-0.5">
+          <p className="text-sm text-text-secondary mt-1">
             {(() => { const { date, time } = formatDateTime(next.startsAt); return `${date} · ${time}` })()}
             {next.locationName && ` · ${next.locationName}`}
           </p>

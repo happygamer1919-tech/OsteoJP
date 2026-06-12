@@ -16,7 +16,7 @@ export default async function BookingPage() {
       <div className="flex items-center gap-3 mb-5">
         <Link
           href="/portal/dashboard"
-          className="inline-flex items-center gap-1 text-text-muted hover:text-text-secondary text-sm"
+          className="inline-flex min-h-11 items-center gap-1 text-text-secondary hover:text-text-primary text-sm"
         >
           <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
           Voltar

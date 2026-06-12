@@ -46,7 +46,7 @@ export default async function AppointmentsPage() {
         <h2 className="text-lg font-medium text-text-primary">As minhas consultas</h2>
         <Link
           href="/portal/booking"
-          className="inline-flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-lg bg-accent-2-100 text-accent-2-800"
+          className="inline-flex min-h-11 items-center gap-1 text-sm font-medium px-3 rounded-lg bg-accent-2-100 text-accent-2-800"
         >
           <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
           Marcar

@@ -79,7 +79,7 @@ export default function AppointmentCard({ appointment, showCancel }: Props) {
             <p className="font-medium text-text-primary">
               {appointment.serviceName ?? 'Consulta'}
             </p>
-            <p className="text-sm text-text-secondary mt-0.5">
+            <p className="text-sm text-text-secondary mt-1">
               {appointment.locationName}
               {appointment.practitionerName && (
                 <> · {appointment.practitionerName}</>

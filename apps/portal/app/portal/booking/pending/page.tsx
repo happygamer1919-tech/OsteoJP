@@ -23,7 +23,7 @@ export default async function BookingPendingPage({
       </p>
 
       {id && (
-        <div className="inline-block rounded-lg px-3 py-1.5 text-xs font-mono text-text-muted mb-8 bg-surface-muted">
+        <div className="inline-block rounded-lg px-3 py-1 text-xs font-mono text-text-muted mb-8 bg-surface-muted">
           Ref: {id.slice(0, 8).toUpperCase()}
         </div>
       )}

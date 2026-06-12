@@ -134,7 +134,7 @@ export default function LoginPage() {
         </button>
       </div>
 
-      <p className="text-xs text-text-muted text-center mt-5">
+      <p className="text-xs text-text-secondary text-center mt-5">
         Ainda não tem conta? A sua clínica irá enviar-lhe um convite por SMS.
       </p>
     </div>
