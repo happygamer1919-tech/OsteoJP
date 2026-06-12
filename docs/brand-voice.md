@@ -87,6 +87,15 @@ Preferred terminology for common platform copy, in both languages. Where multipl
 | Invoice | Fatura | Legal term. "Fatura-recibo" only when that is literally the fiscal document type issued. Never "recibo" or "nota" for an invoice. |
 | To reschedule | Remarcar | One word; prefer over "alterar a marcação". |
 
+> **Rule (binding): the UI never displays "utente".** No label, no column header,
+> no button, no helper text, no empty-state copy uses "utente". The word for a
+> patient is **"paciente"** everywhere in the product (it matches the `patients`
+> table and the site's own "Respeito pelo Paciente" values copy). "Utente" is
+> SNS/public-sector register, acceptable only when quoting an official document
+> verbatim, never to address or label a patient. Legacy strings that still say
+> "utente" (e.g. "Novo utente", "Adicionar utente") exist in the codebase and are
+> being swept to "paciente" in Wave 4 (PLAN.md W4-03 and the W4-09 i18n sweep).
+
 ### 3.2 Treatments (proper-noun list — capitalize, do not translate)
 
 These are the official service names. Do not translate to English; surface in both PT and EN UI with their Portuguese names. EN UI can include a short EN gloss in parentheses on first mention.
@@ -347,6 +356,7 @@ Run any new string through this list:
 - [ ] Treatment names are correctly capitalized and untranslated where listed in §3.2
 - [ ] "Linda-a-Velha e Castelo Branco" order preserved when both mentioned
 - [ ] PT-PT vocabulary, not PT-BR ("equipa", "guardar", "definições", "a carregar")
+- [ ] "Paciente" everywhere — never "utente" in any label, header, or button (§3.1 rule)
 - [ ] Length: as short as the content allows, no shorter
 
 ---
