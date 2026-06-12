@@ -87,7 +87,11 @@ export async function fillAppointment(
   dialog: Locator,
   opts: { patient: string; therapist: string; location: string; date: string; time: string },
 ) {
-  await dialog.getByLabel(/Utente/i).selectOption({ label: opts.patient });
+  // Patient is now a search Combobox (W2-04): type the name, pick the option.
+  const patient = dialog.getByRole("combobox", { name: /Utente/i });
+  await patient.click();
+  await patient.fill(opts.patient);
+  await dialog.getByRole("option", { name: opts.patient }).click();
   await dialog.getByLabel(/Terapeuta/i).selectOption({ label: opts.therapist });
   await dialog.getByLabel(/Localização/i).selectOption({ label: opts.location });
   await dialog.locator('input[type="date"]').fill(opts.date);
