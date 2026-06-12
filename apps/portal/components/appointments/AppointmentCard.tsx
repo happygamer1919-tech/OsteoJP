@@ -114,7 +114,7 @@ export default function AppointmentCard({ appointment, showCancel }: Props) {
               <p className="text-sm text-text-secondary flex-1">Tem a certeza?</p>
               <button
                 onClick={() => setShowConfirm(false)}
-                className="inline-flex items-center min-h-11 text-sm text-text-secondary"
+                className="inline-flex items-center justify-center min-h-11 min-w-11 text-sm text-text-secondary"
               >
                 Não
               </button>
