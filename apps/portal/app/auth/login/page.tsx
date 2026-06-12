@@ -1,7 +1,7 @@
 'use client'
 
 import { Eye, EyeOff, Mail } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Banner, Button, Field, Input } from '@osteojp/ui'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -13,6 +13,18 @@ const SECONDARY_LINK =
 export default function LoginPage() {
   const router = useRouter()
   const supabase = createBrowserClient()
+
+  // Handle magic link hash token delivered via URL fragment (#access_token=...).
+  // Hash fragments never reach the server, so the /auth/callback route cannot
+  // intercept them. We detect them client-side and let Supabase exchange the
+  // session, then redirect to the dashboard.
+  useEffect(() => {
+    const hash = window.location.hash
+    if (!hash.includes('access_token')) return
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace('/portal/dashboard')
+    })
+  }, [router, supabase])
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
