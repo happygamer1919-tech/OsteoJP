@@ -75,3 +75,10 @@ export {
   type HeritageDividerProps,
   type HeritageDividerVariant,
 } from "./src/components/HeritageDivider";
+export {
+  StaffAppShell,
+  PortalShell,
+  type StaffAppShellProps,
+  type PortalShellProps,
+  type AppShellNavItem,
+} from "./src/components/AppShell";
