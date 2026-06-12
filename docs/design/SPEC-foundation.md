@@ -201,3 +201,154 @@ The only Wave 1 component allowed to render the motif assets from packages/ui/sr
 ## 6. Out of scope for Wave 1
 
 Searchable patient combobox, date and time pickers, the agenda time grid, body chart, file upload tiles, invoice PDF layout, the portal booking stepper, and any screen composition. These are Wave 2 and Wave 3 work and get their own spec files. Do not build ahead of the plan.
+
+---
+
+## 7. HeritageCorners (Wave 4 addition)
+
+Consumed by the design loop, Wave 4 (task W4-01), built in `packages/ui` as a NEW
+component. It extends §4.12 (HeritageDivider) and reuses the same two tileable
+assets in `packages/ui/src/assets/heritage/`
+(`motif-border-moldovan.svg`, `motif-divider-azulejo.svg`). It is the second and
+final heritage component; no third heritage surface is introduced by Wave 4.
+
+This is the one place Principle 5 ("heritage as signature, not wallpaper") is
+allowed to grow from a hairline divider into a framed presence. Everything below
+is written to keep that growth disciplined: heritage frames the content, never
+sits behind it.
+
+### 7.1 Purpose and anatomy
+
+HeritageCorners draws the motif as a **perimeter frame** around a full-bleed
+surface: ornament clusters anchored in the four corners, optionally joined by
+tileable strips along the four edges. The content (an auth card, an empty-state
+column) sits centered in a protected inner region the frame never enters.
+
+- Renders as a single `aria-hidden="true"` decorative layer, `pointer-events:
+  none`, positioned `absolute inset-0` behind its content (content is a sibling
+  at a higher stacking context, or the frame is `z-0` and content `z-10`). The
+  frame is never focusable, never animated, never a tab stop.
+- Built from the two existing tileable SVGs, **recolored to the brand palette
+  only** via the heritage tint rule (§7.4). Unlike HeritageDivider (which bakes
+  the asset's own hex), HeritageCorners drives color from tokens so the frame
+  obeys the §6 palette structurally.
+- The corner clusters use the azulejo four-fold tile (it reads as a corner
+  rosette); the edge strips use the moldovan border lattice (it tiles cleanly as
+  a running band). Both come from `currentColor`/CSS-variable-driven recolors of
+  the existing assets, never new art.
+
+### 7.2 Variants
+
+| Variant | Renders | Allowed on |
+|---|---|---|
+| `corners-only` (subtle, default) | Four corner clusters only; edges bare. | Auth screens and full-bleed empty states. |
+| `corners-plus-edges` (auth only) | Corner clusters plus tileable edge strips joining them on all four sides. | **Auth screens only.** Never on an empty state — it is too much frame around in-app content. |
+
+No other variants. `corners-plus-edges` outside an auth route is a design-reviewer
+blocker.
+
+### 7.3 Sizing (4px scale only)
+
+All dimensions snap to the spacing scale in brand-tokens.md §4. No arbitrary
+values.
+
+- **Corner cluster**: `space-16` × `space-16` (64px square) per corner, the
+  azulejo tile scaled to fill it. Anchored flush to each corner of the host
+  surface (top-left, top-right, bottom-left, bottom-right), mirrored per corner
+  so the rosette points inward.
+- **Edge strips** (`corners-plus-edges` only): `space-6` (24px) band thickness,
+  the moldovan lattice tiled along its length (`repeat-x` on top/bottom,
+  `repeat-y` on left/right), running between the corner clusters so the frame
+  reads continuous. The strips stop at the cluster bounds; they do not overlap.
+- **Protected inner region**: the frame reserves a clear inset of at least
+  `space-16` (64px) on every edge on screens ≥768px, `space-8` (32px) below
+  768px. Content (auth card, empty-state column) renders inside that inset only.
+  The frame must not draw within the inner region under any viewport — this is
+  what keeps motif away from text and from focus rings.
+- **Reduced footprint under 640px**: corner clusters shrink to `space-12` (48px)
+  and edge strips are suppressed entirely (`corners-plus-edges` degrades to
+  `corners-only` behavior on small screens), so the frame never crowds a narrow
+  auth card.
+
+### 7.4 Color (heritage tint rule — binding)
+
+Per brand-tokens.md §6, HeritageCorners recolors the assets to the brand palette
+**only**, at the 200-tint level or lighter:
+
+- Permitted: `primary-200`, `primary-300`, `accent-1-200`, `accent-2-200`,
+  `neutral-200`. Nothing darker, nothing outside this document, never folk
+  red/black.
+- Corner rosettes default to `accent-2-200` (teal tint), edge strips to
+  `primary-200` (grey-blue tint); a single `tone` prop may swap corners to
+  `accent-1-200` for the magenta brand accent on the login screen. At most one
+  accent tone per surface (Principle 2: rationed accent).
+- Because every permitted tint is a light 200-level value and the frame never
+  enters the content region, no text ever sits on the motif; the AA text-contrast
+  budget is untouched. The a11y reviewer verifies the inner-region inset rather
+  than per-pixel contrast.
+
+### 7.5 Interaction with focus rings and AA (non-negotiable)
+
+1. The frame is `pointer-events: none` and `aria-hidden`, so it cannot receive
+   focus and never draws a ring.
+2. The protected inner region (§7.3) guarantees the global `focus-ring` (2px
+   `accent-2-600`, 2px offset) on any control inside the content never overlaps
+   or is visually broken by motif pixels. The reviewer checks that the first
+   focusable control's ring clears the nearest frame element by ≥`space-4`
+   (16px).
+3. No motif element raises the luminance under any text below AA, by
+   construction (text lives in the inset, §7.4).
+4. `prefers-reduced-motion` is irrelevant (the frame never animates) but the
+   component still must not introduce any transition.
+
+### 7.6 Allowed and forbidden hosts
+
+- **Allowed:** auth screens (staff `/login`, portal login/activate once JP signs
+  off Q6) and full-bleed empty states (the zero-results surface of a list screen,
+  via a dedicated full-bleed empty layout — not the inline EmptyState band of
+  §7.7).
+- **Forbidden, design-reviewer blocks:** any screen that renders patient or
+  clinical data, the clinical record editor, any table, the agenda grid,
+  dashboards, invoicing. The forbidden set is the §6 "never on data-dense
+  screens" list, restated for this component with no exceptions.
+- Portal usage stays OFF until JP sign-off (QUESTIONS.md Q6); staff auth may use
+  it now.
+
+### 7.7 EmptyState motif band upgrade (amends §4.10 / §4.12)
+
+The EmptyState `heritage` prop currently renders the HeritageDivider at its 10px
+(`h-2.5`) divider height above the icon badge. Wave 4 upgrades that thin divider
+to a **motif band of meaningful height at a legible motif scale**, while keeping
+HeritageDivider's other hosts (auth, section dividers) unchanged.
+
+Exact sizing (4px scale, used by W4-01 and W4-04/W4-05 empty states):
+
+- **Band total height**: `space-12` (48px), up from the current 10px.
+- **Motif tile height inside the band**: `space-6` (24px) — the "legible scale";
+  roughly 2.4× the divider, large enough that the azulejo four-fold pattern is
+  recognizable rather than a texture line.
+- **Vertical breathing room**: `space-3` (12px) above and below the motif row
+  inside the band (12 + 24 + 12 = 48 = `space-12`). No off-scale padding.
+- **Width**: unchanged max of 320px, centered, `repeat-x` tiling.
+- **Placement in the EmptyState column**: the band is the first row of the
+  existing centered column; the gap between the band and the icon badge moves
+  from `space-4` to `space-6` so the heavier band has room. All other EmptyState
+  anatomy (badge, h3, body-sm, action) is untouched.
+
+This upgrade is delivered as a band mode on the heritage surface (e.g. a
+`size="band"` option on HeritageDivider, or a small dedicated `HeritageBand`
+sharing the asset and tint plumbing — implementer's call in W4-01, but a NEW
+file, never an edit that changes HeritageDivider's default divider rendering).
+The band recolors per the §7.4 tint rule (azulejo, `accent-2-200`).
+
+### 7.8 Exports and stories
+
+Exports from `@osteojp/ui` root with a docblock usage example. Storybook
+coverage (hard gate for W4-02 per PLAN.md):
+
+- HeritageCorners: both variants (`corners-only`, `corners-plus-edges`), both
+  corner tones (teal default, magenta accent), at three widths (narrow mobile
+  card, tablet, full desktop auth surface) showing the protected inner region and
+  a focused control inside it clearing the frame.
+- EmptyState band upgrade: the upgraded band rendered above a sample EmptyState,
+  side by side with the legacy 10px divider for the size delta.
