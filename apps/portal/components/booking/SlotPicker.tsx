@@ -89,7 +89,7 @@ export default function SlotPicker({ service, location, slots }: Props) {
                     key={slot}
                     onClick={() => setSelected(slot)}
                     aria-pressed={selected === slot}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${
+                    className={`inline-flex min-h-11 items-center justify-center px-4 py-2 rounded-lg text-sm font-medium border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${
                       selected === slot
                         ? 'bg-accent-2-700 text-text-inverse border-accent-2-700'
                         : 'bg-surface text-text-primary border-border-strong'

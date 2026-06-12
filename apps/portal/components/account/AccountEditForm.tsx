@@ -118,14 +118,14 @@ export default function AccountEditForm({ profile }: Props) {
           <div className="flex gap-3">
             <button
               onClick={handleCancel}
-              className="text-sm text-text-muted"
+              className="inline-flex items-center min-h-11 text-sm text-text-muted"
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
               disabled={isPending}
-              className="text-sm font-medium disabled:opacity-50 text-accent-2-700"
+              className="inline-flex items-center min-h-11 text-sm font-medium disabled:opacity-50 text-accent-2-700"
             >
               {isPending ? 'A guardar...' : 'Guardar'}
             </button>
@@ -133,7 +133,7 @@ export default function AccountEditForm({ profile }: Props) {
         ) : (
           <button
             onClick={() => setEditing(true)}
-            className="text-sm font-medium text-accent-2-700"
+            className="inline-flex items-center min-h-11 text-sm font-medium text-accent-2-700"
           >
             Editar dados
           </button>

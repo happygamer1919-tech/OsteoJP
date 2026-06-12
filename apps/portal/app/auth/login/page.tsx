@@ -81,7 +81,7 @@ export default function LoginPage() {
 
       <form onSubmit={mode === 'password' ? handlePasswordLogin : handleMagicLink}>
         <div className="mb-4">
-          <label className="block text-sm text-text-secondary mb-1.5" htmlFor="email">
+          <label className="block text-sm text-text-secondary mb-2" htmlFor="email">
             Email
           </label>
           <input
@@ -91,13 +91,13 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="o.seu@email.pt"
-            className="w-full bg-surface border border-border-strong rounded-lg px-3 py-2.5 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            className="w-full bg-surface border border-border-strong rounded-lg px-3 py-3 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           />
         </div>
 
         {mode === 'password' && (
           <div className="mb-5">
-            <label className="block text-sm text-text-secondary mb-1.5" htmlFor="password">
+            <label className="block text-sm text-text-secondary mb-2" htmlFor="password">
               Palavra-passe
             </label>
             <input
@@ -106,9 +106,9 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-surface border border-border-strong rounded-lg px-3 py-2.5 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+              className="w-full bg-surface border border-border-strong rounded-lg px-3 py-3 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
             />
-            <div className="text-right mt-1.5">
+            <div className="text-right mt-2">
               <a href="/auth/reset-password" className="text-xs text-accent-2-700 hover:underline">
                 Esqueceu a palavra-passe?
               </a>
@@ -119,7 +119,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-accent-2-700 text-text-inverse font-medium rounded-lg py-2.5 text-sm transition-opacity disabled:opacity-60"
+          className="w-full bg-accent-2-700 text-text-inverse font-medium rounded-lg py-3 text-sm transition-opacity disabled:opacity-60"
         >
           {loading ? 'A carregar...' : mode === 'password' ? 'Entrar' : 'Enviar link'}
         </button>

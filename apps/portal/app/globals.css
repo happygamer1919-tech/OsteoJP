@@ -31,3 +31,14 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+/* Brand focus ring on every interactive element. The shared @osteojp/ui
+   components set their own focus-visible ring and `outline-none` (which
+   out-specifies this rule, so they are unaffected); this global rule is the
+   fallback that keeps the portal's not-yet-componentised raw controls (links,
+   plain buttons) from losing focus indication during the migration. Token-based
+   (focus-ring = accent-2-600, clears WCAG 2.1 SC 1.4.11). */
+:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}

@@ -48,7 +48,7 @@ export default function ActivatePage() {
 
       <form onSubmit={handleActivate}>
         <div className="mb-4">
-          <label className="block text-sm text-text-secondary mb-1.5" htmlFor="password">
+          <label className="block text-sm text-text-secondary mb-2" htmlFor="password">
             Escolha uma palavra-passe
           </label>
           <input
@@ -58,11 +58,11 @@ export default function ActivatePage() {
             minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full bg-surface border border-border-strong rounded-lg px-3 py-2.5 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            className="w-full bg-surface border border-border-strong rounded-lg px-3 py-3 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           />
         </div>
         <div className="mb-5">
-          <label className="block text-sm text-text-secondary mb-1.5" htmlFor="confirm">
+          <label className="block text-sm text-text-secondary mb-2" htmlFor="confirm">
             Confirme a palavra-passe
           </label>
           <input
@@ -71,13 +71,13 @@ export default function ActivatePage() {
             required
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            className="w-full bg-surface border border-border-strong rounded-lg px-3 py-2.5 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            className="w-full bg-surface border border-border-strong rounded-lg px-3 py-3 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           />
         </div>
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-accent-2-700 text-text-inverse font-medium rounded-lg py-2.5 text-sm disabled:opacity-60"
+          className="w-full bg-accent-2-700 text-text-inverse font-medium rounded-lg py-3 text-sm disabled:opacity-60"
         >
           {loading ? 'A ativar...' : 'Ativar conta'}
         </button>

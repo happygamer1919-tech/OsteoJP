@@ -20,15 +20,20 @@ export default function ReminderToggles() {
         </div>
         <button
           onClick={() => setSms((v) => !v)}
-          className={`w-10 h-6 rounded-full relative transition-colors flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${sms ? 'bg-accent-2-600' : 'bg-neutral-300'}`}
+          className="inline-flex items-center justify-center min-h-11 min-w-11 flex-shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           aria-checked={sms}
           aria-label="Lembretes por SMS"
           role="switch"
         >
           <span
-            className="absolute top-0.5 w-5 h-5 bg-surface rounded-full shadow transition-transform"
-            style={{ transform: sms ? 'translateX(18px)' : 'translateX(2px)' }}
-          />
+            aria-hidden="true"
+            className={`relative block w-10 h-6 rounded-full transition-colors ${sms ? 'bg-accent-2-600' : 'bg-neutral-300'}`}
+          >
+            <span
+              className="absolute top-0.5 w-5 h-5 bg-surface rounded-full shadow transition-transform"
+              style={{ transform: sms ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+          </span>
         </button>
       </div>
 
@@ -39,15 +44,20 @@ export default function ReminderToggles() {
         </div>
         <button
           onClick={() => setEmail((v) => !v)}
-          className={`w-10 h-6 rounded-full relative transition-colors flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${email ? 'bg-accent-2-600' : 'bg-neutral-300'}`}
+          className="inline-flex items-center justify-center min-h-11 min-w-11 flex-shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           aria-checked={email}
           aria-label="Lembretes por email"
           role="switch"
         >
           <span
-            className="absolute top-0.5 w-5 h-5 bg-surface rounded-full shadow transition-transform"
-            style={{ transform: email ? 'translateX(18px)' : 'translateX(2px)' }}
-          />
+            aria-hidden="true"
+            className={`relative block w-10 h-6 rounded-full transition-colors ${email ? 'bg-accent-2-600' : 'bg-neutral-300'}`}
+          >
+            <span
+              className="absolute top-0.5 w-5 h-5 bg-surface rounded-full shadow transition-transform"
+              style={{ transform: email ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+          </span>
         </button>
       </div>
 
