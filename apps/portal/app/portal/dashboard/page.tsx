@@ -1,8 +1,10 @@
-import { Calendar, FileText } from 'lucide-react'
+import { Calendar, FileText, MapPin, Plus } from 'lucide-react'
+import { Card, EmptyState } from '@osteojp/ui'
+import type { LucideIcon } from 'lucide-react'
 import { createServerClient } from '@/lib/supabase/server'
 import { getMyAppointments } from '@/lib/api/client'
 import type { AppointmentView } from '@/lib/api/client'
-import Link from 'next/link'
+import { NavButton } from './NavButton'
 
 function isUpcoming(appt: AppointmentView): boolean {
   return (
@@ -13,35 +15,40 @@ function isUpcoming(appt: AppointmentView): boolean {
   )
 }
 
-function formatDateTime(iso: string) {
+function heroDateTime(iso: string): string {
   const d = new Date(iso)
-  return {
-    date: d.toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' }),
-    time: d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', hour12: false }),
-  }
+  const date = d.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' })
+  const time = d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${date} · ${time}`
 }
 
-const STATUS_PT: Record<string, string> = {
-  scheduled: 'Aguarda confirmação',
-  confirmed: 'Confirmada',
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' })
 }
+
+type QuickAction = { href: string; label: string; icon: LucideIcon }
+
+const QUICK_ACTIONS: QuickAction[] = [
+  { href: '/portal/booking', label: 'Marcar consulta', icon: Plus },
+  { href: '/portal/appointments', label: 'As minhas marcações', icon: Calendar },
+  { href: '/portal/documents', label: 'Documentos', icon: FileText },
+  { href: '/portal/clinics', label: 'Clínicas', icon: MapPin },
+]
 
 export default async function DashboardPage() {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   const firstName = (user?.user_metadata?.first_name as string | undefined) ?? 'Paciente'
 
-  let appointments: AppointmentView[] = []
-  try {
-    appointments = await getMyAppointments()
-  } catch {
-    // non-fatal — dashboard degrades gracefully
-  }
+  // A hard fetch failure surfaces the route-level error.tsx (ErrorState + retry);
+  // an empty list is the empty state below, not an error.
+  const appointments = await getMyAppointments()
 
   const upcoming = appointments
     .filter(isUpcoming)
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
-
   const next = upcoming[0] ?? null
 
   const past = appointments
@@ -49,92 +56,102 @@ export default async function DashboardPage() {
     .sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime())
     .slice(0, 3)
 
+  const today = new Date().toLocaleDateString('pt-PT', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })
+
+  // Pending-forms banner (SPEC §5.3) is omitted: the portal API exposes no
+  // pending-forms data yet (SPEC §0.1 — omit missing-data elements).
+
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       {/* Greeting */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0 bg-accent-2-100 text-accent-2-800">
-          {firstName.charAt(0).toUpperCase()}
-        </div>
-        <div>
-          <p className="font-medium text-text-primary">Olá, {firstName}</p>
-          <p className="text-xs text-text-secondary">Bem-vindo de volta</p>
-        </div>
+      <div className="flex flex-col gap-1">
+        <h3 className="text-xl text-text-primary">Olá, {firstName}</h3>
+        <p className="text-sm text-text-secondary first-letter:uppercase">{today}</p>
       </div>
 
-      {/* Next appointment */}
-      <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
-        Próxima consulta
-      </p>
-
+      {/* Hero: next appointment, or empty state */}
       {next ? (
-        <div className="bg-surface rounded-xl border border-border border-l-4 border-l-accent-2-700 p-4 mb-5">
-          <p className="font-medium text-text-primary">{next.serviceName ?? 'Consulta'}</p>
-          <p className="text-sm text-text-secondary mt-1">
-            {(() => { const { date, time } = formatDateTime(next.startsAt); return `${date} · ${time}` })()}
-            {next.locationName && ` · ${next.locationName}`}
+        <Card
+          className="border-l-4 border-l-accent-2-700"
+          footer={
+            <div className="flex gap-3">
+              <NavButton href="/portal/appointments" variant="secondary" className="flex-1">
+                Remarcar
+              </NavButton>
+              <NavButton href="/portal/appointments" variant="ghost" className="flex-1">
+                Detalhes
+              </NavButton>
+            </div>
+          }
+        >
+          <p className="text-xs font-medium text-text-secondary">Próxima consulta</p>
+          <h3 className="mt-1 text-xl text-text-primary first-letter:uppercase">
+            {heroDateTime(next.startsAt)}
+          </h3>
+          <p className="mt-1 text-sm text-text-primary">
+            {next.serviceName ?? 'Consulta'}
+            {next.practitionerName ? ` · ${next.practitionerName}` : ''}
           </p>
-          {next.status in STATUS_PT && (
-            <span
-              className={`inline-block mt-2 text-xs font-medium px-2 py-1 rounded-full ${
-                next.status === 'confirmed'
-                  ? 'bg-success-bg text-success-700'
-                  : 'bg-warning-bg text-warning-700'
-              }`}
-            >
-              {STATUS_PT[next.status]}
-            </span>
+          {next.locationName && (
+            <p className="mt-1 flex items-center gap-1 text-xs text-text-secondary">
+              <MapPin size={16} strokeWidth={1.75} aria-hidden="true" />
+              {next.locationName}
+            </p>
           )}
-        </div>
+        </Card>
       ) : (
-        <div className="bg-surface rounded-xl border border-border p-4 mb-5">
-          <p className="text-sm text-text-secondary">Sem consultas marcadas.</p>
-        </div>
+        <Card>
+          <EmptyState
+            icon={Calendar}
+            title="Sem consultas marcadas"
+            description="Quando marcar uma consulta, aparecerá aqui."
+            action={
+              <NavButton href="/portal/booking" variant="primary" iconLeft={Plus}>
+                Marcar consulta
+              </NavButton>
+            }
+          />
+        </Card>
       )}
 
       {/* Quick actions */}
-      <div className="grid grid-cols-2 gap-3 mb-5">
-        <Link
-          href="/portal/booking"
-          className="flex flex-col items-center justify-center gap-2 rounded-xl py-4 text-sm font-medium bg-accent-2-700 text-text-inverse"
-        >
-          <Calendar size={24} strokeWidth={1.75} aria-hidden="true" />
-          Marcar consulta
-        </Link>
-        <Link
-          href="/portal/documents"
-          className="flex flex-col items-center justify-center gap-2 rounded-xl py-4 text-sm font-medium text-text-primary bg-surface border border-border"
-        >
-          <FileText size={24} strokeWidth={1.75} aria-hidden="true" />
-          Documentos
-        </Link>
+      <div className="grid grid-cols-2 gap-3">
+        {QUICK_ACTIONS.map(({ href, label, icon: Icon }) => (
+          <Card key={href} href={href} className="p-4">
+            <span className="flex flex-col items-center gap-2 text-center">
+              <Icon size={24} strokeWidth={1.75} aria-hidden="true" className="text-accent-2-700" />
+              <span className="text-sm font-medium text-text-primary">{label}</span>
+            </span>
+          </Card>
+        ))}
       </div>
 
-      {/* Recent visits */}
+      {/* Recent activity (only when it exists) */}
       {past.length > 0 && (
-        <>
-          <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
-            Visitas recentes
-          </p>
-          <div className="bg-surface rounded-xl border border-border divide-y divide-border">
-            {past.map((appt) => {
-              const { date } = formatDateTime(appt.startsAt)
-              return (
-                <div key={appt.id} className="px-4 py-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-text-primary">
-                      {appt.serviceName ?? 'Consulta'}
-                    </p>
-                    <p className="text-xs text-text-secondary">{date}</p>
-                  </div>
-                  <span className="text-xs font-medium px-2 py-1 rounded-full bg-surface-muted text-text-secondary">
-                    Concluída
-                  </span>
+        <section className="flex flex-col gap-2">
+          <h3 className="text-xs font-medium text-text-secondary">Visitas recentes</h3>
+          <div className="divide-y divide-border rounded-lg border border-border bg-surface">
+            {past.map((appt) => (
+              <div key={appt.id} className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-text-primary">
+                    {appt.serviceName ?? 'Consulta'}
+                  </p>
+                  <p className="text-xs text-text-secondary first-letter:uppercase">
+                    {shortDate(appt.startsAt)}
+                  </p>
                 </div>
-              )
-            })}
+                <span className="rounded-full bg-surface-muted px-2 py-1 text-xs font-medium text-text-secondary">
+                  Concluída
+                </span>
+              </div>
+            ))}
           </div>
-        </>
+        </section>
       )}
     </div>
   )
