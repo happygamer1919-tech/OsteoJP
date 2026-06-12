@@ -2,6 +2,39 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-10 AppShell (staff + portal) + apps/web migration (branch design/W1-10-appshell)
+
+Design loop Wave 1, final task. Per SPEC-foundation §4.11. The only Wave 1 task
+permitted to touch apps/web.
+
+- **Two shells in packages/ui.** StaffAppShell (64px top bar, icon+label nav,
+  right-side slots, hamburger→native-<dialog> slide-over under 768px, content
+  max-w-7xl) and PortalShell (56px top bar, 64px bottom tab bar with 44px
+  targets, desktop tabs-on-top at max-w-160). Both are presentational and
+  framework-agnostic: nav is data, role filtering stays with the caller, and a
+  `linkComponent` prop injects next/link (defaults to <a>).
+- **Content wrapper is a <div>, not <main>.** The existing app pages own their
+  <main> landmark, so the shell must not nest one — preserving the prior contract
+  and avoiding a nested-main a11y defect.
+- **apps/web migration.** app-shell.tsx now renders the shared shell through
+  StaffShellClient, a thin client wrapper that injects next/link, computes the
+  active item from usePathname, and maps each route to its canonical icon — the
+  icon map must live client-side because LucideIcon components can't cross the
+  server→client prop boundary. Role-gated nav (navItemsForRole) and the logout
+  server action are unchanged; nav-links.tsx (the old sidebar list) was removed.
+- **Tailwind @source.** apps/web/globals.css now @sources packages/ui/src so
+  Tailwind v4 generates the shell's utility classes (it does not scan workspace
+  packages by default; BrandLockup never needed it as it is class-free).
+- **lucide-react added to apps/web** (the already-approved Q8 dependency) for the
+  route→icon map.
+- **AA fix (Q13):** SPEC §4.11's portal nav colors (active accent-2-600, inactive
+  text-muted) fail AA at 12px; shipped accent-2-700 / text-secondary (both clear
+  4.5:1 text and 3:1 icon). Icon buttons aligned to the h-10 (40px) interactive
+  height. design + a11y reviewers PASS after the fix.
+- **Verification:** gates green (lint/typecheck/test/build/Storybook). The live
+  shell render is exercised by the CI Playwright e2e suite (login → app), since a
+  build cannot confirm Tailwind class generation.
+
 ## 2026-06-11 — W1-09 HeritageDivider (branch design/W1-09-heritage-divider)
 
 Design loop Wave 1, ninth task. Per SPEC-foundation §4.12 + brand-tokens §6.

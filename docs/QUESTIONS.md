@@ -245,3 +245,20 @@ Recommended default: **change the global focus-ring token to `accent-2-600`**
 (#3A9C8D, ~3.3:1 on white — clears 1.4.11) in SPEC §2 + a single coordinated PR
 updating every component's `ring-accent-2-500` → `ring-accent-2-600`. The visual
 change is a barely-perceptible one-step-darker teal. Not blocking for W1-04.
+
+
+## 2026-06-11 — Q13: SPEC §4.11 portal bottom-nav colors fail WCAG AA
+
+Context: SPEC-foundation §4.11 specifies the portal bottom-tab bar as "active in
+`accent-2-600`, inactive `text-muted`". As 12px label text both fail WCAG AA
+4.5:1 (accent-2-600 #3A9C8D ≈ 3.3:1; text-muted #8A98A6 ≈ 2.9:1), and the
+inactive 24px icon at 2.9:1 fails even the 3:1 graphical-object bar.
+
+Interim implementation (W1-10): the portal tabs use AA-safe tokens — active
+`accent-2-700` (#2F7E72 ≈ 4.8:1) and inactive `text-secondary` (#56697A ≈ 5.5:1),
+both clearing the text 4.5:1 and icon 3:1 bars. The active color stays teal, one
+step darker than the spec value (a barely-perceptible change).
+
+Recommended default: **correct SPEC §4.11** to active `accent-2-700` / inactive
+`text-secondary`. Same family as Q9 (teal-on-light text) and Q11 (text-muted is
+a deemphasized-label token, not body/UI text). Not blocking for W1-10.
