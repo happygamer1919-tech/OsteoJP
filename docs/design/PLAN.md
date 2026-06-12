@@ -123,14 +123,29 @@ Cross-task rules: never edit another task's component except through its exporte
 
 ## Wave 2 — Staff screens
 
-<!-- Placeholder. Tasks added in a later PR. -->
+Wave 2 binds to apps/web per the parallel-loops path allowlist. W2-01 is a hard gate: it must be merged into main before any other Wave 2 or Wave 3 task starts; pause and wait for that merge after opening the W2-01 PR (self-merge it when the policy conditions hold).
 
-_(no tasks yet)_
+- [ ] W2-01 — Composite components in packages/ui (NEW files only): Combobox, DatePicker, TimeField, SlotPicker per SPEC-staff-screens section 2, each with full states and Storybook stories. Shared hard gate for Wave 2 and Wave 3.
+- [ ] W2-02 — Dashboard per SPEC-staff-screens section 3. Same metrics and data as today, KpiCards, appointments table, all states, role scoping unchanged.
+- [ ] W2-03 — Agenda per SPEC-staff-screens section 4: toolbar, day grid, week view, current-time line, slot interactions, overlap rendering, blocked time, all states, mobile single-therapist day view.
+- [ ] W2-04 — Appointment Drawer per SPEC-staff-screens section 5: create, view, edit modes, patient search Combobox with create pivot, conflict banner, dirty-discard, toasts. Replaces the current appointment modal with identical data and permissions.
+- [ ] W2-05 — Patient profile per SPEC-staff-screens section 6: header card, permission-filtered tabs, view-then-edit cards, history table, clinical records list with the two separate status axes, documents, patient-scoped invoicing tab.
+- [ ] W2-06 — Clinical record editor per SPEC-staff-screens section 7: section rail, restyled form engine output, AI-prefill caption on narrative fields only, bodychart container restyle only, status bar with autosave text, locked and signed read-only rendering, single review banner. No heritage on this screen.
+- [ ] W2-07 — Invoicing view per SPEC-staff-screens section 8: filters, table, detail drawer, disabled-with-helper actions for inactive integrations, admin and owner gating per existing permissions.
+- [ ] W2-08 — Polish and debt per SPEC-staff-screens section 9: app-shell ring fix or file removal, hex and spacing sweep with grep proof, anti-goal verification (one banner max, no blank-then-pop, motion budget), pt-PT and en-GB pass on all six screens.
 
 ---
 
 ## Wave 3 — Portal
 
-<!-- Placeholder. Tasks added in a later PR. -->
+Wave 3 binds to apps/portal per the parallel-loops path allowlist. Cross-wave prerequisite: do not start any Wave 3 task until the Wave 2 task W2-01 PR is merged to main (poll per the shared gate pattern). W3-01 is then this wave's own hard gate: merge it before starting W3-02 onward. Heritage motifs are forbidden in apps/portal this wave (QUESTIONS Q6 item b, pending JP).
 
-_(no tasks yet)_
+- [ ] W3-01 — Migration gate per SPEC-portal section 1: portal consumes packages/ui theme.css, all hardcoded hexes migrated with grep proof, every emoji replaced with the canonical lucide icons, portal AppShell adopted with bottom tabs, Inter loaded. Existing portal e2e flows stay green.
+- [ ] W3-02 — Login and Activate per SPEC-portal sections 3 and 4: brand lockup, restyled credential and activation forms, inline validation, expired-token ErrorState, language switcher.
+- [ ] W3-03 — Dashboard per SPEC-portal section 5: greeting, next-appointment hero card, single pending-forms banner, quick actions grid, all states.
+- [ ] W3-04 — Appointments list and detail per SPEC-portal section 6: upcoming and history segments, appointment cards, detail with 24h-cutoff-aware cancel and email-only reschedule, all states.
+- [ ] W3-05 — Booking flow per SPEC-portal section 7: four steps with progress, inline DatePicker plus SlotPicker, confirm summary, honest pending status on success, slot-taken recovery without state loss.
+- [ ] W3-06 — Clinics and Account per SPEC-portal section 8: clinic cards, grouped account rows, view-then-edit drawer, language preference, sign-out with confirm.
+- [ ] W3-07 — Documents and Forms per SPEC-portal sections 9 and 10: document list with download, pending-first forms list, restyled form filling, submit flow that always communicates pending_review.
+
+Cross-task rules for both waves: never edit another task's files except through exported APIs; never modify existing packages/ui components (stop and log to QUESTIONS.md); i18n strings additive keep-both; each PR ticks only its own checkbox; self-merge strictly per the PLAN.md self-merge policy.
