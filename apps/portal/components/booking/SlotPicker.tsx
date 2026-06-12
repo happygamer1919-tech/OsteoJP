@@ -57,7 +57,7 @@ export default function SlotPicker({ service, location, slots }: Props) {
         ))}
       </div>
 
-      <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
+      <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-1">
         Passo 3 de 4
       </p>
       <h2 className="text-lg font-medium text-text-primary mb-1">
@@ -72,7 +72,7 @@ export default function SlotPicker({ service, location, slots }: Props) {
           <p className="text-text-secondary text-sm mb-3">
             Não há horários disponíveis nos próximos dias.
           </p>
-          <p className="text-sm text-text-muted">
+          <p className="text-sm text-text-secondary">
             Por favor ligue para a clínica para marcar directamente.
           </p>
         </div>
@@ -80,7 +80,7 @@ export default function SlotPicker({ service, location, slots }: Props) {
         <div className="space-y-5">
           {Object.entries(byDate).map(([date, dateSlots]) => (
             <div key={date}>
-              <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2 capitalize">
+              <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2 capitalize">
                 {date}
               </p>
               <div className="flex flex-wrap gap-2">

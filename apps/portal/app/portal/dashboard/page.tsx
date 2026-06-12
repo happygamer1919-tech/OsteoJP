@@ -63,7 +63,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Next appointment */}
-      <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">
+      <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
         Próxima consulta
       </p>
 
@@ -76,7 +76,7 @@ export default async function DashboardPage() {
           </p>
           {next.status in STATUS_PT && (
             <span
-              className={`inline-block mt-2 text-xs font-medium px-2 py-0.5 rounded-full ${
+              className={`inline-block mt-2 text-xs font-medium px-2 py-1 rounded-full ${
                 next.status === 'confirmed'
                   ? 'bg-success-bg text-success-700'
                   : 'bg-warning-bg text-warning-700'
@@ -113,7 +113,7 @@ export default async function DashboardPage() {
       {/* Recent visits */}
       {past.length > 0 && (
         <>
-          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">
+          <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
             Visitas recentes
           </p>
           <div className="bg-surface rounded-xl border border-border divide-y divide-border">
@@ -125,9 +125,9 @@ export default async function DashboardPage() {
                     <p className="text-sm font-medium text-text-primary">
                       {appt.serviceName ?? 'Consulta'}
                     </p>
-                    <p className="text-xs text-text-muted">{date}</p>
+                    <p className="text-xs text-text-secondary">{date}</p>
                   </div>
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-surface-muted text-text-secondary">
+                  <span className="text-xs font-medium px-2 py-1 rounded-full bg-surface-muted text-text-secondary">
                     Concluída
                   </span>
                 </div>

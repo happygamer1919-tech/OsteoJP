@@ -33,7 +33,7 @@ export default async function BookingPage() {
         ))}
       </div>
 
-      <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
+      <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-1">
         Passo 1 de 4
       </p>
       <h2 className="text-lg font-medium text-text-primary mb-5">
@@ -52,7 +52,7 @@ export default async function BookingPage() {
               <div>
                 <p className="font-medium text-text-primary">{loc.name}</p>
               </div>
-              <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="ml-auto text-text-muted" />
+              <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="ml-auto text-text-secondary" />
             </div>
           </Link>
         ))}

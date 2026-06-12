@@ -105,7 +105,7 @@ export default function AppointmentCard({ appointment, showCancel }: Props) {
           {!showConfirm ? (
             <button
               onClick={() => setShowConfirm(true)}
-              className="inline-flex items-center min-h-11 text-sm text-text-muted hover:text-error transition-colors"
+              className="inline-flex items-center min-h-11 text-sm text-text-secondary hover:text-error transition-colors"
             >
               Cancelar consulta
             </button>
@@ -114,7 +114,7 @@ export default function AppointmentCard({ appointment, showCancel }: Props) {
               <p className="text-sm text-text-secondary flex-1">Tem a certeza?</p>
               <button
                 onClick={() => setShowConfirm(false)}
-                className="inline-flex items-center min-h-11 text-sm text-text-muted"
+                className="inline-flex items-center min-h-11 text-sm text-text-secondary"
               >
                 Não
               </button>

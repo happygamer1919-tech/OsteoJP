@@ -108,8 +108,8 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-surface border border-border-strong rounded-lg px-3 py-3 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
             />
-            <div className="text-right mt-2">
-              <a href="/auth/reset-password" className="text-xs text-accent-2-700 hover:underline">
+            <div className="flex justify-end mt-2">
+              <a href="/auth/reset-password" className="inline-flex min-h-11 items-center text-xs text-accent-2-700 hover:underline">
                 Esqueceu a palavra-passe?
               </a>
             </div>
@@ -125,10 +125,10 @@ export default function LoginPage() {
         </button>
       </form>
 
-      <div className="mt-4 text-center">
+      <div className="mt-4 flex justify-center">
         <button
           onClick={() => { setMode(mode === 'password' ? 'magic' : 'password'); setError(null) }}
-          className="text-sm text-accent-2-700 hover:underline"
+          className="inline-flex min-h-11 items-center text-sm text-accent-2-700 hover:underline"
         >
           {mode === 'password' ? 'Entrar com link por email' : 'Entrar com palavra-passe'}
         </button>

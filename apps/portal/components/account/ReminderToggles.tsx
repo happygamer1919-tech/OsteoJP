@@ -1,5 +1,6 @@
 'use client'
 
+import { Switch } from '@osteojp/ui'
 import { useState } from 'react'
 
 // V1: reminder preferences are stored client-side in localStorage as a fallback
@@ -16,49 +17,31 @@ export default function ReminderToggles() {
       <div className="px-4 py-3 flex items-center justify-between">
         <div>
           <p className="text-sm text-text-primary">SMS</p>
-          <p className="text-xs text-text-muted">24h antes da consulta</p>
+          <p className="text-xs text-text-secondary">24h antes da consulta</p>
         </div>
-        <button
-          onClick={() => setSms((v) => !v)}
-          className="inline-flex items-center justify-center min-h-11 min-w-11 flex-shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-          aria-checked={sms}
-          aria-label="Lembretes por SMS"
-          role="switch"
-        >
-          <span
-            aria-hidden="true"
-            className={`relative block w-10 h-6 rounded-full transition-colors ${sms ? 'bg-accent-2-600' : 'bg-neutral-300'}`}
-          >
-            <span
-              className="absolute top-0.5 w-5 h-5 bg-surface rounded-full shadow transition-transform"
-              style={{ transform: sms ? 'translateX(18px)' : 'translateX(2px)' }}
-            />
-          </span>
-        </button>
+        {/* The wrapping label gives the switch a 44px tap area (SPEC-portal §0.2)
+            without altering the shared Switch's visual size. */}
+        <label className="inline-flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center">
+          <Switch
+            checked={sms}
+            onChange={(e) => setSms(e.target.checked)}
+            aria-label="Lembretes por SMS"
+          />
+        </label>
       </div>
 
       <div className="px-4 py-3 flex items-center justify-between">
         <div>
           <p className="text-sm text-text-primary">Email</p>
-          <p className="text-xs text-text-muted">48h antes da consulta</p>
+          <p className="text-xs text-text-secondary">48h antes da consulta</p>
         </div>
-        <button
-          onClick={() => setEmail((v) => !v)}
-          className="inline-flex items-center justify-center min-h-11 min-w-11 flex-shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-          aria-checked={email}
-          aria-label="Lembretes por email"
-          role="switch"
-        >
-          <span
-            aria-hidden="true"
-            className={`relative block w-10 h-6 rounded-full transition-colors ${email ? 'bg-accent-2-600' : 'bg-neutral-300'}`}
-          >
-            <span
-              className="absolute top-0.5 w-5 h-5 bg-surface rounded-full shadow transition-transform"
-              style={{ transform: email ? 'translateX(18px)' : 'translateX(2px)' }}
-            />
-          </span>
-        </button>
+        <label className="inline-flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center">
+          <Switch
+            checked={email}
+            onChange={(e) => setEmail(e.target.checked)}
+            aria-label="Lembretes por email"
+          />
+        </label>
       </div>
 
       {(!sms && !email) && (

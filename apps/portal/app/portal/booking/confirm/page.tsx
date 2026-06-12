@@ -69,7 +69,7 @@ export default async function BookingConfirmPage({
         ))}
       </div>
 
-      <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
+      <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-1">
         Passo 4 de 4
       </p>
       <h2 className="text-lg font-medium text-text-primary mb-5">
@@ -79,20 +79,20 @@ export default async function BookingConfirmPage({
       {/* Summary card */}
       <div className="bg-surface rounded-xl border border-border p-4 mb-6 space-y-3">
         <div>
-          <p className="text-xs text-text-muted">Clínica</p>
+          <p className="text-xs text-text-secondary">Clínica</p>
           <p className="text-sm font-medium text-text-primary">{location.name}</p>
         </div>
         <div className="h-px bg-border" />
         <div>
-          <p className="text-xs text-text-muted">Serviço</p>
+          <p className="text-xs text-text-secondary">Serviço</p>
           <p className="text-sm font-medium text-text-primary">{service.name}</p>
-          <p className="text-xs text-text-muted mt-1">{service.durationMin} min</p>
+          <p className="text-xs text-text-secondary mt-1">{service.durationMin} min</p>
         </div>
         <div className="h-px bg-border" />
         <div>
-          <p className="text-xs text-text-muted">Data e hora</p>
+          <p className="text-xs text-text-secondary">Data e hora</p>
           <p className="text-sm font-medium text-text-primary capitalize">{date}</p>
-          <p className="text-xs text-text-muted mt-1">{time}</p>
+          <p className="text-xs text-text-secondary mt-1">{time}</p>
         </div>
       </div>
 

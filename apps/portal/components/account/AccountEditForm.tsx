@@ -47,7 +47,7 @@ export default function AccountEditForm({ profile }: Props) {
     <div className="bg-surface rounded-xl border border-border divide-y divide-border">
       {/* Phone */}
       <div className="px-4 py-3">
-        <p className="text-xs text-text-muted mb-1">Telemóvel</p>
+        <p className="text-xs text-text-secondary mb-1">Telemóvel</p>
         {editing ? (
           <input
             type="tel"
@@ -63,7 +63,7 @@ export default function AccountEditForm({ profile }: Props) {
 
       {/* Address */}
       <div className="px-4 py-3">
-        <p className="text-xs text-text-muted mb-1">Morada</p>
+        <p className="text-xs text-text-secondary mb-1">Morada</p>
         {editing ? (
           <input
             type="text"
@@ -79,7 +79,7 @@ export default function AccountEditForm({ profile }: Props) {
 
       {/* Postal + City */}
       <div className="px-4 py-3">
-        <p className="text-xs text-text-muted mb-1">Código postal / Localidade</p>
+        <p className="text-xs text-text-secondary mb-1">Código postal / Localidade</p>
         {editing ? (
           <div className="flex gap-2">
             <input
@@ -118,7 +118,7 @@ export default function AccountEditForm({ profile }: Props) {
           <div className="flex gap-3">
             <button
               onClick={handleCancel}
-              className="inline-flex items-center min-h-11 text-sm text-text-muted"
+              className="inline-flex items-center min-h-11 text-sm text-text-secondary"
             >
               Cancelar
             </button>

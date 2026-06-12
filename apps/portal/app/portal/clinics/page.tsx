@@ -70,7 +70,7 @@ export default function ClinicsPage() {
             <div className="p-4 space-y-4">
               {/* Address */}
               <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
+                <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-1">
                   Morada
                 </p>
                 <address className="not-italic text-sm text-text-primary leading-relaxed">
@@ -94,7 +94,7 @@ export default function ClinicsPage() {
 
               {/* Phone */}
               <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
+                <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-1">
                   Telefone
                 </p>
                 <div className="space-y-1">
@@ -116,12 +116,12 @@ export default function ClinicsPage() {
 
               {/* Email */}
               <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
+                <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-1">
                   Email
                 </p>
                 <a
                   href={`mailto:${clinic.email}`}
-                  className="text-sm text-accent-2-700"
+                  className="flex items-center min-h-11 text-sm text-accent-2-700"
                 >
                   {clinic.email}
                 </a>
@@ -132,7 +132,7 @@ export default function ClinicsPage() {
 
               {/* Hours */}
               <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
+                <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-1">
                   Horário
                 </p>
                 {clinic.hours.map((h) => (
@@ -141,7 +141,7 @@ export default function ClinicsPage() {
                     <span className="font-medium text-text-primary">{h.time}</span>
                   </div>
                 ))}
-                <p className="text-xs text-text-muted mt-1">
+                <p className="text-xs text-text-secondary mt-1">
                   Sábado e Domingo encerrado
                 </p>
               </div>

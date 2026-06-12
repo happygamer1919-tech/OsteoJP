@@ -43,7 +43,7 @@ export default async function AccountPage() {
 
       {/* Editable fields */}
       <div className="mb-4">
-        <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">
+        <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
           Dados de contacto
         </p>
         <AccountEditForm profile={profile} />
@@ -51,7 +51,7 @@ export default async function AccountPage() {
 
       {/* Reminder preferences */}
       <div className="mb-4">
-        <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">
+        <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
           Lembretes de consulta
         </p>
         <ReminderToggles />
@@ -59,7 +59,7 @@ export default async function AccountPage() {
 
       {/* Security */}
       <div className="mb-6">
-        <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">
+        <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
           Segurança
         </p>
         <div className="bg-surface rounded-xl border border-border divide-y divide-border">
@@ -68,14 +68,14 @@ export default async function AccountPage() {
             className="flex items-center justify-between px-4 py-3"
           >
             <span className="text-sm text-text-primary">Alterar palavra-passe</span>
-            <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="text-text-muted" />
+            <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="text-text-secondary" />
           </Link>
         </div>
       </div>
 
       {/* Language */}
       <div className="mb-6">
-        <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">
+        <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
           Idioma
         </p>
         <div className="bg-surface rounded-xl border border-border p-4">

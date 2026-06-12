@@ -54,7 +54,7 @@ export default async function AppointmentsPage() {
       </div>
 
       {/* Upcoming */}
-      <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-3">
+      <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-3">
         Próximas
       </p>
 
@@ -63,7 +63,7 @@ export default async function AppointmentsPage() {
           <p className="text-text-secondary text-sm mb-3">Não tem consultas marcadas.</p>
           <Link
             href="/portal/booking"
-            className="inline-flex items-center gap-1 text-sm font-medium text-accent-2-700"
+            className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-accent-2-700"
           >
             Marcar consulta
             <ArrowRight size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -80,7 +80,7 @@ export default async function AppointmentsPage() {
       {/* Past */}
       {past.length > 0 && (
         <>
-          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-3">
+          <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-3">
             Anteriores
           </p>
           <div className="space-y-3">

@@ -57,7 +57,7 @@ export default async function BookingServicePage({
         ))}
       </div>
 
-      <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
+      <p className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-1">
         Passo 2 de 4
       </p>
       <h2 className="text-lg font-medium text-text-primary mb-1">
@@ -75,14 +75,14 @@ export default async function BookingServicePage({
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium text-text-primary">{svc.name}</p>
-                <p className="text-sm text-text-muted mt-1">
+                <p className="text-sm text-text-secondary mt-1">
                   {svc.durationMin} min
                   {svc.priceCents !== null && (
                     <> · {formatPrice(svc.priceCents, svc.currency)}</>
                   )}
                 </p>
               </div>
-              <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="text-text-muted" />
+              <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="text-text-secondary" />
             </div>
           </Link>
         ))}
