@@ -79,10 +79,10 @@ export default async function DashboardPage() {
           className="border-l-4 border-l-accent-2-700"
           footer={
             <div className="flex gap-3">
-              <NavButton href="/portal/appointments" variant="secondary" className="flex-1">
+              <NavButton href="/portal/appointments" variant="secondary" className="min-h-11 flex-1">
                 Remarcar
               </NavButton>
-              <NavButton href="/portal/appointments" variant="ghost" className="flex-1">
+              <NavButton href="/portal/appointments" variant="ghost" className="min-h-11 flex-1">
                 Detalhes
               </NavButton>
             </div>
@@ -110,7 +110,7 @@ export default async function DashboardPage() {
             title="Sem consultas marcadas"
             description="Quando marcar uma consulta, aparecerá aqui."
             action={
-              <NavButton href="/portal/booking" variant="primary" iconLeft={Plus}>
+              <NavButton href="/portal/booking" variant="primary" iconLeft={Plus} className="min-h-11">
                 Marcar consulta
               </NavButton>
             }
