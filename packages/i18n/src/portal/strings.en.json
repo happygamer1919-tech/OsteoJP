@@ -113,7 +113,7 @@
     "status_unpaid": "Unpaid",
     "cancel_title": "Cancel appointment",
     "cancel_body": "Are you sure you want to cancel this appointment?",
-    "cancel_confirm": "Yes, cancel",
+    "cancel_confirm": "Cancel booking",
     "cancel_success": "Appointment cancelled.",
     "cancel_too_late": "Appointments cannot be cancelled less than 24 hours in advance. Please call the clinic.",
     "cancel_error": "Could not cancel. Please try again or call the clinic.",
