@@ -41,7 +41,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       <form action={logout}>
         <button
           type="submit"
-          className="inline-flex h-10 items-center rounded-md px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2"
+          className="inline-flex h-10 items-center rounded-md px-3 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           {s["common.signOut"]}
         </button>
