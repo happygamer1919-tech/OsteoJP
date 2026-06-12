@@ -93,7 +93,7 @@ export default function ActivatePage() {
   return (
     <div className="rounded-xl border border-border bg-surface p-6">
       <h2 className="mb-1 text-xl font-semibold text-text-primary">Ativar conta</h2>
-      <p className="mb-5 text-sm text-text-secondary">
+      <p className="mb-6 text-sm text-text-secondary">
         Defina a sua palavra-passe para começar a usar o portal.
       </p>
 

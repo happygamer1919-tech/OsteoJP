@@ -73,7 +73,7 @@ export default function LoginPage() {
   return (
     <>
       <div className="rounded-xl border border-border bg-surface p-6">
-        <h2 className="mb-5 text-xl font-semibold text-text-primary">Entrar</h2>
+        <h2 className="mb-6 text-xl font-semibold text-text-primary">Entrar</h2>
 
         {error && (
           <div className="mb-4 overflow-hidden rounded-lg">
@@ -110,7 +110,7 @@ export default function LoginPage() {
                     onClick={() => setShowPassword((v) => !v)}
                     aria-pressed={showPassword}
                     aria-label={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
-                    className="flex size-10 items-center justify-center rounded text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                    className="flex size-11 items-center justify-center rounded text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
                   >
                     {showPassword ? (
                       <EyeOff size={16} strokeWidth={1.75} aria-hidden="true" />
