@@ -544,5 +544,18 @@
   "appointment.discardTitle": "Discard changes?",
   "appointment.discardMessage": "Unsaved changes will be lost.",
   "appointment.discardConfirm": "Discard",
-  "appointment.discardKeep": "Keep editing"
+  "appointment.discardKeep": "Keep editing",
+  "patients.tabRecords": "Clinical records",
+  "patients.cardPersonal": "Personal details",
+  "patients.cardContacts": "Contacts",
+  "patients.recordDefaultName": "Clinical record",
+  "patients.emptyConsultasTitle": "No appointments",
+  "patients.emptyConsultasHelp": "This patient's appointments will appear here.",
+  "patients.emptyRecordsTitle": "No clinical records",
+  "patients.emptyRecordsHelp": "Start a record from an appointment.",
+  "patients.emptyDocumentsTitle": "No documents",
+  "patients.emptyDocumentsHelp": "The patient's documents will appear here.",
+  "patients.emptyInvoicingTitle": "No invoices",
+  "patients.emptyInvoicingHelp": "This patient's invoices will appear here.",
+  "patients.openRecord": "Open record"
 }
