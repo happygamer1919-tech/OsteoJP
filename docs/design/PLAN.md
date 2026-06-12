@@ -62,7 +62,13 @@ Multiple loops may run at the same time, one per wave. Concurrency rules:
     files, and NEW files under `packages/ui`.
   - **Wave 3** may touch: `apps/portal`, `docs/design`, `packages/i18n` strings
     files, and NEW files under `packages/ui`.
-  No loop may modify an EXISTING `packages/ui` component file. If a task needs a
+  - **Wave 4** may touch: `apps/web`, `packages/ui`, `packages/i18n`, and
+    `docs/design`. Wave 4 is the fix wave: unlike Waves 2 and 3 it MAY edit
+    existing `packages/ui` component files where a task explicitly calls for it
+    (the EmptyState band upgrade, W4-01), but it still adds new heritage surfaces
+    as NEW files and never touches another wave's task list.
+  No loop may modify an EXISTING `packages/ui` component file (Wave 4 excepted per
+  its own allowlist above, and only for the component a task names). If a task needs a
   change to an existing `packages/ui` component, stop that task, log it in
   `docs/QUESTIONS.md` (the component, the needed change, the blocked task), and
   move to the next task. The design-reviewer blocks any file outside the bound
@@ -149,3 +155,32 @@ Wave 3 binds to apps/portal per the parallel-loops path allowlist. Cross-wave pr
 - [x] W3-07 — Documents and Forms per SPEC-portal sections 9 and 10: document list with download, pending-first forms list, restyled form filling, submit flow that always communicates pending_review.
 
 Cross-task rules for both waves: never edit another task's files except through exported APIs; never modify existing packages/ui components (stop and log to QUESTIONS.md); i18n strings additive keep-both; each PR ticks only its own checkbox; self-merge strictly per the PLAN.md self-merge policy.
+
+---
+
+## Wave 4 — Fix wave (staff debt + heritage presence)
+
+Wave 4 binds to `apps/web` plus the shared `packages/ui` / `packages/i18n` per the
+parallel-loops path allowlist (allowed paths: `apps/web/**`, `packages/ui/**`,
+`packages/i18n/**`, `docs/design/**`). It clears pre-Wave-1 staff debt and adds the
+heritage frame to the one auth surface that earns it. SPECs:
+SPEC-foundation §7 (HeritageCorners + EmptyState band) and SPEC-staff-screens §11
+(secondary staff screens). W4-01 is a hard gate: it must be merged into main before
+W4-02 starts (HeritageCorners + the band are its prerequisites); pause and wait for
+that merge after opening the W4-01 PR. Self-merge strictly per the PLAN.md
+self-merge policy (zero changes to migrations, RLS, auth, payments, webhooks,
+`.github/workflows`; e2e green for any `apps/web` diff).
+
+- [ ] W4-01 packages/ui: HeritageCorners component + EmptyState motif band upgrade per SPEC-foundation §7 (both HeritageCorners variants and tones, the band at the §7.7 sizing tokens, Storybook stories for all of it). Hard gate for W4-02.
+- [ ] W4-02 Staff /login restyle with heritage corners-plus-edges per SPEC-staff-screens §11.5 (BrandLockup, AA credential Field set, inline validation, single error Banner, language switcher). Depends on W4-01 merged.
+- [ ] W4-03 /patients list restyle per SPEC-staff-screens §11.1, including the "Novo Paciente" rename, AA search field, Table with hover + ChevronRight, and EmptyState for both zero-patients and zero-results.
+- [ ] W4-04 /clinical fichas list restyle per SPEC-staff-screens §11.2: StatusChips on the two status axes, filled teal "Nova Ficha" primary button, EmptyState, ErrorState.
+- [ ] W4-05 /review queue restyle per SPEC-staff-screens §11.3: EmptyState component for the empty queue, token migration off any pre-Wave-1 values.
+- [ ] W4-06 /admin hub restyle per SPEC-staff-screens §11.4: descriptive settings-rows pattern (Card per area: title, one-line description, ChevronRight), remove the duplicated link boxes, Tabs remain the only navigation.
+- [ ] W4-07 /agenda defects: fix the truncated therapist and location Select widths, remove the redundant empty-period banner (the agenda grid is its own empty affordance), fix the clipped 08:00 gutter label.
+- [ ] W4-08 /dashboard: hide the section-header "Adicionar" while the EmptyState CTA is visible, so the create action shows once, not twice.
+- [ ] W4-09 i18n sweep: "utente" to "paciente" across `strings.pt.json`, em dash in template display titles replaced with a colon (seed display strings only, no schema changes), `en.json` parity. Strings additive keep-both on rebase per the parallel-loops rule.
+- [ ] W4-10 Docs consolidation: move the Wave 2 PR-body decisions and the Wave 3 owner-confirmable items into `docs/DECISIONS.md` and `docs/QUESTIONS.md`, and remove the two orphan merge-artifact lines around `docs/DECISIONS.md` lines 173-174.
+- [ ] W4-11 Token debt sweep on all W4 screens: zero raw hex, zero arbitrary Tailwind values, old `brand-teal`/`brand-magenta`/`brand-grey` aliases migrated to the canonical tokens, AA verified, grep proof in the PR.
+
+Cross-task rules: each PR ticks only its own checkbox; never touch another wave's list; i18n strings are additive keep-both; self-merge strictly per the self-merge policy above. W4-10 touches `docs/DECISIONS.md` and `docs/QUESTIONS.md`, which sit outside the `apps/web` / `packages` / `docs/design` allowlist — that task is docs-only housekeeping and ships as its own PR with no code diff.

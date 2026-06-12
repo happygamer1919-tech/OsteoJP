@@ -156,3 +156,192 @@ Greenfield UI per ui-inventory; backend integrations are Phase 4, so this screen
 ## 10. Out of scope for Wave 2
 
 The portal (Wave 3), any reminder or notification UI, form template authoring UI, data migration screens, and any change to data fetching beyond moving existing calls between components. Do not build ahead.
+
+---
+
+## 11. Secondary staff screens (Wave 4 addition)
+
+Consumed by the design loop, Wave 4 (bound to `apps/web`). These five screens
+shipped before the design system and still carry pre-Wave-1 markup; Wave 4
+restyles them onto packages/ui with zero data, endpoint, or permission changes.
+Section 0 hard scope rules apply unchanged: presentation only, role behavior from
+`packages/auth/permissions.ts` exactly as today, every screen ships loading /
+empty / error states in the same PR, every string is an i18n key, heritage only
+where §0.5 and SPEC-foundation §7.6 allow.
+
+Shared patterns from §1 (page header, AppShell container, filters row, person
+rows, money) apply to every screen below. None of these screens adds its own
+outer container; AppShell owns width and padding (max-width 1280, px `space-6`,
+py `space-8`), identical to `/dashboard`.
+
+### 11.1 Screen: /patients list (W4-03)
+
+Purpose: find a patient fast, create a new one.
+
+**Layout (desktop)**, full-width aligned with the app shell exactly like
+`/dashboard`:
+1. Page header (§1): h1 "Pacientes", primary action Button right labeled
+   **"Novo Paciente"** filled teal (`accent-2-700`, the §1 single primary above
+   the fold), Plus leading icon. This renames the legacy "Adicionar utente" /
+   "Novo utente" label (see brand-voice utente rule).
+2. Search field: full-width Input with Search leading icon, placeholder
+   "Pesquisar por nome, NIF ou telefone", debounced against the existing search
+   query. AA-compliant: `border-strong` border, `text-muted` placeholder (not
+   lighter), the global `focus-ring`, label associated via Field even when the
+   visible label is visually hidden (`aria-label` is not enough for the reviewer
+   — use a Field with an sr-only label or a visible "Pesquisar" label).
+3. Results: Table (§SPEC-foundation 4.7). Columns: Paciente (person row — name
+   body-sm weight 500, NIF or phone secondary line), Telefone, Última consulta
+   (date, `text-secondary`), trailing ChevronRight icon (20px, `text-muted`) as
+   the row-navigation affordance. Rows are interactive: hover bg `bg`, whole row
+   is one keyboard-reachable link to the patient profile, the ChevronRight is the
+   visible affordance (not an extra tab stop).
+
+**Role behavior**: therapist sees their own patients only, reception and admin
+see the location-wide list, exactly as the existing query scopes it. The "Novo
+Paciente" action shows only for roles that can create patients today; never widen
+exposure.
+
+**States**:
+- Loading: SkeletonTable, 8 rows matching the three column widths.
+- Empty (no patients at all): **EmptyState** component (Users icon, "Sem
+  pacientes registados", guidance "Crie o primeiro paciente para começar.",
+  primary "Novo Paciente" action). Heritage allowed on this one empty state per
+  §0.5 (the upgraded motif band, SPEC-foundation §7.7).
+- Empty (search returns nothing): EmptyState (Search icon, "Sem resultados para
+  esta pesquisa", guidance "Ajuste os termos de pesquisa.", no heritage, no
+  create action — the query is the thing to change). Zero-results uses the
+  EmptyState component, never a plain text line.
+- Error: ErrorState with retry.
+
+**Mobile**: search full-width, Table swaps to TableCardRow (name + phone line
+one, last-visit + chevron line two).
+
+### 11.2 Screen: /clinical fichas list (W4-04)
+
+Purpose: the cross-patient list of clinical records (fichas).
+
+**Layout (desktop)**:
+1. Page header: h1 "Fichas clínicas", primary action **"Nova Ficha"** as a filled
+   teal Button (`accent-2-700`, Plus leading icon). Optional ghost Filtros button
+   beside it.
+2. Filters row (§1): Estado Select, Terapeuta Select/Combobox, date range where
+   the data layer provides it. Hidden controls collapse behind a single Filtros
+   button under 768px.
+3. Table. Columns: Data (left), Paciente (person row, links to the patient
+   profile), Tipo/Episódio (form or episode name), Terapeuta (hidden for
+   therapist role since it is always them), **Estado** rendered with **StatusChip
+   on the two separate status axes** exactly as §6 Registos clínicos: a
+   `record_status` chip (draft=neutral, locked=info, signed=success) and, only
+   when `ai_review_state` is not approved, a SECOND chip (pending_review=warning,
+   in_review=info, rejected=error). The two axes never merge into one chip. Row
+   click navigates to the clinical record editor.
+
+**Role behavior**: visible only to roles that can read clinical records today
+(therapist on own patients, admin per permissions); reception never sees this
+screen. "Nova Ficha" shows only where record creation is permitted today.
+
+**States**:
+- Loading: SkeletonTable 8 rows.
+- Empty: EmptyState (FileText icon, "Sem fichas clínicas", guidance line, primary
+  "Nova Ficha"). Heritage allowed here (one empty state per screen).
+- Error: ErrorState with retry.
+
+**Mobile**: TableCardRow (date + patient line one, type + Estado chip(s) line
+two).
+
+### 11.3 Screen: /review queue (W4-05)
+
+Purpose: the staff review queue for AI drafts and patient submissions
+(`ai_review_state`). Restyle only; the claim → edit → finalize behavior and its
+permissions are unchanged.
+
+**Layout**: page header h1 "Revisão", no primary create action (items arrive from
+ingestion, not created here); optional Estado Select filter. Table or interactive
+Card list of pending items: Paciente (person row), Origem (AI / submissão do
+paciente), Recebido (date), `ai_review_state` StatusChip
+(pending_review=warning, in_review=info), trailing ChevronRight to open the
+review editor. Row gating: only the `clinical_records:review` capability sees the
+claim/finalize actions, exactly as today.
+
+**States**:
+- Loading: SkeletonTable.
+- **Empty queue: EmptyState component**, not the current plain text. Check icon,
+  "Sem itens para rever", guidance "Os novos registos do parceiro de IA e as
+  submissões de pacientes aparecem aqui." No create action. Heritage optional
+  (single empty state) but a calm empty queue reads better without it — leave
+  heritage off here by default.
+- Error: ErrorState with retry.
+
+### 11.4 Screen: /admin hub (W4-06)
+
+Purpose: the administration landing screen. Today it duplicates navigation as a
+grid of link boxes that repeat the tab bar; Wave 4 removes that duplication.
+
+**Layout**:
+1. Page header: h1 "Administração". No primary action at the hub level (each area
+   owns its own actions on its own screen).
+2. **Tabs are the only navigation** across admin areas (Utilizadores, Definições
+   da clínica, Faturação, etc., per the existing admin routes and permissions).
+   **Remove the duplicated link boxes** — the grid of cards that merely re-link to
+   the same tabs is deleted, not restyled.
+3. Hub body: a **descriptive settings-rows pattern** — one Card per admin area,
+   each row: area title (`text-primary`, xl weight 600 or lg per density), a
+   one-line description (`body-sm` `text-secondary`) of what the area manages, and
+   a trailing ChevronRight (20px, `text-muted`). Each Card is the interactive Card
+   variant (whole card is one keyboard-reachable link to that area, single tab
+   stop, hover bg `bg`, global focus ring). This replaces the duplicated boxes
+   with informative rows that say what each destination does, while Tabs remain
+   the primary navigation chrome.
+
+A HeritageDivider section divider is permitted between hub groups (settings-class
+screen, SPEC-foundation §4.12 allowed host) — at most one, decorative.
+
+**Role behavior**: the whole screen is admin/owner only per permissions.ts.
+Owner-only areas (the owner-tier role management) render only for the owner;
+non-owner admins do not see them, unchanged from today.
+
+**States**: the hub is static config navigation — render the rows directly. Any
+area whose data is still loading shows its skeleton on that area's own screen, not
+the hub. Error on the hub itself (rare) = ErrorState with retry.
+
+### 11.5 Screen: staff /login (W4-02)
+
+Purpose: staff authentication. The one staff screen that gets the full heritage
+treatment.
+
+**Layout**: centered single-column auth card on the `bg` page color, framed by
+**HeritageCorners `corners-plus-edges`** (SPEC-foundation §7, auth-only variant).
+The card sits inside the protected inner region; the frame never touches the card
+or its focus rings.
+
+1. **BrandLockup** `lockup` variant at the top of the card (the brand signature;
+   pairs with the heritage frame for the one memorable auth surface).
+2. Credential Field set: Email Input, Password Input, both AA-compliant with
+   associated labels, inline validation (`role="alert"` error text per Field
+   spec), "Iniciar sessão" primary Button (filled teal `accent-2-700`,
+   loading state on submit). Voice: "Iniciar sessão", never "fazer login"
+   (brand-voice §3.5); no "por favor" padding (§2.8).
+3. Secondary paths as the app already supports them (magic-link / password reset),
+   rendered as ghost or link styling, strings per brand-voice.
+4. Language switcher (pt-PT / en-GB) consistent with the portal login pattern.
+
+**States**:
+- Default, submitting (primary Button loading, inputs disabled).
+- Invalid credentials: inline error via Field error text + a single error Banner
+  at most (never two banners), plain-language ("Não foi possível iniciar sessão.
+  Verifique o email e a palavra-passe."), never raw auth codes or PII.
+- Expired/invalid token (magic-link path): ErrorState-style message with the
+  re-request action, per the existing auth flow.
+
+**Role behavior**: pre-auth screen, no role context; never leaks whether an email
+exists (generic failure copy).
+
+### 11.6 Out of scope for these screens
+
+No change to auth logic, queries, endpoints, the permission matrix, migrations,
+RLS, or ingestion. Restyle and state-completeness only. The clinical record
+editor (§7) and its no-heritage rule are unchanged. Heritage appears only on
+`/login` (full frame) and at most one empty state per list screen (motif band);
+never on `/clinical`'s table, `/review`'s populated queue, the agenda grid, or any
+data surface.
