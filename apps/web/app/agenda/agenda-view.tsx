@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, DatePicker, Select, SegmentedControl } from "@osteojp/ui";
+import { Button, DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -19,7 +19,7 @@ import type {
 } from "@/lib/scheduling/types";
 
 import { AgendaGrid } from "./agenda-grid";
-import { AppointmentModal, type ModalState } from "./appointment-modal";
+import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
 
 const iconBtn =
   "inline-flex size-10 items-center justify-center rounded-md border border-border-strong bg-surface text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
@@ -62,6 +62,7 @@ export function AgendaView({
   const step = view === "week" ? 7 : 1;
 
   return (
+    <ToastProvider>
     <main>
       {/* Toolbar (sticky under the app bar) */}
       <div className="sticky top-16 z-20 -mx-6 -mt-8 mb-6 flex flex-wrap items-center gap-3 border-b border-border bg-surface px-6 py-3">
@@ -168,7 +169,7 @@ export function AgendaView({
       />
 
       {modal && (
-        <AppointmentModal
+        <AppointmentDrawer
           state={modal}
           options={options}
           anchor={anchor}
@@ -180,5 +181,6 @@ export function AgendaView({
         />
       )}
     </main>
+    </ToastProvider>
   );
 }

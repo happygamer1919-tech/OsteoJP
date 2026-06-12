@@ -537,5 +537,12 @@
   "appointment.status.completed": "Concluída",
   "appointment.status.cancelled": "Cancelada",
   "appointment.status.no_show": "Falta",
-  "agenda.pickDate": "Escolher data"
+  "agenda.pickDate": "Escolher data",
+  "appointment.recurringCheckbox": "Marcação recorrente",
+  "appointment.saved": "Marcação guardada",
+  "appointment.patientSearchEmpty": "Sem resultados",
+  "appointment.discardTitle": "Descartar alterações?",
+  "appointment.discardMessage": "As alterações não guardadas serão perdidas.",
+  "appointment.discardConfirm": "Descartar",
+  "appointment.discardKeep": "Continuar a editar"
 }

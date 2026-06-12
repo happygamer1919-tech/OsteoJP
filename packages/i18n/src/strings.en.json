@@ -537,5 +537,12 @@
   "appointment.status.completed": "Completed",
   "appointment.status.cancelled": "Cancelled",
   "appointment.status.no_show": "No-show",
-  "agenda.pickDate": "Choose date"
+  "agenda.pickDate": "Choose date",
+  "appointment.recurringCheckbox": "Recurring appointment",
+  "appointment.saved": "Appointment saved",
+  "appointment.patientSearchEmpty": "No results",
+  "appointment.discardTitle": "Discard changes?",
+  "appointment.discardMessage": "Unsaved changes will be lost.",
+  "appointment.discardConfirm": "Discard",
+  "appointment.discardKeep": "Keep editing"
 }
