@@ -2,6 +2,27 @@
 
 Append-only. Every session appends decisions made and reasoning.
 
+## 2026-06-11 — W1-09 HeritageDivider (branch design/W1-09-heritage-divider)
+
+Design loop Wave 1, ninth task. Per SPEC-foundation §4.12 + brand-tokens §6.
+
+- **HeritageDivider** renders the tileable motif as a repeating CSS
+  background-image. The motif SVGs (PR #175) are embedded as URL-encoded data
+  URIs (generated `heritage-svg.ts`) so they tile with no bundler-specific asset
+  import — the same bundler-agnostic rationale as BrandLockup's inline SVG. The
+  encoded colors are the canonical brand tokens; §4.12 says the color comes from
+  the asset, so there is no recoloring prop in Wave 1.
+- Decorative only: aria-hidden, not focusable, not animated. SPEC dimensions as
+  dynamic utilities: h-2.5 (10px), max-w-80 (320px), my-8 (space-8).
+- The allowed-hosts rule (auth / EmptyState / loading / settings dividers; never
+  behind data; off patient-facing portal until Q6) is documented in the docblock,
+  for the design reviewer to enforce at call sites.
+- **EmptyState's `heritage` wiring is intentionally left as a follow-up** — wiring
+  it would edit W1-07's component internals, which the PLAN cross-task rule
+  forbids (only edit another task's component through its exported API).
+- **Reviews:** design-reviewer PASS, a11y-reviewer PASS (first pass).
+- **Gates:** lint, typecheck, test, build (web), Storybook all green.
+
 ## 2026-06-11 — W1-08 Toast and Banner (branch design/W1-08-toast-banner)
 
 Design loop Wave 1, eighth task. Per SPEC-foundation §4.9.

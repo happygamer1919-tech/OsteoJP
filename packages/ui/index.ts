@@ -70,3 +70,8 @@ export {
   type ToastAction,
 } from "./src/components/Toast";
 export { Banner, type BannerProps, type BannerTone } from "./src/components/Banner";
+export {
+  HeritageDivider,
+  type HeritageDividerProps,
+  type HeritageDividerVariant,
+} from "./src/components/HeritageDivider";
