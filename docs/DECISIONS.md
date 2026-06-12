@@ -493,3 +493,43 @@ Token layer + font only; no component restyling.
   assets were added by PR #175. Q6 item (b) (heritage motifs on patient-facing
   surfaces) stays OPEN, pending JP sign-off — untouched here.
 - Docs only (brand-tokens.md, CLAUDE.md, DECISIONS.md). No code. No gate impact.
+
+## 2026-06-12 — Lock Wave 1 WCAG AA corrections into the token layer (branch fix/ui-aa-token-pass)
+
+Resolves QUESTIONS Q8–Q13 — the AA decisions taken ad hoc during Wave 1 are now
+canonical in the token layer, brand-tokens.md, and SPEC-foundation, so the spec
+no longer contradicts shipped reality.
+
+- **Q12 — single focus-ring token.** Added `--color-focus-ring: var(--color-accent-2-600)`
+  to theme.css (brand-tokens.md §1.9). accent-2-600 ≈ 3.3:1 on white clears WCAG
+  2.1 SC 1.4.11; accent-2-500 (~2.4:1) failed. Migrated every `ring-accent-2-500`
+  in packages/ui to `ring-focus-ring` in one mechanical pass (11 components +
+  control-skin + 2 stories). The input focus *border* stays `accent-2-500`
+  (decorative emphasis, not the AA-critical indicator; SPEC §4.2 unchanged).
+- **Q10 — error 50–900 scale.** Generated the same way as the brand scales
+  (accent-2 lightness profile, error hue, gamut-safe chroma). `#B23A3A` is dark
+  (OKLCH L≈0.52) so it pins at **700** (matching the doc's convention for dark
+  saturated bases, e.g. accent-1 magenta at 700), not 500 as Q10 speculated.
+  `--color-error` DEFAULT = error-700; destructive Button hover/active now use
+  `error-800`/`error-900` (replacing interim `brightness-*`).
+- **Q11 — AA-dark semantic text.** Added `success-700 #127B59` and
+  `warning-700 #956302` (≥4.5:1 on their tints and white). StatusChip success/
+  warning labels switched from the interim `text-primary` to the `-700` token;
+  the 8px dot keeps the base tone (3:1 graphical-object).
+- **Q9 — primary Button fill.** Corrected SPEC §4.1 + §2 to `accent-2-700` (fill)
+  / 800 / 900; code already shipped this.
+- **Q13 — portal bottom-nav.** Corrected SPEC §4.11 to active `accent-2-700` /
+  inactive `text-secondary`; code already shipped this.
+- **Q8 — lucide-react.** Recorded as the approved Wave 1 icon dependency in
+  brand-tokens.md ("Approved runtime dependencies").
+- **EmptyState heritage prop wired** to `<HeritageDivider variant="azulejo" />`
+  (the deferred W1-09 follow-up; SPEC §4.10/§4.12). Decorative, aria-hidden,
+  default off; stays off patient-facing portal until JP sign-off (Q6).
+- All new hexes verified for monotonicity and WCAG contrast (sRGB + OKLCH math).
+  Every value is documented in brand-tokens.md §1.8/§1.9/§7 + Appendix so the
+  design-reviewer's "token-only" check passes.
+- **Scope / out of scope:** diff is packages/ui + docs + QUESTIONS.md +
+  DECISIONS.md only. `apps/web/components/app-shell.tsx` still hardcodes
+  `ring-accent-2-500`; correcting it is a separate apps/ change (outside this
+  PR's fence) — the app is slated to adopt the packages/ui AppShell. Follow-up
+  noted under Q12.

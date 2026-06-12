@@ -1,6 +1,8 @@
 import { type LucideIcon } from "lucide-react";
 import { type ReactNode } from "react";
 
+import { HeritageDivider } from "./HeritageDivider";
+
 /**
  * EmptyState — SPEC-foundation §4.10.
  *
@@ -9,8 +11,9 @@ import { type ReactNode } from "react";
  * an optional action. Tone per brand-voice: an empty screen is an invitation to
  * act, never an apology. Strings come from screens via i18n.
  *
- * `heritage` is reserved for the azulejo divider motif above the badge
- * (HeritageDivider, task W1-09); see the TODO below.
+ * When `heritage` is set, the azulejo HeritageDivider renders above the badge
+ * (SPEC §4.10 / §4.12). It is decorative (aria-hidden) and, like every heritage
+ * surface, stays off patient-facing portal screens until JP sign-off (Q6).
  *
  * @example
  * <EmptyState icon={Users} title={t("patients.empty.title")}
@@ -23,7 +26,7 @@ export interface EmptyStateProps {
   description?: ReactNode;
   /** Optional primary/secondary action button. */
   action?: ReactNode;
-  /** Reserved: render the azulejo HeritageDivider above the badge (W1-09). */
+  /** Render the azulejo HeritageDivider above the badge (decorative). */
   heritage?: boolean;
   className?: string;
 }
@@ -46,9 +49,7 @@ export function EmptyState({
         className,
       )}
     >
-      {/* TODO(W1-09): when `heritage`, render <HeritageDivider variant="azulejo" />
-          at 10px height here, above the badge. Prop reserved until W1-09 merges. */}
-      {heritage ? null : null}
+      {heritage && <HeritageDivider variant="azulejo" />}
 
       <span className="flex size-12 items-center justify-center rounded-full bg-surface-muted">
         <Icon

@@ -34,7 +34,7 @@ const navPill = (active: boolean | undefined): string =>
   cx(
     "inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium",
     "transition-colors duration-fast ease-standard",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
     active
       ? "bg-surface-muted text-text-primary"
       : "text-text-secondary hover:bg-surface-muted hover:text-text-primary",
@@ -83,11 +83,11 @@ export function StaffAppShell({
             aria-label={openMenuLabel}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen(true)}
-            className="inline-flex size-10 items-center justify-center rounded-md text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2 md:hidden"
+            className="inline-flex size-10 items-center justify-center rounded-md text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 md:hidden"
           >
             <Menu size={20} strokeWidth={1.75} aria-hidden="true" />
           </button>
-          <Link href={brandHomeHref} className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2">
+          <Link href={brandHomeHref} className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2">
             <BrandLockup variant="lockup" size="sm" />
           </Link>
         </div>
@@ -190,7 +190,7 @@ function MobileNav({
             type="button"
             aria-label={closeLabel}
             onClick={onClose}
-            className="inline-flex size-10 items-center justify-center rounded-md text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2"
+            className="inline-flex size-10 items-center justify-center rounded-md text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             <X size={20} strokeWidth={1.75} aria-hidden="true" />
           </button>
@@ -243,7 +243,7 @@ export function PortalShell({
       className={cx(
         "flex min-h-11 flex-1 flex-col items-center justify-center gap-1 rounded-md px-2 py-1 text-xs font-medium",
         "transition-colors duration-fast ease-standard",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
         // SPEC §4.11 says active accent-2-600 / inactive text-muted, but both
         // fail WCAG AA as 12px label text (3.3:1 / 2.9:1) and the inactive icon
         // fails the 3:1 graphical bar. Use AA-safe accent-2-700 / text-secondary

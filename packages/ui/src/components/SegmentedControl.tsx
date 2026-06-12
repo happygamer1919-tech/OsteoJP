@@ -96,7 +96,7 @@ export function SegmentedControl({
             className={cx(
               "relative z-10 flex-1 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium",
               "transition-colors duration-fast ease-standard",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
               selected ? "text-text-primary" : "text-text-secondary hover:text-text-primary",
             )}
           >

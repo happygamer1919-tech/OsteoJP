@@ -52,7 +52,7 @@ export function Card({
     isLink || isButton
       ? "w-full text-left cursor-pointer transition-colors duration-fast ease-standard " +
         "hover:bg-bg focus-visible:outline-none focus-visible:ring-2 " +
-        "focus-visible:ring-accent-2-500 focus-visible:ring-offset-2"
+        "focus-visible:ring-focus-ring focus-visible:ring-offset-2"
       : "";
 
   const className2 = cx(

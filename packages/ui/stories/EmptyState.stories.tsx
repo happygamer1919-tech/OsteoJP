@@ -32,7 +32,7 @@ export const WithAction: Story = {
   },
 };
 
-/** `heritage` is reserved for the azulejo divider (W1-09); no visual change yet. */
+/** `heritage` renders the decorative azulejo HeritageDivider above the badge. */
 export const Heritage: Story = {
   args: {
     icon: Users,

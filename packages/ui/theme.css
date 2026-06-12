@@ -98,15 +98,37 @@
   --color-text-muted: #8A98A6;
   --color-text-inverse: #FFFFFF;
 
-  /* ---- 1.8 Semantic (DEFAULT + bg variant) ---- */
-  --color-success: #2F8F6B;
+  /* ---- 1.8 Semantic (DEFAULT + bg variant; AA-dark text + error scale) ---- */
+  --color-success: #2F8F6B; /* accent / icon / status dot */
   --color-success-bg: #E6F4EE;
-  --color-warning: #B47A14;
+  --color-success-700: #127B59; /* AA label text — ≥4.5:1 on success-bg AND white (Q11) */
+  --color-warning: #B47A14; /* accent / icon / status dot */
   --color-warning-bg: #FBF1DD;
-  --color-error: #B23A3A;
-  --color-error-bg: #F8E5E5;
+  --color-warning-700: #956302; /* AA label text — ≥4.5:1 on warning-bg AND white (Q11) */
   --color-info: #2E6FA8;
   --color-info-bg: #E4EEF7;
+
+  /* error — full 50–900 scale (base #B23A3A pinned at 700, generated the same
+     way as the brand scales: accent-2 lightness profile, error hue, gamut-safe
+     chroma — Q10). DEFAULT = error-700; destructive hover/active step to
+     error-800 / error-900. */
+  --color-error-50: #F8F0EF;
+  --color-error-100: #F7E1DF;
+  --color-error-200: #FCC9C4;
+  --color-error-300: #FFA9A2;
+  --color-error-400: #FF8882;
+  --color-error-500: #FF615F;
+  --color-error-600: #DD4949;
+  --color-error-700: #B23A3A; /* base */
+  --color-error-800: #8D2D2D;
+  --color-error-900: #672120;
+  --color-error: #B23A3A; /* DEFAULT = error-700 */
+  --color-error-bg: #F8E5E5;
+
+  /* ---- 1.9 Focus ring — single source every control's ring consumes.
+     accent-2-600 ≈ 3.3:1 on white / surface, clearing WCAG 2.1 SC 1.4.11 for a
+     focus indicator (accent-2-500 was ~2.4:1 and failed) — Q12. ---- */
+  --color-focus-ring: var(--color-accent-2-600);
 
   /* ============================================================== *
    * 2. Typography
