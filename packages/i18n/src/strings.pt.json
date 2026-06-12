@@ -544,5 +544,18 @@
   "appointment.discardTitle": "Descartar alterações?",
   "appointment.discardMessage": "As alterações não guardadas serão perdidas.",
   "appointment.discardConfirm": "Descartar",
-  "appointment.discardKeep": "Continuar a editar"
+  "appointment.discardKeep": "Continuar a editar",
+  "patients.tabRecords": "Registos clínicos",
+  "patients.cardPersonal": "Dados pessoais",
+  "patients.cardContacts": "Contactos",
+  "patients.recordDefaultName": "Registo clínico",
+  "patients.emptyConsultasTitle": "Sem consultas",
+  "patients.emptyConsultasHelp": "As marcações deste paciente aparecem aqui.",
+  "patients.emptyRecordsTitle": "Sem registos clínicos",
+  "patients.emptyRecordsHelp": "Inicie um registo a partir de uma consulta.",
+  "patients.emptyDocumentsTitle": "Sem documentos",
+  "patients.emptyDocumentsHelp": "Os documentos do paciente aparecem aqui.",
+  "patients.emptyInvoicingTitle": "Sem faturas",
+  "patients.emptyInvoicingHelp": "As faturas deste paciente aparecem aqui.",
+  "patients.openRecord": "Abrir registo"
 }

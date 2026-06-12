@@ -74,7 +74,7 @@ test("create patient with all fields persists and displays them", async ({ page 
     notes: "Nota E2E",
   });
   await expect(page.getByRole("heading", { name })).toBeVisible();
-  await expect(page.getByText(phone)).toBeVisible();
+  await expect(page.getByText(phone).first()).toBeVisible();
 });
 
 test("edit patient phone and see the updated value on the profile", async ({ page }) => {
@@ -86,7 +86,7 @@ test("edit patient phone and see the updated value on the profile", async ({ pag
   await page.getByRole("button", { name: "Guardar" }).click();
 
   await expect(page).toHaveURL(new RegExp(`/patients/${id}$`), { timeout: 12_000 });
-  await expect(page.getByText("+351 910 000 999")).toBeVisible();
+  await expect(page.getByText("+351 910 000 999").first()).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
