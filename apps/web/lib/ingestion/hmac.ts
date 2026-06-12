@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 // HMAC verification for the AI partner ingestion endpoint.
 //
@@ -99,4 +99,74 @@ export function verifyIngestionSignature(
   }
 
   return { ok: true };
+}
+
+// --- TEMPORARY DIAGNOSTICS -------------------------------------------------
+// Emits ONE structured [HMAC-DIAG] line per FAILED verification so we can
+// reconcile the partner's signing against ours during the live integration
+// test. This is logging only: it re-reads the same inputs that
+// verifyIngestionSignature() saw and recomputes the expected signature for
+// comparison. It never mutates state, never changes the verify result, and is
+// only called once the route already has an `{ ok: false }`.
+//
+// SECRET SAFETY: never logs the secret or any substring of it. Only the
+// secret's character length and the first 8 hex chars of sha256(secret) — a
+// non-reversible fingerprint that lets us confirm both sides hold the same key.
+// Body CONTENT is never logged either (only its byte length), so this stays
+// within the no-PII-in-logs rule.
+//
+// REMOVE this block AND its call site in
+// app/api/v1/ingestion/clinical-records/route.ts once the live HMAC handshake
+// with the AI partner is proven. TODO(remove-after-live-test).
+
+function secretDiagnosticFingerprint(secret: string): string {
+  const digest = createHash("sha256").update(secret).digest("hex");
+  return `len=${secret.length},sha256_8=${digest.slice(0, 8)}`;
+}
+
+export function logHmacVerificationFailure(
+  rawBody: string,
+  headers: Headers | Record<string, string>,
+  reason: SignatureRejection,
+  now: Date = new Date(),
+): void {
+  const secret = process.env[SECRET_ENV];
+  // Unreachable when verify returned a typed rejection (secret was present),
+  // but guard so diagnostics can never throw and never log a fingerprint of "".
+  if (!secret) return;
+
+  const check: "timestamp_window" | "signature_mismatch" =
+    reason === "missing_timestamp" ||
+    reason === "malformed_timestamp" ||
+    reason === "stale_timestamp"
+      ? "timestamp_window"
+      : "signature_mismatch";
+
+  const receivedTimestamp = readHeader(headers, TIMESTAMP_HEADER);
+  const receivedSignature = readHeader(headers, SIGNATURE_HEADER);
+  const serverEpochSeconds = Math.floor(now.getTime() / 1000);
+  const bodyByteLength = Buffer.byteLength(rawBody);
+
+  // Recompute the signature exactly as verify would — but only when the
+  // timestamp is a usable integer, since there is nothing valid to sign
+  // otherwise. Matches the Number()/Number.isInteger() guard above.
+  const ts = Number(receivedTimestamp);
+  const computedSignature =
+    receivedTimestamp !== null && Number.isFinite(ts) && Number.isInteger(ts)
+      ? signIngestionBody(rawBody, ts, secret)
+      : "n/a (timestamp unusable)";
+
+  console.warn(
+    "[HMAC-DIAG] ingestion signature verification failed " +
+      JSON.stringify({
+        check,
+        reason,
+        receivedTimestamp,
+        serverEpochSeconds,
+        receivedSignature,
+        computedSignature,
+        bodyByteLength,
+        secretFingerprint: secretDiagnosticFingerprint(secret),
+      }),
+  );
 }
