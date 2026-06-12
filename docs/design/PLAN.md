@@ -35,14 +35,70 @@ Run one task at a time, in order, never skipping ahead. For each task:
    entries added.
 7. **Tick the task checkbox in this PLAN.md inside the same PR** (`- [ ]` →
    `- [x]`). The checkbox flip and the implementation ship together.
-8. **Move to the next unchecked task.** Never touch a checked (`- [x]`) task.
-   Never push to `main` and never merge your own PR.
-9. **Stop when the wave has no unchecked tasks** and report a summary listing
-   every PR opened in the run (task ID, title, PR URL, gate/reviewer status).
+8. **Decide merge via the "Self-merge policy" below**, then move to the next
+   unchecked task. Never touch a checked (`- [x]`) task. Never `git push`
+   directly to `main`; the only way main advances is a policy-compliant merge.
+9. **Stop when the wave has no unchecked tasks** and report the end-of-wave
+   summary. List every PR opened in the run (task ID, title, PR URL,
+   gate/reviewer status, and whether it self-merged or was left open and why).
+   The summary MUST also list every changed route/screen with its Vercel preview
+   URL, grouped for a single human QA pass by Max.
 
 Hard rules: one task = one worktree = one branch = one PR. Token values come
 only from `docs/brand-tokens.md`. Blocker and fix findings must be resolved
-before the PR is opened. Never push to `main`.
+before the PR is opened. Never `git push` directly to `main`; main advances only
+through a merge that satisfies the "Self-merge policy".
+
+### Parallel loops
+
+Multiple loops may run at the same time, one per wave. Concurrency rules:
+
+- **Wave binding.** A loop binds to exactly one wave at dispatch and only ever
+  ticks checkboxes in its own wave section. It never reads, edits, or ticks a
+  task in another wave's list.
+- **Path allowlist per wave.** Each loop's diff must stay inside its wave's
+  allowed paths:
+  - **Wave 2** may touch: `apps/web`, `docs/design`, `packages/i18n` strings
+    files, and NEW files under `packages/ui`.
+  - **Wave 3** may touch: `apps/portal`, `docs/design`, `packages/i18n` strings
+    files, and NEW files under `packages/ui`.
+  No loop may modify an EXISTING `packages/ui` component file. If a task needs a
+  change to an existing `packages/ui` component, stop that task, log it in
+  `docs/QUESTIONS.md` (the component, the needed change, the blocked task), and
+  move to the next task. The design-reviewer blocks any file outside the bound
+  wave's allowlist.
+- **i18n strings are additive.** Strings files under `packages/i18n` are
+  append-only across loops: on a rebase conflict, keep BOTH sides and never drop
+  an existing key.
+- **Shared gate (cross-wave prerequisite).** A wave's task list may declare a
+  task in ANOTHER wave as its prerequisite. When a task names such a
+  prerequisite, the loop polls GitHub for that PR's merge before starting the
+  task — `gh pr view <pr> --json state,mergedAt`, `sleep 600` between checks. If
+  it is still unmerged after 8 hours, give up, report the block, and move to the
+  next task.
+
+### Self-merge policy
+
+After both reviewers PASS and the PR is open, the loop may merge its own PR ONLY
+when ALL of these hold:
+
+- Every required status check is green, verified with `gh pr checks` showing
+  nothing pending. Admin bypass of a pending or failing required check is
+  forbidden.
+- Both reviewer agents (design-reviewer and a11y-reviewer) returned `PASS` after
+  all fixes.
+- The e2e suite is green whenever the diff touches `apps/web` or `apps/portal`.
+- The diff stays entirely inside the bound wave's path allowlist.
+- The diff contains ZERO changes to any of: drizzle migrations, anything RLS- or
+  auth-related, payment or webhook code, `.github/workflows`.
+
+If any single condition is unmet, leave the PR open, summarize exactly which
+condition blocked it, and continue to the next task. Never use admin privileges
+to force a merge past a pending or failing required check.
+
+Failed NON-required checks (for example a Vercel deploy that was skipped or
+rate-limited) do not block self-merge; when self-merging past one, say so
+explicitly in the summary.
 
 ---
 
