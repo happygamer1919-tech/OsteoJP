@@ -73,7 +73,7 @@ export function Banner({
           type="button"
           aria-label={closeLabel}
           onClick={onDismiss}
-          className="shrink-0 rounded text-text-secondary transition-colors duration-fast ease-standard hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2"
+          className="shrink-0 rounded text-text-secondary transition-colors duration-fast ease-standard hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           <X size={16} strokeWidth={1.75} aria-hidden="true" />
         </button>

@@ -154,14 +154,62 @@ near the teal family.
 
 | Token | Hex | Use |
 |---|---|---|
-| `success` | `#2F8F6B` | Confirmations, completed states, healthy indicators |
-| `success-bg` | `#E6F4EE` | Success banner backgrounds |
-| `warning` | `#B47A14` | Caution states, pending review, attention needed |
-| `warning-bg` | `#FBF1DD` | Warning banner backgrounds |
-| `error` | `#B23A3A` | Validation errors, destructive actions, failed states |
-| `error-bg` | `#F8E5E5` | Error banner backgrounds |
+| `success` | `#2F8F6B` | Accent / icon / status dot (confirmations, healthy indicators) |
+| `success-bg` | `#E6F4EE` | Success banner / chip backgrounds |
+| `success-700` | `#127B59` | AA-safe success **label text** (≥4.5:1 on `success-bg` and white) |
+| `warning` | `#B47A14` | Accent / icon / status dot (caution, pending review) |
+| `warning-bg` | `#FBF1DD` | Warning banner / chip backgrounds |
+| `warning-700` | `#956302` | AA-safe warning **label text** (≥4.5:1 on `warning-bg` and white) |
+| `error` | `#B23A3A` | DEFAULT = `error-700`. Validation errors, destructive actions, failed states |
+| `error-bg` | `#F8E5E5` | Error banner / chip backgrounds |
 | `info` | `#2E6FA8` | Informational notices, neutral system messages |
-| `info-bg` | `#E4EEF7` | Info banner backgrounds |
+| `info-bg` | `#E4EEF7` | Info banner / chip backgrounds |
+
+**`error` numeric scale** (full 50–900, base `#B23A3A` pinned at 700; generated
+the same way as the brand scales — accent-2 lightness profile, error hue,
+gamut-safe chroma). Destructive controls fill `error` (=700) and darken to
+`error-800` / `error-900` on hover / active.
+
+| Step | Hex | Step | Hex |
+|---|---|---|---|
+| `error-50` | `#F8F0EF` | `error-500` | `#FF615F` |
+| `error-100` | `#F7E1DF` | `error-600` | `#DD4949` |
+| `error-200` | `#FCC9C4` | `error-700` | `#B23A3A` (base) |
+| `error-300` | `#FFA9A2` | `error-800` | `#8D2D2D` |
+| `error-400` | `#FF8882` | `error-900` | `#672120` |
+
+**AA contrast notes (binding; the a11y reviewer enforces these):**
+
+- **Filled teal text surfaces** (primary Button, active states) use
+  **`accent-2-700`** with `text-inverse` (≈4.8:1). `accent-2-600` white text is
+  only ~3.3:1 and **fails** AA for 12–16px labels — never use 500/600 as a
+  filled text surface.
+- **`success` / `warning`** are accent/icon tones only. As **text** they fail AA
+  on their tints and on white, so labels use `success-700` / `warning-700`. The
+  8px status **dot** may keep the base tone (3:1 graphical-object bar).
+- **Focus ring** uses `accent-2-600` (see §1.9), not `accent-2-500`.
+
+### 1.9 Focus ring
+
+| Token | Value | Use |
+|---|---|---|
+| `focus-ring` | `accent-2-600` (`#3A9C8D`) | The single global focus-indicator color every interactive control's `focus-visible` ring consumes |
+
+`accent-2-600` measures ≈3.3:1 against white / `surface`, clearing WCAG 2.1
+SC 1.4.11 (non-text contrast, 3:1) for a focus indicator. The earlier
+`accent-2-500` ring was ~2.4:1 and failed. Components reference the token
+(`ring-focus-ring`); they do not hardcode the scale step, so the ring can be
+retuned in one place.
+
+---
+
+## Approved runtime dependencies
+
+- **`lucide-react`** — the icon library for `packages/ui`. The one new runtime
+  dependency approved for Wave 1 (icons only: `currentColor`, stroke-width 1.75,
+  sizes 16/20/24 per SPEC-foundation §3). MIT, tree-shakeable, no telemetry, no
+  PII/EU-residency impact (client-side SVG). Recorded per the new-dependency rule
+  (QUESTIONS.md Q8).
 
 ---
 
@@ -360,10 +408,24 @@ const themeExtend = {
       DEFAULT: '#FFFFFF',
       muted: '#F0F3F6',
     },
-    success: { DEFAULT: '#2F8F6B', bg: '#E6F4EE' },
-    warning: { DEFAULT: '#B47A14', bg: '#FBF1DD' },
-    error: { DEFAULT: '#B23A3A', bg: '#F8E5E5' },
+    success: { DEFAULT: '#2F8F6B', bg: '#E6F4EE', 700: '#127B59' }, // 700 = AA label text
+    warning: { DEFAULT: '#B47A14', bg: '#FBF1DD', 700: '#956302' }, // 700 = AA label text
+    error: {
+      50: '#F8F0EF',
+      100: '#F7E1DF',
+      200: '#FCC9C4',
+      300: '#FFA9A2',
+      400: '#FF8882',
+      500: '#FF615F',
+      600: '#DD4949',
+      700: '#B23A3A', // base
+      800: '#8D2D2D',
+      900: '#672120',
+      DEFAULT: '#B23A3A', // = error-700
+      bg: '#F8E5E5',
+    },
     info: { DEFAULT: '#2E6FA8', bg: '#E4EEF7' },
+    'focus-ring': '#3A9C8D', // = accent-2-600; global focus-indicator color (§1.9)
   },
   fontFamily: {
     sans: [
@@ -442,8 +504,12 @@ module.exports = { themeExtend };
   --text-inverse: #FFFFFF;
 
   --success: #2F8F6B;
+  --success-700: #127B59; /* AA label text */
   --warning: #B47A14;
-  --error: #B23A3A;
+  --warning-700: #956302; /* AA label text */
+  --error: #B23A3A; /* = error-700; scale 50–900 + 800/900 for destructive hover/active */
   --info: #2E6FA8;
+
+  --focus-ring: #3A9C8D; /* = accent-2-600; global focus indicator */
 }
 ```

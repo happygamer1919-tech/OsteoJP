@@ -1,7 +1,8 @@
 /**
  * Shared visual skin for text controls (Input, Textarea) — SPEC-foundation §4.2.
- * Surface bg, 1px border-strong, default radius, accent-2-500 border + global
- * focus ring on focus, error border when invalid, muted surface when disabled.
+ * Surface bg, 1px border-strong, default radius, accent-2-500 focus border +
+ * the global focus-ring token on focus, error border when invalid, muted
+ * surface when disabled.
  * Token-only; the focus border/ring transitions use the W1-01 motion tokens.
  */
 export const cx = (
@@ -17,6 +18,6 @@ export const controlSkin = (invalid: boolean): string =>
     invalid
       ? "border-error"
       : "border-border-strong focus:border-accent-2-500",
-    "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2",
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
     "disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-text-muted",
   );

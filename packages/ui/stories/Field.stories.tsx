@@ -32,7 +32,7 @@ const clearButton = (
   <button
     type="button"
     aria-label="Limpar"
-    className="inline-flex items-center justify-center rounded-full text-text-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2"
+    className="inline-flex items-center justify-center rounded-full text-text-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
   >
     <X size={16} strokeWidth={1.75} aria-hidden="true" />
   </button>

@@ -7,12 +7,12 @@ import { type ReactNode } from "react";
  * space-3) with an optional leading 8px dot. Five tones; screens map domain
  * statuses (e.g. appointment states) to a tone via i18n.
  *
- * Accessibility note (QUESTIONS.md Q11): the spec sets the text to the semantic
- * color, but `success` (#2F8F6B → 3.5:1) and `warning` (#B47A14 → 3.3:1) fail
- * WCAG AA on their light tints (and on white) at 12px. Those two tones therefore
- * carry the status with the tinted bg + the colored dot (a graphical object,
- * 3:1) and use `text-primary` for the label. error/info/neutral pass AA and use
- * the semantic text per spec. Pending owner-ratified AA-dark semantic text tokens.
+ * Accessibility note (QUESTIONS.md Q11, resolved): `success` (#2F8F6B → 3.5:1)
+ * and `warning` (#B47A14 → 3.3:1) fail WCAG AA as 12px label text on their light
+ * tints (and on white). They now render the label in the AA-dark semantic text
+ * tokens `success-700` (#127B59, ≥4.5:1) / `warning-700` (#956302, ≥4.5:1) while
+ * the colored 8px dot keeps the base tone (a 3:1 graphical object). error/info/
+ * neutral already pass AA and use the semantic text per spec.
  *
  * @example
  * <StatusChip tone="success" dot>{t("appointment.confirmed")}</StatusChip>
@@ -28,9 +28,9 @@ export interface StatusChipProps {
 }
 
 const TONES: Record<StatusTone, { container: string; dot: string }> = {
-  // success/warning text → text-primary for WCAG AA (see docblock / Q11).
-  success: { container: "bg-success-bg text-text-primary", dot: "bg-success" },
-  warning: { container: "bg-warning-bg text-text-primary", dot: "bg-warning" },
+  // success/warning label → AA-dark semantic text token; dot keeps base tone (Q11).
+  success: { container: "bg-success-bg text-success-700", dot: "bg-success" },
+  warning: { container: "bg-warning-bg text-warning-700", dot: "bg-warning" },
   error: { container: "bg-error-bg text-error", dot: "bg-error" },
   info: { container: "bg-info-bg text-info", dot: "bg-info" },
   neutral: { container: "bg-surface-muted text-text-secondary", dot: "bg-text-muted" },

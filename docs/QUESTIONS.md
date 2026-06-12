@@ -148,6 +148,8 @@ main
 
 ## 2026-06-11 — Q8: lucide-react added to packages/ui (new runtime dependency)
 
+> **RESOLVED 2026-06-12 (PR fix/ui-aa-token-pass):** accepted (recommended default). Recorded as the approved Wave 1 icon dependency in brand-tokens.md ("Approved runtime dependencies") and SPEC-foundation §3.
+
 Context: task W1-01 (docs/design/PLAN.md) and SPEC-foundation §3 explicitly
 approve `lucide-react` as "the one new runtime dependency approved for Wave 1",
 added in `packages/ui` only. Logging it here because the global rule requires a
@@ -162,6 +164,8 @@ Recommended default: **accept** (already spec-approved). No action needed unless
 the owner wants a different icon library. Not blocking.
 
 ## 2026-06-11 — Q9: SPEC-foundation §4.1 primary Button fill fails WCAG AA — used accent-2-700
+
+> **RESOLVED 2026-06-12 (PR fix/ui-aa-token-pass):** corrected SPEC §4.1 (and §2 contrast) to the shipped values — primary fill `accent-2-700`, hover `accent-2-800`, active `accent-2-900` with `text-inverse`. AA wins on conflict.
 
 Context: SPEC-foundation §4.1 specifies the primary Button as `accent-2-600`
 fill with `text-inverse` text, hover `accent-2-700`, active `accent-2-800`. But
@@ -183,6 +187,8 @@ a non-text-inverse foreground, re-opening contrast).
 
 ## 2026-06-11 — Q10: `error` semantic token has no numeric scale for destructive hover/active
 
+> **RESOLVED 2026-06-12 (PR fix/ui-aa-token-pass):** added the full `error` 50–900 scale (base `#B23A3A` pinned at 700, generated the same way as the brand scales) to brand-tokens.md §1.8/§7 and theme.css. Destructive Button now uses `error` base with `error-800`/`error-900` hover/active (replacing the interim `brightness-*`). Note: base pins at 700 (matching the doc's dark-saturated-base convention, e.g. accent-1), so hover/active are 800/900, not the 600/700 the question speculated.
+
 Context: SPEC-foundation §4.1 destructive Button calls for hover "darken one
 step" and active "darken two steps", but brand-tokens.md §1.8/§7 define `error`
 only as a single value (`#B23A3A`) plus `error-bg` — there is no `error-600/700`
@@ -199,6 +205,8 @@ optionally full 50–900) to brand-tokens.md §1.8/§7 and theme.css, then switc
 destructive hover/active to `error-600`/`error-700`. Not blocking for W1-01.
 
 ## 2026-06-11 — Q11: `success` and `warning` semantic text fail WCAG AA on their tints (StatusChip)
+
+> **RESOLVED 2026-06-12 (PR fix/ui-aa-token-pass):** added AA-dark text tokens `success-700` (`#127B59`) and `warning-700` (`#956302`) (≥4.5:1 on their tints and white). StatusChip success/warning labels now use the `-700` token; the colored dot keeps the base tone (3:1 graphical). SPEC §4.5 + brand-tokens.md §1.8 updated.
 
 Context: SPEC-foundation §4.5 sets each StatusChip tone's text to the matching
 semantic color on its `-bg` tint. Measured contrast (12px text → needs 4.5:1):
@@ -227,6 +235,8 @@ semantic `-700` text for a uniform colored-text treatment. Not blocking for W1-0
 
 ## 2026-06-11 — Q12: global focus-ring color (accent-2-500) is below the 3:1 focus-indicator threshold on white
 
+> **RESOLVED 2026-06-12 (PR fix/ui-aa-token-pass):** added a single `focus-ring` token (= `accent-2-600`, ≈3.3:1, clears SC 1.4.11) and migrated every `ring-accent-2-500` in packages/ui to `ring-focus-ring` in one coordinated edit. SPEC §2 + brand-tokens.md §1.9 updated. Follow-up: `apps/web/components/app-shell.tsx` also hardcodes the old ring; out of this PR's scope (apps/ not in the self-merge fence) — see DECISIONS.
+
 Context: SPEC-foundation §2 mandates the global focus ring as "2px ring in
 `accent-2-500`". `accent-2-500` (#45B9A7) measures ~2.4:1 against white /
 `surface`, below the WCAG 2.1 SC 1.4.11 (non-text contrast) 3:1 minimum for a
@@ -248,6 +258,8 @@ change is a barely-perceptible one-step-darker teal. Not blocking for W1-04.
 
 
 ## 2026-06-11 — Q13: SPEC §4.11 portal bottom-nav colors fail WCAG AA
+
+> **RESOLVED 2026-06-12 (PR fix/ui-aa-token-pass):** corrected SPEC §4.11 to the shipped AA-safe tokens — active `accent-2-700` (≈4.8:1), inactive `text-secondary` (≈5.5:1).
 
 Context: SPEC-foundation §4.11 specifies the portal bottom-tab bar as "active in
 `accent-2-600`, inactive `text-muted`". As 12px label text both fail WCAG AA

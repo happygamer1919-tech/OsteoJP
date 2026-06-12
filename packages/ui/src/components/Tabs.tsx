@@ -85,7 +85,7 @@ export function Tabs({
             className={cx(
               "-mb-px border-b-2 px-1 pb-3 pt-2 text-sm font-medium",
               "transition-colors duration-fast ease-standard",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
               selected
                 ? "border-accent-2-600 text-text-primary"
                 : "border-transparent text-text-secondary hover:text-text-primary",

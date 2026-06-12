@@ -119,7 +119,7 @@ export function Table<T>({
           className={cx(
             "inline-flex items-center gap-1 font-medium text-text-secondary hover:text-text-primary",
             "transition-colors duration-fast ease-standard",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
             col.align === "right" && "flex-row-reverse",
           )}
         >
@@ -192,7 +192,7 @@ export function Table<T>({
                         <a
                           href={href}
                           aria-label={getRowLabel?.(row)}
-                          className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-2-500"
+                          className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
                         />
                       )}
                     </td>
@@ -249,7 +249,7 @@ export function TableCardRow({
         className={cx(
           base,
           "cursor-pointer transition-colors duration-fast ease-standard hover:bg-bg",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
           className,
         )}
       >

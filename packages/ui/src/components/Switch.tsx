@@ -52,7 +52,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
           "peer h-5 w-9 appearance-none rounded-full bg-neutral-300",
           "transition-colors duration-fast ease-standard",
           "checked:bg-accent-2-600",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
           "disabled:cursor-not-allowed disabled:opacity-60",
           disabled ? "" : "cursor-pointer",
           className,

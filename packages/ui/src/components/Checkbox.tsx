@@ -65,7 +65,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
               "transition-colors duration-fast ease-standard",
               "checked:border-accent-2-600 checked:bg-accent-2-600",
               "indeterminate:border-accent-2-600 indeterminate:bg-accent-2-600",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
               "disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-muted",
             )}
             {...rest}

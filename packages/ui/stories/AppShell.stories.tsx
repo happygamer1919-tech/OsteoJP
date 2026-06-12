@@ -39,7 +39,7 @@ const staffNav: AppShellNavItem[] = [
 const userMenu = (
   <button
     type="button"
-    className="inline-flex items-center gap-1 rounded-md p-1 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2"
+    className="inline-flex items-center gap-1 rounded-md p-1 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
   >
     <span className="inline-flex size-8 items-center justify-center rounded-full bg-surface-muted text-text-secondary">
       <User size={20} strokeWidth={1.75} aria-hidden="true" />
@@ -52,7 +52,7 @@ const help = (
   <button
     type="button"
     aria-label="Ajuda"
-    className="inline-flex size-9 items-center justify-center rounded-md text-text-secondary hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2"
+    className="inline-flex size-9 items-center justify-center rounded-md text-text-secondary hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
   >
     <HelpCircle size={20} strokeWidth={1.75} aria-hidden="true" />
   </button>

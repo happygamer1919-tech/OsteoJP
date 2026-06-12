@@ -165,7 +165,7 @@ function ToastItem({
             toast.action?.onClick();
             onDismiss();
           }}
-          className="shrink-0 rounded px-2 py-1 text-sm font-semibold text-accent-2-700 transition-colors duration-fast ease-standard hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2"
+          className="shrink-0 rounded px-2 py-1 text-sm font-semibold text-accent-2-700 transition-colors duration-fast ease-standard hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           {toast.action.label}
         </button>
@@ -174,7 +174,7 @@ function ToastItem({
         type="button"
         aria-label="Fechar"
         onClick={onDismiss}
-        className="shrink-0 rounded text-text-muted transition-colors duration-fast ease-standard hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-2-500 focus-visible:ring-offset-2"
+        className="shrink-0 rounded text-text-muted transition-colors duration-fast ease-standard hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
       >
         <X size={16} strokeWidth={1.75} aria-hidden="true" />
       </button>

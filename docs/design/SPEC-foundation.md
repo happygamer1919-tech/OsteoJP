@@ -41,9 +41,9 @@ These apply to every component and are enforced by the design-reviewer agent.
 - `--ease-standard: cubic-bezier(0.2, 0, 0, 1)`
 - All transitions wrapped so `prefers-reduced-motion: reduce` sets durations to 0ms.
 
-**Focus.** Every interactive element shows `focus-visible`: 2px ring in `accent-2-500`, 2px offset, on every background. No `outline: none` without a replacement ring in the same rule.
+**Focus.** Every interactive element shows `focus-visible`: 2px ring in the `focus-ring` token (= `accent-2-600`), 2px offset, on every background. The ring color is `≈3.3:1` on white/`surface`, clearing WCAG 2.1 SC 1.4.11; `accent-2-500` was ~2.4:1 and is not used for the ring. Components consume the single `focus-ring` token (`ring-focus-ring`), never a hardcoded scale step. No `outline: none` without a replacement ring in the same rule.
 
-**Contrast.** Text on filled surfaces must meet WCAG AA (4.5:1 normal text, 3:1 large). Known trap: `text-inverse` on `brand-teal` (#45B9A7) fails AA. Filled teal surfaces that carry text therefore use `accent-2-600` or darker; the a11y reviewer blocks anything lighter.
+**Contrast.** Text on filled surfaces must meet WCAG AA (4.5:1 normal text, 3:1 large). Known trap: `text-inverse` on `brand-teal` (#45B9A7) fails AA, and so does `text-inverse` on `accent-2-600` (~3.3:1). Filled teal surfaces that carry text therefore use **`accent-2-700` or darker** (`accent-2-700` ≈ 4.8:1); the a11y reviewer blocks anything lighter. `accent-2-600` is for the focus ring and non-text surfaces only. The semantic `success`/`warning` tones likewise fail as text and use their `-700` token for labels (see §4.5).
 
 **Strings.** No hardcoded user-facing strings in components. Components take strings as props; screens resolve them from packages/i18n keys. Copy follows brand-voice.md: sentence case, infinitive verbs on buttons in PT (Gravar, Cancelar, Adicionar), no exclamation marks, no emoji anywhere.
 
@@ -67,10 +67,12 @@ These apply to every component and are enforced by the design-reviewer agent.
 **Variants**
 | Variant | Fill | Text | Border | Hover | Active |
 |---|---|---|---|---|---|
-| primary | `accent-2-600` | `text-inverse` | none | `accent-2-700` | `accent-2-800` |
+| primary | `accent-2-700` | `text-inverse` | none | `accent-2-800` | `accent-2-900` |
 | secondary | `surface` | `text-primary` | 1px `border-strong` | bg `surface-muted` | bg `neutral-200` |
 | ghost | transparent | `text-secondary` | none | bg `surface-muted`, text `text-primary` | bg `neutral-200` |
-| destructive | `error` | `text-inverse` | none | darken one step | darken two steps |
+| destructive | `error` (= `error-700`) | `text-inverse` | none | `error-800` | `error-900` |
+
+Primary fills at `accent-2-700` (not 600): `text-inverse` on `accent-2-600` is only ~3.3:1, below AA for the 12–16px label (§2 contrast). Destructive uses the `error` 50–900 scale (brand-tokens.md §1.8); `error` (= `error-700`) base, stepping to `error-800` / `error-900`.
 
 **Sizes**: sm (height 32px, caption text, px `space-3`), md (height 40px, body-sm, px `space-4`), lg (height 48px, body, px `space-6`). md is default. Portal screens use md minimum (44px touch target met via min-height on tap area).
 
@@ -117,11 +119,13 @@ Pill (radius `full`), caption text weight 500, py `space-1` px `space-3`, option
 **Tones** (semantic, not status-specific; screens map appointment statuses via i18n):
 | Tone | Bg | Text | Dot |
 |---|---|---|---|
-| success | `success-bg` | `success` | `success` |
-| warning | `warning-bg` | `warning` | `warning` |
+| success | `success-bg` | `success-700` | `success` |
+| warning | `warning-bg` | `warning-700` | `warning` |
 | error | `error-bg` | `error` | `error` |
 | info | `info-bg` | `info` | `info` |
 | neutral | `surface-muted` | `text-secondary` | `text-muted` |
+
+`success` / `warning` labels use the AA-dark `-700` text token (the base tones are ~3.5:1 / ~3.3:1 on their tints and fail AA at 12px); the 8px dot keeps the base tone (3:1 graphical-object bar). error/info/neutral text already clear AA. See brand-tokens.md §1.8 and QUESTIONS Q11.
 
 Canonical appointment mapping for screens (PT terms per brand-voice.md): confirmed=success, pending=warning, cancelled=neutral with strikethrough on the row not the chip, no-show=error, completed=info. The chip itself stays generic.
 
@@ -171,7 +175,7 @@ Generalizes the existing staff AppShell+NavLinks (the best current pattern per u
 
 **Staff layout (under 768px)**: nav collapses to a hamburger ghost button opening a Drawer with the nav list; a persistent help ghost icon button stays visible (borrowed deliberately from app.doc).
 
-**Portal layout (mobile-first)**: top bar 56px with BrandLockup `mark` size sm and screen title; bottom tab bar height 64px, `surface` bg, top 1px `border`, up to 5 items (icon 24px over caption label), active in `accent-2-600`, inactive `text-muted`, each tab min 44px touch. Desktop portal centers content at max-width 640px and moves tabs to a top row.
+**Portal layout (mobile-first)**: top bar 56px with BrandLockup `mark` size sm and screen title; bottom tab bar height 64px, `surface` bg, top 1px `border`, up to 5 items (icon 24px over caption label), active in `accent-2-700` (≈4.8:1; `accent-2-600` ~3.3:1 fails AA as 12px label and the 24px icon), inactive `text-secondary` (≈5.5:1; `text-muted` ~2.9:1 fails the text and 3:1 icon bars), each tab min 44px touch. Desktop portal centers content at max-width 640px and moves tabs to a top row.
 
 Role-aware nav: AppShell takes nav items as data; screens filter by role via packages/auth/permissions.ts. The shell never hardcodes role logic.
 
