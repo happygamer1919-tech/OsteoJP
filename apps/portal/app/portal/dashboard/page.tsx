@@ -1,3 +1,4 @@
+import { Calendar, FileText } from 'lucide-react'
 import { createServerClient } from '@/lib/supabase/server'
 import { getMyAppointments } from '@/lib/api/client'
 import type { AppointmentView } from '@/lib/api/client'
@@ -52,49 +53,42 @@ export default async function DashboardPage() {
     <div>
       {/* Greeting */}
       <div className="flex items-center gap-3 mb-5">
-        <div
-          className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0"
-          style={{ backgroundColor: '#E1F5EE', color: '#0F6E56' }}
-        >
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0 bg-accent-2-100 text-accent-2-800">
           {firstName.charAt(0).toUpperCase()}
         </div>
         <div>
-          <p className="font-medium text-gray-900">Olá, {firstName}</p>
-          <p className="text-xs text-gray-500">Bem-vindo de volta</p>
+          <p className="font-medium text-text-primary">Olá, {firstName}</p>
+          <p className="text-xs text-text-secondary">Bem-vindo de volta</p>
         </div>
       </div>
 
       {/* Next appointment */}
-      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+      <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">
         Próxima consulta
       </p>
 
       {next ? (
-        <div
-          className="bg-white rounded-xl border border-gray-100 p-4 mb-5"
-          style={{ borderLeft: '3px solid #45B9A7' }}
-        >
-          <p className="font-medium text-gray-900">{next.serviceName ?? 'Consulta'}</p>
-          <p className="text-sm text-gray-500 mt-0.5">
+        <div className="bg-surface rounded-xl border border-border border-l-4 border-l-accent-2-700 p-4 mb-5">
+          <p className="font-medium text-text-primary">{next.serviceName ?? 'Consulta'}</p>
+          <p className="text-sm text-text-secondary mt-0.5">
             {(() => { const { date, time } = formatDateTime(next.startsAt); return `${date} · ${time}` })()}
             {next.locationName && ` · ${next.locationName}`}
           </p>
           {next.status in STATUS_PT && (
             <span
-              className="inline-block mt-2 text-xs font-medium px-2 py-0.5 rounded-full"
-              style={
+              className={`inline-block mt-2 text-xs font-medium px-2 py-0.5 rounded-full ${
                 next.status === 'confirmed'
-                  ? { backgroundColor: '#EAF3DE', color: '#27500A' }
-                  : { backgroundColor: '#FAEEDA', color: '#633806' }
-              }
+                  ? 'bg-success-bg text-success-700'
+                  : 'bg-warning-bg text-warning-700'
+              }`}
             >
               {STATUS_PT[next.status]}
             </span>
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-100 p-4 mb-5">
-          <p className="text-sm text-gray-500">Sem consultas marcadas.</p>
+        <div className="bg-surface rounded-xl border border-border p-4 mb-5">
+          <p className="text-sm text-text-secondary">Sem consultas marcadas.</p>
         </div>
       )}
 
@@ -102,17 +96,16 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-2 gap-3 mb-5">
         <Link
           href="/portal/booking"
-          className="flex flex-col items-center justify-center gap-2 rounded-xl py-4 text-sm font-medium text-white"
-          style={{ backgroundColor: '#45B9A7' }}
+          className="flex flex-col items-center justify-center gap-2 rounded-xl py-4 text-sm font-medium bg-accent-2-700 text-text-inverse"
         >
-          <span className="text-xl">📅</span>
+          <Calendar size={24} strokeWidth={1.75} aria-hidden="true" />
           Marcar consulta
         </Link>
         <Link
           href="/portal/documents"
-          className="flex flex-col items-center justify-center gap-2 rounded-xl py-4 text-sm font-medium text-gray-700 bg-white border border-gray-100"
+          className="flex flex-col items-center justify-center gap-2 rounded-xl py-4 text-sm font-medium text-text-primary bg-surface border border-border"
         >
-          <span className="text-xl">📁</span>
+          <FileText size={24} strokeWidth={1.75} aria-hidden="true" />
           Documentos
         </Link>
       </div>
@@ -120,24 +113,21 @@ export default async function DashboardPage() {
       {/* Recent visits */}
       {past.length > 0 && (
         <>
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">
             Visitas recentes
           </p>
-          <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+          <div className="bg-surface rounded-xl border border-border divide-y divide-border">
             {past.map((appt) => {
               const { date } = formatDateTime(appt.startsAt)
               return (
                 <div key={appt.id} className="px-4 py-3 flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="text-sm font-medium text-text-primary">
                       {appt.serviceName ?? 'Consulta'}
                     </p>
-                    <p className="text-xs text-gray-400">{date}</p>
+                    <p className="text-xs text-text-muted">{date}</p>
                   </div>
-                  <span
-                    className="text-xs font-medium px-2 py-0.5 rounded-full"
-                    style={{ backgroundColor: '#F3F4F6', color: '#6B7280' }}
-                  >
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-surface-muted text-text-secondary">
                     Concluída
                   </span>
                 </div>

@@ -1,3 +1,4 @@
+import { ArrowRight, MapPin } from 'lucide-react'
 import Link from 'next/link'
 
 // Clinic data sourced from osteojp.pt/contactos — kept static, updated on redeploy.
@@ -43,8 +44,8 @@ const CLINICS = [
 export default function ClinicsPage() {
   return (
     <div>
-      <h1 className="text-lg font-medium text-gray-900 mb-1">As nossas clínicas</h1>
-      <p className="text-sm text-gray-500 mb-6">
+      <h2 className="text-lg font-medium text-text-primary mb-1">As nossas clínicas</h2>
+      <p className="text-sm text-text-secondary mb-6">
         Estamos presentes em Linda-a-Velha e Castelo Branco.
       </p>
 
@@ -52,30 +53,27 @@ export default function ClinicsPage() {
         {CLINICS.map((clinic) => (
           <article
             key={clinic.id}
-            className="bg-white rounded-xl border border-gray-100 overflow-hidden"
+            className="bg-surface rounded-xl border border-border overflow-hidden"
             aria-label={`Clínica ${clinic.name}`}
           >
             {/* Header */}
-            <div
-              className="px-4 py-3 flex items-center gap-2"
-              style={{ backgroundColor: '#E1F5EE' }}
-            >
-              <span aria-hidden="true" style={{ color: '#0F6E56' }}>📍</span>
+            <div className="px-4 py-3 flex items-center gap-2 bg-accent-2-100">
+              <MapPin size={20} strokeWidth={1.75} aria-hidden="true" className="text-accent-2-800" />
               <div>
-                <p className="font-medium text-sm" style={{ color: '#0F6E56' }}>
+                <p className="font-medium text-sm text-accent-2-800">
                   {clinic.name}
                 </p>
-                <p className="text-xs" style={{ color: '#1D9E75' }}>{clinic.area}</p>
+                <p className="text-xs text-accent-2-700">{clinic.area}</p>
               </div>
             </div>
 
             <div className="p-4 space-y-4">
               {/* Address */}
               <div>
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">
+                <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
                   Morada
                 </p>
-                <address className="not-italic text-sm text-gray-900 leading-relaxed">
+                <address className="not-italic text-sm text-text-primary leading-relaxed">
                   {clinic.address}<br />
                   {clinic.postalCode} {clinic.city}
                 </address>
@@ -83,20 +81,20 @@ export default function ClinicsPage() {
                   href={clinic.mapsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-block text-xs font-medium mt-1.5"
-                  style={{ color: '#45B9A7' }}
+                  className="inline-flex items-center gap-1 text-xs font-medium mt-1.5 text-accent-2-700"
                   aria-label={`Ver ${clinic.name} no Google Maps`}
                 >
-                  Ver no mapa →
+                  Ver no mapa
+                  <ArrowRight size={16} strokeWidth={1.75} aria-hidden="true" />
                 </a>
               </div>
 
               {/* Divider */}
-              <div className="h-px bg-gray-50" aria-hidden="true" />
+              <div className="h-px bg-border" aria-hidden="true" />
 
               {/* Phone */}
               <div>
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">
+                <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
                   Telefone
                 </p>
                 <div className="space-y-1">
@@ -104,8 +102,7 @@ export default function ClinicsPage() {
                     <a
                       key={p.number}
                       href={`tel:${p.number}`}
-                      className="block text-sm font-medium"
-                      style={{ color: '#45B9A7' }}
+                      className="block text-sm font-medium text-accent-2-700"
                       aria-label={`Ligar para ${p.display}`}
                     >
                       {p.display}
@@ -115,37 +112,36 @@ export default function ClinicsPage() {
               </div>
 
               {/* Divider */}
-              <div className="h-px bg-gray-50" aria-hidden="true" />
+              <div className="h-px bg-border" aria-hidden="true" />
 
               {/* Email */}
               <div>
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">
+                <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
                   Email
                 </p>
                 <a
                   href={`mailto:${clinic.email}`}
-                  className="text-sm"
-                  style={{ color: '#45B9A7' }}
+                  className="text-sm text-accent-2-700"
                 >
                   {clinic.email}
                 </a>
               </div>
 
               {/* Divider */}
-              <div className="h-px bg-gray-50" aria-hidden="true" />
+              <div className="h-px bg-border" aria-hidden="true" />
 
               {/* Hours */}
               <div>
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">
+                <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">
                   Horário
                 </p>
                 {clinic.hours.map((h) => (
                   <div key={h.days} className="flex justify-between text-sm">
-                    <span className="text-gray-600">{h.days}</span>
-                    <span className="font-medium text-gray-900">{h.time}</span>
+                    <span className="text-text-secondary">{h.days}</span>
+                    <span className="font-medium text-text-primary">{h.time}</span>
                   </div>
                 ))}
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-text-muted mt-1">
                   Sábado e Domingo encerrado
                 </p>
               </div>
@@ -153,8 +149,7 @@ export default function ClinicsPage() {
               {/* CTA */}
               <Link
                 href="/portal/booking"
-                className="block w-full text-center py-2.5 rounded-lg text-sm font-medium text-white mt-2"
-                style={{ backgroundColor: '#45B9A7' }}
+                className="block w-full text-center py-2.5 rounded-lg text-sm font-medium text-text-inverse mt-2 bg-accent-2-700"
                 aria-label={`Marcar consulta em ${clinic.name}`}
               >
                 Marcar consulta aqui
@@ -165,8 +160,8 @@ export default function ClinicsPage() {
       </div>
 
       {/* General contact note */}
-      <div className="mt-6 bg-white rounded-xl border border-gray-100 p-4">
-        <p className="text-sm text-gray-500 leading-relaxed text-center">
+      <div className="mt-6 bg-surface rounded-xl border border-border p-4">
+        <p className="text-sm text-text-secondary leading-relaxed text-center">
           Para urgências ou questões gerais, ligue directamente para a clínica. As marcações online estão disponíveis até 24 horas antes da consulta.
         </p>
       </div>

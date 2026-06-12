@@ -1,3 +1,4 @@
+import { ChevronLeft } from 'lucide-react'
 import { getBookableCatalog } from '@/lib/api/client'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
@@ -64,9 +65,10 @@ export default async function BookingSlotPage({
       <div className="flex items-center gap-3 mb-5">
         <Link
           href={`/portal/booking/service?location=${locationId}`}
-          className="text-gray-400 hover:text-gray-600 text-sm"
+          className="inline-flex items-center gap-1 text-text-muted hover:text-text-secondary text-sm"
         >
-          ← Voltar
+          <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
+          Voltar
         </Link>
       </div>
       <SlotPicker service={service} location={location} slots={slots} />

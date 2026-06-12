@@ -1,80 +1,33 @@
-@import "tailwindcss";
+/* Brand tokens (docs/brand-tokens.md) live in @osteojp/ui/theme.css; importing
+   it here makes the patient portal share the exact same token layer (colours,
+   type, spacing, radius, shadows, motion + the reduced-motion rule) as the
+   staff app. This replaces the portal's former local colour system. */
+@import "@osteojp/ui/theme.css";
 
-/* ── Focus visible ── */
-/* Consistent teal focus ring across all interactive elements */
-:focus-visible {
-  outline: 2px solid #45B9A7;
-  outline-offset: 2px;
-  border-radius: 4px;
+/* Scan the shared component library so Tailwind generates the utility classes
+   used inside @osteojp/ui components (e.g. PortalShell). Tailwind v4 does not
+   scan node_modules / workspace packages by default; without this the shell
+   renders unstyled. */
+@source "../../../packages/ui/src";
+
+/* Drive the global background/foreground from the brand tokens, matching
+   apps/web: the page background is the brand light neutral (the `bg` token). */
+:root {
+  --background: var(--color-bg);
+  --foreground: var(--color-text-primary);
 }
 
-/* Remove default outline only when focus-visible is supported */
-:focus:not(:focus-visible) {
-  outline: none;
-}
-
-/* ── Reduced motion ── */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
-/* ── Tap target minimum size ── */
-/* WCAG 2.5.8: minimum 24×24px; we aim for 44×44px on touch */
-button,
-a,
-[role="checkbox"],
-[role="switch"] {
-  min-height: 24px;
-  min-width: 24px;
-}
-
-/* ── Screen reader only utility ── */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
-
-.focus\:not-sr-only:focus {
-  position: static;
-  width: auto;
-  height: auto;
-  padding: revert;
-  margin: revert;
-  overflow: visible;
-  clip: auto;
-  white-space: normal;
-}
-
-/* ── Base ── */
-html {
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  /* Inter (loaded via next/font in app/layout.tsx, injected as --font-inter)
+     is the default sans, with the system stack as the pre-webfont fallback. */
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, sans-serif;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  color: #111827;
-  background-color: #F9FAFB;
-}
-
-/* ── Scrollbar ── */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #D1D5DB transparent;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
 }

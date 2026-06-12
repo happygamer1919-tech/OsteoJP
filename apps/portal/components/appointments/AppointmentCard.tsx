@@ -17,12 +17,22 @@ const STATUS_LABELS: Record<AppointmentStatus, string> = {
   no_show: 'Não compareceu',
 }
 
-const STATUS_COLORS: Record<AppointmentStatus, { bg: string; color: string }> = {
-  scheduled: { bg: '#FAEEDA', color: '#633806' },
-  confirmed: { bg: '#EAF3DE', color: '#27500A' },
-  completed: { bg: '#F3F4F6', color: '#6B7280' },
-  cancelled: { bg: '#FCEBEB', color: '#791F1F' },
-  no_show: { bg: '#FCEBEB', color: '#791F1F' },
+// Semantic StatusChip tones (SPEC-foundation §4.5) as token classes.
+const STATUS_CHIP: Record<AppointmentStatus, string> = {
+  scheduled: 'bg-warning-bg text-warning-700',
+  confirmed: 'bg-success-bg text-success-700',
+  completed: 'bg-surface-muted text-text-secondary',
+  cancelled: 'bg-error-bg text-error',
+  no_show: 'bg-error-bg text-error',
+}
+
+// Left-edge accent token per status.
+const STATUS_ACCENT: Record<AppointmentStatus, string> = {
+  scheduled: 'border-l-warning',
+  confirmed: 'border-l-accent-2-700',
+  completed: 'border-l-border',
+  cancelled: 'border-l-border',
+  no_show: 'border-l-border',
 }
 
 function formatDateTime(iso: string) {
@@ -47,13 +57,8 @@ export default function AppointmentCard({ appointment, showCancel }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
 
   const { date, time } = formatDateTime(appointment.startsAt)
-  const statusStyle = STATUS_COLORS[appointment.status]
-  const accentColor =
-    appointment.status === 'confirmed'
-      ? '#45B9A7'
-      : appointment.status === 'scheduled'
-      ? '#EF9F27'
-      : '#E5E7EB'
+  const chipClass = STATUS_CHIP[appointment.status]
+  const accentClass = STATUS_ACCENT[appointment.status]
 
   function handleCancel() {
     setError(null)
@@ -67,62 +72,56 @@ export default function AppointmentCard({ appointment, showCancel }: Props) {
   }
 
   return (
-    <div
-      className="bg-white rounded-xl border border-gray-100 overflow-hidden"
-      style={{ borderLeft: `3px solid ${accentColor}` }}
-    >
+    <div className={`bg-surface rounded-xl border border-border border-l-4 ${accentClass} overflow-hidden`}>
       <div className="p-4">
         <div className="flex items-start justify-between mb-2">
           <div>
-            <p className="font-medium text-gray-900">
+            <p className="font-medium text-text-primary">
               {appointment.serviceName ?? 'Consulta'}
             </p>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <p className="text-sm text-text-secondary mt-0.5">
               {appointment.locationName}
               {appointment.practitionerName && (
                 <> · {appointment.practitionerName}</>
               )}
             </p>
           </div>
-          <span
-            className="text-xs font-medium px-2 py-1 rounded-full flex-shrink-0 ml-2"
-            style={statusStyle}
-          >
+          <span className={`text-xs font-medium px-2 py-1 rounded-full flex-shrink-0 ml-2 ${chipClass}`}>
             {STATUS_LABELS[appointment.status]}
           </span>
         </div>
 
-        <p className="text-sm text-gray-700 capitalize">
+        <p className="text-sm text-text-primary capitalize">
           {date} · {time}
         </p>
 
         {error && (
-          <p className="text-red-600 text-xs mt-2">{error}</p>
+          <p role="alert" className="text-error text-xs mt-2">{error}</p>
         )}
       </div>
 
       {showCancel && appointment.status !== 'cancelled' && (
-        <div className="border-t border-gray-50 px-4 py-2">
+        <div className="border-t border-border px-4 py-2">
           {!showConfirm ? (
             <button
               onClick={() => setShowConfirm(true)}
-              className="text-sm text-gray-400 hover:text-red-500 transition-colors"
+              className="text-sm text-text-muted hover:text-error transition-colors"
             >
               Cancelar consulta
             </button>
           ) : (
             <div className="flex items-center gap-3">
-              <p className="text-sm text-gray-600 flex-1">Tem a certeza?</p>
+              <p className="text-sm text-text-secondary flex-1">Tem a certeza?</p>
               <button
                 onClick={() => setShowConfirm(false)}
-                className="text-sm text-gray-400"
+                className="text-sm text-text-muted"
               >
                 Não
               </button>
               <button
                 onClick={handleCancel}
                 disabled={isPending}
-                className="text-sm font-medium text-red-600 disabled:opacity-50"
+                className="text-sm font-medium text-error disabled:opacity-50"
               >
                 {isPending ? 'A cancelar...' : 'Sim, cancelar'}
               </button>

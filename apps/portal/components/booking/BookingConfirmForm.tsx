@@ -26,15 +26,14 @@ export default function BookingConfirmForm({ serviceId, locationId, startsAt }: 
   return (
     <div>
       {error && (
-        <div className="bg-red-50 text-red-700 text-sm rounded-lg px-4 py-3 mb-4">
+        <div role="alert" className="bg-error-bg text-error text-sm rounded-lg px-4 py-3 mb-4">
           {error}
         </div>
       )}
       <button
         onClick={handleSubmit}
         disabled={isPending}
-        className="w-full py-3 rounded-xl text-white font-medium text-sm disabled:opacity-60 transition-opacity"
-        style={{ backgroundColor: '#45B9A7' }}
+        className="w-full py-3 rounded-xl text-text-inverse font-medium text-sm disabled:opacity-60 transition-opacity bg-accent-2-700"
       >
         {isPending ? 'A submeter...' : 'Confirmar marcação'}
       </button>
