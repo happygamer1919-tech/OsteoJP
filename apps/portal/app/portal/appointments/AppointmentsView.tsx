@@ -19,16 +19,19 @@ function dateParts(iso: string) {
 
 function AppointmentRow({ appt, muted }: { appt: AppointmentView; muted?: boolean }) {
   const { month, day, time } = dateParts(appt.startsAt)
+  // SPEC-foundation §4.5 / §6.3: a cancelled appointment strikes through the row
+  // (not the chip).
+  const cancelled = appt.status === 'cancelled'
   return (
     <Link
       href={`/portal/appointments/${appt.id}`}
       className="flex items-center gap-3 rounded-lg border border-border bg-surface p-4 transition-colors duration-fast ease-standard hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
     >
       <div className={`flex w-12 shrink-0 flex-col items-center ${muted ? 'text-text-secondary' : 'text-text-primary'}`}>
-        <span className="text-xs font-medium uppercase text-text-secondary">{month}</span>
+        <span className="text-xs font-medium text-text-secondary first-letter:uppercase">{month}</span>
         <span className="text-xl">{day}</span>
       </div>
-      <div className="min-w-0 flex-1">
+      <div className={`min-w-0 flex-1 ${cancelled ? 'line-through' : ''}`}>
         <p className="truncate text-sm font-medium text-text-primary">
           {time} · {appt.serviceName ?? 'Consulta'}
         </p>
@@ -53,7 +56,7 @@ export function AppointmentsView({
   const list = segment === 'proximas' ? upcoming : past
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <SegmentedControl
         aria-label="Filtrar marcações"
         value={segment}
