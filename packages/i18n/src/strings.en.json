@@ -557,5 +557,14 @@
   "patients.emptyDocumentsHelp": "The patient's documents will appear here.",
   "patients.emptyInvoicingTitle": "No invoices",
   "patients.emptyInvoicingHelp": "This patient's invoices will appear here.",
-  "patients.openRecord": "Open record"
+  "patients.openRecord": "Open record",
+  "invoicing.notLive": "Available once invoicing is activated",
+  "invoicing.colNumber": "No.",
+  "invoicing.colDate": "Date",
+  "invoicing.colPatient": "Patient",
+  "invoicing.colAmount": "Amount",
+  "invoicing.colStatus": "Status",
+  "invoicing.tableCaption": "Invoices",
+  "invoicing.emptyTitle": "No invoices in the selected period",
+  "invoicing.emptyHelp": "Adjust the selected period."
 }

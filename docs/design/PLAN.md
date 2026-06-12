@@ -131,7 +131,7 @@ Wave 2 binds to apps/web per the parallel-loops path allowlist. W2-01 is a hard 
 - [x] W2-04 — Appointment Drawer per SPEC-staff-screens section 5: create, view, edit modes, patient search Combobox with create pivot, conflict banner, dirty-discard, toasts. Replaces the current appointment modal with identical data and permissions.
 - [x] W2-05 — Patient profile per SPEC-staff-screens section 6: header card, permission-filtered tabs, view-then-edit cards, history table, clinical records list with the two separate status axes, documents, patient-scoped invoicing tab.
 - [x] W2-06 — Clinical record editor per SPEC-staff-screens section 7: section rail, restyled form engine output, AI-prefill caption on narrative fields only, bodychart container restyle only, status bar with autosave text, locked and signed read-only rendering, single review banner. No heritage on this screen.
-- [ ] W2-07 — Invoicing view per SPEC-staff-screens section 8: filters, table, detail drawer, disabled-with-helper actions for inactive integrations, admin and owner gating per existing permissions.
+- [x] W2-07 — Invoicing view per SPEC-staff-screens section 8: filters, table, detail drawer, disabled-with-helper actions for inactive integrations, admin and owner gating per existing permissions.
 - [ ] W2-08 — Polish and debt per SPEC-staff-screens section 9: app-shell ring fix or file removal, hex and spacing sweep with grep proof, anti-goal verification (one banner max, no blank-then-pop, motion budget), pt-PT and en-GB pass on all six screens.
 
 ---
