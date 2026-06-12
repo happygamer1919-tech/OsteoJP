@@ -125,7 +125,7 @@ Cross-task rules: never edit another task's component except through its exporte
 
 Wave 2 binds to apps/web per the parallel-loops path allowlist. W2-01 is a hard gate: it must be merged into main before any other Wave 2 or Wave 3 task starts; pause and wait for that merge after opening the W2-01 PR (self-merge it when the policy conditions hold).
 
-- [ ] W2-01 — Composite components in packages/ui (NEW files only): Combobox, DatePicker, TimeField, SlotPicker per SPEC-staff-screens section 2, each with full states and Storybook stories. Shared hard gate for Wave 2 and Wave 3.
+- [x] W2-01 — Composite components in packages/ui (NEW files only): Combobox, DatePicker, TimeField, SlotPicker per SPEC-staff-screens section 2, each with full states and Storybook stories. Shared hard gate for Wave 2 and Wave 3.
 - [ ] W2-02 — Dashboard per SPEC-staff-screens section 3. Same metrics and data as today, KpiCards, appointments table, all states, role scoping unchanged.
 - [ ] W2-03 — Agenda per SPEC-staff-screens section 4: toolbar, day grid, week view, current-time line, slot interactions, overlap rendering, blocked time, all states, mobile single-therapist day view.
 - [ ] W2-04 — Appointment Drawer per SPEC-staff-screens section 5: create, view, edit modes, patient search Combobox with create pivot, conflict banner, dirty-discard, toasts. Replaces the current appointment modal with identical data and permissions.

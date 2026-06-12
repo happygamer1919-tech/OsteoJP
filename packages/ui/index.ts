@@ -82,3 +82,17 @@ export {
   type PortalShellProps,
   type AppShellNavItem,
 } from "./src/components/AppShell";
+
+// W2-01 composite components (shared Wave 2 / Wave 3 hard gate).
+export {
+  Combobox,
+  type ComboboxProps,
+  type ComboboxOption,
+} from "./src/components/Combobox";
+export { DatePicker, type DatePickerProps } from "./src/components/DatePicker";
+export { TimeField, type TimeFieldProps } from "./src/components/TimeField";
+export {
+  SlotPicker,
+  type SlotPickerProps,
+  type SlotOption,
+} from "./src/components/SlotPicker";
