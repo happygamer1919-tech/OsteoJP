@@ -1,21 +1,23 @@
+import { BrandLockup, ToastProvider } from '@osteojp/ui'
+
+// Auth frame (SPEC-portal §3/§4): a centered single column with the full brand
+// lockup above the screen card. Wrapped in ToastProvider so the activate flow
+// can confirm success with a toast.
 export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-bg px-4">
-      <div className="w-full max-w-sm">
-        {/* Brand mark */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl mb-3 bg-accent-2-700">
-            <span className="text-text-inverse font-medium text-lg">O</span>
+    <ToastProvider regionLabel="Notificações">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-bg px-6 py-12">
+        <div className="w-full max-w-sm">
+          <div className="mb-12 flex justify-center">
+            <BrandLockup variant="full" size="lg" />
           </div>
-          <h1 className="text-xl font-medium text-text-primary">OsteoJP</h1>
-          <p className="text-sm text-text-secondary mt-1">Portal do Paciente</p>
+          {children}
         </div>
-        {children}
       </div>
-    </div>
+    </ToastProvider>
   )
 }

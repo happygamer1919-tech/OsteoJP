@@ -1,9 +1,14 @@
 'use client'
 
+import { Eye, EyeOff, Mail } from 'lucide-react'
 import { useState } from 'react'
-import { Mail } from 'lucide-react'
+import { Banner, Button, Field, Input } from '@osteojp/ui'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+
+// Ghost-styled secondary text link/button, 44px tap target (SPEC-portal §3.3).
+const SECONDARY_LINK =
+  'inline-flex min-h-11 items-center justify-center rounded px-2 text-sm text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -11,6 +16,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [magicLinkSent, setMagicLinkSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,14 +60,9 @@ export default function LoginPage() {
 
   if (magicLinkSent) {
     return (
-      <div className="bg-surface rounded-xl border border-border p-6 text-center">
-        <Mail
-          size={24}
-          strokeWidth={1.75}
-          aria-hidden="true"
-          className="mx-auto mb-3 text-accent-2-700"
-        />
-        <h2 className="font-medium text-text-primary mb-2">Verifique o seu email</h2>
+      <div className="rounded-xl border border-border bg-surface p-6 text-center">
+        <Mail size={24} strokeWidth={1.75} aria-hidden="true" className="mx-auto mb-3 text-accent-2-700" />
+        <h2 className="mb-2 text-xl font-semibold text-text-primary">Verifique o seu email</h2>
         <p className="text-sm text-text-secondary">
           Enviámos um link para <strong>{email}</strong>. Clique no link para entrar.
         </p>
@@ -70,73 +71,89 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="bg-surface rounded-xl border border-border p-6">
-      <h2 className="font-medium text-text-primary mb-5">Entrar</h2>
+    <>
+      <div className="rounded-xl border border-border bg-surface p-6">
+        <h2 className="mb-6 text-xl font-semibold text-text-primary">Entrar</h2>
 
-      {error && (
-        <div role="alert" className="bg-error-bg text-error text-sm rounded-lg px-4 py-3 mb-4">
-          {error}
-        </div>
-      )}
-
-      <form onSubmit={mode === 'password' ? handlePasswordLogin : handleMagicLink}>
-        <div className="mb-4">
-          <label className="block text-sm text-text-secondary mb-2" htmlFor="email">
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="o.seu@email.pt"
-            className="w-full bg-surface border border-border-strong rounded-lg px-3 py-3 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-          />
-        </div>
-
-        {mode === 'password' && (
-          <div className="mb-5">
-            <label className="block text-sm text-text-secondary mb-2" htmlFor="password">
-              Palavra-passe
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-surface border border-border-strong rounded-lg px-3 py-3 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-            />
-            <div className="flex justify-end mt-2">
-              <a href="/auth/reset-password" className="inline-flex min-h-11 items-center text-xs text-accent-2-700 hover:underline">
-                Esqueceu a palavra-passe?
-              </a>
-            </div>
+        {error && (
+          <div className="mb-4 overflow-hidden rounded-lg">
+            <Banner tone="error">{error}</Banner>
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-accent-2-700 text-text-inverse font-medium rounded-lg py-3 text-sm transition-opacity disabled:opacity-60"
+        <form
+          onSubmit={mode === 'password' ? handlePasswordLogin : handleMagicLink}
+          className="flex flex-col gap-4"
         >
-          {loading ? 'A carregar...' : mode === 'password' ? 'Entrar' : 'Enviar link'}
-        </button>
-      </form>
+          <Field label="Email">
+            <Input
+              type="email"
+              autoComplete="username"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="o.seu@email.pt"
+            />
+          </Field>
 
-      <div className="mt-4 flex justify-center">
+          {mode === 'password' && (
+            <Field label="Palavra-passe">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                trailing={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-pressed={showPassword}
+                    aria-label={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
+                    className="flex size-11 items-center justify-center rounded text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                  >
+                    {showPassword ? (
+                      <EyeOff size={16} strokeWidth={1.75} aria-hidden="true" />
+                    ) : (
+                      <Eye size={16} strokeWidth={1.75} aria-hidden="true" />
+                    )}
+                  </button>
+                }
+              />
+            </Field>
+          )}
+
+          <Button type="submit" variant="primary" loading={loading} className="w-full">
+            {mode === 'password' ? 'Entrar' : 'Enviar link'}
+          </Button>
+        </form>
+      </div>
+
+      {/* Secondary links (SPEC §3.3): ghost text, stacked, centered. */}
+      <div className="mt-6 flex flex-col items-center gap-3">
         <button
-          onClick={() => { setMode(mode === 'password' ? 'magic' : 'password'); setError(null) }}
-          className="inline-flex min-h-11 items-center text-sm text-accent-2-700 hover:underline"
+          type="button"
+          onClick={() => {
+            setMode(mode === 'password' ? 'magic' : 'password')
+            setError(null)
+          }}
+          className={SECONDARY_LINK}
         >
           {mode === 'password' ? 'Entrar com link por email' : 'Entrar com palavra-passe'}
         </button>
+        <a href="/auth/reset-password" className={SECONDARY_LINK}>
+          Recuperar acesso
+        </a>
+        <a href="/auth/activate" className={SECONDARY_LINK}>
+          Ativar conta
+        </a>
       </div>
 
-      <p className="text-xs text-text-secondary text-center mt-5">
-        Ainda não tem conta? A sua clínica irá enviar-lhe um convite por SMS.
+      {/* Footer identity (SPEC §3.5). The PT|EN language switcher is omitted until
+          the portal i18n layer lands — see the PR notes. */}
+      <p className="mt-8 text-center text-xs text-text-secondary">
+        OsteoJP · Linda-a-Velha · Castelo Branco · Montemor-o-Novo
       </p>
-    </div>
+    </>
   )
 }
