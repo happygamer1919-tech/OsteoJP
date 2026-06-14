@@ -16,7 +16,13 @@ export async function login(
 
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { error: "Credenciais inválidas." };
+  // Plain-language, non-revealing copy (SPEC-staff-screens §11.5): never leak
+  // whether the email exists, and never surface a raw auth code or PII.
+  if (error) {
+    return {
+      error: "Não foi possível iniciar sessão. Verifique o email e a palavra-passe.",
+    };
+  }
 
   redirect("/dashboard");
 }
