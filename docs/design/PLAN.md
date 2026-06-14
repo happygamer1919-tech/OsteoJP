@@ -174,7 +174,7 @@ self-merge policy (zero changes to migrations, RLS, auth, payments, webhooks,
 - [x] W4-01 packages/ui: HeritageCorners component + EmptyState motif band upgrade per SPEC-foundation §7 (both HeritageCorners variants and tones, the band at the §7.7 sizing tokens, Storybook stories for all of it). Hard gate for W4-02.
 - [x] W4-02 Staff /login restyle with heritage corners-plus-edges per SPEC-staff-screens §11.5 (BrandLockup, AA credential Field set, inline validation, single error Banner, language switcher). Depends on W4-01 merged.
 - [x] W4-03 /patients list restyle per SPEC-staff-screens §11.1, including the "Novo Paciente" rename, AA search field, Table with hover + ChevronRight, and EmptyState for both zero-patients and zero-results.
-- [ ] W4-04 /clinical fichas list restyle per SPEC-staff-screens §11.2: StatusChips on the two status axes, filled teal "Nova Ficha" primary button, EmptyState, ErrorState.
+- [x] W4-04 /clinical fichas list restyle per SPEC-staff-screens §11.2: StatusChips on the two status axes, filled teal "Nova Ficha" primary button, EmptyState, ErrorState.
 - [ ] W4-05 /review queue restyle per SPEC-staff-screens §11.3: EmptyState component for the empty queue, token migration off any pre-Wave-1 values.
 - [ ] W4-06 /admin hub restyle per SPEC-staff-screens §11.4: descriptive settings-rows pattern (Card per area: title, one-line description, ChevronRight), remove the duplicated link boxes, Tabs remain the only navigation.
 - [ ] W4-07 /agenda defects: fix the truncated therapist and location Select widths, remove the redundant empty-period banner (the agenda grid is its own empty affordance), fix the clipped 08:00 gutter label.
