@@ -77,7 +77,7 @@ export function ReviewEditor({
       <form action={finalizeAction}>
         <button
           type="submit"
-          className="rounded bg-brand-magenta px-3 py-1.5 text-sm font-medium text-text-inverse"
+          className="rounded bg-accent-1-700 px-3 py-1.5 text-sm font-medium text-text-inverse"
         >
           {s["review.finalize"]}
         </button>
