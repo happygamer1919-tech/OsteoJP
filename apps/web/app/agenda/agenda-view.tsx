@@ -116,7 +116,7 @@ export function AgendaView({
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {!lockTherapist && (
-            <div className="w-44">
+            <div className="w-56">
               <Select
                 aria-label={s["agenda.filterTherapists"]}
                 value={filters.practitionerId ?? ""}
@@ -131,7 +131,7 @@ export function AgendaView({
               </Select>
             </div>
           )}
-          <div className="w-44">
+          <div className="w-56">
             <Select
               aria-label={s["header.location"]}
               value={filters.locationId ?? ""}
@@ -154,12 +154,8 @@ export function AgendaView({
         </div>
       </div>
 
-      {appointments.length === 0 && (
-        <p className="mb-4 rounded-md bg-surface-muted px-4 py-3 text-sm text-text-secondary">
-          {s["agenda.noAppointments"]}
-        </p>
-      )}
-
+      {/* No empty-period banner: the agenda grid (empty time columns) is its
+          own empty affordance, so a separate banner is redundant (W4-07). */}
       <AgendaGrid
         view={view}
         anchor={anchor}
