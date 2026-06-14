@@ -171,7 +171,7 @@ that merge after opening the W4-01 PR. Self-merge strictly per the PLAN.md
 self-merge policy (zero changes to migrations, RLS, auth, payments, webhooks,
 `.github/workflows`; e2e green for any `apps/web` diff).
 
-- [ ] W4-01 packages/ui: HeritageCorners component + EmptyState motif band upgrade per SPEC-foundation §7 (both HeritageCorners variants and tones, the band at the §7.7 sizing tokens, Storybook stories for all of it). Hard gate for W4-02.
+- [x] W4-01 packages/ui: HeritageCorners component + EmptyState motif band upgrade per SPEC-foundation §7 (both HeritageCorners variants and tones, the band at the §7.7 sizing tokens, Storybook stories for all of it). Hard gate for W4-02.
 - [ ] W4-02 Staff /login restyle with heritage corners-plus-edges per SPEC-staff-screens §11.5 (BrandLockup, AA credential Field set, inline validation, single error Banner, language switcher). Depends on W4-01 merged.
 - [ ] W4-03 /patients list restyle per SPEC-staff-screens §11.1, including the "Novo Paciente" rename, AA search field, Table with hover + ChevronRight, and EmptyState for both zero-patients and zero-results.
 - [ ] W4-04 /clinical fichas list restyle per SPEC-staff-screens §11.2: StatusChips on the two status axes, filled teal "Nova Ficha" primary button, EmptyState, ErrorState.

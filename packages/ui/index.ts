@@ -76,6 +76,13 @@ export {
   type HeritageDividerVariant,
 } from "./src/components/HeritageDivider";
 export {
+  HeritageCorners,
+  type HeritageCornersProps,
+  type HeritageCornersVariant,
+  type HeritageCornersTone,
+} from "./src/components/HeritageCorners";
+export { HeritageBand, type HeritageBandProps } from "./src/components/HeritageBand";
+export {
   StaffAppShell,
   PortalShell,
   type StaffAppShellProps,
