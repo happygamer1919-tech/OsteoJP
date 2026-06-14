@@ -21,11 +21,22 @@ import { resolveCurrentTemplates } from "./template-version";
 
 export type RecordStatus = "draft" | "locked" | "signed";
 
+/** The orthogonal AI-review axis (schema.ts ai_review_state); null for records
+ *  that never entered the AI/patient review queue. */
+export type AiReviewState =
+  | "pending_review"
+  | "in_review"
+  | "approved"
+  | "rejected";
+
 export type RecordListItem = {
   id: string;
   patientId: string;
   patientName: string;
   status: RecordStatus;
+  /** Second status axis (§6 / §11.2). Read-only projection surfaced for the
+   *  list's two-axis StatusChip — no filtering/scope/permission change. */
+  aiReviewState: AiReviewState | null;
   version: number;
   templateTitle: Localized | null;
   signedAt: string | null;
@@ -79,6 +90,7 @@ export async function listRecords(
         patientId: clinicalRecords.patientId,
         patientName: patients.fullName,
         status: clinicalRecords.status,
+        aiReviewState: clinicalRecords.aiReviewState,
         version: clinicalRecords.version,
         templateTitle: formTemplates.title,
         signedAt: clinicalRecords.signedAt,
@@ -94,6 +106,7 @@ export async function listRecords(
       patientId: r.patientId,
       patientName: r.patientName,
       status: r.status as RecordStatus,
+      aiReviewState: (r.aiReviewState as AiReviewState | null) ?? null,
       version: r.version,
       templateTitle: (r.templateTitle as Localized | null) ?? null,
       signedAt: r.signedAt ? r.signedAt.toISOString() : null,
