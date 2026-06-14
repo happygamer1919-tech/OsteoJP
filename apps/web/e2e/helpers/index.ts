@@ -64,8 +64,10 @@ export async function createPatient(page: Page, f: PatientFields): Promise<strin
 /** Runs a patient search via the search box (fill + submit) and waits for nav. */
 export async function searchPatients(page: Page, query: string) {
   await goToPatients(page);
-  await page.getByPlaceholder(/Pesquisar por nome/i).fill(query);
-  await page.getByRole("button", { name: "Pesquisar" }).click();
+  // The search box is now a debounced Field/Input (W4-03): Enter submits it.
+  const box = page.getByPlaceholder(/Pesquisar por nome/i);
+  await box.fill(query);
+  await box.press("Enter");
   await expect(page).toHaveURL(/\/patients\?q=/);
 }
 

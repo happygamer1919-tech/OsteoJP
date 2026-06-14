@@ -42,7 +42,7 @@ test("search by phone returns the matching patient", async ({ page }) => {
 test("search with no results shows the empty-state message", async ({ page }) => {
   // Digit-free: a query with digits would also match patients by NIF/phone.
   await searchPatients(page, "ZZZNENHUMUTENTEZZZ");
-  await expect(page.getByText("Sem resultados para a pesquisa.")).toBeVisible();
+  await expect(page.getByText("Sem resultados para esta pesquisa")).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ test("a soft-deleted patient is absent from the active list and search", async (
 
   // The seeded soft-deleted patient must not surface in search…
   await searchPatients(page, PATIENTS.archived.name);
-  await expect(page.getByText("Sem resultados para a pesquisa.")).toBeVisible();
+  await expect(page.getByText("Sem resultados para esta pesquisa")).toBeVisible();
 
   // …nor in the unfiltered active list.
   await goToPatients(page);
