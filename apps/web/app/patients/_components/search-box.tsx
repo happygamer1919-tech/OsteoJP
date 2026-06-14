@@ -1,39 +1,64 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { Field, Input } from "@osteojp/ui";
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
+import { Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 const s = getStrings(DEFAULT_LOCALE);
+
+const DEBOUNCE_MS = 300;
 
 export function SearchBox({ initialQuery }: { initialQuery: string }) {
   const router = useRouter();
   const [q, setQ] = useState(initialQuery);
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const query = q.trim();
+  function navigate(value: string) {
+    const query = value.trim();
     startTransition(() => {
-      router.push(query ? `/patients?q=${encodeURIComponent(query)}` : "/patients");
+      router.replace(
+        query ? `/patients?q=${encodeURIComponent(query)}` : "/patients",
+      );
     });
   }
 
+  function onChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value;
+    setQ(value);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => navigate(value), DEBOUNCE_MS);
+  }
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (timer.current) clearTimeout(timer.current);
+    navigate(q);
+  }
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
   return (
-    <form onSubmit={submit} className="flex gap-2">
-      <input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder={s["patients.searchPlaceholder"]}
-        className="w-80 rounded border border-border-strong px-3 py-2 text-sm outline-none focus:border-brand-teal"
-      />
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded bg-brand-teal px-4 py-2 text-sm font-medium text-text-inverse disabled:opacity-50"
-      >
-        {s["common.search"]}
-      </button>
+    <form onSubmit={onSubmit} role="search">
+      {/* The visible affordance is the placeholder + Search icon; the label is
+          present for AA association but visually hidden (§11.1). */}
+      <Field label={<span className="sr-only">{s["common.search"]}</span>}>
+        <Input
+          type="search"
+          name="q"
+          value={q}
+          onChange={onChange}
+          leadingIcon={Search}
+          placeholder={s["patients.searchPlaceholder"]}
+        />
+      </Field>
     </form>
   );
 }
