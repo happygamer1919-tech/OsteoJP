@@ -179,7 +179,7 @@ self-merge policy (zero changes to migrations, RLS, auth, payments, webhooks,
 - [x] W4-06 /admin hub restyle per SPEC-staff-screens §11.4: descriptive settings-rows pattern (Card per area: title, one-line description, ChevronRight), remove the duplicated link boxes, Tabs remain the only navigation.
 - [x] W4-07 /agenda defects: fix the truncated therapist and location Select widths, remove the redundant empty-period banner (the agenda grid is its own empty affordance), fix the clipped 08:00 gutter label.
 - [ ] W4-08 /dashboard: hide the section-header "Adicionar" while the EmptyState CTA is visible, so the create action shows once, not twice.
-- [ ] W4-09 i18n sweep: "utente" to "paciente" across `strings.pt.json`, em dash in template display titles replaced with a colon (seed display strings only, no schema changes), `en.json` parity. Strings additive keep-both on rebase per the parallel-loops rule.
+- [x] W4-09 i18n sweep: "utente" to "paciente" across `strings.pt.json`, em dash in template display titles replaced with a colon (seed display strings only, no schema changes), `en.json` parity. Strings additive keep-both on rebase per the parallel-loops rule.
 - [ ] W4-10 Docs consolidation: move the Wave 2 PR-body decisions and the Wave 3 owner-confirmable items into `docs/DECISIONS.md` and `docs/QUESTIONS.md`, and remove the two orphan merge-artifact lines around `docs/DECISIONS.md` lines 173-174.
 - [ ] W4-11 Token debt sweep on all W4 screens: zero raw hex, zero arbitrary Tailwind values, old `brand-teal`/`brand-magenta`/`brand-grey` aliases migrated to the canonical tokens, AA verified, grep proof in the PR.
 

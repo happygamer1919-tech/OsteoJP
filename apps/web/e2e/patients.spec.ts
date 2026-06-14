@@ -52,7 +52,7 @@ test("create patient with required fields only", async ({ page }) => {
   const name = `Novo Mínimo ${uniq()}`;
   await page.goto("/patients/new");
   await fillPatientForm(page, { fullName: name });
-  await page.getByRole("button", { name: "Criar Utente" }).click();
+  await page.getByRole("button", { name: "Criar Paciente" }).click();
 
   await expect(page).toHaveURL(/\/patients\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   await expect(page.getByRole("heading", { name })).toBeVisible();
@@ -116,8 +116,8 @@ test("merging two patients marks the loser as Fundido", async ({ page }) => {
   const loserId = await createPatient(page, { fullName: `Perdedor ${uniq()}` });
 
   await page.goto(`/patients/${loserId}`);
-  await page.getByPlaceholder(/ID do utente/i).fill(survivorId);
-  await page.getByRole("button", { name: "Fundir neste utente" }).click();
+  await page.getByPlaceholder(/ID do paciente/i).fill(survivorId);
+  await page.getByRole("button", { name: "Fundir neste paciente" }).click();
 
   await expect(page.getByText("Fundido")).toBeVisible({ timeout: 8_000 });
 });
