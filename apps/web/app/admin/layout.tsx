@@ -1,13 +1,14 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { can } from "@osteojp/auth";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { getRequestContext } from "@/lib/auth/context";
 import { AppShell } from "@/components/app-shell";
 
+import { AdminNav, type AdminNavItem } from "./admin-nav.client";
+
 const s = getStrings(DEFAULT_LOCALE);
 
-const NAV = [
+const NAV: AdminNavItem[] = [
   { href: "/admin", label: s["admin.nav.overview"] },
   { href: "/admin/settings", label: s["admin.nav.settings"] },
   { href: "/admin/staff", label: s["admin.nav.staff"] },
@@ -26,22 +27,12 @@ export default async function AdminLayout({
   // enter admin. Each action re-checks its own capability (defense in depth).
   if (!can(actor.role, "settings:read")) redirect("/dashboard");
 
-  // Global nav comes from AppShell; admin keeps its own sub-nav for the
-  // admin sub-sections.
+  // Global nav comes from AppShell; admin keeps its own tab nav for the admin
+  // sub-sections (§11.4: Tabs are the only navigation across admin areas).
   return (
     <AppShell>
       <main className="px-8 py-6">
-        <nav className="mb-6 flex gap-4 border-b border-border pb-3 text-body-sm">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="text-text-secondary hover:text-brand-magenta hover:underline"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <AdminNav items={NAV} label={s["admin.title"]} />
         {children}
       </main>
     </AppShell>
