@@ -176,7 +176,7 @@ self-merge policy (zero changes to migrations, RLS, auth, payments, webhooks,
 - [x] W4-03 /patients list restyle per SPEC-staff-screens §11.1, including the "Novo Paciente" rename, AA search field, Table with hover + ChevronRight, and EmptyState for both zero-patients and zero-results.
 - [x] W4-04 /clinical fichas list restyle per SPEC-staff-screens §11.2: StatusChips on the two status axes, filled teal "Nova Ficha" primary button, EmptyState, ErrorState.
 - [x] W4-05 /review queue restyle per SPEC-staff-screens §11.3: EmptyState component for the empty queue, token migration off any pre-Wave-1 values.
-- [ ] W4-06 /admin hub restyle per SPEC-staff-screens §11.4: descriptive settings-rows pattern (Card per area: title, one-line description, ChevronRight), remove the duplicated link boxes, Tabs remain the only navigation.
+- [x] W4-06 /admin hub restyle per SPEC-staff-screens §11.4: descriptive settings-rows pattern (Card per area: title, one-line description, ChevronRight), remove the duplicated link boxes, Tabs remain the only navigation.
 - [ ] W4-07 /agenda defects: fix the truncated therapist and location Select widths, remove the redundant empty-period banner (the agenda grid is its own empty affordance), fix the clipped 08:00 gutter label.
 - [ ] W4-08 /dashboard: hide the section-header "Adicionar" while the EmptyState CTA is visible, so the create action shows once, not twice.
 - [ ] W4-09 i18n sweep: "utente" to "paciente" across `strings.pt.json`, em dash in template display titles replaced with a colon (seed display strings only, no schema changes), `en.json` parity. Strings additive keep-both on rebase per the parallel-loops rule.
