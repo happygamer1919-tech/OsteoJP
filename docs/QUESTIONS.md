@@ -274,3 +274,36 @@ step darker than the spec value (a barely-perceptible change).
 Recommended default: **correct SPEC §4.11** to active `accent-2-700` / inactive
 `text-secondary`. Same family as Q9 (teal-on-light text) and Q11 (text-muted is
 a deemphasized-label token, not body/UI text). Not blocking for W1-10.
+
+## 2026-06-14 — Wave 3 portal owner-confirmable items (consolidated from PR bodies, W4-10)
+
+The Wave 3 portal PRs (#197–#206) recorded owner-confirmable items in their PR
+bodies because `docs/QUESTIONS.md` is outside the Wave 3 path allowlist.
+Consolidated here for owner review; per-PR detail remains in the PR bodies.
+
+- **Portal language switcher omitted — no i18n layer yet (#199 W3-02, #205 W3-06).**
+  String i18n was deferred in W3-01, so a functional PT|EN switcher has nothing to
+  switch; per SPEC-portal §0.1 (omit missing-data elements) it is omitted (W3-06
+  shows a read-only "Português (PT)" row). **Recommended default:** add a portal
+  i18n-infrastructure ticket, then wire the switcher. (Same gap exists on staff
+  `/login`, W4-02 — both wait on a shared i18n runtime.)
+
+- **Booking flow data-layer gaps (#204 W3-05).** The therapist Select (§7.3),
+  service categories (§7.2), and the Notas Textarea (§7.4) were omitted because
+  the booking catalog exposes no therapists/categories and the booking API
+  accepts no notes (SPEC §0.1). Booking success deliberately shows pending wording
+  ("Marcação recebida"), never "confirmed." **Recommended default:** confirm
+  whether the booking API should expose therapist/category selection and accept
+  notes; if yes, a data-layer ticket precedes restoring those controls.
+
+- **In-portal form *filling* deferred — significant gap (#206 W3-07).** The intake
+  catalog exposes only form *titles*, not field schemas, and the portal has no
+  form-rendering engine, so SPEC-portal §10's "restyle the form engine" had
+  nothing to restyle. The Documents/Forms screen shows the patient's *submitted*
+  fichas with honest review status instead. **Recommended default:** a foundation
+  ticket to (a) define intake field schemas and (b) build/borrow a portal
+  form-rendering engine, then a follow-up to add filling + submit — submissions
+  must always land in `pending_review`, never "concluído."
+
+- **Portal heritage stays OFF until JP sign-off** (already tracked as Q6 above);
+  Wave 3 added no heritage motifs to any patient-facing surface.
