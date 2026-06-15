@@ -42,7 +42,7 @@ test("search by phone returns the matching patient", async ({ page }) => {
 test("search with no results shows the empty-state message", async ({ page }) => {
   // Digit-free: a query with digits would also match patients by NIF/phone.
   await searchPatients(page, "ZZZNENHUMUTENTEZZZ");
-  await expect(page.getByText("Sem resultados para a pesquisa.")).toBeVisible();
+  await expect(page.getByText("Sem resultados para esta pesquisa")).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ test("create patient with required fields only", async ({ page }) => {
   const name = `Novo Mínimo ${uniq()}`;
   await page.goto("/patients/new");
   await fillPatientForm(page, { fullName: name });
-  await page.getByRole("button", { name: "Criar Utente" }).click();
+  await page.getByRole("button", { name: "Criar Paciente" }).click();
 
   await expect(page).toHaveURL(/\/patients\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   await expect(page.getByRole("heading", { name })).toBeVisible();
@@ -116,8 +116,8 @@ test("merging two patients marks the loser as Fundido", async ({ page }) => {
   const loserId = await createPatient(page, { fullName: `Perdedor ${uniq()}` });
 
   await page.goto(`/patients/${loserId}`);
-  await page.getByPlaceholder(/ID do utente/i).fill(survivorId);
-  await page.getByRole("button", { name: "Fundir neste utente" }).click();
+  await page.getByPlaceholder(/ID do paciente/i).fill(survivorId);
+  await page.getByRole("button", { name: "Fundir neste paciente" }).click();
 
   await expect(page.getByText("Fundido")).toBeVisible({ timeout: 8_000 });
 });
@@ -132,7 +132,7 @@ test("a soft-deleted patient is absent from the active list and search", async (
 
   // The seeded soft-deleted patient must not surface in search…
   await searchPatients(page, PATIENTS.archived.name);
-  await expect(page.getByText("Sem resultados para a pesquisa.")).toBeVisible();
+  await expect(page.getByText("Sem resultados para esta pesquisa")).toBeVisible();
 
   // …nor in the unfiltered active list.
   await goToPatients(page);

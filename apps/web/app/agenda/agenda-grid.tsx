@@ -159,7 +159,14 @@ export function AgendaGrid({
               style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }}
             >
               {m % 60 === 0 && (
-                <span className="absolute right-2 -top-2 bg-surface px-0.5 text-xs text-text-secondary">
+                // The first hour label (i === 0) sits at the gutter top rather
+                // than centered on its line (-top-2), so it is not clipped above
+                // the grid body (W4-07: clipped 08:00 label).
+                <span
+                  className={`absolute right-2 bg-surface px-0.5 text-xs text-text-secondary ${
+                    i === 0 ? "top-0" : "-top-2"
+                  }`}
+                >
                   {slotLabel(m)}
                 </span>
               )}
