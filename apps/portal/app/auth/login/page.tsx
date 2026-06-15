@@ -16,21 +16,26 @@ export default function LoginPage() {
 
   // Handle magic link hash token delivered via URL fragment (#access_token=...).
   // Hash fragments never reach the server so /auth/callback cannot intercept
-  // them. The Supabase JS client detects and exchanges the token asynchronously
-  // after mount — we subscribe to onAuthStateChange which fires once the
-  // exchange completes, then redirect. getSession() races the async exchange
-  // and resolves before the client has finished parsing the hash.
+  // them. @supabase/ssr createBrowserClient uses cookies and does not
+  // auto-process hash fragments — onAuthStateChange never fires for them.
+  // We extract the tokens manually and call setSession() to establish the
+  // cookie-backed session, then redirect. Hash is cleared from browser
+  // history so tokens are not exposed after exchange.
   useEffect(() => {
-    if (!window.location.hash.includes('access_token')) return
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (session) {
-          subscription.unsubscribe()
+    const hash = window.location.hash
+    if (!hash.includes('access_token')) return
+    const params = new URLSearchParams(hash.slice(1))
+    const accessToken = params.get('access_token')
+    const refreshToken = params.get('refresh_token')
+    if (!accessToken || !refreshToken) return
+    supabase.auth
+      .setSession({ access_token: accessToken, refresh_token: refreshToken })
+      .then(({ data: { session }, error }) => {
+        if (session && !error) {
+          window.history.replaceState(null, '', window.location.pathname)
           router.replace('/portal/dashboard')
         }
-      }
-    )
-    return () => subscription.unsubscribe()
+      })
   }, [router, supabase])
 
   const [email, setEmail] = useState('')
