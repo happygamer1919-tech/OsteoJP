@@ -424,9 +424,6 @@ migration-foundation
   Supabase's recommended durable path, then drop the seed block; (2) consider
   pinning the Supabase CLI version in db-tests.yml — `latest` made the gate
   flip red with zero repo changes.
- main
-main
-main
 
 ## 2026-06-11 — Brand token layer + Inter font wiring (feat/ui-design-tokens)
 
@@ -533,3 +530,48 @@ no longer contradicts shipped reality.
   `ring-accent-2-500`; correcting it is a separate apps/ change (outside this
   PR's fence) — the app is slated to adopt the packages/ui AppShell. Follow-up
   noted under Q12.
+
+## 2026-06-14 — Wave 2 staff-screens decisions (consolidated from PR bodies, W4-10)
+
+The Wave 2 design-loop PRs (#195 W2-01 … #209 W2-08) recorded their decisions in
+the PR bodies because `docs/DECISIONS.md` is outside the Wave 2 path allowlist.
+Consolidated here so the log is the source of truth; per-PR detail remains in the
+PR bodies.
+
+- **Corrected focus ring on new surfaces (#195 W2-01).** Wave 2 composites
+  (Combobox, DatePicker, TimeField, SlotPicker) adopt the corrected focus ring
+  `ring-focus-ring` (= `accent-2-600`, brand-tokens §1.9). The pre-existing
+  `control-skin` still carried the old `accent-2-500` ring and could not be
+  modified in Wave 2 (no edits to existing `packages/ui` files), so the
+  composites shipped a new skin. The AA-token pass later ratified `ring-focus-ring`
+  as the single ring token.
+- **PR-body logging convention.** Every Wave 2 PR (#196 Dashboard, #198 Agenda,
+  #201 Appointment Drawer, #203 Patient profile, #207 Clinical record editor,
+  #208 Invoicing) noted decisions and changed routes inline because the docs were
+  out of allowlist. No behaviour/endpoint/permission changes were made; restyle
+  + state-completeness only.
+- **Deferred alias debt (#209 W2-08).** The `brand-teal` / `brand-magenta` /
+  `brand-grey` aliases still used in non-Wave-2 screens (patients list, auth,
+  login, admin, clinical episodes/review, BodyChart) are valid theme tokens, not
+  raw-hex debt; migrating them to the semantic `accent-2` / `focus-ring` tokens
+  was out of W2-08 scope and left as future debt — picked up by the Wave 4 fix
+  wave (W4-02/W4-06/W4-11).
+
+## 2026-06-14 — Wave 3 portal decisions (consolidated from PR bodies, W4-10)
+
+Wave 3 portal PRs (#197 W3-01 … #206 W3-07) likewise logged decisions in PR
+bodies (docs out of the Wave 3 allowlist). Notable non-question decisions:
+
+- **Portal migrated to shared tokens + shell (#197 W3-01).** All hardcoded hex
+  removed; PortalShell (top bar + 5-tab bottom bar) adopted; Inter + `lang="pt-PT"`;
+  a11y hardening (visible focus, AA contrast, 44px targets, SR announcements).
+- **Account edit uses the shared Drawer pattern (#205 W3-06).** Replaced the
+  inline AccountEditForm. Sign-out added as a standard client
+  `supabase.auth.signOut()` + redirect — UI calling the standard auth method, no
+  auth/permission/RLS logic changed.
+- **Portal API read wrappers (#206 W3-07).** `getMyDocuments`,
+  `getDocumentDownloadUrl`, `getMyForms` added over existing `apps/api` endpoints
+  — data fetching only.
+
+Owner-confirmable items raised by Wave 3 are consolidated in QUESTIONS.md (same
+date).

@@ -178,9 +178,16 @@ self-merge policy (zero changes to migrations, RLS, auth, payments, webhooks,
 - [x] W4-05 /review queue restyle per SPEC-staff-screens §11.3: EmptyState component for the empty queue, token migration off any pre-Wave-1 values.
 - [x] W4-06 /admin hub restyle per SPEC-staff-screens §11.4: descriptive settings-rows pattern (Card per area: title, one-line description, ChevronRight), remove the duplicated link boxes, Tabs remain the only navigation.
 - [x] W4-07 /agenda defects: fix the truncated therapist and location Select widths, remove the redundant empty-period banner (the agenda grid is its own empty affordance), fix the clipped 08:00 gutter label.
+ design/w4-10-docs-consolidation
+- [ ] W4-08 /dashboard: hide the section-header "Adicionar" while the EmptyState CTA is visible, so the create action shows once, not twice.
+- [ ] W4-09 i18n sweep: "utente" to "paciente" across `strings.pt.json`, em dash in template display titles replaced with a colon (seed display strings only, no schema changes), `en.json` parity. Strings additive keep-both on rebase per the parallel-loops rule.
+- [x] W4-10 Docs consolidation: move the Wave 2 PR-body decisions and the Wave 3 owner-confirmable items into `docs/DECISIONS.md` and `docs/QUESTIONS.md`, and remove the two orphan merge-artifact lines around `docs/DECISIONS.md` lines 173-174.
+- [ ] W4-11 Token debt sweep on all W4 screens: zero raw hex, zero arbitrary Tailwind values, old `brand-teal`/`brand-magenta`/`brand-grey` aliases migrated to the canonical tokens, AA verified, grep proof in the PR.
+
 - [x] W4-08 /dashboard: hide the section-header "Adicionar" while the EmptyState CTA is visible, so the create action shows once, not twice.
 - [x] W4-09 i18n sweep: "utente" to "paciente" across `strings.pt.json`, em dash in template display titles replaced with a colon (seed display strings only, no schema changes), `en.json` parity. Strings additive keep-both on rebase per the parallel-loops rule.
 - [ ] W4-10 Docs consolidation: move the Wave 2 PR-body decisions and the Wave 3 owner-confirmable items into `docs/DECISIONS.md` and `docs/QUESTIONS.md`, and remove the two orphan merge-artifact lines around `docs/DECISIONS.md` lines 173-174.
 - [x] W4-11 Token debt sweep on all W4 screens: zero raw hex, zero arbitrary Tailwind values, old `brand-teal`/`brand-magenta`/`brand-grey` aliases migrated to the canonical tokens, AA verified, grep proof in the PR.
+ main
 
 Cross-task rules: each PR ticks only its own checkbox; never touch another wave's list; i18n strings are additive keep-both; self-merge strictly per the self-merge policy above. W4-10 touches `docs/DECISIONS.md` and `docs/QUESTIONS.md`, which sit outside the `apps/web` / `packages` / `docs/design` allowlist — that task is docs-only housekeeping and ships as its own PR with no code diff.
