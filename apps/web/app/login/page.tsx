@@ -11,6 +11,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useActionState, useState } from "react";
 
 import { login, type LoginState } from "./actions";
+import { s } from "@/lib/i18n";
 
 const initial: LoginState = { error: null };
 
@@ -30,9 +31,9 @@ export default function LoginPage() {
     const email = String(data.get("email") ?? "").trim();
     const password = String(data.get("password") ?? "");
     const next: FieldErrors = {};
-    if (!email) next.email = "Indique o seu email.";
-    else if (!/.+@.+\..+/.test(email)) next.email = "Indique um email válido.";
-    if (!password) next.password = "Indique a sua palavra-passe.";
+    if (!email) next.email = s["login.errEmailRequired"];
+    else if (!/.+@.+\..+/.test(email)) next.email = s["login.errEmailInvalid"];
+    if (!password) next.password = s["login.errPasswordRequired"];
     setFieldErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -59,7 +60,7 @@ export default function LoginPage() {
           </div>
 
           <h1 className="mb-6 text-center text-xl text-text-primary">
-            Iniciar sessão
+            {s["login.title"]}
           </h1>
 
           {state.error ? (
@@ -69,17 +70,17 @@ export default function LoginPage() {
           ) : null}
 
           <div className="flex flex-col gap-4">
-            <Field label="Email" required error={fieldErrors.email}>
+            <Field label={s["login.emailLabel"]} required error={fieldErrors.email}>
               <Input
                 name="email"
                 type="email"
                 autoComplete="email"
                 disabled={pending}
-                placeholder="nome@osteojp.pt"
+                placeholder={s["login.emailPlaceholder"]}
               />
             </Field>
 
-            <Field label="Palavra-passe" required error={fieldErrors.password}>
+            <Field label={s["login.passwordLabel"]} required error={fieldErrors.password}>
               <Input
                 name="password"
                 type={showPassword ? "text" : "password"}
@@ -93,8 +94,8 @@ export default function LoginPage() {
                     aria-pressed={showPassword}
                     aria-label={
                       showPassword
-                        ? "Ocultar palavra-passe"
-                        : "Mostrar palavra-passe"
+                        ? s["login.hidePassword"]
+                        : s["login.showPassword"]
                     }
                     className="flex size-6 items-center justify-center rounded text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
                   >
@@ -114,7 +115,7 @@ export default function LoginPage() {
               loading={pending}
               className="mt-2 w-full"
             >
-              Iniciar sessão
+              {s["login.submit"]}
             </Button>
           </div>
 

@@ -56,7 +56,7 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
 export async function createPatient(page: Page, f: PatientFields): Promise<string> {
   await page.goto("/patients/new");
   await fillPatientForm(page, f);
-  await page.getByRole("button", { name: "Criar Utente" }).click();
+  await page.getByRole("button", { name: "Criar Paciente" }).click();
   await expect(page).toHaveURL(/\/patients\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   return page.url().split("/").at(-1)!;
 }
@@ -90,7 +90,7 @@ export async function fillAppointment(
   opts: { patient: string; therapist: string; location: string; date: string; time: string },
 ) {
   // Patient is now a search Combobox (W2-04): type the name, pick the option.
-  const patient = dialog.getByRole("combobox", { name: /Utente/i });
+  const patient = dialog.getByRole("combobox", { name: /Paciente/i });
   await patient.click();
   await patient.fill(opts.patient);
   await dialog.getByRole("option", { name: opts.patient }).click();

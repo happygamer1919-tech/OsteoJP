@@ -108,7 +108,7 @@ export function BookingFlow({
           className="inline-flex min-h-11 w-fit items-center gap-1 text-sm text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
-          Voltar
+          Anterior
         </button>
 
         <div className="flex flex-col gap-1">

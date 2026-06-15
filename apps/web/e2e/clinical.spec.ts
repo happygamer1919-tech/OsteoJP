@@ -32,7 +32,7 @@ test.describe("authoring (therapist)", () => {
   test("create a record from the current form, then sign/lock and version it", async ({ page }) => {
     // --- Create from the current template version ---
     await page.goto("/clinical/new");
-    await page.getByLabel(/Utente/i).selectOption({ label: PATIENTS.maria.name });
+    await page.getByLabel(/Paciente/i).selectOption({ label: PATIENTS.maria.name });
     await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
     await page.getByRole("button", { name: "Criar ficha" }).click();
 

@@ -147,10 +147,15 @@ export default async function DashboardPage({
       <section>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
           <h2 className="text-2xl text-text-primary">{s["dashboard.appointments"]}</h2>
-          <Link href={addHref} className={primaryLink}>
-            <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
-            {s["dashboard.add"]}
-          </Link>
+          {/* W4-08: when the list is empty the EmptyState carries the single
+              create CTA, so the section-header action is hidden — the create
+              action shows once, never twice. */}
+          {appointments.length > 0 && (
+            <Link href={addHref} className={primaryLink}>
+              <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
+              {s["dashboard.add"]}
+            </Link>
+          )}
         </div>
 
         {appointments.length === 0 ? (
