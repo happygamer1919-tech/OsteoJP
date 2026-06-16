@@ -255,7 +255,7 @@ export function AgendaGrid({
                     aria-label={`${formatDayHeader(d, locale)} ${slotLabel(m)}`}
                     onClick={() => onSelectSlot(d, slotLabel(m))}
                     className={`absolute inset-x-0 transition-colors duration-fast ease-standard hover:bg-v2-green-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
-                      m % 60 === 0 ? "border-b border-v2-border" : "border-b border-v2-border/40"
+                      m % 60 === 0 ? "border-b border-v2-border" : "border-b border-surface-muted"
                     }`}
                     style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }}
                   />
@@ -358,7 +358,10 @@ function AppointmentBlock({
       }}
     >
       {conflicting && (
-        <span className="block text-xs font-semibold uppercase text-warning-700">{s["agenda.conflict"]}</span>
+        // The warning is carried by the ring (ring-warning); the label text uses
+        // v2-text-primary so it clears AA on every service tint (warning-700 is
+        // sub-AA on the 100 tints — SPEC §3.4).
+        <span className="block text-xs font-semibold uppercase text-v2-text-primary">{s["agenda.conflict"]}</span>
       )}
       <span className="block truncate text-xs text-v2-text-primary">
         {formatTimeOfDay(new Date(appt.startsAt))}-{formatTimeOfDay(new Date(appt.endsAt))}
