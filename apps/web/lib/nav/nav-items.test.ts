@@ -5,12 +5,13 @@ const hrefs = (role: Parameters<typeof navItemsForRole>[0]) =>
   navItemsForRole(role).map((i) => i.href);
 
 describe("navItemsForRole — role-aware nav gating", () => {
-  it("owner sees every section incl. Clinical, Review and Admin", () => {
+  it("owner sees every section incl. Clinical, Marcações, Review and Admin", () => {
     expect(hrefs("owner")).toEqual([
       "/dashboard",
       "/agenda",
       "/patients",
       "/clinical",
+      "/marcacoes",
       "/clinical/review",
       "/admin",
     ]);
@@ -22,6 +23,7 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/agenda",
       "/patients",
       "/clinical",
+      "/marcacoes",
       "/admin",
     ]);
     expect(hrefs("admin")).not.toContain("/clinical/review");
@@ -33,13 +35,14 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/agenda",
       "/patients",
       "/clinical",
+      "/marcacoes",
       "/clinical/review",
     ]);
   });
 
-  it("reception sees NEITHER Clinical NOR Review NOR Admin", () => {
+  it("reception sees Marcações but NEITHER Clinical NOR Review NOR Admin", () => {
     const r = hrefs("reception");
-    expect(r).toEqual(["/dashboard", "/agenda", "/patients"]);
+    expect(r).toEqual(["/dashboard", "/agenda", "/patients", "/marcacoes"]);
     expect(r).not.toContain("/clinical");
     expect(r).not.toContain("/clinical/review");
     expect(r).not.toContain("/admin");
