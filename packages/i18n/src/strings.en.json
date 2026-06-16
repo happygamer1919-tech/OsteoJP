@@ -61,6 +61,7 @@
   "patients.paymentStatus": "Payment Status",
   "patients.view": "view",
   "patients.title": "Patients",
+  "patients.subtitle": "View and manage your patients.",
   "patients.searchPlaceholder": "Search by name, NIF or phone",
   "patients.new": "New Patient",
   "patients.create": "Create Patient",
