@@ -3,6 +3,12 @@
    brand palette. */
 @import "@osteojp/ui/theme.css";
 
+/* Scan the shared component library so Tailwind generates the utility classes
+   used inside @osteojp/ui components (e.g. the AppShell). Tailwind v4 does not
+   scan node_modules / workspace packages by default; without this the shell
+   renders unstyled. */
+@source "../../../packages/ui/src";
+
 /* Drive the global background/foreground from the brand tokens: the page
    background is the brand light neutral (`bg` = #F7F9FB), never pure white or
    the create-next-app dark default. Set once here so every screen inherits it
@@ -15,12 +21,15 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Inter (loaded via next/font in app/layout.tsx, injected as --font-inter)
+     is the default sans. Falls back to the system stack before the webfont
+     resolves. font-mono is intentionally left to the Tailwind default. */
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
 }

@@ -66,6 +66,23 @@ export type PatientProfilePatch = {
   city?: string | null
 }
 
+export type PatientDocument = {
+  id: string
+  fileName: string
+  mimeType: string | null
+  sizeBytes: number | null
+  createdAt: string
+}
+
+export type PatientFormSubmission = {
+  id: string
+  formKey: string
+  therapy: string | null
+  source: string
+  reviewState: string
+  submittedAt: string
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function apiBase(): string {
@@ -121,6 +138,43 @@ export async function getMyAppointments(): Promise<AppointmentView[]> {
   if (!res.ok) throw new Error(`appointments fetch failed: ${res.status}`)
   const data = await res.json() as { appointments: AppointmentView[] }
   return data.appointments
+}
+
+// ─── Documents ────────────────────────────────────────────────────────────────
+
+export async function getMyDocuments(): Promise<PatientDocument[]> {
+  const res = await fetch(`${apiBase()}/api/v1/patient/documents`, {
+    headers: await apiHeaders(),
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`documents fetch failed: ${res.status}`)
+  const data = await res.json() as { documents: PatientDocument[] }
+  return data.documents
+}
+
+/** Short-lived signed URL for one of the patient's own documents. */
+export async function getDocumentDownloadUrl(id: string): Promise<string> {
+  const res = await fetch(`${apiBase()}/api/v1/patient/documents/${id}/download`, {
+    headers: await apiHeaders(),
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, 'DOWNLOAD_FAILED', 'Document download failed')
+  }
+  const data = await res.json() as { url: string }
+  return data.url
+}
+
+// ─── Forms (intake submissions) ────────────────────────────────────────────────
+
+export async function getMyForms(): Promise<PatientFormSubmission[]> {
+  const res = await fetch(`${apiBase()}/api/v1/me/forms`, {
+    headers: await apiHeaders(),
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`forms fetch failed: ${res.status}`)
+  const data = await res.json() as { submissions: PatientFormSubmission[] }
+  return data.submissions
 }
 
 export async function bookAppointment(input: BookingInput): Promise<AppointmentView> {

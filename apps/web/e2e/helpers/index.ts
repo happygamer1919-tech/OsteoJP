@@ -56,7 +56,7 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
 export async function createPatient(page: Page, f: PatientFields): Promise<string> {
   await page.goto("/patients/new");
   await fillPatientForm(page, f);
-  await page.getByRole("button", { name: "Criar Utente" }).click();
+  await page.getByRole("button", { name: "Criar Paciente" }).click();
   await expect(page).toHaveURL(/\/patients\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   return page.url().split("/").at(-1)!;
 }
@@ -64,8 +64,10 @@ export async function createPatient(page: Page, f: PatientFields): Promise<strin
 /** Runs a patient search via the search box (fill + submit) and waits for nav. */
 export async function searchPatients(page: Page, query: string) {
   await goToPatients(page);
-  await page.getByPlaceholder(/Pesquisar por nome/i).fill(query);
-  await page.getByRole("button", { name: "Pesquisar" }).click();
+  // The search box is now a debounced Field/Input (W4-03): Enter submits it.
+  const box = page.getByPlaceholder(/Pesquisar por nome/i);
+  await box.fill(query);
+  await box.press("Enter");
   await expect(page).toHaveURL(/\/patients\?q=/);
 }
 
@@ -87,7 +89,11 @@ export async function fillAppointment(
   dialog: Locator,
   opts: { patient: string; therapist: string; location: string; date: string; time: string },
 ) {
-  await dialog.getByLabel(/Utente/i).selectOption({ label: opts.patient });
+  // Patient is now a search Combobox (W2-04): type the name, pick the option.
+  const patient = dialog.getByRole("combobox", { name: /Paciente/i });
+  await patient.click();
+  await patient.fill(opts.patient);
+  await dialog.getByRole("option", { name: opts.patient }).click();
   await dialog.getByLabel(/Terapeuta/i).selectOption({ label: opts.therapist });
   await dialog.getByLabel(/Localização/i).selectOption({ label: opts.location });
   await dialog.locator('input[type="date"]').fill(opts.date);

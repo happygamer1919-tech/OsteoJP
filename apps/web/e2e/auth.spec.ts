@@ -32,33 +32,33 @@ test.describe("unauthenticated", () => {
 
   test("login with valid admin credentials establishes a session", async ({ page }) => {
     await page.goto("/login");
-    await page.getByPlaceholder("Email").fill(USERS.admin);
-    await page.getByPlaceholder("Palavra-passe").fill(E2E_PASSWORD);
-    await page.getByRole("button", { name: /Entrar/i }).click();
+    await page.locator('input[name="email"]').fill(USERS.admin);
+    await page.locator('input[name="password"]').fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
     // Login action redirects to /dashboard on success.
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 12_000 });
   });
 
   test("wrong password shows the invalid-credentials error", async ({ page }) => {
     await page.goto("/login");
-    await page.getByPlaceholder("Email").fill(USERS.admin);
-    await page.getByPlaceholder("Palavra-passe").fill("definitely-wrong-99999");
-    await page.getByRole("button", { name: /Entrar/i }).click();
-    await expect(page.getByText(/Credenciais inválidas/i)).toBeVisible({ timeout: 8_000 });
+    await page.locator('input[name="email"]').fill(USERS.admin);
+    await page.locator('input[name="password"]').fill("definitely-wrong-99999");
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+    await expect(page.getByText(/Não foi possível iniciar sessão/i)).toBeVisible({ timeout: 8_000 });
     await expect(page).toHaveURL(/\/login/);
   });
 
   test("unknown email shows the invalid-credentials error", async ({ page }) => {
     await page.goto("/login");
-    await page.getByPlaceholder("Email").fill("nobody@nowhere.test");
-    await page.getByPlaceholder("Palavra-passe").fill("whatever");
-    await page.getByRole("button", { name: /Entrar/i }).click();
-    await expect(page.getByText(/Credenciais inválidas/i)).toBeVisible({ timeout: 8_000 });
+    await page.locator('input[name="email"]').fill("nobody@nowhere.test");
+    await page.locator('input[name="password"]').fill("whatever");
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+    await expect(page.getByText(/Não foi possível iniciar sessão/i)).toBeVisible({ timeout: 8_000 });
   });
 
   test("submitting an empty form stays on /login", async ({ page }) => {
     await page.goto("/login");
-    await page.getByRole("button", { name: /Entrar/i }).click();
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
     await expect(page).toHaveURL(/\/login/);
   });
 });

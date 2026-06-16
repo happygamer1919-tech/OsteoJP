@@ -56,9 +56,9 @@ for (const role of ROLES) {
     }
 
     await page.goto("/login");
-    await page.getByPlaceholder("Email").fill(email);
-    await page.getByPlaceholder("Palavra-passe").fill(password);
-    await page.getByRole("button", { name: /Entrar/i }).click();
+    await page.locator('input[name="email"]').fill(email);
+    await page.locator('input[name="password"]').fill(password);
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
 
     // After login, the app redirects to /dashboard. Allow generous time for the
     // dev server to compile the dashboard route on first hit.

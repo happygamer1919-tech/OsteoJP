@@ -17,6 +17,10 @@ name: DB Tests
 # Deliberately uses a NON-privileged `supabase db reset` — the prod-equivalent
 # migration apply. No privileged GRANT and no branch DB: the gate must hold under
 # exactly what production runs.
+#
+# Skipping: PRs that touch only docs/markdown/excalidraw skip the Supabase boot
+# entirely. The job still runs (so the branch-protection check is always reported)
+# but exits green immediately with a skip notice.
 
 on:
   pull_request:
@@ -45,52 +49,71 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect whether code files changed
+        id: changes
+        run: |
+          # On pull_request events compare against base branch.
+          # On push to main always run.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD")
+          echo "Changed files:"
+          echo "$CHANGED"
+          # Skip only if EVERY changed file is docs/markdown/excalidraw/config
+          NON_DOC=$(echo "$CHANGED" | grep -vE '^(docs/|.*\.(md|excalidraw)$)' || true)
+          if [ -z "$NON_DOC" ]; then
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip — docs-only PR
+        if: steps.changes.outputs.code == 'false'
+        run: echo "No code changes detected. DB tests not required for this PR."
 
       - name: Set up pnpm
+        if: steps.changes.outputs.code == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: 11.1.3
 
       - name: Set up Node.js
+        if: steps.changes.outputs.code == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
+        if: steps.changes.outputs.code == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Set up Supabase CLI
+        if: steps.changes.outputs.code == 'true'
         uses: supabase/setup-cli@v1
         with:
           version: latest
 
       - name: Start Supabase (lean stack)
-        # The RLS suites need only the data plane (Postgres). Auth (gotrue) cannot
-        # be excluded by the CLI — it always boots — but the suites never call it;
-        # they set request.jwt.claims directly in rolled-back transactions. Mirror
-        # e2e.yml's exclusions: dropping analytics/vector also avoids the
-        # containers that go unhealthy on first boot and cascade the start to fail.
+        if: steps.changes.outputs.code == 'true'
         run: >
           supabase start
           -x analytics,vector,studio,realtime,storage,imgproxy,edge-runtime,functions,inbucket,meta
 
       - name: Apply migrations + base seed (supabase db reset)
-        # Re-applies supabase/migrations/* and supabase/seed.sql deterministically
-        # as the NON-privileged migration role (prod-equivalent). Migration 0010's
-        # `GRANT USAGE ON SCHEMA auth TO patient` silently no-ops here, but
-        # migration 0012 made the patient jwt helpers SECURITY DEFINER, so every
-        # RLS suite — patient-form-intake-rls included — resolves and runs under
-        # this apply. No suite is permitted to skip; see the guard.
+        if: steps.changes.outputs.code == 'true'
         run: supabase db reset
 
       - name: Run RLS isolation suite (DATABASE_URL set)
+        if: steps.changes.outputs.code == 'true'
         working-directory: packages/db
-        # pipefail (GitHub's default bash) ⇒ a real RLS failure (e.g. a broken
-        # policy) fails this step and reddens the job directly. The `json` reporter
-        # writes the machine-readable report the guard parses; `default` streams to
-        # the log we tee, which carries the patient-form-intake skip reason the
-        # guard matches. Tests vitest greenlit-with-skips are caught by the guard.
         run: |
           pnpm exec vitest run \
             --reporter=default \
@@ -98,16 +121,14 @@ jobs:
             2>&1 | tee rls-run.log
 
       - name: Assert RLS suites actually executed (skip-guard)
-        # Turns the job RED on a silent skip: any of the six suites skipping or
-        # collecting zero tests fails here. No skip is tolerated — every suite is
-        # hard-required.
+        if: steps.changes.outputs.code == 'true'
         run: >
           node .github/scripts/assert-rls-executed.mjs
           packages/db/rls-results.json
           packages/db/rls-run.log
 
       - name: Upload RLS report + log
-        if: ${{ !cancelled() }}
+        if: steps.changes.outputs.code == 'true' && !cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: rls-report

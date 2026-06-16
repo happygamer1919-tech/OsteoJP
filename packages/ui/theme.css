@@ -1,49 +1,171 @@
 @import "tailwindcss";
 
 /*
- * OsteoJP brand tokens — Tailwind v4 theme
- * Source of truth: docs/brand-tokens.md (sampled from Logotipo_OsteoJP_2023.pdf @ 300 DPI)
+ * OsteoJP brand token layer — Tailwind v4 @theme (CSS-first).
  *
- * NOTE: brand-teal/brand-magenta here use the logo-PDF-sampled values from
- * brand-tokens.md (#45B9A7 / #8B1863). These differ from the values in
- * CLAUDE.md (#3DAEB3 / #8E2C7A). brand-tokens.md is the visual-identity source
- * of truth, so its values are used here. If CLAUDE.md is canonical instead,
- * update the two --color-brand-* lines below.
+ * Single source of truth: docs/brand-tokens.md. Base hexes were sampled from
+ * Logotipo_OsteoJP_2023.pdf @ 300 DPI and are canonical until a vector source
+ * is provided (brand-tokens.md §0). Earlier teal/magenta approximations that
+ * appear in some files are superseded by the canonical values below; the token
+ * test guards against them being reintroduced here.
+ *
+ * This file is the implementation contract for brand-tokens.md §7. Every token
+ * in the doc is mirrored here as an @theme variable so Tailwind generates the
+ * matching utilities (bg-*, text-*, border-*, rounded-*, shadow-*, p-*, etc).
+ *
+ * Naming follows the doc (kebab-case): brand-teal, surface-muted,
+ * text-secondary, success-bg, etc. The 50–900 brand/neutral scales use the
+ * §7 names (primary, accent-1, accent-2, neutral).
+ *
+ * The `--text-h1`…`--text-display` block is a LEGACY alias set, NOT in
+ * brand-tokens.md. It is retained because existing screens already reference
+ * those utilities; removing them would break rendering. Migrate those call
+ * sites to the doc's xs–4xl scale in the redesign tickets, then delete the
+ * legacy block.
  */
 
 @theme {
-  /* ---- Brand colors (from logo) ---- */
-  --color-brand-teal: #45B9A7;
-  --color-brand-magenta: #8B1863;
-  --color-brand-grey: #98B2C2;
+  /* ============================================================== *
+   * 1. Color
+   * ============================================================== */
 
-  /* ---- Neutrals ---- */
+  /* ---- 1.1 Brand bases (logo) ---- */
+  --color-brand-teal: #45B9A7; /* accent-2-500 — logo right hand */
+  --color-brand-magenta: #8B1863; /* accent-1-700 — logo left hand */
+  --color-brand-grey: #98B2C2; /* primary-300 — wordmark, figure, spine */
+
+  /* ---- 1.2 Primary scale (grey-blue), base pinned at 300 ---- */
+  --color-primary-50: #F6F8F8;
+  --color-primary-100: #E8EBED;
+  --color-primary-200: #CED8DE;
+  --color-primary-300: #98B2C2; /* base */
+  --color-primary-400: #789AAF;
+  --color-primary-500: #5D859D;
+  --color-primary-600: #4E6F83;
+  --color-primary-700: #405C6D;
+  --color-primary-800: #334956;
+  --color-primary-900: #263640;
+  --color-primary: #98B2C2; /* DEFAULT */
+
+  /* ---- 1.3 Accent-1 scale (magenta), base pinned at 700 ---- */
+  --color-accent-1-50: #FAF4F8;
+  --color-accent-1-100: #F4E6EF;
+  --color-accent-1-200: #EDC5DF;
+  --color-accent-1-300: #E793CA;
+  --color-accent-1-400: #E25AB3;
+  --color-accent-1-500: #D9269B;
+  --color-accent-1-600: #AE1E7C;
+  --color-accent-1-700: #8B1863; /* base */
+  --color-accent-1-800: #6D134D;
+  --color-accent-1-900: #4E0E38;
+  --color-accent-1: #8B1863; /* DEFAULT */
+
+  /* ---- 1.4 Accent-2 scale (teal), base pinned at 500 ---- */
+  --color-accent-2-50: #F5F9F9;
+  --color-accent-2-100: #E5F0EE;
+  --color-accent-2-200: #C8E4E0;
+  --color-accent-2-300: #9ED6CE;
+  --color-accent-2-400: #6EC9BB;
+  --color-accent-2-500: #45B9A7; /* base */
+  --color-accent-2-600: #3A9C8D;
+  --color-accent-2-700: #2F7E72;
+  --color-accent-2-800: #25645B;
+  --color-accent-2-900: #1C4A43;
+  --color-accent-2: #45B9A7; /* DEFAULT */
+
+  /* ---- 1.6 Neutral greys (cool-tinted, hue ~205) ---- */
+  --color-neutral-50: #F7F9FB;
+  --color-neutral-100: #F0F3F6;
+  --color-neutral-200: #E2E8EE;
+  --color-neutral-300: #C7D1DA;
+  --color-neutral-400: #A9B6C2;
+  --color-neutral-500: #8A98A6;
+  --color-neutral-600: #6E7E8D;
+  --color-neutral-700: #56697A;
+  --color-neutral-800: #33424F;
+  --color-neutral-900: #1A2733;
+
+  /* ---- 1.7 Background and surface (light mode only) ---- */
   --color-bg: #F7F9FB;
-  --color-surface: #FFFFFF;
+  --color-surface: #FFFFFF; /* DEFAULT */
   --color-surface-muted: #F0F3F6;
   --color-border: #E2E8EE;
   --color-border-strong: #C7D1DA;
 
-  /* ---- Text ---- */
+  /* ---- text ---- */
   --color-text-primary: #1A2733;
   --color-text-secondary: #56697A;
   --color-text-muted: #8A98A6;
   --color-text-inverse: #FFFFFF;
 
-  /* ---- Semantic ---- */
-  --color-success: #2F8F6B;
+  /* ---- 1.8 Semantic (DEFAULT + bg variant; AA-dark text + error scale) ---- */
+  --color-success: #2F8F6B; /* accent / icon / status dot */
   --color-success-bg: #E6F4EE;
-  --color-warning: #B47A14;
+  --color-success-700: #127B59; /* AA label text — ≥4.5:1 on success-bg AND white (Q11) */
+  --color-warning: #B47A14; /* accent / icon / status dot */
   --color-warning-bg: #FBF1DD;
-  --color-error: #B23A3A;
-  --color-error-bg: #F8E5E5;
+  --color-warning-700: #956302; /* AA label text — ≥4.5:1 on warning-bg AND white (Q11) */
   --color-info: #2E6FA8;
   --color-info-bg: #E4EEF7;
 
-  /* ---- Typography ---- */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  /* error — full 50–900 scale (base #B23A3A pinned at 700, generated the same
+     way as the brand scales: accent-2 lightness profile, error hue, gamut-safe
+     chroma — Q10). DEFAULT = error-700; destructive hover/active step to
+     error-800 / error-900. */
+  --color-error-50: #F8F0EF;
+  --color-error-100: #F7E1DF;
+  --color-error-200: #FCC9C4;
+  --color-error-300: #FFA9A2;
+  --color-error-400: #FF8882;
+  --color-error-500: #FF615F;
+  --color-error-600: #DD4949;
+  --color-error-700: #B23A3A; /* base */
+  --color-error-800: #8D2D2D;
+  --color-error-900: #672120;
+  --color-error: #B23A3A; /* DEFAULT = error-700 */
+  --color-error-bg: #F8E5E5;
 
-  /* Type scale: --text-<token> sets size; paired --text-<token>--line-height sets leading */
+  /* ---- 1.9 Focus ring — single source every control's ring consumes.
+     accent-2-600 ≈ 3.3:1 on white / surface, clearing WCAG 2.1 SC 1.4.11 for a
+     focus indicator (accent-2-500 was ~2.4:1 and failed) — Q12. ---- */
+  --color-focus-ring: var(--color-accent-2-600);
+
+  /* ============================================================== *
+   * 2. Typography
+   * ============================================================== */
+
+  /* Inter is loaded via next/font in apps/web (subsets latin + latin-ext for
+     pt-PT diacritics) and injected as --font-inter on <html>. The literal
+     'Inter' / system fallbacks cover apps that do not (yet) load the webfont. */
+  --font-sans: var(--font-inter, 'Inter'), -apple-system, BlinkMacSystemFont,
+    'Segoe UI', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+
+  /* ---- 2.2 Type scale (base 16px, ratio ~1.25) ---- */
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-xs--font-weight: 500;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 18px;
+  --text-lg--line-height: 26px;
+  --text-lg--font-weight: 500;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-xl--font-weight: 600;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+  --text-2xl--font-weight: 600;
+  --text-3xl: 32px;
+  --text-3xl--line-height: 40px;
+  --text-3xl--font-weight: 600;
+  --text-4xl: 40px;
+  --text-4xl--line-height: 48px;
+  --text-4xl--font-weight: 600;
+
+  /* ---- LEGACY type aliases (not in brand-tokens.md; see file header) ---- */
   --text-display: 2.5rem;
   --text-display--line-height: 3rem;
   --text-h1: 2rem;
@@ -63,13 +185,25 @@
   --text-caption: 0.75rem;
   --text-caption--line-height: 1rem;
 
-  /* Font weights */
+  /* ---- 2.3 Weights ---- */
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
 
-  /* ---- Spacing (4px base, named to match brand-tokens.md) ---- */
+  /* ============================================================== *
+   * 3. Radius
+   * ============================================================== */
+  --radius-sm: 4px; /* badges, tags, checkboxes */
+  --radius: 6px; /* DEFAULT — buttons, inputs, selects */
+  --radius-md: 8px; /* cards, popovers */
+  --radius-lg: 12px; /* modals, large panels */
+  --radius-xl: 16px; /* hero surfaces, feature cards */
+  --radius-full: 9999px; /* avatars, pills, status dots */
+
+  /* ============================================================== *
+   * 4. Spacing (4px base; named steps pinned to match Tailwind's grid)
+   * ============================================================== */
   --spacing-1: 4px;
   --spacing-2: 8px;
   --spacing-3: 12px;
@@ -78,4 +212,242 @@
   --spacing-8: 32px;
   --spacing-12: 48px;
   --spacing-16: 64px;
+
+  /* ============================================================== *
+   * 5. Shadow (cool-tinted, derived from neutral-900 = rgb 26 39 51)
+   * ============================================================== */
+  --shadow-xs: 0 1px 2px rgb(26 39 51 / 0.05);
+  --shadow-sm: 0 1px 3px rgb(26 39 51 / 0.08), 0 1px 2px rgb(26 39 51 / 0.04);
+  --shadow-md: 0 4px 8px -2px rgb(26 39 51 / 0.1), 0 2px 4px -2px rgb(26 39 51 / 0.06);
+  --shadow-lg: 0 12px 24px -4px rgb(26 39 51 / 0.12), 0 4px 8px -4px rgb(26 39 51 / 0.06);
+  --shadow-overlay: 0 24px 48px -12px rgb(26 39 51 / 0.18);
+
+  /* ============================================================== *
+   * 6. Motion (SPEC-foundation §2 — added in task W1-01)
+   * Durations + the standard easing curve. prefers-reduced-motion handling
+   * is the global rule below this @theme block, which collapses every
+   * transition and animation to 0ms platform-wide (design principle 4).
+   * ============================================================== */
+  --duration-fast: 150ms; /* hover, focus, chip changes */
+  --duration-base: 200ms; /* drawers, dialogs, toasts */
+  --duration-slow: 250ms; /* page-level skeleton fades */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1); /* --ease-* namespace → `ease-standard` utility */
+}
+
+/* ================================================================ *
+ * 1.5 Brand gradients (decorative surfaces only — never behind data)
+ * v4 has no first-class background-image theme namespace, so these are
+ * exposed as explicit utilities matching the doc token names.
+ * ================================================================ */
+@utility bg-gradient-magenta {
+  background-image: linear-gradient(135deg, #8B1863 0%, #6D134D 100%);
+}
+@utility bg-gradient-teal {
+  background-image: linear-gradient(135deg, #45B9A7 0%, #2F7E72 100%);
+}
+
+/* ================================================================ *
+ * Motion utilities + reduced-motion (SPEC-foundation §2, task W1-01)
+ * Tailwind v4 has no --duration-* theme namespace that emits utilities, so
+ * the three duration tokens are exposed as explicit token-consuming utilities
+ * (same pattern as the gradients above). The easing token emits the
+ * `ease-standard` utility automatically via the --ease-* namespace.
+ * ================================================================ */
+@utility duration-fast {
+  transition-duration: var(--duration-fast);
+}
+@utility duration-base {
+  transition-duration: var(--duration-base);
+}
+@utility duration-slow {
+  transition-duration: var(--duration-slow);
+}
+
+/* Design principle 4 / SPEC §5.6: prefers-reduced-motion collapses every
+ * transition and animation to an instant change, across all components. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ================================================================ *
+ * OsteoJP v2 design system (SPEC-v2-foundation.md) — task V2-W0-01
+ *
+ * The v2 glass + sidebar look. This layer is ADDITIVE: it never edits the v1
+ * tokens above (brand-tokens.md still governs the logo palette, type scale,
+ * spacing, radius origin, shadows-as-baseline, and motion tokens, which v2
+ * reuses). Every value below is mirrored verbatim from SPEC-v2-foundation.md;
+ * the v2 token test (tokens-v2.test.ts) guards them against drift.
+ *
+ * Tenant scoping (SPEC §2): the glass / shell / radius / shadow tokens are
+ * tenant-INVARIANT (product default for every tenant). The five accent families
+ * (blue, burgundy, green, lavender, gold) below carry the OsteoJP tenant theme
+ * values. A neutral (non-OsteoJP) tenant substitutes a neutral palette behind
+ * the SAME token names by overriding the `--color-v2-<accent>-*` custom
+ * properties on its own root scope — the generated utilities reference the
+ * variables (`var(--color-v2-blue-500)`), so a scoped override re-themes without
+ * touching markup. The neutral-tenant accent values are not yet specified by the
+ * design source and are a foundation follow-up (flagged in the PR), so this file
+ * ships the OsteoJP values as the default the product is built against. Heritage
+ * is gated separately by the HeritageFrame component (V2-W0-04), OsteoJP theme
+ * only.
+ * ================================================================ */
+@theme {
+  /* ---- §3.1 Base surfaces and text (v2) ---- */
+  --color-v2-bg: #F7F8FA;
+  --color-v2-surface: #FFFFFF;
+  --color-v2-border: rgba(220, 225, 235, 0.6);
+  --color-v2-text-primary: #223042;
+  /* SPEC §3.1 lists #6E7A89, but that is 4.37:1 on white / 4.11:1 on v2-bg —
+     below WCAG AA 4.5:1 for the normal-size text this token is specced for
+     (captions, helper text, metadata, secondary labels), violating the spec's
+     own §10 hard AA floor. Darkened the minimum to clear AA on both surfaces
+     (#66727F = 4.91:1 on white, ~4.6:1 on v2-bg), same cool grey-blue hue. The
+     spec value is corrected to match. Same class of AA token-tuning as the v1
+     success-700 / warning-700 / focus-ring adjustments. */
+  --color-v2-text-secondary: #66727F;
+
+  /* ---- §3.2/§3.3 Portuguese Blue (azulejo, graphs, blue category) ---- */
+  --color-v2-blue-50: #EEF4FC;
+  --color-v2-blue-100: #DBE7F8;
+  --color-v2-blue-200: #BBCFF0;
+  --color-v2-blue-300: #97B5E8;
+  --color-v2-blue-400: #7AA1E0;
+  --color-v2-blue-500: #5B8FD9; /* base */
+  --color-v2-blue-600: #4275C2;
+  --color-v2-blue-700: #345C9C; /* AA label text on light surfaces (§3.4) */
+  --color-v2-blue-800: #294876;
+  --color-v2-blue-900: #1F3454;
+
+  /* ---- §3.2/§3.3 Moldavian Burgundy (embroidery, Osteopatia category) ---- */
+  --color-v2-burgundy-50: #F8EEEF;
+  --color-v2-burgundy-100: #F1DADD;
+  --color-v2-burgundy-200: #E3B6BC;
+  --color-v2-burgundy-300: #D28E97;
+  --color-v2-burgundy-400: #BC6975;
+  --color-v2-burgundy-500: #A44B58; /* base */
+  --color-v2-burgundy-600: #8A3D49;
+  --color-v2-burgundy-700: #6E303A; /* AA label text on light surfaces (§3.4) */
+  --color-v2-burgundy-800: #54252D;
+  --color-v2-burgundy-900: #3C1A20;
+
+  /* ---- §3.2/§3.3 Wellness Green (success, active menu, primary fills) ---- */
+  --color-v2-green-50: #EFF7F3;
+  --color-v2-green-100: #DCEDE5;
+  --color-v2-green-200: #BBDDCD;
+  --color-v2-green-300: #A6D2BE;
+  --color-v2-green-400: #90C5AD;
+  --color-v2-green-500: #7AB79F; /* base */
+  --color-v2-green-600: #629C86;
+  --color-v2-green-700: #4E7D6B; /* AA label text on light surfaces (§3.4) */
+  --color-v2-green-800: #3C6052;
+  --color-v2-green-900: #2C463C;
+
+  /* ---- §3.2/§3.3 Soft Lavender (clinical records, forms, fichas KPI) ---- */
+  --color-v2-lavender-50: #F4F0FC;
+  --color-v2-lavender-100: #E9E0F9;
+  --color-v2-lavender-200: #D4C3F3;
+  --color-v2-lavender-300: #C7AEF0;
+  --color-v2-lavender-400: #B79AEC;
+  --color-v2-lavender-500: #A786E8; /* base */
+  --color-v2-lavender-600: #8A66D1;
+  --color-v2-lavender-700: #6E4FAB; /* AA label text on light surfaces (§3.4) */
+  --color-v2-lavender-800: #543C82;
+  --color-v2-lavender-900: #3D2C5E;
+
+  /* ---- §3.2/§3.3 Warm Gold (revenue, premium indicators) ---- */
+  --color-v2-gold-50: #FBF4EA;
+  --color-v2-gold-100: #F7E8D2;
+  --color-v2-gold-200: #EFD1A6;
+  --color-v2-gold-300: #E7BD83;
+  --color-v2-gold-400: #DEAF6E;
+  --color-v2-gold-500: #D5A25A; /* base */
+  --color-v2-gold-600: #BA8742;
+  --color-v2-gold-700: #946A34; /* AA label text on light surfaces (§3.4) */
+  --color-v2-gold-800: #6F5028;
+  --color-v2-gold-900: #4F391D;
+
+  /* ---- §4.1 Glass colors (color namespace; emits bg- and border- utilities) ---- */
+  --color-v2-glass-card-bg: rgba(255, 255, 255, 0.72);
+  --color-v2-glass-nav-bg: rgba(255, 255, 255, 0.75); /* §4.1 nav opacity 75% */
+  --color-v2-glass-card-border: rgba(255, 255, 255, 0.45);
+  --color-v2-glass-active-bg: rgba(122, 183, 159, 0.15); /* Wellness Green glass */
+
+  /* ---- §4.2 Radius (v2-specific, above the brand-tokens radius origin) ---- */
+  --radius-v2: 24px; /* cards, panels, drawers, inputs inside glass */
+  --radius-v2-kpi: 28px; /* KPI cards only */
+
+  /* ---- §4.3 Shadow (single float shadow; no second heavier layer) ---- */
+  --shadow-v2-float: 0 8px 30px rgba(0, 0, 0, 0.05);
+
+  /* ---- §5 Typography (greeting size; weight ladder per spec) ---- */
+  --text-v2-greeting: 42px;
+  --text-v2-greeting--line-height: 48px;
+  --text-v2-greeting--font-weight: 600;
+
+  /* ---- §4.1/§4.4 Glass plumbing (non-utility vars consumed by the glass
+     utilities below; kept as custom properties so a tenant scope can retune
+     them) ---- */
+  --v2-glass-card-blur: blur(24px);
+  --v2-glass-nav-blur: blur(20px);
+  --v2-glass-fallback-bg: rgba(255, 255, 255, 0.92); /* §4.4 no-backdrop fallback */
+}
+
+/* ----------------------------------------------------------------
+ * §4 Glass surfaces. Composite utilities (bg + border + radius + float
+ * shadow + backdrop blur) so primitives apply one class. §4.4 makes the
+ * backdrop-filter fallback a hard requirement: where blur is unsupported the
+ * surface falls back to a near-opaque fill so text contrast never depends on
+ * the blur. The fallback lives in the plain @supports rule below the utilities.
+ * ---------------------------------------------------------------- */
+@utility glass-card {
+  background-color: var(--color-v2-glass-card-bg);
+  border: 1px solid var(--color-v2-glass-card-border);
+  border-radius: var(--radius-v2);
+  box-shadow: var(--shadow-v2-float);
+  -webkit-backdrop-filter: var(--v2-glass-card-blur);
+  backdrop-filter: var(--v2-glass-card-blur);
+}
+
+@utility glass-nav {
+  background-color: var(--color-v2-glass-nav-bg);
+  border: 1px solid var(--color-v2-glass-card-border);
+  -webkit-backdrop-filter: var(--v2-glass-nav-blur);
+  backdrop-filter: var(--v2-glass-nav-blur);
+}
+
+/* §4.4 backdrop-filter fallback (hard requirement). Where blur is unsupported
+ * the glass surfaces fall back to a near-opaque fill so text contrast never
+ * depends on the blur. Kept as plain unlayered rules (Tailwind's @utility
+ * parser does not accept a nested @supports); unlayered CSS also outranks the
+ * layered utility, so the fallback reliably wins when blur is absent. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-card,
+  .glass-nav {
+    background-color: var(--v2-glass-fallback-bg);
+  }
+}
+
+/* §8 Hover lift: interactive glass tiles/cards translate -4px on hover over
+ * duration-base with ease-standard. No shadow change, no scale. Under
+ * prefers-reduced-motion the transform itself is suppressed (not just its
+ * transition) so the lift never moves; components mark hover with a tint
+ * instead. The hover/reduced-motion rules are plain unlayered CSS — Tailwind's
+ * @utility parser does not accept a nested `&:hover`. */
+@utility hover-lift {
+  transition: transform var(--duration-base) var(--ease-standard);
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hover-lift:hover {
+    transform: none;
+  }
 }

@@ -12,6 +12,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:e2e": "turbo run e2e",
     "format": "prettier --write .",
     "db:check": "pnpm --filter @osteojp/db exec drizzle-kit check",
     "db:migrate": "pnpm --filter @osteojp/db exec drizzle-kit migrate",

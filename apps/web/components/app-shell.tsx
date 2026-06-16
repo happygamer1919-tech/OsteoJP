@@ -1,51 +1,90 @@
 import { redirect } from "next/navigation";
-import { s } from "@/lib/i18n";
+
+import { UserAreaCluster } from "@osteojp/ui";
+import { type Role } from "@osteojp/auth";
+
 import { getRequestContext } from "@/lib/auth/context";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { logout } from "@/app/logout/actions";
-import { NavLinks } from "./nav-links";
+import { s } from "@/lib/i18n";
 import { navItemsForRole } from "@/lib/nav/nav-items";
 
+import { StaffShellClient } from "./staff-shell.client";
+
 /**
- * Persistent, role-aware navigation shell for every authenticated route
- * (fixes BUG-04: post-login there was no nav). Rendered by each authenticated
- * section's layout, so it wraps Dashboard, Agenda, Patients, Clinical and Admin.
+ * Persistent, role-aware navigation shell for every authenticated route.
+ * Rendered by each authenticated section's layout, so it wraps Dashboard,
+ * Agenda, Patients, Clinical, Marcações and Admin.
  *
- * Link visibility is gated by the permission matrix (packages/auth):
- *   - Clinical  → clinical_records:read  (reception is denied → no Clinical)
- *   - Admin     → settings:read          (owner + admin only)
- * Dashboard / Agenda / Patients are available to every authenticated role.
+ * V2-W0-05: migrated from the v1 top-bar AppShell to the shared @osteojp/ui
+ * SidebarAppShell (SPEC-v2-foundation §7) via the StaffShellClient wrapper. Link
+ * visibility is still gated by the permission matrix (navItemsForRole →
+ * packages/auth); the shell never decides role visibility. The user-area cluster
+ * (§7.3) renders from existing session data — no new data, no profile fetch.
  *
- * Server component: it reads the verified request context, fails closed to
- * /login when there is none, and never renders <main> itself (the wrapped
- * pages own that), so there is no nested-main.
+ * Server component: reads the verified request context, fails closed to /login
+ * when there is none, and never renders <main> itself beyond the shell's own.
  */
+const ROLE_LABEL: Record<Role, string> = {
+  owner: s["admin.role.owner"],
+  admin: s["admin.role.admin"],
+  therapist: s["admin.role.therapist"],
+  reception: s["admin.role.reception"],
+};
+
+// Derive a display name + initials from the session email (the only identity in
+// the JWT — there is no name claim and no profile table read here, per "existing
+// session data, no new data"). "ana.morais@…" → "Ana Morais" / "AM".
+function displayFromEmail(email: string | undefined): { name: string; initials: string } {
+  if (!email) return { name: "", initials: "" };
+  const local = email.split("@")[0] ?? email;
+  const parts = local.split(/[._-]+/).filter(Boolean);
+  const name = parts
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(" ");
+  const initials =
+    parts
+      .slice(0, 2)
+      .map((p) => p.charAt(0).toUpperCase())
+      .join("") || local.charAt(0).toUpperCase();
+  return { name: name || local, initials };
+}
+
 export async function AppShell({ children }: { children: React.ReactNode }) {
   const ctx = await getRequestContext();
   if (!ctx) redirect("/login");
 
   const items = navItemsForRole(ctx.role);
+  const roleLabel = ROLE_LABEL[ctx.role];
+
+  // Read the email claim for the cluster's name/initials (no extra data model).
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase.auth.getClaims();
+  const email =
+    typeof data?.claims?.email === "string" ? data.claims.email : undefined;
+  const { name, initials } = displayFromEmail(email);
+
+  const userArea = (
+    <div className="flex items-center gap-4">
+      <UserAreaCluster
+        name={name || roleLabel}
+        roleLabel={roleLabel}
+        initials={initials || roleLabel.charAt(0).toUpperCase()}
+      />
+      <form action={logout}>
+        <button
+          type="submit"
+          className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        >
+          {s["common.signOut"]}
+        </button>
+      </form>
+    </div>
+  );
 
   return (
-    <div className="flex min-h-dvh">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface">
-        <div className="px-6 py-5 text-h4 font-semibold tracking-tight">
-          <span className="text-brand-teal">Osteo</span>
-          <span className="text-brand-magenta">JP</span>
-        </div>
-
-        <NavLinks items={items} />
-
-        <form action={logout} className="mt-auto border-t border-border p-3">
-          <button
-            type="submit"
-            className="w-full rounded-md px-3 py-2 text-left text-body-sm text-text-secondary transition-colors hover:bg-surface-muted hover:text-text-primary"
-          >
-            {s["common.signOut"]}
-          </button>
-        </form>
-      </aside>
-
-      <div className="flex min-w-0 flex-1 flex-col bg-bg">{children}</div>
-    </div>
+    <StaffShellClient items={items} userArea={userArea}>
+      {children}
+    </StaffShellClient>
   );
 }

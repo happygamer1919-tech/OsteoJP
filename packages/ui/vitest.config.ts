@@ -15,6 +15,16 @@ export default defineConfig({
   test: {
     projects: [
       {
+        // Plain node unit tests (e.g. token-layer assertions). Selected by
+        // `pnpm test` (vitest run --project unit) so the brand-token contract
+        // is verified without spinning up the Storybook browser stack.
+        test: {
+          name: 'unit',
+          environment: 'node',
+          include: ['src/**/*.test.ts'],
+        },
+      },
+      {
         extends: true,
         plugins: [
           // The plugin will run tests for the stories defined in your Storybook config

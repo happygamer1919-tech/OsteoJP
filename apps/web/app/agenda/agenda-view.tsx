@@ -1,7 +1,10 @@
 "use client";
 
+import { Button, DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+
 import { s } from "@/lib/i18n";
 import {
   addDays,
@@ -14,8 +17,12 @@ import type {
   AgendaFilters,
   AgendaOptions,
 } from "@/lib/scheduling/types";
+
 import { AgendaGrid } from "./agenda-grid";
-import { AppointmentModal, type ModalState } from "./appointment-modal";
+import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
+
+const iconBtn =
+  "inline-flex size-10 items-center justify-center rounded-md border border-border-strong bg-surface text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
 export function AgendaView({
   view,
@@ -45,10 +52,8 @@ export function AgendaView({
     const params = new URLSearchParams();
     params.set("view", next.view ?? view);
     params.set("date", next.date ?? anchor);
-    const therapist =
-      next.therapist !== undefined ? next.therapist : filters.practitionerId;
-    const location =
-      next.location !== undefined ? next.location : filters.locationId;
+    const therapist = next.therapist !== undefined ? next.therapist : filters.practitionerId;
+    const location = next.location !== undefined ? next.location : filters.locationId;
     if (therapist && !lockTherapist) params.set("therapist", therapist);
     if (location) params.set("location", location);
     startTransition(() => router.push(`/agenda?${params.toString()}`));
@@ -57,112 +62,110 @@ export function AgendaView({
   const step = view === "week" ? 7 : 1;
 
   return (
-    <main className="flex min-h-dvh flex-col bg-bg">
-      {/* Header */}
-      <header className="flex items-center justify-between border-b border-border bg-surface px-6 py-3">
-        <h1 className="text-lg font-semibold text-text-primary">
-          {s["app.name"]} · {s["agenda.title"]}
-        </h1>
-      </header>
+    <ToastProvider>
+    <main>
+      {/* Toolbar (sticky under the app bar) */}
+      <div className="sticky top-16 z-20 -mx-6 -mt-8 mb-6 flex flex-wrap items-center gap-3 border-b border-border bg-surface px-6 py-3">
+        <h1 className="text-2xl text-text-primary">{s["agenda.title"]}</h1>
 
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-border bg-surface px-6 py-3">
-        <div className="inline-flex overflow-hidden rounded border border-border-strong">
-          <ToggleButton
-            active={view === "day"}
-            onClick={() => navigate({ view: "day" })}
-          >
-            {s["agenda.viewDay"]}
-          </ToggleButton>
-          <ToggleButton
-            active={view === "week"}
-            onClick={() => navigate({ view: "week" })}
-          >
-            {s["agenda.viewWeek"]}
-          </ToggleButton>
-        </div>
+        <SegmentedControl
+          aria-label={s["agenda.title"]}
+          value={view}
+          onValueChange={(v) => navigate({ view: v as View })}
+          items={[
+            { value: "day", label: s["agenda.viewDay"] },
+            { value: "week", label: s["agenda.viewWeek"] },
+          ]}
+        />
 
-        <div className="inline-flex items-center gap-1">
-          <NavButton
-            label={s["agenda.prevPeriod"]}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label={s["agenda.prevPeriod"]}
             onClick={() => navigate({ date: addDays(anchor, -step) })}
+            className={iconBtn}
           >
-            ←
-          </NavButton>
+            <ChevronLeft size={20} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+          <div className="w-44">
+            <DatePicker
+              value={anchor}
+              onChange={(d) => navigate({ date: d })}
+              triggerLabel={s["agenda.pickDate"]}
+            />
+          </div>
           <button
             type="button"
             onClick={() => navigate({ date: todayInLisbon() })}
-            className="rounded border border-border-strong px-3 py-1.5 text-sm text-text-primary hover:bg-surface-muted"
+            className="inline-flex h-10 items-center rounded-md px-3 text-sm font-medium text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             {s["agenda.today"]}
           </button>
-          <NavButton
-            label={s["agenda.nextPeriod"]}
+          <button
+            type="button"
+            aria-label={s["agenda.nextPeriod"]}
             onClick={() => navigate({ date: addDays(anchor, step) })}
+            className={iconBtn}
           >
-            →
-          </NavButton>
-          <span className="ml-2 text-sm font-medium text-text-primary">
+            <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+          <span className="ml-1 hidden text-sm font-medium text-text-primary sm:inline">
             {formatAnchorLabel(view, anchor)}
           </span>
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {!lockTherapist && (
-            <select
-              aria-label={s["agenda.filterTherapists"]}
-              value={filters.practitionerId ?? ""}
-              onChange={(e) =>
-                navigate({ therapist: e.target.value || null })
-              }
-              className="rounded border border-border-strong bg-surface px-2 py-1.5 text-sm text-text-primary"
+            <div className="w-56">
+              <Select
+                aria-label={s["agenda.filterTherapists"]}
+                value={filters.practitionerId ?? ""}
+                onChange={(e) => navigate({ therapist: e.target.value || null })}
+              >
+                <option value="">{s["agenda.allTherapists"]}</option>
+                {options.therapists.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          <div className="w-56">
+            <Select
+              aria-label={s["header.location"]}
+              value={filters.locationId ?? ""}
+              onChange={(e) => navigate({ location: e.target.value || null })}
             >
-              <option value="">{s["agenda.allTherapists"]}</option>
-              {options.therapists.map((o) => (
+              <option value="">{s["agenda.allLocations"]}</option>
+              {options.locations.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.label}
                 </option>
               ))}
-            </select>
-          )}
-          <select
-            aria-label={s["header.location"]}
-            value={filters.locationId ?? ""}
-            onChange={(e) => navigate({ location: e.target.value || null })}
-            className="rounded border border-border-strong bg-surface px-2 py-1.5 text-sm text-text-primary"
-          >
-            <option value="">{s["agenda.allLocations"]}</option>
-            {options.locations.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => setModal({ mode: "create" })}
-            className="rounded bg-brand-teal px-3 py-1.5 text-sm font-medium text-text-inverse hover:bg-brand-teal/90"
-          >
-            + {s["agenda.newAppointment"]}
-          </button>
+            </Select>
+          </div>
+          {/* SPEC §4 calls for an "Adicionar" split button (Nova marcação /
+              Bloquear horário); blocked-time has no data model, so the single
+              action ships directly as Nova Marcação (preserves the e2e action). */}
+          <Button iconLeft={Plus} onClick={() => setModal({ mode: "create" })}>
+            {s["agenda.newAppointment"]}
+          </Button>
         </div>
       </div>
 
-      {/* Grid */}
-      <div className="flex-1 overflow-auto p-4">
-        <AgendaGrid
-          view={view}
-          anchor={anchor}
-          appointments={appointments}
-          onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
-          onSelectSlot={(date, time) =>
-            setModal({ mode: "create", slot: { date, time } })
-          }
-        />
-      </div>
+      {/* No empty-period banner: the agenda grid (empty time columns) is its
+          own empty affordance, so a separate banner is redundant (W4-07). */}
+      <AgendaGrid
+        view={view}
+        anchor={anchor}
+        appointments={appointments}
+        onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
+        onSelectSlot={(date, time) => setModal({ mode: "create", slot: { date, time } })}
+      />
 
       {modal && (
-        <AppointmentModal
+        <AppointmentDrawer
           state={modal}
           options={options}
           anchor={anchor}
@@ -174,50 +177,6 @@ export function AgendaView({
         />
       )}
     </main>
-  );
-}
-
-function ToggleButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-3 py-1.5 text-sm ${
-        active
-          ? "bg-brand-teal text-text-inverse"
-          : "bg-surface text-text-primary hover:bg-surface-muted"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function NavButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={onClick}
-      className="rounded border border-border-strong px-2.5 py-1.5 text-sm text-text-primary hover:bg-surface-muted"
-    >
-      {children}
-    </button>
+    </ToastProvider>
   );
 }
