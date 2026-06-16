@@ -1,5 +1,7 @@
 # SPEC-staff-screens — Wave 2 staff platform screen specifications
 
+> Superseded by SPEC-v2-foundation.md (OsteoJP v2) for the staff app. Kept for history.
+
 Status: ready for implementation
 Consumed by: the design loop, Wave 2 (bound to apps/web)
 Sources of truth, in priority order:

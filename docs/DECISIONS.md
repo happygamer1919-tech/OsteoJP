@@ -575,3 +575,49 @@ bodies (docs out of the Wave 3 allowlist). Notable non-question decisions:
 
 Owner-confirmable items raised by Wave 3 are consolidated in QUESTIONS.md (same
 date).
+
+## 2026-06-16: OsteoJP v2 design system adopted (branch design/v2-spec-authoring)
+
+The v2 design system is authored as a new spec set (SPEC-v2-foundation.md plus six
+SPEC-v2-<screen>.md files) and supersedes the v1 visual specs for the staff app
+(apps/web). The v1 specs (SPEC-foundation.md, SPEC-staff-screens.md) are kept for history
+with a one-line supersede note at the top of each. brand-tokens.md keeps the logo palette
+as the logo reference and is not edited; brand-voice.md is unchanged and still governs all
+copy.
+
+- **Direction adopted: premium healthcare dashboard.** Glassmorphism (iOS-26 style frosted
+  glass), Scandinavian medical minimalism, and culturally personalized heritage (Portuguese
+  azulejo plus Moldavian embroidery). Calm, trustworthy, premium, therapeutic. Rationale: the
+  v1 clinical-restrained look read as functional but generic; the v2 direction differentiates
+  the product and carries the "padrão ouro" positioning visually without warming the copy.
+  Tenant scoping preserves licensing neutrality: the glass and sidebar are the product
+  default for every tenant; the OsteoJP palette and heritage frame are the OsteoJP tenant
+  theme only.
+
+Three reversals from v1, each with rationale:
+
+- **(a) Heritage scope widened.** v1 allowed heritage on auth screens and empty states only
+  and forbade it on data screens. v2 makes it a persistent, restrained edge frame
+  (HeritageFrame) on staff data screens too, capped in opacity and inset behind content. The
+  clinical record editor stays exempt (no ornament behind clinical authoring, unchanged hard
+  rule). Rationale: the frame at `restrained` density adds brand presence without harming
+  legibility, and the AA/inset rules keep data screens readable.
+- **(b) Folk colors now allowed.** v1 banned traditional folk red/black and recolored all
+  motifs to the brand palette. v2 adopts Moldavian Burgundy (#A44B58) embroidery and
+  Portuguese Blue (#5B8FD9) azulejo as part of the OsteoJP theme palette. Rationale: the
+  heritage is the point of the OsteoJP theme; the burgundy and blue are muted, low-opacity,
+  and tenant-scoped, so they never leak to other tenants.
+- **(c) Palette is no longer logo-derived.** v1 generated all scales from the logo hexes
+  (teal/magenta/grey). v2 adopts a new five-accent palette (Portuguese Blue, Moldavian
+  Burgundy, Wellness Green, Soft Lavender, Warm Gold) for the OsteoJP theme, not derived from
+  the logo. Adopted by Ivan with JP and owner sign-off. Rationale: the logo palette did not
+  support the premium-wellness direction; the logo stays the logo reference in
+  brand-tokens.md, while the product surface uses the new theme palette.
+
+- **(d) Staff shell changes from top bar to sidebar.** The v1 64px top bar is replaced by a
+  280px floating glass left sidebar AppShell across apps/web, with seven nav items (Início,
+  Agenda, Pacientes, Fichas Clínicas, Marcações, Revisão, Administração; Relatórios and
+  Definições intentionally omitted from v1), an active-item green glass state, and a
+  top-right user-area cluster. This is the product default for all tenants. Rationale: a
+  sidebar suits the seven-item information architecture and the dashboard density better than
+  a top bar, and it is the standard shell for premium dashboard products.
