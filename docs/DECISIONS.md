@@ -621,3 +621,26 @@ Three reversals from v1, each with rationale:
   top-right user-area cluster. This is the product default for all tenants. Rationale: a
   sidebar suits the seven-item information architecture and the dashboard density better than
   a top bar, and it is the standard shell for premium dashboard products.
+
+## 2026-06-16 — Docs housekeeping: resolve merge residue in QUESTIONS.md and PLAN.md (branch design/v2-docs-housekeeping)
+
+A prior session stripped the `<<<<<<<`/`=======`/`>>>>>>>` markers from two
+files but left orphaned branch-label residue (the same failure mode already
+recorded for brand-tokens.md). Cleaned here.
+
+- **docs/QUESTIONS.md** — removed two stray `main` lines (after Q6's recommended
+  default and after Q7) left behind by stripped `>>>>>>> main` markers. No
+  question content changed; every logged question and resolution is intact.
+- **docs/design/PLAN.md "V2 section waves"** — the list was a garbled 3-way
+  merge: V2-W2..W5 appeared twice with conflicting checkboxes, plus residue
+  lines `design/V2-W2-agenda`, `design/v2-w5`, and two ` main` lines. De-duped
+  to one entry per wave. Duplicate entries were textually identical apart from
+  the checkbox, so no unique content was dropped; every `per SPEC-v2-*`
+  reference (including W7's `per SPEC-v2-marcacoes`) is preserved.
+- **Checkboxes reconciled to CLI ground truth** (`gh pr list --state merged`),
+  not the garbled file: V2-W0-01..05 (#237–241), V2-W1 (#244), V2-W2 (#245),
+  V2-W3 (#242), V2-W4 (#246), V2-W5 (#243), V2-W6 (#251) all merged → ticked.
+  V2-W7 left unticked: only the spec PR #248 (`[V2-W7-spec] Add
+  SPEC-v2-marcacoes`) merged; the build wave has not started.
+- Docs only (QUESTIONS.md, PLAN.md, DECISIONS.md). No code, no gate impact.
+  Repo greps clean for all three conflict markers and for branch-label residue.

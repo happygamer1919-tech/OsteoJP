@@ -121,7 +121,6 @@ V1, add a `migrated` source value only if the UI later needs to badge
 migrated records. This touches clinical data retention semantics, so it is
 owner-confirmable (CLAUDE.md). Not blocking: the foundation supports both
 options; the decision is needed before the first real batch (Phase 5).
-main
 
 ## 2026-06-11 — Q7: Canonical radius/type scales shift existing screen rendering — confirm redesign direction
 
@@ -151,7 +150,6 @@ more code, defers the canonical switch.
 
 Not blocking: the token layer ships either way; this only decides whether the
 modest web visual drift is accepted now or deferred. No clinical/legal impact.
-main
 
 ## 2026-06-11 — Q8: lucide-react added to packages/ui (new runtime dependency)
 
