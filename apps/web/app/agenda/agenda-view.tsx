@@ -3,7 +3,7 @@
 import { DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import { s } from "@/lib/i18n";
 import {
@@ -46,6 +46,21 @@ export function AgendaView({
   const [, startTransition] = useTransition();
   const [modal, setModal] = useState<ModalState | null>(null);
 
+  // SPEC-v2-agenda §4: mobile collapses to the Dia view. This is a presentation
+  // override — the URL `view` (and the server fetch range) are untouched; below
+  // the lg breakpoint the grid, the range label, and the date step all render as
+  // a single day. Starts false so the SSR/first-client render match (no
+  // hydration mismatch); the effect corrects it on mount.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)"); // below Tailwind `lg`
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  const effectiveView: View = isMobile ? "day" : view;
+
   function navigate(next: {
     view?: View;
     date?: string;
@@ -62,7 +77,7 @@ export function AgendaView({
     startTransition(() => router.push(`/agenda?${params.toString()}`));
   }
 
-  const step = view === "week" ? 7 : 1;
+  const step = effectiveView === "week" ? 7 : 1;
 
   return (
     <ToastProvider>
@@ -74,15 +89,18 @@ export function AgendaView({
       <div className="glass-nav sticky top-16 z-10 -mx-6 -mt-8 mb-6 flex flex-wrap items-center gap-3 px-6 py-3 lg:top-0">
         <h1 className="text-2xl text-v2-text-primary">{s["agenda.title"]}</h1>
 
-        <SegmentedControl
-          aria-label={s["agenda.title"]}
-          value={view}
-          onValueChange={(v) => navigate({ view: v as View })}
-          items={[
-            { value: "day", label: s["agenda.viewDay"] },
-            { value: "week", label: s["agenda.viewWeek"] },
-          ]}
-        />
+        {/* Day/week toggle is desktop-only: mobile is always the Dia view (§4). */}
+        <div className="hidden lg:block">
+          <SegmentedControl
+            aria-label={s["agenda.title"]}
+            value={view}
+            onValueChange={(v) => navigate({ view: v as View })}
+            items={[
+              { value: "day", label: s["agenda.viewDay"] },
+              { value: "week", label: s["agenda.viewWeek"] },
+            ]}
+          />
+        </div>
 
         <div className="flex items-center gap-2">
           <button
@@ -116,7 +134,7 @@ export function AgendaView({
             <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" />
           </button>
           <span className="ml-1 hidden text-sm font-medium text-v2-text-primary sm:inline">
-            {formatAnchorLabel(view, anchor)}
+            {formatAnchorLabel(effectiveView, anchor)}
           </span>
         </div>
 
@@ -155,7 +173,8 @@ export function AgendaView({
               packages/ui Button is brand-teal with no green variant; styled
               in-route on v2 tokens to meet the spec (green-700 fill + inverse
               text = 4.7:1 AA). A green Button variant is logged as a foundation
-              follow-up in docs/QUESTIONS.md, never added inside a section wave.
+              follow-up in docs/design/QUESTIONS.md (Q-V2W2-2), never added inside
+              a section wave.
               Blocked-time has no data model, so the single action ships as Nova
               Marcação (preserves the e2e action). */}
           <button
@@ -172,7 +191,7 @@ export function AgendaView({
       {/* No empty-period banner: the agenda grid (empty time columns) is its
           own empty affordance, so a separate banner is redundant (W4-07). */}
       <AgendaGrid
-        view={view}
+        view={effectiveView}
         anchor={anchor}
         appointments={appointments}
         onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
