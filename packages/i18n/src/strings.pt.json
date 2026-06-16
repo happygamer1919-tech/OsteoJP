@@ -400,6 +400,7 @@
   "review.sourcePatient": "Paciente",
   "review.statePending": "Por rever",
   "review.stateInReview": "Em revisão",
+  "review.stateApproved": "Aprovada",
   "review.stateRejected": "Rejeitada",
   "review.open": "Abrir",
   "review.claim": "Assumir",
