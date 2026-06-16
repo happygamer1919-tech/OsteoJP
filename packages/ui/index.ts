@@ -134,3 +134,9 @@ export {
   ResumoChart,
   type ResumoChartProps,
 } from "./src/components/ResumoChart";
+export {
+  HeritageFrame,
+  isHeritageForbiddenRoute,
+  type HeritageFrameProps,
+  type HeritageFrameDensity,
+} from "./src/components/HeritageFrame";
