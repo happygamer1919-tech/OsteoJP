@@ -1,10 +1,10 @@
 "use client";
 
-import { ErrorState } from "@osteojp/ui";
+import { ErrorState, GlassPanel } from "@osteojp/ui";
 
 import { s } from "@/lib/i18n";
 
-/** Patients list error boundary (SPEC-staff-screens §11.1): ErrorState + retry. */
+/** Patients list error boundary (SPEC-v2-patients §3): ErrorState inside the glass container, with retry. */
 export default function PatientsError({
   reset,
 }: {
@@ -13,12 +13,14 @@ export default function PatientsError({
 }) {
   return (
     <main>
-      <ErrorState
-        title={s["patients.errorTitle"]}
-        description={s["patients.errorHelp"]}
-        retryLabel={s["common.retry"]}
-        onRetry={reset}
-      />
+      <GlassPanel>
+        <ErrorState
+          title={s["patients.errorTitle"]}
+          description={s["patients.errorHelp"]}
+          retryLabel={s["common.retry"]}
+          onRetry={reset}
+        />
+      </GlassPanel>
     </main>
   );
 }
