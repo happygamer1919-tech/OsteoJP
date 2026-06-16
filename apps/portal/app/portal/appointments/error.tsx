@@ -6,7 +6,7 @@ import { ErrorState } from '@osteojp/ui'
 export default function AppointmentsError({ reset }: { error: Error; reset: () => void }) {
   return (
     <ErrorState
-      title="Não foi possível carregar as consultas"
+      title="Não foi possível carregar as marcações"
       description="Ocorreu um erro ao carregar as suas marcações. Tente novamente."
       retryLabel="Tentar novamente"
       onRetry={reset}
