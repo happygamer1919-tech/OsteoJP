@@ -221,6 +221,10 @@ export interface PortalShellProps {
   children: ReactNode;
   linkComponent?: ElementType;
   navLabel?: string;
+  /** Distinct label for the desktop top nav (accessibility). Defaults to navLabel + " (ambiente de trabalho)". */
+  desktopNavLabel?: string;
+  /** Distinct label for the mobile bottom tab bar (accessibility). Defaults to navLabel + " (barra de separadores)". */
+  mobileNavLabel?: string;
 }
 
 /**
@@ -234,7 +238,11 @@ export function PortalShell({
   children,
   linkComponent: Link = "a",
   navLabel = "Navegação",
+  desktopNavLabel,
+  mobileNavLabel,
 }: PortalShellProps) {
+  const _desktopNavLabel = desktopNavLabel ?? `${navLabel} (ambiente de trabalho)`
+  const _mobileNavLabel = mobileNavLabel ?? `${navLabel} (barra de separadores)`
   const tab = (item: AppShellNavItem) => (
     <Link
       key={item.href}
@@ -262,7 +270,7 @@ export function PortalShell({
         <BrandLockup variant="mark" size="sm" />
         <h1 className="truncate text-lg text-text-primary">{title}</h1>
         {/* Desktop: tabs as a top row. */}
-        <nav aria-label={navLabel} className="ml-auto hidden items-center gap-1 md:flex">
+        <nav aria-label={_desktopNavLabel} className="ml-auto hidden items-center gap-1 md:flex">
           {tabs.map(tab)}
         </nav>
       </header>
@@ -274,7 +282,7 @@ export function PortalShell({
 
       {/* Mobile: bottom tab bar. */}
       <nav
-        aria-label={navLabel}
+        aria-label={_mobileNavLabel}
         className="fixed inset-x-0 bottom-0 z-30 flex h-16 items-stretch gap-1 border-t border-border bg-surface px-2 md:hidden"
       >
         {tabs.map(tab)}
