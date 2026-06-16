@@ -116,3 +116,21 @@ export {
   QuickActionTile,
   type QuickActionTileProps,
 } from "./src/components/QuickActionTile";
+export {
+  GlassPanel,
+  type GlassPanelProps,
+} from "./src/components/GlassPanel";
+export {
+  GlassStatusChip,
+  type GlassStatusChipProps,
+  type GlassStatusTone,
+} from "./src/components/GlassStatusChip";
+export {
+  StatusBadge,
+  type StatusBadgeProps,
+  type AppointmentTone,
+} from "./src/components/StatusBadge";
+export {
+  ResumoChart,
+  type ResumoChartProps,
+} from "./src/components/ResumoChart";

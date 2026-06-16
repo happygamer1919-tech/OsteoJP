@@ -201,7 +201,7 @@ payments, webhooks, or `.github/workflows`.
 
 - [x] V2-W0-01 OsteoJP v2 theme tokens, glass system, and heritage-v2 SVG assets in packages/ui (hard gate for W0-02..04)
 - [x] V2-W0-02 Glass primitives: GlassCard, GlassKpiCard, QuickActionTile (after W0-01)
-- [ ] V2-W0-03 Glass primitives: ResumoChart, StatusChip/StatusBadge glass restyle, GlassPanel (after W0-01)
+- [x] V2-W0-03 Glass primitives: ResumoChart, StatusChip/StatusBadge glass restyle, GlassPanel (after W0-01)
 - [ ] V2-W0-04 HeritageFrame component with surface allowlist and AA inset (after W0-01)
 - [ ] V2-W0-05 Sidebar AppShell replacing the top bar across apps/web, all seven nav items, Marcações placeholder route, HeritageFrame integration (after W0-02, W0-03, W0-04; hard gate for all section waves)
 
