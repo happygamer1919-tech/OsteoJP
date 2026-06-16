@@ -7,6 +7,7 @@
   "nav.review": "Review",
   "nav.admin": "Administration",
   "nav.invoicing": "Invoicing",
+  "nav.bookings": "Bookings",
   "header.location": "Location",
   "header.userMenu": "User menu",
   "common.save": "Save",
@@ -641,5 +642,18 @@
   "agenda.serviceDrenagemLinfatica": "Drenagem Linfática",
   "agenda.serviceMassagemDesportiva": "Massagem Desportiva",
   "agenda.serviceOsteopatia": "Osteopatia",
-  "agenda.serviceOther": "Other services"
+  "agenda.serviceOther": "Other services",
+  "marcacoes.title": "Bookings",
+  "marcacoes.subtitle": "View your patients' bookings.",
+  "marcacoes.filterDateFrom": "Start date",
+  "marcacoes.filterDateTo": "End date",
+  "marcacoes.dateTo": "to",
+  "marcacoes.filterStatus": "Status",
+  "marcacoes.allStatuses": "All statuses",
+  "marcacoes.filterService": "Service",
+  "marcacoes.allServices": "All services",
+  "marcacoes.emptyTitle": "No bookings for the selected filters.",
+  "marcacoes.emptyHelp": "Adjust the filters or the date range.",
+  "marcacoes.errorTitle": "Couldn’t load the bookings",
+  "marcacoes.errorHelp": "Check your connection and try again."
 }

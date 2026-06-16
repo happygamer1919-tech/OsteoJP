@@ -7,6 +7,7 @@
   "nav.review": "Revisão",
   "nav.admin": "Administração",
   "nav.invoicing": "Faturação",
+  "nav.bookings": "Marcações",
   "header.location": "Localização",
   "header.userMenu": "Menu de utilizador",
   "common.save": "Guardar",
@@ -641,5 +642,18 @@
   "agenda.serviceDrenagemLinfatica": "Drenagem Linfática",
   "agenda.serviceMassagemDesportiva": "Massagem Desportiva",
   "agenda.serviceOsteopatia": "Osteopatia",
-  "agenda.serviceOther": "Outros serviços"
+  "agenda.serviceOther": "Outros serviços",
+  "marcacoes.title": "Marcações",
+  "marcacoes.subtitle": "Consulte as marcações dos seus pacientes.",
+  "marcacoes.filterDateFrom": "Data de início",
+  "marcacoes.filterDateTo": "Data de fim",
+  "marcacoes.dateTo": "a",
+  "marcacoes.filterStatus": "Estado",
+  "marcacoes.allStatuses": "Todos os estados",
+  "marcacoes.filterService": "Serviço",
+  "marcacoes.allServices": "Todos os serviços",
+  "marcacoes.emptyTitle": "Sem marcações para os filtros selecionados.",
+  "marcacoes.emptyHelp": "Ajuste os filtros ou o intervalo de datas.",
+  "marcacoes.errorTitle": "Não foi possível carregar as marcações",
+  "marcacoes.errorHelp": "Verifique a ligação e tente novamente."
 }
