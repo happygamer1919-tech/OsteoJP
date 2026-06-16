@@ -634,5 +634,12 @@
   "invoicing.colStatus": "Estado",
   "invoicing.tableCaption": "Faturas",
   "invoicing.emptyTitle": "Sem faturas no período selecionado",
-  "invoicing.emptyHelp": "Ajuste o período selecionado."
+  "invoicing.emptyHelp": "Ajuste o período selecionado.",
+  "agenda.legend": "Legenda de serviços",
+  "agenda.serviceMassagemTerapeutica": "Massagem Terapêutica",
+  "agenda.serviceMassagemRelaxamento": "Massagem Relaxamento",
+  "agenda.serviceDrenagemLinfatica": "Drenagem Linfática",
+  "agenda.serviceMassagemDesportiva": "Massagem Desportiva",
+  "agenda.serviceOsteopatia": "Osteopatia",
+  "agenda.serviceOther": "Outros serviços"
 }

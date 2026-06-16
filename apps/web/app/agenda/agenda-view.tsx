@@ -1,9 +1,9 @@
 "use client";
 
-import { Button, DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
+import { DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import { s } from "@/lib/i18n";
 import {
@@ -21,8 +21,11 @@ import type {
 import { AgendaGrid } from "./agenda-grid";
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
 
+// v2 glass toolbar controls (SPEC-v2-foundation §7 nav-button idiom): no opaque
+// border/fill, neutral hover tint, the global focus ring. Mirrors the shell's
+// own icon buttons so the agenda toolbar reads as part of the v2 chrome.
 const iconBtn =
-  "inline-flex size-10 items-center justify-center rounded-md border border-border-strong bg-surface text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+  "inline-flex size-10 items-center justify-center rounded-v2 text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
 export function AgendaView({
   view,
@@ -43,6 +46,21 @@ export function AgendaView({
   const [, startTransition] = useTransition();
   const [modal, setModal] = useState<ModalState | null>(null);
 
+  // SPEC-v2-agenda §4: mobile collapses to the Dia view. This is a presentation
+  // override — the URL `view` (and the server fetch range) are untouched; below
+  // the lg breakpoint the grid, the range label, and the date step all render as
+  // a single day. Starts false so the SSR/first-client render match (no
+  // hydration mismatch); the effect corrects it on mount.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)"); // below Tailwind `lg`
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  const effectiveView: View = isMobile ? "day" : view;
+
   function navigate(next: {
     view?: View;
     date?: string;
@@ -59,24 +77,30 @@ export function AgendaView({
     startTransition(() => router.push(`/agenda?${params.toString()}`));
   }
 
-  const step = view === "week" ? 7 : 1;
+  const step = effectiveView === "week" ? 7 : 1;
 
   return (
     <ToastProvider>
     <main>
-      {/* Toolbar (sticky under the app bar) */}
-      <div className="sticky top-16 z-20 -mx-6 -mt-8 mb-6 flex flex-wrap items-center gap-3 border-b border-border bg-surface px-6 py-3">
-        <h1 className="text-2xl text-text-primary">{s["agenda.title"]}</h1>
+      {/* Toolbar: full-bleed sticky glass bar. Under the v2 SidebarAppShell the
+          desktop content area has no top bar (sticks to top-0); on mobile it
+          sits below the shell's sticky h-16 header (top-16). z-10 keeps it under
+          that header (z-20). */}
+      <div className="glass-nav sticky top-16 z-10 -mx-6 -mt-8 mb-6 flex flex-wrap items-center gap-3 px-6 py-3 lg:top-0">
+        <h1 className="text-2xl text-v2-text-primary">{s["agenda.title"]}</h1>
 
-        <SegmentedControl
-          aria-label={s["agenda.title"]}
-          value={view}
-          onValueChange={(v) => navigate({ view: v as View })}
-          items={[
-            { value: "day", label: s["agenda.viewDay"] },
-            { value: "week", label: s["agenda.viewWeek"] },
-          ]}
-        />
+        {/* Day/week toggle is desktop-only: mobile is always the Dia view (§4). */}
+        <div className="hidden lg:block">
+          <SegmentedControl
+            aria-label={s["agenda.title"]}
+            value={view}
+            onValueChange={(v) => navigate({ view: v as View })}
+            items={[
+              { value: "day", label: s["agenda.viewDay"] },
+              { value: "week", label: s["agenda.viewWeek"] },
+            ]}
+          />
+        </div>
 
         <div className="flex items-center gap-2">
           <button
@@ -97,7 +121,7 @@ export function AgendaView({
           <button
             type="button"
             onClick={() => navigate({ date: todayInLisbon() })}
-            className="inline-flex h-10 items-center rounded-md px-3 text-sm font-medium text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             {s["agenda.today"]}
           </button>
@@ -109,8 +133,8 @@ export function AgendaView({
           >
             <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" />
           </button>
-          <span className="ml-1 hidden text-sm font-medium text-text-primary sm:inline">
-            {formatAnchorLabel(view, anchor)}
+          <span className="ml-1 hidden text-sm font-medium text-v2-text-primary sm:inline">
+            {formatAnchorLabel(effectiveView, anchor)}
           </span>
         </div>
 
@@ -145,19 +169,29 @@ export function AgendaView({
               ))}
             </Select>
           </div>
-          {/* SPEC §4 calls for an "Adicionar" split button (Nova marcação /
-              Bloquear horário); blocked-time has no data model, so the single
-              action ships directly as Nova Marcação (preserves the e2e action). */}
-          <Button iconLeft={Plus} onClick={() => setModal({ mode: "create" })}>
+          {/* Primary action: filled Wellness Green (SPEC-v2-agenda §1.4). The
+              packages/ui Button is brand-teal with no green variant; styled
+              in-route on v2 tokens to meet the spec (green-700 fill + inverse
+              text = 4.7:1 AA). A green Button variant is logged as a foundation
+              follow-up in docs/design/QUESTIONS.md (Q-V2W2-2), never added inside
+              a section wave.
+              Blocked-time has no data model, so the single action ships as Nova
+              Marcação (preserves the e2e action). */}
+          <button
+            type="button"
+            onClick={() => setModal({ mode: "create" })}
+            className="inline-flex h-10 items-center gap-2 rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition-colors duration-fast ease-standard hover:bg-v2-green-800 active:bg-v2-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          >
+            <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
             {s["agenda.newAppointment"]}
-          </Button>
+          </button>
         </div>
       </div>
 
       {/* No empty-period banner: the agenda grid (empty time columns) is its
           own empty affordance, so a separate banner is redundant (W4-07). */}
       <AgendaGrid
-        view={view}
+        view={effectiveView}
         anchor={anchor}
         appointments={appointments}
         onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
