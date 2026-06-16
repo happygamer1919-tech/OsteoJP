@@ -320,6 +320,7 @@
   "admin.locations.saved": "Local guardado.",
   "admin.locations.error": "Não foi possível guardar o local.",
   "clinical.title": "Fichas Clínicas",
+  "clinical.subtitle": "Consulte e faça a gestão das fichas clínicas dos seus pacientes.",
   "clinical.new": "Nova Ficha",
   "clinical.newTitle": "Nova Ficha Clínica",
   "clinical.patient": "Paciente",
