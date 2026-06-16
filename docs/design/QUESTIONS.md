@@ -46,3 +46,25 @@ SPEC §2.1 categories (Osteopatia family by prefix), with a neutral fallback +
 - **Status:** non-blocking; works for the five canonical names.
 - **Recommended default:** confirm the live service catalogue names map cleanly
   to the five categories, or provide the canonical service→category mapping.
+
+---
+
+## V2-W7 Marcações (bookings list)
+
+### Q-V2W7-1 — Service-tinted chip has no glass primitive (foundation follow-up)
+
+`GlassStatusChip` carries only the five semantic tones (success/info/warning/
+error/neutral), not the five SPEC §2.1 service accents (green/lavender/gold/blue/
+burgundy). Section waves must not edit `packages/ui`, so the Marcações list
+renders the service as an **in-route token-tinted pill** reusing the same
+`SERVICE_TINT` tokens as the agenda cards (100 fill + 200 hairline,
+`v2-text-primary` label), with a neutral fallback for "Outros serviços". The
+service→category match logic and the conflict-detection helpers
+(`serviceAccent`, `conflictingIds`, `sameRoom`) live un-exported inside
+`agenda/agenda-grid.tsx`, so they are duplicated in the list route.
+
+- **Status:** non-blocking; visually consistent with the agenda.
+- **Recommended default:** add a `packages/ui` glass `ServiceChip` (or extend
+  `GlassStatusChip` with service-accent tones) and lift the service/conflict
+  helpers into `lib/scheduling`, then swap the agenda grid and the list over in a
+  later foundation pass. Do not add inside a section wave.
