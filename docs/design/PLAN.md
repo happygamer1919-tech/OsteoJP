@@ -191,3 +191,43 @@ self-merge policy (zero changes to migrations, RLS, auth, payments, webhooks,
  main
 
 Cross-task rules: each PR ticks only its own checkbox; never touch another wave's list; i18n strings are additive keep-both; self-merge strictly per the self-merge policy above. W4-10 touches `docs/DECISIONS.md` and `docs/QUESTIONS.md`, which sit outside the `apps/web` / `packages` / `docs/design` allowlist — that task is docs-only housekeeping and ships as its own PR with no code diff.
+
+---
+
+## Wave V2: OsteoJP v2 design system
+
+The v2 system (glass + sidebar AppShell as the product default, OsteoJP palette and
+heritage edge frame as the tenant theme). SPECs: SPEC-v2-foundation.md plus the six
+SPEC-v2-<screen>.md files. The v2 specs supersede the v1 visual specs for the staff app.
+Self-merge policy unchanged from prior waves: every required check green, both reviewer
+agents (design-reviewer, a11y-reviewer) PASS, diff strictly inside the wave's path
+allowlist, e2e green for any `apps/web` diff, and ZERO changes to migrations, RLS, auth,
+payments, webhooks, or `.github/workflows`.
+
+### V2-W0 Foundation (hard gate before all section waves)
+
+- [ ] V2-W0-01 OsteoJP v2 theme tokens, glass system, and heritage-v2 SVG assets in packages/ui (hard gate for W0-02..04)
+- [ ] V2-W0-02 Glass primitives: GlassCard, GlassKpiCard, QuickActionTile (after W0-01)
+- [ ] V2-W0-03 Glass primitives: ResumoChart, StatusChip/StatusBadge glass restyle, GlassPanel (after W0-01)
+- [ ] V2-W0-04 HeritageFrame component with surface allowlist and AA inset (after W0-01)
+- [ ] V2-W0-05 Sidebar AppShell replacing the top bar across apps/web, all seven nav items, Marcações placeholder route, HeritageFrame integration (after W0-02, W0-03, W0-04; hard gate for all section waves)
+
+### V2 section waves (parallel after V2-W0 is green on main)
+
+- [ ] V2-W1 Dashboard (Início) per SPEC-v2-dashboard
+- [ ] V2-W2 Agenda per SPEC-v2-agenda
+- [ ] V2-W3 Pacientes per SPEC-v2-patients
+- [ ] V2-W4 Fichas Clínicas per SPEC-v2-fichas
+- [ ] V2-W5 Revisão per SPEC-v2-review
+- [ ] V2-W6 Administração per SPEC-v2-admin
+- [ ] V2-W7 Marcações list view (reuses the existing appointments fetch, no new data model)
+
+### V2 path allowlists
+
+- **V2-W0-01 through V2-W0-04** may touch: `packages/ui/**` plus `docs/design/**`.
+- **V2-W0-05** may touch: `packages/ui/**` plus `apps/web/**` plus `docs/design/**`.
+- **All V2 section waves (V2-W1 through V2-W7)** may touch: `apps/web/**` (the screen's own
+  route only) plus `packages/i18n/**` plus `docs/design/**`, and explicitly NOT
+  `packages/ui`. Every primitive ships in V2-W0. Any `packages/ui` change discovered
+  mid-section is a foundation follow-up, never inside a parallel wave: stop the task, log it
+  to `docs/QUESTIONS.md`, and move on. i18n strings are additive keep-both on rebase.

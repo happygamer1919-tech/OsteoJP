@@ -66,3 +66,29 @@ Heritage motifs are **decorative accents only**. They appear **only** on:
 Do **not** place heritage motifs on clinical record views, forms, data tables,
 invoices, declarations, or any dense functional surface. Product chrome stays clinical
 and restrained per the brand tone ("padrão ouro", serious, not warm).
+
+## Heritage v2 (edge-frame motifs): `packages/ui/src/assets/heritage/v2/`
+
+Added for the OsteoJP v2 design system (SPEC-v2-foundation.md section 6). These power
+the `HeritageFrame` component: a persistent, low-opacity decorative frame behind the
+content area. Two new tileable watercolor SVGs, vertically tileable so they run down the
+left and right edges and meet the corner pieces with no visible seam.
+
+| File | Color | Motif | Opacity | Placement |
+|---|---|---|---|---|
+| `embroidery-left.svg` | Moldavian Burgundy `#A44B58` | Moldavian embroidery geometry, watercolor faded | 20 percent | Top-left corner, left vertical edge, bottom-left corner |
+| `azulejo-right.svg` | Portuguese Blue `#5B8FD9` | Portuguese azulejo, watercolor faded | 18 percent | Top-right corner, right vertical edge, bottom-right corner |
+
+Scope and rules:
+
+- **OsteoJP-theme-scoped.** These render only when the active tenant theme has heritage
+  enabled. Other tenants inherit the same glass and sidebar with a neutral palette and no
+  heritage (licensing neutrality, SPEC-v2-foundation section 2).
+- The colors `#A44B58` and `#5B8FD9` are the OsteoJP v2 theme accents, not the logo palette.
+  The logo palette (teal, magenta, grey) in brand-tokens.md is unchanged and is not used by
+  the v2 frame.
+- The frame is `aria-hidden`, `pointer-events: none`, inset, opacity-capped, and never
+  reduces text contrast below AA. On data-dense screens it runs at the `restrained` density
+  (corners plus a thin edge only). It is allowed on auth screens, empty states, and staff
+  data screens, and is FORBIDDEN on the clinical record editor.
+- Authored `viewBox`-only (no fixed width/height) so they scale to any container edge.

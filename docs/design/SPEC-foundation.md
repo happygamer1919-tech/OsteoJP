@@ -1,5 +1,7 @@
 # SPEC-foundation — packages/ui Wave 1 component specifications
 
+> Superseded by SPEC-v2-foundation.md (OsteoJP v2) for the staff app. Kept for history.
+
 Status: ready for implementation
 Consumed by: the design loop (docs/design/PLAN.md, Wave 1)
 Sources of truth, in priority order:

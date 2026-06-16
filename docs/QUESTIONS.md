@@ -90,6 +90,13 @@ brand-tokens.md section 6 but marked "pending JP sign-off for patient-facing
 surfaces". Recommended default: ship with the neutral (no-motif) default for
 all tenants; do not enable on any patient-facing surface until JP signs off.
 
+**Q6b CLOSED 2026-06-16, JP signed off.** Heritage is approved as a persistent,
+restrained, opacity-capped edge frame (HeritageFrame) on the OsteoJP tenant theme,
+including staff data screens. It stays tenant-scoped (neutral default for other
+tenants) and remains forbidden on the clinical record editor. Adopted as part of the
+OsteoJP v2 design system (see DECISIONS.md 2026-06-16, reversal (a), and
+SPEC-v2-foundation.md section 6). Q6(a), the vector logo source, stays open.
+
 ## 2026-06-11 — Q5: Migrated clinical records: land as `draft` or `locked`, and do they need a dedicated source tag?
 
 Context: the migration pipeline foundation (branch migration-foundation) can
@@ -307,3 +314,29 @@ Consolidated here for owner review; per-PR detail remains in the PR bodies.
 
 - **Portal heritage stays OFF until JP sign-off** (already tracked as Q6 above);
   Wave 3 added no heritage motifs to any patient-facing surface.
+
+## 2026-06-16: V1.1 functional follow-ups raised by the OsteoJP v2 design specs
+
+These are NON-design backend tickets. The v2 design specs render honest placeholders or
+empty states for the widgets below; making them show real data is separate functional work.
+None of these are design-loop tasks, and none may add migrations, RLS, auth, payment,
+webhook, or workflow changes as part of a design wave. Each needs an owner decision on scope
+and priority (V1.1 unless the owner pulls it into V1).
+
+- **Receita (mês) KPI: revenue aggregation.** The dashboard KPI card (SPEC-v2-dashboard
+  section 2, card 4) needs a monthly revenue aggregation plus a "vs mês anterior" delta. No
+  such aggregation exists in V1. Recommended default: V1.1 functional ticket; the card ships
+  with an honest "Sem dados" placeholder until then.
+- **Resumo semanal: weekly appointment counts.** The dashboard line chart
+  (SPEC-v2-dashboard section 4.2) needs a weekly appointment-count series. Recommended
+  default: V1.1 functional ticket; the chart ships with an empty placeholder until then. No
+  new data model.
+- **Notas rápidas: notes persistence.** The dashboard notes card (SPEC-v2-dashboard section
+  5) needs a notes store. None exists in V1. Open question: per-staff-member or
+  per-tenant-shared notes. Recommended default: V1.1, per-staff-member; the card ships
+  read-only with an empty state until then. No notes table or endpoint added in a design wave.
+- **Marcações list query confirmation.** The Marcações nav item and the V2-W7 list view
+  reuse the existing appointments fetch rendered as a list (SPEC-v2-agenda section 6). Confirm
+  the existing appointments query is sufficient for a list view with no new data model. Until
+  the route ships, the nav item points to a placeholder empty state. Recommended default:
+  reuse the existing fetch as-is; no new data model.
