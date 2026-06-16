@@ -207,7 +207,7 @@ payments, webhooks, or `.github/workflows`.
 
 ### V2 section waves (parallel after V2-W0 is green on main)
 
-- [ ] V2-W1 Dashboard (Início) per SPEC-v2-dashboard
+- [x] V2-W1 Dashboard (Início) per SPEC-v2-dashboard
 - [ ] V2-W2 Agenda per SPEC-v2-agenda
 - [x] V2-W3 Pacientes per SPEC-v2-patients
 - [ ] V2-W4 Fichas Clínicas per SPEC-v2-fichas
