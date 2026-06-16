@@ -28,10 +28,16 @@ export default async function AdminLayout({
   if (!can(actor.role, "settings:read")) redirect("/dashboard");
 
   // Global nav comes from AppShell; admin keeps its own tab nav for the admin
-  // sub-sections (§11.4: Tabs are the only navigation across admin areas).
+  // sub-sections (SPEC-v2-admin §1.2: Tabs are the only navigation across admin
+  // areas). The title + subtitle (§1.1) sit above the tab row, consistent on
+  // every tab; the HeritageFrame wraps the content area via the SidebarAppShell.
   return (
     <AppShell>
-      <main className="px-8 py-6">
+      <main className="flex flex-col gap-6">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-3xl text-v2-text-primary">{s["admin.title"]}</h1>
+          <p className="text-v2-text-secondary">{s["admin.overview.intro"]}</p>
+        </div>
         <AdminNav items={NAV} label={s["admin.title"]} />
         {children}
       </main>

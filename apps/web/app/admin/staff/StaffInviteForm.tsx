@@ -1,7 +1,9 @@
 "use client";
 import { useActionState } from "react";
+import { GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { inviteAction, type InviteState } from "./actions";
+import { adminBtnPrimary, adminInput, adminLabel } from "../admin-ui";
 
 const s = getStrings(DEFAULT_LOCALE);
 const initial: InviteState = { ok: false };
@@ -23,54 +25,52 @@ export function StaffInviteForm({
           : null;
 
   return (
-    <form action={action} className="space-y-3 rounded border p-4 max-w-xl">
-      <h3 className="text-sm font-semibold">{s["admin.staff.inviteTitle"]}</h3>
+    <GlassPanel title={s["admin.staff.inviteTitle"]} className="max-w-xl">
+      <form action={action} className="flex flex-col gap-3">
+        <label className="block space-y-1">
+          <span className={adminLabel}>{s["admin.staff.fullName"]}</span>
+          <input name="fullName" required className={adminInput} />
+        </label>
+        <label className="block space-y-1">
+          <span className={adminLabel}>{s["admin.staff.email"]}</span>
+          <input name="email" type="email" required className={adminInput} />
+        </label>
+        <label className="block space-y-1">
+          <span className={adminLabel}>{s["admin.staff.role"]}</span>
+          <select name="role" required className={adminInput}>
+            {roles.map((r) => (
+              <option key={r.slug} value={r.slug}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
-      <label className="block space-y-1">
-        <span className="text-sm font-medium">{s["admin.staff.fullName"]}</span>
-        <input name="fullName" required className="block w-full rounded border px-2 py-1.5 text-sm" />
-      </label>
-      <label className="block space-y-1">
-        <span className="text-sm font-medium">{s["admin.staff.email"]}</span>
-        <input name="email" type="email" required className="block w-full rounded border px-2 py-1.5 text-sm" />
-      </label>
-      <label className="block space-y-1">
-        <span className="text-sm font-medium">{s["admin.staff.role"]}</span>
-        <select name="role" required className="block w-full rounded border px-2 py-1.5 text-sm">
-          {roles.map((r) => (
-            <option key={r.slug} value={r.slug}>
-              {r.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded border px-3 py-2 text-sm font-medium disabled:opacity-50"
-      >
-        {s["admin.staff.invite"]}
-      </button>
-
-      {state.ok && state.delivery === "email" && (
-        <div className="rounded border border-success bg-success-bg p-3 text-sm">
-          <p className="font-medium text-success">{s["admin.staff.invited"]}</p>
-          <p className="mt-1">{s["admin.staff.inviteEmailSent"]}</p>
+        <div>
+          <button type="submit" disabled={pending} className={adminBtnPrimary}>
+            {s["admin.staff.invite"]}
+          </button>
         </div>
-      )}
-      {state.ok && state.delivery === "temp_password" && state.tempPassword && (
-        <div className="rounded border border-success bg-success-bg p-3 text-sm">
-          <p className="font-medium text-success">{s["admin.staff.invited"]}</p>
-          {/* Email could not be delivered — fall back to out-of-band hand-off. */}
-          <p className="mt-1">{s["admin.staff.inviteEmailFailed"]}</p>
-          <p className="mt-1">{s["admin.staff.tempPasswordNotice"]}</p>
-          <code className="mt-1 block break-all rounded bg-surface px-2 py-1 font-mono">
-            {state.tempPassword}
-          </code>
-        </div>
-      )}
-      {errorText && <p className="text-sm text-error">{errorText}</p>}
-    </form>
+
+        {state.ok && state.delivery === "email" && (
+          <div className="rounded-v2 border border-success bg-success-bg p-3 text-sm text-v2-text-primary">
+            <p className="font-medium text-success-700">{s["admin.staff.invited"]}</p>
+            <p className="mt-1">{s["admin.staff.inviteEmailSent"]}</p>
+          </div>
+        )}
+        {state.ok && state.delivery === "temp_password" && state.tempPassword && (
+          <div className="rounded-v2 border border-success bg-success-bg p-3 text-sm text-v2-text-primary">
+            <p className="font-medium text-success-700">{s["admin.staff.invited"]}</p>
+            {/* Email could not be delivered — fall back to out-of-band hand-off. */}
+            <p className="mt-1">{s["admin.staff.inviteEmailFailed"]}</p>
+            <p className="mt-1">{s["admin.staff.tempPasswordNotice"]}</p>
+            <code className="mt-1 block break-all rounded bg-v2-surface px-2 py-1 font-mono">
+              {state.tempPassword}
+            </code>
+          </div>
+        )}
+        {errorText && <p className="text-sm text-error" role="status">{errorText}</p>}
+      </form>
+    </GlassPanel>
   );
 }
