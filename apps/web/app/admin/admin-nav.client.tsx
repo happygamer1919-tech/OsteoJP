@@ -26,7 +26,7 @@ export function AdminNav({
   return (
     <nav
       aria-label={label}
-      className="mb-8 flex gap-1 overflow-x-auto border-b border-border"
+      className="flex gap-1 overflow-x-auto border-b border-v2-border"
     >
       {items.map((item) => {
         const active =
@@ -43,8 +43,8 @@ export function AdminNav({
               "transition-colors duration-fast ease-standard",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-inset",
               active
-                ? "border-accent-2-700 text-text-primary"
-                : "border-transparent text-text-secondary hover:text-text-primary",
+                ? "border-v2-green-600 text-v2-text-primary"
+                : "border-transparent text-v2-text-secondary hover:text-v2-text-primary",
             )}
           >
             {item.label}
