@@ -103,3 +103,16 @@ export {
   type SlotPickerProps,
   type SlotOption,
 } from "./src/components/SlotPicker";
+
+// OsteoJP v2 design system (SPEC-v2-foundation). Glass primitives ship in V2-W0
+// and are consumed by the V2 section waves.
+export { type V2Accent } from "./src/components/v2-accent";
+export { GlassCard, type GlassCardProps } from "./src/components/GlassCard";
+export {
+  GlassKpiCard,
+  type GlassKpiCardProps,
+} from "./src/components/GlassKpiCard";
+export {
+  QuickActionTile,
+  type QuickActionTileProps,
+} from "./src/components/QuickActionTile";
