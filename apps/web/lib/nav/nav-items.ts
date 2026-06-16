@@ -12,6 +12,13 @@ const ALL: (NavItem & { capability?: Capability })[] = [
   { href: "/agenda", label: s["nav.agenda"] },
   { href: "/patients", label: s["nav.patients"] },
   { href: "/clinical", label: s["nav.clinical"], capability: "clinical_records:read" },
+  // Marcações (V2-W0-05, SPEC-v2-foundation §7.2): a bookings list of the same
+  // scheduling data the agenda renders as a grid; open to every role like the
+  // agenda. Points at a placeholder until the V2-W7 list ships. There is no
+  // dedicated `nav.bookings` i18n key yet (packages/i18n is outside this task's
+  // allowlist), so it reuses the existing "Marcações" string; V2-W7 should add
+  // a `nav.bookings` key.
+  { href: "/marcacoes", label: s["patients.tabAppointments"] },
   { href: "/clinical/review", label: s["nav.review"], capability: "clinical_records:review" },
   { href: "/admin", label: s["nav.admin"], capability: "settings:read" },
 ];

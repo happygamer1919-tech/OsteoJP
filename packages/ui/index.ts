@@ -140,3 +140,11 @@ export {
   type HeritageFrameProps,
   type HeritageFrameDensity,
 } from "./src/components/HeritageFrame";
+export {
+  SidebarAppShell,
+  type SidebarAppShellProps,
+} from "./src/components/SidebarAppShell";
+export {
+  UserAreaCluster,
+  type UserAreaClusterProps,
+} from "./src/components/UserAreaCluster";
