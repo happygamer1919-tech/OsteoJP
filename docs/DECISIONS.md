@@ -644,3 +644,22 @@ recorded for brand-tokens.md). Cleaned here.
   SPEC-v2-marcacoes`) merged; the build wave has not started.
 - Docs only (QUESTIONS.md, PLAN.md, DECISIONS.md). No code, no gate impact.
   Repo greps clean for all three conflict markers and for branch-label residue.
+
+## 2026-06-16 — Remove temporary [HMAC-DIAG] ingestion diagnostics (branch chore-remove-hmac-diag)
+
+PR #211 added a `logHmacVerificationFailure` helper that emitted one structured
+`[HMAC-DIAG]` line per failed HMAC verification, to reconcile the AI partner's
+signing against ours during the live handshake. That handshake is now proven (a
+201 landed with a clean record), so the diagnostic layer is removed.
+
+- **apps/web/lib/ingestion/hmac.ts** — deleted the `logHmacVerificationFailure`
+  export, the `secretDiagnosticFingerprint` helper, and the now-unused
+  `createHash` import. `verifyIngestionSignature` and `signIngestionBody` are
+  byte-for-byte unchanged.
+- **apps/web/app/api/v1/ingestion/clinical-records/route.ts** — removed the
+  helper call on the `!verified.ok` branch and the `TODO(remove-after-live-test)`
+  comment. The failed-verification path still returns `401 {"error":"unauthorized"}`,
+  identical to before.
+- Net removal (2 insertions, 76 deletions). Repo greps clean for `HMAC-DIAG`,
+  `logHmacVerificationFailure`, `secretDiagnosticFingerprint`, and
+  `remove-after-live-test`. Lint green, web typecheck green, all 10 hmac tests pass.
