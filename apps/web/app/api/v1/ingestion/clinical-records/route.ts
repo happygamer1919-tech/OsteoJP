@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { logHmacVerificationFailure, verifyIngestionSignature } from "@/lib/ingestion/hmac";
+import { verifyIngestionSignature } from "@/lib/ingestion/hmac";
 import { hashPayload, ingest, parseEnvelope } from "@/lib/ingestion/ingest";
 import { drizzleIngestionStore } from "@/lib/ingestion/store";
 
@@ -40,10 +40,6 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
   if (!verified.ok) {
-    // TEMPORARY diagnostics for the live HMAC handshake — logs one [HMAC-DIAG]
-    // line (no secret, no body content). Remove with the helper in hmac.ts once
-    // the partner integration is proven. TODO(remove-after-live-test).
-    logHmacVerificationFailure(rawBody, req.headers, verified.reason);
     // Never echo WHICH check failed.
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
