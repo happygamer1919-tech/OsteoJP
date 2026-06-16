@@ -320,6 +320,7 @@
   "admin.locations.saved": "Location saved.",
   "admin.locations.error": "Could not save the location.",
   "clinical.title": "Clinical Records",
+  "clinical.subtitle": "View and manage your patients’ clinical records.",
   "clinical.new": "New Record",
   "clinical.newTitle": "New Clinical Record",
   "clinical.patient": "Patient",

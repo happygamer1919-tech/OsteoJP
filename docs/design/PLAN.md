@@ -210,7 +210,7 @@ payments, webhooks, or `.github/workflows`.
 - [x] V2-W1 Dashboard (Início) per SPEC-v2-dashboard
 - [ ] V2-W2 Agenda per SPEC-v2-agenda
 - [x] V2-W3 Pacientes per SPEC-v2-patients
-- [ ] V2-W4 Fichas Clínicas per SPEC-v2-fichas
+- [x] V2-W4 Fichas Clínicas per SPEC-v2-fichas
 - [ ] V2-W5 Revisão per SPEC-v2-review
 - [ ] V2-W6 Administração per SPEC-v2-admin
 - [ ] V2-W7 Marcações list view (reuses the existing appointments fetch, no new data model)
