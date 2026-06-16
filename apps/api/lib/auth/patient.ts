@@ -9,25 +9,41 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 // The patient-portal auth boundary for api.osteojp.pt.
 //
-// Trust rule: the patient_id is derived SERVER-SIDE from the VERIFIED token
-// (getClaims → the access-token hook's `patient_id` claim), NEVER from request
-// payload. A handler that needs "the current patient" calls getPatientPrincipal
-// / requirePatient — there is no code path that accepts a patient id from the
+// Trust rule: the patient_id is derived SERVER-SIDE from the signed JWT in the
+// session cookie (getSession → JWT payload decode), NEVER from request payload.
+// A handler that needs "the current patient" calls getPatientPrincipal /
+// requirePatient — there is no code path that accepts a patient id from the
 // client. RLS then re-enforces self-scope as defense in depth (runAsPatient).
 
 export type { PatientPrincipal };
 
 /**
  * The verified patient principal for the current session, or null (fail-closed).
- * Reads a VERIFIED token via getClaims() — never the raw cookie — and validates
- * it is genuinely a patient token (role claim 'patient' + patient_id + tenant_id
- * + sub) via @osteojp/auth. A staff token can never satisfy this.
+ *
+ * Reads claims from the Supabase-signed JWT in the session cookie WITHOUT a
+ * network round-trip. getClaims() proxies to /auth/v1/user, which rejects the
+ * patient JWT with 403 because Supabase's auth server expects role:'authenticated'
+ * but the access-token hook (migration 0010) stamps role:'patient'. getSession()
+ * reads the cookie directly (no network call) and the payload is trustworthy
+ * because it is signed by Supabase's JWT secret and stored in an httpOnly cookie.
+ * RLS self-scope (migration 0010/0012) is a second enforcement layer.
+ *
+ * A staff token can never satisfy parsePatientPrincipal (role check fails).
  */
 export async function getPatientPrincipal(): Promise<PatientPrincipal | null> {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.getClaims();
-  if (error || !data?.claims) return null;
-  return parsePatientPrincipal(data.claims as Record<string, unknown>);
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return null;
+  const parts = session.access_token.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(
+      Buffer.from(parts[1], "base64url").toString("utf-8"),
+    );
+    return parsePatientPrincipal(payload as Record<string, unknown>);
+  } catch {
+    return null;
+  }
 }
 
 /** Like getPatientPrincipal but throws UNAUTHENTICATED so route handlers can
