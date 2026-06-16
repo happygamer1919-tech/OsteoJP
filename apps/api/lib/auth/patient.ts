@@ -9,47 +9,38 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 // The patient-portal auth boundary for api.osteojp.pt.
 //
-// Trust rule: the patient_id is derived SERVER-SIDE from the VERIFIED token
-// (getSession → local JWT decode → the access-token hook's `patient_id` claim),
-// NEVER from request payload. A handler that needs "the current patient" calls
-// getPatientPrincipal / requirePatient — there is no code path that accepts a
-// patient id from the client. RLS then re-enforces self-scope as defense in
-// depth (runAsPatient).
+// Trust rule: the patient_id is derived SERVER-SIDE from the signed JWT in the
+// session cookie (getSession → JWT payload decode), NEVER from request payload.
+// A handler that needs "the current patient" calls getPatientPrincipal /
+// requirePatient — there is no code path that accepts a patient id from the
+// client. RLS then re-enforces self-scope as defense in depth (runAsPatient).
 
 export type { PatientPrincipal };
 
 /**
  * The verified patient principal for the current session, or null (fail-closed).
  *
- * Uses getSession() + local JWT payload decode instead of getClaims() because
- * getClaims() internally calls getUser(), which makes a GET /auth/v1/user
- * request. The Supabase auth server returns 403 for patient JWTs whose `role`
- * claim is 'patient' (stamped by the access-token hook in migration 0010) rather
- * than the standard 'authenticated' role — causing getClaims() to return null
- * and every patient route to 401.
+ * Reads claims from the Supabase-signed JWT in the session cookie WITHOUT a
+ * network round-trip. getClaims() proxies to /auth/v1/user, which rejects the
+ * patient JWT with 403 because Supabase's auth server expects role:'authenticated'
+ * but the access-token hook (migration 0010) stamps role:'patient'. getSession()
+ * reads the cookie directly (no network call) and the payload is trustworthy
+ * because it is signed by Supabase's JWT secret and stored in an httpOnly cookie.
+ * RLS self-scope (migration 0010/0012) is a second enforcement layer.
  *
- * getSession() reads the session cookie directly (no network round-trip). The JWT
- * is trustworthy: it was issued and HMAC-signed by Supabase at login time via the
- * access-token hook. parsePatientPrincipal() then re-validates all required claims
- * (role === 'patient', patient_id UUID, tenant_id UUID, sub present) fail-closed,
- * and withPatientContext() + RLS TO patient policies enforce self-scope at the DB
- * layer as defense in depth.
- *
- * A staff token (role 'authenticated') can never satisfy parsePatientPrincipal.
+ * A staff token can never satisfy parsePatientPrincipal (role check fails).
  */
 export async function getPatientPrincipal(): Promise<PatientPrincipal | null> {
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) return null;
+  const parts = session.access_token.split(".");
+  if (parts.length !== 3) return null;
   try {
-    const parts = session.access_token.split(".");
-    if (parts.length !== 3 || !parts[1]) return null;
-    const claims = JSON.parse(
+    const payload = JSON.parse(
       Buffer.from(parts[1], "base64url").toString("utf-8"),
-    ) as Record<string, unknown>;
-    return parsePatientPrincipal(claims);
+    );
+    return parsePatientPrincipal(payload as Record<string, unknown>);
   } catch {
     return null;
   }

@@ -219,7 +219,7 @@ design/v2-w5
 - [ ] V2-W5 Revisão per SPEC-v2-review
  main
 - [ ] V2-W6 Administração per SPEC-v2-admin
-- [ ] V2-W7 Marcações list view (reuses the existing appointments fetch, no new data model)
+- [ ] V2-W7 Marcações list view per SPEC-v2-marcacoes (reuses the existing appointments fetch, no new data model)
 
 ### V2 path allowlists
 
