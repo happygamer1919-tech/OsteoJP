@@ -275,3 +275,179 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ================================================================ *
+ * OsteoJP v2 design system (SPEC-v2-foundation.md) — task V2-W0-01
+ *
+ * The v2 glass + sidebar look. This layer is ADDITIVE: it never edits the v1
+ * tokens above (brand-tokens.md still governs the logo palette, type scale,
+ * spacing, radius origin, shadows-as-baseline, and motion tokens, which v2
+ * reuses). Every value below is mirrored verbatim from SPEC-v2-foundation.md;
+ * the v2 token test (tokens-v2.test.ts) guards them against drift.
+ *
+ * Tenant scoping (SPEC §2): the glass / shell / radius / shadow tokens are
+ * tenant-INVARIANT (product default for every tenant). The five accent families
+ * (blue, burgundy, green, lavender, gold) below carry the OsteoJP tenant theme
+ * values. A neutral (non-OsteoJP) tenant substitutes a neutral palette behind
+ * the SAME token names by overriding the `--color-v2-<accent>-*` custom
+ * properties on its own root scope — the generated utilities reference the
+ * variables (`var(--color-v2-blue-500)`), so a scoped override re-themes without
+ * touching markup. The neutral-tenant accent values are not yet specified by the
+ * design source and are a foundation follow-up (flagged in the PR), so this file
+ * ships the OsteoJP values as the default the product is built against. Heritage
+ * is gated separately by the HeritageFrame component (V2-W0-04), OsteoJP theme
+ * only.
+ * ================================================================ */
+@theme {
+  /* ---- §3.1 Base surfaces and text (v2) ---- */
+  --color-v2-bg: #F7F8FA;
+  --color-v2-surface: #FFFFFF;
+  --color-v2-border: rgba(220, 225, 235, 0.6);
+  --color-v2-text-primary: #223042;
+  /* SPEC §3.1 lists #6E7A89, but that is 4.37:1 on white / 4.11:1 on v2-bg —
+     below WCAG AA 4.5:1 for the normal-size text this token is specced for
+     (captions, helper text, metadata, secondary labels), violating the spec's
+     own §10 hard AA floor. Darkened the minimum to clear AA on both surfaces
+     (#66727F = 4.91:1 on white, ~4.6:1 on v2-bg), same cool grey-blue hue. The
+     spec value is corrected to match. Same class of AA token-tuning as the v1
+     success-700 / warning-700 / focus-ring adjustments. */
+  --color-v2-text-secondary: #66727F;
+
+  /* ---- §3.2/§3.3 Portuguese Blue (azulejo, graphs, blue category) ---- */
+  --color-v2-blue-50: #EEF4FC;
+  --color-v2-blue-100: #DBE7F8;
+  --color-v2-blue-200: #BBCFF0;
+  --color-v2-blue-300: #97B5E8;
+  --color-v2-blue-400: #7AA1E0;
+  --color-v2-blue-500: #5B8FD9; /* base */
+  --color-v2-blue-600: #4275C2;
+  --color-v2-blue-700: #345C9C; /* AA label text on light surfaces (§3.4) */
+  --color-v2-blue-800: #294876;
+  --color-v2-blue-900: #1F3454;
+
+  /* ---- §3.2/§3.3 Moldavian Burgundy (embroidery, Osteopatia category) ---- */
+  --color-v2-burgundy-50: #F8EEEF;
+  --color-v2-burgundy-100: #F1DADD;
+  --color-v2-burgundy-200: #E3B6BC;
+  --color-v2-burgundy-300: #D28E97;
+  --color-v2-burgundy-400: #BC6975;
+  --color-v2-burgundy-500: #A44B58; /* base */
+  --color-v2-burgundy-600: #8A3D49;
+  --color-v2-burgundy-700: #6E303A; /* AA label text on light surfaces (§3.4) */
+  --color-v2-burgundy-800: #54252D;
+  --color-v2-burgundy-900: #3C1A20;
+
+  /* ---- §3.2/§3.3 Wellness Green (success, active menu, primary fills) ---- */
+  --color-v2-green-50: #EFF7F3;
+  --color-v2-green-100: #DCEDE5;
+  --color-v2-green-200: #BBDDCD;
+  --color-v2-green-300: #A6D2BE;
+  --color-v2-green-400: #90C5AD;
+  --color-v2-green-500: #7AB79F; /* base */
+  --color-v2-green-600: #629C86;
+  --color-v2-green-700: #4E7D6B; /* AA label text on light surfaces (§3.4) */
+  --color-v2-green-800: #3C6052;
+  --color-v2-green-900: #2C463C;
+
+  /* ---- §3.2/§3.3 Soft Lavender (clinical records, forms, fichas KPI) ---- */
+  --color-v2-lavender-50: #F4F0FC;
+  --color-v2-lavender-100: #E9E0F9;
+  --color-v2-lavender-200: #D4C3F3;
+  --color-v2-lavender-300: #C7AEF0;
+  --color-v2-lavender-400: #B79AEC;
+  --color-v2-lavender-500: #A786E8; /* base */
+  --color-v2-lavender-600: #8A66D1;
+  --color-v2-lavender-700: #6E4FAB; /* AA label text on light surfaces (§3.4) */
+  --color-v2-lavender-800: #543C82;
+  --color-v2-lavender-900: #3D2C5E;
+
+  /* ---- §3.2/§3.3 Warm Gold (revenue, premium indicators) ---- */
+  --color-v2-gold-50: #FBF4EA;
+  --color-v2-gold-100: #F7E8D2;
+  --color-v2-gold-200: #EFD1A6;
+  --color-v2-gold-300: #E7BD83;
+  --color-v2-gold-400: #DEAF6E;
+  --color-v2-gold-500: #D5A25A; /* base */
+  --color-v2-gold-600: #BA8742;
+  --color-v2-gold-700: #946A34; /* AA label text on light surfaces (§3.4) */
+  --color-v2-gold-800: #6F5028;
+  --color-v2-gold-900: #4F391D;
+
+  /* ---- §4.1 Glass colors (color namespace; emits bg- and border- utilities) ---- */
+  --color-v2-glass-card-bg: rgba(255, 255, 255, 0.72);
+  --color-v2-glass-nav-bg: rgba(255, 255, 255, 0.75); /* §4.1 nav opacity 75% */
+  --color-v2-glass-card-border: rgba(255, 255, 255, 0.45);
+  --color-v2-glass-active-bg: rgba(122, 183, 159, 0.15); /* Wellness Green glass */
+
+  /* ---- §4.2 Radius (v2-specific, above the brand-tokens radius origin) ---- */
+  --radius-v2: 24px; /* cards, panels, drawers, inputs inside glass */
+  --radius-v2-kpi: 28px; /* KPI cards only */
+
+  /* ---- §4.3 Shadow (single float shadow; no second heavier layer) ---- */
+  --shadow-v2-float: 0 8px 30px rgba(0, 0, 0, 0.05);
+
+  /* ---- §5 Typography (greeting size; weight ladder per spec) ---- */
+  --text-v2-greeting: 42px;
+  --text-v2-greeting--line-height: 48px;
+  --text-v2-greeting--font-weight: 600;
+
+  /* ---- §4.1/§4.4 Glass plumbing (non-utility vars consumed by the glass
+     utilities below; kept as custom properties so a tenant scope can retune
+     them) ---- */
+  --v2-glass-card-blur: blur(24px);
+  --v2-glass-nav-blur: blur(20px);
+  --v2-glass-fallback-bg: rgba(255, 255, 255, 0.92); /* §4.4 no-backdrop fallback */
+}
+
+/* ----------------------------------------------------------------
+ * §4 Glass surfaces. Composite utilities (bg + border + radius + float
+ * shadow + backdrop blur) so primitives apply one class. §4.4 makes the
+ * backdrop-filter fallback a hard requirement: where blur is unsupported the
+ * surface falls back to a near-opaque fill so text contrast never depends on
+ * the blur. The fallback lives in the plain @supports rule below the utilities.
+ * ---------------------------------------------------------------- */
+@utility glass-card {
+  background-color: var(--color-v2-glass-card-bg);
+  border: 1px solid var(--color-v2-glass-card-border);
+  border-radius: var(--radius-v2);
+  box-shadow: var(--shadow-v2-float);
+  -webkit-backdrop-filter: var(--v2-glass-card-blur);
+  backdrop-filter: var(--v2-glass-card-blur);
+}
+
+@utility glass-nav {
+  background-color: var(--color-v2-glass-nav-bg);
+  border: 1px solid var(--color-v2-glass-card-border);
+  -webkit-backdrop-filter: var(--v2-glass-nav-blur);
+  backdrop-filter: var(--v2-glass-nav-blur);
+}
+
+/* §4.4 backdrop-filter fallback (hard requirement). Where blur is unsupported
+ * the glass surfaces fall back to a near-opaque fill so text contrast never
+ * depends on the blur. Kept as plain unlayered rules (Tailwind's @utility
+ * parser does not accept a nested @supports); unlayered CSS also outranks the
+ * layered utility, so the fallback reliably wins when blur is absent. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-card,
+  .glass-nav {
+    background-color: var(--v2-glass-fallback-bg);
+  }
+}
+
+/* §8 Hover lift: interactive glass tiles/cards translate -4px on hover over
+ * duration-base with ease-standard. No shadow change, no scale. Under
+ * prefers-reduced-motion the transform itself is suppressed (not just its
+ * transition) so the lift never moves; components mark hover with a tint
+ * instead. The hover/reduced-motion rules are plain unlayered CSS — Tailwind's
+ * @utility parser does not accept a nested `&:hover`. */
+@utility hover-lift {
+  transition: transform var(--duration-base) var(--ease-standard);
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hover-lift:hover {
+    transform: none;
+  }
+}

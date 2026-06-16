@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 64" fill="none" role="img" aria-hidden="true">
+  <!-- Portuguese azulejo: a vertical chain of four-fold quatrefoil rosettes with
+       a solid centre. Authored on a 48x64 viewBox (no fixed width/height) so it
+       scales to any edge and tiles vertically with no seam (rosette centres
+       every 32 units; the petal rhythm carries unbroken across the tile join).
+       Watercolor-faded via layered fill-opacity. Colour: Portuguese Blue
+       #5B8FD9 (SPEC-v2-foundation §6.1 / docs/design/assets.md heritage-v2). -->
+  <g fill="#5B8FD9">
+    <circle cx="24" cy="9" r="6" fill-opacity="0.3" />
+    <circle cx="24" cy="23" r="6" fill-opacity="0.3" />
+    <circle cx="17" cy="16" r="6" fill-opacity="0.3" />
+    <circle cx="31" cy="16" r="6" fill-opacity="0.3" />
+    <circle cx="24" cy="16" r="3.2" fill-opacity="0.85" />
+
+    <circle cx="24" cy="41" r="6" fill-opacity="0.3" />
+    <circle cx="24" cy="55" r="6" fill-opacity="0.3" />
+    <circle cx="17" cy="48" r="6" fill-opacity="0.3" />
+    <circle cx="31" cy="48" r="6" fill-opacity="0.3" />
+    <circle cx="24" cy="48" r="3.2" fill-opacity="0.85" />
+  </g>
+</svg>

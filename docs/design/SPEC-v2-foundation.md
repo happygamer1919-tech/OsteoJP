@@ -62,7 +62,7 @@ Adopt these values exactly for the OsteoJP tenant theme. Other tenants substitut
 | `v2-surface` | `#FFFFFF` | Main opaque surface (where glass is not used) |
 | `v2-border` | `rgba(220,225,235,0.6)` | Hairline border on opaque surfaces and dividers |
 | `v2-text-primary` | `#223042` | Headings, body, primary text |
-| `v2-text-secondary` | `#6E7A89` | Captions, helper text, metadata, secondary labels |
+| `v2-text-secondary` | `#66727F` | Captions, helper text, metadata, secondary labels. AA-corrected from the initial `#6E7A89` (4.37:1 on white, below the §10 AA floor) to `#66727F` (4.91:1 on white, ~4.6:1 on `v2-bg`); same cool grey-blue hue. |
 
 ### 3.2 Accents (base = 500)
 
