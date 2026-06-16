@@ -73,7 +73,7 @@ Rows whose appointment conflicts (overlapping slot) carry a conflict marker cons
 
 ### 2.3 Row interaction
 
-Opening a row routes to the same appointment view/drawer Agenda uses, with identical data and permissions. The whole row is a single tab stop; any trailing chevron is decorative (the row is the control). If v1 has no list-row open behavior, the rows are non-interactive read items and this is flagged to Ivan rather than wiring a new navigation target.
+Opening a row routes to the same appointment view/drawer Agenda uses, with identical data and permissions. The whole row is a single tab stop; any trailing chevron is decorative (the row is the control) and MUST be `aria-hidden="true"` so it is not announced (WCAG 1.1.1 / 4.1.2, SPEC-v2-foundation §6.3). If v1 has no list-row open behavior, the rows are non-interactive read items and this is flagged to Ivan rather than wiring a new navigation target.
 
 ---
 
