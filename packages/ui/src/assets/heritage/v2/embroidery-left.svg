@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 64" fill="none" role="img" aria-hidden="true">
+  <!-- Moldavian embroidery geometry: a vertical chain of stepped diamonds with
+       apex buds and side accent dots. Authored on a 48x64 viewBox (no fixed
+       width/height) so it scales to any edge and tiles vertically with no seam
+       (diamond centres every 32 units; the bottom motif of one tile and the top
+       motif of the next keep the same 4-unit apex gap). Watercolor-faded via
+       layered fill-opacity. Colour: Moldavian Burgundy #A44B58
+       (SPEC-v2-foundation §6.1 / docs/design/assets.md heritage-v2). -->
+  <g fill="#A44B58">
+    <path d="M24 2 L36 16 L24 30 L12 16 Z" fill-opacity="0.35" />
+    <path d="M24 8 L30 16 L24 24 L18 16 Z" fill-opacity="0.7" />
+    <circle cx="24" cy="16" r="2.2" />
+    <rect x="22.8" y="0.4" width="2.4" height="2.4" />
+    <rect x="22.8" y="29.2" width="2.4" height="2.4" />
+    <circle cx="9" cy="16" r="1.4" fill-opacity="0.6" />
+    <circle cx="39" cy="16" r="1.4" fill-opacity="0.6" />
+
+    <path d="M24 34 L36 48 L24 62 L12 48 Z" fill-opacity="0.35" />
+    <path d="M24 40 L30 48 L24 56 L18 48 Z" fill-opacity="0.7" />
+    <circle cx="24" cy="48" r="2.2" />
+    <rect x="22.8" y="32.4" width="2.4" height="2.4" />
+    <rect x="22.8" y="61.2" width="2.4" height="2.4" />
+    <circle cx="9" cy="48" r="1.4" fill-opacity="0.6" />
+    <circle cx="39" cy="48" r="1.4" fill-opacity="0.6" />
+  </g>
+</svg>

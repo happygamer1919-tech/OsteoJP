@@ -199,7 +199,7 @@ payments, webhooks, or `.github/workflows`.
 
 ### V2-W0 Foundation (hard gate before all section waves)
 
-- [ ] V2-W0-01 OsteoJP v2 theme tokens, glass system, and heritage-v2 SVG assets in packages/ui (hard gate for W0-02..04)
+- [x] V2-W0-01 OsteoJP v2 theme tokens, glass system, and heritage-v2 SVG assets in packages/ui (hard gate for W0-02..04)
 - [ ] V2-W0-02 Glass primitives: GlassCard, GlassKpiCard, QuickActionTile (after W0-01)
 - [ ] V2-W0-03 Glass primitives: ResumoChart, StatusChip/StatusBadge glass restyle, GlassPanel (after W0-01)
 - [ ] V2-W0-04 HeritageFrame component with surface allowlist and AA inset (after W0-01)
