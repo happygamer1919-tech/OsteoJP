@@ -208,7 +208,7 @@ export function BookingFlow({
           </Card>
 
           <p className="text-xs text-text-secondary">
-            A marcação fica a aguardar confirmação da clínica. Receberá uma notificação quando for
+            A sua marcação ficará a aguardar confirmação da receção. Receberá um SMS quando for
             confirmada.
           </p>
 
