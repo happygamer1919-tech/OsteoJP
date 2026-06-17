@@ -113,7 +113,8 @@ export default async function DashboardPage() {
             title="Sem consultas marcadas"
             description="Quando marcar uma consulta, aparecerá aqui."
             action={
-              <NavButton href="/portal/booking" variant="primary" iconLeft={Plus} className="min-h-11">
+              <NavButton href="/portal/booking" variant="primary" className="min-h-11">
+                <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
                 Marcar consulta
               </NavButton>
             }

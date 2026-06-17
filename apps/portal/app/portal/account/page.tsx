@@ -6,8 +6,9 @@ import { AccountView } from './AccountView'
 export default async function AccountPage() {
   const supabase = await createServerClient()
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    data: { session },
+  } = await supabase.auth.getSession()
+  const user = session?.user ?? null
 
   let profile: PatientProfile | null = null
   try {
