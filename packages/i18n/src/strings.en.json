@@ -648,12 +648,16 @@
   "marcacoes.filterDateFrom": "Start date",
   "marcacoes.filterDateTo": "End date",
   "marcacoes.dateTo": "to",
+  "marcacoes.filterLocation": "Location",
+  "marcacoes.allLocations": "All locations",
   "marcacoes.filterStatus": "Status",
   "marcacoes.allStatuses": "All statuses",
   "marcacoes.filterService": "Service",
   "marcacoes.allServices": "All services",
+  "marcacoes.filterTherapist": "Therapist",
+  "marcacoes.allTherapists": "All therapists",
   "marcacoes.emptyTitle": "No bookings for the selected filters.",
   "marcacoes.emptyHelp": "Adjust the filters or the date range.",
-  "marcacoes.errorTitle": "Couldn’t load the bookings",
+  "marcacoes.errorTitle": "Could not load the bookings",
   "marcacoes.errorHelp": "Check your connection and try again."
 }
