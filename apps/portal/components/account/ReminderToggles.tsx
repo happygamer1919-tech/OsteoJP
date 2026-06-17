@@ -47,7 +47,7 @@ export default function ReminderToggles() {
       {(!sms && !email) && (
         <div className="px-4 py-2">
           <p role="status" className="text-xs text-warning-700">
-            Ao desactivar os lembretes não receberá notificações de consulta.
+            Ao desativar os lembretes não receberá notificações de consulta.
           </p>
         </div>
       )}

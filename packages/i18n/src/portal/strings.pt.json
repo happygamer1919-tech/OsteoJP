@@ -17,7 +17,9 @@
     "optional": "opcional",
     "yes": "Sim",
     "no": "Não",
-    "call_clinic": "Ligar para a clínica"
+    "call_clinic": "Ligar para a clínica",
+    "retry": "Tentar novamente",
+    "skip_to_content": "Saltar para o conteúdo"
   },
   "nav": {
     "home": "Início",
@@ -96,7 +98,16 @@
     "pending_body": "A sua marcação está a aguardar confirmação pela receção. Receberá um SMS quando for confirmada.",
     "pending_cta": "Ver as minhas consultas",
     "error_submit": "Não foi possível enviar a marcação. Tente novamente ou ligue para a clínica.",
-    "rate_limit": "Demasiadas tentativas. Aguarde um momento e tente novamente."
+    "error_slot_taken": "Este horário já não está disponível. Escolha outro horário ou contacte a clínica.",
+    "rate_limit": "Demasiadas tentativas. Aguarde um momento e tente novamente.",
+    "choose_date_placeholder": "Escolher data",
+    "no_slots_day": "Sem horários disponíveis neste dia.",
+    "choose_date_prompt": "Escolha uma data para ver os horários.",
+    "choose_another_time": "Escolher outra hora",
+    "pending_home_cta": "Ir para o início",
+    "step_info_pending": "A sua marcação ficará a aguardar confirmação da receção. Receberá um SMS quando for confirmada.",
+    "load_error_title": "Não foi possível abrir as marcações",
+    "load_error_description": "Ocorreu um erro ao carregar a oferta de marcação. Tente novamente."
   },
   "appointments": {
     "title": "As minhas consultas",
@@ -179,7 +190,13 @@
     "declaration_treatment": "Declaração de tratamento",
     "download_pdf": "Transferir PDF",
     "download_error": "Não foi possível transferir o documento. Tente novamente.",
-    "phase4_notice": "As faturas estarão disponíveis em breve."
+    "phase4_notice": "As faturas estarão disponíveis em breve.",
+    "empty_title": "Sem documentos disponíveis",
+    "empty_description": "Os seus documentos e declarações aparecerão aqui.",
+    "type_document": "Documento",
+    "type_image": "Imagem",
+    "load_error_title": "Não foi possível carregar os documentos",
+    "load_error_description": "Ocorreu um erro ao carregar os seus documentos. Tente novamente."
   },
   "clinics": {
     "title": "As nossas clínicas",

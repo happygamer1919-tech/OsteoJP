@@ -17,7 +17,9 @@
     "optional": "optional",
     "yes": "Yes",
     "no": "No",
-    "call_clinic": "Call the clinic"
+    "call_clinic": "Call the clinic",
+    "retry": "Try again",
+    "skip_to_content": "Skip to main content"
   },
   "nav": {
     "home": "Home",
@@ -96,7 +98,16 @@
     "pending_body": "Your booking is awaiting confirmation from reception. You will receive an SMS when it is confirmed.",
     "pending_cta": "View my appointments",
     "error_submit": "Could not submit booking. Please try again or call the clinic.",
-    "rate_limit": "Too many attempts. Please wait a moment and try again."
+    "error_slot_taken": "This slot is no longer available. Choose another time or contact the clinic.",
+    "rate_limit": "Too many attempts. Please wait a moment and try again.",
+    "choose_date_placeholder": "Choose date",
+    "no_slots_day": "No slots available on this day.",
+    "choose_date_prompt": "Choose a date to see available times.",
+    "choose_another_time": "Choose another time",
+    "pending_home_cta": "Go to home",
+    "step_info_pending": "Your booking will await confirmation from reception. You will receive an SMS when it is confirmed.",
+    "load_error_title": "Could not open the booking flow",
+    "load_error_description": "An error occurred loading available slots. Please try again."
   },
   "appointments": {
     "title": "My appointments",
@@ -179,7 +190,13 @@
     "declaration_treatment": "Treatment declaration",
     "download_pdf": "Download PDF",
     "download_error": "Could not download document. Please try again.",
-    "phase4_notice": "Invoices will be available soon."
+    "phase4_notice": "Invoices will be available soon.",
+    "empty_title": "No documents available",
+    "empty_description": "Your documents and declarations will appear here.",
+    "type_document": "Document",
+    "type_image": "Image",
+    "load_error_title": "Could not load documents",
+    "load_error_description": "An error occurred loading your documents. Please try again."
   },
   "clinics": {
     "title": "Our clinics",
