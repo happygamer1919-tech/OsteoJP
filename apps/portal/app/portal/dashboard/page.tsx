@@ -38,13 +38,16 @@ const QUICK_ACTIONS: QuickAction[] = [
 export default async function DashboardPage() {
   const supabase = await createServerClient()
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  const firstName = (user?.user_metadata?.first_name as string | undefined) ?? ''
+    data: { session },
+  } = await supabase.auth.getSession()
+  const firstName = (session?.user?.user_metadata?.first_name as string | undefined) ?? ''
 
-  // A hard fetch failure surfaces the route-level error.tsx (ErrorState + retry);
-  // an empty list is the empty state below, not an error.
-  const appointments = await getMyAppointments()
+  let appointments: AppointmentView[] = []
+  try {
+    appointments = await getMyAppointments()
+  } catch {
+    // non-fatal — show empty state rather than error boundary
+  }
 
   const upcoming = appointments
     .filter(isUpcoming)
