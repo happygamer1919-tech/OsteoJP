@@ -36,21 +36,9 @@ const QUICK_ACTIONS: QuickAction[] = [
 ]
 
 export default async function DashboardPage() {
-  const supabase = await createServerClient()
-  // getSession() avoids a network call; getUser() emits SIGNED_OUT for patient JWTs, breaking getMyAppointments().
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  const firstName = (session?.user?.user_metadata?.first_name as string | undefined) ?? ''
+  const firstName = 'Debug'
 
-  // A hard fetch failure surfaces the route-level error.tsx (ErrorState + retry);
-  // an empty list is the empty state below, not an error.
-  let appointments: AppointmentView[] = []
-  try {
-    appointments = await getMyAppointments()
-  } catch {
-    // non-fatal — show empty state rather than error boundary
-  }
+  const appointments: AppointmentView[] = []
 
   const upcoming = appointments
     .filter(isUpcoming)
