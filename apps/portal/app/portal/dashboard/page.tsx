@@ -45,7 +45,12 @@ export default async function DashboardPage() {
 
   // A hard fetch failure surfaces the route-level error.tsx (ErrorState + retry);
   // an empty list is the empty state below, not an error.
-  const appointments = await getMyAppointments()
+  let appointments: AppointmentView[] = []
+  try {
+    appointments = await getMyAppointments()
+  } catch {
+    // non-fatal — show empty state rather than error boundary
+  }
 
   const upcoming = appointments
     .filter(isUpcoming)
