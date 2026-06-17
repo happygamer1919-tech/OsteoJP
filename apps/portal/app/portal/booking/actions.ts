@@ -19,7 +19,7 @@ export async function submitBooking(
     if (err instanceof ApiError) {
       if (err.status === 409) {
         return {
-          error: 'Este horário já não está disponível. Por favor escolha outro.',
+          error: 'Este horário já não está disponível. Escolha outro horário ou contacte a clínica.',
           slotTaken: true,
         }
       }
@@ -27,7 +27,7 @@ export async function submitBooking(
         redirect('/auth/login')
       }
       return {
-        error: 'Não foi possível submeter a marcação. Tente novamente ou ligue para a clínica.',
+        error: 'Não foi possível enviar a marcação. Tente novamente ou ligue para a clínica.',
       }
     }
     // redirect() throws NEXT_REDIRECT — rethrow it

@@ -22,8 +22,8 @@ export default async function BookingPendingPage({
       <div className="flex flex-col gap-2">
         <h2 className="text-xl font-semibold text-text-primary">Marcação recebida</h2>
         <p className="mx-auto max-w-xs text-sm text-text-secondary">
-          A sua marcação está a aguardar confirmação da clínica. Receberá uma notificação quando
-          for confirmada.
+          A sua marcação está a aguardar confirmação da receção. Receberá um SMS quando for
+          confirmada.
         </p>
       </div>
 
@@ -35,10 +35,10 @@ export default async function BookingPendingPage({
 
       <div className="mt-2 flex w-full flex-col gap-3">
         <Link href="/portal/appointments" className={SECONDARY}>
-          Ver as minhas marcações
+          Ver as minhas consultas
         </Link>
         <Link href="/portal/dashboard" className={GHOST}>
-          Voltar ao início
+          Ir para o início
         </Link>
       </div>
     </div>
