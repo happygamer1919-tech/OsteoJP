@@ -2,11 +2,11 @@
 
 import { ErrorState } from '@osteojp/ui'
 
-export default function DashboardError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function DashboardError({ reset }: { error: Error; reset: () => void }) {
   return (
     <ErrorState
-      title="Erro"
-      description={`digest:${error.digest ?? 'none'} msg:${error.message?.slice(0, 100) ?? 'none'}`}
+      title="Não foi possível carregar o início"
+      description="Ocorreu um erro ao carregar a sua informação. Tente novamente."
       retryLabel="Tentar novamente"
       onRetry={reset}
     />

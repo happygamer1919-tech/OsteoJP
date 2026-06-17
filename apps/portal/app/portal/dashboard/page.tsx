@@ -36,9 +36,18 @@ const QUICK_ACTIONS: QuickAction[] = [
 ]
 
 export default async function DashboardPage() {
-  const firstName = 'Debug'
+  const supabase = await createServerClient()
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  const firstName = (session?.user?.user_metadata?.first_name as string | undefined) ?? ''
 
-  const appointments: AppointmentView[] = []
+  let appointments: AppointmentView[] = []
+  try {
+    appointments = await getMyAppointments()
+  } catch {
+    // non-fatal — show empty state rather than error boundary
+  }
 
   const upcoming = appointments
     .filter(isUpcoming)
