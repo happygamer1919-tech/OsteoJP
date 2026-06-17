@@ -61,8 +61,41 @@ export async function POST(req: Request): Promise<Response> {
   let outcome: Awaited<ReturnType<typeof ingest>>;
   try {
     outcome = await ingest(envelope, payloadHash, drizzleIngestionStore);
-  } catch {
-    // Never surface DB internals or payload content.
+  } catch (err) {
+    // Observability: this catch used to be bare, collapsing every DB failure
+    // into an opaque 500 with no trace of the underlying Postgres error. Emit
+    // one structured, PII-free line so the actual failure (SQLSTATE + which
+    // constraint/table/routine) is visible in server logs.
+    //
+    // We log ONLY non-sensitive error metadata. We deliberately EXCLUDE
+    // err.detail (it can echo row/field values), the payload, the raw body, and
+    // patient_id. The first line of err.message is the error class (e.g. the
+    // violated constraint), not the offending row values, which live in detail.
+    //
+    // The driver is porsager/postgres, which exposes constraint_name /
+    // table_name; we also read the node-postgres names (constraint / table) so
+    // this stays correct if the driver ever changes.
+    const e = (typeof err === "object" && err !== null ? err : {}) as {
+      code?: unknown;
+      constraint?: unknown;
+      constraint_name?: unknown;
+      table?: unknown;
+      table_name?: unknown;
+      routine?: unknown;
+      message?: unknown;
+    };
+    console.error(
+      "[INGEST-ERR] ingestion DB write failed " +
+        JSON.stringify({
+          code: e.code,
+          constraint: e.constraint ?? e.constraint_name,
+          table: e.table ?? e.table_name,
+          routine: e.routine,
+          message:
+            typeof e.message === "string" ? e.message.split("\n")[0] : undefined,
+        }),
+    );
+    // Never surface DB internals or payload content to the caller.
     return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 
