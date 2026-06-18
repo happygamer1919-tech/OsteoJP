@@ -1,0 +1,24 @@
+{
+  "name": "@osteojp/fisiozero-extractor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Tier-1 raw archiver for the Fisiozero data-portability extraction. Lives in tools/, imports nothing from packages/db: it does NOT touch the FisiozeroSource seam or the 0014 migration ledger. See docs/DECISIONS.md 2026-06-18.",
+  "bin": {
+    "fisiozero-extract": "./src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "extract": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.22.3",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.7"
+  },
+  "dependencies": {
+    "playwright": "1.60.0"
+  }
+}
