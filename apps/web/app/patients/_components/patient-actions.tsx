@@ -32,7 +32,7 @@ export function PatientActions({
         await fn();
         router.refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Error");
+        setError(err instanceof Error ? err.message : s["errors.generic"]);
       }
     });
   }
