@@ -12,10 +12,12 @@ export default function AuthLayout({
     <ToastProvider regionLabel="Notificações">
       <div className="flex min-h-screen flex-col items-center justify-center bg-bg px-6 py-12">
         <div className="w-full max-w-sm">
-          <div className="mb-12 flex justify-center">
+          <header className="mb-12 flex justify-center">
             <BrandLockup variant="full" size="lg" />
-          </div>
-          {children}
+          </header>
+          <main>
+            {children}
+          </main>
         </div>
       </div>
     </ToastProvider>
