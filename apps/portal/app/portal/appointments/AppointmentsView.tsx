@@ -40,7 +40,7 @@ function AppointmentRow({ appt, muted }: { appt: AppointmentView; muted?: boolea
         </p>
       </div>
       <StatusChip tone={STATUS_TONE[appt.status]}>{STATUS_LABELS[appt.status]}</StatusChip>
-      <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-muted" />
+      <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-secondary" />
     </Link>
   )
 }

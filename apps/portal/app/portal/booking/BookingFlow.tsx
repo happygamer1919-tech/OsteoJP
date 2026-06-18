@@ -129,7 +129,7 @@ export function BookingFlow({
             <button key={loc.id} type="button" onClick={() => selectLocation(loc.id)} className={ROW}>
               <MapPin size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-accent-2-700" />
               <span className="flex-1 text-sm font-medium text-text-primary">{loc.name}</span>
-              <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-muted" />
+              <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-secondary" />
             </button>
           ))}
         </div>
@@ -147,7 +147,7 @@ export function BookingFlow({
                   {svc.priceCents !== null ? ` · ${formatPrice(svc.priceCents, svc.currency)}` : ''}
                 </span>
               </span>
-              <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-muted" />
+              <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-secondary" />
             </button>
           ))}
         </div>

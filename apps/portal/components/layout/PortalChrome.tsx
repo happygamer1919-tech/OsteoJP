@@ -56,7 +56,7 @@ export default function PortalChrome({ children }: { children: React.ReactNode }
     <>
       <a
         href="#main-content"
-        className="sr-only rounded-md bg-accent-2-700 px-4 py-2 text-sm font-medium text-text-inverse focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50"
+        className="sr-only rounded-md bg-accent-2-700 px-4 py-2 text-sm font-medium text-text-inverse focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
       >
         Saltar para o conteúdo
       </a>

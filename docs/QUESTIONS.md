@@ -338,3 +338,77 @@ and priority (V1.1 unless the owner pulls it into V1).
   the existing appointments query is sufficient for a list view with no new data model. Until
   the route ships, the nav item points to a placeholder empty state. Recommended default:
   reuse the existing fetch as-is; no new data model.
+
+## 2026-06-18 — Fisiozero extractor dispatch contradicts the migration contract (BLOCKED, owner decision needed)
+
+A "Phase S scaffold plus gated test" dispatch asked for a live Playwright HTML
+scraper of app.fisiozero.pt (per-patient ficha/episode/hist HTML + per-patient
+XLS + scraped attachment binaries) for all ~7,964 records, feeding the
+`FisiozeroSource` seam and writing 0014 ledger rows. Reading the three files the
+dispatch told me to conform to, that plan conflicts with the repo on seven
+points. Owner chose **"decouple: Tier-1 raw archiver only"** (see DECISIONS.md
+2026-06-18); these remain open for the owner to confirm before any Tier-2 /
+ledger / import work proceeds.
+
+- **C1 — Seam forbids scraping now (BLOCKING).** `packages/db/src/migration/source.ts:3-12`
+  states the confirmed source is a **CSV+ZIP export** and that "no implementation,
+  scraping, or field mapping may be written before that sample exists."
+  `docs/migration-notes.md` still lists scraper credential ownership as an open
+  Phase-5 question. **Recommended default:** keep the seam unimplemented; the
+  Tier-1 archiver does not touch it. Build the adapter only once a real export OR
+  signed-off raw capture freezes the format.
+- **C2 — Ledger status values don't exist (BLOCKING).** `0014_migration_staging.sql:2`
+  / `types.ts:32` define `migration_staging_status = pending | validated |
+  imported | failed`. The dispatch's `extracted` / `verified` are not valid enum
+  members. **Recommended default:** do NOT alter the import enum; extraction
+  lifecycle lives in the archiver's own local checkpoint, not this table.
+- **C3 — No "attachment count" column.** `migration_staging_rows` has no field for
+  a verified attachment count; SHA-256/byte counts have no home except `raw`
+  jsonb. **Recommended default:** counts live in the per-patient Tier-1
+  manifest.json, not the ledger.
+- **C4 — 0014 is tenant-scoped import staging, not a scraper checkpoint.** It has
+  `tenant_id NOT NULL`, FK→tenants, RLS on the JWT tenant claim, written via
+  `withTenantContext` (`0014:5,19,36-45`). The dispatch never supplies a tenant
+  context. **Recommended default:** archiver uses a local SQLite/JSON checkpoint;
+  ledger writes are deferred to the sanctioned import step.
+- **C5 — Tier-2 mapping is exactly what the seam prohibits.** Mapping scraped HTML
+  to `MigrationRecord` now would bake guessed assumptions in. **Recommended
+  default:** defer Tier-2 entirely; archive raw first.
+- **C6 — Attachment storage model disagrees.** Dispatch: hashed static URLs under
+  `user_rgpd_files/` scraped from HTML. `migration-notes.md` + `types.ts:116-117`:
+  attachments are **local server paths**. **Recommended default:** treat the
+  recon as newer truth but record it; the archiver scrapes anchors from HTML and
+  stores bytes + provenance, so either model is captured losslessly.
+- **C7 — V1 scope line.** `CLAUDE.md` lists "full historical archive migration" as
+  **out of scope for V1**, and `migration-notes.md` marks Phase 5 deprioritised.
+  The dispatch is a full ~7,964-record historical extraction. **Recommended
+  default:** treat the Tier-1 archiver as a GDPR-portability data-rescue tool
+  (get the bytes out while the session is capturable), explicitly NOT the V1
+  import; the import remains out of V1 scope until the owner moves the line.
+
+**Also note (not a conflict, an execution blocker):** the gated 8-patient run
+cannot execute until the owner provides `FISIOZERO_STORAGE_STATE` (a Playwright
+storageState JSON captured from a logged-in browser). No credentials are entered
+by Claude. The code is built and unit-tested; the live gated run is blocked on
+that file. **Recommended default:** owner captures the session and runs the
+documented `--limit 8` command locally; Claude reports the summary back.
+
+### Resolution 2026-06-18 (owner, corrected dispatch)
+- **C1 ANSWERED:** there is no free CSV+ZIP export. Recon found only a free
+  per-patient XLS (no episodes/attachments) and a paid 370 EUR bulk export that
+  terminates clinic access. Scraping a Tier-1 raw archive is the sanctioned path;
+  this supersedes the source.ts "no scraping before a sample export" TODO for the
+  extraction step only. See DECISIONS.md 2026-06-18.
+- **C6 ANSWERED:** recon is the newer truth — attachments are hashed statics in
+  rendered HTML; the archiver scrapes anchors and stores bytes + provenance.
+- **C7 ANSWERED:** owner confirms this IS the V1 historical migration (extraction
+  step), overriding the CLAUDE.md "out of V1" line for the raw-archive capture.
+- **C2/C3/C4/C5 STILL DEFERRED (by design):** the 0014 ledger and the Tier-2
+  MigrationRecord mapping remain untouched until real raw captures exist; the tool
+  uses its own local checkpoint. No change requested to the import contract.
+- **Encryption-at-rest (open, owner action):** the archiver writes plaintext raw
+  PII to the `--out` directory. App-level encryption + key management was not
+  built (owner-confirmable security design). **Recommended default:** point
+  `--out` at an encrypted, EU-resident volume (FileVault / LUKS / encrypted
+  external disk) and keep the archive off any synced/cloud folder. The CLI prints
+  this reminder at startup.

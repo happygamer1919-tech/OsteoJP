@@ -663,3 +663,75 @@ signing against ours during the live handshake. That handshake is now proven (a
 - Net removal (2 insertions, 76 deletions). Repo greps clean for `HMAC-DIAG`,
   `logHmacVerificationFailure`, `secretDiagnosticFingerprint`, and
   `remove-after-live-test`. Lint green, web typecheck green, all 10 hmac tests pass.
+
+## 2026-06-18 — Fisiozero extractor: decouple as Tier-1 raw archiver (branch feat/fisiozero-raw-archiver)
+
+The "Phase S scaffold + gated test" dispatch (live Playwright scrape of
+app.fisiozero.pt feeding the `FisiozeroSource` seam and 0014 ledger) was stopped
+and reported: it contradicts `packages/db/src/migration/source.ts` (seam is
+deliberately unimplemented, confirmed source is CSV+ZIP, scraping/field-mapping
+forbidden before a sample), the `migration_staging_status` enum (no
+`extracted`/`verified`), the tenant-scoped/RLS shape of `migration_staging_rows`,
+and the V1 scope line ("full historical archive migration" is out of V1). Seven
+conflicts logged to QUESTIONS.md (C1–C7).
+
+**Decision (owner, via dispatch guardrail):** build a **decoupled Tier-1 raw
+archiver only**. Rationale: the time-sensitive, session-dependent part is getting
+the raw bytes out of Fisiozero (GDPR data portability, clinic owns the data)
+while a logged-in session can be captured. Normalization (Tier-2 → MigrationRecord)
+and ledger writes are deferred until the raw shape is known from real captures, so
+no guessed assumptions get baked into the import contract.
+
+- **Scope of this branch:** a standalone tool that, per patient, drives the
+  stateful Fisiozero session serially (set-active → ficha → episode/eval lists →
+  per-episode detail → consultar_hist → per-patient XLS), scrapes attachment
+  anchors from every ficha and episode page, downloads each via the authenticated
+  cookie jar, and writes a Tier-1 raw archive: untransformed HTML, the XLS, every
+  attachment binary, and a per-patient `manifest.json` with SHA-256 + byte count
+  for every file.
+- **Explicitly NOT in scope (deferred):** the `FisiozeroSource` implementation,
+  any `MigrationRecord` mapping, and any write to `migration_staging_rows`. The
+  seam and ledger are untouched.
+- **Resumability/idempotency** uses the tool's OWN local checkpoint (SQLite),
+  not the 0014 ledger. Re-runs skip patients already archived+manifested.
+- **Auth:** session loaded from a Playwright storageState JSON at
+  `FISIOZERO_STORAGE_STATE`. Claude never enters credentials; cookie values are
+  never logged. A login redirect halts the run with a recapture message.
+- **Serial only:** server holds "current patient" in session, so patient fetches
+  are never concurrent.
+- **Gated:** `--limit 8` for the first reviewed batch; full enumeration requires
+  explicit owner go after manual review.
+- **Placement:** standalone tool `tools/fisiozero-extractor`
+  (`@osteojp/fisiozero-extractor`), added to the workspace via a new `tools/*`
+  glob. Playwright pinned at the workspace 1.60.0. No new third-party vendor
+  introduced (Playwright already in the workspace). See the canonical
+  source-reality decision below (2026-06-18, "scraping Tier-1 raw, not CSV+ZIP").
+
+## 2026-06-18 — Fisiozero migration source: scraping Tier-1 raw, not CSV+ZIP export
+
+Recon (Phase R) established: app.fisiozero.pt has no JSON API and no free
+bulk CSV+ZIP export. The only built-in export is a free per-patient XLS that
+omits episodes and attachments. A bulk export exists only behind a paid
+370 EUR action that also terminates the clinic's access.
+
+Decision: the source.ts seam's assumed CSV+ZIP source does not exist.
+Sanctioned path is to capture a Tier-1 raw archive now (full HTML per
+sub-view, per-patient XLS, all attachments, per-patient manifest with
+SHA-256 and byte counts) under clinic data ownership and GDPR portability,
+while authorized access is open. Tier-2 normalization against the
+FisiozeroSource seam, and any 0014 ledger writes, are DEFERRED until real
+raw captures exist and the true raw shape is known. This supersedes the
+"no scraping before a sample export" TODO in source.ts and the Phase 5
+deprioritisation in migration-notes.md for the extraction step only.
+Owner: Ivan. Scope note: this is the V1 historical migration, owner-confirmed.
+
+### Implementation placement (same decision, build details)
+- Tool location: `tools/fisiozero-extractor` (`@osteojp/fisiozero-extractor`),
+  added to the pnpm workspace via a new `tools/*` glob. NOT in `packages/db`;
+  imports nothing from the migration seam or ledger.
+- Branch: `feat/fisiozero-raw-archiver`.
+- Local checkpoint (append-only JSONL, states pending/done/absent/error) is the
+  resume store, not `migration_staging_rows`.
+- Playwright pinned at the workspace 1.60.0 override. No new third-party vendor.
+- Gated to `--limit 8` for the first hand-reviewed batch; full enumeration of the
+  ~7,964-record range waits for Ivan's explicit go.
