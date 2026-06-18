@@ -33,6 +33,21 @@ export {
 export { validateMigrationRecord } from "./validate";
 
 export {
+  generateReconciliationReport,
+  reportToJson,
+  reportToMarkdown,
+  type ReconciliationFailedRow,
+  type ReconciliationReport,
+} from "./reconciliation";
+
+export {
+  applyBatchValidation,
+  detectBatchIssues,
+  type BatchValidationIssue,
+  type BatchValidationResult,
+} from "./batch-validate";
+
+export {
   importRecords,
   mergeImportedPatient,
   type ImportAction,
