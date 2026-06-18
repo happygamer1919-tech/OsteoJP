@@ -41,6 +41,13 @@ export {
 } from "./reconciliation";
 
 export {
+  applyBatchValidation,
+  detectBatchIssues,
+  type BatchValidationIssue,
+  type BatchValidationResult,
+} from "./batch-validate";
+
+export {
   importRecords,
   mergeImportedPatient,
   type ImportAction,
