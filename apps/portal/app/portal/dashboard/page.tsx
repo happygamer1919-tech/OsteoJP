@@ -2,7 +2,7 @@ import { Calendar, FileText, MapPin, Plus } from 'lucide-react'
 import { Card, EmptyState } from '@osteojp/ui'
 import type { LucideIcon } from 'lucide-react'
 import { createServerClient } from '@/lib/supabase/server'
-import { getMyAppointments } from '@/lib/api/client'
+import { getMyAppointments, getMyProfile } from '@/lib/api/client'
 import type { AppointmentView } from '@/lib/api/client'
 import { NavButton } from './NavButton'
 
@@ -39,20 +39,29 @@ export default async function DashboardPage() {
   const supabase = await createServerClient()
 
   let firstName = ''
-  try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    firstName = (session?.user?.user_metadata?.first_name as string | undefined) ?? ''
-  } catch {
-    // non-fatal — firstName stays empty, page renders without personalisation
+  // Run profile and appointments fetches in parallel; neither must cause an error boundary.
+  const [profileResult, appointmentsResult] = await Promise.allSettled([
+    getMyProfile(),
+    getMyAppointments(),
+  ])
+
+  if (profileResult.status === 'fulfilled') {
+    firstName = profileResult.value.fullName.split(' ')[0] ?? ''
+  } else {
+    // Fallback: user_metadata.first_name (set at invite time, may be absent)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      firstName = (session?.user?.user_metadata?.first_name as string | undefined) ?? ''
+    } catch {
+      // non-fatal — firstName stays empty
+    }
   }
 
   let appointments: AppointmentView[] = []
-  try {
-    appointments = await getMyAppointments()
-  } catch {
-    // non-fatal — show empty state rather than error boundary
+  if (appointmentsResult.status === 'fulfilled') {
+    appointments = appointmentsResult.value
   }
 
   const upcoming = appointments
