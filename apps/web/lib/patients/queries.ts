@@ -76,7 +76,7 @@ export async function searchPatients(
     if (digits.length > 0) {
       matchers.push(ilike(patients.nif, `${escapeLike(digits)}%`));
       matchers.push(
-        sql`regexp_replace(coalesce(${patients.phone}, ''), '[^0-9]', '', 'g') like ${`%${digits}%`}`,
+        sql`"phone_digits" like ${`%${digits}%`}`,
       );
     }
     return tx

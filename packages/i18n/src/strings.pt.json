@@ -160,6 +160,7 @@
   "appointment.statusCompleted": "Concluída",
   "appointment.statusNoShow": "Falta",
   "appointment.selectPatient": "Selecionar paciente",
+  "appointment.patientTypeToSearch": "Digite para pesquisar...",
   "appointment.selectService": "Selecionar serviço",
   "appointment.selectTherapist": "Selecionar terapeuta",
   "appointment.selectLocation": "Selecionar localização",

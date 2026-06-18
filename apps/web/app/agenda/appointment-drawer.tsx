@@ -12,9 +12,10 @@ import {
   useToast,
   type ComboboxOption,
 } from "@osteojp/ui";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { s } from "@/lib/i18n";
+import { searchPatientsAction } from "@/lib/patients/actions";
 import {
   cancelAppointment,
   createAppointment,
@@ -149,6 +150,37 @@ export function AppointmentDrawer({
   const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Patient search — async, search-as-you-type (min 2 chars, 300 ms debounce).
+  // Edit mode pre-populates the query with the existing patient name so the
+  // current selection is visible without a round-trip.
+  const editingPatient = editing
+    ? { value: editing.patientId, label: editing.patientName }
+    : null;
+  const [patientQuery, setPatientQuery] = useState(editingPatient?.label ?? "");
+  const [patientSearchResults, setPatientSearchResults] = useState<ComboboxOption[]>([]);
+  const [patientLoading, setPatientLoading] = useState(false);
+
+  // When query is below the minimum, show the current patient (edit) or nothing
+  // (create). When at or above minimum, show the debounced search results.
+  const patientOptions = useMemo<ComboboxOption[]>(() => {
+    if (patientQuery.trim().length < 2) return editingPatient ? [editingPatient] : [];
+    return patientSearchResults;
+  }, [patientQuery, patientSearchResults, editingPatient]);
+
+  useEffect(() => {
+    const q = patientQuery.trim();
+    if (q.length < 2) return;
+    const timer = setTimeout(() => {
+      setPatientLoading(true);
+      searchPatientsAction(q)
+        .then((rows) => setPatientSearchResults(rows.map((r) => ({ value: r.id, label: r.label }))))
+        .finally(() => setPatientLoading(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  // editing is stable for the drawer's lifetime; patientQuery drives the search.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientQuery]);
+
   const dirty = JSON.stringify(form) !== JSON.stringify(init);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -253,8 +285,6 @@ export function AppointmentDrawer({
   const availabilityConflicts = conflicts?.filter((c) => c.kind === "availability") ?? [];
   const timeOffConflicts = conflicts?.filter((c) => c.kind === "time_off") ?? [];
 
-  const patientOptions: ComboboxOption[] = options.patients.map((p) => ({ value: p.id, label: p.label }));
-
   return (
     <Drawer
       open
@@ -300,7 +330,10 @@ export function AppointmentDrawer({
             options={patientOptions}
             value={form.patientId || null}
             onChange={(v) => set("patientId", v)}
-            placeholder={s["appointment.selectPatient"]}
+            query={patientQuery}
+            onQueryChange={setPatientQuery}
+            loading={patientLoading}
+            placeholder={s["appointment.patientTypeToSearch"]}
             emptyLabel={s["appointment.patientSearchEmpty"]}
           />
         </div>
