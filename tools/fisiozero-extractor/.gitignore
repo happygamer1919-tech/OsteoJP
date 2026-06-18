@@ -1,0 +1,8 @@
+# Raw PII archive output and resume checkpoint — NEVER commit.
+fisiozero-archive/
+*.jsonl
+
+# Playwright storageState / captured session files — NEVER commit.
+*storage-state*.json
+*storageState*.json
+*.session.json
