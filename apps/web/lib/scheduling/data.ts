@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gte, isNull, lt, ne, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, lt, ne, type SQL } from "drizzle-orm";
 import type { RequestContext } from "@osteojp/auth";
 import {
   appointments,
@@ -118,40 +118,33 @@ export async function getAgendaOptions(
   ctx: RequestContext,
 ): Promise<AgendaOptions> {
   return runScoped(ctx, async (tx) => {
-    const [therapistRows, locationRows, patientRows, serviceRows] =
-      await Promise.all([
-        tx
-          .select({ id: users.id, label: users.fullName })
-          .from(users)
-          // role join keeps reception (non-clinician) out of the therapist list
-          .innerJoin(roles, eq(users.roleId, roles.id))
-          .where(and(eq(users.isActive, true), ne(roles.slug, "reception")))
-          .orderBy(asc(users.fullName)),
-        tx
-          .select({ id: locations.id, label: locations.name })
-          .from(locations)
-          .where(eq(locations.isActive, true))
-          .orderBy(asc(locations.name)),
-        tx
-          .select({ id: patients.id, label: patients.fullName })
-          .from(patients)
-          .where(isNull(patients.deletedAt))
-          .orderBy(asc(patients.fullName)),
-        tx
-          .select({
-            id: services.id,
-            label: services.name,
-            durationMin: services.durationMin,
-          })
-          .from(services)
-          .where(eq(services.isActive, true))
-          .orderBy(asc(services.name)),
-      ]);
+    const [therapistRows, locationRows, serviceRows] = await Promise.all([
+      tx
+        .select({ id: users.id, label: users.fullName })
+        .from(users)
+        // role join keeps reception (non-clinician) out of the therapist list
+        .innerJoin(roles, eq(users.roleId, roles.id))
+        .where(and(eq(users.isActive, true), ne(roles.slug, "reception")))
+        .orderBy(asc(users.fullName)),
+      tx
+        .select({ id: locations.id, label: locations.name })
+        .from(locations)
+        .where(eq(locations.isActive, true))
+        .orderBy(asc(locations.name)),
+      tx
+        .select({
+          id: services.id,
+          label: services.name,
+          durationMin: services.durationMin,
+        })
+        .from(services)
+        .where(eq(services.isActive, true))
+        .orderBy(asc(services.name)),
+    ]);
 
     return {
       therapists: therapistRows,
       locations: locationRows,
-      patients: patientRows,
       services: serviceRows,
     };
   });

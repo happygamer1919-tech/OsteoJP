@@ -26,6 +26,7 @@ import {
   type MergePatientsInput,
   type UpdatePatientInput,
 } from "./validation";
+import { searchPatients } from "./queries";
 import type { Patient } from "./types";
 
 function revalidatePatient(id: string): void {
@@ -155,6 +156,17 @@ export async function restorePatient(id: string): Promise<Patient> {
 
   revalidatePatient(patient.id);
   return patient;
+}
+
+/**
+ * Read-only search action for the agenda appointment drawer Combobox.
+ * Returns at most 50 matches for the given query string.
+ */
+export async function searchPatientsAction(
+  query: string,
+): Promise<{ id: string; label: string }[]> {
+  const rows = await searchPatients(query, { limit: 50 });
+  return rows.map((p) => ({ id: p.id, label: p.fullName }));
 }
 
 /**
