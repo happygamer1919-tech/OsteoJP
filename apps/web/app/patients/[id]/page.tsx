@@ -6,7 +6,7 @@ import {
   StatusChip,
   type StatusTone,
 } from "@osteojp/ui";
-import { Calendar, FileText, Pencil, Plus } from "lucide-react";
+import { Calendar, ChevronLeft, FileText, Pencil, Plus } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -84,8 +84,8 @@ export default async function PatientProfilePage({
 
   return (
     <main>
-      <Link href="/patients" className={`${ghostLink} mb-4`}>
-        ← {s["patients.back"]}
+      <Link href="/patients" className={`${ghostLink} mb-4 inline-flex items-center gap-1`}>
+        <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />{s["patients.back"]}
       </Link>
 
       {/* Header card */}

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ChevronLeft } from "lucide-react";
 import { can } from "@osteojp/auth";
 import { s, locale } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
@@ -35,8 +36,8 @@ export default async function EpisodePage({
 
   return (
     <section className="max-w-3xl space-y-5">
-      <Link href={`/patients/${episode.patientId}`} className="text-sm text-brand-teal">
-        ← {s["clinical.episodeBackToPatient"]}
+      <Link href={`/patients/${episode.patientId}`} className="inline-flex items-center gap-1 text-sm text-brand-teal">
+        <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />{s["clinical.episodeBackToPatient"]}
       </Link>
 
       <div className="flex items-start justify-between">
