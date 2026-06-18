@@ -1,5 +1,5 @@
 -- AUTO-GENERATED — DO NOT EDIT.
--- Mirror of packages/db/migrations/0015_perf_indexes.sql for Supabase branching.
+-- Mirror of packages/db/migrations/0016_perf_indexes.sql for Supabase branching.
 -- Edit the drizzle source, then run: node scripts/sync-supabase-migrations.mjs
 
 -- Finding #3 (P2): full-name substring search — ILIKE '%text%' cannot use the

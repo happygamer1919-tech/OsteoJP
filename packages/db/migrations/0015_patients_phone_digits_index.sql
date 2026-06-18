@@ -1,7 +1,3 @@
--- AUTO-GENERATED — DO NOT EDIT.
--- Mirror of packages/db/migrations/0015_patients_phone_digits_index.sql for Supabase branching.
--- Edit the drizzle source, then run: node scripts/sync-supabase-migrations.mjs
-
 /* ================================================================== */
 /* 0015 — phone_digits generated column + search indexes on patients  */
 /*                                                                    */
