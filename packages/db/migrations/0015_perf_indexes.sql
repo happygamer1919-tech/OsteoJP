@@ -1,7 +1,3 @@
--- AUTO-GENERATED — DO NOT EDIT.
--- Mirror of packages/db/migrations/0015_perf_indexes.sql for Supabase branching.
--- Edit the drizzle source, then run: node scripts/sync-supabase-migrations.mjs
-
 -- Finding #3 (P2): full-name substring search — ILIKE '%text%' cannot use the
 -- existing B-tree index. A GIN trigram index lets Postgres use an index scan
 -- for infix patterns.
