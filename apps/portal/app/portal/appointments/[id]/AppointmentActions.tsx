@@ -60,8 +60,8 @@ export function AppointmentActions({
       <Button
         variant="destructive"
         className="min-h-11 w-full"
-        disabled={!outsideCutoff}
-        onClick={outsideCutoff ? () => setOpen(true) : undefined}
+        aria-disabled={!outsideCutoff}
+        onClick={() => { if (!outsideCutoff) return; setOpen(true) }}
       >
         Cancelar consulta
       </Button>
