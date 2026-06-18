@@ -33,6 +33,14 @@ export {
 export { validateMigrationRecord } from "./validate";
 
 export {
+  generateReconciliationReport,
+  reportToJson,
+  reportToMarkdown,
+  type ReconciliationFailedRow,
+  type ReconciliationReport,
+} from "./reconciliation";
+
+export {
   importRecords,
   mergeImportedPatient,
   type ImportAction,
