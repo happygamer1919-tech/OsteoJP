@@ -23,6 +23,7 @@ type TenantSettingsJson = {
   locale?: unknown;
   reminders?: unknown;
   billing?: unknown;
+  notes?: string;
 };
 
 export type TenantSettingsView = {

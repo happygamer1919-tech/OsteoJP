@@ -38,6 +38,7 @@ import { activePatientsOnly } from "@/lib/patients/filters";
 import { listAppointments } from "@/lib/scheduling/data";
 import {
   addDays,
+  addMonths,
   formatTimeOfDay,
   lisbonMidnightUtc,
   lisbonParts,
@@ -45,14 +46,14 @@ import {
   todayInLisbon,
 } from "@/lib/scheduling/time";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
+import { getMonthlyRevenue } from "@/lib/invoices/queries";
+import { getQuickNotes } from "@/lib/dashboard/notes";
 
 import { DateJump } from "./date-jump";
+import { NotasRapidas } from "./notas-rapidas";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Appointment status → StatusBadge tone (SPEC-v2-dashboard §4.1: green Confirmada,
-// orange Pendente). completed reads as done (green); cancelled/no_show neutral —
-// the restrained tones per SPEC-v2-foundation §10 (no red flood).
 const STATUS_TONE: Record<AgendaAppointment["status"], AppointmentTone> = {
   scheduled: "pending",
   confirmed: "confirmed",
@@ -68,7 +69,6 @@ const STATUS_KEY = {
   no_show: "appointment.status.no_show",
 } as const;
 
-// Greeting time-of-day (Lisbon hour). No exclamation, per brand-voice.
 function greetingKey(
   hour: number,
 ): "dashboard.greeting.morning" | "dashboard.greeting.afternoon" | "dashboard.greeting.evening" {
@@ -77,8 +77,6 @@ function greetingKey(
   return "dashboard.greeting.evening";
 }
 
-// First name from the session email (the only identity in the JWT — no name
-// claim, no profile fetch; same derivation as the AppShell cluster).
 function firstNameFromEmail(email: string | undefined): string {
   if (!email) return "";
   const local = email.split("@")[0] ?? "";
@@ -86,21 +84,26 @@ function firstNameFromEmail(email: string | undefined): string {
   return first ? first.charAt(0).toUpperCase() + first.slice(1) : "";
 }
 
+/** Format integer cents as a PT locale EUR string, e.g. 124500 → "1.245,00 €". */
+function formatEur(cents: number): string {
+  return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(
+    cents / 100,
+  );
+}
+
+/** "2026-06-01" for any date in the same calendar month. */
+function monthStart(dateStr: string): string {
+  const [y, m] = dateStr.split("-");
+  return `${y}-${m}-01`;
+}
+
 const iconNav =
   "inline-flex size-10 items-center justify-center rounded-v2 border border-v2-border bg-v2-surface text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 const ghostNav =
   "inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
-// Primary action fills with Wellness Green (SPEC §3.2); green-700 + white text
-// clears AA (≈4.75:1).
 const primaryBtn =
   "inline-flex h-10 items-center justify-center gap-2 rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition-colors duration-fast ease-standard hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
-/**
- * Dashboard (Início) — SPEC-v2-dashboard. v2 glass system on /dashboard.
- * Presentation only: consumes the existing patient / appointment / clinical-
- * record queries (tenant + role scoped via runScoped + RLS). Receita, Resumo
- * semanal and Notas rápidas are honest placeholders (V1.1 backend tickets).
- */
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -123,10 +126,10 @@ export default async function DashboardPage({
     typeof claims?.claims?.email === "string" ? claims.claims.email : undefined;
   const firstName = firstNameFromEmail(email);
 
-  const weekStartUtc = lisbonMidnightUtc(startOfWeekMonday(today));
+  const weekStartDate = startOfWeekMonday(today);
+  const weekStartUtc = lisbonMidnightUtc(weekStartDate);
 
-  // KPI 1 — active patients + the "+N esta semana" delta (active patients
-  // created this week). Both existing-table scoped counts.
+  // KPI 1 — active patients + "+N esta semana" delta.
   const countRows = await runScoped(ctx, (tx) =>
     tx
       .select({
@@ -143,20 +146,27 @@ export default async function DashboardPage({
       ? `+${newPatientsThisWeek} ${s["dashboard.thisWeekLower"]}`
       : undefined;
 
-  // KPI 2 + Próximas marcações — appointments on the selected day (existing,
-  // RLS + role scoped). Every staff role has appointments:read.
+  // KPI 2 + Próximas marcações panel — rolling 7-day window from today (SPEC §4.1
+  // scopes the panel to the selected day; M1 expands this to today + 7 so the
+  // panel shows upcoming appointments across the week rather than just one day).
   const canAppointments = can(ctx.role, "appointments:read");
-  const appointments = canAppointments
+  const upcomingAppointments = canAppointments
     ? await listAppointments(ctx, {
-        startUtc: lisbonMidnightUtc(date),
-        endUtc: lisbonMidnightUtc(addDays(date, 1)),
+        startUtc: lisbonMidnightUtc(today),
+        endUtc: lisbonMidnightUtc(addDays(today, 7)),
       })
     : [];
-  const active = appointments
+  const active = upcomingAppointments
     .filter((a) => a.status !== "cancelled")
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
-  const todayCount = active.length;
-  // "Próxima: HH:MM" only when viewing today (relative to now).
+
+  // KPI 2: count for the selected date (derived from the 7-day set; 0 if date
+  // falls outside the window, e.g. navigating to a past day).
+  const todayCount = active.filter(
+    (a) => lisbonParts(new Date(a.startsAt)).date === date,
+  ).length;
+
+  // "Próxima: HH:MM" caption only when viewing today.
   const next =
     date === today
       ? active.find((a) => new Date(a.startsAt).getTime() >= now.getTime())
@@ -165,8 +175,7 @@ export default async function DashboardPage({
     ? `${s["dashboard.kpiNext"]}: ${formatTimeOfDay(new Date(next.startsAt))}`
     : undefined;
 
-  // KPI 3 — new clinical records this week (gated; hidden for reception, which
-  // has no clinical_records access — RLS denies it too).
+  // KPI 3 — new clinical records this week.
   const canClinical = can(ctx.role, "clinical_records:read");
   let newRecords = 0;
   if (canClinical) {
@@ -179,7 +188,41 @@ export default async function DashboardPage({
     newRecords = recRows[0]?.count ?? 0;
   }
 
-  // Acessos rápidos — five tiles, role-gated; the grid reflows to the visible set.
+  // KPI 4 — Receita (mês): sum of issued + paid invoice amountCents for the
+  // current calendar month (Lisbon midnight boundaries).
+  const mStart = monthStart(today);
+  const monthRevenueCents = await getMonthlyRevenue(
+    ctx,
+    lisbonMidnightUtc(mStart),
+    lisbonMidnightUtc(addMonths(mStart, 1)),
+  );
+  const revenueDisplay = formatEur(monthRevenueCents);
+
+  // Resumo semanal — appointment counts grouped by calendar day (Mon–Sun) for
+  // the current week. The ResumoChart renders a 7-point line; needs ≥ 2 points
+  // (always satisfied once any appointments exist in the week).
+  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
+  let weeklyData: number[] | undefined;
+  if (canAppointments) {
+    const weekAppointments = await listAppointments(ctx, {
+      startUtc: weekStartUtc,
+      endUtc: lisbonMidnightUtc(addDays(weekStartDate, 7)),
+    });
+    const counts = weekDates.map(
+      (d) =>
+        weekAppointments.filter(
+          (a) => a.status !== "cancelled" && lisbonParts(new Date(a.startsAt)).date === d,
+        ).length,
+    );
+    // Only pass data to the chart if there is at least one non-zero day; an
+    // all-zero series is still valid (a week with no appointments is real data).
+    weeklyData = counts;
+  }
+
+  // Notas rápidas — initial value from tenants.settings.notes.
+  const initialNotes = await getQuickNotes(ctx);
+
+  // Acessos rápidos — role-gated.
   const tiles: Array<{
     label: ReactNode;
     icon: LucideIcon;
@@ -229,8 +272,8 @@ export default async function DashboardPage({
         {canClinical && (
           <GlassKpiCard accent="lavender" icon={<ClipboardList size={20} strokeWidth={1.75} />} label={s["dashboard.kpiNewRecords"]} value={newRecords} caption={s["dashboard.kpiThisWeek"]} />
         )}
-        {/* Receita — placeholder until revenue aggregation lands (V1.1). */}
-        <GlassKpiCard accent="gold" icon={<TrendingUp size={20} strokeWidth={1.75} />} label={s["dashboard.kpiRevenue"]} value="—" error={s["dashboard.kpiNoData"]} />
+        {/* Receita (mês) — sum of issued + paid invoices for the current month. */}
+        <GlassKpiCard accent="gold" icon={<TrendingUp size={20} strokeWidth={1.75} />} label={s["dashboard.kpiRevenue"]} value={revenueDisplay} />
       </div>
 
       {/* Acessos rápidos */}
@@ -262,7 +305,16 @@ export default async function DashboardPage({
                 {active.map((a) => (
                   <li key={a.id} className="flex items-center justify-between gap-4 py-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="text-sm font-medium text-v2-text-primary">{formatTimeOfDay(new Date(a.startsAt))}</span>
+                      <span className="text-sm font-medium tabular-nums text-v2-text-secondary">
+                        {lisbonParts(new Date(a.startsAt)).date === today
+                          ? formatTimeOfDay(new Date(a.startsAt))
+                          : new Date(a.startsAt).toLocaleDateString("pt-PT", {
+                              weekday: "short",
+                              day: "numeric",
+                              month: "short",
+                              timeZone: "Europe/Lisbon",
+                            })}
+                      </span>
                       <span className="flex min-w-0 flex-col">
                         <span className="truncate text-sm text-v2-text-primary">{a.patientName}</span>
                         <span className="truncate text-xs text-v2-text-secondary">{a.serviceName ?? "—"}</span>
@@ -276,15 +328,19 @@ export default async function DashboardPage({
           </GlassPanel>
         )}
 
-        {/* Resumo semanal — placeholder until weekly counts are fetched (V1.1). */}
+        {/* Resumo semanal — Mon–Sun appointment counts for the current week. */}
         <GlassPanel title={s["dashboard.weeklySummary"]}>
-          <ResumoChart emptyLabel={s["dashboard.notEnoughData"]} ariaLabel={s["dashboard.weeklyChartLabel"]} />
+          <ResumoChart
+            data={weeklyData}
+            emptyLabel={s["dashboard.notEnoughData"]}
+            ariaLabel={s["dashboard.weeklyChartLabel"]}
+          />
         </GlassPanel>
       </div>
 
-      {/* Notas rápidas — placeholder until notes persistence lands (V1.1). */}
+      {/* Notas rápidas — persisted to tenants.settings.notes. */}
       <GlassCard title={s["dashboard.notes"]}>
-        <p className="text-sm text-v2-text-secondary">{s["dashboard.noNotes"]}</p>
+        <NotasRapidas initialNotes={initialNotes} />
       </GlassCard>
     </main>
   );
