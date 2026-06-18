@@ -2,7 +2,7 @@
 
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
-import { ApiError } from '@/lib/api/client'
+import { createServerClient } from '@/lib/supabase/server'
 
 type Patch = {
   phone?: string
@@ -46,6 +46,28 @@ export async function updateProfileAction(
         return { error: 'Número de telemóvel inválido. Use o formato +351 912 345 678.' }
       }
       return { error: 'Não foi possível actualizar os dados. Tente novamente.' }
+    }
+
+    // Read the updated profile from the response and sync fullName to auth
+    // user_metadata. Best-effort: profile save is the critical path; a metadata
+    // sync failure must not surface as an error to the patient.
+    try {
+      const data = await res.json() as { profile?: { fullName?: string } }
+      const fullName = data.profile?.fullName ?? ''
+      if (fullName) {
+        const spaceIdx = fullName.indexOf(' ')
+        const first_name = spaceIdx === -1 ? fullName : fullName.slice(0, spaceIdx)
+        const last_name = spaceIdx === -1 ? '' : fullName.slice(spaceIdx + 1)
+        const supabase = await createServerClient()
+        const { error: metaError } = await supabase.auth.updateUser({
+          data: { first_name, last_name },
+        })
+        if (metaError) {
+          console.error('[updateProfileAction] metadata sync failed:', metaError.message)
+        }
+      }
+    } catch (metaErr) {
+      console.error('[updateProfileAction] metadata sync error:', metaErr)
     }
 
     revalidatePath('/portal/account')
