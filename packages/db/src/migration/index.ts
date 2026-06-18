@@ -48,6 +48,14 @@ export {
 } from "./batch-validate";
 
 export {
+  batchSummary,
+  pendingFailures,
+  totalAppointmentsMigrated,
+  totalPatientsMigrated,
+  type BatchSummaryEntry,
+} from "./health";
+
+export {
   importRecords,
   mergeImportedPatient,
   type ImportAction,
