@@ -600,6 +600,7 @@
   "dashboard.notEnoughData": "Sem dados suficientes",
   "dashboard.notes": "Notas rápidas",
   "dashboard.noNotes": "Sem notas.",
+  "dashboard.notesPlaceholder": "Escreva notas para a equipa…",
   "dashboard.noAppointmentsToday": "Sem marcações para hoje.",
   "appointment.status.scheduled": "Agendada",
   "appointment.status.confirmed": "Confirmada",
