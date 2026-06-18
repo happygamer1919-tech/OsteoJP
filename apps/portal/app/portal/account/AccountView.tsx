@@ -28,7 +28,7 @@ function Row({
         <span className="block truncate text-sm text-text-primary">{value}</span>
       </span>
       {onClick && (
-        <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-muted" />
+        <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-secondary" />
       )}
     </>
   )
@@ -144,7 +144,7 @@ export function AccountView({
             className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             <span className="text-sm text-text-primary">Alterar palavra-passe</span>
-            <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-muted" />
+            <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-secondary" />
           </Link>
         </div>
       </section>
