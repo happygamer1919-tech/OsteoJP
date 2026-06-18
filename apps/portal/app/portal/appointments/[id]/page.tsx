@@ -39,6 +39,7 @@ export default async function AppointmentDetailPage({
     <div className="flex flex-col gap-6">
       <Link
         href="/portal/appointments"
+        aria-label="Voltar para marcações"
         className="inline-flex min-h-11 items-center gap-1 text-sm text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
       >
         <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
