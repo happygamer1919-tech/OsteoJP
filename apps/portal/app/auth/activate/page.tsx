@@ -16,6 +16,7 @@ function Requirement({ met, children }: { met: boolean; children: React.ReactNod
       ) : (
         <Circle size={16} strokeWidth={1.75} aria-hidden="true" />
       )}
+      <span className="sr-only">{met ? 'Concluído: ' : 'Pendente: '}</span>
       {children}
     </li>
   )
@@ -121,7 +122,7 @@ export default function ActivatePage() {
           />
         </Field>
 
-        <ul className="flex flex-col gap-1 text-xs">
+        <ul aria-live="polite" className="flex flex-col gap-1 text-xs">
           <Requirement met={longEnough}>Pelo menos 8 caracteres</Requirement>
           <Requirement met={matches}>As palavras-passe coincidem</Requirement>
         </ul>
