@@ -42,7 +42,6 @@ export type ServiceOption = Option & { durationMin: number };
 export type AgendaOptions = {
   therapists: Option[];
   locations: Option[];
-  patients: Option[];
   services: ServiceOption[];
 };
 
