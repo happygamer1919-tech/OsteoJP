@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Relatório Clínico {{episode_id}} — OsteoJP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300..900;1,8..60,300..900&display=swap" rel="stylesheet" />
+  <style>
+    /* ============================================================
+       OsteoJP — Relatório Clínico print template
+       Target renderer: Puppeteer page.pdf({
+         format: 'A4',
+         printBackground: true,
+         displayHeaderFooter: true,
+         margin: { top: '48mm', right: '20mm', bottom: '20mm', left: '20mm' }
+       })
+       Note: the repeating page header uses Puppeteer's headerTemplate.
+       Alternatively, set a fixed-position header div with position:fixed + top:0 for
+       CSS-only rendering. Both approaches are supported by the markup below.
+       ============================================================ */
+
+    /* Brand tokens */
+    :root {
+      --color-teal:        #45B9A7;
+      --color-magenta:     #8B1863;
+      --color-grey-blue:   #98B2C2;
+      --color-body:        #1A2733;
+      --color-secondary:   #56697A;
+      --color-border:      #E2E8EE;
+      --color-bg:          #FFFFFF;
+    }
+
+    @page {
+      size: A4 portrait;
+      /* Top margin is enlarged to accommodate the repeating page header */
+      margin-top: 48mm;
+      margin-right: 20mm;
+      margin-bottom: 20mm;
+      margin-left: 20mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Source Serif 4', 'Times New Roman', serif;
+      font-size: 10.5pt;
+      color: var(--color-body);
+      background: var(--color-bg);
+      line-height: 1.55;
+    }
+
+    /* ============================================================
+       REPEATING PAGE HEADER
+       Uses position:fixed so it appears on every printed page.
+       Puppeteer alternative: use headerTemplate in page.pdf() options.
+       ============================================================ */
+    .page-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: var(--color-bg);
+      border-bottom: 2px solid var(--color-teal);
+      padding: 8pt 20mm 8pt 20mm;
+      z-index: 100;
+    }
+
+    .page-header__inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .page-header__logo {
+      /* TODO: replace this placeholder box with actual SVG logo once vector asset is available */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44pt;
+      height: 32pt;
+      border: 2px solid var(--color-teal);
+      color: var(--color-teal);
+      font-size: 7pt;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-align: center;
+      flex-shrink: 0;
+      margin-right: 8pt;
+    }
+
+    .page-header__brand {
+      flex: 1;
+    }
+
+    .page-header__brand-name {
+      font-size: 13pt;
+      font-weight: 700;
+      color: var(--color-grey-blue);
+      line-height: 1.1;
+    }
+
+    .page-header__location {
+      font-size: 7.5pt;
+      color: var(--color-secondary);
+      line-height: 1.3;
+    }
+
+    .page-header__right {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .page-header__doc-title {
+      font-size: 11pt;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--color-body);
+    }
+
+    .page-header__episode {
+      font-size: 8pt;
+      color: var(--color-secondary);
+      margin-top: 2pt;
+    }
+
+    .page-header__nif {
+      font-size: 7.5pt;
+      color: var(--color-secondary);
+      margin-top: 2pt;
+    }
+
+    /* ============================================================
+       MAIN CONTENT
+       margin-top offset matches the fixed header height
+       ============================================================ */
+    .page {
+      width: 100%;
+      max-width: 170mm; /* A4 210mm - 2×20mm */
+      margin: 0 auto;
+    }
+
+    /* ---- Patient block (first page, prominent) ---- */
+    .patient-block {
+      background: #F0F8F7;
+      border: 1px solid var(--color-teal);
+      border-radius: 4pt;
+      padding: 12pt 14pt;
+      margin-bottom: 20pt;
+    }
+
+    .patient-block__name {
+      font-size: 15pt;
+      font-weight: 700;
+      color: var(--color-body);
+      margin-bottom: 4pt;
+    }
+
+    .patient-block__details {
+      display: flex;
+      gap: 24pt;
+      font-size: 9.5pt;
+      color: var(--color-secondary);
+    }
+
+    .patient-block__details .field-label {
+      font-weight: 600;
+      color: var(--color-body);
+    }
+
+    /* ---- Consultation meta block ---- */
+    .consultation-block {
+      display: flex;
+      gap: 24pt;
+      font-size: 9.5pt;
+      color: var(--color-secondary);
+      margin-bottom: 20pt;
+      padding-bottom: 12pt;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .consultation-block .field-label {
+      font-weight: 600;
+      color: var(--color-body);
+    }
+
+    /* ---- Clinical section ---- */
+    .clinical-section {
+      margin-bottom: 18pt;
+    }
+
+    .clinical-section__header {
+      border-top: 1.5px solid var(--color-border);
+      padding-top: 8pt;
+      margin-bottom: 6pt;
+    }
+
+    .clinical-section__title {
+      font-size: 9pt;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--color-teal);
+    }
+
+    .clinical-section__content {
+      font-size: 10.5pt;
+      line-height: 1.6;
+      color: var(--color-body);
+      white-space: pre-wrap;
+    }
+
+    /* ---- Lock / signature block ---- */
+    .lock-block {
+      margin-top: 32pt;
+      border-top: 2px solid var(--color-border);
+      padding-top: 16pt;
+      page-break-inside: avoid;
+    }
+
+    .lock-block__notice {
+      font-size: 11pt;
+      font-weight: 700;
+      color: var(--color-teal);
+      letter-spacing: 0.02em;
+      margin-bottom: 10pt;
+    }
+
+    .lock-block__meta {
+      font-size: 9pt;
+      color: var(--color-secondary);
+      margin-bottom: 32pt;
+    }
+
+    .lock-block__sig-label {
+      font-size: 9.5pt;
+      color: var(--color-body);
+      margin-bottom: 24pt;
+    }
+
+    .lock-block__sig-line {
+      border-top: 1px solid var(--color-body);
+      width: 180pt;
+      margin-bottom: 6pt;
+    }
+
+    .lock-block__sig-name {
+      font-size: 9pt;
+      color: var(--color-secondary);
+      font-style: italic;
+    }
+
+    /* ---- Page footer ---- */
+    .page-footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 5pt 20mm;
+      border-top: 1px solid var(--color-border);
+      background: var(--color-bg);
+      font-size: 7pt;
+      color: var(--color-secondary);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .page-footer__left {
+      font-style: italic;
+    }
+
+    .page-footer__right {
+      /* Page numbers: Puppeteer injects page/totalPages via headerTemplate/footerTemplate.
+         For CSS-only rendering, these placeholders are filled by the template engine. */
+    }
+
+    /* ---- Print styles ---- */
+    @media print {
+      body {
+        margin: 0;
+      }
+
+      .no-print {
+        display: none !important;
+      }
+
+      .page {
+        max-width: none;
+      }
+
+      .page-header {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .patient-block {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .lock-block__notice {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .clinical-section {
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============================================================
+       REPEATING PAGE HEADER (position:fixed — prints on every page)
+       ============================================================ -->
+  <div class="page-header" role="banner">
+    <div class="page-header__inner">
+      <div style="display:flex; align-items:center;">
+        <!-- TODO: replace this placeholder with the actual OsteoJP SVG logo once the vector asset is available -->
+        <div class="page-header__logo" aria-label="OsteoJP logótipo">[LOGO: OsteoJP]</div>
+        <div class="page-header__brand">
+          <div class="page-header__brand-name">OsteoJP</div>
+          <div class="page-header__location">
+            <strong>{{location_name}}</strong> ·
+            {{location_address}}, {{location_postal}} {{location_city}} ·
+            Tel: {{location_phone}} · {{location_email}}
+          </div>
+          <div class="page-header__nif">NIF: 510 200 427</div>
+        </div>
+      </div>
+      <div class="page-header__right">
+        <div class="page-header__doc-title">Relatório Clínico</div>
+        <div class="page-header__episode">Episódio: {{episode_id}}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PAGE FOOTER (position:fixed — prints on every page)
+       ============================================================ -->
+  <div class="page-footer" role="contentinfo">
+    <div class="page-footer__left">
+      OsteoJP · NIF 510 200 427 · Documento confidencial — Registo clínico bloqueado
+    </div>
+    <div class="page-footer__right">
+      Página {{page_number}} de {{total_pages}}
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MAIN CONTENT
+       ============================================================ -->
+  <div class="page">
+
+    <!-- Patient block -->
+    <div class="patient-block">
+      <div class="patient-block__name">{{patient_name}}</div>
+      <div class="patient-block__details">
+        <div>
+          <span class="field-label">Data de nascimento:</span>
+          {{patient_dob}}
+        </div>
+        <div>
+          <span class="field-label">NIF:</span>
+          {{patient_nif}}
+        </div>
+      </div>
+    </div>
+
+    <!-- Consultation meta -->
+    <div class="consultation-block">
+      <div>
+        <span class="field-label">Data da consulta:</span>
+        {{consultation_date}}
+      </div>
+      <div>
+        <span class="field-label">Terapeuta:</span>
+        {{practitioner_name}}
+      </div>
+      <div>
+        <span class="field-label">Título:</span>
+        {{practitioner_title}}
+      </div>
+    </div>
+
+    <!-- Clinical content sections -->
+
+    <div class="clinical-section">
+      <div class="clinical-section__header">
+        <div class="clinical-section__title">Motivo da consulta</div>
+      </div>
+      <div class="clinical-section__content">{{consultation_reason}}</div>
+    </div>
+
+    <div class="clinical-section">
+      <div class="clinical-section__header">
+        <div class="clinical-section__title">Antecedentes relevantes</div>
+      </div>
+      <div class="clinical-section__content">{{background}}</div>
+    </div>
+
+    <div class="clinical-section">
+      <div class="clinical-section__header">
+        <div class="clinical-section__title">Queixas principais</div>
+      </div>
+      <div class="clinical-section__content">{{main_complaints}}</div>
+    </div>
+
+    <div class="clinical-section">
+      <div class="clinical-section__header">
+        <div class="clinical-section__title">Diagnóstico</div>
+      </div>
+      <div class="clinical-section__content">{{diagnosis}}</div>
+    </div>
+
+    <div class="clinical-section">
+      <div class="clinical-section__header">
+        <div class="clinical-section__title">Objetivos terapêuticos</div>
+      </div>
+      <div class="clinical-section__content">{{treatment_goals}}</div>
+    </div>
+
+    <div class="clinical-section">
+      <div class="clinical-section__header">
+        <div class="clinical-section__title">Plano de tratamento</div>
+      </div>
+      <div class="clinical-section__content">{{treatment_plan}}</div>
+    </div>
+
+    <div class="clinical-section">
+      <div class="clinical-section__header">
+        <div class="clinical-section__title">Observações</div>
+      </div>
+      <div class="clinical-section__content">{{observations}}</div>
+    </div>
+
+    <!-- ============================================================
+         SIGNATURE / LOCK BLOCK (last page)
+         ============================================================ -->
+    <div class="lock-block">
+      <div class="lock-block__notice">
+        Este registo encontra-se BLOQUEADO e não pode ser alterado.
+      </div>
+      <div class="lock-block__meta">
+        Bloqueado em: {{locked_at}}
+      </div>
+      <div class="lock-block__sig-label">
+        Assinatura do(a) Terapeuta:
+      </div>
+      <div class="lock-block__sig-line"></div>
+      <div class="lock-block__sig-name">{{practitioner_name}}</div>
+    </div>
+
+  </div><!-- /.page -->
+
+</body>
+</html>
