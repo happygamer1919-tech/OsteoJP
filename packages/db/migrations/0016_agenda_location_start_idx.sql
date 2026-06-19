@@ -1,7 +1,3 @@
--- AUTO-GENERATED — DO NOT EDIT.
--- Mirror of packages/db/migrations/0016_agenda_location_start_idx.sql for Supabase branching.
--- Edit the drizzle source, then run: node scripts/sync-supabase-migrations.mjs
-
 /* ================================================================== */
 /* 0016 — covering index for location-filtered agenda view            */
 /*                                                                    */

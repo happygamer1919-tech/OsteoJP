@@ -1,13 +1,17 @@
 import "server-only";
-import { tenants } from "@osteojp/db";
+import { eq } from "drizzle-orm";
+import { quickNotes } from "@osteojp/db";
 import type { RequestContext } from "@osteojp/auth";
 import { runScoped } from "@/lib/auth/context";
 
-/** Read the tenant's quick-notes string from tenants.settings.notes. */
+/** Read the current staff user's quick-notes string from quick_notes. */
 export async function getQuickNotes(ctx: RequestContext): Promise<string> {
   const rows = await runScoped(ctx, (tx) =>
-    tx.select({ settings: tenants.settings }).from(tenants),
+    tx
+      .select({ content: quickNotes.content })
+      .from(quickNotes)
+      .where(eq(quickNotes.staffUserId, ctx.userId))
+      .limit(1),
   );
-  const settings = (rows[0]?.settings ?? {}) as Record<string, unknown>;
-  return typeof settings.notes === "string" ? settings.notes : "";
+  return rows[0]?.content ?? "";
 }

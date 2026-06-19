@@ -831,3 +831,33 @@ export const patientFormSubmissions = pgTable(
     index("patient_form_submissions_tenant_review_idx").on(t.tenantId, t.reviewState),
   ],
 );
+
+/* ================================================================== */
+/* Quick notes — per-staff scratchpad (migration 0018)                */
+/* ================================================================== */
+
+// One row per (tenant_id, staff_user_id). RLS scopes it to the current
+// staff user via jwt_tenant_id() + auth.uid(). No drizzle-generated migration;
+// see supabase/migrations/0018_quick_notes.sql for the hand-written DDL.
+export const quickNotes = pgTable(
+  "quick_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    staffUserId: uuid("staff_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    content: text("content").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("quick_notes_tenant_user_idx").on(t.tenantId, t.staffUserId),
+    uniqueIndex("quick_notes_tenant_user_uq").on(t.tenantId, t.staffUserId),
+  ],
+);
