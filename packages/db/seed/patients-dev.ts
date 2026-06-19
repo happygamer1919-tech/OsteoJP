@@ -103,7 +103,7 @@ async function seed() {
 
   console.log(`Seeding ${PATIENTS.length} patients → tenant ${TENANT_ID}…`);
 
-  const result = await db
+  const inserted = await db
     .insert(patients)
     .values(
       PATIENTS.map((p) => ({
@@ -120,12 +120,11 @@ async function seed() {
         city: p.city,
       })),
     )
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ id: patients.id });
 
-  // Drizzle returns affected rows for onConflictDoNothing
-  const inserted = result.rowCount ?? 0;
-  const skipped = PATIENTS.length - inserted;
-  console.log(`Done. inserted=${inserted} skipped=${skipped} total=${PATIENTS.length}`);
+  const skipped = PATIENTS.length - inserted.length;
+  console.log(`Done. inserted=${inserted.length} skipped=${skipped} total=${PATIENTS.length}`);
 
   await sql.end();
 }
