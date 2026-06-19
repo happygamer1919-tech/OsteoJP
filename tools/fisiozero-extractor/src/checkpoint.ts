@@ -19,6 +19,8 @@ export type CheckpointRecord = {
   id: number;
   status: CheckpointStatus;
   episodes: number;
+  episodePdfsDiscovered?: number;
+  episodePdfsDownloaded?: number;
   attachmentsDiscovered: number;
   attachmentsDownloaded: number;
   xlsCaptured: boolean;

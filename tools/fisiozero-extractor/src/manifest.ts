@@ -14,6 +14,7 @@ export type ArchiveFileKind =
   | "episode_list_html"
   | "evaluation_list_html"
   | "episode_detail_html"
+  | "episode_pdf"
   | "history_html"
   | "xls"
   | "attachment";
@@ -41,6 +42,8 @@ export type PatientManifest = {
   };
   counts: {
     episodes: number;
+    episodePdfsDiscovered: number;
+    episodePdfsDownloaded: number;
     attachmentsDiscovered: number;
     attachmentsDownloaded: number;
     xlsCaptured: boolean;

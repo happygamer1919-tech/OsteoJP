@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractAttachmentUrls,
+  extractEpisodePdfUrls,
   extractEpisodeUrls,
   extractHrefs,
   extractOnclickTargets,
@@ -103,6 +104,39 @@ describe("extractEpisodeUrls", () => {
   it("does not match op=r60 when pattern is op=r6", () => {
     const html = `<a href='#' onclick="location.href='?op=r60&i=ABC'"></a>`;
     expect(extractEpisodeUrls(BASE, html)).toEqual([]);
+  });
+});
+
+describe("extractEpisodePdfUrls", () => {
+  it("returns the absolute PDF URL from an export_pdf_osteopatia2.php href", () => {
+    // Mirrors a real osteo_epi.html episode row: PDF icon link is a plain <a href>.
+    const html = `
+      <td>
+        <a href='#' onClick="location.href='?op=r6&i=ABC'">2025-07-08</a>
+      </td>
+      <td>
+        <a target='_blank' href='export_pdf_osteopatia2.php?i=ABC&u=XYZ'>
+          <i class="fa fa-file-pdf-o"></i>
+        </a>
+      </td>
+    `;
+    expect(extractEpisodePdfUrls(BASE, html)).toEqual([
+      "https://app.fisiozero.pt/export_pdf_osteopatia2.php?i=ABC&u=XYZ",
+    ]);
+  });
+
+  it("deduplicates the same PDF URL appearing in both list pages", () => {
+    const href = `<a href='export_pdf_osteopatia2.php?i=AAA&u=BBB'></a>`;
+    const combined = href + "\n" + href;
+    expect(extractEpisodePdfUrls(BASE, combined)).toHaveLength(1);
+  });
+
+  it("does not return op=r6 or osteo_epi_new links", () => {
+    const html = `
+      <a href='#' onclick="location.href='?op=r6&i=ABC'"></a>
+      <a href='?op=osteo_epi_new&i=1'></a>
+    `;
+    expect(extractEpisodePdfUrls(BASE, html)).toEqual([]);
   });
 });
 
