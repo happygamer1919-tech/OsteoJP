@@ -116,9 +116,10 @@ export async function getAppointment(
 
 // Therapists, locations, and services are stable reference data — they change
 // only when an admin makes a configuration change, at most a few times a year.
-// Cache per-tenant for 5 minutes to avoid 3 DB round-trips on every agenda load.
-// The cache key includes the full RequestContext (tenantId, role, userId) so
-// RLS-filtered results are never shared across tenants.
+// Cache per-tenant for 60 seconds to avoid 3 DB round-trips on every agenda load.
+// The cache key includes tenantId + userId so RLS-filtered results are never
+// shared across tenants or roles. Tagged `agenda-reference-data` for targeted
+// invalidation when admin makes config changes.
 const fetchStableAgendaRef = unstable_cache(
   async (ctx: RequestContext) =>
     runScoped(ctx, async (tx) => {
@@ -147,7 +148,7 @@ const fetchStableAgendaRef = unstable_cache(
       return { therapistRows, locationRows, serviceRows };
     }),
   ["agenda-stable-ref"],
-  { revalidate: 300 },
+  { revalidate: 60, tags: ["agenda-reference-data"] },
 );
 
 /** Dropdown options for the toolbar filters and the appointment modal. */
