@@ -3,6 +3,7 @@
 import { Download, Loader2 } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { getDownloadUrlAction } from './actions'
+import { s } from '@/lib/i18n'
 
 // Downloads go through a short-lived signed URL (never proxied); the bytes open
 // in a new tab. 44px tap target with an accessible name (SPEC-portal §9).
@@ -30,8 +31,8 @@ export function DownloadButton({ id, fileName }: { id: string; fileName: string 
         disabled={pending}
         aria-label={
           error
-            ? `Erro ao descarregar ${fileName}. Tentar novamente`
-            : `Descarregar ${fileName}`
+            ? `${s.documents.download_error} ${fileName}`
+            : `${s.documents.download_pdf} ${fileName}`
         }
         className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-accent-2-700 transition-colors hover:bg-surface-muted disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
       >
@@ -42,7 +43,7 @@ export function DownloadButton({ id, fileName }: { id: string; fileName: string 
         )}
       </button>
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-        {error ? `Erro ao descarregar ${fileName}. Tentar novamente.` : ''}
+        {error ? `${s.documents.download_error} ${fileName}` : ''}
       </span>
     </>
   )

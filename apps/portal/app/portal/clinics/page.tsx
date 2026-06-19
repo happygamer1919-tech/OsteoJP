@@ -1,4 +1,5 @@
 import { ExternalLink, Mail, MapPin, Phone } from 'lucide-react'
+import { s } from '@/lib/i18n'
 
 // Clinic data sourced from osteojp.pt/contactos — kept static, updated on redeploy.
 const CLINICS = [
@@ -39,9 +40,9 @@ export default function ClinicsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-medium text-text-primary">As nossas clínicas</h2>
+        <h2 className="text-lg font-medium text-text-primary">{s.clinics.title}</h2>
         <p className="text-sm text-text-secondary">
-          Estamos presentes em Linda-a-Velha e Castelo Branco.
+          {s.clinics.subtitle}
         </p>
       </div>
 
@@ -64,9 +65,9 @@ export default function ClinicsPage() {
           <div className="h-px bg-border" aria-hidden="true" />
 
           <div className="flex flex-col gap-2">
-            <p className="text-xs font-medium text-text-secondary">Contactos</p>
+            <p className="text-xs font-medium text-text-secondary">{s.clinics.contacts_heading}</p>
             {clinic.phone.map((p) => (
-              <a key={p.number} href={`tel:${p.number}`} className={CONTACT_LINK} aria-label={`Ligar para ${p.display}`}>
+              <a key={p.number} href={`tel:${p.number}`} className={CONTACT_LINK} aria-label={`${s.clinics.call} ${p.display}`}>
                 <Phone size={16} strokeWidth={1.75} aria-hidden="true" />
                 {p.display}
               </a>
@@ -80,24 +81,24 @@ export default function ClinicsPage() {
           <div className="h-px bg-border" aria-hidden="true" />
 
           <div className="flex flex-col gap-1">
-            <p className="text-xs font-medium text-text-secondary">Horário</p>
+            <p className="text-xs font-medium text-text-secondary">{s.clinics.hours_heading}</p>
             {clinic.hours.map((h) => (
               <div key={h.days} className="flex justify-between text-sm">
                 <span className="text-text-secondary">{h.days}</span>
                 <span className="font-medium text-text-primary">{h.time}</span>
               </div>
             ))}
-            <p className="text-xs text-text-secondary">Sábado e Domingo encerrado</p>
+            <p className="text-xs text-text-secondary">{s.clinics.weekend_closed}</p>
           </div>
 
           <a
             href={clinic.mapsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`Abrir ${clinic.name} no mapa`}
+            aria-label={`${s.clinics.open_in_map} ${clinic.name}`}
             className="inline-flex min-h-11 items-center justify-center gap-1 rounded-lg border border-border-strong text-sm font-medium text-text-secondary transition-colors hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
-            Abrir no mapa
+            {s.clinics.open_in_map}
             <ExternalLink size={16} strokeWidth={1.75} aria-hidden="true" />
           </a>
         </article>
@@ -105,8 +106,7 @@ export default function ClinicsPage() {
 
       <div className="rounded-lg border border-border bg-surface p-4">
         <p className="text-center text-sm leading-relaxed text-text-secondary">
-          Para urgências ou questões gerais, ligue diretamente para a clínica. As marcações online
-          estão disponíveis até 24 horas antes da consulta.
+          {s.clinics.general_info}
         </p>
       </div>
     </div>

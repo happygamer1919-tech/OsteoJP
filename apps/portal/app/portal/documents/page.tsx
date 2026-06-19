@@ -3,16 +3,17 @@ import { EmptyState } from '@osteojp/ui'
 import { getMyDocuments } from '@/lib/api/client'
 import type { PatientDocument } from '@/lib/api/client'
 import { DownloadButton } from './DownloadButton'
+import { s } from '@/lib/i18n'
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 function formatType(mime: string | null): string {
-  if (!mime) return 'Documento'
+  if (!mime) return s.documents.type_document
   if (mime === 'application/pdf') return 'PDF'
-  if (mime.startsWith('image/')) return 'Imagem'
-  return 'Documento'
+  if (mime.startsWith('image/')) return s.documents.type_image
+  return s.documents.type_document
 }
 
 export default async function DocumentsPage() {
@@ -23,8 +24,8 @@ export default async function DocumentsPage() {
     return (
       <EmptyState
         icon={FileText}
-        title="Sem documentos disponíveis"
-        description="Os seus documentos e declarações aparecerão aqui."
+        title={s.documents.empty_title}
+        description={s.documents.empty_description}
       />
     )
   }

@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getMyAppointments, getMyProfile } from '@/lib/api/client'
 import type { AppointmentView } from '@/lib/api/client'
 import { NavButton } from './NavButton'
+import { s } from '@/lib/i18n'
 
 function isUpcoming(appt: AppointmentView): boolean {
   return (
@@ -29,10 +30,10 @@ function shortDate(iso: string): string {
 type QuickAction = { href: string; label: string; icon: LucideIcon }
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { href: '/portal/booking', label: 'Marcar consulta', icon: Plus },
-  { href: '/portal/appointments', label: 'As minhas marcações', icon: Calendar },
-  { href: '/portal/documents', label: 'Documentos', icon: FileText },
-  { href: '/portal/clinics', label: 'Clínicas', icon: MapPin },
+  { href: '/portal/booking', label: s.dashboard.quick_book, icon: Plus },
+  { href: '/portal/appointments', label: s.nav.appointments, icon: Calendar },
+  { href: '/portal/documents', label: s.dashboard.quick_documents, icon: FileText },
+  { href: '/portal/clinics', label: s.nav.clinics, icon: MapPin },
 ]
 
 export default async function DashboardPage() {
@@ -87,7 +88,11 @@ export default async function DashboardPage() {
     <div className="flex flex-col gap-6">
       {/* Greeting */}
       <div className="flex flex-col gap-1">
-        <h3 className="text-xl text-text-primary">{firstName ? `Olá, ${firstName}` : 'Olá'}</h3>
+        <h3 className="text-xl text-text-primary">
+          {firstName
+            ? s.dashboard.greeting.replace('{{name}}', firstName)
+            : s.dashboard.greeting.replace(', {{name}}', '')}
+        </h3>
         <p className="text-sm text-text-secondary first-letter:uppercase">{today}</p>
       </div>
 
@@ -98,20 +103,20 @@ export default async function DashboardPage() {
           footer={
             <div className="flex gap-3">
               <NavButton href="/portal/appointments" variant="secondary" className="min-h-11 flex-1">
-                Remarcar
+                {s.appointments.action_reschedule}
               </NavButton>
               <NavButton href="/portal/appointments" variant="ghost" className="min-h-11 flex-1">
-                Detalhes
+                {s.appointments.action_details}
               </NavButton>
             </div>
           }
         >
-          <p className="text-xs font-medium text-text-secondary">Próxima consulta</p>
+          <p className="text-xs font-medium text-text-secondary">{s.dashboard.next_appointment_title}</p>
           <h3 className="mt-1 text-xl text-text-primary first-letter:uppercase">
             {heroDateTime(next.startsAt)}
           </h3>
           <p className="mt-1 text-sm text-text-primary">
-            {next.serviceName ?? 'Consulta'}
+            {next.serviceName ?? s.appointments.detail_service}
             {next.practitionerName ? ` · ${next.practitionerName}` : ''}
           </p>
           {next.locationName && (
@@ -125,12 +130,12 @@ export default async function DashboardPage() {
         <Card>
           <EmptyState
             icon={Calendar}
-            title="Sem consultas marcadas"
-            description="Quando marcar uma consulta, aparecerá aqui."
+            title={s.dashboard.next_appointment_empty}
+            description={s.dashboard.next_appointment_empty}
             action={
               <NavButton href="/portal/booking" variant="primary" className="min-h-11">
                 <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
-                Marcar consulta
+                {s.dashboard.next_appointment_cta}
               </NavButton>
             }
           />
@@ -152,20 +157,20 @@ export default async function DashboardPage() {
       {/* Recent activity (only when it exists) */}
       {past.length > 0 && (
         <section className="flex flex-col gap-2">
-          <h3 className="text-xs font-medium text-text-secondary">Visitas recentes</h3>
+          <h3 className="text-xs font-medium text-text-secondary">{s.dashboard.past_appointments_title}</h3>
           <div className="divide-y divide-border rounded-lg border border-border bg-surface">
             {past.map((appt) => (
               <div key={appt.id} className="flex items-center justify-between px-4 py-3">
                 <div>
                   <p className="text-sm font-medium text-text-primary">
-                    {appt.serviceName ?? 'Consulta'}
+                    {appt.serviceName ?? s.appointments.detail_service}
                   </p>
                   <p className="text-xs text-text-secondary first-letter:uppercase">
                     {shortDate(appt.startsAt)}
                   </p>
                 </div>
                 <span className="rounded-full bg-surface-muted px-2 py-1 text-xs font-medium text-text-secondary">
-                  Concluída
+                  {s.appointments.status_completed}
                 </span>
               </div>
             ))}

@@ -7,6 +7,7 @@ import { Banner, Button, Card, DatePicker, SlotPicker } from '@osteojp/ui'
 import type { BookableLocation, BookableService } from '@/lib/api/client'
 import { submitBooking } from './actions'
 import { formatPrice, formatTime, generateSlots, localDateKey } from './slots'
+import { s } from '@/lib/i18n'
 
 type Step = 1 | 2 | 3 | 4
 
@@ -108,11 +109,15 @@ export function BookingFlow({
           className="inline-flex min-h-11 w-fit items-center gap-1 text-sm text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
-          Anterior
+          {s.common.back}
         </button>
 
         <div className="flex flex-col gap-1">
-          <p className="text-xs font-medium text-text-secondary">Passo {step} de 4</p>
+          <p className="text-xs font-medium text-text-secondary">
+            {s.booking.step_label
+              .replace('{{current}}', String(step))
+              .replace('{{total}}', '4')}
+          </p>
           <div className="h-0.5 w-full overflow-hidden rounded-full bg-surface-muted" aria-hidden="true">
             <div
               className="h-full rounded-full bg-accent-2-700 transition-all duration-base ease-standard"
@@ -124,7 +129,7 @@ export function BookingFlow({
 
       {step === 1 && (
         <div className="flex flex-col gap-3">
-          <h2 className="text-lg font-medium text-text-primary">Escolha a clínica</h2>
+          <h2 className="text-lg font-medium text-text-primary">{s.booking.step_location}</h2>
           {locations.map((loc) => (
             <button key={loc.id} type="button" onClick={() => selectLocation(loc.id)} className={ROW}>
               <MapPin size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-accent-2-700" />
@@ -137,7 +142,7 @@ export function BookingFlow({
 
       {step === 2 && (
         <div className="flex flex-col gap-3">
-          <h2 className="text-lg font-medium text-text-primary">Escolha o serviço</h2>
+          <h2 className="text-lg font-medium text-text-primary">{s.booking.step_service}</h2>
           {availableServices.map((svc) => (
             <button key={svc.id} type="button" onClick={() => selectService(svc.id)} className={ROW}>
               <span className="min-w-0 flex-1">
@@ -155,7 +160,7 @@ export function BookingFlow({
 
       {step === 3 && (
         <div className="flex flex-col gap-4">
-          <h2 className="text-lg font-medium text-text-primary">Escolha a data e hora</h2>
+          <h2 className="text-lg font-medium text-text-primary">{s.booking.step_datetime}</h2>
           <DatePicker
             value={date}
             onChange={(d) => {
@@ -164,17 +169,17 @@ export function BookingFlow({
             }}
             min={availableDates[0]}
             max={availableDates[availableDates.length - 1]}
-            placeholder="Escolher data"
-            triggerLabel="Escolher data"
+            placeholder={s.booking.choose_date_placeholder}
+            triggerLabel={s.booking.choose_date_placeholder}
           />
           {date ? (
             daySlots.length > 0 ? (
-              <SlotPicker aria-label="Horários disponíveis" value={slotIso} onChange={setSlotIso} slots={daySlots} />
+              <SlotPicker aria-label={s.booking.slot_available} value={slotIso} onChange={setSlotIso} slots={daySlots} />
             ) : (
-              <p className="text-sm text-text-secondary">Sem horários disponíveis neste dia.</p>
+              <p className="text-sm text-text-secondary">{s.booking.no_slots_day}</p>
             )
           ) : (
-            <p className="text-sm text-text-secondary">Escolha uma data para ver os horários.</p>
+            <p className="text-sm text-text-secondary">{s.booking.choose_date_prompt}</p>
           )}
           <Button
             variant="primary"
@@ -182,34 +187,33 @@ export function BookingFlow({
             disabled={!slotIso}
             onClick={() => slotIso && setStep(4)}
           >
-            Continuar
+            {s.common.continue}
           </Button>
         </div>
       )}
 
       {step === 4 && (
         <div className="flex flex-col gap-4">
-          <h2 className="text-lg font-medium text-text-primary">Confirmar marcação</h2>
+          <h2 className="text-lg font-medium text-text-primary">{s.booking.step_confirm}</h2>
           <Card>
             <dl className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
-                <dt className="text-xs font-medium text-text-secondary">Clínica</dt>
+                <dt className="text-xs font-medium text-text-secondary">{s.booking.confirm_location}</dt>
                 <dd className="text-sm text-text-primary">{location?.name ?? '—'}</dd>
               </div>
               <div className="flex flex-col gap-1">
-                <dt className="text-xs font-medium text-text-secondary">Serviço</dt>
+                <dt className="text-xs font-medium text-text-secondary">{s.booking.confirm_service}</dt>
                 <dd className="text-sm text-text-primary">{service?.name ?? '—'}</dd>
               </div>
               <div className="flex flex-col gap-1">
-                <dt className="text-xs font-medium text-text-secondary">Data e hora</dt>
+                <dt className="text-xs font-medium text-text-secondary">{s.booking.confirm_datetime}</dt>
                 <dd className="text-sm text-text-primary first-letter:uppercase">{summaryDate}</dd>
               </div>
             </dl>
           </Card>
 
           <p className="text-xs text-text-secondary">
-            A sua marcação ficará a aguardar confirmação da receção. Receberá um SMS quando for
-            confirmada.
+            {s.booking.step_info_pending}
           </p>
 
           {error && (
@@ -222,7 +226,7 @@ export function BookingFlow({
                     onClick={chooseAnotherTime}
                     className="inline-flex min-h-11 items-center whitespace-nowrap rounded text-sm font-semibold text-accent-2-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
                   >
-                    Escolher outra hora
+                    {s.booking.choose_another_time}
                   </button>
                 ) : undefined
               }
@@ -232,7 +236,7 @@ export function BookingFlow({
           )}
 
           <Button variant="primary" className="min-h-11 w-full" loading={pending} onClick={confirm}>
-            Confirmar marcação
+            {s.booking.confirm_submit}
           </Button>
         </div>
       )}

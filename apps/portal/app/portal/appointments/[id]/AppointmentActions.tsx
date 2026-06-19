@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Button, Dialog } from '@osteojp/ui'
 import type { AppointmentStatus } from '@/lib/api/client'
 import { cancelAppointmentAction } from '../actions'
+import { s } from '@/lib/i18n'
 
 const CUTOFF_MS = 24 * 60 * 60 * 1000
 
@@ -54,7 +55,7 @@ export function AppointmentActions({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-text-secondary">
-        Para remarcar, utilize a ligação no email de confirmação da marcação.
+        {s.appointments.action_reschedule_hint}
       </p>
 
       <Button
@@ -63,13 +64,12 @@ export function AppointmentActions({
         aria-disabled={!outsideCutoff}
         onClick={() => { if (!outsideCutoff) return; setOpen(true) }}
       >
-        Cancelar consulta
+        {s.appointments.cancel_title}
       </Button>
 
       {!outsideCutoff && (
         <p className="text-xs text-text-secondary">
-          Não é possível cancelar com menos de 24 horas de antecedência. Por favor ligue para a
-          clínica.
+          {s.appointments.cancel_too_late}
         </p>
       )}
 
@@ -82,13 +82,13 @@ export function AppointmentActions({
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title="Cancelar consulta?"
-        message="Esta ação não pode ser anulada."
+        title={s.appointments.cancel_title}
+        message={s.appointments.cancel_body}
         icon={AlertTriangle}
         iconTone="error"
         confirmVariant="destructive"
-        confirmLabel="Sim, cancelar"
-        cancelLabel="Manter"
+        confirmLabel={s.appointments.cancel_confirm}
+        cancelLabel={s.common.cancel}
         confirmLoading={pending}
         onConfirm={confirmCancel}
       />
