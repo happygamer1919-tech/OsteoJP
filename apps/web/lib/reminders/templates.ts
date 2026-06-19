@@ -1,11 +1,15 @@
-// Appointment-reminder message templates.
+// Appointment notification message templates.
 //
-// The COPY in this file is ported verbatim from the content authored by Max in
-//   docs/email-templates-reminders.md  (scenarios 2 & 3 — the 48h / 24h reminders)
-//   docs/sms-templates.md              (scenarios 2 & 3 — the 48h / 24h reminders)
-// Do not reword it here — those docs are the source of truth for register and
-// brand voice. This module only mechanises the placeholder fills and enforces
-// the SMS carrier constraints documented alongside the copy.
+// Covers four notification types across two channels (email + SMS) and two
+// locales (PT + EN):
+//
+//   confirmation  — sent immediately on appointment creation / reschedule
+//   48h / 24h     — timed pre-appointment reminders (Stream E originals)
+//   follow_up     — sent 24 h after appointment ends; thanks patient, invites rebooking
+//   no_show       — sent when staff marks the appointment no-show
+//
+// Brand voice: neutral imperative, no "por favor"/"você". PT email uses full
+// accents (UTF-8). PT SMS strips all accents to stay single-segment GSM-7.
 //
 // Pure module: no DB, no SDK, no `server-only`. Everything here is synchronous
 // and side-effect free so it can be unit-tested without a network or a database.
@@ -13,6 +17,9 @@
 import type { Locale } from "@osteojp/i18n";
 
 export type ReminderOffsetId = "48h" | "24h";
+
+/** All notification kinds the pipeline can render and send. */
+export type NotificationKind = "confirmation" | ReminderOffsetId | "follow_up" | "no_show";
 
 /**
  * Everything a rendered reminder can reference. Email uses the full set; SMS
@@ -234,4 +241,222 @@ export function assertSmsCompliant(message: string): void {
       `reminders/sms: message is ${message.length} chars, exceeds ${SMS_SEGMENT_LIMIT}-char single segment`,
     );
   }
+}
+
+/* ================================================================== */
+/* Confirmation — sent immediately after booking / reschedule          */
+/* ================================================================== */
+
+const CONFIRMATION_EMAIL: Record<Locale, EmailTemplate> = {
+  pt: {
+    subject: "Marcação confirmada — {{appointment_date}}, {{appointment_time}}",
+    body: `Olá {{patient_first_name}},
+
+A sua marcação está confirmada:
+
+  Data:      {{appointment_date}} às {{appointment_time}}
+  Local:     {{clinic_location}}
+  Terapeuta: {{practitioner_name}}
+
+Para remarcar ou cancelar: {{reschedule_link}}
+Ou contacte: {{clinic_phone}}
+
+— OsteoJP`,
+  },
+  en: {
+    subject: "Appointment confirmed — {{appointment_date}}, {{appointment_time}}",
+    body: `Dear {{patient_first_name}},
+
+Your appointment is confirmed:
+
+  Date:       {{appointment_date}} at {{appointment_time}}
+  Location:   {{clinic_location}}
+  Therapist:  {{practitioner_name}}
+
+To reschedule or cancel: {{reschedule_link}}
+Or contact us: {{clinic_phone}}
+
+— OsteoJP`,
+  },
+};
+
+// PT: no accents (GSM-7). "marcacao" = marcação, "as" = às.
+const CONFIRMATION_SMS: Record<Locale, string> = {
+  pt: "OsteoJP: marcacao confirmada a {date} as {time} em {clinic}. Para remarcar ligue {phone}",
+  en: "OsteoJP: appointment confirmed on {date} at {time} in {clinic}. To reschedule call {phone}",
+};
+
+export function renderConfirmationEmail(locale: Locale, ctx: ReminderContext): RenderedEmail {
+  const tpl = CONFIRMATION_EMAIL[locale];
+  const tokens = {
+    patient_first_name: ctx.patientFirstName,
+    appointment_date: ctx.appointmentDateLong,
+    appointment_time: ctx.appointmentTime,
+    practitioner_name: ctx.practitionerName,
+    clinic_location: ctx.clinicLocation,
+    clinic_phone: ctx.clinicPhone,
+    reschedule_link: ctx.rescheduleLink,
+  };
+  const subject = fill(tpl.subject, tokens);
+  const body = fill(tpl.body, tokens);
+  assertNoUnfilledPlaceholders("email/confirmation", subject);
+  assertNoUnfilledPlaceholders("email/confirmation", body);
+  return { subject, body };
+}
+
+export function renderConfirmationSms(locale: Locale, ctx: ReminderContext): string {
+  const message = fill(CONFIRMATION_SMS[locale], {
+    date: ctx.appointmentDateShort,
+    time: ctx.appointmentTime,
+    clinic: ctx.clinicLocation,
+    phone: ctx.clinicPhone,
+  });
+  assertNoUnfilledPlaceholders("sms/confirmation", message);
+  assertSmsCompliant(message);
+  return message;
+}
+
+/* ================================================================== */
+/* Follow-up — sent 24 h after appointment ends                        */
+/* ================================================================== */
+
+/**
+ * Context for the post-visit follow-up. Slimmer than ReminderContext: the visit
+ * is over so no time, practitioner, or reschedule link is relevant.
+ */
+export type FollowUpContext = {
+  patientFirstName: string;
+  /** Localised long date of the visit, e.g. "23 de maio de 2026". */
+  appointmentDateLong: string;
+  /** Terse dd/mm for SMS. */
+  appointmentDateShort: string;
+  clinicPhone: string;
+};
+
+const FOLLOW_UP_EMAIL: Record<Locale, EmailTemplate> = {
+  pt: {
+    subject: "Obrigado pela sua visita — {{appointment_date}}",
+    body: `Olá {{patient_first_name}},
+
+Obrigado pela visita de {{appointment_date}}. Ficamos ao dispor para qualquer questão.
+
+Para marcar a próxima consulta contacte: {{clinic_phone}}
+
+— OsteoJP`,
+  },
+  en: {
+    subject: "Thank you for your visit — {{appointment_date}}",
+    body: `Dear {{patient_first_name}},
+
+Thank you for your visit on {{appointment_date}}. We remain available for any questions.
+
+To book your next appointment contact us: {{clinic_phone}}
+
+— OsteoJP`,
+  },
+};
+
+// PT: "proxima" = próxima (no tilde/accent).
+const FOLLOW_UP_SMS: Record<Locale, string> = {
+  pt: "OsteoJP: obrigado pela sua visita de {date}. Para marcar a proxima consulta ligue {phone}",
+  en: "OsteoJP: thank you for your visit on {date}. To book your next appointment call {phone}",
+};
+
+export function renderFollowUpEmail(locale: Locale, ctx: FollowUpContext): RenderedEmail {
+  const tpl = FOLLOW_UP_EMAIL[locale];
+  const tokens = {
+    patient_first_name: ctx.patientFirstName,
+    appointment_date: ctx.appointmentDateLong,
+    clinic_phone: ctx.clinicPhone,
+  };
+  const subject = fill(tpl.subject, tokens);
+  const body = fill(tpl.body, tokens);
+  assertNoUnfilledPlaceholders("email/follow_up", subject);
+  assertNoUnfilledPlaceholders("email/follow_up", body);
+  return { subject, body };
+}
+
+export function renderFollowUpSms(locale: Locale, ctx: FollowUpContext): string {
+  const message = fill(FOLLOW_UP_SMS[locale], {
+    date: ctx.appointmentDateShort,
+    phone: ctx.clinicPhone,
+  });
+  assertNoUnfilledPlaceholders("sms/follow_up", message);
+  assertSmsCompliant(message);
+  return message;
+}
+
+/* ================================================================== */
+/* No-show — sent when staff marks appointment as no_show              */
+/* ================================================================== */
+
+/**
+ * Context for the no-show notification. Includes time (for the email body) and
+ * a reschedule link so the patient can rebook directly.
+ */
+export type NoShowContext = {
+  patientFirstName: string;
+  appointmentDateLong: string;
+  appointmentDateShort: string;
+  appointmentTime: string;
+  clinicPhone: string;
+  rescheduleLink: string;
+};
+
+const NO_SHOW_EMAIL: Record<Locale, EmailTemplate> = {
+  pt: {
+    subject: "Sentimos a sua falta — consulta de {{appointment_date}}",
+    body: `Olá {{patient_first_name}},
+
+A sua consulta de {{appointment_date}} às {{appointment_time}} ficou por realizar.
+
+Para remarcar: {{reschedule_link}}
+Ou contacte: {{clinic_phone}}
+
+— OsteoJP`,
+  },
+  en: {
+    subject: "We missed you — appointment on {{appointment_date}}",
+    body: `Dear {{patient_first_name}},
+
+Your appointment on {{appointment_date}} at {{appointment_time}} was not attended.
+
+To rebook: {{reschedule_link}}
+Or contact us: {{clinic_phone}}
+
+— OsteoJP`,
+  },
+};
+
+// PT: "nao" = não, "as" = às. No accents in SMS.
+const NO_SHOW_SMS: Record<Locale, string> = {
+  pt: "OsteoJP: a sua consulta de {date} as {time} nao foi realizada. Para remarcar ligue {phone}",
+  en: "OsteoJP: your appointment on {date} at {time} was not attended. To rebook call {phone}",
+};
+
+export function renderNoShowEmail(locale: Locale, ctx: NoShowContext): RenderedEmail {
+  const tpl = NO_SHOW_EMAIL[locale];
+  const tokens = {
+    patient_first_name: ctx.patientFirstName,
+    appointment_date: ctx.appointmentDateLong,
+    appointment_time: ctx.appointmentTime,
+    clinic_phone: ctx.clinicPhone,
+    reschedule_link: ctx.rescheduleLink,
+  };
+  const subject = fill(tpl.subject, tokens);
+  const body = fill(tpl.body, tokens);
+  assertNoUnfilledPlaceholders("email/no_show", subject);
+  assertNoUnfilledPlaceholders("email/no_show", body);
+  return { subject, body };
+}
+
+export function renderNoShowSms(locale: Locale, ctx: NoShowContext): string {
+  const message = fill(NO_SHOW_SMS[locale], {
+    date: ctx.appointmentDateShort,
+    time: ctx.appointmentTime,
+    phone: ctx.clinicPhone,
+  });
+  assertNoUnfilledPlaceholders("sms/no_show", message);
+  assertSmsCompliant(message);
+  return message;
 }

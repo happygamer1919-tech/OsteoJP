@@ -24,7 +24,17 @@ export type ReminderDueData = {
   sendAt: string; // ISO-8601 UTC
 };
 
+/** Payload for status-change events (completed / no_show). endsAt is carried so
+ *  the follow-up function can sleep until endsAt + 24 h without a DB read. */
+export type AppointmentStatusChangedData = {
+  appointmentId: string;
+  tenantId: string;
+  endsAt: string; // ISO-8601 UTC
+};
+
 export const EVENT_APPOINTMENT_SCHEDULED = "appointment/scheduled" as const;
 export const EVENT_REMINDER_DUE = "appointment/reminder.due" as const;
+export const EVENT_APPOINTMENT_COMPLETED = "appointment/completed" as const;
+export const EVENT_APPOINTMENT_NOSHOW = "appointment/noshow" as const;
 
 export const inngest = new Inngest({ id: "osteojp-reminders" });

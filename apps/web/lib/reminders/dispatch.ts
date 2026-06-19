@@ -2,7 +2,20 @@ import "server-only";
 import { parseTenantConfig, type ReminderConfig } from "@/lib/admin/settings-config";
 import { loadReminderData } from "./data";
 import { resolveLocale, formatTime, formatDateLong, formatDateShort } from "./locale";
-import { renderEmail, renderSms, type ReminderContext, type ReminderOffsetId } from "./templates";
+import {
+  renderEmail,
+  renderSms,
+  renderConfirmationEmail,
+  renderConfirmationSms,
+  renderFollowUpEmail,
+  renderFollowUpSms,
+  renderNoShowEmail,
+  renderNoShowSms,
+  type ReminderContext,
+  type ReminderOffsetId,
+  type FollowUpContext,
+  type NoShowContext,
+} from "./templates";
 import { sendEmail, sendSms, type SendResult } from "./clients";
 import { signRescheduleToken, rescheduleTokenExpiry } from "./link-token";
 import { REMINDER_OFFSETS } from "./offsets";
@@ -182,5 +195,160 @@ export async function dispatchReminder(
     channels.push(await sendSms({ to: data.patientPhone, body: sms }));
   }
 
+  return { dispatched: true, channels };
+}
+
+/* ================================================================== */
+/* Confirmation dispatch                                               */
+/* ================================================================== */
+
+/** Statuses where a booking confirmation makes sense (pre-visit only). */
+const CONFIRMABLE_STATUSES = new Set(["scheduled", "confirmed"]);
+
+/**
+ * Send the immediate booking confirmation for an appointment. Fires right after
+ * appointment creation or reschedule; reuses the same ReminderContext so the
+ * email body can include the reschedule link. Channel toggles from the tenant's
+ * reminder config apply — the same emailEnabled / smsEnabled switches gate all
+ * outbound patient notifications.
+ */
+export async function dispatchConfirmation(
+  tenantId: string,
+  appointmentId: string,
+): Promise<DispatchOutcome> {
+  const data = await loadReminderData(tenantId, appointmentId);
+  if (!data) return { dispatched: false, reason: "not_found" };
+  if (!CONFIRMABLE_STATUSES.has(data.status)) {
+    return { dispatched: false, reason: "status" };
+  }
+  if (!data.patientEmail && !data.patientPhone) {
+    return { dispatched: false, reason: "no_contact" };
+  }
+
+  const { reminders } = parseTenantConfig(data.tenantSettings);
+  const email = reminders.emailEnabled && !!data.patientEmail;
+  const sms = reminders.smsEnabled && !!data.patientPhone;
+  if (!email && !sms) return { dispatched: false, reason: "channels_off" };
+
+  const locale = resolveLocale(data.tenantSettings);
+  const ctx = buildReminderContext({ ...data, tenantId }, locale);
+
+  const channels: SendResult[] = [];
+  if (email && data.patientEmail) {
+    const rendered = renderConfirmationEmail(locale, ctx);
+    channels.push(await sendEmail({ to: data.patientEmail, subject: rendered.subject, body: rendered.body }));
+  }
+  if (sms && data.patientPhone) {
+    channels.push(await sendSms({ to: data.patientPhone, body: renderConfirmationSms(locale, ctx) }));
+  }
+  return { dispatched: true, channels };
+}
+
+/* ================================================================== */
+/* Follow-up dispatch                                                  */
+/* ================================================================== */
+
+function buildFollowUpContext(
+  data: Awaited<ReturnType<typeof loadReminderData>> & object,
+  locale: Parameters<typeof formatTime>[1],
+): FollowUpContext {
+  return {
+    patientFirstName: firstName(data.patientName),
+    appointmentDateLong: formatDateLong(data.startsAt, locale),
+    appointmentDateShort: formatDateShort(data.startsAt),
+    clinicPhone: data.locationPhone || tenantPhone(data.tenantSettings),
+  };
+}
+
+/**
+ * Send the post-visit follow-up. Called 24 h after the appointment ends (the
+ * Inngest function sleeps before calling). Only fires when status is still
+ * "completed" — if the appointment was subsequently re-opened this is a no-op.
+ */
+export async function dispatchFollowUp(
+  tenantId: string,
+  appointmentId: string,
+): Promise<DispatchOutcome> {
+  const data = await loadReminderData(tenantId, appointmentId);
+  if (!data) return { dispatched: false, reason: "not_found" };
+  if (data.status !== "completed") return { dispatched: false, reason: "status" };
+  if (!data.patientEmail && !data.patientPhone) {
+    return { dispatched: false, reason: "no_contact" };
+  }
+
+  const { reminders } = parseTenantConfig(data.tenantSettings);
+  const email = reminders.emailEnabled && !!data.patientEmail;
+  const sms = reminders.smsEnabled && !!data.patientPhone;
+  if (!email && !sms) return { dispatched: false, reason: "channels_off" };
+
+  const locale = resolveLocale(data.tenantSettings);
+  const ctx = buildFollowUpContext(data, locale);
+
+  const channels: SendResult[] = [];
+  if (email && data.patientEmail) {
+    const rendered = renderFollowUpEmail(locale, ctx);
+    channels.push(await sendEmail({ to: data.patientEmail, subject: rendered.subject, body: rendered.body }));
+  }
+  if (sms && data.patientPhone) {
+    channels.push(await sendSms({ to: data.patientPhone, body: renderFollowUpSms(locale, ctx) }));
+  }
+  return { dispatched: true, channels };
+}
+
+/* ================================================================== */
+/* No-show dispatch                                                    */
+/* ================================================================== */
+
+function buildNoShowContext(
+  data: Awaited<ReturnType<typeof loadReminderData>> & object,
+  tenantId: string,
+  locale: Parameters<typeof formatTime>[1],
+): NoShowContext {
+  return {
+    patientFirstName: firstName(data.patientName),
+    appointmentDateLong: formatDateLong(data.startsAt, locale),
+    appointmentDateShort: formatDateShort(data.startsAt),
+    appointmentTime: formatTime(data.startsAt, locale),
+    clinicPhone: data.locationPhone || tenantPhone(data.tenantSettings),
+    rescheduleLink: rescheduleLink({
+      tenantId,
+      appointmentId: data.appointmentId,
+      startsAt: data.startsAt,
+    }),
+  };
+}
+
+/**
+ * Send the no-show notification. Fires immediately when the Inngest function
+ * receives the appointment/noshow event. Guards on status still being "no_show"
+ * in case the staff corrects the status before the job runs.
+ */
+export async function dispatchNoShow(
+  tenantId: string,
+  appointmentId: string,
+): Promise<DispatchOutcome> {
+  const data = await loadReminderData(tenantId, appointmentId);
+  if (!data) return { dispatched: false, reason: "not_found" };
+  if (data.status !== "no_show") return { dispatched: false, reason: "status" };
+  if (!data.patientEmail && !data.patientPhone) {
+    return { dispatched: false, reason: "no_contact" };
+  }
+
+  const { reminders } = parseTenantConfig(data.tenantSettings);
+  const email = reminders.emailEnabled && !!data.patientEmail;
+  const sms = reminders.smsEnabled && !!data.patientPhone;
+  if (!email && !sms) return { dispatched: false, reason: "channels_off" };
+
+  const locale = resolveLocale(data.tenantSettings);
+  const ctx = buildNoShowContext(data, tenantId, locale);
+
+  const channels: SendResult[] = [];
+  if (email && data.patientEmail) {
+    const rendered = renderNoShowEmail(locale, ctx);
+    channels.push(await sendEmail({ to: data.patientEmail, subject: rendered.subject, body: rendered.body }));
+  }
+  if (sms && data.patientPhone) {
+    channels.push(await sendSms({ to: data.patientPhone, body: renderNoShowSms(locale, ctx) }));
+  }
   return { dispatched: true, channels };
 }

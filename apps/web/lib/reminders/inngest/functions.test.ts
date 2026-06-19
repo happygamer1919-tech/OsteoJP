@@ -33,7 +33,7 @@ describe("reminder reschedule supersession config", () => {
     expect(REMINDER_IDEMPOTENCY_KEY).toContain("event.data.sendAt");
   });
 
-  it("still registers exactly the two reminder functions", () => {
-    expect(functions).toHaveLength(2);
+  it("registers all five notification functions (2 reminders + confirmation + follow-up + no-show)", () => {
+    expect(functions).toHaveLength(5);
   });
 });
