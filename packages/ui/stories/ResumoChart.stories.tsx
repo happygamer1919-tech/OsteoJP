@@ -29,6 +29,7 @@ type Story = StoryObj<typeof meta>;
 export const WithData: Story = {
   args: {
     data: [4, 6, 5, 8, 7, 9, 6],
+    labels: ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"],
     ariaLabel: "Resumo semanal de marcações",
   },
   render: (args) => (
