@@ -1,3 +1,7 @@
+-- AUTO-GENERATED — DO NOT EDIT.
+-- Mirror of packages/db/migrations/0014_migration_staging.sql for Supabase branching.
+-- Edit the drizzle source, then run: node scripts/sync-supabase-migrations.mjs
+
 CREATE TYPE "public"."migration_entity_type" AS ENUM('patient', 'appointment', 'clinical_episode', 'clinical_record', 'attachment');--> statement-breakpoint
 CREATE TYPE "public"."migration_staging_status" AS ENUM('pending', 'validated', 'imported', 'failed');--> statement-breakpoint
 CREATE TABLE "migration_staging_rows" (
