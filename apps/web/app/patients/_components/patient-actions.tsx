@@ -84,7 +84,7 @@ export function PatientActions({
               value={survivorId}
               onChange={(e) => setSurvivorId(e.target.value)}
               placeholder={s["patients.mergeIntoLabel"]}
-              className="flex-1 rounded border border-border-strong px-3 py-1.5 text-sm outline-none focus:border-brand-teal"
+              className="flex-1 rounded border border-border-strong px-3 py-1.5 text-sm focus:border-brand-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
             />
             <button
               type="submit"
@@ -97,7 +97,7 @@ export function PatientActions({
         </form>
       )}
 
-      {error && <p className="text-sm text-error">{error}</p>}
+      {error && <p role="alert" className="text-sm text-error">{error}</p>}
     </div>
   );
 }

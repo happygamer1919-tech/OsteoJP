@@ -58,17 +58,17 @@ export function ReviewEditor({
           rows={14}
           className="w-full rounded border px-3 py-2 font-mono text-xs"
         />
-        {!state.ok && errorMessage && <p className="text-sm text-error">{errorMessage}</p>}
+        {!state.ok && errorMessage && <p role="alert" className="text-sm text-error">{errorMessage}</p>}
         {!state.ok && state.rejected && (
-          <p className="text-xs text-error">
+          <p role="alert" className="text-xs text-error">
             {Object.keys(state.rejected).join(", ")}
           </p>
         )}
-        {state.ok && <p className="text-sm text-success">{s["review.saved"]}</p>}
+        {state.ok && <p role="status" className="text-sm text-success">{s["review.saved"]}</p>}
         <button
           type="submit"
           disabled={pending}
-          className="rounded border px-3 py-1.5 text-sm font-medium"
+          className="rounded border px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           {s["review.save"]}
         </button>
@@ -77,7 +77,7 @@ export function ReviewEditor({
       <form action={finalizeAction}>
         <button
           type="submit"
-          className="rounded bg-accent-1-700 px-3 py-1.5 text-sm font-medium text-text-inverse"
+          className="rounded bg-accent-1-700 px-3 py-1.5 text-sm font-medium text-text-inverse focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           {s["review.finalize"]}
         </button>

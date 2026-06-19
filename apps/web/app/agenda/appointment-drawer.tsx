@@ -307,7 +307,7 @@ export function AppointmentDrawer({
       <div className="flex flex-col gap-4">
         {editing && isRecurring && (
           <Field label={s["appointment.applyTo"]}>
-            <div className="flex flex-col gap-1">
+            <div role="radiogroup" aria-label={s["appointment.applyTo"]} className="flex flex-col gap-1">
               {SCOPE_OPTIONS.map((o) => (
                 <label key={o.value} className="flex items-center gap-2 text-sm text-text-primary">
                   <input type="radio" name="scope" checked={form.scope === o.value} onChange={() => set("scope", o.value)} />

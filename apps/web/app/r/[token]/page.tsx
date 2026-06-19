@@ -125,7 +125,7 @@ export default async function ReschedulePage({
         {phone ? (
           <a
             href={`tel:${phone.replace(/\s+/g, "")}`}
-            className="inline-block rounded bg-brand-teal px-4 py-2 font-medium text-text-inverse hover:bg-brand-teal/90"
+            className="inline-block rounded bg-brand-teal px-4 py-2 font-medium text-text-inverse hover:bg-brand-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             {s["reschedule.callCta"]}: {phone}
           </a>

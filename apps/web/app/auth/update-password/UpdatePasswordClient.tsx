@@ -254,7 +254,7 @@ export default function UpdatePasswordClient() {
 
         <p className="text-body-sm text-text-muted">{s["auth.setPassword.hint"]}</p>
 
-        {fieldError ? <p className="text-body-sm text-error">{s[fieldError]}</p> : null}
+        {fieldError ? <p role="alert" className="text-body-sm text-error">{s[fieldError]}</p> : null}
 
         <button
           type="submit"
