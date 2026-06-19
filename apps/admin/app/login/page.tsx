@@ -15,7 +15,7 @@ export default function LoginPage() {
         className="w-full max-w-sm space-y-4 rounded-lg border border-border bg-surface p-6 shadow-sm"
       >
         <div className="text-center">
-          <span className="text-h2 font-semibold tracking-tight">
+          <span aria-hidden="true" className="text-h2 font-semibold tracking-tight">
             <span className="text-brand-teal">Osteo</span>
             <span className="text-brand-magenta">JP</span>
           </span>
@@ -23,7 +23,11 @@ export default function LoginPage() {
             {s["superadmin.login.subtitle"]}
           </h1>
         </div>
+        <label htmlFor="admin-email" className="sr-only">
+          {s["superadmin.login.email"]}
+        </label>
         <input
+          id="admin-email"
           name="email"
           type="email"
           autoComplete="email"
@@ -31,7 +35,11 @@ export default function LoginPage() {
           placeholder={s["superadmin.login.email"]}
           className="w-full rounded border border-border-strong px-3 py-2 text-text-primary placeholder:text-text-muted"
         />
+        <label htmlFor="admin-password" className="sr-only">
+          {s["superadmin.login.password"]}
+        </label>
         <input
+          id="admin-password"
           name="password"
           type="password"
           autoComplete="current-password"
@@ -39,7 +47,7 @@ export default function LoginPage() {
           placeholder={s["superadmin.login.password"]}
           className="w-full rounded border border-border-strong px-3 py-2 text-text-primary placeholder:text-text-muted"
         />
-        {state.error ? <p className="text-sm text-error">{state.error}</p> : null}
+        {state.error ? <p role="alert" className="text-sm text-error">{state.error}</p> : null}
         <button
           type="submit"
           disabled={pending}

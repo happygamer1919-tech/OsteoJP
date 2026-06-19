@@ -29,7 +29,7 @@ export default async function Page({
     <main className="mx-auto w-full max-w-5xl space-y-6 p-6">
       <header className="flex items-center justify-between">
         <div>
-          <span className="text-h3 font-semibold tracking-tight">
+          <span aria-hidden="true" className="text-h3 font-semibold tracking-tight">
             <span className="text-brand-teal">Osteo</span>
             <span className="text-brand-magenta">JP</span>
           </span>
@@ -45,7 +45,7 @@ export default async function Page({
         </form>
       </header>
 
-      {m === "err" && <p className="text-sm text-error">{s["superadmin.statusError"]}</p>}
+      {m === "err" && <p role="alert" className="text-sm text-error">{s["superadmin.statusError"]}</p>}
 
       <CreateTenantForm />
 
@@ -57,12 +57,12 @@ export default async function Page({
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b text-left">
-                <th className="py-2 pr-4 font-medium">{s["superadmin.col.name"]}</th>
-                <th className="py-2 pr-4 font-medium">{s["superadmin.col.slug"]}</th>
-                <th className="py-2 pr-4 font-medium">{s["superadmin.col.nif"]}</th>
-                <th className="py-2 pr-4 font-medium">{s["superadmin.col.status"]}</th>
-                <th className="py-2 pr-4 font-medium">{s["superadmin.col.created"]}</th>
-                <th className="py-2 pr-4 font-medium">{s["superadmin.col.actions"]}</th>
+                <th scope="col" className="py-2 pr-4 font-medium">{s["superadmin.col.name"]}</th>
+                <th scope="col" className="py-2 pr-4 font-medium">{s["superadmin.col.slug"]}</th>
+                <th scope="col" className="py-2 pr-4 font-medium">{s["superadmin.col.nif"]}</th>
+                <th scope="col" className="py-2 pr-4 font-medium">{s["superadmin.col.status"]}</th>
+                <th scope="col" className="py-2 pr-4 font-medium">{s["superadmin.col.created"]}</th>
+                <th scope="col" className="py-2 pr-4 font-medium">{s["superadmin.col.actions"]}</th>
               </tr>
             </thead>
             <tbody>
@@ -87,7 +87,11 @@ export default async function Page({
                       <form action={setStatusAction}>
                         <input type="hidden" name="tenantId" value={t.id} />
                         <input type="hidden" name="status" value={next} />
-                        <button type="submit" className="rounded border border-border-strong px-2 py-1">
+                        <button
+                          type="submit"
+                          aria-label={`${next === "suspended" ? s["superadmin.action.suspend"] : s["superadmin.action.activate"]} ${t.name}`}
+                          className="rounded border border-border-strong px-2 py-1"
+                        >
                           {next === "suspended"
                             ? s["superadmin.action.suspend"]
                             : s["superadmin.action.activate"]}
