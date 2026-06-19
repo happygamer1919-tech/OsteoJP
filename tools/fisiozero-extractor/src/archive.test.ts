@@ -16,6 +16,8 @@ describe("PatientArchive", () => {
     a.addBinary("export_ficha_utente.xls", "xls", "https://x/xls", Buffer.from("XLSDATA"));
     const manifest = a.finalize({
       episodes: 0,
+      episodePdfsDiscovered: 0,
+      episodePdfsDownloaded: 0,
       attachmentsDiscovered: 0,
       attachmentsDownloaded: 0,
       xlsCaptured: true,

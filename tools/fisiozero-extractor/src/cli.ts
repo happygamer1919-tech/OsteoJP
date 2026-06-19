@@ -38,14 +38,16 @@ function printSummary(summary: RunSummary): void {
   console.log("─".repeat(60));
   for (const p of summary.patients) {
     const attach = `${p.attachmentsDownloaded}/${p.attachmentsDiscovered}`;
+    const pdfs = `${p.episodePdfsDownloaded}/${p.episodePdfsDiscovered}`;
     const flags: string[] = [];
     if (p.attachmentsDownloaded < p.attachmentsDiscovered) flags.push("ATTACHMENT-GAP");
+    if (p.status === "done" && p.episodes > 0 && p.episodePdfsDownloaded === 0) flags.push("NO-EPISODE-PDF");
     if (p.status === "done" && !p.xlsCaptured) flags.push("NO-XLS");
     if (p.status === "error") flags.push(`ERROR:${p.errorCode ?? "?"}`);
     const flagStr = flags.length ? `  ⚠ ${flags.join(" ")}` : "";
     console.log(
       `  #${p.id}  ${p.status.padEnd(7)}  episodes=${p.episodes}  ` +
-        `attachments=${attach}  xls=${p.xlsCaptured ? "yes" : "no"}${flagStr}`,
+        `attachments=${attach}  pdfs=${pdfs}  xls=${p.xlsCaptured ? "yes" : "no"}${flagStr}`,
     );
   }
   console.log("─".repeat(60));
@@ -55,10 +57,17 @@ function printSummary(summary: RunSummary): void {
   );
   console.log(
     `  episodes captured=${summary.totalEpisodes}  ` +
+      `pdfs downloaded/discovered=${summary.totalEpisodePdfsDownloaded}/${summary.totalEpisodePdfsDiscovered}  ` +
       `attachments downloaded/discovered=${summary.totalAttachmentsDownloaded}/${summary.totalAttachmentsDiscovered}`,
   );
   const anomalies = summary.patients.filter(
-    (p) => p.status === "error" || (p.status === "done" && (!p.xlsCaptured || p.attachmentsDownloaded < p.attachmentsDiscovered)),
+    (p) =>
+      p.status === "error" ||
+      (p.status === "done" && (
+        !p.xlsCaptured ||
+        p.attachmentsDownloaded < p.attachmentsDiscovered ||
+        (p.episodes > 0 && p.episodePdfsDownloaded === 0)
+      )),
   );
   console.log(`  anomalies needing review: ${anomalies.length}`);
   console.log("─".repeat(60));

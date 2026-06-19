@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { and, asc, eq, gte, lt, ne, type SQL } from "drizzle-orm";
 import type { RequestContext } from "@osteojp/auth";
 import {
@@ -113,39 +114,51 @@ export async function getAppointment(
   });
 }
 
+// Therapists, locations, and services are stable reference data — they change
+// only when an admin makes a configuration change, at most a few times a year.
+// Cache per-tenant for 5 minutes to avoid 3 DB round-trips on every agenda load.
+// The cache key includes the full RequestContext (tenantId, role, userId) so
+// RLS-filtered results are never shared across tenants.
+const fetchStableAgendaRef = unstable_cache(
+  async (ctx: RequestContext) =>
+    runScoped(ctx, async (tx) => {
+      const [therapistRows, locationRows, serviceRows] = await Promise.all([
+        tx
+          .select({ id: users.id, label: users.fullName })
+          .from(users)
+          .innerJoin(roles, eq(users.roleId, roles.id))
+          .where(and(eq(users.isActive, true), ne(roles.slug, "reception")))
+          .orderBy(asc(users.fullName)),
+        tx
+          .select({ id: locations.id, label: locations.name })
+          .from(locations)
+          .where(eq(locations.isActive, true))
+          .orderBy(asc(locations.name)),
+        tx
+          .select({
+            id: services.id,
+            label: services.name,
+            durationMin: services.durationMin,
+          })
+          .from(services)
+          .where(eq(services.isActive, true))
+          .orderBy(asc(services.name)),
+      ]);
+      return { therapistRows, locationRows, serviceRows };
+    }),
+  ["agenda-stable-ref"],
+  { revalidate: 300 },
+);
+
 /** Dropdown options for the toolbar filters and the appointment modal. */
 export async function getAgendaOptions(
   ctx: RequestContext,
 ): Promise<AgendaOptions> {
-  return runScoped(ctx, async (tx) => {
-    const [therapistRows, locationRows, serviceRows] = await Promise.all([
-      tx
-        .select({ id: users.id, label: users.fullName })
-        .from(users)
-        // role join keeps reception (non-clinician) out of the therapist list
-        .innerJoin(roles, eq(users.roleId, roles.id))
-        .where(and(eq(users.isActive, true), ne(roles.slug, "reception")))
-        .orderBy(asc(users.fullName)),
-      tx
-        .select({ id: locations.id, label: locations.name })
-        .from(locations)
-        .where(eq(locations.isActive, true))
-        .orderBy(asc(locations.name)),
-      tx
-        .select({
-          id: services.id,
-          label: services.name,
-          durationMin: services.durationMin,
-        })
-        .from(services)
-        .where(eq(services.isActive, true))
-        .orderBy(asc(services.name)),
-    ]);
-
-    return {
-      therapists: therapistRows,
-      locations: locationRows,
-      services: serviceRows,
-    };
-  });
+  const { therapistRows, locationRows, serviceRows } =
+    await fetchStableAgendaRef(ctx);
+  return {
+    therapists: therapistRows,
+    locations: locationRows,
+    services: serviceRows,
+  };
 }
