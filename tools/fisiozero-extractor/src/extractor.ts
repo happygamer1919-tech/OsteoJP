@@ -25,6 +25,7 @@ import { SessionExpiredError, type FisiozeroClient } from "./client";
 import type { ExtractorConfig } from "./config";
 import {
   extractAttachmentUrls,
+  extractEpisodePdfUrls,
   extractEpisodeUrls,
   fileNameFromUrl,
   isFichaAbsent,
@@ -37,6 +38,8 @@ export type PatientResult = {
   id: number;
   status: CheckpointStatus;
   episodes: number;
+  episodePdfsDiscovered: number;
+  episodePdfsDownloaded: number;
   attachmentsDiscovered: number;
   attachmentsDownloaded: number;
   xlsCaptured: boolean;
@@ -53,6 +56,8 @@ export type RunSummary = {
   errored: number;
   skipped: number;
   totalEpisodes: number;
+  totalEpisodePdfsDiscovered: number;
+  totalEpisodePdfsDownloaded: number;
   totalAttachmentsDiscovered: number;
   totalAttachmentsDownloaded: number;
   patients: PatientResult[];
@@ -78,6 +83,8 @@ export async function extractPatient(
     id,
     status: "done",
     episodes: 0,
+    episodePdfsDiscovered: 0,
+    episodePdfsDownloaded: 0,
     attachmentsDiscovered: 0,
     attachmentsDownloaded: 0,
     xlsCaptured: false,
@@ -124,6 +131,35 @@ export async function extractPatient(
     }
     result.episodes = episodeUrls.length;
 
+    // 4b. Episode PDFs — server-rendered full content from export_pdf_osteopatia2.php.
+    //     Scraped from both list pages; the op=r6 HTML shell is JS-rendered and empty.
+    const episodePdfUrls = Array.from(
+      new Set([
+        ...extractEpisodePdfUrls(base, episodeList.body),
+        ...extractEpisodePdfUrls(base, evalList.body),
+      ]),
+    );
+    result.episodePdfsDiscovered = episodePdfUrls.length;
+    for (let i = 0; i < episodePdfUrls.length; i++) {
+      const pdfUrl = episodePdfUrls[i]!;
+      try {
+        const bin = await client.getBinary(pdfUrl);
+        const isPdf =
+          (bin.contentType ?? "").toLowerCase().includes("pdf") ||
+          (bin.bytes.length >= 4 &&
+            bin.bytes[0] === 0x25 && bin.bytes[1] === 0x50 &&
+            bin.bytes[2] === 0x44 && bin.bytes[3] === 0x46);
+        if (bin.status < 400 && bin.bytes.byteLength > 0 && isPdf) {
+          const name = `episodes/episode-${String(i + 1).padStart(2, "0")}.pdf`;
+          archive.addBinary(name, "episode_pdf", bin.url, bin.bytes);
+          result.episodePdfsDownloaded++;
+        }
+      } catch (err) {
+        if (err instanceof SessionExpiredError) throw err;
+        // PDF miss is non-fatal; surfaces via discovered>downloaded delta and NO-EPISODE-PDF flag.
+      }
+    }
+
     // 5. Appointment/payment/SMS history.
     const history = await client.getText(opUrl(base, PATIENT_OPS.history));
     archive.addText("consultar_hist.html", "history_html", history.url, history.body);
@@ -160,6 +196,8 @@ export async function extractPatient(
 
     archive.finalize({
       episodes: result.episodes,
+      episodePdfsDiscovered: result.episodePdfsDiscovered,
+      episodePdfsDownloaded: result.episodePdfsDownloaded,
       attachmentsDiscovered: result.attachmentsDiscovered,
       attachmentsDownloaded: result.attachmentsDownloaded,
       xlsCaptured: result.xlsCaptured,
@@ -192,6 +230,8 @@ export async function runExtraction(
     errored: 0,
     skipped: 0,
     totalEpisodes: 0,
+    totalEpisodePdfsDiscovered: 0,
+    totalEpisodePdfsDownloaded: 0,
     totalAttachmentsDiscovered: 0,
     totalAttachmentsDownloaded: 0,
     patients: [],
@@ -221,6 +261,8 @@ export async function runExtraction(
       id,
       status: result.status,
       episodes: result.episodes,
+      episodePdfsDiscovered: result.episodePdfsDiscovered,
+      episodePdfsDownloaded: result.episodePdfsDownloaded,
       attachmentsDiscovered: result.attachmentsDiscovered,
       attachmentsDownloaded: result.attachmentsDownloaded,
       xlsCaptured: result.xlsCaptured,
@@ -234,6 +276,8 @@ export async function runExtraction(
     else summary.errored++;
 
     summary.totalEpisodes += result.episodes;
+    summary.totalEpisodePdfsDiscovered += result.episodePdfsDiscovered;
+    summary.totalEpisodePdfsDownloaded += result.episodePdfsDownloaded;
     summary.totalAttachmentsDiscovered += result.attachmentsDiscovered;
     summary.totalAttachmentsDownloaded += result.attachmentsDownloaded;
 
