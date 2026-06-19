@@ -7,6 +7,7 @@ import { EmptyState, SegmentedControl, StatusChip } from '@osteojp/ui'
 import type { AppointmentView } from '@/lib/api/client'
 import { NavButton } from '../dashboard/NavButton'
 import { STATUS_LABELS, STATUS_TONE } from './status'
+import { s } from '@/lib/i18n'
 
 function dateParts(iso: string) {
   const d = new Date(iso)
@@ -33,7 +34,7 @@ function AppointmentRow({ appt, muted }: { appt: AppointmentView; muted?: boolea
       </div>
       <div className={`min-w-0 flex-1 ${cancelled ? 'line-through' : ''}`}>
         <p className="truncate text-sm font-medium text-text-primary">
-          {time} · {appt.serviceName ?? 'Consulta'}
+          {time} · {appt.serviceName ?? s.appointments.detail_service}
         </p>
         <p className="truncate text-xs text-text-secondary">
           {[appt.practitionerName, appt.locationName].filter(Boolean).join(' · ') || '—'}
@@ -58,12 +59,12 @@ export function AppointmentsView({
   return (
     <div className="flex flex-col gap-6">
       <SegmentedControl
-        aria-label="Filtrar marcações"
+        aria-label={s.appointments.title}
         value={segment}
         onValueChange={(v) => setSegment(v as 'proximas' | 'historico')}
         items={[
-          { value: 'proximas', label: 'Próximas' },
-          { value: 'historico', label: 'Histórico' },
+          { value: 'proximas', label: s.appointments.tab_upcoming },
+          { value: 'historico', label: s.appointments.tab_past },
         ]}
         className="w-full"
       />
@@ -72,19 +73,19 @@ export function AppointmentsView({
         segment === 'proximas' ? (
           <EmptyState
             icon={Calendar}
-            title="Sem consultas marcadas"
-            description="Marque a sua próxima consulta quando quiser."
+            title={s.appointments.empty_upcoming}
+            description={s.appointments.empty_upcoming}
             action={
               <NavButton href="/portal/booking" variant="primary" className="min-h-11">
-                Marcar consulta
+                {s.appointments.empty_upcoming_cta}
               </NavButton>
             }
           />
         ) : (
           <EmptyState
             icon={Calendar}
-            title="Sem histórico"
-            description="As consultas anteriores aparecerão aqui."
+            title={s.appointments.empty_past}
+            description={s.appointments.empty_past}
           />
         )
       ) : (

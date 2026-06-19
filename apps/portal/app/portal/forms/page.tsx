@@ -1,33 +1,34 @@
 import { ClipboardList } from 'lucide-react'
 import { EmptyState, StatusChip, type StatusTone } from '@osteojp/ui'
 import { getMyForms } from '@/lib/api/client'
+import { s } from '@/lib/i18n'
 
 const THERAPY_LABELS: Record<string, string> = {
-  osteopathy: 'Osteopatia',
-  physiotherapy: 'Fisioterapia',
+  osteopathy: s.intake.fichaGeral.title,
+  physiotherapy: s.forms.fisioterapia_title,
   rpg: 'RPG',
-  nesa: 'NESA',
-  'massagem-terapeutica': 'Massagem Terapêutica',
-  'pilates-terapeutico': 'Pilates Terapêutico',
+  nesa: s.forms.nesa_title,
+  'massagem-terapeutica': s.services.massagem,
+  'pilates-terapeutico': s.services.pilates,
 }
 
 function formTitle(formKey: string, therapy: string | null): string {
-  if (formKey === 'ficha_geral') return 'Ficha geral'
-  if (therapy && THERAPY_LABELS[therapy]) return `Ficha de ${THERAPY_LABELS[therapy]}`
-  return 'Ficha'
+  if (formKey === 'ficha_geral') return s.forms.general_anamnese_title
+  if (therapy && THERAPY_LABELS[therapy]) return `${s.forms.start_form.replace('Preencher ', '')} ${THERAPY_LABELS[therapy]}`
+  return s.forms.title
 }
 
 // Status reflects the review state honestly — a submitted ficha is never shown as
 // "concluído" (SPEC-portal §10.3); it is always "for review" until a therapist acts.
 const REVIEW: Record<string, { label: string; tone: StatusTone }> = {
-  pending_review: { label: 'Enviado para revisão', tone: 'info' },
-  in_review: { label: 'Em revisão', tone: 'info' },
-  approved: { label: 'Revisto', tone: 'success' },
-  rejected: { label: 'Requer atenção', tone: 'warning' },
+  pending_review: { label: s.forms.status_under_review, tone: 'info' },
+  in_review: { label: s.forms.status_under_review, tone: 'info' },
+  approved: { label: s.forms.status_completed, tone: 'success' },
+  rejected: { label: s.forms.status_pending, tone: 'warning' },
 }
 
 function review(state: string): { label: string; tone: StatusTone } {
-  return REVIEW[state] ?? { label: 'Enviado para revisão', tone: 'info' }
+  return REVIEW[state] ?? { label: s.forms.status_under_review, tone: 'info' }
 }
 
 function formatDate(iso: string): string {
@@ -43,23 +44,23 @@ export default async function FormsPage() {
       {submissions.length === 0 ? (
         <EmptyState
           icon={ClipboardList}
-          title="Sem fichas enviadas"
-          description="As fichas que enviar aparecerão aqui para acompanhar a revisão."
+          title={s.forms.empty}
+          description={s.forms.empty}
         />
       ) : (
         <div className="flex flex-col gap-3">
-          {submissions.map((s) => {
-            const r = review(s.reviewState)
+          {submissions.map((sub) => {
+            const r = review(sub.reviewState)
             return (
               <div
-                key={s.id}
+                key={sub.id}
                 className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface p-4"
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-text-primary">
-                    {formTitle(s.formKey, s.therapy)}
+                    {formTitle(sub.formKey, sub.therapy)}
                   </p>
-                  <p className="text-xs text-text-secondary">Enviada a {formatDate(s.submittedAt)}</p>
+                  <p className="text-xs text-text-secondary">{formatDate(sub.submittedAt)}</p>
                 </div>
                 <StatusChip tone={r.tone} className="shrink-0">
                   {r.label}
@@ -71,8 +72,7 @@ export default async function FormsPage() {
       )}
 
       <p className="text-xs text-text-secondary">
-        As fichas de admissão são preenchidas na clínica. Aqui pode acompanhar o estado das fichas
-        que enviou.
+        {s.forms.forms_info}
       </p>
     </div>
   )

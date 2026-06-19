@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { Banner, Button, Field, Input } from '@osteojp/ui'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { s } from '@/lib/i18n'
 
 const SECONDARY_LINK =
   'inline-flex min-h-11 items-center justify-center rounded px-2 text-sm text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2'
@@ -27,7 +28,7 @@ export default function ResetPasswordPage() {
     })
 
     if (error) {
-      setError('Não foi possível enviar o link. Tente novamente.')
+      setError(s.auth.reset_password_error)
       setLoading(false)
       return
     }
@@ -46,14 +47,15 @@ export default function ResetPasswordPage() {
             aria-hidden="true"
             className="mx-auto mb-3 text-accent-2-700"
           />
-          <h2 className="mb-2 text-xl font-semibold text-text-primary">Verifique o seu email</h2>
+          <h2 className="mb-2 text-xl font-semibold text-text-primary">{s.auth.reset_password_check_inbox}</h2>
           <p className="text-sm text-text-secondary">
-            Enviámos um link para <strong>{email}</strong>. Verifique a sua caixa de entrada.
+            {s.auth.reset_password_sent.replace('{{email}}', '')}
+            <strong>{email}</strong>.
           </p>
         </div>
         <div className="mt-6 flex flex-col items-center gap-3">
           <Link href="/auth/login" className={SECONDARY_LINK}>
-            Ir para o início de sessão
+            {s.auth.back_to_login}
           </Link>
         </div>
       </>
@@ -63,9 +65,9 @@ export default function ResetPasswordPage() {
   return (
     <>
       <div className="rounded-xl border border-border bg-surface p-6">
-        <h2 className="mb-1 text-xl font-semibold text-text-primary">Repor palavra-passe</h2>
+        <h2 className="mb-1 text-xl font-semibold text-text-primary">{s.auth.reset_password_title}</h2>
         <p className="mb-6 text-sm text-text-secondary">
-          Introduza o seu email para receber um link de reposição.
+          {s.auth.reset_password_email}
         </p>
 
         {error && (
@@ -75,31 +77,31 @@ export default function ResetPasswordPage() {
         )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <Field label="Email">
+          <Field label={s.auth.login_email}>
             <Input
               type="email"
               autoComplete="username"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="o.seu@email.pt"
+              placeholder={s.auth.login_email_placeholder}
             />
           </Field>
 
           <Button type="submit" variant="primary" loading={loading} className="w-full">
-            Enviar link
+            {s.auth.reset_password_submit}
           </Button>
         </form>
       </div>
 
       <div className="mt-6 flex flex-col items-center gap-3">
         <Link href="/auth/login" className={SECONDARY_LINK}>
-          Ir para o início de sessão
+          {s.auth.back_to_login}
         </Link>
       </div>
 
       <p className="mt-8 text-center text-xs text-text-secondary">
-        OsteoJP · Linda-a-Velha · Castelo Branco · Montemor-o-Novo
+        {s.common.app_name} · Linda-a-Velha · Castelo Branco · Montemor-o-Novo
       </p>
     </>
   )

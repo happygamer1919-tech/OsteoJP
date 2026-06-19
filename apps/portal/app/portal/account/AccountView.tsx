@@ -9,6 +9,7 @@ import type { PatientProfile } from '@/lib/api/client'
 import { createBrowserClient } from '@/lib/supabase/client'
 import ReminderToggles from '@/components/account/ReminderToggles'
 import { updateProfileAction } from './actions'
+import { s } from '@/lib/i18n'
 
 const APP_VERSION = '0.1.0'
 
@@ -128,14 +129,14 @@ export function AccountView({
 
       {/* Group 1 — Dados pessoais (editable rows open the edit drawer) */}
       <section className="flex flex-col gap-2">
-        <h3 className="text-xs font-medium text-text-secondary">Dados pessoais</h3>
+        <h3 className="text-xs font-medium text-text-secondary">{s.account.section_personal}</h3>
         <div className="divide-y divide-border rounded-lg border border-border bg-surface">
-          <Row label="Nome" value={fullName} />
-          <Row label="Email" value={email || '—'} />
-          <Row label="Telemóvel" value={profile?.phone || '—'} onClick={openEdit} />
-          <Row label="Morada" value={profile?.address || '—'} onClick={openEdit} />
+          <Row label={s.account.field_name} value={fullName} />
+          <Row label={s.account.field_email} value={email || '—'} />
+          <Row label={s.account.field_phone} value={profile?.phone || '—'} onClick={openEdit} />
+          <Row label={s.account.field_address} value={profile?.address || '—'} onClick={openEdit} />
           <Row
-            label="Código postal / Localidade"
+            label={s.account.field_postal_city}
             value={[profile?.postalCode, profile?.city].filter(Boolean).join(' ') || '—'}
             onClick={openEdit}
           />
@@ -143,7 +144,7 @@ export function AccountView({
             href="/auth/reset-password"
             className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
-            <span className="text-sm text-text-primary">Alterar palavra-passe</span>
+            <span className="text-sm text-text-primary">{s.account.change_password}</span>
             <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-secondary" />
           </Link>
         </div>
@@ -151,10 +152,10 @@ export function AccountView({
 
       {/* Group 2 — Preferências */}
       <section className="flex flex-col gap-2">
-        <h3 className="text-xs font-medium text-text-secondary">Preferências</h3>
+        <h3 className="text-xs font-medium text-text-secondary">{s.account.section_preferences}</h3>
         <div className="divide-y divide-border rounded-lg border border-border bg-surface">
-          {/* Idioma: PT only until the portal i18n layer + EN strings land. */}
-          <Row label="Idioma" value="Português (PT)" />
+          {/* Language: PT only until per-patient locale selection lands. */}
+          <Row label={s.account.field_language} value={s.account.language_pt} />
         </div>
         <ReminderToggles />
       </section>
@@ -167,7 +168,7 @@ export function AccountView({
           className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-medium text-error transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           <LogOut size={20} strokeWidth={1.75} aria-hidden="true" />
-          Terminar sessão
+          {s.auth.logout}
         </button>
       </section>
 
@@ -179,17 +180,17 @@ export function AccountView({
         onClose={() => setEditOpen(false)}
         dirty={dirty}
         discard={{
-          title: 'Descartar alterações?',
-          message: 'As alterações não guardadas serão perdidas.',
-          confirmLabel: 'Descartar',
-          cancelLabel: 'Continuar a editar',
+          title: s.account.discard_title,
+          message: s.account.discard_message,
+          confirmLabel: s.account.discard_confirm,
+          cancelLabel: s.account.discard_keep,
         }}
-        title="Dados de contacto"
-        cancelLabel="Cancelar"
-        confirmLabel="Guardar"
+        title={s.account.edit_title}
+        cancelLabel={s.common.cancel}
+        confirmLabel={s.common.save}
         confirmLoading={saving}
         onConfirm={save}
-        closeLabel="Fechar"
+        closeLabel={s.common.close}
       >
         <div className="flex flex-col gap-4">
           {error && (
@@ -197,7 +198,7 @@ export function AccountView({
               {error}
             </p>
           )}
-          <Field label="Telemóvel">
+          <Field label={s.account.field_phone}>
             <Input
               type="tel"
               autoComplete="tel"
@@ -206,22 +207,22 @@ export function AccountView({
               placeholder="+351 912 345 678"
             />
           </Field>
-          <Field label="Morada">
+          <Field label={s.account.field_address}>
             <Input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               placeholder="Rua, número…"
             />
           </Field>
-          <Field label="Código postal">
+          <Field label={s.account.field_postal_code}>
             <Input
               value={postalCode}
               onChange={(e) => setPostalCode(e.target.value)}
               placeholder="0000-000"
             />
           </Field>
-          <Field label="Localidade">
-            <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Localidade" />
+          <Field label={s.account.field_city}>
+            <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder={s.account.field_city} />
           </Field>
         </div>
       </Drawer>
@@ -230,13 +231,13 @@ export function AccountView({
       <Dialog
         open={logoutOpen}
         onClose={() => setLogoutOpen(false)}
-        title="Terminar sessão?"
-        message="Terá de iniciar sessão novamente para aceder ao portal."
+        title={s.account.logout_confirm_title}
+        message={s.account.logout_confirm_message}
         icon={LogOut}
         iconTone="warning"
         confirmVariant="destructive"
-        confirmLabel="Terminar sessão"
-        cancelLabel="Cancelar"
+        confirmLabel={s.auth.logout}
+        cancelLabel={s.common.cancel}
         confirmLoading={loggingOut}
         onConfirm={logout}
       />

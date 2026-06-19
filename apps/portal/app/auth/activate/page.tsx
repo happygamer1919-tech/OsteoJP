@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { Button, ErrorState, Field, Input, useToast } from '@osteojp/ui'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { s } from '@/lib/i18n'
 
 type TokenState = 'checking' | 'valid' | 'invalid'
 
@@ -60,12 +61,12 @@ export default function ActivatePage() {
     const { error } = await supabase.auth.updateUser({ password })
 
     if (error) {
-      setError('Não foi possível ativar a conta. Tente novamente.')
+      setError(s.common.error_generic)
       setLoading(false)
       return
     }
 
-    toast({ tone: 'success', message: 'Conta ativada. A entrar…' })
+    toast({ tone: 'success', message: s.auth.activate_success })
     // Let the success toast register before the existing flow routes onward.
     setTimeout(() => router.push('/portal/dashboard'), 900)
   }
@@ -73,7 +74,7 @@ export default function ActivatePage() {
   if (tokenState === 'checking') {
     return (
       <div className="rounded-xl border border-border bg-surface p-6">
-        <p className="text-sm text-text-secondary">A verificar a ligação…</p>
+        <p className="text-sm text-text-secondary">{s.common.loading}</p>
       </div>
     )
   }
@@ -82,9 +83,9 @@ export default function ActivatePage() {
     return (
       <div className="rounded-xl border border-border bg-surface p-6">
         <ErrorState
-          title="Ligação inválida ou expirada"
-          description="O link de ativação já não é válido. Peça um novo acesso para continuar."
-          retryLabel="Recuperar acesso"
+          title={s.auth.activate_invalid_title}
+          description={s.auth.activate_invalid_desc}
+          retryLabel={s.auth.login_forgot_password}
           onRetry={() => router.push('/auth/reset-password')}
         />
       </div>
@@ -93,13 +94,13 @@ export default function ActivatePage() {
 
   return (
     <div className="rounded-xl border border-border bg-surface p-6">
-      <h2 className="mb-1 text-xl font-semibold text-text-primary">Ativar conta</h2>
+      <h2 className="mb-1 text-xl font-semibold text-text-primary">{s.auth.activate_title}</h2>
       <p className="mb-6 text-sm text-text-secondary">
-        Defina a sua palavra-passe para começar a usar o portal.
+        {s.auth.activate_subtitle}
       </p>
 
       <form onSubmit={handleActivate} className="flex flex-col gap-4">
-        <Field label="Escolha uma palavra-passe">
+        <Field label={s.auth.activate_password}>
           <Input
             type="password"
             autoComplete="new-password"
@@ -110,8 +111,8 @@ export default function ActivatePage() {
         </Field>
 
         <Field
-          label="Confirme a palavra-passe"
-          error={mismatch ? 'As palavras-passe não coincidem.' : undefined}
+          label={s.auth.activate_password_confirm}
+          error={mismatch ? s.auth.activate_password_mismatch : undefined}
         >
           <Input
             type="password"
@@ -123,8 +124,8 @@ export default function ActivatePage() {
         </Field>
 
         <ul aria-live="polite" className="flex flex-col gap-1 text-xs">
-          <Requirement met={longEnough}>Pelo menos 8 caracteres</Requirement>
-          <Requirement met={matches}>As palavras-passe coincidem</Requirement>
+          <Requirement met={longEnough}>{s.auth.activate_req_length}</Requirement>
+          <Requirement met={matches}>{s.auth.activate_req_match}</Requirement>
         </ul>
 
         {error && (
@@ -134,7 +135,7 @@ export default function ActivatePage() {
         )}
 
         <Button type="submit" variant="primary" loading={loading} disabled={!canSubmit} className="w-full">
-          Ativar conta
+          {s.auth.activate_submit}
         </Button>
       </form>
     </div>

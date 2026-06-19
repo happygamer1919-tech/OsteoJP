@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react'
 import Link from 'next/link'
+import { s } from '@/lib/i18n'
 
 const SECONDARY =
   'flex min-h-11 w-full items-center justify-center rounded-lg border border-border-strong bg-surface text-sm font-semibold text-text-primary transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2'
@@ -20,10 +21,9 @@ export default async function BookingPendingPage({
       </span>
 
       <div className="flex flex-col gap-2">
-        <h2 className="text-xl font-semibold text-text-primary">Marcação recebida</h2>
+        <h2 className="text-xl font-semibold text-text-primary">{s.booking.pending_title}</h2>
         <p className="mx-auto max-w-xs text-sm text-text-secondary">
-          A sua marcação está a aguardar confirmação da receção. Receberá um SMS quando for
-          confirmada.
+          {s.booking.pending_body}
         </p>
       </div>
 
@@ -35,10 +35,10 @@ export default async function BookingPendingPage({
 
       <div className="mt-2 flex w-full flex-col gap-3">
         <Link href="/portal/appointments" className={SECONDARY}>
-          Ver as minhas consultas
+          {s.booking.pending_cta}
         </Link>
         <Link href="/portal/dashboard" className={GHOST}>
-          Ir para o início
+          {s.booking.pending_home_cta}
         </Link>
       </div>
     </div>

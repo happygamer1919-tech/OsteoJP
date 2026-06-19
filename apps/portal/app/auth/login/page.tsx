@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { Banner, Button, Field, Input } from '@osteojp/ui'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { s } from '@/lib/i18n'
 
 // Ghost-styled secondary text link/button, 44px tap target (SPEC-portal §3.3).
 const SECONDARY_LINK =
@@ -54,7 +55,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
-      setError('Email ou palavra-passe incorretos.')
+      setError(s.auth.login_error ?? s.common.error_generic)
       setLoading(false)
       return
     }
@@ -73,7 +74,7 @@ export default function LoginPage() {
     })
 
     if (error) {
-      setError('Não foi possível enviar o link. Tente novamente.')
+      setError(s.auth.reset_password_error)
       setLoading(false)
       return
     }
@@ -86,9 +87,10 @@ export default function LoginPage() {
     return (
       <div className="rounded-xl border border-border bg-surface p-6 text-center">
         <Mail size={24} strokeWidth={1.75} aria-hidden="true" className="mx-auto mb-3 text-accent-2-700" />
-        <h2 className="mb-2 text-xl font-semibold text-text-primary">Verifique o seu email</h2>
+        <h2 className="mb-2 text-xl font-semibold text-text-primary">{s.auth.reset_password_check_inbox}</h2>
         <p className="text-sm text-text-secondary">
-          Enviámos um link para <strong>{email}</strong>. Clique no link para entrar.
+          {s.auth.login_magic_link_sent.replace('{{email}}', '')}
+          <strong>{email}</strong>.
         </p>
       </div>
     )
@@ -97,7 +99,7 @@ export default function LoginPage() {
   return (
     <>
       <div className="rounded-xl border border-border bg-surface p-6">
-        <h2 className="mb-6 text-xl font-semibold text-text-primary">Entrar</h2>
+        <h2 className="mb-6 text-xl font-semibold text-text-primary">{s.auth.login_title}</h2>
 
         {error && (
           <div className="mb-4 overflow-hidden rounded-lg">
@@ -109,19 +111,19 @@ export default function LoginPage() {
           onSubmit={mode === 'password' ? handlePasswordLogin : handleMagicLink}
           className="flex flex-col gap-4"
         >
-          <Field label="Email">
+          <Field label={s.auth.login_email}>
             <Input
               type="email"
               autoComplete="username"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="o.seu@email.pt"
+              placeholder={s.auth.login_email_placeholder}
             />
           </Field>
 
           {mode === 'password' && (
-            <Field label="Palavra-passe">
+            <Field label={s.auth.login_password}>
               <Input
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
@@ -133,7 +135,7 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
                     aria-pressed={showPassword}
-                    aria-label={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
+                    aria-label={showPassword ? s.auth.hide_password : s.auth.show_password}
                     className="flex size-11 items-center justify-center rounded text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
                   >
                     {showPassword ? (
@@ -148,7 +150,7 @@ export default function LoginPage() {
           )}
 
           <Button type="submit" variant="primary" loading={loading} className="w-full">
-            {mode === 'password' ? 'Entrar' : 'Enviar link'}
+            {mode === 'password' ? s.auth.login_submit : s.auth.reset_password_submit}
           </Button>
         </form>
       </div>
@@ -163,20 +165,20 @@ export default function LoginPage() {
           }}
           className={SECONDARY_LINK}
         >
-          {mode === 'password' ? 'Entrar com link por email' : 'Entrar com palavra-passe'}
+          {mode === 'password' ? s.auth.login_magic_link : s.auth.login_submit}
         </button>
         <a href="/auth/reset-password" className={SECONDARY_LINK}>
-          Recuperar acesso
+          {s.auth.login_forgot_password}
         </a>
         <a href="/auth/activate" className={SECONDARY_LINK}>
-          Ativar conta
+          {s.auth.activate_title}
         </a>
       </div>
 
       {/* Footer identity (SPEC §3.5). The PT|EN language switcher is omitted until
           the portal i18n layer lands — see the PR notes. */}
       <p className="mt-8 text-center text-xs text-text-secondary">
-        OsteoJP · Linda-a-Velha · Castelo Branco · Montemor-o-Novo
+        {s.common.app_name} · Linda-a-Velha · Castelo Branco · Montemor-o-Novo
       </p>
     </>
   )
