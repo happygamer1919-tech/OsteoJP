@@ -14,7 +14,7 @@ const CLINICS = [
       { number: '+351214191988', display: '214 191 988' },
     ],
     email: 'clinica.osteojp@gmail.com',
-    hours: [{ days: 'Segunda a Sexta', time: '09:00 – 19:00' }],
+    hours: [{ days: s.clinics.weekdays, time: '09:00 – 19:00' }],
     mapsUrl: 'https://maps.google.com/?q=Praça+Central+Plaza+1+Linda-a-Velha+2795-246',
   },
   {
@@ -28,7 +28,7 @@ const CLINICS = [
       { number: '+351272328221', display: '272 328 221' },
     ],
     email: 'geral.castelobranco@osteojp.pt',
-    hours: [{ days: 'Segunda a Sexta', time: '09:00 – 19:00' }],
+    hours: [{ days: s.clinics.weekdays, time: '09:00 – 19:00' }],
     mapsUrl: 'https://maps.google.com/?q=R.+Fernando+Namora+6+Castelo+Branco+6000-140',
   },
 ]
@@ -49,7 +49,7 @@ export default function ClinicsPage() {
       {CLINICS.map((clinic) => (
         <article
           key={clinic.id}
-          aria-label={`Clínica ${clinic.name}`}
+          aria-label={s.clinics.clinic_label.replace('{{name}}', clinic.name)}
           className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-6"
         >
           <div className="flex flex-col gap-1">

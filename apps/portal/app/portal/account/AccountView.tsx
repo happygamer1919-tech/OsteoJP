@@ -172,7 +172,7 @@ export function AccountView({
         </button>
       </section>
 
-      <p className="text-center text-xs text-text-secondary">Versão {APP_VERSION}</p>
+      <p className="text-center text-xs text-text-secondary">{s.common.version} {APP_VERSION}</p>
 
       {/* Edit drawer */}
       <Drawer
@@ -211,7 +211,7 @@ export function AccountView({
             <Input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="Rua, número…"
+              placeholder={s.account.address_placeholder}
             />
           </Field>
           <Field label={s.account.field_postal_code}>
