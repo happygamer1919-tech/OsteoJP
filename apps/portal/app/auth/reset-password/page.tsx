@@ -101,7 +101,7 @@ export default function ResetPasswordPage() {
       </div>
 
       <p className="mt-8 text-center text-xs text-text-secondary">
-        {s.common.app_name} · Linda-a-Velha · Castelo Branco · Montemor-o-Novo
+        {s.common.app_name} · {s.common.footer_locations}
       </p>
     </>
   )

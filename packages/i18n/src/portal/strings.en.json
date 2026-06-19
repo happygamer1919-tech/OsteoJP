@@ -19,7 +19,10 @@
     "no": "No",
     "call_clinic": "Call the clinic",
     "retry": "Try again",
-    "skip_to_content": "Skip to main content"
+    "skip_to_content": "Skip to main content",
+    "toast_region": "Notifications",
+    "version": "Version",
+    "footer_locations": "Linda-a-Velha · Castelo Branco · Montemor-o-Novo"
   },
   "nav": {
     "home": "Home",
@@ -63,7 +66,9 @@
     "activate_req_length": "At least 8 characters",
     "activate_req_match": "Passwords match",
     "logout": "Sign out",
-    "session_expired": "Your session has expired. Please sign in again."
+    "session_expired": "Your session has expired. Please sign in again.",
+    "activate_req_done": "Completed: ",
+    "activate_req_pending": "Pending: "
   },
   "dashboard": {
     "greeting": "Hello, {{name}}",
@@ -192,7 +197,8 @@
     "field_consent_treatment": "I consent to the proposed treatment.",
     "field_consent_data": "I consent to the processing of my personal data for clinical purposes, under GDPR.",
     "consent_required": "Your consent is required to proceed.",
-    "forms_info": "Intake forms are completed at the clinic. Here you can track the status of the forms you submitted."
+    "forms_info": "Intake forms are completed at the clinic. Here you can track the status of the forms you submitted.",
+    "form_word": "Form"
   },
   "documents": {
     "title": "Documents",
@@ -232,7 +238,9 @@
     "linda_velha_hours": "Monday to Friday, 9am–8pm",
     "castelo_branco_name": "Castelo Branco",
     "castelo_branco_address": "R. Fernando Namora, n.º 6, 6000-140",
-    "castelo_branco_hours": "Monday to Friday, 9am–7pm"
+    "castelo_branco_hours": "Monday to Friday, 9am–7pm",
+    "clinic_label": "Clinic {{name}}",
+    "weekdays": "Monday to Friday"
   },
   "account": {
     "title": "My account",
@@ -275,7 +283,8 @@
     "delete_account": "Delete account",
     "delete_account_confirm": "Are you sure? This action is irreversible and all your data will be deleted.",
     "delete_account_success": "Your account has been deleted.",
-    "tarifa_protocolo": "Protocol rate"
+    "tarifa_protocolo": "Protocol rate",
+    "address_placeholder": "Street, number…"
   },
   "services": {
     "osteopatia": "Osteopathy",

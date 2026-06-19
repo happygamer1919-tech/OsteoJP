@@ -178,7 +178,7 @@ export default function LoginPage() {
       {/* Footer identity (SPEC §3.5). The PT|EN language switcher is omitted until
           the portal i18n layer lands — see the PR notes. */}
       <p className="mt-8 text-center text-xs text-text-secondary">
-        {s.common.app_name} · Linda-a-Velha · Castelo Branco · Montemor-o-Novo
+        {s.common.app_name} · {s.common.footer_locations}
       </p>
     </>
   )

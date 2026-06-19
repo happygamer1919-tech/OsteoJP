@@ -14,7 +14,7 @@ const THERAPY_LABELS: Record<string, string> = {
 
 function formTitle(formKey: string, therapy: string | null): string {
   if (formKey === 'ficha_geral') return s.forms.general_anamnese_title
-  if (therapy && THERAPY_LABELS[therapy]) return `${s.forms.start_form.replace('Preencher ', '')} ${THERAPY_LABELS[therapy]}`
+  if (therapy && THERAPY_LABELS[therapy]) return `${s.forms.form_word} ${THERAPY_LABELS[therapy]}`
   return s.forms.title
 }
 
