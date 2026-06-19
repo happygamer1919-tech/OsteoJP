@@ -169,7 +169,7 @@ function FieldWidget({
           disabled={readOnly}
           value={arr.join(", ")}
           onChange={(e) => onChange(e.target.value.split(",").map((x) => x.trim()).filter(Boolean))}
-          placeholder="A, B, C"
+          placeholder={s["clinical.stringListPlaceholder"]}
         />
       );
     }

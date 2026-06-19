@@ -9,6 +9,7 @@ import {
   type Locale,
   type StringKey,
 } from "@osteojp/i18n";
+import { BrandLockup } from "@osteojp/ui";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { validatePassword } from "./password";
 
@@ -271,11 +272,8 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <main className="flex min-h-dvh items-center justify-center bg-bg p-6">
       <div className="w-full max-w-sm space-y-6 rounded-lg border border-border bg-surface p-8 shadow-sm">
-        <div className="text-center">
-          <span className="text-h2 font-semibold tracking-tight">
-            <span className="text-brand-teal">Osteo</span>
-            <span className="text-brand-magenta">JP</span>
-          </span>
+        <div className="flex justify-center">
+          <BrandLockup variant="lockup" />
         </div>
         {children}
       </div>
