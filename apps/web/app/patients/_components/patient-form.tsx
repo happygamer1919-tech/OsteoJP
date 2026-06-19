@@ -60,7 +60,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
         router.push(`/patients/${saved.id}`);
         router.refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Error");
+        setError(err instanceof Error ? err.message : s["errors.generic"]);
       }
     });
   }
