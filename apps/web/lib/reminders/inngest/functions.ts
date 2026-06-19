@@ -2,11 +2,14 @@ import {
   inngest,
   EVENT_APPOINTMENT_SCHEDULED,
   EVENT_REMINDER_DUE,
+  EVENT_APPOINTMENT_COMPLETED,
+  EVENT_APPOINTMENT_NOSHOW,
   type AppointmentScheduledData,
   type ReminderDueData,
+  type AppointmentStatusChangedData,
 } from "./client";
 import { computeDueReminders, reminderIdempotencyKey } from "../offsets";
-import { dispatchReminder } from "../dispatch";
+import { dispatchReminder, dispatchConfirmation, dispatchFollowUp, dispatchNoShow } from "../dispatch";
 
 // Inngest functions for appointment reminders (SDK v4 API).
 //
@@ -113,4 +116,76 @@ export const sendAppointmentReminder = inngest.createFunction(
   },
 );
 
-export const functions = [scheduleAppointmentReminders, sendAppointmentReminder];
+/* ================================================================== */
+/* Confirmation — fires immediately on appointment/scheduled            */
+/* ================================================================== */
+
+// Idempotency includes startsAt so a reschedule (new time → new event with
+// different startsAt) sends a fresh confirmation while duplicate delivery of
+// the same event still dedupes.
+export const CONFIRMATION_IDEMPOTENCY_KEY =
+  'event.data.appointmentId + ":confirmation:" + event.data.startsAt';
+
+export const sendAppointmentConfirmation = inngest.createFunction(
+  {
+    id: "send-appointment-confirmation",
+    triggers: [{ event: EVENT_APPOINTMENT_SCHEDULED }],
+    idempotency: CONFIRMATION_IDEMPOTENCY_KEY,
+  },
+  async ({ event, step }) => {
+    const { appointmentId, tenantId } = event.data as AppointmentScheduledData;
+    const outcome = await step.run("dispatch-confirmation", () =>
+      dispatchConfirmation(tenantId, appointmentId),
+    );
+    return { appointmentId, ...outcome };
+  },
+);
+
+/* ================================================================== */
+/* Follow-up — sleeps 24 h after appointment ends, then fires          */
+/* ================================================================== */
+
+export const sendFollowUpNotification = inngest.createFunction(
+  {
+    id: "send-follow-up-notification",
+    triggers: [{ event: EVENT_APPOINTMENT_COMPLETED }],
+    idempotency: 'event.data.appointmentId + ":follow_up"',
+  },
+  async ({ event, step }) => {
+    const { appointmentId, tenantId, endsAt } =
+      event.data as AppointmentStatusChangedData;
+    const sendAt = new Date(new Date(endsAt).getTime() + 24 * 60 * 60_000);
+    await step.sleepUntil("wait-24h-after-visit", sendAt);
+    const outcome = await step.run("dispatch-follow-up", () =>
+      dispatchFollowUp(tenantId, appointmentId),
+    );
+    return { appointmentId, ...outcome };
+  },
+);
+
+/* ================================================================== */
+/* No-show — fires immediately when appointment is marked no_show      */
+/* ================================================================== */
+
+export const sendNoShowNotification = inngest.createFunction(
+  {
+    id: "send-no-show-notification",
+    triggers: [{ event: EVENT_APPOINTMENT_NOSHOW }],
+    idempotency: 'event.data.appointmentId + ":no_show"',
+  },
+  async ({ event, step }) => {
+    const { appointmentId, tenantId } = event.data as AppointmentStatusChangedData;
+    const outcome = await step.run("dispatch-no-show", () =>
+      dispatchNoShow(tenantId, appointmentId),
+    );
+    return { appointmentId, ...outcome };
+  },
+);
+
+export const functions = [
+  scheduleAppointmentReminders,
+  sendAppointmentReminder,
+  sendAppointmentConfirmation,
+  sendFollowUpNotification,
+  sendNoShowNotification,
+];

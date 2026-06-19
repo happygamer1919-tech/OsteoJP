@@ -15,7 +15,12 @@ import { writeAppointmentAudit } from "./audit";
 import { findConflicts, findConflictsForWindow } from "./conflict";
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
-import { enqueueRemindersAfterCommit, type ReminderEnqueueTarget } from "./reminders";
+import {
+  enqueueRemindersAfterCommit,
+  enqueueStatusNotificationsAfterCommit,
+  type ReminderEnqueueTarget,
+  type StatusNotificationTarget,
+} from "./reminders";
 import { lisbonDateTimeToUtc, lisbonParts } from "./time";
 import type {
   ActionResult,
@@ -309,6 +314,8 @@ export async function updateAppointment(
   const newRoom = typeof set.room === "string" ? set.room.trim() : "";
 
   const ip = await clientIp();
+  // Captured inside the tx, emitted AFTER commit (network out of the tx).
+  let statusTargets: StatusNotificationTarget[] = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -360,10 +367,23 @@ export async function updateAppointment(
             ip,
           });
         }
+
+        if (patch.status === "completed" || patch.status === "no_show") {
+          statusTargets = affected.map((a) => ({ appointmentId: a.id, endsAt: a.endsAt }));
+        }
+
         return { ok: true, data: { id } };
       },
     );
-    if (result.ok) revalidatePath(AGENDA_PATH);
+    if (result.ok) {
+      revalidatePath(AGENDA_PATH);
+      if (
+        (patch.status === "completed" || patch.status === "no_show") &&
+        statusTargets.length > 0
+      ) {
+        await enqueueStatusNotificationsAfterCommit(actor.tenantId, statusTargets, patch.status);
+      }
+    }
     return result;
   } catch (e) {
     return fail("update", e);

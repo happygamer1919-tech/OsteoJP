@@ -258,9 +258,9 @@ describe("reschedule link secret (REMINDERS_LINK_SECRET)", () => {
 // 3. Inngest scheduler wiring — registered & deployable? (reported in PR)
 // ---------------------------------------------------------------------------
 describe("Inngest scheduler wiring", () => {
-  it("registers both reminder functions and serves them at /api/inngest", async () => {
+  it("registers all notification functions and serves them at /api/inngest", async () => {
     const { functions } = await import("./inngest/functions");
-    expect(functions).toHaveLength(2);
+    expect(functions).toHaveLength(5);
 
     const route = await import("@/app/api/inngest/route");
     // serve() must expose the three verbs Inngest calls (GET/POST/PUT).

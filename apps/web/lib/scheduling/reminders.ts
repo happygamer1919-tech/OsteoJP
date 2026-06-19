@@ -1,4 +1,4 @@
-import { enqueueAppointmentReminders } from "@/lib/reminders";
+import { enqueueAppointmentReminders, enqueueFollowUp, enqueueNoShow } from "@/lib/reminders";
 
 // Bridge from a committed appointment mutation (Stream B) to the reminder
 // pipeline (Stream E). Kept out of the server action's DB transaction on purpose:
@@ -49,6 +49,34 @@ export async function enqueueRemindersAfterCommit(
     } catch (e) {
       console.error(
         "scheduling: reminder enqueue failed",
+        e instanceof Error ? e.name : "unknown",
+      );
+    }
+  }
+}
+
+export type StatusNotificationTarget = {
+  appointmentId: string;
+  endsAt: Date;
+};
+
+/**
+ * Emit completion or no-show events for each affected appointment, best-effort,
+ * post-commit. Mirrors the enqueueRemindersAfterCommit pattern: network calls
+ * stay outside the DB transaction, a failed enqueue is logged and swallowed.
+ */
+export async function enqueueStatusNotificationsAfterCommit(
+  tenantId: string,
+  targets: StatusNotificationTarget[],
+  status: "completed" | "no_show",
+): Promise<void> {
+  const enqueue = status === "completed" ? enqueueFollowUp : enqueueNoShow;
+  for (const t of targets) {
+    try {
+      await enqueue({ appointmentId: t.appointmentId, tenantId, endsAt: t.endsAt });
+    } catch (e) {
+      console.error(
+        `scheduling: ${status} notification enqueue failed`,
         e instanceof Error ? e.name : "unknown",
       );
     }

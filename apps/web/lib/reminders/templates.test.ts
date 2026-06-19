@@ -4,8 +4,16 @@ import {
   isGsm7,
   renderEmail,
   renderSms,
+  renderConfirmationEmail,
+  renderConfirmationSms,
+  renderFollowUpEmail,
+  renderFollowUpSms,
+  renderNoShowEmail,
+  renderNoShowSms,
   SMS_SEGMENT_LIMIT,
   type ReminderContext,
+  type FollowUpContext,
+  type NoShowContext,
 } from "./templates";
 
 // A realistic worst-case-ish context: long-ish names + a clinic name with a
@@ -130,5 +138,212 @@ describe("sms compliance guard", () => {
     // the case the no-accents rule guards against. Must blow up, not ship.
     const accented: ReminderContext = { ...ctx, clinicLocation: "marcação" };
     expect(() => renderSms("48h", "pt", accented)).toThrow(/non-GSM-7/);
+  });
+});
+
+/* ================================================================== */
+/* Confirmation templates                                              */
+/* ================================================================== */
+
+describe("confirmation email", () => {
+  it("PT subject contains date and time", () => {
+    const { subject } = renderConfirmationEmail("pt", ctx);
+    expect(subject).toBe("Marcação confirmada — 23 de maio de 2026, 14:30");
+  });
+
+  it("EN subject contains date and time", () => {
+    const { subject } = renderConfirmationEmail("en", ctx);
+    expect(subject).toBe("Appointment confirmed — 23 de maio de 2026, 14:30");
+  });
+
+  it("PT body contains patient name, clinic details, and reschedule link", () => {
+    const { body } = renderConfirmationEmail("pt", ctx);
+    expect(body).toContain("Olá Madalena,");
+    expect(body).toContain("23 de maio de 2026 às 14:30");
+    expect(body).toContain("Linda-a-Velha");
+    expect(body).toContain("Dr. Joao Pereira");
+    expect(body).toContain("https://osteojp.pt/r/abc123");
+    expect(body).toContain("+351 210 000 000");
+    expect(body.trimEnd().endsWith("— OsteoJP")).toBe(true);
+  });
+
+  it("EN body is structurally correct", () => {
+    const { body } = renderConfirmationEmail("en", ctx);
+    expect(body).toContain("Dear Madalena,");
+    expect(body).toContain("23 de maio de 2026 at 14:30");
+    expect(body).toContain("Linda-a-Velha");
+    expect(body).toContain("To reschedule or cancel: https://osteojp.pt/r/abc123");
+  });
+
+  it("leaves no unfilled placeholders in either locale", () => {
+    for (const locale of ["pt", "en"] as const) {
+      const { subject, body } = renderConfirmationEmail(locale, ctx);
+      expect(subject).not.toMatch(/\{\{?[a-z_]+\}?\}/i);
+      expect(body).not.toMatch(/\{\{?[a-z_]+\}?\}/i);
+    }
+  });
+});
+
+describe("confirmation SMS", () => {
+  it("PT SMS is accent-free and within one segment", () => {
+    const msg = renderConfirmationSms("pt", ctx);
+    expect(msg).toBe(
+      "OsteoJP: marcacao confirmada a 23/05 as 14:30 em Linda-a-Velha. Para remarcar ligue +351 210 000 000",
+    );
+    expect(isGsm7(msg)).toBe(true);
+    expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+  });
+
+  it("EN SMS is within one segment", () => {
+    const msg = renderConfirmationSms("en", ctx);
+    expect(msg).toBe(
+      "OsteoJP: appointment confirmed on 23/05 at 14:30 in Linda-a-Velha. To reschedule call +351 210 000 000",
+    );
+    expect(isGsm7(msg)).toBe(true);
+    expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+  });
+});
+
+/* ================================================================== */
+/* Follow-up templates                                                 */
+/* ================================================================== */
+
+const followUpCtx: FollowUpContext = {
+  patientFirstName: "Madalena",
+  appointmentDateLong: "23 de maio de 2026",
+  appointmentDateShort: "23/05",
+  clinicPhone: "+351 210 000 000",
+};
+
+describe("follow-up email", () => {
+  it("PT subject references the visit date", () => {
+    const { subject } = renderFollowUpEmail("pt", followUpCtx);
+    expect(subject).toBe("Obrigado pela sua visita — 23 de maio de 2026");
+  });
+
+  it("EN subject references the visit date", () => {
+    const { subject } = renderFollowUpEmail("en", followUpCtx);
+    expect(subject).toBe("Thank you for your visit — 23 de maio de 2026");
+  });
+
+  it("PT body thanks patient and provides clinic phone", () => {
+    const { body } = renderFollowUpEmail("pt", followUpCtx);
+    expect(body).toContain("Olá Madalena,");
+    expect(body).toContain("visita de 23 de maio de 2026");
+    expect(body).toContain("+351 210 000 000");
+    expect(body.trimEnd().endsWith("— OsteoJP")).toBe(true);
+  });
+
+  it("EN body thanks patient and provides clinic phone", () => {
+    const { body } = renderFollowUpEmail("en", followUpCtx);
+    expect(body).toContain("Dear Madalena,");
+    expect(body).toContain("visit on 23 de maio de 2026");
+    expect(body).toContain("+351 210 000 000");
+  });
+
+  it("leaves no unfilled placeholders in either locale", () => {
+    for (const locale of ["pt", "en"] as const) {
+      const { subject, body } = renderFollowUpEmail(locale, followUpCtx);
+      expect(subject).not.toMatch(/\{\{?[a-z_]+\}?\}/i);
+      expect(body).not.toMatch(/\{\{?[a-z_]+\}?\}/i);
+    }
+  });
+});
+
+describe("follow-up SMS", () => {
+  it("PT SMS is accent-free and within one segment", () => {
+    const msg = renderFollowUpSms("pt", followUpCtx);
+    expect(msg).toBe(
+      "OsteoJP: obrigado pela sua visita de 23/05. Para marcar a proxima consulta ligue +351 210 000 000",
+    );
+    expect(isGsm7(msg)).toBe(true);
+    expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+  });
+
+  it("EN SMS is within one segment", () => {
+    const msg = renderFollowUpSms("en", followUpCtx);
+    expect(msg).toBe(
+      "OsteoJP: thank you for your visit on 23/05. To book your next appointment call +351 210 000 000",
+    );
+    expect(isGsm7(msg)).toBe(true);
+    expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+  });
+});
+
+/* ================================================================== */
+/* No-show templates                                                   */
+/* ================================================================== */
+
+const noShowCtx: NoShowContext = {
+  patientFirstName: "Madalena",
+  appointmentDateLong: "23 de maio de 2026",
+  appointmentDateShort: "23/05",
+  appointmentTime: "14:30",
+  clinicPhone: "+351 210 000 000",
+  rescheduleLink: "https://osteojp.pt/r/abc123",
+};
+
+describe("no-show email", () => {
+  it("PT subject names the missed appointment date", () => {
+    const { subject } = renderNoShowEmail("pt", noShowCtx);
+    expect(subject).toBe("Sentimos a sua falta — consulta de 23 de maio de 2026");
+  });
+
+  it("EN subject names the missed appointment date", () => {
+    const { subject } = renderNoShowEmail("en", noShowCtx);
+    expect(subject).toBe("We missed you — appointment on 23 de maio de 2026");
+  });
+
+  it("PT body contains date, time, reschedule link and phone", () => {
+    const { body } = renderNoShowEmail("pt", noShowCtx);
+    expect(body).toContain("Olá Madalena,");
+    expect(body).toContain("23 de maio de 2026 às 14:30");
+    expect(body).toContain("https://osteojp.pt/r/abc123");
+    expect(body).toContain("+351 210 000 000");
+    expect(body.trimEnd().endsWith("— OsteoJP")).toBe(true);
+  });
+
+  it("EN body contains date, time, reschedule link and phone", () => {
+    const { body } = renderNoShowEmail("en", noShowCtx);
+    expect(body).toContain("Dear Madalena,");
+    expect(body).toContain("23 de maio de 2026 at 14:30");
+    expect(body).toContain("https://osteojp.pt/r/abc123");
+    expect(body).toContain("+351 210 000 000");
+  });
+
+  it("leaves no unfilled placeholders in either locale", () => {
+    for (const locale of ["pt", "en"] as const) {
+      const { subject, body } = renderNoShowEmail(locale, noShowCtx);
+      expect(subject).not.toMatch(/\{\{?[a-z_]+\}?\}/i);
+      expect(body).not.toMatch(/\{\{?[a-z_]+\}?\}/i);
+    }
+  });
+});
+
+describe("no-show SMS", () => {
+  it("PT SMS is accent-free and within one segment", () => {
+    const msg = renderNoShowSms("pt", noShowCtx);
+    expect(msg).toBe(
+      "OsteoJP: a sua consulta de 23/05 as 14:30 nao foi realizada. Para remarcar ligue +351 210 000 000",
+    );
+    expect(isGsm7(msg)).toBe(true);
+    expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+  });
+
+  it("EN SMS is within one segment", () => {
+    const msg = renderNoShowSms("en", noShowCtx);
+    expect(msg).toBe(
+      "OsteoJP: your appointment on 23/05 at 14:30 was not attended. To rebook call +351 210 000 000",
+    );
+    expect(isGsm7(msg)).toBe(true);
+    expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+  });
+
+  it("PT and EN SMS are GSM-7 compliant across both locales", () => {
+    for (const locale of ["pt", "en"] as const) {
+      const msg = renderNoShowSms(locale, noShowCtx);
+      expect(isGsm7(msg)).toBe(true);
+      expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+    }
   });
 });
