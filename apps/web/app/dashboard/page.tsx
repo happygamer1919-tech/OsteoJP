@@ -134,7 +134,7 @@ export default async function DashboardPage({
     tx
       .select({
         total: sql<number>`count(*)::int`,
-        week: sql<number>`count(*) filter (where ${patients.createdAt} >= ${weekStartUtc})::int`,
+        week: sql<number>`count(*) filter (where ${patients.createdAt} >= ${weekStartUtc.toISOString()}::timestamptz)::int`,
       })
       .from(patients)
       .where(activePatientsOnly),

@@ -49,17 +49,19 @@ test("search with no results shows the empty-state message", async ({ page }) =>
 });
 
 test("search result row shows the patient NIF below the name (scenario 4.1)", async ({ page }) => {
-  // The PersonCell renders the NIF as "NIF <value>" in a secondary-text span.
+  // Scope to <table> (desktop view) to avoid matching the hidden mobile <ul>
+  // sibling, which also renders the NIF but is display:none at desktop viewport.
   await searchPatients(page, PATIENTS.maria.name);
   await expect(page.getByRole("link", { name: new RegExp(PATIENTS.maria.name) })).toBeVisible();
-  await expect(page.getByText(`NIF ${PATIENTS.maria.nif}`)).toBeVisible();
+  await expect(page.locator("table").getByText(`NIF ${PATIENTS.maria.nif}`)).toBeVisible();
 });
 
 test("search result row shows the patient phone in the phone column (scenario 4.1)", async ({ page }) => {
-  // The phone column renders the stored display value ("+351 912 345 678").
+  // Scope to <table> for the same reason — mobile <ul> also renders the phone
+  // but is hidden at desktop viewport width.
   await searchPatients(page, PATIENTS.maria.name);
   await expect(page.getByRole("link", { name: new RegExp(PATIENTS.maria.name) })).toBeVisible();
-  await expect(page.getByText(PATIENTS.maria.phoneDisplay)).toBeVisible();
+  await expect(page.locator("table").getByText(PATIENTS.maria.phoneDisplay)).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
