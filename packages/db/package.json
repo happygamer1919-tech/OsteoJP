@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "seed:form-templates": "tsx seed/form-templates.ts",
-    "seed:roles": "tsx seed/roles.ts"
+    "seed:roles": "tsx seed/roles.ts",
+    "seed:patients:dev": "tsx seed/patients-dev.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
