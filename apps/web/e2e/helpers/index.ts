@@ -44,7 +44,7 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
   if (f.dateOfBirth) await page.getByLabel(/Data de nascimento/i).fill(f.dateOfBirth);
   if (f.sex) await page.getByLabel(/Sexo/i).selectOption(f.sex); // <select>, not text
   if (f.nif) await page.getByLabel(/NIF/i).fill(f.nif);
-  if (f.phone) await page.getByLabel(/Telefone/i).fill(f.phone);
+  if (f.phone) await page.getByLabel(/Telem[oó]vel/i).fill(f.phone);
   if (f.email) await page.getByLabel(/^Email/i).fill(f.email);
   if (f.city) await page.getByLabel(/Localidade/i).fill(f.city); // i18n: "Localidade"
   if (f.postalCode) await page.getByLabel(/Código postal/i).fill(f.postalCode);
