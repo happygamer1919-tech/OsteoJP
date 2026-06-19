@@ -36,14 +36,14 @@ export default async function EpisodePage({
 
   return (
     <section className="max-w-3xl space-y-5">
-      <Link href={`/patients/${episode.patientId}`} className="inline-flex items-center gap-1 text-sm text-brand-teal">
+      <Link href={`/patients/${episode.patientId}`} className="inline-flex items-center gap-1 text-sm text-brand-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 rounded">
         <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />{s["clinical.episodeBackToPatient"]}
       </Link>
 
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold">{episode.title}</h2>
+            <h1 className="text-lg font-semibold">{episode.title}</h1>
             <span
               className={`rounded px-2 py-0.5 text-xs font-medium ${
                 episode.status === "open"
@@ -66,7 +66,7 @@ export default async function EpisodePage({
         {canAuthor && (
           <Link
             href={newRecordHref}
-            className="rounded border border-brand-teal px-3 py-1.5 text-sm font-medium text-brand-teal hover:bg-surface-muted"
+            className="rounded border border-brand-teal px-3 py-1.5 text-sm font-medium text-brand-teal hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             + {s["clinical.episodeAddRecord"]}
           </Link>
@@ -74,20 +74,20 @@ export default async function EpisodePage({
       </div>
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold text-text-primary">
+        <h2 className="mb-2 text-sm font-semibold text-text-primary">
           {s["clinical.episodeRecords"]}
-        </h3>
+        </h2>
         {episode.records.length === 0 ? (
           <p className="text-sm text-text-secondary">{s["clinical.episodeNoRecords"]}</p>
         ) : (
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b text-left">
-                <th className="py-2 pr-4 font-medium">{s["clinical.colTemplate"]}</th>
-                <th className="py-2 pr-4 font-medium">{s["clinical.colStatus"]}</th>
-                <th className="py-2 pr-4 font-medium">{s["clinical.colVersion"]}</th>
-                <th className="py-2 pr-4 font-medium">{s["clinical.colUpdated"]}</th>
-                <th className="py-2 pr-4 font-medium"></th>
+                <th scope="col" className="py-2 pr-4 font-medium">{s["clinical.colTemplate"]}</th>
+                <th scope="col" className="py-2 pr-4 font-medium">{s["clinical.colStatus"]}</th>
+                <th scope="col" className="py-2 pr-4 font-medium">{s["clinical.colVersion"]}</th>
+                <th scope="col" className="py-2 pr-4 font-medium">{s["clinical.colUpdated"]}</th>
+                <th scope="col" className="py-2 pr-4 font-medium"><span className="sr-only">{s["clinical.open"]}</span></th>
               </tr>
             </thead>
             <tbody>

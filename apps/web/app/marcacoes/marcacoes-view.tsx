@@ -196,12 +196,15 @@ function AppointmentRow({
         >
           <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
           {recurring && (
-            <Repeat
-              size={14}
-              strokeWidth={1.75}
-              aria-label={s["appointment.recurring"]}
-              className="shrink-0 text-v2-text-secondary"
-            />
+            <>
+              <Repeat
+                size={14}
+                strokeWidth={1.75}
+                aria-hidden="true"
+                className="shrink-0 text-v2-text-secondary"
+              />
+              <span className="sr-only">{s["appointment.recurring"]}</span>
+            </>
           )}
           <span className="truncate">{appt.patientName}</span>
         </span>

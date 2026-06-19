@@ -71,12 +71,12 @@ export function Attachments({
       <h3 className="text-sm font-semibold">{s["clinical.attachments"]}</h3>
 
       {!readOnly && (
-        <label className="inline-block cursor-pointer rounded border px-3 py-1.5 text-sm">
+        <label className="inline-block cursor-pointer rounded border px-3 py-1.5 text-sm has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-focus-ring has-[:focus-visible]:ring-offset-2">
           {pending ? s["clinical.attachmentUploading"] : s["clinical.attachmentAdd"]}
           <input type="file" className="hidden" onChange={onSelect} disabled={pending} />
         </label>
       )}
-      {error && <p className="text-xs text-error">{s["clinical.error"]}</p>}
+      {error && <p role="alert" className="text-xs text-error">{s["clinical.error"]}</p>}
 
       <ul className="space-y-1 text-sm">
         {items.length === 0 && (

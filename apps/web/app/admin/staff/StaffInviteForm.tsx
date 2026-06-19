@@ -53,13 +53,13 @@ export function StaffInviteForm({
         </div>
 
         {state.ok && state.delivery === "email" && (
-          <div className="rounded-v2 border border-success bg-success-bg p-3 text-sm text-v2-text-primary">
+          <div role="status" className="rounded-v2 border border-success bg-success-bg p-3 text-sm text-v2-text-primary">
             <p className="font-medium text-success-700">{s["admin.staff.invited"]}</p>
             <p className="mt-1">{s["admin.staff.inviteEmailSent"]}</p>
           </div>
         )}
         {state.ok && state.delivery === "temp_password" && state.tempPassword && (
-          <div className="rounded-v2 border border-success bg-success-bg p-3 text-sm text-v2-text-primary">
+          <div role="status" className="rounded-v2 border border-success bg-success-bg p-3 text-sm text-v2-text-primary">
             <p className="font-medium text-success-700">{s["admin.staff.invited"]}</p>
             {/* Email could not be delivered — fall back to out-of-band hand-off. */}
             <p className="mt-1">{s["admin.staff.inviteEmailFailed"]}</p>
@@ -69,7 +69,7 @@ export function StaffInviteForm({
             </code>
           </div>
         )}
-        {errorText && <p className="text-sm text-error" role="status">{errorText}</p>}
+        {errorText && <p role="alert" className="text-sm text-error">{errorText}</p>}
       </form>
     </GlassPanel>
   );

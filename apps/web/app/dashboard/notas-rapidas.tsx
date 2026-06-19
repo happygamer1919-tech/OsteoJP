@@ -32,6 +32,7 @@ export function NotasRapidas({ initialNotes }: { initialNotes: string }) {
         defaultValue={optimistic}
         maxLength={MAX_LEN}
         rows={4}
+        aria-label={s["dashboard.notes"]}
         placeholder={s["dashboard.notesPlaceholder"]}
         className="w-full resize-none rounded-md border border-v2-border bg-transparent p-3 text-sm text-v2-text-primary placeholder:text-v2-text-secondary focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2"
       />

@@ -79,7 +79,7 @@ export function RecordForm({
               : s["clinical.error"]}
         </p>
       )}
-      {state.ok && <p className="text-sm text-success">{s["clinical.saved"]}</p>}
+      {state.ok && <p role="status" className="text-sm text-success">{s["clinical.saved"]}</p>}
 
       {topLevelFields(schema).map(([key, field]) => {
         const widget = widgetOf(key, field);

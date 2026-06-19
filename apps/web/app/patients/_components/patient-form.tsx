@@ -153,7 +153,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
         />
       </Field>
 
-      {error && <p className="text-sm text-error">{error}</p>}
+      {error && <p role="alert" className="text-sm text-error">{error}</p>}
 
       <div className="flex gap-3">
         <button
@@ -180,7 +180,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
 }
 
 const inputCls =
-  "w-full rounded border border-border-strong px-3 py-2 text-sm outline-none focus:border-brand-teal";
+  "w-full rounded border border-border-strong px-3 py-2 text-sm focus:border-brand-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
 function Field({
   label,

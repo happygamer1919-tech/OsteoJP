@@ -37,7 +37,7 @@ export function DownloadReportButton({ recordId }: { recordId: string }) {
       >
         {s["clinical.downloadPdf"]}
       </button>
-      {error && <p className="text-xs text-error">{s["clinical.downloadPdfError"]}</p>}
+      {error && <p role="alert" className="text-xs text-error">{s["clinical.downloadPdfError"]}</p>}
     </div>
   );
 }

@@ -126,7 +126,7 @@ export default async function ServicesPage({
                   <tr className={adminTrBorder}>
                     <td colSpan={5} className="pb-3 pr-4">
                       <details className="text-sm text-v2-text-primary">
-                        <summary className={`cursor-pointer ${adminHelp}`}>
+                        <summary className={`cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${adminHelp}`}>
                           {s["admin.services.locationPrices"]}
                         </summary>
                         {activeLocations.length === 0 ? (

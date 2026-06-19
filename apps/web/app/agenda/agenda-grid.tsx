@@ -369,7 +369,10 @@ function AppointmentBlock({
       <span className={`flex items-center gap-1 truncate text-sm font-medium ${cancelled ? "text-v2-text-secondary line-through" : "text-v2-text-primary"}`}>
         <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
         {(appt.recurrenceRule || appt.recurrenceParentId) && (
-          <Repeat size={14} strokeWidth={1.75} aria-label={s["appointment.recurring"]} className="shrink-0 text-v2-text-secondary" />
+          <>
+            <Repeat size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
+            <span className="sr-only">{s["appointment.recurring"]}</span>
+          </>
         )}
         <span className="truncate">{appt.patientName}</span>
       </span>

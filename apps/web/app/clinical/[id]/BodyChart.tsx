@@ -1,5 +1,5 @@
 "use client";
-import { useState, type MouseEvent } from "react";
+import { useId, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { s } from "@/lib/i18n";
 
 export type Marker = { marker_type: string; x: number; y: number; view: string };
@@ -24,6 +24,9 @@ export function BodyChart({
 }) {
   const [view, setView] = useState<string>("anterior");
   const [markerType, setMarkerType] = useState<string>(markerOptions[0]?.value ?? "");
+  const [cursor, setCursor] = useState({ x: 0.5, y: 0.5 });
+  const [chartFocused, setChartFocused] = useState(false);
+  const hintId = useId();
 
   function place(e: MouseEvent<HTMLDivElement>) {
     if (readOnly || !markerType) return;
@@ -31,6 +34,22 @@ export function BodyChart({
     const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
     onChange([...markers, { marker_type: markerType, x, y, view }]);
+  }
+
+  function handleKey(e: KeyboardEvent<HTMLDivElement>) {
+    if (readOnly || !markerType) return;
+    const STEP = 0.05;
+    switch (e.key) {
+      case "ArrowLeft":  e.preventDefault(); setCursor((c) => ({ ...c, x: Math.max(0, c.x - STEP) })); break;
+      case "ArrowRight": e.preventDefault(); setCursor((c) => ({ ...c, x: Math.min(1, c.x + STEP) })); break;
+      case "ArrowUp":    e.preventDefault(); setCursor((c) => ({ ...c, y: Math.max(0, c.y - STEP) })); break;
+      case "ArrowDown":  e.preventDefault(); setCursor((c) => ({ ...c, y: Math.min(1, c.y + STEP) })); break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        onChange([...markers, { marker_type: markerType, x: cursor.x, y: cursor.y, view }]);
+        break;
+    }
   }
 
   function remove(index: number) {
@@ -45,13 +64,14 @@ export function BodyChart({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-text-secondary">{s["clinical.bodychartHint"]}</p>
+      <p id={hintId} className="text-xs text-text-secondary">{s["clinical.bodychartHint"]}</p>
 
       <div className="flex flex-wrap gap-2">
         {VIEWS.map((v) => (
           <button
             key={v.value}
             type="button"
+            aria-pressed={view === v.value}
             onClick={() => setView(v.value)}
             className={`rounded border px-2 py-1 text-xs ${view === v.value ? "bg-text-primary text-text-inverse" : ""}`}
           >
@@ -78,9 +98,23 @@ export function BodyChart({
       )}
 
       <div
+        role="application"
+        tabIndex={readOnly ? undefined : 0}
+        aria-describedby={hintId}
         onClick={place}
-        className={`relative h-80 w-56 rounded border bg-surface-muted ${readOnly ? "" : "cursor-crosshair"}`}
+        onKeyDown={!readOnly ? handleKey : undefined}
+        onFocus={() => setChartFocused(true)}
+        onBlur={() => setChartFocused(false)}
+        className={`relative h-80 w-56 rounded border bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${readOnly ? "" : "cursor-crosshair"}`}
       >
+        {/* Keyboard cursor indicator — visible only while the chart has focus */}
+        {!readOnly && chartFocused && (
+          <span
+            aria-hidden="true"
+            className="absolute -ml-1.5 -mt-1.5 h-3 w-3 rounded-full border-2 border-brand-teal bg-transparent"
+            style={{ left: `${cursor.x * 100}%`, top: `${cursor.y * 100}%` }}
+          />
+        )}
         {inView.map(({ m, i }) => (
           <span
             key={i}
