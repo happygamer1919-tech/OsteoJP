@@ -26,8 +26,8 @@ export function CreateTenantForm() {
     : null;
 
   return (
-    <form action={action} className="space-y-3 rounded border border-border bg-surface p-4 max-w-xl">
-      <h3 className="text-sm font-semibold">{s["superadmin.create.title"]}</h3>
+    <form action={action} aria-labelledby="create-tenant-heading" className="space-y-3 rounded border border-border bg-surface p-4 max-w-xl">
+      <h3 id="create-tenant-heading" className="text-sm font-semibold">{s["superadmin.create.title"]}</h3>
 
       <label className="block space-y-1">
         <span className="text-sm font-medium">{s["superadmin.create.name"]}</span>
@@ -39,6 +39,7 @@ export function CreateTenantForm() {
           name="slug"
           required
           pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+          title={s["superadmin.create.slugHint"]}
           className="block w-full rounded border border-border-strong px-2 py-1.5 text-sm"
         />
         <span className="text-xs text-text-muted">{s["superadmin.create.slugHint"]}</span>
@@ -61,8 +62,8 @@ export function CreateTenantForm() {
         {pending ? s["superadmin.create.pending"] : s["superadmin.create.submit"]}
       </button>
 
-      {successText && <p className="text-sm text-success">{successText}</p>}
-      {errorText && <p className="text-sm text-error">{errorText}</p>}
+      {successText && <p role="status" className="text-sm text-success">{successText}</p>}
+      {errorText && <p role="alert" className="text-sm text-error">{errorText}</p>}
     </form>
   );
 }
