@@ -16,6 +16,10 @@ import { MarcacoesView, type MarcacoesFilters } from "./marcacoes-view";
 export const metadata = { title: "Marcações" };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Audit: the fetch is always date-windowed, but the URL-param range was
+// uncapped. 92 days (~3 months) is enough for any booking list use-case
+// while preventing accidental table-wide scans via crafted URLs.
+const MAX_WINDOW_DAYS = 92;
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -76,7 +80,13 @@ export default async function MarcacoesPage({
   const rawFrom = fromParam && DATE_RE.test(fromParam) ? fromParam : defWeek[0]!;
   const rawTo =
     toParam && DATE_RE.test(toParam) ? toParam : defWeek[defWeek.length - 1]!;
-  const [from, to] = rawFrom <= rawTo ? [rawFrom, rawTo] : [rawTo, rawFrom];
+  const [sortedFrom, sortedTo] =
+    rawFrom <= rawTo ? [rawFrom, rawTo] : [rawTo, rawFrom];
+  const from = sortedFrom;
+  const to =
+    sortedTo <= addDays(sortedFrom, MAX_WINDOW_DAYS - 1)
+      ? sortedTo
+      : addDays(sortedFrom, MAX_WINDOW_DAYS - 1);
 
   // Therapists default to their own calendar (carry the agenda scoping forward);
   // scope never widens beyond the existing query.
