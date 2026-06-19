@@ -3,6 +3,7 @@ import {
   extractAttachmentUrls,
   extractEpisodeUrls,
   extractHrefs,
+  extractOnclickTargets,
   fileNameFromUrl,
   isFichaAbsent,
   looksLikeLogin,
@@ -37,17 +38,71 @@ describe("extractAttachmentUrls", () => {
   });
 });
 
+describe("extractOnclickTargets", () => {
+  it("extracts single-quoted URL from double-quoted onclick attribute", () => {
+    const html = `<a href="#" onclick="location.href='?op=r6&i=ABC'">row</a>`;
+    expect(extractOnclickTargets(html)).toEqual(["?op=r6&i=ABC"]);
+  });
+
+  it("extracts double-quoted URL from single-quoted onclick attribute", () => {
+    const html = `<a href='#' onclick='location.href="?op=r6&i=ABC"'>row</a>`;
+    expect(extractOnclickTargets(html)).toEqual(["?op=r6&i=ABC"]);
+  });
+
+  it("handles window.location.href and is case-insensitive on onClick", () => {
+    const html = `<div onClick="window.location.href='?op=lembretes'"></div>`;
+    expect(extractOnclickTargets(html)).toEqual(["?op=lembretes"]);
+  });
+
+  it("returns multiple targets in document order", () => {
+    const html = `
+      <a onclick="location.href='?op=r6&i=AAA'"></a>
+      <a onclick="location.href='?op=r6&i=BBB'"></a>
+    `;
+    expect(extractOnclickTargets(html)).toEqual(["?op=r6&i=AAA", "?op=r6&i=BBB"]);
+  });
+});
+
 describe("extractEpisodeUrls", () => {
-  it("returns scraped osteo_epi_new links, never constructed ones", () => {
+  it("returns op=r6 onclick targets and ignores the new-episode button href", () => {
+    // Fixture mirrors a real Fisiozero osteo_epi.html with one episode row:
+    // - two cells both fire location.href='?op=r6&i=...' (should be deduped to one URL)
+    // - the add-evaluation icon fires op=r7 (must NOT be captured)
+    // - the PDF link is a plain href (must NOT be captured — not op=r6)
+    // - the new-episode button is href="?op=osteo_epi_new&i=1" (must NOT be captured)
+    const html = `
+      <table>
+        <tr>
+          <td><a href='#' onClick="location.href='?op=r6&i=ABC123'">2025-07-08</a></td>
+          <td><a href='#' onClick="location.href='?op=r6&i=ABC123'">Episode title</a></td>
+          <td>
+            <a target='_blank' href='export_pdf_osteopatia2.php?i=ABC123&u=DEF456'></a>
+            <a href='#'><i onClick="location.href='?op=r7&i=ABC123'"></i></a>
+          </td>
+        </tr>
+      </table>
+      <a href="?op=osteo_epi_new&i=1"><i class="fa fa-plus-circle"></i></a>
+    `;
+    expect(extractEpisodeUrls(BASE, html)).toEqual([
+      "https://app.fisiozero.pt/?op=r6&i=ABC123",
+    ]);
+  });
+
+  it("returns episode hrefs when a custom pattern is supplied (backward-compat)", () => {
     const html = `
       <a href="index.php?op=osteo_epi_new&e=ENC1">Ep1</a>
       <a href="index.php?op=osteo_epi_new&e=ENC2">Ep2</a>
       <a href="index.php?op=avl">other</a>
     `;
-    expect(extractEpisodeUrls(BASE, html)).toEqual([
+    expect(extractEpisodeUrls(BASE, html, ["osteo_epi_new"])).toEqual([
       "https://app.fisiozero.pt/index.php?op=osteo_epi_new&e=ENC1",
       "https://app.fisiozero.pt/index.php?op=osteo_epi_new&e=ENC2",
     ]);
+  });
+
+  it("does not match op=r60 when pattern is op=r6", () => {
+    const html = `<a href='#' onclick="location.href='?op=r60&i=ABC'"></a>`;
+    expect(extractEpisodeUrls(BASE, html)).toEqual([]);
   });
 });
 
