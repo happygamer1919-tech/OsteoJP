@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fatura-Recibo {{invoice_number}} — OsteoJP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300..900;1,8..60,300..900&display=swap" rel="stylesheet" />
+  <style>
+    /* ============================================================
+       OsteoJP — Fatura-Recibo print template
+       Target renderer: Puppeteer page.pdf({ format: 'A4', printBackground: true, margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' } })
+       ============================================================ */
+
+    /* Brand tokens */
+    :root {
+      --color-teal:        #45B9A7;
+      --color-magenta:     #8B1863;
+      --color-grey-blue:   #98B2C2;
+      --color-body:        #1A2733;
+      --color-secondary:   #56697A;
+      --color-border:      #E2E8EE;
+      --color-bg:          #FFFFFF;
+    }
+
+    @page {
+      size: A4 portrait;
+      margin: 20mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Source Serif 4', 'Times New Roman', serif;
+      font-size: 10pt;
+      color: var(--color-body);
+      background: var(--color-bg);
+      line-height: 1.5;
+    }
+
+    /* ---- Layout ---- */
+    .page {
+      width: 100%;
+      max-width: 170mm; /* A4 210mm - 2×20mm margins */
+      margin: 0 auto;
+    }
+
+    /* ---- Header ---- */
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding-bottom: 12pt;
+      border-bottom: 2px solid var(--color-teal);
+      margin-bottom: 16pt;
+    }
+
+    .header__logo {
+      /* TODO: replace this placeholder box with actual SVG logo once vector asset is available */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 56pt;
+      height: 40pt;
+      border: 2px solid var(--color-teal);
+      color: var(--color-teal);
+      font-size: 8pt;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-align: center;
+      flex-shrink: 0;
+      margin-right: 12pt;
+    }
+
+    .header__brand {
+      flex: 1;
+    }
+
+    .header__brand h1 {
+      font-size: 18pt;
+      font-weight: 700;
+      color: var(--color-grey-blue);
+      letter-spacing: -0.01em;
+      line-height: 1.1;
+    }
+
+    .header__location {
+      margin-top: 4pt;
+      font-size: 8.5pt;
+      color: var(--color-secondary);
+      line-height: 1.4;
+    }
+
+    .header__nif {
+      font-size: 8.5pt;
+      color: var(--color-secondary);
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    /* ---- Document title block ---- */
+    .doc-title-block {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 16pt;
+    }
+
+    .doc-title-block__left h2 {
+      font-size: 20pt;
+      font-weight: 900;
+      color: var(--color-body);
+      letter-spacing: -0.02em;
+      text-transform: uppercase;
+    }
+
+    .doc-title-block__left .invoice-number {
+      font-size: 11pt;
+      color: var(--color-secondary);
+      margin-top: 2pt;
+    }
+
+    .doc-title-block__meta {
+      text-align: right;
+      font-size: 9pt;
+      color: var(--color-secondary);
+      line-height: 1.6;
+    }
+
+    .doc-title-block__meta .label {
+      font-weight: 600;
+      color: var(--color-body);
+    }
+
+    .status-badge {
+      display: inline-block;
+      margin-top: 6pt;
+      padding: 2pt 8pt;
+      border-radius: 3pt;
+      font-size: 9pt;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: var(--color-teal);
+      color: #fff;
+    }
+
+    /* ---- Section label ---- */
+    .section-label {
+      font-size: 7.5pt;
+      font-weight: 700;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      color: var(--color-secondary);
+      margin-bottom: 4pt;
+    }
+
+    /* ---- Client block ---- */
+    .client-block {
+      border: 1px solid var(--color-border);
+      border-radius: 4pt;
+      padding: 10pt 12pt;
+      margin-bottom: 16pt;
+    }
+
+    .client-block__name {
+      font-size: 12pt;
+      font-weight: 700;
+      color: var(--color-body);
+      margin-bottom: 2pt;
+    }
+
+    .client-block__detail {
+      font-size: 9pt;
+      color: var(--color-secondary);
+      line-height: 1.5;
+    }
+
+    /* ---- Line items table ---- */
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16pt;
+      font-size: 9.5pt;
+    }
+
+    .items-table thead tr {
+      background: var(--color-teal);
+      color: #fff;
+    }
+
+    .items-table thead th {
+      padding: 6pt 8pt;
+      text-align: left;
+      font-weight: 600;
+      font-size: 8.5pt;
+      letter-spacing: 0.03em;
+    }
+
+    .items-table thead th.right {
+      text-align: right;
+    }
+
+    .items-table tbody tr {
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .items-table tbody tr:nth-child(even) {
+      background: #F7FAFA;
+    }
+
+    .items-table tbody td {
+      padding: 6pt 8pt;
+      vertical-align: top;
+    }
+
+    .items-table tbody td.right {
+      text-align: right;
+    }
+
+    .items-table tfoot tr {
+      border-top: 2px solid var(--color-border);
+    }
+
+    .items-table tfoot td {
+      padding: 5pt 8pt;
+      font-size: 9pt;
+    }
+
+    .items-table tfoot td.right {
+      text-align: right;
+    }
+
+    .items-table tfoot tr.total-row {
+      background: #F0F8F7;
+    }
+
+    .items-table tfoot tr.total-row td {
+      font-weight: 700;
+      font-size: 10.5pt;
+    }
+
+    .iva-note {
+      font-size: 8pt;
+      color: var(--color-secondary);
+    }
+
+    /* ---- Payment block ---- */
+    .payment-block {
+      border: 1px solid var(--color-border);
+      border-radius: 4pt;
+      padding: 10pt 12pt;
+      margin-bottom: 16pt;
+      font-size: 9.5pt;
+    }
+
+    .payment-block__row {
+      display: flex;
+      gap: 4pt;
+      margin-bottom: 3pt;
+    }
+
+    .payment-block__row .label {
+      font-weight: 600;
+      color: var(--color-body);
+      min-width: 120pt;
+    }
+
+    .payment-block__row .value {
+      color: var(--color-secondary);
+    }
+
+    /* ---- Notes ---- */
+    .notes-block {
+      margin-bottom: 16pt;
+      font-size: 9pt;
+      color: var(--color-secondary);
+    }
+
+    .notes-block .notes-text {
+      border-left: 3px solid var(--color-teal);
+      padding-left: 8pt;
+      font-style: italic;
+    }
+
+    /* ---- Fiscal footer ---- */
+    .fiscal-footer {
+      border-top: 1px solid var(--color-border);
+      padding-top: 8pt;
+      margin-top: 20pt;
+      font-size: 7.5pt;
+      color: var(--color-secondary);
+      line-height: 1.5;
+    }
+
+    .fiscal-footer__primary {
+      margin-bottom: 6pt;
+      font-weight: 600;
+      color: var(--color-body);
+    }
+
+    .fiscal-footer__locations {
+      margin-bottom: 6pt;
+    }
+
+    .fiscal-footer__locations p {
+      margin-bottom: 2pt;
+    }
+
+    .fiscal-footer__processed {
+      font-style: italic;
+    }
+
+    /* ---- Print styles ---- */
+    @media print {
+      body {
+        margin: 0;
+      }
+
+      .no-print {
+        display: none !important;
+      }
+
+      .page {
+        max-width: none;
+      }
+
+      .status-badge {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .items-table thead tr {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ============================================================
+       HEADER
+       ============================================================ -->
+  <header class="header">
+    <div style="display:flex; align-items:flex-start;">
+      <!-- TODO: replace this placeholder with the actual OsteoJP SVG logo once the vector asset is available -->
+      <div class="header__logo" aria-label="OsteoJP logótipo">[LOGO: OsteoJP]</div>
+      <div class="header__brand">
+        <h1>OsteoJP</h1>
+        <div class="header__location">
+          <strong>{{location_name}}</strong><br />
+          {{location_address}}<br />
+          {{location_postal}} {{location_city}}<br />
+          Tel: {{location_phone}}<br />
+          {{location_email}}
+        </div>
+      </div>
+    </div>
+    <div class="header__nif">
+      NIF: 510 200 427
+    </div>
+  </header>
+
+  <!-- ============================================================
+       DOCUMENT TITLE BLOCK
+       ============================================================ -->
+  <div class="doc-title-block">
+    <div class="doc-title-block__left">
+      <h2>Fatura-Recibo</h2>
+      <div class="invoice-number">N.º {{invoice_number}}</div>
+    </div>
+    <div class="doc-title-block__meta">
+      <div><span class="label">Data de emissão:</span> {{issue_date}}</div>
+      <div><span class="label">Data de vencimento:</span> {{due_date}}</div>
+      <div>
+        <span class="status-badge">{{status}}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       CLIENT / ADQUIRENTE BLOCK
+       ============================================================ -->
+  <div class="section-label">Adquirente</div>
+  <div class="client-block">
+    <div class="client-block__name">{{patient_name}}</div>
+    <div class="client-block__detail">
+      NIF: {{patient_nif}}<br />
+      {{patient_address}}
+    </div>
+  </div>
+
+  <!-- ============================================================
+       LINE ITEMS TABLE
+       ============================================================ -->
+  <table class="items-table" aria-label="Linhas da fatura">
+    <thead>
+      <tr>
+        <th>Descrição</th>
+        <th>Data serviço</th>
+        <th class="right">Qtd</th>
+        <th class="right">Preço unit.</th>
+        <th class="right">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{line_items}}
+      <!-- Template engine note: render one <tr> per line item, e.g.:
+        <tr>
+          <td>Consulta de osteopatia</td>
+          <td>01/06/2026</td>
+          <td class="right">1</td>
+          <td class="right">50,00 €</td>
+          <td class="right">50,00 €</td>
+        </tr>
+      -->
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="4" class="right">Subtotal</td>
+        <td class="right">{{subtotal}}</td>
+      </tr>
+      <tr>
+        <td colspan="4" class="right">
+          IVA (0%) <span class="iva-note">— isento art. 9.º n.º 1 CIVA</span>
+        </td>
+        <td class="right">0,00 €</td>
+      </tr>
+      <!-- JP-GATED TODO: discount line — do not implement yet
+        <tr class="discount-row">
+          <td colspan="4" class="right">Desconto ({{discount_label}})</td>
+          <td class="right">-{{discount_amount}}</td>
+        </tr>
+      -->
+      <!-- JP-GATED TODO: protocolo/convenção label — do not implement yet
+        <tr class="protocol-row">
+          <td colspan="5">Protocolo/Convenção: {{protocol_name}}</td>
+        </tr>
+      -->
+      <tr class="total-row">
+        <td colspan="4" class="right">Total</td>
+        <td class="right">{{total}}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- JP-GATED TODO: IVA rate override — currently always 0%; do not implement yet.
+       If OsteoJP services ever become VAT-taxable, add a configurable IVA rate field here.
+  -->
+
+  <!-- ============================================================
+       PAYMENT BLOCK
+       ============================================================ -->
+  <div class="section-label">Pagamento</div>
+  <div class="payment-block">
+    <div class="payment-block__row">
+      <span class="label">Método de pagamento:</span>
+      <span class="value">{{payment_method}}</span>
+    </div>
+    <div class="payment-block__row">
+      <span class="label">Referência:</span>
+      <span class="value">{{payment_reference}}</span>
+      <!-- Conditional rendering note: omit this row entirely if payment_reference is null or empty -->
+    </div>
+  </div>
+
+  <!-- ============================================================
+       NOTES (conditional — omit block if {{notes}} is empty)
+       ============================================================ -->
+  <div class="notes-block">
+    <div class="section-label">Observações</div>
+    <div class="notes-text">{{notes}}</div>
+  </div>
+
+  <!-- ============================================================
+       FISCAL FOOTER
+       ============================================================ -->
+  <footer class="fiscal-footer">
+    <div class="fiscal-footer__primary">
+      OsteoJP — NIF 510 200 427 — Profissional de saúde isento de IVA nos termos do art. 9.º n.º 1 do Código do IVA (CIVA).
+    </div>
+    <div class="fiscal-footer__locations">
+      <p><strong>Linda-a-Velha (sede):</strong> Praça Central Plaza, n.º 1 – A, 2795-246 Linda-a-Velha · Tel: 969 472 111 / 214 191 988 · clinica.osteojp@gmail.com</p>
+      <p><strong>Castelo Branco:</strong> R. Fernando Namora, n.º 6, 6000-140 Castelo Branco · Tel: 969 877 553 / 272 328 221 · geral.castelobranco@osteojp.pt</p>
+      <!-- TODO (BUG-13): Montemor-o-Novo address, phone and email pending owner confirmation — update once confirmed -->
+      <!-- <p><strong>Montemor-o-Novo:</strong> [endereço pendente] · Tel: [pendente] · [email pendente]</p> -->
+    </div>
+    <div class="fiscal-footer__processed">Documento processado por computador.</div>
+  </footer>
+
+</div><!-- /.page -->
+</body>
+</html>

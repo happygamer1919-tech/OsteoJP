@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Declaração de Tratamento — OsteoJP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300..900;1,8..60,300..900&display=swap" rel="stylesheet" />
+  <style>
+    /* ============================================================
+       OsteoJP — Declaração de Tratamento print template
+       Target renderer: Puppeteer page.pdf({ format: 'A4', printBackground: true, margin: { top: '25mm', right: '25mm', bottom: '25mm', left: '25mm' } })
+       ============================================================ */
+
+    /* Brand tokens */
+    :root {
+      --color-teal:        #45B9A7;
+      --color-magenta:     #8B1863;
+      --color-grey-blue:   #98B2C2;
+      --color-body:        #1A2733;
+      --color-secondary:   #56697A;
+      --color-border:      #E2E8EE;
+      --color-bg:          #FFFFFF;
+    }
+
+    @page {
+      size: A4 portrait;
+      margin: 25mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Source Serif 4', 'Times New Roman', serif;
+      font-size: 11pt;
+      color: var(--color-body);
+      background: var(--color-bg);
+      line-height: 1.6;
+    }
+
+    .page {
+      width: 100%;
+      max-width: 160mm; /* A4 210mm - 2×25mm margins */
+      margin: 0 auto;
+    }
+
+    /* ---- Header ---- */
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding-bottom: 12pt;
+      border-bottom: 2px solid var(--color-teal);
+      margin-bottom: 32pt;
+    }
+
+    .header__logo {
+      /* TODO: replace this placeholder box with actual SVG logo once vector asset is available */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 56pt;
+      height: 40pt;
+      border: 2px solid var(--color-teal);
+      color: var(--color-teal);
+      font-size: 8pt;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-align: center;
+      flex-shrink: 0;
+      margin-right: 12pt;
+    }
+
+    .header__brand h1 {
+      font-size: 18pt;
+      font-weight: 700;
+      color: var(--color-grey-blue);
+      letter-spacing: -0.01em;
+      line-height: 1.1;
+    }
+
+    .header__location {
+      margin-top: 4pt;
+      font-size: 8.5pt;
+      color: var(--color-secondary);
+      line-height: 1.4;
+    }
+
+    .header__nif {
+      font-size: 8.5pt;
+      color: var(--color-secondary);
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    /* ---- Document title ---- */
+    .doc-title {
+      text-align: center;
+      margin-bottom: 32pt;
+    }
+
+    .doc-title h2 {
+      font-size: 18pt;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--color-body);
+    }
+
+    .doc-title__rule {
+      width: 60pt;
+      height: 3px;
+      background: var(--color-teal);
+      margin: 8pt auto 0;
+    }
+
+    /* ---- Body text ---- */
+    .declaration-body {
+      font-size: 11.5pt;
+      line-height: 1.8;
+      text-align: justify;
+      margin-bottom: 24pt;
+    }
+
+    .declaration-body p {
+      margin-bottom: 16pt;
+      text-indent: 1.5em;
+    }
+
+    /* ---- Diagnosis block ---- */
+    .diagnosis-block {
+      display: block;
+      margin-top: 8pt;
+      margin-bottom: 8pt;
+      padding: 8pt 12pt;
+      border-left: 3px solid var(--color-teal);
+      background: #F0F8F7;
+      font-size: 11pt;
+    }
+
+    .diagnosis-block__label {
+      font-weight: 700;
+      margin-right: 4pt;
+    }
+
+    /* ---- Date / place line ---- */
+    .date-line {
+      text-align: right;
+      font-size: 10.5pt;
+      color: var(--color-secondary);
+      margin-bottom: 48pt;
+      font-style: italic;
+    }
+
+    /* ---- Signature block ---- */
+    .signature-block {
+      margin-top: 8pt;
+    }
+
+    .signature-block__line {
+      border-top: 1px solid var(--color-body);
+      width: 180pt;
+      margin-bottom: 6pt;
+    }
+
+    .signature-block__label {
+      font-size: 9pt;
+      color: var(--color-secondary);
+      font-style: italic;
+    }
+
+    .signature-block__space {
+      height: 40pt;
+    }
+
+    /* ---- Fiscal footer ---- */
+    .fiscal-footer {
+      border-top: 1px solid var(--color-border);
+      padding-top: 8pt;
+      margin-top: 32pt;
+      font-size: 7.5pt;
+      color: var(--color-secondary);
+      line-height: 1.5;
+    }
+
+    .fiscal-footer__primary {
+      margin-bottom: 6pt;
+      font-weight: 600;
+      color: var(--color-body);
+    }
+
+    .fiscal-footer__locations p {
+      margin-bottom: 2pt;
+    }
+
+    .fiscal-footer__processed {
+      margin-top: 4pt;
+      font-style: italic;
+    }
+
+    /* ---- Print styles ---- */
+    @media print {
+      body {
+        margin: 0;
+      }
+
+      .no-print {
+        display: none !important;
+      }
+
+      .page {
+        max-width: none;
+      }
+
+      .diagnosis-block {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ============================================================
+       HEADER
+       ============================================================ -->
+  <header class="header">
+    <div style="display:flex; align-items:flex-start;">
+      <!-- TODO: replace this placeholder with the actual OsteoJP SVG logo once the vector asset is available -->
+      <div class="header__logo" aria-label="OsteoJP logótipo">[LOGO: OsteoJP]</div>
+      <div class="header__brand">
+        <h1>OsteoJP</h1>
+        <div class="header__location">
+          <strong>{{location_name}}</strong><br />
+          {{location_address}}<br />
+          {{location_postal}} {{location_city}}<br />
+          Tel: {{location_phone}}<br />
+          {{location_email}}
+        </div>
+      </div>
+    </div>
+    <div class="header__nif">
+      NIF: 510 200 427
+    </div>
+  </header>
+
+  <!-- ============================================================
+       DOCUMENT TITLE
+       ============================================================ -->
+  <div class="doc-title">
+    <h2>Declaração de Tratamento</h2>
+    <div class="doc-title__rule"></div>
+  </div>
+
+  <!-- ============================================================
+       DECLARATION BODY
+       ============================================================ -->
+  <div class="declaration-body">
+    <p>
+      Declara-se que <strong>{{patient_name}}</strong>,
+      NIF <strong>{{patient_nif}}</strong>,
+      foi utente da clínica OsteoJP&nbsp;— <strong>{{location_name}}</strong>,
+      tendo realizado um plano de tratamento de <strong>{{session_count}}</strong> sessões
+      de <strong>{{service_name}}</strong>,
+      no período de <strong>{{treatment_start_date}}</strong> a <strong>{{treatment_end_date}}</strong>,
+      sob orientação do(a) terapeuta <strong>{{practitioner_name}}</strong>.
+    </p>
+
+    <!--
+      CONDITIONAL BLOCK: render the .diagnosis-block element only when diagnosis_or_reason is non-empty.
+      Template engine instruction: if (diagnosis_or_reason) { render the span below } else { omit it }
+      The inline style approach below is an alternative fallback for engines that cannot do conditionals:
+        style="display: {{diagnosis_display}}" where diagnosis_display = diagnosis_or_reason ? 'block' : 'none'
+    -->
+    <span class="diagnosis-block" style="display: {{diagnosis_display}}">
+      <span class="diagnosis-block__label">Motivo/Diagnóstico:</span>{{diagnosis_or_reason}}
+    </span>
+
+    <p>
+      A presente declaração é emitida a pedido do(a) interessado(a) para os fins por ele(a) indicados.
+    </p>
+  </div>
+
+  <!-- ============================================================
+       DATE / PLACE LINE
+       ============================================================ -->
+  <div class="date-line">
+    {{location_city}}, {{signature_date}}
+  </div>
+
+  <!-- ============================================================
+       SIGNATURE BLOCK
+       ============================================================ -->
+  <div class="signature-block">
+    <div class="signature-block__space"></div>
+    <div class="signature-block__line"></div>
+    <div class="signature-block__label">O/A Responsável Clínico(a)</div>
+  </div>
+
+  <!-- ============================================================
+       FISCAL FOOTER
+       ============================================================ -->
+  <footer class="fiscal-footer">
+    <div class="fiscal-footer__primary">
+      OsteoJP — NIF 510 200 427 — Profissional de saúde isento de IVA nos termos do art. 9.º n.º 1 do Código do IVA (CIVA).
+    </div>
+    <div class="fiscal-footer__locations">
+      <p><strong>Linda-a-Velha (sede):</strong> Praça Central Plaza, n.º 1 – A, 2795-246 Linda-a-Velha · Tel: 969 472 111 / 214 191 988 · clinica.osteojp@gmail.com</p>
+      <p><strong>Castelo Branco:</strong> R. Fernando Namora, n.º 6, 6000-140 Castelo Branco · Tel: 969 877 553 / 272 328 221 · geral.castelobranco@osteojp.pt</p>
+      <!-- TODO (BUG-13): Montemor-o-Novo address, phone and email pending owner confirmation — update once confirmed -->
+      <!-- <p><strong>Montemor-o-Novo:</strong> [endereço pendente] · Tel: [pendente] · [email pendente]</p> -->
+    </div>
+    <div class="fiscal-footer__processed">Documento processado por computador.</div>
+  </footer>
+
+</div><!-- /.page -->
+</body>
+</html>
