@@ -27,29 +27,63 @@ export function extractHrefs(html: string): string[] {
 }
 
 /**
+ * Match inline onclick navigation in both quote combinations:
+ *   onclick="...location.href='URL'..."  (double-quoted attr, single-quoted target)
+ *   onclick='...location.href="URL"...'  (single-quoted attr, double-quoted target)
+ * The `i` flag makes this match onClick, ONCLICK, etc.
+ */
+const ONCLICK_SQ = /onclick\s*=\s*"[^"]*?location\.href\s*=\s*'([^']+)'[^"]*?"/gi;
+const ONCLICK_DQ = /onclick\s*=\s*'[^']*?location\.href\s*=\s*"([^"]+)"[^']*?'/gi;
+
+/**
+ * Extract URL strings from onclick="...location.href='URL'..." handlers and
+ * the inverted-quote variant. Fisiozero episode rows use href="#" with the
+ * real navigation target in an inline onclick; href-only scraping misses them.
+ */
+export function extractOnclickTargets(html: string): string[] {
+  const out: string[] = [];
+  for (const m of html.matchAll(ONCLICK_SQ)) { if (m[1]) out.push(m[1]); }
+  for (const m of html.matchAll(ONCLICK_DQ)) { if (m[1]) out.push(m[1]); }
+  return out;
+}
+
+/**
  * Default path fragments that mark a Fisiozero attachment URL (recon: hashed
  * statics under the "user_rgpd_files/" folder and other "user_" folders).
  * Configurable so the gated run can widen them without code changes.
  */
 export const DEFAULT_ATTACHMENT_PATTERNS = ["user_rgpd_files/", "user_"];
 
-/** Default fragment that marks an episode-detail link (recon: `osteo_epi_new`). */
-export const DEFAULT_EPISODE_PATTERNS = ["osteo_epi_new"];
+/**
+ * Default token that marks an episode-detail link. Matched as a whole op= token
+ * (must be followed by `&`, `#`, or end of string) so `op=r6` never matches
+ * `op=r60` or similar. Real episode rows use onclick="location.href='?op=r6&i=...'".
+ */
+export const DEFAULT_EPISODE_PATTERNS = ["op=r6"];
 
 function matchesAny(href: string, patterns: readonly string[]): boolean {
   return patterns.some((p) => href.includes(p));
+}
+
+/**
+ * Match each pattern as a whole op= token: must be followed by `&`, `#`, or
+ * end of string. Prevents `op=r6` from matching `op=r60` etc.
+ */
+function matchesOpToken(href: string, patterns: readonly string[]): boolean {
+  return patterns.some((p) => new RegExp(p + "(?:[&#]|$)").test(href));
 }
 
 function uniqueResolved(
   baseUrl: string,
   hrefs: readonly string[],
   patterns: readonly string[],
+  matcher: (href: string, patterns: readonly string[]) => boolean = matchesAny,
 ): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const href of hrefs) {
     if (href.startsWith("#") || href.toLowerCase().startsWith("javascript:")) continue;
-    if (!matchesAny(href, patterns)) continue;
+    if (!matcher(href, patterns)) continue;
     let abs: string;
     try {
       abs = resolveHref(baseUrl, href);
@@ -73,13 +107,21 @@ export function extractAttachmentUrls(
   return uniqueResolved(baseUrl, extractHrefs(html), patterns);
 }
 
-/** Absolute, de-duplicated episode-detail URLs found in a list page. */
+/**
+ * Absolute, de-duplicated episode-detail URLs found in a list page.
+ *
+ * Candidates are the union of href attributes AND onclick navigation targets,
+ * because Fisiozero episode rows use `<a href="#">` with the real URL in an
+ * inline onclick — href-only scraping returns the new-episode button instead.
+ * Patterns are matched as whole op= tokens (see matchesOpToken).
+ */
 export function extractEpisodeUrls(
   baseUrl: string,
   html: string,
   patterns: readonly string[] = DEFAULT_EPISODE_PATTERNS,
 ): string[] {
-  return uniqueResolved(baseUrl, extractHrefs(html), patterns);
+  const candidates = [...extractHrefs(html), ...extractOnclickTargets(html)];
+  return uniqueResolved(baseUrl, candidates, patterns, matchesOpToken);
 }
 
 /** Default markers that indicate a response is actually the login screen. */
