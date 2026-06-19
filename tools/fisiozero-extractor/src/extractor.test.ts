@@ -70,10 +70,11 @@ class FakeClient implements FisiozeroClient {
       return this.text(url, `<h1>Ficha</h1><a href="user_rgpd_files/RG.pdf">RGPD</a>${PAD}`);
     }
     if (op === "osteo_epi") {
-      return this.text(url, `<a href="index.php?op=osteo_epi_new&e=E1">Ep1</a>${PAD}`);
+      // Real Fisiozero episode rows use href="#" with the target in an inline onclick.
+      return this.text(url, `<a href="#" onclick="location.href='?op=r6&i=RTE1'">Ep1</a>${PAD}`);
     }
     if (op === "avl") return this.text(url, `<div>no evals</div>${PAD}`);
-    if (op === "osteo_epi_new") {
+    if (op === "r6") {
       return this.text(url, `<h2>Episode</h2><a href="user_487/exam.png">Exam</a>${PAD}`);
     }
     if (op === "consultar_hist") return this.text(url, `<table>history</table>${PAD}`);
