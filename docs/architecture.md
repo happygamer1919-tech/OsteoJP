@@ -1,37 +1,33 @@
 # Architecture — OsteoJP Platform
 
-> Engineering overview of the OsteoJP unified clinic platform. Single source of truth for system shape, stack, data model summary, permission model, key flows, integration map, and deployment topology.
+> Engineering overview of the OsteoJP unified clinic platform. Single source of truth for system shape, stack, data model summary, permission model, key flows, CI gates, integration map, and deployment topology.
 >
-> Companion documents: [`mega-plan.md`](./mega-plan.md) (task plan), [`claude-md-reference.md`](./claude-md-reference.md) (architectural rules referenced by Claude Code in this repo), [`tech-stack.md`](./tech-stack.md), [`handoff-brief.md`](./handoff-brief.md).
+> Companion documents: [`mega-plan.md`](./mega-plan.md) (task plan), [`claude-md-reference.md`](./claude-md-reference.md) (architectural rules), [`tech-stack.md`](./tech-stack.md), [`handoff-brief.md`](./handoff-brief.md).
 >
-> Schema is the source of truth for table shape, not this doc. See `packages/db/src/schema.ts`.
+> Schema is the authoritative source for table shape — not this doc. See `packages/db/src/schema.ts`.
 
 ---
 
 ## 1. Overview
 
-OsteoJP is a Portuguese osteopathy and physiotherapy clinic with locations in Linda-a-Velha, Castelo Branco, and Montemor-o-Novo (opening). Brand pillars: Osteopatia, Fisioterapia, Formação. Reference site: https://osteojp.pt.
+OsteoJP is a Portuguese osteopathy and physiotherapy clinic with locations in Linda-a-Velha, Castelo Branco, and Montemor-o-Novo (opening). The platform replaces two legacy systems — Fisiozero (clinical) and Stylus.pt (scheduling) — with a single multi-tenant application covering scheduling, patient records, clinical forms, invoicing, and payments. Multi-tenant from day 1 to support a future licensing path beyond OsteoJP.
 
-The platform replaces two legacy systems — Fisiozero (clinical) and Stylus.pt (scheduling) — with a single multi-tenant application covering scheduling, patient records, clinical forms, invoicing, and payments. The system is multi-tenant from day 1 to support a future licensing path beyond OsteoJP.
-
-The platform is API-first for clinical record ingestion: an external AI partner runs ambient recording → Whisper → LLM and pushes completed clinical reports into a signed endpoint. The platform owns the AI-ingestion review queue (`ai_review_state`, placeholder pending the partner contract), the clinical record lifecycle (`record_status`: `draft` → `locked` → `signed`), and the immutability of locked/signed records.
-
-Target launch: end of June 2026.
+The platform is API-first for clinical record ingestion: an external AI partner runs ambient recording → Whisper → LLM and pushes completed clinical reports into a signed endpoint. The platform owns the AI-ingestion review queue (`ai_review_state`, placeholder pending the partner contract), the clinical record lifecycle (`record_status`: `draft` → `locked` → `signed`), and the immutability of locked/signed records via a BEFORE trigger that fires even for `service_role`.
 
 ---
 
 ## 2. Hard architecture rules
 
-These are non-negotiable constraints applied across the codebase. Sourced from `CLAUDE.md`.
+Non-negotiable constraints applied across the codebase. Source: `CLAUDE.md`.
 
 1. Every domain table has `tenant_id uuid not null`. No exceptions.
 2. Every domain table has an RLS policy keyed on the JWT `tenant_id` claim.
 3. Service-role queries (migrations, ingestion, jobs) must set `tenant_id` explicitly. Never global.
-4. Clinical records have two orthogonal state machines, defined in `packages/db/src/schema.ts`:
-   - `record_status` — lifecycle of every clinical record regardless of origin: `draft` → `locked` → `signed`. Locking makes content immutable (enforced by the BEFORE UPDATE OR DELETE trigger); signing attaches the therapist signature. Changes after locking create addendum versions.
-   - `ai_review_state` — review queue for records arriving via the AI ingestion endpoint only. PLACEHOLDER values (`pending_review`, `in_review`, `approved`, `rejected`) pending the AI partner auth contract; refine in schema once signed off. AI ingestion never produces a `locked` or `signed` record directly — a human reviewer must accept the AI payload, after which the resulting `clinical_record` follows the standard `record_status` lifecycle.
-5. Form templates are JSON Schema-driven. Templates are versioned and immutable once referenced by a record.
-6. Audit log writes on every clinical record mutation and every permission-sensitive action. No exceptions.
+4. Clinical records have two orthogonal state machines (see §7):
+   - `record_status` — lifecycle for all records: `draft` → `locked` → `signed`. Locking is enforced by a BEFORE UPDATE OR DELETE trigger that rejects mutations on locked/signed rows regardless of caller role.
+   - `ai_review_state` — review queue for AI-ingested records only. PLACEHOLDER values pending the AI partner auth contract.
+5. Form templates are JSON Schema-driven, versioned, and immutable once referenced by a record.
+6. Audit log writes on every clinical record mutation and permission-sensitive action. No exceptions.
 7. PII never appears in logs, error messages, or Sentry events. Sanitize before logging.
 8. EU data residency: Supabase EU (Frankfurt), Vercel `fra1`, Resend EU. No US-region resources for stored data.
 
@@ -43,19 +39,20 @@ These are non-negotiable constraints applied across the codebase. Sourced from `
 |---|---|
 | Framework | Next.js 16 (App Router), TypeScript strict |
 | UI | shadcn/ui + Tailwind v4 |
-| ORM | Drizzle |
+| ORM | Drizzle ORM |
 | Database | PostgreSQL via Supabase EU (Frankfurt) |
-| Auth | Supabase Auth (JWT with `tenant_id` + role claims) |
-| File storage | Supabase Storage (signed URLs only, never public) |
+| Auth | Supabase Auth — JWT with `tenant_id` + `user_role` custom claims |
+| File storage | Supabase Storage — signed URLs only, never public |
 | Background jobs | Inngest |
-| Hosting | Vercel (region: `fra1`) |
+| Hosting | Vercel (region `fra1`) |
 | Error tracking | Sentry (EU) |
 | Email | Resend (EU) |
 | SMS | Twilio (PT sender) |
-| Payments | Stripe (EU), IfThenPay (MB, MB Way) |
-| Invoicing | InvoiceXpress |
+| Payments | IfThenPay (MB/MB Way) + Stripe (card) — both owner-gated |
+| Fiscal invoicing | InvoiceXpress — Phase 4, owner-gated |
 | Monorepo | pnpm + Turborepo |
-| Testing | Vitest (unit), Playwright (E2E) |
+| Node.js | 22.x (pinned in CI and Vercel) |
+| Testing | Vitest (unit + RLS isolation), Playwright (E2E) |
 
 ---
 
@@ -63,406 +60,528 @@ These are non-negotiable constraints applied across the codebase. Sourced from `
 
 ```
 apps/
-  web/                 # Staff platform (Next.js)
-  admin/               # Superadmin (tenant management, system ops)
+  web/                 # Staff platform (Next.js) — scheduling, patients, clinical records
+  admin/               # Superadmin (tenant management, tenant lifecycle, system ops)
+  api/                 # Patient-facing REST API (Next.js) — portal backend at api.osteojp.pt
+  portal/              # Patient portal (Next.js) — appointment booking, forms, documents
 packages/
-  db/                  # Drizzle schema, migrations, RLS policies, seed
-  ui/                  # shadcn components, brand tokens
-  auth/                # Permission matrix, JWT helpers
-  ingestion/           # AI partner ingestion contract + validators
-  integrations/        # InvoiceXpress, IfThenPay, Stripe, Twilio, Resend
-  i18n/                # User-facing strings (PT primary, EN secondary)
-docs/                  # Architecture, brand, voice, wireframes, templates
+  db/                  # Drizzle schema, migrations (source), RLS policies, seed
+  ui/                  # shadcn components, brand tokens, Storybook
+  auth/                # Permission matrix (PERMISSIONS), JWT helpers, role guards
+  i18n/                # User-facing strings: PT primary, EN secondary
+tools/
+  fisiozero-extractor/ # Data migration tooling (Phase 5)
+docs/                  # Architecture, brand, QA, wireframes, templates
+scripts/
+  sync-supabase-migrations.mjs   # Mirrors packages/db/migrations → supabase/migrations
+  check-openapi-drift.mjs        # Checks every API route is documented in openapi.yaml
 supabase/
-  migrations/          # Tracked
-  config.toml          # Tracked
+  migrations/          # Mirror of packages/db/migrations (auto-generated — do not hand-edit)
+  config.toml          # Tracked; configures custom_access_token hook
+  seed.sql             # Branch/local seed: one demo tenant + role rows
   .branches/           # Gitignored
   .temp/               # Gitignored
 ```
 
-Notes:
+**Key layout notes:**
 
-- `packages/db/seed/form-templates/` holds JSON Schema seed templates (osteopathy, physiotherapy v1). Loader is live (`packages/db/seed/form-templates.ts`) — idempotent upsert on `(tenant_id, key, version)`. Patient seed data in `packages/db/seed/patients.json` (50 PT-realistic records).
-- `packages/i18n/` is the canonical home for `strings.pt.json` and `strings.en.json`. Both files are fully populated (112+ keys each, typecheck-clean). PT is primary.
-- Tests live next to code: `foo.ts` + `foo.test.ts`. E2E tests in `apps/web/e2e/` (Playwright, 51 scenarios across auth, patients, scheduling, clinical, admin).
+- Integration clients (InvoiceXpress, IfThenPay, Stripe) live in `apps/web/lib/integrations/`, not in a `packages/` directory — they are staff-app concerns only.
+- `packages/db/src/schema.ts` is the canonical schema; the migration files under `packages/db/migrations/` are the applied history.
+- Tests colocated: `foo.ts` + `foo.test.ts`. E2E tests in `apps/web/e2e/` (Playwright, covering auth, patients, scheduling, clinical, admin flows).
+- `packages/i18n/strings.ts` + `portal-strings.ts` are the canonical string catalogs; all user-facing strings must use i18n keys.
+- `tools/fisiozero-extractor` supports the Phase 5 data migration from the legacy system.
 
 ---
 
-## 5. Data model — high-level
+## 5. Turborepo + pnpm
 
-The full schema lives in `packages/db/src/schema.ts`. This section names the V1 tables and explains how they relate, but it is not the schema reference.
+The monorepo uses **pnpm workspaces** (`apps/*`, `packages/*`, `tools/*`) and **Turborepo** for build orchestration.
 
-### 5.1 Table inventory (V1)
+### 5.1 Workspace config (`pnpm-workspace.yaml`)
+
+- Packages declare dependencies on each other with `workspace:*` protocol.
+- Playwright version is pinned workspace-wide via `overrides` (`1.60.0`) to prevent two copies of `playwright-core` arising from `apps/web` and `packages/ui` pulling different versions.
+
+### 5.2 Turborepo pipeline (`turbo.json`)
+
+| Task | `dependsOn` | Notes |
+|---|---|---|
+| `build` | `^build` | Outputs: `.next/**`, `dist/**` |
+| `dev` | — | `cache: false`, persistent |
+| `lint` | — | No deps |
+| `typecheck` | `^build` | Downstream packages must build first |
+| `test` | `^build` | Unit (Vitest) |
+| `e2e` | `^build` | Playwright; `cache: false` |
+
+Running `pnpm <task>` from the repo root fans out to all workspaces respecting the dependency graph. Running `pnpm --filter <name> <task>` scopes to a single package.
+
+### 5.3 Key scripts (root `package.json`)
+
+| Script | What it runs |
+|---|---|
+| `pnpm dev` | All apps in dev mode |
+| `pnpm build` | All apps (ordered by deps) |
+| `pnpm lint` | All workspaces |
+| `pnpm typecheck` | All workspaces (after build) |
+| `pnpm test` | Vitest unit suites (no DB) |
+| `pnpm db:generate` | `drizzle-kit generate` — creates SQL in `packages/db/migrations/` |
+| `pnpm db:migrate` | `drizzle-kit migrate` — applies to production via direct connection |
+
+---
+
+## 6. The four apps
+
+### 6.1 `apps/web` — staff platform
+
+Next.js 16 App Router. The primary application: scheduling, patient records, clinical forms, body charts, invoicing, appointment reminders, user/role management.
+
+Hosts:
+- All staff-facing UI routes
+- Inngest serving endpoints (`/api/inngest`, `/api/inngest/ifthenpay`, `/api/inngest/invoicexpress`, `/api/inngest/stripe`)
+- IfThenPay payment callback webhook (`/api/webhooks/ifthenpay`)
+- AI clinical record ingestion endpoint (`/api/v1/ingestion/clinical-records`)
+
+Key external packages: `inngest`, `twilio`, `resend`, `pdf-lib`, `@sentry/nextjs`.
+
+### 6.2 `apps/admin` — superadmin
+
+Next.js 16 App Router. Internal operator console for managing the platform itself: list tenants, create tenants, suspend/activate tenants, view tenant details. Accessible only with the `operator` role (a separate auth path from the staff `user_role` claims; see `packages/auth/guard.ts`).
+
+No patient data is accessible from this app.
+
+### 6.3 `apps/api` — patient-facing REST API
+
+Next.js 16 App Router. Exposes `/api/v1/...` routes consumed by the patient portal frontend (`apps/portal`). Routes are authenticated via the patient's Supabase session and the `patient` JWT principal resolved from `packages/auth/patient.ts`.
+
+Key routes:
+```
+GET  /api/health
+GET  /api/v1/auth/session              # patient identity (own patient_id + tenant_id)
+GET  /api/v1/patient/profile           # patient's own profile
+GET  /api/v1/patient/documents         # patient's documents
+GET  /api/v1/patient/documents/:id/download
+GET  /api/v1/me/fichas                 # patient's submitted intake forms
+GET  /api/v1/me/forms/catalog          # available form templates
+POST /api/v1/me/forms                  # submit intake form
+GET  /api/v1/booking/catalog           # bookable services
+GET  /api/v1/appointments              # patient's upcoming appointments
+GET  /api/v1/appointments/:id
+POST /api/v1/appointments/:id/cancel
+POST /api/v1/appointments/:id/reschedule
+```
+
+The API also handles patient account activation (email/SMS via Twilio + Resend in sandbox-first mode).
+
+### 6.4 `apps/portal` — patient portal
+
+Next.js 16 App Router. Patient-facing UI at (planned) `portal.osteojp.pt`. Talks exclusively to `apps/api` for data; shares `@osteojp/auth`, `@osteojp/db`, `@osteojp/ui`, `@osteojp/i18n` packages.
+
+Portal routes:
+- `/auth/login` — patient sign-in
+- `/portal/dashboard`
+- `/portal/appointments` — upcoming + past
+- `/portal/booking` — self-book an appointment
+- `/portal/forms` — intake forms catalog + submission
+- `/portal/clinics` — clinic locations
+- `/portal/documents` — patient documents
+- `/portal/account` — account settings
+
+---
+
+## 7. Data model
+
+The full schema with column definitions, constraints, and indexes lives in `packages/db/src/schema.ts`. This section summarizes the table inventory and key relationships.
+
+### 7.1 Table inventory (current — 19 tables)
 
 | Table | Purpose |
 |---|---|
-| `tenants` | Top-level isolation unit. Every domain row belongs to one tenant. |
-| `users` | Platform user accounts (staff). Tied to Supabase Auth identities. |
-| `roles` | Role definitions per the permission matrix. |
-| `locations` | Per-tenant clinic locations (Linda-a-Velha, Castelo Branco, etc.). |
-| `services` | Per-tenant service catalogue (treatments offered, pricing). |
-| `patients` | Patient records. |
-| `appointments` | Scheduled sessions. Linked to patient, practitioner, location, service. |
-| `form_templates` | Versioned, JSON Schema-driven clinical form definitions. Immutable once referenced. |
-| `clinical_episodes` | A patient's course of treatment for a given complaint. Groups records. |
-| `clinical_records` | Individual clinical notes / forms. State machine driven (see §7). |
-| `attachments` | Files attached to records (images, scans). Stored in Supabase Storage; row holds the signed-URL handle. |
-| `audit_log` | Append-only record of mutations to clinical data and permission-sensitive actions. |
-| `invoices` | Issued invoices, tied to InvoiceXpress IDs once issued. |
+| `tenants` | Top-level isolation unit. Every domain row belongs to one tenant. Carries `status` (active/suspended — managed by superadmin only). |
+| `roles` | Role definitions per tenant. Slug must match `packages/auth/permissions.ts`: `owner`, `admin`, `therapist`, `reception`. |
+| `users` | Staff accounts. `id` mirrors `auth.users.id` (Supabase Auth). JWT carries `tenant_id` + `user_role` derived from this table via the custom_access_token hook. |
+| `locations` | Per-tenant clinic locations (Linda-a-Velha, Castelo Branco, Montemor-o-Novo). |
+| `services` | Per-tenant service catalogue: treatment type, duration, base price (integer cents). |
+| `service_location_prices` | Per-(service, location) price override. When a row exists for a pair it wins over `services.price_cents`; otherwise the location inherits the base. |
+| `patients` | Patient records. Soft-deleted via `deleted_at`. Carries `auth_user_id` (nullable) linking to the patient portal principal once activated. |
+| `patient_locations` | Junction table: many-to-many patient ↔ location assignment. |
+| `appointments` | Scheduled sessions. Links patient, practitioner (user), location, service. Supports recurring series via `recurrence_rule` (RRULE) + `recurrence_parent_id`. |
+| `availability_templates` | Therapist recurring weekly working hours per location. Weekday (0–6), start/end times, optional validity window. |
+| `time_off` | Therapist absence blocks (vacation, sick, holiday, other). Cross-location; timestamptz start/end. |
+| `form_templates` | Versioned JSON Schema-driven clinical form definitions. Immutable once referenced. Title and schema stored as JSONB; supports PT/EN labels. |
+| `clinical_episodes` | A patient's course of treatment for a given complaint. Groups `clinical_records`. |
+| `clinical_records` | Individual clinical notes. Two orthogonal state machines: `record_status` (draft/locked/signed) and `ai_review_state` (pending_review/in_review/approved/rejected — AI-ingested rows only). Addendum chain via `supersedes_id`. Body chart markers stored in `data.bodychart` (JSONB). |
+| `ai_ingestion_requests` | One row per AI partner push, keyed by `(tenant_id, idempotency_key)`. Enables 24h dedupe and 409-on-mismatch. |
+| `attachments` | Files attached to clinical records. `storage_path` is the Supabase Storage object path; app always issues signed URLs, never exposes public paths. |
+| `audit_log` | Append-only. RLS allows INSERT + SELECT only — no UPDATE/DELETE policy exists, so both are denied under RLS. Indexes on `(entity_type, entity_id)` and `created_at`. |
+| `invoices` | Internal billing ledger. `external_invoice_id` / `payment_provider` / `payment_ref` are relay hooks for the InvoiceXpress + IfThenPay integrations (see §12). |
+| `patient_form_submissions` | Wave B: patient-submitted intake forms from the portal. Lands as `review_state = pending_review`; never auto-finalizes. Staff review path materialises a draft `clinical_record` and links it via `clinical_record_id`. |
+| `migration_staging_rows` | Phase 5 foundation. Staging + idempotency ledger for Fisiozero → OsteoJP import. Unique on `(tenant_id, source_system, entity_type, source_id)`. `imported_entity_id` is intentionally not an FK (points at different target tables per `entity_type`). |
+| `quick_notes` | Per-staff scratchpad. One row per `(tenant_id, staff_user_id)`. RLS self-scopes to the current staff user. |
 
-### 5.2 Relationships (selected)
+### 7.2 Selected relationships
 
-- `tenants` → `users`, `locations`, `services`, `patients`, `form_templates`, `appointments`, `clinical_episodes`, `clinical_records`, `invoices`, `audit_log` (1-to-many on `tenant_id`)
+- `tenants` → all other domain tables (1-to-many on `tenant_id`)
 - `patients` → `clinical_episodes` (1-to-many) → `clinical_records` (1-to-many)
-- `appointments` → `clinical_records` (optional 1-to-1, linked when the visit produces a record)
+- `appointments` → `clinical_records` (optional 1-to-1 when visit produces a record)
 - `clinical_records` → `form_templates` (many-to-1, references a specific `(key, version)`)
 - `clinical_records` → `attachments` (1-to-many)
-- `invoices` → `appointments` (many-to-many, an invoice can cover multiple sessions)
+- `clinical_records` → `clinical_records` (self-FK `supersedes_id`, addendum chain)
+- `invoices` → `appointments` + `patients` (billing ledger)
+- `patients` ↔ `locations` (many-to-many via `patient_locations`)
+- `users` ↔ `locations` (availability via `availability_templates`, per weekday)
+- `patient_form_submissions` → `clinical_records` (review claim result)
 
-### 5.3 Money
+### 7.3 Conventions
 
-All monetary values stored as integer cents with currency on the column. Never floats. (Per CLAUDE.md.)
-
-### 5.4 Time
-
-All timestamps stored in UTC. Display layer converts to Europe/Lisbon. (Per CLAUDE.md.)
-
-### 5.5 Form template versioning
-
-`form_templates` rows are keyed by `(key, version)` — e.g. `("osteopathy", "v1")`, `("physiotherapy", "v1")`. A clinical record references a specific template version. Once any record references a template version, that version is immutable. New template revisions ship as `v2`, `v3`, etc. Migration of existing records to new versions is an explicit operation, not implicit.
-
----
-
-## 6. Permission matrix
-
-Server-enforced. Client-side checks exist for UX but are never the security boundary.
-
-| Action | Admin | Therapist | Receptionist |
-|---|---|---|---|
-| View any patient | ✓ | ✓ (own only) | ✓ |
-| View clinical records | ✓ | ✓ (own patients only) | ✗ |
-| Edit clinical records | ✓ | ✓ (own, until locked) | ✗ |
-| Schedule appointments | ✓ | ✓ (own calendar) | ✓ |
-| Issue invoices | ✓ | ✗ | ✓ |
-| Manage users/roles | ✓ | ✗ | ✗ |
-| Tenant settings | ✓ | ✗ | ✗ |
-
-Enforcement model: every API route runs a server-side check via `packages/auth`, and RLS policies on `packages/db` enforce the same constraints at the database layer. Both must pass; one is not sufficient.
+- **Money:** integer cents + ISO currency on the column. Never floats.
+- **Time:** all timestamps in UTC in DB; display layer converts to `Europe/Lisbon`.
+- **Soft delete:** `patients` only — via `deleted_at` (records must never disappear).
+- **JSONB:** `clinical_records.data` (filled form response), `form_templates.schema` (JSON Schema), `form_templates.title` (PT/EN).
+- **Primary keys:** random UUID on all tables except `users.id`, which mirrors `auth.users.id`.
 
 ---
 
-## 7. Clinical record state machine
+## 8. RLS + JWT security model
 
-Per architecture rule 4, `clinical_records` rows carry **two orthogonal state machines**, both defined in `packages/db/src/schema.ts`:
+### 8.1 JWT custom claims
 
-1. **`record_status`** — lifecycle of every clinical record regardless of origin: `draft` → `locked` → `signed`. Mandatory column, defaults to `draft`.
-2. **`ai_review_state`** — review queue for records arriving via the AI ingestion endpoint only. Nullable; populated only on AI-ingested rows. **PLACEHOLDER** values pending the AI partner auth contract (see §16.1).
+Every Supabase Auth token carries two custom claims injected by the **Custom Access Token Hook** (`public.custom_access_token_hook`, defined in migration `0002_auth_token_hook.sql`):
 
-These axes are independent: an AI-ingested record carries both columns and progresses through each separately. Manual records leave `ai_review_state` NULL.
-
-### 7.1 `record_status` — record lifecycle (all records)
-
-```mermaid
-stateDiagram-v2
-    [*] --> draft: Therapist creates (or human reviewer accepts AI payload)
-    draft --> locked: Therapist locks (content frozen)
-    locked --> signed: Therapist attaches signature
-    signed --> [*]: Immutable
-    signed --> addendum: Addendum version created
-    addendum --> signed: Addendum signed (new immutable version)
-```
-
-Rules:
-
-- A record in `draft` is editable by the assigned therapist (or admin), subject to the permission matrix in §6.
-- Locking makes content immutable. A `BEFORE UPDATE OR DELETE` trigger on `clinical_records` (see `packages/db/migrations/0001_rls.sql`) rejects any mutation of rows where `status IN ('locked', 'signed')`. The trigger fires regardless of RLS / `BYPASSRLS`, so even `service_role` cannot mutate a locked or signed row.
-- Signing requires therapist signature and transitions the row to `signed`. The row remains immutable.
-- Any change to a locked or signed record creates a new addendum version. The original is preserved; the addendum is signed independently and chained via a `parent_record_id` reference.
-- Every state transition writes to `audit_log` with actor, timestamp, and from/to states.
-
-### 7.2 `ai_review_state` — AI ingestion review queue (PLACEHOLDER, pending partner contract)
-
-> The enum below is a **placeholder**. Exact values, transitions, and audit semantics depend on the AI partner auth contract (open item §16.1) and will be refined in `packages/db/src/schema.ts` once the contract is signed off. Do not build product flows on the specific names until then.
-
-Applies only to records arriving via the AI ingestion endpoint (§9). Current placeholder values: `pending_review`, `in_review`, `approved`, `rejected`.
-
-```mermaid
-stateDiagram-v2
-    note right of pending_review: PLACEHOLDER — pending partner contract
-    [*] --> pending_review: AI partner ingests
-    pending_review --> in_review: Reviewer opens
-    in_review --> approved: Reviewer accepts payload
-    in_review --> rejected: Reviewer rejects payload
-    approved --> [*]: clinical_record proceeds via record_status (§7.1)
-    rejected --> [*]
-```
-
-Rules:
-
-- AI ingestion **never produces a `locked` or `signed` record directly**. A row inserted via the AI endpoint enters with `record_status = 'draft'` and `ai_review_state = 'pending_review'`. Only a human reviewer accepting the payload (`ai_review_state` → `approved`) allows the record to follow the standard `record_status` lifecycle from §7.1.
-- Rejection (`ai_review_state` → `rejected`) terminates the row; it does not silently roll back into the standard lifecycle.
-- A record with `ai_review_state` set is gated to reviewing roles (admin, assigned therapist); receptionists are denied per §6.
-
----
-
-## 8. Auth flow
-
-Supabase Auth issues JWTs containing custom claims for `tenant_id` and `role`. Those claims are propagated into PostgreSQL via Supabase's RLS context, where policies key on them.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant Web as apps/web (Next.js)
-    participant SupaAuth as Supabase Auth
-    participant API as API route / Server Action
-    participant Auth as packages/auth
-    participant DB as PostgreSQL (RLS)
-
-    User->>Web: Submit credentials
-    Web->>SupaAuth: signInWithPassword
-    SupaAuth-->>Web: JWT (sub, tenant_id, role)
-    Web->>Web: Persist session
-    User->>Web: Action requiring data
-    Web->>API: Request + JWT
-    API->>Auth: Verify JWT + permission check
-    Auth-->>API: Allow / deny
-    API->>DB: Query (JWT context set)
-    DB->>DB: RLS evaluates tenant_id + role
-    DB-->>API: Rows (filtered)
-    API-->>Web: Response
-    Web-->>User: Render
-```
-
-Notes:
-
-- `supabase-js` is used only for auth flows. Application-layer queries go through Drizzle ORM via `packages/db`.
-- JWT verification is centralized in `packages/auth`. Routes do not re-implement verification.
-- The permission check in step 5 references the matrix in §6.
-- RLS is defense in depth, not the primary check. The server check in step 5 is the primary gate. If the server check is bypassed by bug, RLS still prevents cross-tenant reads.
-
----
-
-## 9. AI ingestion flow
-
-The AI partner runs an ambient-recording → Whisper → LLM pipeline external to the platform and pushes completed clinical reports into a signed endpoint exposed by `packages/ingestion`. Volume: 10–15 reports per month.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Partner as AI Partner
-    participant Ingest as packages/ingestion endpoint
-    participant Validate as JSON Schema validator
-    participant DB as PostgreSQL
-    participant Queue as Inngest (review queue)
-    participant Web as apps/web
-    actor Therapist
-
-    Partner->>Ingest: POST signed payload (record + attachments)
-    Ingest->>Ingest: Verify signature
-    Ingest->>Validate: Validate against form_template version
-    Validate-->>Ingest: OK / errors
-    Ingest->>DB: Insert clinical_record (record_status: draft, ai_review_state: pending_review — PLACEHOLDER)
-    Ingest->>DB: Write audit_log entry
-    Ingest->>Queue: Enqueue review notification
-    Ingest-->>Partner: 202 Accepted (record_id)
-    Queue->>Therapist: Notify (in-app + email)
-    Therapist->>Web: Open review queue
-    Web->>DB: Fetch records pending review (ai_review_state filter, RLS-scoped)
-    Therapist->>Web: Open record, accept (or reject) AI payload
-    Web->>DB: Update ai_review_state (pending_review → in_review → approved/rejected)
-    Web->>DB: On approval, record proceeds via record_status (draft → locked → signed) per §7.1
-    Web->>DB: Write audit_log entries
-```
-
-Notes:
-
-- Authentication contract between partner and platform is **unresolved** — see §16. CLAUDE.md specifies API key + HMAC; the partner has recommended a service-account bearer token. Decision pending lead + partner sign-off.
-- Validation in step 3 uses the JSON Schema in `packages/db/seed/form-templates/` for the referenced `(key, version)`. Records that fail validation are rejected with a structured error response to the partner — no `clinical_record` row is created.
-- Records ingested via this path always enter the `ai_review_state` review queue (PLACEHOLDER values pending the partner contract — see §7.2). The endpoint cannot produce a `clinical_record` whose `record_status` is `locked` or `signed`; only a human reviewer accepting the payload can advance the record through the standard `record_status` lifecycle.
-- Attachments are uploaded via signed URLs issued by the platform on partner request, never proxied through the Next.js server.
-- Per-field `ai_extractable` flags on form templates control which fields the partner is permitted to populate. Fields marked `ai_extractable: false` (including `physiotherapy_v1.private_notes`) reject any partner-supplied value at validation time.
-
----
-
-## 10. Background jobs
-
-Inngest schedules and runs background jobs. All job code lives in functions registered with Inngest and triggered by either schedule or event.
-
-| Job | Trigger | Purpose |
+| Claim | Type | Value |
 |---|---|---|
-| Appointment reminder (48h) | Cron (per appointment) | Send SMS + email 48 hours before appointment. |
-| Appointment reminder (24h) | Cron (per appointment) | Send SMS + email 24 hours before appointment. |
-| Post-visit thank you | Event (appointment marked complete) | Send post-visit email same day. |
-| Post-visit feedback | Cron (+3 days post-appointment) | Send feedback request email. |
-| InvoiceXpress retry | Event (invoice issue failure) | Retry with exponential backoff. |
-| IfThenPay reconciliation | Cron (hourly) | Reconcile pending payments against IfThenPay API. |
-| Review queue notification | Event (`ai_review_state` queue insertion — PLACEHOLDER, pending partner contract) | Notify assigned therapist of pending review. |
+| `tenant_id` | `uuid` (as text in JWT) | From `public.users.tenant_id` for the signing user |
+| `user_role` | `text` | Slug from `public.roles.slug` joined via `users.role_id` |
 
-Notes:
+The claim is named `user_role`, NOT `role`. Supabase reserves the `role` claim for PostgREST's `SET ROLE` mechanism; writing a slug like `therapist` there would break all authenticated requests.
 
-- All jobs operate on a single tenant context — set explicitly per CLAUDE.md rule 3. No global queries.
-- Failures are reported to Sentry (PII sanitized per rule 7).
-- Per-patient communication preferences (SMS / email / both) are honoured at send time, not job scheduling time.
+The hook runs as `SECURITY DEFINER` with `search_path = ''` (defense against search-path injection). `EXECUTE` is granted only to `supabase_auth_admin`; application code cannot call it. The hook must be enabled manually in the Supabase Dashboard under Authentication → Hooks.
 
----
+### 8.2 JWT helper functions
 
-## 11. Integration map
+Two `STABLE` SQL functions wrap claim reads. Referenced in policies as `(select public.jwt_tenant_id())` / `(select public.jwt_role())` so Postgres evaluates them as initPlans (once per query, not per row):
 
-Each external service is wrapped in a module under `packages/integrations`. Application code never calls third-party SDKs directly — all calls go through the wrapper, which centralizes retry, logging (PII-sanitized), and error handling.
+```sql
+CREATE OR REPLACE FUNCTION public.jwt_tenant_id() RETURNS uuid AS $$
+  SELECT (auth.jwt() ->> 'tenant_id')::uuid
+$$;
 
-| Integration | Purpose | Where invoked |
-|---|---|---|
-| **InvoiceXpress** | Issue, retrieve, void, list invoices (fatura-recibo format with NIF, fiscal data). | Invoice creation flow; reconciliation jobs. |
-| **IfThenPay** | MB (Multibanco reference) and MB Way payment requests + callback handler. | Patient payment flow; reconciliation jobs. |
-| **Stripe** | Card payments + webhook handler + refund flow. | Patient payment flow (card option). |
-| **Twilio** | SMS sending. PT sender (registered). 160-char GSM-7 compliant per `docs/sms-templates.md`. | Reminder jobs; transactional notifications. |
-| **Resend** | Transactional email. EU region. From `[from-address]@osteojp.pt` (pending DNS verification). | Reminder jobs; post-visit jobs; auth flows. |
-| **Sentry** | Error tracking. EU region. PII sanitized before send. | All apps. |
-| **Supabase Storage** | File storage for attachments (clinical record images, scans). Signed URLs only, never public. | Clinical records; AI ingestion attachments. |
-
-The AI partner is not in `packages/integrations` — it is an *inbound* integration (pushes data to us), and its contract lives in `packages/ingestion`.
-
----
-
-## 12. Deployment topology
-
-```mermaid
-flowchart TB
-    subgraph EU["🇪🇺 EU residency boundary (per rule 8)"]
-        direction TB
-        Vercel["Vercel<br/>region: fra1<br/>apps/web + apps/admin"]
-        Supabase["Supabase EU<br/>Frankfurt<br/>Postgres + Auth + Storage"]
-        Resend["Resend EU<br/>transactional email"]
-        Sentry["Sentry EU<br/>error tracking"]
-        Inngest["Inngest<br/>background jobs"]
-
-        Vercel <--> Supabase
-        Vercel --> Resend
-        Vercel --> Sentry
-        Vercel <--> Inngest
-        Inngest --> Supabase
-    end
-
-    subgraph External["External (outbound calls only — no stored data)"]
-        Twilio["Twilio<br/>PT SMS sender"]
-        Stripe["Stripe EU<br/>card payments"]
-        IfThenPay["IfThenPay<br/>MB / MB Way"]
-        InvoiceXpress["InvoiceXpress<br/>invoicing"]
-    end
-
-    subgraph Partner["AI Partner (external)"]
-        AI["Ambient recording<br/>→ Whisper → LLM"]
-    end
-
-    Vercel --> Twilio
-    Vercel --> Stripe
-    Vercel --> IfThenPay
-    Vercel --> InvoiceXpress
-    AI -->|signed POST| Vercel
-
-    User["Staff users<br/>(browser)"] --> Vercel
+CREATE OR REPLACE FUNCTION public.jwt_role() RETURNS text AS $$
+  SELECT auth.jwt() ->> 'user_role'
+$$;
 ```
 
-Notes:
+A missing or invalid `tenant_id` claim causes `jwt_tenant_id()` to return `NULL`, which makes every `tenant_id = (select public.jwt_tenant_id())` predicate `FALSE` — all rows invisible. **Fail-closed** by design.
 
-- All services storing OsteoJP data sit inside the EU residency boundary per rule 8.
-- Twilio, Stripe, IfThenPay, and InvoiceXpress are outbound only — the platform sends them transactional payloads (SMS, payment requests, invoice records). No clinical data crosses these boundaries.
-- The AI partner pushes data inbound into `packages/ingestion`. Their pipeline is external to the platform and outside our control.
-- Sentry events are scrubbed of PII before send per rule 7.
+### 8.3 RLS policies
+
+Every domain table has RLS enabled. The standard tenant-isolation policy pattern:
+
+```sql
+CREATE POLICY "table_tenant_isolation" ON public.table_name
+  FOR ALL TO authenticated
+  USING      (tenant_id = (select public.jwt_tenant_id()))
+  WITH CHECK (tenant_id = (select public.jwt_tenant_id()));
+```
+
+Exceptions to the standard pattern:
+
+- **`tenants`** — keyed on `id` (not `tenant_id`): `id = (select public.jwt_tenant_id())`.
+- **`audit_log`** — SELECT + INSERT policies only; absence of UPDATE/DELETE policies denies both.
+- **`clinical_records`** — separate SELECT/INSERT/UPDATE/DELETE policies gate on role: `jwt_role() IN ('owner', 'admin', 'therapist')`. Reception is denied at the DB layer.
+- **`patient_form_submissions`** — dual policy: patient `role` self-scope (INSERT + SELECT own rows only) + standard tenant-isolation for staff (Wave B).
+
+`service_role` has `BYPASSRLS` in Supabase and is the sanctioned escape hatch for migrations, ingestion jobs, and seed scripts. All service-role queries still filter by `tenant_id` explicitly (rule 3).
+
+### 8.4 Clinical records immutability trigger
+
+Enforced by a `BEFORE UPDATE OR DELETE` trigger (`clinical_records_enforce_immutability`). Fires regardless of RLS or `BYPASSRLS`:
+
+```sql
+IF OLD.status IN ('locked', 'signed') THEN
+  RAISE EXCEPTION '... is finalized and immutable; create a new versioned record instead'
+  USING ERRCODE = 'check_violation';
+END IF;
+```
+
+### 8.5 App-layer permission matrix
+
+`packages/auth/permissions.ts` defines the `PERMISSIONS` record. All API routes and server actions check this before any DB call. RLS is the second line of defense.
+
+| Capability | owner | admin | therapist | reception |
+|---|---|---|---|---|
+| `patients:read` | ✓ | ✓ | ✓ | ✓ |
+| `patients:write` | ✓ | ✓ | ✓ | ✓ |
+| `patients:delete` | ✓ | ✓ | ✗ | ✗ |
+| `appointments:read/write` | ✓ | ✓ | ✓ | ✓ |
+| `appointments:delete` | ✓ | ✓ | ✗ | ✓ |
+| `services:read` | ✓ | ✓ | ✓ | ✓ |
+| `services:write` | ✓ | ✓ | ✗ | ✗ |
+| `locations:read` | ✓ | ✓ | ✓ | ✓ |
+| `locations:write` | ✓ | ✓ | ✗ | ✗ |
+| `clinical_records:read` | ✓ | ✓ | ✓ | **✗** |
+| `clinical_records:author` | ✓ | **✗** | ✓ | ✗ |
+| `clinical_records:review` | ✓ | **✗** | ✓ | ✗ |
+| `clinical_records:sign` | ✓ | **✗** | ✓ | ✗ |
+| `invoices:read` | ✓ | ✓ | ✓ | ✓ |
+| `invoices:issue` | ✓ | ✓ | ✗ | ✓ |
+| `invoices:void` | ✓ | ✓ | ✗ | ✗ |
+| `users:read` | ✓ | ✓ | ✗ | ✗ |
+| `users:manage` | ✓ | ✓ | ✗ | ✗ |
+| `roles:read` | ✓ | ✓ | ✗ | ✗ |
+| `roles:manage` | ✓ | **✗** | ✗ | ✗ |
+| `settings:read/manage` | ✓ | ✓ | ✗ | ✗ |
+| `audit_log:read` | ✓ | ✓ | ✗ | ✗ |
+
+Key points: **Admin cannot author, review, or sign clinical records** (read-only, oversight role). **Only the owner can grant/change the owner role** (anti-escalation; `canReassignRole()` in `permissions.ts`). Reception has no clinical record access at all — enforced both here and by RLS.
 
 ---
 
-## 13. Environments
+## 9. Auth flow
 
-| Environment | Hostname | Purpose | DB |
+### 9.1 Staff auth (apps/web, apps/admin)
+
+```
+User → signInWithPassword → Supabase Auth
+Supabase Auth → custom_access_token_hook (SECURITY DEFINER)
+  hook reads: users.tenant_id, roles.slug via users.role_id
+  hook injects: { tenant_id, user_role } into JWT claims
+JWT returned to browser → @supabase/ssr stores session in cookies
+Server action / API route receives request with JWT cookie
+→ packages/auth verifies JWT + checks PERMISSIONS matrix
+→ Drizzle query sent with JWT context set by Supabase PostgREST
+→ RLS evaluates jwt_tenant_id() + jwt_role() per-query (initPlan)
+→ Filtered rows returned
+```
+
+`supabase-js` is used only for auth flows (`signInWithPassword`, session refresh). Application-layer queries go through Drizzle ORM via `packages/db`. No raw SQL in app code.
+
+### 9.2 Patient auth (apps/api, apps/portal)
+
+Patients authenticate via Supabase Auth with a separate principal type. The `custom_access_token_hook` returns `user_role = null` for patients (no row in `public.users`). `packages/auth/patient.ts` resolves the patient principal by looking up `patients.auth_user_id = auth.uid()`.
+
+Patient portal RLS uses a self-scope policy: a patient can only read/write rows where `patient_id` matches their own `auth.uid()` → `patients.auth_user_id` lookup. Staff tenant-isolation policies do not apply to the patient role.
+
+---
+
+## 10. Clinical record state machines
+
+Two orthogonal state machines on `clinical_records` (both defined in `packages/db/src/schema.ts`).
+
+### 10.1 `record_status` — lifecycle (all records)
+
+```
+draft → locked → signed
+                signed → [new row: addendum] → signed
+```
+
+- `draft`: editable by the assigned therapist (or owner). Content in `data` JSONB is mutable.
+- `locked` → `signed`: immutable. The BEFORE trigger blocks any UPDATE/DELETE, including `service_role`.
+- Addenda: a therapist opens a new record row with `supersedes_id` pointing at the finalized record. The chain preserves history.
+
+### 10.2 `ai_review_state` — AI ingestion queue (AI-ingested records only, PLACEHOLDER)
+
+Enum values: `pending_review`, `in_review`, `approved`, `rejected`. **PLACEHOLDER** — exact values and transition semantics depend on the AI partner auth contract (open item, see §15).
+
+- AI ingestion never produces a `locked` or `signed` record directly.
+- A human reviewer claiming the record (`pending_review` → `in_review`) is what advances it. Acceptance (`in_review` → `approved`) lets the record proceed through `record_status`.
+- `patient_form_submissions` reuses the same `ai_review_state` enum for the Wave B patient intake review queue.
+
+---
+
+## 11. Migration workflow
+
+### 11.1 Source of truth: `packages/db/migrations/`
+
+Schema changes flow through Drizzle:
+
+```
+Edit packages/db/src/schema.ts
+→ pnpm db:generate          # drizzle-kit generate → writes NNNN_*.sql to packages/db/migrations/
+→ node scripts/sync-supabase-migrations.mjs   # mirrors SQL to supabase/migrations/ (byte-for-byte + auto-header)
+→ git add packages/db/migrations/ supabase/migrations/
+→ commit + PR
+```
+
+`supabase/migrations/` is a **generated mirror** — never hand-edit it. The source is always `packages/db/migrations/`.
+
+### 11.2 Why the mirror exists
+
+Supabase branching builds each PR's ephemeral DB branch by applying `supabase/migrations/*.sql` + `supabase/seed.sql`. There is no config knob to point Supabase at the Drizzle directory. The sync script keeps the two directories byte-identical so preview branches always match what Drizzle applies to production.
+
+### 11.3 Applying migrations locally / on preview branches
+
+```bash
+supabase db reset   # applies all supabase/migrations/*.sql in order, then supabase/seed.sql
+```
+
+Used by both `db-tests.yml` (RLS isolation) and `e2e.yml` (Playwright) CI workflows.
+
+### 11.4 Applying to production (`prod-migrate.yml`)
+
+Manual, gated workflow (`workflow_dispatch` only). Requires typing `MIGRATE-PROD` exactly into the confirmation input. Uses `drizzle-kit migrate` against `PROD_DATABASE_URL_DIRECT` (the Supabase session pooler on port 5432 — drizzle-kit needs session-level advisory locks; the transaction pooler on 6543 does not support them). Idempotent: Drizzle tracks applied migrations in `drizzle.__drizzle_migrations` and skips already-applied files.
+
+---
+
+## 12. CI gates
+
+Six GitHub Actions workflows. Three are **required** (branch-protection gates). Three are additional guards.
+
+### 12.1 Required gates (branch protection)
+
+| Workflow | Job name (wire to branch protection exactly) | Trigger | What it tests |
 |---|---|---|---|
-| Local | `localhost:3000` | Developer machines | Local Postgres or Supabase branch |
-| PR Preview | Vercel preview URL per PR | Review individual PRs in isolation | Supabase branch per PR (DB branching enabled per mega plan Phase 2) |
-| Development | `app-dev.osteojp.pt` | Shared staging | Supabase dev project |
-| Production | `app.osteojp.pt` | Live platform | Supabase production project |
-| Ingestion API | `api.osteojp.pt` | AI partner ingestion endpoint (production) | Same as production |
+| `ci.yml` | `Lint + typecheck + test` | PR → `main` | `pnpm lint` + `pnpm typecheck` + `pnpm test` (Vitest, no DB). Fast, unit-only. |
+| `db-tests.yml` | `DB-gated tests (RLS isolation, seeded DB)` | PR → `main`, push `main` | Boots local Supabase, runs `supabase db reset`, executes `packages/db` Vitest suite with `DATABASE_URL` set. Includes a skip-guard that turns the job RED if any of the six RLS isolation suites silently skips (zero tests collected). Docs-only PRs skip the Supabase boot but the job still reports green. |
+| `e2e.yml` | `Playwright E2E (seeded DB)` | PR → `main` | Boots local Supabase, runs `supabase db reset`, seeds deterministic E2E fixture (`apps/web/e2e/seed/seed-e2e.mjs`), runs Playwright against `next dev`. Docs-only PRs skip. |
 
-CI/CD via GitHub Actions: lint, typecheck, and test run on every PR. Merge to `main` deploys to production. Branch protection on `main` requires PR + 1 approval + status checks.
+### 12.2 Non-required / advisory workflows
 
----
+| Workflow | Trigger | What it checks |
+|---|---|---|
+| `supabase-branch-sync.yml` | PR touching `packages/db/migrations/**`, `supabase/migrations/**`, `supabase/config.toml`, `supabase/seed.sql`, or `scripts/sync-supabase-migrations.mjs`; push to `main` | Verifies `supabase/migrations/` is byte-identical to `packages/db/migrations/` (via `--check` flag). Also asserts `custom_access_token_hook` is enabled in `config.toml`. |
+| `openapi-drift.yml` | PR touching `apps/api/app/api/**`, `apps/web/app/api/v1/**`, `docs/api/openapi.yaml`, or related scripts | Lints `docs/api/openapi.yaml` (Redocly), then checks every `/api/v1` route handler has a documented path+method. |
+| `prod-migrate.yml` | `workflow_dispatch` only | Manual production migration (see §11.4). |
 
-## 14. Coding conventions
+### 12.3 Vercel preview checks
 
-Sourced from `CLAUDE.md`.
-
-- Server actions over API routes when possible.
-- No `any`. If forced, comment why.
-- Database access only through `packages/db`. No raw SQL in app code.
-- All dates in UTC in DB, Europe/Lisbon for display.
-- Money: integer cents, currency on the column. Never floats.
-- File uploads always go through signed URLs; never proxy through the Next.js server.
-- Tests live next to code: `foo.ts` + `foo.test.ts`.
-
-Naming:
-
-- Tables: `snake_case`, plural (`patients`, `clinical_records`).
-- TS: `camelCase` for variables, `PascalCase` for types and components.
-- Routes: `/api/v1/...` with explicit versioning.
+Vercel posts a non-required `Preview – …` check on every PR. On the Hobby plan this check may show as `informational` or fail without blocking merge. It is not wired into branch protection.
 
 ---
 
-## 15. Out of scope for V1
+## 13. External integrations
 
-Per `CLAUDE.md`. Do not build, ignore in PR reviews.
+All integration clients live in `apps/web/lib/integrations/` (staff-app only). Each wrapper is **credential-gated**: it throws a typed config error before any network call when owner-supplied keys are absent. All integrations default to sandbox/dry-run mode in the absence of credentials or the `REMINDERS_LIVE_SEND=true` flag.
 
-- Patient portal
-- WhatsApp integration
-- Mobile app
-- Telehealth
-- Insurance handling
-- Waitlist
-- Loyalty / referral programs
-- Pilates module
-- Formação module
-- CID-10 mandatory enforcement (codes captured but not enforced)
-- Full historical archive migration (partial migration only — see mega plan Phase 5)
+### 13.1 InvoiceXpress — **Phase 4, owner-gated**
+
+Fiscal invoicing for Portugal (`fatura-recibo` format with NIF + AT-certified serial). Issues, retrieves, voids, and lists invoices. Relay is designed but not yet wired to real issuance.
+
+- **Status:** keys unset (`INVOICEXPRESS_API_KEY`, `INVOICEXPRESS_ACCOUNT_NAME`). Every operation throws `InvoiceXpressConfigError` before any fetch.
+- **Owner gates before live use:** (1) provision API key; (2) owner sign-off on VAT-23% wiring (CLAUDE.md: invoicing legal compliance is owner-confirmable).
+- **Integration path:** `lib/integrations/invoicexpress/` → Inngest retry job at `/api/inngest/invoicexpress`.
+- **Fiscal note:** IfThenPay records payment status; InvoiceXpress issues the legal fiscal document. They are independent — one collects money, the other issues the receipt.
+
+### 13.2 IfThenPay — **owner-gated, no live calls**
+
+Portuguese payment gateway for Multibanco references and MB Way push payments. Includes anti-spoofed callback handler and idempotent reconciliation against the internal `invoices` ledger.
+
+- **Status:** keys unset (`IFTHENPAY_MB_KEY`, `IFTHENPAY_MBWAY_KEY`, `IFTHENPAY_ANTIPHISHING_KEY`). Every operation throws `IfThenPayConfigError` before any fetch.
+- **Integration path:** `lib/integrations/ifthenpay/` → Inngest retry job at `/api/inngest/ifthenpay`; public callback webhook at `/api/webhooks/ifthenpay`.
+
+### 13.3 Stripe — **owner-gated, no live calls**
+
+Card payment processing. Typed client + webhook handler + refund flow. Keys unset (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`).
+
+- **Status:** every operation throws `StripeConfigError` before any fetch.
+- **Integration path:** `lib/integrations/stripe/` → Inngest retry job at `/api/inngest/stripe`; webhook at `/api/v1/integrations/stripe/webhook`.
+
+### 13.4 Twilio — **sandbox-first**
+
+SMS notifications (appointment reminders, patient activation). PT SMS sender ID "OsteoJP" — registration process documented in `docs/twilio-pt-sender-registration.md`.
+
+- **Status:** SDK imported lazily; no network call fires unless `REMINDERS_LIVE_SEND=true` AND provider keys are present. Defaults to sandbox (logs intent, no send).
+- **PT registration:** sender ID registration pending (required before any live SMS to PT numbers).
+- **Used in:** `apps/web/lib/reminders/clients.ts` (staff reminders), `apps/api/lib/notify/clients.ts` (patient activation).
+
+### 13.5 Resend — **sandbox-first**
+
+Transactional email (reminders, post-visit, patient activation, staff invite). EU region. Sender domain `@osteojp.pt` pending DNS verification.
+
+- **Status:** SDK imported lazily; sandbox-first same gate as Twilio above.
+- **DNS pending:** SPF, DKIM, DMARC records documented in `docs/dns-records-pending.md`. Owner DNS access required.
+- **Used in:** `apps/web/lib/reminders/clients.ts`, `apps/web/lib/admin/staff.ts`, `apps/api/lib/notify/clients.ts`.
+
+### 13.6 Sentry — **active**
+
+Error tracking, EU region (`@sentry/nextjs`). Configured in `apps/web/sentry.server.config.ts`, `sentry.edge.config.ts`, and `instrumentation.ts`. `tracesSampleRate`: 1.0 in dev, 0.1 in production. PII scrubbed before any event is sent (rule 7).
+
+### 13.7 Inngest — **active**
+
+Background job orchestration. Separate Inngest "apps" per integration domain (core, ifthenpay, invoicexpress, stripe), each with its own serving endpoint under `/api/inngest/`. Functions handle retry, deduplication, and concurrency.
+
+Key jobs:
+| Job | Trigger |
+|---|---|
+| Appointment reminder 48h + 24h | Scheduled per appointment |
+| Post-visit thank-you | Event: appointment marked complete |
+| Post-visit feedback | Cron: +3 days post-appointment |
+| IfThenPay payment reconciliation | Event: payment callback received |
+| InvoiceXpress issue with retries | Event: `invoice/issue.requested` |
+| Stripe charge with retries | Event: invoice payment by card |
+| AI review queue notification | Event: ingestion accepted (PLACEHOLDER) |
+
+All jobs operate on a single tenant context (rule 3). Failures reported to Sentry (PII sanitized).
 
 ---
 
-## 16. Open questions
+## 14. Deployment topology
 
-Items that need a decision from the lead, the owner, or the AI partner before they're locked in.
+```
+EU data-residency boundary
+  Vercel (fra1)
+    apps/web   — staff platform (app.osteojp.pt)
+    apps/admin — superadmin (admin.osteojp.pt)
+    apps/api   — patient API (api.osteojp.pt)
+    apps/portal — patient portal (portal.osteojp.pt)
+  Supabase EU (Frankfurt)
+    PostgreSQL (with RLS) + Auth + Storage
+  Resend EU — transactional email
+  Sentry EU — error tracking
+  Inngest — background jobs (US-hosted worker, EU DB access)
 
-1. **AI ingestion authentication contract.** `CLAUDE.md` specifies API key + HMAC. The partner has recommended a service-account bearer token. Decision pending; affects `packages/ingestion` and the partner-side client.
-2. **Per-field `ai_extractable` flag values.** Form templates currently set every flag to `false` pending the AI partner contract. Once signed, narrative textareas will likely flip to `true`; structured fields and `private_notes` stay `false` permanently.
-3. **Email sender details.** Sender display name, reply-to address, and 48h vs 24h reminder timing pending owner decision.
-4. **Resend DNS verification.** `[from-address]@osteojp.pt` is placeholder pending DNS records (SPF, DKIM, DMARC) — DNS access required from the owner per `docs/dns-records-pending.md`.
-5. **Twilio PT sender registration.** SMS sender ID "OsteoJP" needs PT registration before SMS templates can send.
-6. **No-show charge policy.** Whether the no-show email mentions a charge / late-cancellation fee. Owner decision.
+External / outbound only (no stored clinical data crosses these)
+  Twilio — PT SMS
+  IfThenPay — MB/MB Way payments
+  Stripe — card payments
+  InvoiceXpress — fiscal invoicing
+
+AI Partner (inbound only — pushes into /api/v1/ingestion)
+  Ambient recording → Whisper → LLM pipeline (external)
+```
+
+**Vercel regions:** all four apps are deployed with `regions: ["fra1"]` (from `vercel.json` at repo root). Vercel Hobby tier — Vercel preview checks are non-required.
+
+**Vercel setup checklist** (applied manually in the dashboard — do not automate):
+- Settings → General → Data Preferences → disable "Improve models with this project's data"
+- Settings → Build and Deployment → Node.js Version → 22.x
+
+---
+
+## 15. Open questions
+
+Items needing decision from the lead, owner, or AI partner before they can be resolved.
+
+1. **AI ingestion auth contract.** `CLAUDE.md` specifies API key + HMAC. The partner has recommended a service-account bearer token. Decision pending; affects `packages/ingestion` and the partner-side client.
+2. **Per-field `ai_extractable` flag values.** All form template fields currently set to `false` pending the AI partner contract. Narrative fields will likely flip to `true` once signed; structured fields and `private_notes` stay `false` permanently.
+3. **Email sender details.** Sender display name, reply-to address, and 48h vs 24h reminder timing. Owner decision.
+4. **Resend DNS verification.** SPF/DKIM/DMARC records pending DNS access from the owner (see `docs/dns-records-pending.md`).
+5. **Twilio PT sender registration.** Sender ID "OsteoJP" needs PT carrier registration before any live SMS.
+6. **No-show charge policy.** Whether the no-show email mentions a late-cancellation fee. Owner decision.
 7. **Montemor-o-Novo opening date + contacts.** Pending owner confirmation.
-8. **`invoicing.total*` string deduplication.** `invoicing.totalPaid/Pending/Overdue` duplicate the status labels — consolidate if they render in the same context. Flagged in i18n copy review (#55).
-9. **`patients.fieldSex` EN label.** Current: `"Biological sex"`. Confirm clinically acceptable to owner (vs `"Sex"`). Flagged in i18n copy review (#55).
-
-**Resolved since last update:**
-- ~~Seed loader contract~~ — loader shipped in `packages/db/seed/form-templates.ts` (PR #31). Form templates relocated and validated (PR #36). Patient seed data added (PR #52).
-- ~~i18n package initialization~~ — `packages/i18n/` fully populated, typecheck-clean (PR #32).
-- ~~Supabase branching setup~~ — per-PR Supabase branches live (PR #39). See `docs/supabase-branching.md`.
-- ~~Storybook scaffold~~ — `packages/ui` Storybook working with brand tokens wired (PRs #33–#35).
+8. **VAT-23% sign-off (#107).** Required before InvoiceXpress or Stripe can issue real documents. Owner-confirmable per CLAUDE.md.
+9. **`invoicing.total*` string deduplication.** `invoicing.totalPaid/Pending/Overdue` duplicate status labels. Flagged in i18n copy review.
+10. **`patients.fieldSex` EN label.** Current: `"Biological sex"`. Confirm clinically acceptable (vs `"Sex"`). Flagged in i18n copy review.
 
 ---
 
-## 17. References
+## 16. References
 
 - [`mega-plan.md`](./mega-plan.md) — phased task plan
-- [`claude-md-reference.md`](./claude-md-reference.md) — architectural rules (the `CLAUDE.md` companion this doc transcribes)
+- [`CLAUDE.md`](../CLAUDE.md) — architectural rules (the source this doc transcribes)
 - [`tech-stack.md`](./tech-stack.md) — stack rationale
 - [`handoff-brief.md`](./handoff-brief.md) — team context
 - [`brand-tokens.md`](./brand-tokens.md) — visual identity
 - [`brand-voice.md`](./brand-voice.md) — copy and tone reference
-- [`sms-templates.md`](./sms-templates.md) — SMS content (PR #18)
-- [`email-templates-reminders.md`](./email-templates-reminders.md) — appointment reminder emails (PR #20)
-- [`email-templates-post-visit.md`](./email-templates-post-visit.md) — post-visit emails (PR #21)
-- [`wireframes/README.md`](./wireframes/README.md) — wireframe index
-- [`dns-records-pending.md`](./dns-records-pending.md) — pending DNS items for Resend
+- [`sms-templates.md`](./sms-templates.md) — SMS content
+- [`email-templates-reminders.md`](./email-templates-reminders.md) — appointment reminder emails
+- [`email-templates-post-visit.md`](./email-templates-post-visit.md) — post-visit emails
 - [`supabase-branching.md`](./supabase-branching.md) — per-PR Supabase branch setup and CI guard
 - [`supabase-setup.md`](./supabase-setup.md) — Supabase project configuration
-- [`i18n-copy-review.md`](./i18n-copy-review.md) — PT/EN copy review findings (PR #55)
+- [`dns-records-pending.md`](./dns-records-pending.md) — Resend DNS items
+- [`twilio-pt-sender-registration.md`](./twilio-pt-sender-registration.md) — SMS sender registration
+- [`ops/prod-migrate.md`](./ops/prod-migrate.md) — production migration runbook
+- [`docs/api/openapi.yaml`](./api/openapi.yaml) — API spec
 - [`packages/db/src/schema.ts`](../packages/db/src/schema.ts) — schema source of truth
-- [`packages/db/seed/README.md`](../packages/db/seed/README.md) — seed strategy and loader contract
-- [`apps/web/e2e/`](../apps/web/e2e/) — Playwright E2E test suite (PR #53)
+- [`packages/auth/permissions.ts`](../packages/auth/permissions.ts) — permission matrix source
+- [`apps/web/lib/integrations/`](../apps/web/lib/integrations/) — integration clients
+- [`apps/web/e2e/`](../apps/web/e2e/) — Playwright E2E suite
