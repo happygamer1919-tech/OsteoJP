@@ -30,7 +30,8 @@ export const PATIENTS = {
     id: "00000000-0000-0000-0000-00000000a301",
     name: "Maria Silva",
     nif: "123456789",
-    phone: "912345678",
+    phone: "912345678",       // digit-only — used as search input
+    phoneDisplay: "+351 912 345 678", // stored/rendered value — used for column assertions
   },
   joao: { id: "00000000-0000-0000-0000-00000000a302", name: "João Pereira" },
   ana: { id: "00000000-0000-0000-0000-00000000a303", name: "Ana Costa" },

@@ -7,6 +7,8 @@
  *  4. Empty form stays on /login (native required validation)
  *  5. An authenticated session carries tenant + role: an admin reaches the app,
  *     and visiting /login while authenticated bounces back into it.
+ *  6. Therapist login redirects to /dashboard (scenario 1.x — login per role)
+ *  7. Reception login redirects to /dashboard (scenario 1.x — login per role)
  *
  * Role-specific session enforcement (reception has no clinical access) is proven
  * in clinical.spec.ts.
@@ -36,6 +38,22 @@ test.describe("unauthenticated", () => {
     await page.locator('input[name="password"]').fill(E2E_PASSWORD);
     await page.getByRole("button", { name: /Iniciar sessão/i }).click();
     // Login action redirects to /dashboard on success.
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 12_000 });
+  });
+
+  test("login with valid therapist credentials redirects to /dashboard", async ({ page }) => {
+    await page.goto("/login");
+    await page.locator('input[name="email"]').fill(USERS.therapist);
+    await page.locator('input[name="password"]').fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 12_000 });
+  });
+
+  test("login with valid reception credentials redirects to /dashboard", async ({ page }) => {
+    await page.goto("/login");
+    await page.locator('input[name="email"]').fill(USERS.reception);
+    await page.locator('input[name="password"]').fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 12_000 });
   });
 

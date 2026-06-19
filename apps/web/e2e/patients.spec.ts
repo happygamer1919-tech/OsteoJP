@@ -5,6 +5,9 @@
  * restore, merge.
  * Guardrails: a pre-soft-deleted patient is absent from active views;
  * a cross-tenant patient id is denied (404).
+ *
+ * Scenario 4.1 (test-scenarios-staff.md): the result row also shows the
+ * patient NIF (below the name) and phone (in the phone column).
  */
 import { test, expect } from "@playwright/test";
 import { createPatient, fillPatientForm, goToPatients, searchPatients } from "./helpers";
@@ -43,6 +46,22 @@ test("search with no results shows the empty-state message", async ({ page }) =>
   // Digit-free: a query with digits would also match patients by NIF/phone.
   await searchPatients(page, "ZZZNENHUMUTENTEZZZ");
   await expect(page.getByText("Sem resultados para esta pesquisa")).toBeVisible();
+});
+
+test("search result row shows the patient NIF below the name (scenario 4.1)", async ({ page }) => {
+  // Scope to <table> (desktop view) to avoid matching the hidden mobile <ul>
+  // sibling, which also renders the NIF but is display:none at desktop viewport.
+  await searchPatients(page, PATIENTS.maria.name);
+  await expect(page.getByRole("link", { name: new RegExp(PATIENTS.maria.name) })).toBeVisible();
+  await expect(page.locator("table").getByText(`NIF ${PATIENTS.maria.nif}`)).toBeVisible();
+});
+
+test("search result row shows the patient phone in the phone column (scenario 4.1)", async ({ page }) => {
+  // Scope to <table> for the same reason — mobile <ul> also renders the phone
+  // but is hidden at desktop viewport width.
+  await searchPatients(page, PATIENTS.maria.name);
+  await expect(page.getByRole("link", { name: new RegExp(PATIENTS.maria.name) })).toBeVisible();
+  await expect(page.locator("table").getByText(PATIENTS.maria.phoneDisplay)).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
