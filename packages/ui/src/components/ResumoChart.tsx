@@ -20,6 +20,12 @@ import { type ReactNode, useId } from "react";
 export interface ResumoChartProps {
   /** Series values; needs at least 2 points to draw a line. */
   data?: number[];
+  /**
+   * Optional x-axis labels (one per data point). When provided and the same
+   * length as `data`, each label is rendered below the corresponding point.
+   * Typical use: PT short weekday names ("Seg", "Ter", …, "Dom").
+   */
+  labels?: string[];
   loading?: boolean;
   /** Placeholder copy shown when there is no/insufficient data. */
   emptyLabel?: ReactNode;
@@ -31,14 +37,16 @@ export interface ResumoChartProps {
 const cx = (...c: Array<string | false | null | undefined>): string =>
   c.filter(Boolean).join(" ");
 
-// viewBox geometry. Width 100, height 40, with 2-unit vertical padding so the
-// extremes never touch the edge.
+// viewBox geometry. Width 100, chart height 40, label row 10 (rendered when
+// labels are supplied). PAD keeps extremes off the top/bottom of the chart area.
 const W = 100;
 const H = 40;
 const PAD = 2;
+const LABEL_H = 10; // extra height below chart for the weekday label row
 
 export function ResumoChart({
   data,
+  labels,
   loading = false,
   emptyLabel,
   ariaLabel,
@@ -70,12 +78,20 @@ export function ResumoChart({
     );
   }
 
+  const showLabels = labels != null && labels.length === data.length;
+  const totalH = showLabels ? H + LABEL_H : H;
+
   const min = Math.min(...data);
   const max = Math.max(...data);
   const span = max - min || 1;
+
+  // Horizontal position (0–100) for data point i. Shared by the polyline and
+  // the optional label row.
+  const xAt = (i: number) => (i / (data.length - 1)) * W;
+
   const points = data
     .map((v, i) => {
-      const x = (i / (data.length - 1)) * W;
+      const x = xAt(i);
       const y = H - PAD - ((v - min) / span) * (H - PAD * 2);
       return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
@@ -88,7 +104,7 @@ export function ResumoChart({
     <svg
       role="img"
       aria-label={ariaLabel}
-      viewBox={`0 0 ${W} ${H}`}
+      viewBox={`0 0 ${W} ${totalH}`}
       preserveAspectRatio="none"
       className={cx(base, className)}
     >
@@ -121,6 +137,21 @@ export function ResumoChart({
         strokeLinejoin="round"
         vectorEffect="non-scaling-stroke"
       />
+
+      {showLabels &&
+        (labels as string[]).map((label, i) => (
+          <text
+            key={label}
+            x={xAt(i).toFixed(2)}
+            y={H + LABEL_H - 1}
+            textAnchor="middle"
+            fontSize="6"
+            fill="var(--color-v2-text-secondary)"
+            vectorEffect="non-scaling-stroke"
+          >
+            {label}
+          </text>
+        ))}
     </svg>
   );
 }

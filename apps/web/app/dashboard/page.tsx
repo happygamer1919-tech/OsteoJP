@@ -219,6 +219,15 @@ export default async function DashboardPage({
     weeklyData = counts;
   }
 
+  // Weekday labels for the chart x-axis: "Seg"–"Dom" derived from the actual
+  // date strings so the order is always correct regardless of locale.
+  const weekLabels = weekDates.map((d) =>
+    new Date(lisbonMidnightUtc(d))
+      .toLocaleDateString("pt-PT", { weekday: "short", timeZone: "Europe/Lisbon" })
+      .replace(".", "")
+      .replace(/^(.)/, (c) => c.toUpperCase()),
+  );
+
   // Notas rápidas — initial value from tenants.settings.notes.
   const initialNotes = await getQuickNotes(ctx);
 
@@ -332,6 +341,7 @@ export default async function DashboardPage({
         <GlassPanel title={s["dashboard.weeklySummary"]}>
           <ResumoChart
             data={weeklyData}
+            labels={weekLabels}
             emptyLabel={s["dashboard.notEnoughData"]}
             ariaLabel={s["dashboard.weeklyChartLabel"]}
           />
