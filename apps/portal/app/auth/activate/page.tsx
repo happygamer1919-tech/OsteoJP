@@ -17,7 +17,7 @@ function Requirement({ met, children }: { met: boolean; children: React.ReactNod
       ) : (
         <Circle size={16} strokeWidth={1.75} aria-hidden="true" />
       )}
-      <span className="sr-only">{met ? 'Concluído: ' : 'Pendente: '}</span>
+      <span className="sr-only">{met ? s.auth.activate_req_done : s.auth.activate_req_pending}</span>
       {children}
     </li>
   )

@@ -23,7 +23,7 @@ export default function NotFound() {
         {s.errors['404_cta']}
       </Link>
       <p className="text-xs text-text-secondary">
-        {s.common.app_name} · Linda-a-Velha · Castelo Branco · Montemor-o-Novo
+        {s.common.app_name} · {s.common.footer_locations}
       </p>
     </div>
   )

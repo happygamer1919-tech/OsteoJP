@@ -19,7 +19,10 @@
     "no": "Não",
     "call_clinic": "Ligar para a clínica",
     "retry": "Tentar novamente",
-    "skip_to_content": "Saltar para o conteúdo"
+    "skip_to_content": "Saltar para o conteúdo",
+    "toast_region": "Notificações",
+    "version": "Versão",
+    "footer_locations": "Linda-a-Velha · Castelo Branco · Montemor-o-Novo"
   },
   "nav": {
     "home": "Início",
@@ -63,7 +66,9 @@
     "activate_req_length": "Pelo menos 8 caracteres",
     "activate_req_match": "As palavras-passe coincidem",
     "logout": "Terminar sessão",
-    "session_expired": "A sua sessão expirou. Por favor entre novamente."
+    "session_expired": "A sua sessão expirou. Por favor entre novamente.",
+    "activate_req_done": "Concluído: ",
+    "activate_req_pending": "Pendente: "
   },
   "dashboard": {
     "greeting": "Olá, {{name}}",
@@ -192,7 +197,8 @@
     "field_consent_treatment": "Consinto a realização do tratamento proposto.",
     "field_consent_data": "Consinto o tratamento dos meus dados pessoais para fins clínicos, nos termos do RGPD.",
     "consent_required": "O seu consentimento é obrigatório para prosseguir.",
-    "forms_info": "As fichas de admissão são preenchidas na clínica. Aqui pode acompanhar o estado das fichas que enviou."
+    "forms_info": "As fichas de admissão são preenchidas na clínica. Aqui pode acompanhar o estado das fichas que enviou.",
+    "form_word": "Ficha"
   },
   "documents": {
     "title": "Documentos",
@@ -232,7 +238,9 @@
     "linda_velha_hours": "Segunda a sexta, 9h–20h",
     "castelo_branco_name": "Castelo Branco",
     "castelo_branco_address": "R. Fernando Namora, n.º 6, 6000-140",
-    "castelo_branco_hours": "Segunda a sexta, 9h–19h"
+    "castelo_branco_hours": "Segunda a sexta, 9h–19h",
+    "clinic_label": "Clínica {{name}}",
+    "weekdays": "Segunda a Sexta"
   },
   "account": {
     "title": "A minha conta",
@@ -275,7 +283,8 @@
     "delete_account": "Eliminar conta",
     "delete_account_confirm": "Tem a certeza? Esta ação é irreversível e todos os seus dados serão eliminados.",
     "delete_account_success": "A sua conta foi eliminada.",
-    "tarifa_protocolo": "Tarifa protocolo"
+    "tarifa_protocolo": "Tarifa protocolo",
+    "address_placeholder": "Rua, número…"
   },
   "services": {
     "osteopatia": "Osteopatia",
