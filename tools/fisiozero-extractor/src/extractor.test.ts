@@ -48,6 +48,7 @@ const noWaitDeps: LoopDeps = { sleep: async () => {}, rng: () => 0 };
 class FakeClient implements FisiozeroClient {
   activeId: number | null = null;
   failAttachment: string | null = null;
+  failPdf = false;
   throwLoginOn: string | null = null;
   constructor(private readonly present: Set<number>) {}
 
@@ -70,8 +71,13 @@ class FakeClient implements FisiozeroClient {
       return this.text(url, `<h1>Ficha</h1><a href="user_rgpd_files/RG.pdf">RGPD</a>${PAD}`);
     }
     if (op === "osteo_epi") {
-      // Real Fisiozero episode rows use href="#" with the target in an inline onclick.
-      return this.text(url, `<a href="#" onclick="location.href='?op=r6&i=RTE1'">Ep1</a>${PAD}`);
+      // Real Fisiozero episode rows use href="#" with the target in an inline onclick,
+      // plus a plain <a href> for the server-rendered PDF.
+      return this.text(
+        url,
+        `<a href="#" onclick="location.href='?op=r6&i=RTE1'">Ep1</a>` +
+          `<a href="export_pdf_osteopatia2.php?i=RTE1&u=UPAT">PDF</a>${PAD}`,
+      );
     }
     if (op === "avl") return this.text(url, `<div>no evals</div>${PAD}`);
     if (op === "r6") {
@@ -88,6 +94,10 @@ class FakeClient implements FisiozeroClient {
     if (url.includes("export_ficha_utente.php")) {
       return { status: 200, url, bytes: Buffer.from("XLSDATA"), contentType: "application/vnd.ms-excel" };
     }
+    if (url.includes("export_pdf_osteopatia2.php")) {
+      if (this.failPdf) return { status: 404, url, bytes: Buffer.alloc(0), contentType: "text/plain" };
+      return { status: 200, url, bytes: Buffer.from("%PDF-1.4 fake"), contentType: "application/pdf" };
+    }
     return { status: 200, url, bytes: Buffer.from("FILE"), contentType: "application/octet-stream" };
   }
 
@@ -101,7 +111,9 @@ describe("extractPatient", () => {
 
     expect(r.status).toBe("done");
     expect(r.episodes).toBe(1);
-    expect(r.attachmentsDiscovered).toBe(2); // 1 on ficha + 1 on episode
+    expect(r.episodePdfsDiscovered).toBe(1);
+    expect(r.episodePdfsDownloaded).toBe(1);
+    expect(r.attachmentsDiscovered).toBe(2); // 1 on ficha + 1 on episode detail
     expect(r.attachmentsDownloaded).toBe(2);
     expect(r.xlsCaptured).toBe(true);
 
@@ -113,6 +125,7 @@ describe("extractPatient", () => {
       "attachments/exam.png",
       "consultar_hist.html",
       "episodes/episode-01.html",
+      "episodes/episode-01.pdf",
       "export_ficha_utente.xls",
       "ficha.html",
       "lists/avl.html",
@@ -134,6 +147,23 @@ describe("extractPatient", () => {
     expect(r.status).toBe("done");
     expect(r.attachmentsDiscovered).toBe(2);
     expect(r.attachmentsDownloaded).toBe(1);
+  });
+
+  it("increments episodePdfsDownloaded when the PDF is served correctly", async () => {
+    const client = new FakeClient(new Set([300]));
+    const r = await extractPatient(client, cfg(), 300);
+    expect(r.status).toBe("done");
+    expect(r.episodePdfsDiscovered).toBe(1);
+    expect(r.episodePdfsDownloaded).toBe(1);
+  });
+
+  it("records a PDF miss as discovered>downloaded delta, still done", async () => {
+    const client = new FakeClient(new Set([301]));
+    client.failPdf = true;
+    const r = await extractPatient(client, cfg(), 301);
+    expect(r.status).toBe("done");
+    expect(r.episodePdfsDiscovered).toBe(1);
+    expect(r.episodePdfsDownloaded).toBe(0);
   });
 });
 

@@ -124,6 +124,21 @@ export function extractEpisodeUrls(
   return uniqueResolved(baseUrl, candidates, patterns, matchesOpToken);
 }
 
+/**
+ * Default path fragment that marks a server-rendered episode PDF link.
+ * Appears as a plain <a href> on both osteo_epi.html and avl.html list pages.
+ */
+export const DEFAULT_EPISODE_PDF_PATTERNS = ["export_pdf_osteopatia2.php"];
+
+/** Absolute, de-duplicated episode PDF URLs found in a list page. */
+export function extractEpisodePdfUrls(
+  baseUrl: string,
+  html: string,
+  patterns: readonly string[] = DEFAULT_EPISODE_PDF_PATTERNS,
+): string[] {
+  return uniqueResolved(baseUrl, extractHrefs(html), patterns);
+}
+
 /** Default markers that indicate a response is actually the login screen. */
 export const DEFAULT_LOGIN_URL_MARKERS = ["op=login", "/login", "login.php"];
 export const DEFAULT_LOGIN_BODY_MARKERS = ['name="password"', 'name="pass"', "op=login"];
