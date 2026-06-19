@@ -80,7 +80,7 @@ test("create patient with all fields persists and displays them", async ({ page 
 test("edit patient phone and see the updated value on the profile", async ({ page }) => {
   const id = await createPatient(page, { fullName: `Editar ${uniq()}`, phone: "+351 910 000 000" });
   await page.goto(`/patients/${id}/edit`);
-  const phone = page.getByLabel(/Telefone/i);
+  const phone = page.getByLabel(/Telem[oó]vel/i);
   await phone.clear();
   await phone.fill("+351 910 000 999");
   await page.getByRole("button", { name: "Guardar" }).click();
