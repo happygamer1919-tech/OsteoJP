@@ -320,6 +320,8 @@ export const patients = pgTable(
     activatedAt: timestamp("activated_at", { withTimezone: true }),
     // Stream A — patient merge: the losing record points at the survivor.
     mergedIntoId: uuid("merged_into_id"),
+    reminderSmsEnabled: boolean("reminder_sms_enabled").notNull().default(true),
+    reminderEmailEnabled: boolean("reminder_email_enabled").notNull().default(false),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

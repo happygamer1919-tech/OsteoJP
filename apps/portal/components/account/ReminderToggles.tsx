@@ -1,17 +1,39 @@
 'use client'
 
 import { Switch } from '@osteojp/ui'
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
+import { updateReminderPrefsAction } from '@/app/portal/account/actions'
 import { s } from '@/lib/i18n'
 
-// V1: reminder preferences are stored client-side in localStorage as a fallback
-// until the PATCH /api/v1/patient/profile endpoint exposes reminder_preferences.
-// When that field is added, swap useState for server-read initial state.
-// Default: SMS on (Joao Pedro confirmed), email off.
+export default function ReminderToggles({
+  initialSms,
+  initialEmail,
+}: {
+  initialSms: boolean
+  initialEmail: boolean
+}) {
+  const [sms, setSms] = useState(initialSms)
+  const [email, setEmail] = useState(initialEmail)
+  const [, startTransition] = useTransition()
 
-export default function ReminderToggles() {
-  const [sms, setSms] = useState(true)
-  const [email, setEmail] = useState(false)
+  function toggle(field: 'sms' | 'email', checked: boolean) {
+    const next = field === 'sms'
+      ? { smsEnabled: checked, emailEnabled: email }
+      : { smsEnabled: sms, emailEnabled: checked }
+
+    // Optimistic update — apply immediately, rollback on server error.
+    if (field === 'sms') setSms(checked)
+    else setEmail(checked)
+
+    startTransition(async () => {
+      const result = await updateReminderPrefsAction(next)
+      if (result?.error) {
+        // Revert on failure
+        if (field === 'sms') setSms(!checked)
+        else setEmail(!checked)
+      }
+    })
+  }
 
   return (
     <div className="bg-surface rounded-xl border border-border divide-y divide-border">
@@ -25,7 +47,7 @@ export default function ReminderToggles() {
         <label className="inline-flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center">
           <Switch
             checked={sms}
-            onChange={(e) => setSms(e.target.checked)}
+            onChange={(e) => toggle('sms', e.target.checked)}
             aria-label={s.account.reminders_sms}
           />
         </label>
@@ -39,7 +61,7 @@ export default function ReminderToggles() {
         <label className="inline-flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center">
           <Switch
             checked={email}
-            onChange={(e) => setEmail(e.target.checked)}
+            onChange={(e) => toggle('email', e.target.checked)}
             aria-label={s.account.reminders_email}
           />
         </label>

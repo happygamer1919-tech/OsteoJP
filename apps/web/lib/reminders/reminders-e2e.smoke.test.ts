@@ -90,6 +90,8 @@ function makeData(locale: Locale) {
     patientName: pt ? "Madalena Sousa" : "Mary Roberts",
     patientEmail: pt ? "madalena@example.pt" : "mary@example.com",
     patientPhone: LONGEST_PHONE,
+    patientReminderSmsEnabled: true,
+    patientReminderEmailEnabled: true,
     practitionerName: "Dr. João Pereira",
     locationName: LONGEST_LOCATION,
     locationPhone: LONGEST_PHONE,

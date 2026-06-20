@@ -57,6 +57,8 @@ export type PatientProfile = {
   address: string | null
   postalCode: string | null
   city: string | null
+  reminderSmsEnabled: boolean
+  reminderEmailEnabled: boolean
 }
 
 export type PatientProfilePatch = {

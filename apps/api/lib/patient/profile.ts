@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { patients } from "@osteojp/db";
 import { runAsPatient, type PatientPrincipal } from "@/lib/auth/patient";
 
-// ─── Read (existing) ──────────────────────────────────────────────────────────
+// ─── Read ─────────────────────────────────────────────────────────────────────
 
 export type PatientProfile = {
   id: string;
@@ -13,6 +13,8 @@ export type PatientProfile = {
   address: string | null;
   postalCode: string | null;
   city: string | null;
+  reminderSmsEnabled: boolean;
+  reminderEmailEnabled: boolean;
 };
 
 type ProfileRow = {
@@ -23,6 +25,8 @@ type ProfileRow = {
   address: string | null;
   postalCode: string | null;
   city: string | null;
+  reminderSmsEnabled: boolean;
+  reminderEmailEnabled: boolean;
 };
 
 export function toProfileDTO(row: ProfileRow): PatientProfile {
@@ -34,6 +38,8 @@ export function toProfileDTO(row: ProfileRow): PatientProfile {
     address: row.address,
     postalCode: row.postalCode,
     city: row.city,
+    reminderSmsEnabled: row.reminderSmsEnabled,
+    reminderEmailEnabled: row.reminderEmailEnabled,
   };
 }
 
@@ -50,6 +56,8 @@ export async function getOwnProfile(
         address: patients.address,
         postalCode: patients.postalCode,
         city: patients.city,
+        reminderSmsEnabled: patients.reminderSmsEnabled,
+        reminderEmailEnabled: patients.reminderEmailEnabled,
       })
       .from(patients)
       .where(
@@ -66,12 +74,13 @@ export async function getOwnProfile(
   });
 }
 
-// ─── Write (new) ──────────────────────────────────────────────────────────────
+// ─── Write ────────────────────────────────────────────────────────────────────
 
 /**
  * The subset of the patient's own profile that the portal is allowed to update.
  * NIF is Phase 4 only (fiscal). fullName and email changes require staff action
- * (identity integrity). The patient may update contact + address fields only.
+ * (identity integrity). The patient may update contact + address fields and
+ * reminder channel preferences.
  *
  * All fields are optional — a PATCH applies only the provided keys.
  */
@@ -80,6 +89,8 @@ export type PatientProfilePatch = {
   address?: string | null;
   postalCode?: string | null;
   city?: string | null;
+  reminderSmsEnabled?: boolean;
+  reminderEmailEnabled?: boolean;
 };
 
 /**
@@ -108,6 +119,8 @@ export async function updateOwnProfile(
         ...(patch.address !== undefined && { address: patch.address }),
         ...(patch.postalCode !== undefined && { postalCode: patch.postalCode }),
         ...(patch.city !== undefined && { city: patch.city }),
+        ...(patch.reminderSmsEnabled !== undefined && { reminderSmsEnabled: patch.reminderSmsEnabled }),
+        ...(patch.reminderEmailEnabled !== undefined && { reminderEmailEnabled: patch.reminderEmailEnabled }),
       })
       .where(
         and(
@@ -126,6 +139,8 @@ export async function updateOwnProfile(
         address: patients.address,
         postalCode: patients.postalCode,
         city: patients.city,
+        reminderSmsEnabled: patients.reminderSmsEnabled,
+        reminderEmailEnabled: patients.reminderEmailEnabled,
       })
       .from(patients)
       .where(

@@ -75,3 +75,35 @@ export async function updateProfileAction(
     return { error: 'Erro de ligação. Verifique a sua internet e tente novamente.' }
   }
 }
+
+export async function updateReminderPrefsAction(prefs: {
+  smsEnabled: boolean
+  emailEnabled: boolean
+}): Promise<{ error: string } | void> {
+  const cookieStore = await cookies()
+  const cookieHeader = cookieStore.getAll()
+    .map(({ name, value }) => `${name}=${value}`)
+    .join('; ')
+
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/patient/profile`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookieHeader,
+      },
+      body: JSON.stringify({
+        reminderSmsEnabled: prefs.smsEnabled,
+        reminderEmailEnabled: prefs.emailEnabled,
+      }),
+    })
+
+    if (!res.ok) {
+      return { error: 'Não foi possível guardar as preferências. Tente novamente.' }
+    }
+
+    revalidatePath('/portal/account')
+  } catch {
+    return { error: 'Erro de ligação. Verifique a sua internet e tente novamente.' }
+  }
+}
