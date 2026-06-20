@@ -16,6 +16,8 @@ const ALL: (NavItem & { capability?: Capability })[] = [
   // scheduling data the agenda renders as a grid; open to every role like the
   // agenda. V2-W7 ships the list view and the dedicated `nav.bookings` key.
   { href: "/marcacoes", label: s["nav.bookings"] },
+  // Faturação: all roles have invoices:read so this shows for every authenticated user.
+  { href: "/invoicing", label: s["nav.invoicing"], capability: "invoices:read" },
   { href: "/clinical/review", label: s["nav.review"], capability: "clinical_records:review" },
   { href: "/admin", label: s["nav.admin"], capability: "settings:read" },
 ];
