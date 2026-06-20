@@ -1,20 +1,33 @@
 name: E2E
 
-# Runs the Playwright suite (#105 — auth / patients / scheduling / clinical) on
-# every PR against a full local Supabase stack seeded with the deterministic
-# fixture. This is a SEPARATE gate from ci.yml (lint + typecheck + vitest); that
-# one stays fast and unit-only. The suite drives one `next dev` server talking to
-# local Supabase, serially (workers: 1) — see apps/web/playwright.config.ts.
+# Two jobs:
 #
-# Skipping: PRs that touch only docs/markdown/excalidraw skip the Supabase boot
-# entirely. The job still runs (so the branch-protection check is always reported)
-# but exits green immediately with a skip notice.
+#   1. "Playwright E2E (seeded DB)" — REQUIRED gate. Chromium only. Fast (~12 min).
+#      This is the check wired to branch protection. It drives one next dev server
+#      talking to a local Supabase, serially (workers: 1). Must stay green on every
+#      PR. Skips when only docs/markdown/excalidraw changed.
+#
+#   2. "Cross-browser E2E (Firefox + WebKit)" — INFORMATIONAL only. continue-on-error,
+#      never blocks a merge. Runs the same suite on Firefox and WebKit to surface
+#      engine-specific regressions early. Shares the same Supabase + seed pattern
+#      but boots its own runner. Results are visible in the Actions tab and in the
+#      Playwright HTML report artifact.
+#
+# Both jobs detect docs-only PRs and skip the Supabase stack in that case.
 
 on:
   pull_request:
     branches: [main]
 
+# ---------------------------------------------------------------------------
+# Shared env — both jobs declare the same set (duplicate kept explicit so each
+# job is self-contained and the env is readable without cross-referencing).
+# ---------------------------------------------------------------------------
+
 jobs:
+  # -------------------------------------------------------------------------
+  # REQUIRED — Chromium only, fast, wired to branch protection.
+  # -------------------------------------------------------------------------
   playwright:
     name: Playwright E2E (seeded DB)
     runs-on: ubuntu-latest
@@ -76,17 +89,15 @@ jobs:
       - name: Resolve pinned Playwright version
         if: steps.changes.outputs.code == 'true'
         id: pw
-        # apps/web declares @playwright/test; it does not resolve from the root.
         working-directory: apps/web
         run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
         if: steps.changes.outputs.code == 'true'
-        id: pw-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
       - name: Install Playwright Chromium (+ system deps)
         if: steps.changes.outputs.code == 'true'
@@ -119,14 +130,136 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: node apps/web/e2e/seed/seed-e2e.mjs
 
-      - name: Run Playwright E2E
+      - name: Run Playwright E2E (Chromium)
         if: steps.changes.outputs.code == 'true'
-        run: pnpm --filter web e2e
+        run: pnpm --filter web exec playwright test --project=setup --project=chromium
 
-      - name: Upload Playwright HTML report
+      - name: Upload Playwright report (Chromium)
         if: steps.changes.outputs.code == 'true' && !cancelled()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-chromium
+          path: apps/web/playwright-report
+          retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # INFORMATIONAL — Firefox + WebKit. Non-blocking; never prevents a merge.
+  # Branch protection does NOT list this check name in the required set.
+  # -------------------------------------------------------------------------
+  playwright-cross-browser:
+    name: Cross-browser E2E (Firefox + WebKit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Failure here is surfaced in the Actions UI but never blocks a PR merge.
+    continue-on-error: true
+
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_URL: http://127.0.0.1:54321
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      E2E_ADMIN_EMAIL: e2e-admin@osteojp.test
+      E2E_ADMIN_PASSWORD: E2ePassw0rd!
+      E2E_THERAPIST_EMAIL: e2e-therapist@osteojp.test
+      E2E_THERAPIST_PASSWORD: E2ePassw0rd!
+      E2E_RECEPTION_EMAIL: e2e-reception@osteojp.test
+      E2E_RECEPTION_PASSWORD: E2ePassw0rd!
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect whether code files changed
+        id: changes
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD")
+          echo "Changed files:"
+          echo "$CHANGED"
+          NON_DOC=$(echo "$CHANGED" | grep -vE '^(docs/|.*\.(md|excalidraw)$)' || true)
+          if [ -z "$NON_DOC" ]; then
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip — docs-only PR
+        if: steps.changes.outputs.code == 'false'
+        run: echo "No code changes detected. Cross-browser E2E not required for this PR."
+
+      - name: Set up pnpm
+        if: steps.changes.outputs.code == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: Set up Node.js
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        if: steps.changes.outputs.code == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve pinned Playwright version
+        if: steps.changes.outputs.code == 'true'
+        id: pw
+        working-directory: apps/web
+        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          # Separate cache key from the Chromium-only required job.
+          key: playwright-cross-browser-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright browsers (Chromium for setup, Firefox, WebKit + system deps)
+        if: steps.changes.outputs.code == 'true'
+        # Chromium is needed to run the `setup` project (auth storage state generation).
+        run: pnpm --filter web exec playwright install --with-deps chromium firefox webkit
+
+      - name: Set up Supabase CLI
+        if: steps.changes.outputs.code == 'true'
+        uses: supabase/setup-cli@v1
+        with:
+          version: v2.107.0
+
+      - name: Start Supabase (lean stack)
+        if: steps.changes.outputs.code == 'true'
+        run: >
+          supabase start
+          -x analytics,vector,studio,realtime,storage,imgproxy,edge-runtime,functions,inbucket,meta
+
+      - name: Apply migrations + base seed
+        if: steps.changes.outputs.code == 'true'
+        run: supabase db reset
+
+      - name: Capture Supabase keys for app + seed
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          STATUS="$(supabase status -o json)"
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(echo "$STATUS" | jq -r '.ANON_KEY')" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$(echo "$STATUS" | jq -r '.SERVICE_ROLE_KEY')" >> "$GITHUB_ENV"
+
+      - name: Seed deterministic E2E fixture
+        if: steps.changes.outputs.code == 'true'
+        run: node apps/web/e2e/seed/seed-e2e.mjs
+
+      - name: Run cross-browser E2E (Firefox + WebKit)
+        if: steps.changes.outputs.code == 'true'
+        run: pnpm --filter web exec playwright test --project=setup --project=firefox --project=webkit
+
+      - name: Upload Playwright report (cross-browser)
+        if: steps.changes.outputs.code == 'true' && !cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-cross-browser
           path: apps/web/playwright-report
           retention-days: 7

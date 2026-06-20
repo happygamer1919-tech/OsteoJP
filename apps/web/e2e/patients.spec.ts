@@ -100,8 +100,10 @@ test("edit patient phone and see the updated value on the profile", async ({ pag
   const id = await createPatient(page, { fullName: `Editar ${uniq()}`, phone: "+351 910 000 000" });
   await page.goto(`/patients/${id}/edit`);
   const phone = page.getByLabel(/Telem[oó]vel/i);
-  await phone.clear();
-  await phone.fill("+351 910 000 999");
+  // Triple-click selects all, then pressSequentially replaces — needed in WebKit
+  // where fill() does not trigger React's controlled-input onChange.
+  await phone.click({ clickCount: 3 });
+  await phone.pressSequentially("+351 910 000 999");
   await page.getByRole("button", { name: "Guardar" }).click();
 
   await expect(page).toHaveURL(new RegExp(`/patients/${id}$`), { timeout: 12_000 });

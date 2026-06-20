@@ -21,8 +21,10 @@ import { defineConfig, devices } from "@playwright/test";
  *   E2E_THERAPIST_EMAIL / E2E_THERAPIST_PASSWORD
  *   E2E_RECEPTION_EMAIL / E2E_RECEPTION_PASSWORD
  *
- * One authenticated browser project (default storage = admin). Specs that need a
- * different role override per-file with `test.use({ storageState })`.
+ * Three browser projects (Chromium, Firefox, WebKit) share one setup run.
+ * Auth storage state files (e2e/.auth/<role>.json) are cookie-based and
+ * browser-agnostic — a single Chromium setup pass suffices for all three.
+ * Reminders is excluded from all projects (in flux).
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -47,6 +49,8 @@ export default defineConfig({
 
   projects: [
     // Logs in as each role and saves storage state to e2e/.auth/<role>.json.
+    // Runs on Chromium; the resulting JSON files are reused by all three browser
+    // projects below (Playwright storage state is browser-agnostic).
     { name: "setup", testMatch: /.*\.setup\.ts/ },
     {
       name: "chromium",
@@ -58,6 +62,24 @@ export default defineConfig({
       dependencies: ["setup"],
       // Out of scope for this suite — Reminders is in flux and owned by its own
       // stream's spec. (Admin had no stable spec and was removed.)
+      testIgnore: ["**/reminders.spec.ts"],
+    },
+    {
+      name: "firefox",
+      use: {
+        ...devices["Desktop Firefox"],
+        storageState: "e2e/.auth/admin.json",
+      },
+      dependencies: ["setup"],
+      testIgnore: ["**/reminders.spec.ts"],
+    },
+    {
+      name: "webkit",
+      use: {
+        ...devices["Desktop Safari"],
+        storageState: "e2e/.auth/admin.json",
+      },
+      dependencies: ["setup"],
       testIgnore: ["**/reminders.spec.ts"],
     },
   ],
