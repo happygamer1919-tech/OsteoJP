@@ -128,45 +128,76 @@ export default async function DashboardPage({
 
   const weekStartDate = startOfWeekMonday(today);
   const weekStartUtc = lisbonMidnightUtc(weekStartDate);
+  const mStart = monthStart(today);
 
-  // KPI 1 — active patients + "+N esta semana" delta.
-  const countRows = await runScoped(ctx, (tx) =>
-    tx
-      .select({
-        total: sql<number>`count(*)::int`,
-        week: sql<number>`count(*) filter (where ${patients.createdAt} >= ${weekStartUtc.toISOString()}::timestamptz)::int`,
-      })
-      .from(patients)
-      .where(activePatientsOnly),
-  );
-  const patientCount = countRows[0]?.total ?? 0;
-  const newPatientsThisWeek = countRows[0]?.week ?? 0;
+  const canAppointments = can(ctx.role, "appointments:read");
+  const canClinical = can(ctx.role, "clinical_records:read");
+
+  // Fire all widget queries in parallel; a failure in one degrades only that
+  // widget rather than error-boundarying the entire dashboard.
+  const [countResult, upcomingResult, recResult, revenueResult, weekResult, notesResult] =
+    await Promise.allSettled([
+      // 1. Active patients + this-week delta
+      runScoped(ctx, (tx) =>
+        tx
+          .select({
+            total: sql<number>`count(*)::int`,
+            week: sql<number>`count(*) filter (where ${patients.createdAt} >= ${weekStartUtc.toISOString()}::timestamptz)::int`,
+          })
+          .from(patients)
+          .where(activePatientsOnly),
+      ),
+      // 2. Upcoming appointments (KPI 2 + Próximas panel)
+      canAppointments
+        ? listAppointments(ctx, {
+            startUtc: lisbonMidnightUtc(today),
+            endUtc: lisbonMidnightUtc(addDays(today, 7)),
+          })
+        : Promise.resolve([] as AgendaAppointment[]),
+      // 3. Clinical records count
+      canClinical
+        ? runScoped(ctx, (tx) =>
+            tx
+              .select({ count: sql<number>`count(*)::int` })
+              .from(clinicalRecords)
+              .where(gte(clinicalRecords.createdAt, weekStartUtc)),
+          )
+        : Promise.resolve([] as Array<{ count: number }>),
+      // 4. Monthly revenue
+      getMonthlyRevenue(
+        ctx,
+        lisbonMidnightUtc(mStart),
+        lisbonMidnightUtc(addMonths(mStart, 1)),
+      ),
+      // 5. Weekly appointments (Resumo semanal chart)
+      canAppointments
+        ? listAppointments(ctx, {
+            startUtc: weekStartUtc,
+            endUtc: lisbonMidnightUtc(addDays(weekStartDate, 7)),
+          })
+        : Promise.resolve([] as AgendaAppointment[]),
+      // 6. Quick notes
+      getQuickNotes(ctx),
+    ]);
+
+  // KPI 1 — active patients
+  const patientRows = countResult.status === "fulfilled" ? countResult.value : null;
+  const patientCount = patientRows?.[0]?.total ?? 0;
+  const newPatientsThisWeek = patientRows?.[0]?.week ?? 0;
   const patientsCaption =
-    newPatientsThisWeek > 0
+    countResult.status === "fulfilled" && newPatientsThisWeek > 0
       ? `+${newPatientsThisWeek} ${s["dashboard.thisWeekLower"]}`
       : undefined;
 
-  // KPI 2 + Próximas marcações panel — rolling 7-day window from today (SPEC §4.1
-  // scopes the panel to the selected day; M1 expands this to today + 7 so the
-  // panel shows upcoming appointments across the week rather than just one day).
-  const canAppointments = can(ctx.role, "appointments:read");
-  const upcomingAppointments = canAppointments
-    ? await listAppointments(ctx, {
-        startUtc: lisbonMidnightUtc(today),
-        endUtc: lisbonMidnightUtc(addDays(today, 7)),
-      })
-    : [];
+  // KPI 2 + Próximas marcações panel — rolling 7-day window from today.
+  const upcomingAppointments =
+    upcomingResult.status === "fulfilled" ? upcomingResult.value : [];
   const active = upcomingAppointments
     .filter((a) => a.status !== "cancelled")
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
-
-  // KPI 2: count for the selected date (derived from the 7-day set; 0 if date
-  // falls outside the window, e.g. navigating to a past day).
   const todayCount = active.filter(
     (a) => lisbonParts(new Date(a.startsAt)).date === date,
   ).length;
-
-  // "Próxima: HH:MM" caption only when viewing today.
   const next =
     date === today
       ? active.find((a) => new Date(a.startsAt).getTime() >= now.getTime())
@@ -175,48 +206,26 @@ export default async function DashboardPage({
     ? `${s["dashboard.kpiNext"]}: ${formatTimeOfDay(new Date(next.startsAt))}`
     : undefined;
 
-  // KPI 3 — new clinical records this week.
-  const canClinical = can(ctx.role, "clinical_records:read");
-  let newRecords = 0;
-  if (canClinical) {
-    const recRows = await runScoped(ctx, (tx) =>
-      tx
-        .select({ count: sql<number>`count(*)::int` })
-        .from(clinicalRecords)
-        .where(gte(clinicalRecords.createdAt, weekStartUtc)),
-    );
-    newRecords = recRows[0]?.count ?? 0;
-  }
+  // KPI 3 — new clinical records this week
+  const recRows = recResult.status === "fulfilled" ? recResult.value : null;
+  const newRecords = recRows?.[0]?.count ?? 0;
 
-  // KPI 4 — Receita (mês): sum of issued + paid invoice amountCents for the
-  // current calendar month (Lisbon midnight boundaries).
-  const mStart = monthStart(today);
-  const monthRevenueCents = await getMonthlyRevenue(
-    ctx,
-    lisbonMidnightUtc(mStart),
-    lisbonMidnightUtc(addMonths(mStart, 1)),
-  );
-  const revenueDisplay = formatEur(monthRevenueCents);
+  // KPI 4 — Receita (mês)
+  const monthRevenueCents = revenueResult.status === "fulfilled" ? revenueResult.value : null;
+  const revenueDisplay =
+    monthRevenueCents !== null ? formatEur(monthRevenueCents) : s["dashboard.kpiNoData"];
 
-  // Resumo semanal — appointment counts grouped by calendar day (Mon–Sun) for
-  // the current week. The ResumoChart renders a 7-point line; needs ≥ 2 points
-  // (always satisfied once any appointments exist in the week).
+  // Resumo semanal — appointment counts grouped by calendar day (Mon–Sun).
   const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStartDate, i));
   let weeklyData: number[] | undefined;
-  if (canAppointments) {
-    const weekAppointments = await listAppointments(ctx, {
-      startUtc: weekStartUtc,
-      endUtc: lisbonMidnightUtc(addDays(weekStartDate, 7)),
-    });
-    const counts = weekDates.map(
+  if (canAppointments && weekResult.status === "fulfilled") {
+    const weekAppointments = weekResult.value;
+    weeklyData = weekDates.map(
       (d) =>
         weekAppointments.filter(
           (a) => a.status !== "cancelled" && lisbonParts(new Date(a.startsAt)).date === d,
         ).length,
     );
-    // Only pass data to the chart if there is at least one non-zero day; an
-    // all-zero series is still valid (a week with no appointments is real data).
-    weeklyData = counts;
   }
 
   // Weekday labels for the chart x-axis: "Seg"–"Dom" derived from the actual
@@ -228,8 +237,8 @@ export default async function DashboardPage({
       .replace(/^(.)/, (c) => c.toUpperCase()),
   );
 
-  // Notas rápidas — initial value from tenants.settings.notes.
-  const initialNotes = await getQuickNotes(ctx);
+  // Notas rápidas — empty string fallback when the quick_notes table is unavailable.
+  const initialNotes = notesResult.status === "fulfilled" ? notesResult.value : "";
 
   // Acessos rápidos — role-gated.
   const tiles: Array<{
@@ -274,12 +283,12 @@ export default async function DashboardPage({
 
       {/* KPI row */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <GlassKpiCard accent="green" icon={<Users size={20} strokeWidth={1.75} />} label={s["dashboard.kpiActivePatients"]} value={patientCount} caption={patientsCaption} />
+        <GlassKpiCard accent="green" icon={<Users size={20} strokeWidth={1.75} />} label={s["dashboard.kpiActivePatients"]} value={countResult.status === "rejected" ? s["dashboard.kpiNoData"] : patientCount} caption={patientsCaption} />
         {canAppointments && (
-          <GlassKpiCard accent="blue" icon={<Calendar size={20} strokeWidth={1.75} />} label={s["dashboard.kpiTodayAppointments"]} value={todayCount} caption={nextCaption} />
+          <GlassKpiCard accent="blue" icon={<Calendar size={20} strokeWidth={1.75} />} label={s["dashboard.kpiTodayAppointments"]} value={upcomingResult.status === "rejected" ? s["dashboard.kpiNoData"] : todayCount} caption={nextCaption} />
         )}
         {canClinical && (
-          <GlassKpiCard accent="lavender" icon={<ClipboardList size={20} strokeWidth={1.75} />} label={s["dashboard.kpiNewRecords"]} value={newRecords} caption={s["dashboard.kpiThisWeek"]} />
+          <GlassKpiCard accent="lavender" icon={<ClipboardList size={20} strokeWidth={1.75} />} label={s["dashboard.kpiNewRecords"]} value={recResult.status === "rejected" ? s["dashboard.kpiNoData"] : newRecords} caption={s["dashboard.kpiThisWeek"]} />
         )}
         {/* Receita (mês) — sum of issued + paid invoices for the current month. */}
         <GlassKpiCard accent="gold" icon={<TrendingUp size={20} strokeWidth={1.75} />} label={s["dashboard.kpiRevenue"]} value={revenueDisplay} />
