@@ -10,7 +10,7 @@ import {
 } from "@osteojp/ui";
 import { Receipt, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 
 import { s } from "@/lib/i18n";
 import type { InvoiceRow, InvoiceStatus, LocationOption } from "@/lib/invoices/queries";
@@ -60,6 +60,32 @@ function InvoiceDetailPanel({
   invoice: InvoiceRow;
   onClose: () => void;
 }) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onClose();
+      return;
+    }
+    if (e.key === "Tab") {
+      const focusable = e.currentTarget.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    }
+  }
+
   return (
     <>
       {/* Backdrop */}
@@ -71,14 +97,18 @@ function InvoiceDetailPanel({
       {/* Panel */}
       <div
         role="dialog"
+        aria-modal="true"
         aria-label={s["invoicing.detailTitle"]}
+        onKeyDown={handleKeyDown}
         className="fixed inset-y-0 right-0 z-50 flex h-dvh w-full flex-col bg-surface shadow-lg sm:w-[30rem]"
       >
         <header className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-6 py-4">
           <h2 className="text-2xl text-text-primary">{s["invoicing.detailTitle"]}</h2>
           <button
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
             type="button"
-            aria-label={s["common.cancel"]}
+            aria-label={s["invoicing.closeDetail"]}
             onClick={onClose}
             className="rounded p-1 text-text-secondary hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
@@ -115,7 +145,7 @@ function InvoiceDetailPanel({
             onClick={onClose}
             className="inline-flex h-10 items-center justify-center rounded border border-border-strong bg-surface px-4 text-sm font-medium text-text-primary transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
-            {s["common.cancel"]}
+            {s["invoicing.closeDetail"]}
           </button>
         </footer>
       </div>
@@ -146,6 +176,21 @@ export function InvoicingView({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [selected, setSelected] = useState<InvoiceRow | null>(null);
+  const triggerRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
+
+  function openDetail(inv: InvoiceRow) {
+    setSelected(inv);
+  }
+
+  function closeDetail() {
+    const id = selected?.id;
+    setSelected(null);
+    if (id) {
+      requestAnimationFrame(() => {
+        triggerRefs.current.get(id)?.focus();
+      });
+    }
+  }
 
   function navigate(next: Partial<InvoicingFilters>) {
     const merged = { ...filters, ...next };
@@ -191,7 +236,7 @@ export function InvoicingView({
               triggerLabel={s["invoicing.filterDateFrom"]}
             />
           </div>
-          <span className="text-sm text-text-secondary">—</span>
+          <span className="text-sm text-text-secondary" aria-hidden="true">—</span>
           <div className="w-40">
             <DatePicker
               value={filters.to}
@@ -252,23 +297,23 @@ export function InvoicingView({
             <table className="w-full text-sm" aria-label={s["invoicing.tableCaption"]}>
               <thead>
                 <tr className="border-b border-border text-left">
-                  <th className="pb-3 pr-4 text-xs font-medium text-text-secondary">
+                  <th scope="col" className="pb-3 pr-4 text-xs font-medium text-text-secondary">
                     {s["invoicing.columnNumber"]}
                   </th>
-                  <th className="pb-3 pr-4 text-xs font-medium text-text-secondary">
+                  <th scope="col" className="pb-3 pr-4 text-xs font-medium text-text-secondary">
                     {s["invoicing.columnPatient"]}
                   </th>
-                  <th className="pb-3 pr-4 text-xs font-medium text-text-secondary">
+                  <th scope="col" className="pb-3 pr-4 text-xs font-medium text-text-secondary">
                     {s["invoicing.columnDate"]}
                   </th>
-                  <th className="pb-3 pr-4 text-right text-xs font-medium text-text-secondary">
+                  <th scope="col" className="pb-3 pr-4 text-right text-xs font-medium text-text-secondary">
                     {s["invoicing.columnAmount"]}
                   </th>
-                  <th className="pb-3 pr-4 text-xs font-medium text-text-secondary">
+                  <th scope="col" className="pb-3 pr-4 text-xs font-medium text-text-secondary">
                     {s["invoicing.columnStatus"]}
                   </th>
-                  <th className="pb-3 text-xs font-medium text-text-secondary">
-                    {s["invoicing.columnActions"]}
+                  <th scope="col" className="pb-3 text-xs font-medium text-text-secondary">
+                    <span className="sr-only">{s["invoicing.columnActions"]}</span>
                   </th>
                 </tr>
               </thead>
@@ -294,9 +339,11 @@ export function InvoicingView({
                     </td>
                     <td className="py-3">
                       <button
+                        ref={(el) => { triggerRefs.current.set(inv.id, el); }}
                         type="button"
-                        onClick={() => setSelected(inv)}
-                        className="text-xs text-text-secondary underline hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:rounded"
+                        aria-label={`${s["invoicing.viewInvoice"]} ${inv.externalId ?? inv.id.slice(-6)}`}
+                        onClick={() => openDetail(inv)}
+                        className="text-xs text-text-secondary underline hover:text-text-primary focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1"
                       >
                         {s["invoicing.viewAction"]}
                       </button>
@@ -327,7 +374,7 @@ export function InvoicingView({
 
       {/* Detail panel */}
       {selected && (
-        <InvoiceDetailPanel invoice={selected} onClose={() => setSelected(null)} />
+        <InvoiceDetailPanel invoice={selected} onClose={closeDetail} />
       )}
     </main>
   );
