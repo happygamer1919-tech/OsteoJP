@@ -1,32 +1,34 @@
 import { can } from "@osteojp/auth";
-import { EmptyState, Table, type TableColumn } from "@osteojp/ui";
-import { Receipt } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { getRequestContext } from "@/lib/auth/context";
+import { credentialsConfigured } from "@/lib/integrations/invoicexpress";
 import { s } from "@/lib/i18n";
+import { listInvoices, listActiveLocations, type InvoiceStatus } from "@/lib/invoices/queries";
+import { InvoicingView, type InvoicingFilters } from "./invoicing-view";
 
-// Live record_status / fiscal state may change; never cache.
+// Never cache: live record_status / fiscal state may change between requests.
 export const dynamic = "force-dynamic";
 
-type InvoiceRow = { id: string };
+/** YYYY-MM-DD for the first day of the current UTC month. */
+function monthStart(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
+}
 
-/**
- * Invoicing view (SPEC-staff-screens §8). Greenfield, gated by `invoices:read`.
- *
- * Per rule #1 the screen renders only data the app already exposes — and there is
- * none to display: the platform never self-issues fiscal documents (the local
- * `invoices` table is an internal ledger only), and the InvoiceXpress relay is
- * Phase 4 / not live, so `listInvoices` is the gated integration call, not a
- * display query. The screen therefore shows the table structure + the empty/
- * not-yet-active state, ready for the data layer.
- *
- * Deferred until the Phase-4 data layer / integration is live (documented):
- * the filters row (date range + Estado + location), populated rows, the detail
- * Drawer, the "Nova fatura" primary action, and the nav-bar link (adding it now
- * would break the exact-match nav unit test — a small follow-up).
- */
-export default async function InvoicingPage() {
+/** YYYY-MM-DD for today in UTC. */
+function todayUtc(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+}
+
+const VALID_STATUSES = new Set<string>(["draft", "issued", "paid", "void"]);
+
+export default async function InvoicingPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const ctx = await getRequestContext();
   if (!ctx) redirect("/login");
 
@@ -38,35 +40,46 @@ export default async function InvoicingPage() {
     );
   }
 
-  const columns: TableColumn<InvoiceRow>[] = [
-    { key: "number", header: s["invoicing.colNumber"], cell: () => "—" },
-    { key: "date", header: s["invoicing.colDate"], cell: () => "—" },
-    { key: "patient", header: s["invoicing.colPatient"], cell: () => "—" },
-    { key: "amount", header: s["invoicing.colAmount"], align: "right", cell: () => "—" },
-    { key: "status", header: s["invoicing.colStatus"], align: "right", cell: () => "—" },
-  ];
+  const params = await searchParams;
+  const fromParam = typeof params.from === "string" ? params.from : monthStart();
+  const toParam = typeof params.to === "string" ? params.to : todayUtc();
+  const statusParam =
+    typeof params.status === "string" && VALID_STATUSES.has(params.status)
+      ? (params.status as InvoiceStatus)
+      : null;
+  const locationParam = typeof params.location === "string" ? params.location : null;
+
+  const filters: InvoicingFilters = {
+    from: fromParam,
+    to: toParam,
+    status: statusParam,
+    locationId: locationParam,
+  };
+
+  // Build date range: toParam is inclusive, so advance by one day for the exclusive upper bound.
+  const fromDate = new Date(`${fromParam}T00:00:00Z`);
+  const toDateExclusive = new Date(`${toParam}T00:00:00Z`);
+  toDateExclusive.setUTCDate(toDateExclusive.getUTCDate() + 1);
+
+  const [invoiceRows, locationRows] = await Promise.all([
+    listInvoices(ctx, {
+      from: fromDate,
+      to: toDateExclusive,
+      status: statusParam ?? undefined,
+      locationId: locationParam ?? undefined,
+    }),
+    listActiveLocations(ctx),
+  ]);
+
+  // "Nova fatura" button is only shown when InvoiceXpress credentials are configured.
+  const issueEnabled = credentialsConfigured();
 
   return (
-    <main>
-      <div className="mb-8">
-        <h1 className="text-3xl text-text-primary">{s["nav.invoicing"]}</h1>
-        <p className="mt-1 text-sm text-text-secondary">{s["invoicing.notLive"]}</p>
-      </div>
-
-      <Table
-        caption={s["invoicing.tableCaption"]}
-        columns={columns}
-        data={[]}
-        rowKey={(r) => r.id}
-        state="empty"
-        empty={
-          <EmptyState
-            icon={Receipt}
-            title={s["invoicing.emptyTitle"]}
-            description={s["invoicing.emptyHelp"]}
-          />
-        }
-      />
-    </main>
+    <InvoicingView
+      filters={filters}
+      invoices={invoiceRows}
+      locations={locationRows}
+      issueEnabled={issueEnabled}
+    />
   );
 }

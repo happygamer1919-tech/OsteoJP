@@ -12,6 +12,7 @@ import { notFound } from "next/navigation";
 
 import { getRequestContext } from "../../../lib/auth/context";
 import { listRecords, type RecordStatus } from "../../../lib/clinical/records";
+import { listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
 import { getPatient } from "../../../lib/patients/queries";
 import type { Patient } from "../../../lib/patients/types";
 import { PatientActions } from "../_components/patient-actions";
@@ -39,6 +40,19 @@ const RECORD_KEY = {
   locked: "clinical.statusLocked",
   signed: "clinical.statusSigned",
 } as const;
+
+const INVOICE_STATUS_TONE: Record<InvoiceStatus, StatusTone> = {
+  draft: "neutral",
+  issued: "warning",
+  paid: "success",
+  void: "error",
+};
+const INVOICE_STATUS_KEY: Record<InvoiceStatus, keyof typeof s> = {
+  draft: "invoicing.statusDraft",
+  issued: "invoicing.statusIssued",
+  paid: "invoicing.statusPaid",
+  void: "invoicing.statusVoid",
+};
 
 const dateFmt = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" });
 
@@ -81,6 +95,8 @@ export default async function PatientProfilePage({
 
   // Registos clínicos consumes the existing RLS + role-scoped records query.
   const records = tab === "registos" && canReadClinical ? await listRecords(ctx, { patientId: id }) : [];
+  // Faturação tab: fetch invoices for this patient when the tab is active.
+  const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
 
   return (
     <main>
@@ -200,9 +216,36 @@ export default async function PatientProfilePage({
         <EmptyState icon={FileText} title={s["patients.emptyDocumentsTitle"]} description={s["patients.emptyDocumentsHelp"]} />
       )}
 
-      {tab === "faturacao" && (
-        <EmptyState icon={FileText} title={s["patients.emptyInvoicingTitle"]} description={s["patients.emptyInvoicingHelp"]} />
-      )}
+      {tab === "faturacao" &&
+        (patientInvoices.length === 0 ? (
+          <EmptyState
+            icon={FileText}
+            title={s["patients.emptyInvoicingTitle"]}
+            description={s["patients.emptyInvoicingHelp"]}
+          />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {patientInvoices.map((inv) => (
+              <Card key={inv.id}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium text-text-primary">
+                      {inv.externalId ?? `#${inv.id.slice(-6)}`}
+                    </span>
+                    <span className="text-sm text-text-secondary">
+                      {inv.issuedAt ? dateFmt.format(new Date(inv.issuedAt)) : "—"}
+                      {inv.amountCents != null &&
+                        ` · ${new Intl.NumberFormat("pt-PT", { style: "currency", currency: inv.currency }).format(inv.amountCents / 100)}`}
+                    </span>
+                  </div>
+                  <StatusChip tone={INVOICE_STATUS_TONE[inv.status]} dot>
+                    {s[INVOICE_STATUS_KEY[inv.status]]}
+                  </StatusChip>
+                </div>
+              </Card>
+            ))}
+          </div>
+        ))}
 
       {canDelete && (
         <section className="mt-8">
