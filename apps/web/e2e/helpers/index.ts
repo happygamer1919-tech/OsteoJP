@@ -88,9 +88,9 @@ export async function openNewAppointment(page: Page, date: string): Promise<Loca
     await page.goto(url);
   } catch (e) {
     // Firefox/WebKit: a client-side agenda refresh triggered by a preceding form
-    // save can race with page.goto and throw "interrupted by another navigation".
-    // Retry once — the second goto supersedes both navigations cleanly.
-    if (/interrupted by another navigation/i.test(String(e))) {
+    // save can race with page.goto. Firefox throws NS_BINDING_ABORTED; WebKit
+    // throws "interrupted by another navigation". Retry once — cleanly supersedes.
+    if (/interrupted by another navigation|NS_BINDING_ABORTED/i.test(String(e))) {
       await page.goto(url);
     } else {
       throw e;
