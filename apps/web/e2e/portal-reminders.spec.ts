@@ -60,10 +60,9 @@ test("disabling SMS persists after reload", async ({ page }) => {
   await smsToggle.click();
   await expect(smsToggle).not.toBeChecked();
 
-  // Wait for the server action to complete (optimistic update is immediate;
-  // the round-trip updates the DB before the reload test is meaningful).
-  // A short wait is sufficient; the action is fast in local Supabase.
-  await page.waitForTimeout(800);
+  // Wait for all inflight requests (including the server action's API PATCH)
+  // to settle before navigating away. networkidle = no requests for 500ms.
+  await page.waitForLoadState("networkidle");
 
   // Reload the page — data must be re-fetched from the DB.
   await page.goto("/portal/account");
@@ -74,7 +73,7 @@ test("disabling SMS persists after reload", async ({ page }) => {
 
   // Restore to seed state (sms=true) so subsequent tests start clean.
   await page.getByRole("switch", { name: /^SMS$/i }).click();
-  await page.waitForTimeout(400);
+  await page.waitForLoadState("networkidle");
 });
 
 // ---------------------------------------------------------------------------
@@ -106,5 +105,5 @@ test("disabling both SMS and email shows the all-off warning", async ({ page }) 
   ).toHaveCount(0);
 
   // Leave the page in the seed state (sms=on, email=off).
-  await page.waitForTimeout(400);
+  await page.waitForLoadState("networkidle");
 });

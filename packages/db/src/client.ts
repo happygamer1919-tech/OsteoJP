@@ -76,6 +76,9 @@ export function getDbAdmin(): Db {
 export type TenantClaims = {
   tenant_id: string;
   user_role: string;
+  /** Forwarded as the JWT `sub` claim so auth.uid() resolves inside
+   * withTenantContext — required by RLS policies that check auth.uid(). */
+  sub?: string;
 };
 
 /**

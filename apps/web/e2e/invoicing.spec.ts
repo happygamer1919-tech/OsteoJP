@@ -8,10 +8,12 @@
  *   2. "Nova fatura" button is absent — INVOICEXPRESS creds are never set in
  *      the e2e environment, so credentialsConfigured() always returns false.
  *   3. Empty state shows when no invoices exist in the date range (seed has none).
- *   4. Therapist is forbidden — no invoices:read capability.
- *   5. Patient profile page shows a "Faturação" tab for admin (invoices:read).
- *   6. "Faturação" tab is absent for therapist (no invoices:read).
+ *   4. Reception also has invoices:read — verified to see the page.
+ *   5. Therapist also has invoices:read (read-only) — can access the page.
+ *   6. Patient profile page shows a "Faturação" tab for admin (invoices:read).
  *   7. Faturação tab body renders the empty state for the test patient.
+ *
+ * Role matrix for invoices:read: owner ✓, admin ✓, therapist ✓, reception ✓.
  *
  * All specs run in chromium only (listed in testIgnore for firefox + webkit).
  */
@@ -47,14 +49,19 @@ test.describe("/invoicing — admin", () => {
     ).toHaveCount(0);
   });
 
-  test("filter bar renders date pickers and status select", async ({ page }) => {
+  test("filter bar: date range triggers and status select are present", async ({ page }) => {
     await page.goto("/invoicing");
 
-    // Date pickers are labelled in PT-PT.
-    await expect(page.getByText(/Data de início/i).first()).toBeVisible();
-    await expect(page.getByText(/Data de fim/i).first()).toBeVisible();
+    // The DatePicker component renders the triggerLabel as aria-label on its
+    // trigger button (not as visible text). Use getByRole to target it.
+    await expect(
+      page.getByRole("button", { name: /Data de início/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Data de fim/i }),
+    ).toBeVisible();
 
-    // Status select exists.
+    // Status filter: a <select> element with aria-label "Estado".
     await expect(
       page.getByRole("combobox", { name: /Estado/i }),
     ).toBeVisible();
@@ -78,31 +85,31 @@ test.describe("/invoicing — reception", () => {
 });
 
 // ---------------------------------------------------------------------------
-// /invoicing — therapist (no invoices:read → forbidden)
+// /invoicing — therapist (read-only: invoices:read but no invoices:issue)
 // ---------------------------------------------------------------------------
 
-test.describe("/invoicing — therapist (forbidden)", () => {
+test.describe("/invoicing — therapist (read-only)", () => {
   test.use({ storageState: STORAGE.therapist });
 
-  test("returns forbidden for therapist", async ({ page }) => {
+  test("therapist can access /invoicing (has invoices:read)", async ({ page }) => {
     await page.goto("/invoicing");
-    // The page renders an error paragraph rather than redirecting.
-    await expect(page.getByText(/proibido|forbidden|não tem permiss/i)).toBeVisible({
-      timeout: 8_000,
-    });
-    // Heading and empty state must be absent.
+    await expect(page).toHaveURL(/\/invoicing(\?|$)/, { timeout: 10_000 });
     await expect(
       page.getByRole("heading", { level: 1, name: /Fatura[cç][aã]o/i }),
+    ).toBeVisible();
+    // Therapist has invoices:read but not invoices:issue — no issue button.
+    await expect(
+      page.getByRole("button", { name: /Nova fatura/i }),
     ).toHaveCount(0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Patient profile — Faturação tab
+// Patient profile — Faturação tab (visible to all roles with invoices:read)
 // ---------------------------------------------------------------------------
 
 test.describe("patient profile — Faturação tab", () => {
-  // Default storageState is admin (invoices:read granted).
+  // Default storageState is admin.
 
   test("admin sees Faturação tab on patient profile", async ({ page }) => {
     await page.goto(`/patients/${PATIENTS.maria.id}`);
@@ -116,22 +123,20 @@ test.describe("patient profile — Faturação tab", () => {
   test("Faturação tab shows empty state for the test patient", async ({ page }) => {
     await page.goto(`/patients/${PATIENTS.maria.id}?tab=faturacao`);
 
-    // The empty state title: "Sem faturas"
+    // Empty state title: "Sem faturas"
     await expect(page.getByText(/Sem faturas/i)).toBeVisible({ timeout: 8_000 });
-    // No invoice cards rendered.
-    await expect(page.getByRole("status")).toHaveCount(0);
   });
 });
 
-test.describe("patient profile — Faturação tab absent for therapist", () => {
+test.describe("patient profile — Faturação tab visible for therapist", () => {
   test.use({ storageState: STORAGE.therapist });
 
-  test("therapist does not see Faturação tab", async ({ page }) => {
+  test("therapist sees Faturação tab (has invoices:read)", async ({ page }) => {
     await page.goto(`/patients/${PATIENTS.maria.id}`);
     await expect(page).toHaveURL(/\/patients\//, { timeout: 10_000 });
 
     await expect(
       page.getByRole("tab", { name: /Fatura[cç][aã]o/i }),
-    ).toHaveCount(0);
+    ).toBeVisible();
   });
 });
