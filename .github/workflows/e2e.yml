@@ -96,7 +96,7 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: v2.107.0
 
       - name: Start Supabase (lean stack)
         if: steps.changes.outputs.code == 'true'
