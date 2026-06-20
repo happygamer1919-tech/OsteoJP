@@ -21,6 +21,8 @@ export type ReminderAppointmentData = {
   patientName: string;
   patientEmail: string | null;
   patientPhone: string | null;
+  patientReminderSmsEnabled: boolean;
+  patientReminderEmailEnabled: boolean;
   practitionerName: string;
   locationName: string;
   locationPhone: string | null;
@@ -45,6 +47,8 @@ export async function loadReminderData(
         patientName: patients.fullName,
         patientEmail: patients.email,
         patientPhone: patients.phone,
+        patientReminderSmsEnabled: patients.reminderSmsEnabled,
+        patientReminderEmailEnabled: patients.reminderEmailEnabled,
         practitionerName: users.fullName,
         locationName: locations.name,
         locationPhone: locations.phone,

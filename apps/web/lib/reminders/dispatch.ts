@@ -54,19 +54,23 @@ export type ReminderPlan =
  * Decide, from the tenant reminder config, which channels (if any) a reminder
  * for this (offset, patient-contact) should go out on. Pure + exported for
  * direct unit testing without the DB. Precedence, most decisive first:
- *   1. lead_time_off — the tenant disabled this offset; nothing sends, contact
+ *   1. lead_time_off  — the tenant disabled this offset; nothing sends, contact
  *      and channel toggles are irrelevant.
- *   2. no_contact    — the patient has neither email nor phone on file.
- *   3. channels_off  — contact exists, but every channel the patient could be
- *      reached on is disabled in config.
- * On the default config (both channels on, both lead times on) this collapses to
- * the prior contact-presence behavior: email iff email-on-file, SMS iff phone —
- * which is how "defaults preserve current behavior" holds for unset config.
+ *   2. no_contact     — the patient has neither email nor phone on file.
+ *   3. channels_off   — contact exists, but every channel the patient could be
+ *      reached on is disabled (tenant config OR patient opt-out).
+ * On the default config (both channels on, both lead times on) and default
+ * patient prefs (SMS on, email off), this collapses to the prior contact-
+ * presence behavior — which is how "defaults preserve current behavior" holds.
+ *
+ * patientPrefs defaults to both-enabled to preserve behavior for callers that
+ * don't yet supply the field (e.g. existing tests).
  */
 export function planReminderChannels(
   reminders: ReminderConfig,
   offsetId: ReminderOffsetId,
   contact: { email: boolean; phone: boolean },
+  patientPrefs: { smsEnabled: boolean; emailEnabled: boolean } = { smsEnabled: true, emailEnabled: true },
 ): ReminderPlan {
   const leadHours = OFFSET_LEAD_HOURS.get(offsetId);
   if (
@@ -78,8 +82,8 @@ export function planReminderChannels(
   if (!contact.email && !contact.phone) {
     return { send: false, reason: "no_contact" };
   }
-  const email = reminders.emailEnabled && contact.email;
-  const sms = reminders.smsEnabled && contact.phone;
+  const email = reminders.emailEnabled && patientPrefs.emailEnabled && contact.email;
+  const sms = reminders.smsEnabled && patientPrefs.smsEnabled && contact.phone;
   if (!email && !sms) return { send: false, reason: "channels_off" };
   return { send: true, email, sms };
 }
@@ -170,10 +174,12 @@ export async function dispatchReminder(
   }
 
   const config = parseTenantConfig(data.tenantSettings).reminders;
-  const plan = planReminderChannels(config, offsetId, {
-    email: !!data.patientEmail,
-    phone: !!data.patientPhone,
-  });
+  const plan = planReminderChannels(
+    config,
+    offsetId,
+    { email: !!data.patientEmail, phone: !!data.patientPhone },
+    { smsEnabled: data.patientReminderSmsEnabled, emailEnabled: data.patientReminderEmailEnabled },
+  );
   if (!plan.send) return { dispatched: false, reason: plan.reason };
 
   const locale = resolveLocale(data.tenantSettings);
@@ -226,8 +232,8 @@ export async function dispatchConfirmation(
   }
 
   const { reminders } = parseTenantConfig(data.tenantSettings);
-  const email = reminders.emailEnabled && !!data.patientEmail;
-  const sms = reminders.smsEnabled && !!data.patientPhone;
+  const email = reminders.emailEnabled && data.patientReminderEmailEnabled && !!data.patientEmail;
+  const sms = reminders.smsEnabled && data.patientReminderSmsEnabled && !!data.patientPhone;
   if (!email && !sms) return { dispatched: false, reason: "channels_off" };
 
   const locale = resolveLocale(data.tenantSettings);
@@ -277,8 +283,8 @@ export async function dispatchFollowUp(
   }
 
   const { reminders } = parseTenantConfig(data.tenantSettings);
-  const email = reminders.emailEnabled && !!data.patientEmail;
-  const sms = reminders.smsEnabled && !!data.patientPhone;
+  const email = reminders.emailEnabled && data.patientReminderEmailEnabled && !!data.patientEmail;
+  const sms = reminders.smsEnabled && data.patientReminderSmsEnabled && !!data.patientPhone;
   if (!email && !sms) return { dispatched: false, reason: "channels_off" };
 
   const locale = resolveLocale(data.tenantSettings);
@@ -335,8 +341,8 @@ export async function dispatchNoShow(
   }
 
   const { reminders } = parseTenantConfig(data.tenantSettings);
-  const email = reminders.emailEnabled && !!data.patientEmail;
-  const sms = reminders.smsEnabled && !!data.patientPhone;
+  const email = reminders.emailEnabled && data.patientReminderEmailEnabled && !!data.patientEmail;
+  const sms = reminders.smsEnabled && data.patientReminderSmsEnabled && !!data.patientPhone;
   if (!email && !sms) return { dispatched: false, reason: "channels_off" };
 
   const locale = resolveLocale(data.tenantSettings);

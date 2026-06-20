@@ -114,6 +114,49 @@ describe("planReminderChannels", () => {
       reason: "no_contact",
     });
   });
+
+  it("suppresses SMS when the patient has opted out of SMS reminders", () => {
+    const prefs = { smsEnabled: false, emailEnabled: true };
+    expect(planReminderChannels(cfg(), "24h", both, prefs)).toEqual({
+      send: true,
+      email: true,
+      sms: false,
+    });
+  });
+
+  it("suppresses email when the patient has opted out of email reminders", () => {
+    const prefs = { smsEnabled: true, emailEnabled: false };
+    expect(planReminderChannels(cfg(), "24h", both, prefs)).toEqual({
+      send: true,
+      email: false,
+      sms: true,
+    });
+  });
+
+  it("returns channels_off when patient has opted out of all channels", () => {
+    const prefs = { smsEnabled: false, emailEnabled: false };
+    expect(planReminderChannels(cfg(), "24h", both, prefs)).toEqual({
+      send: false,
+      reason: "channels_off",
+    });
+  });
+
+  it("patient opt-out of SMS takes precedence over tenant SMS being enabled", () => {
+    const prefs = { smsEnabled: false, emailEnabled: true };
+    const result = planReminderChannels(cfg({ smsEnabled: true }), "24h", both, prefs);
+    expect(result).toMatchObject({ send: true });
+    if (!result.send) throw new Error("expected send:true");
+    expect(result.sms).toBe(false);
+    expect(result.email).toBe(true);
+  });
+
+  it("omitting patientPrefs defaults to both-enabled (preserves prior behavior)", () => {
+    expect(planReminderChannels(cfg(), "24h", both)).toEqual({
+      send: true,
+      email: true,
+      sms: true,
+    });
+  });
 });
 
 /* --------------------------- wired dispatch ------------------------------ */
@@ -122,7 +165,7 @@ describe("dispatchReminder honors tenant reminder config", () => {
   const ENV_KEYS = ["REMINDERS_LIVE_SEND", "REMINDERS_LINK_SECRET", "REMINDERS_RESCHEDULE_BASE_URL"];
   const saved: Record<string, string | undefined> = {};
 
-  function fixture(reminders?: unknown) {
+  function fixture(reminders?: unknown, patientPrefs?: { smsEnabled?: boolean; emailEnabled?: boolean }) {
     return {
       appointmentId: APPOINTMENT_ID,
       startsAt: STARTS_AT,
@@ -130,6 +173,9 @@ describe("dispatchReminder honors tenant reminder config", () => {
       patientName: "Madalena Sousa",
       patientEmail: "madalena@example.pt",
       patientPhone: "+351 210 000 000",
+      // Default patient prefs: SMS on, email on (same as "both enabled" default).
+      patientReminderSmsEnabled: patientPrefs?.smsEnabled ?? true,
+      patientReminderEmailEnabled: patientPrefs?.emailEnabled ?? true,
       practitionerName: "Dr. João Pereira",
       locationName: "Linda-a-Velha",
       locationPhone: "+351 210 000 000",
@@ -202,5 +248,31 @@ describe("dispatchReminder honors tenant reminder config", () => {
     expect(outcome.channels.map((c) => c.channel).sort()).toEqual(["email", "sms"]);
     expect(h.email).toHaveLength(1);
     expect(h.sms).toHaveLength(1);
+  });
+
+  it("suppresses SMS when patient has opted out of SMS, even if tenant SMS is on", async () => {
+    h.loadReminderData.mockResolvedValue(
+      fixture({ emailEnabled: true, smsEnabled: true, leadTimeHours: [48, 24] }, { smsEnabled: false, emailEnabled: true }),
+    );
+
+    const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h");
+
+    expect(outcome).toMatchObject({ dispatched: true });
+    if (!outcome.dispatched) throw new Error("expected dispatched");
+    expect(outcome.channels.map((c) => c.channel)).toEqual(["email"]);
+    expect(h.email).toHaveLength(1);
+    expect(h.sms).toHaveLength(0);
+  });
+
+  it("returns channels_off when patient has opted out of all channels", async () => {
+    h.loadReminderData.mockResolvedValue(
+      fixture({ emailEnabled: true, smsEnabled: true, leadTimeHours: [48, 24] }, { smsEnabled: false, emailEnabled: false }),
+    );
+
+    const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h");
+
+    expect(outcome).toEqual({ dispatched: false, reason: "channels_off" });
+    expect(h.email).toHaveLength(0);
+    expect(h.sms).toHaveLength(0);
   });
 });

@@ -34,6 +34,8 @@ const OWN_ROW = {
   address: "Rua A, 1",
   postalCode: "2795-000",
   city: "Linda-a-Velha",
+  reminderSmsEnabled: true,
+  reminderEmailEnabled: false,
 };
 
 // NB: each test sets runAsPatient's implementation via withRows() (overwriting
@@ -47,7 +49,7 @@ describe("toProfileDTO — portal whitelist (no fiscal / internal fields)", () =
     // Even if the source object carries fiscal/internal fields, they don't map.
     const dto = toProfileDTO({ ...OWN_ROW, nif: "123456789", notes: "private" } as never);
     expect(Object.keys(dto).sort()).toEqual(
-      ["address", "city", "email", "fullName", "id", "phone", "postalCode"].sort(),
+      ["address", "city", "email", "fullName", "id", "phone", "postalCode", "reminderEmailEnabled", "reminderSmsEnabled"].sort(),
     );
     expect(dto).not.toHaveProperty("nif");
     expect(dto).not.toHaveProperty("notes");

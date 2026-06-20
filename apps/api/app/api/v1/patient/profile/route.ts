@@ -20,7 +20,7 @@ export async function GET(): Promise<Response> {
 }
 
 // PATCH /api/v1/patient/profile — update the patient's own editable fields.
-// Editable whitelist: phone, address, postalCode, city.
+// Editable whitelist: phone, address, postalCode, city, reminderSmsEnabled, reminderEmailEnabled.
 // NOT editable via portal: fullName (identity), email (identity), nif (Phase 4).
 export async function PATCH(req: Request): Promise<Response> {
   const principal = await getPatientPrincipal();
@@ -45,6 +45,8 @@ export async function PATCH(req: Request): Promise<Response> {
   if ("address" in raw) patch.address = raw.address === null ? null : String(raw.address);
   if ("postalCode" in raw) patch.postalCode = raw.postalCode === null ? null : String(raw.postalCode);
   if ("city" in raw) patch.city = raw.city === null ? null : String(raw.city);
+  if ("reminderSmsEnabled" in raw) patch.reminderSmsEnabled = Boolean(raw.reminderSmsEnabled);
+  if ("reminderEmailEnabled" in raw) patch.reminderEmailEnabled = Boolean(raw.reminderEmailEnabled);
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "no_editable_fields" }, { status: 400 });

@@ -157,7 +157,10 @@ export function AccountView({
           {/* Language: PT only until per-patient locale selection lands. */}
           <Row label={s.account.field_language} value={s.account.language_pt} />
         </div>
-        <ReminderToggles />
+        <ReminderToggles
+          initialSms={profile?.reminderSmsEnabled ?? true}
+          initialEmail={profile?.reminderEmailEnabled ?? false}
+        />
       </section>
 
       {/* Group 3 — Terminar sessão */}
