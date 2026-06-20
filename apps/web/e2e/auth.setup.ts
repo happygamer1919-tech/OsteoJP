@@ -9,10 +9,12 @@
  *   E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD
  *   E2E_THERAPIST_EMAIL, E2E_THERAPIST_PASSWORD
  *   E2E_RECEPTION_EMAIL, E2E_RECEPTION_PASSWORD
+ *   E2E_PORTAL_PATIENT_EMAIL, E2E_PORTAL_PATIENT_PASSWORD (portal patient)
  */
 
 import { test as setup } from "@playwright/test";
 import path from "path";
+import { E2E_PORTAL_PATIENT_EMAIL, E2E_PASSWORD, PORTAL_BASE_URL, PORTAL_STORAGE } from "./fixtures";
 
 const AUTH_DIR = path.join(__dirname, ".auth");
 
@@ -67,3 +69,25 @@ for (const role of ROLES) {
     await page.context().storageState({ path: role.storageFile });
   });
 }
+
+// ---------------------------------------------------------------------------
+// Portal patient login (apps/portal — port 3001)
+// ---------------------------------------------------------------------------
+
+setup("authenticate as portal patient", async ({ page }) => {
+  const email =
+    process.env.E2E_PORTAL_PATIENT_EMAIL ?? E2E_PORTAL_PATIENT_EMAIL;
+  const password = process.env.E2E_PORTAL_PATIENT_PASSWORD ?? E2E_PASSWORD;
+
+  // Use the full portal URL so this setup step isn't bound by the staff
+  // platform's baseURL (http://localhost:3000).
+  await page.goto(`${PORTAL_BASE_URL}/auth/login`);
+  await page.getByLabel(/Email/i).fill(email);
+  await page.getByLabel(/Palavra-passe/i).fill(password);
+  await page.getByRole("button", { name: /Entrar/i }).click();
+
+  // Portal redirects to /portal/dashboard after a successful login.
+  await page.waitForURL(/\/portal\/dashboard/, { timeout: 20_000 });
+
+  await page.context().storageState({ path: PORTAL_STORAGE.patient });
+});

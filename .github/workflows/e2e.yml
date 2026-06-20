@@ -37,12 +37,16 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       SUPABASE_URL: http://127.0.0.1:54321
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      # API app URL used by the portal server actions in E2E (apps/api on port 3002).
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:3002
       E2E_ADMIN_EMAIL: e2e-admin@osteojp.test
       E2E_ADMIN_PASSWORD: E2ePassw0rd!
       E2E_THERAPIST_EMAIL: e2e-therapist@osteojp.test
       E2E_THERAPIST_PASSWORD: E2ePassw0rd!
       E2E_RECEPTION_EMAIL: e2e-reception@osteojp.test
       E2E_RECEPTION_PASSWORD: E2ePassw0rd!
+      E2E_PORTAL_PATIENT_EMAIL: e2e-patient@osteojp.test
+      E2E_PORTAL_PATIENT_PASSWORD: E2ePassw0rd!
 
     steps:
       - name: Checkout
@@ -157,12 +161,15 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       SUPABASE_URL: http://127.0.0.1:54321
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:3002
       E2E_ADMIN_EMAIL: e2e-admin@osteojp.test
       E2E_ADMIN_PASSWORD: E2ePassw0rd!
       E2E_THERAPIST_EMAIL: e2e-therapist@osteojp.test
       E2E_THERAPIST_PASSWORD: E2ePassw0rd!
       E2E_RECEPTION_EMAIL: e2e-reception@osteojp.test
       E2E_RECEPTION_PASSWORD: E2ePassw0rd!
+      E2E_PORTAL_PATIENT_EMAIL: e2e-patient@osteojp.test
+      E2E_PORTAL_PATIENT_PASSWORD: E2ePassw0rd!
 
     steps:
       - name: Checkout

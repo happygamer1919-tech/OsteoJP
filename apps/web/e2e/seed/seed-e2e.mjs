@@ -239,6 +239,36 @@ async function ensureFormTemplates() {
   return rows.map((r) => `${r.key} v${r.version}`);
 }
 
+// ---------------------------------------------------------------------------
+// Portal patient — an auth user linked to Maria Silva's patient row.
+// Used by portal-reminders.spec.ts. Credentials: E2E_PORTAL_PATIENT_EMAIL /
+// E2E_PASSWORD. The seed resets reminder prefs to a known initial state on
+// every run so toggle-persistence tests start deterministically.
+// ---------------------------------------------------------------------------
+
+const E2E_PORTAL_PATIENT_EMAIL = "e2e-patient@osteojp.test";
+const MARIA_SILVA_ID = PATIENTS_A[0].id; // "00000000-0000-0000-0000-00000000a301"
+
+async function ensurePortalPatient() {
+  // Create (or update) the portal patient auth user.
+  const authId = await ensureAuthUser(E2E_PORTAL_PATIENT_EMAIL, E2E_PASSWORD);
+
+  // Link the auth user to Maria Silva's patient row and reset reminder prefs
+  // to the known initial state (sms=true, email=false) so toggle tests are
+  // deterministic across re-runs.
+  const { error } = await db
+    .from("patients")
+    .update({
+      auth_user_id: authId,
+      activated_at: new Date().toISOString(),
+      reminder_sms_enabled: true,
+      reminder_email_enabled: false,
+    })
+    .eq("id", MARIA_SILVA_ID)
+    .eq("tenant_id", TENANT_A);
+  must(error, `link portal patient auth_user_id for ${MARIA_SILVA_ID}`);
+}
+
 async function main() {
   await ensureTenant(TENANT_A, "OsteoJP (E2E)", "osteojp-preview");
   await ensureTenant(TENANT_B, "OsteoJP Other (E2E)", "osteojp-e2e-other");
@@ -246,12 +276,14 @@ async function main() {
   await ensureRoles(TENANT_B);
   await ensureUsers();
   await ensureBaseData();
+  await ensurePortalPatient();
   const templates = await ensureFormTemplates();
 
   console.log("[seed-e2e] tenant A:", TENANT_A);
   console.log("[seed-e2e] tenant B:", TENANT_B);
   console.log("[seed-e2e] users:", USERS.map((u) => `${u.email} (${u.slug})`).join(", "));
   console.log("[seed-e2e] patients A:", PATIENTS_A.length, "(1 soft-deleted)");
+  console.log("[seed-e2e] portal patient:", E2E_PORTAL_PATIENT_EMAIL, "→", MARIA_SILVA_ID);
   console.log("[seed-e2e] templates:", templates.join(", "));
   console.log("[seed-e2e] done.");
 }
