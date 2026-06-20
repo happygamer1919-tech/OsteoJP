@@ -18,7 +18,7 @@ jobs:
   playwright:
     name: Playwright E2E (seeded DB)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
 
     env:
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
@@ -86,11 +86,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+          key: playwright-all-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
-      - name: Install Playwright Chromium (+ system deps)
+      - name: Install Playwright browsers (Chromium, Firefox, WebKit + system deps)
         if: steps.changes.outputs.code == 'true'
-        run: pnpm --filter web exec playwright install --with-deps chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium firefox webkit
 
       - name: Set up Supabase CLI
         if: steps.changes.outputs.code == 'true'
