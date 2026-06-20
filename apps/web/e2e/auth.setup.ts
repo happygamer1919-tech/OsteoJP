@@ -83,7 +83,9 @@ setup("authenticate as portal patient", async ({ page }) => {
   // platform's baseURL (http://localhost:3000).
   await page.goto(`${PORTAL_BASE_URL}/auth/login`);
   await page.getByLabel(/Email/i).fill(email);
-  await page.getByLabel(/Palavra-passe/i).fill(password);
+  // Use exact:true to avoid matching the "Mostrar palavra-passe" show/hide button
+  // that also has "Palavra-passe" in its aria-label.
+  await page.getByLabel("Palavra-passe", { exact: true }).fill(password);
   await page.getByRole("button", { name: /Entrar/i }).click();
 
   // Portal redirects to /portal/dashboard after a successful login.
