@@ -60,7 +60,6 @@ export async function PATCH(req: Request): Promise<Response> {
     if (e instanceof Error && e.message === "INVALID_PHONE") {
       return NextResponse.json({ error: "invalid_phone" }, { status: 422 });
     }
-    console.error("[api/patient/profile PATCH] updateOwnProfile error:", e);
     return errorResponse(e);
   }
 }
