@@ -156,6 +156,8 @@ export async function updateReminderPrefsAction(prefs: {
     })
 
     if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.error('[portal/actions] updateReminderPrefsAction API returned', res.status, body.slice(0, 200))
       return { error: 'Não foi possível guardar as preferências. Tente novamente.' }
     }
 

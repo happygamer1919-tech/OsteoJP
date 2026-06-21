@@ -60,7 +60,9 @@ export async function getPatientPrincipal(): Promise<PatientPrincipal | null> {
   const headerStore = await headers();
   const authHeader = headerStore.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
-    return decodePatientJwt(authHeader.slice(7));
+    const principal = decodePatientJwt(authHeader.slice(7));
+    console.error("[api/patient] Bearer path: principal=", principal ? JSON.stringify({ patient_id: (principal as Record<string,unknown>).patientId }) : null);
+    return principal;
   }
 
   // Path 2 — httpOnly session cookie (browser → api server directly)
@@ -68,7 +70,10 @@ export async function getPatientPrincipal(): Promise<PatientPrincipal | null> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  if (!session?.access_token) return null;
+  if (!session?.access_token) {
+    console.error("[api/patient] no session in cookies either");
+    return null;
+  }
   return decodePatientJwt(session.access_token);
 }
 
