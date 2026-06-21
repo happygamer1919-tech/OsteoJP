@@ -1,0 +1,191 @@
+name: Prod Schema Drift Check
+
+# Compares the Drizzle migration journal in main against the migrations table
+# in PRODUCTION and reports any pending migrations in the job summary.
+#
+# Safety contract
+#   - Runs on a daily schedule and on workflow_dispatch ONLY.
+#     Never runs on push or pull_request — not a PR gate, not a required check.
+#   - Issues SELECT queries only. No writes, no migrations, no schema changes.
+#   - Reads the connection string from PROD_DATABASE_URL_DIRECT (same secret
+#     as prod-migrate.yml — the Supabase session pooler on port 5432).
+#   - If the secret is not configured, the job exits green with a notice.
+#     No false failures, no noise during early setup.
+#
+# Responding to a drift alert
+#   See docs/ops/prod-drift-check.md.
+
+on:
+  schedule:
+    # 07:00 UTC = 08:00 Lisbon (winter) / 08:00 Lisbon (summer, WEST +1).
+    # Off-peak for the clinic; fresh at the start of the work day.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift-check:
+    name: Prod schema drift check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      DATABASE_URL_DIRECT: ${{ secrets.PROD_DATABASE_URL_DIRECT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Fast exit when the secret is not yet configured (e.g. early dev setup).
+      # The job succeeds so it doesn't create noise in the required-checks list.
+      # -----------------------------------------------------------------------
+      - name: No-op — PROD_DATABASE_URL_DIRECT not configured
+        if: env.DATABASE_URL_DIRECT == ''
+        run: |
+          echo "::notice::PROD_DATABASE_URL_DIRECT is not set — skipping drift check. Configure the secret to enable daily monitoring."
+          {
+            echo "## Prod schema drift check — SKIPPED ℹ️"
+            echo ""
+            echo "**\`PROD_DATABASE_URL_DIRECT\`** is not configured as a repo secret."
+            echo ""
+            echo "Set it in **Settings → Secrets and variables → Actions** (Supabase session-pooler URL, port 5432) to enable daily prod drift monitoring."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up pnpm
+        if: env.DATABASE_URL_DIRECT != ''
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - name: Set up Node.js
+        if: env.DATABASE_URL_DIRECT != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        if: env.DATABASE_URL_DIRECT != ''
+        run: pnpm install --frozen-lockfile
+
+      # Write the drift-check script at runtime (same pattern as prod-migrate.yml).
+      # Placed inside packages/db/ so bare `import "postgres"` resolves correctly.
+      - name: Write drift-check script
+        if: env.DATABASE_URL_DIRECT != ''
+        run: |
+          cat > packages/db/drift-check.mjs << 'SCRIPT'
+          import postgres from "postgres";
+          import { readFileSync, appendFileSync } from "node:fs";
+
+          const url = process.env.DATABASE_URL_DIRECT;
+          if (!url) throw new Error("DATABASE_URL_DIRECT is not set");
+
+          const summaryFile = process.env.GITHUB_STEP_SUMMARY;
+          const repoUrl    = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`;
+          const migrateUrl = `${repoUrl}/actions/workflows/prod-migrate.yml`;
+
+          function summary(...lines) {
+            if (summaryFile) appendFileSync(summaryFile, lines.join("\n") + "\n");
+          }
+
+          // Read-only: only SELECT queries are issued below.
+          const sql = postgres(url, { max: 1, prepare: false });
+
+          try {
+            // --- local journal (source of truth for what main expects) ---------
+            const journal = JSON.parse(
+              readFileSync("migrations/meta/_journal.json", "utf8"),
+            );
+            const entries = [...journal.entries].sort((a, b) => a.idx - b.idx);
+
+            // --- what prod has applied ------------------------------------------
+            const [{ exists }] = await sql`
+              SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_schema = 'drizzle'
+                  AND table_name   = '__drizzle_migrations'
+              ) AS exists
+            `;
+
+            let appliedRows = [];
+            if (exists) {
+              appliedRows = await sql`
+                SELECT created_at FROM drizzle.__drizzle_migrations
+                ORDER BY created_at
+              `;
+            }
+            const appliedWhens = new Set(appliedRows.map(r => Number(r.created_at)));
+
+            // --- diff ----------------------------------------------------------
+            const pending = entries.filter(e => !appliedWhens.has(e.when));
+            const applied = entries.filter(e => appliedWhens.has(e.when));
+
+            console.log(`Journal entries in main : ${entries.length}`);
+            console.log(`Applied in prod         : ${appliedRows.length}`);
+            console.log(`Pending                 : ${pending.length}`);
+            console.log();
+
+            if (pending.length === 0) {
+              console.log("✅  Prod is up to date — no pending migrations.");
+              const latest = entries.at(-1)?.tag ?? "(none)";
+              summary(
+                "## Prod schema drift check — UP TO DATE ✅",
+                "",
+                `**${entries.length}** migrations tracked in main, all applied to prod.`,
+                `Latest: \`${latest}\``,
+              );
+            } else {
+              for (const e of pending) {
+                console.log(`  ⚠️  PENDING  ${e.tag}`);
+              }
+              for (const e of applied) {
+                console.log(`       applied  ${e.tag}`);
+              }
+              console.log();
+              console.log(`Run the Prod Migrate workflow to catch prod up: ${migrateUrl}`);
+
+              const pendingRows = pending
+                .map(e => `| \`${e.tag}\` | ⚠️ pending |`)
+                .join("\n");
+              const recentApplied = applied.slice(-5)
+                .map(e => `| \`${e.tag}\` | ✅ applied |`)
+                .join("\n") || "| (none) | — |";
+
+              summary(
+                "## Prod schema drift check — DRIFT DETECTED ⚠️",
+                "",
+                `**${pending.length}** migration(s) are present in main but have NOT been applied to prod.`,
+                "",
+                "### Pending (not yet applied to prod)",
+                "| Migration | Status |",
+                "|---|---|",
+                pendingRows,
+                "",
+                "### Last applied to prod (most recent 5)",
+                "| Migration | Status |",
+                "|---|---|",
+                recentApplied,
+                "",
+                `**Action required:** trigger the [Prod Migrate (manual)](${migrateUrl}) workflow.`,
+                "",
+                "> See **docs/ops/prod-drift-check.md** for the full response runbook.",
+              );
+            }
+          } finally {
+            await sql.end();
+          }
+          SCRIPT
+
+      - name: Run drift check (read-only)
+        if: env.DATABASE_URL_DIRECT != ''
+        working-directory: packages/db
+        run: node drift-check.mjs
+        env:
+          DATABASE_URL_DIRECT: ${{ secrets.PROD_DATABASE_URL_DIRECT }}
