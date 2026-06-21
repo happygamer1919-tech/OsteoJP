@@ -133,14 +133,20 @@ All React-controlled text input interactions switched from `fill()` to `pressSeq
 
 ### F3 — WebKit: `merging two patients` flaky under CI load
 
-- **Severity:** P3 (flaky under load; retried successfully; no assertion weakened)
-- **Browsers affected:** WebKit only (one CI run)
+- **Severity:** P3 → **Fixed** (`test/webkit-merge-flake`)
+- **Browsers affected:** WebKit only
 - **Spec:** `patients.spec.ts:135` — `merging two patients marks the loser as Fundido`
 
-**Description:**  
-On one CI run, the merge test hit the 30 s test-timeout during `locator.click()` for the "Fundir neste paciente" button. The retry completed in 6.2 s. The test creates two patients (two `createPatient` calls, each up to 15 s for the URL redirect assertion) plus a page navigation and a merge action — under heavy CI load, the cumulative wall time can approach the 30 s Playwright default test timeout. The timeout occurs before the click rather than because of it.
+**Root cause (two compounding issues):**
 
-**Assessment:** This is a resource-contention flake, not a browser bug. The merge input and button behave identically in WebKit vs Chromium functionally. No fix applied; the assertion is correct and the retry mechanism (configured `retries: 2` in CI) handles this appropriately. If it recurs consistently, the fix is to increase the per-test timeout for this test or to extract the patient creation to a `beforeAll` hook.
+1. **Same React controlled-input issue as F2.** The merge `<input value={survivorId} onChange={...}>` is a React controlled input. The "Fundir neste paciente" button is `disabled={pending || survivorId.trim().length === 0}`. Playwright's `fill()` sets the DOM value and dispatches a single synthetic `input` event that WebKit does not forward to React's delegation root — leaving React state as `""` and the button permanently disabled. Playwright's `click()` then waits for the button to become actionable (non-disabled) and times out at 30 s. The retry passed because retries get a fresh 30 s window, and WebKit's synthetic-event propagation is non-deterministic: `fill()` occasionally fires `onChange` when the event loop is less contended.
+
+2. **Cumulative 30 s wall-time budget.** Two `createPatient` calls (each with a 15 s assertion timeout) plus navigation and the merge interaction can collectively approach the 30 s default test timeout under CI load.
+
+**Fix applied** (`apps/web/e2e/patients.spec.ts`):
+- `test.setTimeout(90_000)` budgets 90 s for the whole test (2× createPatient + merge).
+- `await expect(mergeInput).toBeVisible({ timeout: 8_000 })` waits for React hydration before filling.
+- `mergeInput.pressSequentially(survivorId)` replaces `fill()` — fires per-character key events that React's `onChange` processes correctly in WebKit (same fix as F2).
 
 ---
 
@@ -150,11 +156,11 @@ On one CI run, the merge test hit the 30 s test-timeout during `locator.click()`
 |---|---|---|---|---|---|---|
 | Chromium | ✅ 9/9 | ✅ 7/7 | ✅ 15/15 | ✅ 4/4 | ✅ 3/3 | **PASS** |
 | Firefox | ✅ 9/9 | ✅ 7/7 | ✅ 15/15 | ✅ 4/4 ⚠ F1 fixed | ✅ 3/3 | **PASS** |
-| WebKit | ✅ 9/9 | ✅ 7/7 | ✅ 15/15 ⚠ F2 fixed | ✅ 4/4 ⚠ F1 fixed | ✅ 3/3 | **PASS** (1 flaky F3) |
+| WebKit | ✅ 9/9 | ✅ 7/7 | ✅ 15/15 ⚠ F2+F3 fixed | ✅ 4/4 ⚠ F1 fixed | ✅ 3/3 | **PASS** |
 
 **3 findings:**
 - **F1 (P2):** Firefox `NS_BINDING_ABORTED` + WebKit `interrupted by another navigation` navigation race — fixed in test helpers (catch+retry).
 - **F2 (P2):** WebKit `fill()` does not trigger React's `onChange` — fixed in test helpers (`pressSequentially`).
-- **F3 (P3):** WebKit `merging two patients` flaky under CI load — retried successfully; no fix required.
+- **F3 (P3):** WebKit `merging two patients` flaky — two issues: `fill()` on the controlled merge input leaving button disabled in WebKit, plus cumulative createPatient wall-time approaching 30 s default. Fixed: `pressSequentially`, explicit hydration wait, `test.setTimeout(90_000)`.
 
 All findings are test-layer issues. No application code changed. No assertions weakened.

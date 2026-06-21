@@ -133,13 +133,30 @@ test("restoring a soft-deleted patient clears the Eliminado badge", async ({ pag
 });
 
 test("merging two patients marks the loser as Fundido", async ({ page }) => {
+  // Two createPatient calls each take up to 15 s in CI (URL redirect assertion).
+  // Extend the per-test budget so cumulative wall-time under CI load doesn't
+  // exhaust the 30 s default before the merge click can fire.
+  test.setTimeout(90_000);
+
   const survivorId = await createPatient(page, { fullName: `Sobrevivente ${uniq()}` });
   const loserId = await createPatient(page, { fullName: `Perdedor ${uniq()}` });
 
   await page.goto(`/patients/${loserId}`);
-  await page.getByPlaceholder(/ID do paciente/i).fill(survivorId);
-  await page.getByRole("button", { name: "Fundir neste paciente" }).click();
 
+  // Wait for React hydration before filling: the PatientActions component
+  // renders client-side and the input appears after JS hydration completes.
+  const mergeInput = page.getByPlaceholder(/ID do paciente/i);
+  await expect(mergeInput).toBeVisible({ timeout: 8_000 });
+
+  // pressSequentially fires per-character key events that propagate through
+  // React's controlled-input onChange in all browsers. fill() dispatches a
+  // single synthetic input event that WebKit's automation layer does not
+  // forward to React's delegation root, leaving the state empty — which keeps
+  // the "Fundir neste paciente" button disabled and causes click() to time out
+  // waiting for actionability. Same root cause as F2.
+  await mergeInput.pressSequentially(survivorId);
+
+  await page.getByRole("button", { name: "Fundir neste paciente" }).click();
   await expect(page.getByText("Fundido")).toBeVisible({ timeout: 8_000 });
 });
 
