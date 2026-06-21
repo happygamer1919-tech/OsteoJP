@@ -188,3 +188,36 @@ Ivan to forward `docs/jp-decisions-2026-06-17.md` verbatim.
 1. **Notas rápidas persistence** — wire quick-notes to the `quick_notes` table (migration 0018, already applied). Per-staff scope. Replaces the current `useState`-only implementation. No new migration needed.
 2. **A11y P2 follow-up sweep** — fix the 9 new focus-ring omissions and 2 P3 nits in `docs/qa-a11y-staff-verify-2026-06-19.md`.
 3. **`docs/SPEC.md` refresh** — update stale spec to reflect V2 design system, portal, and current phase status.
+
+---
+
+## Addendum (post-recheck) — 0014 was also missing
+
+**Discovered:** 2026-06-21, before session 15 work began.
+
+### What happened
+
+The tracking reconciliation in session 14 (PR #338) inserted rows for migrations 0008–0019 into `drizzle.__drizzle_migrations` based on sha256 hashes of the SQL files. The rows confirmed the hashes were registered, but **a tracking row is not proof the objects exist** — it only means the SQL was acknowledged by Drizzle's migration bookkeeping. The objects themselves can still be absent if the migration was applied to tracking without being applied to the schema.
+
+A direct object-level recheck against prod (`to_regclass`, `pg_type`, `pg_policy`) found:
+
+- **0008–0013**: all objects genuinely present. ✓
+- **0014 (`0014_migration_staging`)**: `migration_staging_rows` table, both enums (`migration_entity_type`, `migration_staging_status`), and the `migration_staging_rows_tenant_isolation` RLS policy were all **MISSING**.
+
+### What was applied
+
+0014 was applied to prod using the same safe procedure as 0015–0019:
+
+1. Schema-only snapshot (`prod-schema-pre-0014-<timestamp>.sql`).
+2. Single atomic `BEGIN` / `\i packages/db/migrations/0014_migration_staging.sql` / `COMMIT`.
+3. Object-level verify: table present, both enums present, policy present, 7 GRANTs to `authenticated` present.
+
+Prod now has all migrations 0000–0019 applied. The 20-row tracking table matches reality. `prod-migrate` is a verified no-op.
+
+### Clarification: `migration_batches` does not exist
+
+The diagnostic probed for `public.migration_batches` speculatively. That table was never created by any migration and does not exist by design. The `batch_id` column on `migration_staging_rows` is a grouping UUID — batches are logical, not a separate table.
+
+### Lesson learned
+
+**Always verify object existence directly** (`to_regclass`, `pg_type`, `pg_policy`, `pg_indexes`). A row in the Drizzle tracking table proves only that the hash was registered — not that the DDL succeeded. Per-migration object checklists (as done for 0015–0019 in session 14) should be the standard for any out-of-band apply.
