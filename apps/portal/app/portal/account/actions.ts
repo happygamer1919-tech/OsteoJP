@@ -1,5 +1,6 @@
 'use server'
 
+import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -14,21 +15,65 @@ function apiBase(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? ''
 }
 
-// Build the Authorization header from the portal's own server-side Supabase
-// session. The session is read from the incoming browser request's cookies by
-// createServerClient — no cross-app cookie forwarding needed. This is more
-// reliable than building a Cookie string by hand (which is sensitive to value
-// encoding, SameSite, and cookie-path scoping across ports).
-async function apiAuthHeader(): Promise<Record<string, string>> {
-  const supabase = await createServerClient()
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  if (!session?.access_token) {
-    console.error('[portal/actions] apiAuthHeader: getSession() returned no session — portal→API calls will be unauthenticated')
-    return {}
+// Reads the Supabase access_token directly from cookies without going through
+// createServerClient — used to diagnose why getSession() returns null in CI.
+async function getAccessTokenFromCookies(): Promise<string | null> {
+  const cookieStore = await cookies()
+  const allCookies = cookieStore.getAll()
+  console.error('[portal/actions] cookie names visible in server action:', allCookies.map(c => c.name))
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
+  let storageKey: string
+  try {
+    const url = new URL(supabaseUrl)
+    storageKey = `sb-${url.hostname.split('.')[0]}-auth-token`
+  } catch {
+    console.error('[portal/actions] invalid SUPABASE_URL:', supabaseUrl)
+    return null
   }
-  return { Authorization: `Bearer ${session.access_token}` }
+  console.error('[portal/actions] looking for cookie:', storageKey)
+
+  // Session may be stored under the exact key or under key.0 (chunked)
+  const sessionCookie =
+    allCookies.find(c => c.name === storageKey) ??
+    allCookies.find(c => c.name === `${storageKey}.0`)
+
+  if (!sessionCookie?.value) {
+    console.error('[portal/actions] session cookie not found')
+    return null
+  }
+
+  let jsonStr = sessionCookie.value
+  if (jsonStr.startsWith('base64-')) {
+    try {
+      jsonStr = Buffer.from(jsonStr.slice(7), 'base64url').toString('utf-8')
+    } catch {
+      console.error('[portal/actions] base64url decode failed')
+      return null
+    }
+  }
+
+  try {
+    const session = JSON.parse(jsonStr) as { access_token?: string }
+    console.error('[portal/actions] access_token found:', !!session.access_token)
+    return session.access_token ?? null
+  } catch {
+    console.error('[portal/actions] JSON.parse failed')
+    return null
+  }
+}
+
+async function apiAuthHeader(): Promise<Record<string, string>> {
+  const token = await getAccessTokenFromCookies()
+  if (!token) {
+    // Fallback: try createServerClient().getSession() for comparison
+    const supabase = await createServerClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    console.error('[portal/actions] getSession() fallback result:', !!session?.access_token)
+    if (!session?.access_token) return {}
+    return { Authorization: `Bearer ${session.access_token}` }
+  }
+  return { Authorization: `Bearer ${token}` }
 }
 
 export async function updateProfileAction(

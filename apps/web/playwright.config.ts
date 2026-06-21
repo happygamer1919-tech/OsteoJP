@@ -116,6 +116,8 @@ export default defineConfig({
         {
           command: "pnpm --filter api dev",
           url: "http://localhost:3002",
+          stdout: "pipe",
+          stderr: "pipe",
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,
         },
@@ -128,6 +130,7 @@ export default defineConfig({
           command: "NEXT_PUBLIC_API_URL=http://localhost:3002 pnpm --filter portal dev",
           url: "http://localhost:3001",
           stdout: "pipe",
+          stderr: "pipe",
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,
         },
