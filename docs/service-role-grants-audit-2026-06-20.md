@@ -305,3 +305,35 @@ Supabase Studio and realtime for 24 h).
 
 **No critical gaps found.** The two actionable findings (F-1, F-2) are hygiene
 improvements, not active vulnerabilities.
+
+---
+
+## 8. Dev-validation result — 0021_grants_hardening (2026-06-21)
+
+**Migration:** `packages/db/migrations/0021_grants_hardening.sql`
+**Applied to:** dev (`ufbkzbyghvxtosyrkgjq`) — NOT prod (staged for separate careful apply)
+**Method:** psql BEGIN/\i/COMMIT via session pooler (port 5432)
+
+**Pre-condition fix:** `migration_staging_rows` was also missing from dev (same 0014 gap as prod). Applied 0014's DDL (enums + table + RLS + authenticated grant) to dev before running 0021.
+
+### F-1 anon revoke — result: PASS ✓
+
+Ran `SET ROLE anon; SELECT ... LIMIT 0` against all 21 tables. Every table returned:
+
+```
+ERROR:  permission denied for table <name>
+```
+
+No table leaked data or returned an empty result set. All 21/21 denied.
+
+### F-2 service_role explicit grants — result: PASS ✓
+
+Ran `SET ROLE service_role; SELECT count(*) FROM public.<table>` against all 8 post-0003 tables. All returned `count = 0` (no rows, but no permission error). Access confirmed for: `patient_locations`, `availability_templates`, `time_off`, `service_location_prices`, `ai_ingestion_requests`, `patient_form_submissions`, `migration_staging_rows`, `quick_notes`.
+
+### authenticated role — unaffected: PASS ✓
+
+`SET ROLE authenticated` + `SELECT ... LIMIT 0` on `tenants`, `patients`, `quick_notes`, `migration_staging_rows` all returned empty result sets (RLS filtering rows, not permission denied). Table-level grant unchanged.
+
+### Prod apply status
+
+**NOT applied to prod.** Migration is committed on `chore/grants-hardening` and staged for a separate prod apply step. The prod apply of the anon revoke requires manual operator sign-off (run `BEGIN; \i packages/db/migrations/0021_grants_hardening.sql; COMMIT;` against prod via session pooler after verifying `migration_staging_rows` exists in prod — it was applied in the 0014 remediation on 2026-06-21).
