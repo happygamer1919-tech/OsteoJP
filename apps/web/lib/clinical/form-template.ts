@@ -21,6 +21,12 @@ export type FieldSchema = {
   "x-required"?: boolean;
   "x-hint"?: Localized;
   "x-enum-labels"?: Record<string, Localized>;
+  /** If true, this field may be sent to the AI extraction partner.
+   * DEFAULT-DENY: absent or false means the field is NEVER extracted. */
+  ai_extractable?: boolean;
+  /** If true, this field is private to the therapist (x-private: true in
+   * templates). Redundant with ai_extractable: false but kept for clarity. */
+  "x-private"?: boolean;
 };
 
 export type TemplateSchema = {
@@ -103,6 +109,28 @@ function isEmpty(value: unknown): boolean {
     (typeof value === "string" && value.trim() === "") ||
     (Array.isArray(value) && value.length === 0)
   );
+}
+
+/**
+ * Project clinical record data through the template's ai_extractable flags.
+ * Only copies fields where ai_extractable === true; every other field
+ * (including private_notes, which carries ai_extractable: false, and any field
+ * with no flag at all) is silently dropped.
+ *
+ * DEFAULT-DENY: ai_extractable must be explicitly true to pass through.
+ * Absent (undefined) and false are both treated as non-extractable.
+ */
+export function projectAiExtractableData(
+  data: Record<string, unknown>,
+  schema: TemplateSchema,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(schema.properties)) {
+    if (field.ai_extractable === true && Object.prototype.hasOwnProperty.call(data, key)) {
+      out[key] = data[key];
+    }
+  }
+  return out;
 }
 
 export type ValidationResult = { ok: boolean; errors: Record<string, string> };
