@@ -120,8 +120,12 @@ export default defineConfig({
           timeout: 120_000,
         },
         // apps/portal — patient-facing app; portal-reminders.spec.ts targets this.
+        // Explicitly set NEXT_PUBLIC_API_URL so Next.js's DefinePlugin inlines it
+        // at compile time (the plugin reads from process.env at server startup, not
+        // from the inherited env when using pnpm --filter). Without this prefix the
+        // portal's apiBase() returns '' and all server-action API calls fail silently.
         {
-          command: "pnpm --filter portal dev",
+          command: "NEXT_PUBLIC_API_URL=http://localhost:3002 pnpm --filter portal dev",
           url: "http://localhost:3001",
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,

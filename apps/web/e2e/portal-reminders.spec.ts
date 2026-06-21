@@ -61,8 +61,13 @@ test("disabling SMS persists after reload", async ({ page }) => {
   await expect(smsToggle).not.toBeChecked();
 
   // Wait for all inflight requests (including the server action's API PATCH)
-  // to settle before navigating away. networkidle = no requests for 500ms.
+  // to settle. networkidle = 500ms of no network activity.
   await page.waitForLoadState("networkidle");
+  // If the server action failed (e.g., API unreachable), ReminderToggles
+  // rolls back the optimistic update — the toggle would be checked again here.
+  // Asserting NOT checked before the reload catches that scenario with a clearer
+  // error message than checking after the reload.
+  await expect(smsToggle).not.toBeChecked();
 
   // Reload the page — data must be re-fetched from the DB.
   await page.goto("/portal/account");
