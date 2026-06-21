@@ -24,7 +24,10 @@ async function apiAuthHeader(): Promise<Record<string, string>> {
   const {
     data: { session },
   } = await supabase.auth.getSession()
-  if (!session?.access_token) return {}
+  if (!session?.access_token) {
+    console.error('[portal/actions] apiAuthHeader: getSession() returned no session — portal→API calls will be unauthenticated')
+    return {}
+  }
   return { Authorization: `Bearer ${session.access_token}` }
 }
 

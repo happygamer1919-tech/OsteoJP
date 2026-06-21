@@ -53,6 +53,11 @@ test("disabling SMS persists after reload", async ({ page }) => {
   await page.goto("/portal/account");
   await expect(page).toHaveURL(/\/portal\/account(\?|$)/, { timeout: 10_000 });
 
+  // Diagnostic: confirm the portal server can serve the patient profile via API.
+  // If this fails (not 200) the session is not visible to the portal server.
+  const profileResp = await page.request.get("http://localhost:3002/api/v1/patient/profile");
+  expect(profileResp.status(), `direct API GET returned ${profileResp.status()} — session cookies missing from browser context`).toBe(200);
+
   const smsToggle = page.getByRole("switch", { name: /^SMS$/i });
   await expect(smsToggle).toBeChecked();
 
