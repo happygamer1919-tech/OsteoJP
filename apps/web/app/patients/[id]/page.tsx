@@ -83,13 +83,13 @@ export default async function PatientProfilePage({
   const canDelete = can(ctx.role, "patients:delete");
   const canStartEpisode = can(ctx.role, "clinical_records:author");
 
-  // Permission-filtered tabs.
+  // Permission-filtered tabs. aria-controls links each tab button to its panel.
   const tabItems = [
-    { value: "resumo", label: s["patients.tabSummary"] },
-    { value: "consultas", label: s["patients.tabAppointments"] },
-    ...(canReadClinical ? [{ value: "registos", label: s["patients.tabRecords"] }] : []),
-    { value: "documentos", label: s["patients.tabDocuments"] },
-    ...(canInvoice ? [{ value: "faturacao", label: s["patients.tabInvoicing"] }] : []),
+    { value: "resumo", label: s["patients.tabSummary"], "aria-controls": "tabpanel-resumo" },
+    { value: "consultas", label: s["patients.tabAppointments"], "aria-controls": "tabpanel-consultas" },
+    ...(canReadClinical ? [{ value: "registos", label: s["patients.tabRecords"], "aria-controls": "tabpanel-registos" }] : []),
+    { value: "documentos", label: s["patients.tabDocuments"], "aria-controls": "tabpanel-documentos" },
+    ...(canInvoice ? [{ value: "faturacao", label: s["patients.tabInvoicing"], "aria-controls": "tabpanel-faturacao" }] : []),
   ];
   const tab = tabItems.some((t) => t.value === tabParam) ? tabParam! : "resumo";
 
@@ -150,102 +150,114 @@ export default async function PatientProfilePage({
       </div>
 
       {tab === "resumo" && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Card
-            title={s["patients.cardPersonal"]}
-            headerAction={
-              <Link href={`/patients/${id}/edit`} className={ghostLink}>
-                <Pencil size={16} strokeWidth={1.75} aria-hidden="true" />
-                {s["patients.editRecord"]}
-              </Link>
-            }
-          >
-            <Rows
-              rows={[
-                [s["patients.fieldDateOfBirth"], patient.dateOfBirth ?? "—"],
-                [s["patients.fieldSex"], patient.sex ?? "—"],
-                [s["patients.fieldNif"], patient.nif ?? "—"],
-                [
-                  s["patients.fieldAddress"],
-                  [patient.address, patient.city, patient.postalCode].filter(Boolean).join(", ") || "—",
-                ],
-              ]}
-            />
-          </Card>
-          <Card title={s["patients.cardContacts"]}>
-            <Rows
-              rows={[
-                [s["patients.fieldPhone"], patient.phone ?? "—"],
-                [s["patients.fieldEmail"], patient.email ?? "—"],
-              ]}
-            />
-          </Card>
+        <div role="tabpanel" id="tabpanel-resumo" aria-label={s["patients.tabSummary"]}>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <Card
+              title={s["patients.cardPersonal"]}
+              headerAction={
+                <Link href={`/patients/${id}/edit`} className={ghostLink}>
+                  <Pencil size={16} strokeWidth={1.75} aria-hidden="true" />
+                  {s["patients.editRecord"]}
+                </Link>
+              }
+            >
+              <Rows
+                rows={[
+                  [s["patients.fieldDateOfBirth"], patient.dateOfBirth ?? "—"],
+                  [s["patients.fieldSex"], patient.sex ?? "—"],
+                  [s["patients.fieldNif"], patient.nif ?? "—"],
+                  [
+                    s["patients.fieldAddress"],
+                    [patient.address, patient.city, patient.postalCode].filter(Boolean).join(", ") || "—",
+                  ],
+                ]}
+              />
+            </Card>
+            <Card title={s["patients.cardContacts"]}>
+              <Rows
+                rows={[
+                  [s["patients.fieldPhone"], patient.phone ?? "—"],
+                  [s["patients.fieldEmail"], patient.email ?? "—"],
+                ]}
+              />
+            </Card>
+          </div>
         </div>
       )}
 
       {tab === "consultas" && (
-        <EmptyState icon={Calendar} title={s["patients.emptyConsultasTitle"]} description={s["patients.emptyConsultasHelp"]} />
+        <div role="tabpanel" id="tabpanel-consultas" aria-label={s["patients.tabAppointments"]}>
+          <EmptyState icon={Calendar} title={s["patients.emptyConsultasTitle"]} description={s["patients.emptyConsultasHelp"]} />
+        </div>
       )}
 
-      {tab === "registos" &&
-        (records.length === 0 ? (
-          <EmptyState icon={FileText} title={s["patients.emptyRecordsTitle"]} description={s["patients.emptyRecordsHelp"]} heritage />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {records.map((r) => (
-              <Card key={r.id} href={`/clinical/${r.id}`}>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-col gap-1">
-                    <span className="font-medium text-text-primary">
-                      {r.templateTitle ? r.templateTitle[DEFAULT_LOCALE] : s["patients.recordDefaultName"]}
-                    </span>
-                    <span className="text-sm text-text-secondary">{dateFmt.format(new Date(r.updatedAt))}</span>
+      {tab === "registos" && (
+        <div role="tabpanel" id="tabpanel-registos" aria-label={s["patients.tabRecords"]}>
+          {records.length === 0 ? (
+            <EmptyState icon={FileText} title={s["patients.emptyRecordsTitle"]} description={s["patients.emptyRecordsHelp"]} heritage />
+          ) : (
+            <div className="flex flex-col gap-3">
+              {records.map((r) => (
+                <Card key={r.id} href={`/clinical/${r.id}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium text-text-primary">
+                        {r.templateTitle ? r.templateTitle[DEFAULT_LOCALE] : s["patients.recordDefaultName"]}
+                      </span>
+                      <span className="text-sm text-text-secondary">{dateFmt.format(new Date(r.updatedAt))}</span>
+                    </div>
+                    {/* record_status axis. The ai_review_state second axis is not in
+                        the records list query, so it is not shown here (rule #1). */}
+                    <StatusChip tone={RECORD_TONE[r.status]} dot>
+                      {s[RECORD_KEY[r.status]]}
+                    </StatusChip>
                   </div>
-                  {/* record_status axis. The ai_review_state second axis is not in
-                      the records list query, so it is not shown here (rule #1). */}
-                  <StatusChip tone={RECORD_TONE[r.status]} dot>
-                    {s[RECORD_KEY[r.status]]}
-                  </StatusChip>
-                </div>
-              </Card>
-            ))}
-          </div>
-        ))}
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {tab === "documentos" && (
-        <EmptyState icon={FileText} title={s["patients.emptyDocumentsTitle"]} description={s["patients.emptyDocumentsHelp"]} />
+        <div role="tabpanel" id="tabpanel-documentos" aria-label={s["patients.tabDocuments"]}>
+          <EmptyState icon={FileText} title={s["patients.emptyDocumentsTitle"]} description={s["patients.emptyDocumentsHelp"]} />
+        </div>
       )}
 
-      {tab === "faturacao" &&
-        (patientInvoices.length === 0 ? (
-          <EmptyState
-            icon={FileText}
-            title={s["patients.emptyInvoicingTitle"]}
-            description={s["patients.emptyInvoicingHelp"]}
-          />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {patientInvoices.map((inv) => (
-              <Card key={inv.id}>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-col gap-1">
-                    <span className="font-medium text-text-primary">
-                      {inv.externalId ?? `#${inv.id.slice(-6)}`}
-                    </span>
-                    <span className="text-sm text-text-secondary">
-                      {inv.issuedAt ? dateFmt.format(new Date(inv.issuedAt)) : "—"}
-                      {inv.amountCents != null &&
-                        ` · ${new Intl.NumberFormat("pt-PT", { style: "currency", currency: inv.currency }).format(inv.amountCents / 100)}`}
-                    </span>
+      {tab === "faturacao" && (
+        <div role="tabpanel" id="tabpanel-faturacao" aria-label={s["patients.tabInvoicing"]}>
+          {patientInvoices.length === 0 ? (
+            <EmptyState
+              icon={FileText}
+              title={s["patients.emptyInvoicingTitle"]}
+              description={s["patients.emptyInvoicingHelp"]}
+            />
+          ) : (
+            <div className="flex flex-col gap-3">
+              {patientInvoices.map((inv) => (
+                <Card key={inv.id}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium text-text-primary">
+                        {inv.externalId ?? `#${inv.id.slice(-6)}`}
+                      </span>
+                      <span className="text-sm text-text-secondary">
+                        {inv.issuedAt ? dateFmt.format(new Date(inv.issuedAt)) : "—"}
+                        {inv.amountCents != null &&
+                          ` · ${new Intl.NumberFormat("pt-PT", { style: "currency", currency: inv.currency }).format(inv.amountCents / 100)}`}
+                      </span>
+                    </div>
+                    <StatusChip tone={INVOICE_STATUS_TONE[inv.status]} dot>
+                      {s[INVOICE_STATUS_KEY[inv.status]]}
+                    </StatusChip>
                   </div>
-                  <StatusChip tone={INVOICE_STATUS_TONE[inv.status]} dot>
-                    {s[INVOICE_STATUS_KEY[inv.status]]}
-                  </StatusChip>
-                </div>
-              </Card>
-            ))}
-          </div>
-        ))}
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {canDelete && (
         <section className="mt-8">
