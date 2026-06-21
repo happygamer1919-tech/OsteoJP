@@ -37,12 +37,16 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       SUPABASE_URL: http://127.0.0.1:54321
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      # API app URL used by the portal server actions in E2E (apps/api on port 3002).
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:3002
       E2E_ADMIN_EMAIL: e2e-admin@osteojp.test
       E2E_ADMIN_PASSWORD: E2ePassw0rd!
       E2E_THERAPIST_EMAIL: e2e-therapist@osteojp.test
       E2E_THERAPIST_PASSWORD: E2ePassw0rd!
       E2E_RECEPTION_EMAIL: e2e-reception@osteojp.test
       E2E_RECEPTION_PASSWORD: E2ePassw0rd!
+      E2E_PORTAL_PATIENT_EMAIL: e2e-patient@osteojp.test
+      E2E_PORTAL_PATIENT_PASSWORD: E2ePassw0rd!
 
     steps:
       - name: Checkout
@@ -130,6 +134,13 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: node apps/web/e2e/seed/seed-e2e.mjs
 
+      # Write apps/portal/.env.local so Next.js's DefinePlugin inlines
+      # NEXT_PUBLIC_API_URL at compile time. Without this file the portal dev
+      # server has no .env source for the variable and apiBase() compiles to ''.
+      - name: Write portal .env.local for E2E
+        if: steps.changes.outputs.code == 'true'
+        run: echo "NEXT_PUBLIC_API_URL=http://localhost:3002" > apps/portal/.env.local
+
       - name: Run Playwright E2E (Chromium)
         if: steps.changes.outputs.code == 'true'
         run: pnpm --filter web exec playwright test --project=setup --project=chromium
@@ -157,12 +168,15 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       SUPABASE_URL: http://127.0.0.1:54321
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:3002
       E2E_ADMIN_EMAIL: e2e-admin@osteojp.test
       E2E_ADMIN_PASSWORD: E2ePassw0rd!
       E2E_THERAPIST_EMAIL: e2e-therapist@osteojp.test
       E2E_THERAPIST_PASSWORD: E2ePassw0rd!
       E2E_RECEPTION_EMAIL: e2e-reception@osteojp.test
       E2E_RECEPTION_PASSWORD: E2ePassw0rd!
+      E2E_PORTAL_PATIENT_EMAIL: e2e-patient@osteojp.test
+      E2E_PORTAL_PATIENT_PASSWORD: E2ePassw0rd!
 
     steps:
       - name: Checkout
@@ -251,6 +265,12 @@ jobs:
       - name: Seed deterministic E2E fixture
         if: steps.changes.outputs.code == 'true'
         run: node apps/web/e2e/seed/seed-e2e.mjs
+
+      # Same portal .env.local as the chromium job — keeps NEXT_PUBLIC_API_URL
+      # available to Next.js at compile time in the portal dev server.
+      - name: Write portal .env.local for E2E
+        if: steps.changes.outputs.code == 'true'
+        run: echo "NEXT_PUBLIC_API_URL=http://localhost:3002" > apps/portal/.env.local
 
       - name: Run cross-browser E2E (Firefox + WebKit)
         if: steps.changes.outputs.code == 'true'

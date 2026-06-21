@@ -2,7 +2,7 @@
  * Portal API client — wraps apps/api (api.osteojp.pt) endpoints.
  */
 
-import { cookies } from 'next/headers'
+import { createServerClient } from '@/lib/supabase/server'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,15 +91,22 @@ function apiBase(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? ''
 }
 
+// Use the portal's own Supabase session to build an Authorization: Bearer
+// header for server-to-server calls to apps/api. This avoids the fragility of
+// manually forwarding the Cookie header string (encoding edge cases, SameSite
+// restrictions, cookie-path scoping). The portal server can always read its
+// own session from the incoming browser request via createServerClient, so
+// extracting the access_token here is safe even without network round-trips.
 async function apiHeaders(): Promise<HeadersInit> {
-  const cookieStore = await cookies()
-  const cookieHeader = cookieStore.getAll()
-    .map(({ name, value }) => `${name}=${value}`)
-    .join('; ')
-  return {
-    'Content-Type': 'application/json',
-    Cookie: cookieHeader,
+  const supabase = await createServerClient()
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  const headers: HeadersInit = { 'Content-Type': 'application/json' }
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`
   }
+  return headers
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────

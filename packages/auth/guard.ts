@@ -34,8 +34,9 @@ export type RequestContext = {
   tenantId: string;
   role: Role;
   // Supabase auth user id (the verified JWT `sub`). The audit actor written on
-  // every mutation (audit_log.actor_user_id). Not an RLS claim, so toClaims()
-  // does not forward it — RLS keys only on tenant_id + user_role.
+  // every mutation (audit_log.actor_user_id). Also included as `sub` in the
+  // claims so auth.uid() resolves correctly inside withTenantContext — required
+  // by any RLS policy that checks staff_user_id = auth.uid() (e.g. quick_notes).
   userId: string;
 };
 
@@ -45,9 +46,11 @@ export type RequestContext = {
 export function toClaims(ctx: RequestContext): {
   tenant_id: string;
   user_role: string;
+  sub: string;
 } {
   return {
     tenant_id: ctx.tenantId,
     user_role: ctx.role,
+    sub: ctx.userId,
   };
 }

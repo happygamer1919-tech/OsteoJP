@@ -20,11 +20,17 @@ import { defineConfig, devices } from "@playwright/test";
  *   E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD
  *   E2E_THERAPIST_EMAIL / E2E_THERAPIST_PASSWORD
  *   E2E_RECEPTION_EMAIL / E2E_RECEPTION_PASSWORD
+ *   E2E_PORTAL_PATIENT_EMAIL / E2E_PORTAL_PATIENT_PASSWORD (portal patient)
  *
  * Three browser projects (Chromium, Firefox, WebKit) share one setup run.
  * Auth storage state files (e2e/.auth/<role>.json) are cookie-based and
  * browser-agnostic — a single Chromium setup pass suffices for all three.
  * Reminders is excluded from all projects (in flux).
+ *
+ * New-feature specs (quick-notes, invoicing, portal-reminders) run in
+ * Chromium only — they are listed in testIgnore for Firefox and WebKit.
+ * The portal tests additionally require apps/api (port 3002) and apps/portal
+ * (port 3001) to be running; both are declared as webServers below.
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -71,7 +77,13 @@ export default defineConfig({
         storageState: "e2e/.auth/admin.json",
       },
       dependencies: ["setup"],
-      testIgnore: ["**/reminders.spec.ts"],
+      // New-feature specs are Chromium-only (see comment at top of file).
+      testIgnore: [
+        "**/reminders.spec.ts",
+        "**/quick-notes.spec.ts",
+        "**/invoicing.spec.ts",
+        "**/portal-reminders.spec.ts",
+      ],
     },
     {
       name: "webkit",
@@ -80,16 +92,47 @@ export default defineConfig({
         storageState: "e2e/.auth/admin.json",
       },
       dependencies: ["setup"],
-      testIgnore: ["**/reminders.spec.ts"],
+      testIgnore: [
+        "**/reminders.spec.ts",
+        "**/quick-notes.spec.ts",
+        "**/invoicing.spec.ts",
+        "**/portal-reminders.spec.ts",
+      ],
     },
   ],
 
   webServer: process.env.BASE_URL
     ? undefined
-    : {
-        command: "pnpm dev",
-        url: "http://localhost:3000",
-        reuseExistingServer: !process.env.CI,
-        timeout: 120_000,
-      },
+    : [
+        {
+          command: "pnpm dev",
+          url: "http://localhost:3000",
+          reuseExistingServer: !process.env.CI,
+          timeout: 120_000,
+        },
+        // apps/api — required by portal server actions (PATCH /api/v1/patient/profile).
+        // NEXT_PUBLIC_API_URL must be http://localhost:3002 in the test environment
+        // (set via env var or NEXT_PUBLIC_API_URL=http://localhost:3002 prefix).
+        {
+          command: "pnpm --filter api dev",
+          url: "http://localhost:3002",
+          stdout: "pipe",
+          stderr: "pipe",
+          reuseExistingServer: !process.env.CI,
+          timeout: 120_000,
+        },
+        // apps/portal — patient-facing app; portal-reminders.spec.ts targets this.
+        // Explicitly set NEXT_PUBLIC_API_URL so Next.js's DefinePlugin inlines it
+        // at compile time (the plugin reads from process.env at server startup, not
+        // from the inherited env when using pnpm --filter). Without this prefix the
+        // portal's apiBase() returns '' and all server-action API calls fail silently.
+        {
+          command: "NEXT_PUBLIC_API_URL=http://localhost:3002 pnpm --filter portal dev",
+          url: "http://localhost:3001",
+          stdout: "pipe",
+          stderr: "pipe",
+          reuseExistingServer: !process.env.CI,
+          timeout: 120_000,
+        },
+      ],
 });

@@ -80,3 +80,31 @@ export function futureDate(offsetDays: number): string {
  * (the seed creates no appointments).
  */
 export const RUN_DAY_BASE = 60 + (Date.now() % 300);
+
+// ---------------------------------------------------------------------------
+// Portal (apps/portal — patient-facing, port 3001)
+// ---------------------------------------------------------------------------
+
+/**
+ * Base URL for the portal app. Override with PORTAL_BASE_URL env var when
+ * pointing at a Vercel preview instead of a local dev server.
+ */
+export const PORTAL_BASE_URL =
+  process.env.PORTAL_BASE_URL ?? "http://localhost:3001";
+
+/** Portal patient test credential (seeded by seed-e2e.mjs → ensurePortalPatient). */
+export const E2E_PORTAL_PATIENT_EMAIL = "e2e-patient@osteojp.test";
+
+/** Storage-state file for the portal patient session. */
+export const PORTAL_STORAGE = {
+  patient: "e2e/.auth/portal-patient.json",
+} as const;
+
+/**
+ * Maria Silva's patient row doubles as the portal test patient.
+ * The seed sets her auth_user_id to the e2e-patient auth user ID.
+ */
+export const PORTAL_PATIENT = {
+  id: PATIENTS.maria.id,
+  name: PATIENTS.maria.name,
+} as const;

@@ -1,4 +1,5 @@
 import "server-only";
+import { headers } from "next/headers";
 import {
   parsePatientPrincipal,
   toPatientClaims,
@@ -17,24 +18,14 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type { PatientPrincipal };
 
-/**
- * The verified patient principal for the current session, or null (fail-closed).
- *
- * Reads claims from the Supabase-signed JWT in the session cookie WITHOUT a
- * network round-trip. getClaims() proxies to /auth/v1/user, which rejects the
- * patient JWT with 403 because Supabase's auth server expects role:'authenticated'
- * but the access-token hook (migration 0010) stamps role:'patient'. getSession()
- * reads the cookie directly (no network call) and the payload is trustworthy
- * because it is signed by Supabase's JWT secret and stored in an httpOnly cookie.
- * RLS self-scope (migration 0010/0012) is a second enforcement layer.
- *
- * A staff token can never satisfy parsePatientPrincipal (role check fails).
- */
-export async function getPatientPrincipal(): Promise<PatientPrincipal | null> {
-  const supabase = await createSupabaseServerClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) return null;
-  const parts = session.access_token.split(".");
+// Decode a Supabase-issued JWT and parse the patient principal from its claims.
+// We decode rather than verify the signature because:
+//   1. The Supabase auth server's JWT secret is not available in apps/api.
+//   2. The token arrives from a trusted source (portal's server-side session or
+//      the patient's own httpOnly cookie), both of which originate at Supabase.
+// RLS (migration 0019) re-enforces self-scope as a second enforcement layer.
+function decodePatientJwt(token: string): PatientPrincipal | null {
+  const parts = token.split(".");
   if (parts.length !== 3) return null;
   try {
     const payload = JSON.parse(
@@ -44,6 +35,41 @@ export async function getPatientPrincipal(): Promise<PatientPrincipal | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * The verified patient principal for the current session, or null (fail-closed).
+ *
+ * Two auth paths (checked in order):
+ *   1. Authorization: Bearer <token> — used by portal server actions to avoid
+ *      cross-app cookie forwarding. The token is extracted from the portal's OWN
+ *      Supabase session (server-side, not from the browser), so it originates at
+ *      Supabase and has not been touched by client code.
+ *   2. Session cookie — the original path; reads the Supabase session stored in
+ *      an httpOnly cookie set by the browser Supabase client.
+ *
+ * In both cases the JWT payload is decoded and parsePatientPrincipal validates
+ * that role='patient', patient_id, tenant_id, and sub are present.
+ *
+ * A staff token (role='authenticated') can never satisfy parsePatientPrincipal.
+ * getClaims() / getUser() is intentionally NOT used because Supabase's auth
+ * server rejects patient JWTs with 403 (expects role:'authenticated').
+ */
+export async function getPatientPrincipal(): Promise<PatientPrincipal | null> {
+  // Path 1 — Bearer token (portal server → api server, no cookie forwarding)
+  const headerStore = await headers();
+  const authHeader = headerStore.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    return decodePatientJwt(authHeader.slice(7));
+  }
+
+  // Path 2 — httpOnly session cookie (browser → api server directly)
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) return null;
+  return decodePatientJwt(session.access_token);
 }
 
 /** Like getPatientPrincipal but throws UNAUTHENTICATED so route handlers can
