@@ -4,6 +4,25 @@ Client: https://osteojp.pt/ · App: `apps/web` (staff platform) · Prod: `https:
 
 Scope: exhaustive manual QA of the staff platform — every screen, every role, every permission combination, plus i18n, accessibility, and cross-browser. Portal QA is tracked separately (already done).
 
+## Run log
+
+**Last updated:** 2026-06-25 · env: prod (`osteojp-platform.vercel.app`), build = `main` post-#360/#361 · Vercel Hobby (503 flicker present).
+
+| Section | Status | Result | Issues |
+|---|---|---|---|
+| §1 Auth & session | Done (owner) | All 6 checks PASS | — |
+| §3 Screen smoke | Done (owner) | All screens render; 1 write defect + 1 fiscal | #357, #363 |
+| §4 i18n / copy | Done (owner) | 3 localization gaps | #364 |
+| Accessibility | Done (owner) | Keyboard + headings OK; 4 defects | #365 |
+| §2 Role × permission matrix | Paused | Needs Vercel Pro (#356) + active admin/therapist/reception test users | — |
+| Cross-browser / responsive | Paused | Needs Safari + Firefox (Chrome-only extension can't cover) | — |
+
+Notes:
+- All passes so far run as `owner` via the Chrome extension. §2 requires the three non-owner test users (not yet created) and is best run after Vercel Pro tames the 503 flicker.
+- `/agenda` = scheduling calendar (time grid); `/marcacoes` = filterable appointment list. Confirmed distinct.
+- 503-retry on writes is the #356 infra issue, not a functional bug; #353 write-outage itself is fixed.
+- Filed: **#357** dashboard notes GET-fallback (cause+fix noted), **#363** [P1] tenant NIF wrong (`501200427`→`510200427`; IVA-23% JP check noted), **#364** [P2] i18n gaps (update-password EN, sex enum, DOB ISO), **#365** [P2] a11y (unlabeled icon links, active-nav + primary-CTA contrast, unlabeled merge input).
+
 ---
 
 ## 0. Before you start
