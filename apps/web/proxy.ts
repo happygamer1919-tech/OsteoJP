@@ -15,6 +15,24 @@ export async function proxy(request: NextRequest) {
   if (process.env.PROXY_PASSTHROUGH === "1") {
     return NextResponse.next({ request });
   }
+
+  // FIX (issue #353): running updateSession (Supabase SSR getUser + response
+  // handling) on React Server Component flight requests interferes with React 19's
+  // streamed-Suspense client completion — interactive components never hydrate and
+  // server-action POSTs hang. Flight requests (RSC navigations, prefetches, and
+  // server actions) are sub-fetches of a document navigation that has already been
+  // session-gated, so they do not need their own per-request session refresh. Skip
+  // updateSession for them and let the streamed response pass through untouched.
+  // Full document navigations still run updateSession (auth gating + token refresh).
+  const headers = request.headers;
+  const isFlightRequest =
+    headers.get("rsc") === "1" ||
+    headers.get("next-router-prefetch") === "1" ||
+    headers.has("next-action");
+  if (isFlightRequest) {
+    return NextResponse.next({ request });
+  }
+
   return updateSession(request);
 }
 
