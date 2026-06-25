@@ -12,6 +12,15 @@ const NOTES_MAX = 2000;
  * constraint). RLS scopes every read/write to the caller's own row — another
  * staff member's notes are never visible or writable.
  */
+export async function saveQuickNotesAction(
+  _prev: { content: string; saved: boolean },
+  formData: FormData,
+): Promise<{ content: string; saved: boolean }> {
+  const text = (formData.get("notes") as string | null) ?? "";
+  await saveQuickNotes(text);
+  return { content: text, saved: true };
+}
+
 export async function saveQuickNotes(rawText: string): Promise<void> {
   const ctx = await requireRequestContext();
   const text = rawText.slice(0, NOTES_MAX);

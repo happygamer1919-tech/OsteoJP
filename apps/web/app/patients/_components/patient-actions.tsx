@@ -81,6 +81,7 @@ export function PatientActions({
           <span className="text-xs text-text-secondary">{s["patients.mergeHint"]}</span>
           <div className="flex gap-2">
             <input
+              aria-label={s["patients.mergeIntoLabel"]}
               value={survivorId}
               onChange={(e) => setSurvivorId(e.target.value)}
               placeholder={s["patients.mergeIntoLabel"]}

@@ -92,6 +92,8 @@ export interface SidebarAppShellProps {
   openMenuLabel?: string;
   closeMenuLabel?: string;
   menuTitle?: string;
+  /** Accessible name for the brand-logo home link (icon-only; must describe destination). */
+  brandLinkLabel?: string;
 }
 
 export function SidebarAppShell({
@@ -105,6 +107,7 @@ export function SidebarAppShell({
   openMenuLabel = "Abrir menu",
   closeMenuLabel = "Fechar menu",
   menuTitle = "Menu",
+  brandLinkLabel = "Ir para o painel",
 }: SidebarAppShellProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -116,6 +119,7 @@ export function SidebarAppShell({
         <div className="glass-nav flex h-full flex-col gap-6 rounded-v2 p-4 shadow-v2-float">
           <Link
             href={brandHomeHref}
+            aria-label={brandLinkLabel}
             className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             <BrandLockup variant="lockup" size="lg" />
@@ -138,6 +142,7 @@ export function SidebarAppShell({
           </button>
           <Link
             href={brandHomeHref}
+            aria-label={brandLinkLabel}
             className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             <BrandLockup variant="lockup" size="sm" />
@@ -152,6 +157,7 @@ export function SidebarAppShell({
         nav={nav}
         Link={Link}
         brandHomeHref={brandHomeHref}
+        brandLinkLabel={brandLinkLabel}
         title={menuTitle}
         navLabel={navLabel}
         closeLabel={closeMenuLabel}
@@ -184,6 +190,7 @@ function MobileNav({
   nav,
   Link,
   brandHomeHref,
+  brandLinkLabel,
   title,
   navLabel,
   closeLabel,
@@ -193,6 +200,7 @@ function MobileNav({
   nav: AppShellNavItem[];
   Link: ElementType;
   brandHomeHref: string;
+  brandLinkLabel: string;
   title: string;
   navLabel: string;
   closeLabel: string;
@@ -235,7 +243,7 @@ function MobileNav({
     >
       <div className="flex h-full flex-col gap-6 p-4">
         <div className="flex items-center justify-between">
-          <Link href={brandHomeHref} onClick={onClose} className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2">
+          <Link href={brandHomeHref} aria-label={brandLinkLabel} onClick={onClose} className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2">
             <BrandLockup variant="lockup" size="sm" />
           </Link>
           <button

@@ -43,7 +43,7 @@ export function AdminNav({
               "transition-colors duration-fast ease-standard",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-inset",
               active
-                ? "border-v2-green-600 text-v2-text-primary"
+                ? "border-v2-green-700 text-v2-text-primary"
                 : "border-transparent text-v2-text-secondary hover:text-v2-text-primary",
             )}
           >
