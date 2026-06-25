@@ -3,19 +3,7 @@ import { updateSession } from "@/lib/supabase/middleware";
 
 // Next 16 renamed the `middleware` file convention to `proxy`. The exported
 // function is `proxy`; the matcher config is unchanged.
-//
-// EXPERIMENT (issue #353 — silent streamed-Suspense hydration-completion failure):
-// When PROXY_PASSTHROUGH is set (preview deploys only), skip updateSession and
-// return a plain pass-through. This isolates whether running the Supabase SSR
-// `getUser()` per-request — which touches the streamed response — is what breaks
-// the client-side Suspense segment completion (un-hydrated forms; hanging server
-// actions). Production leaves this env UNSET, so behavior is byte-for-byte
-// identical to before. Remove this branch once #353 is root-caused.
 export async function proxy(request: NextRequest) {
-  if (process.env.PROXY_PASSTHROUGH === "1") {
-    return NextResponse.next({ request });
-  }
-
   // FIX (issue #353): running updateSession (Supabase SSR getUser + response
   // handling) on React Server Component flight requests interferes with React 19's
   // streamed-Suspense client completion — interactive components never hydrate and
