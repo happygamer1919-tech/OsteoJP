@@ -163,8 +163,8 @@ export default async function PatientProfilePage({
             >
               <Rows
                 rows={[
-                  [s["patients.fieldDateOfBirth"], patient.dateOfBirth ?? "—"],
-                  [s["patients.fieldSex"], patient.sex ?? "—"],
+                  [s["patients.fieldDateOfBirth"], patient.dateOfBirth ? dateFmt.format(new Date(patient.dateOfBirth)) : "—"],
+                  [s["patients.fieldSex"], patient.sex ? formatSex(patient.sex) : "—"],
                   [s["patients.fieldNif"], patient.nif ?? "—"],
                   [
                     s["patients.fieldAddress"],
@@ -268,6 +268,13 @@ export default async function PatientProfilePage({
   );
 }
 
+function formatSex(sex: string): string {
+  if (sex === "male") return s["patients.sexMale"];
+  if (sex === "female") return s["patients.sexFemale"];
+  if (sex === "other") return s["patients.sexOther"];
+  return s["patients.sexOther"];
+}
+
 function Rows({ rows }: { rows: [string, string][] }) {
   return (
     <dl className="flex flex-col gap-2">
@@ -289,7 +296,7 @@ function identityLine(p: Patient): string {
   const parts: string[] = [];
   const age = ageFrom(p.dateOfBirth);
   if (age !== null) parts.push(`${age} ${s["patients.ageSuffix"]}`);
-  if (p.sex) parts.push(p.sex);
+  if (p.sex) parts.push(formatSex(p.sex));
   if (p.nif) parts.push(`${s["patients.fieldNif"]} ${p.nif}`);
   return parts.join(" · ") || "—";
 }
