@@ -9,7 +9,9 @@ import {
  * Button — SPEC-foundation §4.1.
  *
  * Four variants, three sizes, six states (default, hover, focus-visible,
- * active, disabled, loading). All colors, spacing, radius, type and motion are
+ * active, disabled, loading). Active state adds motion-safe:scale-[0.97] press
+ * feedback; gated under motion-safe so prefers-reduced-motion users see only
+ * the color change. All colors, spacing, radius, type and motion are
  * design tokens from theme.css (docs/brand-tokens.md + SPEC §2 motion); no hex,
  * rgb, or arbitrary Tailwind values.
  *
@@ -52,7 +54,8 @@ const cx = (...classes: Array<string | false | null | undefined>): string =>
 
 const BASE =
   "relative inline-flex items-center justify-center gap-2 rounded font-semibold " +
-  "whitespace-nowrap select-none align-middle transition-colors duration-fast ease-standard " +
+  "whitespace-nowrap select-none align-middle transition duration-fast ease-standard " +
+  "motion-safe:active:scale-[0.97] " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring " +
   "focus-visible:ring-offset-2 " +
   "disabled:pointer-events-none disabled:border-transparent disabled:shadow-none " +
