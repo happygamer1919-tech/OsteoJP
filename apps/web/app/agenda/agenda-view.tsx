@@ -25,7 +25,7 @@ import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
 // border/fill, neutral hover tint, the global focus ring. Mirrors the shell's
 // own icon buttons so the agenda toolbar reads as part of the v2 chrome.
 const iconBtn =
-  "inline-flex size-10 items-center justify-center rounded-v2 text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+  "inline-flex size-10 items-center justify-center rounded-v2 text-v2-text-secondary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
 export function AgendaView({
   view,
@@ -121,7 +121,7 @@ export function AgendaView({
           <button
             type="button"
             onClick={() => navigate({ date: todayInLisbon() })}
-            className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             {s["agenda.today"]}
           </button>
@@ -180,7 +180,7 @@ export function AgendaView({
           <button
             type="button"
             onClick={() => setModal({ mode: "create" })}
-            className="inline-flex h-10 items-center gap-2 rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition-colors duration-fast ease-standard hover:bg-v2-green-800 active:bg-v2-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            className="inline-flex h-10 items-center gap-2 rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-800 active:bg-v2-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
             {s["agenda.newAppointment"]}

@@ -12,7 +12,7 @@ import { s } from '@/lib/i18n'
 type Step = 1 | 2 | 3 | 4
 
 const ROW =
-  'flex items-center gap-3 rounded-lg border border-border bg-surface p-4 text-left transition-colors duration-fast ease-standard hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2'
+  'flex items-center gap-3 rounded-lg border border-border bg-surface p-4 text-left transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2'
 
 export function BookingFlow({
   locations,
@@ -106,7 +106,7 @@ export function BookingFlow({
         <button
           type="button"
           onClick={back}
-          className="inline-flex min-h-11 w-fit items-center gap-1 text-sm text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          className="inline-flex min-h-11 w-fit items-center gap-1 text-sm text-text-secondary transition motion-safe:active:scale-[0.97] hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
           {s.common.back}
@@ -224,7 +224,7 @@ export function BookingFlow({
                   <button
                     type="button"
                     onClick={chooseAnotherTime}
-                    className="inline-flex min-h-11 items-center whitespace-nowrap rounded text-sm font-semibold text-accent-2-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                    className="inline-flex min-h-11 items-center whitespace-nowrap rounded text-sm font-semibold text-accent-2-700 transition-transform motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
                   >
                     {s.booking.choose_another_time}
                   </button>
