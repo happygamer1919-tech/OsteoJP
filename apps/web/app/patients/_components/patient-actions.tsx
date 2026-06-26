@@ -45,7 +45,7 @@ export function PatientActions({
             type="button"
             disabled={pending}
             onClick={() => run(() => restorePatient(patientId))}
-            className="rounded border border-border-strong px-3 py-1.5 text-sm disabled:opacity-50"
+            className="rounded border border-border-strong px-3 py-1.5 text-sm transition-transform motion-safe:active:scale-[0.97] disabled:opacity-50"
           >
             {s["patients.restore"]}
           </button>
@@ -58,7 +58,7 @@ export function PatientActions({
                 run(() => softDeletePatient(patientId));
               }
             }}
-            className="rounded border border-error px-3 py-1.5 text-sm text-error disabled:opacity-50"
+            className="rounded border border-error px-3 py-1.5 text-sm text-error transition-transform motion-safe:active:scale-[0.97] disabled:opacity-50"
           >
             {s["patients.delete"]}
           </button>
@@ -90,7 +90,7 @@ export function PatientActions({
             <button
               type="submit"
               disabled={pending || survivorId.trim().length === 0}
-              className="rounded border border-border-strong px-3 py-1.5 text-sm disabled:opacity-50"
+              className="rounded border border-border-strong px-3 py-1.5 text-sm transition-transform motion-safe:active:scale-[0.97] disabled:opacity-50"
             >
               {s["patients.mergeSubmit"]}
             </button>

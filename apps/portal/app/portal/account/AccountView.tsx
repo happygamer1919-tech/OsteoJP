@@ -38,7 +38,7 @@ function Row({
       <button
         type="button"
         onClick={onClick}
-        className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left transition motion-safe:active:scale-[0.97] hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
       >
         {body}
       </button>
@@ -168,7 +168,7 @@ export function AccountView({
         <button
           type="button"
           onClick={() => setLogoutOpen(true)}
-          className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-medium text-error transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-medium text-error transition motion-safe:active:scale-[0.97] hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           <LogOut size={20} strokeWidth={1.75} aria-hidden="true" />
           {s.auth.logout}

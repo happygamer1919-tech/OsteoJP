@@ -37,7 +37,7 @@ export function NotasRapidas({ initialNotes }: { initialNotes: string }) {
         <button
           type="submit"
           disabled={isPending}
-          className="inline-flex h-9 items-center justify-center rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition-colors duration-fast ease-standard hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-50"
+          className="inline-flex h-9 items-center justify-center rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-50"
         >
           {isPending ? s["common.loading"] : s["common.save"]}
         </button>

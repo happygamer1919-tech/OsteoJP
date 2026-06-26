@@ -15,11 +15,11 @@ export const adminInputInline =
 // Primary action: Wellness Green fill (SPEC-v2-foundation §3.2); green-700 + white
 // clears AA (≈4.7:1).
 export const adminBtnPrimary =
-  "inline-flex h-10 items-center justify-center rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition-colors duration-fast ease-standard hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-50";
+  "inline-flex h-10 items-center justify-center rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-50";
 
 // Secondary / neutral action.
 export const adminBtnGhost =
-  "inline-flex items-center justify-center rounded-v2 border border-v2-border bg-v2-surface px-3 py-2 text-sm font-medium text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-50";
+  "inline-flex items-center justify-center rounded-v2 border border-v2-border bg-v2-surface px-3 py-2 text-sm font-medium text-v2-text-secondary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-50";
 
 export const adminLabel = "text-sm font-medium text-v2-text-primary";
 export const adminHelp = "text-xs text-v2-text-secondary";

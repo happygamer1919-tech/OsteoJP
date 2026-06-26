@@ -254,7 +254,7 @@ export function AgendaGrid({
                     type="button"
                     aria-label={`${formatDayHeader(d, locale)} ${slotLabel(m)}`}
                     onClick={() => onSelectSlot(d, slotLabel(m))}
-                    className={`absolute inset-x-0 transition-colors duration-fast ease-standard hover:bg-v2-green-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
+                    className={`absolute inset-x-0 transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
                       m % 60 === 0 ? "border-b border-v2-border" : "border-b border-surface-muted"
                     }`}
                     style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }}
@@ -347,7 +347,7 @@ function AppointmentBlock({
       // §2.1 tinted-glass card by service category. rounded-lg (12px) keeps small
       // blocks legible — the v2 radius scale only defines 24/28px for large
       // containers (foundation §4.2 keeps the brand radius scale for the rest).
-      className={`hover-lift absolute overflow-hidden rounded-lg border p-2 text-left text-v2-text-primary shadow-v2-float hover:z-10 ${tint} ${
+      className={`hover-lift motion-safe:active:scale-[0.97] absolute overflow-hidden rounded-lg border p-2 text-left text-v2-text-primary shadow-v2-float hover:z-10 ${tint} ${
         conflicting ? "ring-2 ring-warning" : ""
       } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1`}
       style={{
