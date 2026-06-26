@@ -110,7 +110,7 @@ function InvoiceDetailPanel({
             type="button"
             aria-label={s["invoicing.closeDetail"]}
             onClick={onClose}
-            className="rounded p-1 text-text-secondary hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className="rounded p-1 text-text-secondary transition-transform motion-safe:active:scale-[0.97] hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             <X size={20} strokeWidth={1.75} aria-hidden="true" />
           </button>
@@ -143,7 +143,7 @@ function InvoiceDetailPanel({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 items-center justify-center rounded border border-border-strong bg-surface px-4 text-sm font-medium text-text-primary transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            className="inline-flex h-10 items-center justify-center rounded border border-border-strong bg-surface px-4 text-sm font-medium text-text-primary transition motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             {s["invoicing.closeDetail"]}
           </button>
@@ -210,7 +210,7 @@ export function InvoicingView({
     .reduce((sum, i) => sum + i.amountCents, 0);
 
   const primaryBtn =
-    "inline-flex h-10 items-center justify-center rounded bg-accent-2-700 px-4 text-sm font-semibold text-text-inverse transition-colors hover:bg-accent-2-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+    "inline-flex h-10 items-center justify-center rounded bg-accent-2-700 px-4 text-sm font-semibold text-text-inverse transition motion-safe:active:scale-[0.97] hover:bg-accent-2-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
   return (
     <main className="space-y-6">
@@ -343,7 +343,7 @@ export function InvoicingView({
                         type="button"
                         aria-label={`${s["invoicing.viewInvoice"]} ${inv.externalId ?? inv.id.slice(-6)}`}
                         onClick={() => openDetail(inv)}
-                        className="text-xs text-text-secondary underline hover:text-text-primary focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1"
+                        className="text-xs text-text-secondary underline transition-transform motion-safe:active:scale-[0.97] hover:text-text-primary focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1"
                       >
                         {s["invoicing.viewAction"]}
                       </button>
