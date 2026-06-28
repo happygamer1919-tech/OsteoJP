@@ -88,7 +88,7 @@ export function Attachments({
             <button
               type="button"
               onClick={() => download(a.storagePath)}
-              className="rounded border px-2 py-0.5 text-xs"
+              className="rounded border px-2 py-0.5 text-xs transition-transform motion-safe:active:scale-[0.97]"
             >
               {s["clinical.attachmentDownload"]}
             </button>

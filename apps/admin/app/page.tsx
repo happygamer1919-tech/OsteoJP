@@ -39,7 +39,7 @@ export default async function Page({
           <span className="text-xs text-text-muted">
             {s["superadmin.operatorLabel"]} {operator.email}
           </span>
-          <button type="submit" className="rounded border border-border-strong px-3 py-1.5 text-sm">
+          <button type="submit" className="rounded border border-border-strong px-3 py-1.5 text-sm transition-transform motion-safe:active:scale-[0.97]">
             {s["superadmin.signOut"]}
           </button>
         </form>
@@ -90,7 +90,7 @@ export default async function Page({
                         <button
                           type="submit"
                           aria-label={`${next === "suspended" ? s["superadmin.action.suspend"] : s["superadmin.action.activate"]} ${t.name}`}
-                          className="rounded border border-border-strong px-2 py-1"
+                          className="rounded border border-border-strong px-2 py-1 transition-transform motion-safe:active:scale-[0.97]"
                         >
                           {next === "suspended"
                             ? s["superadmin.action.suspend"]

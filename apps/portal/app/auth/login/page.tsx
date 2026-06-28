@@ -9,7 +9,7 @@ import { s } from '@/lib/i18n'
 
 // Ghost-styled secondary text link/button, 44px tap target (SPEC-portal §3.3).
 const SECONDARY_LINK =
-  'inline-flex min-h-11 items-center justify-center rounded px-2 text-sm text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2'
+  'inline-flex min-h-11 items-center justify-center rounded px-2 text-sm text-text-secondary transition motion-safe:active:scale-[0.97] hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -136,7 +136,7 @@ export default function LoginPage() {
                     onClick={() => setShowPassword((v) => !v)}
                     aria-pressed={showPassword}
                     aria-label={showPassword ? s.auth.hide_password : s.auth.show_password}
-                    className="flex size-11 items-center justify-center rounded text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                    className="flex size-11 items-center justify-center rounded text-text-secondary transition motion-safe:active:scale-[0.97] hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
                   >
                     {showPassword ? (
                       <EyeOff size={16} strokeWidth={1.75} aria-hidden="true" />

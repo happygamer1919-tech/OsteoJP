@@ -97,7 +97,7 @@ export default function LoginPage() {
                         ? s["login.hidePassword"]
                         : s["login.showPassword"]
                     }
-                    className="flex size-6 items-center justify-center rounded text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                    className="flex size-6 items-center justify-center rounded text-text-secondary transition motion-safe:active:scale-[0.97] hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
                   >
                     {showPassword ? (
                       <EyeOff size={16} strokeWidth={1.75} aria-hidden="true" />

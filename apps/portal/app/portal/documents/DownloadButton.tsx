@@ -34,7 +34,7 @@ export function DownloadButton({ id, fileName }: { id: string; fileName: string 
             ? `${s.documents.download_error} ${fileName}`
             : `${s.documents.download_pdf} ${fileName}`
         }
-        className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-accent-2-700 transition-colors hover:bg-surface-muted disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-accent-2-700 transition motion-safe:active:scale-[0.97] hover:bg-surface-muted disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
       >
         {pending ? (
           <Loader2 size={20} strokeWidth={1.75} aria-hidden="true" className="animate-spin" />

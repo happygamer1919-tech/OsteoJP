@@ -33,7 +33,7 @@ export function DownloadReportButton({ recordId }: { recordId: string }) {
         type="button"
         onClick={onClick}
         disabled={pending}
-        className="rounded border px-3 py-2 text-sm font-medium disabled:opacity-50"
+        className="rounded border px-3 py-2 text-sm font-medium transition-transform motion-safe:active:scale-[0.97] disabled:opacity-50"
       >
         {s["clinical.downloadPdf"]}
       </button>

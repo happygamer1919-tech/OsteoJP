@@ -57,7 +57,7 @@ export function CreateTenantForm() {
       <button
         type="submit"
         disabled={pending}
-        className="rounded bg-brand-teal px-3 py-2 text-sm font-medium text-text-inverse hover:bg-brand-teal/90 disabled:opacity-50"
+        className="rounded bg-brand-teal px-3 py-2 text-sm font-medium text-text-inverse transition-transform motion-safe:active:scale-[0.97] hover:bg-brand-teal/90 disabled:opacity-50"
       >
         {pending ? s["superadmin.create.pending"] : s["superadmin.create.submit"]}
       </button>

@@ -259,7 +259,7 @@ export default function UpdatePasswordClient() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded bg-brand-teal px-3 py-2 font-medium text-text-inverse hover:bg-brand-teal/90 disabled:opacity-50"
+          className="w-full rounded bg-brand-teal px-3 py-2 font-medium text-text-inverse transition-transform motion-safe:active:scale-[0.97] hover:bg-brand-teal/90 disabled:opacity-50"
         >
           {submitting ? s["auth.setPassword.submitting"] : s["auth.setPassword.submit"]}
         </button>

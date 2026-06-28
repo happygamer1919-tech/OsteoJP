@@ -73,7 +73,7 @@ export function BodyChart({
             type="button"
             aria-pressed={view === v.value}
             onClick={() => setView(v.value)}
-            className={`rounded border px-2 py-1 text-xs ${view === v.value ? "bg-text-primary text-text-inverse" : ""}`}
+            className={`rounded border px-2 py-1 text-xs transition-transform motion-safe:active:scale-[0.97] ${view === v.value ? "bg-text-primary text-text-inverse" : ""}`}
           >
             {s[v.labelKey]}
           </button>
@@ -137,7 +137,7 @@ export function BodyChart({
               <button
                 type="button"
                 onClick={() => remove(i)}
-                className="rounded border px-1.5 py-0.5 text-xs"
+                className="rounded border px-1.5 py-0.5 text-xs transition-transform motion-safe:active:scale-[0.97]"
               >
                 {s["clinical.bodychartRemove"]}
               </button>

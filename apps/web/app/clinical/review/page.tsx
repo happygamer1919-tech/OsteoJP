@@ -17,7 +17,7 @@ import { claimAction } from "./actions";
 // Ghost action that submits the claim/open form (claim → edit → finalize flow
 // unchanged). The whole row is NOT a link because claiming is a state change.
 const actionButton =
-  "inline-flex items-center gap-1 rounded text-sm font-medium text-v2-blue-700 transition-colors duration-fast ease-standard hover:text-v2-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+  "inline-flex items-center gap-1 rounded text-sm font-medium text-v2-blue-700 transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:text-v2-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
 // ai_review_state → chip tone. The two clinical state axes stay separate: this
 // maps ONLY the review axis (presentation), never the record_status lifecycle.

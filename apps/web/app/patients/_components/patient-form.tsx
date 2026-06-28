@@ -159,7 +159,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
         <button
           type="submit"
           disabled={pending}
-          className="rounded bg-v2-green-700 px-4 py-2 text-sm font-medium text-text-inverse hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-50"
+          className="rounded bg-v2-green-700 px-4 py-2 text-sm font-medium text-text-inverse transition-transform motion-safe:active:scale-[0.97] hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-50"
         >
           {pending
             ? s["patients.saving"]
@@ -170,7 +170,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
         <button
           type="button"
           onClick={() => router.back()}
-          className="rounded border border-border-strong px-4 py-2 text-sm"
+          className="rounded border border-border-strong px-4 py-2 text-sm transition-transform motion-safe:active:scale-[0.97]"
         >
           {s["common.cancel"]}
         </button>

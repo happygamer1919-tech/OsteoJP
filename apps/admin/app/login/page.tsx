@@ -51,7 +51,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={pending}
-          className="w-full rounded bg-brand-teal px-3 py-2 font-medium text-text-inverse hover:bg-brand-teal/90 disabled:opacity-50"
+          className="w-full rounded bg-brand-teal px-3 py-2 font-medium text-text-inverse transition-transform motion-safe:active:scale-[0.97] hover:bg-brand-teal/90 disabled:opacity-50"
         >
           {pending ? s["superadmin.login.pending"] : s["superadmin.login.submit"]}
         </button>

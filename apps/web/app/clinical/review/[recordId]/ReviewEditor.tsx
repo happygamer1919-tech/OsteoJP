@@ -68,7 +68,7 @@ export function ReviewEditor({
         <button
           type="submit"
           disabled={pending}
-          className="rounded border px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          className="rounded border px-3 py-1.5 text-sm font-medium transition-transform motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           {s["review.save"]}
         </button>
@@ -77,7 +77,7 @@ export function ReviewEditor({
       <form action={finalizeAction}>
         <button
           type="submit"
-          className="rounded bg-accent-1-700 px-3 py-1.5 text-sm font-medium text-text-inverse focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          className="rounded bg-accent-1-700 px-3 py-1.5 text-sm font-medium text-text-inverse transition-transform motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           {s["review.finalize"]}
         </button>
