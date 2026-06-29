@@ -1,5 +1,6 @@
 "use client";
 import { useActionState } from "react";
+import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { login, type LoginState } from "./actions";
 
@@ -48,13 +49,9 @@ export default function LoginPage() {
           className="w-full rounded border border-border-strong px-3 py-2 text-text-primary placeholder:text-text-muted"
         />
         {state.error ? <p role="alert" className="text-sm text-error">{state.error}</p> : null}
-        <button
-          type="submit"
-          disabled={pending}
-          className="w-full rounded bg-brand-teal px-3 py-2 font-medium text-text-inverse transition-transform motion-safe:active:scale-[0.97] hover:bg-brand-teal/90 disabled:opacity-50"
-        >
-          {pending ? s["superadmin.login.pending"] : s["superadmin.login.submit"]}
-        </button>
+        <Button type="submit" loading={pending} variant="primary" className="w-full">
+          {s["superadmin.login.submit"]}
+        </Button>
       </form>
     </main>
   );

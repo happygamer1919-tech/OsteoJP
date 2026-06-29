@@ -9,7 +9,7 @@ import {
   type Locale,
   type StringKey,
 } from "@osteojp/i18n";
-import { BrandLockup } from "@osteojp/ui";
+import { BrandLockup, Button } from "@osteojp/ui";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { validatePassword } from "./password";
 
@@ -256,13 +256,9 @@ export default function UpdatePasswordClient() {
 
         {fieldError ? <p role="alert" className="text-body-sm text-error">{s[fieldError]}</p> : null}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded bg-brand-teal px-3 py-2 font-medium text-text-inverse transition-transform motion-safe:active:scale-[0.97] hover:bg-brand-teal/90 disabled:opacity-50"
-        >
-          {submitting ? s["auth.setPassword.submitting"] : s["auth.setPassword.submit"]}
-        </button>
+        <Button type="submit" loading={submitting} variant="primary" className="w-full">
+          {s["auth.setPassword.submit"]}
+        </Button>
       </form>
     </Shell>
   );

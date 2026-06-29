@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
@@ -85,13 +86,14 @@ export function Attachments({
         {items.map((a) => (
           <li key={a.id} className="flex items-center gap-2">
             <span>{a.fileName}</span>
-            <button
+            <Button
               type="button"
               onClick={() => download(a.storagePath)}
-              className="rounded border px-2 py-0.5 text-xs transition-transform motion-safe:active:scale-[0.97]"
+              variant="secondary"
+              size="sm"
             >
               {s["clinical.attachmentDownload"]}
-            </button>
+            </Button>
           </li>
         ))}
       </ul>

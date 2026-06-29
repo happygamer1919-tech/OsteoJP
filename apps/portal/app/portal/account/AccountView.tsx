@@ -4,7 +4,7 @@ import { ChevronRight, LogOut } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Dialog, Drawer, Field, Input } from '@osteojp/ui'
+import { Button, Dialog, Drawer, Field, Input } from '@osteojp/ui'
 import type { PatientProfile } from '@/lib/api/client'
 import { createBrowserClient } from '@/lib/supabase/client'
 import ReminderToggles from '@/components/account/ReminderToggles'
@@ -165,14 +165,15 @@ export function AccountView({
 
       {/* Group 3 — Terminar sessão */}
       <section>
-        <button
+        <Button
           type="button"
           onClick={() => setLogoutOpen(true)}
-          className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-medium text-error transition motion-safe:active:scale-[0.97] hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          variant="destructive"
+          iconLeft={LogOut}
+          className="w-full"
         >
-          <LogOut size={20} strokeWidth={1.75} aria-hidden="true" />
           {s.auth.logout}
-        </button>
+        </Button>
       </section>
 
       <p className="text-center text-xs text-text-secondary">{s.common.version} {APP_VERSION}</p>

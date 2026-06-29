@@ -20,10 +20,9 @@ import {
  * loading sets `aria-busy` and blocks interaction while keeping width; an
  * icon-only button (no children) is square and REQUIRES an `aria-label`.
  *
- * Contrast note: the primary fill is accent-2-700 (~4.8:1 with text-inverse),
- * hover accent-2-800, active accent-2-900. accent-2-600 white text is only
- * ~3.3:1 (below AA 4.5:1 for the 12–16px label), so it is not used for filled
- * text surfaces. Resolved in QUESTIONS.md Q9; SPEC §4.1 matches.
+ * Contrast note: the primary fill is v2-green-700 (~4.7:1 with text-inverse),
+ * hover v2-green-800, active v2-green-900. v2-green-700 text on light surfaces
+ * (secondary/ghost) also clears AA (§3.4 SPEC). Resolved in QUESTIONS.md Q9.
  *
  * @example
  * import { Plus } from "lucide-react";
@@ -62,12 +61,14 @@ const BASE =
   "disabled:bg-surface-muted disabled:text-text-muted";
 
 const VARIANTS: Record<ButtonVariant, string> = {
+  // v2-green-700 (#4E7D6B) + white ≈ 4.7:1 — AA compliant.
   primary:
-    "bg-accent-2-700 text-text-inverse hover:bg-accent-2-800 active:bg-accent-2-900",
+    "bg-v2-green-700 text-text-inverse hover:bg-v2-green-800 active:bg-v2-green-900",
+  // Green border + green text on white; hover tints with v2-green-50.
   secondary:
-    "bg-surface text-text-primary border border-border-strong hover:bg-surface-muted active:bg-neutral-200",
+    "bg-surface text-v2-green-700 border border-v2-green-700 hover:bg-v2-green-50 active:bg-v2-green-100",
   ghost:
-    "bg-transparent text-text-secondary hover:bg-surface-muted hover:text-text-primary active:bg-neutral-200",
+    "bg-transparent text-v2-green-700 hover:bg-v2-green-50 hover:text-v2-green-800 active:bg-v2-green-100",
   // error now has a 50–900 scale (QUESTIONS.md Q10); base = error-700, so
   // hover/active step to error-800 / error-900 per SPEC §4.1.
   destructive:

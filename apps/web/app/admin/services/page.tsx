@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { GlassPanel } from "@osteojp/ui";
+import { Button, GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import {
@@ -15,8 +15,6 @@ import {
   updateServiceAction,
 } from "./actions";
 import {
-  adminBtnGhost,
-  adminBtnPrimary,
   adminHelp,
   adminInputInline,
   adminLabel,
@@ -77,9 +75,9 @@ export default async function ServicesPage({
           <Labeled label={s["admin.services.price"]}>
             <input name="price" type="text" inputMode="decimal" placeholder="0.00" className={`w-28 ${adminInputInline}`} />
           </Labeled>
-          <button type="submit" className={adminBtnPrimary}>
+          <Button type="submit" variant="primary">
             {s["admin.services.add"]}
-          </button>
+          </Button>
         </form>
       </GlassPanel>
 
@@ -108,18 +106,18 @@ export default async function ServicesPage({
                         <span className={adminHelp}>
                           {svc.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
                         </span>
-                        <button type="submit" className={adminBtnGhost}>
+                        <Button type="submit" variant="ghost" size="sm">
                           {s["common.save"]}
-                        </button>
+                        </Button>
                       </form>
                     </td>
                     <td className={adminTd}>
                       <form action={setServiceActiveAction}>
                         <input type="hidden" name="id" value={svc.id} />
                         <input type="hidden" name="active" value={svc.isActive ? "false" : "true"} />
-                        <button type="submit" className={adminBtnGhost}>
+                        <Button type="submit" variant="ghost" size="sm">
                           {svc.isActive ? s["admin.services.archive"] : s["admin.services.restore"]}
-                        </button>
+                        </Button>
                       </form>
                     </td>
                   </tr>
@@ -164,9 +162,9 @@ export default async function ServicesPage({
                                 </Labeled>
                               );
                             })}
-                            <button type="submit" className={adminBtnPrimary}>
+                            <Button type="submit" variant="primary">
                               {s["admin.services.savePrices"]}
-                            </button>
+                            </Button>
                           </form>
                         )}
                       </details>

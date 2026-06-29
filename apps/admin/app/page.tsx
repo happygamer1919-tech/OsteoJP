@@ -1,5 +1,6 @@
 import { requireOperator } from "@/lib/auth/operator";
 import { listTenants, type TenantStatus } from "@/lib/tenants";
+import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { logout } from "./logout/actions";
 import { setStatusAction } from "./actions";
@@ -39,9 +40,9 @@ export default async function Page({
           <span className="text-xs text-text-muted">
             {s["superadmin.operatorLabel"]} {operator.email}
           </span>
-          <button type="submit" className="rounded border border-border-strong px-3 py-1.5 text-sm transition-transform motion-safe:active:scale-[0.97]">
+          <Button type="submit" variant="ghost" size="sm">
             {s["superadmin.signOut"]}
-          </button>
+          </Button>
         </form>
       </header>
 
@@ -87,15 +88,16 @@ export default async function Page({
                       <form action={setStatusAction}>
                         <input type="hidden" name="tenantId" value={t.id} />
                         <input type="hidden" name="status" value={next} />
-                        <button
+                        <Button
                           type="submit"
                           aria-label={`${next === "suspended" ? s["superadmin.action.suspend"] : s["superadmin.action.activate"]} ${t.name}`}
-                          className="rounded border border-border-strong px-2 py-1 transition-transform motion-safe:active:scale-[0.97]"
+                          variant={next === "suspended" ? "destructive" : "secondary"}
+                          size="sm"
                         >
                           {next === "suspended"
                             ? s["superadmin.action.suspend"]
                             : s["superadmin.action.activate"]}
-                        </button>
+                        </Button>
                       </form>
                     </td>
                   </tr>

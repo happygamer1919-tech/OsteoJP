@@ -1,5 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
+import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { downloadReportUrlAction } from "./actions";
 
@@ -29,14 +30,9 @@ export function DownloadReportButton({ recordId }: { recordId: string }) {
 
   return (
     <div className="flex flex-col gap-1">
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={pending}
-        className="rounded border px-3 py-2 text-sm font-medium transition-transform motion-safe:active:scale-[0.97] disabled:opacity-50"
-      >
+      <Button onClick={onClick} loading={pending} variant="secondary" size="sm">
         {s["clinical.downloadPdf"]}
-      </button>
+      </Button>
       {error && <p role="alert" className="text-xs text-error">{s["clinical.downloadPdfError"]}</p>}
     </div>
   );

@@ -103,14 +103,9 @@ export function BookingFlow({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
-        <button
-          type="button"
-          onClick={back}
-          className="inline-flex min-h-11 w-fit items-center gap-1 text-sm text-text-secondary transition motion-safe:active:scale-[0.97] hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-        >
-          <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
+        <Button type="button" onClick={back} variant="ghost" iconLeft={ChevronLeft}>
           {s.common.back}
-        </button>
+        </Button>
 
         <div className="flex flex-col gap-1">
           <p className="text-xs font-medium text-text-secondary">

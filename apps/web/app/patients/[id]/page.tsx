@@ -1,6 +1,7 @@
 import { can } from "@osteojp/auth";
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
 import {
+  Button,
   Card,
   EmptyState,
   StatusChip,
@@ -25,8 +26,6 @@ const s = getStrings(DEFAULT_LOCALE);
 
 const primaryLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded bg-accent-2-700 px-4 text-sm font-semibold text-text-inverse transition-colors duration-fast ease-standard hover:bg-accent-2-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
-const secondaryBtn =
-  "inline-flex h-10 items-center justify-center gap-2 rounded border border-border-strong bg-surface px-4 text-sm font-medium text-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 const ghostLink =
   "inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
@@ -132,10 +131,9 @@ export default async function PatientProfilePage({
             {canStartEpisode && (
               <form action={createEpisodeAction}>
                 <input type="hidden" name="patientId" value={patient.id} />
-                <button type="submit" className={secondaryBtn}>
-                  <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
+                <Button type="submit" variant="secondary" iconLeft={Plus}>
                   {s["patients.newEpisode"]}
-                </button>
+                </Button>
               </form>
             )}
           </div>
