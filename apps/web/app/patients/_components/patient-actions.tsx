@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
+import { Button } from "@osteojp/ui";
 import {
   mergePatients,
   restorePatient,
@@ -41,16 +42,17 @@ export function PatientActions({
     <div className="flex flex-col gap-3 border-t border-border pt-4">
       <div className="flex flex-wrap gap-3">
         {isDeleted ? (
-          <button
+          <Button
             type="button"
             disabled={pending}
             onClick={() => run(() => restorePatient(patientId))}
-            className="rounded border border-border-strong px-3 py-1.5 text-sm transition-transform motion-safe:active:scale-[0.97] disabled:opacity-50"
+            variant="secondary"
+            size="sm"
           >
             {s["patients.restore"]}
-          </button>
+          </Button>
         ) : (
-          <button
+          <Button
             type="button"
             disabled={pending}
             onClick={() => {
@@ -58,10 +60,11 @@ export function PatientActions({
                 run(() => softDeletePatient(patientId));
               }
             }}
-            className="rounded border border-error px-3 py-1.5 text-sm text-error transition-transform motion-safe:active:scale-[0.97] disabled:opacity-50"
+            variant="destructive"
+            size="sm"
           >
             {s["patients.delete"]}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -87,13 +90,14 @@ export function PatientActions({
               placeholder={s["patients.mergeIntoLabel"]}
               className="flex-1 rounded border border-border-strong px-3 py-1.5 text-sm focus:border-brand-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
             />
-            <button
+            <Button
               type="submit"
               disabled={pending || survivorId.trim().length === 0}
-              className="rounded border border-border-strong px-3 py-1.5 text-sm transition-transform motion-safe:active:scale-[0.97] disabled:opacity-50"
+              variant="secondary"
+              size="sm"
             >
               {s["patients.mergeSubmit"]}
-            </button>
+            </Button>
           </div>
         </form>
       )}

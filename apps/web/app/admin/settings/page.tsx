@@ -1,4 +1,4 @@
-import { GlassPanel } from "@osteojp/ui";
+import { Button, GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE, LOCALES } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { getTenantSettings } from "@/lib/admin/settings";
@@ -8,7 +8,6 @@ import {
 } from "@/lib/admin/settings-config";
 import { saveSettings } from "./actions";
 import {
-  adminBtnPrimary,
   adminInput,
   adminLabel,
   adminLegend,
@@ -104,9 +103,9 @@ export default async function SettingsPage({
           </fieldset>
 
           <div>
-            <button type="submit" className={adminBtnPrimary}>
+            <Button type="submit" variant="primary">
               {s["common.save"]}
-            </button>
+            </Button>
           </div>
         </form>
       </GlassPanel>

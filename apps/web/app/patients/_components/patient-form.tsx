@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
+import { Button } from "@osteojp/ui";
 import { createPatient, updatePatient } from "../../../lib/patients/actions";
 import type { Patient } from "../../../lib/patients/types";
 
@@ -156,24 +157,12 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
       {error && <p role="alert" className="text-sm text-error">{error}</p>}
 
       <div className="flex gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded bg-v2-green-700 px-4 py-2 text-sm font-medium text-text-inverse transition-transform motion-safe:active:scale-[0.97] hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:opacity-50"
-        >
-          {pending
-            ? s["patients.saving"]
-            : isEdit
-              ? s["common.save"]
-              : s["patients.create"]}
-        </button>
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="rounded border border-border-strong px-4 py-2 text-sm transition-transform motion-safe:active:scale-[0.97]"
-        >
+        <Button type="submit" loading={pending} variant="primary">
+          {isEdit ? s["common.save"] : s["patients.create"]}
+        </Button>
+        <Button type="button" onClick={() => router.back()} variant="secondary">
           {s["common.cancel"]}
-        </button>
+        </Button>
       </div>
     </form>
   );

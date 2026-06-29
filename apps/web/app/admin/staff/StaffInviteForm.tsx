@@ -3,7 +3,8 @@ import { useActionState } from "react";
 import { GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { inviteAction, type InviteState } from "./actions";
-import { adminBtnPrimary, adminInput, adminLabel } from "../admin-ui";
+import { adminInput, adminLabel } from "../admin-ui";
+import { Button } from "@osteojp/ui";
 
 const s = getStrings(DEFAULT_LOCALE);
 const initial: InviteState = { ok: false };
@@ -47,9 +48,9 @@ export function StaffInviteForm({
         </label>
 
         <div>
-          <button type="submit" disabled={pending} className={adminBtnPrimary}>
+          <Button type="submit" disabled={pending} loading={pending} variant="primary">
             {s["admin.staff.invite"]}
-          </button>
+          </Button>
         </div>
 
         {state.ok && state.delivery === "email" && (

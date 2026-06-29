@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { can } from "@osteojp/auth";
+import { Button } from "@osteojp/ui";
 import { s, locale } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import {
@@ -64,9 +65,9 @@ export default async function NewRecordPage({
         </label>
 
         <div className="flex gap-2">
-          <button type="submit" className="rounded border px-3 py-2 text-sm font-medium transition-transform motion-safe:active:scale-[0.97]">
+          <Button type="submit" variant="primary" size="sm">
             {s["clinical.create"]}
-          </button>
+          </Button>
           <Link href="/clinical" className="rounded border px-3 py-2 text-sm">
             {s["common.cancel"]}
           </Link>

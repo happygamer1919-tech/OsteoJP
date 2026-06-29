@@ -1,5 +1,6 @@
 "use client";
 import { useActionState, useState } from "react";
+import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 
 export type ReviewSaveState = {
@@ -65,22 +66,15 @@ export function ReviewEditor({
           </p>
         )}
         {state.ok && <p role="status" className="text-sm text-success">{s["review.saved"]}</p>}
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded border px-3 py-1.5 text-sm font-medium transition-transform motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-        >
+        <Button type="submit" loading={pending} variant="secondary" size="sm">
           {s["review.save"]}
-        </button>
+        </Button>
       </form>
 
       <form action={finalizeAction}>
-        <button
-          type="submit"
-          className="rounded bg-accent-1-700 px-3 py-1.5 text-sm font-medium text-text-inverse transition-transform motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-        >
+        <Button type="submit" variant="primary" size="sm">
           {s["review.finalize"]}
-        </button>
+        </Button>
       </form>
     </div>
   );

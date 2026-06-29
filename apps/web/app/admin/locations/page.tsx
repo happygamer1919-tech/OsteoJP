@@ -1,4 +1,4 @@
-import { GlassPanel } from "@osteojp/ui";
+import { Button, GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { listLocations } from "@/lib/admin/locations";
@@ -8,8 +8,6 @@ import {
   updateLocationAction,
 } from "./actions";
 import {
-  adminBtnGhost,
-  adminBtnPrimary,
   adminHelp,
   adminInputInline,
   adminLabel,
@@ -55,9 +53,9 @@ export default async function LocationsPage({
           <Labeled label={s["admin.locations.phone"]}>
             <input name="phone" className={`w-40 ${adminInputInline}`} />
           </Labeled>
-          <button type="submit" className={adminBtnPrimary}>
+          <Button type="submit" variant="primary">
             {s["admin.locations.add"]}
-          </button>
+          </Button>
         </form>
       </GlassPanel>
 
@@ -85,18 +83,18 @@ export default async function LocationsPage({
                       <span className={adminHelp}>
                         {loc.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
                       </span>
-                      <button type="submit" className={adminBtnGhost}>
+                      <Button type="submit" variant="ghost" size="sm">
                         {s["common.save"]}
-                      </button>
+                      </Button>
                     </form>
                   </td>
                   <td className={adminTd}>
                     <form action={setLocationActiveAction}>
                       <input type="hidden" name="id" value={loc.id} />
                       <input type="hidden" name="active" value={loc.isActive ? "false" : "true"} />
-                      <button type="submit" className={adminBtnGhost}>
+                      <Button type="submit" variant="ghost" size="sm">
                         {loc.isActive ? s["admin.locations.archive"] : s["admin.locations.restore"]}
-                      </button>
+                      </Button>
                     </form>
                   </td>
                 </tr>

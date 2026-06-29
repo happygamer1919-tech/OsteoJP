@@ -1,5 +1,6 @@
 import { can } from "@osteojp/auth";
 import {
+  Button,
   GlassCard,
   GlassStatusChip,
   SkeletonTable,
@@ -14,10 +15,6 @@ import { s } from "@/lib/i18n";
 import { listReviewQueue, type ReviewQueueItem } from "@/lib/clinical/review";
 import { claimAction } from "./actions";
 
-// Ghost action that submits the claim/open form (claim → edit → finalize flow
-// unchanged). The whole row is NOT a link because claiming is a state change.
-const actionButton =
-  "inline-flex items-center gap-1 rounded text-sm font-medium text-v2-blue-700 transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:text-v2-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
 // ai_review_state → chip tone. The two clinical state axes stay separate: this
 // maps ONLY the review axis (presentation), never the record_status lifecycle.
@@ -69,10 +66,9 @@ function ClaimAction({ item }: { item: ReviewQueueItem }) {
     <form action={claimAction}>
       <input type="hidden" name="source" value={item.source} />
       <input type="hidden" name="id" value={item.id} />
-      <button type="submit" className={actionButton}>
+      <Button type="submit" variant="ghost" size="sm" iconRight={ChevronRight}>
         {item.state === "in_review" ? s["review.open"] : s["review.claim"]}
-        <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
-      </button>
+      </Button>
     </form>
   );
 }

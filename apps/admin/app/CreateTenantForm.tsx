@@ -1,5 +1,6 @@
 "use client";
 import { useActionState } from "react";
+import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { createTenantAction, type CreateState } from "./actions";
 
@@ -54,13 +55,9 @@ export function CreateTenantForm() {
         <span className="text-xs text-text-muted">{s["superadmin.create.nifHint"]}</span>
       </label>
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded bg-brand-teal px-3 py-2 text-sm font-medium text-text-inverse transition-transform motion-safe:active:scale-[0.97] hover:bg-brand-teal/90 disabled:opacity-50"
-      >
-        {pending ? s["superadmin.create.pending"] : s["superadmin.create.submit"]}
-      </button>
+      <Button type="submit" loading={pending} variant="primary">
+        {s["superadmin.create.submit"]}
+      </Button>
 
       {successText && <p role="status" className="text-sm text-success">{successText}</p>}
       {errorText && <p role="alert" className="text-sm text-error">{errorText}</p>}

@@ -1,12 +1,11 @@
 import { assignableRoles, type Role } from "@osteojp/auth";
-import { GlassPanel } from "@osteojp/ui";
+import { Button, GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { listStaff } from "@/lib/admin/staff";
 import { StaffInviteForm } from "./StaffInviteForm";
 import { changeRoleAction, editStaffAction, setActiveAction } from "./actions";
 import {
-  adminBtnGhost,
   adminInputInline,
   adminTd,
   adminTh,
@@ -85,7 +84,7 @@ export default async function StaffPage({
                             <input type="hidden" name="userId" value={u.id} />
                             <input name="fullName" defaultValue={u.fullName} required aria-label={s["admin.staff.fullName"]} className={adminInputInline} />
                             <input name="email" type="email" defaultValue={u.email} required aria-label={s["admin.staff.email"]} className={adminInputInline} />
-                            <button type="submit" className={adminBtnGhost}>{s["admin.staff.save"]}</button>
+                            <Button type="submit" variant="ghost" size="sm">{s["admin.staff.save"]}</Button>
                           </form>
                           <form action={changeRoleAction} className="flex items-center gap-1">
                             <input type="hidden" name="userId" value={u.id} />
@@ -96,14 +95,14 @@ export default async function StaffPage({
                                 </option>
                               ))}
                             </select>
-                            <button type="submit" className={adminBtnGhost}>{s["admin.staff.apply"]}</button>
+                            <Button type="submit" variant="ghost" size="sm">{s["admin.staff.apply"]}</Button>
                           </form>
                           <form action={setActiveAction}>
                             <input type="hidden" name="userId" value={u.id} />
                             <input type="hidden" name="active" value={u.isActive ? "false" : "true"} />
-                            <button type="submit" className={adminBtnGhost}>
+                            <Button type="submit" variant="ghost" size="sm">
                               {u.isActive ? s["admin.staff.deactivate"] : s["admin.staff.reactivate"]}
-                            </button>
+                            </Button>
                           </form>
                         </div>
                       ) : (

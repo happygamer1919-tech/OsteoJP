@@ -7,9 +7,6 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { s } from '@/lib/i18n'
 
-// Ghost-styled secondary text link/button, 44px tap target (SPEC-portal §3.3).
-const SECONDARY_LINK =
-  'inline-flex min-h-11 items-center justify-center rounded px-2 text-sm text-text-secondary transition motion-safe:active:scale-[0.97] hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -157,20 +154,20 @@ export default function LoginPage() {
 
       {/* Secondary links (SPEC §3.3): ghost text, stacked, centered. */}
       <div className="mt-6 flex flex-col items-center gap-3">
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={() => {
             setMode(mode === 'password' ? 'magic' : 'password')
             setError(null)
           }}
-          className={SECONDARY_LINK}
         >
           {mode === 'password' ? s.auth.login_magic_link : s.auth.login_submit}
-        </button>
-        <a href="/auth/reset-password" className={SECONDARY_LINK}>
+        </Button>
+        <a href="/auth/reset-password" className="inline-flex min-h-11 items-center justify-center rounded px-2 text-sm text-text-secondary transition hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2">
           {s.auth.login_forgot_password}
         </a>
-        <a href="/auth/activate" className={SECONDARY_LINK}>
+        <a href="/auth/activate" className="inline-flex min-h-11 items-center justify-center rounded px-2 text-sm text-text-secondary transition hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2">
           {s.auth.activate_title}
         </a>
       </div>
