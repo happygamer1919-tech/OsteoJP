@@ -56,6 +56,7 @@ export type RecordDetail = {
   id: string;
   patientId: string;
   patientName: string;
+  patientSex: string | null;
   episodeId: string | null;
   episodeTitle: string | null;
   formTemplateId: string | null;
@@ -127,6 +128,7 @@ export async function getRecordDetail(
         id: clinicalRecords.id,
         patientId: clinicalRecords.patientId,
         patientName: patients.fullName,
+        patientSex: patients.sex,
         episodeId: clinicalRecords.episodeId,
         episodeTitle: clinicalEpisodes.title,
         formTemplateId: clinicalRecords.formTemplateId,
@@ -167,6 +169,7 @@ export async function getRecordDetail(
       id: r.id,
       patientId: r.patientId,
       patientName: r.patientName,
+      patientSex: r.patientSex,
       episodeId: r.episodeId,
       episodeTitle: r.episodeTitle,
       formTemplateId: r.formTemplateId,

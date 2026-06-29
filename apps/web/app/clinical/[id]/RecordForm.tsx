@@ -50,6 +50,7 @@ export function RecordForm({
   saveAction,
   statusChip,
   extraActions,
+  patientSex,
 }: {
   schema: TemplateSchema;
   initialData: Record<string, unknown>;
@@ -57,6 +58,7 @@ export function RecordForm({
   saveAction: (prev: SaveState, formData: FormData) => Promise<SaveState>;
   statusChip: ReactNode;
   extraActions: ReactNode;
+  patientSex?: string | null;
 }) {
   const [state, formAction, pending] = useActionState(saveAction, initialState);
   const [data, setData] = useState<Record<string, unknown>>(initialData);
@@ -96,6 +98,7 @@ export function RecordForm({
                 value={data[key]}
                 readOnly={readOnly}
                 onChange={(v) => setField(key, v)}
+                patientSex={patientSex}
               />
             </Field>
           </div>
@@ -131,12 +134,14 @@ function FieldWidget({
   value,
   readOnly,
   onChange,
+  patientSex,
 }: {
   widget: ReturnType<typeof widgetOf>;
   field: FieldSchema;
   value: unknown;
   readOnly: boolean;
   onChange: (v: unknown) => void;
+  patientSex?: string | null;
 }) {
   switch (widget) {
     case "textarea":
@@ -235,7 +240,7 @@ function FieldWidget({
         .map((v) => ({ value: v, label: markerField ? enumLabel(markerField, v, locale) : v }));
       return (
         <Card>
-          <BodyChart markers={asMarkers(value)} onChange={(m) => onChange(m)} markerOptions={options} readOnly={readOnly} />
+          <BodyChart markers={asMarkers(value)} onChange={(m) => onChange(m)} markerOptions={options} readOnly={readOnly} sex={patientSex} />
         </Card>
       );
     }

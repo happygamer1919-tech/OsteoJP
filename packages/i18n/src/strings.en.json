@@ -398,6 +398,8 @@
   "clinical.bodychartViewLateralRight": "Lateral Right",
   "clinical.bodychartEmpty": "No markers.",
   "clinical.bodychartNoTypes": "Marker types not yet configured.",
+  "clinical.bodychartFigureMale": "Male figure",
+  "clinical.bodychartFigureFemale": "Female figure",
   "review.title": "Review Queue",
   "review.heading": "Review",
   "review.subtitle": "AI drafts and patient forms awaiting review.",
