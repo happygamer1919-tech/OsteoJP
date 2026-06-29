@@ -1,5 +1,6 @@
 "use client";
 import { useId, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 
 export type Marker = { marker_type: string; x: number; y: number; view: string };
@@ -56,6 +57,8 @@ export function BodyChart({
     onChange(markers.filter((_, i) => i !== index));
   }
 
+  const canInteract = !readOnly && markerOptions.length > 0;
+
   const labelFor = (value: string) =>
     markerOptions.find((o) => o.value === value)?.label ?? value;
   const inView = markers
@@ -68,19 +71,20 @@ export function BodyChart({
 
       <div className="flex flex-wrap gap-2">
         {VIEWS.map((v) => (
-          <button
+          <Button
             key={v.value}
             type="button"
             aria-pressed={view === v.value}
             onClick={() => setView(v.value)}
-            className={`rounded border px-2 py-1 text-xs transition-transform motion-safe:active:scale-[0.97] ${view === v.value ? "bg-text-primary text-text-inverse" : ""}`}
+            variant={view === v.value ? "primary" : "secondary"}
+            size="sm"
           >
             {s[v.labelKey]}
-          </button>
+          </Button>
         ))}
       </div>
 
-      {!readOnly && (
+      {canInteract && (
         <label className="flex items-center gap-2 text-sm">
           <span className="text-xs font-medium">{s["clinical.bodychartMarkerType"]}</span>
           <select
@@ -96,19 +100,22 @@ export function BodyChart({
           </select>
         </label>
       )}
+      {!readOnly && markerOptions.length === 0 && (
+        <p className="text-xs text-text-muted">{s["clinical.bodychartNoTypes"]}</p>
+      )}
 
       <div
-        role="application"
-        tabIndex={readOnly ? undefined : 0}
-        aria-describedby={hintId}
-        onClick={place}
-        onKeyDown={!readOnly ? handleKey : undefined}
-        onFocus={() => setChartFocused(true)}
-        onBlur={() => setChartFocused(false)}
-        className={`relative h-80 w-56 rounded border bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${readOnly ? "" : "cursor-crosshair"}`}
+        role={canInteract ? "application" : undefined}
+        tabIndex={canInteract ? 0 : undefined}
+        aria-describedby={canInteract ? hintId : undefined}
+        onClick={canInteract ? place : undefined}
+        onKeyDown={canInteract ? handleKey : undefined}
+        onFocus={canInteract ? () => setChartFocused(true) : undefined}
+        onBlur={canInteract ? () => setChartFocused(false) : undefined}
+        className={`relative h-80 w-56 rounded border bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${canInteract ? "cursor-crosshair" : ""}`}
       >
         {/* Keyboard cursor indicator — visible only while the chart has focus */}
-        {!readOnly && chartFocused && (
+        {canInteract && chartFocused && (
           <span
             aria-hidden="true"
             className="absolute -ml-1.5 -mt-1.5 h-3 w-3 rounded-full border-2 border-brand-teal bg-transparent"
@@ -130,17 +137,18 @@ export function BodyChart({
           <li className="text-xs text-text-secondary">{s["clinical.bodychartEmpty"]}</li>
         )}
         {markers.map((m, i) => (
-          <li key={i} className="flex items-center gap-2">
-            <span className="text-xs text-text-secondary">[{m.view}]</span>
-            <span>{labelFor(m.marker_type)}</span>
+          <li key={i} className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-xs text-text-secondary">[{m.view}]</span>
+            <span className="min-w-0 flex-1 break-words">{labelFor(m.marker_type)}</span>
             {!readOnly && (
-              <button
+              <Button
                 type="button"
                 onClick={() => remove(i)}
-                className="rounded border px-1.5 py-0.5 text-xs transition-transform motion-safe:active:scale-[0.97]"
+                variant="ghost"
+                size="sm"
               >
                 {s["clinical.bodychartRemove"]}
-              </button>
+              </Button>
             )}
           </li>
         ))}

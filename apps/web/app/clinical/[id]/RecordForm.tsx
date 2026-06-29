@@ -67,7 +67,7 @@ export function RecordForm({
 
   return (
     <>
-    <form id="record-form" action={formAction} className="flex flex-col gap-6 pb-24">
+    <form id="record-form" action={formAction} className="flex min-w-0 flex-col gap-6 pb-24">
       <input type="hidden" name="data" value={JSON.stringify(data)} />
 
       {state.code && !state.ok && (
@@ -88,7 +88,7 @@ export function RecordForm({
         const hint = hintOf(field, locale);
         const err = errors[key] ? s["clinical.required"] : undefined;
         return (
-          <div key={key} id={fieldAnchorId(key)} className="scroll-mt-24">
+          <div key={key} id={fieldAnchorId(key)} className="scroll-mt-24 min-w-0">
             <Field label={label} required={isRequired} helperText={hint ?? undefined} error={err}>
               <FieldWidget
                 widget={widget}
@@ -185,7 +185,7 @@ function FieldWidget({
               (Array.isArray(subField.type) ? subField.type.includes("string") : subField.type === "string");
             if (isText) {
               return (
-                <Field key={sub} label={subLabel} className="sm:col-span-2">
+                <Field key={sub} label={subLabel} className="min-w-0 sm:col-span-2">
                   <Input
                     type="text"
                     disabled={readOnly}
@@ -196,13 +196,15 @@ function FieldWidget({
               );
             }
             return (
-              <Checkbox
-                key={sub}
-                label={subLabel}
-                disabled={readOnly}
-                checked={obj[sub] === true}
-                onChange={(e) => onChange({ ...obj, [sub]: e.target.checked })}
-              />
+              <div key={sub} className="min-w-0">
+                <Checkbox
+                  label={subLabel}
+                  disabled={readOnly}
+                  className="w-full"
+                  checked={obj[sub] === true}
+                  onChange={(e) => onChange({ ...obj, [sub]: e.target.checked })}
+                />
+              </div>
             );
           })}
         </div>
