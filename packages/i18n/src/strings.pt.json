@@ -398,6 +398,8 @@
   "clinical.bodychartViewLateralRight": "Lateral Dir.",
   "clinical.bodychartEmpty": "Sem marcadores.",
   "clinical.bodychartNoTypes": "Tipos de marcador não configurados.",
+  "clinical.bodychartFigureMale": "Figura masculina",
+  "clinical.bodychartFigureFemale": "Figura feminina",
   "review.title": "Fila de Revisão",
   "review.heading": "Revisão",
   "review.subtitle": "Fichas de IA e formulários de paciente a aguardar revisão.",

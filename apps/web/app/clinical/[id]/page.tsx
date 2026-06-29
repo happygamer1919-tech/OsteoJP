@@ -126,6 +126,7 @@ export default async function RecordDetailPage({
               saveAction={saveRecordAction.bind(null, id)}
               statusChip={statusChip}
               extraActions={extraActions}
+              patientSex={record.patientSex}
             />
           ) : (
             <p className="text-sm text-text-secondary">—</p>

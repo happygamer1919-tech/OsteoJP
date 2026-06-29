@@ -3,6 +3,14 @@ import { useId, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 
+import {
+  AnteriorFigure,
+  LateralLeftFigure,
+  LateralRightFigure,
+  PosteriorFigure,
+  type FigSex,
+} from "./BodyFigure";
+
 export type Marker = { marker_type: string; x: number; y: number; view: string };
 
 const VIEWS: { value: string; labelKey: keyof typeof s }[] = [
@@ -12,22 +20,38 @@ const VIEWS: { value: string; labelKey: keyof typeof s }[] = [
   { value: "lateral_right", labelKey: "clinical.bodychartViewLateralRight" },
 ];
 
+const FIGURE_COMPONENTS: Record<string, React.ComponentType<{ sex: FigSex; className?: string }>> = {
+  anterior: AnteriorFigure,
+  posterior: PosteriorFigure,
+  lateral_left: LateralLeftFigure,
+  lateral_right: LateralRightFigure,
+};
+
+function deriveFigSex(sex: string | null | undefined): FigSex {
+  return sex === "female" ? "female" : "male";
+}
+
 export function BodyChart({
   markers,
   onChange,
   markerOptions,
   readOnly,
+  sex,
 }: {
   markers: Marker[];
   onChange: (next: Marker[]) => void;
   markerOptions: { value: string; label: string }[];
   readOnly: boolean;
+  sex?: string | null;
 }) {
   const [view, setView] = useState<string>("anterior");
   const [markerType, setMarkerType] = useState<string>(markerOptions[0]?.value ?? "");
+  const [figSex, setFigSex] = useState<FigSex>(() => deriveFigSex(sex));
   const [cursor, setCursor] = useState({ x: 0.5, y: 0.5 });
   const [chartFocused, setChartFocused] = useState(false);
   const hintId = useId();
+
+  const Figure = FIGURE_COMPONENTS[view] ?? AnteriorFigure;
 
   function place(e: MouseEvent<HTMLDivElement>) {
     if (readOnly || !markerType) return;
@@ -104,32 +128,62 @@ export function BodyChart({
         <p className="text-xs text-text-muted">{s["clinical.bodychartNoTypes"]}</p>
       )}
 
-      <div
-        role={canInteract ? "application" : undefined}
-        tabIndex={canInteract ? 0 : undefined}
-        aria-describedby={canInteract ? hintId : undefined}
-        onClick={canInteract ? place : undefined}
-        onKeyDown={canInteract ? handleKey : undefined}
-        onFocus={canInteract ? () => setChartFocused(true) : undefined}
-        onBlur={canInteract ? () => setChartFocused(false) : undefined}
-        className={`relative h-80 w-56 rounded border bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${canInteract ? "cursor-crosshair" : ""}`}
-      >
-        {/* Keyboard cursor indicator — visible only while the chart has focus */}
-        {canInteract && chartFocused && (
-          <span
-            aria-hidden="true"
-            className="absolute -ml-1.5 -mt-1.5 h-3 w-3 rounded-full border-2 border-brand-teal bg-transparent"
-            style={{ left: `${cursor.x * 100}%`, top: `${cursor.y * 100}%` }}
+      <div className="flex items-start gap-3">
+        <div
+          role={canInteract ? "application" : undefined}
+          tabIndex={canInteract ? 0 : undefined}
+          aria-describedby={canInteract ? hintId : undefined}
+          onClick={canInteract ? place : undefined}
+          onKeyDown={canInteract ? handleKey : undefined}
+          onFocus={canInteract ? () => setChartFocused(true) : undefined}
+          onBlur={canInteract ? () => setChartFocused(false) : undefined}
+          className={`relative h-80 w-56 shrink-0 rounded border bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${canInteract ? "cursor-crosshair" : ""}`}
+        >
+          {/* Body figure background layer */}
+          <Figure
+            sex={figSex}
+            className="pointer-events-none absolute inset-0 h-full w-full text-text-secondary opacity-[0.18]"
           />
-        )}
-        {inView.map(({ m, i }) => (
-          <span
-            key={i}
-            title={labelFor(m.marker_type)}
-            className="absolute -ml-1.5 -mt-1.5 h-3 w-3 rounded-full border border-surface bg-brand-magenta"
-            style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%` }}
-          />
-        ))}
+
+          {/* Keyboard cursor indicator — visible only while the chart has focus */}
+          {canInteract && chartFocused && (
+            <span
+              aria-hidden="true"
+              className="absolute -ml-1.5 -mt-1.5 h-3 w-3 rounded-full border-2 border-brand-teal bg-transparent"
+              style={{ left: `${cursor.x * 100}%`, top: `${cursor.y * 100}%` }}
+            />
+          )}
+          {inView.map(({ m, i }) => (
+            <span
+              key={i}
+              title={labelFor(m.marker_type)}
+              className="absolute -ml-1.5 -mt-1.5 h-3 w-3 rounded-full border border-surface bg-brand-magenta"
+              style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%` }}
+            />
+          ))}
+        </div>
+
+        {/* Sex toggle — stacked vertically beside the chart */}
+        <div className="flex flex-col gap-1 pt-1">
+          <Button
+            type="button"
+            onClick={() => setFigSex("male")}
+            variant={figSex === "male" ? "primary" : "secondary"}
+            size="sm"
+            aria-pressed={figSex === "male"}
+          >
+            {s["clinical.bodychartFigureMale"]}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => setFigSex("female")}
+            variant={figSex === "female" ? "primary" : "secondary"}
+            size="sm"
+            aria-pressed={figSex === "female"}
+          >
+            {s["clinical.bodychartFigureFemale"]}
+          </Button>
+        </div>
       </div>
 
       <ul className="space-y-1 text-sm">
