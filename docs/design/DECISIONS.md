@@ -15,3 +15,6 @@
 - Appointment status transitions folded into the event layer as appointment_status_changed (appointment_id, from_status, to_status, actor, timestamp). No standalone transition table; the event log is both transition history and KPI feed. Status is overwritten in place today with no old->new trace.
 - Therapist-service mapping is greenfield: no existing therapist<->service relationship. Created, not extended.
 - Next Wave 01 migration number is 0022 (migrations extend to 0021, not 0019).
+
+## 2026-06-30 - Migration 0022 scope
+- 0022 scoped to profession + region only (both text, nullable); city was NOT added because it already existed on patients (text, nullable, schema.ts + STATE.md); patient_notes append-relation deferred to a later loop pending JP's audit-trail ruling (patients.notes single mutable field already exists and is sufficient for Wave 01).
