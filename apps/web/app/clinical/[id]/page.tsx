@@ -41,7 +41,7 @@ export default async function RecordDetailPage({
   if (!record) notFound();
 
   const schema = record.template ? parseTemplateSchema(record.template.schema) : null;
-  const readOnly = record.status !== "draft";
+  const readOnly = record.status !== "draft" || !can(ctx.role, "clinical_records:author");
   const canSign = record.status === "draft" && can(ctx.role, "clinical_records:sign");
   const canVersion = readOnly && can(ctx.role, "clinical_records:author");
 
