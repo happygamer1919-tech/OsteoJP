@@ -412,3 +412,8 @@ documented `--limit 8` command locally; Claude reports the summary back.
   `--out` at an encrypted, EU-resident volume (FileVault / LUKS / encrypted
   external disk) and keep the archive off any synced/cloud folder. The CLI prints
   this reminder at startup.
+
+## 2026-06-30 - Wave 01 owner/accountant decisions
+- [ ] Patient ID format (JP): sequential, prefixed, or per-tenant scoped; confirm whether it must map to an identifier the clinic already uses. Blocks patient migration ID generation.
+- [ ] VAT treatment for KPI finance views (accountant): VAT 0 vs 23 for PT health services. Event capture stores gross and applies treatment at report time, so this blocks only the finance KPI report, not capture. Carried from the standing 10-item list (item 2).
+- [ ] Gated appointment completion (JP, clinical): hard block or soft warning when closing an appointment with no per-visit note. Blocks appointment lifecycle behavior.

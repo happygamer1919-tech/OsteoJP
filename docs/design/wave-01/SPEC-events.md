@@ -24,6 +24,14 @@ Minimum dimensions per event (refine in build):
 - timestamp
 - source reference (appointment id, invoice id)
 
+Named event types (extend as needed):
+- appointment_status_changed: emitted on every appointment status transition. Carries
+  appointment_id, from_status, to_status, actor (user id), timestamp. This IS the
+  per-appointment transition history (status is overwritten in place today; the generic
+  audit_log records that a field changed but not old->new values, per the 2026-06-30 audit)
+  and doubles as the KPI feed for no-show rate, confirm-then-cancel rate, and similar
+  time-based metrics. No standalone status-transition table is created.
+
 ## Principles
 - Capture gross now; apply VAT/tax treatment at report time. Do not bake VAT into the event, since the treatment is unresolved (accountant).
 - Append-only. Events are facts, never edited.

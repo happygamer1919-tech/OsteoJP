@@ -31,6 +31,13 @@ Done: given a rule producing N slots with K busy, engine books N-K and returns K
 What it does: given date (or week) and therapist, return booked vs free slots. Powers the new-appointment availability panel and the batch engine's conflict check (shared logic).
 Done: query returns accurate free/busy for a therapist over a range; panel and batch engine both consume it.
 
+## 6. Therapist-service mapping (greenfield)
+Per the 2026-06-30 audit, no therapist-to-service relationship exists (no join table, array
+column, or FK; no dedicated therapist table either, a care-deliverer is a users row with role
+therapist). Created from zero, not extended. A tenant-scoped relation (user_id <-> service_id)
+lets selecting a therapist resolve the service for auto-select. Admin-managed.
+Done: relation migrated; selecting a therapist returns their service(s); Max wires auto-select.
+
 ## Cross-cutting
 - Confirmation state and lifecycle status are separate axes.
 - Availability logic is shared between the panel, batch engine, and multi-therapist conflict reporting. Build once.
