@@ -68,3 +68,8 @@ service→category match logic and the conflict-detection helpers
   `GlassStatusChip` with service-accent tones) and lift the service/conflict
   helpers into `lib/scheduling`, then swap the agenda grid and the list over in a
   later foundation pass. Do not add inside a section wave.
+
+## 2026-06-30 - Wave 01 open questions
+- [ ] Patient ID format (route: JP). Sequential, prefixed, or per-tenant scoped. Fiscal-adjacent: confirm whether it must map to an identifier the clinic already uses. Blocks: patient migration ID-generation.
+- [ ] VAT treatment in KPI finance views (route: accountant). Revenue-per-therapist numbers depend on VAT 0 vs 23 for PT health services. Event schema captures gross now and applies treatment at report time, so this does not block capture, but blocks the finance KPI report. Carried from the standing 10-item JP/accountant list (item 2).
+- [ ] Gated completion: hard block or soft warning (route: JP, clinical). Decides whether a therapist can ever close an appointment without a per-visit note. Blocks: appointment lifecycle migration behavior.
