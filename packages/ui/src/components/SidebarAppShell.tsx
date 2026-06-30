@@ -69,6 +69,7 @@ function NavList({
           aria-current={item.active ? "page" : undefined}
           onClick={onNavigate}
           className={navItemClass(item.active)}
+          prefetch={false}
         >
           <item.icon size={20} strokeWidth={1.75} aria-hidden="true" />
           {item.label}
