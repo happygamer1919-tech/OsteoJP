@@ -84,6 +84,8 @@ export function Drawer({
   return (
     <dialog
       ref={ref}
+      role="dialog"
+      aria-modal="true"
       aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault();
