@@ -452,6 +452,13 @@ export const appointments = pgTable(
     // Recurring series: RRULE string + pointer to the series parent (Stream B).
     recurrenceRule: text("recurrence_rule"), // null = one-off
     recurrenceParentId: uuid("recurrence_parent_id"),
+    // Multi-therapist booking (0027): a shared id relating appointments created
+    // together in one flow (two therapists / one patient / one tab). NULL = a
+    // standalone appointment — the common case, and every pre-0027 row. Bare
+    // uuid (no FK), mirroring recurrence_parent_id: the group is defined by the
+    // appointments that share the value, and creation atomicity is app-layer.
+    // Orthogonal to recurrence_parent_id (recurring series over time).
+    bookingGroupId: uuid("booking_group_id"),
     notes: text("notes"),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -466,6 +473,11 @@ export const appointments = pgTable(
     index("appointments_tenant_location_start_idx").on(t.tenantId, t.locationId, t.startsAt),
     index("appointments_practitioner_start_idx").on(t.practitionerId, t.startsAt),
     index("appointments_patient_idx").on(t.patientId),
+    // Fetch all appointments in a booking group; partial since the column is
+    // NULL for every standalone appointment (the common case).
+    index("appointments_booking_group_idx")
+      .on(t.tenantId, t.bookingGroupId)
+      .where(sql`${t.bookingGroupId} is not null`),
   ],
 );
 
