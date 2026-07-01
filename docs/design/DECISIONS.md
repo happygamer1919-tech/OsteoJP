@@ -60,3 +60,13 @@
 ## 2026-07-01 - Chained self-merge is a dev-phase pattern only
 - Chained self-merge exists because branch protection is currently relaxed. Once protection is re-hardened (the pre-real-data gate), chained runners open PRs and HALT for human merge.
 - No terminal ever bypasses protection to keep a chain alive. A refused merge is a HALT, not an escalation.
+
+## 2026-07-01 - Single Supabase project reality; seed guard reworked to SEED_DEV_CONFIRM
+- Owner-verified (Ivan, via Supabase and Vercel dashboards): the Supabase org contains exactly ONE project, ref `jaxmkwoxjcgzkwxgbayx` (Frankfurt, Pro, backups active). It is the dev database AND currently also backs the deployed app.
+- The ref `ufbkzbyghvxtosyrkgjq` DOES NOT EXIST and never did — a phantom from an earlier recon that was inherited into the five dev seed scripts (as the claimed "dev" project) and into docs/QUESTIONS.md.
+- Consequence for the seed guard: the prior guard was a substring blocklist of `jaxmkwoxjcgzkwxgbayx` (treated as prod) across dev-reference/patients-dev/appointments-dev/availability-dev/episodes-dev. Built on the phantom-ref premise, it blocked the only real project and made the dev seed impossible to run. A prior GREEN loop correctly HALTED rather than weaken it.
+- Guard reworked (this PR): extracted one shared helper `packages/db/seed/seed-guard.ts` imported by all five seed scripts. Two layers replace the hardcoded ref blocklist:
+  1. `PROD_REFS: string[] = []` — an explicit, currently-empty blocklist to populate with the production ref the moment a separate prod project exists.
+  2. `SEED_DEV_CONFIRM` opt-in — the operator must set `SEED_DEV_CONFIRM` to the exact project ref parsed from `DATABASE_URL` (pooler or direct form), forcing a deliberate "I verified this target in the dashboard" step. Missing/mismatched confirm → refuse (exit 1). No hardcoded dev refs remain anywhere in `packages/db/seed/`.
+- NEW PRE-REAL-DATA GATE: before any real patient data enters the system, provision a SEPARATE production Supabase project, repoint the Vercel envs at it, and add the old dev ref to `PROD_REFS` (so the dev seed can never touch prod). No real patient data exists today (Fisiozero export not purchased), so this gate is still open.
+- This decision closes the seed-blocker and ref-discrepancy entries in docs/QUESTIONS.md (see the 2026-07-01 resolution appended there).

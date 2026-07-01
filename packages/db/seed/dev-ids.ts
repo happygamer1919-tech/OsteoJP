@@ -1,8 +1,7 @@
 // Fixed UUIDs for the dev environment seed data.
 // No side effects — safe to import from any seed script.
 //
-// Supabase project: ufbkzbyghvxtosyrkgjq (dev)
-// Tenant:          3a2d0711-fbdb-4ce9-b940-b6a87e3d3560
+// Tenant: 3a2d0711-fbdb-4ce9-b940-b6a87e3d3560
 
 export const ROLE_OWNER     = "de000001-0000-0000-0000-000000000001";
 export const ROLE_ADMIN     = "de000001-0000-0000-0000-000000000002";
