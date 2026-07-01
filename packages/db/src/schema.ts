@@ -47,6 +47,16 @@ export const appointmentStatus = pgEnum("appointment_status", [
   "no_show",
 ]);
 
+// Wave 01 (migration 0024) — confirmation axis, ORTHOGONAL to appointment_status.
+// "Did the patient confirm the reminder?" is a separate question from "where is
+// the appointment in its lifecycle?". Never collapse the two (same discipline as
+// record_status vs ai_review_state). Deliberately does NOT reuse appointment_status.
+export const appointmentConfirmationState = pgEnum("appointment_confirmation_state", [
+  "pending",
+  "confirmed",
+  "declined",
+]);
+
 export const episodeStatus = pgEnum("episode_status", ["open", "closed"]);
 
 export const recordStatus = pgEnum("record_status", [
@@ -431,6 +441,14 @@ export const appointments = pgTable(
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
     status: appointmentStatus("status").notNull().default("scheduled"),
+    // Confirmation axis (0024) — orthogonal to `status` above, never merged into it.
+    confirmationState: appointmentConfirmationState("confirmation_state")
+      .notNull()
+      .default("pending"),
+    confirmationReceivedAt: timestamp("confirmation_received_at", { withTimezone: true }),
+    // Free text (sms/whatsapp/phone/email/manual…) not an enum, so adding a new
+    // reminder channel never forces a migration.
+    confirmationChannel: text("confirmation_channel"),
     // Recurring series: RRULE string + pointer to the series parent (Stream B).
     recurrenceRule: text("recurrence_rule"), // null = one-off
     recurrenceParentId: uuid("recurrence_parent_id"),
