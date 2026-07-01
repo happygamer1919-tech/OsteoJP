@@ -16,6 +16,7 @@
  */
 
 import { drizzle } from "drizzle-orm/postgres-js";
+import { eq } from "drizzle-orm";
 import postgres from "postgres";
 import { tenants, roles, locations, services, users } from "../src/schema";
 import { loadFormTemplates } from "./form-templates";
@@ -96,15 +97,34 @@ async function seed() {
     .onConflictDoNothing();
 
   // ── Users / therapists ──
+  // Resolve role IDs by (tenant, slug) from whatever role rows actually exist
+  // for this tenant. The fixture role IDs above are only authoritative when this
+  // seed created the roles; a DB whose roles were seeded elsewhere (e.g.
+  // supabase/seed.sql with random UUIDs) is handled identically — the users
+  // attach to the existing role IDs instead of the skipped fixture IDs.
+  const roleRows = await db
+    .select({ id: roles.id, slug: roles.slug })
+    .from(roles)
+    .where(eq(roles.tenantId, TENANT_ID));
+  const roleIdBySlug = new Map(roleRows.map((r) => [r.slug, r.id]));
+  const roleId = (slug: string): string => {
+    const id = roleIdBySlug.get(slug);
+    if (!id) {
+      console.error(`Seed failed: role slug "${slug}" not found for tenant ${TENANT_ID}.`);
+      process.exit(1);
+    }
+    return id;
+  };
+
   console.log("Seeding users…");
   await db
     .insert(users)
     .values([
-      { id: USR_1, tenantId: TENANT_ID, roleId: ROLE_THERAPIST, email: "andre.costa@osteojp-dev.pt",      fullName: "Dr. André Costa",       isActive: true },
-      { id: USR_2, tenantId: TENANT_ID, roleId: ROLE_THERAPIST, email: "sofia.mendes@osteojp-dev.pt",     fullName: "Dra. Sofia Mendes",      isActive: true },
-      { id: USR_3, tenantId: TENANT_ID, roleId: ROLE_THERAPIST, email: "bernardo.figueira@osteojp-dev.pt", fullName: "Dr. Bernardo Figueira", isActive: true },
-      { id: USR_4, tenantId: TENANT_ID, roleId: ROLE_THERAPIST, email: "ines.carmo@osteojp-dev.pt",       fullName: "Dra. Inês Carmo",        isActive: true },
-      { id: USR_5, tenantId: TENANT_ID, roleId: ROLE_ADMIN,     email: "rui.correia@osteojp-dev.pt",      fullName: "Dr. Rui Correia",        isActive: true },
+      { id: USR_1, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "andre.costa@osteojp-dev.pt",      fullName: "Dr. André Costa",       isActive: true },
+      { id: USR_2, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "sofia.mendes@osteojp-dev.pt",     fullName: "Dra. Sofia Mendes",      isActive: true },
+      { id: USR_3, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "bernardo.figueira@osteojp-dev.pt", fullName: "Dr. Bernardo Figueira", isActive: true },
+      { id: USR_4, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "ines.carmo@osteojp-dev.pt",       fullName: "Dra. Inês Carmo",        isActive: true },
+      { id: USR_5, tenantId: TENANT_ID, roleId: roleId("admin"),     email: "rui.correia@osteojp-dev.pt",      fullName: "Dr. Rui Correia",        isActive: true },
     ])
     .onConflictDoNothing();
 
