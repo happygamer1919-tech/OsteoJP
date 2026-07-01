@@ -731,6 +731,56 @@ export const auditLog = pgTable(
   ],
 );
 
+// Wave 01 (migration 0025) — KPI/analytics event feed (SPEC-events.md). Append-only,
+// PII-lean, and DISTINCT from audit_log (which is PII-free change tracking recording
+// that a field changed, not old→new values). This layer captures the dimensions
+// needed to reconstruct KPIs — revenue/services per therapist, finance totals,
+// filterable by date/location/therapist/service — without back-filling, and is also
+// the per-appointment status-transition history via the appointment_status_changed
+// event (status is overwritten in place on appointments; this log preserves the
+// from→to trail). Monetary amounts are stored GROSS; VAT treatment is applied at
+// report time, never at capture (VAT 0 vs 23 is an open accountant question —
+// docs/design/QUESTIONS.md). Append-only is enforced by RLS: only SELECT + INSERT
+// policies exist (mirrors audit_log), so UPDATE/DELETE are denied.
+export const analyticsEvents = pgTable(
+  "analytics_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    // Free text (appointment_status_changed, appointment_completed, invoice_issued,
+    // service_delivered…), not an enum, so a new event type never forces a migration
+    // (SPEC-events: "extend as needed" + "no migration to add a missing dimension").
+    eventType: text("event_type").notNull(),
+    // Source reference — the entity this event is about (SPEC "source reference").
+    entityType: text("entity_type"), // e.g. appointment, invoice
+    entityId: uuid("entity_id"),
+    // KPI dimensions promoted to real columns so report queries filter/group without
+    // unpacking payload (SPEC: filterable by date/location/therapist/service).
+    therapistUserId: uuid("therapist_user_id").references(() => users.id),
+    patientId: uuid("patient_id").references(() => patients.id),
+    serviceId: uuid("service_id").references(() => services.id),
+    locationId: uuid("location_id").references(() => locations.id),
+    // Who triggered the event (server-derived identity, never from payload).
+    actorUserId: uuid("actor_user_id").references(() => users.id),
+    // GROSS monetary amount in integer cents (never float); VAT applied at report
+    // time. Null for non-financial events. currency travels on the column.
+    amountCentsGross: integer("amount_cents_gross"),
+    currency: char("currency", { length: 3 }),
+    // Event-specific extras — appointment_status_changed carries from_status/to_status.
+    payload: jsonb("payload").notNull().default({}),
+    // When the event actually happened (may precede the row insert).
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("analytics_events_tenant_occurred_idx").on(t.tenantId, t.occurredAt),
+    index("analytics_events_tenant_type_idx").on(t.tenantId, t.eventType),
+    index("analytics_events_tenant_therapist_idx").on(t.tenantId, t.therapistUserId),
+  ],
+);
+
 export const invoices = pgTable(
   "invoices",
   {
