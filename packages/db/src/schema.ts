@@ -289,6 +289,41 @@ export const serviceLocationPrices = pgTable(
   ],
 );
 
+// Wave 01 (migration 0023) — therapist-to-service mapping. Greenfield: the
+// 2026-06-30 audit confirmed no such relation existed. A care-deliverer is a
+// `users` row with role therapist (no dedicated therapist table); this
+// tenant-scoped join resolves the service(s) a therapist delivers so the
+// booking flow can auto-select the eligible service when a therapist is picked
+// (SPEC-appointments.md §6). Admin-managed; mutability is add/remove, not
+// edit-in-place (no UPDATE) — see DECISIONS.md 2026-07-01.
+export const therapistServices = pgTable(
+  "therapist_services",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    therapistUserId: uuid("therapist_user_id")
+      .notNull()
+      .references(() => users.id),
+    serviceId: uuid("service_id")
+      .notNull()
+      .references(() => services.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One mapping row per (tenant, therapist, service) — no duplicates.
+    unique("therapist_services_tenant_therapist_service_uq").on(
+      t.tenantId,
+      t.therapistUserId,
+      t.serviceId,
+    ),
+    index("therapist_services_tenant_idx").on(t.tenantId),
+    // Resolve "which therapists deliver service X" without a full scan.
+    index("therapist_services_tenant_service_idx").on(t.tenantId, t.serviceId),
+  ],
+);
+
 /* ================================================================== */
 /* Patients                                                           */
 /* ================================================================== */
