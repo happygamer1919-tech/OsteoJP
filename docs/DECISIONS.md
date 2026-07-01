@@ -735,3 +735,36 @@ Owner: Ivan. Scope note: this is the V1 historical migration, owner-confirmed.
 - Playwright pinned at the workspace 1.60.0 override. No new third-party vendor.
 - Gated to `--limit 8` for the first hand-reviewed batch; full enumeration of the
   ~7,964-record range waits for Ivan's explicit go.
+
+## 2026-07-01 - Read-only therapist availability query (migration-free)
+Built a tenant-scoped availability query returning per-day booked vs free
+intervals for a therapist over a day or week, shared by the new-appointment
+panel, the batch engine, and multi-therapist conflict reporting (build once,
+consume three times). No schema change, no migration, no Supabase mirror.
+
+Placement and shape:
+- `apps/web/lib/scheduling/intervals.ts` - pure interval-set math (mergeIntervals,
+  subtractIntervals) on half-open [start, end) instants, mirroring overlap.ts /
+  availability.ts (no DB, no `server-only`, unit-testable). free = working
+  windows minus booked.
+- `apps/web/lib/scheduling/day-availability.ts` - `server-only`
+  `getTherapistAvailability(ctx, {therapistId, from, to, locationId?})`, reads
+  through `runScoped` (RLS), tenant_id from the verified JWT never from payload.
+- Reused the existing `availability.ts` helpers (`lisbonWeekday`,
+  `isWithinValidity`, `AvailabilityTemplate`) and `time.ts` UTC<->Lisbon bridge
+  rather than re-deriving weekday/validity/timezone logic.
+
+Confirmed column names (read-only recon): appointments start/end =
+`starts_at`/`ends_at`; therapist FK = `practitioner_id` (appointments) and
+`user_id` (availability_templates), both -> `users.id`.
+
+Booked = status in {scheduled, confirmed, completed}; `cancelled` and `no_show`
+excluded (do not block a slot), encoded as a NON_BLOCKING exclusion so it tracks
+the appointment_status enum. Working windows come from active
+`availability_templates` matched on weekday + validity window and converted from
+Lisbon wall-clock `time` columns to UTC per day.
+
+Gates: typecheck 0, lint 0, vitest 64 passed (16 new interval-math cases: overlap,
+adjacency, full-day-free, fully-booked, empty template, split shifts, overhang
+clipping), apps/web build 0. `git diff` touches no file under
+packages/db/migrations/ or supabase/migrations/.
