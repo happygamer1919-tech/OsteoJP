@@ -13,7 +13,7 @@ import { s } from "@/lib/i18n";
 
 import { MarcacoesView, type MarcacoesFilters } from "./marcacoes-view";
 
-export const metadata = { title: "Marcações" };
+export const metadata = { title: s["marcacoes.title"] };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Audit: the fetch is always date-windowed, but the URL-param range was

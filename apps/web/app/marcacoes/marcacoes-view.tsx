@@ -312,6 +312,8 @@ export function MarcacoesView({
               max={filters.to}
               onChange={(d) => navigate({ from: d })}
               triggerLabel={s["marcacoes.filterDateFrom"]}
+              prevMonthLabel={s["calendar.previousMonth"]}
+              nextMonthLabel={s["calendar.nextMonth"]}
             />
           </div>
           <span className="text-sm text-v2-text-secondary">{s["marcacoes.dateTo"]}</span>
@@ -321,6 +323,8 @@ export function MarcacoesView({
               min={filters.from}
               onChange={(d) => navigate({ to: d })}
               triggerLabel={s["marcacoes.filterDateTo"]}
+              prevMonthLabel={s["calendar.previousMonth"]}
+              nextMonthLabel={s["calendar.nextMonth"]}
             />
           </div>
         </div>

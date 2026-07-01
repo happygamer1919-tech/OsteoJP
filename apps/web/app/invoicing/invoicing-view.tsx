@@ -234,6 +234,8 @@ export function InvoicingView({
               max={filters.to}
               onChange={(d) => navigate({ from: d })}
               triggerLabel={s["invoicing.filterDateFrom"]}
+              prevMonthLabel={s["calendar.previousMonth"]}
+              nextMonthLabel={s["calendar.nextMonth"]}
             />
           </div>
           <span className="text-sm text-text-secondary" aria-hidden="true">—</span>
@@ -243,6 +245,8 @@ export function InvoicingView({
               min={filters.from}
               onChange={(d) => navigate({ to: d })}
               triggerLabel={s["invoicing.filterDateTo"]}
+              prevMonthLabel={s["calendar.previousMonth"]}
+              nextMonthLabel={s["calendar.nextMonth"]}
             />
           </div>
         </div>
