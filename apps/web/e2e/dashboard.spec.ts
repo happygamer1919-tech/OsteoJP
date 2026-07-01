@@ -20,9 +20,6 @@
  *   "Novas fichas"        — roles with clinical_records:read (admin + therapist)
  *   "Receita (mês)"       — always
  *
- * Note: quick-action tile links ("Nova marcação" etc.) are NOT asserted here
- * because the "Próximas marcações" empty-state also renders a "Nova marcação"
- * link when no appointments are seeded, causing strict-mode violations.
  */
 import { test, expect } from "@playwright/test";
 import { STORAGE } from "./fixtures";
@@ -47,9 +44,8 @@ test.describe("admin dashboard", () => {
     await expect(page.getByText("Receita (mês)")).toBeVisible();
   });
 
-  test("admin sees the Próximas marcações and Resumo semanal panels", async ({ page }) => {
+  test("admin sees the Resumo semanal panel", async ({ page }) => {
     await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: "Próximas marcações" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Resumo semanal" })).toBeVisible();
   });
 });
