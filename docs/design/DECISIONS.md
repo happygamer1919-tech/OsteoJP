@@ -24,3 +24,8 @@
 - City is now shown as its own row in addition to the existing combined Morada line (address, city, postal code); the full-address drop from SPEC-patients.md's "Address reduction" is still not done — that remains blocked on the fiscal/declaration confirmation, unchanged from the 2026-06-30 locked calls entry.
 - Patient ID next to NIF is explicitly NOT surfaced in this PR — still blocked on JP's ID format decision (docs/design/QUESTIONS.md, 2026-06-30 Wave 01 owner/accountant decisions).
 - Remaining Max-queue item 3 scope (patient ID surfacing) stays open; do not check it off in WAVE-01.md until the ID format question resolves and that half ships.
+
+## Clinical record terminology (2026-07-01)
+- Canonical PT term is "Registo clínico" per brand-voice.md §3.1. PR #391 renamed the primary nav/title/action strings (`nav.clinical`, `clinical.title`, `clinical.newTitle`, etc.) from "Ficha(s) Clínica(s)" to "Registo(s) clínico(s)".
+- Correction to the queue brief: the rename is **not** complete. As of this session, "ficha"/"fichas clínicas" still appears in several PT strings — `clinical.subtitle`, `clinical.tableCaption`, `clinical.empty`, `clinical.new`, `clinical.create`, `clinical.openLabel`, `clinical.saved`, `clinical.lockedNotice`, `clinical.finalized`, `clinical.episodeRecords`, `clinical.episodeNoRecords`, `clinical.episodeAddRecord`, `clinical.errorTitle`, `clinical.emptyHelp`, `review.finalizeConfirm`, `dashboard.kpiNewRecords` — plus the unrelated `intake.fichaGeral.*` / `fichas.*` keys, which name a different concept (the patient portal's general intake form) and are out of scope for this rename.
+- Do not record this terminology sweep as done until a follow-up PR clears the remaining `clinical.*` occurrences above.
