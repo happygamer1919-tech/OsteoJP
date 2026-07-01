@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { htmlLang } from "@osteojp/i18n";
+
+import { s } from "@/lib/i18n";
 import "./globals.css";
 
 // Inter is the OsteoJP default sans (docs/brand-tokens.md §2). latin-ext is
@@ -17,7 +19,7 @@ export const metadata: Metadata = {
     default: "OsteoJP",
     template: "%s | OsteoJP",
   },
-  description: "Plataforma clínica OsteoJP",
+  description: s["app.title"],
 };
 
 export default function RootLayout({

@@ -673,5 +673,18 @@
   "marcacoes.emptyHelp": "Adjust the filters or the date range.",
   "marcacoes.errorTitle": "Could not load the bookings",
   "marcacoes.errorHelp": "Check your connection and try again.",
-  "clinical.stringListPlaceholder": "A, B, C"
+  "clinical.stringListPlaceholder": "A, B, C",
+  "app.title": "OsteoJP Clinical Platform",
+  "nav.ariaLabel": "Main navigation",
+  "nav.label": "Navigation",
+  "nav.openMenu": "Open menu",
+  "nav.closeMenu": "Close menu",
+  "nav.menu": "Menu",
+  "nav.goToDashboard": "Go to dashboard",
+  "common.close": "Close",
+  "toast.regionLabel": "Notifications",
+  "time.hours": "Hours",
+  "time.minutes": "Minutes",
+  "calendar.previousMonth": "Previous month",
+  "calendar.nextMonth": "Next month"
 }
