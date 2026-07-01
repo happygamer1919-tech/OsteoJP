@@ -102,6 +102,8 @@
   "patients.fieldAddress": "Address",
   "patients.fieldPostalCode": "Postal code",
   "patients.fieldCity": "City",
+  "patients.fieldRegion": "Region",
+  "patients.fieldProfession": "Profession",
   "patients.fieldNotes": "Notes",
   "patients.ageSuffix": "yrs",
   "patients.noUpcoming": "No upcoming appointments.",
