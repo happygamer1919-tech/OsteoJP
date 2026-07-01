@@ -92,6 +92,20 @@ export default async function PatientProfilePage({
   ];
   const tab = tabItems.some((t) => t.value === tabParam) ? tabParam! : "resumo";
 
+  const personalRows: [string, string][] = [
+    [s["patients.fieldDateOfBirth"], patient.dateOfBirth ? dateFmt.format(new Date(patient.dateOfBirth)) : "—"],
+    [s["patients.fieldSex"], patient.sex ? formatSex(patient.sex) : "—"],
+    [s["patients.fieldNif"], patient.nif ?? "—"],
+    [
+      s["patients.fieldAddress"],
+      [patient.address, patient.city, patient.postalCode].filter(Boolean).join(", ") || "—",
+    ],
+  ];
+  if (patient.profession) personalRows.push([s["patients.fieldProfession"], patient.profession]);
+  if (patient.city) personalRows.push([s["patients.fieldCity"], patient.city]);
+  if (patient.region) personalRows.push([s["patients.fieldRegion"], patient.region]);
+  if (patient.notes) personalRows.push([s["patients.fieldNotes"], patient.notes]);
+
   // Registos clínicos consumes the existing RLS + role-scoped records query.
   const records = tab === "registos" && canReadClinical ? await listRecords(ctx, { patientId: id }) : [];
   // Faturação tab: fetch invoices for this patient when the tab is active.
@@ -159,17 +173,7 @@ export default async function PatientProfilePage({
                 </Link>
               }
             >
-              <Rows
-                rows={[
-                  [s["patients.fieldDateOfBirth"], patient.dateOfBirth ? dateFmt.format(new Date(patient.dateOfBirth)) : "—"],
-                  [s["patients.fieldSex"], patient.sex ? formatSex(patient.sex) : "—"],
-                  [s["patients.fieldNif"], patient.nif ?? "—"],
-                  [
-                    s["patients.fieldAddress"],
-                    [patient.address, patient.city, patient.postalCode].filter(Boolean).join(", ") || "—",
-                  ],
-                ]}
-              />
+              <Rows rows={personalRows} />
             </Card>
             <Card title={s["patients.cardContacts"]}>
               <Rows

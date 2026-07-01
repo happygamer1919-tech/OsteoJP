@@ -18,3 +18,9 @@
 
 ## 2026-06-30 - Migration 0022 scope
 - 0022 scoped to profession + region only (both text, nullable); city was NOT added because it already existed on patients (text, nullable, schema.ts + STATE.md); patient_notes append-relation deferred to a later loop pending JP's audit-trail ruling (patients.notes single mutable field already exists and is sufficient for Wave 01).
+
+## 2026-07-01 - Max queue item 3 (partial): patient-profile surfacing
+- Surfaced profession, city, region, and notes on the patient profile "Dados pessoais" card, following the existing `Rows` label+value pattern. Unlike the existing dob/sex/nif/address rows (which show "—" for null), these four rows are omitted entirely when the underlying value is null/empty.
+- City is now shown as its own row in addition to the existing combined Morada line (address, city, postal code); the full-address drop from SPEC-patients.md's "Address reduction" is still not done — that remains blocked on the fiscal/declaration confirmation, unchanged from the 2026-06-30 locked calls entry.
+- Patient ID next to NIF is explicitly NOT surfaced in this PR — still blocked on JP's ID format decision (docs/design/QUESTIONS.md, 2026-06-30 Wave 01 owner/accountant decisions).
+- Remaining Max-queue item 3 scope (patient ID surfacing) stays open; do not check it off in WAVE-01.md until the ID format question resolves and that half ships.
