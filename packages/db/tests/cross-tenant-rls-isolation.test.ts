@@ -75,6 +75,7 @@ type Ids = {
   servicePrice: string;
   therapistService: string;
   audit: string;
+  analyticsEvent: string;
 };
 
 const newIds = (): Ids => ({
@@ -98,6 +99,7 @@ const newIds = (): Ids => ({
   servicePrice: randomUUID(),
   therapistService: randomUUID(),
   audit: randomUUID(),
+  analyticsEvent: randomUUID(),
 });
 
 const A = newIds();
@@ -151,6 +153,9 @@ async function seedTenant(p: Sql, x: Ids, label: string): Promise<void> {
           values (${x.therapistService}, ${x.tenant}, ${x.user}, ${x.service})`;
   await p`insert into audit_log (id, tenant_id, action, entity_type, entity_id)
           values (${x.audit}, ${x.tenant}, 'seed.action', 'patient', ${x.patient})`;
+  await p`insert into analytics_events (id, tenant_id, event_type, entity_type, entity_id, actor_user_id, occurred_at, payload)
+          values (${x.analyticsEvent}, ${x.tenant}, 'appointment_status_changed', 'appointment', ${x.appointment}, ${x.user}, ${START},
+                  ${JSON.stringify({ appointment_id: x.appointment, from_status: "scheduled", to_status: "confirmed", actor: x.user })}::jsonb)`;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -662,6 +667,60 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
         expect(`${e.code ?? ""} ${e.message ?? ""}`).toMatch(/42501|permission denied/i);
       }
       expect(modified.length).toBe(0);
+    });
+  });
+
+  /* ---- analytics_events — append-only KPI feed (SELECT + INSERT policies only) -------- */
+  // Same append-only shape as audit_log: the UPDATE/DELETE privilege is granted
+  // (0025 keeps the full DML grant — 0003's audit_log philosophy), but NO UPDATE/DELETE
+  // policy exists, so RLS filters both to 0 rows deterministically in every environment.
+  describe("analytics_events — append-only (no UPDATE/DELETE policy ⇒ denied for all rows)", () => {
+    it("SELECT under tenant-A returns only A's rows; tenant-B row invisible", async () => {
+      const rows = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`select id::text as id, tenant_id::text as scope from analytics_events`) as {
+          id: string;
+          scope: string;
+        }[],
+      );
+      const ids = rows.map((r) => r.id);
+      expect(ids).toContain(A.analyticsEvent);
+      expect(ids).not.toContain(B.analyticsEvent);
+      expect(rows.every((r) => r.scope === A.tenant)).toBe(true);
+    });
+
+    it("INSERT of an own-tenant event under tenant-A JWT succeeds", async () => {
+      const inserted = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        tx<{ id: string }[]>`insert into analytics_events (tenant_id, event_type, occurred_at)
+          values (${A.tenant}, 'invoice_issued', ${START}) returning id`,
+      );
+      expect(inserted.length).toBe(1);
+    });
+
+    it("INSERT of a tenant-B event under tenant-A JWT is rejected by WITH CHECK", async () => {
+      await expect(
+        asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+          tx`insert into analytics_events (tenant_id, event_type, occurred_at)
+             values (${B.tenant}, 'invoice_issued', ${START})`,
+        ),
+      ).rejects.toThrow(/row-level security/i);
+    });
+
+    it("UPDATE of the tenant's OWN row affects 0 rows — append-only (no UPDATE policy)", async () => {
+      const updated = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`update analytics_events set event_type = 'mutated' where id = ${A.analyticsEvent} returning id`) as {
+          id: string;
+        }[],
+      );
+      expect(updated.length).toBe(0);
+    });
+
+    it("DELETE of the tenant's OWN row affects 0 rows — append-only (no DELETE policy)", async () => {
+      const deleted = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`delete from analytics_events where id = ${A.analyticsEvent} returning id`) as {
+          id: string;
+        }[],
+      );
+      expect(deleted.length).toBe(0);
     });
   });
 });
