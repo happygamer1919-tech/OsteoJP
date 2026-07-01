@@ -2,12 +2,12 @@
  * Seed — reference data for the dev environment (tenant, roles, locations,
  * services, users/therapists, form templates).
  *
- * Supabase project: ufbkzbyghvxtosyrkgjq (dev)
- * Tenant:          3a2d0711-fbdb-4ce9-b940-b6a87e3d3560
+ * Tenant: 3a2d0711-fbdb-4ce9-b940-b6a87e3d3560
  *
  * All IDs are fixed so every table is idempotent via onConflictDoNothing.
  *
- * SAFETY: refuses to run against the prod project ref (jaxmkwoxjcgzkwxgbayx).
+ * SAFETY: target is resolved and confirmed by ./seed-guard (SEED_DEV_CONFIRM
+ * opt-in + PROD_REFS blocklist).
  *
  * Usage:
  *   DATABASE_URL=<dev-service-role-url> \
@@ -19,6 +19,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { tenants, roles, locations, services, users } from "../src/schema";
 import { loadFormTemplates } from "./form-templates";
+import { resolveSeedDatabaseUrl } from "./seed-guard";
 import {
   ROLE_OWNER, ROLE_ADMIN, ROLE_THERAPIST, ROLE_RECEPTION,
   LOC_LAV, LOC_CB, LOC_MTN,
@@ -35,20 +36,8 @@ export {
 };
 
 const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
-const PROD_REF = "jaxmkwoxjcgzkwxgbayx";
 
-const DATABASE_URL = process.env.DATABASE_URL_DEV ?? process.env.DATABASE_URL;
-if (!DATABASE_URL) {
-  console.error("Error: DATABASE_URL_DEV or DATABASE_URL is required");
-  process.exit(1);
-}
-if (DATABASE_URL.includes(PROD_REF)) {
-  console.error(
-    `SAFETY: refusing to seed into production (${PROD_REF}).\n` +
-      "Set DATABASE_URL_DEV or DATABASE_URL to the dev project (ufbkzbyghvxtosyrkgjq).",
-  );
-  process.exit(1);
-}
+const DATABASE_URL = resolveSeedDatabaseUrl();
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 

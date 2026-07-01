@@ -1,8 +1,7 @@
 /**
  * Seed — availability_templates (working hours) for the dev environment.
  *
- * Supabase project: ufbkzbyghvxtosyrkgjq (dev)
- * Tenant:          3a2d0711-fbdb-4ce9-b940-b6a87e3d3560
+ * Tenant: 3a2d0711-fbdb-4ce9-b940-b6a87e3d3560
  *
  * Gives every seeded practitioner realistic weekly working windows so the
  * read-only availability query (getTherapistAvailability) returns non-empty
@@ -24,7 +23,7 @@
  *
  * The row builder (SCHEDULES / buildRows) is a pure export so availability-dev.test.ts
  * can assert its shape without a database; the DB write only runs when this file
- * is executed directly (SAFETY: refuses the prod project ref).
+ * is executed directly (SAFETY: target confirmed by ./seed-guard).
  *
  * Usage:
  *   DATABASE_URL=<dev-service-role-url> pnpm --filter @osteojp/db seed:availability:dev
@@ -38,9 +37,9 @@ import {
   LOC_LAV, LOC_CB, LOC_MTN,
   USR_1, USR_2, USR_3, USR_4, USR_5,
 } from "./dev-ids";
+import { resolveSeedDatabaseUrl } from "./seed-guard";
 
 export const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
-const PROD_REF = "jaxmkwoxjcgzkwxgbayx";
 
 // ─── Weekly schedules ─────────────────────────────────────────────────────────
 // Weekday: 1=Mon .. 5=Fri (JS getDay). A shift is [start, end] Lisbon wall-clock.
@@ -134,18 +133,7 @@ export function buildRows(): AvailabilityRow[] {
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
 async function seed() {
-  const DATABASE_URL = process.env.DATABASE_URL_DEV ?? process.env.DATABASE_URL;
-  if (!DATABASE_URL) {
-    console.error("Error: DATABASE_URL_DEV or DATABASE_URL is required");
-    process.exit(1);
-  }
-  if (DATABASE_URL.includes(PROD_REF)) {
-    console.error(
-      `SAFETY: refusing to seed into production (${PROD_REF}).\n` +
-        "Set DATABASE_URL_DEV or DATABASE_URL to the dev project (ufbkzbyghvxtosyrkgjq).",
-    );
-    process.exit(1);
-  }
+  const DATABASE_URL = resolveSeedDatabaseUrl();
 
   const sql = postgres(DATABASE_URL, { max: 1 });
   const db = drizzle(sql);
