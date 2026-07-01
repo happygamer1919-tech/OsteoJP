@@ -82,3 +82,5 @@ Both saturated. Ivan stays one item ahead so Max's queue is fed at the rate he c
 
 ## Open questions
 See docs/design/QUESTIONS.md. Three items gate specific loops: patient ID format (JP), VAT in KPI finance (accountant), gated completion hard-vs-soft (JP).
+
+> Live loop status and sequencing are owned by docs/design/BACKLOG.md (Wave 01 Loop Queue). This document is scope, not status. Do not infer what is runnable now from here.

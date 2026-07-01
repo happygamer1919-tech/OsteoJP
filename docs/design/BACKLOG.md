@@ -1,5 +1,7 @@
 ## Wave 01 Loop Queue
 
+> Board ownership: this file is the single source of truth for live loop status and sequencing (DRAFT / READY / IN-FLIGHT / DONE / HALTED). WAVE-01.md describes wave scope, STATE.md holds ground truth, DECISIONS.md holds locked calls, LOOP-DISPATCH.md holds the dispatch mechanism. For what is runnable now, read this file only.
+
 ### Coordination protocol
 Status flow: DRAFT (written, gate not cleared) -> READY (gate cleared, dispatchable) -> IN-FLIGHT (terminal running) -> DONE (PR merged to main, verified) -> or HALTED (briefing-vs-reality mismatch, see QUESTIONS.md).
 Rules:
@@ -14,8 +16,8 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 ### MIG lane (Ivan)
 | ID | Loop | Status | Gate |
 |----|------|--------|------|
-| 0022 | patient columns | IN-FLIGHT | none |
-| 0023 | therapist-service mapping | DRAFT | 0022 DONE |
+| 0022 | patient columns | DONE | none |
+| 0023 | therapist-service mapping | READY | 0022 DONE |
 | 0024 | appointment confirmation state | DRAFT | 0023 DONE |
 | 0025 | event schema (SPEC-events, incl appointment_status_changed) | DRAFT | 0024 DONE |
 | 0026 | appointment lifecycle, gated completion + per-visit notes | DRAFT | 0025 DONE AND JP gated-completion ruling |
@@ -35,7 +37,7 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | remove Proximas marcacoes card | READY | none |
 | rename Revisao to Revisao Consulta | READY | none |
 | stale comment fix at page.tsx:360 | READY | none |
-| patient profile surfacing (profession, city, region, notes) | DRAFT | 0022 DONE |
+| patient profile surfacing: profession + region (new in 0022), city + notes (already existed) | READY | 0022 DONE |
 | auto-select service from therapist | DRAFT | 0023 DONE |
 | confirmation thumbs on appointment preview | DRAFT | 0024 DONE |
 | availability panel in new-appointment flow | DRAFT | availability query DONE |
