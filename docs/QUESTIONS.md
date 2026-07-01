@@ -429,3 +429,28 @@ documented `--limit 8` command locally; Claude reports the summary back.
   - Root cause (two parts): (1) the rotated dev password was never in a file the tooling reads, and (2) `drizzle-kit migrate` runs with `cwd=packages/db` and loads **`packages/db/.env`** via dotenv's default (`process.cwd()/.env`). It does **NOT** read the repo-root `.env`, `.env.local`, or `.env.development`, and does not walk up. The repo-root `.env` alone is insufficient for migrations; `.env.local` is Vercel-managed (holds only `VERCEL_OIDC_TOKEN`) and must never carry DB creds (a `vercel env pull` overwrites hand-edits).
   - Fix: dev creds (DATABASE_URL + DATABASE_URL_DIRECT, rotated Supabase password) now live in `packages/db/.env` in both the worktree and the main checkout. Both files are gitignored and uncommitted.
   - Standing rule: put dev DB creds in `packages/db/.env`, not repo-root `.env`/`.env.local`.
+
+## 2026-07-01 - Availability query: DoD live-seed gap + dirty working tree
+- [ ] **No `availability_templates` seed exists.** The dev seed populates
+  appointments (271 rows) but there is NO seed script or fixture for
+  `availability_templates` (grep of `packages/db/seed` confirms). The loop DoD
+  line "for a seeded therapist over a known day, returns correct booked and free
+  intervals asserted against the sample set" is therefore only half-verifiable
+  against live data: the *booked* half is seedable, the *working-window / free*
+  half has no seed to assert against. The interval math is instead fully covered
+  by unit tests (`intervals.test.ts`, 16 cases). **Recommended default:** add a
+  small `seed/availability-dev.ts` (e.g. USR_1/USR_2 Mon-Fri 09:00-13:00 +
+  14:00-18:00 at LAV/CB) in a follow-up ticket so the free-interval branch gets a
+  live end-to-end assertion; not blocking, math is unit-tested.
+- [ ] **Working tree was NOT clean when this loop started (precondition
+  violation).** Loop 0023 (therapist-service-mapping) left uncommitted changes in
+  the main checkout: `M packages/db/src/schema.ts`,
+  `M packages/db/migrations/meta/_journal.json`,
+  `M packages/db/tests/cross-tenant-rls-isolation.test.ts`, plus untracked
+  `packages/db/migrations/0023_therapist_service_mapping.sql` and
+  `supabase/migrations/0023_therapist_service_mapping.sql`. This branch was cut
+  from that dirty tree. My commits deliberately stage ONLY the three
+  `apps/web/lib/scheduling` files; the 0023 files were left untouched (not mine,
+  and deleting another loop's in-flight work would be destructive). **Recommended
+  action (owner/next session):** finish and commit or stash 0023 on its own
+  branch so main returns to a green terminal; confirm 0023 is not half-applied.
