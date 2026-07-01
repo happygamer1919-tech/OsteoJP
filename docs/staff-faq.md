@@ -1,172 +1,74 @@
-# Staff FAQ — OsteoJP Platform
+# FAQ da Equipa — Plataforma OsteoJP
 
-**Audiência:** Rececionistas e terapeutas das clínicas OsteoJP (Linda-a-Velha e Castelo Branco)
-**Objetivo:** Resposta rápida às questões do dia-a-dia na plataforma
-**Responsável:** Max — atualizar à medida que surgirem novas questões durante a transição
-**Última atualização:** 2026-06-19
+**Audiência:** equipa clínica e administrativa das clínicas OsteoJP.
+**Objetivo:** respostas diretas às 15 questões mais frequentes sobre o uso da plataforma.
+**Última atualização:** 2026-07-01.
 
----
-
-## Acesso e login
-
-**Como entro na plataforma?**
-Acede a `app.osteojp.pt` no browser. Usa o teu email de trabalho e a password que te foi fornecida pela administração. Se não recebeste as credenciais, contacta o João Pedro.
-
-**Esqueci-me da password. O que faço?**
-Na página de login, clica em "Esqueceu a password?" e segue as instruções. Se não receberes o email de recuperação em 5 minutos, verifica a pasta de spam. Se o problema persistir, contacta a administração.
-
-**Posso aceder noutro computador ou telemóvel?**
-Sim. A plataforma funciona em qualquer browser moderno (Chrome, Safari, Firefox, Edge). No telemóvel funciona mas a interface está otimizada para desktop — para uso diário recomendamos um computador ou tablet.
-
-**A plataforma está em inglês. Porquê?**
-O idioma do interface segue as preferências de idioma do browser. Para mudar para português, altera as preferências de idioma do browser. Em caso de dúvida, pede ajuda à administração.
+Itens marcados com `[A CONFIRMAR COM JP]` não têm resposta confirmada no código ou na documentação existente — não devem ser respondidos com base em suposições até serem esclarecidos.
 
 ---
 
-## Pacientes
+## 1. Como inicio sessão na plataforma?
 
-**Como pesquiso um paciente?**
-Vai a **Pacientes** na barra lateral. Usa a barra de pesquisa para procurar por nome, NIF ou número de telefone. A pesquisa aceita partes do nome (ex: "Silva" encontra "Ana Silva") e os primeiros dígitos do NIF.
+Aceda a `app.osteojp.pt`, indique o email de trabalho e a palavra-passe fornecida pela administração e clique em "Iniciar sessão".
 
-**Como crio um novo paciente?**
-Em **Pacientes**, clica em **"Novo paciente"** no canto superior direito. Preenche os campos obrigatórios — nome completo, data de nascimento e sexo — e clica em **"Criar paciente"**. Os restantes dados (contacto, morada, NIF) podem ser adicionados ou corrigidos mais tarde no perfil.
+## 2. Como marco uma nova consulta?
 
-**Como actualizo os dados de um paciente?**
-Abre o perfil do paciente em **Pacientes → [nome do paciente]**. Clica em **"Editar"** junto à secção que queres alterar (dados pessoais, contactos, morada). Guarda as alterações.
+Na **Agenda**, clique em "Nova marcação". Selecione paciente, serviço, terapeuta, localização, data e hora — a duração é preenchida automaticamente a partir do serviço escolhido, mas pode ser ajustada. É também possível configurar uma marcação recorrente. Grave a marcação para a colocar na agenda.
 
-**Um paciente aparece duplicado. O que faço?**
-Não apagues nenhum dos registos. Usa a função **"Fundir duplicado"** no perfil do paciente — ela transfere todo o histórico clínico e marcações para o registo principal e marca o duplicado como fundido. Em caso de dúvida, contacta a administração antes de fundir.
+## 3. Como encontro um paciente?
 
-**Não encontro um paciente que existia no Fisiozero. Porquê?**
-Durante a fase de transição, nem todos os registos foram ainda migrados. Confirma no Fisiozero se o paciente existe lá. Se sim, reporta à administração para que o registo seja importado.
+Em **Pacientes**, use a barra de pesquisa ("Pesquisar por nome, NIF ou telefone"). A pesquisa aceita partes do nome.
 
----
+## 4. Como edito os dados de um paciente?
 
-## Marcações
+Abra o perfil do paciente em **Pacientes → [nome do paciente]** e clique em "Editar dados".
 
-**Como marco uma consulta?**
-Vai à **Agenda** e clica em **"+ Nova marcação"**. Preenche: paciente, serviço (ex: Osteopatia, Fisioterapia, NESA), terapeuta, sala, data e hora. Clica em **"Guardar"**. A marcação aparece imediatamente na agenda.
+## 5. Como registo notas clínicas após uma consulta?
 
-**Como pesquiso uma marcação existente?**
-Na **Agenda**, usa os filtros na parte superior — podes filtrar por terapeuta, localização e intervalo de datas. Para ver todas as marcações de um paciente específico, vai ao seu perfil em **Pacientes** e consulta o histórico de marcações.
+Em **Fichas Clínicas**, clique em "Nova ficha" (ou "Nova ficha neste episódio" a partir de um episódio já aberto). Selecione o paciente, o episódio e o modelo correspondente ao tipo de consulta — Osteopatia, Fisioterapia, NESA, RPG, Massagem Terapêutica ou Pilates Terapêutico — e preencha os campos.
 
-**Como remarco uma consulta?**
-Na **Agenda**, clica na marcação e seleciona **"Remarcar"**. Escolhe a nova data e hora e confirma. A marcação original fica registada no histórico.
+- "Guardar" grava a ficha em rascunho, editável.
+- "Assinar e bloquear" finaliza a ficha de forma permanente — deixa de poder ser alterada. Uma correção a uma ficha já assinada exige a criação de uma nova versão (adenda), nunca a edição da ficha original.
 
-**Como cancelo uma consulta?**
-Na **Agenda**, clica na marcação e seleciona **"Cancelar marcação"**. Confirma a ação na caixa de diálogo. As marcações canceladas ficam registadas no histórico — nunca são eliminadas definitivamente.
+## 6. O que é a Revisão Consulta e quando devo usá-la?
 
-**Posso ver a agenda de outro terapeuta ou da outra clínica?**
-Sim. Na **Agenda**, usa o filtro **"Todos os terapeutas"** para ver todas as agendas em simultâneo, ou seleciona um terapeuta específico na lista. Usa o filtro de localização para alternar entre a clínica de Linda-a-Velha e a clínica de Castelo Branco.
+A **Revisão Consulta** é a fila onde chegam as fichas produzidas pelo parceiro de IA (a partir da gravação ambiente da consulta) e os formulários submetidos diretamente pelos pacientes, antes de se tornarem fichas clínicas oficiais. Só terapeutas e o proprietário têm acesso a esta fila — a função Administrador não a vê.
 
-**O paciente vai receber confirmação ou lembrete automático?**
-Os lembretes automáticos estão em fase de ativação. Confirma com o João Pedro se já estão ativos para a tua clínica. Enquanto não estiverem, confirma as marcações manualmente por telefone.
+Para a usar: clique em "Assumir" no item que quer rever. Pode editar apenas os campos de texto livre (narrativos); campos codificados e de segurança (por exemplo, sinais de alarme) têm de ser confirmados manualmente e não são alteráveis aqui. Quando a ficha estiver correta, clique em "Finalizar (assinar e bloquear)" — tal como nas fichas clínicas normais, esta ação é permanente.
 
----
+## 7. Como emito uma fatura?
 
-## Fichas clínicas
+Em **Faturação**, o botão "Nova fatura" só aparece quando a integração InvoiceXpress está configurada e ativada para a clínica. `[A CONFIRMAR COM JP]` — qual o processo a seguir para emitir faturas enquanto essa integração não estiver ativada pelo proprietário.
 
-**O que é um episódio?**
-Um episódio agrupa as consultas e fichas clínicas relacionadas com o mesmo problema ou curso de tratamento. Por exemplo: um paciente com dor lombar pode ter um episódio com 6 consultas e as respetivas fichas. Um novo problema clínico começa um novo episódio — não se adiciona a um episódio já existente.
+## 8. Como vejo o calendário da semana?
 
-**Como crio um novo episódio?**
-No perfil do paciente, clica em **"+ Novo episódio"**. O episódio é criado de imediato e ficas na sua página, onde podes adicionar logo a primeira ficha clínica.
+Na **Agenda**, use o alternador "Dia / Semana" no topo do ecrã e selecione "Semana". Este alternador só está disponível em ecrã de computador — no telemóvel a Agenda mostra sempre a vista Dia.
 
-**Como crio uma ficha clínica?**
-Dentro de um episódio, clica em **"+ Nova ficha"**. Seleciona o modelo correspondente ao tipo de consulta (Osteopatia, Fisioterapia, NESA, RPG, Massagem Terapêutica, Pilates Terapêutico) e preenche os campos. Clica em **"Guardar"** para gravar em rascunho, ou **"Assinar e bloquear"** para fechar definitivamente o registo.
+## 9. Esqueci-me da palavra-passe — o que faço?
 
-**Posso editar uma ficha depois de guardada?**
-Sim, enquanto a ficha estiver em rascunho. Depois de assinada, o registo fica imutável — é um documento clínico definitivo. Se precisares de corrigir algo numa ficha já assinada, cria uma nova ficha de seguimento no mesmo episódio com a correção e uma nota de contexto.
+A página de início de sessão não tem, atualmente, uma opção de recuperação de palavra-passe autónoma. Contacte um administrador para lhe ser restabelecido o acesso. `[A CONFIRMAR COM JP]` — qual o procedimento exato que a administração deve seguir para restabelecer o acesso de um membro da equipa já existente (distinto do convite a um novo membro).
 
-**O que significa "ficha bloqueada"?**
-A ficha foi assinada pelo terapeuta e está fechada para edição. O bloqueio é permanente e intencional — garante a integridade do registo clínico. Não é possível desbloquear.
+## 10. Como adiciono um novo terapeuta ao sistema?
 
-**Como vejo o histórico clínico de um paciente?**
-No perfil do paciente, vai ao separador **"Episódios"**. Cada episódio pode ser expandido para mostrar as fichas associadas por ordem cronológica.
+Em **Administração → Equipa**, abra "Convidar novo membro". Preencha nome completo, email e função — selecione "Terapeuta" — e clique em "Convidar". O novo membro recebe um email com uma ligação para definir a própria palavra-passe; se o envio de email não estiver ativo nessa clínica, é apresentada uma palavra-passe temporária, a entregar ao novo membro por um canal seguro.
 
-**Não vejo o modelo correto na lista. O que faço?**
-Os modelos disponíveis são: Osteopatia, Fisioterapia, NESA, RPG, Massagem Terapêutica, Pilates Terapêutico. Se o modelo necessário não aparece, contacta a administração — pode ser um problema de configuração do serviço.
+## 11. Posso aceder à plataforma no telemóvel?
 
----
+Sim. A plataforma funciona no browser do telemóvel e a interface adapta-se ao ecrã — por exemplo, a Agenda mostra sempre a vista Dia no telemóvel, reservando a vista Semana para o ecrã de computador.
 
-## Faturação
+## 12. Os dados dos pacientes estão seguros?
 
-**Como emito uma fatura?**
-Vai a **Faturação** na barra lateral e clica em **"Emitir fatura"**. Seleciona o paciente e a marcação correspondente. Confirma os dados — serviço, valor e data — e clica em **"Emitir"**. A fatura fica imediatamente disponível para impressão ou envio por email.
+Sim, por desenho. Cada clínica é isolada ao nível da base de dados: todas as tabelas exigem uma identificação da clínica (`tenant_id`) e têm uma política de segurança (RLS) que restringe o acesso apenas aos dados dessa clínica. Toda a infraestrutura — base de dados, alojamento, email — está na União Europeia. Ações sobre fichas clínicas e outras ações sensíveis ficam registadas num registo de auditoria que não pode ser editado nem apagado. Uma ficha clínica assinada torna-se imutável — não pode ser alterada nem eliminada.
 
-**O paciente quer uma cópia da fatura. Como envio?**
-Em **Faturação**, pesquisa pelo nome do paciente ou pelo número de fatura. Abre a fatura e clica em **"Enviar por email"** (usa o email do perfil do paciente) ou em **"Imprimir"** para uma cópia em papel.
+## 13. O que acontece se fechar o browser a meio de uma ficha clínica?
 
-**Uma consulta foi cancelada após a fatura ter sido emitida. O que faço?**
-É necessário emitir uma nota de crédito. Em **Faturação**, abre a fatura em questão e clica em **"Nota de crédito"**. Em caso de dúvida sobre o procedimento fiscal correto, contacta a administração antes de avançar.
+Perde as alterações não guardadas. A ficha clínica não tem gravação automática — é necessário clicar em "Guardar" antes de sair ou fechar o browser para preservar o que foi escrito.
 
-**Como registo um pagamento?**
-Após emitir a fatura, clica em **"Registar pagamento"** na página da fatura. Seleciona o método (numerário, transferência bancária, MB Way) e confirma. O estado da fatura passa de "Por pagar" para "Paga".
+## 14. Como imprimo um relatório clínico?
 
----
+Depois de a ficha estar assinada e bloqueada (finalizada), abra-a e clique em "Transferir PDF". Este botão só está disponível para fichas finalizadas — uma ficha em rascunho não tem PDF disponível. A partir do PDF transferido, imprima-o pelo seu leitor de PDF ou pelo browser.
 
-## Portal do paciente
+## 15. A quem reporto um problema técnico?
 
-**O que é o portal do paciente?**
-O portal do paciente (acessível em `portal.osteojp.pt`) permite ao paciente consultar as suas marcações, ver o histórico de consultas e atualizar alguns dados pessoais. É uma aplicação separada da plataforma de staff. O paciente acede com o seu email e com a password criada na ativação da conta.
-
-**O paciente não consegue entrar no portal. O que faço?**
-Confirma que o paciente ativou a conta — deve ter recebido um email de ativação quando foi registado. Se nunca ativou, abre o perfil do paciente em **Pacientes** e clica em **"Reenviar convite"**. Se o paciente se esqueceu da password, indica-lhe que clique em "Esqueceu a password?" na página de login do portal.
-
-**O paciente quer actualizar os seus dados pessoais. O que faz?**
-O paciente pode atualizar morada, telefone e cidade diretamente no portal em **"A minha conta"**. O nome completo e a data de nascimento só podem ser alterados pela receção na plataforma de staff, em **Pacientes → [nome do paciente] → Editar**.
-
----
-
-## Administração
-
-**Onde configuro os serviços e preços?**
-Em **Administração → Serviços**. Cada serviço tem duração e preço base. Podes configurar preços diferentes por clínica expandindo **"Preços por localização"** em cada serviço.
-
-**Como adiciono um novo membro de equipa?**
-Em **Administração → Equipa**, clica em **"Novo membro"**. Preenche o nome, email e função (Terapeuta ou Receção). O novo utilizador recebe um email com instruções para ativar a conta e definir a password.
-
-**Como vejo as duas clínicas (Linda-a-Velha e Castelo Branco)?**
-Em **Administração → Locais**, cada clínica tem a sua configuração de salas e disponibilidade. Na **Agenda**, usa o filtro **"Todas as localizações"** para ver as marcações de ambas em simultâneo.
-
----
-
-## Problemas comuns
-
-**A página não carrega ou aparece um erro.**
-Recarrega a página (F5 ou Cmd+R). Se o erro persistir, fecha o browser completamente e abre de novo. Se o problema continuar, reporta à administração com uma descrição do que estavas a fazer e, se possível, uma captura de ecrã.
-
-**Fiz uma ação por engano (ex: criei um episódio errado, cancelei uma marcação).**
-Contacta a administração imediatamente — algumas ações podem ser revertidas se forem reportadas a tempo. Não cries registos adicionais para tentar corrigir o erro sozinho.
-
-**Não consigo guardar um formulário — aparece um erro de validação.**
-Verifica se todos os campos obrigatórios (assinalados com *) estão preenchidos e no formato correto. Se o erro persistir com todos os campos preenchidos, tira uma captura de ecrã e reporta à administração.
-
-**O paciente diz que não recebeu o lembrete da consulta.**
-Os lembretes automáticos ainda estão em fase de ativação. Por enquanto, confirma as marcações manualmente por telefone quando necessário. Quando os lembretes estiverem totalmente ativos, a equipa será informada.
-
----
-
-## Comparação com o Fisiozero
-
-| No Fisiozero | Na plataforma OsteoJP |
-|---|---|
-| Lista de utentes | Pacientes |
-| Ficha do utente | Perfil do paciente |
-| Evento / marcação | Marcação (na Agenda) |
-| Tipo de evento (RPG, osteopatia…) | Serviço (selecionado na marcação) |
-| Nota clínica | Ficha clínica (dentro de um Episódio) |
-| Histórico de consultas | Episódios (no perfil do paciente) |
-| Configurações | Administração |
-
----
-
-## Contactos de suporte
-
-| Assunto | Contacto |
-|---|---|
-| Problema técnico na plataforma | Ivan (administração) |
-| Dúvidas sobre dados clínicos ou migração | João Pedro |
-| Dúvida sobre esta documentação | Max |
-
-> Durante a fase de transição, mantemos acesso de leitura ao Fisiozero em paralelo. Em caso de dúvida sobre dados históricos, consulta primeiro o Fisiozero antes de reportar um dado em falta.
+Reporte problemas técnicos da plataforma à administração (Ivan). Para dúvidas sobre dados clínicos ou a migração do Fisiozero, contacte o João Pedro (JP).
