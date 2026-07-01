@@ -639,13 +639,29 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
       expect(deleted.length).toBe(1);
     });
 
-    it("UPDATE of the tenant's OWN row affects 0 rows — no UPDATE policy (add/remove only)", async () => {
-      const updated = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
-        (await tx`update therapist_services set service_id = ${A.service2} where id = ${A.therapistService} returning id`) as {
-          id: string;
-        }[],
-      );
-      expect(updated.length).toBe(0);
+    it("UPDATE of the tenant's OWN row never modifies data — add/remove only (privilege denial or RLS filter)", async () => {
+      // therapist_services is add/remove only (migration 0023: SELECT/INSERT/DELETE,
+      // no UPDATE). The block lands at a different layer depending on environment:
+      //  • CI prod-equivalent apply (`supabase db reset`, no privileged grants):
+      //    `authenticated` holds only 0023's SELECT/INSERT/DELETE grant, so an
+      //    UPDATE raises 42501 permission denied at the privilege layer.
+      //  • Hosted Supabase (dev): the project's default privileges also grant UPDATE
+      //    to `authenticated`, so the statement clears the privilege layer but finds
+      //    no UPDATE policy → RLS filters it to 0 rows.
+      // The invariant that matters in BOTH is that no row is ever modified.
+      let modified: { id: string }[] = [];
+      try {
+        modified = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+          (await tx`update therapist_services set service_id = ${A.service2} where id = ${A.therapistService} returning id`) as {
+            id: string;
+          }[],
+        );
+      } catch (err) {
+        // Privilege-layer denial. Acceptable — nothing was modified.
+        const e = err as { code?: string; message?: string };
+        expect(`${e.code ?? ""} ${e.message ?? ""}`).toMatch(/42501|permission denied/i);
+      }
+      expect(modified.length).toBe(0);
     });
   });
 });
