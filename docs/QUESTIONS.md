@@ -465,6 +465,38 @@ documented `--limit 8` command locally; Claude reports the summary back.
   - Options: (a) add "Bodychart" to the §3.2 do-not-translate list as a deliberate product name, or (b) replace with a PT-PT term (e.g. "Diagrama corporal" or "Esquema corporal").
   - Owner: JP or Ivan to decide. Block on this before touching those two i18n keys.
 
+osteojp-availability-seed
+## 2026-07-01 - availability seed: CI does NOT consume it, and live dev run is credential-blocked
+- [ ] **CI's seeded-DB jobs do not run the TS dev seed (loop premise was wrong).**
+  The availability-seed loop assumed wiring into the `seed:dev` entrypoint would make
+  CI's seeded-DB jobs pick up the rows. It does not: `db-tests.yml` seeds via
+  `supabase db reset` -> `supabase/seed.sql` (roles + tenants ONLY; RLS suites build
+  their own fixtures), and `e2e.yml` seeds via `supabase db reset` +
+  `apps/web/e2e/seed/seed-e2e.mjs` (a self-contained fixture with no appointments or
+  availability). The TS `seed:dev` chain (dev-reference/patients/appointments/
+  availability/episodes) is dev-only, run manually against the dev Supabase project.
+  So this seed reaches DEV (which is what the availability-query live verification
+  needs), NOT CI's ephemeral DBs. Per the loop's HALT-LOUD trigger ("CI seeds
+  differently") I did NOT modify any CI seed source or workflow. **Recommended
+  default:** leave as-is (dev is the intended target). If e2e coverage of the
+  availability UI is later wanted, add appointments+availability to `seed-e2e.mjs` in
+  a scoped follow-up ticket (still no workflow-file change) — owner decision, out of
+  this loop's scope.
+- [ ] **Live dev seed run is blocked on missing dev credentials.** The only local DB
+  creds (`packages/db/.env`, gitignored) point at the prod-guarded ref
+  `jaxmkwoxjcgzkwxgbayx`; the seed's SAFETY guard correctly refuses it, and I did not
+  seek or use prod creds (seeding is destructive/owner-confirmable). The local
+  fallback (ephemeral Supabase) was unavailable because the Docker daemon would not
+  start (~2 min, no readiness). So the DoD's live evidence ("seed runs clean on dev",
+  "live availability call returns non-empty") could not be produced here. Mitigation:
+  the seed's shape is fully asserted by `tests/availability-dev-seed.test.ts` (DB-free,
+  CI-gated), and both seed guards were verified to fire. **Recommended action (owner):**
+  with a valid dev `DATABASE_URL` (project ufbkzbyghvxtosyrkgjq), run
+  `pnpm --filter @osteojp/db seed:dev` (or `seed:availability:dev` after the reference
+  seed), then confirm per-therapist counts and one `getTherapistAvailability` call over
+  a seeded week returns non-empty working/free. Same dev-credential gap class as the
+  0022 blocker.
+
 ## 2026-07-01 — Portal "Ficha" naming (intake forms)
 - [ ] Should the patient portal's "Ficha" terminology (Fichas, Ficha Geral, Ficha de Osteopatia, Preencher ficha — **23 occurrences** in `packages/i18n/src/portal/strings.pt.json`, verified by grep; not the 16 originally estimated) be renamed?
   - Context: portal "fichas" are pre-visit patient intake forms — a genuinely different concept from "registo clínico" (therapist's post-visit documentation), which the staff-side sweep standardized (#391). `docs/brand-voice.md` defines no term for the intake-form concept. Two defensible readings: (a) intentionally distinct feature name, correctly named, leave it; (b) same inconsistency the staff sweep missed. Patient-facing copy, so this is JP's register call as much as a vocabulary one.
@@ -476,3 +508,4 @@ documented `--limit 8` command locally; Claude reports the summary back.
   - Context: portal metadata uses "consultas" (compliant per brand-voice.md as written). Staff app uses "marcação" for the broader appointment concept (compliant per the newer convention, not per §3.1 as documented). One of the two must be declared canonical: either update brand-voice.md §3.1 to document the marcação-first convention, or relax the staff convention back to the documented consulta/marcação split.
   - Owner: JP or Ivan — this is a brand-voice doc decision, not a code decision.
   - Blocked work: none hard-blocked, but every future copy PR touches this ambiguity until resolved.
+ main
