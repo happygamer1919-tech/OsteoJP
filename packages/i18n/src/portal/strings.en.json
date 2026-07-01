@@ -1,4 +1,8 @@
 {
+  "meta": {
+    "title": "OsteoJP — Patient Portal",
+    "description": "Manage your appointments, forms, and documents."
+  },
   "common": {
     "app_name": "OsteoJP",
     "tagline": "Your body relaxes, your mind thanks you",
