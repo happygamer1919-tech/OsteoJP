@@ -1,4 +1,8 @@
 {
+  "meta": {
+    "title": "OsteoJP — Portal do Paciente",
+    "description": "Gerencie as suas consultas, fichas e documentos."
+  },
   "common": {
     "app_name": "OsteoJP",
     "tagline": "O corpo relaxa, a mente agradece",

@@ -768,3 +768,33 @@ Gates: typecheck 0, lint 0, vitest 64 passed (16 new interval-math cases: overla
 adjacency, full-day-free, fully-booked, empty template, split shifts, overhang
 clipping), apps/web build 0. `git diff` touches no file under
 packages/db/migrations/ or supabase/migrations/.
+
+## 2026-07-01 - availability_templates dev seed (migration-free)
+Added `packages/db/seed/availability-dev.ts` giving each seeded practitioner
+realistic weekly working windows, closing the "no availability_templates seed"
+gap flagged during the availability-query loop so `getTherapistAvailability`
+returns non-empty working/free on dev (unblocks the availability-query consumer's
+live verification).
+
+Shape/decisions:
+- 34 rows across USR_1..USR_5, deliberately varied so downstream verification hits
+  multiple cases: USR_1 standard Mon–Fri two-shift (LAV); USR_2 split across two
+  clinics (LAV two-shift + CB short single shift); USR_3 Mon–Fri off-the-hour
+  two-shift (CB); USR_4 part-time single shift (MTN); USR_5 (admin who also
+  practices) one shift per clinic. Location map mirrors appointments-dev.
+- Per-practitioner counts: USR_1=10, USR_2=8, USR_3=10, USR_4=3, USR_5=3.
+- Idempotent by construction: fixed `de000008-*` ids + `onConflictDoNothing`, with
+  the `availability_templates_dedupe_uq` natural-key unique constraint as a second
+  guard. Re-run inserts 0.
+- Wired into the `seed:dev` chain after `dev-reference` (needs users+locations) and
+  added the standalone `seed:availability:dev` script.
+- Refactored the row builder (`SCHEDULES`/`buildRows`) to a pure export and gated
+  the DB write behind a main-module check, so `tests/availability-dev-seed.test.ts`
+  can assert the seed's shape (counts, unique ids, weekday/time CHECK invariants,
+  tenant-scoping) in the normal `pnpm test` with no database. This makes the seed's
+  correctness a CI-enforced gate rather than a one-off manual paste.
+
+Gates: typecheck 0; packages/db vitest 51 passed / 223 gated-skipped (incl. 10 new
+seed-shape assertions); prod-ref + missing-URL guards verified to fire; `git diff`
+touches no file under packages/db/migrations/, supabase/migrations/, or
+.github/workflows/.
