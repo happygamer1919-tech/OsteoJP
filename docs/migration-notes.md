@@ -360,3 +360,11 @@ Volume is unknown until scraping runs.
 - Does Stylus.pt have an export function or does it require scraping?
 - Who at the clinic owns the Fisiozero server credentials for scraper access?
 - Should migrated clinical records land as `draft` or `locked`? (Open in `docs/QUESTIONS.md`)
+
+## 2026-07-01 — Sex field normalization
+
+Migration importer (`packages/db/src/migration/upsert.ts`) passes sex through with no normalization. When the Fisiozero CSV+ZIP source adapter is built, it must normalize sex to canonical values (male/female/other). Map: F/feminino/Feminino/f -> female, M/masculino/Masculino/m -> male. Fix at the migration boundary, not in `deriveFigSex`. Not a live bug — no migration has run yet.
+
+## 2026-07-01 — i18n file location correction
+
+i18n source files are at `packages/i18n/src/strings.pt.json` and `packages/i18n/src/strings.en.json`. The `packages/i18n/strings.*.json` path (without `/src/`) does not exist. All tooling and prompts must use the `/src/` path.
