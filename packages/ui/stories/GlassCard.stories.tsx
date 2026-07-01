@@ -7,7 +7,7 @@ import { GlassCard } from "../src/components/GlassCard";
  * header/body/footer slots and an interactive single-tab-stop variant.
  * Rendered on the v2 background so the glass reads correctly.
  */
-const meta = {
+const meta: Meta<typeof GlassCard> = {
   title: "V2/GlassCard",
   component: GlassCard,
   parameters: { layout: "fullscreen" },

@@ -7,7 +7,7 @@ import { StatusBadge } from "../src/components/StatusBadge";
  * GlassPanel (SPEC-v2-foundation §9 / SPEC-v2-dashboard §4): grouped-content
  * glass container with header, body, and an optional footer link with chevron.
  */
-const meta = {
+const meta: Meta<typeof GlassPanel> = {
   title: "V2/GlassPanel",
   component: GlassPanel,
   parameters: { layout: "fullscreen" },

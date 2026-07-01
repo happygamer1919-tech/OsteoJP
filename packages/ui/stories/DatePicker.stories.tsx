@@ -4,7 +4,7 @@ import { useState } from "react";
 import { DatePicker } from "../src/components/DatePicker";
 
 /** DatePicker (SPEC-staff-screens §2): month-calendar popover, Monday-first. */
-const meta = {
+const meta: Meta<typeof DatePicker> = {
   title: "Composites/DatePicker",
   component: DatePicker,
   parameters: { layout: "padded" },

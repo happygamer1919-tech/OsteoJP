@@ -4,7 +4,7 @@ import { Button } from "../src/components/Button";
 import { Card } from "../src/components/Card";
 
 /** Card (SPEC-foundation §4.4): calm surface container with header/footer slots. */
-const meta = {
+const meta: Meta<typeof Card> = {
   title: "Components/Card",
   component: Card,
   parameters: { layout: "padded" },

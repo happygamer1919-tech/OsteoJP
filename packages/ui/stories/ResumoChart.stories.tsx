@@ -8,7 +8,7 @@ import { ResumoChart } from "../src/components/ResumoChart";
  * chart with a blue-to-green gradient stroke and a light grid. Renders a series
  * or an honest empty placeholder.
  */
-const meta = {
+const meta: Meta<typeof ResumoChart> = {
   title: "V2/ResumoChart",
   component: ResumoChart,
   parameters: { layout: "fullscreen" },
