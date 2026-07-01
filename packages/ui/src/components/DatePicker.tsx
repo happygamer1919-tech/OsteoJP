@@ -173,6 +173,7 @@ export function DatePicker({
           aria-label={triggerLabel}
           className="absolute left-0 top-full z-40 mt-1 w-72 rounded-lg border border-border bg-surface p-3 shadow-lg"
         >
+          <h2 className="sr-only">{triggerLabel}</h2>
           <div className="mb-2 flex items-center justify-between">
             <button
               type="button"

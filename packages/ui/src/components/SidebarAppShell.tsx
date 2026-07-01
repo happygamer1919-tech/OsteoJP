@@ -5,6 +5,7 @@ import {
   type ElementType,
   type ReactNode,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -208,6 +209,7 @@ function MobileNav({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [shown, setShown] = useState(false);
+  const titleId = useId();
 
   useEffect(() => {
     const d = ref.current;
@@ -227,7 +229,7 @@ function MobileNav({
   return (
     <dialog
       ref={ref}
-      aria-label={title}
+      aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault();
         onClose();
@@ -242,6 +244,7 @@ function MobileNav({
         shown ? "translate-x-0" : "-translate-x-full",
       )}
     >
+      <h2 id={titleId} className="sr-only">{title}</h2>
       <div className="flex h-full flex-col gap-6 p-4">
         <div className="flex items-center justify-between">
           <Link href={brandHomeHref} aria-label={brandLinkLabel} onClick={onClose} className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2">
