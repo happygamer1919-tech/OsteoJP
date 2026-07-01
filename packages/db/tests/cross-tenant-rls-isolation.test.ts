@@ -61,6 +61,7 @@ type Ids = {
   location: string;
   location2: string;
   service: string;
+  service2: string;
   patient: string;
   appointment: string;
   formTemplate: string;
@@ -72,6 +73,7 @@ type Ids = {
   availability: string;
   timeOff: string;
   servicePrice: string;
+  therapistService: string;
   audit: string;
 };
 
@@ -82,6 +84,7 @@ const newIds = (): Ids => ({
   location: randomUUID(),
   location2: randomUUID(),
   service: randomUUID(),
+  service2: randomUUID(),
   patient: randomUUID(),
   appointment: randomUUID(),
   formTemplate: randomUUID(),
@@ -93,6 +96,7 @@ const newIds = (): Ids => ({
   availability: randomUUID(),
   timeOff: randomUUID(),
   servicePrice: randomUUID(),
+  therapistService: randomUUID(),
   audit: randomUUID(),
 });
 
@@ -117,7 +121,8 @@ async function seedTenant(p: Sql, x: Ids, label: string): Promise<void> {
           values (${x.location}, ${x.tenant}, 'Loc 1'),
                  (${x.location2}, ${x.tenant}, 'Loc 2')`;
   await p`insert into services (id, tenant_id, location_id, name)
-          values (${x.service}, ${x.tenant}, ${x.location}, 'Service')`;
+          values (${x.service}, ${x.tenant}, ${x.location}, 'Service'),
+                 (${x.service2}, ${x.tenant}, ${x.location}, 'Service 2')`;
   await p`insert into patients (id, tenant_id, full_name)
           values (${x.patient}, ${x.tenant}, 'Seed Patient')`;
   await p`insert into appointments (id, tenant_id, patient_id, practitioner_id, location_id, service_id, starts_at, ends_at)
@@ -142,6 +147,8 @@ async function seedTenant(p: Sql, x: Ids, label: string): Promise<void> {
           values (${x.timeOff}, ${x.tenant}, ${x.user}, '2026-02-01T00:00:00Z', '2026-02-02T00:00:00Z', 'vacation')`;
   await p`insert into service_location_prices (id, tenant_id, service_id, location_id, price_cents)
           values (${x.servicePrice}, ${x.tenant}, ${x.service}, ${x.location}, 5000)`;
+  await p`insert into therapist_services (id, tenant_id, therapist_user_id, service_id)
+          values (${x.therapistService}, ${x.tenant}, ${x.user}, ${x.service})`;
   await p`insert into audit_log (id, tenant_id, action, entity_type, entity_id)
           values (${x.audit}, ${x.tenant}, 'seed.action', 'patient', ${x.patient})`;
 }
@@ -577,6 +584,68 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
         (await tx`delete from audit_log where id = ${A.audit} returning id`) as { id: string }[],
       );
       expect(deleted.length).toBe(0);
+    });
+  });
+
+  /* ---- therapist_services — add/remove only (SELECT/INSERT/DELETE, no UPDATE policy) --- */
+  describe("therapist_services — tenant isolation + add/remove only (no UPDATE policy)", () => {
+    it("SELECT under tenant-A returns only A's rows; tenant-B row invisible", async () => {
+      const rows = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`select id::text as id, tenant_id::text as scope from therapist_services`) as {
+          id: string;
+          scope: string;
+        }[],
+      );
+      const ids = rows.map((r) => r.id);
+      expect(ids).toContain(A.therapistService);
+      // SANITY: proves RLS is on — B's seed row must not leak.
+      expect(ids).not.toContain(B.therapistService);
+      expect(rows.every((r) => r.scope === A.tenant)).toBe(true);
+    });
+
+    it("INSERT of an own-tenant mapping under tenant-A JWT succeeds (WITH CHECK allows)", async () => {
+      // service2 avoids the (tenant,therapist,service) unique already seeded.
+      const inserted = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        tx<{ id: string }[]>`insert into therapist_services (tenant_id, therapist_user_id, service_id)
+          values (${A.tenant}, ${A.user}, ${A.service2}) returning id`,
+      );
+      expect(inserted.length).toBe(1);
+    });
+
+    it("INSERT of a tenant-B mapping under tenant-A JWT is rejected by WITH CHECK", async () => {
+      await expect(
+        asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+          tx`insert into therapist_services (tenant_id, therapist_user_id, service_id)
+             values (${B.tenant}, ${B.user}, ${B.service})`,
+        ),
+      ).rejects.toThrow(/row-level security/i);
+    });
+
+    it("DELETE of a tenant-B row under tenant-A JWT affects 0 rows (USING filters silently)", async () => {
+      const deleted = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`delete from therapist_services where id = ${B.therapistService} returning id`) as {
+          id: string;
+        }[],
+      );
+      expect(deleted.length).toBe(0);
+    });
+
+    it("DELETE of the tenant's OWN row under tenant-A JWT succeeds (mappings are removable)", async () => {
+      const deleted = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`delete from therapist_services where id = ${A.therapistService} returning id`) as {
+          id: string;
+        }[],
+      );
+      expect(deleted.length).toBe(1);
+    });
+
+    it("UPDATE of the tenant's OWN row affects 0 rows — no UPDATE policy (add/remove only)", async () => {
+      const updated = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`update therapist_services set service_id = ${A.service2} where id = ${A.therapistService} returning id`) as {
+          id: string;
+        }[],
+      );
+      expect(updated.length).toBe(0);
     });
   });
 });
