@@ -15,6 +15,8 @@ import { s } from "@/lib/i18n";
 import { listReviewQueue, type ReviewQueueItem } from "@/lib/clinical/review";
 import { claimAction } from "./actions";
 
+export const metadata = { title: "Revisão Consulta" };
+
 
 // ai_review_state → chip tone. The two clinical state axes stay separate: this
 // maps ONLY the review axis (presentation), never the record_status lifecycle.
