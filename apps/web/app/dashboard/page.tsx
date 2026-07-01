@@ -357,7 +357,7 @@ export default async function DashboardPage({
         </GlassPanel>
       </div>
 
-      {/* Notas rápidas — persisted to tenants.settings.notes. */}
+      {/* Notas rápidas — saved via saveQuickNotesAction to public.quick_notes (content column), keyed on tenant_id + staff_user_id (migration 0018). */}
       <GlassCard title={s["dashboard.notes"]}>
         <NotasRapidas initialNotes={initialNotes} />
       </GlassCard>
