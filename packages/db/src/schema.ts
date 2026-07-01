@@ -47,6 +47,16 @@ export const appointmentStatus = pgEnum("appointment_status", [
   "no_show",
 ]);
 
+// Wave 01 (migration 0024) — confirmation axis, ORTHOGONAL to appointment_status.
+// "Did the patient confirm the reminder?" is a separate question from "where is
+// the appointment in its lifecycle?". Never collapse the two (same discipline as
+// record_status vs ai_review_state). Deliberately does NOT reuse appointment_status.
+export const appointmentConfirmationState = pgEnum("appointment_confirmation_state", [
+  "pending",
+  "confirmed",
+  "declined",
+]);
+
 export const episodeStatus = pgEnum("episode_status", ["open", "closed"]);
 
 export const recordStatus = pgEnum("record_status", [
@@ -431,6 +441,14 @@ export const appointments = pgTable(
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
     status: appointmentStatus("status").notNull().default("scheduled"),
+    // Confirmation axis (0024) — orthogonal to `status` above, never merged into it.
+    confirmationState: appointmentConfirmationState("confirmation_state")
+      .notNull()
+      .default("pending"),
+    confirmationReceivedAt: timestamp("confirmation_received_at", { withTimezone: true }),
+    // Free text (sms/whatsapp/phone/email/manual…) not an enum, so adding a new
+    // reminder channel never forces a migration.
+    confirmationChannel: text("confirmation_channel"),
     // Recurring series: RRULE string + pointer to the series parent (Stream B).
     recurrenceRule: text("recurrence_rule"), // null = one-off
     recurrenceParentId: uuid("recurrence_parent_id"),
@@ -710,6 +728,56 @@ export const auditLog = pgTable(
     index("audit_log_tenant_idx").on(t.tenantId),
     index("audit_log_entity_idx").on(t.entityType, t.entityId),
     index("audit_log_created_idx").on(t.createdAt),
+  ],
+);
+
+// Wave 01 (migration 0025) — KPI/analytics event feed (SPEC-events.md). Append-only,
+// PII-lean, and DISTINCT from audit_log (which is PII-free change tracking recording
+// that a field changed, not old→new values). This layer captures the dimensions
+// needed to reconstruct KPIs — revenue/services per therapist, finance totals,
+// filterable by date/location/therapist/service — without back-filling, and is also
+// the per-appointment status-transition history via the appointment_status_changed
+// event (status is overwritten in place on appointments; this log preserves the
+// from→to trail). Monetary amounts are stored GROSS; VAT treatment is applied at
+// report time, never at capture (VAT 0 vs 23 is an open accountant question —
+// docs/design/QUESTIONS.md). Append-only is enforced by RLS: only SELECT + INSERT
+// policies exist (mirrors audit_log), so UPDATE/DELETE are denied.
+export const analyticsEvents = pgTable(
+  "analytics_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    // Free text (appointment_status_changed, appointment_completed, invoice_issued,
+    // service_delivered…), not an enum, so a new event type never forces a migration
+    // (SPEC-events: "extend as needed" + "no migration to add a missing dimension").
+    eventType: text("event_type").notNull(),
+    // Source reference — the entity this event is about (SPEC "source reference").
+    entityType: text("entity_type"), // e.g. appointment, invoice
+    entityId: uuid("entity_id"),
+    // KPI dimensions promoted to real columns so report queries filter/group without
+    // unpacking payload (SPEC: filterable by date/location/therapist/service).
+    therapistUserId: uuid("therapist_user_id").references(() => users.id),
+    patientId: uuid("patient_id").references(() => patients.id),
+    serviceId: uuid("service_id").references(() => services.id),
+    locationId: uuid("location_id").references(() => locations.id),
+    // Who triggered the event (server-derived identity, never from payload).
+    actorUserId: uuid("actor_user_id").references(() => users.id),
+    // GROSS monetary amount in integer cents (never float); VAT applied at report
+    // time. Null for non-financial events. currency travels on the column.
+    amountCentsGross: integer("amount_cents_gross"),
+    currency: char("currency", { length: 3 }),
+    // Event-specific extras — appointment_status_changed carries from_status/to_status.
+    payload: jsonb("payload").notNull().default({}),
+    // When the event actually happened (may precede the row insert).
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("analytics_events_tenant_occurred_idx").on(t.tenantId, t.occurredAt),
+    index("analytics_events_tenant_type_idx").on(t.tenantId, t.eventType),
+    index("analytics_events_tenant_therapist_idx").on(t.tenantId, t.therapistUserId),
   ],
 );
 
