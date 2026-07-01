@@ -459,6 +459,13 @@ export const appointments = pgTable(
     // appointments that share the value, and creation atomicity is app-layer.
     // Orthogonal to recurrence_parent_id (recurring series over time).
     bookingGroupId: uuid("booking_group_id"),
+    // Batch scheduling (0028): a shared id linking appointments created by ONE
+    // batch-engine run (a package across repeating slots, e.g. 7 Thursdays). NULL
+    // = not batch-created — every pre-0028 row. Bare uuid (no FK), like
+    // booking_group_id: a batch's created rows share the value even when some
+    // slots in the run failed (busy), so it does NOT reuse recurrence_parent_id
+    // (which needs a bookable parent). recurrence_rule still documents the rule.
+    batchId: uuid("batch_id"),
     notes: text("notes"),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -478,6 +485,10 @@ export const appointments = pgTable(
     index("appointments_booking_group_idx")
       .on(t.tenantId, t.bookingGroupId)
       .where(sql`${t.bookingGroupId} is not null`),
+    // Fetch all appointments created by one batch run; partial (NULL-heavy).
+    index("appointments_batch_idx")
+      .on(t.tenantId, t.batchId)
+      .where(sql`${t.batchId} is not null`),
   ],
 );
 
