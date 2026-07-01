@@ -6,8 +6,6 @@ import {
   GlassPanel,
   QuickActionTile,
   ResumoChart,
-  StatusBadge,
-  type AppointmentTone,
   type V2Accent,
 } from "@osteojp/ui";
 import { gte, sql } from "drizzle-orm";
@@ -18,7 +16,6 @@ import {
   ChevronRight,
   ClipboardList,
   FileText,
-  Plus,
   Settings,
   TrendingUp,
   UserPlus,
@@ -54,21 +51,6 @@ import { NotasRapidas } from "./notas-rapidas";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-const STATUS_TONE: Record<AgendaAppointment["status"], AppointmentTone> = {
-  scheduled: "pending",
-  confirmed: "confirmed",
-  completed: "confirmed",
-  cancelled: "cancelled",
-  no_show: "cancelled",
-};
-const STATUS_KEY = {
-  scheduled: "appointment.status.scheduled",
-  confirmed: "appointment.status.confirmed",
-  completed: "appointment.status.completed",
-  cancelled: "appointment.status.cancelled",
-  no_show: "appointment.status.no_show",
-} as const;
-
 function greetingKey(
   hour: number,
 ): "dashboard.greeting.morning" | "dashboard.greeting.afternoon" | "dashboard.greeting.evening" {
@@ -101,8 +83,6 @@ const iconNav =
   "inline-flex size-10 items-center justify-center rounded-v2 border border-v2-border bg-v2-surface text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 const ghostNav =
   "inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
-const primaryBtn =
-  "inline-flex h-10 items-center justify-center gap-2 rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition-colors duration-fast ease-standard hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
 export default async function DashboardPage({
   searchParams,
@@ -147,7 +127,7 @@ export default async function DashboardPage({
           .from(patients)
           .where(activePatientsOnly),
       ),
-      // 2. Upcoming appointments (KPI 2 + Próximas panel)
+      // 2. Upcoming appointments (KPI 2)
       canAppointments
         ? listAppointments(ctx, {
             startUtc: lisbonMidnightUtc(today),
@@ -189,7 +169,7 @@ export default async function DashboardPage({
       ? `+${newPatientsThisWeek} ${s["dashboard.thisWeekLower"]}`
       : undefined;
 
-  // KPI 2 + Próximas marcações panel — rolling 7-day window from today.
+  // KPI 2 — rolling 7-day window from today.
   const upcomingAppointments =
     upcomingResult.status === "fulfilled" ? upcomingResult.value : [];
   const active = upcomingAppointments
@@ -306,46 +286,7 @@ export default async function DashboardPage({
         </section>
       )}
 
-      {/* Two panels: Próximas marcações + Resumo semanal */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {canAppointments && (
-          <GlassPanel title={s["dashboard.panelUpcoming"]} footerHref="/agenda" footerLabel={s["dashboard.seeFullAgenda"]}>
-            {active.length === 0 ? (
-              <div className="flex flex-col items-start gap-4 py-6">
-                <p className="text-sm text-v2-text-secondary">{s["dashboard.noAppointmentsToday"]}</p>
-                <Link href={`/agenda?view=day&date=${today}`} className={primaryBtn}>
-                  <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
-                  {s["dashboard.tile.newAppointment"]}
-                </Link>
-              </div>
-            ) : (
-              <ul className="divide-y divide-v2-border">
-                {active.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between gap-4 py-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="text-sm font-medium tabular-nums text-v2-text-secondary">
-                        {lisbonParts(new Date(a.startsAt)).date === today
-                          ? formatTimeOfDay(new Date(a.startsAt))
-                          : new Date(a.startsAt).toLocaleDateString("pt-PT", {
-                              weekday: "short",
-                              day: "numeric",
-                              month: "short",
-                              timeZone: "Europe/Lisbon",
-                            })}
-                      </span>
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate text-sm text-v2-text-primary">{a.patientName}</span>
-                        <span className="truncate text-xs text-v2-text-secondary">{a.serviceName ?? "—"}</span>
-                      </span>
-                    </div>
-                    <StatusBadge tone={STATUS_TONE[a.status]}>{s[STATUS_KEY[a.status]]}</StatusBadge>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </GlassPanel>
-        )}
-
         {/* Resumo semanal — Mon–Sun appointment counts for the current week. */}
         <GlassPanel title={s["dashboard.weeklySummary"]}>
           <ResumoChart
@@ -357,7 +298,7 @@ export default async function DashboardPage({
         </GlassPanel>
       </div>
 
-      {/* Notas rápidas — persisted to tenants.settings.notes. */}
+      {/* Notas rápidas — saved via saveQuickNotesAction to public.quick_notes (content column), keyed on tenant_id + staff_user_id (migration 0018). */}
       <GlassCard title={s["dashboard.notes"]}>
         <NotasRapidas initialNotes={initialNotes} />
       </GlassCard>
