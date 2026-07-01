@@ -667,6 +667,60 @@ export const attachments = pgTable(
   ],
 );
 
+/* ================================================================== */
+/* Per-visit notes (Wave 01, migration 0026)                          */
+/*                                                                    */
+/* SPEC-appointments §2 + SPEC-patients (Fichas relocation). An        */
+/* append-only note a therapist attaches to a single appointment       */
+/* (visit), tied to the patient and optionally to the clinical episode */
+/* (ficha) the visit belongs to — so the per-visit note and the ficha  */
+/* are ONE continuity, not two disconnected things.                    */
+/*                                                                    */
+/* Soft completion gate (DECISIONS.md 2026-07-01, JP ruling): an       */
+/* appointment CAN be marked completed with NO note. There is          */
+/* deliberately NO NOT NULL / CHECK / trigger here that would          */
+/* hard-block completion; the absence of a note is recorded as         */
+/* note_present=false on the appointment_status_changed event          */
+/* (analytics_events, 0025, in payload), never blocked at the DB.      */
+/*                                                                    */
+/* Append-only via the POLICY pattern (SELECT + INSERT only; UPDATE/   */
+/* DELETE denied by absent policy as 0 rows, table keeps the full DML  */
+/* grant), mirroring analytics_events / audit_log.                     */
+/* ================================================================== */
+export const appointmentNotes = pgTable(
+  "appointment_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    // The visit this note documents (SPEC §2: "tied to appointment").
+    appointmentId: uuid("appointment_id")
+      .notNull()
+      .references(() => appointments.id),
+    // Denormalized patient link (SPEC §2: "tied to ... patient") so the ficha
+    // tab lists a patient's per-visit notes without walking through appointments.
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    // Optional link into the clinical episode (ficha) this visit belongs to, so
+    // the note lives in the patient's ficha continuity. Nullable: an ad-hoc note
+    // need not belong to a formal episode.
+    episodeId: uuid("episode_id").references(() => clinicalEpisodes.id),
+    authorUserId: uuid("author_user_id")
+      .notNull()
+      .references(() => users.id),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("appointment_notes_tenant_idx").on(t.tenantId),
+    index("appointment_notes_appointment_idx").on(t.appointmentId),
+    index("appointment_notes_patient_idx").on(t.tenantId, t.patientId),
+    index("appointment_notes_episode_idx").on(t.episodeId),
+  ],
+);
+
 // AI ingestion request log (Stream D). One row per request from the AI partner,
 // keyed by the partner's idempotency_key. The unique (tenant_id, idempotency_key)
 // constraint is what lets the future endpoint do 24h dedupe (same key + same
