@@ -80,7 +80,7 @@ export function AgendaView({
   const step = effectiveView === "week" ? 7 : 1;
 
   return (
-    <ToastProvider>
+    <ToastProvider regionLabel={s["toast.regionLabel"]}>
     <main>
       {/* Toolbar: full-bleed sticky glass bar. Under the v2 SidebarAppShell the
           desktop content area has no top bar (sticks to top-0); on mobile it
@@ -116,6 +116,8 @@ export function AgendaView({
               value={anchor}
               onChange={(d) => navigate({ date: d })}
               triggerLabel={s["agenda.pickDate"]}
+              prevMonthLabel={s["calendar.previousMonth"]}
+              nextMonthLabel={s["calendar.nextMonth"]}
             />
           </div>
           <button

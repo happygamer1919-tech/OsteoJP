@@ -16,6 +16,7 @@ import type { ReactNode } from "react";
 
 import { HeritageFrame, SidebarAppShell, type AppShellNavItem } from "@osteojp/ui";
 
+import { s } from "@/lib/i18n";
 import type { NavItem } from "@/lib/nav/nav-items";
 
 /**
@@ -79,6 +80,11 @@ export function StaffShellClient({
         />
       }
       linkComponent={Link}
+      navLabel={s["nav.ariaLabel"]}
+      openMenuLabel={s["nav.openMenu"]}
+      closeMenuLabel={s["nav.closeMenu"]}
+      menuTitle={s["nav.menu"]}
+      brandLinkLabel={s["nav.goToDashboard"]}
     >
       {children}
     </SidebarAppShell>
