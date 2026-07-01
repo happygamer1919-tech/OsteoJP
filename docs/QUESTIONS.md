@@ -454,3 +454,13 @@ documented `--limit 8` command locally; Claude reports the summary back.
   and deleting another loop's in-flight work would be destructive). **Recommended
   action (owner/next session):** finish and commit or stash 0023 on its own
   branch so main returns to a green terminal; confirm 0023 is not half-applied.
+
+## 2026-07-01 - Dead i18n keys flagged for Ivan (do not delete without confirming scope)
+- [ ] `dashboard.upcomingToday` (packages/i18n/src/strings.pt.json, strings.en.json): zero references anywhere in the repo — confirmed dead. Safe to delete once Ivan confirms no non-web consumers (e.g. email templates, API responses, any other app in the monorepo) reference this key.
+- [ ] `intake.state.pendingReview` (packages/i18n/src/strings.pt.json, strings.en.json): zero references in apps/ — confirmed dead. Every live surface rendering the `pending_review` `ai_review_state` value uses `review.statePending` ("Por rever") instead (apps/web/app/clinical/review/page.tsx:54).
+  - Owner: Ivan to confirm scope, then delete both keys.
+
+## 2026-07-01 - "Bodychart" term: brand decision needed before touching clinical.bodychart / clinicalRecord.bodychart
+- [ ] Is "Bodychart" a deliberate brand/product name (do-not-translate) or an unresolved anglicism? `clinical.bodychart` and `clinicalRecord.bodychart` carry the untranslated English value "Bodychart" in strings.pt.json (and strings.en.json). It is not on the do-not-translate list in docs/brand-voice.md §3.2 (which only names therapy/service proper nouns: Osteopatia, Fisioterapia, Massagens, Pilates Terapêutico, Neuromodulação Não Invasiva/NESA, Formação). It appears as a lowercase technical term ("body chart") in docs/architecture.md and across several design docs (ui-inventory.md, SPEC-foundation.md, SPEC-staff-screens.md, PLAN.md, wireframes) but is never explicitly named as a brand term the way §3.2 names the therapy types.
+  - Options: (a) add "Bodychart" to the §3.2 do-not-translate list as a deliberate product name, or (b) replace with a PT-PT term (e.g. "Diagrama corporal" or "Esquema corporal").
+  - Owner: JP or Ivan to decide. Block on this before touching those two i18n keys.
