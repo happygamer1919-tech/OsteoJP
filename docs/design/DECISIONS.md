@@ -46,3 +46,17 @@
 - SPEC-alignment (where SPEC overrode the loop floor): SPEC requires KPIs filterable by date/location/therapist/service "without a migration to add a missing dimension", so the KPI dimensions are promoted to real, indexed columns (therapist_user_id, patient_id, service_id, location_id, actor_user_id, amount_cents_gross, currency) rather than living only in payload. payload jsonb retained for event-specific extras (from_status/to_status). event_type is text not enum (SPEC "extend as needed"). Indexes: (tenant_id, occurred_at), (tenant_id, event_type), (tenant_id, therapist_user_id).
 - Money: amount_cents_gross is GROSS integer cents (never float), with a CHECK (>= 0 or null). VAT treatment applied at report time, never at capture — VAT 0 vs 23 remains an open accountant question (QUESTIONS.md), so no VAT is baked into events. No monetary field required VAT at capture, so no halt.
 - RLS: append-only, tenant-isolated, fail-closed — mirrors audit_log. Only SELECT + INSERT policies exist; UPDATE/DELETE are denied by RLS as 0 rows. Per 0003_grants.sql's audit_log note, append-only lives in the POLICY SET, so the table keeps the full DML grant (SELECT/INSERT/UPDATE/DELETE to authenticated) and the missing policies enforce it — this deterministically yields 0-rows (not a 42501 throw) in both CI and dev, avoiding the environment split seen when 0023 carved UPDATE out of the grant.
+
+## 2026-07-01 - Gated completion ruling (JP via Ivan)
+- Gated completion is a SOFT WARNING, not a hard block. A therapist CAN close an appointment with no per-visit note. Clinical policy is unchanged: notes remain mandatory on the clinic's side. The system records non-compliance instead of blocking it: when an appointment transitions to completed, the appointment_status_changed event (analytics_events, 0025) captures note_present (boolean).
+- Owner requirement: she must see, per appointment and per therapist, whether a note was present at completion, to catch anyone closing without notes. This is soft warning PLUS audit trail, never a silent soft warning. A visible no-note indicator on completed appointments is added to the UI lane.
+- Resolves SPEC-appointments.md §2 open question ("hard block or soft warning") and its "(or warns, per JP ruling)" clause. No SPEC conflict: SPEC anticipated the ruling.
+
+## 2026-07-01 - Append-only table conventions (choose deliberately)
+- App-written append-only tables (e.g. analytics_events, 0025) use the POLICY pattern: SELECT+INSERT policies present, UPDATE/DELETE denied by absence-of-policy as 0 rows, table keeps the full DML grant. Mirrors audit_log. Deterministic 0-rows in both CI and dev.
+- Admin-only add/remove tables (e.g. therapist_services, 0023) use the NO-GRANT pattern: the verb is revoked at the privilege layer, which THROWS SQLSTATE 42501. Tests against no-grant tables must assert the throw, not a 0-row result.
+- Pick per table by intent; do not mix the two enforcement layers on one verb (the 0023-vs-0025 environment-split lesson).
+
+## 2026-07-01 - Chained self-merge is a dev-phase pattern only
+- Chained self-merge exists because branch protection is currently relaxed. Once protection is re-hardened (the pre-real-data gate), chained runners open PRs and HALT for human merge.
+- No terminal ever bypasses protection to keep a chain alive. A refused merge is a HALT, not an escalation.
