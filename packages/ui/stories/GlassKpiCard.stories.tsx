@@ -8,7 +8,7 @@ import { GlassKpiCard } from "../src/components/GlassKpiCard";
  * with an accent-tinted icon circle, value, caption, built-in loading skeleton,
  * and a compact inline error tone.
  */
-const meta = {
+const meta: Meta<typeof GlassKpiCard> = {
   title: "V2/GlassKpiCard",
   component: GlassKpiCard,
   parameters: { layout: "fullscreen" },

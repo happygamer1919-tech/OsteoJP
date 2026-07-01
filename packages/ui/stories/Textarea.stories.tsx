@@ -7,7 +7,7 @@ import { Textarea } from "../src/components/Textarea";
  * skin. Min-height 96px, vertical resize only. Pair with Field for label +
  * aria wiring; use standalone for inline note areas.
  */
-const meta = {
+const meta: Meta<typeof Textarea> = {
   title: "Components/Textarea",
   component: Textarea,
   parameters: { layout: "padded" },

@@ -43,7 +43,7 @@ import { GlassStatusChip } from "../src/components/GlassStatusChip";
  * For appointment-row status (Confirmada / Pendente / Cancelada) use
  * `StatusBadge` — it has three tones, no dot, and a filled (not glass) surface.
  */
-const meta = {
+const meta: Meta<typeof GlassStatusChip> = {
   title: "V2/GlassStatusChip",
   component: GlassStatusChip,
   parameters: { layout: "fullscreen" },

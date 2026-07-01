@@ -4,7 +4,7 @@ import { Field } from "../src/components/Field";
 import { Select } from "../src/components/Select";
 
 /** Select (SPEC-foundation §4.3): styled native select, Input skin + chevron. */
-const meta = {
+const meta: Meta<typeof Select> = {
   title: "Components/Select",
   component: Select,
   parameters: { layout: "padded" },

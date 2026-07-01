@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Combobox, type ComboboxOption } from "../src/components/Combobox";
 
 /** Combobox (SPEC-staff-screens §2): generic searchable single-select. */
-const meta = {
+const meta: Meta<typeof Combobox> = {
   title: "Composites/Combobox",
   component: Combobox,
   parameters: { layout: "padded" },

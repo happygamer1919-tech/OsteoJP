@@ -33,7 +33,7 @@ import { StatusBadge } from "../src/components/StatusBadge";
  * For record / review status (draft → locked → signed, AI review queue)
  * use `GlassStatusChip` instead — it has five tones and an optional dot.
  */
-const meta = {
+const meta: Meta<typeof StatusBadge> = {
   title: "V2/StatusBadge",
   component: StatusBadge,
   parameters: { layout: "fullscreen" },

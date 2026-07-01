@@ -8,7 +8,7 @@ import { Input } from "../src/components/Input";
  * skin. Pair with Field for label + aria wiring; use standalone for search
  * bars, inline controls, or any case where no visible label is needed.
  */
-const meta = {
+const meta: Meta<typeof Input> = {
   title: "Components/Input",
   component: Input,
   parameters: { layout: "padded" },

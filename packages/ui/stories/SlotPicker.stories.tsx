@@ -4,7 +4,7 @@ import { useState } from "react";
 import { SlotPicker, type SlotOption } from "../src/components/SlotPicker";
 
 /** SlotPicker (SPEC-staff-screens §2): wrapping grid of time chips. */
-const meta = {
+const meta: Meta<typeof SlotPicker> = {
   title: "Composites/SlotPicker",
   component: SlotPicker,
   parameters: { layout: "padded" },

@@ -11,7 +11,7 @@ import { Textarea } from "../src/components/Textarea";
  * context. Stories pass the control through `children` so the default render
  * (`<Field {...args} />`) drives every case.
  */
-const meta = {
+const meta: Meta<typeof Field> = {
   title: "Components/Field",
   component: Field,
   parameters: { layout: "padded" },
