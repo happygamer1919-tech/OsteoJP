@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import { htmlLang } from '@osteojp/i18n'
+import { s } from '@/lib/i18n'
 import './globals.css'
 
 // Inter is the OsteoJP default sans (docs/brand-tokens.md §2). latin-ext is
@@ -14,8 +15,8 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'OsteoJP — Portal do Paciente',
-  description: 'Gerencie as suas consultas, fichas e documentos.',
+  title: s.meta.title,
+  description: s.meta.description,
 }
 
 export default function RootLayout({
