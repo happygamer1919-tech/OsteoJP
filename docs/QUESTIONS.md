@@ -464,3 +464,34 @@ documented `--limit 8` command locally; Claude reports the summary back.
 - [ ] Is "Bodychart" a deliberate brand/product name (do-not-translate) or an unresolved anglicism? `clinical.bodychart` and `clinicalRecord.bodychart` carry the untranslated English value "Bodychart" in strings.pt.json (and strings.en.json). It is not on the do-not-translate list in docs/brand-voice.md §3.2 (which only names therapy/service proper nouns: Osteopatia, Fisioterapia, Massagens, Pilates Terapêutico, Neuromodulação Não Invasiva/NESA, Formação). It appears as a lowercase technical term ("body chart") in docs/architecture.md and across several design docs (ui-inventory.md, SPEC-foundation.md, SPEC-staff-screens.md, PLAN.md, wireframes) but is never explicitly named as a brand term the way §3.2 names the therapy types.
   - Options: (a) add "Bodychart" to the §3.2 do-not-translate list as a deliberate product name, or (b) replace with a PT-PT term (e.g. "Diagrama corporal" or "Esquema corporal").
   - Owner: JP or Ivan to decide. Block on this before touching those two i18n keys.
+
+## 2026-07-01 - availability seed: CI does NOT consume it, and live dev run is credential-blocked
+- [ ] **CI's seeded-DB jobs do not run the TS dev seed (loop premise was wrong).**
+  The availability-seed loop assumed wiring into the `seed:dev` entrypoint would make
+  CI's seeded-DB jobs pick up the rows. It does not: `db-tests.yml` seeds via
+  `supabase db reset` -> `supabase/seed.sql` (roles + tenants ONLY; RLS suites build
+  their own fixtures), and `e2e.yml` seeds via `supabase db reset` +
+  `apps/web/e2e/seed/seed-e2e.mjs` (a self-contained fixture with no appointments or
+  availability). The TS `seed:dev` chain (dev-reference/patients/appointments/
+  availability/episodes) is dev-only, run manually against the dev Supabase project.
+  So this seed reaches DEV (which is what the availability-query live verification
+  needs), NOT CI's ephemeral DBs. Per the loop's HALT-LOUD trigger ("CI seeds
+  differently") I did NOT modify any CI seed source or workflow. **Recommended
+  default:** leave as-is (dev is the intended target). If e2e coverage of the
+  availability UI is later wanted, add appointments+availability to `seed-e2e.mjs` in
+  a scoped follow-up ticket (still no workflow-file change) — owner decision, out of
+  this loop's scope.
+- [ ] **Live dev seed run is blocked on missing dev credentials.** The only local DB
+  creds (`packages/db/.env`, gitignored) point at the prod-guarded ref
+  `jaxmkwoxjcgzkwxgbayx`; the seed's SAFETY guard correctly refuses it, and I did not
+  seek or use prod creds (seeding is destructive/owner-confirmable). The local
+  fallback (ephemeral Supabase) was unavailable because the Docker daemon would not
+  start (~2 min, no readiness). So the DoD's live evidence ("seed runs clean on dev",
+  "live availability call returns non-empty") could not be produced here. Mitigation:
+  the seed's shape is fully asserted by `tests/availability-dev-seed.test.ts` (DB-free,
+  CI-gated), and both seed guards were verified to fire. **Recommended action (owner):**
+  with a valid dev `DATABASE_URL` (project ufbkzbyghvxtosyrkgjq), run
+  `pnpm --filter @osteojp/db seed:dev` (or `seed:availability:dev` after the reference
+  seed), then confirm per-therapist counts and one `getTherapistAvailability` call over
+  a seeded week returns non-empty working/free. Same dev-credential gap class as the
+  0022 blocker.
