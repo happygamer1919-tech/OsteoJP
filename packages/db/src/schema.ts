@@ -309,6 +309,11 @@ export const patients = pgTable(
     address: text("address"),
     postalCode: varchar("postal_code", { length: 16 }),
     city: text("city"),
+    // Wave 01 — administrative region/distrito, paired with city. Street
+    // `address` is retained (no fiscal/declaration dependency cleared yet).
+    region: text("region"),
+    // Wave 01 — clinically relevant (sedentary work, job-driven strain).
+    profession: text("profession"),
     notes: text("notes"),
     // Patient identity layer — links a patient to their Supabase auth principal
     // (the patient portal login at api.osteojp.pt). A patient is a DISTINCT
