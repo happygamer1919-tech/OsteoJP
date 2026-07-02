@@ -136,7 +136,7 @@
       },
       "nesa_patient_response": {
         "type": ["string", "null"],
-        "x-label": { "pt": "Resposta / Tolerância do Utente", "en": "Patient Response / Tolerance" },
+        "x-label": { "pt": "Resposta / Tolerância do Paciente", "en": "Patient Response / Tolerance" },
         "x-widget": "textarea",
         "x-section": "nesa_specific",
         "ai_extractable": false
@@ -167,7 +167,7 @@
       },
       "private_notes": {
         "type": ["string", "null"],
-        "x-label": { "pt": "Notas Pessoais sobre o Utente neste Episódio / Consulta", "en": "Personal Notes (this episode)" },
+        "x-label": { "pt": "Notas Pessoais sobre o Paciente neste Episódio / Consulta", "en": "Personal Notes (this episode)" },
         "x-widget": "textarea",
         "x-private": true,
         "x-note": "Este campo não é partilhado com nenhum outro utilizador da sua conta.",
