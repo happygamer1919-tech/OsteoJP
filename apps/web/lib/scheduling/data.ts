@@ -1,7 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
-import { and, asc, eq, gte, lt, ne, type SQL } from "drizzle-orm";
-import type { RequestContext } from "@osteojp/auth";
+import { and, asc, desc, eq, gte, lt, ne, type SQL } from "drizzle-orm";
+import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   appointments,
   locations,
@@ -111,6 +111,25 @@ export async function getAppointment(
       .where(eq(appointments.id, id))
       .limit(1);
     return rows[0] ? mapAppointment(rows[0]) : null;
+  });
+}
+
+/**
+ * A patient's full appointment history (past + upcoming), most recent first —
+ * the "Consultas" tab on the patient profile. Row 3 (schedule-again): the
+ * caller decides which of these are eligible for re-booking (past or
+ * completed); this query just returns the history, unfiltered by status.
+ */
+export async function listPatientAppointments(
+  ctx: RequestContext,
+  patientId: string,
+): Promise<AgendaAppointment[]> {
+  assertCan(ctx.role, "appointments:read");
+  return runScoped(ctx, async (tx) => {
+    const rows = await baseAppointmentQuery(tx)
+      .where(eq(appointments.patientId, patientId))
+      .orderBy(desc(appointments.startsAt));
+    return rows.map(mapAppointment);
   });
 }
 
