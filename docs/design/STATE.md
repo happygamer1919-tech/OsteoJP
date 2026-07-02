@@ -5,6 +5,83 @@ record of schema, write paths, and existing surfaces. Append-only, dated section
 No recommendations here. Design decisions go in DECISIONS.md; open questions go in
 QUESTIONS.md.
 
+## 2026-07-02 - Wave 01 close audit (recon-verified through 0028 + clone)
+
+Read-only audit against `main` at `origin/main` (`45f68e4`). No schema changed, no
+migration run, no code changed. This section is the current living ground truth; the
+`2026-06-30` section below is the prior snapshot (migrations `0000`–`0021`) and is
+retained as history, not superseded in place. Everything here is verified against the
+merged tree (`packages/db/src/schema.ts`, `packages/db/migrations/`,
+`apps/web/lib/scheduling/`), not copied from plans.
+
+### Migration spine 0022–0028 (all merged)
+
+| # | Object | What actually landed | PR |
+|---|---|---|---|
+| 0022 | `patients.profession`, `patients.region` | Two nullable `text` columns added (`ADD COLUMN IF NOT EXISTS`). `city` NOT re-added (already existed); street `address` NOT dropped (deferred); no `patient_notes` relation created. No RLS/grant change — table-level grants cover the new columns; patient-role column UPDATE grant deliberately excludes both (staff data). | #382 |
+| 0023 | `therapist_services` table | Join table `(id, tenant_id, therapist_user_id → users.id, service_id → services.id, created_at)`. Unique `(tenant_id, therapist_user_id, service_id)`; indexes on `(tenant_id)` and `(tenant_id, service_id)`. NO-GRANT append pattern (admin add/remove; revoked verbs throw 42501). | #398 |
+| 0024 | `appointments.confirmation_*` axis | Enum `appointment_confirmation_state (pending, confirmed, declined)`. Columns: `confirmation_state` NOT NULL default `pending`, `confirmation_received_at timestamptz` null, `confirmation_channel text` null (free text, not enum). ORTHOGONAL to `status` — never merged. | #403 |
+| 0025 | `analytics_events` table | Greenfield append-only KPI/event feed, distinct from `audit_log`. `event_type text` (not enum); KPI dimensions promoted to real indexed columns (`therapist_user_id, patient_id, service_id, location_id, actor_user_id`); `amount_cents_gross integer` (GROSS cents, VAT at report time) + `currency char(3)`; `payload jsonb` default `{}`; `occurred_at` NOT NULL. Also carries the per-appointment status-transition history (`appointment_status_changed` payload holds from_status/to_status) — no standalone status-transition table. POLICY append pattern (SELECT+INSERT only, keeps full grant). Indexes: `(tenant,occurred_at)`, `(tenant,event_type)`, `(tenant,therapist_user_id)`. | #404 |
+| 0026 | `appointment_notes` table | Per-visit append-only notes relation `(id, tenant_id, appointment_id → appointments.id, patient_id → patients.id, episode_id → clinical_episodes.id null, author_user_id → users.id, body text, created_at)`. Indexes on tenant, appointment, `(tenant,patient)`, episode. Gated completion is a SOFT WARNING (JP ruling): a completed appointment MAY have no note; `note_present` is recorded on the completion event, not blocked. | #415 |
+| 0027 | `appointments.booking_group_id` | Bare `uuid` (no FK), nullable — a shared id relating appointments booked together (two therapists / one patient / one flow). NULL = standalone (every pre-0027 row). Partial index `(tenant, booking_group_id) WHERE booking_group_id IS NOT NULL`. Creation atomicity is app-layer. | #416 |
+| 0028 | `appointments.batch_id` | Bare `uuid` (no FK), nullable — a shared id linking appointments created by ONE batch-engine run. NULL = not batch-created. Partial index `(tenant, batch_id) WHERE batch_id IS NOT NULL`. Distinct from `recurrence_parent_id` (which needs a bookable parent). | #417 |
+
+`appointments` now carries both orthogonal axes plus both grouping ids: `status`
+(scheduled/confirmed/completed/cancelled/no_show), `confirmation_state`
+(pending/confirmed/declined), `booking_group_id`, `batch_id`, alongside the pre-existing
+`recurrence_rule`/`recurrence_parent_id`, `room`, and inline `notes`.
+
+### Scheduling code (merged, verified in `apps/web/lib/scheduling/`)
+
+- **`getTherapistAvailability(ctx, query)`** (`day-availability.ts:72`, migration-free, #396):
+  read-only, tenant-scoped via `runScoped`. Returns `DayAvailability[]` = per-day
+  `booked[]`/`free[]` from `availability_templates` minus booked appointment intervals.
+  `cancelled`/`no_show` excluded from booked. Consumed by the batch engine and the UI.
+- **`batchSchedule(ctx, input)`** (`batch.ts:52`, engine on 0028): expands a recurrence to
+  slots, checks each against `getTherapistAvailability`, books the free ones under one
+  `batch_id`, returns `{ batchId, requested, booked[], failures[] }` with structured
+  per-slot failures (date, hh:mm). Partial success is expected, not an error. Pure slot
+  math isolated in `batch-core.ts`.
+- **`cloneAppointment(sourceId, startsAt)`** (`actions.ts:312`, migration-free, #419):
+  reads the source INSIDE the tenant-scoped tx (RLS confines to caller's tenant; a
+  cross-tenant/missing id → `not_found`, nothing inserted). Pure mapping in `clone-core.ts`
+  `buildClonedAppointment`. COPIES patient/practitioner/service/location + duration
+  (`ends_at - starts_at` re-applied to the new start); resets lifecycle (`status=scheduled`,
+  `confirmation_state=pending`); sets `tenant_id`/`created_by` from JWT; NULLs everything a
+  clone must not inherit (confirmation receipt/channel, recurrence, `booking_group_id`,
+  `batch_id`, `room`, inline `notes`). The `appointment_notes` relation is never written.
+  NO availability enforcement (clinic may override; UI shows availability). Matches its loop
+  DoD exactly — no contradiction found.
+
+### Migration bookkeeping (recon-verified)
+
+- Migration head: **0028** (`0028_batch_scheduling`). `packages/db/migrations/` holds 29
+  numbered `.sql` files (`0000`–`0028`).
+- Journal (`meta/_journal.json`): **29 entries**, idx `0`–`28`, tags `0000_empty_runaways`
+  … `0028_batch_scheduling`.
+- Supabase mirror parity: `supabase/migrations/` holds **29** `.sql` files — 1:1 with
+  `packages/db/migrations/`. In parity.
+- Anomaly (benign, dev DB only): the dev `__drizzle_migrations` tracking table holds **28**
+  apply-records — orphan re-hashes from dev iteration (a migration re-applied under an
+  edited hash during development). Irrelevant on any fresh apply, which replays the 29
+  committed journal entries cleanly. NOTE: the wave-close dispatch described this as "28 vs
+  26 journal entries"; the committed journal in fact holds 29 entries (0000–0028), so the
+  tracking-table delta is a dev-DB artifact, not a journal shortfall. Recording the
+  committed count as ground truth.
+
+### Dev database fingerprint (reported by the wave-close dispatch)
+
+Not independently re-queried in this read-only docs lane (no DB credentials used here);
+recorded as the operator-provided corrected fingerprint at wave close:
+
+- `patients` = 50, `appointments` = 272, `availability_templates` = 34, `roles` = 4
+  (original random UUIDs).
+- Seed users `USR_1..5` present under their fixture ids (`de000004-*`), with `role_id`
+  FKs resolved by `(tenant_id, slug)` — the #414 fix, not by the `ROLE_*` fixture ids.
+- Migration head 0028; mirror in parity (29 files).
+- See QUESTIONS.md (2026-07-02) for a latent same-class FK risk on the `users` seed that
+  the #414 fix did NOT extend to the downstream `-dev` seeders.
+
 ## 2026-06-30 - Wave 01 audit findings
 
 Read-only audit against `main` (commit at `origin/main`). No schema changed, no
