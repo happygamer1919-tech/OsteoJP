@@ -162,3 +162,51 @@ Report only — no code changed in this audit (docs lane).
 - [x] The FA-1 loop DoD asked the idempotent `seed:dev` run to show counts UNCHANGED at "patients=50, availability_templates=34" (the fixture floor recorded at wave close). The live run showed **patients=105** (and users=12), not 50 — which read as a fingerprint deviation against the DoD's literal numbers, so PURPLE surfaced it rather than papering over it.
 - [x] RESOLVED: the surplus is **QA-created synthetic data**, confirmed by Max (2026-07-02) — 55 test patients + 7 staff/QA accounts created through the app during UI QA on the shared dev project. Not a seed defect, not real patient data. STATE.md (2026-07-02 live-verified fingerprint) records the corrected baseline (patients=105, users=12, `availability_templates`=34 unchanged).
 - [x] STANDING RULING (ratified as the DoD pattern for all live-dev seeds): idempotence is verified by **zero delta between two consecutive seed runs** (a re-run changes no counts), NOT by the live total equaling the fixture floor. On a shared dev project that also carries QA/staff data, the fixture counts (50 patients, 5 users, etc.) are the seed FLOOR, never the expected live total. Future live-dev seed loops must assert run-to-run stability, not equality to fixtures. FA-1 met this: the second run changed nothing.
+
+## 2026-07-02 — HALT: row 8 no-note indicator has no data source to read (route: Ivan)
+
+### Q-ROW8-1 — `analytics_events` note_present capture is documented but not implemented anywhere in code
+
+BACKLOG.md UI-lane row 8 ("no-note indicator on completed appointments") and the
+2026-07-01 "Gated completion ruling" in DECISIONS.md both point to reading
+`note_present` from the `appointment_status_changed` `analytics_events` event,
+captured at the instant an appointment transitions to `completed`. That is the
+semantically correct source: the owner requirement is to catch a therapist who
+closes without a note, and a note added *after* the fact should still show as a
+violation. Deriving from `appointment_notes` existence at query time would
+silently launder exactly that case (add a backdated note, indicator clears).
+
+**Finding: this capture does not exist anywhere — schema, app, or DB.**
+- `schema.ts` only has a comment describing the intent (lines 714-719); there is
+  no `note_present` column and no code that sets it in `payload`.
+- `updateAppointment` (`apps/web/lib/scheduling/actions.ts:395-493`) is the only
+  place `status: "completed"` is written. It calls `writeAppointmentAudit` (writes
+  `audit_log` only) on every mutation and never touches `analyticsEvents`.
+- No trigger exists in `0025_event_schema.sql` or `0026_appointment_notes.sql`.
+- Repo-wide, `analytics_events` / `analyticsEvents` appears only in `schema.ts`
+  and one RLS-isolation test fixture (`cross-tenant-rls-isolation.test.ts:158-160`),
+  which inserts a synthetic `appointment_status_changed` row for policy testing —
+  its payload doesn't even carry `note_present`.
+
+Building the UI against `analytics_events.payload->>'note_present'` today renders
+an indicator with zero eligible rows: not loophole-prone, just permanently empty,
+defeating the owner requirement outright rather than approximating it.
+
+- **Status:** HALTED. BACKLOG.md row 8 flipped from READY to HALTED pointing here.
+- **Recommended default:** implement the missing capture first — inside
+  `updateAppointment`'s completion branch (`actions.ts:473`), alongside the
+  existing `writeAppointmentAudit` call, insert one `analytics_events` row
+  (`event_type: "appointment_status_changed"`, existing 0025 table, no new
+  migration) with `payload: { appointment_id, from_status, to_status,
+  note_present }`, where `note_present` is an `exists(select 1 from
+  appointment_notes where appointment_id = $id)` check run in the same tx before
+  the status update commits. Row 8's UI then reads `note_present` off that event,
+  matching DECISIONS.md and closing the backdated-note loophole. Flagging that
+  this is backend logic against an already-migrated table (no schema change) but
+  lives in `actions.ts` business logic, not a UI file — Ivan may want it in his
+  non-migration lane rather than folded into Max's UI-lane ticket.
+- **Fallback if capture work is not wanted this wave:** derive from
+  `appointment_notes` existence at query time instead. Ship row 8 on that basis,
+  explicitly logging the backdated-note gap as a known, temporary limitation, and
+  fast-follow to the event-sourced read once capture lands.
+- **Owner:** Ivan / backend stream.
