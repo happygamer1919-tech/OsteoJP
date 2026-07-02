@@ -21,10 +21,12 @@ import postgres from "postgres";
 import { eq, and } from "drizzle-orm";
 import { clinicalEpisodes, clinicalRecords, formTemplates } from "../src/schema";
 import { resolveDevUsers } from "./dev-users";
+import { loadSeedEnv } from "./load-env";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
 
 const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
 
+loadSeedEnv();
 const DATABASE_URL = resolveSeedDatabaseUrl();
 
 // ─── Patient IDs (first 30 of the 50 fixed patients) ──────────────────────────

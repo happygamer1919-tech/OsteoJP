@@ -22,10 +22,12 @@ import {
   SVC_OST, SVC_FIS, SVC_MAS, SVC_PIL, SVC_NES,
 } from "./dev-ids";
 import { resolveDevUsers } from "./dev-users";
+import { loadSeedEnv } from "./load-env";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
 
 const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
 
+loadSeedEnv();
 const DATABASE_URL = resolveSeedDatabaseUrl();
 
 // ─── Patient IDs (same fixed UUIDs as patients-dev.ts) ────────────────────────

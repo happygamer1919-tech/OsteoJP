@@ -16,10 +16,12 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { patients } from "../src/schema";
+import { loadSeedEnv } from "./load-env";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
 
 const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
 
+loadSeedEnv();
 const DATABASE_URL = resolveSeedDatabaseUrl();
 
 // ─── Patient data ─────────────────────────────────────────────────────────────
