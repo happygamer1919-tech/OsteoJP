@@ -414,7 +414,8 @@ documented `--limit 8` command locally; Claude reports the summary back.
   this reminder at startup.
 
 ## 2026-06-30 - Wave 01 owner/accountant decisions
-- [ ] Patient ID format (JP): sequential, prefixed, or per-tenant scoped; confirm whether it must map to an identifier the clinic already uses. Blocks patient migration ID generation.
+- [x] Patient ID format (JP): sequential, prefixed, or per-tenant scoped; confirm whether it must map to an identifier the clinic already uses. Blocks patient migration ID generation.
+  > **RESOLVED 2026-07-02 (PR #426):** plain numbers only, no prefix, zero-padded at display only (e.g. `0001`); migrated Fisiozero patients keep their original Fisiozero numbers, new patients get the next sequential number per tenant. See docs/design/DECISIONS.md 2026-07-02 "Patient ID format ruling (JP) + implementation policy". Implemented in migration 0029 (`patients.patient_number`).
 - [ ] VAT treatment for KPI finance views (accountant): VAT 0 vs 23 for PT health services. Event capture stores gross and applies treatment at report time, so this blocks only the finance KPI report, not capture. Carried from the standing 10-item list (item 2).
 - [ ] Gated appointment completion (JP, clinical): hard block or soft warning when closing an appointment with no per-visit note. Blocks appointment lifecycle behavior.
 
