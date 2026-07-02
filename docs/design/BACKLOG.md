@@ -25,7 +25,7 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | 0028 | batch scheduling engine | DONE (#417) | 0027 DONE AND availability query DONE AND availability_templates dev seed merged |
 | seed | availability_templates dev seed (purple, migration-free) | DONE (#406; guard rework #412, seed role-ID fix #414) | none |
 | 0029 | patient number (loop: docs/loops/0029-patient-number.md) | WRITTEN | none — ruling received (JP, DECISIONS 2026-07-02); ready for GREEN |
-| TBD | patient_notes append-only relation | DEFERRED | JP audit-trail ruling; `patients.notes` mutable text sufficient for Wave 01 (0022 comment, DECISIONS 2026-06-30) |
+| TBD | patient_notes append-only relation | RULING RECEIVED | JP audit-trail ruling: full version history required (DECISIONS 2026-07-02); loop authoring queued for next wave |
 
 ### Ivan non-migration code (parallel-safe, not migration-numbered)
 | Item | Status | Gate |
