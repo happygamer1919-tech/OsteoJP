@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useEffect } from "react";
 
 import { Button } from "../src/components/Button";
-import { ToastProvider, useToast } from "../src/components/Toast";
+import { ToastProvider, useToast, type ToastOptions } from "../src/components/Toast";
 
 /** Toast (SPEC-foundation §4.9): transient notifications in one live region. */
 const meta = {
@@ -13,6 +14,20 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+/** Never auto-dismisses in the pinned-state stories below — a real toast
+ * clears itself after `duration`, but these render at rest for browsing. */
+const PINNED_DURATION = 24 * 60 * 60 * 1000;
+
+/** Pushes a single toast on mount so the story renders it at rest, with no
+ * click required. */
+function AutoToast(options: ToastOptions) {
+  const toast = useToast();
+  useEffect(() => {
+    toast({ duration: PINNED_DURATION, ...options });
+  }, []);
+  return null;
+}
 
 function Demo() {
   const toast = useToast();
@@ -53,6 +68,41 @@ export const Playground: Story = {
   render: () => (
     <ToastProvider>
       <Demo />
+    </ToastProvider>
+  ),
+};
+
+/** Success tone at rest — check icon, `role="status"`. */
+export const Success: Story = {
+  args: { children: null },
+  render: () => (
+    <ToastProvider>
+      <AutoToast tone="success" message="Paciente gravado." />
+    </ToastProvider>
+  ),
+};
+
+/** Info tone at rest — info icon, `role="status"`. */
+export const Info: Story = {
+  args: { children: null },
+  render: () => (
+    <ToastProvider>
+      <AutoToast tone="info" message="A sincronizar registos…" />
+    </ToastProvider>
+  ),
+};
+
+/** Error tone at rest with a ghost retry action — alert icon,
+ * `role="alert"` so it announces assertively. */
+export const ErrorWithRetry: Story = {
+  args: { children: null },
+  render: () => (
+    <ToastProvider>
+      <AutoToast
+        tone="error"
+        message="Não foi possível gravar."
+        action={{ label: "Tentar novamente", onClick: () => {} }}
+      />
     </ToastProvider>
   ),
 };
