@@ -17,6 +17,11 @@ export type Marker = { marker_type: string; x: number; y: number; view: string }
 // (0.18) to read at all — single constant so it's easy to tune later.
 const FIGURE_OPACITY = 0.6;
 
+// Since PR #413 both sexes render the same neutral figure (no male source art
+// exists), making the toggle a visible no-op. Re-enable when distinct
+// male/female figure assets land.
+const HAS_SEX_VARIANTS = false;
+
 const VIEWS: { value: string; labelKey: keyof typeof s }[] = [
   { value: "anterior", labelKey: "clinical.bodychartViewAnterior" },
   { value: "posterior", labelKey: "clinical.bodychartViewPosterior" },
@@ -172,26 +177,28 @@ export function BodyChart({
         </div>
 
         {/* Sex toggle — stacked vertically beside the chart */}
-        <div className="flex flex-col gap-1 pt-1">
-          <Button
-            type="button"
-            onClick={() => setFigSex("male")}
-            variant={figSex === "male" ? "primary" : "secondary"}
-            size="sm"
-            aria-pressed={figSex === "male"}
-          >
-            {s["clinical.bodychartFigureMale"]}
-          </Button>
-          <Button
-            type="button"
-            onClick={() => setFigSex("female")}
-            variant={figSex === "female" ? "primary" : "secondary"}
-            size="sm"
-            aria-pressed={figSex === "female"}
-          >
-            {s["clinical.bodychartFigureFemale"]}
-          </Button>
-        </div>
+        {HAS_SEX_VARIANTS && (
+          <div className="flex flex-col gap-1 pt-1">
+            <Button
+              type="button"
+              onClick={() => setFigSex("male")}
+              variant={figSex === "male" ? "primary" : "secondary"}
+              size="sm"
+              aria-pressed={figSex === "male"}
+            >
+              {s["clinical.bodychartFigureMale"]}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => setFigSex("female")}
+              variant={figSex === "female" ? "primary" : "secondary"}
+              size="sm"
+              aria-pressed={figSex === "female"}
+            >
+              {s["clinical.bodychartFigureFemale"]}
+            </Button>
+          </div>
+        )}
       </div>
 
       <ul className="space-y-1 text-sm">
