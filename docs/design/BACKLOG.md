@@ -43,10 +43,10 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | stale comment fix at page.tsx:360 | READY | none |
 | patient profile surfacing: profession + region (new in 0022), city + notes (already existed) | DONE (#393) | 0022 DONE |
 | auto-select service from therapist | READY | 0023 DONE |
-| confirmation thumbs on appointment preview | READY | 0024 DONE |
+| confirmation thumbs on appointment preview | DONE (#441) | 0024 DONE |
 | no-note indicator on completed appointments | READY | 0026 DONE |
 | availability panel in new-appointment flow | READY | availability query DONE |
 | fichas-as-tab inside patient profile | DRAFT | JP fichas-placement design ruling (0026 code merged; design call still open) |
 | schedule-again action on patient profile | READY | clone endpoint DONE (#419) |
-| batch failure pop-up | READY | 0028 DONE |
+| batch failure pop-up | HALTED | no defined UI entry point to trigger batchSchedule (briefing-vs-reality mismatch; QUESTIONS.md 2026-07-02) |
 | patient ID next to NIF | DRAFT | 0029 patient number migration (WRITTEN, ready for GREEN); unblocks when 0029 merges |

@@ -41,11 +41,17 @@ function mapAppointment(r: {
   notes: string | null;
   recurrenceRule: string | null;
   recurrenceParentId: string | null;
+  confirmationState: AgendaAppointment["confirmationState"];
+  confirmationReceivedAt: Date | null;
+  confirmationChannel: string | null;
 }): AgendaAppointment {
   return {
     ...r,
     startsAt: r.startsAt.toISOString(),
     endsAt: r.endsAt.toISOString(),
+    confirmationReceivedAt: r.confirmationReceivedAt
+      ? r.confirmationReceivedAt.toISOString()
+      : null,
   };
 }
 
@@ -66,6 +72,10 @@ const appointmentSelection = {
   notes: appointments.notes,
   recurrenceRule: appointments.recurrenceRule,
   recurrenceParentId: appointments.recurrenceParentId,
+  // Confirmation axis (0024) — orthogonal to `status`, read-only here.
+  confirmationState: appointments.confirmationState,
+  confirmationReceivedAt: appointments.confirmationReceivedAt,
+  confirmationChannel: appointments.confirmationChannel,
 } as const;
 
 function baseAppointmentQuery(tx: DbTx) {
