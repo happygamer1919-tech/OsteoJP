@@ -140,7 +140,7 @@
       },
       "private_notes": {
         "type": ["string", "null"],
-        "x-label": { "pt": "Notas Pessoais sobre o Utente neste Episódio / Consulta", "en": "Personal Notes (this episode)" },
+        "x-label": { "pt": "Notas Pessoais sobre o Paciente neste Episódio / Consulta", "en": "Personal Notes (this episode)" },
         "x-fisiozero-field": "notas_pessoais",
         "x-widget": "textarea",
         "x-private": true,
