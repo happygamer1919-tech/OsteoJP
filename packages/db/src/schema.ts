@@ -346,6 +346,15 @@ export const patients = pgTable(
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     fullName: text("full_name").notNull(),
+    // Per-tenant sequential patient number (JP ruling, DECISIONS 2026-07-02):
+    // plain unpadded integer, unique within a tenant, zero-padded to 4 digits
+    // AT DISPLAY ONLY. DB-enforced NOT NULL; assigned per-tenant (MAX+1) by the
+    // 0029 BEFORE INSERT trigger whenever the inserted value is NULL, so the
+    // 15 insert paths that do not set it (import, seeds, tests) stay valid.
+    // `createPatient` sets it explicitly app-side. The `sql\`null\`` default is a
+    // type-level marker letting callers omit it (the trigger fills it); the
+    // column never stores a real NULL.
+    patientNumber: integer("patient_number").notNull().default(sql`null`),
     dateOfBirth: date("date_of_birth"),
     sex: varchar("sex", { length: 16 }),
     nif: varchar("nif", { length: 20 }), // PT fiscal number (fatura-recibo)
@@ -383,6 +392,9 @@ export const patients = pgTable(
   (t) => [
     index("patients_tenant_idx").on(t.tenantId),
     index("patients_tenant_name_idx").on(t.tenantId, t.fullName),
+    // Patient number is unique per tenant; the same number may recur across
+    // tenants. Also serves MAX(patient_number) lookups in the assignment path.
+    unique("patients_tenant_number_uq").on(t.tenantId, t.patientNumber),
   ],
 );
 

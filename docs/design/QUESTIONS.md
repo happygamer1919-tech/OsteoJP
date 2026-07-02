@@ -153,3 +153,7 @@ downstream FK that references the fixture id dangles.
   the `ROLE_*` fixture ids are no longer load-bearing for FKs.
 
 Report only — no code changed in this audit (docs lane).
+
+## 2026-07-02 — RESOLVED: 0029 patient_number NOT-NULL vs 16 insert sites (halt closed)
+- [x] Loop 0029 as written (`patient_number NOT NULL`, app-layer-only assignment, no schema beyond column+unique) was not executable within its own scope: 16 patient-insert sites across 11 files (8 RLS test files + the Fisiozero import path `upsert.ts:242`, exercised live by `migration-upsert-idempotency.test.ts`, + 2 seeds + `createPatient`) insert without a number, so a `NOT NULL` no-default column reds the gated db suite, and every in-scope fix hit a named HALT (Field 6 trigger ban / Field 5 no-import-code / "minimal createPatient-only"). Executor halted and surfaced a recommended default.
+- [x] RESOLVED by owner ruling (Ivan, 2026-07-02): trigger auto-assign approved — see `docs/design/DECISIONS.md` (same date). The deviation supersedes the loop file's Field 6 and Field 2; the committed loop file was left unedited per owner instruction. Loop executed to green on that basis (backfill 105==105, 0 nulls, contiguous 1..105; uniqueness + cross-tenant + live MAX+1 round-trip all proven).
