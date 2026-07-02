@@ -82,6 +82,31 @@ recorded as the operator-provided corrected fingerprint at wave close:
 - See QUESTIONS.md (2026-07-02) for a latent same-class FK risk on the `users` seed that
   the #414 fix did NOT extend to the downstream `-dev` seeders.
 
+### Dev database fingerprint — LIVE-VERIFIED correction (2026-07-02, post-0029 + FA-1)
+
+Supersedes the "reported by the wave-close dispatch" block above (which was operator-provided
+and not re-queried). These are the live values after the 0029 patient-number migration and the
+FA-1 users-seed fix ran, Max-confirmed 2026-07-02:
+
+- `patients` = **105** — 50 seed fixtures + **55 QA-created test patients** (created through the
+  app during UI QA). All synthetic; zero real patient data.
+- `users` = **12** — 5 seed fixtures (`USR_1..5`) + **7 staff / QA accounts**.
+- `appointments` = 272, `availability_templates` = 34, `clinical_episodes` = 46,
+  `clinical_records` = 78, `roles` = 4.
+- Migration head **0029**. `patients.patient_number` backfilled **contiguous 1..105** per tenant
+  (single dev tenant), unique per `(tenant_id, patient_number)`.
+- FA-1 landed: seed user FKs now resolve by `(tenant_id, email)` via
+  `packages/db/seed/dev-users.ts` (`resolveDevUsers`); no downstream seeder consumes a hardcoded
+  `USR_*` id as an FK. The latent risk noted above is closed.
+
+**Premise correction (dated):** earlier fingerprint notes framed the dev DB as fixture-only
+("50 patients", "5 users"). That premise is now corrected: the shared dev Supabase project also
+carries **staff accounts and QA-created test patients** generated during UI QA. This does NOT
+affect the pre-real-data gates (DECISIONS.md 2026-07-01): all dev data remains SYNTHETIC — no
+Fisiozero export has been imported, so the separate-prod-project gate before real patient data
+stands unchanged. The counts above are the working baseline for future recon; when a seeder or
+test asserts "50 patients", read it as the fixture floor, not the live total.
+
 ## 2026-06-30 - Wave 01 audit findings
 
 Read-only audit against `main` (commit at `origin/main`). No schema changed, no
