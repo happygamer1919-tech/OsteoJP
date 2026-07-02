@@ -12,6 +12,7 @@ import { appointments, type DbTx } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { clientIp } from "./actor";
 import { writeAppointmentAudit } from "./audit";
+import { buildClonedAppointment } from "./clone-core";
 import { findConflicts, findConflictsForWindow } from "./conflict";
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
@@ -287,6 +288,107 @@ export async function createAppointment(
     return result;
   } catch (e) {
     return fail("create", e);
+  }
+}
+
+/**
+ * Schedule-again clone. Given an existing appointment's id and a new start time,
+ * create ONE new standalone appointment that copies the source's clinical shape
+ * (patient / practitioner / service / location) and duration, on a fresh
+ * lifecycle. The caller supplies ONLY the new `startsAt`; `endsAt` is derived
+ * from the source duration. Unblocks Max's "schedule-again" UI action.
+ *
+ * Scope (loop-decided): this action does NOT enforce availability — the UI
+ * surfaces availability and the clinic may deliberately book over a busy slot,
+ * so the clone is created unconditionally at the requested start. Availability
+ * lives in the read-only availability query the UI consumes, not here.
+ *
+ * Cross-tenant safety: the source is read INSIDE the tenant-scoped tx, so RLS
+ * confines the lookup to the caller's tenant. A cross-tenant (or missing) source
+ * id resolves to zero rows and the clone is refused (`not_found`) — no row is
+ * inserted. tenant_id and created_by come from the JWT context, never the source
+ * or the payload.
+ */
+export async function cloneAppointment(
+  sourceId: string,
+  startsAt: string, // ISO UTC — the new start; endsAt is derived from the source
+): Promise<ActionResult<{ id: string }>> {
+  const auth = await authorize("appointments:write");
+  if (isDenied(auth)) return auth;
+  const { actor } = auth;
+
+  if (!sourceId) return { ok: false, error: "validation" };
+  const newStart = new Date(startsAt);
+  if (Number.isNaN(newStart.getTime())) return { ok: false, error: "validation" };
+
+  const ip = await clientIp();
+  // Captured inside the tx, enqueued AFTER commit (network out of the tx).
+  let reminderTargets: ReminderEnqueueTarget[] = [];
+  try {
+    const result = await runScoped<ActionResult<{ id: string }>>(
+      actor,
+      async (tx) => {
+        // RLS scopes this read to the caller's tenant: a cross-tenant / missing
+        // source id returns zero rows → hard failure, nothing inserted.
+        const [source] = await tx
+          .select({
+            patientId: appointments.patientId,
+            practitionerId: appointments.practitionerId,
+            locationId: appointments.locationId,
+            serviceId: appointments.serviceId,
+            startsAt: appointments.startsAt,
+            endsAt: appointments.endsAt,
+          })
+          .from(appointments)
+          .where(eq(appointments.id, sourceId))
+          .limit(1);
+        if (!source) return { ok: false, error: "not_found" };
+
+        const values = buildClonedAppointment(source, newStart, {
+          tenantId: actor.tenantId,
+          userId: actor.userId,
+        });
+        // Defensive: the duration comes from an already-valid stored row, so this
+        // only trips on a corrupt source or a NaN start slipping the guard above.
+        if (!isValidInterval(values.startsAt, values.endsAt)) {
+          return { ok: false, error: "validation" };
+        }
+
+        const [created] = await tx
+          .insert(appointments)
+          .values(values)
+          .returning({ id: appointments.id });
+
+        await writeAppointmentAudit(tx, {
+          tenantId: actor.tenantId,
+          actorUserId: actor.userId,
+          action: "appointment.create",
+          appointmentId: created.id,
+          metadata: {
+            patientId: values.patientId,
+            practitionerId: values.practitionerId,
+            locationId: values.locationId,
+            serviceId: values.serviceId,
+            status: values.status,
+            startsAt: values.startsAt.toISOString(),
+            clonedFrom: sourceId, // id only — no PII
+          },
+          ip,
+        });
+
+        reminderTargets = [{ appointmentId: created.id, startsAt: values.startsAt }];
+        return { ok: true, data: { id: created.id } };
+      },
+    );
+    if (result.ok) {
+      revalidatePath(AGENDA_PATH);
+      // A clone is a real new appointment: schedule its reminders like any other
+      // creation. Best-effort, post-commit; safe with REMINDERS_LIVE_SEND off.
+      await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
+    }
+    return result;
+  } catch (e) {
+    return fail("clone", e);
   }
 }
 
