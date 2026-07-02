@@ -13,6 +13,10 @@ import {
 
 export type Marker = { marker_type: string; x: number; y: number; view: string };
 
+// Line-art figures need much more opacity than the old filled silhouettes did
+// (0.18) to read at all — single constant so it's easy to tune later.
+const FIGURE_OPACITY = 0.6;
+
 const VIEWS: { value: string; labelKey: keyof typeof s }[] = [
   { value: "anterior", labelKey: "clinical.bodychartViewAnterior" },
   { value: "posterior", labelKey: "clinical.bodychartViewPosterior" },
@@ -20,7 +24,10 @@ const VIEWS: { value: string; labelKey: keyof typeof s }[] = [
   { value: "lateral_right", labelKey: "clinical.bodychartViewLateralRight" },
 ];
 
-const FIGURE_COMPONENTS: Record<string, React.ComponentType<{ sex: FigSex; className?: string }>> = {
+const FIGURE_COMPONENTS: Record<
+  string,
+  React.ComponentType<{ sex: FigSex; className?: string; style?: React.CSSProperties }>
+> = {
   anterior: AnteriorFigure,
   posterior: PosteriorFigure,
   lateral_left: LateralLeftFigure,
@@ -142,7 +149,8 @@ export function BodyChart({
           {/* Body figure background layer */}
           <Figure
             sex={figSex}
-            className="pointer-events-none absolute inset-0 h-full w-full text-text-secondary opacity-[0.18]"
+            className="pointer-events-none absolute inset-0 h-full w-full text-text-secondary"
+            style={{ opacity: FIGURE_OPACITY }}
           />
 
           {/* Keyboard cursor indicator — visible only while the chart has focus */}
