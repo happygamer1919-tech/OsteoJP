@@ -35,6 +35,7 @@ import type {
   Frequency,
   SeriesScope,
 } from "@/lib/scheduling/types";
+import { AvailabilityPanel } from "./availability-panel";
 
 export type ModalState =
   | { mode: "create"; slot?: { date: string; time: string } }
@@ -403,6 +404,15 @@ export function AppointmentDrawer({
             </Select>
           </Field>
         </div>
+
+        <AvailabilityPanel
+          therapistId={form.practitionerId}
+          date={form.date}
+          locationId={form.locationId}
+          durationMin={form.durationMin}
+          time={form.time}
+          onPickTime={(hhmm) => set("time", hhmm)}
+        />
 
         {!editing && (
           <div className="flex flex-col gap-3">

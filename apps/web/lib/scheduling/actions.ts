@@ -14,6 +14,7 @@ import { clientIp } from "./actor";
 import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
 import { findConflicts, findConflictsForWindow } from "./conflict";
+import { getTherapistAvailability, type DayAvailability } from "./day-availability";
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
 import {
@@ -161,6 +162,35 @@ async function collectConflicts(
     if (conflicts.length >= CONFLICT_CAP) break;
   }
   return conflicts.slice(0, CONFLICT_CAP);
+}
+
+/**
+ * Read-only availability for one therapist on one Lisbon calendar day. Feeds
+ * the new-appointment availability panel (SPEC-appointments §5) — same
+ * getTherapistAvailability query the batch engine uses, single-day range.
+ */
+export async function getTherapistDayAvailability(
+  input: { therapistId: string; date: string; locationId?: string | null },
+): Promise<ActionResult<DayAvailability>> {
+  const auth = await authorize("appointments:read");
+  if (isDenied(auth)) return auth;
+  const { actor } = auth;
+
+  if (!input.therapistId || !input.date) {
+    return { ok: false, error: "validation" };
+  }
+
+  try {
+    const days = await getTherapistAvailability(actor, {
+      therapistId: input.therapistId,
+      from: input.date,
+      to: input.date,
+      locationId: input.locationId ?? null,
+    });
+    return { ok: true, data: days[0] ?? { date: input.date, working: [], booked: [], free: [] } };
+  } catch (e) {
+    return fail("availability", e);
+  }
 }
 
 export async function createAppointment(
