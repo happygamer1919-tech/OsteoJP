@@ -47,6 +47,6 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | no-note indicator on completed appointments | READY | 0026 DONE |
 | availability panel in new-appointment flow | READY | availability query DONE |
 | fichas-as-tab inside patient profile | DRAFT | JP fichas-placement design ruling (0026 code merged; design call still open) |
-| schedule-again action on patient profile | READY | clone endpoint DONE (#419) |
+| schedule-again action on patient profile | IN-FLIGHT | clone endpoint DONE (#419) |
 | batch failure pop-up | READY | 0028 DONE |
 | patient ID next to NIF | DRAFT | 0029 patient number migration (WRITTEN, ready for GREEN); unblocks when 0029 merges |
