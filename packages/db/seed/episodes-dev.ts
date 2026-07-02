@@ -20,7 +20,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { eq, and } from "drizzle-orm";
 import { clinicalEpisodes, clinicalRecords, formTemplates } from "../src/schema";
-import { USR_1, USR_2, USR_3, USR_4, USR_5 } from "./dev-ids";
+import { resolveDevUsers } from "./dev-users";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
 
 const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
@@ -61,8 +61,6 @@ const EPISODE_PATIENT_IDS: readonly string[] = [
   "d1573d09-f0e6-4f10-9755-4302b610185c", // 28 Cristina Maria Moreira
   "a4dcca0a-2a01-4bd9-9b4b-5ac7dac1c6c7", // 29 André Luís Fonseca
 ];
-
-const THERAPISTS = [USR_1, USR_2, USR_3, USR_4, USR_5] as const;
 
 const EPISODE_TITLES = [
   "Lombalgia crónica",
@@ -140,6 +138,10 @@ function sampleRecordData(templateKey: "osteopathy" | "physiotherapy", pi: numbe
 async function seed() {
   const sql = postgres(DATABASE_URL!, { max: 1 });
   const db = drizzle(sql);
+
+  // Resolve USR_1..5 to their REAL ids by (tenant, email); primary_practitioner_id,
+  // practitioner_id and signed_by all flow from here, never a fixture constant (FA-1).
+  const { ids: THERAPISTS } = await resolveDevUsers(db, TENANT_ID);
 
   // Query form template IDs by (tenant_id, key, version)
   const [ostRow] = await db
