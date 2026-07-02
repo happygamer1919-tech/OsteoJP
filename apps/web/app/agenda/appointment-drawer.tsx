@@ -150,6 +150,25 @@ export function AppointmentDrawer({
   const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // A conflict banner describes one specific therapist/date/time/duration
+  // combination (checked server-side inside create/update/reschedule — there
+  // is no separate live pre-check endpoint to call here). If the user changes
+  // any of those fields after a conflict is shown, the banner is now
+  // describing a slot that's no longer being requested, and — worse — the
+  // Drawer's confirm button has switched to "Guardar mesmo assim", which
+  // submits with allowConflict=true. Without this, that would silently skip
+  // conflict checking for the new, never-validated combination. Clearing
+  // conflicts forces the next confirm to re-check the current slot from
+  // scratch, same as a first-time submit. Adjusted during render (React's
+  // documented pattern for resetting state when inputs change) rather than in
+  // an effect, so the stale banner never has a chance to paint.
+  const slotKey = `${form.practitionerId}|${form.date}|${form.time}|${form.durationMin}`;
+  const [checkedSlotKey, setCheckedSlotKey] = useState(slotKey);
+  if (slotKey !== checkedSlotKey) {
+    setCheckedSlotKey(slotKey);
+    setConflicts(null);
+  }
+
   // Patient search — async, search-as-you-type (min 2 chars, 300 ms debounce).
   // Edit mode pre-populates the query with the existing patient name so the
   // current selection is visible without a round-trip.
