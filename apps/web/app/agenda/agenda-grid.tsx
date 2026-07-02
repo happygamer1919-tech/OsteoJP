@@ -19,6 +19,8 @@ import {
 } from "@/lib/scheduling/time";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
+import { ConfirmationIndicator } from "./confirmation-indicator";
+
 const SLOT_HEIGHT = 48; // px per 30-min slot
 const DAY_START_MIN = DAY_START_HOUR * 60;
 const GUTTER = 64;
@@ -363,8 +365,13 @@ function AppointmentBlock({
         // sub-AA on the 100 tints — SPEC §3.4).
         <span className="block text-xs font-semibold uppercase text-v2-text-primary">{s["agenda.conflict"]}</span>
       )}
-      <span className="block truncate text-xs text-v2-text-primary">
-        {formatTimeOfDay(new Date(appt.startsAt))}-{formatTimeOfDay(new Date(appt.endsAt))}
+      <span className="flex items-center justify-between gap-1 text-xs text-v2-text-primary">
+        <span className="truncate">
+          {formatTimeOfDay(new Date(appt.startsAt))}-{formatTimeOfDay(new Date(appt.endsAt))}
+        </span>
+        {/* Confirmation axis (0024) — orthogonal to `status`/`cancelled` above,
+            always shown independently regardless of lifecycle. */}
+        <ConfirmationIndicator state={appt.confirmationState} />
       </span>
       <span className={`flex items-center gap-1 truncate text-sm font-medium ${cancelled ? "text-v2-text-secondary line-through" : "text-v2-text-primary"}`}>
         <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />

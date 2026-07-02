@@ -36,6 +36,8 @@ import type {
   SeriesScope,
 } from "@/lib/scheduling/types";
 
+import { ConfirmationIndicator } from "./confirmation-indicator";
+
 export type ModalState =
   | { mode: "create"; slot?: { date: string; time: string } }
   | { mode: "edit"; appt: AgendaAppointment };
@@ -441,6 +443,26 @@ export function AppointmentDrawer({
             ))}
           </Select>
         </Field>
+
+        {/* Confirmation axis (0024) — read-only display, ORTHOGONAL to the
+            "Estado" lifecycle Select above. Never derived from `form.status`
+            and never edited here (BACKLOG specs a display only, no edit
+            control); shown separately so the two are never visually or
+            semantically conflated. Manual label, same reasoning as the
+            patient Combobox above: not a Field-wrapped form control. */}
+        {editing && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-text-primary">{s["appointment.confirmation"]}</span>
+            <ConfirmationIndicator state={editing.confirmationState} showLabel />
+            {editing.confirmationReceivedAt && (
+              <p className="text-xs text-text-secondary">
+                {s["appointment.confirmationReceivedAt"]}{": "}
+                {new Date(editing.confirmationReceivedAt).toLocaleString("pt-PT")}
+                {editing.confirmationChannel ? ` · ${editing.confirmationChannel}` : ""}
+              </p>
+            )}
+          </div>
+        )}
 
         <Field label={s["appointment.notes"]}>
           <Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} />
