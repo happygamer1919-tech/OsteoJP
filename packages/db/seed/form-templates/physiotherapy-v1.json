@@ -54,7 +54,7 @@
       },
       "red_flags": {
         "type": ["string", "null"],
-        "x-label": { "pt": "Alertas (Red Flags)", "en": "Red Flags" },
+        "x-label": { "pt": "Alertas (sinais de alarme)", "en": "Alerts (Red Flags)" },
         "x-fisiozero-field": "alertas",
         "x-widget": "textarea",
         "x-order": 6,
