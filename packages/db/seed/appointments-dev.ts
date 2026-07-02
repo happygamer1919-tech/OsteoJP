@@ -20,8 +20,8 @@ import { appointments } from "../src/schema";
 import {
   LOC_LAV, LOC_CB, LOC_MTN,
   SVC_OST, SVC_FIS, SVC_MAS, SVC_PIL, SVC_NES,
-  USR_1, USR_2, USR_3, USR_4, USR_5,
 } from "./dev-ids";
+import { resolveDevUsers } from "./dev-users";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
 
 const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
@@ -90,9 +90,14 @@ const PATIENT_IDS: readonly string[] = [
 type AppointmentStatus = "scheduled" | "confirmed" | "completed" | "cancelled" | "no_show";
 
 const SERVICES = [SVC_OST, SVC_FIS, SVC_MAS, SVC_PIL, SVC_NES] as const;
-const LAV_THERAPISTS = [USR_1, USR_2, USR_5] as const;
-const CB_THERAPISTS  = [USR_2, USR_3, USR_5] as const;
-const MTN_THERAPISTS = [USR_4, USR_5] as const;
+
+// Per-location practitioner pools, by USR_1..5 order. Filled at seed time from
+// the users' REAL ids resolved by email (FA-1), never from fixture constants.
+type TherapistPools = {
+  lav: readonly string[];
+  cb: readonly string[];
+  mtn: readonly string[];
+};
 
 // Reference date: 2026-06-19 noon UTC
 const SEED_DATE = new Date("2026-06-19T12:00:00Z");
@@ -108,7 +113,9 @@ function makeApptId(pi: number, ai: number): string {
   return `de000007-${pi.toString(16).padStart(4, "0")}-${ai.toString(16).padStart(4, "0")}-0000-000000000000`;
 }
 
-function buildAppointments() {
+function buildAppointments(therapists: TherapistPools) {
+  const { lav: LAV_THERAPISTS, cb: CB_THERAPISTS, mtn: MTN_THERAPISTS } = therapists;
+
   type ApptRow = {
     id: string;
     tenantId: string;
@@ -220,7 +227,15 @@ async function seed() {
   const sql = postgres(DATABASE_URL!, { max: 1 });
   const db = drizzle(sql);
 
-  const rows = buildAppointments();
+  // Resolve USR_1..5 to their REAL ids by (tenant, email); practitioner_id FKs
+  // flow from here, never a fixture constant (FA-1).
+  const { ids } = await resolveDevUsers(db, TENANT_ID);
+  const [U1, U2, U3, U4, U5] = ids;
+  const rows = buildAppointments({
+    lav: [U1, U2, U5],
+    cb: [U2, U3, U5],
+    mtn: [U4, U5],
+  });
   console.log(`Seeding ${rows.length} appointments → tenant ${TENANT_ID}…`);
 
   // Insert in batches of 100 to stay within postgres parameter limits
