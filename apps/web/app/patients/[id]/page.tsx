@@ -7,7 +7,7 @@ import {
   StatusChip,
   type StatusTone,
 } from "@osteojp/ui";
-import { Calendar, ChevronLeft, FileText, Pencil, Plus } from "lucide-react";
+import { ChevronLeft, FileText, Pencil, Plus } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -17,7 +17,9 @@ import { listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries"
 import { formatPatientNumber } from "../../../lib/patients/format";
 import { getPatient } from "../../../lib/patients/queries";
 import type { Patient } from "../../../lib/patients/types";
+import { listPatientAppointments } from "../../../lib/scheduling/data";
 import { PatientActions } from "../_components/patient-actions";
+import { AppointmentsList } from "./appointments-list";
 import { createEpisodeAction } from "./episode-actions";
 import { ProfileTabs } from "./profile-tabs";
 
@@ -116,6 +118,8 @@ export default async function PatientProfilePage({
   const records = tab === "registos" && canReadClinical ? await listRecords(ctx, { patientId: id }) : [];
   // Faturação tab: fetch invoices for this patient when the tab is active.
   const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
+  // Consultas tab: this patient's appointment history (Row 3 — schedule-again).
+  const patientAppointments = tab === "consultas" ? await listPatientAppointments(ctx, id) : [];
 
   return (
     <main>
@@ -195,7 +199,7 @@ export default async function PatientProfilePage({
 
       {tab === "consultas" && (
         <div role="tabpanel" id="tabpanel-consultas" aria-label={s["patients.tabAppointments"]}>
-          <EmptyState icon={Calendar} title={s["patients.emptyConsultasTitle"]} description={s["patients.emptyConsultasHelp"]} />
+          <AppointmentsList appointments={patientAppointments} />
         </div>
       )}
 
