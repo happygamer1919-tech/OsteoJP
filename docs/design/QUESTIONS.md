@@ -73,3 +73,83 @@ service→category match logic and the conflict-detection helpers
 - [ ] Patient ID format (route: JP). Sequential, prefixed, or per-tenant scoped. Fiscal-adjacent: confirm whether it must map to an identifier the clinic already uses. Blocks: patient migration ID-generation.
 - [ ] VAT treatment in KPI finance views (route: accountant). Revenue-per-therapist numbers depend on VAT 0 vs 23 for PT health services. Event schema captures gross now and applies treatment at report time, so this does not block capture, but blocks the finance KPI report. Carried from the standing 10-item JP/accountant list (item 2).
 - [ ] Gated completion: hard block or soft warning (route: JP, clinical). Decides whether a therapist can ever close an appointment without a per-visit note. Blocks: appointment lifecycle migration behavior.
+
+## 2026-07-02 - Wave 01 close: resolutions, follow-up, and FK audit
+
+### R-1 — RESOLVED: seed user role IDs collided with real-UUID roles (owed from #414)
+
+Resolution note owed from the seed role-ID-fix dispatch and never committed. The dev
+seed originally wrote `users.role_id` using the `ROLE_*` fixture ids (`de000001-*`).
+The dev DB's `roles` were seeded elsewhere with real random UUIDs, and roles carry a
+secondary unique key `roles_tenant_slug_uq (tenant_id, slug)`. Because the roles seed
+used `onConflictDoNothing`, the fixture-id role insert was silently SKIPPED (a row with
+the same `(tenant, slug)` already existed under a real UUID), leaving the `ROLE_*`
+fixture ids absent and the users' `role_id` FKs dangling.
+
+- **Fix (PR #414):** `dev-reference.ts` now resolves each user's `role_id` by
+  `(tenant_id, slug)` from whatever `roles` rows actually exist, via a `roleId(slug)`
+  lookup, instead of referencing the `ROLE_*` fixture ids. Robust whether roles were
+  seeded by this script or elsewhere (e.g. `supabase/seed.sql` with random UUIDs).
+- **Status:** resolved and merged. Recorded here for the append-only trail.
+
+### R-2 — RESOLVED: gated completion (was the 2026-06-30 open item, route JP)
+
+Answered by JP via Ivan: SOFT WARNING, not a hard block (DECISIONS 2026-07-01). A
+therapist can close an appointment with no per-visit note; the system records
+`note_present` on the completion event rather than blocking. Marked answered here
+without editing the original open item above (append-only).
+
+### FT-1 — FOLLOW-UP TICKET: seed:dev chain has no dotenv preload
+
+The `seed:dev` chain does not preload environment variables: `tsx` does not auto-load
+`packages/db/.env`, so a seed run currently requires the operator to manually source the
+env plus set `SEED_DEV_CONFIRM`. Owed fix: a shared bootstrap that loads
+`packages/db/.env` (mirroring the drizzle-kit config pattern) so the seed scripts get
+`DATABASE_URL` without manual sourcing, while keeping the `SEED_DEV_CONFIRM` opt-in
+intact.
+
+- **Priority:** small, non-urgent. Do before the next seed consumer runs the chain.
+- **Recommended default:** add the shared dotenv preload to the seed entrypoint; do not
+  weaken or remove `SEED_DEV_CONFIRM`.
+
+### FA-1 — Hardcoded-FK audit (read-only findings, owed from the #414 dispatch)
+
+The same-class audit promised in the role-ID fix dispatch (step 5), performed now,
+read-only, no code changed. Question asked: do the `-dev` seeders reference any FK
+target by a hardcoded fixture id that could dangle via a unique-key SKIP the way roles
+did? Mechanism of risk: a target seeded with `onConflictDoNothing` that ALSO has a
+secondary unique key (beyond its PK) — a pre-existing row with the same natural key but
+a different (real) UUID survives, the fixture-id insert is silently skipped, and any
+downstream FK that references the fixture id dangles.
+
+**Finding: ONE latent same-class risk (`users`); everything else clean.**
+
+- **`users` — LATENT SAME-CLASS RISK (unmitigated in the downstream seeders).** `users`
+  carries secondary unique key `users_tenant_email_uq (tenant_id, email)`.
+  `dev-reference.ts` seeds users with `.onConflictDoNothing()` and NO explicit conflict
+  target, so it swallows an email-unique conflict as well as a PK conflict. If a user
+  with a seeded email (e.g. `andre.costa@osteojp-dev.pt`) pre-exists under a different
+  real UUID, the fixture-id `USR_n` (`de000004-*`) insert is silently skipped and `USR_n`
+  is absent. `appointments-dev.ts`, `availability-dev.ts`, and `episodes-dev.ts` all
+  reference `USR_1..5` by hardcoded fixture id (imported from `dev-ids.ts`) and NEVER
+  resolve users by email — so they would hit FK violations / dangling practitioner refs.
+  This is exactly the roles mechanism. It has not fired on the current dev DB only because
+  those users were seeded by this same script and therefore hold the fixture ids; a DB
+  whose users originated elsewhere breaks. The #414 resolve-by-natural-key fix was applied
+  to roles but NOT extended to users.
+  - **Recommended default (do not fix now — read-only audit):** extend the #414 pattern —
+    resolve `USR_1..5` to real ids by `(tenant_id, email)` at seed time in the three
+    downstream `-dev` seeders (or make `dev-reference.ts` upsert users on the email key so
+    the fixture ids always win), so a pre-existing user can never orphan the FKs.
+- **`locations` — clean.** No secondary unique key (PK + tenant FK only; no unique-on-name).
+  `onConflictDoNothing` can conflict only on the PK id, which preserves the fixture id. No
+  skip-with-different-id path. `LOC_*` refs safe.
+- **`services` — clean.** Same as locations: no unique-on-name, no secondary unique key.
+  PK-only idempotency. `SVC_*` refs safe.
+- **`patients` — clean.** `patients-dev.ts` uses its own fixed patient ids; the only
+  secondary unique key is `auth_user_id`, intentionally left null ("patients are
+  un-activated"). PK-only idempotency. Patient FK targets safe.
+- **`roles` — already mitigated (#414).** Resolved by `(tenant, slug)` at user-seed time;
+  the `ROLE_*` fixture ids are no longer load-bearing for FKs.
+
+Report only — no code changed in this audit (docs lane).

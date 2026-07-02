@@ -20,17 +20,19 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | 0023 | therapist-service mapping | DONE | 0022 DONE |
 | 0024 | appointment confirmation state | DONE | 0023 DONE |
 | 0025 | event schema (SPEC-events, incl appointment_status_changed) | DONE | 0024 DONE |
-| 0026 | appointment lifecycle, gated completion + per-visit notes | WRITTEN | 0025 DONE (JP ruling: soft warning, DECISIONS 2026-07-01) |
-| 0027 | multi-therapist booking | WRITTEN | 0026 DONE |
-| 0028 | batch scheduling engine | WRITTEN | 0027 DONE AND availability query DONE AND availability_templates dev seed merged |
-| seed | availability_templates dev seed (purple, migration-free) | READY | none, 0028 prerequisite |
-| TBD | patient ID column | DRAFT | JP patient ID format ruling |
+| 0026 | appointment lifecycle, gated completion + per-visit notes | DONE (#415) | 0025 DONE (JP ruling: soft warning, DECISIONS 2026-07-01) |
+| 0027 | multi-therapist booking | DONE (#416) | 0026 DONE |
+| 0028 | batch scheduling engine | DONE (#417) | 0027 DONE AND availability query DONE AND availability_templates dev seed merged |
+| seed | availability_templates dev seed (purple, migration-free) | DONE (#406; guard rework #412, seed role-ID fix #414) | none |
+| TBD | patient ID column | DRAFT | JP patient ID format ruling (open, QUESTIONS 2026-06-30) |
+| TBD | patient_notes append-only relation | DEFERRED | JP audit-trail ruling; `patients.notes` mutable text sufficient for Wave 01 (0022 comment, DECISIONS 2026-06-30) |
 
 ### Ivan non-migration code (parallel-safe, not migration-numbered)
 | Item | Status | Gate |
 |------|--------|------|
-| availability query (read-only, booked vs free) | DONE | none, parallel-safe with one in-flight migration |
-| schedule-again clone endpoint (loop: docs/loops/schedule-again-clone.md) | WRITTEN | none, schedule when ready |
+| availability query (read-only, booked vs free) | DONE (#396) | none, parallel-safe with one in-flight migration |
+| schedule-again clone endpoint (loop: docs/loops/schedule-again-clone.md) | DONE (#419) | none |
+| finance KPI report (revenue per therapist/service) | GATED | accountant VAT ruling (VAT 0 vs 23, PT health services); events capture gross now, VAT at report time (QUESTIONS 2026-06-30) |
 
 ### UI lane (Max)
 | Item | Status | Gate |
@@ -38,12 +40,12 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | remove Proximas marcacoes card | READY | none |
 | rename Revisao to Revisao Consulta | READY | none |
 | stale comment fix at page.tsx:360 | READY | none |
-| patient profile surfacing: profession + region (new in 0022), city + notes (already existed) | READY | 0022 DONE |
-| auto-select service from therapist | DRAFT | 0023 DONE |
-| confirmation thumbs on appointment preview | DRAFT | 0024 DONE |
-| no-note indicator on completed appointments | DRAFT | 0026 DONE |
-| availability panel in new-appointment flow | DRAFT | availability query DONE |
-| fichas-as-tab inside patient profile | DRAFT | 0026 design settled (JP) |
-| schedule-again action on patient profile | DRAFT | clone endpoint DONE |
-| batch failure pop-up | DRAFT | 0028 DONE |
-| patient ID next to NIF | DRAFT | patient ID migration DONE |
+| patient profile surfacing: profession + region (new in 0022), city + notes (already existed) | DONE (#393) | 0022 DONE |
+| auto-select service from therapist | READY | 0023 DONE |
+| confirmation thumbs on appointment preview | READY | 0024 DONE |
+| no-note indicator on completed appointments | READY | 0026 DONE |
+| availability panel in new-appointment flow | READY | availability query DONE |
+| fichas-as-tab inside patient profile | DRAFT | JP fichas-placement design ruling (0026 code merged; design call still open) |
+| schedule-again action on patient profile | READY | clone endpoint DONE (#419) |
+| batch failure pop-up | READY | 0028 DONE |
+| patient ID next to NIF | DRAFT | patient ID migration (still DRAFT, gated on JP format ruling) |
