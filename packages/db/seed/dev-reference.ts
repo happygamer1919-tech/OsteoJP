@@ -2,12 +2,12 @@
  * Seed — reference data for the dev environment (tenant, roles, locations,
  * services, users/therapists, form templates).
  *
- * Supabase project: ufbkzbyghvxtosyrkgjq (dev)
- * Tenant:          3a2d0711-fbdb-4ce9-b940-b6a87e3d3560
+ * Tenant: 3a2d0711-fbdb-4ce9-b940-b6a87e3d3560
  *
  * All IDs are fixed so every table is idempotent via onConflictDoNothing.
  *
- * SAFETY: refuses to run against the prod project ref (jaxmkwoxjcgzkwxgbayx).
+ * SAFETY: target is resolved and confirmed by ./seed-guard (SEED_DEV_CONFIRM
+ * opt-in + PROD_REFS blocklist).
  *
  * Usage:
  *   DATABASE_URL=<dev-service-role-url> \
@@ -16,9 +16,11 @@
  */
 
 import { drizzle } from "drizzle-orm/postgres-js";
+import { eq } from "drizzle-orm";
 import postgres from "postgres";
 import { tenants, roles, locations, services, users } from "../src/schema";
 import { loadFormTemplates } from "./form-templates";
+import { resolveSeedDatabaseUrl } from "./seed-guard";
 import {
   ROLE_OWNER, ROLE_ADMIN, ROLE_THERAPIST, ROLE_RECEPTION,
   LOC_LAV, LOC_CB, LOC_MTN,
@@ -35,20 +37,8 @@ export {
 };
 
 const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
-const PROD_REF = "jaxmkwoxjcgzkwxgbayx";
 
-const DATABASE_URL = process.env.DATABASE_URL_DEV ?? process.env.DATABASE_URL;
-if (!DATABASE_URL) {
-  console.error("Error: DATABASE_URL_DEV or DATABASE_URL is required");
-  process.exit(1);
-}
-if (DATABASE_URL.includes(PROD_REF)) {
-  console.error(
-    `SAFETY: refusing to seed into production (${PROD_REF}).\n` +
-      "Set DATABASE_URL_DEV or DATABASE_URL to the dev project (ufbkzbyghvxtosyrkgjq).",
-  );
-  process.exit(1);
-}
+const DATABASE_URL = resolveSeedDatabaseUrl();
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
@@ -107,15 +97,34 @@ async function seed() {
     .onConflictDoNothing();
 
   // ── Users / therapists ──
+  // Resolve role IDs by (tenant, slug) from whatever role rows actually exist
+  // for this tenant. The fixture role IDs above are only authoritative when this
+  // seed created the roles; a DB whose roles were seeded elsewhere (e.g.
+  // supabase/seed.sql with random UUIDs) is handled identically — the users
+  // attach to the existing role IDs instead of the skipped fixture IDs.
+  const roleRows = await db
+    .select({ id: roles.id, slug: roles.slug })
+    .from(roles)
+    .where(eq(roles.tenantId, TENANT_ID));
+  const roleIdBySlug = new Map(roleRows.map((r) => [r.slug, r.id]));
+  const roleId = (slug: string): string => {
+    const id = roleIdBySlug.get(slug);
+    if (!id) {
+      console.error(`Seed failed: role slug "${slug}" not found for tenant ${TENANT_ID}.`);
+      process.exit(1);
+    }
+    return id;
+  };
+
   console.log("Seeding users…");
   await db
     .insert(users)
     .values([
-      { id: USR_1, tenantId: TENANT_ID, roleId: ROLE_THERAPIST, email: "andre.costa@osteojp-dev.pt",      fullName: "Dr. André Costa",       isActive: true },
-      { id: USR_2, tenantId: TENANT_ID, roleId: ROLE_THERAPIST, email: "sofia.mendes@osteojp-dev.pt",     fullName: "Dra. Sofia Mendes",      isActive: true },
-      { id: USR_3, tenantId: TENANT_ID, roleId: ROLE_THERAPIST, email: "bernardo.figueira@osteojp-dev.pt", fullName: "Dr. Bernardo Figueira", isActive: true },
-      { id: USR_4, tenantId: TENANT_ID, roleId: ROLE_THERAPIST, email: "ines.carmo@osteojp-dev.pt",       fullName: "Dra. Inês Carmo",        isActive: true },
-      { id: USR_5, tenantId: TENANT_ID, roleId: ROLE_ADMIN,     email: "rui.correia@osteojp-dev.pt",      fullName: "Dr. Rui Correia",        isActive: true },
+      { id: USR_1, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "andre.costa@osteojp-dev.pt",      fullName: "Dr. André Costa",       isActive: true },
+      { id: USR_2, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "sofia.mendes@osteojp-dev.pt",     fullName: "Dra. Sofia Mendes",      isActive: true },
+      { id: USR_3, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "bernardo.figueira@osteojp-dev.pt", fullName: "Dr. Bernardo Figueira", isActive: true },
+      { id: USR_4, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "ines.carmo@osteojp-dev.pt",       fullName: "Dra. Inês Carmo",        isActive: true },
+      { id: USR_5, tenantId: TENANT_ID, roleId: roleId("admin"),     email: "rui.correia@osteojp-dev.pt",      fullName: "Dr. Rui Correia",        isActive: true },
     ])
     .onConflictDoNothing();
 

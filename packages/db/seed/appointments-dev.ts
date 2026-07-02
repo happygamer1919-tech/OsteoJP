@@ -2,13 +2,13 @@
  * Seed — appointment history for 50 dev patients across the three clinic
  * locations, spanning roughly the last 6 and next 2 months from 2026-06-19.
  *
- * Supabase project: ufbkzbyghvxtosyrkgjq (dev)
- * Tenant:          3a2d0711-fbdb-4ce9-b940-b6a87e3d3560
+ * Tenant: 3a2d0711-fbdb-4ce9-b940-b6a87e3d3560
  *
  * Fixed appointment IDs make this idempotent via onConflictDoNothing.
  * Run after dev-reference.ts and patients-dev.ts.
  *
- * SAFETY: refuses to run against the prod project ref (jaxmkwoxjcgzkwxgbayx).
+ * SAFETY: target is resolved and confirmed by ./seed-guard (SEED_DEV_CONFIRM
+ * opt-in + PROD_REFS blocklist).
  *
  * Usage:
  *   DATABASE_URL=<dev-service-role-url> pnpm --filter @osteojp/db seed:appointments:dev
@@ -22,22 +22,11 @@ import {
   SVC_OST, SVC_FIS, SVC_MAS, SVC_PIL, SVC_NES,
   USR_1, USR_2, USR_3, USR_4, USR_5,
 } from "./dev-ids";
+import { resolveSeedDatabaseUrl } from "./seed-guard";
 
 const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
-const PROD_REF = "jaxmkwoxjcgzkwxgbayx";
 
-const DATABASE_URL = process.env.DATABASE_URL_DEV ?? process.env.DATABASE_URL;
-if (!DATABASE_URL) {
-  console.error("Error: DATABASE_URL_DEV or DATABASE_URL is required");
-  process.exit(1);
-}
-if (DATABASE_URL.includes(PROD_REF)) {
-  console.error(
-    `SAFETY: refusing to seed into production (${PROD_REF}).\n` +
-      "Set DATABASE_URL_DEV or DATABASE_URL to the dev project (ufbkzbyghvxtosyrkgjq).",
-  );
-  process.exit(1);
-}
+const DATABASE_URL = resolveSeedDatabaseUrl();
 
 // ─── Patient IDs (same fixed UUIDs as patients-dev.ts) ────────────────────────
 // Indices 0-24: Linda-a-Velha patients

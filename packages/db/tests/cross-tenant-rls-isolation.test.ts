@@ -76,6 +76,7 @@ type Ids = {
   therapistService: string;
   audit: string;
   analyticsEvent: string;
+  appointmentNote: string;
 };
 
 const newIds = (): Ids => ({
@@ -100,6 +101,7 @@ const newIds = (): Ids => ({
   therapistService: randomUUID(),
   audit: randomUUID(),
   analyticsEvent: randomUUID(),
+  appointmentNote: randomUUID(),
 });
 
 const A = newIds();
@@ -156,6 +158,8 @@ async function seedTenant(p: Sql, x: Ids, label: string): Promise<void> {
   await p`insert into analytics_events (id, tenant_id, event_type, entity_type, entity_id, actor_user_id, occurred_at, payload)
           values (${x.analyticsEvent}, ${x.tenant}, 'appointment_status_changed', 'appointment', ${x.appointment}, ${x.user}, ${START},
                   ${JSON.stringify({ appointment_id: x.appointment, from_status: "scheduled", to_status: "confirmed", actor: x.user })}::jsonb)`;
+  await p`insert into appointment_notes (id, tenant_id, appointment_id, patient_id, episode_id, author_user_id, body)
+          values (${x.appointmentNote}, ${x.tenant}, ${x.appointment}, ${x.patient}, ${x.episode}, ${x.user}, 'Seed visit note')`;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -717,6 +721,63 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
     it("DELETE of the tenant's OWN row affects 0 rows — append-only (no DELETE policy)", async () => {
       const deleted = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
         (await tx`delete from analytics_events where id = ${A.analyticsEvent} returning id`) as {
+          id: string;
+        }[],
+      );
+      expect(deleted.length).toBe(0);
+    });
+  });
+
+  /* ---- appointment_notes — per-visit notes, append-only (SELECT + INSERT only, 0026) ---- */
+  // Same append-only shape as analytics_events/audit_log: the UPDATE/DELETE privilege is
+  // granted (0026 keeps the full DML grant) but NO UPDATE/DELETE policy exists, so RLS
+  // filters both to 0 rows deterministically. This is the soft-completion note relation —
+  // notes are immutable once written.
+  describe("appointment_notes — append-only (no UPDATE/DELETE policy ⇒ denied for all rows)", () => {
+    it("SELECT under tenant-A returns only A's rows; tenant-B row invisible", async () => {
+      const rows = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`select id::text as id, tenant_id::text as scope from appointment_notes`) as {
+          id: string;
+          scope: string;
+        }[],
+      );
+      const ids = rows.map((r) => r.id);
+      expect(ids).toContain(A.appointmentNote);
+      expect(ids).not.toContain(B.appointmentNote);
+      expect(rows.every((r) => r.scope === A.tenant)).toBe(true);
+    });
+
+    it("INSERT of an own-tenant note under tenant-A JWT succeeds", async () => {
+      const inserted = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        tx<{ id: string }[]>`insert into appointment_notes
+          (tenant_id, appointment_id, patient_id, author_user_id, body)
+          values (${A.tenant}, ${A.appointment}, ${A.patient}, ${A.user}, 'note') returning id`,
+      );
+      expect(inserted.length).toBe(1);
+    });
+
+    it("INSERT of a tenant-B note under tenant-A JWT is rejected by WITH CHECK", async () => {
+      await expect(
+        asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+          tx`insert into appointment_notes
+            (tenant_id, appointment_id, patient_id, author_user_id, body)
+            values (${B.tenant}, ${B.appointment}, ${B.patient}, ${B.user}, 'note')`,
+        ),
+      ).rejects.toThrow(/row-level security/i);
+    });
+
+    it("UPDATE of the tenant's OWN row affects 0 rows — append-only (no UPDATE policy)", async () => {
+      const updated = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`update appointment_notes set body = 'mutated' where id = ${A.appointmentNote} returning id`) as {
+          id: string;
+        }[],
+      );
+      expect(updated.length).toBe(0);
+    });
+
+    it("DELETE of the tenant's OWN row affects 0 rows — append-only (no DELETE policy)", async () => {
+      const deleted = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`delete from appointment_notes where id = ${A.appointmentNote} returning id`) as {
           id: string;
         }[],
       );
