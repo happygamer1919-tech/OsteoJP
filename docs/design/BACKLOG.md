@@ -30,7 +30,7 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | Item | Status | Gate |
 |------|--------|------|
 | availability query (read-only, booked vs free) | DONE | none, parallel-safe with one in-flight migration |
-| schedule-again clone endpoint | DRAFT | none, schedule when ready |
+| schedule-again clone endpoint (loop: docs/loops/schedule-again-clone.md) | WRITTEN | none, schedule when ready |
 
 ### UI lane (Max)
 | Item | Status | Gate |
