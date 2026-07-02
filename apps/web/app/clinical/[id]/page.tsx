@@ -96,7 +96,7 @@ export default async function RecordDetailPage({
 
       <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
         {anchors.length > 0 && (
-          <aside className="lg:sticky lg:top-20 lg:w-60 lg:shrink-0 lg:self-start">
+          <aside className="lg:sticky lg:top-20 lg:w-60 lg:shrink-0 lg:self-start lg:overflow-hidden">
             <SectionRail anchors={anchors} label={s["clinical.title"]} />
           </aside>
         )}
