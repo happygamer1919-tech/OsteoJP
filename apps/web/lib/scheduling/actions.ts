@@ -17,6 +17,7 @@ import { findConflicts, findConflictsForWindow } from "./conflict";
 import { getTherapistAvailability, type DayAvailability } from "./day-availability";
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
+import { getTherapistServiceIds } from "./therapist-services";
 import {
   enqueueRemindersAfterCommit,
   enqueueStatusNotificationsAfterCommit,
@@ -190,6 +191,31 @@ export async function getTherapistDayAvailability(
     return { ok: true, data: days[0] ?? { date: input.date, working: [], booked: [], free: [] } };
   } catch (e) {
     return fail("availability", e);
+  }
+}
+
+/**
+ * Read-only service IDs a therapist is mapped to deliver (`therapist_services`,
+ * migration 0023). Feeds the new-appointment service auto-select (SPEC-
+ * appointments §6): the drawer filters its service Select to this list and
+ * preselects when there is exactly one.
+ */
+export async function getTherapistServices(
+  therapistId: string,
+): Promise<ActionResult<string[]>> {
+  const auth = await authorize("appointments:read");
+  if (isDenied(auth)) return auth;
+  const { actor } = auth;
+
+  if (!therapistId) {
+    return { ok: false, error: "validation" };
+  }
+
+  try {
+    const serviceIds = await getTherapistServiceIds(actor, therapistId);
+    return { ok: true, data: serviceIds };
+  } catch (e) {
+    return fail("therapist-services", e);
   }
 }
 

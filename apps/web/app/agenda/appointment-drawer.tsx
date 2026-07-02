@@ -12,13 +12,14 @@ import {
   useToast,
   type ComboboxOption,
 } from "@osteojp/ui";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { s } from "@/lib/i18n";
 import { searchPatientsAction } from "@/lib/patients/actions";
 import {
   cancelAppointment,
   createAppointment,
+  getTherapistServices,
   rescheduleAppointment,
   updateAppointment,
 } from "@/lib/scheduling/actions";
@@ -208,10 +209,62 @@ export function AppointmentDrawer({
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
-  function onServiceChange(serviceId: string) {
+  function applyService(serviceId: string) {
     const svc = options.services.find((o) => o.id === serviceId);
     setForm((f) => ({ ...f, serviceId, durationMin: svc ? svc.durationMin : f.durationMin }));
   }
+  function onServiceChange(serviceId: string) {
+    applyService(serviceId);
+  }
+
+  // Therapist -> service mapping (0023, SPEC-appointments §6). `therapistServiceResult`
+  // only ever holds the outcome for the therapist it was fetched for, so a
+  // stale response landing after the therapist changed again is naturally
+  // ignored by the render-time comparison below (same technique the
+  // availability panel uses, row 5) rather than resetting state from inside
+  // the effect body. Preselect only fires when the fetch was triggered by an
+  // actual user edit to the Terapeuta field (userChangedTherapist, set in the
+  // Select's onChange below) — never on the initial mount value — so opening
+  // the edit drawer can never silently rewrite an already-saved serviceId
+  // before the user has touched anything.
+  const [therapistServiceResult, setTherapistServiceResult] = useState<
+    { therapistId: string; ids: string[] } | null
+  >(null);
+  const userChangedTherapist = useRef(false);
+
+  useEffect(() => {
+    const therapistId = form.practitionerId;
+    if (!therapistId) return;
+    let cancelled = false;
+    getTherapistServices(therapistId).then((r) => {
+      if (cancelled) return;
+      const ids = r.ok ? r.data : [];
+      setTherapistServiceResult({ therapistId, ids });
+      if (userChangedTherapist.current && ids.length === 1) applyService(ids[0]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  // applyService/options.services are stable for the drawer's lifetime (same
+  // reasoning as the patient-search effect above); only the therapist drives
+  // this fetch.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.practitionerId]);
+
+  // `null` means "unknown" — no therapist picked yet, or the fetch for the
+  // current therapist hasn't landed — and is treated as "show every service",
+  // same fallback as a therapist with zero mappings (BACKLOG.md doesn't rule
+  // on that case; showing all rather than an empty Select is the least
+  // surprising default, see PR description).
+  const therapistServiceIds =
+    form.practitionerId && therapistServiceResult?.therapistId === form.practitionerId
+      ? therapistServiceResult.ids
+      : null;
+
+  const serviceOptions =
+    therapistServiceIds && therapistServiceIds.length > 0
+      ? options.services.filter((o) => therapistServiceIds.includes(o.id))
+      : options.services;
 
   function handleResult(r: { ok: boolean; error?: string; conflicts?: ConflictInfo[] }): boolean {
     if (r.ok) return true;
@@ -363,14 +416,20 @@ export function AppointmentDrawer({
         <Field label={s["appointment.service"]}>
           <Select value={form.serviceId} onChange={(e) => onServiceChange(e.target.value)}>
             <option value="">{s["appointment.selectService"]}</option>
-            {options.services.map((o) => (
+            {serviceOptions.map((o) => (
               <option key={o.id} value={o.id}>{o.label}</option>
             ))}
           </Select>
         </Field>
 
         <Field label={s["appointment.therapist"]} required>
-          <Select value={form.practitionerId} onChange={(e) => set("practitionerId", e.target.value)}>
+          <Select
+            value={form.practitionerId}
+            onChange={(e) => {
+              userChangedTherapist.current = true;
+              set("practitionerId", e.target.value);
+            }}
+          >
             <option value="">{s["appointment.selectTherapist"]}</option>
             {options.therapists.map((o) => (
               <option key={o.id} value={o.id}>{o.label}</option>
