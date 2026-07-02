@@ -303,8 +303,17 @@ export function MarcacoesView({
       </div>
 
       {/* Filters (SPEC-v2-marcacoes §1.2): date range, location, status,
-          service, therapist. Self-contained glass bar. */}
-      <div className="glass-nav flex flex-wrap items-end gap-3 rounded-v2 px-4 py-3 shadow-v2-float">
+          service, therapist. Self-contained glass bar.
+          `relative z-10` mirrors the agenda toolbar (agenda-view.tsx): without
+          an explicit position + z-index, this backdrop-filter element and the
+          results GlassPanel below it (also backdrop-filter, glass-card) both
+          land in the z-index:auto paint bucket and are ordered by DOM/tree
+          order — the later GlassPanel then paints OVER this bar's absolutely
+          positioned DatePicker popovers (which are trapped inside this bar's
+          own stacking context and can't out-rank a later same-level sibling
+          on z-index alone). That's why day cells were invisible: they were
+          rendered and clickable, just painted underneath the results panel. */}
+      <div className="glass-nav relative z-10 flex flex-wrap items-end gap-3 rounded-v2 px-4 py-3 shadow-v2-float">
         <div className="flex items-center gap-2">
           <div className="w-40">
             <DatePicker
