@@ -49,7 +49,7 @@ export function SectionRail({
             className={cx(
               "whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors duration-fast ease-standard",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
-              "lg:rounded-none lg:border-l-2 lg:px-3",
+              "lg:rounded-none lg:border-l-2 lg:px-3 lg:whitespace-normal lg:break-words",
               isActive
                 ? "text-text-primary lg:border-accent-2-700"
                 : "text-text-secondary hover:text-text-primary lg:border-transparent",
