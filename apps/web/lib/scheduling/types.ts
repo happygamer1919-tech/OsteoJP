@@ -4,7 +4,7 @@
 // UTC strings for instants (not Date), so it survives serialization and the
 // client converts to Lisbon wall-clock for display via lib/scheduling/time.
 
-import { appointmentStatus } from "@osteojp/db";
+import { appointmentConfirmationState, appointmentStatus } from "@osteojp/db";
 import type { AgendaView } from "./time";
 import type { RecurrenceSpec, SeriesScope } from "./recurrence";
 
@@ -13,6 +13,15 @@ export type { RecurrenceSpec, SeriesScope, Frequency } from "./recurrence";
 
 export type AppointmentStatusValue =
   (typeof appointmentStatus.enumValues)[number];
+
+/**
+ * Confirmation axis (migration 0024) — did the patient confirm the reminder?
+ * ORTHOGONAL to AppointmentStatusValue (the lifecycle: scheduled -> ... ->
+ * completed/cancelled). Never derive one from the other; always display both
+ * independently (same discipline as record_status vs ai_review_state).
+ */
+export type AppointmentConfirmationStateValue =
+  (typeof appointmentConfirmationState.enumValues)[number];
 
 /** One appointment as rendered in the agenda (joined with display labels). */
 export type AgendaAppointment = {
@@ -34,6 +43,10 @@ export type AgendaAppointment = {
   // Either being set means this appointment belongs to a series.
   recurrenceRule: string | null;
   recurrenceParentId: string | null;
+  // Confirmation axis (0024) — see AppointmentConfirmationStateValue above.
+  confirmationState: AppointmentConfirmationStateValue;
+  confirmationReceivedAt: string | null; // ISO UTC
+  confirmationChannel: string | null; // free text (sms/whatsapp/phone/...), not an enum
 };
 
 export type Option = { id: string; label: string };
