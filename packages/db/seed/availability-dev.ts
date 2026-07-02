@@ -33,10 +33,8 @@ import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { availabilityTemplates } from "../src/schema";
-import {
-  LOC_LAV, LOC_CB, LOC_MTN,
-  USR_1, USR_2, USR_3, USR_4, USR_5,
-} from "./dev-ids";
+import { LOC_LAV, LOC_CB, LOC_MTN } from "./dev-ids";
+import { resolveDevUsers } from "./dev-users";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
 
 export const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
@@ -54,7 +52,9 @@ export const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
 
 export type Shift = readonly [string, string];
 export type Rule = {
-  userId: string;
+  // Stable therapist index 1..5 (USR_1..5 order). Resolved to the user's REAL
+  // id by email at seed time; used directly for the stable template id below.
+  userSeq: number;
   locationId: string;
   weekdays: readonly number[];
   shifts: readonly Shift[];
@@ -62,30 +62,30 @@ export type Rule = {
 
 export const SCHEDULES: readonly Rule[] = [
   // USR_1 Dr. André Costa — Linda-a-Velha, Mon–Fri, two shifts
-  { userId: USR_1, locationId: LOC_LAV, weekdays: [1, 2, 3, 4, 5], shifts: [["09:00", "13:00"], ["14:00", "18:00"]] },
+  { userSeq: 1, locationId: LOC_LAV, weekdays: [1, 2, 3, 4, 5], shifts: [["09:00", "13:00"], ["14:00", "18:00"]] },
 
   // USR_2 Dra. Sofia Mendes — LAV Mon/Wed/Fri (two shifts); CB Tue/Thu (short single shift)
-  { userId: USR_2, locationId: LOC_LAV, weekdays: [1, 3, 5], shifts: [["09:00", "13:00"], ["14:00", "17:00"]] },
-  { userId: USR_2, locationId: LOC_CB,  weekdays: [2, 4],    shifts: [["10:00", "14:00"]] },
+  { userSeq: 2, locationId: LOC_LAV, weekdays: [1, 3, 5], shifts: [["09:00", "13:00"], ["14:00", "17:00"]] },
+  { userSeq: 2, locationId: LOC_CB,  weekdays: [2, 4],    shifts: [["10:00", "14:00"]] },
 
   // USR_3 Dr. Bernardo Figueira — Castelo Branco, Mon–Fri, two shifts (off-the-hour)
-  { userId: USR_3, locationId: LOC_CB, weekdays: [1, 2, 3, 4, 5], shifts: [["08:30", "12:30"], ["13:30", "17:30"]] },
+  { userSeq: 3, locationId: LOC_CB, weekdays: [1, 2, 3, 4, 5], shifts: [["08:30", "12:30"], ["13:30", "17:30"]] },
 
   // USR_4 Dra. Inês Carmo — Montemor-o-Novo, part-time Mon/Wed/Fri, single shift
-  { userId: USR_4, locationId: LOC_MTN, weekdays: [1, 3, 5], shifts: [["09:00", "14:00"]] },
+  { userSeq: 4, locationId: LOC_MTN, weekdays: [1, 3, 5], shifts: [["09:00", "14:00"]] },
 
   // USR_5 Dr. Rui Correia (admin, practices all locations) — light multi-location cover
-  { userId: USR_5, locationId: LOC_LAV, weekdays: [1], shifts: [["15:00", "18:00"]] },
-  { userId: USR_5, locationId: LOC_CB,  weekdays: [3], shifts: [["09:00", "12:00"]] },
-  { userId: USR_5, locationId: LOC_MTN, weekdays: [5], shifts: [["14:00", "17:00"]] },
+  { userSeq: 5, locationId: LOC_LAV, weekdays: [1], shifts: [["15:00", "18:00"]] },
+  { userSeq: 5, locationId: LOC_CB,  weekdays: [3], shifts: [["09:00", "12:00"]] },
+  { userSeq: 5, locationId: LOC_MTN, weekdays: [5], shifts: [["14:00", "17:00"]] },
 ];
 
-// Stable per-user UUID: de000008-<userSeq>-<rowSeq>-0000-000000000000.
-const USER_SEQ: Record<string, number> = {
-  [USR_1]: 1, [USR_2]: 2, [USR_3]: 3, [USR_4]: 4, [USR_5]: 5,
-};
-function makeId(userId: string, rowSeq: number): string {
-  const u = (USER_SEQ[userId] ?? 0).toString(16).padStart(4, "0");
+// Stable per-therapist UUID: de000008-<userSeq>-<rowSeq>-0000-000000000000. The
+// id is keyed on the stable seq (1..5), NOT the user's UUID, so the template id
+// is identical whether the user was seeded under the fixture id or a real one —
+// keeping the upsert idempotent regardless of how the users originated.
+function makeId(userSeq: number, rowSeq: number): string {
+  const u = userSeq.toString(16).padStart(4, "0");
   const r = rowSeq.toString(16).padStart(4, "0");
   return `de000008-${u}-${r}-0000-000000000000`;
 }
@@ -103,19 +103,25 @@ export type AvailabilityRow = {
   isActive: boolean;
 };
 
-/** Expand SCHEDULES into one row per (rule, weekday, shift). Pure — no DB. */
-export function buildRows(): AvailabilityRow[] {
+/**
+ * Expand SCHEDULES into one row per (rule, weekday, shift). Pure — no DB.
+ *
+ * `userIdBySeq` maps the stable therapist seq (1..5) to the user's REAL id
+ * (resolved by email at seed time). The row `id` stays keyed on the seq, so it
+ * is stable across runs; only the `user_id` FK reflects the real user.
+ */
+export function buildRows(userIdBySeq: (seq: number) => string): AvailabilityRow[] {
   const rows: AvailabilityRow[] = [];
-  const perUserSeq: Record<string, number> = {};
+  const perUserSeq: Record<number, number> = {};
 
   for (const rule of SCHEDULES) {
     for (const weekday of rule.weekdays) {
       for (const [startTime, endTime] of rule.shifts) {
-        const seq = (perUserSeq[rule.userId] = (perUserSeq[rule.userId] ?? 0) + 1);
+        const seq = (perUserSeq[rule.userSeq] = (perUserSeq[rule.userSeq] ?? 0) + 1);
         rows.push({
-          id: makeId(rule.userId, seq),
+          id: makeId(rule.userSeq, seq),
           tenantId: TENANT_ID,
-          userId: rule.userId,
+          userId: userIdBySeq(rule.userSeq),
           locationId: rule.locationId,
           weekday,
           startTime,
@@ -138,7 +144,10 @@ async function seed() {
   const sql = postgres(DATABASE_URL, { max: 1 });
   const db = drizzle(sql);
 
-  const rows = buildRows();
+  // Resolve USR_1..5 to their REAL ids by (tenant, email); user_id FKs flow from
+  // here, never a fixture constant (FA-1).
+  const { userIdBySeq } = await resolveDevUsers(db, TENANT_ID);
+  const rows = buildRows(userIdBySeq);
   console.log(`Seeding ${rows.length} availability templates → tenant ${TENANT_ID}…`);
 
   const result = await db

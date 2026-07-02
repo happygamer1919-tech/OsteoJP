@@ -1,22 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { buildRows, SCHEDULES, TENANT_ID } from "../seed/availability-dev";
-import {
-  USR_1, USR_2, USR_3, USR_4, USR_5,
-  LOC_LAV, LOC_CB, LOC_MTN,
-} from "../seed/dev-ids";
+import { LOC_LAV, LOC_CB, LOC_MTN } from "../seed/dev-ids";
 
 // Pure, DB-free checks on the availability_templates dev seed. These run in the
 // normal `pnpm test` (no DATABASE_URL needed) and lock the seed's shape so a
 // later edit can't silently drop a therapist's working windows or introduce a
 // duplicate row. The live seed run against dev is a separate manual step.
+//
+// buildRows now takes a seq→userId resolver (FA-1: user_id resolves by email at
+// seed time). The shape is independent of the actual user id, so the test feeds
+// a deterministic stand-in id per therapist seq and asserts against it.
 
-const rows = buildRows();
+const TEST_ID = (seq: number): string =>
+  `de000004-0000-0000-0000-${seq.toString(16).padStart(12, "0")}`;
 
-// Role therapist = USR_1..4 (USR_5 is admin but also practices — see dev-reference).
-const THERAPISTS = [USR_1, USR_2, USR_3, USR_4] as const;
+const rows = buildRows(TEST_ID);
+
+// Role therapist = seq 1..4 (seq 5 is admin but also practices — see dev-reference).
+const THERAPISTS = [1, 2, 3, 4].map(TEST_ID);
 const LOCATIONS = new Set([LOC_LAV, LOC_CB, LOC_MTN]);
 
 const countFor = (userId: string) => rows.filter((r) => r.userId === userId).length;
+const countForSeq = (seq: number) => countFor(TEST_ID(seq));
 
 describe("availability-dev seed", () => {
   it("produces the expected total row count", () => {
@@ -28,11 +33,11 @@ describe("availability-dev seed", () => {
   });
 
   it("matches the intended per-practitioner counts", () => {
-    expect(countFor(USR_1)).toBe(10); // LAV Mon–Fri × 2 shifts
-    expect(countFor(USR_2)).toBe(8); //  LAV Mon/Wed/Fri × 2 + CB Tue/Thu × 1
-    expect(countFor(USR_3)).toBe(10); // CB Mon–Fri × 2 shifts
-    expect(countFor(USR_4)).toBe(3); //  MTN Mon/Wed/Fri × 1 shift
-    expect(countFor(USR_5)).toBe(3); //  admin: one shift per clinic
+    expect(countForSeq(1)).toBe(10); // LAV Mon–Fri × 2 shifts
+    expect(countForSeq(2)).toBe(8); //  LAV Mon/Wed/Fri × 2 + CB Tue/Thu × 1
+    expect(countForSeq(3)).toBe(10); // CB Mon–Fri × 2 shifts
+    expect(countForSeq(4)).toBe(3); //  MTN Mon/Wed/Fri × 1 shift
+    expect(countForSeq(5)).toBe(3); //  admin: one shift per clinic
   });
 
   it("uses unique, well-formed ids (idempotent upsert keys)", () => {

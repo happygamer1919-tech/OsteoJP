@@ -21,6 +21,7 @@ import postgres from "postgres";
 import { tenants, roles, locations, services, users } from "../src/schema";
 import { loadFormTemplates } from "./form-templates";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
+import { DEV_USERS } from "./dev-users";
 import {
   ROLE_OWNER, ROLE_ADMIN, ROLE_THERAPIST, ROLE_RECEPTION,
   LOC_LAV, LOC_CB, LOC_MTN,
@@ -116,16 +117,21 @@ async function seed() {
     return id;
   };
 
+  // Insert from the single-source DEV_USERS descriptor (packages/db/seed/dev-users.ts);
+  // downstream seeders resolve these users' REAL ids by email, never the fixture id.
   console.log("Seeding users…");
   await db
     .insert(users)
-    .values([
-      { id: USR_1, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "andre.costa@osteojp-dev.pt",      fullName: "Dr. André Costa",       isActive: true },
-      { id: USR_2, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "sofia.mendes@osteojp-dev.pt",     fullName: "Dra. Sofia Mendes",      isActive: true },
-      { id: USR_3, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "bernardo.figueira@osteojp-dev.pt", fullName: "Dr. Bernardo Figueira", isActive: true },
-      { id: USR_4, tenantId: TENANT_ID, roleId: roleId("therapist"), email: "ines.carmo@osteojp-dev.pt",       fullName: "Dra. Inês Carmo",        isActive: true },
-      { id: USR_5, tenantId: TENANT_ID, roleId: roleId("admin"),     email: "rui.correia@osteojp-dev.pt",      fullName: "Dr. Rui Correia",        isActive: true },
-    ])
+    .values(
+      DEV_USERS.map((u) => ({
+        id: u.id,
+        tenantId: TENANT_ID,
+        roleId: roleId(u.roleSlug),
+        email: u.email,
+        fullName: u.fullName,
+        isActive: true,
+      })),
+    )
     .onConflictDoNothing();
 
   // ── Form templates ──
