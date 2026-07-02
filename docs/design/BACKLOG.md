@@ -24,7 +24,7 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | 0027 | multi-therapist booking | DONE (#416) | 0026 DONE |
 | 0028 | batch scheduling engine | DONE (#417) | 0027 DONE AND availability query DONE AND availability_templates dev seed merged |
 | seed | availability_templates dev seed (purple, migration-free) | DONE (#406; guard rework #412, seed role-ID fix #414) | none |
-| TBD | patient ID column | DRAFT | JP patient ID format ruling (open, QUESTIONS 2026-06-30) |
+| 0029 | patient number (loop: docs/loops/0029-patient-number.md) | WRITTEN | none — ruling received (JP, DECISIONS 2026-07-02); ready for GREEN |
 | TBD | patient_notes append-only relation | DEFERRED | JP audit-trail ruling; `patients.notes` mutable text sufficient for Wave 01 (0022 comment, DECISIONS 2026-06-30) |
 
 ### Ivan non-migration code (parallel-safe, not migration-numbered)
@@ -32,7 +32,8 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 |------|--------|------|
 | availability query (read-only, booked vs free) | DONE (#396) | none, parallel-safe with one in-flight migration |
 | schedule-again clone endpoint (loop: docs/loops/schedule-again-clone.md) | DONE (#419) | none |
-| finance KPI report (revenue per therapist/service) | GATED | accountant VAT ruling (VAT 0 vs 23, PT health services); events capture gross now, VAT at report time (QUESTIONS 2026-06-30) |
+| FA-1 users-seed natural-key fix (loop: docs/loops/users-seed-natural-key-fix.md) | WRITTEN | none — ready for PURPLE (migration-free; QUESTIONS 2026-07-02 FA-1) |
+| finance KPI report (revenue per therapist/service) | QUEUED (gate cleared) | VAT answered — CIVA art. 9 exemption, gross=final (DECISIONS 2026-07-02); queued until scoped as its own loop |
 
 ### UI lane (Max)
 | Item | Status | Gate |
@@ -48,4 +49,4 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | fichas-as-tab inside patient profile | DRAFT | JP fichas-placement design ruling (0026 code merged; design call still open) |
 | schedule-again action on patient profile | READY | clone endpoint DONE (#419) |
 | batch failure pop-up | READY | 0028 DONE |
-| patient ID next to NIF | DRAFT | patient ID migration (still DRAFT, gated on JP format ruling) |
+| patient ID next to NIF | DRAFT | 0029 patient number migration (WRITTEN, ready for GREEN); unblocks when 0029 merges |
