@@ -97,6 +97,7 @@
   "patients.sexOther": "Outro",
   "patients.sexNotSpecified": "Não especificado",
   "patients.fieldNif": "NIF",
+  "patients.patientNumber": "N.º de paciente",
   "patients.fieldEmail": "Email",
   "patients.fieldPhone": "Telemóvel",
   "patients.fieldAddress": "Morada",

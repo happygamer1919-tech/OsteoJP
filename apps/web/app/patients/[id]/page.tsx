@@ -14,6 +14,7 @@ import { notFound } from "next/navigation";
 import { getRequestContext } from "../../../lib/auth/context";
 import { listRecords, type RecordStatus } from "../../../lib/clinical/records";
 import { listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
+import { formatPatientNumber } from "../../../lib/patients/format";
 import { getPatient } from "../../../lib/patients/queries";
 import type { Patient } from "../../../lib/patients/types";
 import { PatientActions } from "../_components/patient-actions";
@@ -96,6 +97,11 @@ export default async function PatientProfilePage({
     [s["patients.fieldDateOfBirth"], patient.dateOfBirth ? dateFmt.format(new Date(patient.dateOfBirth)) : "—"],
     [s["patients.fieldSex"], patient.sex ? formatSex(patient.sex) : "—"],
     [s["patients.fieldNif"], patient.nif ?? "—"],
+    // patient_number is NOT NULL post-backfill (migration 0029); still rendered
+    // defensively so the row is simply omitted rather than showing "—" if absent.
+    ...(patient.patientNumber
+      ? ([[s["patients.patientNumber"], formatPatientNumber(patient.patientNumber)]] as [string, string][])
+      : []),
     [
       s["patients.fieldAddress"],
       [patient.address, patient.city, patient.postalCode].filter(Boolean).join(", ") || "—",

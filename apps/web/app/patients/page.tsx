@@ -6,6 +6,7 @@ import { Suspense } from "react";
 
 import { getRequestContext } from "../../lib/auth/context";
 import { s } from "../../lib/i18n";
+import { formatPatientNumber } from "../../lib/patients/format";
 import { listPatients, searchPatients } from "../../lib/patients/queries";
 import type { Patient } from "../../lib/patients/types";
 import { SearchBox } from "./_components/search-box";
@@ -42,10 +43,21 @@ function Avatar({ name }: { name: string }) {
   );
 }
 
-// Avatar + name over a NIF secondary line. NIF is on the existing list query
-// (Patient = patients.$inferSelect), so the §2 NIF assumption resolves in favour
-// of rendering it; absent, the line is simply omitted.
+// Avatar + name over a NIF/patient-number secondary line. Both are on the
+// existing list query (Patient = patients.$inferSelect); each part is
+// rendered only when present (NIF may be absent; patient_number is NOT NULL
+// post-backfill but still checked defensively), joined " · " like the
+// profile page's identityLine().
+function personSecondaryLine(patient: Patient): string | null {
+  const parts = [
+    patient.nif ? `${s["patients.fieldNif"]} ${patient.nif}` : null,
+    patient.patientNumber ? `${s["patients.patientNumber"]} ${formatPatientNumber(patient.patientNumber)}` : null,
+  ].filter((p): p is string => p !== null);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 function PersonCell({ patient }: { patient: Patient }) {
+  const secondaryLine = personSecondaryLine(patient);
   return (
     <div className="flex items-center gap-3">
       <Avatar name={patient.fullName} />
@@ -53,10 +65,8 @@ function PersonCell({ patient }: { patient: Patient }) {
         <span className="truncate font-medium text-v2-text-primary">
           {patient.fullName}
         </span>
-        {patient.nif ? (
-          <span className="text-xs text-v2-text-secondary">
-            {s["patients.fieldNif"]} {patient.nif}
-          </span>
+        {secondaryLine ? (
+          <span className="text-xs text-v2-text-secondary">{secondaryLine}</span>
         ) : null}
       </div>
     </div>
@@ -223,36 +233,39 @@ async function PatientsResults({ query }: { query: string }) {
 
       {/* Mobile: stacked rows, same single-tab-stop link semantics. */}
       <ul className="divide-y divide-v2-border sm:hidden">
-        {rows.map((p) => (
-          <li key={p.id}>
-            <Link
-              href={`/patients/${p.id}`}
-              aria-label={`${s["patients.openLabel"]}: ${p.fullName}`}
-              className="flex items-center gap-3 rounded-v2 px-1 py-3 transition-colors duration-fast ease-standard hover:bg-v2-green-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-            >
-              <Avatar name={p.fullName} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-v2-text-primary">
-                  {p.fullName}
-                </p>
-                {p.nif ? (
-                  <p className="truncate text-xs text-v2-text-secondary">
-                    {s["patients.fieldNif"]} {p.nif}
+        {rows.map((p) => {
+          const secondaryLine = personSecondaryLine(p);
+          return (
+            <li key={p.id}>
+              <Link
+                href={`/patients/${p.id}`}
+                aria-label={`${s["patients.openLabel"]}: ${p.fullName}`}
+                className="flex items-center gap-3 rounded-v2 px-1 py-3 transition-colors duration-fast ease-standard hover:bg-v2-green-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+              >
+                <Avatar name={p.fullName} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-v2-text-primary">
+                    {p.fullName}
                   </p>
-                ) : null}
-                <p className="truncate text-xs text-v2-text-secondary">
-                  {p.phone ?? "—"}
-                </p>
-              </div>
-              <ChevronRight
-                size={20}
-                strokeWidth={1.75}
-                aria-hidden="true"
-                className="shrink-0 text-v2-text-secondary"
-              />
-            </Link>
-          </li>
-        ))}
+                  {secondaryLine ? (
+                    <p className="truncate text-xs text-v2-text-secondary">
+                      {secondaryLine}
+                    </p>
+                  ) : null}
+                  <p className="truncate text-xs text-v2-text-secondary">
+                    {p.phone ?? "—"}
+                  </p>
+                </div>
+                <ChevronRight
+                  size={20}
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                  className="shrink-0 text-v2-text-secondary"
+                />
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </GlassPanel>
   );
