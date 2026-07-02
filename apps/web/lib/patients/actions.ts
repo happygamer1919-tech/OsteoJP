@@ -9,7 +9,7 @@
 // Patients are NEVER hard-deleted (hard rule: soft delete via deleted_at).
 
 import { revalidatePath } from "next/cache";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, max, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { patients } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "../auth/context";
@@ -40,6 +40,20 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
   const input = parseCreatePatient(raw);
 
   const patient = await runScoped(ctx, async (tx) => {
+    // Per-tenant sequential patient number (JP ruling, DECISIONS 2026-07-02).
+    // Serialize concurrent inserts for this tenant with the same transaction-
+    // scoped advisory lock the 0029 trigger uses, then assign MAX+1. Setting it
+    // explicitly here makes the trigger pass it through untouched; the trigger
+    // stays the safety net for the other insert paths (import, seeds, tests).
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext('patients_patient_number'), hashtext(${ctx.tenantId}::text))`,
+    );
+    const [agg] = await tx
+      .select({ maxNumber: max(patients.patientNumber) })
+      .from(patients)
+      .where(eq(patients.tenantId, ctx.tenantId));
+    const patientNumber = Number(agg?.maxNumber ?? 0) + 1;
+
     // tenant_id is set explicitly because it is NOT NULL; RLS WITH CHECK then
     // verifies it equals the caller's tenant. This is the required INSERT value,
     // not a hand-rolled tenant filter.
@@ -47,6 +61,7 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
       .insert(patients)
       .values({
         tenantId: ctx.tenantId,
+        patientNumber,
         createdBy: ctx.userId,
         fullName: input.fullName,
         dateOfBirth: input.dateOfBirth,
