@@ -97,6 +97,7 @@
   "patients.sexOther": "Other",
   "patients.sexNotSpecified": "Not specified",
   "patients.fieldNif": "NIF",
+  "patients.patientNumber": "Patient no.",
   "patients.fieldEmail": "Email",
   "patients.fieldPhone": "Phone",
   "patients.fieldAddress": "Address",
