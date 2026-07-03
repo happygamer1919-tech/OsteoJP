@@ -341,3 +341,25 @@ actually signed off on.
 - **Recommended default:** the executor of W2-04 / W2-05 / W2-06 posts the closing comment on
   #440 / #439 / #446 respectively as the final step of its own merge.
 - **Owner:** whichever lane merges the replacement loop.
+
+## 2026-07-03 — SMS confirmation flow (W2-13 SPEC): owner/JP decisions before any build
+
+> Source: `docs/design/SPEC-sms-confirmation.md` (SPEC ONLY, no build this wave). A build
+> loop is gated on all four items below.
+
+- [ ] **Twilio as a new vendor (owner-confirmable).** The SMS flow introduces Twilio (new
+  third-party vendor, CLAUDE.md). Needs owner approval AND confirmation of an EU region /
+  signed DPA before any integration is wired. **Recommended default:** approve only with
+  Twilio EU region + DPA; otherwise re-evaluate an EU-native SMS provider.
+- [ ] **Message + confirm-page copy (pt-PT).** Exact SMS body and the SIM/NÃO confirm-page
+  wording (JP tone: serious, "padrão ouro", no emoji). **Recommended default:** a two-line
+  SMS (clinic + appointment date/time + short link) and a page showing date/time/therapist/
+  location with SIM (Confirmar) / NÃO (Não posso) buttons — final wording is JP's.
+- [ ] **Exact send times (Europe/Lisbon).** What "day-before" and "same-day-morning" mean.
+  **Recommended default:** 18:00 on D-1 and 08:00 on D0 (Europe/Lisbon), skip if the
+  appointment is already confirmed/declined.
+- [ ] **Opt-out / consent (GDPR).** STOP handling, per-patient SMS preference, and consent
+  capture. **Recommended default:** honour the existing per-patient `reminder_sms_enabled`
+  flag; add a STOP keyword handler and suppress on opt-out; no SMS without the flag set.
+- **Owner:** JP for copy; owner for the Twilio vendor + residency call. A future build loop
+  picks these up once answered.
