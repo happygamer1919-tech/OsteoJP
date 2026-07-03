@@ -63,7 +63,7 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 
 ## Wave 02 Loop Queue
 
-> Opened 2026-07-03. Same board rules as Wave 01 (status flow, one MIG-lane loop in flight, db-tests.yml/e2e.yml = Ivan hold). Loop files land under `docs/loops/wave-02/`. Lane tags: GREEN = chained migration runner, PURPLE = migration-free executor, UI = Max's UI lane. Sequencing gates are in the Gate column; DRAFT rows have no committed loop file yet.
+> Opened 2026-07-03. Same board rules as Wave 01 (status flow, one MIG-lane loop in flight, db-tests.yml/e2e.yml = Ivan hold). Loop files land under `docs/loops/wave-02/`. **Wave-02 lane override (DECISIONS 2026-07-03 "Wave 02 is single-executor"): every W2 loop — migration, UI, PURPLE, docs — belongs to the GREEN runner; the historical GREEN/PURPLE/UI tags apply to future waves, not this one.** Sequencing gates are in the Gate column; DRAFT rows have no committed loop file yet.
 
 | ID | Item | Status | Lane | Gate / note |
 |------|------|--------|------|-------------|
@@ -75,11 +75,11 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | W2-06 | fichas tab completion (list + create entry point) (loop: `docs/loops/wave-02/W2-06-ui-fichas-tab-completion.md`) | DONE (#458) | GREEN runner | owner ruling 2026-07-03: wave-02 single-executor, UI lane closed this wave. Registos tab: Nova ficha (scoped reuse) + per-ficha Nova versão (reuse versionRecordAction); /clinical nav item removed, list route kept unlinked (no orphan); /clinical/[id] deep links intact; supersedes halt #446 |
 | W2-07 | migration 0031 NESA contraindication flags (loop: `docs/loops/wave-02/W2-07-mig-0031-nesa-contraindications.md`) | DONE (#453) | GREEN | AFTER W2-01 (0030) merged — one migration in flight; per DECISIONS 2026-07-03 ruling A; applied on dev, 3 boolean cols default false, db suite 303 green |
 | W2-08 | NESA booking warning UI (loop: `docs/loops/wave-02/W2-08-ui-nesa-warning.md`) | DONE (#460) | GREEN runner | owner ruling 2026-07-03: wave-02 single-executor, UI lane closed this wave. Soft warning (never blocks) across 3 surfaces: patient checkboxes, service admin flag, reactive drawer Banner (both booking paths); per DECISIONS 2026-07-03 ruling A |
-| W2-09 | batch V2 engine — explicit per-slot datetime list | DRAFT | PURPLE | supersedes the V1 recurrence-only batch path |
-| W2-10 | batch V2 UI (Agendar lote: count, every-X, per-date time pickers, summary, confirm) | DRAFT | UI | AFTER W2-09 merged |
-| W2-11 | patient notes tab + Notas Rápidas rewire to patient quick-note | DRAFT | UI/PURPLE | AFTER 0030 merged; includes read-only trace of the current Notas Rápidas write destination + orphaned-data check; flips notes UI to the revisions relation |
-| W2-12 | working-hours admin UI — availability template CRUD per therapist in Administração (weekdays, hours, location) | DRAFT | UI | none stated |
-| W2-13 | SMS confirmation flow — SPEC ONLY, no build this wave (Twilio PT, signed SIM/NÃO link page, flips 0024 `confirmation_state`) | DRAFT | SPEC | new vendor (Twilio) — spec only, owner-confirmable before any build |
+| W2-09 | batch V2 engine — explicit per-slot datetime list (loop: `docs/loops/wave-02/W2-09-engine-batch-v2.md`) | READY | GREEN runner | none — migration-free; extends `batchSchedule` (0028) with an explicit slot-list input, backward compatible; supersedes the V1 recurrence-only batch path |
+| W2-10 | batch V2 UI (Agendar lote: count, every-X, per-date time pickers, summary, confirm) (loop: `docs/loops/wave-02/W2-10-ui-agendar-lote.md`) | READY | GREEN runner | AFTER W2-09 merged; REPLACES the V1 recorrente entry point (owner pre-ruled); reuses the W2-05 failure dialog |
+| W2-11 | patient notes tab + Notas Rápidas rewire to patient quick-note (loop: `docs/loops/wave-02/W2-11-ui-patient-notes.md`) | READY | GREEN runner | precondition met (0030 / #452); read-only trace of Notas Rápidas destination + orphaned-data HALT check; flips notes UI to the revisions relation (`patients.notes` untouched) |
+| W2-12 | working-hours admin UI — availability template CRUD per therapist in Administração (weekdays, hours, location) (loop: `docs/loops/wave-02/W2-12-ui-working-hours-admin.md`) | READY | GREEN runner | none — migration-free CRUD over `availability_templates`; HALT check on same-weekday overlap (default: reject overlaps) |
+| W2-13 | SMS confirmation flow — SPEC ONLY, no build this wave (Twilio PT, signed SIM/NÃO link page, flips 0024 `confirmation_state`) (loop: `docs/loops/wave-02/W2-13-spec-sms-confirmation.md`) | READY | GREEN runner | docs-output loop (SPEC + QUESTIONS only); Twilio = new vendor, owner-confirmable before any future build |
 
 ### Wave 02 deferred (recorded, not scheduled this wave)
 - **2-clients-same-slot UI** — `booking_group_id` (0027) exists in schema, no UI yet. Deferred.
