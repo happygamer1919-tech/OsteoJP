@@ -73,7 +73,7 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | W2-04 | no-note indicator UI on completed appointments (loop: `docs/loops/wave-02/W2-04-ui-no-note-indicator.md`) | READY | UI | none — precondition met (#449 merged); reads `appointment_notes` existence (present-state), supersedes halt #440 |
 | W2-05 | batch failure pop-up wiring (partial-success) (loop: `docs/loops/wave-02/W2-05-ui-batch-failure-popup.md`) | READY | UI | none — per DECISIONS 2026-07-03 ruling G; supersedes halt #439 (HALTs if engine change needed → W2-09) |
 | W2-06 | fichas tab completion (list + create entry point) (loop: `docs/loops/wave-02/W2-06-ui-fichas-tab-completion.md`) | READY | UI | none — per DECISIONS 2026-07-03 ruling F; supersedes halt #446 |
-| W2-07 | migration 0031 NESA contraindication flags (loop: `docs/loops/wave-02/W2-07-mig-0031-nesa-contraindications.md`) | READY | GREEN | AFTER W2-01 (0030) merged — one migration in flight; per DECISIONS 2026-07-03 ruling A |
+| W2-07 | migration 0031 NESA contraindication flags (loop: `docs/loops/wave-02/W2-07-mig-0031-nesa-contraindications.md`) | DONE (#453) | GREEN | AFTER W2-01 (0030) merged — one migration in flight; per DECISIONS 2026-07-03 ruling A; applied on dev, 3 boolean cols default false, db suite 303 green |
 | W2-08 | NESA booking warning UI (loop: `docs/loops/wave-02/W2-08-ui-nesa-warning.md`) | READY | UI | AFTER W2-07 (0031) merged; per DECISIONS 2026-07-03 ruling A (warning, never a block) |
 | W2-09 | batch V2 engine — explicit per-slot datetime list | DRAFT | PURPLE | supersedes the V1 recurrence-only batch path |
 | W2-10 | batch V2 UI (Agendar lote: count, every-X, per-date time pickers, summary, confirm) | DRAFT | UI | AFTER W2-09 merged |
