@@ -251,6 +251,10 @@ export const services = pgTable(
     priceCents: integer("price_cents"), // seeded from the owner's pricing data
     currency: varchar("currency", { length: 3 }).notNull().default("EUR"),
     isActive: boolean("is_active").notNull().default(true),
+    // NESA contraindication flag (0031, DECISIONS 2026-07-03 ruling A): marks a
+    // service as sensitive so booking surfaces a SOFT warning (W2-08). Never a
+    // hard block — warning logic lives in the UI, the column only stores state.
+    contraindicationSensitive: boolean("contraindication_sensitive").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -369,6 +373,11 @@ export const patients = pgTable(
     // Wave 01 — clinically relevant (sedentary work, job-driven strain).
     profession: text("profession"),
     notes: text("notes"),
+    // NESA contraindication flags (0031, DECISIONS 2026-07-03 ruling A): drive a
+    // SOFT booking-time warning (W2-08), never a hard block. Columns only store
+    // state; the warning logic lives in the UI.
+    contraindicationEpilepsy: boolean("contraindication_epilepsy").notNull().default(false),
+    contraindicationPregnancy: boolean("contraindication_pregnancy").notNull().default(false),
     // Patient identity layer — links a patient to their Supabase auth principal
     // (the patient portal login at api.osteojp.pt). A patient is a DISTINCT
     // principal from a staff `users` row: there is no users row for a patient.
