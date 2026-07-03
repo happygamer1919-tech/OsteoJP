@@ -59,6 +59,10 @@ const LOCATION_A = "00000000-0000-0000-0000-00000000a101";
 const LOCATION_ARCHIVED = "00000000-0000-0000-0000-00000000a102";
 const LOCATION_ARCHIVED_NAME = "Sede Antiga (Arquivada)";
 const SERVICE_A = "00000000-0000-0000-0000-00000000a201";
+// NESA contraindication-sensitive service (W2-08) — pairs with Ana's epilepsy
+// flag to drive the soft booking warning.
+const SERVICE_NESA = "00000000-0000-0000-0000-00000000a202";
+const SERVICE_NESA_NAME = "NESA (sensível)";
 
 const PATIENTS_A = [
   {
@@ -84,6 +88,9 @@ const PATIENTS_A = [
     phone: "+351 914 000 003",
     email: null,
     deleted_at: null,
+    // NESA contraindication flag (W2-08): drives the soft booking warning when
+    // paired with the contraindication-sensitive service seeded below.
+    contraindication_epilepsy: true,
   },
   {
     // Pre-soft-deleted — must NEVER appear in the active list or search.
@@ -207,6 +214,13 @@ async function ensureBaseData() {
       { onConflict: "id" },
     )).error,
     "service",
+  );
+  must(
+    (await db.from("services").upsert(
+      { id: SERVICE_NESA, tenant_id: TENANT_A, location_id: LOCATION_A, name: SERVICE_NESA_NAME, duration_min: 60, is_active: true, contraindication_sensitive: true },
+      { onConflict: "id" },
+    )).error,
+    "service-nesa",
   );
 
   for (const p of PATIENTS_A) {
