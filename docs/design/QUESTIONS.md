@@ -111,6 +111,11 @@ intact.
 - **Priority:** small, non-urgent. Do before the next seed consumer runs the chain.
 - **Recommended default:** add the shared dotenv preload to the seed entrypoint; do not
   weaken or remove `SEED_DEV_CONFIRM`.
+- **RESOLVED (2026-07-03):** shipped in PR #444 (merged 2026-07-03). The `seed:dev` chain now
+  auto-loads `packages/db/.env` via Node's `process.loadEnvFile` (no new dependency, mirrors the
+  drizzle-kit config pattern), so `DATABASE_URL` is available without manual sourcing.
+  `SEED_DEV_CONFIRM` stays shell-only and is captured BEFORE the preload, and `.env` is asserted
+  not to define it, so the opt-in is not weakened. The manual-sourcing caveat is retired.
 
 ### FA-1 — Hardcoded-FK audit (read-only findings, owed from the #414 dispatch)
 
@@ -210,6 +215,13 @@ defeating the owner requirement outright rather than approximating it.
   explicitly logging the backdated-note gap as a known, temporary limitation, and
   fast-follow to the event-sourced read once capture lands.
 - **Owner:** Ivan / backend stream.
+- **RESOLVED (2026-07-03, Ivan):** the gap is confirmed REAL, not a mis-read. The
+  `note_present` capture is assigned to the PURPLE lane as a build item: insert the
+  `analytics_events` `appointment_status_changed` row inside `updateAppointment`'s completion
+  branch (`actions.ts`), migration-free (existing 0025 table), with `note_present` computed as
+  an `exists(... appointment_notes ...)` check in the same tx — i.e. the recommended default
+  above, backend lane not UI. Max's row-8 no-note indicator UI (#440) lands AFTER the capture
+  ships and reads `note_present` off that event. Row 8 stays HALTED as a UI ticket until then.
 
 ## 2026-07-02 — HALT: row 7 fichas-as-tab awaiting JP fichas-placement design ruling (route: Ivan)
 
@@ -256,3 +268,47 @@ actually signed off on.
   is JP's placement call to make, not one to infer from the completion ruling.
 - **Owner:** Ivan, routing JP's fichas-placement ruling through as he did for
   gated completion (DECISIONS.md 2026-07-01).
+- **RESOLVED (2026-07-03, Ivan):** placement ruling issued — see
+  `docs/design/DECISIONS.md` 2026-07-03 "Fichas Clínicas placement: tab in the patient
+  profile". Fichas Clínicas leaves top-level nav and becomes a tab in the patient profile
+  alongside Marcações; per-visit notes (0026) and fichas stay two distinct objects (notes
+  attach to appointments with an optional episode link, never merged); the tab lists the
+  patient's fichas and per-visit notes surface in appointment history. The `/clinical/[id]`
+  record-detail deep links keep resolving unchanged, as recommended. This confirms the halt
+  was a false positive rooted in the two-shelf split: the cited 2026-07-01 gated-completion
+  ruling already lived on the canonical shelf and was a SEPARATE call from placement — the
+  agent that proposed a backfill had read the legacy shelf. Row 7 UNBLOCKED (UI lane, existing
+  PR #446).
+
+## 2026-07-03 — NEW TICKET: Vercel Preview envs share the single Supabase project (infra)
+
+- [ ] Vercel Preview environments on `osteojp-platform` now carry DB env vars and share the
+  SINGLE Supabase project (`jaxmkwoxjcgzkwxgbayx`) with the deployed app (fixed by Max
+  2026-07-02 so previews build against a real DB). Consequence: preview deployments read/write
+  the same dev database as the live app — no preview DB isolation.
+- **Context:** this reinforces the existing pre-real-data gate (DECISIONS 2026-07-01: provision a
+  SEPARATE production Supabase project and repoint envs before any real patient data). Preview DB
+  isolation is a distinct, future infra call: once a separate prod project exists, decide whether
+  previews get their own branch/database or stay pointed at dev-only.
+- **Recommended default:** defer preview DB isolation until the separate-prod-project gate is
+  executed; track it as part of that infra work, not before. No real patient data exists today,
+  so shared preview/dev is acceptable in the interim.
+- **Owner:** Ivan / infra.
+
+## 2026-07-03 — NEW TICKET: legacy-shelf consolidation loop (docs)
+
+- [ ] Two documentation shelves exist: canonical `docs/design/` (DECISIONS.md, QUESTIONS.md,
+  STATE.md, BACKLOG.md) and legacy `docs/` (DECISIONS.md, QUESTIONS.md). Per DECISIONS
+  2026-07-03 "Canonical doc shelf is docs/design/", the legacy files are read-only for new
+  entries, but they still hold open items (e.g. Bodychart term, portal ficha naming,
+  consulta/marcação brand-voice, batch-pop-up/row-9 in `docs/QUESTIONS.md`) and historical
+  content in the 800-line `docs/DECISIONS.md`.
+- **Scope of the future loop:** migrate the still-open `docs/QUESTIONS.md` items and any
+  live/unsuperseded `docs/DECISIONS.md` content onto the canonical `docs/design/` shelf, then
+  replace the legacy files with archived pointer stubs (a header noting the content moved and
+  where). Append-only history preserved; no decision content discarded.
+- **Priority:** low, non-urgent. Do NOT fold into a feature PR; it is its own docs loop to keep
+  the diff reviewable.
+- **Recommended default:** one dedicated consolidation loop, canonical shelf as the merge target,
+  legacy files become pointer stubs (not deleted).
+- **Owner:** Ivan / docs.

@@ -91,8 +91,11 @@ FA-1 users-seed fix ran, Max-confirmed 2026-07-02:
 - `patients` = **105** — 50 seed fixtures + **55 QA-created test patients** (created through the
   app during UI QA). All synthetic; zero real patient data.
 - `users` = **12** — 5 seed fixtures (`USR_1..5`) + **7 staff / QA accounts**.
-- `appointments` = 272, `availability_templates` = 34, `clinical_episodes` = 46,
+- `appointments` = 274, `availability_templates` = 34, `clinical_episodes` = 46,
   `clinical_records` = 78, `roles` = 4.
+  - `appointments` 272 → 274 (2026-07-03): +2 drift observed live during the FT-1 / PR #444
+    zero-delta seed runs (the seed itself changed nothing; the delta is external QA activity on
+    the shared dev project). Drift is external and expected; live counts remain the authority.
 - Migration head **0029**. `patients.patient_number` backfilled **contiguous 1..105** per tenant
   (single dev tenant), unique per `(tenant_id, patient_number)`.
 - FA-1 landed: seed user FKs now resolve by `(tenant_id, email)` via
@@ -106,6 +109,35 @@ affect the pre-real-data gates (DECISIONS.md 2026-07-01): all dev data remains S
 Fisiozero export has been imported, so the separate-prod-project gate before real patient data
 stands unchanged. The counts above are the working baseline for future recon; when a seeder or
 test asserts "50 patients", read it as the fixture floor, not the live total.
+
+## 2026-07-03 - Wave 01 close-out: lane status + seed:dev env preload
+
+### seed:dev env preload (PR #444, merged 2026-07-03)
+- The `seed:dev` chain now auto-loads `packages/db/.env` via Node's `process.loadEnvFile` (no new
+  dependency), so `DATABASE_URL` is available without manually sourcing the env. `SEED_DEV_CONFIRM`
+  stays SHELL-ONLY and is captured BEFORE the preload; `.env` is asserted not to define it, so the
+  opt-in guard is not weakened. The prior manual-sourcing caveat (tracked as QUESTIONS FT-1) is
+  RETIRED — the run is now `SEED_DEV_CONFIRM=<ref> pnpm --filter @osteojp/db seed:dev`.
+
+### Max UI-consumption lane status (Wave 01)
+- Rows 1–6 MERGED: #383 / #384 / #385, #435 + #393, #442, #441, #445.
+- Rows 7–9 were halted, now unblocked/assigned per the 2026-07-03 rulings:
+  - Row 7 (fichas-as-tab) UNBLOCKED by DECISIONS 2026-07-03 "Fichas Clínicas placement"; UI lane,
+    existing PR #446.
+  - Row 8 (no-note indicator) SPLIT: the missing `note_present` capture is a PURPLE backend build
+    item first (migration-free, in `updateAppointment`'s completion branch — QUESTIONS Q-ROW8-1
+    resolution); Max's UI indicator (#440) lands after it.
+  - Row 9 (batch failure pop-up) UNBLOCKED by DECISIONS 2026-07-03 "Batch scheduling is
+    partial-success by design"; UI lane, existing PR #439.
+- Bodychart originals owed item CLEARED (Max self-served via #413, verified on prod).
+
+### Max side work (2026-07-02, outside the row lane)
+- Vercel Preview env fix on `osteojp-platform`: preview deployments now carry DB env vars and share
+  the single Supabase project with the deployed app (preview DB isolation tracked as a new
+  QUESTIONS ticket, 2026-07-03; reinforces the separate-prod-project pre-real-data gate).
+- Prod form-template label re-seed (updated = 6, idempotent).
+- QA fixes: #437 (conflict-banner bypass), #438 (Marcações date-range picker), #421 / #425
+  (section-nav overflow).
 
 ## 2026-06-30 - Wave 01 audit findings
 
