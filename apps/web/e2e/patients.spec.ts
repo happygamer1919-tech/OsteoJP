@@ -80,6 +80,7 @@ test("create patient with required fields only", async ({ page }) => {
 test("create patient with all fields persists and displays them", async ({ page }) => {
   const name = `Completo ${uniq()}`;
   const phone = "+351 912 000 111";
+  const profession = "Fisioterapeuta E2E";
   await createPatient(page, {
     fullName: name,
     dateOfBirth: "1980-06-15",
@@ -89,11 +90,16 @@ test("create patient with all fields persists and displays them", async ({ page 
     email: `c.${uniq()}@osteojp.test`,
     city: "Linda-a-Velha",
     postalCode: "2795-001",
-    address: "Rua do Teste, 1",
+    profession,
     notes: "Nota E2E",
   });
   await expect(page.getByRole("heading", { name })).toBeVisible();
+  // Contactos folded into Dados pessoais (W2-02 item 4): phone shows on the profile.
   await expect(page.getByText(phone).first()).toBeVisible();
+  // Profession is surfaced (W2-02 item 5).
+  await expect(page.getByText(profession).first()).toBeVisible();
+  // Street address is not surfaced anywhere on the profile (W2-02 item 3).
+  await expect(page.getByText(/Morada/i)).toHaveCount(0);
 });
 
 test("edit patient phone and see the updated value on the profile", async ({ page }) => {

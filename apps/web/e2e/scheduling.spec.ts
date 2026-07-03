@@ -10,7 +10,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { openNewAppointment, fillAppointment } from "./helpers";
-import { PATIENTS, LOCATION, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
+import { PATIENTS, LOCATION, LOCATION_ARCHIVED, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
 
 const SAVE = "Guardar";
 
@@ -18,6 +18,21 @@ test("agenda loads with the New Appointment action", async ({ page }) => {
   await page.goto("/agenda");
   await expect(page.getByRole("heading", { name: /Agenda/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /Nova Marcação/i })).toBeVisible();
+});
+
+test("new-appointment drawer hides the Estado selector (W2-02 item 1)", async ({ page }) => {
+  const dialog = await openNewAppointment(page, futureDate(RUN_DAY_BASE + 11));
+  // Lifecycle "Estado" is edit-only; a new marcação uses the house defaults
+  // (status=scheduled, confirmation_state=pending) with no hand-set status.
+  await expect(dialog.getByLabel(/^Estado/i)).toHaveCount(0);
+});
+
+test("archived location is absent from the booking dropdown (W2-02 item 2)", async ({ page }) => {
+  const dialog = await openNewAppointment(page, futureDate(RUN_DAY_BASE + 12));
+  const locationSelect = dialog.getByLabel(/Localização/i);
+  // Active location is offered; the archived one is excluded from selection.
+  await expect(locationSelect.locator("option", { hasText: LOCATION.name })).toHaveCount(1);
+  await expect(locationSelect.locator("option", { hasText: LOCATION_ARCHIVED.name })).toHaveCount(0);
 });
 
 test("book a one-off appointment; it appears on the agenda", async ({ page }) => {

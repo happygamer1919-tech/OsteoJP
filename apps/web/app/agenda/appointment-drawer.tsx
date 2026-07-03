@@ -505,13 +505,22 @@ export function AppointmentDrawer({
           </div>
         )}
 
-        <Field label={s["appointment.status"]}>
-          <Select value={form.status} onChange={(e) => set("status", e.target.value as AppointmentStatusValue)}>
-            {STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{s[o.key]}</option>
-            ))}
-          </Select>
-        </Field>
+        {/* Lifecycle "Estado" — edit-only. A NEW marcação is always created with
+            the house defaults (status = scheduled via the form init above,
+            confirmation_state = pending via the DB default); the selector is
+            hidden on create so the two axes are never set by hand at booking
+            time. It stays on edit, where marking completed/cancelled/no_show is
+            the point. Never conflated with the orthogonal confirmation axis
+            below. */}
+        {editing && (
+          <Field label={s["appointment.status"]}>
+            <Select value={form.status} onChange={(e) => set("status", e.target.value as AppointmentStatusValue)}>
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{s[o.key]}</option>
+              ))}
+            </Select>
+          </Field>
+        )}
 
         {/* Confirmation axis (0024) — read-only display, ORTHOGONAL to the
             "Estado" lifecycle Select above. Never derived from `form.status`
