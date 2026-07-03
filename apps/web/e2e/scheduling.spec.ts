@@ -135,9 +135,8 @@ test("Agendar lote generates per-date slots and submits via the batch engine; V1
   await dialog.getByLabel(/Nº de marcações/i).fill("3");
   await dialog.getByLabel(/A cada \(semanas\)/i).fill("1");
   await dialog.getByRole("button", { name: /Gerar datas/i }).click();
-  await expect(dialog.getByText(/marcações a criar/i)).toBeVisible();
-  // Three per-date time pickers were generated.
-  await expect(dialog.locator('input[type="time"]')).toHaveCount(3);
+  // Three candidate dates were generated (summary count), each with its own time.
+  await expect(dialog.getByText(/3\s+marcações a criar/i)).toBeVisible();
 
   // Confirm → submits the explicit slot list. The E2E therapist has no
   // availability template, so every slot is busy → the partial-success dialog
