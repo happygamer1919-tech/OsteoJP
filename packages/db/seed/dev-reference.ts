@@ -20,6 +20,7 @@ import { eq } from "drizzle-orm";
 import postgres from "postgres";
 import { tenants, roles, locations, services, users } from "../src/schema";
 import { loadFormTemplates } from "./form-templates";
+import { loadSeedEnv } from "./load-env";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
 import { DEV_USERS } from "./dev-users";
 import {
@@ -39,6 +40,7 @@ export {
 
 const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
 
+loadSeedEnv();
 const DATABASE_URL = resolveSeedDatabaseUrl();
 
 // ─── Loader ───────────────────────────────────────────────────────────────────

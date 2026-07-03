@@ -35,6 +35,7 @@ import postgres from "postgres";
 import { availabilityTemplates } from "../src/schema";
 import { LOC_LAV, LOC_CB, LOC_MTN } from "./dev-ids";
 import { resolveDevUsers } from "./dev-users";
+import { loadSeedEnv } from "./load-env";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
 
 export const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
@@ -139,6 +140,7 @@ export function buildRows(userIdBySeq: (seq: number) => string): AvailabilityRow
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
 async function seed() {
+  loadSeedEnv();
   const DATABASE_URL = resolveSeedDatabaseUrl();
 
   const sql = postgres(DATABASE_URL, { max: 1 });
