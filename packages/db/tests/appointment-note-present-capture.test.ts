@@ -97,17 +97,19 @@ async function seedTenant(sql: Sql, x: Ids, full: boolean): Promise<void> {
       (tenant_id, appointment_id, patient_id, episode_id, author_user_id, body)
     values (${x.tenant}, ${x.apptWithNote}, ${x.patient}, ${x.episode}, ${x.user}, 'visit note')`;
   // A persisted emitted event carrying note_present=true, for isolation checks.
+  // Payload built with jsonb_build_object (not a stringified literal) so
+  // note_present is a real jsonb boolean that `payload->>'note_present'` reads.
   await sql`insert into analytics_events
       (id, tenant_id, event_type, entity_type, entity_id, therapist_user_id, location_id, actor_user_id, payload, occurred_at)
     values (${x.persistedEvent}, ${x.tenant}, 'appointment_status_changed', 'appointment', ${x.apptWithNote},
             ${x.user}, ${x.location}, ${x.user},
-            ${JSON.stringify({
-              appointment_id: x.apptWithNote,
-              from_status: "confirmed",
-              to_status: "completed",
-              actor: x.user,
-              note_present: true,
-            })}::jsonb,
+            jsonb_build_object(
+              'appointment_id', ${x.apptWithNote}::text,
+              'from_status', 'confirmed',
+              'to_status', 'completed',
+              'actor', ${x.user}::text,
+              'note_present', true
+            ),
             ${START})`;
 }
 
