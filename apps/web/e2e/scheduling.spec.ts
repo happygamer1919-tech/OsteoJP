@@ -114,7 +114,7 @@ test("booking the same therapist at an overlapping time is flagged as a conflict
   await expect(dialog).toBeVisible(); // not saved — still open
 });
 
-test("recorrente booking routes through the partial-success batch and shows the failure dialog (W2-05)", async ({
+test("Agendar lote generates per-date slots and submits via the batch engine; V1 recorrente is gone (W2-10)", async ({
   page,
 }) => {
   const date = futureDate(RUN_DAY_BASE + 14);
@@ -126,13 +126,23 @@ test("recorrente booking routes through the partial-success batch and shows the 
     date,
     time: "16:00",
   });
-  // Turn the booking into a recurring series ("Marcação recorrente").
-  await dialog.getByLabel(/Marcação recorrente/i).check();
-  await dialog.getByRole("button", { name: SAVE }).click();
 
-  // The E2E therapist has no availability template, so every recurring slot is
-  // reported busy — the partial-success dialog opens (never an all-or-nothing
-  // refusal), listing each slot with a per-row "Remarcar" control.
+  // V1 "Marcação recorrente" is REPLACED by "Agendar lote" — the old control is gone.
+  await expect(dialog.getByLabel(/Marcação recorrente/i)).toHaveCount(0);
+  await dialog.getByLabel(/Agendar lote/i).check();
+
+  // Count + every-X-weeks → generate candidate dates, each with its own time.
+  await dialog.getByLabel(/Nº de marcações/i).fill("3");
+  await dialog.getByLabel(/A cada \(semanas\)/i).fill("1");
+  await dialog.getByRole("button", { name: /Gerar datas/i }).click();
+  await expect(dialog.getByText(/marcações a criar/i)).toBeVisible();
+  // Three per-date time pickers were generated.
+  await expect(dialog.locator('input[type="time"]')).toHaveCount(3);
+
+  // Confirm → submits the explicit slot list. The E2E therapist has no
+  // availability template, so every slot is busy → the partial-success dialog
+  // opens (never an all-or-nothing refusal) with a per-row "Remarcar" control.
+  await dialog.getByRole("button", { name: SAVE }).click();
   await expect(page.getByText("Algumas marcações não foram criadas")).toBeVisible({ timeout: 12_000 });
   await expect(page.getByRole("button", { name: /Remarcar/i }).first()).toBeVisible();
 });
@@ -158,12 +168,12 @@ test("NESA contraindication warning shows on booking (both paths) and never bloc
   await expect(dialog.getByText(/contraindicação NESA/i)).toBeVisible({ timeout: 8_000 });
   await expect(dialog.getByText(/Epilepsia/)).toBeVisible();
 
-  // Recorrente path uses the same drawer → the same warning is shown.
-  await dialog.getByLabel(/Marcação recorrente/i).check();
+  // Agendar lote (batch) path uses the same drawer → the same warning is shown.
+  await dialog.getByLabel(/Agendar lote/i).check();
   await expect(dialog.getByText(/contraindicação NESA/i)).toBeVisible();
 
-  // Never blocks: submit stays enabled. Book a single appointment successfully.
-  await dialog.getByLabel(/Marcação recorrente/i).uncheck();
+  // Never blocks: submit stays enabled. Turn lote off and book a single one.
+  await dialog.getByLabel(/Agendar lote/i).uncheck();
   await dialog.getByRole("button", { name: SAVE }).click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 });
