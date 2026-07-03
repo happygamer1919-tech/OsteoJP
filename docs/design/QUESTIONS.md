@@ -363,3 +363,13 @@ actually signed off on.
   flag; add a STOP keyword handler and suppress on opt-out; no SMS without the flag set.
 - **Owner:** JP for copy; owner for the Twilio vendor + residency call. A future build loop
   picks these up once answered.
+
+## 2026-07-03 — Wave 02 close: QUESTIONS sweep
+
+Housekeeping sweep at Wave 02 close. No new questions; records what the wave closed and what stays open.
+
+- **CLOSED — Notas Rápidas write destination** (open since Wave 01, STATE 2026-06-30 audit finding #1): resolved by **W2-11 (#463)**. Patient notes now flow through the append-only `patient_note_revisions` relation; the notes UI no longer reads/writes `patients.notes` (column retained, untouched). Recorded in STATE 2026-07-03 wave-02 close audit.
+- **CLOSED — W2-03 location cleanup** ambiguity: resolved by owner ruling **Option A** (DECISIONS 2026-07-03), executed in **#455**. Not a standing QUESTIONS entry; noted here for the trail.
+- **OPEN (unchanged) — SMS confirmation JP/owner decisions**: message wording, exact send times, opt-out/consent, and the **Twilio new-vendor** confirmation — see the 2026-07-03 SMS-confirmation entry above. A future build loop is blocked on these.
+- **OPEN (unchanged) — standing next-wave-planning batch**: marcações row-open (SPEC-v2-marcações §2.3, unimplemented), delete policy (cancel-only intentional?), Bodychart term, portal ficha naming, consulta/marcação brand-voice. These live in the legacy `docs/QUESTIONS.md` shelf (untouched here per the canonical-shelf ruling); they roll forward as Wave 03 planning inputs and are folded into the legacy-shelf consolidation candidate (BACKLOG Wave 03).
+- **OPEN (unchanged) — infra/CI tickets**: CI db-gate hardening (owner-hold, touches `db-tests.yml`) and Preview DB isolation — both 2026-07-03 above; both carried into Wave 03 candidates.

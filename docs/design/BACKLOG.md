@@ -85,3 +85,17 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 - **2-clients-same-slot UI** — `booking_group_id` (0027) exists in schema, no UI yet. Deferred.
 - **Marcações section stays** — no rename/relocation of the Marcações nav section this wave.
 - **Fisiozero import** — sequenced LAST (after all Wave 02 build), gated on the pre-real-data gates (separate-prod-project + signed DPA, DECISIONS 2026-07-01 / 2026-07-02).
+
+## Wave 03 candidates
+
+> Added 2026-07-03 at Wave 02 close. UNORDERED, NOT committed scope — candidates for the next wave's planning pass, not loops yet. No lane/gate assignments until scoped.
+
+- **SMS confirmation BUILD** — build the flow specified in `docs/design/SPEC-sms-confirmation.md`. GATED on Twilio vendor confirmation + EU residency/DPA (owner-confirmable) and JP's copy/send-time/opt-out answers (QUESTIONS 2026-07-03). No build until those clear.
+- **Finance KPI report scoping** — the 0025 `analytics_events` capture is live and the VAT ruling is on file (CIVA art. 9 exemption, gross=final, DECISIONS 2026-07-02); scope it as its own loop. Note: the fiscal partner-model re-spec (DECISIONS 2026-07-03 entry B) applies to any fatura-recibo/discount work, not to the internal KPI report.
+- **Fisiozero import build** — the import side (mapping + reconciliation), using dev SAMPLE data only; the live import stays gated on the pre-real-data gates (separate-prod-project + signed DPA). Import-collision HALT policy already recorded (DECISIONS 2026-07-02).
+- **Portal V2 redesign** — GATED on owner mockups; no scope until provided.
+- **CI db-gate hardening** — the db-gated step soft-passed a failing inner test during #449; hardening it touches `.github/workflows/db-tests.yml` → automatic OWNER HOLD, never self-merged (QUESTIONS 2026-07-03).
+- **Preview DB isolation** — Vercel Preview envs share the single Supabase project with the deployed app; isolate preview DB as future infra (QUESTIONS 2026-07-03), part of the separate-prod-project work.
+- **Legacy-shelf consolidation loop** — migrate the still-open `docs/QUESTIONS.md` items and any live `docs/DECISIONS.md` content onto the canonical `docs/design/` shelf, then leave pointer stubs (QUESTIONS 2026-07-03).
+- **Dangling-branch pruning pass** — sweep merged/abandoned feature + docs branches (and their worktrees) left over from Waves 01–02; housekeeping only.
+- **Superseded Max halt PRs closure** — post closing "superseded by W2-04/05/06" comments on the abandoned halt PRs **#440** (→ W2-04 #456), **#439** (→ W2-05 #457), **#446** (→ W2-06 #458); replacements all merged (QUESTIONS 2026-07-03 housekeeping ticket). Comment-only, no revert/reopen.
