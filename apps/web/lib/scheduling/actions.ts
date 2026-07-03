@@ -11,6 +11,7 @@ import {
 import { appointments, type DbTx } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { clientIp } from "./actor";
+import { writeAppointmentStatusChangedEvent } from "./analytics";
 import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
 import { findConflicts, findConflictsForWindow } from "./conflict";
@@ -27,6 +28,7 @@ import {
 import { lisbonDateTimeToUtc, lisbonParts } from "./time";
 import type {
   ActionResult,
+  AppointmentStatusValue,
   ConflictInfo,
   CreateAppointmentInput,
   RescheduleInput,
@@ -82,6 +84,9 @@ type SeriesMember = {
   practitionerId: string;
   locationId: string;
   room: string | null;
+  // Pre-mutation lifecycle status — the `from_status` a status-change event
+  // records. Read inside the tx BEFORE the update is applied.
+  status: AppointmentStatusValue;
 };
 
 /**
@@ -104,6 +109,7 @@ async function resolveSeries(
       practitionerId: appointments.practitionerId,
       locationId: appointments.locationId,
       room: appointments.room,
+      status: appointments.status,
       recurrenceParentId: appointments.recurrenceParentId,
     })
     .from(appointments)
@@ -118,6 +124,7 @@ async function resolveSeries(
     practitionerId: target.practitionerId,
     locationId: target.locationId,
     room: target.room,
+    status: target.status,
   };
   if (scope === "one") return [self];
 
@@ -130,6 +137,7 @@ async function resolveSeries(
       practitionerId: appointments.practitionerId,
       locationId: appointments.locationId,
       room: appointments.room,
+      status: appointments.status,
     })
     .from(appointments)
     .where(
@@ -524,6 +532,27 @@ export async function updateAppointment(
             metadata: { changed: Object.keys(set), scope },
             ip,
           });
+        }
+
+        // Completion is the transition the soft gate cares about: emit the
+        // status-change event carrying note_present, so closing a visit without
+        // a per-visit note is recorded, never blocked (Q-ROW8-1). Same tx as the
+        // status write — the event and the transition commit atomically. Other
+        // transitions are intentionally not logged here (out of Q-ROW8-1 scope).
+        if (patch.status === "completed") {
+          const occurredAt = new Date();
+          for (const a of affected) {
+            await writeAppointmentStatusChangedEvent(tx, {
+              tenantId: actor.tenantId,
+              actorUserId: actor.userId,
+              appointmentId: a.id,
+              fromStatus: a.status,
+              toStatus: "completed",
+              therapistUserId: a.practitionerId,
+              locationId: a.locationId,
+              occurredAt,
+            });
+          }
         }
 
         if (patch.status === "completed" || patch.status === "no_show") {
