@@ -35,7 +35,6 @@ export type PatientFields = {
   city?: string;
   postalCode?: string;
   profession?: string;
-  notes?: string;
 };
 
 /** Fills the patient form (caller is already on /patients/new or /edit). */
@@ -54,7 +53,6 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
   if (f.postalCode) await page.getByLabel(/Código postal/i).pressSequentially(f.postalCode);
   // Street address (Morada) is no longer surfaced in the form (W2-02 item 3).
   if (f.profession) await page.getByLabel(/Profissão/i).pressSequentially(f.profession);
-  if (f.notes) await page.getByLabel(/Notas/i).pressSequentially(f.notes);
 }
 
 /** Creates a patient and returns the new patient id (from the redirect URL). */

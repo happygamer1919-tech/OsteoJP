@@ -71,7 +71,7 @@ describe("parseUpdatePatient", () => {
   });
 
   it("clears a field when an explicit empty value is provided", () => {
-    expect(parseUpdatePatient({ notes: "" })).toEqual({ notes: null });
+    expect(parseUpdatePatient({ city: "" })).toEqual({ city: null });
   });
 
   it("still validates provided values", () => {

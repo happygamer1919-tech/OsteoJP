@@ -22,7 +22,6 @@ type Fields = {
   postalCode: string;
   city: string;
   profession: string;
-  notes: string;
   // NESA contraindication flags (0031) — drive the soft booking warning (W2-08).
   contraindicationEpilepsy: boolean;
   contraindicationPregnancy: boolean;
@@ -40,7 +39,6 @@ function toFields(p?: Patient | null): Fields {
     postalCode: p?.postalCode ?? "",
     city: p?.city ?? "",
     profession: p?.profession ?? "",
-    notes: p?.notes ?? "",
     contraindicationEpilepsy: p?.contraindicationEpilepsy ?? false,
     contraindicationPregnancy: p?.contraindicationPregnancy ?? false,
   };
@@ -179,14 +177,8 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
       {/* Street address input intentionally not surfaced (address-reduction,
           2026-06-30). `fields.address` is preserved from the loaded patient and
           submitted unchanged, so the stored value and historical data are kept. */}
-      <Field label={s["patients.fieldNotes"]}>
-        <textarea
-          rows={3}
-          value={fields.notes}
-          onChange={(e) => set("notes", e.target.value)}
-          className={inputCls}
-        />
-      </Field>
+      {/* Patient notes moved to the append-only Notas tab (W2-11): the edit form
+          no longer reads or writes patients.notes. */}
 
       {error && <p role="alert" className="text-sm text-error">{error}</p>}
 

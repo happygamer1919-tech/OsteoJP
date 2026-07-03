@@ -91,7 +91,6 @@ test("create patient with all fields persists and displays them", async ({ page 
     city: "Linda-a-Velha",
     postalCode: "2795-001",
     profession,
-    notes: "Nota E2E",
   });
   await expect(page.getByRole("heading", { name })).toBeVisible();
   // Contactos folded into Dados pessoais (W2-02 item 4): phone shows on the profile.
@@ -100,6 +99,43 @@ test("create patient with all fields persists and displays them", async ({ page 
   await expect(page.getByText(profession).first()).toBeVisible();
   // Street address is not surfaced anywhere on the profile (W2-02 item 3).
   await expect(page.getByText(/Morada/i)).toHaveCount(0);
+});
+
+test("Notas tab appends an append-only note; the edit form no longer has a notes field (W2-11)", async ({
+  page,
+}) => {
+  const id = await createPatient(page, { fullName: `Notas ${uniq()}` });
+
+  // The patient edit form no longer reads/writes patients.notes (flipped to the tab).
+  await page.goto(`/patients/${id}/edit`);
+  await expect(page.getByLabel(/^Notas/i)).toHaveCount(0);
+
+  // The Notas tab composer appends a revision that shows immediately.
+  await page.goto(`/patients/${id}?tab=notas`);
+  const note = `Nota de teste ${uniq()}`;
+  await page.getByPlaceholder(/Escreva uma nota/i).fill(note);
+  await page.getByRole("button", { name: "Adicionar nota" }).click();
+  await expect(page.getByText(note)).toBeVisible({ timeout: 8_000 });
+});
+
+test("Notas Rápidas appends a note to the SELECTED patient (W2-11)", async ({ page }) => {
+  const name = `Rápida ${uniq()}`;
+  const id = await createPatient(page, { fullName: name });
+  await page.goto("/dashboard");
+
+  // Pick THAT patient in the Notas Rápidas card, type a note, save.
+  const combo = page.getByRole("combobox", { name: /Paciente/i });
+  await combo.click();
+  await combo.fill(name);
+  await page.getByRole("option", { name }).click();
+  const note = `Quick ${uniq()}`;
+  await page.getByLabel(/Notas rápidas/i).fill(note);
+  await page.getByRole("button", { name: "Guardar" }).click();
+  await expect(page.getByText(/Notas guardadas/i)).toBeVisible({ timeout: 8_000 });
+
+  // It lands on THAT patient's Notas tab.
+  await page.goto(`/patients/${id}?tab=notas`);
+  await expect(page.getByText(note)).toBeVisible({ timeout: 8_000 });
 });
 
 test("edit patient phone and see the updated value on the profile", async ({ page }) => {
