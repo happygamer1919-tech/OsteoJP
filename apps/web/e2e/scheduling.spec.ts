@@ -114,6 +114,29 @@ test("booking the same therapist at an overlapping time is flagged as a conflict
   await expect(dialog).toBeVisible(); // not saved — still open
 });
 
+test("recorrente booking routes through the partial-success batch and shows the failure dialog (W2-05)", async ({
+  page,
+}) => {
+  const date = futureDate(RUN_DAY_BASE + 14);
+  const dialog = await openNewAppointment(page, date);
+  await fillAppointment(dialog, {
+    patient: PATIENTS.joao.name,
+    therapist: THERAPIST_NAME,
+    location: LOCATION.name,
+    date,
+    time: "16:00",
+  });
+  // Turn the booking into a recurring series ("Marcação recorrente").
+  await dialog.getByLabel(/Marcação recorrente/i).check();
+  await dialog.getByRole("button", { name: SAVE }).click();
+
+  // The E2E therapist has no availability template, so every recurring slot is
+  // reported busy — the partial-success dialog opens (never an all-or-nothing
+  // refusal), listing each slot with a per-row "Remarcar" control.
+  await expect(page.getByText("Algumas marcações não foram criadas")).toBeVisible({ timeout: 12_000 });
+  await expect(page.getByRole("button", { name: /Remarcar/i }).first()).toBeVisible();
+});
+
 test("completed appointment with no note shows the 'Sem nota' indicator (W2-04)", async ({
   page,
 }) => {
