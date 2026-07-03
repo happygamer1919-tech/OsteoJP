@@ -48,6 +48,9 @@ export type AgendaAppointment = {
   confirmationState: AppointmentConfirmationStateValue;
   confirmationReceivedAt: string | null; // ISO UTC
   confirmationChannel: string | null; // free text (sms/whatsapp/phone/...), not an enum
+  // Present-state existence of a per-visit note (W2-04). Drives the "Sem nota"
+  // indicator on completed appointments; clears the moment a note is added.
+  hasNote: boolean;
 };
 
 export type Option = { id: string; label: string };

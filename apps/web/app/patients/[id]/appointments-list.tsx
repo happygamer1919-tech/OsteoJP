@@ -92,6 +92,9 @@ function AppointmentsListInner({ appointments }: { appointments: AgendaAppointme
               <StatusChip tone={STATUS_TONE[a.status]} dot>
                 {s[STATUS_KEY[a.status]]}
               </StatusChip>
+              {a.status === "completed" && !a.hasNote && (
+                <StatusChip tone="warning">{s["appointment.noNote"]}</StatusChip>
+              )}
               {isEligibleForScheduleAgain(a) && (
                 <button
                   type="button"

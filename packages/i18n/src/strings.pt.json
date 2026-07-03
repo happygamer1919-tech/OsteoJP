@@ -639,6 +639,7 @@
   "appointment.status.completed": "Concluída",
   "appointment.status.cancelled": "Cancelada",
   "appointment.status.no_show": "Falta",
+  "appointment.noNote": "Sem nota",
   "agenda.pickDate": "Escolher data",
   "appointment.recurringCheckbox": "Marcação recorrente",
   "appointment.saved": "Marcação guardada",

@@ -384,6 +384,12 @@ function AppointmentBlock({
         <span className="truncate">{appt.patientName}</span>
       </span>
       {showService && <span className="block truncate text-xs text-v2-text-primary">{appt.serviceName}</span>}
+      {/* No-note indicator (W2-04): completed visit with no per-visit note yet. */}
+      {appt.status === "completed" && !appt.hasNote && (
+        <span className="mt-0.5 inline-block rounded bg-warning-bg px-1 text-[10px] font-semibold text-warning-700">
+          {s["appointment.noNote"]}
+        </span>
+      )}
     </button>
   );
 }
