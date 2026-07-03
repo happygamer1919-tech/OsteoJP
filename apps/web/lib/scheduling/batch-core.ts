@@ -7,6 +7,7 @@
 
 import { lisbonParts } from "./time";
 import type { TimeInterval } from "./intervals";
+import { expandRecurrence, type RecurrenceSpec } from "./recurrence";
 
 export type BatchAlternative = { startsAt: string; date: string; hhmm: string };
 export type BatchFailure = {
@@ -20,6 +21,39 @@ export type BatchFailure = {
 
 /** A resolved candidate slot, annotated with its Lisbon date + hh:mm. */
 export type BatchSlot = { startsAt: Date; endsAt: Date; date: string; hhmm: string };
+
+/**
+ * The two ways to describe a batch's candidate slots (W2-09):
+ *  - recurrence: a rule expanded to N same-time occurrences; or
+ *  - explicit:   a concrete per-slot datetime list (each slot its own time and
+ *    duration — the Rodica case: every Thursday, a different time per date).
+ * Both converge on one BatchSlot[] so the engine runs one booking loop.
+ */
+/** One concrete slot in the explicit per-slot list (ISO UTC instants). */
+export type BatchExplicitSlot = { startsAt: string; endsAt: string };
+
+export type BatchSlotSource =
+  | { firstDate: string; hhmm: string; durationMin: number; recurrence: RecurrenceSpec }
+  | { slots: BatchExplicitSlot[] };
+
+/** Whether a slot source is the explicit per-slot list (vs a recurrence rule). */
+export function isExplicitSlots(source: BatchSlotSource): source is { slots: BatchExplicitSlot[] } {
+  return "slots" in source;
+}
+
+/** Resolve a slot source into concrete, annotated BatchSlot[]. Pure. */
+export function resolveBatchSlots(source: BatchSlotSource): BatchSlot[] {
+  if (isExplicitSlots(source)) {
+    return source.slots.map((s) => {
+      const startsAt = new Date(s.startsAt);
+      const endsAt = new Date(s.endsAt);
+      return { startsAt, endsAt, ...describeInstant(startsAt) };
+    });
+  }
+  return expandRecurrence(source.firstDate, source.hhmm, source.durationMin, source.recurrence).map(
+    (o) => ({ startsAt: o.startsAt, endsAt: o.endsAt, ...describeInstant(o.startsAt) }),
+  );
+}
 
 const pad = (n: number): string => String(n).padStart(2, "0");
 
@@ -62,7 +96,6 @@ export function nearestFreeAlternative(
 export function classifyBatchSlots(
   slots: BatchSlot[],
   freeByDate: Map<string, TimeInterval[]>,
-  durationMin: number,
 ): { toBook: BatchSlot[]; failures: BatchFailure[] } {
   const allFree: TimeInterval[] = Array.from(freeByDate.values()).flat();
   const toBook: BatchSlot[] = [];
@@ -75,6 +108,9 @@ export function classifyBatchSlots(
     if (fits) {
       toBook.push(s);
     } else {
+      // Per-slot duration (explicit slots may each differ; recurrence slots are
+      // uniform). Drives the nearest-alternative window length for THIS slot.
+      const durationMin = (s.endsAt.getTime() - s.startsAt.getTime()) / 60_000;
       failures.push({
         startsAt: s.startsAt.toISOString(),
         date: s.date,

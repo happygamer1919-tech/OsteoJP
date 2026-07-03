@@ -5,14 +5,15 @@ import { appointments } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { writeAppointmentAudit } from "./audit";
 import { getTherapistAvailability } from "./day-availability";
-import { expandRecurrence, toRRule, type RecurrenceSpec } from "./recurrence";
+import { toRRule, type RecurrenceSpec } from "./recurrence";
 import type { TimeInterval } from "./intervals";
 import type { AppointmentStatusValue } from "./types";
 import {
   classifyBatchSlots,
-  describeInstant,
+  isExplicitSlots,
+  resolveBatchSlots,
+  type BatchExplicitSlot,
   type BatchFailure,
-  type BatchSlot,
 } from "./batch-core";
 
 /**
@@ -25,20 +26,34 @@ import {
  * availability result. Partial success is expected behaviour, not an error.
  */
 
-export type BatchScheduleInput = {
+type BatchCommonInput = {
   patientId: string;
   practitionerId: string;
   locationId: string;
   serviceId?: string | null;
+  /** Lifecycle status for booked rows. Default "scheduled". */
+  status?: AppointmentStatusValue;
+};
+
+/** Recurrence-rule input (V1): a rule expanded to N same-time occurrences. */
+export type BatchRecurrenceInput = BatchCommonInput & {
   /** First occurrence's Lisbon calendar date, "yyyy-mm-dd". */
   firstDate: string;
   /** Lisbon wall-clock start, "HH:MM". */
   hhmm: string;
   durationMin: number;
   recurrence: RecurrenceSpec;
-  /** Lifecycle status for booked rows. Default "scheduled". */
-  status?: AppointmentStatusValue;
 };
+
+/** Explicit per-slot input (V2, W2-09): a concrete datetime list, each slot its
+ *  own time/duration (the Rodica case). */
+export type BatchExplicitInput = BatchCommonInput & {
+  slots: BatchExplicitSlot[];
+};
+
+/** Discriminated by the presence of `slots`. Both modes converge on one booking
+ *  loop; recurrence callers (W2-05) keep working unchanged. */
+export type BatchScheduleInput = BatchRecurrenceInput | BatchExplicitInput;
 
 export type BatchBooked = { appointmentId: string; startsAt: string; date: string; hhmm: string };
 export type BatchScheduleResult = {
@@ -53,12 +68,14 @@ export async function batchSchedule(
   ctx: RequestContext,
   input: BatchScheduleInput,
 ): Promise<BatchScheduleResult> {
-  const occ = expandRecurrence(input.firstDate, input.hhmm, input.durationMin, input.recurrence);
-  const slots: BatchSlot[] = occ.map((o) => ({
-    startsAt: o.startsAt,
-    endsAt: o.endsAt,
-    ...describeInstant(o.startsAt),
-  }));
+  // Both input modes converge on one concrete slot list.
+  const slots = resolveBatchSlots(input);
+  const batchId = randomUUID();
+
+  // Nothing to book (e.g. an empty explicit list): return an empty batch.
+  if (slots.length === 0) {
+    return { batchId, requested: 0, booked: [], failures: [] };
+  }
 
   // Availability over the whole span (inclusive Lisbon date range).
   const dates = slots.map((s) => s.date).sort();
@@ -77,10 +94,11 @@ export async function batchSchedule(
     ]),
   );
 
-  const { toBook, failures } = classifyBatchSlots(slots, freeByDate, input.durationMin);
+  const { toBook, failures } = classifyBatchSlots(slots, freeByDate);
 
-  const batchId = randomUUID();
-  const rrule = toRRule(input.recurrence);
+  // Explicit slots carry no recurrence rule; the recurrence mode still documents
+  // its rule on the booked rows (existing storage).
+  const rrule = isExplicitSlots(input) ? null : toRRule(input.recurrence);
   const status: AppointmentStatusValue = input.status ?? "scheduled";
   let booked: BatchBooked[] = [];
 

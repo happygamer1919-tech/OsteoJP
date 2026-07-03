@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyBatchSlots, nearestFreeAlternative, type BatchSlot } from "./batch-core";
+import { classifyBatchSlots, isExplicitSlots, nearestFreeAlternative, resolveBatchSlots, type BatchSlot } from "./batch-core";
 import type { TimeInterval } from "./intervals";
 
 // Pure engine core: no DB, no availability recompute — feeds it a `free` set and
@@ -22,7 +22,7 @@ const slotsAt9 = (): BatchSlot[] => THREE_DATES.map((d) => slot(d, `${d}T09:00:0
 describe("classifyBatchSlots", () => {
   it("all-free: every slot fits its day's free window → all booked, no failures", () => {
     const free = new Map(THREE_DATES.map((d) => [d, [iv(`${d}T08:00:00Z`, `${d}T12:00:00Z`)]]));
-    const r = classifyBatchSlots(slotsAt9(), free, 60);
+    const r = classifyBatchSlots(slotsAt9(), free);
     expect(r.toBook).toHaveLength(3);
     expect(r.failures).toHaveLength(0);
     expect(r.toBook.map((s) => s.date)).toEqual([...THREE_DATES]);
@@ -31,7 +31,7 @@ describe("classifyBatchSlots", () => {
   it("all-busy: no day's free window covers the slot → all failures with an alternative", () => {
     // Free only in the afternoon (14:00–16:00Z); the 09:00Z slots don't fit.
     const free = new Map(THREE_DATES.map((d) => [d, [iv(`${d}T14:00:00Z`, `${d}T16:00:00Z`)]]));
-    const r = classifyBatchSlots(slotsAt9(), free, 60);
+    const r = classifyBatchSlots(slotsAt9(), free);
     expect(r.toBook).toHaveLength(0);
     expect(r.failures).toHaveLength(3);
     // Nearest alternative for the first busy slot is that same day's 14:00Z window.
@@ -46,7 +46,7 @@ describe("classifyBatchSlots", () => {
       ["2026-08-13", [iv("2026-08-13T14:00:00Z", "2026-08-13T16:00:00Z")]], // afternoon only
       ["2026-08-20", []], // fully busy
     ]);
-    const r = classifyBatchSlots(slotsAt9(), free, 60);
+    const r = classifyBatchSlots(slotsAt9(), free);
     expect(r.toBook.map((s) => s.date)).toEqual(["2026-08-06"]);
     expect(r.failures.map((f) => f.date)).toEqual(["2026-08-13", "2026-08-20"]);
     // 08-13's 09:00 slot: wanted time is BEFORE its afternoon window → clamps up
@@ -61,7 +61,7 @@ describe("classifyBatchSlots", () => {
   it("fails a slot that only partially overlaps a free window (end spills past it)", () => {
     // Free 09:00–09:30Z; a 60-min slot at 09:00 ends 10:00, past the window.
     const free = new Map([["2026-08-06", [iv("2026-08-06T09:00:00Z", "2026-08-06T09:30:00Z")]]]);
-    const r = classifyBatchSlots([slot("2026-08-06", "2026-08-06T09:00:00Z", 60)], free, 60);
+    const r = classifyBatchSlots([slot("2026-08-06", "2026-08-06T09:00:00Z", 60)], free);
     expect(r.toBook).toHaveLength(0);
     expect(r.failures).toHaveLength(1);
     // No window fits 60 min anywhere, so no alternative.
@@ -70,7 +70,7 @@ describe("classifyBatchSlots", () => {
 
   it("books a slot that exactly fills its free window (inclusive boundaries)", () => {
     const free = new Map([["2026-08-06", [iv("2026-08-06T09:00:00Z", "2026-08-06T10:00:00Z")]]]);
-    const r = classifyBatchSlots([slot("2026-08-06", "2026-08-06T09:00:00Z", 60)], free, 60);
+    const r = classifyBatchSlots([slot("2026-08-06", "2026-08-06T09:00:00Z", 60)], free);
     expect(r.toBook).toHaveLength(1);
     expect(r.failures).toHaveLength(0);
   });
@@ -103,5 +103,67 @@ describe("nearestFreeAlternative", () => {
   it("returns null when no window fits the duration", () => {
     const free = [iv("2026-08-06T08:00:00Z", "2026-08-06T08:30:00Z")];
     expect(nearestFreeAlternative(free, new Date("2026-08-06T09:00:00Z"), 60)).toBeNull();
+  });
+});
+
+// W2-09: explicit per-slot input mode + its convergence with recurrence mode.
+describe("resolveBatchSlots (W2-09)", () => {
+  it("recurrence mode expands to N same-time slots", () => {
+    const slots = resolveBatchSlots({
+      firstDate: "2026-08-06",
+      hhmm: "09:00",
+      durationMin: 60,
+      recurrence: { freq: "weekly", count: 3 },
+    });
+    expect(slots).toHaveLength(3);
+    expect(slots.map((s) => s.hhmm)).toEqual(["09:00", "09:00", "09:00"]);
+    // Weekly step: 06 → 13 → 20 Aug.
+    expect(slots.map((s) => s.date)).toEqual(["2026-08-06", "2026-08-13", "2026-08-20"]);
+  });
+
+  it("explicit mode keeps each slot's own date/time and duration (the Rodica case)", () => {
+    const slots = resolveBatchSlots({
+      slots: [
+        { startsAt: "2026-08-06T09:00:00Z", endsAt: "2026-08-06T10:00:00Z" },
+        { startsAt: "2026-08-13T14:30:00Z", endsAt: "2026-08-13T15:00:00Z" },
+      ],
+    });
+    expect(slots).toHaveLength(2);
+    // Displayed in Lisbon time (August = UTC+1), so the UTC instants shift +1h.
+    expect(slots.map((s) => `${s.date} ${s.hhmm}`)).toEqual([
+      "2026-08-06 10:00",
+      "2026-08-13 15:30",
+    ]);
+    // Per-slot durations differ: 60 vs 30 minutes.
+    expect(slots.map((s) => (s.endsAt.getTime() - s.startsAt.getTime()) / 60_000)).toEqual([60, 30]);
+  });
+
+  it("isExplicitSlots discriminates the two modes", () => {
+    expect(isExplicitSlots({ slots: [] })).toBe(true);
+    expect(
+      isExplicitSlots({ firstDate: "2026-08-06", hhmm: "09:00", durationMin: 60, recurrence: { freq: "weekly", count: 1 } }),
+    ).toBe(false);
+  });
+});
+
+describe("classifyBatchSlots — explicit-list slots (W2-09)", () => {
+  it("mixed explicit list: books free slots, reports busy ones with reason + nearest alternative", () => {
+    const slots = resolveBatchSlots({
+      slots: [
+        { startsAt: "2026-08-06T09:00:00Z", endsAt: "2026-08-06T10:00:00Z" }, // free
+        { startsAt: "2026-08-13T09:00:00Z", endsAt: "2026-08-13T10:00:00Z" }, // busy (no free window)
+      ],
+    });
+    const free = new Map([
+      ["2026-08-06", [iv("2026-08-06T08:00:00Z", "2026-08-06T12:00:00Z")]],
+      ["2026-08-13", [iv("2026-08-13T14:00:00Z", "2026-08-13T16:00:00Z")]],
+    ]);
+    const r = classifyBatchSlots(slots, free);
+    expect(r.toBook.map((s) => s.date)).toEqual(["2026-08-06"]);
+    expect(r.failures).toHaveLength(1);
+    expect(r.failures[0]!.reason).toBe("busy");
+    expect(r.failures[0]!.date).toBe("2026-08-13");
+    // Nearest free alternative on the busy day's free window (14:00Z → 15:00 Lisbon).
+    expect(r.failures[0]!.nearestAlternative?.hhmm).toBe("15:00");
   });
 });
