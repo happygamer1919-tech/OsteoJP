@@ -46,7 +46,7 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | confirmation thumbs on appointment preview | DONE (#441) | 0024 DONE |
 | no-note indicator on completed appointments | HALTED | analytics_events note_present capture not implemented anywhere in code — see QUESTIONS.md Q-ROW8-1, route Ivan |
 | availability panel in new-appointment flow | READY | availability query DONE |
-| fichas-as-tab inside patient profile | DRAFT | JP fichas-placement design ruling (0026 code merged; design call still open) |
+| fichas-as-tab inside patient profile | HALTED | JP fichas-placement design ruling still open, distinct from the resolved 0026 completion ruling — see QUESTIONS.md Q-ROW7-1, route Ivan |
 | schedule-again action on patient profile | DONE (#442) | clone endpoint DONE (#419) |
 | batch failure pop-up | HALTED | no defined UI entry point to trigger batchSchedule (briefing-vs-reality mismatch; QUESTIONS.md 2026-07-02) |
 | patient ID next to NIF | DRAFT | 0029 patient number migration (WRITTEN, ready for GREEN); unblocks when 0029 merges |

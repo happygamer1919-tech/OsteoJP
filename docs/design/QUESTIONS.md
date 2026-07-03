@@ -210,3 +210,49 @@ defeating the owner requirement outright rather than approximating it.
   explicitly logging the backdated-note gap as a known, temporary limitation, and
   fast-follow to the event-sourced read once capture lands.
 - **Owner:** Ivan / backend stream.
+
+## 2026-07-02 — HALT: row 7 fichas-as-tab awaiting JP fichas-placement design ruling (route: Ivan)
+
+### Q-ROW7-1 — Fichas relocation has its own open design call, separate from the (already-resolved) gated-completion ruling
+
+BACKLOG.md UI-lane row 7 ("fichas-as-tab inside patient profile") carries gate:
+*"JP fichas-placement design ruling (0026 code merged; design call still open)"*.
+A dispatch for this row arrived citing "unblocked by the 0026 ruling: gated
+completion is a soft warning per JP" as grounds to proceed. That ruling is real
+(`docs/design/DECISIONS.md`, 2026-07-01, "Gated completion ruling") but it
+answers a different question — hard block vs. soft warning on closing an
+appointment without a note. It says nothing about where or how Fichas Clínicas
+relocates into the patient profile. `WAVE-01.md`'s Max queue item 7 phrases the
+dependency as "Lands after gated-completion design settled," which reads as
+satisfied now that 0026 shipped — but BACKLOG.md, the file this project treats
+as sole ground truth for what is runnable, is more specific and says the
+placement design call itself is still open, not merely gated on 0026. Treating
+the two rulings as one and the same would ship a routing/IA change JP hasn't
+actually signed off on.
+
+**Code state, checked before halting (no code changed):**
+- A `registos` tab already exists in the patient profile
+  (`apps/web/app/patients/[id]/page.tsx`), permission-gated on
+  `clinical_records:read`, and already lists that patient's clinical records
+  with links to `/clinical/[id]` — this part of "fichas as a tab" is live today.
+- The top-level `/clinical` route (`apps/web/app/clinical/page.tsx`) is a
+  separate **cross-patient** list with its own `/clinical/new` create-record
+  entry point, still linked from the primary nav
+  (`apps/web/lib/nav/nav-items.ts:14`). Relocating "the top-level section" is
+  therefore not a like-for-like swap onto the existing tab: open questions the
+  code alone can't answer are (a) does `/clinical/new`'s creation flow move
+  inside the patient-profile tab, stay at its own route, or both; (b) does the
+  cross-patient list get dropped entirely (staff always enters via a patient
+  profile) or survive as a narrower admin/reporting view; (c) do existing
+  `/clinical/[id]` deep links (bookmarks, any external references) keep
+  resolving unchanged. These are exactly the kind of placement decisions
+  BACKLOG.md's gate is naming.
+- **Status:** HALTED. BACKLOG.md row 7 flipped from DRAFT to HALTED pointing
+  here, per operator instruction (hold row 7, gate stands, Ivan resolves it).
+- **Recommended default (not executed — awaiting ruling):** keep
+  `/clinical/[id]` record-detail deep links working unchanged regardless of
+  outcome; the open call is scoped to the *list* surfaces and the create entry
+  point, not the editor route. Beyond that, no default is assumed here — this
+  is JP's placement call to make, not one to infer from the completion ruling.
+- **Owner:** Ivan, routing JP's fichas-placement ruling through as he did for
+  gated completion (DECISIONS.md 2026-07-01).
