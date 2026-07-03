@@ -14,6 +14,7 @@
     "seed:form-templates": "tsx seed/form-templates.ts",
     "seed:roles": "tsx seed/roles.ts",
     "seed:patients:dev": "tsx seed/patients-dev.ts",
+    "seed:location-cleanup": "tsx seed/location-cleanup.ts",
     "seed:dev:reference": "tsx seed/dev-reference.ts",
     "seed:appointments:dev": "tsx seed/appointments-dev.ts",
     "seed:availability:dev": "tsx seed/availability-dev.ts",
