@@ -11,7 +11,12 @@ const ALL: (NavItem & { capability?: Capability })[] = [
   { href: "/dashboard", label: s["nav.dashboard"] },
   { href: "/agenda", label: s["nav.agenda"] },
   { href: "/patients", label: s["nav.patients"] },
-  { href: "/clinical", label: s["nav.clinical"], capability: "clinical_records:read" },
+  // Registos Clínicos (fichas) left the top-level nav (ruling F, DECISIONS
+  // 2026-07-03): all ficha entry points now live in the patient profile's
+  // "Registos clínicos" tab (create + per-ficha addendum). The cross-patient
+  // list route at /clinical is kept alive (deep-link/bookmark reachable), just
+  // unlinked from primary nav — not orphaned. /clinical/[id] detail deep links
+  // are unchanged. The AI review queue (/clinical/review) is a separate section.
   // Marcações (V2-W0-05, SPEC-v2-foundation §7.2): a bookings list of the same
   // scheduling data the agenda renders as a grid; open to every role like the
   // agenda. V2-W7 ships the list view and the dedicated `nav.bookings` key.
