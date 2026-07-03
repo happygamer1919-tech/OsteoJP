@@ -104,11 +104,14 @@ export default async function PatientProfilePage({
     ...(patient.patientNumber
       ? ([[s["patients.patientNumber"], formatPatientNumber(patient.patientNumber)]] as [string, string][])
       : []),
-    [
-      s["patients.fieldAddress"],
-      [patient.address, patient.city, patient.postalCode].filter(Boolean).join(", ") || "—",
-    ],
+    // Contactos folded into Dados pessoais (one card instead of two). No field
+    // dropped — phone/email relocated here from the old Contactos card.
+    [s["patients.fieldPhone"], patient.phone ?? "—"],
+    [s["patients.fieldEmail"], patient.email ?? "—"],
   ];
+  // Street `address` is intentionally not surfaced (address-reduction direction,
+  // 2026-06-30): localidade (city) + região are shown below instead. The DB
+  // column is retained; historical data still lives there.
   if (patient.profession) personalRows.push([s["patients.fieldProfession"], patient.profession]);
   if (patient.city) personalRows.push([s["patients.fieldCity"], patient.city]);
   if (patient.region) personalRows.push([s["patients.fieldRegion"], patient.region]);
@@ -173,7 +176,9 @@ export default async function PatientProfilePage({
 
       {tab === "resumo" && (
         <div role="tabpanel" id="tabpanel-resumo" aria-label={s["patients.tabSummary"]}>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* Single Dados pessoais card — Contactos (phone/email) folded in via
+              personalRows above. One card instead of two. */}
+          <div className="max-w-2xl">
             <Card
               title={s["patients.cardPersonal"]}
               headerAction={
@@ -184,14 +189,6 @@ export default async function PatientProfilePage({
               }
             >
               <Rows rows={personalRows} />
-            </Card>
-            <Card title={s["patients.cardContacts"]}>
-              <Rows
-                rows={[
-                  [s["patients.fieldPhone"], patient.phone ?? "—"],
-                  [s["patients.fieldEmail"], patient.email ?? "—"],
-                ]}
-              />
             </Card>
           </div>
         </div>

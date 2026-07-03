@@ -72,6 +72,7 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
         address: input.address,
         postalCode: input.postalCode,
         city: input.city,
+        profession: input.profession,
         notes: input.notes,
       })
       .returning();
@@ -104,6 +105,7 @@ export async function updatePatient(
     ...(input.address !== undefined && { address: input.address }),
     ...(input.postalCode !== undefined && { postalCode: input.postalCode }),
     ...(input.city !== undefined && { city: input.city }),
+    ...(input.profession !== undefined && { profession: input.profession }),
     ...(input.notes !== undefined && { notes: input.notes }),
   };
 

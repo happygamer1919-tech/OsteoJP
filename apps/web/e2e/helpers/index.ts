@@ -34,7 +34,7 @@ export type PatientFields = {
   email?: string;
   city?: string;
   postalCode?: string;
-  address?: string;
+  profession?: string;
   notes?: string;
 };
 
@@ -52,7 +52,8 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
   if (f.email) await page.getByLabel(/^Email/i).pressSequentially(f.email);
   if (f.city) await page.getByLabel(/Localidade/i).pressSequentially(f.city);
   if (f.postalCode) await page.getByLabel(/Código postal/i).pressSequentially(f.postalCode);
-  if (f.address) await page.getByLabel(/Morada/i).pressSequentially(f.address);
+  // Street address (Morada) is no longer surfaced in the form (W2-02 item 3).
+  if (f.profession) await page.getByLabel(/Profissão/i).pressSequentially(f.profession);
   if (f.notes) await page.getByLabel(/Notas/i).pressSequentially(f.notes);
 }
 

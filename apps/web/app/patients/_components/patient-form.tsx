@@ -16,9 +16,12 @@ type Fields = {
   nif: string;
   email: string;
   phone: string;
+  // `address` (street) is retained in state so its stored value round-trips
+  // untouched on save, even though the input is no longer surfaced (see form).
   address: string;
   postalCode: string;
   city: string;
+  profession: string;
   notes: string;
 };
 
@@ -33,6 +36,7 @@ function toFields(p?: Patient | null): Fields {
     address: p?.address ?? "",
     postalCode: p?.postalCode ?? "",
     city: p?.city ?? "",
+    profession: p?.profession ?? "",
     notes: p?.notes ?? "",
   };
 }
@@ -137,14 +141,17 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
             className={inputCls}
           />
         </Field>
+        <Field label={s["patients.fieldProfession"]}>
+          <input
+            value={fields.profession}
+            onChange={(e) => set("profession", e.target.value)}
+            className={inputCls}
+          />
+        </Field>
       </div>
-      <Field label={s["patients.fieldAddress"]}>
-        <input
-          value={fields.address}
-          onChange={(e) => set("address", e.target.value)}
-          className={inputCls}
-        />
-      </Field>
+      {/* Street address input intentionally not surfaced (address-reduction,
+          2026-06-30). `fields.address` is preserved from the loaded patient and
+          submitted unchanged, so the stored value and historical data are kept. */}
       <Field label={s["patients.fieldNotes"]}>
         <textarea
           rows={3}

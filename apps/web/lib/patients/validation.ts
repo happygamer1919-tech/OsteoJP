@@ -20,6 +20,7 @@ export type CreatePatientInput = {
   address?: string | null;
   postalCode?: string | null;
   city?: string | null;
+  profession?: string | null;
   notes?: string | null;
 };
 export type UpdatePatientInput = Partial<CreatePatientInput>;
@@ -35,6 +36,7 @@ export type CreatePatientValues = {
   address: string | null;
   postalCode: string | null;
   city: string | null;
+  profession: string | null;
   notes: string | null;
 };
 export type UpdatePatientValues = Partial<CreatePatientValues>;
@@ -93,6 +95,7 @@ export function parseCreatePatient(raw: CreatePatientInput): CreatePatientValues
     address: optionalText(r.address, "address", 500),
     postalCode: optionalText(r.postalCode, "postalCode", 16),
     city: optionalText(r.city, "city", 200),
+    profession: optionalText(r.profession, "profession", 200),
     notes: optionalText(r.notes, "notes", 5000),
   };
 }
@@ -111,6 +114,7 @@ export function parseUpdatePatient(raw: UpdatePatientInput): UpdatePatientValues
   if ("address" in r) out.address = optionalText(r.address, "address", 500);
   if ("postalCode" in r) out.postalCode = optionalText(r.postalCode, "postalCode", 16);
   if ("city" in r) out.city = optionalText(r.city, "city", 200);
+  if ("profession" in r) out.profession = optionalText(r.profession, "profession", 200);
   if ("notes" in r) out.notes = optionalText(r.notes, "notes", 5000);
   return out;
 }

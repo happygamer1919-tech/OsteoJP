@@ -54,6 +54,10 @@ const USERS = [
 ];
 
 const LOCATION_A = "00000000-0000-0000-0000-00000000a101";
+// Archived (is_active=false) location — must be ABSENT from every selection
+// dropdown (W2-02 item 2) while its name stays displayable on the read path.
+const LOCATION_ARCHIVED = "00000000-0000-0000-0000-00000000a102";
+const LOCATION_ARCHIVED_NAME = "Sede Antiga (Arquivada)";
 const SERVICE_A = "00000000-0000-0000-0000-00000000a201";
 
 const PATIENTS_A = [
@@ -189,6 +193,13 @@ async function ensureBaseData() {
       { onConflict: "id" },
     )).error,
     "location",
+  );
+  must(
+    (await db.from("locations").upsert(
+      { id: LOCATION_ARCHIVED, tenant_id: TENANT_A, name: LOCATION_ARCHIVED_NAME, is_active: false },
+      { onConflict: "id" },
+    )).error,
+    "location-archived",
   );
   must(
     (await db.from("services").upsert(

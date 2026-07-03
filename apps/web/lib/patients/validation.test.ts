@@ -30,6 +30,14 @@ describe("parseCreatePatient", () => {
     expect(() => parseCreatePatient({ fullName: "   " })).toThrow(ValidationError);
   });
 
+  it("parses and trims profession, normalizing empty to null (W2-02 item 5)", () => {
+    expect(parseCreatePatient({ fullName: "X", profession: "  Fisioterapeuta  " }).profession).toBe(
+      "Fisioterapeuta",
+    );
+    expect(parseCreatePatient({ fullName: "X", profession: "" }).profession).toBeNull();
+    expect(parseCreatePatient({ fullName: "X" }).profession).toBeNull();
+  });
+
   it("rejects an invalid email", () => {
     expect(() =>
       parseCreatePatient({ fullName: "X", email: "not-an-email" }),
@@ -68,6 +76,12 @@ describe("parseUpdatePatient", () => {
 
   it("still validates provided values", () => {
     expect(() => parseUpdatePatient({ email: "bad" })).toThrow(ValidationError);
+  });
+
+  it("includes profession only when provided, clearing on explicit empty (W2-02 item 5)", () => {
+    expect(parseUpdatePatient({ profession: "Osteopata" })).toEqual({ profession: "Osteopata" });
+    expect(parseUpdatePatient({ profession: "" })).toEqual({ profession: null });
+    expect("profession" in parseUpdatePatient({ phone: "912345678" })).toBe(false);
   });
 });
 

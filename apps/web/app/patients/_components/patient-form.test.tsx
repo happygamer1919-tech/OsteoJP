@@ -30,3 +30,36 @@ describe("PatientForm — BUG-08 date-of-birth locale", () => {
     expect(dateInput).toContain('lang="pt-PT"');
   });
 });
+
+// W2-02 — patient form field surface (items 3 + 5).
+describe("PatientForm — W2-02 field surface", () => {
+  it("does not render the street-address (Morada) input (item 3)", () => {
+    const html = renderToStaticMarkup(createElement(PatientForm));
+    // The address column stays in the DB and round-trips on save, but is not
+    // surfaced as an editable field.
+    expect(html).not.toContain("Morada");
+  });
+
+  it("renders the Profissão input (item 5)", () => {
+    const html = renderToStaticMarkup(createElement(PatientForm));
+    expect(html).toContain("Profissão");
+  });
+
+  it("preserves the loaded patient's address on the (hidden) field so it round-trips", () => {
+    // Rendering with a patient carrying an address must not crash and must keep
+    // the value in form state without surfacing a Morada label.
+    const html = renderToStaticMarkup(
+      createElement(PatientForm, {
+        patient: {
+          id: "00000000-0000-0000-0000-0000000000aa",
+          fullName: "Paciente Antigo",
+          address: "Rua Escondida, 1",
+          profession: "Osteopata",
+        } as never,
+      }),
+    );
+    expect(html).not.toContain("Morada");
+    // Profession value is surfaced in its input.
+    expect(html).toContain("Osteopata");
+  });
+});
