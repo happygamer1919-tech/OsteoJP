@@ -12,6 +12,7 @@ const NAV: AdminNavItem[] = [
   { href: "/admin", label: s["admin.nav.overview"] },
   { href: "/admin/settings", label: s["admin.nav.settings"] },
   { href: "/admin/staff", label: s["admin.nav.staff"] },
+  { href: "/admin/working-hours", label: s["admin.nav.workingHours"] },
   { href: "/admin/services", label: s["admin.nav.services"] },
   { href: "/admin/locations", label: s["admin.nav.locations"] },
 ];

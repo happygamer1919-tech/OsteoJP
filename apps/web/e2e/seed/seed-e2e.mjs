@@ -58,6 +58,12 @@ const LOCATION_A = "00000000-0000-0000-0000-00000000a101";
 // dropdown (W2-02 item 2) while its name stays displayable on the read path.
 const LOCATION_ARCHIVED = "00000000-0000-0000-0000-00000000a102";
 const LOCATION_ARCHIVED_NAME = "Sede Antiga (Arquivada)";
+// Dedicated active location for the W2-12 working-hours test. No other spec
+// books here, so creating availability for a therapist AT THIS LOCATION cannot
+// pollute the shared Linda-a-Velha bookings via the per-(user,location)
+// availability-conflict rule.
+const LOCATION_B = "00000000-0000-0000-0000-00000000a103";
+const LOCATION_B_NAME = "Consultório B (E2E)";
 const SERVICE_A = "00000000-0000-0000-0000-00000000a201";
 // NESA contraindication-sensitive service (W2-08) — pairs with Ana's epilepsy
 // flag to drive the soft booking warning.
@@ -207,6 +213,13 @@ async function ensureBaseData() {
       { onConflict: "id" },
     )).error,
     "location-archived",
+  );
+  must(
+    (await db.from("locations").upsert(
+      { id: LOCATION_B, tenant_id: TENANT_A, name: LOCATION_B_NAME, is_active: true },
+      { onConflict: "id" },
+    )).error,
+    "location-b",
   );
   must(
     (await db.from("services").upsert(
