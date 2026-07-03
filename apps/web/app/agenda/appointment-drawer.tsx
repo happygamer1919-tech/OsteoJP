@@ -39,9 +39,9 @@ import type {
   AgendaOptions,
   AppointmentStatusValue,
   ConflictInfo,
-  Frequency,
   SeriesScope,
 } from "@/lib/scheduling/types";
+import { buildLoteSlots, generateLoteDates, type LoteRow } from "@/lib/scheduling/lote";
 import { AvailabilityPanel } from "./availability-panel";
 
 import { ConfirmationIndicator } from "./confirmation-indicator";
@@ -62,8 +62,6 @@ type FormState = {
   durationMin: number;
   status: AppointmentStatusValue;
   notes: string;
-  repeatFreq: "none" | Frequency;
-  occurrences: number;
   scope: SeriesScope;
 };
 
@@ -74,12 +72,6 @@ const STATUS_OPTIONS: { value: AppointmentStatusValue; key: StringKey }[] = [
   { value: "completed", key: "appointment.statusCompleted" },
   { value: "cancelled", key: "appointment.statusCancelled" },
   { value: "no_show", key: "appointment.statusNoShow" },
-];
-const FREQ_OPTIONS: { value: Frequency; key: StringKey }[] = [
-  { value: "daily", key: "appointment.repeatDaily" },
-  { value: "weekly", key: "appointment.repeatWeekly" },
-  { value: "biweekly", key: "appointment.repeatBiweekly" },
-  { value: "monthly", key: "appointment.repeatMonthly" },
 ];
 const SCOPE_OPTIONS: { value: SeriesScope; key: StringKey }[] = [
   { value: "one", key: "appointment.scopeOne" },
@@ -132,8 +124,6 @@ export function AppointmentDrawer({
         durationMin: durationMin > 0 ? durationMin : 60,
         status: editing.status,
         notes: editing.notes ?? "",
-        repeatFreq: "none",
-        occurrences: 4,
         scope: "one",
       };
     }
@@ -149,8 +139,6 @@ export function AppointmentDrawer({
       durationMin: 60,
       status: "scheduled",
       notes: "",
-      repeatFreq: "none",
-      occurrences: 4,
       scope: "one",
     };
   }, [editing, state, anchor, options.locations]);
@@ -165,6 +153,14 @@ export function AppointmentDrawer({
     bookedCount: number;
     failures: BatchFailure[];
   } | null>(null);
+
+  // "Agendar lote" (W2-10) — replaces the V1 recorrente control. Collects a
+  // count + an every-X-weeks pattern, generates candidate dates, and gives each
+  // its OWN time; Confirm submits the explicit slot list to the W2-09 engine.
+  const [loteMode, setLoteMode] = useState(false);
+  const [loteCount, setLoteCount] = useState(4);
+  const [loteEveryWeeks, setLoteEveryWeeks] = useState(1);
+  const [loteRows, setLoteRows] = useState<LoteRow[]>([]);
 
   // A conflict banner describes one specific therapist/date/time/duration
   // combination (checked server-side inside create/update/reschedule — there
@@ -325,18 +321,21 @@ export function AppointmentDrawer({
     setConflicts(null);
     try {
       if (!editing) {
-        // Recorrente path (ruling G): partial-success batch — book every free
-        // slot, report the busy ones in a dialog. Single creation is unchanged.
-        if (form.repeatFreq !== "none") {
+        // Agendar lote (W2-10, ruling G): partial-success batch over an EXPLICIT
+        // per-date slot list — book every free slot, report the busy ones in a
+        // dialog. Single creation (lote off) is unchanged.
+        if (loteMode) {
+          const slots = buildLoteSlots(loteRows, form.durationMin);
+          if (slots.length === 0) {
+            setError(s["lote.noDates"]);
+            return;
+          }
           const r = await batchScheduleAppointments({
             patientId: form.patientId,
             practitionerId: form.practitionerId,
             locationId: form.locationId,
             serviceId: form.serviceId || null,
-            firstDate: form.date,
-            hhmm: form.time,
-            durationMin: form.durationMin,
-            recurrence: { freq: form.repeatFreq, count: form.occurrences },
+            slots,
             status: form.status,
           });
           if (!r.ok) {
@@ -414,17 +413,14 @@ export function AppointmentDrawer({
   }
 
   // Re-attempt ONE slot from the failure dialog at the edited date/time, through
-  // the same engine (count=1). freq is irrelevant for a single occurrence.
+  // the same engine — as a single explicit slot.
   async function rebookSlot(date: string, hhmm: string): Promise<RebookOutcome> {
     const r = await batchScheduleAppointments({
       patientId: form.patientId,
       practitionerId: form.practitionerId,
       locationId: form.locationId,
       serviceId: form.serviceId || null,
-      firstDate: date,
-      hhmm,
-      durationMin: form.durationMin,
-      recurrence: { freq: form.repeatFreq === "none" ? "weekly" : form.repeatFreq, count: 1 },
+      slots: buildLoteSlots([{ date, time: hhmm }], form.durationMin),
       status: form.status,
     });
     if (!r.ok) return { booked: false, failure: null };
@@ -570,31 +566,77 @@ export function AppointmentDrawer({
           onPickTime={(hhmm) => set("time", hhmm)}
         />
 
+        {/* Agendar lote (W2-10) — replaces the V1 recorrente control. */}
         {!editing && (
           <div className="flex flex-col gap-3">
             <Checkbox
-              label={s["appointment.recurringCheckbox"]}
-              checked={form.repeatFreq !== "none"}
-              onChange={(e) => set("repeatFreq", e.target.checked ? "weekly" : "none")}
+              label={s["lote.checkbox"]}
+              checked={loteMode}
+              onChange={(e) => {
+                setLoteMode(e.target.checked);
+                if (!e.target.checked) setLoteRows([]);
+              }}
             />
-            {form.repeatFreq !== "none" && (
-              <div className="flex flex-wrap gap-3">
-                <Field label={s["appointment.repeat"]}>
-                  <Select value={form.repeatFreq} onChange={(e) => set("repeatFreq", e.target.value as FormState["repeatFreq"])}>
-                    {FREQ_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{s[o.key]}</option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label={s["appointment.occurrences"]}>
-                  <Input
-                    type="number"
-                    min={2}
-                    max={52}
-                    value={String(form.occurrences)}
-                    onChange={(e) => set("occurrences", Math.max(2, Number(e.target.value) || 2))}
-                  />
-                </Field>
+            {loteMode && (
+              <div className="flex flex-col gap-3 rounded-lg border border-border-strong p-3">
+                <div className="flex flex-wrap items-end gap-3">
+                  <Field label={s["lote.count"]}>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={52}
+                      value={String(loteCount)}
+                      onChange={(e) => setLoteCount(Math.max(1, Number(e.target.value) || 1))}
+                    />
+                  </Field>
+                  <Field label={s["lote.everyWeeks"]}>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={String(loteEveryWeeks)}
+                      onChange={(e) => setLoteEveryWeeks(Math.max(1, Number(e.target.value) || 1))}
+                    />
+                  </Field>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLoteRows(
+                        generateLoteDates(form.date, loteEveryWeeks, loteCount).map((date) => ({
+                          date,
+                          time: form.time,
+                        })),
+                      )
+                    }
+                    className="h-10 rounded border border-brand-teal px-3 text-sm font-medium text-brand-teal hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  >
+                    {s["lote.generate"]}
+                  </button>
+                </div>
+
+                {loteRows.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <span className="text-xs font-medium text-text-secondary">
+                      {loteRows.length} {s["lote.summaryCount"]}
+                    </span>
+                    <ul className="flex flex-col gap-2">
+                      {loteRows.map((row, i) => (
+                        <li key={row.date} className="flex flex-wrap items-center gap-2 text-sm">
+                          <span className="w-28 tabular-nums text-text-primary">{row.date}</span>
+                          <Input
+                            type="time"
+                            value={row.time}
+                            onChange={(e) =>
+                              setLoteRows((rs) =>
+                                rs.map((r, j) => (j === i ? { ...r, time: e.target.value } : r)),
+                              )
+                            }
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>
