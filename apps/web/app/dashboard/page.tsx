@@ -44,7 +44,6 @@ import {
 } from "@/lib/scheduling/time";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 import { getMonthlyRevenue } from "@/lib/invoices/queries";
-import { getQuickNotes } from "@/lib/dashboard/notes";
 
 import { DateJump } from "./date-jump";
 import { NotasRapidas } from "./notas-rapidas";
@@ -115,7 +114,7 @@ export default async function DashboardPage({
 
   // Fire all widget queries in parallel; a failure in one degrades only that
   // widget rather than error-boundarying the entire dashboard.
-  const [countResult, upcomingResult, recResult, revenueResult, weekResult, notesResult] =
+  const [countResult, upcomingResult, recResult, revenueResult, weekResult] =
     await Promise.allSettled([
       // 1. Active patients + this-week delta
       runScoped(ctx, (tx) =>
@@ -156,8 +155,6 @@ export default async function DashboardPage({
             endUtc: lisbonMidnightUtc(addDays(weekStartDate, 7)),
           })
         : Promise.resolve([] as AgendaAppointment[]),
-      // 6. Quick notes
-      getQuickNotes(ctx),
     ]);
 
   // KPI 1 — active patients
@@ -218,7 +215,6 @@ export default async function DashboardPage({
   );
 
   // Notas rápidas — empty string fallback when the quick_notes table is unavailable.
-  const initialNotes = notesResult.status === "fulfilled" ? notesResult.value : "";
 
   // Acessos rápidos — role-gated.
   const tiles: Array<{
@@ -300,7 +296,7 @@ export default async function DashboardPage({
 
       {/* Notas rápidas — saved via saveQuickNotesAction to public.quick_notes (content column), keyed on tenant_id + staff_user_id (migration 0018). */}
       <GlassCard title={s["dashboard.notes"]}>
-        <NotasRapidas initialNotes={initialNotes} />
+        <NotasRapidas />
       </GlassCard>
     </main>
   );

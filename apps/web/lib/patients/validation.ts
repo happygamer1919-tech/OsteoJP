@@ -21,7 +21,6 @@ export type CreatePatientInput = {
   postalCode?: string | null;
   city?: string | null;
   profession?: string | null;
-  notes?: string | null;
   contraindicationEpilepsy?: boolean;
   contraindicationPregnancy?: boolean;
 };
@@ -39,7 +38,6 @@ export type CreatePatientValues = {
   postalCode: string | null;
   city: string | null;
   profession: string | null;
-  notes: string | null;
   contraindicationEpilepsy: boolean;
   contraindicationPregnancy: boolean;
 };
@@ -100,7 +98,6 @@ export function parseCreatePatient(raw: CreatePatientInput): CreatePatientValues
     postalCode: optionalText(r.postalCode, "postalCode", 16),
     city: optionalText(r.city, "city", 200),
     profession: optionalText(r.profession, "profession", 200),
-    notes: optionalText(r.notes, "notes", 5000),
     contraindicationEpilepsy: r.contraindicationEpilepsy === true,
     contraindicationPregnancy: r.contraindicationPregnancy === true,
   };
@@ -121,7 +118,6 @@ export function parseUpdatePatient(raw: UpdatePatientInput): UpdatePatientValues
   if ("postalCode" in r) out.postalCode = optionalText(r.postalCode, "postalCode", 16);
   if ("city" in r) out.city = optionalText(r.city, "city", 200);
   if ("profession" in r) out.profession = optionalText(r.profession, "profession", 200);
-  if ("notes" in r) out.notes = optionalText(r.notes, "notes", 5000);
   if ("contraindicationEpilepsy" in r) out.contraindicationEpilepsy = r.contraindicationEpilepsy === true;
   if ("contraindicationPregnancy" in r) out.contraindicationPregnancy = r.contraindicationPregnancy === true;
   return out;

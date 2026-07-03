@@ -11,7 +11,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, isNotNull, isNull, max, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { patients } from "@osteojp/db";
+import { patients, patientNoteRevisions } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
 import {
@@ -73,7 +73,6 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
         postalCode: input.postalCode,
         city: input.city,
         profession: input.profession,
-        notes: input.notes,
         contraindicationEpilepsy: input.contraindicationEpilepsy,
         contraindicationPregnancy: input.contraindicationPregnancy,
       })
@@ -108,7 +107,6 @@ export async function updatePatient(
     ...(input.postalCode !== undefined && { postalCode: input.postalCode }),
     ...(input.city !== undefined && { city: input.city }),
     ...(input.profession !== undefined && { profession: input.profession }),
-    ...(input.notes !== undefined && { notes: input.notes }),
     ...(input.contraindicationEpilepsy !== undefined && {
       contraindicationEpilepsy: input.contraindicationEpilepsy,
     }),
@@ -214,6 +212,31 @@ export async function getPatientContraindications(
       .limit(1);
     return { epilepsy: row?.epilepsy ?? false, pregnancy: row?.pregnancy ?? false };
   });
+}
+
+/**
+ * Append a new patient note revision (W2-11). Append-only: never edits/deletes
+ * an existing revision. author = current user, tenant from JWT. Used by the
+ * profile Notas tab composer and the dashboard Notas Rápidas quick-note.
+ */
+export async function appendPatientNoteAction(
+  patientId: string,
+  content: string,
+): Promise<{ ok: boolean }> {
+  const ctx = await requireRequestContext();
+  assertCan(ctx.role, "patients:write");
+  const text = content.trim();
+  if (!patientId || text.length === 0 || text.length > 5000) return { ok: false };
+  await runScoped(ctx, async (tx) => {
+    await tx.insert(patientNoteRevisions).values({
+      tenantId: ctx.tenantId, // NOT NULL + RLS WITH CHECK
+      patientId,
+      content: text,
+      authorUserId: ctx.userId,
+    });
+  });
+  revalidatePatient(patientId);
+  return { ok: true };
 }
 
 /**

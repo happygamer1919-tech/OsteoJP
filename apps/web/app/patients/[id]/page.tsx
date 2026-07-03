@@ -18,6 +18,8 @@ import { formatPatientNumber } from "../../../lib/patients/format";
 import { getPatient } from "../../../lib/patients/queries";
 import type { Patient } from "../../../lib/patients/types";
 import { listPatientAppointments } from "../../../lib/scheduling/data";
+import { listPatientNoteRevisions } from "../../../lib/patients/note-revisions";
+import { NotesComposer } from "./notes-composer";
 import { PatientActions } from "../_components/patient-actions";
 import { versionRecordAction } from "../../clinical/[id]/actions";
 import { AppointmentsList } from "./appointments-list";
@@ -90,6 +92,7 @@ export default async function PatientProfilePage({
   const tabItems = [
     { value: "resumo", label: s["patients.tabSummary"], "aria-controls": "tabpanel-resumo" },
     { value: "consultas", label: s["patients.tabAppointments"], "aria-controls": "tabpanel-consultas" },
+    { value: "notas", label: s["patients.tabNotes"], "aria-controls": "tabpanel-notas" },
     ...(canReadClinical ? [{ value: "registos", label: s["patients.tabRecords"], "aria-controls": "tabpanel-registos" }] : []),
     { value: "documentos", label: s["patients.tabDocuments"], "aria-controls": "tabpanel-documentos" },
     ...(canInvoice ? [{ value: "faturacao", label: s["patients.tabInvoicing"], "aria-controls": "tabpanel-faturacao" }] : []),
@@ -116,7 +119,8 @@ export default async function PatientProfilePage({
   if (patient.profession) personalRows.push([s["patients.fieldProfession"], patient.profession]);
   if (patient.city) personalRows.push([s["patients.fieldCity"], patient.city]);
   if (patient.region) personalRows.push([s["patients.fieldRegion"], patient.region]);
-  if (patient.notes) personalRows.push([s["patients.fieldNotes"], patient.notes]);
+  // Patient notes moved to the append-only Notas tab (W2-11); the profile
+  // summary no longer reads patients.notes.
 
   // Registos clínicos consumes the existing RLS + role-scoped records query.
   const records = tab === "registos" && canReadClinical ? await listRecords(ctx, { patientId: id }) : [];
@@ -124,6 +128,8 @@ export default async function PatientProfilePage({
   const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
   // Consultas tab: this patient's appointment history (Row 3 — schedule-again).
   const patientAppointments = tab === "consultas" ? await listPatientAppointments(ctx, id) : [];
+  // Notas tab: append-only note history from patient_note_revisions (0030).
+  const noteRevisions = tab === "notas" ? await listPatientNoteRevisions(ctx, id) : [];
 
   return (
     <main>
@@ -198,6 +204,31 @@ export default async function PatientProfilePage({
       {tab === "consultas" && (
         <div role="tabpanel" id="tabpanel-consultas" aria-label={s["patients.tabAppointments"]}>
           <AppointmentsList appointments={patientAppointments} />
+        </div>
+      )}
+
+      {tab === "notas" && (
+        <div role="tabpanel" id="tabpanel-notas" aria-label={s["patients.tabNotes"]}>
+          <Card title={s["patients.tabNotes"]}>
+            {/* Append-only note history (0030). Composer adds a new revision;
+                existing revisions are never edited or deleted. */}
+            <NotesComposer patientId={id} />
+            {noteRevisions.length === 0 ? (
+              <p className="mt-4 text-sm text-text-secondary">{s["patients.notesEmpty"]}</p>
+            ) : (
+              <ul className="mt-4 flex flex-col gap-3">
+                {noteRevisions.map((r) => (
+                  <li key={r.id} className="rounded-lg border border-border-strong p-3">
+                    <p className="whitespace-pre-wrap text-sm text-text-primary">{r.content}</p>
+                    <p className="mt-1 text-xs text-text-secondary">
+                      {r.authorName ?? s["patients.noteSystemAuthor"]} ·{" "}
+                      {new Date(r.createdAt).toLocaleString("pt-PT")}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
         </div>
       )}
 
