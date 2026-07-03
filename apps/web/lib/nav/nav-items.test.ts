@@ -5,12 +5,14 @@ const hrefs = (role: Parameters<typeof navItemsForRole>[0]) =>
   navItemsForRole(role).map((i) => i.href);
 
 describe("navItemsForRole — role-aware nav gating", () => {
-  it("owner sees every section incl. Clinical, Marcações, Invoicing, Review and Admin", () => {
+  // Ruling F (W2-06): the top-level "Registos Clínicos" (/clinical) section left
+  // the primary nav; fichas now live in the patient profile tab. /clinical/review
+  // (AI review queue) is a separate section and stays.
+  it("owner sees Marcações, Invoicing, Review and Admin — but NOT the top-level /clinical", () => {
     expect(hrefs("owner")).toEqual([
       "/dashboard",
       "/agenda",
       "/patients",
-      "/clinical",
       "/marcacoes",
       "/invoicing",
       "/clinical/review",
@@ -18,29 +20,29 @@ describe("navItemsForRole — role-aware nav gating", () => {
     ]);
   });
 
-  it("admin sees Clinical, Invoicing and Admin but NOT Review (oversight, not clinician)", () => {
+  it("admin sees Invoicing and Admin but NOT Review and NOT the top-level /clinical", () => {
     expect(hrefs("admin")).toEqual([
       "/dashboard",
       "/agenda",
       "/patients",
-      "/clinical",
       "/marcacoes",
       "/invoicing",
       "/admin",
     ]);
+    expect(hrefs("admin")).not.toContain("/clinical");
     expect(hrefs("admin")).not.toContain("/clinical/review");
   });
 
-  it("therapist sees Clinical, Invoicing and Review but NOT Admin", () => {
+  it("therapist sees Invoicing and Review but NOT Admin and NOT the top-level /clinical", () => {
     expect(hrefs("therapist")).toEqual([
       "/dashboard",
       "/agenda",
       "/patients",
-      "/clinical",
       "/marcacoes",
       "/invoicing",
       "/clinical/review",
     ]);
+    expect(hrefs("therapist")).not.toContain("/clinical");
   });
 
   it("reception sees Marcações and Invoicing but NEITHER Clinical NOR Review NOR Admin", () => {
@@ -49,6 +51,12 @@ describe("navItemsForRole — role-aware nav gating", () => {
     expect(r).not.toContain("/clinical");
     expect(r).not.toContain("/clinical/review");
     expect(r).not.toContain("/admin");
+  });
+
+  it("NO role sees the top-level Registos Clínicos (/clinical) section (ruling F)", () => {
+    for (const role of ["owner", "admin", "therapist", "reception"] as const) {
+      expect(hrefs(role)).not.toContain("/clinical");
+    }
   });
 
   it("Admin link is limited to owner and admin only", () => {
