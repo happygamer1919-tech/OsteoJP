@@ -54,6 +54,8 @@ export const PATIENT_OTHER_TENANT = {
 export const LOCATION = { id: "00000000-0000-0000-0000-00000000a101", name: "Linda-a-Velha" } as const;
 /** Seeded is_active=false — must never appear in a selection dropdown (W2-02 item 2). */
 export const LOCATION_ARCHIVED = { id: "00000000-0000-0000-0000-00000000a102", name: "Sede Antiga (Arquivada)" } as const;
+/** Dedicated active location for the W2-12 working-hours test (no other spec books here). */
+export const LOCATION_B = { id: "00000000-0000-0000-0000-00000000a103", name: "Consultório B (E2E)" } as const;
 export const SERVICE = { id: "00000000-0000-0000-0000-00000000a201", name: "Osteopatia" } as const;
 export const THERAPIST_NAME = "E2E Therapist";
 
