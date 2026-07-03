@@ -60,3 +60,28 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | note_present capture (PURPLE backend, migration-free) | DECISIONS/QUESTIONS 2026-07-03 (Q-ROW8-1) | prerequisite for row-8 no-note UI indicator (#440) |
 | finance KPI report (revenue per therapist/service) | DECISIONS 2026-07-02 (VAT: CIVA art. 9 exemption) | gate cleared; queued until scoped as its own loop |
 | fiscal integration (fatura-recibo, insurer/protocol discounts) | DECISIONS 2026-07-03 entry B (JP) | GATED: must be re-specced against the licensed-partner model first; InvoiceXpress relay lock possibly superseded |
+
+## Wave 02 Loop Queue
+
+> Opened 2026-07-03. Same board rules as Wave 01 (status flow, one MIG-lane loop in flight, db-tests.yml/e2e.yml = Ivan hold). Loop files land under `docs/loops/wave-02/`. Lane tags: GREEN = chained migration runner, PURPLE = migration-free executor, UI = Max's UI lane. Sequencing gates are in the Gate column; DRAFT rows have no committed loop file yet.
+
+| ID | Item | Status | Lane | Gate / note |
+|------|------|--------|------|-------------|
+| W2-01 | migration 0030 `patient_note_revisions` (loop: `docs/loops/wave-02/W2-01-mig-0030-patient-note-revisions.md`) | READY | GREEN | none — patient-notes design ruling received (DECISIONS 2026-07-03); one migration in flight, 0029 latest on main |
+| W2-02 | UI quick-fix batch (5 items, migration-free) (loop: `docs/loops/wave-02/W2-02-ui-quickfix-batch.md`) | READY | UI/PURPLE | none — migration-free |
+| W2-03 | location data cleanup (live-DB data op) (loop: `docs/loops/wave-02/W2-03-location-cleanup.md`) | READY | PURPLE | runs AFTER W2-02 merged to main (archive-only, no schema change) |
+| W2-04 | no-note indicator UI on completed appointments | DRAFT | UI | consumes `note_present` capture #449 (merged); supersedes halt #440 |
+| W2-05 | batch failure pop-up wiring (partial-success) | DRAFT | UI | per DECISIONS 2026-07-03 ruling G; supersedes halt #439 |
+| W2-06 | fichas tab completion (list + create entry point) | DRAFT | UI | per DECISIONS 2026-07-03 ruling F; supersedes halt #446 |
+| W2-07 | migration 0031 NESA contraindication flags | DRAFT | GREEN | AFTER 0030 merged (one migration in flight); per DECISIONS 2026-07-03 ruling A |
+| W2-08 | NESA booking warning UI | DRAFT | UI | AFTER W2-07 merged |
+| W2-09 | batch V2 engine — explicit per-slot datetime list | DRAFT | PURPLE | supersedes the V1 recurrence-only batch path |
+| W2-10 | batch V2 UI (Agendar lote: count, every-X, per-date time pickers, summary, confirm) | DRAFT | UI | AFTER W2-09 merged |
+| W2-11 | patient notes tab + Notas Rápidas rewire to patient quick-note | DRAFT | UI/PURPLE | AFTER 0030 merged; includes read-only trace of the current Notas Rápidas write destination + orphaned-data check; flips notes UI to the revisions relation |
+| W2-12 | working-hours admin UI — availability template CRUD per therapist in Administração (weekdays, hours, location) | DRAFT | UI | none stated |
+| W2-13 | SMS confirmation flow — SPEC ONLY, no build this wave (Twilio PT, signed SIM/NÃO link page, flips 0024 `confirmation_state`) | DRAFT | SPEC | new vendor (Twilio) — spec only, owner-confirmable before any build |
+
+### Wave 02 deferred (recorded, not scheduled this wave)
+- **2-clients-same-slot UI** — `booking_group_id` (0027) exists in schema, no UI yet. Deferred.
+- **Marcações section stays** — no rename/relocation of the Marcações nav section this wave.
+- **Fisiozero import** — sequenced LAST (after all Wave 02 build), gated on the pre-real-data gates (separate-prod-project + signed DPA, DECISIONS 2026-07-01 / 2026-07-02).

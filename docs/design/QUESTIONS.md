@@ -312,3 +312,32 @@ actually signed off on.
 - **Recommended default:** one dedicated consolidation loop, canonical shelf as the merge target,
   legacy files become pointer stubs (not deleted).
 - **Owner:** Ivan / docs.
+
+## 2026-07-03 — NEW TICKET: CI db-gated step soft-passed while an inner test failed (gate hardening)
+
+- [ ] During PR #449 (note_present capture) a test INSIDE the db-gated job failed while the job's
+  required check still reported SUCCESS — the gate soft-passed a real failure. The failing test was
+  caught and fixed on-branch before merge, but the gate itself did not fail the job as it should
+  have. A green db-gated check must GUARANTEE every inner test passed.
+- **Risk:** a soft-passing gate can let a genuinely broken db/RLS change reach main under a green
+  check. This is the highest-trust gate in the repo (RLS isolation).
+- **Constraint:** hardening the step touches `.github/workflows/db-tests.yml`, which is an AUTOMATIC
+  owner hold (never self-merged, per BACKLOG coordination protocol). So this is a future PURPLE
+  item that opens a PR and HALTS for owner merge — it cannot be folded into a normal loop.
+- **Recommended default:** a dedicated PURPLE loop that fixes the exit-code/`set -e` (or
+  test-runner exit propagation) in `db-tests.yml` so any inner test failure fails the job, plus a
+  deliberately-failing canary test proving the gate now goes red. Owner-merged.
+- **Owner:** Ivan (db-tests.yml hold).
+
+## 2026-07-03 — NEW TICKET: close superseded Max halt PRs #440 / #439 / #446 on replacement merge
+
+- [ ] Three merged Max halt-recording PRs are superseded by Wave 02 loops but remain referenced:
+  `#440` (row-8 no-note halt) → superseded by **W2-04**; `#439` (batch failure pop-up halt) →
+  superseded by **W2-05**; `#446` (fichas-as-tab halt) → superseded by **W2-06**.
+- **Action:** when each replacing loop MERGES, add a closing comment on the corresponding halt PR
+  pointing at the replacement (e.g. "Superseded by W2-04 / PR #NNN — no-note indicator shipped"),
+  so the halt record is not left looking open/unresolved. These PRs are already merged; this is a
+  comment-only housekeeping step, no revert, no reopen.
+- **Recommended default:** the executor of W2-04 / W2-05 / W2-06 posts the closing comment on
+  #440 / #439 / #446 respectively as the final step of its own merge.
+- **Owner:** whichever lane merges the replacement loop.
