@@ -38,15 +38,25 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 ### UI lane (Max)
 | Item | Status | Gate |
 |------|--------|------|
-| remove Proximas marcacoes card | READY | none |
-| rename Revisao to Revisao Consulta | READY | none |
-| stale comment fix at page.tsx:360 | READY | none |
+| remove Proximas marcacoes card | DONE (#385) | none |
+| rename Revisao to Revisao Consulta | DONE (#384) | none |
+| stale comment fix at page.tsx:360 | DONE (#383) | none |
 | patient profile surfacing: profession + region (new in 0022), city + notes (already existed) | DONE (#393) | 0022 DONE |
-| auto-select service from therapist | READY | 0023 DONE |
+| auto-select service from therapist | DONE (#445) | 0023 DONE |
 | confirmation thumbs on appointment preview | DONE (#441) | 0024 DONE |
-| no-note indicator on completed appointments | HALTED | analytics_events note_present capture not implemented anywhere in code — see QUESTIONS.md Q-ROW8-1, route Ivan |
+| no-note indicator on completed appointments | BLOCKED-ON-CAPTURE | row 8 SPLIT (DECISIONS/QUESTIONS 2026-07-03): `note_present` capture is a PURPLE backend build item first (migration-free, `updateAppointment` completion branch); this UI indicator (halt recorded #440) lands after capture ships — Q-ROW8-1 resolved |
 | availability panel in new-appointment flow | READY | availability query DONE |
-| fichas-as-tab inside patient profile | HALTED | JP fichas-placement design ruling still open, distinct from the resolved 0026 completion ruling — see QUESTIONS.md Q-ROW7-1, route Ivan |
+| fichas-as-tab inside patient profile | READY | UNBLOCKED by fichas-placement ruling (DECISIONS 2026-07-03, entry F); halt recorded #446, Q-ROW7-1 resolved — UI lane |
 | schedule-again action on patient profile | DONE (#442) | clone endpoint DONE (#419) |
-| batch failure pop-up | HALTED | no defined UI entry point to trigger batchSchedule (briefing-vs-reality mismatch; QUESTIONS.md 2026-07-02) |
-| patient ID next to NIF | DRAFT | 0029 patient number migration (WRITTEN, ready for GREEN); unblocks when 0029 merges |
+| batch failure pop-up | READY | UNBLOCKED by partial-success ruling (DECISIONS 2026-07-03, entry G): wire `AppointmentDrawer` repeat UI through `batchSchedule`; halt recorded #439 — UI lane, migration-free |
+| patient ID next to NIF | DONE (#435) | 0029 patient number applied (STATE head 0029); zero-padded display per JP ruling |
+
+### Next-wave candidates (Wave 02 intake)
+> Added 2026-07-03 from the wave-01 close-out rulings. Candidates only — not yet scoped into loops.
+
+| Candidate | Origin | Gate / note |
+|-----------|--------|-------------|
+| NESA contraindication warning (flags + booking-time warning) | DECISIONS 2026-07-03 entry A (JP) | soft warning at booking, no hard block; next-wave build |
+| note_present capture (PURPLE backend, migration-free) | DECISIONS/QUESTIONS 2026-07-03 (Q-ROW8-1) | prerequisite for row-8 no-note UI indicator (#440) |
+| finance KPI report (revenue per therapist/service) | DECISIONS 2026-07-02 (VAT: CIVA art. 9 exemption) | gate cleared; queued until scoped as its own loop |
+| fiscal integration (fatura-recibo, insurer/protocol discounts) | DECISIONS 2026-07-03 entry B (JP) | GATED: must be re-specced against the licensed-partner model first; InvoiceXpress relay lock possibly superseded |

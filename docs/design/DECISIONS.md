@@ -116,3 +116,32 @@
 - Ruling (JP, 2026-07-02): the controller/processor principle is CONFIRMED VERBALLY for the Azure EU processor arrangement. Chain: the clinic (OsteoJP) is the data CONTROLLER; A&I Automation is the PROCESSOR; Andrei's pipeline is a SUB-PROCESSOR; all in the EU region.
 - Gate status: the pre-real-data gate remains OPEN. A verbal confirmation of the principle is NOT the recorded, signed instrument the gate requires. The gate closes only when the SIGNED DPA document is executed and recorded. Next action: Ivan prepares the DPA for signature. No real patient data may enter the system before the signed DPA is recorded (this is in addition to the separate-prod-project / seed-guard gate, DECISIONS 2026-07-01 — both must be satisfied).
 - Scope note: this records the arrangement and the open gate only. It is an owner-confirmable legal/compliance item (CLAUDE.md "Owner-confirmable items"); no code, config, or vendor wiring is decided or changed here.
+
+## 2026-07-03 - NESA contraindications: booking-time warning, no hard block (JP)
+- Ruling (JP, 2026-07-03): NESA (Neuromodulação Não Invasiva) has clinical contraindications — epilepsy and pregnancy called out explicitly. At booking time the therapist gets a CLEAR, VISIBLE warning. There is NO hard block: the clinical decision stays with the clinic, which may proceed with informed judgement.
+- Consistent with the 2026-07-01 gated-completion soft-warning philosophy (system surfaces and records, does not block clinical judgement). The build item (contraindication flags on the service/patient + a booking-time warning surface) is a NEXT-WAVE candidate, not built here.
+
+## 2026-07-03 - Fiscal operations ON HOLD pending licensed-partner model (JP)
+- Ruling (JP, 2026-07-03): fiscal operations are ON HOLD. JP plans to operate through an already-licensed partner company with Portuguese banking — OsteoJP provides the interface, the partner provides the licensed fiscal services.
+- Consequence: fatura-recibo live timing and insurer/protocol discount handling are DEFERRED to the final real-client integration batch, and must be RE-SPECCED against the partner model before any further fiscal build. The existing InvoiceXpress relay lock stays on file but is FLAGGED as possibly superseded by the partner model. No fiscal build proceeds until that re-spec.
+
+## 2026-07-03 - Preferred therapist at booking confirmed (JP)
+- Ruling (JP, 2026-07-03): a patient MAY indicate a preferred therapist when booking. The preference is a recommendation only — the clinic can always override. Confirms the recommended default.
+
+## 2026-07-03 - Montemor-o-Novo stays fully hidden (JP)
+- Ruling (JP, 2026-07-03): the Montemor-o-Novo location stays FULLY HIDDEN across all UI. No "Em breve" / coming-soon state is shown yet. Revisit only when JP raises it.
+
+## 2026-07-03 - Fichas Clínicas placement: tab in the patient profile (Ivan)
+- Ruling (Ivan, 2026-07-03): Fichas Clínicas leaves top-level nav and becomes a TAB inside the patient profile, alongside Marcações.
+- Per-visit appointment notes (0026) and fichas remain TWO DISTINCT objects: notes attach to appointments with an optional link to an episode/ficha, and never merge into a single record. The tab lists the patient's fichas; per-visit notes surface in the appointment history. This is the fichas-placement design ruling row 7 was waiting on (the 2026-07-01 gated-completion ruling already existed and was a separate call). Unblocks UI-lane row 7.
+
+## 2026-07-03 - Batch scheduling is partial-success by design (Ivan)
+- Ruling (Ivan, 2026-07-03): booking N recurring slots is PARTIAL-SUCCESS, never all-or-nothing. The batch books every FREE slot and reports each failure with its reason and nearest alternative in the failure pop-up; it never refuses the whole batch because some slots are busy.
+- Wiring the existing repeat-appointment UI through `batchSchedule` is AUTHORIZED as a UX behavior change (all-or-nothing becomes partial-success). Unblocks UI-lane row 9. Migration-free, UI lane.
+
+## 2026-07-03 - PR #447 (mistaken README merge) is ignored, no revert (Ivan)
+- Ruling (Ivan, 2026-07-03): PR #447 (a mistaken one-line README test merge by Max) is IGNORED. No revert. Zero functional impact; a revert would only add noise.
+
+## 2026-07-03 - Canonical doc shelf is docs/design/ (Ivan)
+- Ruling (Ivan, 2026-07-03): the canonical location for DECISIONS.md, QUESTIONS.md, STATE.md, and BACKLOG.md is `docs/design/`. `docs/DECISIONS.md` and `docs/QUESTIONS.md` are LEGACY and read-only for NEW entries from now on; open items still living in the legacy files get resolved in place until a dedicated consolidation loop migrates them onto the canonical shelf.
+- Root cause on record: the two-shelf split caused a FALSE row-7 halt — a prior agent read the legacy shelf and missed the 2026-07-01 gated-completion ruling that already lived on the canonical shelf, then proposed backfilling a ruling that already existed. Recording the canonical shelf prevents a repeat. Full consolidation is a FUTURE ticket (see QUESTIONS.md legacy-shelf consolidation), not this PR.
