@@ -7,6 +7,7 @@ import {
   GlassPanel,
   Select,
   StatusBadge,
+  StatusChip,
 } from "@osteojp/ui";
 import type { AppointmentTone } from "@osteojp/ui";
 import { CalendarClock, Repeat, TriangleAlert, User } from "lucide-react";
@@ -224,8 +225,11 @@ function AppointmentRow({
           </span>
         )}
 
-        {/* Status. */}
-        <span className="sm:ml-auto">
+        {/* Status + no-note indicator. */}
+        <span className="flex items-center gap-2 sm:ml-auto">
+          {appt.status === "completed" && !appt.hasNote && (
+            <StatusChip tone="warning">{s["appointment.noNote"]}</StatusChip>
+          )}
           <StatusBadge tone={STATUS_TONE[appt.status]}>
             {s[STATUS_KEY[appt.status]]}
           </StatusBadge>

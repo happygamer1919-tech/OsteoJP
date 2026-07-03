@@ -639,6 +639,7 @@
   "appointment.status.completed": "Completed",
   "appointment.status.cancelled": "Cancelled",
   "appointment.status.no_show": "No-show",
+  "appointment.noNote": "No note",
   "agenda.pickDate": "Choose date",
   "appointment.recurringCheckbox": "Recurring appointment",
   "appointment.saved": "Appointment saved",

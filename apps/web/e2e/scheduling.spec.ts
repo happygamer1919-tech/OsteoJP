@@ -113,3 +113,31 @@ test("booking the same therapist at an overlapping time is flagged as a conflict
   await expect(dialog.getByRole("button", { name: /Guardar mesmo assim/i })).toBeVisible();
   await expect(dialog).toBeVisible(); // not saved — still open
 });
+
+test("completed appointment with no note shows the 'Sem nota' indicator (W2-04)", async ({
+  page,
+}) => {
+  const date = futureDate(RUN_DAY_BASE + 13);
+
+  // Book, then reopen and mark it Concluída (completed) without adding a note.
+  let dialog = await openNewAppointment(page, date);
+  await fillAppointment(dialog, {
+    patient: PATIENTS.ana.name,
+    therapist: THERAPIST_NAME,
+    location: LOCATION.name,
+    date,
+    time: "15:00",
+  });
+  await dialog.getByRole("button", { name: SAVE }).click();
+  await expect(dialog).toBeHidden({ timeout: 12_000 });
+
+  await page.getByRole("button", { name: new RegExp(PATIENTS.ana.name) }).click();
+  dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel(/^Estado/i).selectOption({ label: "Concluída" });
+  await dialog.getByRole("button", { name: SAVE }).click();
+  await expect(dialog).toBeHidden({ timeout: 12_000 });
+
+  // Present-state indicator: completed + zero appointment_notes -> "Sem nota".
+  await expect(page.getByText("Sem nota").first()).toBeVisible({ timeout: 8_000 });
+});

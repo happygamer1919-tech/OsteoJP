@@ -1,8 +1,9 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
-import { and, asc, desc, eq, gte, lt, ne, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, ne, sql, type SQL } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
+  appointmentNotes,
   appointments,
   locations,
   patients,
@@ -44,6 +45,7 @@ function mapAppointment(r: {
   confirmationState: AgendaAppointment["confirmationState"];
   confirmationReceivedAt: Date | null;
   confirmationChannel: string | null;
+  hasNote: boolean;
 }): AgendaAppointment {
   return {
     ...r,
@@ -76,6 +78,16 @@ const appointmentSelection = {
   confirmationState: appointments.confirmationState,
   confirmationReceivedAt: appointments.confirmationReceivedAt,
   confirmationChannel: appointments.confirmationChannel,
+  // PRESENT-STATE existence of a per-visit note (W2-04). Truth source for the
+  // "Sem nota" indicator: a note added late must CLEAR it, so this reads
+  // appointment_notes NOW — NOT the immutable analytics_events.note_present
+  // (which stays the historical KPI record). Tenant-scoped: the surrounding
+  // query runs under RLS, and the correlation is pinned to the same tenant_id.
+  hasNote: sql<boolean>`exists (
+    select 1 from ${appointmentNotes}
+    where ${appointmentNotes.appointmentId} = ${appointments.id}
+      and ${appointmentNotes.tenantId} = ${appointments.tenantId}
+  )`.as("has_note"),
 } as const;
 
 function baseAppointmentQuery(tx: DbTx) {

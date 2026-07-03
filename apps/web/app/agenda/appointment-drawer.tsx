@@ -8,6 +8,7 @@ import {
   Field,
   Input,
   Select,
+  StatusChip,
   Textarea,
   useToast,
   type ComboboxOption,
@@ -540,6 +541,12 @@ export function AppointmentDrawer({
               </p>
             )}
           </div>
+        )}
+
+        {/* No-note indicator (W2-04): a completed visit with no per-visit note.
+            Present-state read (editing.hasNote); clears once a note is added. */}
+        {editing && editing.status === "completed" && !editing.hasNote && (
+          <StatusChip tone="warning">{s["appointment.noNote"]}</StatusChip>
         )}
 
         <Field label={s["appointment.notes"]}>
