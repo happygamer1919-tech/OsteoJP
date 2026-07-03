@@ -18,12 +18,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { s } from "@/lib/i18n";
 import { searchPatientsAction } from "@/lib/patients/actions";
 import {
+  batchScheduleAppointments,
   cancelAppointment,
   createAppointment,
   getTherapistServices,
   rescheduleAppointment,
   updateAppointment,
 } from "@/lib/scheduling/actions";
+import type { BatchFailure } from "@/lib/scheduling/batch-core";
+import type { RebookOutcome } from "@/lib/scheduling/batch-failure-core";
+import { BatchFailureDialog } from "./batch-failure-dialog";
 import {
   formatTimeOfDay,
   lisbonDateTimeToUtc,
@@ -154,6 +158,12 @@ export function AppointmentDrawer({
   const [error, setError] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Partial-success batch (W2-05): when a recorrente booking has busy slots, the
+  // free ones are booked and these drive the failure dialog for the rest.
+  const [batchFailures, setBatchFailures] = useState<{
+    bookedCount: number;
+    failures: BatchFailure[];
+  } | null>(null);
 
   // A conflict banner describes one specific therapist/date/time/duration
   // combination (checked server-side inside create/update/reschedule — there
@@ -292,7 +302,31 @@ export function AppointmentDrawer({
     setConflicts(null);
     try {
       if (!editing) {
-        const recurrence = form.repeatFreq !== "none" ? { freq: form.repeatFreq, count: form.occurrences } : null;
+        // Recorrente path (ruling G): partial-success batch — book every free
+        // slot, report the busy ones in a dialog. Single creation is unchanged.
+        if (form.repeatFreq !== "none") {
+          const r = await batchScheduleAppointments({
+            patientId: form.patientId,
+            practitionerId: form.practitionerId,
+            locationId: form.locationId,
+            serviceId: form.serviceId || null,
+            firstDate: form.date,
+            hhmm: form.time,
+            durationMin: form.durationMin,
+            recurrence: { freq: form.repeatFreq, count: form.occurrences },
+            status: form.status,
+          });
+          if (!r.ok) {
+            handleResult(r);
+            return;
+          }
+          if (r.data.failures.length === 0) {
+            succeed();
+            return;
+          }
+          setBatchFailures({ bookedCount: r.data.booked.length, failures: r.data.failures });
+          return;
+        }
         const r = await createAppointment({
           patientId: form.patientId,
           practitionerId: form.practitionerId,
@@ -303,7 +337,7 @@ export function AppointmentDrawer({
           endsAt: endISO,
           status: form.status,
           notes: form.notes || null,
-          recurrence,
+          recurrence: null,
           allowConflict,
         });
         if (!handleResult(r)) return;
@@ -356,12 +390,31 @@ export function AppointmentDrawer({
     onDone();
   }
 
+  // Re-attempt ONE slot from the failure dialog at the edited date/time, through
+  // the same engine (count=1). freq is irrelevant for a single occurrence.
+  async function rebookSlot(date: string, hhmm: string): Promise<RebookOutcome> {
+    const r = await batchScheduleAppointments({
+      patientId: form.patientId,
+      practitionerId: form.practitionerId,
+      locationId: form.locationId,
+      serviceId: form.serviceId || null,
+      firstDate: date,
+      hhmm,
+      durationMin: form.durationMin,
+      recurrence: { freq: form.repeatFreq === "none" ? "weekly" : form.repeatFreq, count: 1 },
+      status: form.status,
+    });
+    if (!r.ok) return { booked: false, failure: null };
+    return { booked: r.data.booked.length > 0, failure: r.data.failures[0] ?? null };
+  }
+
   const therapistConflicts = conflicts?.filter((c) => c.kind === "therapist") ?? [];
   const roomConflicts = conflicts?.filter((c) => c.kind === "room") ?? [];
   const availabilityConflicts = conflicts?.filter((c) => c.kind === "availability") ?? [];
   const timeOffConflicts = conflicts?.filter((c) => c.kind === "time_off") ?? [];
 
   return (
+    <>
     <Drawer
       open
       onClose={onClose}
@@ -569,6 +622,18 @@ export function AppointmentDrawer({
         )}
       </div>
     </Drawer>
+    {batchFailures && (
+      <BatchFailureDialog
+        bookedCount={batchFailures.bookedCount}
+        failures={batchFailures.failures}
+        onRebook={rebookSlot}
+        onClose={() => {
+          setBatchFailures(null);
+          succeed();
+        }}
+      />
+    )}
+    </>
   );
 }
 

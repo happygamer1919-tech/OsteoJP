@@ -11,6 +11,7 @@ import {
 import { appointments, type DbTx } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { clientIp } from "./actor";
+import { batchSchedule, type BatchScheduleInput, type BatchScheduleResult } from "./batch";
 import { writeAppointmentStatusChangedEvent } from "./analytics";
 import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
@@ -352,6 +353,32 @@ export async function createAppointment(
     return result;
   } catch (e) {
     return fail("create", e);
+  }
+}
+
+/**
+ * Partial-success batch booking (ruling G, DECISIONS 2026-07-03). Books every
+ * FREE slot in the expanded recurrence and reports each busy slot in `failures`
+ * (with its reason and nearest free alternative) — it never refuses the whole
+ * batch. The recorrente ("Marcação recorrente") drawer path routes here instead
+ * of createAppointment's all-or-nothing recurring branch. Thin wrapper: auth +
+ * validate, then delegate to the batch engine (no engine change here).
+ */
+export async function batchScheduleAppointments(
+  input: BatchScheduleInput,
+): Promise<ActionResult<BatchScheduleResult>> {
+  const auth = await authorize("appointments:write");
+  if (isDenied(auth)) return auth;
+  const { actor } = auth;
+  if (!input.patientId || !input.practitionerId || !input.locationId) {
+    return { ok: false, error: "validation" };
+  }
+  try {
+    const result = await batchSchedule(actor, input);
+    revalidatePath(AGENDA_PATH);
+    return { ok: true, data: result };
+  } catch (e) {
+    return fail("batchSchedule", e);
   }
 }
 
