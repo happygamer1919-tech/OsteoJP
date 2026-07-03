@@ -756,6 +756,44 @@ export const appointmentNotes = pgTable(
   ],
 );
 
+/* ================================================================== */
+/* Patient note revisions (Wave 02, migration 0030)                   */
+/*                                                                    */
+/* Append-only version history for a patient's free-text notes (JP,   */
+/* DECISIONS 2026-07-02 full-version-history ruling; transition plan   */
+/* DECISIONS 2026-07-03). One row per edit; the current `patients.notes`*/
+/* value was backfilled as revision 1 with author NULL (system, no     */
+/* known author). Read newest-first via the                            */
+/* (tenant_id, patient_id, created_at desc) index.                     */
+/*                                                                    */
+/* Append-only via the POLICY pattern (SELECT + INSERT only; UPDATE/   */
+/* DELETE denied by absent policy as 0 rows, table keeps the full DML  */
+/* grant), mirroring appointment_notes (0026) / analytics_events       */
+/* (0025). `patients.notes` is untouched by 0030 (the UI flip to this   */
+/* relation is W2-11).                                                  */
+/* ================================================================== */
+export const patientNoteRevisions = pgTable(
+  "patient_note_revisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    content: text("content").notNull(),
+    // NULL = system/backfill (no known author); an app-written revision carries
+    // the editing staff user.
+    authorUserId: uuid("author_user_id").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Read a patient's history newest-first, tenant-scoped.
+    index("patient_note_revisions_history_idx").on(t.tenantId, t.patientId, t.createdAt.desc()),
+  ],
+);
+
 // AI ingestion request log (Stream D). One row per request from the AI partner,
 // keyed by the partner's idempotency_key. The unique (tenant_id, idempotency_key)
 // constraint is what lets the future endpoint do 24h dedupe (same key + same
