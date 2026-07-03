@@ -14,3 +14,5 @@ Replaces Fisiozero + Stylus.pt with one multi-tenant system.
 
 ## Status
 Phase 0 — Foundations.
+
+Preview env check 2026-07-02
