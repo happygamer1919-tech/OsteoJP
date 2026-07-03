@@ -67,7 +67,7 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 
 | ID | Item | Status | Lane | Gate / note |
 |------|------|--------|------|-------------|
-| W2-01 | migration 0030 `patient_note_revisions` (loop: `docs/loops/wave-02/W2-01-mig-0030-patient-note-revisions.md`) | READY | GREEN | none — patient-notes design ruling received (DECISIONS 2026-07-03); one migration in flight, 0029 latest on main |
+| W2-01 | migration 0030 `patient_note_revisions` (loop: `docs/loops/wave-02/W2-01-mig-0030-patient-note-revisions.md`) | DONE (#452) | GREEN | none — patient-notes design ruling received (DECISIONS 2026-07-03); applied on dev, backfill 10/10, append-only + RLS tests green (300 total) |
 | W2-02 | UI quick-fix batch (5 items, migration-free) (loop: `docs/loops/wave-02/W2-02-ui-quickfix-batch.md`) | READY | UI/PURPLE | none — migration-free |
 | W2-03 | location data cleanup (live-DB data op) (loop: `docs/loops/wave-02/W2-03-location-cleanup.md`) | READY | PURPLE | runs AFTER W2-02 merged to main (archive-only, no schema change) |
 | W2-04 | no-note indicator UI on completed appointments (loop: `docs/loops/wave-02/W2-04-ui-no-note-indicator.md`) | READY | UI | none — precondition met (#449 merged); reads `appointment_notes` existence (present-state), supersedes halt #440 |
