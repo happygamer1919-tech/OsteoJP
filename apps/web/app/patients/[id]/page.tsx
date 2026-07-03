@@ -19,6 +19,7 @@ import { getPatient } from "../../../lib/patients/queries";
 import type { Patient } from "../../../lib/patients/types";
 import { listPatientAppointments } from "../../../lib/scheduling/data";
 import { PatientActions } from "../_components/patient-actions";
+import { versionRecordAction } from "../../clinical/[id]/actions";
 import { AppointmentsList } from "./appointments-list";
 import { createEpisodeAction } from "./episode-actions";
 import { ProfileTabs } from "./profile-tabs";
@@ -202,24 +203,45 @@ export default async function PatientProfilePage({
 
       {tab === "registos" && (
         <div role="tabpanel" id="tabpanel-registos" aria-label={s["patients.tabRecords"]}>
+          {/* Fichas placement (ruling F): all clinical-record entry points live
+              here. "Nova ficha" reuses the /clinical/new creation flow, pre-scoped
+              to this patient. */}
+          {canStartEpisode && (
+            <div className="mb-4 flex justify-end">
+              <Link href={`/clinical/new?patientId=${id}`} className={primaryLink}>
+                <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
+                {s["clinical.new"]}
+              </Link>
+            </div>
+          )}
           {records.length === 0 ? (
             <EmptyState icon={FileText} title={s["patients.emptyRecordsTitle"]} description={s["patients.emptyRecordsHelp"]} heritage />
           ) : (
             <div className="flex flex-col gap-3">
               {records.map((r) => (
-                <Card key={r.id} href={`/clinical/${r.id}`}>
+                <Card key={r.id}>
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-col gap-1">
+                    <Link href={`/clinical/${r.id}`} className="flex min-w-0 flex-col gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
                       <span className="font-medium text-text-primary">
                         {r.templateTitle ? r.templateTitle[DEFAULT_LOCALE] : s["patients.recordDefaultName"]}
                       </span>
                       <span className="text-sm text-text-secondary">{dateFmt.format(new Date(r.updatedAt))}</span>
+                    </Link>
+                    <div className="flex items-center gap-3">
+                      {/* record_status axis. The ai_review_state second axis is not in
+                          the records list query, so it is not shown here (rule #1). */}
+                      <StatusChip tone={RECORD_TONE[r.status]} dot>
+                        {s[RECORD_KEY[r.status]]}
+                      </StatusChip>
+                      {/* Per-ficha addendum: reuse the existing versionRecordAction.
+                          A finalized (non-draft) ficha is immutable; changes create a
+                          new version. Author-gated. */}
+                      {canStartEpisode && r.status !== "draft" && (
+                        <form action={versionRecordAction.bind(null, r.id)}>
+                          <Button type="submit" variant="secondary">{s["clinical.newVersion"]}</Button>
+                        </form>
+                      )}
                     </div>
-                    {/* record_status axis. The ai_review_state second axis is not in
-                        the records list query, so it is not shown here (rule #1). */}
-                    <StatusChip tone={RECORD_TONE[r.status]} dot>
-                      {s[RECORD_KEY[r.status]]}
-                    </StatusChip>
                   </div>
                 </Card>
               ))}

@@ -56,6 +56,41 @@ test.describe("authoring (therapist)", () => {
     await expect(page.getByText(/Versão 2/)).toBeVisible();
     await expect(page.getByText("Rascunho")).toBeVisible();
   });
+
+  // W2-06: fichas entry points live in the patient-profile Registos clínicos tab.
+  test("patient Registos tab creates a ficha (scoped) and surfaces the addendum action", async ({
+    page,
+  }) => {
+    await page.goto(`/patients/${PATIENTS.maria.id}?tab=registos`);
+
+    // "Nova ficha" reuses the /clinical/new creation flow, pre-scoped to this patient.
+    await page.getByRole("link", { name: "Nova ficha" }).click();
+    await expect(page).toHaveURL(/\/clinical\/new\?patientId=/);
+    await expect(page.getByLabel(/Paciente/i)).toHaveValue(PATIENTS.maria.id);
+
+    await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
+    await page.getByRole("button", { name: "Criar ficha" }).click();
+    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    const recordUrl = page.url(); // capture the record-detail deep link
+
+    // Sign/lock so the ficha is finalized (its addendum action then appears in the tab).
+    await page.getByRole("button", { name: "Assinar e bloquear" }).click();
+    await expect(page.getByText("Ficha finalizada e imutável.", { exact: false })).toBeVisible({
+      timeout: 12_000,
+    });
+
+    // Back on the tab: the finalized ficha exposes the per-ficha "Nova versão (adenda)".
+    await page.goto(`/patients/${PATIENTS.maria.id}?tab=registos`);
+    const addendum = page.getByRole("button", { name: "Nova versão (adenda)" }).first();
+    await expect(addendum).toBeVisible();
+    // The ficha row deep-links to /clinical/[id] (its title is a link to the record).
+    await expect(page.locator(`a[href="${new URL(recordUrl).pathname}"]`).first()).toBeVisible();
+
+    // Deep-link invariant: the record-detail URL still resolves unchanged.
+    await page.goto(recordUrl);
+    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/);
+    await expect(page.getByText(/Versão/).first()).toBeVisible({ timeout: 8_000 });
+  });
 });
 
 test.describe("access control (reception)", () => {
