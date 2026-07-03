@@ -83,6 +83,19 @@ describe("parseUpdatePatient", () => {
     expect(parseUpdatePatient({ profession: "" })).toEqual({ profession: null });
     expect("profession" in parseUpdatePatient({ phone: "912345678" })).toBe(false);
   });
+
+  it("coerces contraindication flags to booleans, only when provided (W2-08)", () => {
+    expect(parseUpdatePatient({ contraindicationEpilepsy: true })).toEqual({
+      contraindicationEpilepsy: true,
+    });
+    // Anything not strictly true → false.
+    expect(parseUpdatePatient({ contraindicationPregnancy: false })).toEqual({
+      contraindicationPregnancy: false,
+    });
+    const out = parseUpdatePatient({ phone: "912345678" });
+    expect("contraindicationEpilepsy" in out).toBe(false);
+    expect("contraindicationPregnancy" in out).toBe(false);
+  });
 });
 
 describe("parseMergeInput", () => {

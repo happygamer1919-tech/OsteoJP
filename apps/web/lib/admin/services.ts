@@ -18,6 +18,7 @@ export type ServiceView = {
   priceCents: number | null;
   currency: string;
   isActive: boolean;
+  contraindicationSensitive: boolean;
 };
 
 export type ServiceInput = {
@@ -28,6 +29,8 @@ export type ServiceInput = {
   // resolveServicePriceCents below); effectivePriceCents resolves
   // override-then-base. priceCents null means "no base price set".
   priceCents: number | null;
+  // NESA contraindication sensitivity (0031) — drives the soft booking warning.
+  contraindicationSensitive?: boolean;
 };
 
 export async function listServices(actor: RequestContext): Promise<ServiceView[]> {
@@ -41,6 +44,7 @@ export async function listServices(actor: RequestContext): Promise<ServiceView[]
         priceCents: services.priceCents,
         currency: services.currency,
         isActive: services.isActive,
+        contraindicationSensitive: services.contraindicationSensitive,
       })
       .from(services)
       .orderBy(asc(services.name)),
@@ -68,7 +72,13 @@ export async function createService(actor: RequestContext, input: ServiceInput):
       .insert(services)
       // tenant_id is NOT NULL with no default; RLS WITH CHECK validates it
       // against the JWT claim. Required column data, not a hand-applied filter.
-      .values({ tenantId: actor.tenantId, name, durationMin, priceCents: input.priceCents })
+      .values({
+        tenantId: actor.tenantId,
+        name,
+        durationMin,
+        priceCents: input.priceCents,
+        contraindicationSensitive: input.contraindicationSensitive ?? false,
+      })
       .returning({ id: services.id });
     await writeAudit(tx, actor, {
       action: "service.create",
@@ -89,7 +99,12 @@ export async function updateService(
   await runScoped(actor, async (tx) => {
     const rows = await tx
       .update(services)
-      .set({ name, durationMin, priceCents: input.priceCents })
+      .set({
+        name,
+        durationMin,
+        priceCents: input.priceCents,
+        contraindicationSensitive: input.contraindicationSensitive ?? false,
+      })
       .where(eq(services.id, id))
       .returning({ id: services.id });
     if (!rows[0]) throw new AdminError("not_found");

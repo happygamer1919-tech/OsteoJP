@@ -42,6 +42,7 @@ export async function createServiceAction(formData: FormData): Promise<void> {
       name: String(formData.get("name") ?? ""),
       durationMin: parseDuration(String(formData.get("durationMin") ?? "")),
       priceCents: parsePriceToCents(String(formData.get("price") ?? "")),
+      contraindicationSensitive: formData.get("contraindicationSensitive") === "on",
     }),
   );
 }
@@ -54,6 +55,7 @@ export async function updateServiceAction(formData: FormData): Promise<void> {
       name: String(formData.get("name") ?? ""),
       durationMin: parseDuration(String(formData.get("durationMin") ?? "")),
       priceCents: parsePriceToCents(String(formData.get("price") ?? "")),
+      contraindicationSensitive: formData.get("contraindicationSensitive") === "on",
     }),
   );
 }

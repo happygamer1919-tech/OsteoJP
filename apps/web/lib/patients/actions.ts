@@ -74,6 +74,8 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
         city: input.city,
         profession: input.profession,
         notes: input.notes,
+        contraindicationEpilepsy: input.contraindicationEpilepsy,
+        contraindicationPregnancy: input.contraindicationPregnancy,
       })
       .returning();
     if (!row) throw new Error("Patient insert returned no row");
@@ -107,6 +109,12 @@ export async function updatePatient(
     ...(input.city !== undefined && { city: input.city }),
     ...(input.profession !== undefined && { profession: input.profession }),
     ...(input.notes !== undefined && { notes: input.notes }),
+    ...(input.contraindicationEpilepsy !== undefined && {
+      contraindicationEpilepsy: input.contraindicationEpilepsy,
+    }),
+    ...(input.contraindicationPregnancy !== undefined && {
+      contraindicationPregnancy: input.contraindicationPregnancy,
+    }),
   };
 
   const patient = await runScoped(ctx, async (tx) => {
@@ -184,6 +192,28 @@ export async function searchPatientsAction(
 ): Promise<{ id: string; label: string }[]> {
   const rows = await searchPatients(query, { limit: 50 });
   return rows.map((p) => ({ id: p.id, label: p.fullName }));
+}
+
+/**
+ * Read-only fetch of a patient's NESA contraindication flags for the booking
+ * drawer's soft warning (W2-08). Tenant-scoped via RLS; a missing/cross-tenant
+ * id resolves to all-false (no warning). No mutation, no audit.
+ */
+export async function getPatientContraindications(
+  patientId: string,
+): Promise<{ epilepsy: boolean; pregnancy: boolean }> {
+  const ctx = await requireRequestContext();
+  return runScoped(ctx, async (tx) => {
+    const [row] = await tx
+      .select({
+        epilepsy: patients.contraindicationEpilepsy,
+        pregnancy: patients.contraindicationPregnancy,
+      })
+      .from(patients)
+      .where(eq(patients.id, patientId))
+      .limit(1);
+    return { epilepsy: row?.epilepsy ?? false, pregnancy: row?.pregnancy ?? false };
+  });
 }
 
 /**

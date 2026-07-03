@@ -16,7 +16,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { s } from "@/lib/i18n";
-import { searchPatientsAction } from "@/lib/patients/actions";
+import { getPatientContraindications, searchPatientsAction } from "@/lib/patients/actions";
+import { matchedContraindications, type PatientContraindications } from "@/lib/scheduling/nesa";
 import {
   batchScheduleAppointments,
   cancelAppointment,
@@ -214,6 +215,28 @@ export function AppointmentDrawer({
   // editing is stable for the drawer's lifetime; patientQuery drives the search.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientQuery]);
+
+  // NESA contraindication warning (W2-08): the selected patient's flags, fetched
+  // reactively. Stored WITH the patient id they belong to so the derived value
+  // reads null the instant the selection changes (no synchronous reset in the
+  // effect), then updates when the fetch for the current patient lands.
+  const [ciResult, setCiResult] = useState<{
+    patientId: string;
+    flags: PatientContraindications;
+  } | null>(null);
+  useEffect(() => {
+    const pid = form.patientId;
+    if (!pid) return;
+    let cancelled = false;
+    getPatientContraindications(pid).then((flags) => {
+      if (!cancelled) setCiResult({ patientId: pid, flags });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.patientId]);
+  const patientCI =
+    ciResult && ciResult.patientId === form.patientId ? ciResult.flags : null;
 
   const dirty = JSON.stringify(form) !== JSON.stringify(init);
 
@@ -413,6 +436,16 @@ export function AppointmentDrawer({
   const availabilityConflicts = conflicts?.filter((c) => c.kind === "availability") ?? [];
   const timeOffConflicts = conflicts?.filter((c) => c.kind === "time_off") ?? [];
 
+  // NESA contraindication warning (W2-08, ruling A): SOFT — names the matched
+  // contraindication(s) when the patient has any AND the service is sensitive.
+  // Never blocks submit.
+  const serviceSensitive = !!options.services.find((o) => o.id === form.serviceId)?.contraindicationSensitive;
+  const nesaMatched = matchedContraindications(patientCI, serviceSensitive);
+  const NESA_LABEL: Record<(typeof nesaMatched)[number], StringKey> = {
+    epilepsy: "patients.fieldContraindicationEpilepsy",
+    pregnancy: "patients.fieldContraindicationPregnancy",
+  };
+
   return (
     <>
     <Drawer
@@ -475,6 +508,14 @@ export function AppointmentDrawer({
             ))}
           </Select>
         </Field>
+
+        {/* NESA contraindication warning (W2-08) — soft, never blocks submit. */}
+        {nesaMatched.length > 0 && (
+          <Banner tone="warning">
+            {s["appointment.nesaWarning"]}: {nesaMatched.map((k) => s[NESA_LABEL[k]]).join(", ")} (
+            {s["appointment.nesaServiceSensitive"]})
+          </Banner>
+        )}
 
         <Field label={s["appointment.therapist"]} required>
           <Select

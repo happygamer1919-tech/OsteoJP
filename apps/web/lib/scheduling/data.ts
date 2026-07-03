@@ -181,6 +181,7 @@ const fetchStableAgendaRef = unstable_cache(
             id: services.id,
             label: services.name,
             durationMin: services.durationMin,
+            contraindicationSensitive: services.contraindicationSensitive,
           })
           .from(services)
           .where(eq(services.isActive, true))

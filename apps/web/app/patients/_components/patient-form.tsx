@@ -23,6 +23,9 @@ type Fields = {
   city: string;
   profession: string;
   notes: string;
+  // NESA contraindication flags (0031) — drive the soft booking warning (W2-08).
+  contraindicationEpilepsy: boolean;
+  contraindicationPregnancy: boolean;
 };
 
 function toFields(p?: Patient | null): Fields {
@@ -38,6 +41,8 @@ function toFields(p?: Patient | null): Fields {
     city: p?.city ?? "",
     profession: p?.profession ?? "",
     notes: p?.notes ?? "",
+    contraindicationEpilepsy: p?.contraindicationEpilepsy ?? false,
+    contraindicationPregnancy: p?.contraindicationPregnancy ?? false,
   };
 }
 
@@ -49,7 +54,7 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
 
   const isEdit = Boolean(patient);
 
-  function set<K extends keyof Fields>(key: K, value: string) {
+  function set<K extends keyof Fields>(key: K, value: Fields[K]) {
     setFields((f) => ({ ...f, [key]: value }));
   }
 
@@ -149,6 +154,28 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
           />
         </Field>
       </div>
+      {/* NESA contraindication flags (W2-08) — drive a soft booking warning. */}
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-xs font-medium text-text-secondary">
+          {s["patients.contraindicationsLabel"]}
+        </legend>
+        <label className="flex items-center gap-2 text-sm text-text-primary">
+          <input
+            type="checkbox"
+            checked={fields.contraindicationEpilepsy}
+            onChange={(e) => set("contraindicationEpilepsy", e.target.checked)}
+          />
+          {s["patients.fieldContraindicationEpilepsy"]}
+        </label>
+        <label className="flex items-center gap-2 text-sm text-text-primary">
+          <input
+            type="checkbox"
+            checked={fields.contraindicationPregnancy}
+            onChange={(e) => set("contraindicationPregnancy", e.target.checked)}
+          />
+          {s["patients.fieldContraindicationPregnancy"]}
+        </label>
+      </fieldset>
       {/* Street address input intentionally not surfaced (address-reduction,
           2026-06-30). `fields.address` is preserved from the loaded patient and
           submitted unchanged, so the stored value and historical data are kept. */}

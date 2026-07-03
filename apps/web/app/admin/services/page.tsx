@@ -75,6 +75,10 @@ export default async function ServicesPage({
           <Labeled label={s["admin.services.price"]}>
             <input name="price" type="text" inputMode="decimal" placeholder="0.00" className={`w-28 ${adminInputInline}`} />
           </Labeled>
+          <label className="flex items-center gap-2 pb-2 text-sm text-v2-text-primary">
+            <input type="checkbox" name="contraindicationSensitive" />
+            {s["admin.services.contraindicationSensitive"]}
+          </label>
           <Button type="submit" variant="primary">
             {s["admin.services.add"]}
           </Button>
@@ -103,6 +107,10 @@ export default async function ServicesPage({
                         <input name="name" defaultValue={svc.name} required aria-label={s["admin.services.name"]} className={adminInputInline} />
                         <input name="durationMin" type="number" min={1} defaultValue={svc.durationMin} required aria-label={s["admin.services.duration"]} className={`w-20 ${adminInputInline}`} />
                         <input name="price" type="text" inputMode="decimal" defaultValue={euros(svc.priceCents)} placeholder="0.00" aria-label={s["admin.services.price"]} className={`w-24 ${adminInputInline}`} />
+                        <label className="flex items-center gap-1 text-sm text-v2-text-primary">
+                          <input type="checkbox" name="contraindicationSensitive" defaultChecked={svc.contraindicationSensitive} aria-label={s["admin.services.contraindicationSensitive"]} />
+                          {s["admin.services.contraindicationSensitive"]}
+                        </label>
                         <span className={adminHelp}>
                           {svc.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
                         </span>

@@ -137,6 +137,37 @@ test("recorrente booking routes through the partial-success batch and shows the 
   await expect(page.getByRole("button", { name: /Remarcar/i }).first()).toBeVisible();
 });
 
+test("NESA contraindication warning shows on booking (both paths) and never blocks submit (W2-08)", async ({
+  page,
+}) => {
+  const date = futureDate(RUN_DAY_BASE + 15);
+  const dialog = await openNewAppointment(page, date);
+
+  // Ana carries the epilepsy flag; pick her + the contraindication-sensitive service.
+  const patient = dialog.getByRole("combobox", { name: /Paciente/i });
+  await patient.click();
+  await patient.fill(PATIENTS.ana.name);
+  await dialog.getByRole("option", { name: PATIENTS.ana.name }).click();
+  await dialog.getByLabel(/Terapeuta/i).selectOption({ label: THERAPIST_NAME });
+  await dialog.getByLabel(/Localização/i).selectOption({ label: LOCATION.name });
+  await dialog.getByLabel(/Serviço/i).selectOption({ label: "NESA (sensível)" });
+  await dialog.locator('input[type="date"]').fill(date);
+  await dialog.locator('input[type="time"]').fill("17:00");
+
+  // Soft warning appears, naming the matched contraindication.
+  await expect(dialog.getByText(/contraindicação NESA/i)).toBeVisible({ timeout: 8_000 });
+  await expect(dialog.getByText(/Epilepsia/)).toBeVisible();
+
+  // Recorrente path uses the same drawer → the same warning is shown.
+  await dialog.getByLabel(/Marcação recorrente/i).check();
+  await expect(dialog.getByText(/contraindicação NESA/i)).toBeVisible();
+
+  // Never blocks: submit stays enabled. Book a single appointment successfully.
+  await dialog.getByLabel(/Marcação recorrente/i).uncheck();
+  await dialog.getByRole("button", { name: SAVE }).click();
+  await expect(dialog).toBeHidden({ timeout: 12_000 });
+});
+
 test("completed appointment with no note shows the 'Sem nota' indicator (W2-04)", async ({
   page,
 }) => {

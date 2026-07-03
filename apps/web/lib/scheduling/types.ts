@@ -54,7 +54,11 @@ export type AgendaAppointment = {
 };
 
 export type Option = { id: string; label: string };
-export type ServiceOption = Option & { durationMin: number };
+export type ServiceOption = Option & {
+  durationMin: number;
+  // NESA contraindication sensitivity (0031) — drives the soft booking warning.
+  contraindicationSensitive: boolean;
+};
 
 export type AgendaOptions = {
   therapists: Option[];
