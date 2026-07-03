@@ -71,6 +71,7 @@ test.describe("authoring (therapist)", () => {
     await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
     await page.getByRole("button", { name: "Criar ficha" }).click();
     await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    const recordUrl = page.url(); // capture the record-detail deep link
 
     // Sign/lock so the ficha is finalized (its addendum action then appears in the tab).
     await page.getByRole("button", { name: "Assinar e bloquear" }).click();
@@ -82,10 +83,13 @@ test.describe("authoring (therapist)", () => {
     await page.goto(`/patients/${PATIENTS.maria.id}?tab=registos`);
     const addendum = page.getByRole("button", { name: "Nova versão (adenda)" }).first();
     await expect(addendum).toBeVisible();
+    // The ficha row deep-links to /clinical/[id] (its title is a link to the record).
+    await expect(page.locator(`a[href="${new URL(recordUrl).pathname}"]`).first()).toBeVisible();
 
-    // Deep-link invariant: the ficha row still resolves to /clinical/[id].
-    await page.getByRole("link", { name: TEMPLATE_CURRENT_LABEL }).first().click();
-    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 8_000 });
+    // Deep-link invariant: the record-detail URL still resolves unchanged.
+    await page.goto(recordUrl);
+    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/);
+    await expect(page.getByText(/Versão/).first()).toBeVisible({ timeout: 8_000 });
   });
 });
 
