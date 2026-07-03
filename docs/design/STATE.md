@@ -5,6 +5,36 @@ record of schema, write paths, and existing surfaces. Append-only, dated section
 No recommendations here. Design decisions go in DECISIONS.md; open questions go in
 QUESTIONS.md.
 
+## 2026-07-03 - Wave 02 close audit
+
+Wave 02 executed and CLOSED. All 13 loops merged; zero open PRs from the wave (gh-verified).
+
+### Migration bookkeeping (repo-verified this audit)
+- Migration head: **0031** (`0031_nesa_contraindications`). `packages/db/migrations/` holds **32** `.sql` files (0000–0031).
+- Journal (`meta/_journal.json`): **32 entries**, idx `0`–`31`.
+- Supabase mirror parity: `supabase/migrations/` holds **32** `.sql` files — 1:1 with `packages/db/migrations/`, mirror in parity. `0030_patient_note_revisions` and `0031_nesa_contraindications` present in both.
+- Wave 02 migrations: **0030** `patient_note_revisions` (append-only patient-note history, #452) and **0031** NESA contraindication flag columns on `patients`/`services` (#453).
+
+### Test suite (post-Wave-02)
+- **db suite: 303 passing** (corroborated by the W2-07 close note; +3 vs the 300 recorded at 0030/#452 for the 0031 column tests).
+- **web suite: 647 passing** (reported post-W2 total; not re-run in this read-only docs lane).
+
+### Dev database fingerprint — as of wave-02 close, 2026-07-03 (live counts remain authority)
+Not re-queried in this read-only docs lane; last-known from wave execution evidence:
+- `patients` = **105**, `users` = **12**, `appointments` = **275** (post W2-03 location repoint; the 2 repointed appointments moved between location ids, TOTAL unchanged), `availability_templates` = **34**.
+- `locations`: exactly **2 active** rows, on the FK-rich FIXTURE ids, named **`OsteoJP (LV)`** and **`OsteoJP (CB)`**; **3 archived** (the Montemor fixture + the 2 former in-app manual rows). Zero deletes (row count 5→5), per W2-03 / #455 (owner ruling Option A, DECISIONS 2026-07-03).
+- `patient_note_revisions` = **10** (0030 backfill: one revision per patient with a non-empty `patients.notes`, author NULL/system).
+- Migration head **0031**.
+
+### Wave 02 process record
+- **Single-executor GREEN chain**: per the 2026-07-03 ruling, Max's UI lane was closed for the wave; all 13 loops (migration, UI, PURPLE, docs) ran from the GREEN runner. 13/13 merged: W2-01 #452, W2-07 #453, W2-02 #454, W2-03 #455, W2-04 #456, W2-05 #457, W2-06 #458, W2-08 #460, W2-09 #461, W2-10 #462, W2-11 #463, W2-12 #464, W2-13 #465.
+- **One escalated halt**: W2-03 location cleanup found the live `locations` state inverted vs the loop's assumption (fixtures archived + holding history, manual rows active); escalated and resolved by owner ruling **Option A** (a bounded one-time repoint of 2 appointments onto the LV fixture id), DECISIONS 2026-07-03.
+- **Four on-branch CI fixes**: inner-test failures caught and fixed on-branch before merge during the wave (the db-gate soft-pass defect that let one through is logged as an owner-hold QUESTIONS ticket, 2026-07-03).
+- **Halt-desk mailbox pattern (RATIFIED operating pattern)**: the escalated W2-03 halt used a GREEN↔CYAN filesystem mailbox (`~/osteojp-mailbox/`, halt + `ESCALATED` answer archived under `archive/`, ref `halt-20260703T154745Z-W2-03`). First use this wave; ratified as the standing mechanism for a runner to escalate an owner-confirmable halt without stalling the chain. (Process note also on the W2-03 DECISIONS entry.)
+
+### Open questions closed by Wave 02
+- **Notas Rápidas write destination** (open since Wave 01 — STATE 2026-06-30 audit finding #1 "Notas rapidas persistence"): **CLOSED by W2-11 (#463)**. Patient notes now flow through the append-only `patient_note_revisions` relation; the dashboard Notas Rápidas card writes a revision for a selected patient, and the notes UI no longer reads or writes `patients.notes` (the column is retained in the DB, untouched).
+
 ## 2026-07-02 - Wave 01 close audit (recon-verified through 0028 + clone)
 
 Read-only audit against `main` at `origin/main` (`45f68e4`). No schema changed, no
