@@ -17,7 +17,7 @@ export const LISBON_TZ = "Europe/Lisbon";
 export const SLOT_MINUTES = 30;
 export const DAY_START_HOUR = 8; // first visible row
 export const DAY_END_HOUR = 20; // last visible row (exclusive end label)
-export const WEEK_DAYS = 5; // Mon–Fri
+export const WEEK_DAYS = 6; // Mon–Sat (W3-08, DECISIONS 2026-07-05 real clinic schedule)
 
 const BCP47: Record<Locale, string> = { pt: "pt-PT", en: "en-GB" };
 

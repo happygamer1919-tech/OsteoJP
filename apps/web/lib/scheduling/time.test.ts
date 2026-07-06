@@ -1,15 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
   addDays,
+  formatTimeOfDay,
   isoWeekdayMon0,
   lisbonDateTimeToUtc,
   lisbonMidnightUtc,
   lisbonMinutesFromMidnight,
   lisbonParts,
   rangeForView,
+  slotLabel,
   startOfWeekMonday,
   viewDates,
 } from "./time";
+
+describe("24h time formatting (W3-08)", () => {
+  it("formatTimeOfDay renders 24h HH:mm with no meridiem", () => {
+    // 14:30 Lisbon (WET/UTC+0 in January) — must be "14:30", never "2:30 PM".
+    const t = formatTimeOfDay(new Date("2026-01-05T14:30:00Z"));
+    expect(t).toBe("14:30");
+    expect(t).not.toMatch(/[ap]\.?m\.?/i);
+  });
+
+  it("formatTimeOfDay pads a morning time and midnight to 2 digits", () => {
+    expect(formatTimeOfDay(new Date("2026-01-05T09:05:00Z"))).toBe("09:05");
+    expect(formatTimeOfDay(new Date("2026-01-05T00:00:00Z"))).toBe("00:00");
+  });
+
+  it("slotLabel renders 24h HH:mm across the afternoon (13:00, 20:00)", () => {
+    expect(slotLabel(13 * 60)).toBe("13:00");
+    expect(slotLabel(20 * 60)).toBe("20:00");
+  });
+});
 
 describe("calendar arithmetic", () => {
   it("adds and subtracts days across month boundaries", () => {
@@ -29,13 +50,15 @@ describe("calendar arithmetic", () => {
     expect(startOfWeekMonday("2026-04-13")).toBe("2026-04-13");
   });
 
-  it("renders Mon–Fri for the week view", () => {
+  it("renders Mon–Sat (6 days) for the week view", () => {
+    // W3-08: the week view includes Saturday (2026-04-18), never Sunday.
     expect(viewDates("week", "2026-04-15")).toEqual([
-      "2026-04-13",
+      "2026-04-13", // Mon
       "2026-04-14",
       "2026-04-15",
       "2026-04-16",
       "2026-04-17",
+      "2026-04-18", // Sat
     ]);
     expect(viewDates("day", "2026-04-15")).toEqual(["2026-04-15"]);
   });
@@ -76,8 +99,9 @@ describe("UTC <-> Lisbon", () => {
 describe("rangeForView", () => {
   it("spans the rendered week as a half-open UTC range", () => {
     const { startUtc, endUtc } = rangeForView("week", "2026-04-15");
-    // Mon 2026-04-13 00:00 Lisbon .. Sat 2026-04-18 00:00 Lisbon (exclusive)
+    // W3-08: 6-day week — Mon 2026-04-13 00:00 Lisbon .. Sun 2026-04-19 00:00
+    // Lisbon (exclusive), so the range now covers Saturday 2026-04-18.
     expect(startUtc.toISOString()).toBe("2026-04-12T23:00:00.000Z");
-    expect(endUtc.toISOString()).toBe("2026-04-17T23:00:00.000Z");
+    expect(endUtc.toISOString()).toBe("2026-04-18T23:00:00.000Z");
   });
 });
