@@ -373,3 +373,41 @@ Housekeeping sweep at Wave 02 close. No new questions; records what the wave clo
 - **OPEN (unchanged) — SMS confirmation JP/owner decisions**: message wording, exact send times, opt-out/consent, and the **Twilio new-vendor** confirmation — see the 2026-07-03 SMS-confirmation entry above. A future build loop is blocked on these.
 - **OPEN (unchanged) — standing next-wave-planning batch**: marcações row-open (SPEC-v2-marcações §2.3, unimplemented), delete policy (cancel-only intentional?), Bodychart term, portal ficha naming, consulta/marcação brand-voice. These live in the legacy `docs/QUESTIONS.md` shelf (untouched here per the canonical-shelf ruling); they roll forward as Wave 03 planning inputs and are folded into the legacy-shelf consolidation candidate (BACKLOG Wave 03).
 - **OPEN (unchanged) — infra/CI tickets**: CI db-gate hardening (owner-hold, touches `db-tests.yml`) and Preview DB isolation — both 2026-07-03 above; both carried into Wave 03 candidates.
+
+## 2026-07-06 — Wave 03 close: owner answers + QUESTIONS sweep
+
+Append-only; original open items above are left unedited. This sweep records the owner/JP
+answers taken at Wave 03 close (rulings in DECISIONS.md 2026-07-06) and lists what stays open.
+
+### CLOSED this sweep (answered by owner/JP, 2026-07-06)
+
+- **CLOSED — SMS send timing** (was 2026-07-03 SMS item "exact send times", route JP). **Answer:** a SINGLE reminder **24h before the appointment**; **NO at-booking message**. This SUPERSEDES the earlier 18:00 D-1 / 08:00 D0 two-touch default. Ref DECISIONS 2026-07-06 "SMS confirmation flow product calls".
+- **CLOSED — SMS opt-out / consent** (was 2026-07-03 SMS item "opt-out/consent", route JP/GDPR). **Answer:** a **per-patient, staff-toggleable flag** (reuses `patients.reminder_sms_enabled`, 0019); **NO automated STOP-keyword handler** and no inbound reply parsing. Narrows the earlier "add a STOP handler" default. Ref DECISIONS 2026-07-06.
+- **RESOLVED (mechanism) — SMS message wording** (was 2026-07-03 SMS item "message + confirm-page copy", route JP). **Answer:** JP will **pick the final pt-PT wording from Max's drafted variants**. The selection mechanism is decided; the exact string is JP's pick (not blocking the build's structure). Ref DECISIONS 2026-07-06. NOTE: this is the only SMS item not fully closed to a final string — see OPEN list for the still-blocking Twilio-vendor item.
+- **CLOSED — AI recording consent capture** (route JP). **Answer:** a **consent checkbox before Record**, stored with **actor + timestamp**, minimum-viable format approved. Ref DECISIONS 2026-07-06 "AI recording consent capture". Build item is a Wave 04 candidate.
+- **CLOSED — Visitor stub patient retention** (route JP; owner-confirmable clinical-data-retention item, CLAUDE.md). **Answer:** stub patients that never become real patients are **cleaned after 30 days**; promoted stubs retained normally. Ref DECISIONS 2026-07-06 "Visitor stub retention". 30-day cleanup job is a Wave 04 candidate.
+- **CLOSED — Photos in fichas** (route JP). **Answer:** **APPROVED** — clinical records may carry photo attachments (signed-URL storage only, CLAUDE.md rule 8). Ref DECISIONS 2026-07-06 "Photos in fichas approved". Camera-to-ficha capture is a Wave 04 candidate.
+- **CLOSED (housekeeping) — superseded Max halt PRs #440/#439/#446** (was 2026-07-03 ticket). Confirmed by **W3-10 (#477)**: all three merged and each already carried its superseded-by comment; no duplicate posted. Done.
+
+### AI recording infrastructure — RECORDED (owner-confirmed), with one coordination item still owed
+
+Ref DECISIONS 2026-07-06 "AI recording infrastructure". Terms confirmed: bucket `osteojp-audio-intake`
+on André's AWS (eu-central-1); vault-delivered scoped IAM key (PutObject+GetObject on that bucket only);
+backend signs both presigned PUT and GET; M1 webhook gains API-key auth; contract adds `audio_filename`.
+- **OWED (coordination, not a blocker for authoring) — EMR origins list for André's CORS rule.** The CORS rule on André's side is PENDING our (production + preview) EMR origins list. OsteoJP must supply the exact allowed origins before direct-to-S3 upload works. Tracked into the Wave 04 "presigned PUT + CORS coordination" candidate.
+
+### STILL OPEN after this sweep (for report-back)
+
+- [ ] **SMS — Twilio as a new vendor + EU residency / signed DPA** (route: owner). The only SMS item still blocking the build. No vendor introduced yet; approve only with Twilio EU region + DPA, else re-evaluate an EU-native SMS provider. (2026-07-03 SMS entry, item 1.)
+- [ ] **Q-V2W2-1 — blocked-time band data model** (route: Ivan/backend). Agenda blocked-time band unrendered until a `blocked_time` model + query exist.
+- [ ] **Q-V2W2-2 — missing v2 glass primitives** (foundation follow-up, non-blocking). Green Button variant + glass DatePicker/SegmentedControl/Select; add in a `packages/ui` foundation pass, not a section wave.
+- [ ] **Q-V2W2-3 — service catalogue → colour-category mapping** (non-blocking). Confirm live service names map to the five categories, or provide the mapping.
+- [ ] **Q-V2W7-1 — service-tinted chip has no glass primitive** (foundation follow-up, non-blocking). Add a glass `ServiceChip` / lift service+conflict helpers into `lib/scheduling` in a later foundation pass.
+- [ ] **Preview DB isolation** (route: Ivan/infra). Deferred until the separate-prod-project gate is executed. (2026-07-03.)
+- [ ] **CI db-gate hardening** (route: Ivan; owner-hold — touches `db-tests.yml`). Opens a PR and HALTS for owner merge; cannot be folded into a normal loop. (2026-07-03.)
+- [ ] **Legacy-shelf consolidation loop** (route: Ivan/docs). Migrate still-open legacy `docs/QUESTIONS.md` items (Bodychart term, portal ficha naming, consulta/marcação brand-voice, marcações row-open, cancel-only delete policy) and live `docs/DECISIONS.md` content onto the canonical `docs/design/` shelf; leave pointer stubs. (2026-07-03.)
+- [ ] **AI recording — EMR origins list for André's CORS rule** (route: OsteoJP → André). Coordination item owed before direct-to-S3 upload works (see above). New this sweep.
+
+> Legacy-shelf note: additional standing planning items live in the LEGACY `docs/QUESTIONS.md` shelf
+> (untouched here per the canonical-shelf ruling, DECISIONS 2026-07-03). They roll forward via the
+> legacy-shelf consolidation loop and are not re-listed here.
