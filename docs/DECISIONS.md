@@ -858,3 +858,30 @@ delete-control visibility); e2e for password-change + wrong/correct-password del
 Tenant-scoped delete is covered by the existing cross-tenant appointments DELETE RLS test.
 `git diff` touches no file under packages/db/migrations/, supabase/migrations/, or
 .github/workflows/.
+
+## 2026-07-06 — W3-09 dev therapists set to the real clinic schedule (branch w3-09-working-hours-real-schedule)
+
+Guarded, idempotent live-DB data op on the shared dev Supabase project (synthetic
+data, owner-authorized). NOT a migration, NOT app code — the committed artifact is
+the guarded seed script `packages/db/seed/working-hours-real.ts` only.
+
+Target (DECISIONS 2026-07-05): each of the 5 dev therapists (USR_1..5) has
+availability_templates Mon–Fri 08:00–20:00 + Sat 09:00–13:00 at their PRIMARY
+(first-assigned) location. Weekday convention confirmed vs schema + consumer:
+0=Sun..6=Sat (JS getDay), so Sat=6.
+
+Reconciliation (UPSERT + archive, NO hard delete — deletions are owner-confirmable):
+- Upsert 30 target rows (stable ids `de000009-<seq>-<weekday>`, onConflictDoNothing).
+- Archive (is_active=false) every OTHER row for those therapists, filtered on
+  is_active=true so a re-run is a no-op.
+
+Live-count evidence (credentials redacted; guard SEED_DEV_CONFIRM=<ref>):
+- BEFORE: 34 templates for dev therapists, all active; Saturday (wd=6) = 0.
+- AFTER (run 1): inserted=30, archived=34, deleted=0 → total=64, active=30,
+  archived=34. Active per-weekday: wd1–5 = 5 each @08:00–20:00, wd6 = 5 @09:00–13:00.
+- AFTER-RE-RUN (run 2): inserted=0, archived=0 → ZERO delta; state identical
+  (total=64, active=30, archived=34). Idempotence proven (DECISIONS 2026-07-02).
+
+Reconciliation: 34 (before) preserved as archived + 30 new target = 64 total; zero
+deletions. `git diff` touches no file under apps/, packages/db/migrations/,
+supabase/migrations/, or .github/workflows/.

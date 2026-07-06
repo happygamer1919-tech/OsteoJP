@@ -18,6 +18,7 @@
     "seed:dev:reference": "tsx seed/dev-reference.ts",
     "seed:appointments:dev": "tsx seed/appointments-dev.ts",
     "seed:availability:dev": "tsx seed/availability-dev.ts",
+    "seed:working-hours:dev": "tsx seed/working-hours-real.ts",
     "seed:episodes:dev": "tsx seed/episodes-dev.ts",
     "seed:dev": "tsx seed/dev-reference.ts && tsx seed/patients-dev.ts && tsx seed/appointments-dev.ts && tsx seed/availability-dev.ts && tsx seed/episodes-dev.ts"
   },
