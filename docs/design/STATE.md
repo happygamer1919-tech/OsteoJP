@@ -5,6 +5,60 @@ record of schema, write paths, and existing surfaces. Append-only, dated section
 No recommendations here. Design decisions go in DECISIONS.md; open questions go in
 QUESTIONS.md.
 
+## 2026-07-06 - Wave 03 close audit
+
+Wave 03 executed and CLOSED. All 10 loops merged; zero open PRs from the wave (gh-verified).
+Read-only docs lane against `origin/main` (`61020c7`); no schema, migration, or app code changed.
+
+### Loops + PRs (all merged 2026-07-06, gh-verified)
+| Loop | PR | What landed |
+|------|----|-------------|
+| W3-01 estado-removal-fix | #468 | server-side creation invariant — create + batch hardcode `status=scheduled`/`confirmation_state=pending`, never from payload; axes stay orthogonal (DECISIONS 2026-07-01). UI already hid the Estado selector on create (W2-02) |
+| W3-02 batch-failure-dialog-focus | #469 | failure dialog was an inert in-flow overlay behind the modal drawer; lifted to its own `showModal` `<dialog>` in the top layer via shared `useAnimatedDialog` — focused, isolated from the "Descartar alterações?" discard guard, edit-and-rebook works |
+| W3-03 booking-form-reorder | #470 | Terapeuta first, Serviço below + auto-fill from the therapist's mapped service (editable override honored); reads `therapist_services` (0023) oldest-first; falls back cleanly if W3-04 primary not yet present |
+| W3-04 primary-service-admin | #471 | per-therapist primary service = earliest-created `therapist_services` mapping (no schema change, no UPDATE — respects the 0023 no-grant SELECT/INSERT/DELETE); re-designation = delete+insert; admin "Serviço principal" on `/admin/staff`; W3-03 consumes it unchanged |
+| W3-05 tenant-settings-home | #472 | MIGRATION-FREE verdict: per-tenant secrets home is `tenants.settings.secrets` (jsonb, RLS `tenants_tenant_isolation`, not client-exposed); helper `lib/admin/tenant-secret.ts`. Migration head stays 0031. Unblocks W3-06 |
+| W3-06 password-gated-appointment-delete | #473 | appointment hard-delete behind a scrypt-hashed tenant password (W3-05 home, admin-only `settings:manage`); refuses when linked notes/records/invoices exist; child-first `RETURNING` delete + PII-free audit snapshot; admin password-change in Administração (initial `1234`) |
+| W3-07 location-delete-when-unreferenced | #474 | delete enabled only for zero-appointment locations (else archive-only + disabled control + tooltip); FKs handled non-destructively; archived stays hidden from selection dropdowns (W2-02 behavior preserved) |
+| W3-08 agenda-6day-24h | #475 | agenda week view = 6 days Mon–Sat (`WEEK_DAYS` 5→6, propagates to grid + fetch range); 24h confirmed app-wide (central `formatTimeOfDay` + pt-PT `Intl` + native pickers), zero meridiem hits |
+| W3-09 working-hours-real-schedule | #476 | guarded idempotent live-DB data op set the dev therapists to Mon–Fri 08:00–20:00 + Sat 09:00–13:00 (primary location); upsert+archive, no delete; **34 archived, 30 active inserted**, zero-delta re-run |
+| W3-10 close-superseded-prs | #477 | gh-only housekeeping — confirmed #440→#456, #439→#457, #446→#458 all merged and each already carries its superseded-by comment; no duplicate, no revert/reopen (docs-only board flip) |
+
+### Two on-branch CI-red fixes (caught + fixed on-branch before merge, per the wave chain report)
+- **W3-02 (#469) — Playwright hidden-dialog assertion.** The e2e assertion targeted the failure dialog while it was still the inert in-flow overlay (hidden behind the modal drawer, not in the top layer). Fixed on-branch once the dialog was promoted to a `showModal` `<dialog>`; the assertion then resolves against the visible top-layer dialog.
+- **W3-08 (#475) — pt-PT Sábado weekday rendering.** The 6-day week extension surfaced a weekday-label render assertion mismatch on the Saturday column (pt-PT `Sábado`); fixed on-branch so the 6th column renders and asserts correctly.
+Both were inner-test failures fixed on-branch; both merged green. No `db-tests.yml`/`e2e.yml` workflow files were touched.
+
+### Test suite (post-Wave-03, reported by the wave chain report; not re-run in this read-only docs lane)
+- **web suite: 685 passing.**
+- **db suite: 56 local + 255 DB-gated passing.**
+
+### Migration bookkeeping (repo-verified this audit)
+- Migration head: **0031** (`0031_nesa_contraindications`) — UNCHANGED across Wave 03 (every loop migration-free; W3-05 recon confirmed a migration-free tenant-settings home). `packages/db/migrations/` holds **32** `.sql` files (0000–0031); journal (`meta/_journal.json`) **32 entries** (idx 0–31).
+- Supabase mirror parity: `supabase/migrations/` holds **32** `.sql` files — 1:1 with `packages/db/migrations/`, **mirror in parity (32/32)**.
+- Live corroboration: `drizzle.__drizzle_migrations` holds **32** apply-records on the dev DB (read-only fingerprint below), consistent with head 0031.
+
+### Dev database fingerprint — LIVE-VERIFIED 2026-07-06 (read-only, guarded; live counts remain authority)
+Queried read-only inside a `SET TRANSACTION READ ONLY` transaction against the single dev Supabase project; counts only, no credentials printed, nothing written. Single dev tenant.
+
+| table | count | vs 2026-07-02 baseline | note |
+|-------|-------|------------------------|------|
+| `patients` | **105** | 105 (unchanged) | all synthetic; zero real patient data |
+| `users` | **23** | 12 (+11) | Max's real-therapist entry via admin UI (staff data) + QA/staff accounts — drift EXPECTED |
+| `appointments` | **287** | 274 (+13) | external QA activity on the shared dev project — drift external and expected |
+| `availability_templates` (total) | **64** | 34 (+30) | W3-09 archived 34 + inserted 30 active = 64; matches the loop op exactly |
+| `availability_templates` (active) | **30** | — | exactly the 30 active W3-09 inserted (34 archived) |
+| `patient_note_revisions` | **11** | 10 (+1) | one QA-created note revision — drift expected |
+| `roles` | **4** | 4 (unchanged) | stable |
+
+- The `availability_templates` split (34 archived / 30 active) reconciles W3-09's data op precisely. `users`/`availability_templates` drift is EXPECTED and NORMAL: Max is entering the clinic's REAL therapists through the admin UI concurrently with this close-out. This is STAFF data (users + availability), NOT patient data — all patient data remains synthetic, and the pre-real-data gates (separate-prod-project, DECISIONS 2026-07-01) still stand for real patient records.
+- Live counts are the authority; these fingerprints are a point-in-time read that will keep drifting while Max's therapist entry is in progress.
+
+### Wave 03 process record
+- **Zero halts, zero escalations** across all 10 loops. The **halt-desk mailbox pattern** (GREEN↔CYAN filesystem mailbox, `~/osteojp-mailbox/`, ratified at Wave 02 close) ran its SECOND wave with zero escalations needed — no owner-confirmable halt arose during execution. The mechanism stands ready but was not exercised this wave.
+- **Single in-flight migration discipline held:** only W3-05 was authorized to author a migration, and recon returned a migration-free verdict, so head stayed 0031. No workflow-file (`db-tests.yml`/`e2e.yml`) edits.
+- **Real therapist entry IN PROGRESS (Max, admin UI):** the clinic's real therapist accounts are being entered through the Administração staff surface concurrently with this close-out. This is staff/operational data (users + `availability_templates`), explicitly NOT patient data; it does not touch the pre-real-data patient gates.
+
 ## 2026-07-03 - Wave 02 close audit
 
 Wave 02 executed and CLOSED. All 13 loops merged; zero open PRs from the wave (gh-verified).

@@ -24,16 +24,16 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | 0027 | multi-therapist booking | DONE (#416) | 0026 DONE |
 | 0028 | batch scheduling engine | DONE (#417) | 0027 DONE AND availability query DONE AND availability_templates dev seed merged |
 | seed | availability_templates dev seed (purple, migration-free) | DONE (#406; guard rework #412, seed role-ID fix #414) | none |
-| 0029 | patient number (loop: docs/loops/0029-patient-number.md) | WRITTEN | none — ruling received (JP, DECISIONS 2026-07-02); ready for GREEN |
-| TBD | patient_notes append-only relation | RULING RECEIVED | JP audit-trail ruling: full version history required (DECISIONS 2026-07-02); loop authoring queued for next wave |
+| 0029 | patient number (loop: docs/loops/0029-patient-number.md) | DONE (#435 consumes; migration applied, head 0029) | trigger auto-assign, owner-approved deviation (DECISIONS 2026-07-02); backfill 105==105, 0 nulls, contiguous 1..105 |
+| TBD | patient_notes append-only relation | DONE as 0030 (W2-01 #452) | shipped as `patient_note_revisions` in Wave 02 per the JP full-history ruling (DECISIONS 2026-07-02/03); backfill 10/10 |
 
 ### Ivan non-migration code (parallel-safe, not migration-numbered)
 | Item | Status | Gate |
 |------|--------|------|
 | availability query (read-only, booked vs free) | DONE (#396) | none, parallel-safe with one in-flight migration |
 | schedule-again clone endpoint (loop: docs/loops/schedule-again-clone.md) | DONE (#419) | none |
-| FA-1 users-seed natural-key fix (loop: docs/loops/users-seed-natural-key-fix.md) | WRITTEN | none — ready for PURPLE (migration-free; QUESTIONS 2026-07-02 FA-1) |
-| finance KPI report (revenue per therapist/service) | QUEUED (gate cleared) | VAT answered — CIVA art. 9 exemption, gross=final (DECISIONS 2026-07-02); queued until scoped as its own loop |
+| FA-1 users-seed natural-key fix (loop: docs/loops/users-seed-natural-key-fix.md) | DONE | landed — seed user FKs resolve by `(tenant_id, email)`; latent risk closed (STATE 2026-07-02) |
+| finance KPI report (revenue per therapist/service) | QUEUED (gate cleared) → carried to Wave 04 candidates | VAT answered — CIVA art. 9 exemption, gross=final (DECISIONS 2026-07-02); not scoped in Wave 03; carried forward |
 
 ### UI lane (Max)
 | Item | Status | Gate |
@@ -44,11 +44,11 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | patient profile surfacing: profession + region (new in 0022), city + notes (already existed) | DONE (#393) | 0022 DONE |
 | auto-select service from therapist | DONE (#445) | 0023 DONE |
 | confirmation thumbs on appointment preview | DONE (#441) | 0024 DONE |
-| no-note indicator on completed appointments | BLOCKED-ON-CAPTURE | row 8 SPLIT (DECISIONS/QUESTIONS 2026-07-03): `note_present` capture is a PURPLE backend build item first (migration-free, `updateAppointment` completion branch); this UI indicator (halt recorded #440) lands after capture ships — Q-ROW8-1 resolved |
-| availability panel in new-appointment flow | READY | availability query DONE |
-| fichas-as-tab inside patient profile | READY | UNBLOCKED by fichas-placement ruling (DECISIONS 2026-07-03, entry F); halt recorded #446, Q-ROW7-1 resolved — UI lane |
+| no-note indicator on completed appointments | DONE via W2-04 (#456) | shipped as present-state `EXISTS(appointment_notes)` "Sem nota" indicator; supersedes halt #440 |
+| availability panel in new-appointment flow | DONE | availability query (#396) consumed by the new-appointment flow; live |
+| fichas-as-tab inside patient profile | DONE via W2-06 (#458) | Registos tab completed; `/clinical` nav item removed, deep links intact; supersedes halt #446 |
 | schedule-again action on patient profile | DONE (#442) | clone endpoint DONE (#419) |
-| batch failure pop-up | READY | UNBLOCKED by partial-success ruling (DECISIONS 2026-07-03, entry G): wire `AppointmentDrawer` repeat UI through `batchSchedule`; halt recorded #439 — UI lane, migration-free |
+| batch failure pop-up | DONE via W2-05 (#457) | Recorrente routed through `batchSchedule` + failure dialog; W3-02 (#469) later lifted the dialog to the top layer; supersedes halt #439 |
 | patient ID next to NIF | DONE (#435) | 0029 patient number applied (STATE head 0029); zero-padded display per JP ruling |
 
 ### Next-wave candidates (Wave 02 intake)
@@ -88,6 +88,8 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 
 ## Wave 03 candidates
 
+> **CONSUMED at Wave 03 close (2026-07-06).** The Wave 03 scope pass (owner + Rodica, DECISIONS 2026-07-05) drew a different, tightly-scoped set of ten loops (W3-01..W3-10, all DONE). Of the candidates below, only "Superseded Max halt PRs closure" was scoped into Wave 03 (W3-10 #477, DONE). The remaining candidates (SMS build, finance KPI, Fisiozero import, Portal V2, CI db-gate hardening, preview DB isolation, legacy-shelf consolidation, dangling-branch pruning) were NOT taken this wave and are **carried forward into the Wave 04 candidates section below**. Kept here as the historical intake record.
+>
 > Added 2026-07-03 at Wave 02 close. UNORDERED, NOT committed scope — candidates for the next wave's planning pass, not loops yet. No lane/gate assignments until scoped.
 
 - **SMS confirmation BUILD** — build the flow specified in `docs/design/SPEC-sms-confirmation.md`. GATED on Twilio vendor confirmation + EU residency/DPA (owner-confirmable) and JP's copy/send-time/opt-out answers (QUESTIONS 2026-07-03). No build until those clear.
@@ -123,3 +125,44 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 - **One migration in flight:** only W3-05 may author a migration (0032, and only if recon finds no suitable existing tenant-settings home). Confirm 0031 is the latest on main and no migration PR is open before it authors.
 - **W3-06 gates on W3-05 merged** (needs the hashed-secret home). **W3-03 soft-gates on W3-04** (primary representation) but ships the reorder regardless with a documented fallback.
 - All other loops (W3-01, W3-02, W3-07, W3-08, W3-09, W3-10) are independent and parallel-safe against a single in-flight migration.
+
+> **WAVE 03 CLOSED — 2026-07-06.** All ten loops merged (W3-01 #468 … W3-10 #477), zero halts, zero escalations. Migration head UNCHANGED at 0031, mirror parity 32/32. Suites: web 685, db 56 local + 255 DB-gated. Two on-branch CI-red fixes cleared before merge (W3-02 Playwright hidden-dialog assertion #469; W3-08 pt-PT Sábado weekday render #475). Halt-desk mailbox pattern ran its second wave with zero escalations. Real therapist entry (Max, admin UI) is IN PROGRESS — staff data, not patient data. See STATE.md 2026-07-06 close audit and the Wave 04 candidates section below.
+
+## Wave 04 candidates
+
+> Added 2026-07-06 at Wave 03 close. UNORDERED, NOT committed scope — candidates for the Wave 04 planning pass, not loops yet. No lane/gate assignments until scoped. **All Wave 04 build and dry-run work is SYNTHETIC-DATA-ONLY; real-data go-live is a separately gated step (pre-real-data gates: separate-prod-project DECISIONS 2026-07-01; DPA CLOSED DECISIONS 2026-07-05).**
+
+### AI recording pipeline (new this wave — owner-confirmed infra + product calls, DECISIONS 2026-07-06)
+| Candidate | Origin | Gate / note |
+|-----------|--------|-------------|
+| `SPEC-ai-recording.md` authoring | DECISIONS 2026-07-06 (AI recording infra) | full M1 webhook contract incl. the API-key header + `audio_filename` field; authored before the build loops consume it |
+| Recording UI (MediaRecorder) | Wave 04 scope | `webm`/opus, 32 kbps mono, **Chrome-only gate**, automatic timestamps |
+| Consent checkbox hook before Record | DECISIONS 2026-07-06 (AI recording consent) | checkbox gates the Record action; store actor + timestamp, minimum-viable (candidate home: `audit_log`, PII-free) |
+| Quick-create stub patient at record time | DECISIONS 2026-07-06 (visitor stub retention) | name REQUIRED, phone OPTIONAL; 0029 trigger handles numbering; identity data human-entered ONLY (no auto-fill of identity) |
+| Presigned PUT direct-to-S3 + CORS coordination | DECISIONS 2026-07-06 (AI recording infra) | never through Vercel routes; 4.5 MB limit; supply EMR origins list to André for the CORS rule (pending) |
+| Post-upload presigned GET + M1 webhook fire | DECISIONS 2026-07-06 (AI recording infra) | backend signs the GET; webhook fires with API-key auth + `audio_filename` |
+| End-to-end synthetic dry run (with André) | Wave 04 DoD | the wave's Definition of Done — synthetic-data-only, André in the loop |
+
+### Camera / photo capture
+| Candidate | Origin | Gate / note |
+|-----------|--------|-------------|
+| Camera-to-ficha capture button | DECISIONS 2026-07-06 (photos in fichas approved) | `getUserMedia` **recon-first**; NO device-gallery persistence; Rodica phone verification; signed-URL storage only (CLAUDE.md rule 8) |
+
+### Cleanup / data hygiene
+| Candidate | Origin | Gate / note |
+|-----------|--------|-------------|
+| 30-day stub cleanup job | DECISIONS 2026-07-06 (visitor stub retention) | cleans never-promoted stub patients after 30 days; preserves real/promoted patients and Max's real therapist accounts |
+| Scripted test-data cleanup loop (post-QA) | Wave 04 scope | runs AFTER QA; **preserves Max's real therapist accounts** (staff) and any promoted patients; synthetic QA rows only |
+| Merge-patients function | Roadmap (NOT this wave) | `patients.merged_into_id` pointer exists in schema (STATE 2026-06-30); function is roadmap, deferred |
+
+### Carried from Wave 03 candidates (not taken W3)
+| Candidate | Origin | Gate / note |
+|-----------|--------|-------------|
+| SMS confirmation BUILD | DECISIONS 2026-07-06 (product calls) | product calls made (single 24h reminder, no at-booking msg, staff-toggle opt-out); still GATED on the Twilio vendor + EU-residency/DPA decision (OPEN) |
+| Finance KPI report scoping | DECISIONS 2026-07-02 (VAT: CIVA art. 9 exemption) | gate cleared (gross=final); scope as its own loop; internal KPI only, not fatura-recibo |
+| Fisiozero import build | BACKLOG Wave 03 candidates | mapping + reconciliation on dev SAMPLE data only; live import gated on the pre-real-data gates; collision-HALT policy on file (DECISIONS 2026-07-02) |
+| Portal V2 redesign | BACKLOG Wave 03 candidates | GATED — pending JP's reaction to Max's mockups; no scope until provided |
+| CI db-gate hardening | QUESTIONS 2026-07-03 | touches `.github/workflows/db-tests.yml` → automatic OWNER HOLD, never self-merged; opens a PR and HALTS for owner merge |
+| Preview DB isolation | QUESTIONS 2026-07-03 | future infra, part of the separate-prod-project work |
+| Legacy-shelf consolidation loop | QUESTIONS 2026-07-03 | migrate still-open legacy `docs/` items onto canonical `docs/design/`, leave pointer stubs; its own docs loop |
+| Dangling-branch pruning pass | BACKLOG Wave 03 candidates | sweep merged/abandoned feature + docs branches and their worktrees from Waves 01–03; housekeeping only |
