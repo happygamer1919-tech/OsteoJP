@@ -29,6 +29,10 @@ export {
   type StatusTone,
 } from "./src/components/StatusChip";
 export { Dialog, type DialogProps } from "./src/components/Dialog";
+// Native-<dialog> top-layer + focus-trap primitive shared by Dialog/Drawer;
+// exported so app-level modals (e.g. the batch failure dialog) stack correctly
+// above a Drawer instead of rendering inert behind it.
+export { useAnimatedDialog, DIALOG_ANIM_MS } from "./src/components/dialog-internal";
 export {
   Drawer,
   type DrawerProps,

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Button, Input } from "@osteojp/ui";
+import { type MouseEvent, useState } from "react";
+import { Button, Input, useAnimatedDialog } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import type { BatchFailure } from "@/lib/scheduling/batch-core";
 import {
@@ -32,6 +32,18 @@ export function BatchFailureDialog({
   const [rows, setRows] = useState(() => initFailureRows(failures));
   const [booked, setBooked] = useState(bookedCount);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  // Native <dialog> shown with showModal(): puts this dialog in the browser
+  // TOP LAYER, above the appointment Drawer (also a modal <dialog>). Without
+  // this the failure dialog rendered inert BEHIND the drawer, and Escape/clicks
+  // leaked into the drawer's "Descartar alterações?" guard (W3-02). The native
+  // dialog also traps focus, moves focus in on open, and routes Escape to its
+  // own onCancel — never the drawer's. Open while mounted; the parent unmounts
+  // it on close.
+  const { ref, shown } = useAnimatedDialog(true);
+
+  const onBackdropClick = (e: MouseEvent<HTMLDialogElement>) => {
+    if (e.target === e.currentTarget) onClose();
+  };
 
   async function rebook(key: string): Promise<void> {
     const row = rows.find((r) => r.key === key);
@@ -47,16 +59,23 @@ export function BatchFailureDialog({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <dialog
+      ref={ref}
       aria-label={s["batch.failureTitle"]}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+      onCancel={(e) => {
+        // Escape closes THIS dialog only (never the drawer's discard guard).
+        e.preventDefault();
+        onClose();
       }}
+      onClick={onBackdropClick}
+      className={[
+        "m-auto w-full max-w-lg rounded-xl bg-surface p-0 shadow-v2-float",
+        "backdrop:bg-text-primary/40",
+        "transition-opacity duration-base ease-standard",
+        shown ? "opacity-100" : "opacity-0",
+      ].join(" ")}
     >
-      <div className="w-full max-w-lg rounded-xl bg-surface p-6 shadow-v2-float">
+      <div className="p-6">
         <h2 className="text-lg font-semibold text-text-primary">{s["batch.failureTitle"]}</h2>
         <p className="mt-1 text-sm text-text-secondary">
           {s["batch.bookedLabel"]}: {booked}
@@ -127,6 +146,6 @@ export function BatchFailureDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

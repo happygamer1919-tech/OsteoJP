@@ -170,6 +170,53 @@ test("Agendar lote generates per-date slots and submits via the batch engine; V1
   await expect(page.getByRole("button", { name: /Remarcar/i }).first()).toBeVisible();
 });
 
+test("batch failure dialog is top-most, interactable, and isolated from the drawer discard guard (W3-02)", async ({
+  page,
+}) => {
+  const date = futureDate(RUN_DAY_BASE + 16);
+  const drawer = await openNewAppointment(page, date);
+  await fillAppointment(drawer, {
+    patient: PATIENTS.maria.name,
+    therapist: THERAPIST_NAME,
+    location: LOCATION.name,
+    date,
+    time: "16:00",
+  });
+  // Agendar lote over 2 slots; the E2E therapist has no availability template,
+  // so every slot is busy → the partial-success failure dialog opens.
+  await drawer.getByLabel(/Agendar lote/i).check();
+  await drawer.getByLabel(/Nº de marcações/i).fill("2");
+  await drawer.getByLabel(/A cada \(semanas\)/i).fill("1");
+  await drawer.getByRole("button", { name: /Gerar datas/i }).click();
+  await drawer.getByRole("button", { name: SAVE }).click();
+
+  // The failure dialog renders TOP-MOST (its own showModal <dialog>, above the
+  // drawer). Scope by its accessible name to disambiguate from the drawer.
+  const failure = page.getByRole("dialog", { name: /Algumas marcações não foram criadas/i });
+  await expect(failure).toBeVisible({ timeout: 12_000 });
+
+  // It is INTERACTABLE: editing a time inside it succeeds. If it were inert
+  // behind the modal drawer (the pre-fix bug), this fill would time out.
+  const timeInput = failure.locator('input[type="time"]').first();
+  await timeInput.fill("18:30");
+  await expect(timeInput).toHaveValue("18:30");
+
+  // Interacting inside the dialog NEVER opens the drawer's "Descartar
+  // alterações?" discard guard. The discard Dialog is always mounted (closed),
+  // so assert by ROLE — getByRole excludes hidden elements, so a match means it
+  // is actually open.
+  const discard = page.getByRole("dialog", { name: /Descartar alterações/i });
+  await failure.getByRole("button", { name: /Remarcar/i }).first().click();
+  await expect(discard).toHaveCount(0);
+  await expect(failure).toBeVisible();
+
+  // Escape routes to THIS dialog's own onCancel (closes it) — never the drawer's
+  // discard guard.
+  await page.keyboard.press("Escape");
+  await expect(discard).toHaveCount(0);
+  await expect(failure).toBeHidden({ timeout: 8_000 });
+});
+
 test("NESA contraindication warning shows on booking (both paths) and never blocks submit (W2-08)", async ({
   page,
 }) => {
