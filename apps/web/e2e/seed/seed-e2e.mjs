@@ -60,20 +60,22 @@ const USERS = [
     fullName: "E2E Terapeuta Sem Servicos",
   },
   // W4-12 location auto-fill fixtures — DEDICATED, untouched by other specs.
-  // `therapistLocOne` has availability at exactly ONE active location (LOCATION_A)
+  // `therapistLocOne` (name deliberately avoids the token "Local", which collides
+  // with the working-hours "Local" field under Playwright substring getByLabel):
+  // availability at exactly ONE active location (LOCATION_A)
   // so selecting them auto-fills Localização; `therapistLocMulti` has availability
   // at TWO active locations so it must NOT auto-fill.
   {
     slug: "therapistLocOne",
     roleSlug: "therapist",
     email: "e2e-therapist-loc-one@osteojp.test",
-    fullName: "E2E Terapeuta Um Local",
+    fullName: "E2E Terapeuta Clinica Unica",
   },
   {
     slug: "therapistLocMulti",
     roleSlug: "therapist",
     email: "e2e-therapist-loc-multi@osteojp.test",
-    fullName: "E2E Terapeuta Multi Local",
+    fullName: "E2E Terapeuta Varias Clinicas",
   },
 ];
 

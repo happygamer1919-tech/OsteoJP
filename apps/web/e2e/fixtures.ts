@@ -62,8 +62,8 @@ export const THERAPIST_NAME = "E2E Therapist";
 // availability at exactly LOCATION_A (Linda-a-Velha) + the Osteopatia service, so
 // selecting them auto-fills both Localização and Serviço. `THERAPIST_MULTI_LOCATION`
 // has availability at two active locations and must NOT auto-fill Localização.
-export const THERAPIST_ONE_LOCATION = "E2E Terapeuta Um Local";
-export const THERAPIST_MULTI_LOCATION = "E2E Terapeuta Multi Local";
+export const THERAPIST_ONE_LOCATION = "E2E Terapeuta Clinica Unica";
+export const THERAPIST_MULTI_LOCATION = "E2E Terapeuta Varias Clinicas";
 
 /**
  * The current osteopathy template the "Modelo" picker should offer (PR #96
