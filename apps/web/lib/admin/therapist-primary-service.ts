@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { services, therapistServices } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
@@ -84,10 +84,19 @@ export async function getTherapistPrimaryServiceId(
 }
 
 /**
- * Set a therapist's primary service to `serviceId`, which MUST already be one of
- * the therapist's mapped services. Admin-only, server-enforced. Never issues an
- * UPDATE against `therapist_services` (which 42501-throws): it delete+inserts
- * the other mapped rows so `serviceId` becomes the earliest = primary.
+ * Set a therapist's primary service to `serviceId` — any ACTIVE tenant service
+ * (W4-01). Handles all three cases with ONE delete+insert path (never UPDATE,
+ * which 42501-throws):
+ *   - zero mappings  → INSERT `serviceId` (trivially the earliest = primary);
+ *   - `serviceId` not yet mapped → it is added AND made primary;
+ *   - `serviceId` already mapped → re-designated to primary.
+ *
+ * "Primary" is the earliest-created mapping (W3-04; consumed by W3-03's booking
+ * auto-fill). To make `serviceId` the earliest we DELETE the therapist's current
+ * mappings and re-INSERT them in `[serviceId, ...others]` order, stamping each
+ * `created_at` with `clock_timestamp()` — which advances WITHIN the transaction,
+ * unlike `now()`/`transaction_timestamp()` which would tie every row. All of the
+ * therapist's existing services are preserved. Admin-only, server-enforced.
  */
 export async function setTherapistPrimaryService(
   actor: RequestContext,
@@ -98,6 +107,16 @@ export async function setTherapistPrimaryService(
   if (!therapistId || !serviceId) throw new AdminError("invalid");
 
   await runScoped(actor, async (tx) => {
+    // Defense: `serviceId` must be an ACTIVE service of this tenant (the dropdown
+    // only lists active services; reject a forged / archived id). RLS scopes the
+    // read to the actor's tenant.
+    const [svc] = await tx
+      .select({ id: services.id })
+      .from(services)
+      .where(and(eq(services.id, serviceId), eq(services.isActive, true)))
+      .limit(1);
+    if (!svc) throw new AdminError("invalid");
+
     const mapped = await tx
       .select({ serviceId: therapistServices.serviceId })
       .from(therapistServices)
@@ -105,27 +124,25 @@ export async function setTherapistPrimaryService(
       .orderBy(asc(therapistServices.createdAt));
     const ids = mapped.map((m) => m.serviceId);
 
-    // The primary must be chosen from the therapist's existing mapped services.
-    if (!ids.includes(serviceId)) throw new AdminError("invalid");
-
-    // Already primary (earliest) → nothing to do.
+    // Already the primary (earliest) and already mapped → nothing to change.
     if (ids[0] === serviceId) return;
 
-    // Bump every OTHER mapped service after the chosen one (delete+insert, never
-    // UPDATE) so the chosen service becomes the earliest = primary.
-    for (const other of ids.filter((id) => id !== serviceId)) {
+    const others = ids.filter((id) => id !== serviceId);
+    const ordered = [serviceId, ...others]; // primary first; all services kept
+
+    // Delete every current mapping, then re-insert in order with a strictly
+    // increasing clock_timestamp() so `serviceId` is the earliest = primary.
+    if (ids.length > 0) {
       await tx
         .delete(therapistServices)
-        .where(
-          and(
-            eq(therapistServices.therapistUserId, therapistId),
-            eq(therapistServices.serviceId, other),
-          ),
-        ); // RLS scopes tenant
+        .where(eq(therapistServices.therapistUserId, therapistId)); // RLS scopes tenant
+    }
+    for (const s of ordered) {
       await tx.insert(therapistServices).values({
         tenantId: actor.tenantId, // NOT NULL + RLS WITH CHECK
         therapistUserId: therapistId,
-        serviceId: other,
+        serviceId: s,
+        createdAt: sql`clock_timestamp()`,
       });
     }
 
@@ -133,7 +150,8 @@ export async function setTherapistPrimaryService(
       action: "therapist.primary_service.set",
       entityType: "therapist_services",
       entityId: therapistId,
-      metadata: { serviceId, rebumped: ids.length - 1 },
+      // PII-free: ids + counts only.
+      metadata: { serviceId, added: !ids.includes(serviceId), total: ordered.length },
     });
   });
 }

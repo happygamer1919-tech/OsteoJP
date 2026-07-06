@@ -11,6 +11,8 @@ export type AdminErrorCode =
   | "email_taken" // edited email collides with another user in the tenant
   | "already_invited" // invite target email already belongs to a staff member in the tenant
   | "has_appointments" // location delete refused: appointments still reference it (W3-07)
+  | "password" // wrong delete password (W4-01 staff delete)
+  | "has_activity" // staff delete refused: therapist has appointments/records/audit (W4-01)
   | "not_found"
   | "invalid";
 

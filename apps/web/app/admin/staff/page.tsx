@@ -1,11 +1,13 @@
+import Link from "next/link";
 import { assignableRoles, type Role } from "@osteojp/auth";
 import { Button, GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { listStaff } from "@/lib/admin/staff";
+import { listServices } from "@/lib/admin/services";
 import { listTherapistPrimaries } from "@/lib/admin/therapist-primary-service";
 import { StaffInviteForm } from "./StaffInviteForm";
-import { changeRoleAction, editStaffAction, setActiveAction, setPrimaryServiceAction } from "./actions";
+import { changeRoleAction, deleteStaffAction, editStaffAction, setActiveAction, setPrimaryServiceAction } from "./actions";
 import {
   adminInputInline,
   adminTd,
@@ -30,6 +32,9 @@ export default async function StaffPage({
   const actor = await requireRequestContext();
   const staff = await listStaff(actor);
   const primaries = await listTherapistPrimaries(actor);
+  // ALL active tenant services — the primary dropdown lists these so a therapist
+  // with ZERO mappings can still be assigned a first/primary service (W4-01).
+  const activeServices = (await listServices(actor)).filter((svc) => svc.isActive);
   const { m } = await searchParams;
 
   // Only an owner may assign/modify the owner tier; hide it from admins. The
@@ -45,6 +50,8 @@ export default async function StaffPage({
     m === "err:last_owner" ? s["admin.staff.lastOwnerBlocked"]
     : m === "err:owner_tier" ? s["admin.staff.ownerTierBlocked"]
     : m === "err:email_taken" ? s["admin.staff.emailTakenBlocked"]
+    : m === "err:password" ? s["admin.staff.deleteWrongPassword"]
+    : m === "err:has_activity" ? s["admin.staff.deleteHasActivity"]
     : m && m.startsWith("err") ? s["admin.staff.error"]
     : null;
 
@@ -79,21 +86,23 @@ export default async function StaffPage({
                     <td className={adminTd}>{u.roleSlug ? ROLE_LABEL[u.roleSlug] : "—"}</td>
                     <td className={adminTd}>
                       {u.roleSlug === "therapist" ? (
-                        (() => {
-                          const p = primaries.get(u.id);
-                          if (!p || p.services.length === 0) {
-                            return <span className="text-v2-text-secondary">{s["admin.staff.noServices"]}</span>;
-                          }
-                          return (
+                        activeServices.length === 0 ? (
+                          <span className="text-v2-text-secondary">{s["admin.staff.noServices"]}</span>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Primary-service dropdown lists ALL active services, so a
+                                zero-mapping therapist can be assigned a first primary
+                                and an existing one re-designated (W4-01). */}
                             <form action={setPrimaryServiceAction} className="flex items-center gap-1">
                               <input type="hidden" name="therapistId" value={u.id} />
                               <select
                                 name="serviceId"
-                                defaultValue={p.primaryServiceId ?? ""}
+                                defaultValue={primaries.get(u.id)?.primaryServiceId ?? ""}
                                 aria-label={s["admin.staff.colPrimaryService"]}
                                 className={adminInputInline}
                               >
-                                {p.services.map((svc) => (
+                                <option value="">{s["admin.staff.selectService"]}</option>
+                                {activeServices.map((svc) => (
                                   <option key={svc.id} value={svc.id}>
                                     {svc.name}
                                   </option>
@@ -101,8 +110,16 @@ export default async function StaffPage({
                               </select>
                               <Button type="submit" variant="ghost" size="sm">{s["admin.staff.setPrimary"]}</Button>
                             </form>
-                          );
-                        })()
+                            {/* Entry point into the W2-12 Horários surface, focused on
+                                this therapist (W4-01 part b). */}
+                            <Link
+                              href={`/admin/working-hours?t=${u.id}`}
+                              className="text-sm text-brand-teal underline hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                            >
+                              {s["admin.staff.workingHours"]}
+                            </Link>
+                          </div>
+                        )
                       ) : (
                         "—"
                       )}
@@ -137,6 +154,25 @@ export default async function StaffPage({
                               {u.isActive ? s["admin.staff.deactivate"] : s["admin.staff.reactivate"]}
                             </Button>
                           </form>
+                          {/* Password-gated hard delete (W4-01). Never an owner or
+                              yourself; refused server-side if the therapist has any
+                              appointments/records/audit (deactivate instead). */}
+                          {u.roleSlug !== "owner" && u.id !== actor.userId && (
+                            <form action={deleteStaffAction} className="flex items-center gap-1">
+                              <input type="hidden" name="userId" value={u.id} />
+                              <input
+                                name="password"
+                                type="password"
+                                required
+                                aria-label={s["admin.staff.deletePassword"]}
+                                placeholder={s["admin.staff.deletePassword"]}
+                                className={`w-28 ${adminInputInline}`}
+                              />
+                              <Button type="submit" variant="destructive" size="sm">
+                                {s["admin.staff.delete"]}
+                              </Button>
+                            </form>
+                          )}
                         </div>
                       ) : (
                         "—"

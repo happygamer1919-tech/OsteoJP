@@ -885,3 +885,38 @@ Live-count evidence (credentials redacted; guard SEED_DEV_CONFIRM=<ref>):
 Reconciliation: 34 (before) preserved as archived + 30 new target = 64 total; zero
 deletions. `git diff` touches no file under apps/, packages/db/migrations/,
 supabase/migrations/, or .github/workflows/.
+
+## 2026-07-06 — W4-01 Equipa upgrade: zero-mapping primary, per-therapist Horários, password-gated therapist delete (branch w4-01-equipa-team-upgrade)
+
+Three Equipa (/admin/staff) fixes from owner QA after Wave 03. Migration-free.
+
+(a) **Zero-mapping primary service.** The "Serviço principal" dropdown now lists ALL
+active tenant services (was: only the therapist's mapped services → "Sem serviços"
+for a therapist with none, e.g. Catarina Vieira). setTherapistPrimaryService handles
+every case with ONE delete+insert path (never UPDATE — 42501): zero mappings INSERTs
+the first service; an unmapped active service is added and made primary; a mapped one
+is re-designated. To make the chosen service the earliest-created (= primary, consumed
+by W3-03's booking auto-fill) within a single tx, rows are re-inserted with
+`clock_timestamp()` (advances within a tx; `now()`/`transaction_timestamp()` would tie
+every row). All the therapist's existing services are preserved. Admin-only.
+
+(b) **Per-therapist Horários entry point (link, not rebuild).** W2-12's
+/admin/working-hours already does per-therapist CRUD; added a `?t=<therapistId>` filter
+(focus the list + pre-select the create form) and a "Horários" link from each Equipa row.
+
+(c) **Password-gated therapist delete (owner-requested 2026-07-06).** Reuses the W3-06
+tenant delete password (Administração → Definições) + a linked-records guard: REFUSED
+when the user has any appointment, clinical record/episode, clinical note, audit entry,
+or analytics event — so an established therapist is never destroyed (deactivate instead);
+only an activity-free account (e.g. a mistyped invite) is deletable. Owner-tier protected,
+never self. Config rows (therapist_services, availability_templates, time_off) deleted
+child-first (RETURNING), then the users row; clinical/audit data never touched.
+
+LIVE-DATA note: verified against the E2E seed tenant only (a new fixture therapist "E2E
+Terapeuta Sem Servicos" seeded with zero mappings); the shared DEV project's real
+therapist accounts and availability were never modified or deleted.
+
+Gates: web vitest 693 (+ primary-service rewrite tests, staff.delete tests); db 56.
+e2e covers the zero-mapping set-primary + Nova marcação auto-fill + Horários link + the
+password-gated delete (wrong pw refused, correct pw deletes an activity-free therapist).
+`git diff` touches no packages/db/migrations, supabase/migrations, or .github/workflows.
