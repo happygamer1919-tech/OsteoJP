@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
-import { changeStaffRole, editStaff, inviteStaff, setStaffActive } from "@/lib/admin/staff";
+import { changeStaffRole, deleteStaffMember, editStaff, inviteStaff, setStaffActive } from "@/lib/admin/staff";
 import { setTherapistPrimaryService } from "@/lib/admin/therapist-primary-service";
 import { isAdminError } from "@/lib/admin/errors";
 
@@ -31,6 +31,22 @@ export async function inviteAction(
   } catch (e) {
     return { ok: false, code: isAdminError(e) ? e.code : "error" };
   }
+}
+
+export async function deleteStaffAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  let code = "ok";
+  try {
+    await deleteStaffMember(
+      actor,
+      String(formData.get("userId") ?? ""),
+      String(formData.get("password") ?? ""),
+    );
+  } catch (e) {
+    code = isAdminError(e) ? `err:${e.code}` : "err";
+  }
+  revalidatePath("/admin/staff");
+  redirect(`/admin/staff?m=${code}`);
 }
 
 export async function setPrimaryServiceAction(formData: FormData): Promise<void> {

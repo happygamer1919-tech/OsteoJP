@@ -51,6 +51,14 @@ const USERS = [
   { slug: "admin", email: "e2e-admin@osteojp.test", fullName: "E2E Admin" },
   { slug: "therapist", email: "e2e-therapist@osteojp.test", fullName: "E2E Therapist" },
   { slug: "reception", email: "e2e-reception@osteojp.test", fullName: "E2E Reception" },
+  // A SECOND therapist with ZERO therapist_services (Catarina-Vieira case, W4-01):
+  // `roleSlug` is the real role; `slug` is only the unique key for idBySlug.
+  {
+    slug: "therapist2",
+    roleSlug: "therapist",
+    email: "e2e-therapist2@osteojp.test",
+    fullName: "E2E Terapeuta Sem Servicos",
+  },
 ];
 
 const LOCATION_A = "00000000-0000-0000-0000-00000000a101";
@@ -186,7 +194,7 @@ async function ensureUsers() {
   const idBySlug = {};
   for (const u of USERS) {
     const id = await ensureAuthUser(u.email, E2E_PASSWORD);
-    const rid = await roleId(TENANT_A, u.slug);
+    const rid = await roleId(TENANT_A, u.roleSlug ?? u.slug);
     const { error } = await db.from("users").upsert(
       {
         id,

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Button, GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
@@ -27,7 +28,7 @@ const WEEKDAY_KEYS = [
 export default async function WorkingHoursPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string }>;
+  searchParams: Promise<{ m?: string; t?: string }>;
 }) {
   const actor = await requireRequestContext();
   const [templates, staff, locations] = await Promise.all([
@@ -38,7 +39,13 @@ export default async function WorkingHoursPage({
   // Practitioners take appointments (everyone except reception); active locations only.
   const therapists = staff.filter((u) => u.roleSlug !== "reception");
   const activeLocations = locations.filter((l) => l.isActive);
-  const { m } = await searchParams;
+  const { m, t: focusId } = await searchParams;
+
+  // W4-01 (part b): when reached from the Equipa row (?t=<therapistId>), focus
+  // the view on that therapist — filter the list and pre-select the create form.
+  // The full CRUD is unchanged; this is just scoping.
+  const focused = focusId ? therapists.find((u) => u.id === focusId) ?? null : null;
+  const shownTemplates = focused ? templates.filter((tpl) => tpl.userId === focused.id) : templates;
 
   const banner =
     m === "ok"
@@ -62,6 +69,15 @@ export default async function WorkingHoursPage({
       <h2 className="text-xl text-v2-text-primary">{s["admin.workingHours.title"]}</h2>
       <p className={adminHelp}>{s["admin.workingHours.help"]}</p>
 
+      {focused && (
+        <p className={adminHelp} role="status">
+          {s["admin.workingHours.focusedOn"]}: <strong>{focused.fullName}</strong> ·{" "}
+          <Link href="/admin/working-hours" className="text-brand-teal underline hover:no-underline">
+            {s["admin.workingHours.showAll"]}
+          </Link>
+        </p>
+      )}
+
       {banner && (
         <p className={`text-sm ${banner.ok ? "text-success-700" : "text-error"}`} role="status">
           {banner.text}
@@ -72,7 +88,7 @@ export default async function WorkingHoursPage({
         <form action={createAvailabilityTemplateAction} className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
             <span className={adminLabel}>{s["admin.workingHours.therapist"]}</span>
-            <select name="userId" required className={adminInputInline}>
+            <select name="userId" required defaultValue={focused?.id} className={adminInputInline}>
               {therapists.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.fullName}
@@ -121,14 +137,14 @@ export default async function WorkingHoursPage({
               </tr>
             </thead>
             <tbody>
-              {templates.length === 0 && (
+              {shownTemplates.length === 0 && (
                 <tr>
                   <td colSpan={5} className={`${adminTd} ${adminHelp}`}>
                     {s["admin.workingHours.empty"]}
                   </td>
                 </tr>
               )}
-              {templates.map((t) => (
+              {shownTemplates.map((t) => (
                 <tr key={t.id} className={adminTrBorder}>
                   <td className={adminTd}>{t.userName}</td>
                   <td className={adminTd} colSpan={3}>

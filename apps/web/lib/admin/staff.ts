@@ -1,14 +1,28 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, or } from "drizzle-orm";
 import { assertCan, canReassignRole, isRole, type Role } from "@osteojp/auth";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
-import { roles, users, type DbTx } from "@osteojp/db";
+import {
+  analyticsEvents,
+  appointmentNotes,
+  appointments,
+  auditLog,
+  availabilityTemplates,
+  clinicalEpisodes,
+  clinicalRecords,
+  roles,
+  therapistServices,
+  timeOff,
+  users,
+  type DbTx,
+} from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { provisionStaffUser, generateSetPasswordLink } from "@/lib/auth/provision";
 import { sendEmail, type SendResult } from "@/lib/reminders/clients";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
+import { verifyDeletePassword } from "./appointment-delete-password";
 import { countActiveOwners, wouldRemoveLastOwner } from "./guards";
 
 export type StaffMember = {
@@ -348,4 +362,77 @@ async function loadTarget(tx: DbTx, userId: string): Promise<Target | null> {
     fullName: row.fullName,
     email: row.email,
   };
+}
+
+/**
+ * Hard-delete a staff member (W4-01, owner-requested). Password-gated (reuses
+ * the tenant delete password from Administração → Definições, W3-06) + a
+ * linked-records guard: REFUSED when the user has ANY appointment, clinical
+ * record/episode, clinical note, audit entry, or analytics event — so an
+ * established therapist is never destroyed (deactivate instead); only an
+ * activity-free account (e.g. a mistyped invite) can be removed. Admin-only,
+ * owner-tier protected (never an owner), never self.
+ *
+ * The user's own CONFIG rows (therapist_services, availability_templates,
+ * time_off) are deleted child-first (RETURNING); then the users row. Clinical
+ * and audit data are never touched.
+ */
+export async function deleteStaffMember(
+  actor: RequestContext,
+  userId: string,
+  password: string,
+): Promise<void> {
+  assertCan(actor.role, "users:manage");
+  if (!userId) throw new AdminError("invalid");
+  if (userId === actor.userId) throw new AdminError("invalid"); // never delete yourself
+
+  // Server-side password gate — never trust a client check.
+  if (!(await verifyDeletePassword(actor, password))) {
+    throw new AdminError("password");
+  }
+
+  await runScoped(actor, async (tx) => {
+    const [target] = await tx
+      .select({ id: users.id, roleId: users.roleId })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!target) throw new AdminError("not_found");
+
+    // Owner-tier: never delete an owner via this control.
+    const [ownerRole] = await tx
+      .select({ id: roles.id })
+      .from(roles)
+      .where(eq(roles.slug, "owner"))
+      .limit(1);
+    if (ownerRole && target.roleId === ownerRole.id) throw new AdminError("owner_tier");
+
+    // Linked-records guard — refuse if the user has ANY activity / clinical /
+    // audit reference. Only an activity-free account is deletable.
+    const counts = await Promise.all([
+      tx.select({ n: count() }).from(appointments).where(or(eq(appointments.practitionerId, userId), eq(appointments.createdBy, userId))),
+      tx.select({ n: count() }).from(clinicalRecords).where(or(eq(clinicalRecords.practitionerId, userId), eq(clinicalRecords.signedBy, userId))),
+      tx.select({ n: count() }).from(clinicalEpisodes).where(eq(clinicalEpisodes.primaryPractitionerId, userId)),
+      tx.select({ n: count() }).from(appointmentNotes).where(eq(appointmentNotes.authorUserId, userId)),
+      tx.select({ n: count() }).from(auditLog).where(eq(auditLog.actorUserId, userId)),
+      tx.select({ n: count() }).from(analyticsEvents).where(or(eq(analyticsEvents.therapistUserId, userId), eq(analyticsEvents.actorUserId, userId))),
+    ]);
+    const activity = counts.reduce((sum, [row]) => sum + Number(row?.n ?? 0), 0);
+    if (activity > 0) throw new AdminError("has_activity");
+
+    // Delete the user's own config rows child-first (RETURNING), then the user.
+    await tx.delete(therapistServices).where(eq(therapistServices.therapistUserId, userId)).returning({ id: therapistServices.id });
+    await tx.delete(availabilityTemplates).where(eq(availabilityTemplates.userId, userId)).returning({ id: availabilityTemplates.id });
+    await tx.delete(timeOff).where(eq(timeOff.userId, userId)).returning({ id: timeOff.id });
+
+    const del = await tx.delete(users).where(eq(users.id, userId)).returning({ id: users.id });
+    if (del.length === 0) throw new AdminError("not_found");
+
+    await writeAudit(tx, actor, {
+      action: "staff.delete",
+      entityType: "user",
+      entityId: userId,
+      metadata: { roleId: target.roleId }, // ids only — PII-free
+    });
+  });
 }
