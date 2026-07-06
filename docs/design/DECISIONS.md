@@ -210,3 +210,32 @@
 ## 2026-07-03 - SMS confirmation flow spec authored, no build (W2-13)
 - Authored `docs/design/SPEC-sms-confirmation.md` (SPEC ONLY, zero build): Twilio PT sender, Inngest day-before + same-day-morning reminders, a signed short link to a PUBLIC no-login SIM/NÃO confirm page that flips the 0024 axis (`confirmation_state` = confirmed/declined, `confirmation_received_at` = now, `confirmation_channel = 'sms'` — no schema change; the column is free text). Token is HMAC-signed, single-appointment scope, expiry-bounded, idempotent-flip; TENANT DERIVED SERVER-SIDE FROM THE TOKEN, never payload (hard rule). Non-goals: no inbound reply-text parsing, no build this wave, no other channel.
 - Build is GATED (owner-confirmable): Twilio is a NEW vendor — not introduced here. Four QUESTIONS logged (2026-07-03): Twilio vendor + EU residency/DPA, pt-PT copy, exact Europe/Lisbon send times (default 18:00 D-1 / 08:00 D0), opt-out/consent (default: honour `reminder_sms_enabled` + STOP handling). No dependency, no Inngest job, no route, no env — docs only.
+
+## 2026-07-05 - Signed DPA executed; pre-real-data DPA gate CLOSED (owner)
+- Ruling (owner, 2026-07-05): the Data Processing Agreement is SIGNED, lawyer-finalized, and owner-confirmed. The pre-real-data **DPA gate is now CLOSED**.
+- This supersedes the 2026-07-02 "DPA controller/processor chain: principle confirmed, signed doc still pending" open-gate status — the gate that required a recorded, signed instrument is satisfied. The controller/processor chain stands: clinic (OsteoJP) = controller; A&I Automation = processor; Andrei's pipeline = sub-processor; all EU region.
+- Scope note: this closes ONE of the two pre-real-data gates. The SEPARATE-PROD-PROJECT / seed-guard gate (DECISIONS 2026-07-01) remains OPEN — a separate production Supabase project must still be provisioned and the dev ref added to `PROD_REFS` before any real patient data enters. Both gates had to be satisfied; one now is. Branch protection re-hardening still tracks the remaining prod-project gate.
+
+## 2026-07-05 - Appointment hard-delete allowed behind a password gate (owner amendment to the never-hard-delete lock)
+- Ruling (owner, 2026-07-05): AMENDMENT to the never-hard-delete lock (STATE 2026-06-30 finding #2; prior state: appointments never hard-deleted, cancellation is `status='cancelled'`, code comment "Never hard delete — cancel via the status field only"). Appointments MAY now be **hard-deleted behind a password gate**.
+- Terms (binding, all embedded in loop W3-06):
+  - **Password:** initial value **`1234`**; changeable in **Administração**; stored **server-side HASHED** as a tenant setting; **never stored or verified client-side**. The tenant-settings home for the hash is established by loop W3-05 (recon: reuse an existing home if suitable, else migration 0032).
+  - **Linked-records guard:** deletion is **REFUSED when the appointment has linked clinical notes or records** (per-visit `appointment_notes` (0026) and any `clinical_records`/`clinical_episodes` referencing it). Refuse with a pt-PT reason; do not delete.
+  - **Audit:** every deletion writes an **`audit_log`** entry — actor (`actor_user_id`) + an appointment SNAPSHOT in `metadata`. The snapshot is PII-FREE by the audit contract (CLAUDE.md rule 7): ids/timestamps/enums only (`appointment_id`, `patient_id`, `practitioner_id`, `service_id`, `location_id`, `starts_at`, `ends_at`, `status`, `confirmation_state`), NEVER the notes body or patient name.
+  - **Permanent-delete discipline:** delete child rows FIRST, using `RETURNING`, then the appointment, in one tenant-scoped transaction.
+- Consistent with the soft-warning/records-not-blocks philosophy only in spirit; this is a deliberate, gated destructive action, admin-only (permission matrix), server-enforced. Scoped into loop W3-06 (gates on W3-05 merged).
+
+## 2026-07-05 - Location delete only when unreferenced; archive otherwise (owner)
+- Ruling (owner, 2026-07-05): in the admin location list, **delete is enabled ONLY for locations with zero appointment references**. A location that IS referenced by any appointment offers **archive only** — its delete control is **disabled with an explanatory tooltip** stating it cannot be deleted while it has appointments.
+- Aligns with the DB reality: `appointments.location_id → locations.id` is ON DELETE no action, so a referenced location is not DB-deletable anyway. Archive = `is_active = false`. Archived locations stay HIDDEN from all selection dropdowns (preserves the W2-02 behavior: option queries filter `is_active = true`; the admin management table still lists archived). Migration-free. Scoped into loop W3-07.
+
+## 2026-07-05 - Real clinic schedule + 24h time format everywhere (owner)
+- Ruling (owner, 2026-07-05): the real clinic schedule is **Mon–Fri 08:00–20:00, Sat 09:00–13:00**.
+- Effects:
+  - The agenda **week view shows 6 days including Saturday** (not 5, not 7). Scoped into loop W3-08.
+  - **All time display and pickers use 24h format** (`00:00`–`23:59`); **no AM/PM anywhere** in the product. App-wide sweep. Scoped into loop W3-08. (Display timezone remains Europe/Lisbon per CLAUDE.md.)
+  - Existing dev therapists' `availability_templates` are updated to this schedule as a guarded, idempotent live-DB data op (archive-not-delete; SEED_DEV_CONFIRM-guarded; zero-delta re-run per the 2026-07-02 idempotence ruling). Scoped into loop W3-09.
+
+## 2026-07-05 - Booking form order: Terapeuta first, Serviço auto-selected from primary (owner)
+- Ruling (owner, 2026-07-05): in "Nova marcação", the **Terapeuta** field comes FIRST and the **Serviço** field is BELOW it. Serviço is **auto-selected from the therapist's PRIMARY service** (via `therapist_services`, 0023), and the dropdown remains **editable for exceptions** (the clinic can override the default per booking).
+- Depends on a per-therapist "primary service" designation, added in loop W3-04 (represented WITHOUT a schema change and without UPDATE to `therapist_services` — respecting the 0023 no-grant SELECT/INSERT/DELETE mechanism, where re-designation is delete+insert). The reorder itself is loop W3-03 and ships independently, falling back to the existing therapist→service auto-select (W2-02 #445) if the primary designation is not yet merged. Both loops migration-free.
