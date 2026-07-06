@@ -384,6 +384,8 @@
   "admin.locations.status": "Estado",
   "admin.locations.add": "Adicionar local",
   "admin.locations.archive": "Arquivar",
+  "admin.locations.delete": "Eliminar",
+  "admin.locations.deleteBlockedTooltip": "Não é possível eliminar: existem marcações nesta localização. Arquive-a em alternativa.",
   "admin.locations.restore": "Restaurar",
   "admin.locations.saved": "Local guardado.",
   "admin.locations.error": "Não foi possível guardar o local.",

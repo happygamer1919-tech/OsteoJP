@@ -4,6 +4,7 @@ import { requireRequestContext } from "@/lib/auth/context";
 import { listLocations } from "@/lib/admin/locations";
 import {
   createLocationAction,
+  deleteLocationAction,
   setLocationActiveAction,
   updateLocationAction,
 } from "./actions";
@@ -89,13 +90,31 @@ export default async function LocationsPage({
                     </form>
                   </td>
                   <td className={adminTd}>
-                    <form action={setLocationActiveAction}>
-                      <input type="hidden" name="id" value={loc.id} />
-                      <input type="hidden" name="active" value={loc.isActive ? "false" : "true"} />
-                      <Button type="submit" variant="ghost" size="sm">
-                        {loc.isActive ? s["admin.locations.archive"] : s["admin.locations.restore"]}
-                      </Button>
-                    </form>
+                    <div className="flex items-center gap-2">
+                      <form action={setLocationActiveAction}>
+                        <input type="hidden" name="id" value={loc.id} />
+                        <input type="hidden" name="active" value={loc.isActive ? "false" : "true"} />
+                        <Button type="submit" variant="ghost" size="sm">
+                          {loc.isActive ? s["admin.locations.archive"] : s["admin.locations.restore"]}
+                        </Button>
+                      </form>
+                      {/* W3-07: hard delete only when no appointment references it;
+                          otherwise disabled with an explanatory tooltip. */}
+                      {loc.hasAppointments ? (
+                        <span title={s["admin.locations.deleteBlockedTooltip"]} className="inline-flex">
+                          <Button type="button" variant="ghost" size="sm" disabled>
+                            {s["admin.locations.delete"]}
+                          </Button>
+                        </span>
+                      ) : (
+                        <form action={deleteLocationAction}>
+                          <input type="hidden" name="id" value={loc.id} />
+                          <Button type="submit" variant="destructive" size="sm">
+                            {s["admin.locations.delete"]}
+                          </Button>
+                        </form>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

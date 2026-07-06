@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
-import { createLocation, setLocationActive, updateLocation } from "@/lib/admin/locations";
+import { createLocation, deleteLocation, setLocationActive, updateLocation } from "@/lib/admin/locations";
 import { isAdminError } from "@/lib/admin/errors";
 
 async function run(fn: () => Promise<void>): Promise<never> {
@@ -44,4 +44,10 @@ export async function setLocationActiveAction(formData: FormData): Promise<void>
   const id = String(formData.get("id") ?? "");
   const active = String(formData.get("active") ?? "") === "true";
   await run(() => setLocationActive(actor, id, active));
+}
+
+export async function deleteLocationAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  const id = String(formData.get("id") ?? "");
+  await run(() => deleteLocation(actor, id));
 }
