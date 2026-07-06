@@ -28,6 +28,7 @@ import { getTherapistAvailability, type DayAvailability } from "./day-availabili
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
 import { getTherapistServiceIds } from "./therapist-services";
+import { getTherapistLocationIds } from "./therapist-locations";
 import {
   enqueueRemindersAfterCommit,
   enqueueStatusNotificationsAfterCommit,
@@ -233,6 +234,31 @@ export async function getTherapistServices(
     return { ok: true, data: serviceIds };
   } catch (e) {
     return fail("therapist-services", e);
+  }
+}
+
+/**
+ * Read-only ACTIVE location ids a therapist is assigned to (`availability_
+ * templates`, migration 0006). Feeds the new-appointment Localização auto-fill
+ * (W4-12): the drawer auto-fills the location when the therapist has exactly one
+ * active location, and leaves it manual for zero or multiple.
+ */
+export async function getTherapistLocations(
+  therapistId: string,
+): Promise<ActionResult<string[]>> {
+  const auth = await authorize("appointments:read");
+  if (isDenied(auth)) return auth;
+  const { actor } = auth;
+
+  if (!therapistId) {
+    return { ok: false, error: "validation" };
+  }
+
+  try {
+    const locationIds = await getTherapistLocationIds(actor, therapistId);
+    return { ok: true, data: locationIds };
+  } catch (e) {
+    return fail("therapist-locations", e);
   }
 }
 

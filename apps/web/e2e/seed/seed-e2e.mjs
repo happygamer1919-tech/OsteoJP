@@ -59,6 +59,22 @@ const USERS = [
     email: "e2e-therapist2@osteojp.test",
     fullName: "E2E Terapeuta Sem Servicos",
   },
+  // W4-12 location auto-fill fixtures — DEDICATED, untouched by other specs.
+  // `therapistLocOne` has availability at exactly ONE active location (LOCATION_A)
+  // so selecting them auto-fills Localização; `therapistLocMulti` has availability
+  // at TWO active locations so it must NOT auto-fill.
+  {
+    slug: "therapistLocOne",
+    roleSlug: "therapist",
+    email: "e2e-therapist-loc-one@osteojp.test",
+    fullName: "E2E Terapeuta Um Local",
+  },
+  {
+    slug: "therapistLocMulti",
+    roleSlug: "therapist",
+    email: "e2e-therapist-loc-multi@osteojp.test",
+    fullName: "E2E Terapeuta Multi Local",
+  },
 ];
 
 const LOCATION_A = "00000000-0000-0000-0000-00000000a101";
@@ -229,6 +245,47 @@ async function ensureTherapistServices(therapistUserId) {
   }
 }
 
+/**
+ * availability_templates row (0006) = the therapist↔location association W4-12
+ * derives locations from. One weekday window per (therapist, location) is enough
+ * to make the location "assigned". Deduped on the natural key so re-seeding is
+ * idempotent.
+ */
+async function ensureAvailability(therapistUserId, locationId, weekday) {
+  const { error } = await db.from("availability_templates").upsert(
+    {
+      tenant_id: TENANT_A,
+      user_id: therapistUserId,
+      location_id: locationId,
+      weekday,
+      start_time: "09:00",
+      end_time: "13:00",
+      is_active: true,
+    },
+    {
+      onConflict:
+        "tenant_id,user_id,location_id,weekday,start_time,end_time,valid_from,valid_until",
+    },
+  );
+  must(error, `availability_templates ${therapistUserId}@${locationId}`);
+}
+
+/**
+ * W4-12 location auto-fill fixtures: one therapist assigned to exactly ONE active
+ * location (+ a service, so selecting them auto-fills BOTH on one event), and one
+ * assigned to TWO active locations (must not auto-fill).
+ */
+async function ensureLocationFixtures(idBySlug) {
+  await ensureAvailability(idBySlug.therapistLocOne, LOCATION_A, 1); // single active location
+  await ensureTherapistServices(idBySlug.therapistLocOne); // + Osteopatia, for the combined test
+  await ensureAvailability(idBySlug.therapistLocMulti, LOCATION_A, 1);
+  await ensureAvailability(idBySlug.therapistLocMulti, LOCATION_B, 2); // two active locations
+  // A service on the multi therapist too, so the negative test has an observable
+  // signal (Serviço auto-fills) proving the therapist-selection effect ran while
+  // Localização was deliberately left untouched.
+  await ensureTherapistServices(idBySlug.therapistLocMulti);
+}
+
 async function ensureBaseData() {
   must(
     (await db.from("locations").upsert(
@@ -345,6 +402,7 @@ async function main() {
   const userIds = await ensureUsers();
   await ensureBaseData();
   await ensureTherapistServices(userIds.therapist);
+  await ensureLocationFixtures(userIds);
   await ensurePortalPatient();
   const templates = await ensureFormTemplates();
 
