@@ -831,3 +831,30 @@ Gates: web vitest +5 (tenant-secret: write/read/gate + projection-safety);
 packages/db adds a db-gated RLS isolation test (`tenant-settings-secret-rls.test.ts`,
 runs in db-tests.yml). `git diff` touches no file under packages/db/migrations/,
 supabase/migrations/, or .github/workflows/.
+
+## 2026-07-06 — W3-06 password-gated appointment hard-delete (branch w3-06-password-gated-appointment-delete)
+
+Amends the never-hard-delete lock (STATE 2026-06-30 #2): appointments MAY now be
+hard-deleted behind a password gate (owner ruling, DECISIONS 2026-07-05). Migration-free.
+
+- **Password:** initial `1234`, changeable in Administração, stored HASHED (scrypt via
+  node:crypto — no new vendor) as a tenant secret in the W3-05 home
+  (`tenants.settings.secrets.appointmentDeletePasswordHash`). Verified server-side only
+  (constant-time), never stored/checked/exposed client-side.
+- **Gate:** admin-only — `settings:manage` (the Tenant-settings tier; reception/therapist,
+  who hold `appointments:delete` for cancel, cannot hard-delete). Server-enforced.
+- **Linked-records guard:** refuses if any `appointment_notes` (0026), `clinical_records`,
+  or `invoices` reference the appointment (FK-blocking children; clinical_episodes has no
+  direct appointment FK — covered transitively via clinical_records). pt-PT reason returned.
+- **Delete discipline:** one tenant-scoped tx — child `analytics_events` (linked by
+  entity_id, no FK) deleted first with RETURNING, then the appointment with RETURNING,
+  then an `audit_log` `appointment.hard_delete` row (actor + PII-free snapshot: ids +
+  ISO timestamps + enums only, never notes/name).
+- **UI:** delete control in the edit drawer (admin-only, password prompt via a top-layer
+  Dialog); password-change form in Administração.
+
+Gates: web vitest +17 (secret-hash, delete-password, hard-delete action matrix, drawer
+delete-control visibility); e2e for password-change + wrong/correct-password delete.
+Tenant-scoped delete is covered by the existing cross-tenant appointments DELETE RLS test.
+`git diff` touches no file under packages/db/migrations/, supabase/migrations/, or
+.github/workflows/.

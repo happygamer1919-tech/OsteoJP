@@ -34,6 +34,7 @@ export function AgendaView({
   lockTherapist,
   options,
   appointments,
+  canHardDelete,
 }: {
   view: View;
   anchor: string;
@@ -41,6 +42,7 @@ export function AgendaView({
   lockTherapist: boolean;
   options: AgendaOptions;
   appointments: AgendaAppointment[];
+  canHardDelete: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -205,6 +207,7 @@ export function AgendaView({
           state={modal}
           options={options}
           anchor={anchor}
+          canHardDelete={canHardDelete}
           onClose={() => setModal(null)}
           onDone={() => {
             setModal(null);

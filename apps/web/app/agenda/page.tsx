@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { assertCan, ForbiddenError, type RequestContext } from "@osteojp/auth";
+import { assertCan, can, ForbiddenError, type RequestContext } from "@osteojp/auth";
 import { requireRequestContext } from "@/lib/auth/context";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
 import {
@@ -78,6 +78,7 @@ export default async function AgendaPage({
       lockTherapist={lockTherapist}
       options={options}
       appointments={appointments}
+      canHardDelete={can(actor.role, "settings:manage")}
     />
   );
 }

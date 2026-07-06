@@ -39,6 +39,10 @@ vi.mock("@osteojp/ui", () => {
   return {
     Banner: passthrough("div"),
     StatusChip: passthrough("span"),
+    Button: ({ children }: { children?: ReactNode }) =>
+      createElement("button", null, children as ReactNode),
+    Dialog: ({ open, title, children }: { open?: boolean; title?: ReactNode; children?: ReactNode }) =>
+      open ? createElement("div", null, title as ReactNode, children as ReactNode) : null,
     Drawer: ({ children, title }: { children?: ReactNode; title?: ReactNode }) =>
       createElement("div", null, title as ReactNode, children as ReactNode),
     Field: ({ label, children }: { label?: ReactNode; children?: ReactNode }) =>
@@ -80,12 +84,13 @@ const editAppt: AgendaAppointment = {
   hasNote: false,
 };
 
-function render(state: ModalState): string {
+function render(state: ModalState, canHardDelete = false): string {
   return renderToStaticMarkup(
     createElement(AppointmentDrawer, {
       state,
       options,
       anchor: "2026-08-06",
+      canHardDelete,
       onClose: vi.fn(),
       onDone: vi.fn(),
     }),
@@ -126,5 +131,21 @@ describe("AppointmentDrawer — Estado selector removed from creation (W3-01)", 
     expect(therapistAt).toBeGreaterThan(-1);
     expect(serviceAt).toBeGreaterThan(-1);
     expect(therapistAt).toBeLessThan(serviceAt);
+  });
+
+  // W3-06: the hard-delete control is edit-only AND admin-only (canHardDelete).
+  it("shows the delete control in edit mode for an admin (canHardDelete)", () => {
+    const html = render({ mode: "edit", appt: editAppt }, true);
+    expect(html).toContain("Eliminar marcação");
+  });
+
+  it("hides the delete control for a non-admin in edit mode", () => {
+    const html = render({ mode: "edit", appt: editAppt }, false);
+    expect(html).not.toContain("Eliminar marcação");
+  });
+
+  it("never shows the delete control in create mode", () => {
+    const html = render({ mode: "create" }, true);
+    expect(html).not.toContain("Eliminar marcação");
   });
 });

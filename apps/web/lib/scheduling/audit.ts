@@ -5,7 +5,8 @@ export type AppointmentAuditAction =
   | "appointment.create"
   | "appointment.update"
   | "appointment.reschedule"
-  | "appointment.cancel";
+  | "appointment.cancel"
+  | "appointment.hard_delete";
 
 /**
  * Append an audit row for an appointment mutation. MUST be called inside the

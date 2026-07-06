@@ -2,8 +2,10 @@
 
 import {
   Banner,
+  Button,
   Checkbox,
   Combobox,
+  Dialog,
   Drawer,
   Field,
   Input,
@@ -23,6 +25,7 @@ import {
   cancelAppointment,
   createAppointment,
   getTherapistServices,
+  hardDeleteAppointment,
   rescheduleAppointment,
   updateAppointment,
 } from "@/lib/scheduling/actions";
@@ -95,12 +98,14 @@ export function AppointmentDrawer({
   state,
   options,
   anchor,
+  canHardDelete,
   onClose,
   onDone,
 }: {
   state: ModalState;
   options: AgendaOptions;
   anchor: string;
+  canHardDelete: boolean;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -147,6 +152,11 @@ export function AppointmentDrawer({
   const [error, setError] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Password-gated hard delete (W3-06) — edit-only, admin-only.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePw, setDeletePw] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
   // Partial-success batch (W2-05): when a recorrente booking has busy slots, the
   // free ones are booked and these drive the failure dialog for the rest.
   const [batchFailures, setBatchFailures] = useState<{
@@ -423,6 +433,34 @@ export function AppointmentDrawer({
   function succeed() {
     toast({ tone: "success", message: s["appointment.saved"] });
     onDone();
+  }
+
+  // Password-gated hard delete (W3-06). The password is verified SERVER-side;
+  // the client only forwards it. On success the appointment is permanently gone.
+  async function doHardDelete() {
+    if (!editing) return;
+    setDeleting(true);
+    setDeleteErr(null);
+    try {
+      const r = await hardDeleteAppointment(editing.id, deletePw);
+      if (r.ok) {
+        setDeleteOpen(false);
+        toast({ tone: "success", message: s["appointment.deleted"] });
+        onDone();
+        return;
+      }
+      setDeleteErr(
+        r.error === "password"
+          ? s["appointment.deleteWrongPassword"]
+          : r.error === "linked_records"
+            ? s["appointment.deleteLinkedRecords"]
+            : r.error === "forbidden"
+              ? s["errors.forbidden"]
+              : s["errors.generic"],
+      );
+    } finally {
+      setDeleting(false);
+    }
   }
 
   // Re-attempt ONE slot from the failure dialog at the edited date/time, through
@@ -719,6 +757,23 @@ export function AppointmentDrawer({
         {error && (
           <p role="alert" className="text-sm text-error">{error}</p>
         )}
+
+        {/* Password-gated hard delete (W3-06) — edit-only, admin-only. */}
+        {editing && canHardDelete && (
+          <div className="mt-2 border-t border-border pt-4">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                setDeletePw("");
+                setDeleteErr(null);
+                setDeleteOpen(true);
+              }}
+            >
+              {s["appointment.delete"]}
+            </Button>
+          </div>
+        )}
       </div>
     </Drawer>
     {batchFailures && (
@@ -731,6 +786,31 @@ export function AppointmentDrawer({
           succeed();
         }}
       />
+    )}
+    {editing && canHardDelete && (
+      <Dialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title={s["appointment.delete"]}
+        message={s["appointment.deletePasswordPrompt"]}
+        confirmVariant="destructive"
+        confirmLabel={s["appointment.deleteConfirm"]}
+        confirmLoading={deleting}
+        cancelLabel={s["common.cancel"]}
+        onConfirm={() => {
+          void doHardDelete();
+        }}
+      >
+        <div className="flex flex-col gap-2">
+          <Input
+            type="password"
+            value={deletePw}
+            onChange={(e) => setDeletePw(e.target.value)}
+            aria-label={s["appointment.deletePasswordLabel"]}
+          />
+          {deleteErr && <p role="alert" className="text-sm text-error">{deleteErr}</p>}
+        </div>
+      </Dialog>
     )}
     </>
   );
