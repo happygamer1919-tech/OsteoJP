@@ -262,7 +262,12 @@ export async function createAppointment(
     locationId: input.locationId,
     serviceId: input.serviceId ?? null,
     room: input.room ?? null,
-    status: input.status,
+    // Creation invariant (W3-01, DECISIONS 2026-07-01): a new appointment is
+    // always `scheduled`, hardcoded here — never taken from the payload. There
+    // is no lifecycle Estado selector in the creation UI. `confirmation_state`
+    // is left unset so its DB default (`pending`) applies; the two axes stay
+    // orthogonal. Lifecycle transitions happen later via updateAppointment.
+    status: "scheduled" as const,
     notes: input.notes ?? null,
     createdBy: actor.userId,
   };
@@ -327,7 +332,7 @@ export async function createAppointment(
               practitionerId: input.practitionerId,
               locationId: input.locationId,
               serviceId: input.serviceId ?? null,
-              status: input.status,
+              status: "scheduled",
               startsAt: created[i].startsAt.toISOString(),
               seriesId: recurring ? parent.id : null,
               occurrence: recurring ? i : null,

@@ -31,8 +31,9 @@ type BatchCommonInput = {
   practitionerId: string;
   locationId: string;
   serviceId?: string | null;
-  /** Lifecycle status for booked rows. Default "scheduled". */
-  status?: AppointmentStatusValue;
+  // No lifecycle `status` here by design (W3-01, creation invariant DECISIONS
+  // 2026-07-01): batch booking is a creation path, so every booked row is
+  // `scheduled`, hardcoded below — never from the caller.
 };
 
 /** Recurrence-rule input (V1): a rule expanded to N same-time occurrences. */
@@ -99,7 +100,9 @@ export async function batchSchedule(
   // Explicit slots carry no recurrence rule; the recurrence mode still documents
   // its rule on the booked rows (existing storage).
   const rrule = isExplicitSlots(input) ? null : toRRule(input.recurrence);
-  const status: AppointmentStatusValue = input.status ?? "scheduled";
+  // Creation invariant (W3-01): booked rows are always `scheduled`. Never taken
+  // from the caller; `confirmation_state` falls to its DB default (`pending`).
+  const status: AppointmentStatusValue = "scheduled";
   let booked: BatchBooked[] = [];
 
   if (toBook.length > 0) {

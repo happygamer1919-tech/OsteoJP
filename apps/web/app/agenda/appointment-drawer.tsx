@@ -336,7 +336,6 @@ export function AppointmentDrawer({
             locationId: form.locationId,
             serviceId: form.serviceId || null,
             slots,
-            status: form.status,
           });
           if (!r.ok) {
             handleResult(r);
@@ -357,7 +356,6 @@ export function AppointmentDrawer({
           room: form.room || null,
           startsAt: startISO,
           endsAt: endISO,
-          status: form.status,
           notes: form.notes || null,
           recurrence: null,
           allowConflict,
@@ -421,7 +419,6 @@ export function AppointmentDrawer({
       locationId: form.locationId,
       serviceId: form.serviceId || null,
       slots: buildLoteSlots([{ date, time: hhmm }], form.durationMin),
-      status: form.status,
     });
     if (!r.ok) return { booked: false, failure: null };
     return { booked: r.data.booked.length > 0, failure: r.data.failures[0] ?? null };
