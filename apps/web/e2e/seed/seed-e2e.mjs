@@ -181,6 +181,9 @@ async function ensureAuthUser(email, password) {
 }
 
 async function ensureUsers() {
+  /** slug -> public.users.id, so downstream seeds (e.g. therapist_services) can
+   *  reference the auth-generated therapist id. */
+  const idBySlug = {};
   for (const u of USERS) {
     const id = await ensureAuthUser(u.email, E2E_PASSWORD);
     const rid = await roleId(TENANT_A, u.slug);
@@ -196,6 +199,25 @@ async function ensureUsers() {
       { onConflict: "id" },
     );
     must(error, `public.users ${u.email}`);
+    idBySlug[u.slug] = id;
+  }
+  return idBySlug;
+}
+
+/**
+ * therapist_services mapping (0023) for the E2E therapist. Feeds the booking
+ * form's Serviço auto-select (W3-03): the form defaults Serviço to the FIRST
+ * mapped service. Osteopatia is inserted first so it is oldest (created_at) and
+ * thus the default; NESA stays mapped so the contraindication test can still
+ * pick it. Two separate upserts guarantee a stable created_at order.
+ */
+async function ensureTherapistServices(therapistUserId) {
+  for (const serviceId of [SERVICE_A, SERVICE_NESA]) {
+    const { error } = await db.from("therapist_services").upsert(
+      { tenant_id: TENANT_A, therapist_user_id: therapistUserId, service_id: serviceId },
+      { onConflict: "tenant_id,therapist_user_id,service_id" },
+    );
+    must(error, `therapist_services ${serviceId}`);
   }
 }
 
@@ -312,8 +334,9 @@ async function main() {
   await ensureTenant(TENANT_B, "OsteoJP Other (E2E)", "osteojp-e2e-other");
   await ensureRoles(TENANT_A);
   await ensureRoles(TENANT_B);
-  await ensureUsers();
+  const userIds = await ensureUsers();
   await ensureBaseData();
+  await ensureTherapistServices(userIds.therapist);
   await ensurePortalPatient();
   const templates = await ensureFormTemplates();
 

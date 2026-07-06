@@ -116,4 +116,15 @@ describe("AppointmentDrawer — Estado selector removed from creation (W3-01)", 
     const html = render({ mode: "create" });
     expect(html).not.toContain("Confirmação");
   });
+
+  // W3-03 (DECISIONS 2026-07-05): Terapeuta field is FIRST, Serviço immediately
+  // below it, so the service can default from the chosen therapist.
+  it("renders Terapeuta above Serviço (W3-03 order)", () => {
+    const html = render({ mode: "create" });
+    const therapistAt = html.indexOf("Terapeuta");
+    const serviceAt = html.indexOf("Serviço");
+    expect(therapistAt).toBeGreaterThan(-1);
+    expect(serviceAt).toBeGreaterThan(-1);
+    expect(therapistAt).toBeLessThan(serviceAt);
+  });
 });

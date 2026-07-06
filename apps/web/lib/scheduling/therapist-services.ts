@@ -1,5 +1,5 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { RequestContext } from "@osteojp/auth";
 import { therapistServices } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
@@ -22,7 +22,12 @@ export async function getTherapistServiceIds(
     const rows = await tx
       .select({ serviceId: therapistServices.serviceId })
       .from(therapistServices)
-      .where(eq(therapistServices.therapistUserId, therapistId));
+      .where(eq(therapistServices.therapistUserId, therapistId))
+      // Deterministic order (W3-03): the booking form defaults Serviço to the
+      // FIRST mapped service, so the order must be stable across requests.
+      // Oldest mapping first — a stand-in for "primary" until W3-04 lands a
+      // dedicated primary designation.
+      .orderBy(asc(therapistServices.createdAt));
     return rows.map((r) => r.serviceId);
   });
 }
