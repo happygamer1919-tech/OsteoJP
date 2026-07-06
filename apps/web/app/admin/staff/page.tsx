@@ -3,8 +3,9 @@ import { Button, GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { listStaff } from "@/lib/admin/staff";
+import { listTherapistPrimaries } from "@/lib/admin/therapist-primary-service";
 import { StaffInviteForm } from "./StaffInviteForm";
-import { changeRoleAction, editStaffAction, setActiveAction } from "./actions";
+import { changeRoleAction, editStaffAction, setActiveAction, setPrimaryServiceAction } from "./actions";
 import {
   adminInputInline,
   adminTd,
@@ -28,6 +29,7 @@ export default async function StaffPage({
 }) {
   const actor = await requireRequestContext();
   const staff = await listStaff(actor);
+  const primaries = await listTherapistPrimaries(actor);
   const { m } = await searchParams;
 
   // Only an owner may assign/modify the owner tier; hide it from admins. The
@@ -62,6 +64,7 @@ export default async function StaffPage({
                 <th className={adminTh}>{s["admin.staff.colName"]}</th>
                 <th className={adminTh}>{s["admin.staff.colEmail"]}</th>
                 <th className={adminTh}>{s["admin.staff.colRole"]}</th>
+                <th className={adminTh}>{s["admin.staff.colPrimaryService"]}</th>
                 <th className={adminTh}>{s["admin.staff.colStatus"]}</th>
                 <th className={adminTh}>{s["admin.staff.colActions"]}</th>
               </tr>
@@ -74,6 +77,36 @@ export default async function StaffPage({
                     <td className={adminTd}>{u.fullName}</td>
                     <td className={adminTd}>{u.email}</td>
                     <td className={adminTd}>{u.roleSlug ? ROLE_LABEL[u.roleSlug] : "—"}</td>
+                    <td className={adminTd}>
+                      {u.roleSlug === "therapist" ? (
+                        (() => {
+                          const p = primaries.get(u.id);
+                          if (!p || p.services.length === 0) {
+                            return <span className="text-v2-text-secondary">{s["admin.staff.noServices"]}</span>;
+                          }
+                          return (
+                            <form action={setPrimaryServiceAction} className="flex items-center gap-1">
+                              <input type="hidden" name="therapistId" value={u.id} />
+                              <select
+                                name="serviceId"
+                                defaultValue={p.primaryServiceId ?? ""}
+                                aria-label={s["admin.staff.colPrimaryService"]}
+                                className={adminInputInline}
+                              >
+                                {p.services.map((svc) => (
+                                  <option key={svc.id} value={svc.id}>
+                                    {svc.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <Button type="submit" variant="ghost" size="sm">{s["admin.staff.setPrimary"]}</Button>
+                            </form>
+                          );
+                        })()
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td className={adminTd}>
                       {u.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
                     </td>
