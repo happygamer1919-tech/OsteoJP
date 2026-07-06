@@ -9,17 +9,22 @@ import { PATIENTS, LOCATION, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./
 test("agenda week view shows Mon–Sat (6 days) and a Saturday booking renders (W3-08)", async ({
   page,
 }) => {
+  // Desktop viewport so the agenda renders the week grid (it collapses to a
+  // single Dia view below the lg breakpoint).
+  await page.setViewportSize({ width: 1440, height: 900 });
+
   const anchor = futureDate(RUN_DAY_BASE + 22);
   await page.goto(`/agenda?view=week&date=${anchor}`);
   await expect(page.getByRole("heading", { name: /Agenda/i })).toBeVisible();
 
-  // 6-day week: Saturday column present, Sunday never shown.
-  await expect(page.getByText(/^Sáb\s/).first()).toBeVisible();
-  await expect(page.getByText(/^Dom\s/)).toHaveCount(0);
+  // 6-day week: the Saturday column header (pt-PT "Sábado …") is present, and
+  // Sunday ("Domingo") is never shown.
+  await expect(page.getByText(/^sáb/i).first()).toBeVisible();
+  await expect(page.getByText(/^dom/i)).toHaveCount(0);
 
-  // Book on the Saturday 10:00 slot (its aria-label starts "Sáb …"). The drawer
-  // prefills that date+time; fill the rest and save.
-  await page.getByRole("button", { name: /^Sáb .*10:00$/ }).first().click();
+  // Book on the Saturday 10:00 slot (aria-label "Sábado <day> 10:00"). The
+  // drawer prefills that date+time; fill the rest and save.
+  await page.getByRole("button", { name: /sáb.*10:00$/i }).first().click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible({ timeout: 8_000 });
 
@@ -33,7 +38,7 @@ test("agenda week view shows Mon–Sat (6 days) and a Saturday booking renders (
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 
   // The Saturday appointment renders in the week grid.
-  await expect(page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) })).toBeVisible({
-    timeout: 8_000,
-  });
+  await expect(
+    page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) }).first(),
+  ).toBeVisible({ timeout: 8_000 });
 });
