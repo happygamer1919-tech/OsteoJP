@@ -98,4 +98,28 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 - **Preview DB isolation** — Vercel Preview envs share the single Supabase project with the deployed app; isolate preview DB as future infra (QUESTIONS 2026-07-03), part of the separate-prod-project work.
 - **Legacy-shelf consolidation loop** — migrate the still-open `docs/QUESTIONS.md` items and any live `docs/DECISIONS.md` content onto the canonical `docs/design/` shelf, then leave pointer stubs (QUESTIONS 2026-07-03).
 - **Dangling-branch pruning pass** — sweep merged/abandoned feature + docs branches (and their worktrees) left over from Waves 01–02; housekeeping only.
-- **Superseded Max halt PRs closure** — post closing "superseded by W2-04/05/06" comments on the abandoned halt PRs **#440** (→ W2-04 #456), **#439** (→ W2-05 #457), **#446** (→ W2-06 #458); replacements all merged (QUESTIONS 2026-07-03 housekeeping ticket). Comment-only, no revert/reopen.
+- **Superseded Max halt PRs closure** — post closing "superseded by W2-04/05/06" comments on the abandoned halt PRs **#440** (→ W2-04 #456), **#439** (→ W2-05 #457), **#446** (→ W2-06 #458); replacements all merged (QUESTIONS 2026-07-03 housekeeping ticket). Comment-only, no revert/reopen. → SCOPED into **W3-10**.
+
+## Wave 03 Loop Queue
+
+> Opened 2026-07-05 from the owner + Rodica QA scope pass (rulings recorded DECISIONS.md 2026-07-05). Active board — this is the runnable set. Same board rules as prior waves (status flow, ONE migration-lane loop in flight at a time, `db-tests.yml`/`e2e.yml` = owner hold, never self-merged). Loop files land under `docs/loops/wave-03/`. Sequencing gates are in the Gate column. All ten loops are authored and committed (WRITTEN); execution is GREEN's.
+>
+> Pre-real-data gate status at wave open: the **DPA gate is CLOSED** (signed, DECISIONS 2026-07-05); the **separate-prod-project gate remains OPEN** (DECISIONS 2026-07-01), so branch protection is not yet re-hardened and dev-phase merge rules still apply. No real patient data may enter until the prod-project gate also closes.
+
+| ID | Loop | Status | Lane | Gate / note |
+|------|------|--------|------|-------------|
+| W3-01 | estado-removal-fix (`docs/loops/wave-03/W3-01-estado-removal-fix.md`) | TODO | UI (migration-free) | none — recon-first; QA proved the Estado lifecycle selector still renders in Nova marcação despite W2-02 (#454); remove across ALL creation surfaces; keep lifecycle vs confirmation axes orthogonal (DECISIONS 2026-07-01) |
+| W3-02 | batch-failure-dialog-focus (`docs/loops/wave-03/W3-02-batch-failure-dialog-focus.md`) | TODO | UI (migration-free) | none — the W2-05/W2-10 failure dialog renders behind the drawer and triggers "Descartar alterações?"; fix top-most + focus + isolate from the discard guard; edit-and-rebook end to end |
+| W3-03 | booking-form-reorder (`docs/loops/wave-03/W3-03-booking-form-reorder.md`) | TODO | UI (migration-free) | soft-depends on W3-04 for the primary representation; reorder (Terapeuta first, Serviço below) + editable auto-select ship regardless (DECISIONS 2026-07-05); reads `therapist_services` (0023) |
+| W3-04 | primary-service-admin (`docs/loops/wave-03/W3-04-primary-service-admin.md`) | TODO | Admin (migration-free) | none — recon-first; per-therapist primary service represented WITHOUT a schema change and WITHOUT UPDATE to `therapist_services` (0023 no-grant, UPDATE 42501-throws); build against dev fixture therapists |
+| W3-05 | tenant-settings-home (`docs/loops/wave-03/W3-05-tenant-settings-home.md`) | TODO | MIG-conditional | none to recon — migration-free if a suitable home exists, else authors migration **0032** (the ONLY W3 migration; one migration in flight; RLS isolation test in-PR). Blocks W3-06 |
+| W3-06 | password-gated-appointment-delete (`docs/loops/wave-03/W3-06-password-gated-appointment-delete.md`) | TODO | Server + UI (migration-free) | **W3-05 MERGED** — appointment hard-delete behind a hashed-password gate (initial 1234, Administração, server-side hashed), refuse when clinical notes/records linked, audit_log snapshot, child-rows-first RETURNING (DECISIONS 2026-07-05) |
+| W3-07 | location-delete-when-unreferenced (`docs/loops/wave-03/W3-07-location-delete-when-unreferenced.md`) | TODO | Admin (migration-free) | none — delete enabled only for zero-appointment locations; referenced → archive only, delete disabled + tooltip; archived stays hidden from dropdowns (W2-02 preserved) (DECISIONS 2026-07-05) |
+| W3-08 | agenda-6day-24h (`docs/loops/wave-03/W3-08-agenda-6day-24h.md`) | TODO | UI (migration-free) | none — agenda week view 6 days incl. Saturday; sweep ALL time display/pickers to 24h, no AM/PM (DECISIONS 2026-07-05 real schedule) |
+| W3-09 | working-hours-real-schedule (`docs/loops/wave-03/W3-09-working-hours-real-schedule.md`) | TODO | PURPLE (live-DB data op) | none — set dev therapists' `availability_templates` to Mon–Fri 08:00–20:00, Sat 09:00–13:00; SEED_DEV_CONFIRM-guarded, idempotent (zero-delta re-run), archive-not-delete, live counts pasted (DECISIONS 2026-07-05 / 2026-07-02 idempotence ruling) |
+| W3-10 | close-superseded-prs (`docs/loops/wave-03/W3-10-close-superseded-prs.md`) | TODO | gh-only housekeeping | none — comment-only supersede on the already-MERGED halt PRs #440→#456 (W2-04), #439→#457 (W2-05), #446→#458 (W2-06); no revert/reopen; no code, no PR opened |
+
+### Wave 03 sequencing notes
+- **One migration in flight:** only W3-05 may author a migration (0032, and only if recon finds no suitable existing tenant-settings home). Confirm 0031 is the latest on main and no migration PR is open before it authors.
+- **W3-06 gates on W3-05 merged** (needs the hashed-secret home). **W3-03 soft-gates on W3-04** (primary representation) but ships the reorder regardless with a documented fallback.
+- All other loops (W3-01, W3-02, W3-07, W3-08, W3-09, W3-10) are independent and parallel-safe against a single in-flight migration.
