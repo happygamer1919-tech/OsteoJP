@@ -202,15 +202,18 @@ test("batch failure dialog is top-most, interactable, and isolated from the draw
   await expect(timeInput).toHaveValue("18:30");
 
   // Interacting inside the dialog NEVER opens the drawer's "Descartar
-  // alterações?" discard guard.
+  // alterações?" discard guard. The discard Dialog is always mounted (closed),
+  // so assert by ROLE — getByRole excludes hidden elements, so a match means it
+  // is actually open.
+  const discard = page.getByRole("dialog", { name: /Descartar alterações/i });
   await failure.getByRole("button", { name: /Remarcar/i }).first().click();
-  await expect(page.getByText("Descartar alterações?")).toHaveCount(0);
+  await expect(discard).toHaveCount(0);
   await expect(failure).toBeVisible();
 
   // Escape routes to THIS dialog's own onCancel (closes it) — never the drawer's
   // discard guard.
   await page.keyboard.press("Escape");
-  await expect(page.getByText("Descartar alterações?")).toHaveCount(0);
+  await expect(discard).toHaveCount(0);
   await expect(failure).toBeHidden({ timeout: 8_000 });
 });
 
