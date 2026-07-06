@@ -38,4 +38,14 @@ describe("BatchFailureDialog (W2-05)", () => {
     const html = render([]);
     expect(html).toContain("Todas as marcações em falta foram remarcadas");
   });
+
+  // W3-02: the dialog is a native <dialog> (shown with showModal at runtime) so
+  // it stacks in the browser top layer ABOVE the appointment Drawer instead of
+  // rendering inert behind it as an in-flow `fixed inset-0` overlay did.
+  it("renders as a native <dialog> in the top layer, not an in-flow overlay", () => {
+    const html = render([F1]);
+    expect(html).toContain("<dialog");
+    // The old broken pattern was a fixed, in-flow div behind the modal drawer.
+    expect(html).not.toContain("fixed inset-0");
+  });
 });
