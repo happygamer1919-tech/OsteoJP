@@ -83,6 +83,8 @@ export default defineConfig({
         "**/quick-notes.spec.ts",
         "**/invoicing.spec.ts",
         "**/portal-reminders.spec.ts",
+        // W4-05: getUserMedia camera mock is Chromium-only, like the specs above.
+        "**/camera-to-ficha.spec.ts",
         // W4-12: booking location auto-fill spec — Chromium-only, like the above.
         "**/location-auto-select.spec.ts",
       ],
@@ -99,6 +101,8 @@ export default defineConfig({
         "**/quick-notes.spec.ts",
         "**/invoicing.spec.ts",
         "**/portal-reminders.spec.ts",
+        // W4-05: getUserMedia camera mock is Chromium-only, like the specs above.
+        "**/camera-to-ficha.spec.ts",
         // W4-12: booking location auto-fill spec — Chromium-only, like the above.
         "**/location-auto-select.spec.ts",
       ],

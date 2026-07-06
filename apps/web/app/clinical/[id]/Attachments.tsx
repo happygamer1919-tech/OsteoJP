@@ -5,6 +5,12 @@ import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
+  uploadAttachmentBlob,
+  type AttachmentUploadDeps,
+} from "@/lib/clinical/attachment-upload";
+import { CAPTURE_MIME, captureFileName } from "@/lib/clinical/camera-capture";
+import { CameraCapture } from "./CameraCapture";
+import {
   confirmAttachmentAction,
   createUploadUrlAction,
   downloadUrlAction,
@@ -34,32 +40,39 @@ export function Attachments({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+
+  // The 3-step signed-URL flow, wired to the real server actions + browser
+  // Storage client. Shared by the file picker and the camera (W4-05).
+  const uploadDeps: AttachmentUploadDeps = {
+    createUploadUrl: createUploadUrlAction,
+    uploadToStorage: (path, token, blob) =>
+      createSupabaseBrowserClient().storage
+        .from(BUCKET)
+        .uploadToSignedUrl(path, token, blob),
+    confirmAttachment: confirmAttachmentAction,
+  };
+
+  async function runUpload(
+    blob: Blob,
+    fileName: string,
+    mimeType: string | null,
+  ): Promise<boolean> {
+    setError(false);
+    const outcome = await uploadAttachmentBlob(recordId, blob, fileName, mimeType, uploadDeps);
+    if (!outcome.ok) {
+      setError(true);
+      return false;
+    }
+    start(() => router.refresh());
+    return true;
+  }
 
   async function onSelect(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    setError(false);
-
-    // 1) server issues a one-time signed upload URL (path is tenant-prefixed)
-    const slot = await createUploadUrlAction(recordId, file.name);
-    if (!slot.ok) return setError(true);
-
-    // 2) upload bytes DIRECTLY to Supabase Storage — never through Next
-    const supabase = createSupabaseBrowserClient();
-    const up = await supabase.storage.from(BUCKET).uploadToSignedUrl(slot.path, slot.token, file);
-    if (up.error) return setError(true);
-
-    // 3) record the row + audit
-    const res = await confirmAttachmentAction({
-      recordId,
-      path: slot.path,
-      fileName: file.name,
-      mimeType: file.type || null,
-      sizeBytes: file.size,
-    });
-    if (!res.ok) return setError(true);
-    start(() => router.refresh());
+    await runUpload(file, file.name, file.type || null);
   }
 
   async function download(path: string) {
@@ -72,11 +85,30 @@ export function Attachments({
       <h3 className="text-sm font-semibold">{s["clinical.attachments"]}</h3>
 
       {!readOnly && (
-        <label className="inline-block cursor-pointer rounded border px-3 py-1.5 text-sm has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-focus-ring has-[:focus-visible]:ring-offset-2">
-          {pending ? s["clinical.attachmentUploading"] : s["clinical.attachmentAdd"]}
-          <input type="file" className="hidden" onChange={onSelect} disabled={pending} />
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-block cursor-pointer rounded border px-3 py-1.5 text-sm has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-focus-ring has-[:focus-visible]:ring-offset-2">
+            {pending ? s["clinical.attachmentUploading"] : s["clinical.attachmentAdd"]}
+            <input type="file" className="hidden" onChange={onSelect} disabled={pending} />
+          </label>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => setShowCamera((v) => !v)}
+            aria-expanded={showCamera}
+          >
+            {s["clinical.attachmentTakePhoto"]}
+          </Button>
+        </div>
       )}
+
+      {!readOnly && showCamera && (
+        <CameraCapture
+          onAttach={(blob) => runUpload(blob, captureFileName(), CAPTURE_MIME)}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
+
       {error && <p role="alert" className="text-xs text-error">{s["clinical.error"]}</p>}
 
       <ul className="space-y-1 text-sm">
