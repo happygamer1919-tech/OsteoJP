@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Button, GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
+import { TimeFieldInput } from "@/components/time-field-input";
 import { requireRequestContext } from "@/lib/auth/context";
 import { listAvailabilityTemplates } from "@/lib/admin/availability";
 import { listStaff } from "@/lib/admin/staff";
@@ -102,11 +103,11 @@ export default async function WorkingHoursPage({
           </label>
           <label className="flex flex-col gap-1">
             <span className={adminLabel}>{s["admin.workingHours.start"]}</span>
-            <input name="startTime" type="time" required defaultValue="09:00" aria-label={s["admin.workingHours.start"]} className={adminInputInline} />
+            <TimeFieldInput name="startTime" defaultValue="09:00" />
           </label>
           <label className="flex flex-col gap-1">
             <span className={adminLabel}>{s["admin.workingHours.end"]}</span>
-            <input name="endTime" type="time" required defaultValue="17:00" aria-label={s["admin.workingHours.end"]} className={adminInputInline} />
+            <TimeFieldInput name="endTime" defaultValue="17:00" />
           </label>
           <label className="flex flex-col gap-1">
             <span className={adminLabel}>{s["admin.workingHours.location"]}</span>
@@ -152,8 +153,8 @@ export default async function WorkingHoursPage({
                       <input type="hidden" name="id" value={t.id} />
                       <input type="hidden" name="userId" value={t.userId} />
                       {weekdaySelect("weekday", t.weekday)}
-                      <input name="startTime" type="time" required defaultValue={t.startTime} aria-label={s["admin.workingHours.start"]} className={adminInputInline} />
-                      <input name="endTime" type="time" required defaultValue={t.endTime} aria-label={s["admin.workingHours.end"]} className={adminInputInline} />
+                      <TimeFieldInput name="startTime" defaultValue={t.startTime} />
+                      <TimeFieldInput name="endTime" defaultValue={t.endTime} />
                       <select name="locationId" required defaultValue={t.locationId} aria-label={s["admin.workingHours.location"]} className={adminInputInline}>
                         {activeLocations.map((l) => (
                           <option key={l.id} value={l.id}>

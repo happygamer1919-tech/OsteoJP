@@ -9,7 +9,7 @@
  * seed creates no appointments) so parallel tests and re-runs never collide.
  */
 import { test, expect } from "@playwright/test";
-import { openNewAppointment, fillAppointment } from "./helpers";
+import { openNewAppointment, fillAppointment, fillTime } from "./helpers";
 import { PATIENTS, LOCATION, LOCATION_ARCHIVED, SERVICE, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
 
 const SAVE = "Guardar";
@@ -93,7 +93,7 @@ test("Nova marcação: Terapeuta first, Serviço auto-fills from the therapist, 
   await dialog.getByRole("option", { name: PATIENTS.maria.name }).click();
   await dialog.getByLabel(/Localização/i).selectOption({ label: LOCATION.name });
   await dialog.locator('input[type="date"]').fill(date);
-  await dialog.locator('input[type="time"]').fill("09:30");
+  await fillTime(dialog, "09:30");
   await dialog.getByRole("button", { name: SAVE }).click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 
@@ -141,7 +141,7 @@ test("reschedule an appointment to a different time", async ({ page }) => {
   await page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) }).click();
   dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await dialog.locator('input[type="time"]').fill("11:00");
+  await fillTime(dialog, "11:00");
   await dialog.getByRole("button", { name: SAVE }).click();
 
   await expect(dialog).toBeHidden({ timeout: 12_000 });
@@ -240,11 +240,12 @@ test("batch failure dialog is top-most, interactable, and isolated from the draw
   const failure = page.getByRole("dialog", { name: /Algumas marcações não foram criadas/i });
   await expect(failure).toBeVisible({ timeout: 12_000 });
 
-  // It is INTERACTABLE: editing a time inside it succeeds. If it were inert
-  // behind the modal drawer (the pre-fix bug), this fill would time out.
-  const timeInput = failure.locator('input[type="time"]').first();
-  await timeInput.fill("18:30");
-  await expect(timeInput).toHaveValue("18:30");
+  // It is INTERACTABLE: editing a time inside it succeeds (24h TimeField selects,
+  // W4-02). If it were inert behind the modal drawer (the pre-fix bug), this
+  // would time out.
+  const row0 = failure.locator("li").first();
+  await fillTime(row0, "18:30");
+  await expect(row0.getByLabel("Horas")).toHaveValue("18");
 
   // Interacting inside the dialog NEVER opens the drawer's "Descartar
   // alterações?" discard guard. The discard Dialog is always mounted (closed),
@@ -277,7 +278,7 @@ test("NESA contraindication warning shows on booking (both paths) and never bloc
   await dialog.getByLabel(/Localização/i).selectOption({ label: LOCATION.name });
   await dialog.getByLabel(/Serviço/i).selectOption({ label: "NESA (sensível)" });
   await dialog.locator('input[type="date"]').fill(date);
-  await dialog.locator('input[type="time"]').fill("17:00");
+  await fillTime(dialog, "17:00");
 
   // Soft warning appears, naming the matched contraindication.
   await expect(dialog.getByText(/contraindicação NESA/i)).toBeVisible({ timeout: 8_000 });

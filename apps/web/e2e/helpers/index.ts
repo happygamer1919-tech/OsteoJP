@@ -114,5 +114,16 @@ export async function fillAppointment(
   await dialog.getByLabel(/Terapeuta/i).selectOption({ label: opts.therapist });
   await dialog.getByLabel(/Localização/i).selectOption({ label: opts.location });
   await dialog.locator('input[type="date"]').fill(opts.date);
-  await dialog.locator('input[type="time"]').fill(opts.time);
+  await fillTime(dialog, opts.time);
+}
+
+/**
+ * Set a time on the 24h TimeField (W4-02) — two selects (Horas / Minutos), no
+ * native time input. `scope` must contain exactly one TimeField (a field wrapper
+ * or a row). Value stays "HH:mm".
+ */
+export async function fillTime(scope: Locator, hhmm: string) {
+  const [h, m] = hhmm.split(":");
+  await scope.getByLabel("Horas").selectOption(String(Number(h)));
+  await scope.getByLabel("Minutos").selectOption(String(Number(m)));
 }
