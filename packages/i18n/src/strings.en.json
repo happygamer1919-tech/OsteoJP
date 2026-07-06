@@ -384,6 +384,8 @@
   "admin.locations.status": "Status",
   "admin.locations.add": "Add location",
   "admin.locations.archive": "Archive",
+  "admin.locations.delete": "Delete",
+  "admin.locations.deleteBlockedTooltip": "Cannot delete: appointments reference this location. Archive it instead.",
   "admin.locations.restore": "Restore",
   "admin.locations.saved": "Location saved.",
   "admin.locations.error": "Could not save the location.",

@@ -10,6 +10,7 @@ export type AdminErrorCode =
   | "owner_tier" // non-owner tried to assign or change the owner role
   | "email_taken" // edited email collides with another user in the tenant
   | "already_invited" // invite target email already belongs to a staff member in the tenant
+  | "has_appointments" // location delete refused: appointments still reference it (W3-07)
   | "not_found"
   | "invalid";
 
