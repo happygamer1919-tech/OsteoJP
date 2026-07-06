@@ -10,7 +10,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { openNewAppointment, fillAppointment } from "./helpers";
-import { PATIENTS, LOCATION, LOCATION_ARCHIVED, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
+import { PATIENTS, LOCATION, LOCATION_ARCHIVED, SERVICE, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
 
 const SAVE = "Guardar";
 
@@ -57,6 +57,51 @@ test("archived location is absent from the booking dropdown (W2-02 item 2)", asy
   // Active location is offered; the archived one is excluded from selection.
   await expect(locationSelect.locator("option", { hasText: LOCATION.name })).toHaveCount(1);
   await expect(locationSelect.locator("option", { hasText: LOCATION_ARCHIVED.name })).toHaveCount(0);
+});
+
+test("Nova marcação: Terapeuta first, Serviço auto-fills from the therapist, override honored (W3-03)", async ({
+  page,
+}) => {
+  const date = futureDate(RUN_DAY_BASE + 17);
+  const dialog = await openNewAppointment(page, date);
+
+  const therapist = dialog.getByLabel(/Terapeuta/i);
+  const service = dialog.getByLabel(/Serviço/i);
+
+  // Field order: Terapeuta renders ABOVE Serviço (DECISIONS 2026-07-05).
+  const tBox = await therapist.boundingBox();
+  const sBox = await service.boundingBox();
+  expect(tBox).not.toBeNull();
+  expect(sBox).not.toBeNull();
+  expect(tBox.y).toBeLessThan(sBox.y);
+
+  // Serviço is empty until a therapist is chosen; picking the therapist FIRST
+  // auto-fills Serviço with the therapist's first mapped service (Osteopatia).
+  await expect(service).toHaveValue("");
+  await therapist.selectOption({ label: THERAPIST_NAME });
+  await expect(service).toHaveValue(SERVICE.id);
+
+  // The dropdown stays editable: override to NESA sticks (auto-fill never
+  // clobbers a manual choice).
+  await service.selectOption({ label: "NESA (sensível)" });
+  await expect(service.locator("option:checked")).toHaveText("NESA (sensível)");
+
+  // Complete the booking; the override must be honored on submit.
+  const patient = dialog.getByRole("combobox", { name: /Paciente/i });
+  await patient.click();
+  await patient.fill(PATIENTS.maria.name);
+  await dialog.getByRole("option", { name: PATIENTS.maria.name }).click();
+  await dialog.getByLabel(/Localização/i).selectOption({ label: LOCATION.name });
+  await dialog.locator('input[type="date"]').fill(date);
+  await dialog.locator('input[type="time"]').fill("09:30");
+  await dialog.getByRole("button", { name: SAVE }).click();
+  await expect(dialog).toBeHidden({ timeout: 12_000 });
+
+  // Reopen and confirm Serviço persisted as the overridden NESA service.
+  await page.getByRole("button", { name: new RegExp(PATIENTS.maria.name) }).click();
+  const edit = page.getByRole("dialog");
+  await expect(edit).toBeVisible({ timeout: 8_000 });
+  await expect(edit.getByLabel(/Serviço/i).locator("option:checked")).toHaveText("NESA (sensível)");
 });
 
 test("book a one-off appointment; it appears on the agenda", async ({ page }) => {

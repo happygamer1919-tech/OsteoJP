@@ -246,6 +246,16 @@ export function AppointmentDrawer({
   function onServiceChange(serviceId: string) {
     applyService(serviceId);
   }
+  // Auto-fill Serviço from the therapist's default service (W3-03) WITHOUT ever
+  // overwriting a service the user has already chosen — the Select stays
+  // editable for per-booking exceptions and a manual pick always wins, even if
+  // the mapping fetch lands afterwards.
+  function applyDefaultService(serviceId: string) {
+    const svc = options.services.find((o) => o.id === serviceId);
+    setForm((f) =>
+      f.serviceId ? f : { ...f, serviceId, durationMin: svc ? svc.durationMin : f.durationMin },
+    );
+  }
 
   // Therapist -> service mapping (0023, SPEC-appointments §6). `therapistServiceResult`
   // only ever holds the outcome for the therapist it was fetched for, so a
@@ -270,7 +280,12 @@ export function AppointmentDrawer({
       if (cancelled) return;
       const ids = r.ok ? r.data : [];
       setTherapistServiceResult({ therapistId, ids });
-      if (userChangedTherapist.current && ids.length === 1) applyService(ids[0]);
+      // Default Serviço to the therapist's first mapped service (W3-03). When
+      // W3-04 lands a primary designation, swap ids[0] for the primary here;
+      // getTherapistServices already returns oldest-first so ids[0] is stable.
+      // Only fires on a real Terapeuta change, never on mount, and never over a
+      // service the user already picked (applyDefaultService guards on empty).
+      if (userChangedTherapist.current && ids.length >= 1) applyDefaultService(ids[0]);
     });
     return () => {
       cancelled = true;
@@ -493,6 +508,25 @@ export function AppointmentDrawer({
           />
         </div>
 
+        {/* Booking form order (W3-03, DECISIONS 2026-07-05): Terapeuta FIRST,
+            Serviço immediately below it. Serviço auto-selects from the
+            therapist's default service (see the effect above) and stays
+            editable for per-booking exceptions. */}
+        <Field label={s["appointment.therapist"]} required>
+          <Select
+            value={form.practitionerId}
+            onChange={(e) => {
+              userChangedTherapist.current = true;
+              set("practitionerId", e.target.value);
+            }}
+          >
+            <option value="">{s["appointment.selectTherapist"]}</option>
+            {options.therapists.map((o) => (
+              <option key={o.id} value={o.id}>{o.label}</option>
+            ))}
+          </Select>
+        </Field>
+
         <Field label={s["appointment.service"]}>
           <Select value={form.serviceId} onChange={(e) => onServiceChange(e.target.value)}>
             <option value="">{s["appointment.selectService"]}</option>
@@ -509,21 +543,6 @@ export function AppointmentDrawer({
             {s["appointment.nesaServiceSensitive"]})
           </Banner>
         )}
-
-        <Field label={s["appointment.therapist"]} required>
-          <Select
-            value={form.practitionerId}
-            onChange={(e) => {
-              userChangedTherapist.current = true;
-              set("practitionerId", e.target.value);
-            }}
-          >
-            <option value="">{s["appointment.selectTherapist"]}</option>
-            {options.therapists.map((o) => (
-              <option key={o.id} value={o.id}>{o.label}</option>
-            ))}
-          </Select>
-        </Field>
 
         <Field label={s["appointment.room"]}>
           <Input value={form.room} onChange={(e) => set("room", e.target.value)} />
