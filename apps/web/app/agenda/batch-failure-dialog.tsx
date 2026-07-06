@@ -1,7 +1,7 @@
 "use client";
 
 import { type MouseEvent, useState } from "react";
-import { Button, Input, useAnimatedDialog } from "@osteojp/ui";
+import { Button, Input, TimeField, useAnimatedDialog } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import type { BatchFailure } from "@/lib/scheduling/batch-core";
 import {
@@ -120,10 +120,9 @@ export function BatchFailureDialog({
                     </label>
                     <label className="flex flex-col gap-1 text-xs text-text-secondary">
                       {s["appointment.time"]}
-                      <Input
-                        type="time"
+                      <TimeField
                         value={row.hhmm}
-                        onChange={(e) => setRows((rs) => editRow(rs, row.key, { hhmm: e.target.value }))}
+                        onChange={(v) => setRows((rs) => editRow(rs, row.key, { hhmm: v }))}
                       />
                     </label>
                     <Button

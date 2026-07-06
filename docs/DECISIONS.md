@@ -920,3 +920,31 @@ Gates: web vitest 693 (+ primary-service rewrite tests, staff.delete tests); db 
 e2e covers the zero-mapping set-primary + Nova marcação auto-fill + Horários link + the
 password-gated delete (wrong pw refused, correct pw deletes an activity-free therapist).
 `git diff` touches no packages/db/migrations, supabase/migrations, or .github/workflows.
+
+## 2026-07-06 — W4-02 24h time-INPUT sweep: native inputs → 24h TimeField (branch w4-02-24h-picker-sweep)
+
+Completes "24h everywhere, no AM/PM" (DECISIONS 2026-07-05) for time INPUTS. Migration-free.
+
+Recon corrected the loop's premise: there is NO custom 12h/AM-PM picker in the code.
+Every time input was a **native `<input type="time">`**, which stores a 24h value but
+DISPLAYS in the browser/OS locale — so on a 12h-locale machine it renders the
+`09 / 00 / AM-PM` scroll picker owner QA saw. Native inputs can't be forced to 24h.
+`packages/ui/TimeField.tsx` was already a locale-independent 24h picker (two selects,
+00–23 + minutes, no meridiem) but UNUSED (the drawer even called the swap "a follow-up").
+
+Fix (owner-confirmed 2026-07-06 "swap ALL"): replace every native time input with the
+24h TimeField. Value semantics unchanged (in/out is "HH:mm"; DB stays UTC). Mount sites:
+- Nova marcação Hora + Agendar lote per-date (appointment-drawer) — controlled TimeField.
+- batch failure rebook (batch-failure-dialog) — controlled TimeField.
+- patient "schedule again" (appointments-list) — controlled TimeField.
+- Horários create + edit start/end (working-hours) — via a new `TimeFieldInput` client
+  wrapper that renders TimeField + a hidden `<input name>` so server-action forms still
+  submit the 24h value (normalised to HH:mm).
+
+Display was already 24h (W3-08, `formatTimeOfDay` + pt-PT Intl) — not regressed.
+
+Gates: web vitest 693; packages/ui +3 (TimeField 24h render + no-meridiem + min/max);
+e2e updated to drive the TimeField selects (new `fillTime` helper) across Nova marcação,
+reschedule, Agendar-lote failure, NESA, and Horários. Post-change grep: zero
+`type="time"` / meridiem in app+ui code. `git diff` touches no packages/db/migrations,
+supabase/migrations, or .github/workflows.

@@ -50,6 +50,7 @@ vi.mock("@osteojp/ui", () => {
     Select: ({ children }: { children?: ReactNode }) =>
       createElement("select", null, children as ReactNode),
     Input: () => createElement("input"),
+    TimeField: () => createElement("div"),
     Textarea: () => createElement("textarea"),
     Checkbox: () => createElement("input", { type: "checkbox" }),
     Combobox: () => createElement("div"),

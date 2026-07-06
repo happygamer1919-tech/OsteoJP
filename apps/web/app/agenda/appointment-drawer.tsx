@@ -12,6 +12,7 @@ import {
   Select,
   StatusChip,
   Textarea,
+  TimeField,
   useToast,
   type ComboboxOption,
 } from "@osteojp/ui";
@@ -600,7 +601,7 @@ export function AppointmentDrawer({
             <Input type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
           </Field>
           <Field label={s["appointment.time"]} required>
-            <Input type="time" value={form.time} onChange={(e) => set("time", e.target.value)} />
+            <TimeField value={form.time} onChange={(v) => set("time", v)} />
           </Field>
           <Field label={s["appointment.duration"]}>
             <Select value={String(form.durationMin)} onChange={(e) => set("durationMin", Number(e.target.value))}>
@@ -677,12 +678,11 @@ export function AppointmentDrawer({
                       {loteRows.map((row, i) => (
                         <li key={row.date} className="flex flex-wrap items-center gap-2 text-sm">
                           <span className="w-28 tabular-nums text-text-primary">{row.date}</span>
-                          <Input
-                            type="time"
+                          <TimeField
                             value={row.time}
-                            onChange={(e) =>
+                            onChange={(v) =>
                               setLoteRows((rs) =>
-                                rs.map((r, j) => (j === i ? { ...r, time: e.target.value } : r)),
+                                rs.map((r, j) => (j === i ? { ...r, time: v } : r)),
                               )
                             }
                           />

@@ -7,6 +7,7 @@ import {
   Field,
   Input,
   StatusChip,
+  TimeField,
   ToastProvider,
   useToast,
   type StatusTone,
@@ -173,7 +174,7 @@ function ScheduleAgainDrawer({
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
         <Field label={s["appointment.time"]} required>
-          <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+          <TimeField value={time} onChange={setTime} />
         </Field>
       </div>
     </Drawer>

@@ -4,7 +4,7 @@
  * therapist's working hours appear in the booking availability panel.
  */
 import { test, expect } from "@playwright/test";
-import { openNewAppointment } from "./helpers";
+import { openNewAppointment, fillTime } from "./helpers";
 import { LOCATION_B, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
 
 test("working-hours: create shows in the booking panel; end<=start and overlap rejected (W2-12)", async ({
@@ -30,8 +30,8 @@ test("working-hours: create shows in the booking panel; end<=start and overlap r
   async function create(wd: number, start: string, end: string): Promise<void> {
     await createForm.getByLabel("Terapeuta").selectOption({ label: THERAPIST_NAME });
     await createForm.getByLabel("Dia").selectOption(String(wd));
-    await createForm.getByLabel("Início").fill(start);
-    await createForm.getByLabel("Fim").fill(end);
+    await fillTime(createForm.locator("label").filter({ hasText: "Início" }), start);
+    await fillTime(createForm.locator("label").filter({ hasText: "Fim" }), end);
     await createForm.getByLabel("Local").selectOption({ label: LOCATION_B.name });
     await createForm.getByRole("button", { name: "Adicionar" }).click();
   }
