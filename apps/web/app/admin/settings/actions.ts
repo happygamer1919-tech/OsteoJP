@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
 import { updateTenantSettings } from "@/lib/admin/settings";
+import { setDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { isAdminError } from "@/lib/admin/errors";
 import { REMINDER_LEAD_TIME_OPTIONS } from "@/lib/admin/settings-config";
 
@@ -38,6 +39,23 @@ export async function saveSettings(formData: FormData): Promise<void> {
     code = isAdminError(e) ? `err:${e.code}` : "err";
   }
 
+  revalidatePath("/admin/settings");
+  redirect(`/admin/settings?m=${code}`);
+}
+
+/**
+ * Change the appointment-hard-delete password (W3-06). Admin-only — enforced
+ * server-side by setDeletePassword (settings:manage). The plaintext is hashed
+ * and never persisted, logged, or returned.
+ */
+export async function changeDeletePasswordAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  let code = "ok";
+  try {
+    await setDeletePassword(actor, String(formData.get("deletePassword") ?? ""));
+  } catch (e) {
+    code = isAdminError(e) ? `err:${e.code}` : "err";
+  }
   revalidatePath("/admin/settings");
   redirect(`/admin/settings?m=${code}`);
 }

@@ -1,14 +1,22 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, inArray, or } from "drizzle-orm";
+import { and, count, eq, inArray, or } from "drizzle-orm";
 import {
   assertCan,
   ForbiddenError,
   type Capability,
   type RequestContext,
 } from "@osteojp/auth";
-import { appointments, type DbTx } from "@osteojp/db";
+import {
+  analyticsEvents,
+  appointmentNotes,
+  appointments,
+  clinicalRecords,
+  invoices,
+  type DbTx,
+} from "@osteojp/db";
+import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { clientIp } from "./actor";
 import { batchSchedule, type BatchScheduleInput, type BatchScheduleResult } from "./batch";
@@ -775,5 +783,113 @@ export async function cancelAppointment(
     return result;
   } catch (e) {
     return fail("cancel", e);
+  }
+}
+
+/**
+ * Hard-delete an appointment behind the password gate (W3-06, DECISIONS
+ * 2026-07-05). Admin-only (`settings:manage` — the Tenant-settings tier;
+ * reception/therapist cannot). Verifies the tenant delete password server-side
+ * (hashed, never client-checked), REFUSES if any clinical note / record / invoice
+ * is linked, then in one tenant-scoped tx deletes the child analytics rows first
+ * (RETURNING), the appointment (RETURNING), and writes a PII-free audit snapshot.
+ * Distinct from cancelAppointment, which only sets status = 'cancelled'.
+ */
+export async function hardDeleteAppointment(
+  id: string,
+  password: string,
+): Promise<ActionResult<{ id: string }>> {
+  const auth = await authorize("settings:manage");
+  if (isDenied(auth)) return auth;
+  const { actor } = auth;
+  if (!id) return { ok: false, error: "validation" };
+
+  // Password gate — server-side, hashed. A client-side check is never trusted.
+  if (!(await verifyDeletePassword(actor, password))) {
+    return { ok: false, error: "password" };
+  }
+
+  const ip = await clientIp();
+  try {
+    const result = await runScoped<ActionResult<{ id: string }>>(actor, async (tx) => {
+      // Snapshot + existence. RLS scopes tenant → cross-tenant/missing = 0 rows.
+      const [appt] = await tx
+        .select({
+          id: appointments.id,
+          patientId: appointments.patientId,
+          practitionerId: appointments.practitionerId,
+          serviceId: appointments.serviceId,
+          locationId: appointments.locationId,
+          startsAt: appointments.startsAt,
+          endsAt: appointments.endsAt,
+          status: appointments.status,
+          confirmationState: appointments.confirmationState,
+        })
+        .from(appointments)
+        .where(eq(appointments.id, id))
+        .limit(1);
+      if (!appt) return { ok: false, error: "not_found" };
+
+      // Linked-records guard: never hard-delete an appointment that carries
+      // clinical documentation or an invoice (tenant-scoped counts).
+      const [{ n: notes }] = await tx
+        .select({ n: count() })
+        .from(appointmentNotes)
+        .where(eq(appointmentNotes.appointmentId, id));
+      const [{ n: records }] = await tx
+        .select({ n: count() })
+        .from(clinicalRecords)
+        .where(eq(clinicalRecords.appointmentId, id));
+      const [{ n: invs }] = await tx
+        .select({ n: count() })
+        .from(invoices)
+        .where(eq(invoices.appointmentId, id));
+      if (Number(notes) > 0 || Number(records) > 0 || Number(invs) > 0) {
+        return { ok: false, error: "linked_records" };
+      }
+
+      // Child rows FIRST (RETURNING), then the parent — no orphans. Analytics
+      // events reference the appointment by entity_id (no FK), so they are
+      // cleared explicitly here.
+      await tx
+        .delete(analyticsEvents)
+        .where(
+          and(eq(analyticsEvents.entityType, "appointment"), eq(analyticsEvents.entityId, id)),
+        )
+        .returning({ id: analyticsEvents.id });
+
+      const deleted = await tx
+        .delete(appointments)
+        .where(eq(appointments.id, id))
+        .returning({ id: appointments.id });
+      if (deleted.length === 0) return { ok: false, error: "not_found" };
+
+      // Audit (same tx). PII-FREE snapshot: ids + ISO timestamps + enums ONLY —
+      // never the notes body or patient name (CLAUDE.md rule 7).
+      await writeAppointmentAudit(tx, {
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        action: "appointment.hard_delete",
+        appointmentId: id,
+        metadata: {
+          appointmentId: appt.id,
+          patientId: appt.patientId,
+          practitionerId: appt.practitionerId,
+          serviceId: appt.serviceId,
+          locationId: appt.locationId,
+          startsAt: appt.startsAt.toISOString(),
+          endsAt: appt.endsAt.toISOString(),
+          status: appt.status,
+          confirmationState: appt.confirmationState,
+        },
+        ip,
+      });
+
+      return { ok: true, data: { id } };
+    });
+    if (result.ok) revalidatePath(AGENDA_PATH);
+    return result;
+  } catch (e) {
+    return fail("hardDelete", e);
   }
 }

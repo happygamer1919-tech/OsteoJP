@@ -6,7 +6,7 @@ import {
   REMINDER_LEAD_TIME_OPTIONS,
   BILLING_CURRENCIES,
 } from "@/lib/admin/settings-config";
-import { saveSettings } from "./actions";
+import { changeDeletePasswordAction, saveSettings } from "./actions";
 import {
   adminInput,
   adminLabel,
@@ -105,6 +105,27 @@ export default async function SettingsPage({
           <div>
             <Button type="submit" variant="primary">
               {s["common.save"]}
+            </Button>
+          </div>
+        </form>
+      </GlassPanel>
+
+      {/* Appointment hard-delete password (W3-06) — its own form so it never
+          rides on the main settings save. The current value is never shown
+          (stored hashed server-side); leave the field to keep it unchanged. */}
+      <GlassPanel>
+        <form action={changeDeletePasswordAction} className="flex flex-col gap-3">
+          <h3 className="text-lg text-v2-text-primary">{s["admin.settings.sectionDeletePassword"]}</h3>
+          <p className="text-sm text-v2-text-secondary">{s["admin.settings.deletePasswordHint"]}</p>
+          <Field
+            name="deletePassword"
+            label={s["admin.settings.deletePassword"]}
+            type="password"
+            defaultValue=""
+          />
+          <div>
+            <Button type="submit" variant="primary">
+              {s["admin.settings.deletePasswordSave"]}
             </Button>
           </div>
         </form>

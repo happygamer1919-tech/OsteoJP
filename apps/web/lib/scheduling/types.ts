@@ -143,6 +143,9 @@ export type ActionErrorCode =
   | "validation"
   | "conflict"
   | "not_found"
+  // W3-06 hard-delete: wrong delete password, or linked clinical/invoice records.
+  | "password"
+  | "linked_records"
   | "error";
 
 export type ActionResult<T> =
