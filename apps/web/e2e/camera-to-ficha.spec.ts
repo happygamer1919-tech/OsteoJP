@@ -46,15 +46,23 @@ async function installFakeCamera(page: Page, deny = false) {
         },
       },
     });
-    // The captured frame -> a tiny valid JPEG blob.
+    // The captured frame -> a REAL 1x1 PNG so the preview <img> renders with a
+    // non-zero box (a bogus blob would load as 0x0 and read as "not visible").
+    const PNG_1x1 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
     HTMLCanvasElement.prototype.toBlob = function (cb: (b: Blob | null) => void) {
-      cb(new Blob([new Uint8Array([255, 216, 255, 217])], { type: "image/jpeg" }));
+      const bin = atob(PNG_1x1);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      cb(new Blob([bytes], { type: "image/png" }));
     };
     HTMLVideoElement.prototype.play = async function () {};
-    // Give every <video> a non-zero frame (instance-level own props always
-    // define cleanly, unlike prototype accessors) so captureFrame() has
-    // something to draw. The component tolerates the fake (non-MediaStream)
-    // srcObject assignment via try/catch.
+    // Give every <video> a non-zero frame so captureFrame() has something to
+    // draw. Patch BOTH the prototype (best-effort) and each instance (own props
+    // always define cleanly) — belt and suspenders across engines/timing. The
+    // component tolerates the fake (non-MediaStream) srcObject via try/catch.
+    define(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => 640 });
+    define(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => 480 });
     const patchVideo = (v: HTMLVideoElement) => {
       const marked = v as HTMLVideoElement & { __patched?: boolean };
       if (marked.__patched) return;
@@ -95,12 +103,14 @@ test.describe("camera-to-ficha (therapist)", () => {
     const capture = page.getByRole("button", { name: "Capturar" });
     await expect(capture).toBeVisible();
 
-    // Capture a still -> preview image + Anexar/Repetir; Capturar is gone.
+    // Capture a still -> the "captured" phase: Anexar/Repetir appear, Capturar is
+    // gone, and the preview image is present. Assert the buttons first (reliably
+    // sized) as the phase proof; the <img> is checked as attached.
     await capture.click();
-    await expect(page.getByRole("img", { name: "Câmara" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Anexar foto" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Repetir" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Capturar" })).toHaveCount(0);
+    await expect(page.getByRole("img", { name: "Câmara" })).toHaveCount(1);
 
     // The camera stream was released when the still was taken (no lingering light).
     const stops = await page.evaluate(
