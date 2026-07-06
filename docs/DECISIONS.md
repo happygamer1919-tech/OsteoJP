@@ -798,3 +798,36 @@ Gates: typecheck 0; packages/db vitest 51 passed / 223 gated-skipped (incl. 10 n
 seed-shape assertions); prod-ref + missing-URL guards verified to fire; `git diff`
 touches no file under packages/db/migrations/, supabase/migrations/, or
 .github/workflows/.
+
+## 2026-07-06 — W3-05 tenant settings home for server-side hashed secrets (branch w3-05-tenant-settings-home)
+
+Verdict: **migration-free**. A suitable per-tenant settings home already exists —
+`tenants.settings` (jsonb, `packages/db/src/schema.ts`) — so no migration 0032 was
+authored (head stays 0031, 32/32 mirror parity).
+
+Why it is safe for a server-only hashed secret:
+- Tenant-scoped, fail-closed RLS: `tenants_tenant_isolation` (0001_rls) —
+  `USING`/`WITH CHECK (id = jwt_tenant_id())`. A tenant can only read/write its own
+  `tenants` row, so one tenant's secret is physically unreadable by another.
+- Never client-exposed: the only client-facing read, `getTenantSettings`, PROJECTS
+  just name/nif/contacts/config — it never returns the raw blob, so keys added under
+  a `secrets` namespace stay server-side. Proven by a unit test asserting the view
+  never contains the secret.
+- Preserved across saves: `updateTenantSettings` read-merge-writes (`...existing`),
+  so the `secrets` namespace survives unrelated settings edits.
+
+Storage contract for W3-06 (appointment-hard-delete password):
+- Location: `tenants.settings.secrets.appointmentDeletePasswordHash` (a HASH string,
+  never plaintext).
+- Write: `setTenantSecret(actor, "appointmentDeletePasswordHash", hash)` —
+  `apps/web/lib/admin/tenant-secret.ts`, admin-gated (`settings:manage`), audited
+  (key only, PII-free), read-merge-write.
+- Read (verify): `getTenantSecret(actor, key)` — server-only, tenant-scoped by RLS,
+  not capability-gated (opaque hash, compared server-side inside a gated action),
+  never returned to the client.
+- W3-06 owns the hashing/verification algorithm and the initial `1234` default.
+
+Gates: web vitest +5 (tenant-secret: write/read/gate + projection-safety);
+packages/db adds a db-gated RLS isolation test (`tenant-settings-secret-rls.test.ts`,
+runs in db-tests.yml). `git diff` touches no file under packages/db/migrations/,
+supabase/migrations/, or .github/workflows/.
