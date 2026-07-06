@@ -79,7 +79,10 @@ export type CreateAppointmentInput = {
   room: string | null;
   startsAt: string; // ISO UTC
   endsAt: string; // ISO UTC
-  status: AppointmentStatusValue;
+  // No lifecycle `status` here by design (W3-01, creation invariant DECISIONS
+  // 2026-07-01): every new appointment is created `scheduled` /
+  // `confirmation_state = pending`, hardcoded server-side, never from the
+  // payload. Lifecycle transitions happen later via updateAppointment.
   notes: string | null;
   allowConflict?: boolean;
   // When set (count >= 2), create a materialized recurring series.

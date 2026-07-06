@@ -27,6 +27,30 @@ test("new-appointment drawer hides the Estado selector (W2-02 item 1)", async ({
   await expect(dialog.getByLabel(/^Estado/i)).toHaveCount(0);
 });
 
+test("a newly created appointment persists as scheduled / pendente (W3-01)", async ({ page }) => {
+  // The creation UI has no lifecycle selector; the server hardcodes the
+  // creation invariant (status=scheduled, confirmation_state=pending), never
+  // from the payload. Book one, reopen it, and read the two axes back.
+  const date = futureDate(RUN_DAY_BASE + 13);
+  const dialog = await openNewAppointment(page, date);
+  await fillAppointment(dialog, {
+    patient: PATIENTS.maria.name,
+    therapist: THERAPIST_NAME,
+    location: LOCATION.name,
+    date,
+    time: "14:00",
+  });
+  await dialog.getByRole("button", { name: SAVE }).click();
+  await expect(dialog).toBeHidden({ timeout: 12_000 });
+
+  // Reopen the created appointment (edit mode) and assert both axes.
+  await page.getByRole("button", { name: new RegExp(PATIENTS.maria.name) }).click();
+  const edit = page.getByRole("dialog");
+  await expect(edit).toBeVisible({ timeout: 8_000 });
+  await expect(edit.getByLabel(/^Estado/i)).toHaveValue("scheduled"); // lifecycle
+  await expect(edit.getByText(/Aguarda confirmação/i)).toBeVisible(); // confirmation = pending
+});
+
 test("archived location is absent from the booking dropdown (W2-02 item 2)", async ({ page }) => {
   const dialog = await openNewAppointment(page, futureDate(RUN_DAY_BASE + 12));
   const locationSelect = dialog.getByLabel(/Localização/i);
