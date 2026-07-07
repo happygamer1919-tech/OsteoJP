@@ -51,8 +51,20 @@ async function reachRecorder(page: Page) {
 test.describe("recording (therapist)", () => {
   test.use({ storageState: STORAGE.therapist });
 
-  test("record → stop produces the recording (W4-07)", async ({ page }) => {
+  test("record → stop → sign → direct-to-S3 PUT → uploaded (W4-07 + W4-08)", async ({ page }) => {
     await installFakeRecorder(page, { supported: true });
+    // Mock the DIRECT-to-S3 PUT (never a Vercel route): intercept the presigned
+    // AWS host and return 200. If the client ever PUT through Next instead, this
+    // route would not match and the upload would not succeed.
+    let s3PutSeen = false;
+    await page.route("**amazonaws.com/**", async (route) => {
+      if (route.request().method() === "PUT") {
+        s3PutSeen = true;
+        await route.fulfill({ status: 200, body: "" });
+      } else {
+        await route.continue();
+      }
+    });
     await reachRecorder(page);
 
     const record = page.getByRole("button", { name: "Gravar" });
@@ -63,8 +75,10 @@ test.describe("recording (therapist)", () => {
     await expect(page.getByRole("button", { name: "Parar" })).toBeVisible();
     await expect(page.getByText("A gravar…")).toBeVisible();
 
+    // Stop → the blob is signed and PUT direct to S3 → uploaded.
     await page.getByRole("button", { name: "Parar" }).click();
-    await expect(page.getByText("Gravação concluída.")).toBeVisible();
+    await expect(page.getByText("Gravação enviada.")).toBeVisible();
+    expect(s3PutSeen).toBe(true);
   });
 
   test("non-Chrome / unsupported shows the pt-PT block, no Record (W4-07)", async ({ page }) => {

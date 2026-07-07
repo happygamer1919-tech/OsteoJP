@@ -5,11 +5,17 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // client. These pin that, the role gate, patient existence, and the stub
 // create+validate delegation. Node env — deps mocked.
 
+vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({ requireRequestContext: vi.fn(), runScoped: vi.fn() }));
 vi.mock("@osteojp/auth", () => ({ can: vi.fn() }));
 vi.mock("@/lib/patients/actions", () => ({ createPatient: vi.fn() }));
 vi.mock("@/lib/patients/audit", () => ({ writeAudit: vi.fn() }));
 vi.mock("@osteojp/db", () => ({ patients: { id: "patients.id" } }));
+// actions.ts now imports the W4-08 signer; stub it so this W4-06 test stays unit-scoped.
+vi.mock("@/lib/consultation/audio-storage", () => ({
+  signAudioUpload: vi.fn(),
+  AudioStorageConfigError: class extends Error {},
+}));
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { can } from "@osteojp/auth";
