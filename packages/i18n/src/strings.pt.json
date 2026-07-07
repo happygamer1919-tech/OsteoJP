@@ -42,6 +42,8 @@
   "agenda.nextPeriod": "Período seguinte",
   "agenda.allTherapists": "Todos os terapeutas",
   "agenda.allLocations": "Todas as localizações",
+  "agenda.apptCountOne": "marcação",
+  "agenda.apptCountMany": "marcações",
   "agenda.noAppointments": "Sem marcações neste período",
   "agenda.conflictTherapist": "Conflito de terapeuta",
   "agenda.conflictRoom": "Conflito de sala",

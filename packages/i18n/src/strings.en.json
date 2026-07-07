@@ -42,6 +42,8 @@
   "agenda.nextPeriod": "Next period",
   "agenda.allTherapists": "All therapists",
   "agenda.allLocations": "All locations",
+  "agenda.apptCountOne": "appointment",
+  "agenda.apptCountMany": "appointments",
   "agenda.noAppointments": "No appointments in this period",
   "agenda.conflictTherapist": "Therapist conflict",
   "agenda.conflictRoom": "Room conflict",
