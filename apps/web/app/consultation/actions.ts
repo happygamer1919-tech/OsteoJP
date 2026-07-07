@@ -17,6 +17,7 @@ import { patients } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { createPatient } from "@/lib/patients/actions";
 import { writeAudit } from "@/lib/patients/audit";
+import { AudioStorageConfigError, signAudioUpload } from "@/lib/consultation/audio-storage";
 
 export type StubResult =
   | { ok: true; patientId: string }
@@ -81,4 +82,36 @@ export async function startConsultationAction(input: {
   });
   if (!found) return { ok: false, error: "not_found" };
   return { ok: true };
+}
+
+export type SignUploadResult =
+  | { ok: true; url: string; objectKey: string }
+  | { ok: false; error: "forbidden" | "validation" | "config" };
+
+/**
+ * W4-08 — sign a presigned PUT so the browser uploads the recorded blob DIRECT
+ * to S3 (never through Vercel). Recording is a clinician action. The object key
+ * is derived server-side from the JWT tenant (never the payload). The scoped AWS
+ * key never leaves the server — only the presigned URL + object key cross to the
+ * client. If the env is not configured this returns `config` (never a stub key).
+ */
+export async function signAudioUploadAction(input: {
+  patientId: string;
+  consultationStartedAt: string;
+}): Promise<SignUploadResult> {
+  const ctx = await requireRequestContext();
+  if (!can(ctx.role, "clinical_records:author")) return { ok: false, error: "forbidden" };
+  if (!input.patientId || !input.consultationStartedAt) return { ok: false, error: "validation" };
+  try {
+    // tenantId from JWT context, NEVER from the payload (hard rule 3).
+    const { url, objectKey } = await signAudioUpload(
+      ctx.tenantId,
+      input.patientId,
+      input.consultationStartedAt,
+    );
+    return { ok: true, url, objectKey };
+  } catch (e) {
+    if (e instanceof AudioStorageConfigError) return { ok: false, error: "config" };
+    return { ok: false, error: "config" };
+  }
 }
