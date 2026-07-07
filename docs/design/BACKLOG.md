@@ -177,6 +177,14 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | W4-17 | agenda-header-redesign (`docs/loops/wave-04/W4-17-agenda-header-redesign.md`) | QUEUED | UI (migration-free) | Depends W4-13. Unified toolbar (prominent segmented Dia/Semana, date picker, Hoje, prev/next grouped) + a structured range chip replacing the floating week-range text, carrying a **live appointment count** for the visible range (owner default); `Todos os terapeutas` + `Todas as localizações` filters aligned into the toolbar row. **W3-08 six-day Mon–Sat + 24h grid untouched** |
 | W4-18 | inicio-redesign (`docs/loops/wave-04/W4-18-inicio-redesign.md`) | QUEUED | UI (migration-free) | Depends W4-13. Sixth quick-action tile `Revisão Consulta` (owner default) right of Administração, linking to the existing page; `Resumo semanal` extended full-width; new `Próximas marcações` card (owner default) — today's next appointments (time/patient/therapist), reading existing data, role-scoped. Notas Rápidas + existing tiles untouched |
 
+## Wave 04 Loop Queue — secondary participants (W4-19, LAST in the wave)
+
+> Authored 2026-07-06 (YELLOW docs lane, batch 3). **LAST loop in Wave 04 — runs after W4-18.** The **ONLY Wave 04 loop pre-approved to fire a migration** (owner ruling, DECISIONS 2026-07-06 "Secondary participants on appointments"): recon-first — migration-free if a genuine path exists, else **ONE migration 0032** (the single migration in flight). Standing rules apply: pt-PT UI copy; LIVE-DATA CAUTION (real therapist accounts on dev tenant `3a2d0711-...` never mutated, verify on the E2E seed tenant); conforms to `docs/design/UI-STYLE.md` (W4-13); Playwright selector updates on-branch, **never touch `db-tests.yml`/`e2e.yml`**; CLASSIC halt.
+
+| ID | Loop | Status | Lane | Gate / note |
+|------|------|--------|------|-------------|
+| W4-19 | secondary-participants (`docs/loops/wave-04/W4-19-secondary-participants.md`) | QUEUED | UI+server (+conditional schema — **migration pre-approved**) | **LAST in Wave 04, after W4-18.** Optional `Paciente 2` + `Terapeuta 2` on the booking panel (de-emphasized), persisted linked display data. **Primary-only semantics everywhere** (availability, Serviço/Localização auto-selects, analytics attribution, AI-recording primary pair + idempotency key, Estado/lifecycle axes all stay primary). Secondary shown on appointment details + agenda card (`+1` badge); agenda renders under the primary therapist column only (both-columns = recorded follow-up). Clone copies secondary as-is; W3-06 + reference guards count secondary linkage. **Recon-first migration:** migration-free if possible, else **pre-approved 0032** (default: two nullable FK columns on `appointments`; junction only on a hard blocker) — the **only wave loop allowed a migration**; if fired → mirrored + `--check` (parity 33/33, head 0032), RLS db test in the same PR |
+
 ## Wave 04 candidates
 
 > Added 2026-07-06 at Wave 03 close. UNORDERED, NOT committed scope — candidates for the Wave 04 planning pass, not loops yet. No lane/gate assignments until scoped. **All Wave 04 build and dry-run work is SYNTHETIC-DATA-ONLY; real-data go-live is a separately gated step (pre-real-data gates: separate-prod-project DECISIONS 2026-07-01; DPA CLOSED DECISIONS 2026-07-05).**
@@ -212,6 +220,11 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | Fisiozero import build | BACKLOG Wave 03 candidates | mapping + reconciliation on dev SAMPLE data only; live import gated on the pre-real-data gates; collision-HALT policy on file (DECISIONS 2026-07-02) |
 | Portal V2 redesign | BACKLOG Wave 03 candidates | GATED — pending JP's reaction to Max's mockups; no scope until provided |
 | CI db-gate hardening | QUESTIONS 2026-07-03 | touches `.github/workflows/db-tests.yml` → automatic OWNER HOLD, never self-merged; opens a PR and HALTS for owner merge |
+
+### Recorded follow-ups (not scoped)
+| Candidate | Origin | Gate / note |
+|-----------|--------|-------------|
+| Agenda: render a secondary-therapist appointment under BOTH therapist columns | DECISIONS 2026-07-06 (Secondary participants on appointments) | explicitly deferred out of W4-19 — W4-19 renders under the PRIMARY therapist column only (`+1` badge for the secondary). Dual-column rendering is the recorded follow-up; scope later if the clinic wants it |
 | Preview DB isolation | QUESTIONS 2026-07-03 | future infra, part of the separate-prod-project work |
 | Legacy-shelf consolidation loop | QUESTIONS 2026-07-03 | migrate still-open legacy `docs/` items onto canonical `docs/design/`, leave pointer stubs; its own docs loop |
 | Dangling-branch pruning pass | BACKLOG Wave 03 candidates | sweep merged/abandoned feature + docs branches and their worktrees from Waves 01–03; housekeeping only |
