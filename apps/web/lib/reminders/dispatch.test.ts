@@ -43,6 +43,7 @@ import { dispatchReminder, planReminderChannels } from "./dispatch";
 
 const TENANT_ID = "22222222-2222-2222-2222-222222222222";
 const APPOINTMENT_ID = "11111111-1111-1111-1111-111111111111";
+const PATIENT_ID = "33333333-3333-3333-3333-333333333333";
 // Future-dated so the reschedule token (used in the email path) is not expired.
 const STARTS_AT = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
 
@@ -170,6 +171,7 @@ describe("dispatchReminder honors tenant reminder config", () => {
       appointmentId: APPOINTMENT_ID,
       startsAt: STARTS_AT,
       status: "confirmed",
+      patientId: PATIENT_ID,
       patientName: "Madalena Sousa",
       patientEmail: "madalena@example.pt",
       patientPhone: "+351 210 000 000",
@@ -216,6 +218,33 @@ describe("dispatchReminder honors tenant reminder config", () => {
     expect(outcome.channels.map((c) => c.channel)).toEqual(["sms"]);
     expect(h.email).toHaveLength(0);
     expect(h.sms).toHaveLength(1);
+  });
+
+  it("skips SMS (email still sends) when the stored phone cannot normalize to E.164 PT, logging ids only", async () => {
+    h.loadReminderData.mockResolvedValue({
+      ...fixture(undefined),
+      patientPhone: "not a real number",
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h");
+
+      expect(outcome).toMatchObject({ dispatched: true });
+      if (!outcome.dispatched) throw new Error("expected dispatched");
+      // Email goes out; the SMS channel is skipped, not sent and not errored.
+      expect(outcome.channels.map((c) => c.channel)).toEqual(["email"]);
+      expect(h.sms).toHaveLength(0);
+
+      // Structured skip log: ids only — NEVER the raw number (PII rule #7).
+      const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(logged).toContain("invalid_phone");
+      expect(logged).toContain(`tenantId=${TENANT_ID}`);
+      expect(logged).toContain(`appointmentId=${APPOINTMENT_ID}`);
+      expect(logged).toContain(`patientId=${PATIENT_ID}`);
+      expect(logged).not.toContain("not a real number");
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("suppresses an offset whose lead time the tenant did not select", async () => {

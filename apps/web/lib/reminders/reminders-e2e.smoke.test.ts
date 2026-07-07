@@ -87,6 +87,7 @@ function makeData(locale: Locale) {
     appointmentId: APPOINTMENT_ID,
     startsAt: STARTS_AT,
     status: "confirmed",
+    patientId: "33333333-3333-3333-3333-333333333333",
     patientName: pt ? "Madalena Sousa" : "Mary Roberts",
     patientEmail: pt ? "madalena@example.pt" : "mary@example.com",
     patientPhone: LONGEST_PHONE,
@@ -204,7 +205,9 @@ describe("reminder dry-run E2E — render + send intent (PT & EN, 48h & 24h)", (
       // --- SMS intent: recipient, no link, clinic CTA, single GSM-7 segment ---
       expect(h.sms).toHaveLength(1);
       const sms = h.sms[0]!;
-      expect(sms.to).toBe(data.patientPhone); // correct recipient
+      // Correct recipient, normalized to E.164 (phone.ts strips the display
+      // spacing of the stored "+351 210 000 000" before the send wrapper).
+      expect(sms.to).toBe("+351210000000");
       expect(sms.body).not.toMatch(/https?:\/\//); // NO link
       expect(sms.body).not.toContain("/r/");
       expect(sms.body).toContain(EXPECT[locale].smsVerb); // call-the-clinic wording

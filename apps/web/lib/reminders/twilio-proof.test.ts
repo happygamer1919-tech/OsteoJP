@@ -244,7 +244,7 @@ describe("Twilio API errors propagate (Inngest step retry semantics)", () => {
     twilioCreate.mockRejectedValue(
       restException(400, 21211, "The 'To' number is not a valid phone number."),
     );
-    await expect(sendSms({ to: "912 345 678", body: "b" })).rejects.toMatchObject({
+    await expect(sendSms({ to: "+351912345678", body: "b" })).rejects.toMatchObject({
       status: 400,
       code: 21211,
     });
@@ -259,38 +259,65 @@ describe("Twilio API errors propagate (Inngest step retry semantics)", () => {
 });
 
 /* ================================================================== */
-/* 3. Phone handling — characterization of the KNOWN GAP               */
+/* 3. Phone handling — E.164 normalization in the send path            */
 /* ================================================================== */
 
-describe("phone pass-through — KNOWN GAP: no E.164 normalization exists in the send path", () => {
-  // patients.phone is free text (validation.ts caps it at 32 chars; the patient
-  // portal PATCH allows any 7-15 digit string with optional +). Nothing between
-  // the DB and Twilio normalizes to E.164. These tests PIN that behaviour so it
-  // is visible and so a future normalization change flips them deliberately.
-  // Consequence once REMINDERS_LIVE_SEND goes live: a number stored as
-  // "912 345 678" or "00351912345678" is handed to Twilio verbatim and rejected
-  // with error 21211 — the reminder send fails for that patient.
-  // Tracked in docs/QUESTIONS.md (2026-07-06) and docs/qa/twilio-proof.md.
+describe("phone normalization — every stored format reaches Twilio as E.164 +351", () => {
+  // Closes the gap the #485 characterization tests pinned: normalizePhonePT
+  // (phone.ts) now runs inside sendSms, so no un-normalized number can reach
+  // messages.create. Full format coverage lives in phone.test.ts; this proves
+  // the wiring at the Twilio boundary.
 
   beforeEach(() => {
     armLiveCreds();
     process.env.TWILIO_SMS_FROM = "OsteoJP";
-    twilioCreate.mockResolvedValue({ sid: "SM_raw" });
+    twilioCreate.mockResolvedValue({ sid: "SM_norm" });
   });
 
-  for (const stored of ["912 345 678", "00351912345678", "9 1 2 3 4 5 6 7 8"]) {
-    it(`passes ${JSON.stringify(stored)} to Twilio verbatim (would fail live with 21211)`, async () => {
-      await sendSms({ to: stored, body: "b" });
+  const STORED_FORMATS: ReadonlyArray<[stored: string, e164: string]> = [
+    ["912 345 678", "+351912345678"],
+    ["00351912345678", "+351912345678"],
+    ["9 1 2 3 4 5 6 7 8", "+351912345678"],
+    ["+351 912-345-678", "+351912345678"],
+    ["+351912345678", "+351912345678"], // already E.164, passthrough
+  ];
+
+  for (const [stored, e164] of STORED_FORMATS) {
+    it(`normalizes ${JSON.stringify(stored)} → ${e164} before messages.create`, async () => {
+      const res = await sendSms({ to: stored, body: "b" });
       expect(twilioCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ to: stored }),
+        expect.objectContaining({ to: e164 }),
       );
+      expect(res.sandbox).toBe(false);
     });
   }
 
-  it("already-E.164 numbers pass through unchanged (the only live-safe format)", async () => {
-    await sendSms({ to: "+351912345678", body: "b" });
-    expect(twilioCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "+351912345678" }),
-    );
+  for (const garbage of ["not-a-phone", "12345", "+441234567890", ""]) {
+    it(`rejects ${JSON.stringify(garbage)}: skip result, Twilio never called, number never logged`, async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const res = await sendSms({ to: garbage, body: "b" });
+        expect(res).toEqual({ channel: "sms", sandbox: true, id: "skipped:invalid_phone" });
+        expect(twilioFactory).not.toHaveBeenCalled();
+        expect(twilioCreate).not.toHaveBeenCalled();
+        // PII rule (#7): the warning names the reason, never the raw value.
+        const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
+        expect(logged).toContain("invalid_phone");
+        if (garbage) expect(logged).not.toContain(garbage);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  }
+
+  it("skips invalid numbers even in sandbox mode (guard runs before the gate)", async () => {
+    delete process.env.REMINDERS_LIVE_SEND;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const res = await sendSms({ to: "garbage", body: "b" });
+      expect(res.id).toBe("skipped:invalid_phone");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

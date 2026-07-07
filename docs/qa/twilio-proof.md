@@ -62,6 +62,10 @@ Messaging Service SID as `from` (which Twilio accepts).
   unit to test**. Behaviour is pinned by characterization tests instead
   (`twilio-proof.test.ts` §3) so a future normalization PR flips them
   deliberately. Logged in `docs/QUESTIONS.md` (2026-07-06).
+  **RESOLVED 2026-07-07** (fix/twilio-e164-and-runbook): `normalizePhonePT`
+  added and wired at the dispatch layer + inside both `sendSms` wrappers;
+  invalid numbers skip with a structured ids-only warning. The
+  characterization tests below are now real E.164 expectations.
 - **F2 — Runbook names an env var the code never reads.**
   `docs/cutover-runbook.md` (§1.5, §env-table) instructs setting
   `TWILIO_SENDER_ID=OsteoJP` in Vercel prod. The code reads `TWILIO_SMS_FROM`.
@@ -69,6 +73,9 @@ Messaging Service SID as `from` (which Twilio accepts).
   `TWILIO_MESSAGING_SERVICE_SID` or suppress sends as unconfigured. Pinned by a
   test; logged in `docs/QUESTIONS.md`. **Action: set `TWILIO_SMS_FROM=OsteoJP`
   in Vercel prod (and fix the runbook wording).**
+  **RESOLVED 2026-07-07** (fix/twilio-e164-and-runbook): runbook §1.5 + env
+  table corrected to `TWILIO_SMS_FROM`; the Vercel env change remains Ivan's
+  manual step.
 - **F3 — `apps/api/lib/notify/clients.ts` had zero tests.** Now covered
   (`apps/api/lib/notify/clients.test.ts`).
 

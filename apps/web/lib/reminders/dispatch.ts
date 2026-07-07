@@ -17,6 +17,7 @@ import {
   type NoShowContext,
 } from "./templates";
 import { sendEmail, sendSms, type SendResult } from "./clients";
+import { normalizePhonePT } from "./phone";
 import { signRescheduleToken, rescheduleTokenExpiry } from "./link-token";
 import { REMINDER_OFFSETS } from "./offsets";
 
@@ -90,6 +91,31 @@ export function planReminderChannels(
 
 function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? fullName;
+}
+
+/**
+ * Normalize the stored patient phone to E.164 PT and send, or skip with a
+ * structured warning when it cannot normalize (docs/QUESTIONS.md 2026-07-06:
+ * un-normalized numbers reach Twilio and fail with 21211 once live). The log
+ * carries ids only — never the raw number (PII rule #7). Returns null on skip
+ * so callers simply don't push a channel result; the appointment still counts
+ * as dispatched (email, when planned, goes out independently).
+ */
+async function sendPatientSms(args: {
+  tenantId: string;
+  appointmentId: string;
+  patientId: string;
+  phone: string;
+  body: string;
+}): Promise<SendResult | null> {
+  const to = normalizePhonePT(args.phone);
+  if (!to) {
+    console.warn(
+      `[reminders] sms skipped: invalid_phone tenantId=${args.tenantId} appointmentId=${args.appointmentId} patientId=${args.patientId}`,
+    );
+    return null;
+  }
+  return sendSms({ to, body: args.body });
 }
 
 function tenantPhone(settings: unknown): string {
@@ -198,7 +224,14 @@ export async function dispatchReminder(
   }
   if (plan.sms && data.patientPhone) {
     const sms = renderSms(offsetId, locale, ctx);
-    channels.push(await sendSms({ to: data.patientPhone, body: sms }));
+    const sent = await sendPatientSms({
+      tenantId,
+      appointmentId,
+      patientId: data.patientId,
+      phone: data.patientPhone,
+      body: sms,
+    });
+    if (sent) channels.push(sent);
   }
 
   return { dispatched: true, channels };
@@ -245,7 +278,14 @@ export async function dispatchConfirmation(
     channels.push(await sendEmail({ to: data.patientEmail, subject: rendered.subject, body: rendered.body }));
   }
   if (sms && data.patientPhone) {
-    channels.push(await sendSms({ to: data.patientPhone, body: renderConfirmationSms(locale, ctx) }));
+    const sent = await sendPatientSms({
+      tenantId,
+      appointmentId,
+      patientId: data.patientId,
+      phone: data.patientPhone,
+      body: renderConfirmationSms(locale, ctx),
+    });
+    if (sent) channels.push(sent);
   }
   return { dispatched: true, channels };
 }
@@ -296,7 +336,14 @@ export async function dispatchFollowUp(
     channels.push(await sendEmail({ to: data.patientEmail, subject: rendered.subject, body: rendered.body }));
   }
   if (sms && data.patientPhone) {
-    channels.push(await sendSms({ to: data.patientPhone, body: renderFollowUpSms(locale, ctx) }));
+    const sent = await sendPatientSms({
+      tenantId,
+      appointmentId,
+      patientId: data.patientId,
+      phone: data.patientPhone,
+      body: renderFollowUpSms(locale, ctx),
+    });
+    if (sent) channels.push(sent);
   }
   return { dispatched: true, channels };
 }
@@ -354,7 +401,14 @@ export async function dispatchNoShow(
     channels.push(await sendEmail({ to: data.patientEmail, subject: rendered.subject, body: rendered.body }));
   }
   if (sms && data.patientPhone) {
-    channels.push(await sendSms({ to: data.patientPhone, body: renderNoShowSms(locale, ctx) }));
+    const sent = await sendPatientSms({
+      tenantId,
+      appointmentId,
+      patientId: data.patientId,
+      phone: data.patientPhone,
+      body: renderNoShowSms(locale, ctx),
+    });
+    if (sent) channels.push(sent);
   }
   return { dispatched: true, channels };
 }
