@@ -87,6 +87,8 @@ export default defineConfig({
         "**/camera-to-ficha.spec.ts",
         // W4-12: booking location auto-fill spec — Chromium-only, like the above.
         "**/location-auto-select.spec.ts",
+        // W4-06: start-consultation spec — Chromium-only, like the above.
+        "**/consultation-start.spec.ts",
       ],
     },
     {
@@ -105,6 +107,8 @@ export default defineConfig({
         "**/camera-to-ficha.spec.ts",
         // W4-12: booking location auto-fill spec — Chromium-only, like the above.
         "**/location-auto-select.spec.ts",
+        // W4-06: start-consultation spec — Chromium-only, like the above.
+        "**/consultation-start.spec.ts",
       ],
     },
   ],
