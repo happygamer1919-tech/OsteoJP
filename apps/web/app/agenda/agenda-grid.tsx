@@ -382,6 +382,17 @@ function AppointmentBlock({
           </>
         )}
         <span className="truncate">{appt.patientName}</span>
+        {/* Secondary participants (W4-19) — compact +1 badge; the secondary
+            names sit in the title for hover/details. Rendered under the PRIMARY
+            therapist column only (dual-column is a deferred follow-up). */}
+        {(appt.patientTwoId || appt.practitionerTwoId) && (
+          <span
+            className="ml-1 shrink-0 rounded-full bg-surface-muted px-1.5 text-[10px] font-semibold text-v2-text-secondary"
+            title={[appt.patientTwoName, appt.practitionerTwoName].filter(Boolean).join(" · ")}
+          >
+            {s["appointment.plusOne"]}
+          </span>
+        )}
       </span>
       {showService && <span className="block truncate text-xs text-v2-text-primary">{appt.serviceName}</span>}
       {/* No-note indicator (W2-04): completed visit with no per-visit note yet. */}

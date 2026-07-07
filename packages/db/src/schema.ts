@@ -458,6 +458,19 @@ export const appointments = pgTable(
       .notNull()
       .references(() => locations.id),
     serviceId: uuid("service_id").references(() => services.id),
+    // Secondary participants (0032, W4-19): an OPTIONAL second patient / second
+    // therapist carried on ONE appointment row as de-emphasized LINKED DISPLAY
+    // data. NULL = the common case (every pre-0032 row; no backfill). Nullable
+    // FKs (ON DELETE NO ACTION, exactly like the primary patient_id /
+    // practitioner_id); tenant match is enforced app-layer via runScoped, just
+    // like the primaries. PRIMARY-ONLY SEMANTICS everywhere — availability, the
+    // Serviço/Localização auto-selects, analytics money attribution, the
+    // AI-recording primary pair + idempotency key, and the Estado/lifecycle axes
+    // ALL stay on the primary pair. The secondary is shown on appointment details
+    // + the agenda card (a +1 badge) and rendered under the PRIMARY therapist
+    // column only (dual-column rendering is a deferred follow-up).
+    patientTwoId: uuid("patient_2_id").references(() => patients.id),
+    practitionerTwoId: uuid("practitioner_2_id").references(() => users.id),
     room: text("room"), // room-conflict detection (Stream B)
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),

@@ -31,6 +31,12 @@ export type AgendaAppointment = {
   patientName: string;
   practitionerId: string;
   practitionerName: string;
+  // Secondary participants (W4-19, 0032) — optional, display-only. NULL when
+  // absent. Primary-only semantics everywhere else.
+  patientTwoId: string | null;
+  patientTwoName: string | null;
+  practitionerTwoId: string | null;
+  practitionerTwoName: string | null;
   locationId: string;
   locationName: string;
   serviceId: string | null;
@@ -77,6 +83,12 @@ export type CreateAppointmentInput = {
   locationId: string;
   serviceId: string | null;
   room: string | null;
+  // Optional secondary participants (W4-19, 0032) — de-emphasized LINKED
+  // DISPLAY data. NULL = the common case. PRIMARY-ONLY SEMANTICS: these never
+  // affect availability, conflict detection, the Serviço/Localização auto-
+  // selects, analytics attribution, the AI-recording pair, or the Estado axes.
+  patientTwoId?: string | null;
+  practitionerTwoId?: string | null;
   startsAt: string; // ISO UTC
   endsAt: string; // ISO UTC
   // No lifecycle `status` here by design (W3-01, creation invariant DECISIONS

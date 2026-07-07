@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { and, asc, desc, eq, gte, lt, ne, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   appointmentNotes,
@@ -31,6 +32,10 @@ function mapAppointment(r: {
   patientName: string;
   practitionerId: string;
   practitionerName: string;
+  patientTwoId: string | null;
+  patientTwoName: string | null;
+  practitionerTwoId: string | null;
+  practitionerTwoName: string | null;
   locationId: string;
   locationName: string;
   serviceId: string | null;
@@ -57,12 +62,23 @@ function mapAppointment(r: {
   };
 }
 
+// Secondary participants (W4-19, 0032) are optional, so they join through
+// aliased LEFT joins on patients/users — display-only names for the agenda card
+// (+1 badge) and appointment details. Primary-only semantics elsewhere.
+const patientTwo = alias(patients, "patient_two");
+const practitionerTwo = alias(users, "practitioner_two");
+
 const appointmentSelection = {
   id: appointments.id,
   patientId: appointments.patientId,
   patientName: patients.fullName,
   practitionerId: appointments.practitionerId,
   practitionerName: users.fullName,
+  // Secondary participants (W4-19) — nullable display names.
+  patientTwoId: appointments.patientTwoId,
+  patientTwoName: patientTwo.fullName,
+  practitionerTwoId: appointments.practitionerTwoId,
+  practitionerTwoName: practitionerTwo.fullName,
   locationId: appointments.locationId,
   locationName: locations.name,
   serviceId: appointments.serviceId,
@@ -97,7 +113,11 @@ function baseAppointmentQuery(tx: DbTx) {
     .innerJoin(patients, eq(patients.id, appointments.patientId))
     .innerJoin(users, eq(users.id, appointments.practitionerId))
     .innerJoin(locations, eq(locations.id, appointments.locationId))
-    .leftJoin(services, eq(services.id, appointments.serviceId));
+    .leftJoin(services, eq(services.id, appointments.serviceId))
+    // Secondary participants (W4-19) — LEFT joins (optional); aliased so patients
+    // and users can be joined a second time without colliding with the primaries.
+    .leftJoin(patientTwo, eq(patientTwo.id, appointments.patientTwoId))
+    .leftJoin(practitionerTwo, eq(practitionerTwo.id, appointments.practitionerTwoId));
 }
 
 /** Appointments whose start falls in [startUtc, endUtc), optionally filtered. */
