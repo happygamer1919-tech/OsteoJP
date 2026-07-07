@@ -5,6 +5,120 @@ record of schema, write paths, and existing surfaces. Append-only, dated section
 No recommendations here. Design decisions go in DECISIONS.md; open questions go in
 QUESTIONS.md.
 
+## 2026-07-07 - Wave 04 close audit
+
+Wave 04 executed and **CLOSED**. All 19 loops (W4-01…W4-19) plus the owner addition W4-12
+resolved: DONE, DONE-partial, or AWAITING-EXTERNAL (two non-blocking external relays).
+Read-only docs lane against `origin/main` (`69d2710`), branch `w4-closeout`; no schema,
+migration, or app code changed by this lane. Suite counts and cleanup evidence carried from
+the GREEN closing-batch report (2026-07-07) and the merged tree; not re-run in this docs lane.
+
+### Loops + PRs (all merged, gh-verified 2026-07-07)
+| Loop | PR | What landed |
+|------|----|-------------|
+| W4-01 equipa-team-upgrade | #480 | Equipa primary-service dropdown lists all active services, INSERT on zero-mapping (fixes "Sem serviços"), delete+insert re-designation (no UPDATE, 0023 no-grant); per-therapist Horários entry point. Password-gated therapist delete unchanged |
+| W4-02 24h-picker-sweep | #481 | every time-INPUT widget → 24h `TimeField` (`:00/:15/:30/:45`), custom AM/PM columns removed; input-construction grep pass + value round-trip |
+| W4-03 nova-marcacao-auto-select | #495 | closed **resolved-unreproducible** (docs-only, owner QA 2026-07-07); Serviço auto-select fires correctly; duplicate Fisioterapia rows = owner UI housekeeping. Zero code |
+| W4-04 spec-ai-recording | #483 | authored `docs/design/SPEC-ai-recording.md` — full M1 webhook contract (`audio_url` presigned GET 1h, `audio_filename`, primary `patient_id`/`doctor_id`, timestamps, `x-make-apikey`) |
+| W4-05 camera-to-ficha | #484 | in-page `getUserMedia` capture → synthetic patient's ficha anexos via signed URL (no device-gallery persistence). Rodica real-phone check is an external relay (open, non-blocking) |
+| W4-06 quick-create-stub-consent | #489 | start-consultation stub quick-create (name req/phone opt, 0029 numbering) + server-enforced consent gate (actor+timestamp) |
+| W4-07 recording-ui | #490 | MediaRecorder webm/opus 32 kbps mono, Chrome-only + pt-PT block, machine-stamped `consultation_started_at`/`ended_at` |
+| W4-08 presigned-put-flow | #491 | SigV4 signer + direct-to-S3 PUT (scoped key, `osteojp-audio-intake` eu-central-1), never via Vercel; mock-verified in CI, real 200 is a deploy check |
+| W4-09 post-upload-webhook | #492 | presigned GET (1h) + M1 webhook fire with `x-make-apikey` (env/vault); contract fields present, redacted payload proof |
+| W4-10 first-test-fire-e2e | #493 | machine DoD merged (draft lands `pending_review` via HMAC ingestion) — **AWAITING-EXTERNAL**, closes on André's receipt + `audio_filename` token relay |
+| W4-11 scripted-cleanup | #502 | **DONE-partial (Option B, owner ruling)** — guarded synthetic-data purge without defeating the immutability trigger (rule 4) or audit_log append-only (rule 6); residue recorded |
+| W4-12 location-auto-select | #486 | booking Terapeuta → Localização auto-fill from a single active location (migration-free), always editable; three drawer paths inherit it |
+| W4-13 equipa-dashboard-redesign | #496 | **DESIGN ANCHOR** — Equipa dashboard redesign + authored `docs/design/UI-STYLE.md`; full-width invite + 4 KPI cards + Estado badges + row-actions drawer |
+| W4-14 horarios-redesign | #497 | Horários per-therapist cards + `Editar horário` top-layer modal (weekday toggles, 24h TimeField, per-day location); single Guardar via W2-12 paths; in-modal delete = archive, no password |
+| W4-15 servicos-delete-and-redesign | #498 | Serviços reference-guarded delete (no password): zero-ref hard-delete, referenced = archive-only; restyle. Reference set = 4 relations (analytics_events found beyond the 3 named) |
+| W4-16 pacientes-redesign | #502 | **DONE (docs-only close)** — already shipped in a prior V2-patients wave (structured list table + tabbed identity dashboard; anexos on the ficha per W4-05). Keep tabbed layout. Zero code |
+| W4-17 agenda-header-redesign | #499 | Agenda structured range chip + live appointment count for the visible range (matches the grid's day-in-range logic) |
+| W4-18 inicio-redesign | #500 | Início: 6th tile `Revisão Consulta` (gated on `clinical_records:review`), full-width `Resumo semanal`, new `Próximas marcações` card (reuses fetched appts) |
+| W4-19 secondary-participants | #501 | secondary participants + **migration 0032** (two nullable FK cols); primary-only semantics; tenant-match enforced app-layer; drawer optional section, clone copies as-is, agenda `+1` badge; db-gated RLS test |
+
+### Schema deltas this wave
+- **0032 `secondary_participants`** (the single pre-approved Wave 04 migration, fired by W4-19).
+  Two **nullable** FK columns on `appointments`: **`patient_2_id`** → `patients(id)` and
+  **`practitioner_2_id`** → `users(id)`, both `ON DELETE NO ACTION` (matching the primary FKs).
+  NULL = every pre-0032 row (no backfill). **Primary-only semantics:** availability, conflict
+  detection, Serviço/Localização auto-selects, `analytics_events` money attribution, the
+  AI-recording pair + idempotency key, and the Estado/lifecycle axes ALL stay on the primary
+  pair; the secondary is **linked DISPLAY data** only. Tenant-match enforced at the app layer
+  (`createAppointment` resolves any provided secondary id under the caller's RLS scope; a
+  cross-tenant id → zero rows → `validation` error). **RLS/isolation covered** by the new
+  db-gated `secondary-participants-rls.test.ts`. No other schema change this wave (all other
+  loops migration-free).
+
+### Surface deltas this wave
+- **Consultation recording flow** — start-consultation stub quick-create + server-enforced
+  consent gate (W4-06); MediaRecorder webm/opus 32 kbps mono, Chrome-only (W4-07); presigned
+  PUT direct-to-S3 (W4-08); post-upload M1 webhook fire with `x-make-apikey` (W4-09). First
+  machine fire lands `pending_review` (W4-10); the real deployed-app fire is owner-performed
+  (AWAITING-EXTERNAL).
+- **Camera-to-ficha** — in-page `getUserMedia` capture into a synthetic patient's ficha anexos,
+  signed-URL only, no device-gallery persistence (W4-05).
+- **UI-STYLE.md design language LIVE** across **Equipa, Horários, Serviços, Agenda, Início**
+  (W4-13 anchor → W4-14/15/17/18 conform): card/table anatomy, spacing scale, Estado badges,
+  button hierarchy, toolbar layout, Tailwind v4 tokens. Refinement of the existing shell, not a
+  rebrand; brand tokens unchanged.
+- **Passwordless reference-guarded deletes** — service delete (W4-15) and Horários row delete
+  (W4-14) require no password (both surfaces already sit behind the admin gate); zero-reference
+  hard-delete, referenced = archive-only. Distinct from the password-gated appointment (W3-06)
+  and therapist (W4-01) deletes, which are unchanged.
+- **Booking carries optional `Paciente 2` / `Terapeuta 2`** — de-emphasized create-only section
+  in the booking drawer; agenda card shows a compact `+1` badge; `cloneAppointment` copies the
+  secondary pair as-is (W4-19). Agenda renders under the PRIMARY therapist column only
+  (dual-column is a recorded follow-up).
+
+### Migration bookkeeping (repo-verified this audit)
+- Migration head: **0032** (`0032_secondary_participants`). `packages/db/migrations/` holds **33**
+  `.sql` files (0000–0032); journal (`meta/_journal.json`) **33 entries**.
+- Supabase mirror parity: `supabase/migrations/` holds **33** `.sql` files — 1:1 with
+  `packages/db/migrations/`, **mirror in parity (33/33)**. Corroborated by the CI `sync` check
+  and `db:sync-supabase:check` green.
+- Tooling note (DECISIONS 2026-07-07): drizzle snapshots are frozen at 0014; migrations 0015+ are
+  hand-authored SQL + manual journal entry (no snapshot). `drizzle-kit generate` must not be used
+  (it would spuriously recreate the schema); 0032 was hand-authored to that pattern.
+
+### Test suite (post-Wave-04, reported by the GREEN closing report; not re-run in this docs lane)
+- **web: 816 passed** (5 skipped, 1 todo) · **ui: 42** · **@osteojp/db: 56 local + DB-gated set**
+  (now incl. `secondary-participants-rls.test.ts`) · **admin: 10** · **api: 136**.
+- lint 0 errors, typecheck 9/9, web build green on every PR. Local full `pnpm build` fails only on
+  the pre-existing `apps/portal` `/auth/activate` env gap (reproducible on main, green in CI/Vercel;
+  never touched this wave).
+
+### Dev database fingerprint — post-W4-11 Option-B cleanup (2026-07-07; live counts remain authority)
+Recorded from the W4-11 cleanup evidence (DECISIONS 2026-07-07), guarded and tenant-scoped to the
+single dev tenant `3a2d0711-…`; not independently re-queried in this docs lane.
+
+| table | count | note |
+|-------|-------|------|
+| `patients` | **31** | pinned residue — each holds ≥1 `locked`/`signed` synthetic clinical_record; from 105 pre-cleanup |
+| `availability_templates` (active) | **1** | the single real preserved row; 64 fixture rows deleted (65 → 1) |
+| `clinical_records` (locked/signed) | **49** | synthetic, immutable by the rule-4 trigger — left intact by design (Option B) |
+| `users` (real) | **14** | preserved (real accounts + staff/QA), count-stable through cleanup |
+| fixture users | **5** | deactivated (`is_active=false`), not deleted (pinned by rule-6 audit rows) |
+| `locations` | **3** | preserved, count-stable |
+| `services` | **11** | preserved, count-stable |
+
+- The **49 locked synthetic clinical_records + their 31 pinned patients + 5 deactivated fixtures**
+  are **dev-only residue by construction** — deleting them would require defeating the immutability
+  trigger (rule 4) or mutating `audit_log` (rule 6), which the owner ruling forbids. **Revisit at
+  the pre-real-data gate** when the prod Supabase project splits (BACKLOG). All dev data remains
+  SYNTHETIC; the pre-real-data patient gates (DECISIONS 2026-07-01) stand unchanged.
+- Live counts are the authority; this is a point-in-time read.
+
+### Wave 04 process record
+- **Standing GREEN runner** executed the wave; the closing batch (W4-03, W4-11, W4-13→W4-19)
+  self-merged on the four-leg gate (DoD pasted · 3 required checks green · zero workflow-file
+  changes · branch current). One escalated owner ruling this wave (**W4-11 A/B/C** → Option B) and
+  one surfaced already-satisfied loop (**W4-16** → docs-only close), both landed via #502.
+- **Single in-flight migration discipline held:** only W4-19 was pre-approved to author a migration
+  (0032); it fired and landed, head 0032, parity 33/33. No `db-tests.yml`/`e2e.yml` edits.
+- **Two non-blocking external relays remain open** (carry-overs, not wave blockers): **W4-10**
+  André confirms receipt of the real fire + `audio_filename` token exposure; **W4-05** Rodica
+  real-phone camera-capture check. Each closes via a one-line docs flip when the relay lands.
+
 ## 2026-07-06 - Wave 03 close audit
 
 Wave 03 executed and CLOSED. All 10 loops merged; zero open PRs from the wave (gh-verified).
