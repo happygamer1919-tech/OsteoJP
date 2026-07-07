@@ -11,17 +11,31 @@ vi.mock("@osteojp/auth", () => ({ can: vi.fn() }));
 vi.mock("@/lib/patients/actions", () => ({ createPatient: vi.fn() }));
 vi.mock("@/lib/patients/audit", () => ({ writeAudit: vi.fn() }));
 vi.mock("@osteojp/db", () => ({ patients: { id: "patients.id" } }));
-// actions.ts now imports the W4-08 signer; stub it so this W4-06 test stays unit-scoped.
+// actions.ts imports the W4-08 signer + W4-09 webhook; stub them so this test
+// stays unit-scoped.
 vi.mock("@/lib/consultation/audio-storage", () => ({
+  AUDIO_FILENAME: "consultation.webm",
   signAudioUpload: vi.fn(),
+  signAudioDownload: vi.fn(),
   AudioStorageConfigError: class extends Error {},
+}));
+vi.mock("@/lib/consultation/m1-webhook", () => ({
+  buildM1Payload: vi.fn((x: Record<string, unknown>) => ({ ...x, template: "osteopathy" })),
+  fireM1Webhook: vi.fn(),
+  M1WebhookConfigError: class extends Error {},
 }));
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { can } from "@osteojp/auth";
 import { createPatient } from "@/lib/patients/actions";
 import { writeAudit } from "@/lib/patients/audit";
-import { createStubPatientAction, startConsultationAction } from "./actions";
+import { signAudioDownload } from "@/lib/consultation/audio-storage";
+import { fireM1Webhook } from "@/lib/consultation/m1-webhook";
+import {
+  createStubPatientAction,
+  fireConsultationWebhookAction,
+  startConsultationAction,
+} from "./actions";
 
 const mockCtx = vi.mocked(requireRequestContext);
 const mockRunScoped = vi.mocked(runScoped);
@@ -88,5 +102,53 @@ describe("createStubPatientAction", () => {
     mockCreatePatient.mockRejectedValue(err);
     const r = await createStubPatientAction({ fullName: "  " });
     expect(r).toEqual({ ok: false, error: "validation" });
+  });
+});
+
+describe("fireConsultationWebhookAction (W4-09)", () => {
+  const mockSignDownload = vi.mocked(signAudioDownload);
+  const mockFire = vi.mocked(fireM1Webhook);
+  const OK_INPUT = {
+    objectKey: "t1/p1/ts/consultation.webm",
+    patientId: "p1",
+    consultationStartedAt: "2026-07-07T01:00:00.000Z",
+    consultationEndedAt: "2026-07-07T01:30:00.000Z",
+  };
+
+  beforeEach(() => {
+    mockCtx.mockResolvedValue(ctx); // tenantId: "t1"
+    mockCan.mockReturnValue(true);
+    mockSignDownload.mockResolvedValue("https://s3/get?sig");
+    mockFire.mockResolvedValue({ ok: true, status: 200 });
+  });
+
+  it("forbids a non-authoring role", async () => {
+    mockCan.mockReturnValue(false);
+    await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({ ok: false, error: "forbidden" });
+    expect(mockFire).not.toHaveBeenCalled();
+  });
+
+  it("rejects an object key not prefixed by the caller's tenant (forged)", async () => {
+    await expect(
+      fireConsultationWebhookAction({ ...OK_INPUT, objectKey: "OTHER-TENANT/p1/ts/consultation.webm" }),
+    ).resolves.toEqual({ ok: false, error: "forbidden" });
+    expect(mockFire).not.toHaveBeenCalled();
+  });
+
+  it("validates required fields", async () => {
+    await expect(
+      fireConsultationWebhookAction({ ...OK_INPUT, consultationEndedAt: "" }),
+    ).resolves.toEqual({ ok: false, error: "validation" });
+  });
+
+  it("signs a 1h GET and fires the webhook → ok", async () => {
+    await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({ ok: true });
+    expect(mockSignDownload).toHaveBeenCalledWith("t1/p1/ts/consultation.webm", 3600);
+    expect(mockFire).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a webhook error on a non-2xx fire", async () => {
+    mockFire.mockResolvedValue({ ok: false, status: 401 });
+    await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({ ok: false, error: "webhook" });
   });
 });
