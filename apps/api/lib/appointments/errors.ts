@@ -8,7 +8,8 @@ export type AppointmentErrorCode =
   | "service_unavailable" // service not patient-bookable / inactive → 422
   | "location_unavailable" // location not bookable at → 422
   | "slot_in_past" // requested start is not in the future → 422
-  | "no_slot" // no therapist available for the window → 409
+  | "no_slot" // the chosen slot was taken in the meantime (booking race) → 409
+  | "no_therapist" // nobody works this window (schedule gap, not a race) → 409
   | "cutoff" // inside the 24h cancel/reschedule window → 409
   | "not_reschedulable"; // appointment already cancelled/completed → 409
 
@@ -34,6 +35,7 @@ export const HTTP_STATUS: Record<AppointmentErrorCode, number> = {
   location_unavailable: 422,
   slot_in_past: 422,
   no_slot: 409,
+  no_therapist: 409,
   cutoff: 409,
   not_reschedulable: 409,
 };
@@ -46,6 +48,7 @@ export const MESSAGE_KEY: Record<AppointmentErrorCode, string> = {
   location_unavailable: "patientAppointments.error.locationUnavailable",
   slot_in_past: "patientAppointments.error.slotInPast",
   no_slot: "patientAppointments.error.noSlot",
+  no_therapist: "patientAppointments.error.noTherapist",
   cutoff: "patientAppointments.error.cutoff",
   not_reschedulable: "patientAppointments.error.notReschedulable",
 };

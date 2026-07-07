@@ -117,13 +117,22 @@ async function enrichViews(
 type Practitioner = SQL | string;
 const pref = (p: Practitioner): SQL => (typeof p === "string" ? sql`${p}` : p);
 
+// A window endpoint is either a concrete instant (Date, bound as a timestamptz
+// parameter) or a SQL expression (a column reference from the open-slot sweep,
+// e.g. `sql`s.starts_at``). Generalizing the fragments over both is what makes
+// the step-3 availability list and the step-4 booking guard share ONE predicate
+// source instead of two hand-kept copies.
+type Instant = SQL | Date;
+const iref = (t: Instant): SQL =>
+  t instanceof Date ? sql`${t.toISOString()}::timestamptz` : t;
+
 /** Half-open appointment overlap for a therapist, excluding cancelled + given
  *  ids. Mirrors Stream B findConflicts (therapist dimension). */
 function apptOverlapExists(
   tenantId: string,
   practitioner: Practitioner,
-  startsAt: Date,
-  endsAt: Date,
+  startsAt: Instant,
+  endsAt: Instant,
   excludeIds: string[],
 ): SQL {
   const exclude =
@@ -138,8 +147,8 @@ function apptOverlapExists(
     where a.tenant_id = ${tenantId}
       and a.practitioner_id = ${pref(practitioner)}
       and a.status <> 'cancelled'
-      and a.starts_at < ${endsAt.toISOString()}::timestamptz
-      and a.ends_at   > ${startsAt.toISOString()}::timestamptz
+      and a.starts_at < ${iref(endsAt)}
+      and a.ends_at   > ${iref(startsAt)}
       ${exclude}
   )`;
 }
@@ -148,15 +157,15 @@ function apptOverlapExists(
 function timeOffOverlapExists(
   tenantId: string,
   practitioner: Practitioner,
-  startsAt: Date,
-  endsAt: Date,
+  startsAt: Instant,
+  endsAt: Instant,
 ): SQL {
   return sql`exists (
     select 1 from time_off t
     where t.tenant_id = ${tenantId}
       and t.user_id = ${pref(practitioner)}
-      and t.starts_at < ${endsAt.toISOString()}::timestamptz
-      and t.ends_at   > ${startsAt.toISOString()}::timestamptz
+      and t.starts_at < ${iref(endsAt)}
+      and t.ends_at   > ${iref(startsAt)}
   )`;
 }
 
@@ -167,22 +176,22 @@ function availabilityCoversExists(
   tenantId: string,
   practitioner: Practitioner,
   locationId: string,
-  startsAt: Date,
-  endsAt: Date,
+  startsAt: Instant,
+  endsAt: Instant,
 ): SQL {
-  const s = startsAt.toISOString();
-  const e = endsAt.toISOString();
+  const s = iref(startsAt);
+  const e = iref(endsAt);
   return sql`exists (
     select 1 from availability_templates av
     where av.tenant_id = ${tenantId}
       and av.user_id = ${pref(practitioner)}
       and av.location_id = ${locationId}
       and av.is_active = true
-      and av.weekday = extract(dow from (${s}::timestamptz at time zone ${LISBON}))::int
-      and av.start_time <= (${s}::timestamptz at time zone ${LISBON})::time
-      and av.end_time   >= (${e}::timestamptz at time zone ${LISBON})::time
-      and (av.valid_from  is null or av.valid_from  <= (${s}::timestamptz at time zone ${LISBON})::date)
-      and (av.valid_until is null or av.valid_until >= (${s}::timestamptz at time zone ${LISBON})::date)
+      and av.weekday = extract(dow from (${s} at time zone ${LISBON}))::int
+      and av.start_time <= (${s} at time zone ${LISBON})::time
+      and av.end_time   >= (${e} at time zone ${LISBON})::time
+      and (av.valid_from  is null or av.valid_from  <= (${s} at time zone ${LISBON})::date)
+      and (av.valid_until is null or av.valid_until >= (${s} at time zone ${LISBON})::date)
   )`;
 }
 
@@ -302,6 +311,62 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
       )
       .limit(1);
     return rows.length > 0;
+  },
+
+  async listOpenSlots(principal, { locationId, durationMin, horizonDays, now }): Promise<string[]> {
+    // Step-3 source of truth. Expands ACTIVE therapists' ACTIVE availability
+    // templates at the location into a 30-min grid of concrete starts over the
+    // horizon — all wall-clock math in Europe/Lisbon INSIDE Postgres — and keeps
+    // only starts where at least one therapist passes the EXACT same three
+    // predicates the createBooking guard runs (availabilityCoversExists /
+    // apptOverlapExists / timeOffOverlapExists). A slot returned here can only
+    // be rejected at confirm by a genuine race, never by disagreement.
+    const startExpr = sql`s.starts_at`;
+    // Parens are load-bearing: AT TIME ZONE binds tighter than `+`. The ::int
+    // cast is too: drizzle/postgres-js sends parameters untyped and
+    // make_interval(mins => unknown) does not resolve.
+    const endExpr = sql`(s.starts_at + make_interval(mins => ${durationMin}::int))`;
+    const nowIso = now.toISOString();
+    const rows = (await getDbAdmin().execute(sql`
+      with slot as (
+        select distinct (t.local_start at time zone ${LISBON}) as starts_at
+        from availability_templates av
+        join users u on u.id = av.user_id and u.tenant_id = av.tenant_id
+        cross join lateral generate_series(
+          (${nowIso}::timestamptz at time zone ${LISBON})::date,
+          (${nowIso}::timestamptz at time zone ${LISBON})::date + ${horizonDays}::int,
+          interval '1 day'
+        ) as d(day)
+        cross join lateral generate_series(
+          d.day::date + av.start_time,
+          d.day::date + av.end_time - make_interval(mins => ${durationMin}::int),
+          interval '30 minutes'
+        ) as t(local_start)
+        where av.tenant_id = ${principal.tenantId}
+          and av.location_id = ${locationId}
+          and av.is_active = true
+          and u.is_active = true
+          and av.weekday = extract(dow from d.day)::int
+          and (av.valid_from  is null or av.valid_from  <= d.day::date)
+          and (av.valid_until is null or av.valid_until >= d.day::date)
+      )
+      select s.starts_at as starts_at
+      from slot s
+      where s.starts_at > ${nowIso}::timestamptz
+        and exists (
+          select 1 from users u
+          where u.tenant_id = ${principal.tenantId}
+            and u.is_active = true
+            and ${availabilityCoversExists(principal.tenantId, sql`u.id`, locationId, startExpr, endExpr)}
+            and not ${apptOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr, [])}
+            and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr)}
+        )
+      order by s.starts_at
+    `)) as unknown as ReadonlyArray<{ starts_at: Date | string }>;
+
+    return rows.map((r) =>
+      (r.starts_at instanceof Date ? r.starts_at : new Date(r.starts_at)).toISOString(),
+    );
   },
 
   async listAvailableTherapists(principal, { locationId, startsAt, endsAt }): Promise<TherapistCandidate[]> {

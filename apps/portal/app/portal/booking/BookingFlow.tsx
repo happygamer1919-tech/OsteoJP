@@ -1,12 +1,12 @@
 'use client'
 
 import { ChevronLeft, ChevronRight, MapPin } from 'lucide-react'
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Banner, Button, Card, DatePicker, SlotPicker } from '@osteojp/ui'
 import type { BookableLocation, BookableService } from '@/lib/api/client'
-import { submitBooking } from './actions'
-import { formatPrice, formatTime, generateSlots, localDateKey } from './slots'
+import { loadSlots, submitBooking } from './actions'
+import { formatPrice, formatTime, localDateKey } from './slots'
 import { s } from '@/lib/i18n'
 
 type Step = 1 | 2 | 3 | 4
@@ -32,8 +32,16 @@ export function BookingFlow({
   const [error, setError] = useState<string | null>(null)
   const [slotTaken, setSlotTaken] = useState(false)
   const [pending, startTransition] = useTransition()
-  // Capture "now" once: generateSlots must not read the clock during render.
-  const [now] = useState(() => Date.now())
+  // Step-3 slots come from the API's availability endpoint — the SAME source
+  // the booking confirm validates against. The result is tagged with the key
+  // it was fetched for; a key mismatch means loading. slotsVersion is bumped
+  // after any rejected confirm so the list is refetched, never reused.
+  const [slotsState, setSlotsState] = useState<{
+    key: string
+    slots?: string[]
+    error?: string
+  } | null>(null)
+  const [slotsVersion, setSlotsVersion] = useState(0)
 
   const location = locations.find((l) => l.id === locationId) ?? null
   const service = services.find((s) => s.id === serviceId) ?? null
@@ -41,15 +49,38 @@ export function BookingFlow({
     (s) => s.locationIds.length === 0 || (locationId != null && s.locationIds.includes(locationId)),
   )
 
+  const slotsKey =
+    serviceId && locationId ? `${serviceId}|${locationId}|${slotsVersion}` : null
+
+  useEffect(() => {
+    if (!slotsKey || !serviceId || !locationId) return
+    let stale = false
+    loadSlots(serviceId, locationId).then((result) => {
+      if (stale) return
+      setSlotsState(
+        'error' in result
+          ? { key: slotsKey, error: result.error }
+          : { key: slotsKey, slots: result.slots },
+      )
+    })
+    return () => {
+      stale = true
+    }
+  }, [slotsKey, serviceId, locationId])
+
+  // Stale-keyed state reads as loading — never as the previous list.
+  const currentSlots = slotsState && slotsState.key === slotsKey ? slotsState : null
+  const slots = currentSlots?.slots ?? null
+  const slotsError = currentSlots?.error ?? null
+
   const byDate = useMemo(() => {
-    if (!service) return {} as Record<string, string[]>
     const map: Record<string, string[]> = {}
-    for (const iso of generateSlots(service.durationMin, now)) {
+    for (const iso of slots ?? []) {
       const key = localDateKey(iso)
       ;(map[key] ??= []).push(iso)
     }
     return map
-  }, [service, now])
+  }, [slots])
 
   const availableDates = useMemo(() => Object.keys(byDate).sort(), [byDate])
   const daySlots = date ? (byDate[date] ?? []).map((iso) => ({ value: iso, label: formatTime(iso) })) : []
@@ -85,6 +116,12 @@ export function BookingFlow({
       if (result) {
         setError(result.error)
         setSlotTaken(Boolean(result.slotTaken))
+        if (result.slotTaken) {
+          // The offered list is stale (taken slot or schedule gap) — drop the
+          // dead selection and refetch before the patient picks again.
+          setSlotIso(null)
+          setSlotsVersion((v) => v + 1)
+        }
       }
     })
   }
@@ -94,6 +131,10 @@ export function BookingFlow({
     setSlotTaken(false)
     setSlotIso(null)
     setStep(3)
+  }
+
+  function retrySlots() {
+    setSlotsVersion((v) => v + 1)
   }
 
   const summaryDate = slotIso
@@ -167,7 +208,24 @@ export function BookingFlow({
             placeholder={s.booking.choose_date_placeholder}
             triggerLabel={s.booking.choose_date_placeholder}
           />
-          {date ? (
+          {slotsError ? (
+            <Banner
+              tone="error"
+              action={
+                <button
+                  type="button"
+                  onClick={retrySlots}
+                  className="inline-flex min-h-11 items-center whitespace-nowrap rounded text-sm font-semibold text-accent-2-700 transition-transform motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                >
+                  {s.booking.slots_retry}
+                </button>
+              }
+            >
+              {slotsError}
+            </Banner>
+          ) : slots === null ? (
+            <p className="text-sm text-text-secondary">{s.booking.slots_loading}</p>
+          ) : date ? (
             daySlots.length > 0 ? (
               <SlotPicker aria-label={s.booking.slot_available} value={slotIso} onChange={setSlotIso} slots={daySlots} />
             ) : (

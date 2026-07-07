@@ -606,6 +606,7 @@
   "patientAppointments.error.locationUnavailable": "Esta clínica não está disponível para marcação online.",
   "patientAppointments.error.slotInPast": "Não é possível marcar uma consulta no passado.",
   "patientAppointments.error.noSlot": "Não há horários disponíveis. Tente outro dia ou contacte a clínica.",
+  "patientAppointments.error.noTherapist": "Não há terapeutas disponíveis neste horário. Escolha outro horário disponível.",
   "patientAppointments.error.cutoff": "Não é possível cancelar ou remarcar com menos de 24 horas de antecedência. Por favor ligue para a clínica.",
   "patientAppointments.error.notReschedulable": "Esta consulta não pode ser remarcada (já foi cancelada ou concluída).",
   "patientAppointments.error.serverError": "Ocorreu um erro inesperado. Tente novamente.",

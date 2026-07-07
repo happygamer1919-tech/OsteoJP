@@ -31,11 +31,6 @@ import { randomUUID } from "node:crypto";
 import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { connect, live } from "./rls-harness";
-// The portal's step-3 slot source. On main this is the hardcoded client-side
-// generator that caused the P1; the repro test below runs it against the real
-// validator predicates and MUST fail until the portal consumes the API's
-// availability endpoint.
-import { generateSlots } from "../../../apps/portal/app/portal/booking/slots";
 
 /* ------------------------------- fixture -------------------------------- */
 
@@ -233,23 +228,11 @@ describe.skipIf(!live)("portal booking — slot list / validator parity (P1)", (
     await sql.end();
   });
 
-  it("MAIN REPRO (P1): every slot the portal step-3 generator offers for Wed 2026-07-08 is bookable at LV", async () => {
-    // The portal generator, frozen at the incident clock. It fabricates
-    // Mon–Fri 09:00–19:00 slots with no knowledge of availability templates,
-    // so it offers Wednesday slots the validator then rejects — the exact
-    // production failure (LV, Osteopatia, 2026-07-08 15:00/16:00).
-    const offered = generateSlots(DURATION_MIN, Date.parse(NOW));
-    const lisbonDay = (iso: string) =>
-      new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date(iso));
-    const wednesdaySlots = offered.filter((iso) => lisbonDay(iso) === "2026-07-08");
-    expect(wednesdaySlots.length).toBeGreaterThan(0); // step 3 DOES offer them
-
-    for (const iso of wednesdaySlots) {
-      const eligible = await eligibleTherapists(sql, F.tenant, F.locationLV, iso);
-      // offered ⇒ bookable. On main this fails: eligible is [] for every one.
-      expect({ slot: iso, eligible: eligible.length > 0 }).toEqual({ slot: iso, eligible: true });
-    }
-  });
+  // The pre-fix MAIN REPRO (commit dcfaae8) ran the portal's client-side slot
+  // generator against these predicates and failed: it offered Wednesday
+  // 2026-07-08 slots at LV with zero eligible therapists. That generator is
+  // deleted — the portal now consumes GET /api/v1/booking/slots, whose query
+  // shape is pinned by the parity cases below.
 
   it("NEGATIVE CONTROL: Wednesday 2026-07-08 15:00 Lisbon at LV has NO eligible therapist (the incident rejection)", async () => {
     // 15:00 Lisbon (WEST, UTC+1) = 14:00 UTC.

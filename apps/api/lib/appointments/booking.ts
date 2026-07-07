@@ -95,6 +95,13 @@ export interface AppointmentsStore {
   ): Promise<ServiceForBooking | null>;
   /** True if the location is an active, bookable location for the tenant. */
   isBookableLocation(principal: PatientPrincipal, locationId: string): Promise<boolean>;
+  /** Concrete bookable slot starts (UTC ISO, ascending) at the location over
+   *  the horizon: availability-template expansion filtered by the SAME
+   *  predicates the booking guard runs. The step-3 source of truth. */
+  listOpenSlots(
+    principal: PatientPrincipal,
+    args: { locationId: string; durationMin: number; horizonDays: number; now: Date },
+  ): Promise<string[]>;
   /** Therapists who work at the location AND have no conflict for the window. */
   listAvailableTherapists(
     principal: PatientPrincipal,
@@ -231,6 +238,40 @@ export async function getBookableCatalog(
   return store.getCatalog(principal);
 }
 
+/** Booking horizon offered to patients (calendar days from `now`). */
+export const OPEN_SLOTS_HORIZON_DAYS = 14;
+
+/**
+ * The step-3 availability list. Resolves the service + location with EXACTLY
+ * the same checks bookAppointment applies, then returns the store's open-slot
+ * starts — which are generated from availability templates and filtered by the
+ * same conflict predicates the booking guard runs. One source of truth: a slot
+ * returned here books successfully unless a genuine race takes it first.
+ */
+export async function listOpenSlots(
+  principal: PatientPrincipal,
+  input: { serviceId: string; locationId: string },
+  store: AppointmentsStore,
+  now: Date,
+): Promise<string[]> {
+  const service = await store.getBookableService(principal, input.serviceId);
+  if (!service) throw new AppointmentError("service_unavailable");
+
+  if (!(await store.isBookableLocation(principal, input.locationId))) {
+    throw new AppointmentError("location_unavailable");
+  }
+  if (service.locationId !== null && service.locationId !== input.locationId) {
+    throw new AppointmentError("service_unavailable");
+  }
+
+  return store.listOpenSlots(principal, {
+    locationId: input.locationId,
+    durationMin: service.durationMin,
+    horizonDays: OPEN_SLOTS_HORIZON_DAYS,
+    now,
+  });
+}
+
 /**
  * Book a slot. Resolves the (bookable) service + location, computes the window
  * from the service duration, picks a conflict-free therapist with the returning-
@@ -267,7 +308,10 @@ export async function bookAppointment(
   });
   const prior = await store.priorTherapistId(principal);
   const practitionerId = chooseTherapist(available, prior);
-  if (!practitionerId) throw new AppointmentError("no_slot");
+  // HONEST ERROR: nobody works this window (schedule gap) is `no_therapist`,
+  // distinct from `no_slot` (a real race on a slot that WAS free — thrown by
+  // the in-tx guard in store.createBooking). The portal words them differently.
+  if (!practitionerId) throw new AppointmentError("no_therapist");
 
   const id = await store.createBooking(principal, {
     serviceId: service.id,
