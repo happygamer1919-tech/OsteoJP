@@ -193,7 +193,7 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | ID | Item | Status | Closes when |
 |----|------|--------|-------------|
 | W4-10 | first-test-fire-e2e — real deployed-app fire (André's live Make scenario) | AWAITING-EXTERNAL (#493 machine DoD merged) | André confirms receipt of the real fire **+ `audio_filename` token exposure**, relayed by Ivan. Owner-performed (no deployed-app credentials / interactive browser pick / real audio in the autonomous lane) |
-| W4-05 | camera-to-ficha — Rodica real-phone camera-capture check | AWAITING-EXTERNAL (#484 shipped; loop stays awaiting, non-blocking) | Rodica confirms the real-phone capture works (no device-gallery persistence), relayed by Ivan |
+| W4-05 | camera-to-ficha — Rodica real-phone camera-capture check | DONE (Rodica verified 2026-07-08, relayed by Ivan) | **Rodica real-phone verification 2026-07-08: photo in anexos, zero gallery persistence.** In-page captured photo landed in the ficha anexos and nothing was saved to her phone gallery — closes the external check. Build shipped #484 |
 
 ## Wave 04 candidates
 
