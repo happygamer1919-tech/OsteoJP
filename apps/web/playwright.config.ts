@@ -89,6 +89,8 @@ export default defineConfig({
         "**/location-auto-select.spec.ts",
         // W4-06: start-consultation spec — Chromium-only, like the above.
         "**/consultation-start.spec.ts",
+        // W4-07: recording spec (MediaRecorder mock) — Chromium-only.
+        "**/recording.spec.ts",
       ],
     },
     {
@@ -109,6 +111,8 @@ export default defineConfig({
         "**/location-auto-select.spec.ts",
         // W4-06: start-consultation spec — Chromium-only, like the above.
         "**/consultation-start.spec.ts",
+        // W4-07: recording spec (MediaRecorder mock) — Chromium-only.
+        "**/recording.spec.ts",
       ],
     },
   ],
