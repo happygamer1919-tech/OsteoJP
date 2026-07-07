@@ -54,8 +54,18 @@ test("Equipa: password-gated therapist delete — wrong password refused, correc
   await page.goto("/admin/staff");
   const row = () => page.locator("tbody tr").filter({ hasText: THER });
   await expect(row()).toHaveCount(1);
+  // W4-13: the management actions (incl. the password-gated delete) live in a
+  // per-row `<details>` "Gerir" drawer — open it before interacting. The gate
+  // itself is unchanged (restyle only).
+  const openManage = async () => {
+    const summary = row().locator("summary");
+    if (!(await row().locator('input[name="password"]').isVisible())) {
+      await summary.click();
+    }
+  };
 
   // Wrong password → refused; the therapist is still there.
+  await openManage();
   await row().locator('input[name="password"]').fill("0000");
   await row().getByRole("button", { name: "Eliminar", exact: true }).click();
   await page.waitForURL(/admin\/staff/);
@@ -63,6 +73,7 @@ test("Equipa: password-gated therapist delete — wrong password refused, correc
   await expect(row()).toHaveCount(1);
 
   // Correct password (tenant default 1234) → the activity-free therapist is deleted.
+  await openManage();
   await row().locator('input[name="password"]').fill("1234");
   await row().getByRole("button", { name: "Eliminar", exact: true }).click();
   await page.waitForURL(/admin\/staff/);
