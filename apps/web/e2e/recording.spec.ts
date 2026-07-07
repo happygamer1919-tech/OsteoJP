@@ -1,0 +1,79 @@
+/**
+ * recording.spec.ts — in-browser recording UI (W4-07). Runs as THERAPIST.
+ * MediaRecorder + getUserMedia are mocked via addInitScript so the record→stop
+ * flow is deterministic and needs no real microphone. The non-Chrome path is
+ * simulated by making MediaRecorder.isTypeSupported return false.
+ */
+import { test, expect, type Page } from "@playwright/test";
+import { PATIENTS, STORAGE } from "./fixtures";
+
+async function installFakeRecorder(page: Page, { supported = true } = {}) {
+  await page.addInitScript((supported) => {
+    // Fake microphone stream with stoppable tracks.
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => ({ getTracks: () => [{ kind: "audio", stop() {} }] }),
+      },
+    });
+    class FakeMediaRecorder {
+      ondataavailable: ((e: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      static isTypeSupported() {
+        return supported;
+      }
+      start() {
+        setTimeout(() => {
+          this.ondataavailable?.({
+            data: new Blob([new Uint8Array([1, 2, 3, 4])], { type: "audio/webm" }),
+          });
+        }, 0);
+      }
+      stop() {
+        this.onstop?.();
+      }
+    }
+    (window as unknown as { MediaRecorder: unknown }).MediaRecorder = FakeMediaRecorder;
+  }, supported);
+}
+
+/** Existing patient → consent → start → land on the recording UI. */
+async function reachRecorder(page: Page) {
+  await page.goto("/consultation");
+  const patient = page.getByRole("combobox", { name: /Paciente/i });
+  await patient.click();
+  await patient.fill(PATIENTS.maria.name);
+  await page.getByRole("option", { name: PATIENTS.maria.name }).click();
+  await page.getByRole("checkbox", { name: /consente a gravação/i }).check();
+  await page.getByRole("button", { name: "Iniciar gravação" }).click();
+}
+
+test.describe("recording (therapist)", () => {
+  test.use({ storageState: STORAGE.therapist });
+
+  test("record → stop produces the recording (W4-07)", async ({ page }) => {
+    await installFakeRecorder(page, { supported: true });
+    await reachRecorder(page);
+
+    const record = page.getByRole("button", { name: "Gravar" });
+    await expect(record).toBeVisible();
+    await record.click();
+
+    // Recording state: Stop control + in-progress indicator.
+    await expect(page.getByRole("button", { name: "Parar" })).toBeVisible();
+    await expect(page.getByText("A gravar…")).toBeVisible();
+
+    await page.getByRole("button", { name: "Parar" }).click();
+    await expect(page.getByText("Gravação concluída.")).toBeVisible();
+  });
+
+  test("non-Chrome / unsupported shows the pt-PT block, no Record (W4-07)", async ({ page }) => {
+    await installFakeRecorder(page, { supported: false });
+    await reachRecorder(page);
+
+    await expect(
+      page.getByText(/só está disponível no Google Chrome/i),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Gravar" })).toHaveCount(0);
+  });
+});

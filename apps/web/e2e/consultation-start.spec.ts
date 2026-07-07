@@ -26,7 +26,9 @@ test.describe("start-consultation (therapist)", () => {
     await expect(start).toBeEnabled();
 
     await start.click();
-    await expect(page.getByText("Consentimento registado. Pronto para gravar.")).toBeVisible();
+    // Consent captured -> the recording UI (W4-07) mounts; Chromium supports
+    // webm/opus so the Record control is available.
+    await expect(page.getByRole("button", { name: "Gravar" })).toBeVisible();
   });
 
   test("new stub → name required → create → consent → ready (W4-06)", async ({ page }) => {
@@ -46,6 +48,8 @@ test.describe("start-consultation (therapist)", () => {
     await expect(start).toBeDisabled();
     await page.getByRole("checkbox", { name: /consente a gravação/i }).check();
     await start.click();
-    await expect(page.getByText("Consentimento registado. Pronto para gravar.")).toBeVisible();
+    // Consent captured -> the recording UI (W4-07) mounts; Chromium supports
+    // webm/opus so the Record control is available.
+    await expect(page.getByRole("button", { name: "Gravar" })).toBeVisible();
   });
 });

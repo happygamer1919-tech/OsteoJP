@@ -4,6 +4,7 @@ import { Button, Checkbox, Combobox, Field, Input, type ComboboxOption } from "@
 import { s } from "@/lib/i18n";
 import { searchPatientsAction } from "@/lib/patients/actions";
 import { createStubPatientAction, startConsultationAction } from "./actions";
+import { Recorder } from "./Recorder";
 
 type Mode = "existing" | "new";
 
@@ -100,15 +101,9 @@ export function StartConsultation() {
   const patientChosen = mode === "existing" ? !!patientId : !!patientId && !!stubLabel;
   const canStart = patientChosen && consent && !starting && !ready;
 
-  if (ready) {
-    return (
-      <div className="max-w-lg space-y-3">
-        <h1 className="text-lg font-semibold">{s["consultation.title"]}</h1>
-        <p role="status" className="rounded border border-teal-600 bg-teal-50 px-3 py-2 text-sm">
-          {s["consultation.ready"]}
-        </p>
-      </div>
-    );
+  // Consent captured → hand off to the recording UI (W4-07). patientId is set.
+  if (ready && patientId) {
+    return <Recorder patientId={patientId} />;
   }
 
   return (
