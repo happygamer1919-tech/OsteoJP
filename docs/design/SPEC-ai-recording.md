@@ -8,6 +8,18 @@
 > only and are NEVER written here — this SPEC names headers and env keys, never
 > their values.
 
+> **AMENDED 2026-07-06 — André's infra confirmed built and live.** After this SPEC
+> merged (#483), André confirmed his AWS side is built and live. This revision folds
+> his confirmed terms into the contract the still-QUEUED build chain (W4-06 → W4-10)
+> consumes: single dedicated signer (`PutObject`+`GetObject` only, no list/no delete,
+> Vercel-env-referenced vault secret); bucket hardening (Block All Public Access ON,
+> SSE-S3 — never KMS, 7-day lifecycle auto-delete); **CORS RESOLVED** to exactly three
+> origins (`osteojp-api.vercel.app` excluded); `x-make-apikey` from vault key
+> `osteojp-m1-webhook-key` (401 on missing/wrong); `audio_filename` read by André's
+> transcription module from that field (no longer hardcoded); idempotency key =
+> `patient_id` + `consultation_started_at` + `consultation_ended_at`. See DECISIONS
+> 2026-07-06 "AI recording spec amended per André's 2026-07-06 confirmation".
+
 Authored by the GREEN runner (W4-04), Wave 04. Aligns with the AI-recording
 infrastructure ruling (DECISIONS 2026-07-06 "AI recording infrastructure: bucket,
 scoped IAM, CORS, webhook auth"), the consent ruling (DECISIONS 2026-07-06 "AI
@@ -111,22 +123,38 @@ Per DECISIONS 2026-07-06 "AI recording infrastructure" + CLAUDE.md ("File upload
 always go through signed URLs; never proxy through the Next.js server"):
 
 - **Bucket:** `osteojp-audio-intake`, **André's AWS**, region **eu-central-1**.
-- **Scoped IAM key:** vault-delivered, limited to **`s3:PutObject` + `s3:GetObject`
-  on `osteojp-audio-intake` only** — no other bucket, no other action. **Delivered
-  via vault; never hardcoded or committed.** The key value never appears in this
-  SPEC, chat, or code.
-- **Signing:** the **OsteoJP backend signs BOTH** the presigned PUT (upload) and
-  the presigned GET (§7 `audio_url`). The browser then **PUTs the blob direct to
-  S3** using the presigned PUT URL.
+- **Bucket hardening (André-confirmed 2026-07-06, do NOT change):**
+  - **Block All Public Access is ON** — the bucket is never public; access is only
+    ever via a presigned URL.
+  - **Encryption is SSE-S3.** **Never switch the bucket to KMS** — KMS breaks the
+    presigned URLs this pipeline depends on.
+  - **Lifecycle rule auto-deletes every object at 7 days.** Any presigned GET expiry
+    must therefore stay **well under 7 days**; the agreed **1-hour** GET expiry (§7)
+    stands with wide margin.
+- **Scoped IAM key (one dedicated signer):** vault-delivered, limited to
+  **`s3:PutObject` + `s3:GetObject` on `osteojp-audio-intake` only** — **no other
+  bucket, no other action, NO list, NO delete.** The secret lives in **vault**,
+  **referenced in Vercel env vars only**; never hardcoded or committed. The key value
+  never appears in this SPEC, chat, or code.
+- **Signing:** the **OsteoJP backend is the ONLY signer**, and it signs **BOTH** the
+  presigned PUT (browser upload) and the presigned GET (§7 `audio_url`) with the
+  **same key** — same key, both operations. The browser then **PUTs the blob direct
+  to S3** using the presigned PUT URL.
 - **Never through Vercel:** the audio blob (up to ~21.6 MB) is NEVER posted to a
   Next.js/Vercel route — the Vercel request-body limit is **4.5 MB** and the
   signed-URL rule forbids proxying uploads. Only the small signer request/response
   (URLs, no audio bytes) transits OsteoJP.
-- **CORS (coordination, PENDING):** a CORS rule on André's bucket must allow the
-  EMR origins (production + preview) before direct-to-S3 works. OsteoJP owes André
-  the **exact allowed-origins list**. Tracked as an open coordination item
-  (`docs/design/QUESTIONS.md` — "AI recording — EMR origins list for André's CORS
-  rule"). This does not block SPEC authoring; it blocks the first live upload.
+- **CORS (RESOLVED, André-confirmed 2026-07-06):** the bucket CORS rule is locked to
+  **exactly three** browser-PUT origins:
+  - `https://osteojp-platform.vercel.app`
+  - `https://app.osteojp.pt`
+  - `http://localhost:3000`
+
+  **`osteojp-api.vercel.app` is deliberately EXCLUDED** — no browser PUTs originate
+  there. The staff capture page must serve from one of the three allowed origins; if
+  it ever serves from another origin, **André must add it first** or uploads fail on
+  CORS. CORS config is André's side (his AWS), not ours to set. This supersedes the
+  prior PENDING "EMR origins list" coordination item, now CLOSED.
 - **EU residency:** eu-central-1 holds EU residency; the audio bucket is
   processor/sub-processor infrastructure under the signed DPA chain (DECISIONS
   2026-07-05), consistent with CLAUDE.md rule 8. No US-region resource stores the
@@ -142,14 +170,18 @@ post-processing callback into André's Make.com workflow, module 26). It carries
 
 | Header | Value | Notes |
 |---|---|---|
-| `x-make-apikey` (lowercase) | *(vault/env only)* | Sent on **every** webhook fire. The **value lives in vault/env only** — never in this SPEC, chat, or code. Only the header **name** is specified here. |
+| `x-make-apikey` (lowercase) | *(vault key `osteojp-m1-webhook-key`, referenced via env)* | Sent on **every** webhook fire. The **value lives in vault under key `osteojp-m1-webhook-key`** (referenced from env) — never in this SPEC, chat, or code. Only the header **name** and the **vault key name** are specified here, never the value. |
+
+- **Missing or wrong header → `401`** and the audio never enters André's scenario. The
+  header is mandatory on every fire (André-confirmed 2026-07-06).
+- **All §7.2 payload fields are mandatory on every fire** (André-confirmed 2026-07-06).
 
 ### 7.2 Payload fields
 
 | Field | Type | Source | Notes |
 |---|---|---|---|
 | `audio_url` | string (URL) | OsteoJP backend (presigned GET) | Presigned **GET** for the uploaded object, **1-hour expiry**. Signed with the scoped IAM key. Grants time-boxed read so André can fetch the audio for transcription. |
-| `audio_filename` | string | OsteoJP backend | The uploaded object's filename (e.g. `consultation.webm`). Lets the callback correlate to the uploaded audio and is the **mappable token** André's Make module 26 remaps (DECISIONS 2026-07-06). |
+| `audio_filename` | string | OsteoJP backend | The uploaded object's filename (e.g. `consultation.webm`). **André's transcription module reads the filename from THIS field — it is no longer hardcoded** (André-confirmed 2026-07-06); it is also the **mappable token** André's Make module 26 remaps (DECISIONS 2026-07-06). Must be present and correct on every fire. |
 | `patient_id` | uuid | OsteoJP (stub or real) | Must already exist before Record (§8). Human-entered identity, never AI-filled. |
 | `doctor_id` | uuid | OsteoJP | The recording clinician's user id. Read-only in the pipeline. |
 | `consultation_started_at` | timestamp (UTC, ISO-8601) | **machine** (Record) | Stamped when Record is pressed (§8.1). Never hand-typed. |
@@ -171,6 +203,10 @@ post-processing callback into André's Make.com workflow, module 26). It carries
   §2, `idempotency_key`, unique per `(tenant_id, idempotency_key)`). A hand-typed
   or mutable timestamp would let a re-fire mint a different key and duplicate the
   draft; machine-stamping keeps re-fires idempotent.
+- **Idempotency key composition (André-confirmed 2026-07-06, unchanged):**
+  `patient_id` + `consultation_started_at` + `consultation_ended_at`. Because two of
+  the three components are machine-stamped timestamps, a deterministic re-fire of the
+  same consultation reproduces the same key and does not duplicate the draft.
 - Stored/compared in **UTC**; displayed in **Europe/Lisbon** (CLAUDE.md date rule).
 
 ### 8.1 Stub-patient precondition (`patient_id` must exist before Record)
@@ -261,10 +297,11 @@ The split is explicit and asymmetric:
 
 ## 11. Open coordination items (do not block this SPEC)
 
-1. **CORS EMR origins list** — OsteoJP must give André the exact production +
-   preview origins to allow direct-to-S3 PUT (`QUESTIONS.md`: "AI recording — EMR
-   origins list for André's CORS rule"). Blocks the first live upload, not this
-   SPEC.
+1. **CORS EMR origins list — RESOLVED 2026-07-06.** ~~OsteoJP must give André the
+   exact origins~~ — CLOSED: André's bucket CORS is locked to the three origins in §6
+   (`osteojp-platform.vercel.app`, `app.osteojp.pt`, `localhost:3000`;
+   `osteojp-api.vercel.app` excluded). No longer blocks the first live upload. Any
+   NEW capture-page origin must be added by André before it can PUT.
 2. **Partner inbound field-mapping + signed contract** — André's extractor keys →
    the twelve OsteoJP keys, plus per-field validation and the bodychart
    region→marker mapping (`endpoint-contract.md` §7,

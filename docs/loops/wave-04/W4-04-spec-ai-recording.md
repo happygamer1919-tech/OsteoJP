@@ -5,15 +5,33 @@ GATE: none for authoring. SPEC-ONLY lane, migration-free, zero product code. Mus
 ## Field 1. Scope and ground truth
 Deliverable: **`docs/design/SPEC-ai-recording.md`** — the design source of truth for the Wave 04 AI-recording pipeline. Follow the existing SPEC naming + header precedent (`docs/design/SPEC-<kebab>.md`, e.g. `SPEC-sms-confirmation.md`: a `# SPEC — <title>` heading and a `> **STATUS: SPEC ONLY — NO BUILD THIS LOOP.**` banner). **No product code, no dependency, no route, no schema change, no env/secret** in this loop.
 
+> **AMENDMENT 2026-07-06 (André spec confirmed — his side built and live).** The
+> deliverable `docs/design/SPEC-ai-recording.md` was authored + MERGED (#483). André
+> then confirmed his infra is built and live (2026-07-06). The confirmed facts below
+> are folded into BOTH this loop record AND the live SPEC so the still-QUEUED build
+> chain (W4-06 → W4-10) consumes the confirmed contract, not the pre-confirmation
+> draft. See DECISIONS 2026-07-06 "AI recording spec amended per André's confirmation".
+
 Ground truth (locked infra + product rulings to embed — GREEN runs with ZERO memory):
 - Infra spine (DECISIONS 2026-07-06 "AI recording infrastructure"): bucket `osteojp-audio-intake` on André's AWS, **eu-central-1**; vault-delivered scoped IAM key limited to **`s3:PutObject` + `s3:GetObject` on that bucket only**; the OsteoJP backend signs BOTH presigned PUT and presigned GET; direct-to-S3 upload from the client, **never proxied through a Vercel/Next.js route** (CLAUDE.md signed-URL rule + 4.5 MB Vercel body limit); M1 webhook gains **API-key auth**; the contract adds an **`audio_filename`** field.
+- **André's confirmed spec (2026-07-06, his side built and live) — the SPEC MUST reflect these exact terms:**
+  - **One dedicated IAM signer**, scoped to **`PutObject` + `GetObject` on `osteojp-audio-intake` only — NO list, NO delete**. Its secret lives in **vault**, referenced in **Vercel env vars only**. The OsteoJP backend is the **ONLY** signer, for **both** the presigned PUT (browser upload) and the presigned GET (fired to the M1 webhook) — **same key, both operations**.
+  - **Bucket hardening (never change):** **Block All Public Access ON**; **encryption SSE-S3** — **never switch to KMS, presigned URLs break**. **Lifecycle rule auto-deletes every object at 7 days**, so any presigned GET expiry **must stay well under 7 days** — the agreed **1 hour** stands.
+  - **CORS is now RESOLVED (no longer PENDING):** locked to **exactly three** browser-PUT origins — `https://osteojp-platform.vercel.app`, `https://app.osteojp.pt`, `http://localhost:3000`. **`osteojp-api.vercel.app` is deliberately EXCLUDED** (no browser PUTs originate there). If the capture page ever serves from another origin, André must add it first or uploads fail on CORS.
+  - **M1 webhook auth:** every fire carries header **`x-make-apikey`** (lowercase), value from **vault key `osteojp-m1-webhook-key`**. Missing or wrong header → **401** and the audio never enters the scenario.
+  - **Payload contract — all fields MANDATORY on every fire:** `audio_url` (presigned GET, 1h), `audio_filename` (e.g. `consultation.webm` — **André's transcription module reads the filename from THIS field, no longer hardcoded**), `patient_id`, `doctor_id`, `consultation_started_at`, `consultation_ended_at`, template `osteopathy`.
+  - **Idempotency key (unchanged):** `patient_id` + `consultation_started_at` + `consultation_ended_at`.
 - Consent (DECISIONS 2026-07-06 "AI recording consent", JP): a **consent checkbox** gates Record; store **actor + timestamp**, minimum-viable (candidate home: `audit_log`, PII-free per CLAUDE.md rule 7).
 - Stub patient (DECISIONS 2026-07-06 "visitor stub retention", JP): quick-create at record time, **name required, phone optional**; identity data **human-entered only** (AI never fills identity); 0029 trigger numbers on NULL.
 - Clinical lifecycle (CLAUDE.md rule 4): AI ingestion never produces a `locked`/`signed` record directly; it lands in the `ai_review_state` queue (`pending_review`) for human acceptance.
 
 **The SPEC MUST cover, in full:**
-- **M1 webhook contract fields:** `audio_url` (presigned GET, **1h expiry**), `audio_filename` (e.g. `consultation.webm`), `patient_id`, `doctor_id`, `consultation_started_at`, `consultation_ended_at`, and the template `osteopathy`.
-- **API key header:** `x-make-apikey` (lowercase), sent on **every** webhook fire. **Key lives in vault/env only — never in chat, never in code.**
+- **M1 webhook contract fields (ALL mandatory on every fire):** `audio_url` (presigned GET, **1h expiry**), `audio_filename` (e.g. `consultation.webm` — **André's transcription module reads the filename from this field, no longer hardcoded**), `patient_id`, `doctor_id`, `consultation_started_at`, `consultation_ended_at`, and the template `osteopathy`.
+- **API key header:** `x-make-apikey` (lowercase), sent on **every** webhook fire, value from **vault key `osteojp-m1-webhook-key`**; missing/wrong → **401**. **Key lives in vault/env only — never in chat, never in code.**
+- **Bucket hardening + lifecycle:** Block All Public Access ON; **SSE-S3 encryption (never KMS — presigned URLs break)**; **7-day lifecycle auto-delete** ⇒ presigned GET expiry stays well under 7 days (1h stands).
+- **Single signer, scoped:** one dedicated IAM signer, **`PutObject` + `GetObject` only, no list/no delete**, secret in vault referenced in Vercel env; the backend is the ONLY signer for **both** PUT and GET (same key).
+- **CORS (RESOLVED):** exactly three browser-PUT origins — `https://osteojp-platform.vercel.app`, `https://app.osteojp.pt`, `http://localhost:3000`; **`osteojp-api.vercel.app` excluded**. Mark the prior PENDING coordination item CLOSED.
+- **Idempotency key:** `patient_id` + `consultation_started_at` + `consultation_ended_at`.
 - **Recording config:** `MediaRecorder` **`webm`/opus, 32 kbps, mono**. Rationale to state explicitly: Azure Whisper **25 MB cap**; ~**14.4 MB/hour** at this bitrate; a **90-minute** session fits under the cap.
 - **Chrome-only gate:** deterministic audio format → **Chrome-only**, with a **pt-PT block message** for non-Chrome browsers.
 - **Timestamps:** **Record** stamps `consultation_started_at`; **Stop** stamps `consultation_ended_at`. **Never hand-typed** — machine-stamped, because they feed the **idempotency key** for ingestion.

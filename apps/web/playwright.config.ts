@@ -87,6 +87,10 @@ export default defineConfig({
         "**/camera-to-ficha.spec.ts",
         // W4-12: booking location auto-fill spec — Chromium-only, like the above.
         "**/location-auto-select.spec.ts",
+        // W4-06: start-consultation spec — Chromium-only, like the above.
+        "**/consultation-start.spec.ts",
+        // W4-07: recording spec (MediaRecorder mock) — Chromium-only.
+        "**/recording.spec.ts",
       ],
     },
     {
@@ -105,6 +109,10 @@ export default defineConfig({
         "**/camera-to-ficha.spec.ts",
         // W4-12: booking location auto-fill spec — Chromium-only, like the above.
         "**/location-auto-select.spec.ts",
+        // W4-06: start-consultation spec — Chromium-only, like the above.
+        "**/consultation-start.spec.ts",
+        // W4-07: recording spec (MediaRecorder mock) — Chromium-only.
+        "**/recording.spec.ts",
       ],
     },
   ],
@@ -117,6 +125,17 @@ export default defineConfig({
           url: "http://localhost:3000",
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,
+          // W4-08: TEST-ONLY scoped-audio-bucket env so the presigned signer
+          // produces a URL (the e2e mocks the S3 PUT via page.route — these are
+          // NOT real credentials and never reach AWS). The real scoped key lives
+          // in Vercel env only; this is a harness fixture, like the local
+          // Supabase test key.
+          env: {
+            AUDIO_S3_REGION: "eu-central-1",
+            AUDIO_S3_BUCKET: "osteojp-audio-intake-e2e",
+            AUDIO_S3_ACCESS_KEY_ID: "e2e-test-access-key",
+            AUDIO_S3_SECRET_ACCESS_KEY: "e2e-test-secret-key",
+          },
         },
         // apps/api — required by portal server actions (PATCH /api/v1/patient/profile).
         // NEXT_PUBLIC_API_URL must be http://localhost:3002 in the test environment
