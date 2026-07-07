@@ -240,6 +240,9 @@ export function AppointmentDrawer({
     editing?.patientTwoId && editing.patientTwoName
       ? { value: editing.patientTwoId, label: editing.patientTwoName }
       : null;
+  // The Participantes secundários section mounts its inner fields only when open
+  // (keeps the secondary controls out of the DOM otherwise — see the render).
+  const [secondaryOpen, setSecondaryOpen] = useState(false);
   const [patientTwoQuery, setPatientTwoQuery] = useState(editingPatientTwo?.label ?? "");
   const [patientTwoResults, setPatientTwoResults] = useState<ComboboxOption[]>([]);
   const [patientTwoLoading, setPatientTwoLoading] = useState(false);
@@ -642,10 +645,17 @@ export function AppointmentDrawer({
             availability, conflicts, the Serviço/Localização auto-selects,
             analytics, the AI-recording pair, or the Estado axes. */}
         {!editing && (
-          <details className="rounded-v2 border border-border-strong p-3">
+          <details
+            className="rounded-v2 border border-border-strong p-3"
+            onToggle={(e) => setSecondaryOpen(e.currentTarget.open)}
+          >
             <summary className="cursor-pointer text-xs font-medium text-text-secondary [&::-webkit-details-marker]:hidden">
               {s["appointment.secondaryParticipants"]}
             </summary>
+            {/* Inner fields mount ONLY when opened, so the "Terapeuta 2"/"Paciente 2"
+                controls are absent from the DOM by default and never collide with
+                the primary Terapeuta/Paciente selectors used across the e2e suite. */}
+            {secondaryOpen && (
             <div className="mt-3 flex flex-col gap-3">
               <div className="flex flex-col gap-2">
                 <label htmlFor="appt-patient-2" className="text-xs font-medium text-text-primary">
@@ -675,6 +685,7 @@ export function AppointmentDrawer({
                 </Select>
               </Field>
             </div>
+            )}
           </details>
         )}
 
