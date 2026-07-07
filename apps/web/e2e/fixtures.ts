@@ -58,6 +58,12 @@ export const LOCATION_ARCHIVED = { id: "00000000-0000-0000-0000-00000000a102", n
 export const LOCATION_B = { id: "00000000-0000-0000-0000-00000000a103", name: "Consultório B (E2E)" } as const;
 export const SERVICE = { id: "00000000-0000-0000-0000-00000000a201", name: "Osteopatia" } as const;
 export const THERAPIST_NAME = "E2E Therapist";
+// W4-12 location auto-fill fixtures. `THERAPIST_ONE_LOCATION` is seeded with
+// availability at exactly LOCATION_A (Linda-a-Velha) + the Osteopatia service, so
+// selecting them auto-fills both Localização and Serviço. `THERAPIST_MULTI_LOCATION`
+// has availability at two active locations and must NOT auto-fill Localização.
+export const THERAPIST_ONE_LOCATION = "E2E Terapeuta Clinica Unica";
+export const THERAPIST_MULTI_LOCATION = "E2E Terapeuta Varias Clinicas";
 
 /**
  * The current osteopathy template the "Modelo" picker should offer (PR #96
