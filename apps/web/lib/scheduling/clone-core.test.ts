@@ -16,6 +16,8 @@ const source = (startsAt: string, endsAt: string): CloneSource => ({
   practitionerId: "aaaaaaaa-0000-0000-0000-000000000002",
   locationId: "aaaaaaaa-0000-0000-0000-000000000003",
   serviceId: "aaaaaaaa-0000-0000-0000-000000000004",
+  patientTwoId: null,
+  practitionerTwoId: null,
   startsAt: new Date(startsAt),
   endsAt: new Date(endsAt),
 });

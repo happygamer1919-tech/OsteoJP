@@ -1,230 +1,237 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1779790907279,
-      "tag": "0000_empty_runaways",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1779830496373,
-      "tag": "0001_rls",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1779830505789,
-      "tag": "0002_auth_token_hook",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1779917919088,
-      "tag": "0003_grants",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1780078966252,
-      "tag": "0004_clinical_record_supersedes",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1780319877795,
-      "tag": "0005_patient_merge_multilocation",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1780324715145,
-      "tag": "0006_availability_timeoff",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1780327723529,
-      "tag": "0007_service_location_prices",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1780341810427,
-      "tag": "0008_ai_ingestion_requests",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1780439439972,
-      "tag": "0009_tenant_status",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1780610073075,
-      "tag": "0010_patient_identity_layer",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1780613434617,
-      "tag": "0011_patient_form_intake",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1780617633308,
-      "tag": "0012_patient_jwt_security_definer",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1780941980378,
-      "tag": "0013_review_finalize_audit",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1781185534255,
-      "tag": "0014_migration_staging",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "7",
-      "when": 1781185535255,
-      "tag": "0015_patients_phone_digits_index",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "7",
-      "when": 1781185536255,
-      "tag": "0016_agenda_location_start_idx",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "7",
-      "when": 1781185537255,
-      "tag": "0017_perf_indexes",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1781185538255,
-      "tag": "0018_quick_notes",
-      "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1781185539255,
-      "tag": "0019_patient_reminder_prefs",
-      "breakpoints": true
-    },
-    {
-      "idx": 20,
-      "version": "7",
-      "when": 1781185540255,
-      "tag": "0020_patient_updated_at_grant",
-      "breakpoints": true
-    },
-    {
-      "idx": 21,
-      "version": "7",
-      "when": 1781185541255,
-      "tag": "0021_grants_hardening",
-      "breakpoints": true
-    },
-    {
-      "idx": 22,
-      "version": "7",
-      "when": 1781185542255,
-      "tag": "0022_patient_profession_region",
-      "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "7",
-      "when": 1781185543255,
-      "tag": "0023_therapist_service_mapping",
-      "breakpoints": true
-    },
-    {
-      "idx": 24,
-      "version": "7",
-      "when": 1781185544255,
-      "tag": "0024_appointment_confirmation_state",
-      "breakpoints": true
-    },
-    {
-      "idx": 25,
-      "version": "7",
-      "when": 1781185545255,
-      "tag": "0025_event_schema",
-      "breakpoints": true
-    },
-    {
-      "idx": 26,
-      "version": "7",
-      "when": 1782945998337,
-      "tag": "0026_appointment_notes",
-      "breakpoints": true
-    },
-    {
-      "idx": 27,
-      "version": "7",
-      "when": 1783045998337,
-      "tag": "0027_multi_therapist_booking",
-      "breakpoints": true
-    },
-    {
-      "idx": 28,
-      "version": "7",
-      "when": 1783145998337,
-      "tag": "0028_batch_scheduling",
-      "breakpoints": true
-    },
-    {
-      "idx": 29,
-      "version": "7",
-      "when": 1783245998337,
-      "tag": "0029_patient_number",
-      "breakpoints": true
-    },
-    {
-      "idx": 30,
-      "version": "7",
-      "when": 1783345998337,
-      "tag": "0030_patient_note_revisions",
-      "breakpoints": true
-    },
-    {
-      "idx": 31,
-      "version": "7",
-      "when": 1783445998337,
-      "tag": "0031_nesa_contraindications",
-      "breakpoints": true
-    }
-  ]
+	"version": "7",
+	"dialect": "postgresql",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1779790907279,
+			"tag": "0000_empty_runaways",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1779830496373,
+			"tag": "0001_rls",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1779830505789,
+			"tag": "0002_auth_token_hook",
+			"breakpoints": true
+		},
+		{
+			"idx": 3,
+			"version": "7",
+			"when": 1779917919088,
+			"tag": "0003_grants",
+			"breakpoints": true
+		},
+		{
+			"idx": 4,
+			"version": "7",
+			"when": 1780078966252,
+			"tag": "0004_clinical_record_supersedes",
+			"breakpoints": true
+		},
+		{
+			"idx": 5,
+			"version": "7",
+			"when": 1780319877795,
+			"tag": "0005_patient_merge_multilocation",
+			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "7",
+			"when": 1780324715145,
+			"tag": "0006_availability_timeoff",
+			"breakpoints": true
+		},
+		{
+			"idx": 7,
+			"version": "7",
+			"when": 1780327723529,
+			"tag": "0007_service_location_prices",
+			"breakpoints": true
+		},
+		{
+			"idx": 8,
+			"version": "7",
+			"when": 1780341810427,
+			"tag": "0008_ai_ingestion_requests",
+			"breakpoints": true
+		},
+		{
+			"idx": 9,
+			"version": "7",
+			"when": 1780439439972,
+			"tag": "0009_tenant_status",
+			"breakpoints": true
+		},
+		{
+			"idx": 10,
+			"version": "7",
+			"when": 1780610073075,
+			"tag": "0010_patient_identity_layer",
+			"breakpoints": true
+		},
+		{
+			"idx": 11,
+			"version": "7",
+			"when": 1780613434617,
+			"tag": "0011_patient_form_intake",
+			"breakpoints": true
+		},
+		{
+			"idx": 12,
+			"version": "7",
+			"when": 1780617633308,
+			"tag": "0012_patient_jwt_security_definer",
+			"breakpoints": true
+		},
+		{
+			"idx": 13,
+			"version": "7",
+			"when": 1780941980378,
+			"tag": "0013_review_finalize_audit",
+			"breakpoints": true
+		},
+		{
+			"idx": 14,
+			"version": "7",
+			"when": 1781185534255,
+			"tag": "0014_migration_staging",
+			"breakpoints": true
+		},
+		{
+			"idx": 15,
+			"version": "7",
+			"when": 1781185535255,
+			"tag": "0015_patients_phone_digits_index",
+			"breakpoints": true
+		},
+		{
+			"idx": 16,
+			"version": "7",
+			"when": 1781185536255,
+			"tag": "0016_agenda_location_start_idx",
+			"breakpoints": true
+		},
+		{
+			"idx": 17,
+			"version": "7",
+			"when": 1781185537255,
+			"tag": "0017_perf_indexes",
+			"breakpoints": true
+		},
+		{
+			"idx": 18,
+			"version": "7",
+			"when": 1781185538255,
+			"tag": "0018_quick_notes",
+			"breakpoints": true
+		},
+		{
+			"idx": 19,
+			"version": "7",
+			"when": 1781185539255,
+			"tag": "0019_patient_reminder_prefs",
+			"breakpoints": true
+		},
+		{
+			"idx": 20,
+			"version": "7",
+			"when": 1781185540255,
+			"tag": "0020_patient_updated_at_grant",
+			"breakpoints": true
+		},
+		{
+			"idx": 21,
+			"version": "7",
+			"when": 1781185541255,
+			"tag": "0021_grants_hardening",
+			"breakpoints": true
+		},
+		{
+			"idx": 22,
+			"version": "7",
+			"when": 1781185542255,
+			"tag": "0022_patient_profession_region",
+			"breakpoints": true
+		},
+		{
+			"idx": 23,
+			"version": "7",
+			"when": 1781185543255,
+			"tag": "0023_therapist_service_mapping",
+			"breakpoints": true
+		},
+		{
+			"idx": 24,
+			"version": "7",
+			"when": 1781185544255,
+			"tag": "0024_appointment_confirmation_state",
+			"breakpoints": true
+		},
+		{
+			"idx": 25,
+			"version": "7",
+			"when": 1781185545255,
+			"tag": "0025_event_schema",
+			"breakpoints": true
+		},
+		{
+			"idx": 26,
+			"version": "7",
+			"when": 1782945998337,
+			"tag": "0026_appointment_notes",
+			"breakpoints": true
+		},
+		{
+			"idx": 27,
+			"version": "7",
+			"when": 1783045998337,
+			"tag": "0027_multi_therapist_booking",
+			"breakpoints": true
+		},
+		{
+			"idx": 28,
+			"version": "7",
+			"when": 1783145998337,
+			"tag": "0028_batch_scheduling",
+			"breakpoints": true
+		},
+		{
+			"idx": 29,
+			"version": "7",
+			"when": 1783245998337,
+			"tag": "0029_patient_number",
+			"breakpoints": true
+		},
+		{
+			"idx": 30,
+			"version": "7",
+			"when": 1783345998337,
+			"tag": "0030_patient_note_revisions",
+			"breakpoints": true
+		},
+		{
+			"idx": 31,
+			"version": "7",
+			"when": 1783445998337,
+			"tag": "0031_nesa_contraindications",
+			"breakpoints": true
+		},
+		{
+			"idx": 32,
+			"version": "7",
+			"when": 1783448030808,
+			"tag": "0032_secondary_participants",
+			"breakpoints": true
+		}
+	]
 }

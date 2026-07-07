@@ -61,6 +61,9 @@ type FormState = {
   patientId: string;
   serviceId: string;
   practitionerId: string;
+  // Optional secondary participants (W4-19) — de-emphasized, create-only capture.
+  patientTwoId: string;
+  practitionerTwoId: string;
   locationId: string;
   room: string;
   date: string;
@@ -125,6 +128,8 @@ export function AppointmentDrawer({
         patientId: editing.patientId,
         serviceId: editing.serviceId ?? "",
         practitionerId: editing.practitionerId,
+        patientTwoId: editing.patientTwoId ?? "",
+        practitionerTwoId: editing.practitionerTwoId ?? "",
         locationId: editing.locationId,
         room: editing.room ?? "",
         date: parts.date,
@@ -140,6 +145,8 @@ export function AppointmentDrawer({
       patientId: "",
       serviceId: "",
       practitionerId: "",
+      patientTwoId: "",
+      practitionerTwoId: "",
       locationId: options.locations[0]?.id ?? "",
       room: "",
       date: slot?.date ?? anchor,
@@ -224,6 +231,37 @@ export function AppointmentDrawer({
   // editing is stable for the drawer's lifetime; patientQuery drives the search.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientQuery]);
+
+  // Secondary patient (W4-19) — a second, OPTIONAL search combobox mirroring the
+  // primary. De-emphasized; primary-only semantics elsewhere (never fed to
+  // availability/conflict/analytics). Its own search state so the two comboboxes
+  // don't share results.
+  const editingPatientTwo =
+    editing?.patientTwoId && editing.patientTwoName
+      ? { value: editing.patientTwoId, label: editing.patientTwoName }
+      : null;
+  // The Participantes secundários section mounts its inner fields only when open
+  // (keeps the secondary controls out of the DOM otherwise — see the render).
+  const [secondaryOpen, setSecondaryOpen] = useState(false);
+  const [patientTwoQuery, setPatientTwoQuery] = useState(editingPatientTwo?.label ?? "");
+  const [patientTwoResults, setPatientTwoResults] = useState<ComboboxOption[]>([]);
+  const [patientTwoLoading, setPatientTwoLoading] = useState(false);
+  const patientTwoOptions = useMemo<ComboboxOption[]>(() => {
+    if (patientTwoQuery.trim().length < 2) return editingPatientTwo ? [editingPatientTwo] : [];
+    return patientTwoResults;
+  }, [patientTwoQuery, patientTwoResults, editingPatientTwo]);
+  useEffect(() => {
+    const q = patientTwoQuery.trim();
+    if (q.length < 2) return;
+    const timer = setTimeout(() => {
+      setPatientTwoLoading(true);
+      searchPatientsAction(q)
+        .then((rows) => setPatientTwoResults(rows.map((r) => ({ value: r.id, label: r.label }))))
+        .finally(() => setPatientTwoLoading(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientTwoQuery]);
 
   // NESA contraindication warning (W2-08): the selected patient's flags, fetched
   // reactively. Stored WITH the patient id they belong to so the derived value
@@ -404,6 +442,9 @@ export function AppointmentDrawer({
           locationId: form.locationId,
           serviceId: form.serviceId || null,
           room: form.room || null,
+          // Optional secondary participants (W4-19) — display-only linkage.
+          patientTwoId: form.patientTwoId || null,
+          practitionerTwoId: form.practitionerTwoId || null,
           startsAt: startISO,
           endsAt: endISO,
           notes: form.notes || null,
@@ -598,6 +639,55 @@ export function AppointmentDrawer({
             ))}
           </Select>
         </Field>
+
+        {/* Optional secondary participants (W4-19) — de-emphasized, create-only.
+            Primary-only semantics: these are linked DISPLAY data and never affect
+            availability, conflicts, the Serviço/Localização auto-selects,
+            analytics, the AI-recording pair, or the Estado axes. */}
+        {!editing && (
+          <details
+            className="rounded-v2 border border-border-strong p-3"
+            onToggle={(e) => setSecondaryOpen(e.currentTarget.open)}
+          >
+            <summary className="cursor-pointer text-xs font-medium text-text-secondary [&::-webkit-details-marker]:hidden">
+              {s["appointment.secondaryParticipants"]}
+            </summary>
+            {/* Inner fields mount ONLY when opened, so the "Terapeuta 2"/"Paciente 2"
+                controls are absent from the DOM by default and never collide with
+                the primary Terapeuta/Paciente selectors used across the e2e suite. */}
+            {secondaryOpen && (
+            <div className="mt-3 flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
+                <label htmlFor="appt-patient-2" className="text-xs font-medium text-text-primary">
+                  {s["appointment.patientTwo"]}
+                </label>
+                <Combobox
+                  id="appt-patient-2"
+                  options={patientTwoOptions}
+                  value={form.patientTwoId || null}
+                  onChange={(v) => set("patientTwoId", v ?? "")}
+                  query={patientTwoQuery}
+                  onQueryChange={setPatientTwoQuery}
+                  loading={patientTwoLoading}
+                  placeholder={s["appointment.patientTypeToSearch"]}
+                  emptyLabel={s["appointment.patientSearchEmpty"]}
+                />
+              </div>
+              <Field label={s["appointment.therapistTwo"]}>
+                <Select
+                  value={form.practitionerTwoId}
+                  onChange={(e) => set("practitionerTwoId", e.target.value)}
+                >
+                  <option value="">{s["appointment.selectTherapist"]}</option>
+                  {options.therapists.map((o) => (
+                    <option key={o.id} value={o.id}>{o.label}</option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            )}
+          </details>
+        )}
 
         {/* NESA contraindication warning (W2-08) — soft, never blocks submit. */}
         {nesaMatched.length > 0 && (

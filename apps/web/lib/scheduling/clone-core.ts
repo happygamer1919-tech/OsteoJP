@@ -16,6 +16,9 @@ export type CloneSource = {
   practitionerId: string;
   locationId: string;
   serviceId: string | null;
+  // Secondary participants (W4-19, 0032) — read so the clone can COPY them.
+  patientTwoId: string | null;
+  practitionerTwoId: string | null;
   startsAt: Date;
   endsAt: Date;
 };
@@ -45,6 +48,10 @@ export type ClonedAppointmentValues = {
   practitionerId: string;
   locationId: string;
   serviceId: string | null;
+  // Secondary participants (W4-19) — COPIED as-is (owner ruling), unlike the
+  // grouping/series/room/notes fields a clone drops.
+  patientTwoId: string | null;
+  practitionerTwoId: string | null;
   startsAt: Date;
   endsAt: Date;
   status: "scheduled";
@@ -85,6 +92,10 @@ export function buildClonedAppointment(
     practitionerId: source.practitionerId,
     locationId: source.locationId,
     serviceId: source.serviceId,
+    // Secondary participants (W4-19) — COPIED as-is (owner ruling): schedule-again
+    // reproduces the same two participants.
+    patientTwoId: source.patientTwoId,
+    practitionerTwoId: source.practitionerTwoId,
     // Not copied — a clone is a standalone one-off on a fresh lifecycle.
     confirmationReceivedAt: null,
     confirmationChannel: null,

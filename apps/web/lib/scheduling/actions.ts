@@ -14,6 +14,8 @@ import {
   appointments,
   clinicalRecords,
   invoices,
+  patients,
+  users,
   type DbTx,
 } from "@osteojp/db";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
@@ -296,6 +298,13 @@ export async function createAppointment(
     locationId: input.locationId,
     serviceId: input.serviceId ?? null,
     room: input.room ?? null,
+    // Optional secondary participants (W4-19, 0032) — persisted as-is; NULL when
+    // absent. runScoped enforces tenant isolation on the write; the options the
+    // UI offers are already tenant-scoped, so the secondary pair belongs to the
+    // same tenant exactly as the primary pair does. Primary-only semantics: the
+    // secondary is never read for availability/analytics/AI/estado.
+    patientTwoId: input.patientTwoId ?? null,
+    practitionerTwoId: input.practitionerTwoId ?? null,
     // Creation invariant (W3-01, DECISIONS 2026-07-01): a new appointment is
     // always `scheduled`, hardcoded here — never taken from the payload. There
     // is no lifecycle Estado selector in the creation UI. `confirmation_state`
@@ -322,6 +331,28 @@ export async function createAppointment(
           if (conflicts.length > 0) {
             return { ok: false, error: "conflict", conflicts };
           }
+        }
+
+        // Secondary participants (W4-19) — a bare FK does NOT verify tenant match,
+        // so enforce app-layer that any provided secondary belongs to THIS tenant.
+        // The tx runs under RLS (runScoped), so a scoped lookup only finds
+        // same-tenant rows; a cross-tenant id therefore fails validation and is
+        // never written. Mirrors how the primary pair is implicitly same-tenant.
+        if (input.patientTwoId) {
+          const [p2] = await tx
+            .select({ id: patients.id })
+            .from(patients)
+            .where(eq(patients.id, input.patientTwoId))
+            .limit(1);
+          if (!p2) return { ok: false, error: "validation" };
+        }
+        if (input.practitionerTwoId) {
+          const [u2] = await tx
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.id, input.practitionerTwoId))
+            .limit(1);
+          if (!u2) return { ok: false, error: "validation" };
         }
 
         const [parent] = await tx
@@ -466,6 +497,9 @@ export async function cloneAppointment(
             practitionerId: appointments.practitionerId,
             locationId: appointments.locationId,
             serviceId: appointments.serviceId,
+            // Secondary participants (W4-19) — read so the clone copies them.
+            patientTwoId: appointments.patientTwoId,
+            practitionerTwoId: appointments.practitionerTwoId,
             startsAt: appointments.startsAt,
             endsAt: appointments.endsAt,
           })
