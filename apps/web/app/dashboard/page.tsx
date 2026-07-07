@@ -14,6 +14,7 @@ import {
   CalendarPlus,
   ChevronLeft,
   ChevronRight,
+  ClipboardCheck,
   ClipboardList,
   FileText,
   Settings,
@@ -229,8 +230,25 @@ export default async function DashboardPage({
     { label: s["dashboard.tile.clinicalRecord"], icon: FileText, href: "/clinical/new", accent: "lavender", capability: "clinical_records:author" },
     { label: s["dashboard.tile.viewAgenda"], icon: Calendar, href: "/agenda", accent: "blue", capability: "appointments:read" },
     { label: s["dashboard.tile.admin"], icon: Settings, href: "/admin", accent: "gold", capability: "settings:read" },
+    // W4-18 — sixth tile, to the right of Administração, linking to the EXISTING
+    // Revisão Consulta page (/clinical/review). Gated on the same capability that
+    // page enforces (clinical_records:review → owner + therapist), so the tile
+    // never leads to a redirect.
+    { label: s["nav.review"], icon: ClipboardCheck, href: "/clinical/review", accent: "lavender", capability: "clinical_records:review" },
   ];
   const visibleTiles = tiles.filter((t) => can(ctx.role, t.capability));
+
+  // W4-18 — Próximas marcações: the viewed day's upcoming appointments (time,
+  // patient, therapist), reusing the already-fetched `active` list (role-scoped
+  // via listAppointments). No new query, no schema. When viewing today, only
+  // appointments still ahead of now; a past/future viewed date shows that day's
+  // appointments that fall inside the fetched today→+7 window.
+  const upcomingToday = active
+    .filter((a) => {
+      if (lisbonParts(new Date(a.startsAt)).date !== date) return false;
+      return date === today ? new Date(a.startsAt).getTime() >= now.getTime() : true;
+    })
+    .slice(0, 6);
 
   return (
     <main className="flex flex-col gap-8">
@@ -282,22 +300,42 @@ export default async function DashboardPage({
         </section>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Resumo semanal — Mon–Sun appointment counts for the current week. */}
-        <GlassPanel title={s["dashboard.weeklySummary"]}>
-          <ResumoChart
-            data={weeklyData}
-            labels={weekLabels}
-            emptyLabel={s["dashboard.notEnoughData"]}
-            ariaLabel={s["dashboard.weeklyChartLabel"]}
-          />
-        </GlassPanel>
-      </div>
+      {/* Resumo semanal — full-width Mon–Sun appointment counts (W4-18). */}
+      <GlassPanel title={s["dashboard.weeklySummary"]}>
+        <ResumoChart
+          data={weeklyData}
+          labels={weekLabels}
+          emptyLabel={s["dashboard.notEnoughData"]}
+          ariaLabel={s["dashboard.weeklyChartLabel"]}
+        />
+      </GlassPanel>
 
-      {/* Notas rápidas — saved via saveQuickNotesAction to public.quick_notes (content column), keyed on tenant_id + staff_user_id (migration 0018). */}
-      <GlassCard title={s["dashboard.notes"]}>
-        <NotasRapidas />
-      </GlassCard>
+      {/* Lower row (W4-18): Próximas marcações fills the former dead zone beside
+          the untouched Notas rápidas card. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <GlassPanel title={s["dashboard.upcomingTitle"]}>
+          {!canAppointments || upcomingToday.length === 0 ? (
+            <p className="text-sm text-v2-text-secondary">{s["dashboard.upcomingEmpty"]}</p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-v2-border">
+              {upcomingToday.map((a) => (
+                <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2">
+                  <span className="font-medium tabular-nums text-v2-text-primary">
+                    {formatTimeOfDay(new Date(a.startsAt))}
+                  </span>
+                  <span className="text-sm text-v2-text-primary">{a.patientName}</span>
+                  <span className="text-sm text-v2-text-secondary">· {a.practitionerName}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </GlassPanel>
+
+        {/* Notas rápidas — saved via saveQuickNotesAction to public.quick_notes (content column), keyed on tenant_id + staff_user_id (migration 0018). Untouched. */}
+        <GlassCard title={s["dashboard.notes"]}>
+          <NotasRapidas />
+        </GlassCard>
+      </div>
     </main>
   );
 }

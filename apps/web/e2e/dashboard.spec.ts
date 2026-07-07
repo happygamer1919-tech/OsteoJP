@@ -44,9 +44,17 @@ test.describe("admin dashboard", () => {
     await expect(page.getByText("Receita (mês)")).toBeVisible();
   });
 
-  test("admin sees the Resumo semanal panel", async ({ page }) => {
+  test("admin sees the Resumo semanal + Próximas marcações panels", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { name: "Resumo semanal" })).toBeVisible();
+    // W4-18: the new Próximas marcações card (admin has appointments:read).
+    await expect(page.getByRole("heading", { name: "Próximas marcações" })).toBeVisible();
+  });
+
+  test("admin has no Revisão Consulta tile (admin lacks clinical_records:review)", async ({ page }) => {
+    await page.goto("/dashboard");
+    const quickActions = page.locator("section").filter({ hasText: "Acessos rápidos" });
+    await expect(quickActions.getByRole("link", { name: "Revisão Consulta" })).toHaveCount(0);
   });
 });
 
@@ -66,6 +74,18 @@ test.describe("therapist dashboard", () => {
   test("therapist has no Administração tile", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(page.getByRole("link", { name: "Administração" })).toHaveCount(0);
+  });
+
+  test("therapist sees the Revisão Consulta tile (W4-18)", async ({ page }) => {
+    await page.goto("/dashboard");
+    // clinical_records:review → therapist + owner; the sixth quick-action tile
+    // links to the existing /clinical/review page. Scope to the "Acessos rápidos"
+    // section — the app sidebar also has a Revisão Consulta nav link, so an
+    // unscoped by-name link query would match two elements (strict-mode fail).
+    const quickActions = page.locator("section").filter({ hasText: "Acessos rápidos" });
+    const tile = quickActions.getByRole("link", { name: "Revisão Consulta" });
+    await expect(tile).toBeVisible();
+    await expect(tile).toHaveAttribute("href", "/clinical/review");
   });
 });
 

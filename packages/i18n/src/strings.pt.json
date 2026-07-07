@@ -730,6 +730,8 @@
   "dashboard.panelUpcoming": "Próximas marcações",
   "dashboard.seeFullAgenda": "Ver agenda completa",
   "dashboard.weeklySummary": "Resumo semanal",
+  "dashboard.upcomingTitle": "Próximas marcações",
+  "dashboard.upcomingEmpty": "Sem marcações para hoje.",
   "dashboard.weeklyChartLabel": "Resumo semanal de marcações",
   "dashboard.notEnoughData": "Sem dados suficientes",
   "dashboard.notes": "Notas rápidas",
