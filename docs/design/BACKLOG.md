@@ -189,6 +189,12 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 
 > **WAVE 04 CLOSED — 2026-07-07.** All 19 loops (W4-01…W4-19) plus the owner addition W4-12 resolved. Final PRs: W4-01 #480, W4-02 #481, W4-03 #495 (resolved-unreproducible), W4-04 #483, W4-05 #484, W4-06 #489, W4-07 #490, W4-08 #491, W4-09 #492, W4-10 #493 (machine DoD; AWAITING-EXTERNAL), W4-11 #502 (DONE-partial, Option B), W4-12 #486, W4-13 #496, W4-14 #497, W4-15 #498, W4-16 #502 (docs-only close), W4-17 #499, W4-18 #500, W4-19 #501 (migration 0032). Migration head **0032**, mirror parity **33/33**, branch-time main SHA **`69d2710`**. Suites: web **816**, ui **42**, @osteojp/db **56** local + DB-gated (incl. `secondary-participants-rls.test.ts`), admin **10**, api **136**; lint 0, typecheck 9/9. One escalated ruling (W4-11 A/B/C → Option B) and one surfaced already-satisfied loop (W4-16 → docs close), both via #502. See STATE.md 2026-07-07 close audit and DECISIONS 2026-07-07. Wave 05 candidates below.
 
+## Post-Wave-04 standalone fixes
+
+| Loop | Ref | Status | What |
+|------|-----|--------|------|
+| W4-20 | consultation-discoverability (`docs/loops/wave-04/W4-20-consultation-discoverability.md`) | DONE (standalone, 2026-07-08) | Owner QA: the start-consultation recording screen (`/consultation`, W4-06/W4-07) had NO nav entry (direct-URL only). Replace the Início **Revisão Consulta** quick-action tile with an **Iniciar consulta** tile → `/consultation` (QuickActionTile anatomy per UI-STYLE.md, pt-PT "Iniciar consulta", gated `clinical_records:author`). Revisão Consulta stays reachable via its left-nav entry. Recon: `/consultation` already renders in `<AppShell>` (left nav present), so no wrapping change needed. Migration-free; dashboard e2e updated |
+
 ### Wave 04 OPEN-EXTERNAL carry-overs (not blockers — each closes via a one-line docs flip when the relay lands)
 | ID | Item | Status | Closes when |
 |----|------|--------|-------------|

@@ -732,6 +732,7 @@
   "dashboard.tile.clinicalRecord": "Clinical record",
   "dashboard.tile.viewAgenda": "View agenda",
   "dashboard.tile.admin": "Administration",
+  "dashboard.tile.startConsultation": "Start consultation",
   "dashboard.panelUpcoming": "Upcoming bookings",
   "dashboard.seeFullAgenda": "View full agenda",
   "dashboard.weeklySummary": "Weekly summary",
