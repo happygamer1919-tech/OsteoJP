@@ -143,7 +143,13 @@ export function StartConsultation() {
       </div>
 
       {mode === "existing" ? (
-        <Field label={s["consultation.patient"]} required>
+        // The Combobox does not consume Field context (like the appointment
+        // drawer), so it takes a manual <label htmlFor> for its accessible name.
+        <div className="flex flex-col gap-1">
+          <label htmlFor="consultation-patient" className="text-xs font-medium text-text-primary">
+            {s["consultation.patient"]}
+            <span aria-hidden="true" className="text-error"> *</span>
+          </label>
           <Combobox
             id="consultation-patient"
             options={options}
@@ -158,7 +164,7 @@ export function StartConsultation() {
             placeholder={s["consultation.patientTypeToSearch"]}
             emptyLabel={s["consultation.patientSearchEmpty"]}
           />
-        </Field>
+        </div>
       ) : (
         <div className="space-y-3">
           <Field label={s["consultation.name"]} required>
