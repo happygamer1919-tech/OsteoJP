@@ -1,7 +1,13 @@
 import "server-only";
 import { and, asc, eq } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { serviceLocationPrices, services } from "@osteojp/db";
+import {
+  analyticsEvents,
+  appointments,
+  serviceLocationPrices,
+  services,
+  therapistServices,
+} from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
@@ -133,6 +139,66 @@ export async function setServiceActive(
     if (!rows[0]) throw new AdminError("not_found");
     await writeAudit(tx, actor, {
       action: active ? "service.restore" : "service.archive",
+      entityType: "service",
+      entityId: id,
+    });
+  });
+}
+
+/**
+ * W4-15 — the CONFIRMED reference set for a service. Recon (schema FKs into
+ * `services.id`) found FOUR relations, one more than the loop's three named:
+ *   appointments.service_id, therapist_services.service_id,
+ *   service_location_prices.service_id, analytics_events.service_id.
+ * A service is "zero-reference" (hard-deletable) only when NONE of these
+ * reference it. Returns the set of referenced service ids for the tenant, so the
+ * UI can disable the delete control (archive-only) for referenced services.
+ */
+export async function getReferencedServiceIds(actor: RequestContext): Promise<Set<string>> {
+  assertCan(actor.role, "services:read");
+  return runScoped(actor, async (tx) => {
+    const referenced = new Set<string>();
+    const add = (rows: { serviceId: string | null }[]) => {
+      for (const r of rows) if (r.serviceId) referenced.add(r.serviceId);
+    };
+    add(await tx.selectDistinct({ serviceId: appointments.serviceId }).from(appointments));
+    add(await tx.selectDistinct({ serviceId: therapistServices.serviceId }).from(therapistServices));
+    add(await tx.selectDistinct({ serviceId: serviceLocationPrices.serviceId }).from(serviceLocationPrices));
+    add(await tx.selectDistinct({ serviceId: analyticsEvents.serviceId }).from(analyticsEvents));
+    return referenced;
+  });
+}
+
+/**
+ * W4-15 — hard-delete a service, reference-guarded (owner ruling 2026-07-06),
+ * NO password (services are not clinical/staff principals). Mirrors the W3-07
+ * location-delete shape: a service with ANY reference across the confirmed set
+ * is refused (`has_references`) and must be archived instead; a zero-reference
+ * service is hard-deleted with RETURNING. Server-enforced (the disabled UI
+ * control is only an affordance). Admin-only, tenant-scoped.
+ */
+export async function deleteService(actor: RequestContext, id: string): Promise<void> {
+  assertCan(actor.role, "services:write");
+  if (!id) throw new AdminError("invalid");
+  await runScoped(actor, async (tx) => {
+    const [svc] = await tx.select({ id: services.id }).from(services).where(eq(services.id, id)).limit(1);
+    if (!svc) throw new AdminError("not_found");
+
+    // Reference guard across the confirmed set (defense-in-depth; the UI also
+    // disables delete for these). Any single reference → archive-only.
+    const refChecks: Array<Promise<{ id: string }[]>> = [
+      tx.select({ id: appointments.id }).from(appointments).where(eq(appointments.serviceId, id)).limit(1),
+      tx.select({ id: therapistServices.id }).from(therapistServices).where(eq(therapistServices.serviceId, id)).limit(1),
+      tx.select({ id: serviceLocationPrices.id }).from(serviceLocationPrices).where(eq(serviceLocationPrices.serviceId, id)).limit(1),
+      tx.select({ id: analyticsEvents.id }).from(analyticsEvents).where(eq(analyticsEvents.serviceId, id)).limit(1),
+    ];
+    const results = await Promise.all(refChecks);
+    if (results.some((rows) => rows.length > 0)) throw new AdminError("has_references");
+
+    const del = await tx.delete(services).where(eq(services.id, id)).returning({ id: services.id });
+    if (!del[0]) throw new AdminError("not_found");
+    await writeAudit(tx, actor, {
+      action: "service.delete",
       entityType: "service",
       entityId: id,
     });

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
 import {
   createService,
+  deleteService,
   setServiceActive,
   setServiceLocationPrices,
   updateService,
@@ -65,6 +66,12 @@ export async function setServiceActiveAction(formData: FormData): Promise<void> 
   const id = String(formData.get("id") ?? "");
   const active = String(formData.get("active") ?? "") === "true";
   await run(() => setServiceActive(actor, id, active));
+}
+
+export async function deleteServiceAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  const id = String(formData.get("id") ?? "");
+  await run(() => deleteService(actor, id));
 }
 
 export async function setServiceLocationPricesAction(formData: FormData): Promise<void> {
