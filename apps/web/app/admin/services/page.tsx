@@ -1,15 +1,17 @@
 import { Fragment } from "react";
-import { Button, GlassPanel } from "@osteojp/ui";
+import { Button, GlassPanel, StatusBadge } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import {
   effectivePriceCents,
+  getReferencedServiceIds,
   listServiceLocationPrices,
   listServices,
 } from "@/lib/admin/services";
 import { listLocations } from "@/lib/admin/locations";
 import {
   createServiceAction,
+  deleteServiceAction,
   setServiceActiveAction,
   setServiceLocationPricesAction,
   updateServiceAction,
@@ -35,10 +37,11 @@ export default async function ServicesPage({
   searchParams: Promise<{ m?: string }>;
 }) {
   const actor = await requireRequestContext();
-  const [services, locations, locationPrices] = await Promise.all([
+  const [services, locations, locationPrices, referencedIds] = await Promise.all([
     listServices(actor),
     listLocations(actor),
     listServiceLocationPrices(actor),
+    getReferencedServiceIds(actor),
   ]);
   const { m } = await searchParams;
 
@@ -51,6 +54,7 @@ export default async function ServicesPage({
 
   const banner =
     m === "ok" ? { ok: true, text: s["admin.services.saved"] }
+    : m === "err:has_references" ? { ok: false, text: s["admin.services.deleteHasReferences"] }
     : m && m.startsWith("err") ? { ok: false, text: s["admin.services.error"] }
     : null;
 
@@ -64,7 +68,7 @@ export default async function ServicesPage({
         </p>
       )}
 
-      <GlassPanel>
+      <GlassPanel title={s["admin.services.add"]}>
         <form action={createServiceAction} className="flex flex-wrap items-end gap-3">
           <Labeled label={s["admin.services.name"]}>
             <input name="name" required className={adminInputInline} />
@@ -98,88 +102,124 @@ export default async function ServicesPage({
               </tr>
             </thead>
             <tbody>
-              {services.map((svc) => (
-                <Fragment key={svc.id}>
-                  <tr className={adminTrBorder}>
-                    <td colSpan={4} className={adminTd}>
-                      <form action={updateServiceAction} className="flex flex-wrap items-center gap-2">
-                        <input type="hidden" name="id" value={svc.id} />
-                        <input name="name" defaultValue={svc.name} required aria-label={s["admin.services.name"]} className={adminInputInline} />
-                        <input name="durationMin" type="number" min={1} defaultValue={svc.durationMin} required aria-label={s["admin.services.duration"]} className={`w-20 ${adminInputInline}`} />
-                        <input name="price" type="text" inputMode="decimal" defaultValue={euros(svc.priceCents)} placeholder="0.00" aria-label={s["admin.services.price"]} className={`w-24 ${adminInputInline}`} />
-                        <label className="flex items-center gap-1 text-sm text-v2-text-primary">
-                          <input type="checkbox" name="contraindicationSensitive" defaultChecked={svc.contraindicationSensitive} aria-label={s["admin.services.contraindicationSensitive"]} />
-                          {s["admin.services.contraindicationSensitive"]}
-                        </label>
-                        <span className={adminHelp}>
+              {services.map((svc) => {
+                const referenced = referencedIds.has(svc.id);
+                return (
+                  <Fragment key={svc.id}>
+                    <tr className={adminTrBorder}>
+                      <td className={adminTd}>{svc.name}</td>
+                      <td className={adminTd}>{svc.durationMin}</td>
+                      <td className={adminTd}>
+                        {svc.priceCents === null ? "—" : `${euros(svc.priceCents)} ${svc.currency}`}
+                      </td>
+                      <td className={adminTd}>
+                        <StatusBadge tone={svc.isActive ? "confirmed" : "cancelled"}>
                           {svc.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
-                        </span>
-                        <Button type="submit" variant="ghost" size="sm">
-                          {s["common.save"]}
-                        </Button>
-                      </form>
-                    </td>
-                    <td className={adminTd}>
-                      <form action={setServiceActiveAction}>
-                        <input type="hidden" name="id" value={svc.id} />
-                        <input type="hidden" name="active" value={svc.isActive ? "false" : "true"} />
-                        <Button type="submit" variant="ghost" size="sm">
-                          {svc.isActive ? s["admin.services.archive"] : s["admin.services.restore"]}
-                        </Button>
-                      </form>
-                    </td>
-                  </tr>
-                  <tr className={adminTrBorder}>
-                    <td colSpan={5} className="pb-3 pr-4">
-                      <details className="text-sm text-v2-text-primary">
-                        <summary className={`cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${adminHelp}`}>
-                          {s["admin.services.locationPrices"]}
-                        </summary>
-                        {activeLocations.length === 0 ? (
-                          <p className={`mt-2 ${adminHelp}`}>
-                            {s["admin.services.noLocations"]}
-                          </p>
-                        ) : (
-                          <form action={setServiceLocationPricesAction} className="mt-2 flex flex-wrap items-end gap-3">
-                            <input type="hidden" name="serviceId" value={svc.id} />
-                            <p className={`w-full ${adminHelp}`}>
-                              {s["admin.services.basePrice"]}:{" "}
-                              {svc.priceCents === null
-                                ? s["admin.services.noBasePrice"]
-                                : `${euros(svc.priceCents)} ${svc.currency}`}
+                        </StatusBadge>
+                      </td>
+                      <td className={adminTd}>
+                        {/* Row-actions disclosure (UI-STYLE.md): edit, archive/restore,
+                            and the reference-guarded delete grouped into a drawer. */}
+                        <details className="group">
+                          <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1 rounded-v2 border border-v2-border bg-v2-surface px-3 py-1.5 text-sm text-v2-text-primary hover:bg-v2-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring [&::-webkit-details-marker]:hidden">
+                            {s["admin.staff.manage"]}
+                          </summary>
+                          <div className="mt-3 flex flex-col gap-3 rounded-v2 border border-v2-border bg-v2-surface p-3">
+                            <form action={updateServiceAction} className="flex flex-wrap items-center gap-2">
+                              <input type="hidden" name="id" value={svc.id} />
+                              <input name="name" defaultValue={svc.name} required aria-label={s["admin.services.name"]} className={adminInputInline} />
+                              <input name="durationMin" type="number" min={1} defaultValue={svc.durationMin} required aria-label={s["admin.services.duration"]} className={`w-20 ${adminInputInline}`} />
+                              <input name="price" type="text" inputMode="decimal" defaultValue={euros(svc.priceCents)} placeholder="0.00" aria-label={s["admin.services.price"]} className={`w-24 ${adminInputInline}`} />
+                              <label className="flex items-center gap-1 text-sm text-v2-text-primary">
+                                <input type="checkbox" name="contraindicationSensitive" defaultChecked={svc.contraindicationSensitive} aria-label={s["admin.services.contraindicationSensitive"]} />
+                                {s["admin.services.contraindicationSensitive"]}
+                              </label>
+                              <Button type="submit" variant="ghost" size="sm">
+                                {s["common.save"]}
+                              </Button>
+                            </form>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <form action={setServiceActiveAction}>
+                                <input type="hidden" name="id" value={svc.id} />
+                                <input type="hidden" name="active" value={svc.isActive ? "false" : "true"} />
+                                <Button type="submit" variant="ghost" size="sm">
+                                  {svc.isActive ? s["admin.services.archive"] : s["admin.services.restore"]}
+                                </Button>
+                              </form>
+                              {/* Reference-guarded delete (NO password, W4-15). Referenced
+                                  service → disabled control + tooltip (archive-only);
+                                  zero-reference → hard-delete. Server-enforced regardless. */}
+                              {referenced ? (
+                                <span title={s["admin.services.deleteBlockedTooltip"]} className="inline-flex">
+                                  <Button type="button" variant="ghost" size="sm" disabled>
+                                    {s["admin.services.delete"]}
+                                  </Button>
+                                </span>
+                              ) : (
+                                <form action={deleteServiceAction}>
+                                  <input type="hidden" name="id" value={svc.id} />
+                                  <Button type="submit" variant="destructive" size="sm">
+                                    {s["admin.services.delete"]}
+                                  </Button>
+                                </form>
+                              )}
+                            </div>
+                          </div>
+                        </details>
+                      </td>
+                    </tr>
+                    <tr className={adminTrBorder}>
+                      <td colSpan={5} className="pb-3 pr-4">
+                        <details className="text-sm text-v2-text-primary">
+                          <summary className={`cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${adminHelp}`}>
+                            {s["admin.services.locationPrices"]}
+                          </summary>
+                          {activeLocations.length === 0 ? (
+                            <p className={`mt-2 ${adminHelp}`}>
+                              {s["admin.services.noLocations"]}
                             </p>
-                            {activeLocations.map((loc) => {
-                              const override =
-                                overrideByServiceLocation.get(`${svc.id}:${loc.id}`) ?? null;
-                              const effective = effectivePriceCents(svc.priceCents, override);
-                              return (
-                                <Labeled key={loc.id} label={loc.name}>
-                                  <input
-                                    name={`price__${loc.id}`}
-                                    type="text"
-                                    inputMode="decimal"
-                                    defaultValue={euros(override)}
-                                    placeholder={euros(svc.priceCents) || "0.00"}
-                                    className={`w-24 ${adminInputInline}`}
-                                  />
-                                  <span className={`block ${adminHelp}`}>
-                                    {override === null
-                                      ? s["admin.services.usesBasePrice"]
-                                      : `${s["admin.services.effective"]}: ${euros(effective)}`}
-                                  </span>
-                                </Labeled>
-                              );
-                            })}
-                            <Button type="submit" variant="primary">
-                              {s["admin.services.savePrices"]}
-                            </Button>
-                          </form>
-                        )}
-                      </details>
-                    </td>
-                  </tr>
-                </Fragment>
-              ))}
+                          ) : (
+                            <form action={setServiceLocationPricesAction} className="mt-2 flex flex-wrap items-end gap-3">
+                              <input type="hidden" name="serviceId" value={svc.id} />
+                              <p className={`w-full ${adminHelp}`}>
+                                {s["admin.services.basePrice"]}:{" "}
+                                {svc.priceCents === null
+                                  ? s["admin.services.noBasePrice"]
+                                  : `${euros(svc.priceCents)} ${svc.currency}`}
+                              </p>
+                              {activeLocations.map((loc) => {
+                                const override =
+                                  overrideByServiceLocation.get(`${svc.id}:${loc.id}`) ?? null;
+                                const effective = effectivePriceCents(svc.priceCents, override);
+                                return (
+                                  <Labeled key={loc.id} label={loc.name}>
+                                    <input
+                                      name={`price__${loc.id}`}
+                                      type="text"
+                                      inputMode="decimal"
+                                      defaultValue={euros(override)}
+                                      placeholder={euros(svc.priceCents) || "0.00"}
+                                      className={`w-24 ${adminInputInline}`}
+                                    />
+                                    <span className={`block ${adminHelp}`}>
+                                      {override === null
+                                        ? s["admin.services.usesBasePrice"]
+                                        : `${s["admin.services.effective"]}: ${euros(effective)}`}
+                                    </span>
+                                  </Labeled>
+                                );
+                              })}
+                              <Button type="submit" variant="primary">
+                                {s["admin.services.savePrices"]}
+                              </Button>
+                            </form>
+                          )}
+                        </details>
+                      </td>
+                    </tr>
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
