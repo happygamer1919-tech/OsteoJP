@@ -5,6 +5,9 @@ record of schema, write paths, and existing surfaces. Append-only, dated section
 No recommendations here. Design decisions go in DECISIONS.md; open questions go in
 QUESTIONS.md.
 
+## 2026-07-08 - Migration 0032 applied to the live DB (prod-defect fix)
+- **Migration head 0032** (`0032_secondary_participants`, W4-19) **applied to the live/dev Supabase DB (`jaxmkwoxjcgzkwxgbayx`) on 2026-07-08** via `drizzle-kit migrate` on `DATABASE_URL_DIRECT` (session pooler, 5432). `drizzle.__drizzle_migrations` now holds **33** apply-records (was 32); `appointments.patient_2_id` + `appointments.practitioner_2_id` (nullable uuid FKs) now exist. Root cause of the deployed-app Agenda/Marcações panel error: the W4-19 code shipped to Vercel while 0032 was un-applied on the shared live DB, so the appointment read queried missing columns (the dashboard survived via `Promise.allSettled`). Fix was migration-only, no code change (owner triage Ivan 2026-07-08). Actual column names are `patient_2_id`/`practitioner_2_id` (not `secondary_*`).
+
 ## 2026-07-06 - Wave 03 close audit
 
 Wave 03 executed and CLOSED. All 10 loops merged; zero open PRs from the wave (gh-verified).
