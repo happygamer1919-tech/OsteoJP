@@ -9,7 +9,9 @@ import { s } from "@/lib/i18n";
 import {
   addDays,
   formatAnchorLabel,
+  lisbonParts,
   todayInLisbon,
+  viewDates,
   type AgendaView as View,
 } from "@/lib/scheduling/time";
 import type {
@@ -81,6 +83,17 @@ export function AgendaView({
 
   const step = effectiveView === "week" ? 7 : 1;
 
+  // W4-17 — live appointment count for the VISIBLE range. Computed exactly as the
+  // grid decides visibility (an appointment whose Lisbon calendar day falls in
+  // viewDates(effectiveView, anchor)), so it matches the grid on every viewport
+  // (incl. the mobile day-collapse) and updates live with navigation + filters
+  // (the `appointments` prop is refetched server-side for the range + filters).
+  const visibleDates = new Set(viewDates(effectiveView, anchor));
+  const visibleCount = appointments.filter((a) =>
+    visibleDates.has(lisbonParts(new Date(a.startsAt)).date),
+  ).length;
+  const countLabel = visibleCount === 1 ? s["agenda.apptCountOne"] : s["agenda.apptCountMany"];
+
   return (
     <ToastProvider regionLabel={s["toast.regionLabel"]}>
     <main>
@@ -137,8 +150,20 @@ export function AgendaView({
           >
             <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" />
           </button>
-          <span className="ml-1 hidden text-sm font-medium text-v2-text-primary sm:inline">
-            {formatAnchorLabel(effectiveView, anchor)}
+          {/* W4-17 — structured range chip (replaces the loose week-range text)
+              carrying the range label + the live appointment count for the
+              visible range. */}
+          <span
+            data-testid="agenda-range-chip"
+            className="ml-1 hidden items-center gap-2 rounded-full border border-v2-border bg-v2-surface px-3 py-1 sm:inline-flex"
+          >
+            <span className="text-sm font-medium text-v2-text-primary">
+              {formatAnchorLabel(effectiveView, anchor)}
+            </span>
+            <span aria-hidden="true" className="text-v2-text-secondary">·</span>
+            <span className="text-sm text-v2-text-secondary">
+              {visibleCount} {countLabel}
+            </span>
           </span>
         </div>
 
