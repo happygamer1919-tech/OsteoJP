@@ -5,6 +5,7 @@ import {
   cancelAppointment,
   getOwnAppointment,
   listOwnAppointments,
+  listOpenSlots,
   parseBookingInput,
   rescheduleAppointment,
   type AppointmentsStore,
@@ -60,6 +61,7 @@ type FakeOpts = {
   available?: TherapistCandidate[];
   prior?: string | null;
   conflict?: boolean;
+  openSlots?: string[];
 };
 
 function makeStore(opts: FakeOpts = {}) {
@@ -67,6 +69,7 @@ function makeStore(opts: FakeOpts = {}) {
   const createCalls: { principal: PatientPrincipal; args: Record<string, unknown> }[] = [];
   let seq = 0;
 
+  const openSlotsCalls: { locationId: string; durationMin: number; horizonDays: number }[] = [];
   const store: AppointmentsStore = {
     async listOwn(p) {
       return rows.filter((r) => r.patientId === p.patientId).map(view);
@@ -85,6 +88,14 @@ function makeStore(opts: FakeOpts = {}) {
     },
     async isBookableLocation() {
       return opts.bookableLocation ?? true;
+    },
+    async listOpenSlots(_p, args) {
+      openSlotsCalls.push({
+        locationId: args.locationId,
+        durationMin: args.durationMin,
+        horizonDays: args.horizonDays,
+      });
+      return opts.openSlots ?? [];
     },
     async listAvailableTherapists() {
       return opts.available ?? [{ practitionerId: "ther-1", sortKey: "Ana" }];
@@ -136,7 +147,7 @@ function makeStore(opts: FakeOpts = {}) {
     },
   };
 
-  return { store, rows, createCalls };
+  return { store, rows, createCalls, openSlotsCalls };
 }
 
 const ownRow = (over: Partial<Row> = {}): Row => ({
@@ -271,7 +282,7 @@ describe("book", () => {
     expect(rows.at(-1)!.practitionerId).toBe("ther-rui"); // prior preferred, not Ana
   });
 
-  it("returns no_slot when no therapist is available (never double-books)", async () => {
+  it("returns no_therapist when nobody works the window (honest error, never double-books)", async () => {
     const { store } = makeStore({ available: [] });
     const out = await code(() =>
       bookAppointment(
@@ -281,7 +292,65 @@ describe("book", () => {
         NOW,
       ),
     );
-    expect(out).toBe("no_slot");
+    // The schedule-gap rejection is DISTINCT from no_slot (the createBooking
+    // race), so the portal can word it honestly.
+    expect(out).toBe("no_therapist");
+  });
+
+  it("listOpenSlots resolves the service and passes its duration + the 14-day horizon", async () => {
+    const { store, openSlotsCalls } = makeStore({
+      service: { id: "svc-1", name: "Osteopatia", durationMin: 45, locationId: null },
+      openSlots: ["2026-06-15T08:00:00.000Z"],
+    });
+    const slots = await listOpenSlots(
+      ALICE,
+      { serviceId: "11111111-1111-1111-1111-111111111111", locationId: "loc-1" },
+      store,
+      NOW,
+    );
+    expect(slots).toEqual(["2026-06-15T08:00:00.000Z"]);
+    expect(openSlotsCalls).toEqual([{ locationId: "loc-1", durationMin: 45, horizonDays: 14 }]);
+  });
+
+  it("listOpenSlots rejects a non-bookable service", async () => {
+    const { store } = makeStore({ service: null });
+    const out = await code(() =>
+      listOpenSlots(
+        ALICE,
+        { serviceId: "11111111-1111-1111-1111-111111111111", locationId: "loc-1" },
+        store,
+        NOW,
+      ),
+    );
+    expect(out).toBe("service_unavailable");
+  });
+
+  it("listOpenSlots rejects a non-bookable location", async () => {
+    const { store } = makeStore({ bookableLocation: false });
+    const out = await code(() =>
+      listOpenSlots(
+        ALICE,
+        { serviceId: "11111111-1111-1111-1111-111111111111", locationId: "loc-1" },
+        store,
+        NOW,
+      ),
+    );
+    expect(out).toBe("location_unavailable");
+  });
+
+  it("listOpenSlots rejects a location-bound service queried at another location", async () => {
+    const { store } = makeStore({
+      service: { id: "svc-1", name: "Osteopatia", durationMin: 60, locationId: "loc-2" },
+    });
+    const out = await code(() =>
+      listOpenSlots(
+        ALICE,
+        { serviceId: "11111111-1111-1111-1111-111111111111", locationId: "loc-1" },
+        store,
+        NOW,
+      ),
+    );
+    expect(out).toBe("service_unavailable");
   });
 
   it("rejects a slot in the past", async () => {

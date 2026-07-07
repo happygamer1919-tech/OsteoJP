@@ -606,6 +606,7 @@
   "patientAppointments.error.locationUnavailable": "This clinic is not available for online booking.",
   "patientAppointments.error.slotInPast": "You cannot book an appointment in the past.",
   "patientAppointments.error.noSlot": "No slots available. Try another day or contact the clinic.",
+  "patientAppointments.error.noTherapist": "No therapist is available at this time. Please choose another available time.",
   "patientAppointments.error.cutoff": "Appointments cannot be cancelled or rescheduled less than 24 hours in advance. Please call the clinic.",
   "patientAppointments.error.notReschedulable": "This appointment cannot be rescheduled (already cancelled or completed).",
   "patientAppointments.error.serverError": "An unexpected error occurred. Please try again.",

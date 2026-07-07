@@ -120,6 +120,60 @@ paths:
         "500":
           $ref: "#/components/responses/ServerErrorLocalized"
 
+  /api/v1/booking/slots:
+    get:
+      operationId: listOpenBookingSlots
+      tags: [booking]
+      summary: Bookable slot starts for a service at a location
+      description: >
+        Concrete bookable slot starts (UTC ISO 8601, ascending, 14-day horizon,
+        30-minute grid) for a service at a location. Slots are expanded from
+        ACTIVE therapists' availability templates in Europe/Lisbon wall-clock
+        time and filtered by the SAME conflict predicates the booking confirm
+        re-runs (availability coverage, appointment overlap, time off) — the
+        portal step-3 source of truth. A listed slot can only be rejected at
+        confirm by a genuine booking race.
+      parameters:
+        - name: serviceId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: locationId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Bookable slot starts, ascending.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [slots]
+                properties:
+                  slots:
+                    type: array
+                    items:
+                      type: string
+                      format: date-time
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/UnauthorizedLocalized"
+        "422":
+          description: "`service_unavailable` or `location_unavailable`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "500":
+          $ref: "#/components/responses/ServerErrorLocalized"
+
   /api/v1/me/fichas:
     get:
       operationId: listOwnFichas
@@ -403,7 +457,9 @@ paths:
         "401":
           $ref: "#/components/responses/UnauthorizedLocalized"
         "409":
-          description: "`no_slot` — no therapist available for the requested window."
+          description: >
+            `no_therapist` — nobody works the requested window (schedule gap) —
+            or `no_slot` — the slot was taken by a concurrent booking.
           content:
             application/json:
               schema:

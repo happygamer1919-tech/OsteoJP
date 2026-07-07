@@ -122,7 +122,9 @@ export class ApiError extends Error {
   }
 
   isCutoffError(): boolean {
-    return this.code === 'CANCELLATION_CUTOFF'
+    // apps/api emits `cutoff` (lib/appointments/errors.ts); the legacy
+    // CANCELLATION_CUTOFF spelling is kept for tolerance.
+    return this.code === 'cutoff' || this.code === 'CANCELLATION_CUTOFF'
   }
 }
 
@@ -135,6 +137,28 @@ export async function getBookableCatalog(): Promise<BookableCatalog> {
   })
   if (!res.ok) throw new Error(`catalog fetch failed: ${res.status}`)
   return res.json() as Promise<BookableCatalog>
+}
+
+/**
+ * Bookable slot starts (UTC ISO, ascending) for a service at a location —
+ * the API's availability list, generated and conflict-filtered by the same
+ * predicates the booking confirm re-runs. 14-day horizon, server-decided.
+ */
+export async function getOpenSlots(
+  serviceId: string,
+  locationId: string,
+): Promise<string[]> {
+  const params = new URLSearchParams({ serviceId, locationId })
+  const res = await fetch(`${apiBase()}/api/v1/booking/slots?${params}`, {
+    headers: await apiHeaders(),
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string; message?: string }
+    throw new ApiError(res.status, err.error ?? 'UNKNOWN', err.message ?? 'Slots fetch failed')
+  }
+  const data = await res.json() as { slots: string[] }
+  return data.slots
 }
 
 // ─── Appointments ─────────────────────────────────────────────────────────────
@@ -193,8 +217,8 @@ export async function bookAppointment(input: BookingInput): Promise<AppointmentV
     body: JSON.stringify(input),
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { code?: string; message?: string }
-    throw new ApiError(res.status, err.code ?? 'UNKNOWN', err.message ?? 'Booking failed')
+    const err = await res.json().catch(() => ({})) as { error?: string; code?: string; message?: string }
+    throw new ApiError(res.status, err.error ?? err.code ?? 'UNKNOWN', err.message ?? 'Booking failed')
   }
   const data = await res.json() as { appointment: AppointmentView }
   return data.appointment
@@ -206,8 +230,8 @@ export async function cancelAppointment(id: string): Promise<void> {
     headers: await apiHeaders(),
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { code?: string; message?: string }
-    throw new ApiError(res.status, err.code ?? 'UNKNOWN', err.message ?? 'Cancel failed')
+    const err = await res.json().catch(() => ({})) as { error?: string; code?: string; message?: string }
+    throw new ApiError(res.status, err.error ?? err.code ?? 'UNKNOWN', err.message ?? 'Cancel failed')
   }
 }
 
