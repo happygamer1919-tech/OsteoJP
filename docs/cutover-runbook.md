@@ -76,7 +76,8 @@ Full DNS record values: see [`docs/dns-records-pending.md`](./dns-records-pendin
 ### 1.5 Integrations and env vars
 
 - [ ] **[IVAN]** `REMINDERS_LIVE_SEND` set to `false` in Vercel production env (default safe). **Do not flip to `true` until the first live reminder cycle is explicitly authorized by João Pedro** (see §2, step 9).
-- [ ] **[IVAN]** `TWILIO_SENDER_ID` updated in Vercel production env from test number to `OsteoJP` (approved alphanumeric sender, confirmed 2026-06-11).
+- [ ] **[IVAN]** `TWILIO_SMS_FROM` updated in Vercel production env from test number to `OsteoJP` (approved alphanumeric sender, confirmed 2026-06-11).
+  Note: `TWILIO_SENDER_ID` is ignored by the code — the send wrappers read `TWILIO_SMS_FROM` (falling back to `TWILIO_MESSAGING_SERVICE_SID`); pinned by test in PR #485 (`twilio-proof.test.ts`). If `TWILIO_SENDER_ID` is currently set in Vercel, remove it to avoid confusion.
 - [ ] **[IVAN]** `INVOICEXPRESS_API_KEY` + `INVOICEXPRESS_ACCOUNT_NAME` set in Vercel production env (credentials from the existing `osteojplda.app.invoicexpress.com` account). VAT 23% sign-off from João Pedro required before any invoice is issued via the platform.
 - [ ] **[JP]** IfThenPay live keys (`IFTHENPAY_MBWAY_KEY`, `IFTHENPAY_ANTIPHISHING_KEY`) provided to Ivan and set in Vercel production env. (Backend is ready; this unblocks the payment flow.)
 - [ ] **[IVAN]** Sentry EU DSN set and confirmed: a test error thrown via Sentry in the production app appears in the Sentry EU project dashboard.
@@ -279,7 +280,7 @@ These are not blocking steps — they run in parallel with normal operations.
 | Variable | Pre-cutover value | At/after cutover | Owner |
 |---|---|---|---|
 | `REMINDERS_LIVE_SEND` | `false` | `true` (only after JP authorization, Step 9) | IVAN |
-| `TWILIO_SENDER_ID` | test number | `OsteoJP` | IVAN (done pre-cutover, §1.5) |
+| `TWILIO_SMS_FROM` | test number | `OsteoJP` | IVAN (done pre-cutover, §1.5) |
 | `INVOICEXPRESS_API_KEY` | unset | live key from `osteojplda.app.invoicexpress.com` | IVAN (done pre-cutover, §1.5) |
 | `IFTHENPAY_MBWAY_KEY` | unset | live key from JP | IVAN (done pre-cutover, §1.5) |
 | `IFTHENPAY_ANTIPHISHING_KEY` | unset | live key from JP | IVAN (done pre-cutover, §1.5) |

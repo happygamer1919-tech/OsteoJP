@@ -18,6 +18,8 @@ export type ReminderAppointmentData = {
   appointmentId: string;
   startsAt: Date;
   status: string;
+  /** For structured skip logs only (ids are not PII) — never rendered. */
+  patientId: string;
   patientName: string;
   patientEmail: string | null;
   patientPhone: string | null;
@@ -44,6 +46,7 @@ export async function loadReminderData(
         appointmentId: appointments.id,
         startsAt: appointments.startsAt,
         status: appointments.status,
+        patientId: patients.id,
         patientName: patients.fullName,
         patientEmail: patients.email,
         patientPhone: patients.phone,

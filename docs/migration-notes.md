@@ -368,3 +368,7 @@ Migration importer (`packages/db/src/migration/upsert.ts`) passes sex through wi
 ## 2026-07-01 — i18n file location correction
 
 i18n source files are at `packages/i18n/src/strings.pt.json` and `packages/i18n/src/strings.en.json`. The `packages/i18n/strings.*.json` path (without `/src/`) does not exist. All tooling and prompts must use the `/src/` path.
+
+## 2026-07-07 — Phone field normalization (same principle as sex)
+
+The live SMS send path now normalizes patient phones to E.164 at the send boundary (`apps/web/lib/reminders/phone.ts` `normalizePhonePT`; wired into `dispatch.ts` + both `sendSms` wrappers — fix for the launch blocker in `docs/QUESTIONS.md` 2026-07-06). The future Fisiozero importer must ALSO normalize phones at the migration boundary, same principle as sex above: convert "912 345 678" / "00351912345678" / "+351 912-345-678" to canonical `+3519xxxxxxxx` before writing `patients.phone`, and surface (not silently drop) rows that do not resolve to a valid PT format. The send-path guard makes un-normalized numbers a skipped send instead of a Twilio 21211 failure, but importing them un-normalized would still leave those patients unreachable — clean at the boundary. Reuse `normalizePhonePT` rather than re-deriving the rules.

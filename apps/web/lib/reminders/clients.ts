@@ -13,6 +13,8 @@
 // PII rule (#7): nothing here logs recipient addresses, phone numbers, names,
 // or message bodies. Only non-identifying metadata (channel, sandbox flag).
 
+import { normalizePhonePT } from "./phone";
+
 export type SendChannel = "email" | "sms";
 
 export type SendResult = {
@@ -96,6 +98,15 @@ export async function sendEmail(msg: EmailMessage): Promise<SendResult> {
 /* ================================================================== */
 
 export async function sendSms(msg: SmsMessage): Promise<SendResult> {
+  // E.164 guard — nothing may reach messages.create un-normalized (Twilio
+  // rejects non-E.164 with 21211). The dispatch layer already skips-and-logs
+  // with ids; this is defense-in-depth for any other caller. PII rule (#7):
+  // the rejected value is never logged.
+  const to = normalizePhonePT(msg.to);
+  if (!to) {
+    console.warn("[reminders] sms skipped (invalid_phone)");
+    return { channel: "sms", sandbox: true, id: "skipped:invalid_phone" };
+  }
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_SMS_FROM ?? process.env.TWILIO_MESSAGING_SERVICE_SID;
@@ -111,7 +122,7 @@ export async function sendSms(msg: SmsMessage): Promise<SendResult> {
   const { default: twilio } = await import("twilio");
   const client = twilio(sid, token);
   const result = await client.messages.create({
-    to: msg.to,
+    to,
     from,
     body: msg.body,
   });

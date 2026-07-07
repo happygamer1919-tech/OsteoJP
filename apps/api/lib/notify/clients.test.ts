@@ -106,6 +106,43 @@ describe("live payload — sender resolution matches the reminders path", () => 
   });
 });
 
+describe("E.164 normalization (phone.ts mirror) runs inside sendSms", () => {
+  // Full format coverage lives in apps/web/lib/reminders/phone.test.ts (the
+  // canonical copy); this proves the mirrored util is wired at this boundary.
+  beforeEach(() => {
+    armLiveCreds();
+    process.env.TWILIO_SMS_FROM = "OsteoJP";
+    twilioCreate.mockResolvedValue({ sid: "SM_norm" });
+  });
+
+  it("normalizes stored formats to E.164 before messages.create", async () => {
+    await sendSms({ to: "912 345 678", body: "b" });
+    await sendSms({ to: "00351912345678", body: "b" });
+    expect(twilioCreate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ to: "+351912345678" }),
+    );
+    expect(twilioCreate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ to: "+351912345678" }),
+    );
+  });
+
+  it("skips invalid numbers: skip result, Twilio never called, number never logged", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const res = await sendSms({ to: "not-a-phone", body: "b" });
+      expect(res).toEqual({ channel: "sms", sandbox: true, id: "skipped:invalid_phone" });
+      expect(twilioFactory).not.toHaveBeenCalled();
+      const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(logged).toContain("invalid_phone");
+      expect(logged).not.toContain("not-a-phone");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 describe("Twilio API errors propagate", () => {
   it("rejects on 4xx and on 5xx instead of returning a fake success", async () => {
     armLiveCreds();
