@@ -51,7 +51,7 @@ async function reachRecorder(page: Page) {
 test.describe("recording (therapist)", () => {
   test.use({ storageState: STORAGE.therapist });
 
-  test("record → stop → sign → direct-to-S3 PUT → uploaded (W4-07 + W4-08)", async ({ page }) => {
+  test("record → stop → sign → direct-to-S3 PUT → webhook fire (W4-07 + W4-08 + W4-09)", async ({ page }) => {
     await installFakeRecorder(page, { supported: true });
     // Mock the DIRECT-to-S3 PUT (never a Vercel route): intercept the presigned
     // AWS host and return 200. If the client ever PUT through Next instead, this
@@ -75,9 +75,15 @@ test.describe("recording (therapist)", () => {
     await expect(page.getByRole("button", { name: "Parar" })).toBeVisible();
     await expect(page.getByText("A gravar…")).toBeVisible();
 
-    // Stop → the blob is signed and PUT direct to S3 → uploaded.
+    // Stop → the blob is signed and PUT direct to S3, then the M1 webhook fires.
+    // In CI the AUDIO_S3_* env is set (upload succeeds via the mocked S3 PUT) but
+    // the M1_WEBHOOK_* env is NOT, so the fire is gracefully deferred: the audio
+    // is saved and processing is marked pending (the "fired" success path is
+    // covered by the unit tests).
     await page.getByRole("button", { name: "Parar" }).click();
-    await expect(page.getByText("Gravação enviada.")).toBeVisible();
+    await expect(
+      page.getByText("Gravação guardada. O processamento será retomado."),
+    ).toBeVisible();
     expect(s3PutSeen).toBe(true);
   });
 

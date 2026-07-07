@@ -17,7 +17,17 @@ import { patients } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { createPatient } from "@/lib/patients/actions";
 import { writeAudit } from "@/lib/patients/audit";
-import { AudioStorageConfigError, signAudioUpload } from "@/lib/consultation/audio-storage";
+import {
+  AUDIO_FILENAME,
+  AudioStorageConfigError,
+  signAudioDownload,
+  signAudioUpload,
+} from "@/lib/consultation/audio-storage";
+import {
+  M1WebhookConfigError,
+  buildM1Payload,
+  fireM1Webhook,
+} from "@/lib/consultation/m1-webhook";
 
 export type StubResult =
   | { ok: true; patientId: string }
@@ -113,5 +123,55 @@ export async function signAudioUploadAction(input: {
   } catch (e) {
     if (e instanceof AudioStorageConfigError) return { ok: false, error: "config" };
     return { ok: false, error: "config" };
+  }
+}
+
+export type FireWebhookResult =
+  | { ok: true }
+  | { ok: false; error: "forbidden" | "validation" | "config" | "webhook" };
+
+/**
+ * W4-09 — after the upload lands, generate a 1h presigned GET and fire the M1
+ * webhook (André's Make scenario) with the full contract + `x-make-apikey` (from
+ * env). `doctor_id` is the recording clinician (JWT userId, READ-ONLY). The
+ * object key is verified tenant-prefixed (defense). Timestamps are forwarded
+ * from the recording (they feed the ingestion idempotency key), never re-derived.
+ * The webhook key is never returned or logged.
+ */
+export async function fireConsultationWebhookAction(input: {
+  objectKey: string;
+  patientId: string;
+  consultationStartedAt: string;
+  consultationEndedAt: string;
+}): Promise<FireWebhookResult> {
+  const ctx = await requireRequestContext();
+  if (!can(ctx.role, "clinical_records:author")) return { ok: false, error: "forbidden" };
+  if (
+    !input.objectKey ||
+    !input.patientId ||
+    !input.consultationStartedAt ||
+    !input.consultationEndedAt
+  ) {
+    return { ok: false, error: "validation" };
+  }
+  if (!input.objectKey.startsWith(`${ctx.tenantId}/`)) return { ok: false, error: "forbidden" };
+
+  try {
+    const audioUrl = await signAudioDownload(input.objectKey, 3600); // 1h GET
+    const payload = buildM1Payload({
+      audioUrl,
+      audioFilename: AUDIO_FILENAME,
+      patientId: input.patientId,
+      doctorId: ctx.userId,
+      consultationStartedAt: input.consultationStartedAt,
+      consultationEndedAt: input.consultationEndedAt,
+    });
+    const fired = await fireM1Webhook(payload);
+    return fired.ok ? { ok: true } : { ok: false, error: "webhook" };
+  } catch (e) {
+    if (e instanceof AudioStorageConfigError || e instanceof M1WebhookConfigError) {
+      return { ok: false, error: "config" };
+    }
+    return { ok: false, error: "webhook" };
   }
 }

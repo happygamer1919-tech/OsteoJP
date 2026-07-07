@@ -12,14 +12,16 @@ import {
   type RecordingResult,
 } from "@/lib/consultation/recording";
 import { putToPresignedUrl, uploadRecording } from "@/lib/consultation/upload-audio";
-import { signAudioUploadAction } from "./actions";
+import { fireConsultationWebhookAction, signAudioUploadAction } from "./actions";
 
 type Phase =
   | "unsupported"
   | "idle"
   | "recording"
   | "uploading"
-  | "uploaded"
+  | "firing"
+  | "fired"
+  | "fire_pending"
   | "upload_error";
 
 /**
@@ -116,15 +118,29 @@ export function Recorder({
     recorderRef.current?.stop();
   }
 
-  // W4-08 — after Stop, sign a presigned PUT and upload the blob DIRECT to S3
-  // (never through Vercel). `config` means the AUDIO_S3_* env is not set.
+  // W4-08 upload → W4-09 fire. After Stop: sign a presigned PUT and upload the
+  // blob DIRECT to S3 (never through Vercel), then fire the M1 webhook so André's
+  // pipeline can pull + transcribe it. If the upload fails, that is a hard error;
+  // if only the webhook fire fails (e.g. env not set), the audio is safely stored
+  // and processing is retried — surfaced as a non-error "saved, pending" state.
   async function startUpload(res: RecordingResult) {
     setPhase("uploading");
     const outcome = await uploadRecording(
       { ...res, patientId },
       { sign: signAudioUploadAction, put: putToPresignedUrl },
     );
-    setPhase(outcome.ok ? "uploaded" : "upload_error");
+    if (!outcome.ok) {
+      setPhase("upload_error");
+      return;
+    }
+    setPhase("firing");
+    const fired = await fireConsultationWebhookAction({
+      objectKey: outcome.objectKey,
+      patientId,
+      consultationStartedAt: res.consultationStartedAt,
+      consultationEndedAt: res.consultationEndedAt,
+    });
+    setPhase(fired.ok ? "fired" : "fire_pending");
   }
 
   if (phase === "unsupported") {
@@ -161,14 +177,19 @@ export function Recorder({
         </div>
       )}
 
-      {phase === "uploading" && (
+      {(phase === "uploading" || phase === "firing") && (
         <p role="status" className="text-sm text-text-secondary">
-          {s["recording.uploading"]}
+          {phase === "uploading" ? s["recording.uploading"] : s["recording.processing"]}
         </p>
       )}
-      {phase === "uploaded" && result && (
+      {phase === "fired" && (
         <p role="status" className="rounded border border-teal-600 bg-teal-50 px-3 py-2 text-sm">
-          {s["recording.uploaded"]}
+          {s["recording.processed"]}
+        </p>
+      )}
+      {phase === "fire_pending" && (
+        <p role="status" className="rounded border border-amber-500 bg-amber-50 px-3 py-2 text-sm">
+          {s["recording.savedPending"]}
         </p>
       )}
       {phase === "upload_error" && (
