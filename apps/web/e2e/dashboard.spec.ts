@@ -53,7 +53,8 @@ test.describe("admin dashboard", () => {
 
   test("admin has no Revisão Consulta tile (admin lacks clinical_records:review)", async ({ page }) => {
     await page.goto("/dashboard");
-    await expect(page.getByRole("link", { name: "Revisão Consulta" })).toHaveCount(0);
+    const quickActions = page.locator("section").filter({ hasText: "Acessos rápidos" });
+    await expect(quickActions.getByRole("link", { name: "Revisão Consulta" })).toHaveCount(0);
   });
 });
 
@@ -78,8 +79,11 @@ test.describe("therapist dashboard", () => {
   test("therapist sees the Revisão Consulta tile (W4-18)", async ({ page }) => {
     await page.goto("/dashboard");
     // clinical_records:review → therapist + owner; the sixth quick-action tile
-    // links to the existing /clinical/review page.
-    const tile = page.getByRole("link", { name: "Revisão Consulta" });
+    // links to the existing /clinical/review page. Scope to the "Acessos rápidos"
+    // section — the app sidebar also has a Revisão Consulta nav link, so an
+    // unscoped by-name link query would match two elements (strict-mode fail).
+    const quickActions = page.locator("section").filter({ hasText: "Acessos rápidos" });
+    const tile = quickActions.getByRole("link", { name: "Revisão Consulta" });
     await expect(tile).toBeVisible();
     await expect(tile).toHaveAttribute("href", "/clinical/review");
   });
