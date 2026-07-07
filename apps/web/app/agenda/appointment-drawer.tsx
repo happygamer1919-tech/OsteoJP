@@ -25,11 +25,13 @@ import {
   batchScheduleAppointments,
   cancelAppointment,
   createAppointment,
+  getTherapistLocations,
   getTherapistServices,
   hardDeleteAppointment,
   rescheduleAppointment,
   updateAppointment,
 } from "@/lib/scheduling/actions";
+import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
 import type { BatchFailure } from "@/lib/scheduling/batch-core";
 import type { RebookOutcome } from "@/lib/scheduling/batch-failure-core";
 import { BatchFailureDialog } from "./batch-failure-dialog";
@@ -267,6 +269,13 @@ export function AppointmentDrawer({
       f.serviceId ? f : { ...f, serviceId, durationMin: svc ? svc.durationMin : f.durationMin },
     );
   }
+  // Auto-fill Localização from the therapist's single active location (W4-12,
+  // owner ruling). Unlike Serviço, locationId is never empty (it defaults to the
+  // first active location), so a manual pick is guarded by userChangedLocation —
+  // pickAutoFillLocation returns null when the user has already touched it.
+  function applyDefaultLocation(locationId: string) {
+    setForm((f) => ({ ...f, locationId }));
+  }
 
   // Therapist -> service mapping (0023, SPEC-appointments §6). `therapistServiceResult`
   // only ever holds the outcome for the therapist it was fetched for, so a
@@ -282,6 +291,7 @@ export function AppointmentDrawer({
     { therapistId: string; ids: string[] } | null
   >(null);
   const userChangedTherapist = useRef(false);
+  const userChangedLocation = useRef(false);
 
   useEffect(() => {
     const therapistId = form.practitionerId;
@@ -297,6 +307,20 @@ export function AppointmentDrawer({
       // Only fires on a real Terapeuta change, never on mount, and never over a
       // service the user already picked (applyDefaultService guards on empty).
       if (userChangedTherapist.current && ids.length >= 1) applyDefaultService(ids[0]);
+    });
+    // W4-12: on the SAME therapist-selection event, auto-fill Localização when
+    // the therapist has exactly one active location. Independent fetch/setForm
+    // from the service auto-fill above — different field, no clobber. Guards
+    // (real therapist change, no manual location pick) read fresh after the
+    // await via pickAutoFillLocation, so a location edit during the fetch wins.
+    getTherapistLocations(therapistId).then((r) => {
+      if (cancelled) return;
+      const ids = r.ok ? r.data : [];
+      const pick = pickAutoFillLocation(ids, {
+        userChangedTherapist: userChangedTherapist.current,
+        userChangedLocation: userChangedLocation.current,
+      });
+      if (pick) applyDefaultLocation(pick);
     });
     return () => {
       cancelled = true;
@@ -588,7 +612,13 @@ export function AppointmentDrawer({
         </Field>
 
         <Field label={s["header.location"]} required>
-          <Select value={form.locationId} onChange={(e) => set("locationId", e.target.value)}>
+          <Select
+            value={form.locationId}
+            onChange={(e) => {
+              userChangedLocation.current = true;
+              set("locationId", e.target.value);
+            }}
+          >
             <option value="">{s["appointment.selectLocation"]}</option>
             {options.locations.map((o) => (
               <option key={o.id} value={o.id}>{o.label}</option>
