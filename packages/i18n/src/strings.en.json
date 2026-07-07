@@ -728,6 +728,8 @@
   "dashboard.panelUpcoming": "Upcoming bookings",
   "dashboard.seeFullAgenda": "View full agenda",
   "dashboard.weeklySummary": "Weekly summary",
+  "dashboard.upcomingTitle": "Upcoming appointments",
+  "dashboard.upcomingEmpty": "No appointments today.",
   "dashboard.weeklyChartLabel": "Weekly bookings summary",
   "dashboard.notEnoughData": "Not enough data",
   "dashboard.notes": "Quick notes",
