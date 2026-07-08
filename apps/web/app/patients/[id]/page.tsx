@@ -16,6 +16,7 @@ import { listRecords, type RecordStatus } from "../../../lib/clinical/records";
 import { listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
 import { formatPatientNumber } from "../../../lib/patients/format";
 import { getPatient, getPatientHardDeleteBlockers } from "../../../lib/patients/queries";
+import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
 import { listPatientAppointments } from "../../../lib/scheduling/data";
 import { listPatientNoteRevisions } from "../../../lib/patients/note-revisions";
@@ -25,6 +26,7 @@ import { versionRecordAction } from "../../clinical/[id]/actions";
 import { AppointmentsList } from "./appointments-list";
 import { createEpisodeAction } from "./episode-actions";
 import { ProfileTabs } from "./profile-tabs";
+import { PatientDocuments } from "./PatientDocuments";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +86,10 @@ export default async function PatientProfilePage({
   if (!patient) notFound();
 
   const canReadClinical = can(ctx.role, "clinical_records:read");
+  // Documentos tab: every staff role can view/upload administrative patient
+  // documents (patients:read to view, patients:write to upload) — this is an
+  // administrative surface, not clinical_records.
+  const canUploadDocuments = can(ctx.role, "patients:write");
   const canInvoice = can(ctx.role, "invoices:read");
   // Consultas per-row edits (W5-09) REUSE the Agenda gates verbatim: reschedule
   // and Estado change need appointments:write; Cancel needs appointments:delete
@@ -148,6 +154,9 @@ export default async function PatientProfilePage({
   const patientAppointments = tab === "consultas" ? await listPatientAppointments(ctx, id) : [];
   // Notas tab: append-only note history from patient_note_revisions (0030).
   const noteRevisions = tab === "notas" ? await listPatientNoteRevisions(ctx, id) : [];
+  // Documentos tab: patient-level administrative documents (attachments with a
+  // patient_id and no clinical_record_id). Tenant + role scoped in the query.
+  const patientDocuments = tab === "documentos" ? await listPatientDocuments(ctx, id) : [];
 
   return (
     <main>
@@ -305,7 +314,11 @@ export default async function PatientProfilePage({
 
       {tab === "documentos" && (
         <div role="tabpanel" id="tabpanel-documentos" aria-label={s["patients.tabDocuments"]}>
-          <EmptyState icon={FileText} title={s["patients.emptyDocumentsTitle"]} description={s["patients.emptyDocumentsHelp"]} />
+          <PatientDocuments
+            patientId={patient.id}
+            items={patientDocuments}
+            canUpload={canUploadDocuments}
+          />
         </div>
       )}
 
