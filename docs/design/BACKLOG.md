@@ -260,7 +260,7 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 |----|------|--------|-------------|
 | W5-01 | login-redesign-branding | OPEN | migration-free; redesign `/login` + enlarge logo (login card + shell); no auth-logic change |
 | W5-02 | search-sweep | OPEN | migration-free; add search to Equipa (missing) + audit every patient/therapist list surface; DoD includes the pasted audit table |
-| W5-03 | patient-profissao-ui | DONE (closed-already-shipped, docs-only, 2026-07-08) | **Q-W5-6 resolved PRESENT (owner ruling + machine evidence):** prod deployment `dpl_AWKNbRzyTgvSGHVg31fXNgqFMwXL` builds `9f5c960` = exact main tip (zero drift); form field unconditional (patient-form.tsx 147-153, column 0022); profile row conditional-on-value by design (page.tsx:119), the likely QA source. Zero code |
+| W5-03 | patient-profissao-ui | DONE (#510, closed-already-shipped, docs-only, 2026-07-08) | **Q-W5-6 resolved PRESENT (owner ruling + machine evidence):** prod deployment `dpl_AWKNbRzyTgvSGHVg31fXNgqFMwXL` builds `9f5c960` = exact main tip (zero drift); form field unconditional (patient-form.tsx 147-153, column 0022); profile row conditional-on-value by design (page.tsx:119), the likely QA source. Zero code |
 | W5-04 | episodio-filter | OPEN | migration-free; filter Episodio dropdown to the selected patient + Sem episodio; lands independently of Batch 4 |
 | W5-05 | lote-date-edit | OPEN | migration-free; per-row editable DATES in Agendar lote (per-row TIME already exists); reuses `batchSchedule` |
 | W5-06 | equipa-gerir-centering | OPEN | migration-free; center the Gerir panel as a modal per UI-STYLE.md; zero logic change; extends UI-STYLE.md |
