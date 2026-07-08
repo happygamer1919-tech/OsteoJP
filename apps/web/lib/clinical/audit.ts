@@ -10,7 +10,8 @@ export type ClinicalAuditAction =
   | "clinical_record.review_claim" // therapist claimed a review-queue item (→ in_review)
   | "clinical_record.review_finalize" // therapist finalized a review item (→ approved + locked/signed)
   | "clinical_episode.create"
-  | "attachment.create";
+  | "attachment.create"
+  | "patient_document.create"; // staff uploaded an administrative doc to a patient
 
 /**
  * Append an audit row for a clinical mutation. MUST be called inside the same
@@ -28,6 +29,8 @@ export async function writeClinicalAudit(
     actorUserId: string;
     action: ClinicalAuditAction;
     entityType: "clinical_record" | "clinical_episode" | "attachment";
+    // "attachment" is also the entity type for a patient administrative document
+    // (both are rows in the `attachments` table; the audit action distinguishes them).
     entityId: string;
     metadata: Record<string, unknown>;
     ip: string | null;
