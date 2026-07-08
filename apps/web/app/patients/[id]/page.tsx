@@ -85,6 +85,12 @@ export default async function PatientProfilePage({
 
   const canReadClinical = can(ctx.role, "clinical_records:read");
   const canInvoice = can(ctx.role, "invoices:read");
+  // Consultas per-row edits (W5-09) REUSE the Agenda gates verbatim: reschedule
+  // and Estado change need appointments:write; Cancel needs appointments:delete
+  // (therapist can write but NOT cancel). These flags only shape the affordance;
+  // each Agenda server action re-asserts its own capability server-side.
+  const canEditAppointments = can(ctx.role, "appointments:write");
+  const canCancelAppointments = can(ctx.role, "appointments:delete");
   const canDelete = can(ctx.role, "patients:delete");
   const canStartEpisode = can(ctx.role, "clinical_records:author");
   // Hard delete is Tenant-settings tier (W5-08), like appointment/staff delete.
@@ -215,7 +221,11 @@ export default async function PatientProfilePage({
 
       {tab === "consultas" && (
         <div role="tabpanel" id="tabpanel-consultas" aria-label={s["patients.tabAppointments"]}>
-          <AppointmentsList appointments={patientAppointments} />
+          <AppointmentsList
+            appointments={patientAppointments}
+            canEdit={canEditAppointments}
+            canCancel={canCancelAppointments}
+          />
         </div>
       )}
 
