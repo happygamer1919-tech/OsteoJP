@@ -7,8 +7,8 @@ import { requireRequestContext } from "@/lib/auth/context";
 import {
   listActiveTemplates,
   listEpisodesForPicker,
-  listPatients,
 } from "@/lib/clinical/records";
+import { getPatient } from "@/lib/patients/queries";
 import { createRecordAction } from "./actions";
 import { PatientEpisodeFields } from "./patient-episode-fields";
 
@@ -21,13 +21,17 @@ export default async function NewRecordPage({
   // Authoring is owner/therapist only; admins can read but not create.
   if (!can(ctx.role, "clinical_records:author")) redirect("/clinical");
 
-  const [patients, templates, episodes] = await Promise.all([
-    listPatients(ctx),
+  const [templates, episodes] = await Promise.all([
     listActiveTemplates(ctx),
     listEpisodesForPicker(ctx),
   ]);
   // Prefill when arriving from an episode ("+ New record in this episode").
   const { m, patientId, episodeId } = await searchParams;
+  // W5-02: the Paciente field is an async search Combobox (the old Select
+  // listed EVERY patient). Resolve the prefill id to a name so the pre-selected
+  // patient is visible without a client round-trip; a bad/foreign id resolves
+  // to null (no prefill), same denial the create action enforces server-side.
+  const prefillPatient = patientId ? await getPatient(patientId) : null;
 
   return (
     <section className="max-w-xl space-y-4">
@@ -35,13 +39,18 @@ export default async function NewRecordPage({
       {m === "err" && <p className="text-sm text-error">{s["clinical.error"]}</p>}
 
       <form action={createRecordAction} className="space-y-3">
-        {/* W5-04: the Episódio options are scoped client-side to the selected
-            patient. The Modelo picker below passes through as children so its
-            markup and the field sequence stay untouched (Batch 4 territory). */}
+        {/* W5-02 + W5-04: Paciente is an async search Combobox; the Episódio
+            options are scoped client-side to the selected patient. The Modelo
+            picker passes through as children so its markup and the field
+            sequence (Paciente, Modelo, Episódio) stay untouched (Batch 4
+            territory). */}
         <PatientEpisodeFields
-          patients={patients}
           episodes={episodes}
-          defaultPatientId={patientId}
+          initialPatient={
+            prefillPatient
+              ? { id: prefillPatient.id, name: prefillPatient.fullName }
+              : null
+          }
           defaultEpisodeId={episodeId}
         >
           <label className="block space-y-1">

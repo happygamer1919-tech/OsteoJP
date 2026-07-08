@@ -215,6 +215,82 @@ test("Agendar lote generates per-date slots and submits via the batch engine; V1
   await expect(page.getByRole("button", { name: /Remarcar/i }).first()).toBeVisible();
 });
 
+/** ISO date `days` after `iso` (whole-day UTC arithmetic, DST-proof for a date-only value). */
+function addIsoDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y!, m! - 1, d! + days)).toISOString().slice(0, 10);
+}
+
+/** pt-PT trigger text of the lote row DatePicker for an ISO date (dd/mm/yyyy). */
+function ptTriggerDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Intl.DateTimeFormat("pt-PT").format(new Date(y!, m! - 1, d!));
+}
+
+/** pt-PT full accessible label of a DatePicker day cell for an ISO date. */
+function ptDayLabel(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Intl.DateTimeFormat("pt-PT", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(y!, m! - 1, d!));
+}
+
+test("Agendar lote: a row's DATE is editable per-row and the EDITED set reaches the batch engine (W5-05)", async ({
+  page,
+}) => {
+  const date = futureDate(RUN_DAY_BASE + 50);
+  const dialog = await openNewAppointment(page, date);
+  await fillAppointment(dialog, {
+    patient: PATIENTS.ana.name,
+    therapist: THERAPIST_NAME,
+    location: LOCATION.name,
+    date,
+    time: "16:00",
+  });
+
+  // Weekly generation stays the default seed: 2 rows on the weekly cadence.
+  await dialog.getByLabel(/Agendar lote/i).check();
+  await dialog.getByLabel(/Nº de marcações/i).fill("2");
+  await dialog.getByLabel(/A cada \(semanas\)/i).fill("1");
+  await dialog.getByRole("button", { name: /Gerar datas/i }).click();
+  await expect(dialog.getByText(/2\s+marcações a criar/i)).toBeVisible();
+
+  const seeded = [date, addIsoDays(date, 7)];
+  const edited = addIsoDays(seeded[1]!, 1); // move row 2 one day later
+
+  // Each row now carries its own DatePicker, seeded with the recurrence date.
+  const triggers = dialog.getByRole("button", { name: "Data da marcação" });
+  await expect(triggers).toHaveCount(2);
+  await expect(triggers.nth(0)).toHaveText(ptTriggerDate(seeded[0]!));
+  await expect(triggers.nth(1)).toHaveText(ptTriggerDate(seeded[1]!));
+
+  // Edit ONLY row 2's date via the calendar popover. (While the popover is
+  // open there are two role=dialog nodes, so target the day cell via page.)
+  await triggers.nth(1).click();
+  if (edited.slice(0, 7) !== seeded[1]!.slice(0, 7)) {
+    await page.getByRole("button", { name: "Mês seguinte" }).click();
+  }
+  await page.getByRole("gridcell", { name: ptDayLabel(edited) }).click();
+  await expect(triggers.nth(1)).toHaveText(ptTriggerDate(edited));
+  // The sibling row keeps its recurrence date: the edit is per-row.
+  await expect(triggers.nth(0)).toHaveText(ptTriggerDate(seeded[0]!));
+
+  // Submit → the EDITED explicit slot list goes to batchSchedule. The E2E
+  // therapist has no availability template, so every slot is busy → the
+  // partial-success dialog lists the failures. The edited row must surface
+  // with its NEW date (proof the engine ran against the edited set), the
+  // sibling with its recurrence date, and the replaced date nowhere.
+  await dialog.getByRole("button", { name: SAVE }).click();
+  const failure = page.getByRole("dialog", { name: /Algumas marcações não foram criadas/i });
+  await expect(failure).toBeVisible({ timeout: 12_000 });
+  await expect(failure.getByText(`${edited} · 16:00`)).toBeVisible();
+  await expect(failure.getByText(`${seeded[0]} · 16:00`)).toBeVisible();
+  await expect(failure.getByText(`${seeded[1]} · 16:00`)).toHaveCount(0);
+});
+
 test("batch failure dialog is top-most, interactable, and isolated from the drawer discard guard (W3-02)", async ({
   page,
 }) => {

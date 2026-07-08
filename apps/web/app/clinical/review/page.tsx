@@ -12,6 +12,8 @@ import { Suspense } from "react";
 
 import { requireRequestContext } from "@/lib/auth/context";
 import { s } from "@/lib/i18n";
+import { matchesSearch } from "@/lib/search/text-filter";
+import { SearchBox } from "@/app/patients/_components/search-box";
 import { listReviewQueue, type ReviewQueueItem } from "@/lib/clinical/review";
 import { claimAction } from "./actions";
 
@@ -88,18 +90,38 @@ function ClaimAction({ item }: { item: ReviewQueueItem }) {
  * /clinical/review/[recordId] editor route is not wrapped in a queue-level
  * Suspense boundary.
  */
-export default async function ReviewQueuePage() {
+export default async function ReviewQueuePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
   const ctx = await requireRequestContext();
   // Reviewing/finalizing is a clinician action (therapist/owner). Admin can read
   // clinical records but cannot review — bounce it back rather than render a
   // queue it can't act on.
   if (!can(ctx.role, "clinical_records:review")) redirect("/clinical");
 
+  const { q } = await searchParams;
+  const query = (q ?? "").trim();
+
   return (
     <section className="space-y-8">
       <div className="space-y-1">
         <h1 className="text-2xl text-v2-text-primary">{s["review.heading"]}</h1>
         <p className="text-sm text-v2-text-secondary">{s["review.subtitle"]}</p>
+      </div>
+
+      {/* Toolbar row (UI-STYLE.md §6). W5-02: patient-name search over the
+          role-scoped queue read, reusing the Pacientes SearchBox (URL ?q= +
+          in-memory filter below — never a query/visibility change). */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="w-full max-w-xs">
+          <SearchBox
+            initialQuery={query}
+            path="/clinical/review"
+            placeholder={s["review.searchPlaceholder"]}
+          />
+        </div>
       </div>
 
       <Suspense
@@ -109,15 +131,29 @@ export default async function ReviewQueuePage() {
           </div>
         }
       >
-        <ReviewResults />
+        <ReviewResults query={query} />
       </Suspense>
     </section>
   );
 }
 
-async function ReviewResults() {
+async function ReviewResults({ query }: { query: string }) {
   const ctx = await requireRequestContext();
-  const items = await listReviewQueue(ctx);
+  const allItems = await listReviewQueue(ctx);
+  // W5-02: presentation-only patient-name filter over the loaded queue.
+  const items = allItems.filter((i) => matchesSearch(query, i.patientName));
+
+  // A non-empty queue filtered down to zero is a no-match state, not the
+  // "all reviewed" celebration — keep the two distinguishable.
+  if (items.length === 0 && allItems.length > 0) {
+    return (
+      <GlassCard>
+        <p className="py-8 text-center text-sm text-v2-text-secondary">
+          {s["review.searchEmpty"]}
+        </p>
+      </GlassCard>
+    );
+  }
 
   if (items.length === 0) {
     return (

@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 
-import { BrandLockup } from "../brand/BrandLockup";
+import { BrandLockup, type BrandLockupSize } from "../brand/BrandLockup";
 import { type AppShellNavItem } from "./AppShell";
 
 /**
@@ -96,6 +96,12 @@ export interface SidebarAppShellProps {
   menuTitle?: string;
   /** Accessible name for the brand-logo home link (icon-only; must describe destination). */
   brandLinkLabel?: string;
+  /**
+   * Rendered size of the desktop sidebar brand lockup. Defaults to `lg` (48px)
+   * so every current consumer is unchanged; pass `xl` (96px) to enlarge it. The
+   * mobile top bar and drawer keep their compact `sm` lockup regardless.
+   */
+  brandSize?: BrandLockupSize;
 }
 
 export function SidebarAppShell({
@@ -110,6 +116,7 @@ export function SidebarAppShell({
   closeMenuLabel = "Fechar menu",
   menuTitle = "Menu",
   brandLinkLabel = "Ir para o painel",
+  brandSize = "lg",
 }: SidebarAppShellProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -124,7 +131,7 @@ export function SidebarAppShell({
             aria-label={brandLinkLabel}
             className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
-            <BrandLockup variant="lockup" size="lg" />
+            <BrandLockup variant="lockup" size={brandSize} />
           </Link>
           <NavList nav={nav} Link={Link} navLabel={navLabel} />
         </div>

@@ -3,7 +3,9 @@ import {
   cameraSupported,
   captureFileName,
   captureFrame,
+  downloadStill,
   startCamera,
+  startCameraCancellable,
   stopStream,
   CAPTURE_MIME,
 } from "./camera-capture";
@@ -63,6 +65,108 @@ describe("stopStream (release the camera)", () => {
   it("no-op on null/undefined", () => {
     expect(() => stopStream(null)).not.toThrow();
     expect(() => stopStream(undefined)).not.toThrow();
+  });
+});
+
+// W5-07 first-open regression. getUserMedia resolves asynchronously (real
+// hardware takes time); React StrictMode's dev double-mount tears the component
+// down and remounts it on EVERY first open, so a stream granted after teardown
+// used to leak (camera indicator stayed on; on exclusive-camera devices the
+// racing second acquisition failed NotReadableError -> "denied" alert on first
+// open). startCameraCancellable stops a stale grant instead of leaking it.
+describe("startCameraCancellable (W5-07 first-open fix)", () => {
+  /** getUserMedia that resolves only when released — like real hardware. */
+  function deferredMediaDevices(stream: MediaStream) {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const md = {
+      getUserMedia: vi.fn().mockImplementation(async () => {
+        await gate;
+        return stream;
+      }),
+    } as unknown as MediaDevices;
+    return { md, release };
+  }
+
+  it("stops a stream granted AFTER cancellation and applies nothing (the first-open leak)", async () => {
+    const { tracks, stream } = fakeStream();
+    const { md, release } = deferredMediaDevices(stream);
+    let cancelled = false;
+    const pending = startCameraCancellable(() => cancelled, md);
+    // Teardown happens while getUserMedia is still pending (StrictMode
+    // dev double-mount on first open, or the user closing the panel fast).
+    cancelled = true;
+    release();
+    await expect(pending).resolves.toBeNull();
+    // The granted stream was STOPPED, not leaked.
+    for (const t of tracks) expect(t.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("StrictMode first-open sequence: the cancelled first start is stopped, the second start wins", async () => {
+    const first = fakeStream();
+    const second = fakeStream();
+    const firstMd = deferredMediaDevices(first.stream);
+    const secondMd = deferredMediaDevices(second.stream);
+
+    // Mount #1 starts, is torn down, then mount #2 starts (React dev order).
+    let firstCancelled = false;
+    const p1 = startCameraCancellable(() => firstCancelled, firstMd.md);
+    firstCancelled = true; // cleanup #1
+    const p2 = startCameraCancellable(() => false, secondMd.md); // mount #2
+    firstMd.release();
+    secondMd.release();
+
+    await expect(p1).resolves.toBeNull();
+    await expect(p2).resolves.toEqual({ ok: true, stream: second.stream });
+    for (const t of first.tracks) expect(t.stop).toHaveBeenCalledTimes(1); // no leak
+    for (const t of second.tracks) expect(t.stop).not.toHaveBeenCalled(); // live preview
+  });
+
+  it("passes the result through untouched when not cancelled", async () => {
+    const { tracks, stream } = fakeStream();
+    const { md, release } = deferredMediaDevices(stream);
+    const pending = startCameraCancellable(() => false, md);
+    release();
+    await expect(pending).resolves.toEqual({ ok: true, stream });
+    for (const t of tracks) expect(t.stop).not.toHaveBeenCalled();
+  });
+
+  it("returns the typed failure (not null) when the start fails without cancellation", async () => {
+    const md = {
+      getUserMedia: vi.fn().mockRejectedValue(new Error("NotAllowedError")),
+    } as unknown as MediaDevices;
+    await expect(startCameraCancellable(() => false, md)).resolves.toEqual({
+      ok: false,
+      reason: "denied",
+    });
+  });
+});
+
+// W5-07 "Transferir": explicit user-initiated download of the in-page still.
+// Distinct from the silent gallery persistence W4-05 forbids — bytes leave the
+// page only through this deliberate anchor click (or the signed-URL upload).
+describe("downloadStill (Transferir)", () => {
+  function fakeDocument() {
+    const anchor = {
+      href: "",
+      download: "",
+      click: vi.fn(),
+      remove: vi.fn(),
+    };
+    const doc = {
+      createElement: vi.fn().mockReturnValue(anchor),
+      body: { appendChild: vi.fn() },
+    } as unknown as Document;
+    return { doc, anchor };
+  }
+
+  it("clicks a temporary anchor pointing at the in-page object URL", () => {
+    const { doc, anchor } = fakeDocument();
+    downloadStill("blob:https://app/abc", "foto-1.jpg", doc);
+    expect(anchor.href).toBe("blob:https://app/abc");
+    expect(anchor.download).toBe("foto-1.jpg");
+    expect(anchor.click).toHaveBeenCalledTimes(1);
+    expect(anchor.remove).toHaveBeenCalledTimes(1);
   });
 });
 

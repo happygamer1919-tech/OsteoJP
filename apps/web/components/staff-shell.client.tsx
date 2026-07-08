@@ -71,6 +71,7 @@ export function StaffShellClient({
     <SidebarAppShell
       brandHomeHref="/dashboard"
       nav={nav}
+      brandSize="xl"
       userArea={userArea}
       heritageFrame={
         <HeritageFrame

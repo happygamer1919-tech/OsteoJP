@@ -5,24 +5,24 @@ import { describe, expect, it } from "vitest";
 import {
   PatientEpisodeFields,
   type PickerEpisode,
-  type PickerPatient,
 } from "./patient-episode-fields";
 
 // W5-04 — the Episódio picker is scoped to the selected patient.
 //
 // The component receives the full (already read-gated + tenant-scoped) episode
 // list and must only SURFACE the selected patient's episodes, plus the fixed
-// "Sem episódio" option. These renders assert the initial HTML for a given
-// selection; the interactive re-filter on patient change is covered by the
-// create-flow e2e (clinical.spec.ts).
+// "Sem episódio" option. Patient selection is an async Combobox (W5-02); these
+// renders drive the initial state via the `initialPatient` prefill (the deep
+// link from an episode page) — the interactive re-filter as the Combobox
+// selection changes is covered by the create-flow e2e (clinical.spec.ts).
 
-const PATIENT_A: PickerPatient = {
+const PATIENT_A = {
   id: "00000000-0000-0000-0000-0000000000aa",
-  fullName: "Paciente A",
+  name: "Paciente A",
 };
-const PATIENT_B: PickerPatient = {
+const PATIENT_B = {
   id: "00000000-0000-0000-0000-0000000000bb",
-  fullName: "Paciente B",
+  name: "Paciente B",
 };
 
 const EPISODES: PickerEpisode[] = [
@@ -34,8 +34,8 @@ const EPISODES: PickerEpisode[] = [
 function render(props: Partial<Parameters<typeof PatientEpisodeFields>[0]> = {}) {
   return renderToStaticMarkup(
     createElement(PatientEpisodeFields, {
-      patients: [PATIENT_A, PATIENT_B],
       episodes: EPISODES,
+      initialPatient: null,
       ...props,
     }),
   );
@@ -43,7 +43,7 @@ function render(props: Partial<Parameters<typeof PatientEpisodeFields>[0]> = {})
 
 describe("PatientEpisodeFields — patient-scoped Episódio options", () => {
   it("lists only patient A's episodes (B's excluded) plus Sem episódio when A is selected", () => {
-    const html = render({ defaultPatientId: PATIENT_A.id });
+    const html = render({ initialPatient: PATIENT_A });
     expect(html).toContain("Lombalgia A1");
     expect(html).toContain("Cervicalgia A2");
     expect(html).not.toContain("Ciatalgia B1");
@@ -51,7 +51,7 @@ describe("PatientEpisodeFields — patient-scoped Episódio options", () => {
   });
 
   it("lists only patient B's episodes (A's excluded) plus Sem episódio when B is selected", () => {
-    const html = render({ defaultPatientId: PATIENT_B.id });
+    const html = render({ initialPatient: PATIENT_B });
     expect(html).toContain("Ciatalgia B1");
     expect(html).not.toContain("Lombalgia A1");
     expect(html).not.toContain("Cervicalgia A2");
@@ -72,7 +72,7 @@ describe("PatientEpisodeFields — patient-scoped Episódio options", () => {
 
   it("preselects the episode prefill for its own patient (deep link from an episode)", () => {
     const html = render({
-      defaultPatientId: PATIENT_A.id,
+      initialPatient: PATIENT_A,
       defaultEpisodeId: "00000000-0000-0000-0000-0000000000e1",
     });
     // Attribute order is not guaranteed: grab the selected option tag, then its value.
@@ -86,9 +86,8 @@ describe("PatientEpisodeFields — patient-scoped Episódio options", () => {
       createElement(
         PatientEpisodeFields,
         {
-          patients: [PATIENT_A, PATIENT_B],
           episodes: EPISODES,
-          defaultPatientId: PATIENT_A.id,
+          initialPatient: PATIENT_A,
         },
         createElement("select", { name: "formTemplateId" }),
       ),

@@ -7,6 +7,7 @@ import { EmptyState, SegmentedControl, StatusChip } from '@osteojp/ui'
 import type { AppointmentView } from '@/lib/api/client'
 import { NavButton } from '../dashboard/NavButton'
 import { STATUS_LABELS, STATUS_TONE } from './status'
+import { locationDisplayName } from '@/lib/locationLabel'
 import { s } from '@/lib/i18n'
 
 function dateParts(iso: string) {
@@ -37,7 +38,7 @@ function AppointmentRow({ appt, muted }: { appt: AppointmentView; muted?: boolea
           {time} · {appt.serviceName ?? s.appointments.detail_service}
         </p>
         <p className="truncate text-xs text-text-secondary">
-          {[appt.practitionerName, appt.locationName].filter(Boolean).join(' · ') || '—'}
+          {[appt.practitionerName, locationDisplayName(appt.locationName)].filter(Boolean).join(' · ') || '—'}
         </p>
       </div>
       <StatusChip tone={STATUS_TONE[appt.status]}>{STATUS_LABELS[appt.status]}</StatusChip>

@@ -6,12 +6,29 @@
 //   3. runScoped(ctx, tx => ...) — RLS-enforced transaction
 //   4. writeAudit(tx, ...)       — audit row in the SAME tx (hard rule 6)
 //
-// Patients are NEVER hard-deleted (hard rule: soft delete via deleted_at).
+// Soft delete (deleted_at) is the DEFAULT delete path. Hard delete exists only
+// as a password-gated escalation (W5-08, hardDeletePatient below): admin-only,
+// server-verified scrypt password gate, and REFUSED whenever clinical records
+// (or any other domain rows) still reference the patient.
 
 import { revalidatePath } from "next/cache";
-import { and, eq, isNotNull, isNull, max, sql } from "drizzle-orm";
-import { assertCan } from "@osteojp/auth";
-import { patients, patientNoteRevisions } from "@osteojp/db";
+import { and, count, eq, isNotNull, isNull, max, or, sql } from "drizzle-orm";
+import { assertCan, can } from "@osteojp/auth";
+import {
+  analyticsEvents,
+  appointmentNotes,
+  appointments,
+  attachments,
+  clinicalEpisodes,
+  clinicalRecords,
+  invoices,
+  patientFormSubmissions,
+  patientLocations,
+  patients,
+  patientNoteRevisions,
+} from "@osteojp/db";
+import { AdminError, isAdminError } from "@/lib/admin/errors";
+import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
 import {
@@ -179,6 +196,153 @@ export async function restorePatient(id: string): Promise<Patient> {
 
   revalidatePatient(patient.id);
   return patient;
+}
+
+export type HardDeletePatientError =
+  | "forbidden" // caller lacks settings:manage (admin/owner tier)
+  | "validation" // missing/blank input
+  | "password" // wrong delete password (server-verified scrypt gate)
+  | "has_clinical_records" // clinical records reference the patient — permanently non-hard-deletable
+  | "has_references" // other domain rows (appointments/notes/invoices/…) reference the patient
+  | "not_found" // missing, already hard-deleted, or cross-tenant (RLS = 0 rows)
+  | "error";
+
+export type HardDeletePatientResult =
+  | { ok: true; id: string }
+  | { ok: false; error: HardDeletePatientError };
+
+/**
+ * Hard-delete a patient behind the tenant delete-password gate (W5-08).
+ * Replicates the W3-06 scrypt gate (verifyDeletePassword → tenants.settings
+ * .secrets, shared "appointmentDeletePasswordHash" key) and the
+ * hardDeleteAppointment structure: admin-only (settings:manage), server-side
+ * password verification, refuse guards, child-first RETURNING deletes, and a
+ * PII-free audit row in the SAME tx (rule 6).
+ *
+ * Refuse guards (server-enforced; the disabled UI control is only an affordance):
+ *  - has_clinical_records: ANY clinical_records row with this patient_id. The
+ *    locked/signed immutability trigger (rule 4) means finalized records can
+ *    never be removed, so a records-linked patient is PERMANENTLY
+ *    non-hard-deletable. The trigger and the append-only audit log are never
+ *    touched or bypassed here.
+ *  - has_references: any other domain row still referencing the patient
+ *    (episodes, appointments incl. secondary, visit notes, note revisions,
+ *    invoices, attachments, form submissions, analytics events, merge losers).
+ *    Note revisions / visit notes / analytics are append-only by RLS policy
+ *    (0025/0026/0030) and invoices are fiscally sensitive, so these can never
+ *    be cascaded — only a reference-free patient (e.g. created by mistake) is
+ *    hard-deletable. Everything else stays on the soft-delete path.
+ *
+ * The only deletable child is the patient_locations junction (child-first,
+ * RETURNING), then the patients row itself (RETURNING). Idempotent: a second
+ * call (or a cross-tenant id) sees 0 rows and returns not_found.
+ */
+export async function hardDeletePatient(
+  id: string,
+  password: string,
+): Promise<HardDeletePatientResult> {
+  const ctx = await requireRequestContext();
+  // Tenant-settings tier, like appointment/staff hard delete — NOT patients:delete.
+  if (!can(ctx.role, "settings:manage")) return { ok: false, error: "forbidden" };
+  if (!id || !password) return { ok: false, error: "validation" };
+
+  // Password gate — server-side, scrypt-hashed tenant secret. Never client-checked.
+  if (!(await verifyDeletePassword(ctx, password))) {
+    return { ok: false, error: "password" };
+  }
+
+  try {
+    const deletedId = await runScoped(ctx, async (tx) => {
+      // Existence snapshot. RLS scopes the tenant → cross-tenant/missing = 0 rows.
+      const [target] = await tx
+        .select({
+          id: patients.id,
+          patientNumber: patients.patientNumber,
+          deletedAt: patients.deletedAt,
+        })
+        .from(patients)
+        .where(eq(patients.id, id))
+        .limit(1);
+      if (!target) throw new AdminError("not_found");
+
+      // Clinical-records refuse guard — checked FIRST and alone so the caller
+      // gets the precise "permanently blocked" signal (records can never be
+      // removed once locked/signed; see the immutability trigger, rule 4).
+      const [{ n: records }] = await tx
+        .select({ n: count() })
+        .from(clinicalRecords)
+        .where(eq(clinicalRecords.patientId, id));
+      if (Number(records) > 0) throw new AdminError("has_clinical_records");
+
+      // Remaining-references guard — tenant-scoped counts (RLS). Append-only
+      // tables (notes/revisions/analytics) and invoices can never be cascaded.
+      const refCounts = await Promise.all([
+        tx.select({ n: count() }).from(clinicalEpisodes).where(eq(clinicalEpisodes.patientId, id)),
+        tx
+          .select({ n: count() })
+          .from(appointments)
+          .where(or(eq(appointments.patientId, id), eq(appointments.patientTwoId, id))),
+        tx.select({ n: count() }).from(appointmentNotes).where(eq(appointmentNotes.patientId, id)),
+        tx
+          .select({ n: count() })
+          .from(patientNoteRevisions)
+          .where(eq(patientNoteRevisions.patientId, id)),
+        tx.select({ n: count() }).from(invoices).where(eq(invoices.patientId, id)),
+        tx.select({ n: count() }).from(attachments).where(eq(attachments.patientId, id)),
+        tx
+          .select({ n: count() })
+          .from(patientFormSubmissions)
+          .where(eq(patientFormSubmissions.patientId, id)),
+        tx.select({ n: count() }).from(analyticsEvents).where(eq(analyticsEvents.patientId, id)),
+        // Merge losers pointing at this patient as their survivor.
+        tx.select({ n: count() }).from(patients).where(eq(patients.mergedIntoId, id)),
+      ]);
+      const references = refCounts.reduce((sum, [row]) => sum + Number(row?.n ?? 0), 0);
+      if (references > 0) throw new AdminError("has_references");
+
+      // Child rows FIRST (RETURNING), then the parent — no orphans. The
+      // location junction is the only patient child that is deletable.
+      await tx
+        .delete(patientLocations)
+        .where(eq(patientLocations.patientId, id))
+        .returning({ id: patientLocations.id });
+
+      const deleted = await tx
+        .delete(patients)
+        .where(eq(patients.id, id))
+        .returning({ id: patients.id });
+      if (deleted.length === 0) throw new AdminError("not_found");
+
+      // Audit in the SAME tx (rule 6). PII-FREE: ids + patient number + flags
+      // only — never the name, NIF, or contacts (rule 7).
+      await writeAudit(tx, ctx, {
+        action: "patient.hard_delete",
+        entityId: id,
+        metadata: {
+          patientNumber: target.patientNumber,
+          wasSoftDeleted: target.deletedAt !== null,
+        },
+      });
+      return id;
+    });
+
+    revalidatePatient(deletedId);
+    return { ok: true, id: deletedId };
+  } catch (e) {
+    if (isAdminError(e)) {
+      const code = e.code;
+      if (
+        code === "not_found" ||
+        code === "has_clinical_records" ||
+        code === "has_references"
+      ) {
+        return { ok: false, error: code };
+      }
+    }
+    // PII/secret-safe log (rule 7): error NAME only, never message/values.
+    console.error("patients: hardDelete failed", e instanceof Error ? e.name : "unknown");
+    return { ok: false, error: "error" };
+  }
 }
 
 /**
