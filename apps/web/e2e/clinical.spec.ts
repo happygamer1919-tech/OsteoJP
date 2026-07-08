@@ -32,7 +32,13 @@ test.describe("authoring (therapist)", () => {
   test("create a record from the current form, then sign/lock and version it", async ({ page }) => {
     // --- Create from the current template version ---
     await page.goto("/clinical/new");
-    await page.getByLabel(/Paciente/i).selectOption({ label: PATIENTS.maria.name });
+    // W5-02: the Paciente field is now an async search Combobox (was a Select
+    // listing every patient). Same drive pattern as the agenda/consultation
+    // pickers: focus, type, pick the option.
+    const patient = page.getByRole("combobox", { name: /Paciente/i });
+    await patient.click();
+    await patient.fill(PATIENTS.maria.name);
+    await page.getByRole("option", { name: PATIENTS.maria.name }).click();
     await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
     await page.getByRole("button", { name: "Criar ficha" }).click();
 
@@ -66,7 +72,12 @@ test.describe("authoring (therapist)", () => {
     // "Nova ficha" reuses the /clinical/new creation flow, pre-scoped to this patient.
     await page.getByRole("link", { name: "Nova ficha" }).click();
     await expect(page).toHaveURL(/\/clinical\/new\?patientId=/);
-    await expect(page.getByLabel(/Paciente/i)).toHaveValue(PATIENTS.maria.id);
+    // W5-02: the prefill (arriving with ?patientId=) resolves the id to the
+    // patient's name in the async Combobox input; the hidden patientId carries
+    // the id to the create action. Assert the visible prefilled name.
+    await expect(page.getByRole("combobox", { name: /Paciente/i })).toHaveValue(
+      PATIENTS.maria.name,
+    );
 
     await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
     await page.getByRole("button", { name: "Criar ficha" }).click();

@@ -7,9 +7,10 @@ import { requireRequestContext } from "@/lib/auth/context";
 import {
   listActiveTemplates,
   listEpisodesForPicker,
-  listPatients,
 } from "@/lib/clinical/records";
+import { getPatient } from "@/lib/patients/queries";
 import { createRecordAction } from "./actions";
+import { PatientPicker } from "./patient-picker";
 
 export default async function NewRecordPage({
   searchParams,
@@ -20,13 +21,17 @@ export default async function NewRecordPage({
   // Authoring is owner/therapist only; admins can read but not create.
   if (!can(ctx.role, "clinical_records:author")) redirect("/clinical");
 
-  const [patients, templates, episodes] = await Promise.all([
-    listPatients(ctx),
+  const [templates, episodes] = await Promise.all([
     listActiveTemplates(ctx),
     listEpisodesForPicker(ctx),
   ]);
   // Prefill when arriving from an episode ("+ New record in this episode").
   const { m, patientId, episodeId } = await searchParams;
+  // W5-02: the Paciente field is an async search Combobox (the old Select
+  // listed EVERY patient). Resolve the prefill id to a name so the pre-selected
+  // patient is visible without a client round-trip; a bad/foreign id resolves
+  // to null (no prefill), same denial the create action enforces server-side.
+  const prefillPatient = patientId ? await getPatient(patientId) : null;
 
   return (
     <section className="max-w-xl space-y-4">
@@ -34,14 +39,13 @@ export default async function NewRecordPage({
       {m === "err" && <p className="text-sm text-error">{s["clinical.error"]}</p>}
 
       <form action={createRecordAction} className="space-y-3">
-        <label className="block space-y-1">
-          <span className="text-sm font-medium">{s["clinical.patient"]} *</span>
-          <select name="patientId" required defaultValue={patientId ?? ""} className="block w-full rounded border px-2 py-1.5 text-sm">
-            {patients.map((p) => (
-              <option key={p.id} value={p.id}>{p.fullName}</option>
-            ))}
-          </select>
-        </label>
+        <PatientPicker
+          initial={
+            prefillPatient
+              ? { id: prefillPatient.id, name: prefillPatient.fullName }
+              : null
+          }
+        />
 
         <label className="block space-y-1">
           <span className="text-sm font-medium">{s["clinical.template"]} *</span>

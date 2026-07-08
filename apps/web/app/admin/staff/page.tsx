@@ -3,6 +3,8 @@ import { assignableRoles, type Role } from "@osteojp/auth";
 import { Button, GlassPanel, KpiCard, StatusBadge } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
+import { matchesSearch } from "@/lib/search/text-filter";
+import { SearchBox } from "@/app/patients/_components/search-box";
 import { listStaff } from "@/lib/admin/staff";
 import { listServices } from "@/lib/admin/services";
 import { listTherapistPrimaries } from "@/lib/admin/therapist-primary-service";
@@ -28,7 +30,7 @@ const ROLE_LABEL: Record<Role, string> = {
 export default async function StaffPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string }>;
+  searchParams: Promise<{ m?: string; q?: string }>;
 }) {
   const actor = await requireRequestContext();
   const staff = await listStaff(actor);
@@ -39,7 +41,15 @@ export default async function StaffPage({
   // Active working-hours templates — used only to derive the "with hours set"
   // summary count (reuse of the W2-12 read; no new query shape, no raw SQL).
   const availability = await listAvailabilityTemplates(actor);
-  const { m } = await searchParams;
+  const { m, q } = await searchParams;
+  const query = (q ?? "").trim();
+
+  // W5-02 Equipa search: presentation-only filter (name/role) over the SAME
+  // role-scoped listStaff read — never a query or visibility change. Summary
+  // KPIs stay computed from the full team, only the table rows filter.
+  const visibleStaff = staff.filter((u) =>
+    matchesSearch(query, u.fullName, u.roleSlug ? ROLE_LABEL[u.roleSlug] : null),
+  );
 
   // Only an owner may assign/modify the owner tier; hide it from admins. The
   // assignable set is the matrix's single source of truth (assignableRoles),
@@ -92,6 +102,19 @@ export default async function StaffPage({
         </GlassPanel>
       </div>
 
+      {/* Toolbar row (UI-STYLE.md §6): the surface's filter controls in one
+          horizontal row above the table. W5-02: name/role search, reusing the
+          Pacientes SearchBox (URL ?q= + server-side filter of the same read). */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="w-full max-w-xs">
+          <SearchBox
+            initialQuery={query}
+            path="/admin/staff"
+            placeholder={s["admin.staff.searchPlaceholder"]}
+          />
+        </div>
+      </div>
+
       <GlassPanel>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
@@ -106,7 +129,16 @@ export default async function StaffPage({
               </tr>
             </thead>
             <tbody>
-              {staff.map((u) => {
+              {visibleStaff.length === 0 && (
+                <tr>
+                  <td colSpan={6} className={adminTd}>
+                    <span className="text-v2-text-secondary">
+                      {s["admin.staff.searchEmpty"]}
+                    </span>
+                  </td>
+                </tr>
+              )}
+              {visibleStaff.map((u) => {
                 const manageable = isOwner || u.roleSlug !== "owner";
                 return (
                   <tr key={u.id} className={adminTrBorder}>
