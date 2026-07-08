@@ -258,14 +258,14 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 ### Batch 1 - migration-free, demo priority (run in numeric order; UI-lane, parallel-safe with one in-flight migration)
 | ID | Loop | Status | Gate / note |
 |----|------|--------|-------------|
-| W5-01 | login-redesign-branding | OPEN | migration-free; redesign `/login` + enlarge logo (login card + shell); no auth-logic change |
-| W5-02 | search-sweep | OPEN | migration-free; add search to Equipa (missing) + audit every patient/therapist list surface; DoD includes the pasted audit table |
-| W5-03 | patient-profissao-ui | DONE (#510, closed-already-shipped, docs-only, 2026-07-08) | **Q-W5-6 resolved PRESENT (owner ruling + machine evidence):** prod deployment `dpl_AWKNbRzyTgvSGHVg31fXNgqFMwXL` builds `9f5c960` = exact main tip (zero drift); form field unconditional (patient-form.tsx 147-153, column 0022); profile row conditional-on-value by design (page.tsx:119), the likely QA source. Zero code |
-| W5-04 | episodio-filter | OPEN | migration-free; filter Episodio dropdown to the selected patient + Sem episodio; lands independently of Batch 4 |
-| W5-05 | lote-date-edit | OPEN | migration-free; per-row editable DATES in Agendar lote (per-row TIME already exists); reuses `batchSchedule` |
-| W5-06 | equipa-gerir-centering | OPEN | migration-free; center the Gerir panel as a modal per UI-STYLE.md; zero logic change; extends UI-STYLE.md |
-| W5-07 | camera-anexos-buttons | OPEN | migration-free; two primary actions (Tirar foto, Transferir) + Abrir; reproduce+fix the first-open error; preserve W4-05 zero-gallery |
-| W5-08 | patient-delete-password-gate | OPEN | migration-free; NET-NEW `hardDeletePatient` with the W3-06 scrypt gate + clinical-records-linked refuse guard (no patient hard-delete exists today) |
+| W5-01 | login-redesign-branding | DONE (#519, 2026-07-08) | migration-free; `/login` restyled to GlassPanel + enlarged brand lockup (additive `xl:96` BrandLockup step + optional `brandSize` prop per owner ruling Q-W5-8); no auth-logic change |
+| W5-02 | search-sweep | DONE (#515, 2026-07-08) | migration-free; Equipa search added + list-surface sweep (record-creation patient Select -> async Combobox, marcacoes/review search); audit table in the PR |
+| W5-03 | patient-profissao-ui | DONE (#510, closed-already-shipped, docs-only) | **Q-W5-6 resolved PRESENT (owner ruling + machine evidence):** prod deployment `dpl_AWKNbRzyTgvSGHVg31fXNgqFMwXL` builds `9f5c960` = exact main tip (zero drift); form field unconditional (patient-form.tsx 147-153, column 0022); profile row conditional-on-value by design (page.tsx:119), the likely QA source. Zero code |
+| W5-04 | episodio-filter | DONE (#512, 2026-07-08) | migration-free; Episodio dropdown scoped to the selected patient + Sem episodio. Composed with W5-02: the merged `PatientEpisodeFields` uses the async Combobox patient picker and filters episodes off that selection; `listEpisodesForPicker` returns `{id,patientId,title}` |
+| W5-05 | lote-date-edit | DONE (#511, 2026-07-08) | migration-free; per-row editable DATES in Agendar lote via reused `DatePicker`; reuses `batchSchedule` (no server-action change); DST-safe startsAt recompose |
+| W5-06 | equipa-gerir-centering | DONE (#520, 2026-07-08) | migration-free; Gerir panel is now a centered modal on the reused `useAnimatedDialog` hook (no new packages/ui primitive); zero logic change (staff.ts untouched); UI-STYLE.md extended with the modal pattern |
+| W5-07 | camera-anexos-buttons | DONE (#513, 2026-07-08) | migration-free; two primary actions (Tirar foto, Transferir) + Abrir; first-open error root-caused (getUserMedia async race under StrictMode double-mount leaking the camera -> NotReadableError -> false denied) and fixed with `startCameraCancellable` + regression tests; W4-05 zero-gallery preserved |
+| W5-08 | patient-delete-password-gate | DONE (#514, 2026-07-08) | migration-free; NET-NEW `hardDeletePatient` with the W3-06 scrypt gate (shared delete-password secret) + clinical-records-linked refuse guard + audit + RLS isolation test; soft-delete stays the default |
 
 ### Batch 2 - migration-free (run in numeric order)
 | ID | Loop | Status | Gate / note |
