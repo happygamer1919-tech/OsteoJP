@@ -383,3 +383,11 @@
 ## 2026-07-08 - W4-05 external check closed (Rodica real-phone verification)
 - Rodica performed the real-phone check on the deployed app (relayed by Ivan 2026-07-08): the in-page captured photo landed in the ficha **anexos** and **nothing was saved to her phone gallery** — the "never in her gallery" requirement holds on a real device. The W4-05 external check is closed; BACKLOG OPEN-EXTERNAL row flipped to DONE. Build shipped #484.
 - **W4-10 remains OPEN-EXTERNAL** — this dispatch did not carry the `ANDRE CONFIRMED` line, so the W4-10 close (Section B) was intentionally not executed; its AWAITING-EXTERNAL note is untouched, pending André's receipt + `audio_filename` token relay.
+
+## 2026-07-08 - Wave 05 owner rulings addendum recorded (Q-W5-1..7)
+- Owner rulings dispatched 2026-07-08 (Ivan), outranking the loop files where they conflict: Q-W5-1 episode date editable prefilled today; Q-W5-2 keep both Plano and Objectivos; Q-W5-3 consent/RGPD stays PENDENTE-JP; Q-W5-4 warn-never-auto-cancel on block overlaps; Q-W5-5 retire only the NESA template from creation, 0031 warning system untouched; Q-W5-6 conditional close-if-deployed-present for W5-03; Q-W5-7 conditional migration-free-on-time_off for W5-12 (schema evidence required, else HALT proposing 0034). Marked answered in QUESTIONS.md this PR.
+- Batch 3 consequence: with W5-12 migration-free, 0033 (W5-11) is the only migration in Wave 05; one-in-flight and live-apply-before-DONE rules apply to it in full.
+
+## 2026-07-08 - W5-03 closed ALREADY-SHIPPED (docs-only, zero code)
+- Q-W5-6 resolved PRESENT with machine evidence: production deployment `dpl_AWKNbRzyTgvSGHVg31fXNgqFMwXL` (READY, target production) builds commit `9f5c960`, the exact `origin/main` tip, so there is no repo-vs-deploy drift; that commit renders the Profissao field unconditionally in the new-patient form (`apps/web/app/patients/_components/patient-form.tsx` 147-153) backed by `patients.profession` (migration 0022).
+- Likely source of the QA observation: the profile "Dados pessoais" row renders only when profession is set (`apps/web/app/patients/[id]/page.tsx:119`), which is by design (empty optional fields are hidden). No fix required; mirrors the W4-16 already-shipped docs-only close.
