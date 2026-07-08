@@ -72,6 +72,32 @@ export async function provisionStaffUser(
 }
 
 /**
+ * Sync a staff member's Supabase auth login email to a new address, via the
+ * service-role admin API. This is the auth half of an email edit; the public.users
+ * half lives in editStaff (apps/web/lib/admin/staff.ts), which calls this INSIDE
+ * its RLS transaction so a failure here rolls back the paired public.users write
+ * and both stores stay on the old email.
+ *
+ * `email_confirm: true`: an admin-initiated change is trusted, so the new address
+ * is marked confirmed immediately — no confirmation round-trip that would strand
+ * the staff member behind an email they may not control yet (placeholder → real).
+ *
+ * Throws on any auth failure (unlike generateSetPasswordLink, this MUST surface
+ * so the caller can abort). A globally-taken auth email (Supabase auth emails are
+ * unique platform-wide, not per-tenant) surfaces here as an error.
+ */
+export async function updateStaffAuthEmail(userId: string, email: string): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    email,
+    email_confirm: true,
+  });
+  if (error) {
+    throw new Error(`updateStaffAuthEmail: auth email update failed: ${error.message}`);
+  }
+}
+
+/**
  * Generate a single-use, expiring set-password link for an already-created
  * staff auth user, via Supabase's recovery flow. Single-use and expiry are
  * enforced by Supabase Auth (the project's OTP expiry config) — we do not mint
