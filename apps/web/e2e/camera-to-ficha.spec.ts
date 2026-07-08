@@ -1,16 +1,25 @@
 /**
  * camera-to-ficha.spec.ts — in-page camera capture into a ficha's anexos (W4-05,
- * Rodica request, JP-approved). Runs as THERAPIST (clinical_records:author).
+ * Rodica request, JP-approved; controls reworked by W5-07). Runs as THERAPIST
+ * (clinical_records:author).
  *
  * The camera is mocked via addInitScript (getUserMedia + canvas.toBlob + the
  * video frame size) so the flow is deterministic and needs no real hardware.
- * This proves the in-page camera UI: open -> capture -> preview -> retake, that
- * the stream is RELEASED after capture (track.stop), and that a permission
- * denial shows the pt-PT message with NO gallery-persisting fallback. The actual
- * upload landing (Supabase Storage bucket) is covered by the unit tests
- * (attachment-upload.test.ts) + the Rodica real-device close-out; it is not
- * asserted here because the CI seed does not provision the clinical-attachments
- * bucket (the pre-existing file-input upload is uncovered for the same reason).
+ * This proves the W5-07 two-action camera UI: open -> the two primary actions
+ * (Tirar foto, Transferir) are present with NO other camera button; capture ->
+ * Abrir appears only once a photo exists; that the stream is RELEASED after
+ * capture (track.stop); and that a permission denial shows the pt-PT message
+ * with NO gallery-persisting fallback. The actual upload landing (Supabase
+ * Storage bucket) is covered by the unit tests (attachment-upload.test.ts) +
+ * the Rodica real-device close-out; it is not asserted here because the CI seed
+ * does not provision the clinical-attachments bucket (the pre-existing
+ * file-input upload is uncovered for the same reason).
+ *
+ * NOTE ON THE TWO "Tirar foto" BUTTONS: the anexos toolbar has an entry-point
+ * "Tirar foto" (clinical.attachmentTakePhoto) that opens the camera panel, and
+ * the camera's own primary "Tirar foto" (clinical.cameraTakePhoto) captures the
+ * still. To keep the assertions unambiguous, every in-camera query is scoped to
+ * the camera group (role="group", aria-label "Câmara").
  */
 import { test, expect, type Page } from "@playwright/test";
 import { PATIENTS, STORAGE, TEMPLATE_CURRENT_LABEL } from "./fixtures";
@@ -94,27 +103,48 @@ async function createDraftFicha(page: Page) {
 test.describe("camera-to-ficha (therapist)", () => {
   test.use({ storageState: STORAGE.therapist });
 
-  test("in-page capture: open -> capture -> preview -> retake, and the camera is released", async ({
+  test("two-action camera: open -> Tirar foto + Transferir, capture -> Abrir appears, no other button, and the camera is released", async ({
     page,
   }) => {
     await installFakeCamera(page);
     await createDraftFicha(page);
 
-    // The anexos section offers the in-page camera entry point on a draft.
+    // The anexos toolbar entry point opens the in-page camera panel.
     await page.getByRole("button", { name: "Tirar foto" }).click();
 
-    // Camera opens in-page -> the Capturar action appears (preview phase).
-    const capture = page.getByRole("button", { name: "Capturar" });
-    await expect(capture).toBeVisible();
+    // Scope every assertion to the camera group so the toolbar's own
+    // "Tirar foto" entry point never collides with the camera's controls.
+    const camera = page.getByRole("group", { name: "Câmara" });
+    await expect(camera).toBeVisible();
+    const cameraButtons = camera.getByRole("button");
 
-    // Capture a still -> the "captured" phase: Anexar/Repetir appear, Capturar is
-    // gone, and the preview image is present. Assert the buttons first (reliably
-    // sized) as the phase proof; the <img> is checked as attached.
-    await capture.click();
-    await expect(page.getByRole("button", { name: "Anexar foto" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Repetir" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Capturar" })).toHaveCount(0);
-    await expect(page.getByRole("img", { name: "Câmara" })).toHaveCount(1);
+    // First-open: exactly TWO primary actions, no error, and no stale Abrir.
+    // "Tirar foto" is enabled once the live preview is up (phase !== starting).
+    const takePhoto = camera.getByRole("button", { name: "Tirar foto" });
+    const download = camera.getByRole("button", { name: "Transferir" });
+    await expect(takePhoto).toBeEnabled();
+    await expect(download).toBeVisible();
+    await expect(camera.getByRole("button", { name: "Abrir" })).toHaveCount(0);
+    await expect(cameraButtons).toHaveCount(2);
+    // First-open regression: the denial alert must NOT be present on a clean open.
+    await expect(camera.getByRole("alert")).toHaveCount(0);
+    // Transferir is disabled until a photo exists (nothing to download yet).
+    await expect(download).toBeDisabled();
+
+    // Capture a still -> "captured" phase: Abrir appears, Transferir enables,
+    // still exactly the two primary actions + Abrir (three total), and the
+    // preview <img> is present.
+    await takePhoto.click();
+    await expect(camera.getByRole("button", { name: "Abrir" })).toBeVisible();
+    await expect(download).toBeEnabled();
+    await expect(cameraButtons).toHaveCount(3);
+    await expect(camera.getByRole("img", { name: "Câmara" })).toHaveCount(1);
+    // The old buttons are gone under the two-action model.
+    await expect(camera.getByRole("button", { name: "Capturar" })).toHaveCount(0);
+    await expect(camera.getByRole("button", { name: "Confirmar" })).toHaveCount(0);
+    await expect(camera.getByRole("button", { name: "Anexar foto" })).toHaveCount(0);
+    await expect(camera.getByRole("button", { name: "Repetir" })).toHaveCount(0);
+    await expect(camera.getByRole("button", { name: "Cancelar" })).toHaveCount(0);
 
     // The camera stream was released when the still was taken (no lingering light).
     const stops = await page.evaluate(
@@ -122,9 +152,11 @@ test.describe("camera-to-ficha (therapist)", () => {
     );
     expect(stops).toBeGreaterThanOrEqual(1);
 
-    // Retake returns to the live camera (Capturar visible again).
-    await page.getByRole("button", { name: "Repetir" }).click();
-    await expect(page.getByRole("button", { name: "Capturar" })).toBeVisible();
+    // "Tirar foto" re-arms the live camera (Abrir disappears, preview returns).
+    await takePhoto.click();
+    await expect(camera.getByRole("button", { name: "Abrir" })).toHaveCount(0);
+    await expect(cameraButtons).toHaveCount(2);
+    await expect(takePhoto).toBeEnabled();
   });
 
   test("permission denied shows the pt-PT message and does not fall back to a file input", async ({
@@ -135,10 +167,12 @@ test.describe("camera-to-ficha (therapist)", () => {
 
     await page.getByRole("button", { name: "Tirar foto" }).click();
 
-    // pt-PT denial guidance; no capture control, no silent gallery fallback.
+    const camera = page.getByRole("group", { name: "Câmara" });
+    // pt-PT denial guidance; no captured still, no Abrir, no silent gallery fallback.
     await expect(
-      page.getByText("Não foi possível aceder à câmara. Verifique as permissões do navegador."),
+      camera.getByText("Não foi possível aceder à câmara. Verifique as permissões do navegador."),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Capturar" })).toHaveCount(0);
+    await expect(camera.getByRole("button", { name: "Abrir" })).toHaveCount(0);
+    await expect(camera.getByRole("img", { name: "Câmara" })).toHaveCount(0);
   });
 });

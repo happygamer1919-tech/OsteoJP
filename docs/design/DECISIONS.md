@@ -391,3 +391,6 @@
 ## 2026-07-08 - W5-03 closed ALREADY-SHIPPED (docs-only, zero code)
 - Q-W5-6 resolved PRESENT with machine evidence: production deployment `dpl_AWKNbRzyTgvSGHVg31fXNgqFMwXL` (READY, target production) builds commit `9f5c960`, the exact `origin/main` tip, so there is no repo-vs-deploy drift; that commit renders the Profissao field unconditionally in the new-patient form (`apps/web/app/patients/_components/patient-form.tsx` 147-153) backed by `patients.profession` (migration 0022).
 - Likely source of the QA observation: the profile "Dados pessoais" row renders only when profession is set (`apps/web/app/patients/[id]/page.tsx:119`), which is by design (empty optional fields are hidden). No fix required; mirrors the W4-16 already-shipped docs-only close.
+
+## 2026-07-08 - W5-01 login branding: BrandLockup xl step + login card restyle
+- Owner approved additive BrandLockup `xl:96` size step + optional `brandSize` prop on SidebarAppShell (default lg, non-breaking); login card restyled to GlassPanel per UI-STYLE.md, zero auth-logic change.

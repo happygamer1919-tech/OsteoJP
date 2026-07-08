@@ -52,6 +52,50 @@ export function stopStream(stream: MediaStream | null | undefined): void {
 }
 
 /**
+ * Cancellation-safe camera start (W5-07 first-open fix). `getUserMedia` is
+ * async — real hardware takes time to acquire. If the caller is torn down
+ * while the request is pending (React StrictMode's dev double-mount on FIRST
+ * open, or the user closing the panel fast), a stream granted after teardown
+ * must still be STOPPED; otherwise the camera stays acquired with no owner
+ * (indicator stays on, and on exclusive-camera devices the next acquisition
+ * fails with NotReadableError, surfacing the "denied" alert on first open).
+ *
+ * `isCancelled` is evaluated when the request settles: when true, a granted
+ * stream is stopped immediately and `null` is returned so the caller applies
+ * nothing stale.
+ */
+export async function startCameraCancellable(
+  isCancelled: () => boolean,
+  mediaDevices: MediaDevices | undefined = globalThis.navigator?.mediaDevices,
+): Promise<CameraStartResult | null> {
+  const result = await startCamera(mediaDevices);
+  if (isCancelled()) {
+    if (result.ok) stopStream(result.stream);
+    return null;
+  }
+  return result;
+}
+
+/**
+ * User-initiated download of the captured still to the device (Transferir).
+ * Distinct from the silent gallery persistence W4-05 forbids: nothing is
+ * written unless the clinician explicitly asks for the file. DOM injected for
+ * node-env testability.
+ */
+export function downloadStill(
+  objectUrl: string,
+  fileName: string,
+  doc: Document = globalThis.document,
+): void {
+  const anchor = doc.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = fileName;
+  doc.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+/**
  * Draw the current video frame onto the canvas and export it as an image Blob.
  * The bytes live only in the page (and then Supabase Storage via a signed URL) —
  * never the device gallery.
