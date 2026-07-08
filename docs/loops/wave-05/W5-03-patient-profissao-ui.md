@@ -1,5 +1,7 @@
 # Loop W5-03 - Patient Profissao UI (Batch 1, migration-free) - RECON MISMATCH: likely already shipped
 
+> **CLOSED ALREADY-SHIPPED (2026-07-08, Q-W5-6 resolved by owner ruling, docs-only, zero code).** Deployed-state verification: the current production deployment (`dpl_AWKNbRzyTgvSGHVg31fXNgqFMwXL`, READY) builds commit `9f5c960`, the exact `origin/main` tip, so no repo-vs-deploy drift exists; that commit renders the Profissao field unconditionally in the new-patient form (`patient-form.tsx` 147-153). The profile row renders only when profession is set (`page.tsx:119`, by design), the likely source of the QA observation.
+
 GATE: none. UI-only lane, migration-free. **Read the RECON MISMATCH block before doing anything.**
 
 ## Field 1. Scope and ground truth

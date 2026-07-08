@@ -5,6 +5,7 @@ import {
   Button,
   Checkbox,
   Combobox,
+  DatePicker,
   Dialog,
   Drawer,
   Field,
@@ -795,9 +796,29 @@ export function AppointmentDrawer({
                       {loteRows.length} {s["lote.summaryCount"]}
                     </span>
                     <ul className="flex flex-col gap-2">
+                      {/* Per-row DATE + TIME (W5-05): the weekly generator seeds
+                          the rows; each date is an editable per-row override on
+                          top (same DatePicker primitive as the agenda header).
+                          Editing a row recomposes ONLY that row's startsAt at
+                          submit (buildLoteSlots: Lisbon wall-clock -> UTC).
+                          Index key: dates are user-editable (duplicates possible
+                          mid-edit) and rows are only ever replaced wholesale by
+                          "Gerar datas", never inserted/removed individually. */}
                       {loteRows.map((row, i) => (
-                        <li key={row.date} className="flex flex-wrap items-center gap-2 text-sm">
-                          <span className="w-28 tabular-nums text-text-primary">{row.date}</span>
+                        <li key={i} className="flex flex-wrap items-center gap-2 text-sm">
+                          <div className="w-44">
+                            <DatePicker
+                              value={row.date}
+                              onChange={(d) =>
+                                setLoteRows((rs) =>
+                                  rs.map((r, j) => (j === i ? { ...r, date: d } : r)),
+                                )
+                              }
+                              triggerLabel={s["lote.rowDate"]}
+                              prevMonthLabel={s["calendar.previousMonth"]}
+                              nextMonthLabel={s["calendar.nextMonth"]}
+                            />
+                          </div>
                           <TimeField
                             value={row.time}
                             onChange={(v) =>
