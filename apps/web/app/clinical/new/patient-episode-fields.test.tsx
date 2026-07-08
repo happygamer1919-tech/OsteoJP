@@ -1,6 +1,12 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// The component imports the `searchPatientsAction` server action for its async
+// Paciente Combobox, which pulls the `server-only` guard. renderToStaticMarkup
+// never fires the effect that calls the action, so no-op the guard the same way
+// the agenda drawer + consultation tests do (the repo pattern).
+vi.mock("server-only", () => ({}));
 
 import {
   PatientEpisodeFields,
