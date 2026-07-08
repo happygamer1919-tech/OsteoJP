@@ -89,7 +89,11 @@ async function installFakeCamera(page: Page, deny = false) {
 /** Create a fresh draft ficha for a synthetic patient and land on its detail page. */
 async function createDraftFicha(page: Page) {
   await page.goto("/clinical/new");
-  await page.getByLabel(/Paciente/i).selectOption({ label: PATIENTS.maria.name });
+  // W5-02: Paciente is now an async search Combobox (was a Select).
+  const patient = page.getByRole("combobox", { name: /Paciente/i });
+  await patient.click();
+  await patient.fill(PATIENTS.maria.name);
+  await page.getByRole("option", { name: PATIENTS.maria.name }).click();
   await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
   await page.getByRole("button", { name: "Criar ficha" }).click();
   await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
