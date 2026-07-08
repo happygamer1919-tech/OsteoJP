@@ -573,6 +573,7 @@
   "reschedule.invalidTitle": "Invalid or expired link",
   "reschedule.invalidBody": "This link is no longer valid. For any change to your appointment, please contact the clinic directly.",
   "login.title": "Sign in",
+  "login.subtitle": "Access the OsteoJP platform.",
   "login.emailLabel": "Email",
   "login.emailPlaceholder": "name@osteojp.pt",
   "login.passwordLabel": "Password",

@@ -573,6 +573,7 @@
   "reschedule.invalidTitle": "Ligação inválida ou expirada",
   "reschedule.invalidBody": "Esta ligação já não é válida. Para qualquer alteração à sua consulta, contacte diretamente a clínica.",
   "login.title": "Iniciar sessão",
+  "login.subtitle": "Aceda à plataforma OsteoJP.",
   "login.emailLabel": "Email",
   "login.emailPlaceholder": "nome@osteojp.pt",
   "login.passwordLabel": "Palavra-passe",

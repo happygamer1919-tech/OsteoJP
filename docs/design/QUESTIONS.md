@@ -551,6 +551,8 @@ loop files where they conflict.
 - [x] **Q-W5-7 ANSWERED (conditional):** build W5-12 **migration-free on `time_off` (0006) IF AND ONLY IF** recon proves it supports both an intra-day hour-range block and a multi-day range block, with schema evidence pasted. If whole-day-only, HALT proposing a minimal 0034; never force whole-day semantics onto Bloqueio pontual. Consumed by W5-12 at dispatch.
 
 ### Q-W5-8 - W5-01 login branding needs a new BrandLockup size step (packages/ui)
+- [x] **ANSWERED:** Owner approved Option 1 (additive xl:96 BrandLockup step + optional brandSize prop), 2026-07-08 via CYAN relay.
+
 Raised by the W5-01 executor 2026-07-08 (halt file in the mailbox). `BrandLockup`
 tops out at `lg` = 48px, the sidebar already uses `lg`, and the near-square lockup
 art renders ~44px wide at that height, so "significantly larger and prominent" is

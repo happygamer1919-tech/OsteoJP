@@ -16,7 +16,7 @@ const meta = {
     },
     size: {
       control: "inline-radio",
-      options: ["sm", "md", "lg"],
+      options: ["sm", "md", "lg", "xl"],
     },
     title: { control: "text" },
   },
@@ -37,7 +37,7 @@ export const Mark: Story = {
   args: { variant: "mark", size: "md" },
 };
 
-const SIZES: BrandLockupSize[] = ["sm", "md", "lg"];
+const SIZES: BrandLockupSize[] = ["sm", "md", "lg", "xl"];
 const VARIANTS = ["full", "lockup", "mark"] as const;
 
 /**
