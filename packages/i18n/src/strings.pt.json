@@ -764,6 +764,7 @@
   "lote.generate": "Gerar datas",
   "lote.summaryCount": "marcações a criar",
   "lote.noDates": "Gere as datas antes de confirmar.",
+  "lote.rowDate": "Data da marcação",
   "appointment.nesaServiceSensitive": "serviço sensível a contraindicações",
   "patients.contraindicationsLabel": "Contraindicações NESA",
   "patients.fieldContraindicationEpilepsy": "Epilepsia",
