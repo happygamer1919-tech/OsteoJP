@@ -10,7 +10,8 @@ import { listServices } from "@/lib/admin/services";
 import { listTherapistPrimaries } from "@/lib/admin/therapist-primary-service";
 import { listAvailabilityTemplates } from "@/lib/admin/availability";
 import { StaffInviteForm } from "./StaffInviteForm";
-import { changeRoleAction, deleteStaffAction, editStaffAction, setActiveAction, setPrimaryServiceAction } from "./actions";
+import { StaffManageModal } from "./StaffManageModal";
+import { setPrimaryServiceAction } from "./actions";
 import {
   adminInputInline,
   adminTd,
@@ -193,62 +194,22 @@ export default async function StaffPage({
                     </td>
                     <td className={adminTd}>
                       {manageable ? (
-                        // Row-actions disclosure (W4-13): the management inputs
-                        // (edit, role, activate/deactivate, password-gated delete)
-                        // are grouped into a compact drawer instead of always-on
-                        // inline inputs. Every action wires to its SAME existing
-                        // server-action handler — presentational grouping only.
-                        <details className="group">
-                          <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1 rounded-v2 border border-v2-border bg-v2-surface px-3 py-1.5 text-sm text-v2-text-primary hover:bg-v2-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring [&::-webkit-details-marker]:hidden">
-                            {s["admin.staff.manage"]}
-                          </summary>
-                          <div className="mt-3 flex flex-col gap-3 rounded-v2 border border-v2-border bg-v2-surface p-3">
-                            <form action={editStaffAction} className="flex flex-wrap items-center gap-1">
-                              <input type="hidden" name="userId" value={u.id} />
-                              <input name="fullName" defaultValue={u.fullName} required aria-label={s["admin.staff.fullName"]} className={adminInputInline} />
-                              <input name="email" type="email" defaultValue={u.email} required aria-label={s["admin.staff.email"]} className={adminInputInline} />
-                              <Button type="submit" variant="ghost" size="sm">{s["admin.staff.save"]}</Button>
-                            </form>
-                            <form action={changeRoleAction} className="flex items-center gap-1">
-                              <input type="hidden" name="userId" value={u.id} />
-                              <select name="role" defaultValue={u.roleSlug ?? ""} aria-label={s["admin.staff.colRole"]} className={adminInputInline}>
-                                {roleOptions.map((r) => (
-                                  <option key={r.slug} value={r.slug}>
-                                    {r.label}
-                                  </option>
-                                ))}
-                              </select>
-                              <Button type="submit" variant="ghost" size="sm">{s["admin.staff.apply"]}</Button>
-                            </form>
-                            <form action={setActiveAction}>
-                              <input type="hidden" name="userId" value={u.id} />
-                              <input type="hidden" name="active" value={u.isActive ? "false" : "true"} />
-                              <Button type="submit" variant="ghost" size="sm">
-                                {u.isActive ? s["admin.staff.deactivate"] : s["admin.staff.reactivate"]}
-                              </Button>
-                            </form>
-                            {/* Password-gated hard delete (W4-01). Never an owner or
-                                yourself; refused server-side if the therapist has any
-                                appointments/records/audit (deactivate instead). Gate
-                                UNCHANGED — W4-13 only restyles it. */}
-                            {u.roleSlug !== "owner" && u.id !== actor.userId && (
-                              <form action={deleteStaffAction} className="flex items-center gap-1">
-                                <input type="hidden" name="userId" value={u.id} />
-                                <input
-                                  name="password"
-                                  type="password"
-                                  required
-                                  aria-label={s["admin.staff.deletePassword"]}
-                                  placeholder={s["admin.staff.deletePassword"]}
-                                  className={`w-28 ${adminInputInline}`}
-                                />
-                                <Button type="submit" variant="destructive" size="sm">
-                                  {s["admin.staff.delete"]}
-                                </Button>
-                              </form>
-                            )}
-                          </div>
-                        </details>
+                        // Row-actions modal (W5-06): the management inputs (edit,
+                        // role, activate/deactivate, password-gated delete) open in
+                        // a CENTERED modal instead of the far-right inline drawer.
+                        // Every action wires to its SAME existing server-action
+                        // handler — presentation change only, zero logic change.
+                        <StaffManageModal
+                          userId={u.id}
+                          fullName={u.fullName}
+                          email={u.email}
+                          roleSlug={u.roleSlug ?? ""}
+                          isActive={u.isActive}
+                          roleOptions={roleOptions}
+                          // Never an owner or yourself; the server-enforced scrypt
+                          // gate + linked-records guard still refuse otherwise.
+                          canDelete={u.roleSlug !== "owner" && u.id !== actor.userId}
+                        />
                       ) : (
                         "—"
                       )}

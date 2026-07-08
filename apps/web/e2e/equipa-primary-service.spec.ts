@@ -9,7 +9,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { openNewAppointment } from "./helpers";
-import { futureDate, RUN_DAY_BASE } from "./fixtures";
+import { futureDate, RUN_DAY_BASE, THERAPIST_ONE_LOCATION } from "./fixtures";
 
 const THER = "E2E Terapeuta Sem Servicos";
 
@@ -74,34 +74,74 @@ test("Equipa: name/role search filters the staff table and clearing restores it 
   await expect(page.locator("tbody tr").filter({ hasText: "E2E Reception" })).toHaveCount(1);
 });
 
+test("Equipa: the Gerir management panel opens as a centered modal, traps focus, deactivate/reactivate fire, Escape closes (W5-06)", async ({
+  page,
+}) => {
+  await page.goto("/admin/staff");
+  const row = page.locator("tbody tr").filter({ hasText: THERAPIST_ONE_LOCATION });
+  await expect(row).toHaveCount(1);
+
+  const modal = page.getByRole("dialog", { name: /Gerir/i });
+
+  // The row's Gerir trigger is a button (not a <summary>); clicking it opens a
+  // centered modal <dialog> holding the same management controls.
+  await row.getByRole("button", { name: "Gerir", exact: true }).click();
+  await expect(modal).toBeVisible();
+  // Native <dialog> modal: focus moves inside on open (focus trap / :modal).
+  await expect(modal.locator(":focus")).toHaveCount(1);
+  // Same controls as before, now inside the modal.
+  await expect(modal.getByRole("button", { name: "Guardar" })).toBeVisible();
+  await expect(modal.locator('select[name="role"]')).toBeVisible();
+
+  // Deactivate fires its SAME server-action handler → badge flips to Inativo.
+  await modal.getByRole("button", { name: "Desativar" }).click();
+  await page.waitForURL(/admin\/staff/);
+  await expect(row.getByText("Inativo", { exact: true })).toBeVisible();
+
+  // Reactivate through the modal restores the seeded state (Ativo again).
+  await row.getByRole("button", { name: "Gerir", exact: true }).click();
+  await expect(modal).toBeVisible();
+  await modal.getByRole("button", { name: "Reativar" }).click();
+  await page.waitForURL(/admin\/staff/);
+  await expect(row.getByText("Ativo", { exact: true })).toBeVisible();
+
+  // Escape closes the modal (native <dialog> onCancel).
+  await row.getByRole("button", { name: "Gerir", exact: true }).click();
+  await expect(modal).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(modal).toBeHidden();
+});
+
 test("Equipa: password-gated therapist delete — wrong password refused, correct deletes an activity-free therapist (W4-01)", async ({
   page,
 }) => {
   await page.goto("/admin/staff");
   const row = () => page.locator("tbody tr").filter({ hasText: THER });
   await expect(row()).toHaveCount(1);
-  // W4-13: the management actions (incl. the password-gated delete) live in a
-  // per-row `<details>` "Gerir" drawer — open it before interacting. The gate
-  // itself is unchanged (restyle only).
+  // W5-06: the management actions (incl. the password-gated delete) live in a
+  // per-row CENTERED modal — click the row's "Gerir" button to open it, then
+  // interact with the controls inside the dialog. The gate itself is unchanged
+  // (restyle only). The modal traps focus; Escape/overlay close it.
+  const modal = () => page.getByRole("dialog", { name: /Gerir/i });
   const openManage = async () => {
-    const summary = row().locator("summary");
-    if (!(await row().locator('input[name="password"]').isVisible())) {
-      await summary.click();
+    if (!(await modal().isVisible())) {
+      await row().getByRole("button", { name: "Gerir", exact: true }).click();
+      await expect(modal()).toBeVisible();
     }
   };
 
   // Wrong password → refused; the therapist is still there.
   await openManage();
-  await row().locator('input[name="password"]').fill("0000");
-  await row().getByRole("button", { name: "Eliminar", exact: true }).click();
+  await modal().locator('input[name="password"]').fill("0000");
+  await modal().getByRole("button", { name: "Eliminar", exact: true }).click();
   await page.waitForURL(/admin\/staff/);
   await expect(page.getByText(/Palavra-passe incorreta/i)).toBeVisible();
   await expect(row()).toHaveCount(1);
 
   // Correct password (tenant default 1234) → the activity-free therapist is deleted.
   await openManage();
-  await row().locator('input[name="password"]').fill("1234");
-  await row().getByRole("button", { name: "Eliminar", exact: true }).click();
+  await modal().locator('input[name="password"]').fill("1234");
+  await modal().getByRole("button", { name: "Eliminar", exact: true }).click();
   await page.waitForURL(/admin\/staff/);
   await expect(row()).toHaveCount(0);
 });
