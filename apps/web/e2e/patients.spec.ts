@@ -159,7 +159,9 @@ test("soft-deleting a patient shows the Eliminado badge", async ({ page }) => {
   const id = await createPatient(page, { fullName: `Apagar ${uniq()}` });
   await page.goto(`/patients/${id}`);
   page.once("dialog", (d) => d.accept()); // window.confirm
-  await page.getByRole("button", { name: "Eliminar" }).click();
+  // exact: true so this soft-delete "Eliminar" does not also match the
+  // hard-delete "Eliminar definitivamente" button (W5-08).
+  await page.getByRole("button", { name: "Eliminar", exact: true }).click();
   await expect(page.getByText("Eliminado")).toBeVisible({ timeout: 8_000 });
 });
 
@@ -167,7 +169,7 @@ test("restoring a soft-deleted patient clears the Eliminado badge", async ({ pag
   const id = await createPatient(page, { fullName: `Restaurar ${uniq()}` });
   await page.goto(`/patients/${id}`);
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Eliminar" }).click();
+  await page.getByRole("button", { name: "Eliminar", exact: true }).click();
   await expect(page.getByText("Eliminado")).toBeVisible({ timeout: 8_000 });
 
   await page.getByRole("button", { name: "Restaurar" }).click();
