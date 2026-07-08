@@ -45,3 +45,8 @@ dist/
 
 *storybook.log
 storybook-static
+
+# local agent tooling (worktrees, usage tracker) — never commit
+.claude/worktrees/
+.worktrees/
+claude-usage/
