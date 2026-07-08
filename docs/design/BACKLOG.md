@@ -245,6 +245,49 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | Legacy-shelf consolidation loop | QUESTIONS 2026-07-03 | migrate still-open legacy `docs/` items onto canonical `docs/design/`, leave pointer stubs; its own docs loop |
 | Dangling-branch pruning pass | BACKLOG Wave 03 candidates | sweep merged/abandoned feature + docs branches and their worktrees from Waves 01–03; housekeeping only |
 
+## Wave 05 Loop Queue
+
+> Added 2026-07-08 (YELLOW authoring). **COMMITTED Wave 05 scope** - the 17 loops below are authored under `docs/loops/wave-05/`, scoped from the owner+Rodica QA pass and the Ficha Medica redesign decision (`docs/design/SPEC-ficha-medica.md`). This queue supersedes the "Wave 05 candidates" planning trail below for the items it covers. **Batch and run order here is authoritative.** Status `OPEN` = loop file authored + committed in the authoring PR, awaiting owner merge of that PR and dispatch (maps to the board's WRITTEN state; flips to READY when its gate clears, then IN-FLIGHT/DONE per the coordination protocol at the top of this file).
+>
+> Standing rules apply to every loop: pt-PT UI copy via i18n keys (both `strings.pt.json` + `strings.en.json`); plain hyphens, no em/en dashes; all build/verify work SYNTHETIC-DATA-ONLY (real-data go-live separately gated); `db-tests.yml`/`e2e.yml` = automatic owner hold, never self-merged; one migration in flight at a time; each loop opens ONE PR and HALTS for owner merge (no self-merge).
+>
+> **Batch 3 note:** the migrations are STRICTLY SEQUENTIAL (one in flight), each with **live-apply verification before DONE**. **Batch 4 note:** all five loops DEPEND ON `docs/design/SPEC-ficha-medica.md` (authoritative), which must merge before they build.
+>
+> **Two RECON MISMATCHES flagged at authoring (surface at merge, see QUESTIONS 2026-07-08):** W5-03 (Profissao is ALREADY present in the form + profile - likely already-shipped, Q-W5-6) and W5-12 (the `time_off` block model ALREADY exists at migration 0006 - migration 0034 likely UNNECESSARY, Q-W5-7). Neither is a hard-halt trigger (the named triggers were the opposite conditions); both are authored with the mismatch recorded in-loop and a recommended default in QUESTIONS.
+
+### Batch 1 - migration-free, demo priority (run in numeric order; UI-lane, parallel-safe with one in-flight migration)
+| ID | Loop | Status | Gate / note |
+|----|------|--------|-------------|
+| W5-01 | login-redesign-branding | OPEN | migration-free; redesign `/login` + enlarge logo (login card + shell); no auth-logic change |
+| W5-02 | search-sweep | OPEN | migration-free; add search to Equipa (missing) + audit every patient/therapist list surface; DoD includes the pasted audit table |
+| W5-03 | patient-profissao-ui | OPEN | **RECON MISMATCH (Q-W5-6): Profissao already in form (patient-form.tsx 147-153) + profile (page.tsx ~119). Likely already-shipped; default = verify-and-close.** migration-free, UI-only |
+| W5-04 | episodio-filter | OPEN | migration-free; filter Episodio dropdown to the selected patient + Sem episodio; lands independently of Batch 4 |
+| W5-05 | lote-date-edit | OPEN | migration-free; per-row editable DATES in Agendar lote (per-row TIME already exists); reuses `batchSchedule` |
+| W5-06 | equipa-gerir-centering | OPEN | migration-free; center the Gerir panel as a modal per UI-STYLE.md; zero logic change; extends UI-STYLE.md |
+| W5-07 | camera-anexos-buttons | OPEN | migration-free; two primary actions (Tirar foto, Transferir) + Abrir; reproduce+fix the first-open error; preserve W4-05 zero-gallery |
+| W5-08 | patient-delete-password-gate | OPEN | migration-free; NET-NEW `hardDeletePatient` with the W3-06 scrypt gate + clinical-records-linked refuse guard (no patient hard-delete exists today) |
+
+### Batch 2 - migration-free (run in numeric order)
+| ID | Loop | Status | Gate / note |
+|----|------|--------|-------------|
+| W5-09 | marcacoes-tab-edit | OPEN | migration-free; per-row reschedule/estado/cancel on the profile Marcacoes tab, reusing Agenda actions; axes never collapsed; primary-only |
+| W5-10 | documentos-upload | OPEN | migration-free; upload on the Documentos tab reusing the attachments infra; HALT if a patient-document relation needs a schema change |
+
+### Batch 3 - MIGRATIONS, strictly sequential (one in flight), live-apply verification before DONE
+| ID | Loop | Status | Gate / note |
+|----|------|--------|-------------|
+| W5-11 | referral-source | OPEN | **migration 0033** (head is 0032): `patients.referral_source` nullable; "Como nos conheceu?" dropdown; genuine net-new column; live-apply before DONE; sequential (lands before W5-12) |
+| W5-12 | therapist-blocks | OPEN | **RECON MISMATCH (Q-W5-7): `time_off` already exists (migration 0006) and models both modes; migration 0034 likely UNNECESSARY.** Default = build migration-FREE on `time_off` (admin UI + integrate into `getTherapistAvailability`/lote exclusion; warn-not-cancel, Q-W5-4). A minimal 0034 only if the owner confirms a needed column. Relates to Q-V2W2-1 (blocked-time band). Migration disposition resolved BEFORE any migration |
+
+### Batch 4 - Ficha Medica, per `docs/design/SPEC-ficha-medica.md` (authoritative; must merge first; run in numeric order)
+| ID | Loop | Status | Gate / note |
+|----|------|--------|-------------|
+| W5-13 | ficha-unification | OPEN | single Ficha Medica template; retire others from creation; existing records untouched; **compatibility test posts `template=osteopathy` + the twelve keys -> correct draft** (PRODUCT halt if a key cannot map); migration-free (seed + `form_templates`) |
+| W5-14 | ficha-structure | OPEN | SPEC sec 3-5: full field sequence, read-only patient header strip, auto creation timestamp, Problemas de Saude 4-col grid restructure (fix the orphaned-render bug), Outros rules; migration-free |
+| W5-15 | mobilidade-component | OPEN | SPEC 5.10-5.13: three-circle Mobilidade Activa(dot)/Passiva(star) widget + Limpar + Observacoes, Testes Neurologicos/Especiais, Diagnostico, Tratamento (keep Plano+Objectivos, Q-W5-2), Observacoes; migration-free |
+| W5-16 | ficha-signature-consent | OPEN | SPEC sec 7: canvas signature -> Documentos (attachments infra), Gerar PDF A4 + logo (RGPD), Consinto block with explicit check/X; all consent/RGPD wording PENDENTE-JP (Max drafts 2-3 variants, Q-W5-3); migration-free |
+| W5-17 | revisao-consulta-flow | OPEN | **closes the core wave scope:** Assumir opens the AI draft inside the Ficha Medica editor with the twelve AI-filled fields visible+editable; edit+complete+sign; `record_status` and `ai_review_state` stay separate; signed record in Registos clinicos; migration-free |
+
 ## Wave 05 candidates
 
 > Added 2026-07-07 at Wave 04 close. UNORDERED, **candidates only — NOT committed scope**, no lane/gate/loop assignments until a Wave 05 planning pass scopes them. Standing rules still apply when any of these becomes a loop: pt-PT UI copy; all build/dry-run work SYNTHETIC-DATA-ONLY (real-data go-live separately gated); `db-tests.yml`/`e2e.yml` = automatic owner hold, never self-merged; one migration in flight at a time.

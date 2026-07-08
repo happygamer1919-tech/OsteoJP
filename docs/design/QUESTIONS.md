@@ -435,3 +435,104 @@ backend signs both presigned PUT and GET; M1 webhook gains API-key auth; contrac
 ### External relays (not design questions — tracked in BACKLOG, close via one-line docs flip)
 - **W4-10** — André confirms receipt of the real fire + `audio_filename` token exposure (relayed by Ivan). Owner-performed; machine DoD already merged (#493).
 - **W4-05** — Rodica real-phone camera-capture check (relayed by Ivan). #484 shipped; loop stays awaiting, non-blocking.
+
+## 2026-07-08 - Wave 05 authoring (YELLOW)
+
+Raised while authoring the Wave 05 loops + `docs/design/SPEC-ficha-medica.md`. Each
+has a recommended default so the build can proceed; none blocks authoring. The
+first five are the design/product calls the loops surface; the last two are
+briefing-vs-reality RECON MISMATCHES logged per the blocked-task protocol (record +
+recommended default + continue; a per-loop mismatch stops one branch, never the run).
+
+### Q-W5-1 - Data do Episodio: editable, prefilled today?
+The Ficha Medica separates the record's auto-stamped `created_at` (no manual picker,
+SPEC-ficha-medica sec 4) from the clinical `episode_date`. `episode_date` is the
+date the episode/consultation pertains to.
+- **Recommended default (YES):** keep `episode_date` **editable, prefilled to
+  today**. It is a clinical fact a clinician may back/forward-date (e.g. writing up a
+  prior visit); the record's creation instant is captured separately + immutably.
+- **Owner:** JP / Ivan. Consumed by W5-14.
+
+### Q-W5-2 - Keep both Plano de Tratamento AND Objectivos do Tratamento after Tratamento?
+The field sequence (SPEC sec 5.12) places the new Diagnostico + Tratamento fields,
+then the existing `treatment_plan` (Plano) and `treatment_objectives` (Objectivos).
+Both are among the twelve AI-populated keys (keys 10-11).
+- **Recommended default (KEEP BOTH):** retain Plano and Objectivos after Tratamento.
+  They are distinct (plan = what will be done; objectives = intended outcomes), both
+  are AI-filled from the transcription, and dropping either would break the twelve-key
+  compatibility contract (SPEC sec 2). Keep both, keys unchanged.
+- **Owner:** JP. Consumed by W5-15.
+
+### Q-W5-3 - Consent + RGPD wording (JP picks from Max's variants)
+All consent/RGPD strings in the signature/consent section (SPEC sec 7) ship as pt-PT
+placeholders flagged `PENDENTE-JP`.
+- **Recommended default:** Max drafts **2-3 pt-PT variants per text** (RGPD data
+  processing, SMS reminders acknowledgment, data handling); **JP picks the final
+  string** per item. No consent string is treated as final until JP selects it;
+  build ships the placeholders so structure is not blocked on copy.
+- **Owner:** JP (final wording), Max (variants). Consumed by W5-16. (Parallels the
+  SMS-wording mechanism: structure decided, string pending, non-blocking.)
+
+### Q-W5-4 - Appointments inside a new therapist block: warn, not auto-cancel?
+When a therapist block (W5-12) overlaps existing appointments.
+- **Recommended default (WARN ONLY):** **list the overlapping appointments as a
+  warning; never auto-cancel.** Auto-cancelling clinical/scheduling data is
+  destructive and owner-confirmable (CLAUDE.md security defaults); the staff member
+  resolves each overlap manually. Warn-only is the safe default.
+- **Owner:** JP / Ivan. Consumed by W5-12.
+
+### Q-W5-5 - NESA: template vs booking-warning ambiguity (recon-found)
+Recon found "NESA" names two unrelated things: (a) the `nesa` v1 **template**
+(`packages/db/seed/form-templates/nesa-v1.json`, a full schema whose structure
+follows the osteopathy episode form), and (b) the NESA **contraindication
+booking-warning** system (migration `0031`: `patients.contraindication_epilepsy`,
+`patients.contraindication_pregnancy`, `services.contraindication_sensitive`, driving
+the W2-08 soft booking warning). The Ficha Medica unification retires other templates
+from the creation flow.
+- **Recommended default:** the Ficha Medica DECISION retires **only the NESA
+  *template*** (a) from record creation (like Ficha Geral / Fisioterapia / the
+  wrappers). The NESA **booking-warning** system (b) is a separate, live feature and
+  **stays fully intact** - untouched by W5-13. The two are not the same thing; do not
+  conflate.
+- **Owner:** JP / Ivan (confirm NESA-template retirement is acceptable). Consumed by
+  W5-13 (SPEC sec 1).
+
+### Q-W5-6 - RECON MISMATCH: Profissao is ALREADY in the form + profile (W5-03)
+The briefing scoped W5-03 to "expose the existing profession column in the
+new-patient form as an optional Profissao field and display it on the profile," and
+named "if the column is absent, that is a briefing mismatch, HALT." **Recon (2026-07-08)
+found the opposite of the halt condition and the work already done:** `patients.profession`
+EXISTS (migration 0022); the new-patient form ALREADY collects Profissao
+(`apps/web/app/patients/_components/patient-form.tsx` lines 147-153); the profile
+ALREADY displays it (`apps/web/app/patients/[id]/page.tsx` ~line 119). The named
+hard-halt trigger (column absent) did NOT fire; this is a soft "already-shipped"
+mismatch, so it is logged here rather than escalated as a whole-run halt.
+- **Recommended default:** **close W5-03 as already-shipped** after a thin
+  verification pass (mirrors the W4-16 docs-only already-shipped close), OR, if the
+  owner wants the loop to add value, scope it down to the small residual gaps
+  (confirm the field reads as optional; add e2e coverage for the create -> profile
+  round-trip). Do not manufacture rework.
+- **Owner:** Ivan (pick already-shipped-close vs residual-gap). Consumed by W5-03.
+
+### Q-W5-7 - RECON MISMATCH: `time_off` already exists; migration 0034 likely unnecessary (W5-12)
+The briefing scoped W5-12 as "migration 0034 adds therapist availability blocks"
+supporting Bloqueio pontual (date + hour range) and Ausencia prolongada (date range).
+**Recon (2026-07-08) found the data model already exists:** the `time_off` table
+(migration `0006_availability_timeoff.sql`) has `starts_at`/`ends_at` timestamptz + a
+`reason` enum (vacation, sick, holiday, other) + note - a timestamptz range
+**structurally covers both modes** (pontual = same-day range; prolongada = multi-day
+range, reason vacation = ferias). The conflict system already reads it
+(`apps/web/lib/scheduling/conflict.ts`); booking already refuses overlaps. The two
+real gaps are **both migration-free**: (1) no "Bloquear horario" admin UI on the
+Horarios card; (2) `getTherapistAvailability` (`day-availability.ts`) does not deduct
+`time_off` (only the conflict check does), so blocks still show as free in the
+availability view / lote. **Related:** Q-V2W2-1 left the Agenda blocked-time band
+unrendered pending "a blocked-time data model + query" - `time_off` IS that model.
+- **Recommended default:** build W5-12 **migration-FREE on `time_off`** - add the
+  Bloquear horario UI (both modes -> `time_off` rows) and **integrate `time_off` into
+  `getTherapistAvailability` + the lote availability check** so blocks are excluded
+  everywhere; warn-not-cancel (Q-W5-4). Open a **minimal migration 0034 ONLY** if the
+  owner wants a persisted pontual-vs-prolongada distinction or an all-day/recurring
+  flag `time_off`'s current columns cannot express. Do not open 0034 speculatively.
+- **Owner:** Ivan (confirm migration-free-on-`time_off` vs a minimal column).
+  Consumed by W5-12.
