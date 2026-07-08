@@ -421,6 +421,7 @@
   "clinical.new": "New Record",
   "clinical.newTitle": "New Clinical Record",
   "clinical.patient": "Patient",
+  "clinical.selectPatient": "Select patient",
   "clinical.template": "Template",
   "clinical.episode": "Episode",
   "clinical.episodeNone": "No episode",

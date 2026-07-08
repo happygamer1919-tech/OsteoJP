@@ -421,6 +421,7 @@
   "clinical.new": "Nova ficha",
   "clinical.newTitle": "Novo registo clínico",
   "clinical.patient": "Paciente",
+  "clinical.selectPatient": "Selecionar paciente",
   "clinical.template": "Modelo",
   "clinical.episode": "Episódio",
   "clinical.episodeNone": "Sem episódio",

@@ -91,6 +91,38 @@ test.describe("authoring (therapist)", () => {
     await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/);
     await expect(page.getByText(/Versão/).first()).toBeVisible({ timeout: 8_000 });
   });
+
+  // W5-04: the Episódio picker is scoped to the selected patient — it lists
+  // only that patient's episodes plus "Sem episódio"; with no patient selected
+  // it offers only "Sem episódio".
+  test("Episodio picker lists only the selected patient's episodes plus Sem episodio", async ({
+    page,
+  }) => {
+    // Ensure patient A (Maria) has at least one episode: one-click "Novo
+    // episódio" on her profile (dated default title, lands on the episode).
+    await page.goto(`/patients/${PATIENTS.maria.id}`);
+    await page.getByRole("button", { name: "Novo episódio" }).click();
+    await expect(page).toHaveURL(/\/clinical\/episodes\/[0-9a-f-]{36}/, { timeout: 15_000 });
+
+    await page.goto("/clinical/new");
+    const episodio = page.getByLabel(/Episódio/i);
+
+    // Empty state: no patient selected yet → only "Sem episódio".
+    await expect(episodio.getByRole("option")).toHaveCount(1);
+    await expect(episodio.getByRole("option", { name: "Sem episódio" })).toHaveCount(1);
+
+    // Patient A: her episode(s) appear, and "Sem episódio" stays available.
+    await page.getByLabel(/Paciente/i).selectOption({ label: PATIENTS.maria.name });
+    await expect(episodio.getByRole("option", { name: "Sem episódio" })).toHaveCount(1);
+    // Options inside a closed native select are not "visible" — assert attachment.
+    await expect(episodio.getByRole("option", { name: /Episódio \(/ }).first()).toBeAttached();
+
+    // Patient B (João — no spec ever opens episodes for him): none of Maria's
+    // episodes leak through; only "Sem episódio" remains.
+    await page.getByLabel(/Paciente/i).selectOption({ label: PATIENTS.joao.name });
+    await expect(episodio.getByRole("option")).toHaveCount(1);
+    await expect(episodio.getByRole("option", { name: "Sem episódio" })).toHaveCount(1);
+  });
 });
 
 test.describe("access control (reception)", () => {

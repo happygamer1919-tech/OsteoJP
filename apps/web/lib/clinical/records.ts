@@ -252,23 +252,29 @@ export async function listEpisodes(
   );
 }
 
-/** Flat episode list for the create-record picker, labelled with the patient. */
+/**
+ * Episode options for the create-record picker. Each row carries its
+ * `patientId` so the client scopes the visible list to the selected patient
+ * (W5-04); the label is the bare episode title, since the patient-name prefix
+ * is redundant once the list is patient-scoped. The patients inner join is
+ * kept so the returned row set is unchanged (episodes without a patient row
+ * never appeared and still do not). Same read gate, same tenant scoping.
+ */
 export async function listEpisodesForPicker(
   ctx: RequestContext,
-): Promise<{ id: string; label: string }[]> {
+): Promise<{ id: string; patientId: string; title: string }[]> {
   assertCan(ctx.role, "clinical_records:read");
-  return runScoped(ctx, async (tx) => {
-    const rows = await tx
+  return runScoped(ctx, (tx) =>
+    tx
       .select({
         id: clinicalEpisodes.id,
+        patientId: clinicalEpisodes.patientId,
         title: clinicalEpisodes.title,
-        patientName: patients.fullName,
       })
       .from(clinicalEpisodes)
       .innerJoin(patients, eq(patients.id, clinicalEpisodes.patientId))
-      .orderBy(desc(clinicalEpisodes.openedAt));
-    return rows.map((r) => ({ id: r.id, label: `${r.patientName} — ${r.title}` }));
-  });
+      .orderBy(desc(clinicalEpisodes.openedAt)),
+  );
 }
 
 /* ------------------------------------------------------------------ */
