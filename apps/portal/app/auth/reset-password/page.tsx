@@ -38,6 +38,7 @@ export default function ResetPasswordPage() {
   }
 
   if (sent) {
+    const [before, after] = s.auth.reset_password_sent.split('{{email}}')
     return (
       <>
         <div className="rounded-xl border border-border bg-surface p-6 text-center">
@@ -49,8 +50,9 @@ export default function ResetPasswordPage() {
           />
           <h2 className="mb-2 text-xl font-semibold text-text-primary">{s.auth.reset_password_check_inbox}</h2>
           <p className="text-sm text-text-secondary">
-            {s.auth.reset_password_sent.replace('{{email}}', '')}
-            <strong>{email}</strong>.
+            {before}
+            <strong>{email}</strong>
+            {after}
           </p>
         </div>
         <div className="mt-6 flex flex-col items-center gap-3">

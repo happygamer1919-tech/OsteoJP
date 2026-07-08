@@ -7,6 +7,7 @@ import { Banner, Button, Card, DatePicker, SlotPicker } from '@osteojp/ui'
 import type { BookableLocation, BookableService } from '@/lib/api/client'
 import { loadSlots, submitBooking } from './actions'
 import { formatPrice, formatTime, localDateKey } from './slots'
+import { locationDisplayName } from '@/lib/locationLabel'
 import { s } from '@/lib/i18n'
 
 type Step = 1 | 2 | 3 | 4
@@ -169,7 +170,7 @@ export function BookingFlow({
           {locations.map((loc) => (
             <button key={loc.id} type="button" onClick={() => selectLocation(loc.id)} className={ROW}>
               <MapPin size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-accent-2-700" />
-              <span className="flex-1 text-sm font-medium text-text-primary">{loc.name}</span>
+              <span className="flex-1 text-sm font-medium text-text-primary">{locationDisplayName(loc.name)}</span>
               <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-secondary" />
             </button>
           ))}
@@ -252,7 +253,7 @@ export function BookingFlow({
             <dl className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
                 <dt className="text-xs font-medium text-text-secondary">{s.booking.confirm_location}</dt>
-                <dd className="text-sm text-text-primary">{location?.name ?? '—'}</dd>
+                <dd className="text-sm text-text-primary">{locationDisplayName(location?.name) ?? '—'}</dd>
               </div>
               <div className="flex flex-col gap-1">
                 <dt className="text-xs font-medium text-text-secondary">{s.booking.confirm_service}</dt>
