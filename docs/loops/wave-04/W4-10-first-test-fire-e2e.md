@@ -59,3 +59,17 @@ Halt if:
 ## Field 7. Report back
 Preflight, the end-to-end fire trace (redacted), the **`pending_review` DB evidence** (PII-free, credential-free), the both-headers-carried + real-therapist-untouched proofs, the AWAITING-EXTERNAL André note, migration-free proof, any gate results, and the PR number.
 Close: **open ONE PR against `main` per the standard template and HALT for owner merge.** Machine DoD (part 1) closes on merge; external DoD (part 2) closes on Ivan's relay of André's confirmation. Do NOT self-merge. A refused or blocked merge is a HALT reported to Ivan.
+
+## Closing — external confirmation (relayed by owner, 2026-07-08)
+
+DoD part 2 (external) is satisfied. André confirmed, relayed by Ivan 2026-07-08:
+
+- Real fire from the deployed app received by the M1 scenario at 17:48, processed end to end in 9 seconds.
+- Payload arrived clean: no 401, `x-make-apikey` accepted, all contract fields present (`audio_url`, `audio_filename`, `patient_id`, `doctor_id`, `consultation_started_at`, `consultation_ended_at`).
+- `audio_filename` mapped and read correctly by the transcription module (module 26).
+- Full downstream chain verified: Whisper transcribed the real audio, extraction ran, the signed record posted back to the ingestion endpoint on the success path, an audit row was written, and no error branches fired.
+- Settles the open format question: the transcription module accepts real webm/opus.
+
+Follow-on sequence (not part of this loop): joint dry run on additional synthetic patients, Jabra Speak 510 canary in the room, then a pilot date with Rodica.
+
+**W4-10 CLOSED.**
