@@ -26,6 +26,19 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Proof 2 imports apps/web/lib/reminders/templates.ts directly. Node has to
+// reparse it as ESM and warns (MODULE_TYPELESS_PACKAGE_JSON) because the
+// nearest package.json (apps/web/package.json) declares no "type". Adding
+// "type":"module" to apps/web/package.json is out of scope for this local
+// smoke script, so we silence ONLY that one warning code for this process —
+// every other warning still passes through unchanged.
+const emitWarning = process.emitWarning.bind(process);
+process.emitWarning = (warning, ...rest) => {
+  const code = rest[0] && typeof rest[0] === "object" ? rest[0].code : rest[1];
+  if (code === "MODULE_TYPELESS_PACKAGE_JSON") return;
+  return emitWarning(warning, ...rest);
+};
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /* ------------------------------------------------------------------ */
