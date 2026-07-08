@@ -10,7 +10,16 @@ const s = getStrings(DEFAULT_LOCALE);
 
 const DEBOUNCE_MS = 300;
 
-export function SearchBox({ initialQuery }: { initialQuery: string }) {
+export function SearchBox({
+  initialQuery,
+  path = "/patients",
+  placeholder = s["patients.searchPlaceholder"],
+}: {
+  initialQuery: string;
+  /** Route the ?q= filter param is written to (W5-02: reused beyond /patients). */
+  path?: string;
+  placeholder?: string;
+}) {
   const router = useRouter();
   const [q, setQ] = useState(initialQuery);
   const [, startTransition] = useTransition();
@@ -19,9 +28,7 @@ export function SearchBox({ initialQuery }: { initialQuery: string }) {
   function navigate(value: string) {
     const query = value.trim();
     startTransition(() => {
-      router.replace(
-        query ? `/patients?q=${encodeURIComponent(query)}` : "/patients",
-      );
+      router.replace(query ? `${path}?q=${encodeURIComponent(query)}` : path);
     });
   }
 
@@ -56,7 +63,7 @@ export function SearchBox({ initialQuery }: { initialQuery: string }) {
           value={q}
           onChange={onChange}
           leadingIcon={Search}
-          placeholder={s["patients.searchPlaceholder"]}
+          placeholder={placeholder}
         />
       </Field>
     </form>

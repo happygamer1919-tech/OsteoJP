@@ -948,3 +948,43 @@ e2e updated to drive the TimeField selects (new `fillTime` helper) across Nova m
 reschedule, Agendar-lote failure, NESA, and Horários. Post-change grep: zero
 `type="time"` / meridiem in app+ui code. `git diff` touches no packages/db/migrations,
 supabase/migrations, or .github/workflows.
+
+## 2026-07-08 — Staff email edit synced to Supabase auth login (branch fix/staff-email-auth-sync)
+
+Bug: `editStaff` (apps/web/lib/admin/staff.ts) updated only `public.users.email` and
+left the Supabase auth login email stale — so an account created with a placeholder
+email could not be corrected end-to-end (the person stayed locked to the old login
+address). This blocked the "create-with-placeholder, fix-when-the-real-email-arrives"
+flow.
+
+Fix (migration-free, invite flow untouched):
+- New `updateStaffAuthEmail(userId, email)` in apps/web/lib/auth/provision.ts — the
+  auth half. Service-role admin API (`auth.admin.updateUserById`), `email_confirm: true`
+  so an admin-initiated change takes effect immediately (no confirmation round-trip that
+  would strand the user behind an address they may not control yet). Throws on failure —
+  unlike `generateSetPasswordLink`, it MUST surface so the caller can abort. Keeps every
+  `auth.admin` call in the one sanctioned module.
+- `editStaff`: on an email change, write `public.users` FIRST inside the RLS transaction,
+  then call `updateStaffAuthEmail` while that write is still UNCOMMITTED. Ordering is the
+  consistency guarantee — `withTenantContext` wraps the callback in
+  `getDb().transaction(...)`, so if the auth update throws the transaction rolls back and
+  BOTH stores stay on the old email. A `(tenant_id, email)` collision is caught at the DB
+  write (before auth is touched) and surfaces as the existing `email_taken` domain error.
+  A name-only edit never touches auth.
+- Audit: `staff.profile_update` now records old/new email MASKED (`maskEmail`, first 2
+  local chars + domain) for an email change — auditable without persisting the full
+  address (rule 7). Name-only edits keep the fields-only metadata.
+
+Consistency edge (documented, accepted): if the auth update SUCCEEDS but the transaction
+commit then fails in the tiny window after, auth is ahead of `public.users`. Chosen over
+the reverse because the collision path — the common failure — is caught before auth is
+touched, so the realistic failure modes all leave both stores consistent.
+
+Gates: web vitest — new staff.edit.test.ts (email syncs both stores; auth failure leaves
+public.users rolled back with no audit; tenant unique-collision → email_taken before auth;
+name-only edit never touches auth; owner-tier; not_found; users:manage gate) + maskEmail
+unit tests; lib/admin + lib/auth suites 120 passing. lint 0 errors, typecheck clean, web
+build clean (portal build fails only on a missing local NEXT_PUBLIC_SUPABASE_URL for its
+static /auth/activate export — env, not this change; portal imports none of these files).
+`git diff` touches no packages/db/migrations, supabase/migrations, or .github/workflows,
+and does not change the invite flow.

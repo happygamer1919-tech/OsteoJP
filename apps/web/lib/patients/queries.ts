@@ -3,9 +3,20 @@
 // never add a tenant_id filter here.
 
 import "server-only";
-import { and, asc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, ilike, or, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { patients } from "@osteojp/db";
+import {
+  analyticsEvents,
+  appointmentNotes,
+  appointments,
+  attachments,
+  clinicalEpisodes,
+  clinicalRecords,
+  invoices,
+  patientFormSubmissions,
+  patientNoteRevisions,
+  patients,
+} from "@osteojp/db";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { activePatientsOnly } from "./filters";
 import { escapeLike, parseSearch } from "./validation";
@@ -85,5 +96,54 @@ export async function searchPatients(
       .where(and(activePatientsOnly, or(...matchers)))
       .orderBy(asc(patients.fullName))
       .limit(limit);
+  });
+}
+
+export type PatientHardDeleteBlockers = {
+  /** Clinical records reference the patient — permanently non-hard-deletable
+   *  (locked/signed records can never be removed; immutability trigger). */
+  hasClinicalRecords: boolean;
+  /** Other domain rows (appointments, notes, invoices, …) reference the patient. */
+  hasOtherReferences: boolean;
+};
+
+/**
+ * UI-affordance read for the W5-08 hard-delete control: does anything still
+ * reference this patient? Mirrors the server-enforced guards inside
+ * hardDeletePatient — the button is disabled from this, but the ACTION re-checks
+ * everything server-side (the disabled control is never the enforcement).
+ * Tenant-scoped by RLS; counts only, no row content.
+ */
+export async function getPatientHardDeleteBlockers(
+  id: string,
+): Promise<PatientHardDeleteBlockers> {
+  const ctx = await requireRequestContext();
+  assertCan(ctx.role, "patients:read");
+  return runScoped(ctx, async (tx) => {
+    const [records, ...others] = await Promise.all([
+      tx.select({ n: count() }).from(clinicalRecords).where(eq(clinicalRecords.patientId, id)),
+      tx.select({ n: count() }).from(clinicalEpisodes).where(eq(clinicalEpisodes.patientId, id)),
+      tx
+        .select({ n: count() })
+        .from(appointments)
+        .where(or(eq(appointments.patientId, id), eq(appointments.patientTwoId, id))),
+      tx.select({ n: count() }).from(appointmentNotes).where(eq(appointmentNotes.patientId, id)),
+      tx
+        .select({ n: count() })
+        .from(patientNoteRevisions)
+        .where(eq(patientNoteRevisions.patientId, id)),
+      tx.select({ n: count() }).from(invoices).where(eq(invoices.patientId, id)),
+      tx.select({ n: count() }).from(attachments).where(eq(attachments.patientId, id)),
+      tx
+        .select({ n: count() })
+        .from(patientFormSubmissions)
+        .where(eq(patientFormSubmissions.patientId, id)),
+      tx.select({ n: count() }).from(analyticsEvents).where(eq(analyticsEvents.patientId, id)),
+      tx.select({ n: count() }).from(patients).where(eq(patients.mergedIntoId, id)),
+    ]);
+    return {
+      hasClinicalRecords: Number(records[0]?.n ?? 0) > 0,
+      hasOtherReferences: others.some(([row]) => Number(row?.n ?? 0) > 0),
+    };
   });
 }

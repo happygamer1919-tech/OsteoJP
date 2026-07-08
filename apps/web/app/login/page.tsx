@@ -53,15 +53,20 @@ export default function LoginPage() {
           onSubmit={(e) => {
             if (!validate(e.currentTarget)) e.preventDefault();
           }}
-          className="w-full max-w-sm rounded-xl border border-border bg-surface p-8 shadow-sm"
+          className="glass-card w-full max-w-sm rounded-v2 p-8 shadow-v2-float"
         >
           <div className="mb-6 flex justify-center">
-            <BrandLockup variant="lockup" />
+            <BrandLockup variant="lockup" size="xl" />
           </div>
 
-          <h1 className="mb-6 text-center text-xl text-text-primary">
-            {s["login.title"]}
-          </h1>
+          <div className="mb-6 flex flex-col gap-1 text-center">
+            <h1 className="text-xl text-v2-text-primary">
+              {s["login.title"]}
+            </h1>
+            <p className="text-sm text-v2-text-secondary">
+              {s["login.subtitle"]}
+            </p>
+          </div>
 
           {state.error ? (
             <div className="mb-4 overflow-hidden rounded-lg">

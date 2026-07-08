@@ -18,7 +18,7 @@ import {
   type DbTx,
 } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
-import { provisionStaffUser, generateSetPasswordLink } from "@/lib/auth/provision";
+import { provisionStaffUser, generateSetPasswordLink, updateStaffAuthEmail } from "@/lib/auth/provision";
 import { sendEmail, type SendResult } from "@/lib/reminders/clients";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
@@ -288,12 +288,35 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
+ * Mask an email for the audit trail: keep the first 2 chars of the local part,
+ * star out the rest, keep the domain intact. "bernardo@osteojp.pt" ->
+ * "be******@osteojp.pt". Used so an email change is auditable without writing the
+ * full address into audit_log (rule 7 — sanitize before persisting). Pure +
+ * exported for unit testing.
+ */
+export function maskEmail(email: string): string {
+  const at = email.indexOf("@");
+  if (at <= 0) return "***"; // not an email shape — never echo it back verbatim
+  const local = email.slice(0, at);
+  const domain = email.slice(at); // includes the leading "@"
+  const keep = local.slice(0, 2);
+  return keep + "*".repeat(Math.max(1, local.length - keep.length)) + domain;
+}
+
+/**
  * Edit an invited staff member's name and/or email. Capability-gated
  * (users:manage) and owner-tier hardened: only an owner may edit an owner, in
  * parity with role-change and (de)activate. Email is unique per tenant
  * (users_tenant_email_uq) — a collision surfaces as a clean `email_taken`
  * domain error rather than a raw constraint violation. RLS scopes every read
  * and write to the actor's tenant via runScoped.
+ *
+ * Email edits are synced end-to-end: an email change updates BOTH public.users
+ * and the Supabase auth login email (via updateStaffAuthEmail), so a staff
+ * account created with a placeholder email can later be corrected without
+ * stranding the auth login on the stale address. The two writes are kept
+ * consistent by ordering (see below), since the auth API is external and cannot
+ * enlist in the DB transaction.
  */
 export async function editStaff(
   actor: RequestContext,
@@ -312,11 +335,15 @@ export async function editStaff(
       throw new AdminError("owner_tier");
     }
 
+    const emailChanged = target.email !== email;
     const changed: string[] = [];
     if (target.fullName !== fullName) changed.push("full_name");
-    if (target.email !== email) changed.push("email");
+    if (emailChanged) changed.push("email");
     if (changed.length === 0) return; // no-op
 
+    // (1) Write public.users first, INSIDE the RLS transaction. A
+    // (tenant_id, email) collision is caught HERE as email_taken — before we
+    // touch Supabase auth — so a rejected edit never desyncs the two stores.
     try {
       await tx.update(users).set({ fullName, email }).where(eq(users.id, userId));
     } catch (e) {
@@ -326,12 +353,24 @@ export async function editStaff(
       throw e;
     }
 
+    // (2) Only when the email actually changed, sync the Supabase auth login
+    // email. This runs while the public.users write above is still UNCOMMITTED:
+    // if the auth update throws, the surrounding transaction rolls back and BOTH
+    // stores stay on the old email (consistent). A name-only edit skips this
+    // entirely and never touches auth.
+    if (emailChanged) {
+      await updateStaffAuthEmail(userId, email);
+    }
+
     await writeAudit(tx, actor, {
       action: "staff.profile_update",
       entityType: "user",
       entityId: userId,
-      // PII-free: record WHICH fields changed, never their values (rule 7).
-      metadata: { fields: changed },
+      // Record WHICH fields changed; for an email change also record old/new
+      // MASKED (never the full address) so the trail is useful without PII.
+      metadata: emailChanged
+        ? { fields: changed, emailFrom: maskEmail(target.email), emailTo: maskEmail(email) }
+        : { fields: changed },
     });
   });
 }

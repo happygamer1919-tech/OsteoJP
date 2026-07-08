@@ -5,16 +5,18 @@ import {
   EmptyState,
   GlassCard,
   GlassPanel,
+  Input,
   Select,
   StatusBadge,
   StatusChip,
 } from "@osteojp/ui";
 import type { AppointmentTone } from "@osteojp/ui";
-import { CalendarClock, Repeat, TriangleAlert, User } from "lucide-react";
+import { CalendarClock, Repeat, Search, TriangleAlert, User } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 
 import { s } from "@/lib/i18n";
+import { matchesSearch } from "@/lib/search/text-filter";
 import { intervalsOverlap } from "@/lib/scheduling/overlap";
 import {
   formatAnchorLabel,
@@ -253,6 +255,11 @@ export function MarcacoesView({
   const router = useRouter();
   const [, startTransition] = useTransition();
 
+  // W5-02 patient-name search: client-side, presentation-only filter over the
+  // already-fetched (role-scoped) window, same tier as the Status/Serviço
+  // filters. Local state (not a URL param) so typing never churns history.
+  const [search, setSearch] = useState("");
+
   function navigate(next: Partial<MarcacoesFilters>) {
     const merged = { ...filters, ...next };
     const params = new URLSearchParams();
@@ -271,8 +278,9 @@ export function MarcacoesView({
   const conflicts = conflictingIds(appointments);
   const today = todayInLisbon();
 
-  // Presentation-only filters (Status / Serviço) over the fetched window.
+  // Presentation-only filters (Search / Status / Serviço) over the fetched window.
   const visible = appointments.filter((a) => {
+    if (!matchesSearch(search, a.patientName)) return false;
     if (filters.status && a.status !== filters.status) return false;
     if (filters.service) {
       const acc = serviceAccent(a.serviceName);
@@ -340,6 +348,19 @@ export function MarcacoesView({
               nextMonthLabel={s["calendar.nextMonth"]}
             />
           </div>
+        </div>
+
+        {/* W5-02: patient-name search, aligned into the same toolbar row as the
+            other filters (UI-STYLE.md §6). Client-side filter only. */}
+        <div className="w-56">
+          <Input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            leadingIcon={Search}
+            aria-label={s["common.search"]}
+            placeholder={s["marcacoes.searchPlaceholder"]}
+          />
         </div>
 
         <div className="w-56">
