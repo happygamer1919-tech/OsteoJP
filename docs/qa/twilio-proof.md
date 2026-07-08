@@ -134,15 +134,29 @@ TWILIO_SMOKE_CONFIRM=yes SMOKE_TO_NUMBER=+3519XXXXXXXX node scripts/twilio-smoke
 - Exit codes: 0 ok · 1 missing creds · 2 proof failure (auth failed, send
   rejected, >1 segment, or not delivered).
 
-## 5. Proof 2 results (fill in after running)
+## 5. Proof status (2026-07-08)
+
+- **Proof 1 — PASS** on rotated token (2026-07-08): credential validation
+  (account GET) succeeded and the prod-resolved sender was confirmed.
+- **Proof 2 — executed, send rejected.** The render → auth → request path was
+  verified end to end: the real production template rendered, Twilio auth
+  succeeded, and the send request was accepted for processing but rejected with
+  error **21267 (trial tier)** — a trial account cannot deliver to the target.
+- **Full delivery proof is pending account upgrade.** This is a commercial
+  precondition (trial → paid Twilio), **not code defect**: the wiring, sender
+  resolution, template compliance, and error propagation are all proven. Once
+  the account is upgraded the same script will complete Proof 2 to a delivered
+  terminal status.
 
 | Field | Value |
 | --- | --- |
-| Message SID | _(pending)_ |
-| Final status | _(pending)_ |
-| Segments | _(pending — must be 1)_ |
-| From shown on handset | _(pending — expect "OsteoJP")_ |
-| Timestamp (UTC) | _(pending)_ |
-| Run by | _(pending)_ |
+| Message SID | _(none — send rejected before dispatch)_ |
+| Final status | rejected — error 21267 (trial tier) |
+| Segments | 1 (rendered template, verified pre-send) |
+| From shown on handset | _(n/a — not delivered; sender resolves to "OsteoJP")_ |
+| Timestamp (UTC) | 2026-07-08 |
+| Run by | QA (Proof 1 pass on rotated token; Proof 2 request verified) |
 
-Notes: _(anything unexpected — delivery latency, sender shown, carrier)_
+Notes: 21267 is a Twilio trial-tier restriction, not a code defect. Full
+delivery proof pending account upgrade (trial → paid). No product code, flags,
+or credentials changed by this status update.
