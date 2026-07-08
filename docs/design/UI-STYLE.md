@@ -66,6 +66,17 @@ Token-only (no raw hex in components), on the 4px grid, with the global focus ri
 
 Shared input class strings live in `admin-ui.ts`: `adminInput` (full-width), `adminInputInline` (compact in-row), `adminLabel`, `adminHelp`, `adminLegend`.
 
+## 8. Centered modal (row-actions, dense) — W5-06
+
+For a row-actions group that is too dense to read as an inline `<details>` drawer (§6) — e.g. Equipa "Gerir", where the overflowing staff table pushed the expanded panel far to the right and forced horizontal scrolling — use a **centered modal** instead. This is a deliberate, per-surface deviation from the §6 disclosure, not a replacement for it: keep the compact `<details>` drawer for lighter row groups.
+
+- **Primitive:** build on the shared native-`<dialog>` hook `useAnimatedDialog` (exported from `@osteojp/ui`, the same primitive `Dialog`/`Drawer` use). It provides the focus trap, Escape-to-close, inert background, top-layer stacking, and focus restoration for free. Do **not** add a new `packages/ui` primitive for this (a `packages/ui` change ripples beyond one surface — HALT first); an app-level modal component in `apps/web` on top of the exported hook is the sanctioned path.
+- **Surface:** `glass-card` (§1/§7), `rounded-v2`, `shadow-v2-float`, `p-6`, `m-auto` for centering, `backdrop:bg-text-primary/40`. Enter/exit via the `shown` opacity transition (`duration-base ease-standard`).
+- **Trigger:** a ghost `Button` in the row's **Ações** column (label from i18n, e.g. `admin.staff.manage` "Gerir"), not a `<summary>`.
+- **Close:** Escape, overlay click, and an explicit ghost close control (`common.close`) all request close. One tab-stop discipline, global focus ring on every interactive element.
+- **Zero logic change:** the modal holds the **exact same controls**, each still posting to its **same existing server-action handler**. A server-enforced gate (e.g. the scrypt-gated delete) stays **unchanged** — restyle/relocate only, never weakened (§5).
+- **Playwright:** open the modal by clicking the trigger button, then interact with the controls inside `getByRole("dialog")`.
+
 ---
 
 **Conformance note:** W4-14 (Horários), W4-15 (Serviços), W4-16 (Pacientes), W4-17 (Agenda header), W4-18 (Início) follow the card/table/spacing/badge/button/toolbar/token patterns above. Any surface that needs a pattern not covered here extends this document in the same PR.
