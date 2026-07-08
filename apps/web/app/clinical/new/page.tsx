@@ -10,7 +10,7 @@ import {
 } from "@/lib/clinical/records";
 import { getPatient } from "@/lib/patients/queries";
 import { createRecordAction } from "./actions";
-import { PatientPicker } from "./patient-picker";
+import { PatientEpisodeFields } from "./patient-episode-fields";
 
 export default async function NewRecordPage({
   searchParams,
@@ -39,34 +39,31 @@ export default async function NewRecordPage({
       {m === "err" && <p className="text-sm text-error">{s["clinical.error"]}</p>}
 
       <form action={createRecordAction} className="space-y-3">
-        <PatientPicker
-          initial={
+        {/* W5-02 + W5-04: Paciente is an async search Combobox; the Episódio
+            options are scoped client-side to the selected patient. The Modelo
+            picker passes through as children so its markup and the field
+            sequence (Paciente, Modelo, Episódio) stay untouched (Batch 4
+            territory). */}
+        <PatientEpisodeFields
+          episodes={episodes}
+          initialPatient={
             prefillPatient
               ? { id: prefillPatient.id, name: prefillPatient.fullName }
               : null
           }
-        />
-
-        <label className="block space-y-1">
-          <span className="text-sm font-medium">{s["clinical.template"]} *</span>
-          <select name="formTemplateId" required className="block w-full rounded border px-2 py-1.5 text-sm">
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {(t.title?.[locale] ?? t.key) + ` v${t.version}`}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="block space-y-1">
-          <span className="text-sm font-medium">{s["clinical.episode"]}</span>
-          <select name="episodeId" defaultValue={episodeId ?? ""} className="block w-full rounded border px-2 py-1.5 text-sm">
-            <option value="">{s["clinical.episodeNone"]}</option>
-            {episodes.map((e) => (
-              <option key={e.id} value={e.id}>{e.label}</option>
-            ))}
-          </select>
-        </label>
+          defaultEpisodeId={episodeId}
+        >
+          <label className="block space-y-1">
+            <span className="text-sm font-medium">{s["clinical.template"]} *</span>
+            <select name="formTemplateId" required className="block w-full rounded border px-2 py-1.5 text-sm">
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {(t.title?.[locale] ?? t.key) + ` v${t.version}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        </PatientEpisodeFields>
 
         <div className="flex gap-2">
           <Button type="submit" variant="primary" size="sm">
