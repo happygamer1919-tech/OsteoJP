@@ -15,7 +15,7 @@ import { getRequestContext } from "../../../lib/auth/context";
 import { listRecords, type RecordStatus } from "../../../lib/clinical/records";
 import { listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
 import { formatPatientNumber } from "../../../lib/patients/format";
-import { getPatient } from "../../../lib/patients/queries";
+import { getPatient, getPatientHardDeleteBlockers } from "../../../lib/patients/queries";
 import type { Patient } from "../../../lib/patients/types";
 import { listPatientAppointments } from "../../../lib/scheduling/data";
 import { listPatientNoteRevisions } from "../../../lib/patients/note-revisions";
@@ -87,6 +87,18 @@ export default async function PatientProfilePage({
   const canInvoice = can(ctx.role, "invoices:read");
   const canDelete = can(ctx.role, "patients:delete");
   const canStartEpisode = can(ctx.role, "clinical_records:author");
+  // Hard delete is Tenant-settings tier (W5-08), like appointment/staff delete.
+  // The blockers read only drives the disabled affordance — the server action
+  // re-enforces the password gate and every refuse guard.
+  const canHardDelete = can(ctx.role, "settings:manage");
+  const hardDeleteBlockers = canHardDelete
+    ? await getPatientHardDeleteBlockers(patient.id)
+    : null;
+  const hardDeleteBlocked = hardDeleteBlockers?.hasClinicalRecords
+    ? ("records" as const)
+    : hardDeleteBlockers?.hasOtherReferences
+      ? ("references" as const)
+      : null;
 
   // Permission-filtered tabs. aria-controls links each tab button to its panel.
   const tabItems = [
@@ -323,7 +335,12 @@ export default async function PatientProfilePage({
 
       {canDelete && (
         <section className="mt-8">
-          <PatientActions patientId={patient.id} isDeleted={Boolean(patient.deletedAt)} />
+          <PatientActions
+            patientId={patient.id}
+            isDeleted={Boolean(patient.deletedAt)}
+            canHardDelete={canHardDelete}
+            hardDeleteBlocked={hardDeleteBlocked}
+          />
         </section>
       )}
     </main>

@@ -14,6 +14,7 @@ export type AdminErrorCode =
   | "has_references" // service delete refused: appointments/mappings/prices/analytics reference it (W4-15)
   | "password" // wrong delete password (W4-01 staff delete)
   | "has_activity" // staff delete refused: therapist has appointments/records/audit (W4-01)
+  | "has_clinical_records" // patient hard-delete refused: clinical records reference the patient (W5-08)
   | "not_found"
   | "invalid";
 
