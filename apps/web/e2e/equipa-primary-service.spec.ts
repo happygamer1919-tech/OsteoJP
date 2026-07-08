@@ -48,6 +48,32 @@ test("Equipa: assign a primary to a zero-mapping therapist + Horários link + No
   await expect(dialog.getByLabel(/Serviço/i).locator("option:checked")).toHaveText("Osteopatia");
 });
 
+test("Equipa: name/role search filters the staff table and clearing restores it (W5-02)", async ({
+  page,
+}) => {
+  await page.goto("/admin/staff");
+
+  // Baseline: the table lists several seeded members, including the reception
+  // account, which the query below must exclude.
+  await expect(page.locator("tbody tr").filter({ hasText: "E2E Reception" })).toHaveCount(1);
+
+  // Type a name query → the table narrows to the matching therapist. Same
+  // SearchBox as Pacientes (URL ?q= + server-side filter of the same read).
+  const box = page.getByPlaceholder(/Pesquisar por nome ou função/i);
+  await box.pressSequentially("Sem Servicos");
+  await box.press("Enter");
+  await expect(page).toHaveURL(/\/admin\/staff\?q=/, { timeout: 8_000 });
+
+  await expect(page.locator("tbody tr").filter({ hasText: THER })).toHaveCount(1);
+  await expect(page.locator("tbody tr").filter({ hasText: "E2E Reception" })).toHaveCount(0);
+
+  // Clearing the query restores the full table (reception is back).
+  await box.fill("");
+  await box.press("Enter");
+  await expect(page).toHaveURL(/\/admin\/staff$/, { timeout: 8_000 });
+  await expect(page.locator("tbody tr").filter({ hasText: "E2E Reception" })).toHaveCount(1);
+});
+
 test("Equipa: password-gated therapist delete — wrong password refused, correct deletes an activity-free therapist (W4-01)", async ({
   page,
 }) => {
