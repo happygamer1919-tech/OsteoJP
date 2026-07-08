@@ -14,10 +14,10 @@ import {
   CalendarPlus,
   ChevronLeft,
   ChevronRight,
-  ClipboardCheck,
   ClipboardList,
   FileText,
   Settings,
+  Stethoscope,
   TrendingUp,
   UserPlus,
   Users,
@@ -230,11 +230,12 @@ export default async function DashboardPage({
     { label: s["dashboard.tile.clinicalRecord"], icon: FileText, href: "/clinical/new", accent: "lavender", capability: "clinical_records:author" },
     { label: s["dashboard.tile.viewAgenda"], icon: Calendar, href: "/agenda", accent: "blue", capability: "appointments:read" },
     { label: s["dashboard.tile.admin"], icon: Settings, href: "/admin", accent: "gold", capability: "settings:read" },
-    // W4-18 — sixth tile, to the right of Administração, linking to the EXISTING
-    // Revisão Consulta page (/clinical/review). Gated on the same capability that
-    // page enforces (clinical_records:review → owner + therapist), so the tile
-    // never leads to a redirect.
-    { label: s["nav.review"], icon: ClipboardCheck, href: "/clinical/review", accent: "lavender", capability: "clinical_records:review" },
+    // W4-20 — sixth tile: Iniciar consulta, linking to the start-consultation
+    // recording screen (/consultation), which had NO nav entry (owner QA). Gated
+    // on the same capability that page enforces (clinical_records:author → owner +
+    // therapist), so the tile never leads to a redirect. Replaces the W4-18
+    // Revisão Consulta tile, which stays reachable via its left-nav entry.
+    { label: s["dashboard.tile.startConsultation"], icon: Stethoscope, href: "/consultation", accent: "lavender", capability: "clinical_records:author" },
   ];
   const visibleTiles = tiles.filter((t) => can(ctx.role, t.capability));
 
