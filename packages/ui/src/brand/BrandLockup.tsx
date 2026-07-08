@@ -33,19 +33,20 @@ import { brandSvg, type BrandVariant } from "./brand-svg";
  */
 
 export type BrandLockupVariant = BrandVariant;
-export type BrandLockupSize = "sm" | "md" | "lg";
+export type BrandLockupSize = "sm" | "md" | "lg" | "xl";
 
 /** Rendered height in px per size token. Width follows the viewBox aspect ratio. */
 const SIZE_HEIGHT_PX: Record<BrandLockupSize, number> = {
   sm: 24,
   md: 32,
   lg: 48,
+  xl: 96,
 };
 
 export interface BrandLockupProps {
   /** full = mark + wordmark + tagline; lockup = mark + wordmark; mark = mark only. */
   variant?: BrandLockupVariant;
-  /** sm = 24px, md = 32px, lg = 48px rendered height. */
+  /** sm = 24px, md = 32px, lg = 48px, xl = 96px rendered height. */
   size?: BrandLockupSize;
   /** Overrides the default "OsteoJP" accessible name (e.g. a localized brand line). */
   title?: string;
