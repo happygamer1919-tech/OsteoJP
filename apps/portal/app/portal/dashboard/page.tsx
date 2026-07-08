@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getMyAppointments, getMyProfile } from '@/lib/api/client'
 import type { AppointmentView } from '@/lib/api/client'
 import { NavButton } from './NavButton'
+import { locationDisplayName } from '@/lib/locationLabel'
 import { s } from '@/lib/i18n'
 
 function isUpcoming(appt: AppointmentView): boolean {
@@ -122,7 +123,7 @@ export default async function DashboardPage() {
           {next.locationName && (
             <p className="mt-1 flex items-center gap-1 text-xs text-text-secondary">
               <MapPin size={16} strokeWidth={1.75} aria-hidden="true" />
-              {next.locationName}
+              {locationDisplayName(next.locationName)}
             </p>
           )}
         </Card>
