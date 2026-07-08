@@ -536,3 +536,27 @@ unrendered pending "a blocked-time data model + query" - `time_off` IS that mode
   flag `time_off`'s current columns cannot express. Do not open 0034 speculatively.
 - **Owner:** Ivan (confirm migration-free-on-`time_off` vs a minimal column).
   Consumed by W5-12.
+
+## 2026-07-08 - Owner rulings addendum (Ivan, resolves Q-W5-1..7) + W5-01 halt
+
+Recorded from the owner rulings addendum dispatched 2026-07-08. These outrank the
+loop files where they conflict.
+
+- [x] **Q-W5-1 ANSWERED:** Data do Episodio is **editable, prefilled today** (the recommended default). Consumed by W5-14.
+- [x] **Q-W5-2 ANSWERED:** keep **BOTH** Plano de Tratamento and Objectivos do Tratamento (recommended default; twelve-key contract unchanged). Consumed by W5-15.
+- [x] **Q-W5-3 ANSWERED:** consent/RGPD wording stays **PENDENTE-JP placeholders**; Max drafts variants, JP picks. Never invent legal wording. Consumed by W5-16.
+- [x] **Q-W5-4 ANSWERED:** appointments inside a new therapist block are **WARNED, never auto-cancelled**. Consumed by W5-12.
+- [x] **Q-W5-5 ANSWERED:** retire the NESA **template** from the creation flow only; the 0031 booking-warning system is **untouched**. Consumed by W5-13.
+- [x] **Q-W5-6 ANSWERED (conditional, resolved PRESENT):** owner ruling: if the field is present in the deployed app, close W5-03 docs-only as already-shipped. GREEN verified PRESENT with machine evidence 2026-07-08: production deployment `dpl_AWKNbRzyTgvSGHVg31fXNgqFMwXL` builds commit `9f5c960` (exact `origin/main` tip, zero drift), which renders Profissao unconditionally in the new-patient form (`patient-form.tsx` 147-153). Profile row is conditional on a value being set (`page.tsx:119`), the likely source of the QA observation. **W5-03 closed already-shipped in this PR.**
+- [x] **Q-W5-7 ANSWERED (conditional):** build W5-12 **migration-free on `time_off` (0006) IF AND ONLY IF** recon proves it supports both an intra-day hour-range block and a multi-day range block, with schema evidence pasted. If whole-day-only, HALT proposing a minimal 0034; never force whole-day semantics onto Bloqueio pontual. Consumed by W5-12 at dispatch.
+
+### Q-W5-8 - W5-01 login branding needs a new BrandLockup size step (packages/ui)
+Raised by the W5-01 executor 2026-07-08 (halt file in the mailbox). `BrandLockup`
+tops out at `lg` = 48px, the sidebar already uses `lg`, and the near-square lockup
+art renders ~44px wide at that height, so "significantly larger and prominent" is
+unreachable without a `packages/ui` change (the loop's explicit halt trigger).
+- **Recommended default:** approve an **additive `xl: 96` size step** on BrandLockup
+  plus an optional `brandSize` prop on SidebarAppShell (default keeps today's `lg`).
+  Non-breaking for every consumer; smallest honest change that meets the scope.
+  Alternatives (important-override hack, or staying at 48px) are worse or fail the goal.
+- **Owner:** Ivan. Consumed by W5-01 (blocked on this answer; recon complete and reusable).
