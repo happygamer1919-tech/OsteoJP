@@ -766,6 +766,7 @@
   "lote.generate": "Generate dates",
   "lote.summaryCount": "appointments to create",
   "lote.noDates": "Generate the dates before confirming.",
+  "lote.rowDate": "Appointment date",
   "appointment.nesaServiceSensitive": "contraindication-sensitive service",
   "patients.contraindicationsLabel": "NESA contraindications",
   "patients.fieldContraindicationEpilepsy": "Epilepsy",
