@@ -5,6 +5,7 @@ import { Card, StatusChip } from '@osteojp/ui'
 import { getMyAppointments } from '@/lib/api/client'
 import { STATUS_LABELS, STATUS_TONE } from '../status'
 import { AppointmentActions } from './AppointmentActions'
+import { locationDisplayName } from '@/lib/locationLabel'
 import { s } from '@/lib/i18n'
 
 function fullDateTime(iso: string): string {
@@ -33,7 +34,7 @@ export default async function AppointmentDetailPage({
     { label: s.appointments.detail_service, value: appt.serviceName ?? s.appointments.detail_service },
     { label: s.appointments.detail_datetime, value: fullDateTime(appt.startsAt), caps: true },
     { label: s.appointments.detail_therapist, value: appt.practitionerName ?? '—' },
-    { label: s.appointments.detail_location, value: appt.locationName ?? '—' },
+    { label: s.appointments.detail_location, value: locationDisplayName(appt.locationName) ?? '—' },
   ]
 
   return (

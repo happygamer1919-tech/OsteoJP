@@ -81,13 +81,15 @@ export default function LoginPage() {
   }
 
   if (magicLinkSent) {
+    const [before, after] = s.auth.login_magic_link_sent.split('{{email}}')
     return (
       <div className="rounded-xl border border-border bg-surface p-6 text-center">
         <Mail size={24} strokeWidth={1.75} aria-hidden="true" className="mx-auto mb-3 text-accent-2-700" />
         <h2 className="mb-2 text-xl font-semibold text-text-primary">{s.auth.reset_password_check_inbox}</h2>
         <p className="text-sm text-text-secondary">
-          {s.auth.login_magic_link_sent.replace('{{email}}', '')}
-          <strong>{email}</strong>.
+          {before}
+          <strong>{email}</strong>
+          {after}
         </p>
       </div>
     )
