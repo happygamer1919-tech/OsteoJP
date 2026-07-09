@@ -4,7 +4,6 @@ import {
   Banner,
   Button,
   Field,
-  HeritageCorners,
   Input,
 } from "@osteojp/ui";
 import { Eye, EyeOff } from "lucide-react";
@@ -39,27 +38,35 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="relative min-h-dvh bg-bg">
-      {/* Heritage frame — staff /login is the one staff surface that earns the
-          full corners-plus-edges treatment (SPEC-foundation §7.6, auth-only).
-          The card sits in the protected inner region; the frame never touches
-          it or its focus rings. */}
-      <HeritageCorners variant="corners-plus-edges" tone="magenta" />
+    // Split-screen (W5-18): brand atmosphere panel + form surface. On lg the two
+    // panels sit side by side, each full-height; below lg they stack — the brand
+    // panel collapses to a compact header above the form card. Auth logic, the
+    // server action, the route, and the field `name` attributes are unchanged
+    // from the shipped W5-01 login; this loop rebuilds the visual layer only.
+    <main className="grid min-h-dvh grid-cols-1 bg-v2-surface lg:grid-cols-2">
+      {/* Brand atmosphere panel. Soft sage-to-off-white gradient carrying the
+          large centered logo and one muted tagline line. Compact on mobile
+          (auto height, reduced padding), full-height column on desktop. */}
+      <section className="relative flex flex-col items-center justify-center gap-6 overflow-hidden bg-gradient-to-br from-v2-green-50 to-v2-bg px-8 py-10 text-center lg:py-16">
+        <div className="login-rise flex flex-col items-center gap-5">
+          <BrandLockup variant="lockup" size="xl" />
+          <p className="max-w-xs text-base text-v2-text-secondary">
+            {s["login.tagline"]}
+          </p>
+        </div>
+      </section>
 
-      <div className="relative z-10 flex min-h-dvh items-center justify-center px-8 py-8 md:px-16 md:py-16">
+      {/* Form surface: clean white panel, centered card. */}
+      <section className="flex items-center justify-center bg-v2-surface px-6 py-10 md:px-12">
         <form
           action={formAction}
           noValidate
           onSubmit={(e) => {
             if (!validate(e.currentTarget)) e.preventDefault();
           }}
-          className="glass-card w-full max-w-sm rounded-v2 p-8 shadow-v2-float"
+          className="login-rise w-full max-w-sm"
         >
-          <div className="mb-6 flex justify-center">
-            <BrandLockup variant="lockup" size="xl" />
-          </div>
-
-          <div className="mb-6 flex flex-col gap-1 text-center">
+          <div className="mb-6 flex flex-col gap-1">
             <h1 className="text-xl text-v2-text-primary">
               {s["login.title"]}
             </h1>
@@ -82,6 +89,7 @@ export default function LoginPage() {
                 autoComplete="email"
                 disabled={pending}
                 placeholder={s["login.emailPlaceholder"]}
+                className="h-11"
               />
             </Field>
 
@@ -91,6 +99,7 @@ export default function LoginPage() {
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
                 disabled={pending}
+                className="h-11"
                 trailing={
                   <button
                     type="button"
@@ -117,6 +126,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               variant="primary"
+              size="lg"
               loading={pending}
               className="mt-2 w-full"
             >
@@ -138,7 +148,7 @@ export default function LoginPage() {
               the strings sweep, not the runtime).
           */}
         </form>
-      </div>
+      </section>
     </main>
   );
 }
