@@ -49,7 +49,7 @@ function row(page: Page, hhmm: string): Locator {
 
 async function openConsultas(page: Page) {
   await page.goto(`/patients/${PATIENTS.maria.id}?tab=consultas`);
-  await expect(page.getByRole("tabpanel", { name: /Consultas/i })).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByRole("tabpanel", { name: /Marcações/i })).toBeVisible({ timeout: 8_000 });
 }
 
 test("reschedule from Consultas is blocked by a therapist conflict, then overridable (W5-09)", async ({
