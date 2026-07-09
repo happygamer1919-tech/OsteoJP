@@ -26,6 +26,7 @@ export type CreatePatientInput = {
   referralSource?: string | null;
   contraindicationEpilepsy?: boolean;
   contraindicationPregnancy?: boolean;
+  contraindicationPacemaker?: boolean;
 };
 export type UpdatePatientInput = Partial<CreatePatientInput>;
 
@@ -44,6 +45,7 @@ export type CreatePatientValues = {
   referralSource: string | null;
   contraindicationEpilepsy: boolean;
   contraindicationPregnancy: boolean;
+  contraindicationPacemaker: boolean;
 };
 export type UpdatePatientValues = Partial<CreatePatientValues>;
 
@@ -105,6 +107,7 @@ export function parseCreatePatient(raw: CreatePatientInput): CreatePatientValues
     referralSource: optionalText(r.referralSource, "referralSource", 200),
     contraindicationEpilepsy: r.contraindicationEpilepsy === true,
     contraindicationPregnancy: r.contraindicationPregnancy === true,
+    contraindicationPacemaker: r.contraindicationPacemaker === true,
   };
 }
 
@@ -126,6 +129,7 @@ export function parseUpdatePatient(raw: UpdatePatientInput): UpdatePatientValues
   if ("referralSource" in r) out.referralSource = optionalText(r.referralSource, "referralSource", 200);
   if ("contraindicationEpilepsy" in r) out.contraindicationEpilepsy = r.contraindicationEpilepsy === true;
   if ("contraindicationPregnancy" in r) out.contraindicationPregnancy = r.contraindicationPregnancy === true;
+  if ("contraindicationPacemaker" in r) out.contraindicationPacemaker = r.contraindicationPacemaker === true;
   return out;
 }
 

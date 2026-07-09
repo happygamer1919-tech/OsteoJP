@@ -41,6 +41,7 @@ type Fields = {
   // NESA contraindication flags (0031) — drive the soft booking warning (W2-08).
   contraindicationEpilepsy: boolean;
   contraindicationPregnancy: boolean;
+  contraindicationPacemaker: boolean;
 };
 
 function toFields(p?: Patient | null): Fields {
@@ -64,6 +65,7 @@ function toFields(p?: Patient | null): Fields {
     referralOther: stored !== "" && !isKnown ? stored : "",
     contraindicationEpilepsy: p?.contraindicationEpilepsy ?? false,
     contraindicationPregnancy: p?.contraindicationPregnancy ?? false,
+    contraindicationPacemaker: p?.contraindicationPacemaker ?? false,
   };
 }
 
@@ -231,6 +233,14 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
             onChange={(e) => set("contraindicationPregnancy", e.target.checked)}
           />
           {s["patients.fieldContraindicationPregnancy"]}
+        </label>
+        <label className="flex items-center gap-2 text-sm text-text-primary">
+          <input
+            type="checkbox"
+            checked={fields.contraindicationPacemaker}
+            onChange={(e) => set("contraindicationPacemaker", e.target.checked)}
+          />
+          {s["patients.fieldContraindicationPacemaker"]}
         </label>
       </fieldset>
       {/* Street address input intentionally not surfaced (address-reduction,

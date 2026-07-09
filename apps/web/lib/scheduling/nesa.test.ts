@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { matchedContraindications } from "./nesa";
 
-describe("matchedContraindications (W2-08 NESA warning)", () => {
-  const none = { epilepsy: false, pregnancy: false };
-  const epi = { epilepsy: true, pregnancy: false };
-  const preg = { epilepsy: false, pregnancy: true };
-  const both = { epilepsy: true, pregnancy: true };
+describe("matchedContraindications (W2-08 NESA warning; W5-21 pacemaker)", () => {
+  const none = { epilepsy: false, pregnancy: false, pacemaker: false };
+  const epi = { epilepsy: true, pregnancy: false, pacemaker: false };
+  const preg = { epilepsy: false, pregnancy: true, pacemaker: false };
+  const pace = { epilepsy: false, pregnancy: false, pacemaker: true };
+  const all = { epilepsy: true, pregnancy: true, pacemaker: true };
 
   it("no warning when the patient is unknown (null)", () => {
     expect(matchedContraindications(null, true)).toEqual([]);
@@ -13,7 +14,8 @@ describe("matchedContraindications (W2-08 NESA warning)", () => {
 
   it("no warning when the service is not contraindication-sensitive", () => {
     expect(matchedContraindications(epi, false)).toEqual([]);
-    expect(matchedContraindications(both, false)).toEqual([]);
+    expect(matchedContraindications(pace, false)).toEqual([]);
+    expect(matchedContraindications(all, false)).toEqual([]);
   });
 
   it("no warning when the patient has no flags (even for a sensitive service)", () => {
@@ -23,9 +25,14 @@ describe("matchedContraindications (W2-08 NESA warning)", () => {
   it("names the single matched flag on a sensitive service", () => {
     expect(matchedContraindications(epi, true)).toEqual(["epilepsy"]);
     expect(matchedContraindications(preg, true)).toEqual(["pregnancy"]);
+    expect(matchedContraindications(pace, true)).toEqual(["pacemaker"]);
   });
 
-  it("names both flags, epilepsy first, when both are set", () => {
-    expect(matchedContraindications(both, true)).toEqual(["epilepsy", "pregnancy"]);
+  it("names all flags in stable order (epilepsy, pregnancy, pacemaker) when set", () => {
+    expect(matchedContraindications(all, true)).toEqual([
+      "epilepsy",
+      "pregnancy",
+      "pacemaker",
+    ]);
   });
 });

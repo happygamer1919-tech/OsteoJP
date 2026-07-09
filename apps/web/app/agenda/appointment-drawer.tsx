@@ -557,6 +557,7 @@ export function AppointmentDrawer({
   const NESA_LABEL: Record<(typeof nesaMatched)[number], StringKey> = {
     epilepsy: "patients.fieldContraindicationEpilepsy",
     pregnancy: "patients.fieldContraindicationPregnancy",
+    pacemaker: "patients.fieldContraindicationPacemaker",
   };
 
   return (

@@ -867,6 +867,7 @@
   "patients.contraindicationsLabel": "NESA contraindications",
   "patients.fieldContraindicationEpilepsy": "Epilepsy",
   "patients.fieldContraindicationPregnancy": "Pregnancy",
+  "patients.fieldContraindicationPacemaker": "Pacemaker fitted",
   "admin.services.contraindicationSensitive": "Contraindication-sensitive (NESA)",
   "agenda.pickDate": "Choose date",
   "appointment.recurringCheckbox": "Recurring appointment",

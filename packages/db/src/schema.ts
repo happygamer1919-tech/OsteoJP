@@ -383,6 +383,9 @@ export const patients = pgTable(
     // state; the warning logic lives in the UI.
     contraindicationEpilepsy: boolean("contraindication_epilepsy").notNull().default(false),
     contraindicationPregnancy: boolean("contraindication_pregnancy").notNull().default(false),
+    // 0034 (W5-21): "Portador de pacemaker" — third NESA contraindication flag,
+    // same SOFT-warning semantics; staff data, excluded from patient self-update.
+    contraindicationPacemaker: boolean("contraindication_pacemaker").notNull().default(false),
     // Patient identity layer — links a patient to their Supabase auth principal
     // (the patient portal login at api.osteojp.pt). A patient is a DISTINCT
     // principal from a staff `users` row: there is no users row for a patient.

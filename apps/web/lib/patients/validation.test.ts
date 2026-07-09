@@ -106,9 +106,14 @@ describe("parseUpdatePatient", () => {
     expect(parseUpdatePatient({ contraindicationPregnancy: false })).toEqual({
       contraindicationPregnancy: false,
     });
+    // W5-21 — pacemaker flag coerces the same way, only when provided.
+    expect(parseUpdatePatient({ contraindicationPacemaker: true })).toEqual({
+      contraindicationPacemaker: true,
+    });
     const out = parseUpdatePatient({ phone: "912345678" });
     expect("contraindicationEpilepsy" in out).toBe(false);
     expect("contraindicationPregnancy" in out).toBe(false);
+    expect("contraindicationPacemaker" in out).toBe(false);
   });
 });
 

@@ -93,6 +93,7 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
         referralSource: input.referralSource,
         contraindicationEpilepsy: input.contraindicationEpilepsy,
         contraindicationPregnancy: input.contraindicationPregnancy,
+        contraindicationPacemaker: input.contraindicationPacemaker,
       })
       .returning();
     if (!row) throw new Error("Patient insert returned no row");
@@ -131,6 +132,9 @@ export async function updatePatient(
     }),
     ...(input.contraindicationPregnancy !== undefined && {
       contraindicationPregnancy: input.contraindicationPregnancy,
+    }),
+    ...(input.contraindicationPacemaker !== undefined && {
+      contraindicationPacemaker: input.contraindicationPacemaker,
     }),
   };
 
@@ -365,18 +369,23 @@ export async function searchPatientsAction(
  */
 export async function getPatientContraindications(
   patientId: string,
-): Promise<{ epilepsy: boolean; pregnancy: boolean }> {
+): Promise<{ epilepsy: boolean; pregnancy: boolean; pacemaker: boolean }> {
   const ctx = await requireRequestContext();
   return runScoped(ctx, async (tx) => {
     const [row] = await tx
       .select({
         epilepsy: patients.contraindicationEpilepsy,
         pregnancy: patients.contraindicationPregnancy,
+        pacemaker: patients.contraindicationPacemaker,
       })
       .from(patients)
       .where(eq(patients.id, patientId))
       .limit(1);
-    return { epilepsy: row?.epilepsy ?? false, pregnancy: row?.pregnancy ?? false };
+    return {
+      epilepsy: row?.epilepsy ?? false,
+      pregnancy: row?.pregnancy ?? false,
+      pacemaker: row?.pacemaker ?? false,
+    };
   });
 }
 
