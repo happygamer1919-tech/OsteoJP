@@ -9,6 +9,17 @@ import type { Patient } from "../../../lib/patients/types";
 
 const s = getStrings(DEFAULT_LOCALE);
 
+// "Como nos conheceu?" (W5-11) — the four fixed option LABELS. The one stored in
+// patients.referral_source is either the chosen label or, for Outro, the typed
+// free-text. `referralOtherValue` is the sentinel the <select> uses for Outro.
+const referralOtherValue = "__outro__";
+const referralOptions = [
+  s["patients.referralSocial"],
+  s["patients.referralWebsite"],
+  s["patients.referralFriend"],
+] as const;
+const referralOptionSet = new Set<string>(referralOptions);
+
 type Fields = {
   fullName: string;
   dateOfBirth: string;
@@ -22,12 +33,22 @@ type Fields = {
   postalCode: string;
   city: string;
   profession: string;
+  // W5-11 — "Como nos conheceu?". `referralChoice` is the <select> value (a
+  // fixed label or the Outro sentinel); `referralOther` is the free-text shown
+  // only when Outro is picked. They collapse to one referral_source on submit.
+  referralChoice: string;
+  referralOther: string;
   // NESA contraindication flags (0031) — drive the soft booking warning (W2-08).
   contraindicationEpilepsy: boolean;
   contraindicationPregnancy: boolean;
 };
 
 function toFields(p?: Patient | null): Fields {
+  // Reverse-map a stored referral_source back into the choice/other split: a
+  // value matching one of the fixed labels selects that option; any other
+  // non-empty value is an Outro free-text; empty/null is "not specified".
+  const stored = p?.referralSource ?? "";
+  const isKnown = referralOptionSet.has(stored);
   return {
     fullName: p?.fullName ?? "",
     dateOfBirth: p?.dateOfBirth ?? "",
@@ -39,9 +60,19 @@ function toFields(p?: Patient | null): Fields {
     postalCode: p?.postalCode ?? "",
     city: p?.city ?? "",
     profession: p?.profession ?? "",
+    referralChoice: stored === "" ? "" : isKnown ? stored : referralOtherValue,
+    referralOther: stored !== "" && !isKnown ? stored : "",
     contraindicationEpilepsy: p?.contraindicationEpilepsy ?? false,
     contraindicationPregnancy: p?.contraindicationPregnancy ?? false,
   };
+}
+
+// Collapse the choice/other split into the single referral_source value written
+// to the DB: Outro -> the trimmed free-text; a fixed option -> its label;
+// nothing selected -> "" (validation normalizes to null).
+function resolveReferralSource(fields: Fields): string {
+  if (fields.referralChoice === referralOtherValue) return fields.referralOther.trim();
+  return fields.referralChoice;
 }
 
 export function PatientForm({ patient }: { patient?: Patient | null }) {
@@ -59,12 +90,18 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    // Collapse the referral choice/other split into the single stored value,
+    // dropping the UI-only split keys before the payload reaches the action.
+    const { referralChoice, referralOther, ...rest } = fields;
+    void referralChoice;
+    void referralOther;
+    const payload = { ...rest, referralSource: resolveReferralSource(fields) };
     startTransition(async () => {
       try {
         const saved =
           isEdit && patient
-            ? await updatePatient(patient.id, fields)
-            : await createPatient(fields);
+            ? await updatePatient(patient.id, payload)
+            : await createPatient(payload);
         router.push(`/patients/${saved.id}`);
         router.refresh();
       } catch (err) {
@@ -151,6 +188,28 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
             className={inputCls}
           />
         </Field>
+        <Field label={s["patients.fieldReferralSource"]}>
+          <select
+            value={fields.referralChoice}
+            onChange={(e) => set("referralChoice", e.target.value)}
+            className={inputCls}
+          >
+            <option value="">{s["patients.referralNotSpecified"]}</option>
+            <option value={s["patients.referralSocial"]}>{s["patients.referralSocial"]}</option>
+            <option value={s["patients.referralWebsite"]}>{s["patients.referralWebsite"]}</option>
+            <option value={s["patients.referralFriend"]}>{s["patients.referralFriend"]}</option>
+            <option value={referralOtherValue}>{s["patients.referralOther"]}</option>
+          </select>
+        </Field>
+        {fields.referralChoice === referralOtherValue && (
+          <Field label={s["patients.fieldReferralOther"]}>
+            <input
+              value={fields.referralOther}
+              onChange={(e) => set("referralOther", e.target.value)}
+              className={inputCls}
+            />
+          </Field>
+        )}
       </div>
       {/* NESA contraindication flags (W2-08) — drive a soft booking warning. */}
       <fieldset className="flex flex-col gap-2">
