@@ -18,8 +18,9 @@ const B = randomUUID();
 const HASH_A = "hash-A-" + A;
 const HASH_B = "hash-B-" + B;
 
-const secretBlob = (hash: string) =>
-  JSON.stringify({ secrets: { appointmentDeletePasswordHash: hash } });
+const secretBlob = (hash: string) => ({
+  secrets: { appointmentDeletePasswordHash: hash },
+});
 
 describe.skipIf(!live)("tenants.settings.secrets tenant isolation (W3-05)", () => {
   let sql: Sql;
@@ -27,10 +28,15 @@ describe.skipIf(!live)("tenants.settings.secrets tenant isolation (W3-05)", () =
   beforeAll(async () => {
     sql = connect();
     // Owner connection bypasses RLS — seed two tenants each with a secret.
+    // Bind the jsonb via `sql.json(obj)` (native jsonb param) — NOT
+    // `${JSON.stringify(obj)}::jsonb`: under postgres.js the latter binds a text
+    // value and the text→jsonb cast stores a jsonb *string scalar* (jsonb_typeof
+    // 'string'), so `settings->'secrets'->>…` reads null. `sql.json` stores a
+    // jsonb object, the way the app persists tenant settings.
     await sql`insert into tenants (id, name, slug, settings)
-              values (${A}, 'Secret A', ${`sec-a-${A}`}, ${secretBlob(HASH_A)}::jsonb)`;
+              values (${A}, 'Secret A', ${`sec-a-${A}`}, ${sql.json(secretBlob(HASH_A))})`;
     await sql`insert into tenants (id, name, slug, settings)
-              values (${B}, 'Secret B', ${`sec-b-${B}`}, ${secretBlob(HASH_B)}::jsonb)`;
+              values (${B}, 'Secret B', ${`sec-b-${B}`}, ${sql.json(secretBlob(HASH_B))})`;
   });
 
   afterAll(async () => {

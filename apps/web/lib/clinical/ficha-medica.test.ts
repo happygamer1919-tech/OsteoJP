@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   FICHA_MEDICA_AI_KEYS,
   FICHA_MEDICA_KEY,
+  projectAiPayloadOntoFichaFields,
   readFichaKeyPath,
 } from "./ficha-medica";
 import { resolveCurrentTemplates, type VersionedTemplate } from "./template-version";
@@ -132,5 +133,82 @@ describe("readFichaKeyPath — dotted-path resolution for the compatibility asse
   it("returns undefined for an absent path (never throws)", () => {
     expect(readFichaKeyPath(src, "systems_review.respiratory")).toBeUndefined();
     expect(readFichaKeyPath(src, "missing.deep.path")).toBeUndefined();
+  });
+});
+
+describe("projectAiPayloadOntoFichaFields — W5-17 Assumir → Ficha Médica editor mapping", () => {
+  // The raw payload as the ingestion endpoint stores it (store.ts): the twelve
+  // keys sit under data._aiIngestionRaw at their Ficha Médica field paths
+  // (identity, W5-13). Distinct sentinel values so each mapped value is assertable.
+  const rawPayload = {
+    template: "osteopathy",
+    consultation_reason: "VAL_consultation_reason",
+    relief_aggravation: "VAL_relief_aggravation",
+    clinical_history: "VAL_clinical_history",
+    systems_review: {
+      neurological: "VAL_neurological",
+      cardiovascular: "VAL_cardiovascular",
+      respiratory: "VAL_respiratory",
+      gastrointestinal: "VAL_gastrointestinal",
+      urological_gynecological: "VAL_urological_gynecological",
+      endocrine: "VAL_endocrine",
+    },
+    treatment_objectives: "VAL_treatment_objectives",
+    treatment_plan: "VAL_treatment_plan",
+    observations: "VAL_observations",
+  };
+  const expectedFor = (path: string) => `VAL_${path.split(".").at(-1)!}`;
+
+  it("projects all twelve AI values onto their Ficha Médica field paths — EDITABLE, none dropped", () => {
+    const { data, projected, absent } = projectAiPayloadOntoFichaFields({
+      _aiIngestionRaw: rawPayload,
+    });
+    // Every one of the twelve keys is now reachable at its FIELD PATH in `data`
+    // (not just under _aiIngestionRaw) so the editor renders it in its field.
+    for (const path of FICHA_MEDICA_AI_KEYS) {
+      expect(readFichaKeyPath(data, path), `key "${path}"`).toBe(expectedFor(path));
+    }
+    expect(projected).toEqual([...FICHA_MEDICA_AI_KEYS]);
+    expect(absent).toEqual([]);
+  });
+
+  it("keeps _aiIngestionRaw untouched as the source of truth", () => {
+    const { data } = projectAiPayloadOntoFichaFields({ _aiIngestionRaw: rawPayload });
+    expect(data._aiIngestionRaw).toEqual(rawPayload);
+  });
+
+  it("never overwrites a value already saved at a field path (a reviewer edit wins)", () => {
+    const { data } = projectAiPayloadOntoFichaFields({
+      _aiIngestionRaw: rawPayload,
+      consultation_reason: "REVIEWER_EDIT",
+    });
+    // The reviewer's saved value survives; the AI value does NOT clobber it.
+    expect(data.consultation_reason).toBe("REVIEWER_EDIT");
+    // The other eleven still project.
+    expect(readFichaKeyPath(data, "observations")).toBe("VAL_observations");
+  });
+
+  it("a key the AI did not fill is recorded absent, never invented — field renders empty", () => {
+    const partial = {
+      _aiIngestionRaw: {
+        template: "osteopathy",
+        consultation_reason: "only_this_one",
+        systems_review: { neurological: "n" },
+      },
+    };
+    const { data, projected, absent } = projectAiPayloadOntoFichaFields(partial);
+    expect(readFichaKeyPath(data, "consultation_reason")).toBe("only_this_one");
+    expect(readFichaKeyPath(data, "systems_review.neurological")).toBe("n");
+    // Unfilled keys are absent (empty/editable), not fabricated.
+    expect(readFichaKeyPath(data, "observations")).toBeUndefined();
+    expect(projected).toEqual(["consultation_reason", "systems_review.neurological"]);
+    expect(absent.length).toBe(FICHA_MEDICA_AI_KEYS.length - 2);
+  });
+
+  it("a record with no _aiIngestionRaw is returned unchanged (not an AI draft)", () => {
+    const input = { consultation_reason: "manual" };
+    const { data, projected } = projectAiPayloadOntoFichaFields(input);
+    expect(data).toBe(input);
+    expect(projected).toEqual([]);
   });
 });

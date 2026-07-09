@@ -70,6 +70,12 @@ export type RecordDetail = {
   episodeTitle: string | null;
   formTemplateId: string | null;
   status: RecordStatus;
+  /** Origin axis (schema.ts `source`); 'ai_ingested' records flow through the
+   *  Revisão Consulta review path (W5-17). */
+  source: string;
+  /** Orthogonal AI-review axis (schema.ts ai_review_state); null for records
+   *  that never entered the AI/patient review queue (rule #4). */
+  aiReviewState: AiReviewState | null;
   version: number;
   supersedesId: string | null;
   data: Record<string, unknown>;
@@ -147,6 +153,8 @@ export async function getRecordDetail(
         episodeTitle: clinicalEpisodes.title,
         formTemplateId: clinicalRecords.formTemplateId,
         status: clinicalRecords.status,
+        source: clinicalRecords.source,
+        aiReviewState: clinicalRecords.aiReviewState,
         version: clinicalRecords.version,
         supersedesId: clinicalRecords.supersedesId,
         data: clinicalRecords.data,
@@ -192,6 +200,8 @@ export async function getRecordDetail(
       episodeTitle: r.episodeTitle,
       formTemplateId: r.formTemplateId,
       status: r.status as RecordStatus,
+      source: r.source,
+      aiReviewState: (r.aiReviewState as AiReviewState | null) ?? null,
       version: r.version,
       supersedesId: r.supersedesId,
       data: (r.data as Record<string, unknown>) ?? {},
@@ -254,6 +264,43 @@ export async function listActiveTemplates(ctx: RequestContext): Promise<Template
       version: r.version,
     }));
     return resolveCurrentTemplates(options);
+  });
+}
+
+/**
+ * Resolve the current (highest-version, active) Ficha Médica template — its id,
+ * title and schema. W5-17: an AI-ingested draft is inserted with
+ * `formTemplateId = null` (store.ts persists only the raw payload), so opening it
+ * in the Ficha Médica editor needs the template resolved BY KEY, not by the
+ * (absent) pinned id. Uses the same key-identity + highest-version rule as the
+ * creation picker (FICHA_MEDICA_KEY, resolveCurrentTemplates). Returns null if no
+ * active Ficha Médica template exists (a seed/deploy fault, surfaced by the
+ * caller, never silently ignored).
+ */
+export async function getFichaMedicaTemplate(
+  ctx: RequestContext,
+): Promise<{ id: string; title: Localized | null; schema: unknown } | null> {
+  assertCan(ctx.role, "clinical_records:read");
+  return runScoped(ctx, async (tx) => {
+    const rows = await tx
+      .select({
+        id: formTemplates.id,
+        key: formTemplates.key,
+        title: formTemplates.title,
+        version: formTemplates.version,
+        schema: formTemplates.schema,
+      })
+      .from(formTemplates)
+      .where(and(eq(formTemplates.isActive, true), eq(formTemplates.key, FICHA_MEDICA_KEY)))
+      .orderBy(asc(formTemplates.version));
+    if (rows.length === 0) return null;
+    // Highest active version = the current Ficha Médica (rule #5 version collapse).
+    const current = rows.reduce((a, b) => (b.version > a.version ? b : a));
+    return {
+      id: current.id,
+      title: (current.title as Localized | null) ?? null,
+      schema: current.schema,
+    };
   });
 }
 
