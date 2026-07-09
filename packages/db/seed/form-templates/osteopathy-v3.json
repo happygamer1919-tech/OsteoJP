@@ -481,17 +481,171 @@
         },
         "ai_extractable": false
       },
-      "treatment_objectives": {
+      "mobilidade": {
+        "type": "object",
+        "x-label": {
+          "pt": "Mobilidade Activa / Passiva",
+          "en": "Active / Passive Mobility"
+        },
+        "x-widget": "mobilidade",
+        "x-hint": {
+          "pt": "Clique num círculo (Cervical, Dorsal, Lombar) para colocar marcadores. Ponto = Mobilidade Activa, estrela = Mobilidade Passiva. Pode inserir tantos marcadores quantos desejar por círculo.",
+          "en": "Click a circle (Cervical, Dorsal, Lumbar) to place markers. Dot = Active Mobility, star = Passive Mobility. Insert as many markers as needed per circle."
+        },
+        "description": "Three circle diagrams (Cervical, Dorsal, Lombar). Each holds an unlimited array of markers { marker_type: 'activa'|'passiva', x, y } at 0-1 normalized coordinates.",
+        "properties": {
+          "cervical": {
+            "type": "array",
+            "x-label": {
+              "pt": "Cervical",
+              "en": "Cervical"
+            },
+            "items": {
+              "type": "object",
+              "required": [
+                "marker_type",
+                "x",
+                "y"
+              ],
+              "properties": {
+                "marker_type": {
+                  "type": "string",
+                  "enum": [
+                    "activa",
+                    "passiva"
+                  ]
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "dorsal": {
+            "type": "array",
+            "x-label": {
+              "pt": "Dorsal",
+              "en": "Dorsal"
+            },
+            "items": {
+              "type": "object",
+              "required": [
+                "marker_type",
+                "x",
+                "y"
+              ],
+              "properties": {
+                "marker_type": {
+                  "type": "string",
+                  "enum": [
+                    "activa",
+                    "passiva"
+                  ]
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "lombar": {
+            "type": "array",
+            "x-label": {
+              "pt": "Lombar",
+              "en": "Lumbar"
+            },
+            "items": {
+              "type": "object",
+              "required": [
+                "marker_type",
+                "x",
+                "y"
+              ],
+              "properties": {
+                "marker_type": {
+                  "type": "string",
+                  "enum": [
+                    "activa",
+                    "passiva"
+                  ]
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "ai_extractable": false
+      },
+      "mobilidade_observacoes": {
         "type": [
           "string",
           "null"
         ],
         "x-label": {
-          "pt": "Objectivos do Tratamento",
-          "en": "Treatment Objectives"
+          "pt": "Observações Mobilidade Activa / Passiva",
+          "en": "Active / Passive Mobility Notes"
         },
         "x-widget": "textarea",
-        "ai_extractable": true
+        "ai_extractable": false
+      },
+      "neurological_tests": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Testes Neurológicos",
+          "en": "Neurological Tests"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "special_tests": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Testes Especiais",
+          "en": "Special Tests"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "diagnostico": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Diagnóstico",
+          "en": "Diagnosis"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "tratamento": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Tratamento",
+          "en": "Treatment"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": false
       },
       "treatment_plan": {
         "type": [
@@ -501,6 +655,18 @@
         "x-label": {
           "pt": "Plano de Tratamento",
           "en": "Treatment Plan"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": true
+      },
+      "treatment_objectives": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Objectivos do Tratamento",
+          "en": "Treatment Objectives"
         },
         "x-widget": "textarea",
         "ai_extractable": true
@@ -529,6 +695,6 @@
   "_meta": {
     "source": "W5-13 ficha-unification. Evolves osteopathy v2 (Fisiozero osteopathy episode form) into the unified Ficha Médica per SPEC-ficha-medica.md sec 1-2.",
     "reviewed_by": "W5-13 (Claude Opus 4.8)",
-    "version_note": "v3 — retitled to \"Ficha Médica\" (the single template offered on record creation). ALL twelve AI field keys UNCHANGED from v2 (consultation_reason, relief_aggravation, clinical_history, systems_review.{neurological,cardiovascular,respiratory,gastrointestinal,urological_gynecological,endocrine}, treatment_objectives, treatment_plan, observations) so the template=osteopathy ingestion selector maps to Ficha Médica by IDENTITY, zero change on the external side. Field set kept identical to v2 for this loop; W5-14/W5-15 add the new fields (mobilidade, testes, diagnostico, tratamento, signature/consent) to this schema. Bumped (not edited in place) because v2 is immutable once referenced by a clinical_record (CLAUDE.md rule 5)."
+    "version_note": "v3 — retitled to \"Ficha Médica\" (the single template offered on record creation). ALL twelve AI field keys UNCHANGED from v2 (consultation_reason, relief_aggravation, clinical_history, systems_review.{neurological,cardiovascular,respiratory,gastrointestinal,urological_gynecological,endocrine}, treatment_objectives, treatment_plan, observations) so the template=osteopathy ingestion selector maps to Ficha Médica by IDENTITY, zero change on the external side. Bumped (not edited in place vs v2) because v2 is immutable once referenced by a clinical_record (CLAUDE.md rule 5). W5-15 (SPEC sec 5.10-5.13) added, AFTER bodychart: mobilidade (three-circle Activa/Passiva marker widget, ai_extractable false), mobilidade_observacoes, neurological_tests, special_tests, diagnostico, tratamento (all ai_extractable false), then the existing treatment_plan + treatment_objectives (unchanged keys, still ai_extractable true) placed AFTER tratamento (Q-W5-2 keep both), then observations."
   }
 }

@@ -44,7 +44,8 @@ export type Widget =
   | "string_list" // array of strings (e.g. CID codes)
   | "checkbox_group" // object of booleans (+ optional "other" text)
   | "subfields" // object of nested fields (e.g. systems review)
-  | "bodychart"; // array of markers placed on the body diagram
+  | "bodychart" // array of markers placed on the body diagram
+  | "mobilidade"; // three-circle Activa/Passiva marker widget (Cervical/Dorsal/Lombar)
 
 /** Coerce the untyped jsonb `schema` column into a TemplateSchema, or null. */
 export function parseTemplateSchema(raw: unknown): TemplateSchema | null {
@@ -88,6 +89,7 @@ export function widgetOf(key: string, field: FieldSchema): Widget {
   ) {
     return "bodychart";
   }
+  if (field["x-widget"] === "mobilidade") return "mobilidade";
   if (field["x-widget"] === "checkbox_group") return "checkbox_group";
   if (hasType(field, "object") && field.properties) {
     const allBoolean = Object.values(field.properties).every(

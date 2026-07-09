@@ -119,6 +119,120 @@ test.describe("authoring (therapist)", () => {
     await expect(form.locator('input[type="date"]')).toHaveCount(1);
   });
 
+  // W5-15 (SPEC-ficha-medica.md sec 5.10-5.13): the Mobilidade Activa/Passiva
+  // three-circle widget (unlimited dot/star markers per circle, Limpar per
+  // circle, persist + restore) plus the 5.10-5.13 fields in the authoritative
+  // sequence. Locators are scoped to #record-form and to each circle's
+  // aria-label to avoid strict-mode ambiguity across the three circles.
+  test("Mobilidade widget: place Activa/Passiva markers on all three circles, Limpar clears one, persist + restore; 5.10-5.13 render in order", async ({
+    page,
+  }) => {
+    await page.goto("/clinical/new");
+    const patient = page.getByRole("combobox", { name: /Paciente/i });
+    await patient.click();
+    await patient.fill(PATIENTS.maria.name);
+    await page.getByRole("option", { name: PATIENTS.maria.name }).click();
+    await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
+    await page.getByRole("button", { name: "Criar ficha" }).click();
+    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+
+    const form = page.locator("#record-form");
+
+    // 5.10-5.13 fields render in the authoritative sequence (scoped to the form).
+    for (const label of [
+      "Mobilidade Activa / Passiva",
+      "Observações Mobilidade Activa / Passiva",
+      "Testes Neurológicos",
+      "Testes Especiais",
+      "Diagnóstico",
+      "Tratamento",
+      "Plano de Tratamento",
+      "Objectivos do Tratamento",
+      "Observações",
+    ]) {
+      await expect(form.getByText(label, { exact: false }).first()).toBeVisible();
+    }
+
+    const cervical = form.getByRole("application", { name: "Cervical" });
+    const dorsal = form.getByRole("application", { name: "Dorsal" });
+    const lombar = form.getByRole("application", { name: "Lombar" });
+    const markerSelect = form.getByRole("combobox").filter({ hasText: "Mobilidade Activa" }).first();
+
+    // Place an Activa (dot) marker on each circle.
+    await markerSelect.selectOption({ label: "Mobilidade Activa" });
+    for (const circle of [cervical, dorsal, lombar]) {
+      await circle.click({ position: { x: 40, y: 40 } });
+    }
+    // Switch to Passiva and place a star marker on each circle.
+    await markerSelect.selectOption({ label: "Mobilidade Passiva" });
+    for (const circle of [cervical, dorsal, lombar]) {
+      await circle.click({ position: { x: 100, y: 100 } });
+    }
+
+    // Each circle now holds 1 Activa (dot) + 1 Passiva (star).
+    for (const circle of [cervical, dorsal, lombar]) {
+      await expect(circle.locator('[data-marker="activa"]')).toHaveCount(1);
+      await expect(circle.locator('[data-marker="passiva"]')).toHaveCount(1);
+    }
+
+    // Limpar clears exactly the Dorsal circle; Cervical + Lombar keep their markers.
+    await dorsal
+      .locator("xpath=ancestor::div[1]")
+      .getByRole("button", { name: "Limpar marcadores" })
+      .click();
+    await expect(dorsal.locator('[data-marker]')).toHaveCount(0);
+    await expect(cervical.locator('[data-marker]')).toHaveCount(2);
+    await expect(lombar.locator('[data-marker]')).toHaveCount(2);
+
+    // Motivos (consultation_reason) is a required field — the save validates the
+    // schema's required set (episode_date is prefilled), so fill it before Guardar.
+    await form.getByLabel(/Motivos da Consulta/i).fill("Dor lombar de esforço.");
+
+    // Persist (Guardar) then reload — markers restore from mobilidade.*.
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(page.getByText("Ficha guardada", { exact: false }).first()).toBeVisible({
+      timeout: 12_000,
+    });
+    await page.reload();
+
+    const cervical2 = page.locator("#record-form").getByRole("application", { name: "Cervical" });
+    const dorsal2 = page.locator("#record-form").getByRole("application", { name: "Dorsal" });
+    const lombar2 = page.locator("#record-form").getByRole("application", { name: "Lombar" });
+    await expect(cervical2.locator('[data-marker="activa"]')).toHaveCount(1);
+    await expect(cervical2.locator('[data-marker="passiva"]')).toHaveCount(1);
+    await expect(lombar2.locator('[data-marker]')).toHaveCount(2);
+    await expect(dorsal2.locator('[data-marker]')).toHaveCount(0);
+  });
+
+  // W5-15: a finalized (signed/locked) record renders the Mobilidade widget
+  // read-only — no marker-type select, no Limpar action, and clicking a circle
+  // places nothing (the circle is not an interactive application).
+  test("Mobilidade widget is read-only on a finalized record", async ({ page }) => {
+    await page.goto("/clinical/new");
+    const patient = page.getByRole("combobox", { name: /Paciente/i });
+    await patient.click();
+    await patient.fill(PATIENTS.maria.name);
+    await page.getByRole("option", { name: PATIENTS.maria.name }).click();
+    await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
+    await page.getByRole("button", { name: "Criar ficha" }).click();
+    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+
+    // Place one Activa marker on Cervical, then sign/lock.
+    const form = page.locator("#record-form");
+    await form.getByRole("application", { name: "Cervical" }).click({ position: { x: 40, y: 40 } });
+    await page.getByRole("button", { name: "Assinar e bloquear" }).click();
+    await expect(page.getByText("Ficha finalizada e imutável.", { exact: false })).toBeVisible({
+      timeout: 12_000,
+    });
+
+    // Read-only: the placed marker still renders, but the circle is no longer an
+    // interactive application and the Limpar action + marker-type select are gone.
+    await expect(page.getByText("Cervical").first()).toBeVisible();
+    await expect(page.getByRole("application", { name: "Cervical" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Limpar marcadores" })).toHaveCount(0);
+    await expect(page.locator('[data-marker="activa"]').first()).toBeVisible();
+  });
+
   // W2-06: fichas entry points live in the patient-profile Registos clínicos tab.
   test("patient Registos tab creates a ficha (scoped) and surfaces the addendum action", async ({
     page,
