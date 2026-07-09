@@ -18,6 +18,11 @@ import {
 } from "@/lib/clinical/storage";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { generateClinicalReportPdf } from "@/lib/clinical/report";
+import { generateRgpdFormPdf } from "@/lib/clinical/rgpd/generate";
+import {
+  confirmPatientDocument,
+  createPatientDocumentUploadUrl,
+} from "@/lib/patients/documents";
 import { isClinicalError } from "@/lib/clinical/errors";
 import type { SaveState } from "./RecordForm";
 
@@ -94,6 +99,87 @@ export async function downloadReportUrlAction(
   } catch {
     // not_found / not_printable / render failure — never surface internals/PII.
     return { url: null };
+  }
+}
+
+/**
+ * Generate the branded A4 RGPD print-and-sign form (SPEC sec 7.2) for a record's
+ * patient and return a short-lived SIGNED download URL. The PDF is generated
+ * server-side via lib/clinical/rgpd (tenant-scoped read), written to
+ * tenant-prefixed Storage, and handed back as a 60s Supabase signed URL — the URL
+ * carries an opaque token + expiry only, never PII, and the bytes are never
+ * proxied through Next. The wording is PENDENTE-JP placeholder (Q-W5-3).
+ * Read-only on clinical_records. Available in any record status (this is a blank
+ * consent form the patient signs by hand, not a finalized-record printout).
+ */
+export async function generateRgpdFormUrlAction(
+  id: string,
+): Promise<{ url: string | null }> {
+  const ctx = await requireRequestContext();
+  // A reader of clinical records may print the RGPD form. Reception (no
+  // clinical_records:read) is refused here (defense in depth beyond the layout).
+  if (!can(ctx.role, "clinical_records:read")) return { url: null };
+
+  try {
+    const pdf = await generateRgpdFormPdf(toClaims(ctx), id, locale);
+
+    // Tenant-prefixed object path; record id only — no PII.
+    const path = `${ctx.tenantId}/rgpd-forms/${id}/${randomUUID()}.pdf`;
+    const admin = createSupabaseAdminClient();
+    const up = await admin.storage
+      .from(ATTACHMENTS_BUCKET)
+      .upload(path, pdf.bytes, { contentType: "application/pdf", upsert: true });
+    if (up.error) return { url: null };
+
+    const signed = await admin.storage
+      .from(ATTACHMENTS_BUCKET)
+      .createSignedUrl(path, 60, { download: pdf.filename });
+    if (signed.error || !signed.data) return { url: null };
+    return { url: signed.data.signedUrl };
+  } catch {
+    // not_found / render failure — never surface internals or PII.
+    return { url: null };
+  }
+}
+
+/**
+ * Mint a one-time signed upload URL for the patient's on-screen SIGNATURE image
+ * (SPEC sec 7.1). Reuses the patient-documents signed-URL path so the signature
+ * lands in the patient's Documentos, tenant-scoped, signed URL only, never
+ * public. Gated server-side on patients:write inside the lib helper. The bytes
+ * are uploaded DIRECTLY to Storage by the client — never through Next.
+ */
+export async function createSignatureUploadUrlAction(
+  patientId: string,
+  fileName: string,
+): Promise<{ ok: true; path: string; token: string } | { ok: false }> {
+  const ctx = await requireRequestContext();
+  try {
+    const { path, token } = await createPatientDocumentUploadUrl(ctx, patientId, fileName);
+    return { ok: true, path, token };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * Record the uploaded signature image as a patient document (Documentos) + audit
+ * (patient_document.create). Gated on patients:write in the lib helper.
+ */
+export async function confirmSignatureAction(input: {
+  patientId: string;
+  path: string;
+  fileName: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+}): Promise<{ ok: boolean }> {
+  const ctx = await requireRequestContext();
+  try {
+    await confirmPatientDocument(ctx, input);
+    revalidatePath(`/patients/${input.patientId}`);
+    return { ok: true };
+  } catch {
+    return { ok: false };
   }
 }
 

@@ -14,9 +14,17 @@ import {
 } from "@/lib/clinical/form-template";
 import { s, locale } from "@/lib/i18n";
 
+import {
+  readConsentState,
+  writeConsentState,
+  type ConsentDecision,
+  type ConsentItemKey,
+} from "@/lib/clinical/consent";
+
 import { fieldAnchorId } from "./anchors";
 import { BodyChart, type Marker } from "./BodyChart";
 import { MobilidadeChart, type MobilidadeValue } from "./MobilidadeChart";
+import { SignatureConsent } from "./SignatureConsent";
 
 export type SaveState = { ok: boolean; errors?: Record<string, string>; code?: string };
 
@@ -72,6 +80,8 @@ export function RecordForm({
   statusChip,
   extraActions,
   patientSex,
+  patientId,
+  recordId,
 }: {
   schema: TemplateSchema;
   initialData: Record<string, unknown>;
@@ -80,6 +90,8 @@ export function RecordForm({
   statusChip: ReactNode;
   extraActions: ReactNode;
   patientSex?: string | null;
+  patientId: string;
+  recordId: string;
 }) {
   const [state, formAction, pending] = useActionState(saveAction, initialState);
   // SPEC sec 5.1 / 4: prefill episode_date to today (Lisbon) when the template
@@ -98,6 +110,16 @@ export function RecordForm({
   const required = new Set(schema.required ?? []);
   const setField = (key: string, value: unknown) => setData((d) => ({ ...d, [key]: value }));
   const errors = state.errors ?? {};
+
+  // SPEC sec 5.14 / 7.3: the Consinto block persists MIGRATION-FREE inside the
+  // record `data` under the reserved `_consent` key. Read the current decisions
+  // from `data` and fold updates back in — they save with the ficha through the
+  // one hidden `data` field, no separate action/table. The per-item update
+  // recomputes the block from the FRESH `d` inside the functional updater so two
+  // toggles in one render batch never clobber a sibling (stale-snapshot safe).
+  const consent = readConsentState(data);
+  const setDecision = (key: ConsentItemKey, decision: ConsentDecision) =>
+    setData((d) => writeConsentState(d, { ...readConsentState(d), [key]: decision }));
 
   return (
     <>
@@ -163,6 +185,16 @@ export function RecordForm({
           </>
         );
       })()}
+
+      {/* SPEC sec 5.14 / 7: signature + Gerar PDF + Consinto block, after the
+          ficha body (5.13 observations). Read-only on finalized records. */}
+      <SignatureConsent
+        patientId={patientId}
+        recordId={recordId}
+        readOnly={readOnly}
+        consent={consent}
+        onSetDecision={setDecision}
+      />
 
     </form>
 

@@ -29,6 +29,11 @@ vi.mock("server-only", () => ({}));
 vi.mock("./BodyChart", () => ({
   BodyChart: () => createElement("div", { "data-testid": "bodychart" }),
 }));
+// SignatureConsent pulls in the supabase browser client + server actions — out
+// of scope for this pure structure render; stub it (W5-16 covers it separately).
+vi.mock("./SignatureConsent", () => ({
+  SignatureConsent: () => createElement("div", { "data-testid": "signature-consent" }),
+}));
 vi.mock("@osteojp/ui", () => {
   const passthrough =
     (tag: string) =>
@@ -90,6 +95,8 @@ function render(overrides: Record<string, unknown> = {}, readOnly = false): stri
       statusChip: null,
       extraActions: null,
       patientSex: "female",
+      patientId: "00000000-0000-0000-0000-000000000001",
+      recordId: "00000000-0000-0000-0000-000000000002",
     }),
   );
 }

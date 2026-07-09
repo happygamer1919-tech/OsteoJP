@@ -189,7 +189,9 @@ test.describe("authoring (therapist)", () => {
     await form.getByLabel(/Motivos da Consulta/i).fill("Dor lombar de esforço.");
 
     // Persist (Guardar) then reload — markers restore from mobilidade.*.
-    await page.getByRole("button", { name: "Guardar" }).click();
+    // exact: the signature section adds a "Guardar assinatura" button, which a
+    // substring "Guardar" match would also catch (strict-mode violation).
+    await page.getByRole("button", { name: "Guardar", exact: true }).click();
     await expect(page.getByText("Ficha guardada", { exact: false }).first()).toBeVisible({
       timeout: 12_000,
     });
