@@ -4,13 +4,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireRequestContext } from "@/lib/auth/context";
-import { parseTemplateSchema, labelOf, topLevelFields } from "@/lib/clinical/form-template";
+import { parseTemplateSchema, topLevelFields } from "@/lib/clinical/form-template";
 import { getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
 import { s, locale } from "@/lib/i18n";
 
 import { Attachments } from "./Attachments";
 import { DownloadReportButton } from "./DownloadReportButton";
 import { fieldAnchorId } from "./anchors";
+import { HIDDEN_FIELD_KEYS, sectionLabel } from "./field-display";
 import { PatientHeaderStrip } from "./PatientHeaderStrip";
 import { RecordForm } from "./RecordForm";
 import { canDownloadReport, statusLabel } from "./record-status";
@@ -47,7 +48,9 @@ export default async function RecordDetailPage({
   const canVersion = readOnly && can(ctx.role, "clinical_records:author");
 
   const anchors = schema
-    ? topLevelFields(schema).map(([key, field]) => ({ id: fieldAnchorId(key), label: labelOf(field, locale, key) }))
+    ? topLevelFields(schema)
+        .filter(([key]) => !HIDDEN_FIELD_KEYS.has(key))
+        .map(([key, field]) => ({ id: fieldAnchorId(key), label: sectionLabel(field, locale, key) }))
     : [];
 
   const statusChip = (

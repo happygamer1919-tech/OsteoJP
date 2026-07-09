@@ -96,27 +96,33 @@ test.describe("authoring (therapist)", () => {
     await expect(form.getByText("NIF", { exact: false })).toHaveCount(0);
     await expect(form.getByText("Profissão", { exact: false })).toHaveCount(0);
 
-    // 5.1 header row: Data do Episódio prefilled today, Peso + Altura present.
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date());
-    await expect(form.locator('input[type="date"]').first()).toHaveValue(today);
+    // 5.1 header row (W5-19 ruling B): NO Data do Episódio input — Peso + Altura
+    // present and adjacent. The episode date is auto-stamped from created_at.
     await expect(form.getByText("Peso (kg)")).toBeVisible();
     await expect(form.getByText("Altura (cm)")).toBeVisible();
 
-    // 5.4 Problemas de Saúde: all 19 conditions render as checkboxes (Lúpus
-    // included) with the free-text Outros present. Scope to the form to avoid
-    // the header strip / rail. Assert a representative spread incl. Lúpus.
+    // W5-19 ruling C — the section is now "Outros" (not "Problemas de Saúde"):
+    // all 19 conditions render as checkboxes (Lúpus included). Scope to the form
+    // to avoid the header strip / rail. Assert a representative spread incl. Lúpus.
     for (const label of ["Fumador", "Lúpus", "Diabetes", "COVID-19", "Hipotensão", "Neoplasia"]) {
       await expect(form.getByText(label, { exact: false }).first()).toBeVisible();
     }
     await expect(form.getByText("Outros", { exact: false }).first()).toBeVisible();
+    await expect(form.getByText("Problemas de Saúde", { exact: false })).toHaveCount(0);
+    // The free-text renders with NO visible label — an unlabeled input carrying
+    // the exact placeholder (accessible name via aria-label).
+    await expect(
+      form.getByPlaceholder("Outras condições, alergias, medicamentos..."),
+    ).toBeVisible();
 
     // 5.4 four-column grid: the checkbox grid carries the lg:grid-cols-4 class.
     await expect(form.locator(".lg\\:grid-cols-4").first()).toBeAttached();
 
-    // SPEC sec 4: NO manual created-date picker. The only date input is
-    // episode_date (the header row); there is no second "created"/"criado" date
-    // field to hand-type.
-    await expect(form.locator('input[type="date"]')).toHaveCount(1);
+    // W5-19 ruling B: NO manual created-date picker anywhere — there is no
+    // date input and no "Data do Episódio" label in the form. The created
+    // instant shows read-only in the header strip ("Criado em") only.
+    await expect(form.locator('input[type="date"]')).toHaveCount(0);
+    await expect(form.getByText("Data do Episódio", { exact: false })).toHaveCount(0);
   });
 
   // W5-15 (SPEC-ficha-medica.md sec 5.10-5.13): the Mobilidade Activa/Passiva
@@ -185,7 +191,8 @@ test.describe("authoring (therapist)", () => {
     await expect(lombar.locator('[data-marker]')).toHaveCount(2);
 
     // Motivos (consultation_reason) is a required field — the save validates the
-    // schema's required set (episode_date is prefilled), so fill it before Guardar.
+    // schema's required set (episode_date is auto-stamped server-side from
+    // created_at, W5-19), so only Motivos must be filled before Guardar.
     await form.getByLabel(/Motivos da Consulta/i).fill("Dor lombar de esforço.");
 
     // Persist (Guardar) then reload — markers restore from mobilidade.*.

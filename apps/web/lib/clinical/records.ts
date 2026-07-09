@@ -408,6 +408,7 @@ export async function updateRecordData(
       .select({
         status: clinicalRecords.status,
         schema: formTemplates.schema,
+        createdAt: clinicalRecords.createdAt,
       })
       .from(clinicalRecords)
       .leftJoin(formTemplates, eq(formTemplates.id, clinicalRecords.formTemplateId))
@@ -419,19 +420,37 @@ export async function updateRecordData(
     if (row.status !== "draft") throw new ClinicalError("finalized");
 
     const schema = parseTemplateSchema(row.schema);
+    // Ruling B (W5-19): episode_date has no manual input. When the template
+    // carries it and the record has no value yet, stamp it from the record's
+    // created_at (Europe/Lisbon civil date) so the `required` field stays valid
+    // without a hand-typed date. Existing values round-trip unchanged.
+    const ed = data["episode_date"];
+    const needsEpisodeDate =
+      schema != null &&
+      "episode_date" in schema.properties &&
+      (ed == null || (typeof ed === "string" && ed.trim() === ""));
+    const recordData = needsEpisodeDate
+      ? {
+          ...data,
+          episode_date: new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Europe/Lisbon",
+          }).format(row.createdAt),
+        }
+      : data;
+
     if (schema) {
-      const result = validateRecordData(schema, data);
+      const result = validateRecordData(schema, recordData);
       if (!result.ok) throw new ClinicalError("validation", result.errors);
     }
 
-    await tx.update(clinicalRecords).set({ data }).where(eq(clinicalRecords.id, id));
+    await tx.update(clinicalRecords).set({ data: recordData }).where(eq(clinicalRecords.id, id));
     await writeClinicalAudit(tx, {
       tenantId: ctx.tenantId,
       actorUserId: ctx.userId,
       action: "clinical_record.update",
       entityType: "clinical_record",
       entityId: id,
-      metadata: { fields: Object.keys(data) },
+      metadata: { fields: Object.keys(recordData) },
       ip,
     });
   });
