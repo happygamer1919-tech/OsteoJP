@@ -944,6 +944,7 @@
   "marcacoes.errorTitle": "Could not load the bookings",
   "marcacoes.errorHelp": "Check your connection and try again.",
   "clinical.stringListPlaceholder": "A, B, C",
+  "clinical.healthProblemsOtherPlaceholder": "Other conditions, allergies, medications...",
   "app.title": "OsteoJP Clinical Platform",
   "nav.ariaLabel": "Main navigation",
   "nav.label": "Navigation",

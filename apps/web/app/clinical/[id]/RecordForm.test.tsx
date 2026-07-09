@@ -4,11 +4,13 @@
  *
  * Renders the Ficha Médica (osteopathy v3) template through the real RecordForm
  * and pins the sec 5 structure that W5-14 delivers:
- *  - the Problemas de Saúde checkbox_group renders ALL 19 conditions in a
- *    FOUR-COLUMN grid, with the free-text "Outros" AFTER the grid (bug fix);
+ *  - the health_problems checkbox_group renders ALL 19 conditions in a
+ *    FOUR-COLUMN grid, with the free-text sub-field AFTER the grid (bug fix);
+ *  - W5-19 ruling C: the section is titled "Outros" (renderer override), and
+ *    the free-text renders unlabeled with the guidance placeholder;
  *  - the 5.1 header row keeps Peso (weight_kg) and Altura (height_cm) ADJACENT;
- *  - no manual created-date picker exists (sec 4: created_at is auto-stamped);
- *  - episode_date is prefilled to today and stays editable;
+ *  - W5-19 ruling B: no episode_date input renders (created_at is auto-stamped
+ *    server-side); no manual created-date picker exists (sec 4);
  *  - NO-DUPLICATION (sec 3): the ficha renders no nome/NIF/contactos/morada/
  *    profissão input — those live on the patient profile, not the ficha.
  *
@@ -45,7 +47,8 @@ vi.mock("@osteojp/ui", () => {
     Card: passthrough("div"),
     Field: ({ label, children }: { label?: ReactNode; children?: ReactNode }) =>
       createElement("label", null, label as ReactNode, children as ReactNode),
-    Input: ({ type }: { type?: string }) => createElement("input", { type: type ?? "text" }),
+    Input: ({ type, placeholder, "aria-label": ariaLabel }: { type?: string; placeholder?: string; "aria-label"?: string }) =>
+      createElement("input", { type: type ?? "text", placeholder, "aria-label": ariaLabel }),
     Textarea: () => createElement("textarea"),
     Checkbox: ({ label }: { label?: ReactNode }) =>
       createElement("label", { "data-role": "checkbox" }, label as ReactNode),
@@ -101,10 +104,11 @@ function render(overrides: Record<string, unknown> = {}, readOnly = false): stri
   );
 }
 
-describe("Problemas de Saúde grid (SPEC 5.4) — 19 conditions, four columns, Outros after", () => {
+describe("Outros grid (SPEC 5.4 + W5-19 ruling C) — 19 conditions, four columns, unlabeled free-text after", () => {
   const html = render();
+  const PLACEHOLDER = "Outras condições, alergias, medicamentos...";
 
-  it("renders exactly 19 checkboxes plus one Outros text sub-field", () => {
+  it("renders exactly 19 checkboxes", () => {
     const checkboxes = html.match(/data-role="checkbox"/g) ?? [];
     // Only health_problems is a checkbox_group in v3, so all checkbox stand-ins
     // belong to that grid. Lupus is included (no orphaned render).
@@ -123,17 +127,25 @@ describe("Problemas de Saúde grid (SPEC 5.4) — 19 conditions, four columns, O
     expect(html).toContain("lg:grid-cols-4");
   });
 
-  it("renders Outros AFTER the last checkbox, not interleaved", () => {
+  it("titles the section 'Outros', not 'Problemas de Saúde' (ruling C override)", () => {
+    expect(html).toContain("Outros");
+    expect(html).not.toContain("Problemas de Saúde");
+  });
+
+  it("renders the free-text unlabeled with the guidance placeholder, AFTER the grid", () => {
+    // The free-text sub-field carries the placeholder and no visible label; it
+    // renders after the last checkbox (the orphaned-render bug stays fixed).
     const lastCheckboxIdx = html.lastIndexOf('data-role="checkbox"');
-    const outrosIdx = html.indexOf("Outros");
-    expect(outrosIdx).toBeGreaterThan(lastCheckboxIdx);
+    const placeholderIdx = html.indexOf(PLACEHOLDER);
+    expect(placeholderIdx).toBeGreaterThan(-1);
+    expect(placeholderIdx).toBeGreaterThan(lastCheckboxIdx);
   });
 });
 
 describe("Header row (SPEC 5.1) — Peso and Altura adjacent", () => {
   const html = render();
 
-  it("renders the header row as a grid (Data/Peso/Altura/Marcação in one row)", () => {
+  it("renders the header row as a grid (Peso/Altura/Marcação in one row, no Data)", () => {
     expect(html).toContain("sm:grid-cols-4");
   });
 
@@ -149,12 +161,13 @@ describe("Header row (SPEC 5.1) — Peso and Altura adjacent", () => {
   });
 });
 
-describe("Timestamp (SPEC 4) — no manual created-date picker, episode_date prefilled", () => {
-  it("prefills episode_date to today (Lisbon) on a fresh draft", () => {
+describe("Timestamp (SPEC 4 + W5-19 ruling B) — no episode_date input, no manual created-date picker", () => {
+  it("renders NO date input and no 'Data do Episódio' label (episode_date is auto-stamped)", () => {
     const html = render();
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date());
-    // The hidden `data` JSON carries the prefilled episode_date.
-    expect(html).toContain(today);
+    // Ruling B: episode_date has no manual input — it is populated server-side
+    // from created_at on save. Neither the input nor its label renders.
+    expect(html).not.toContain('type="date"');
+    expect(html).not.toContain("Data do Episódio");
   });
 
   it("renders no created-date field — Criado em is never an input label in the ficha", () => {

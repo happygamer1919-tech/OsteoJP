@@ -22,6 +22,7 @@ import {
 } from "@/lib/clinical/consent";
 
 import { fieldAnchorId } from "./anchors";
+import { HIDDEN_FIELD_KEYS, sectionLabel } from "./field-display";
 import { BodyChart, type Marker } from "./BodyChart";
 import { MobilidadeChart, type MobilidadeValue } from "./MobilidadeChart";
 import { SignatureConsent } from "./SignatureConsent";
@@ -37,15 +38,7 @@ const initialState: SaveState = { ok: false };
  * run of these keys, in template order, is grouped; anything else falls through
  * to the normal one-field-per-row layout.
  */
-const HEADER_ROW_KEYS = ["episode_date", "weight_kg", "height_cm", "linked_appointment"];
-
-/** Today in Europe/Lisbon as an ISO date (YYYY-MM-DD) for the <input type=date>
- *  value. SPEC sec 4 / 5.1 + Q-W5-1: episode_date is prefilled to today and
- *  stays editable. Display timezone is Lisbon (CLAUDE.md). */
-function todayLisbonISODate(): string {
-  // en-CA renders ISO-shaped YYYY-MM-DD; timeZone pins the civil date to Lisbon.
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date());
-}
+const HEADER_ROW_KEYS = ["weight_kg", "height_cm", "linked_appointment"];
 
 function asString(v: unknown): string {
   return typeof v === "string" ? v : v == null ? "" : String(v);
@@ -94,18 +87,10 @@ export function RecordForm({
   recordId: string;
 }) {
   const [state, formAction, pending] = useActionState(saveAction, initialState);
-  // SPEC sec 5.1 / 4: prefill episode_date to today (Lisbon) when the template
-  // carries the field and the record has no value yet (a fresh draft). Editable
-  // afterwards — this only seeds the initial state, it never overrides a saved
-  // value. Read-only records are never re-stamped.
-  const [data, setData] = useState<Record<string, unknown>>(() => {
-    const hasEpisodeDate = "episode_date" in schema.properties;
-    const current = initialData["episode_date"];
-    if (!readOnly && hasEpisodeDate && (current == null || current === "")) {
-      return { ...initialData, episode_date: todayLisbonISODate() };
-    }
-    return initialData;
-  });
+  // Ruling B: no episode_date prefill/seed here — the field has no input and is
+  // stamped from created_at server-side on save. Existing values in `data` (from
+  // a prior save) round-trip unchanged through the hidden `data` field.
+  const [data, setData] = useState<Record<string, unknown>>(initialData);
 
   const required = new Set(schema.required ?? []);
   const setField = (key: string, value: unknown) => setData((d) => ({ ...d, [key]: value }));
@@ -138,7 +123,7 @@ export function RecordForm({
       {state.ok && <p role="status" className="text-sm text-success">{s["clinical.saved"]}</p>}
 
       {(() => {
-        const fields = topLevelFields(schema);
+        const fields = topLevelFields(schema).filter(([key]) => !HIDDEN_FIELD_KEYS.has(key));
         // SPEC sec 5.1: the leading contiguous run of header-row keys renders as
         // one grid row (Peso/Altura adjacent). Everything after keeps the normal
         // one-field-per-row layout. Each field stays its own rail anchor.
@@ -154,7 +139,7 @@ export function RecordForm({
 
         const renderField = ([key, field]: (typeof fields)[number]) => {
           const widget = widgetOf(key, field);
-          const label = labelOf(field, locale, key);
+          const label = sectionLabel(field, locale, key);
           const isRequired = required.has(key) || field["x-required"] === true;
           const hint = hintOf(field, locale);
           const err = errors[key] ? s["clinical.required"] : undefined;
@@ -303,14 +288,19 @@ function FieldWidget({
             ))}
           </div>
           {textEntries.map(([sub, subField]) => (
-            <Field key={sub} label={labelOf(subField, locale, sub)} className="min-w-0">
-              <Input
-                type="text"
-                disabled={readOnly}
-                value={asString(obj[sub])}
-                onChange={(e) => onChange({ ...obj, [sub]: e.target.value })}
-              />
-            </Field>
+            // Ruling C: the free-text sub-field renders with NO visible label —
+            // an aria-label preserves the accessible name and a placeholder
+            // guides input. `other` is the sole text sub-field (recon).
+            <Input
+              key={sub}
+              type="text"
+              disabled={readOnly}
+              className="min-w-0"
+              aria-label={labelOf(subField, locale, sub)}
+              placeholder={sub === "other" ? s["clinical.healthProblemsOtherPlaceholder"] : undefined}
+              value={asString(obj[sub])}
+              onChange={(e) => onChange({ ...obj, [sub]: e.target.value })}
+            />
           ))}
         </div>
       );

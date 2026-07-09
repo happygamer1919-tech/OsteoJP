@@ -420,6 +420,7 @@ export async function saveReviewFicha(
         source: clinicalRecords.source,
         aiState: clinicalRecords.aiReviewState,
         formTemplateId: clinicalRecords.formTemplateId,
+        createdAt: clinicalRecords.createdAt,
       })
       .from(clinicalRecords)
       .where(eq(clinicalRecords.id, recordId))
@@ -431,8 +432,25 @@ export async function saveReviewFicha(
 
     await assertUnderReview(tx, recordId, row.source, row.aiState as AiReviewState | null);
 
+    // Ruling B (W5-19): episode_date has no manual input — stamp it from the
+    // record's created_at (Europe/Lisbon) when absent so the required field
+    // stays valid on the review save path too (mirrors updateRecordData).
+    const ed = data["episode_date"];
+    const needsEpisodeDate =
+      schema != null &&
+      "episode_date" in schema.properties &&
+      (ed == null || (typeof ed === "string" && ed.trim() === ""));
+    const payload = needsEpisodeDate
+      ? {
+          ...data,
+          episode_date: new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Europe/Lisbon",
+          }).format(row.createdAt),
+        }
+      : data;
+
     if (schema) {
-      const result = validateRecordData(schema, data);
+      const result = validateRecordData(schema, payload);
       if (!result.ok) throw new ClinicalError("validation", result.errors);
     }
 
@@ -446,7 +464,7 @@ export async function saveReviewFicha(
     const bindTemplate = row.formTemplateId == null && formTemplateId != null;
     await tx
       .update(clinicalRecords)
-      .set(bindTemplate ? { data, formTemplateId } : { data })
+      .set(bindTemplate ? { data: payload, formTemplateId } : { data: payload })
       .where(and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft")));
 
     await writeClinicalAudit(tx, {
@@ -455,7 +473,7 @@ export async function saveReviewFicha(
       action: "clinical_record.update",
       entityType: "clinical_record",
       entityId: recordId,
-      metadata: { review: true, ficha: true, fields: Object.keys(data) },
+      metadata: { review: true, ficha: true, fields: Object.keys(payload) },
       ip,
     });
   });
