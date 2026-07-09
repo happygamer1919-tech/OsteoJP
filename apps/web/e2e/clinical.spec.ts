@@ -15,18 +15,26 @@ import {
   PATIENTS,
   STORAGE,
   TEMPLATE_CURRENT_LABEL,
+  TEMPLATE_RETIRED_LABEL,
   TEMPLATE_SUPERSEDED_LABEL,
 } from "./fixtures";
 
 test.describe("authoring (therapist)", () => {
   test.use({ storageState: STORAGE.therapist });
 
-  test("the Modelo picker offers only the current template version", async ({ page }) => {
+  test("the Modelo picker offers only Ficha Médica (others retired from creation)", async ({
+    page,
+  }) => {
     await page.goto("/clinical/new");
     const picker = page.getByLabel(/Modelo/i);
+    // W5-13 (SPEC sec 1): creation offers a SINGLE template — Ficha Médica.
+    await expect(picker.getByRole("option")).toHaveCount(1);
     await expect(picker.getByRole("option", { name: TEMPLATE_CURRENT_LABEL })).toHaveCount(1);
-    // PR #96: the superseded v1 must not appear.
+    // The superseded osteopathy version is collapsed away (PR #96 resolver)...
     await expect(picker.getByRole("option", { name: TEMPLATE_SUPERSEDED_LABEL })).toHaveCount(0);
+    // ...and a now-retired template (physiotherapy) is not selectable on creation
+    // — its row still exists; existing records that pinned it render unchanged.
+    await expect(picker.getByRole("option", { name: TEMPLATE_RETIRED_LABEL })).toHaveCount(0);
   });
 
   test("create a record from the current form, then sign/lock and version it", async ({ page }) => {
