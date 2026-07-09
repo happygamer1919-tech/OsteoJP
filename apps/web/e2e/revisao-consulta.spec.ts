@@ -44,8 +44,8 @@ test.describe("Revisão Consulta — Assumir opens the Ficha Médica editor (the
     await expect(page).toHaveURL(/\/clinical\/review\/[0-9a-f-]{36}$/, { timeout: 15_000 });
     const form = page.locator("#record-form");
     await expect(form).toBeVisible({ timeout: 10_000 });
-    // The Ficha Médica structure (a 5.1 header-row date input, Peso/Altura) — this
-    // is the Ficha Médica editor, not the free-text narrative JSON editor.
+    // The Ficha Médica structure (the 5.1 header row: Peso/Altura — no date input
+    // since W5-19) — this is the Ficha Médica editor, not the free-text JSON one.
     await expect(form.getByText("Peso (kg)")).toBeVisible();
     await expect(form.getByText("Altura (cm)")).toBeVisible();
 
