@@ -152,6 +152,16 @@ export default async function PatientProfilePage({
   // W5-11 — "Como nos conheceu?" referral source (staff-entered on intake).
   if (patient.referralSource)
     personalRows.push([s["patients.fieldReferralSource"], patient.referralSource]);
+  // W5-21 — NESA contraindication flags (staff screening). Surface whichever are
+  // set as one row (pacemaker MUST show; epilepsia/gravidez co-located for
+  // consistency); omitted entirely when the patient carries none.
+  const contraindications = [
+    patient.contraindicationEpilepsy ? s["patients.fieldContraindicationEpilepsy"] : null,
+    patient.contraindicationPregnancy ? s["patients.fieldContraindicationPregnancy"] : null,
+    patient.contraindicationPacemaker ? s["patients.fieldContraindicationPacemaker"] : null,
+  ].filter((x): x is string => x !== null);
+  if (contraindications.length > 0)
+    personalRows.push([s["patients.contraindicationsLabel"], contraindications.join(", ")]);
   // Patient notes moved to the append-only Notas tab (W2-11); the profile
   // summary no longer reads patients.notes.
 

@@ -871,6 +871,7 @@
   "patients.contraindicationsLabel": "Contraindicações NESA",
   "patients.fieldContraindicationEpilepsy": "Epilepsia",
   "patients.fieldContraindicationPregnancy": "Gravidez",
+  "patients.fieldContraindicationPacemaker": "Portador de pacemaker",
   "admin.services.contraindicationSensitive": "Sensível a contraindicações NESA",
   "agenda.pickDate": "Escolher data",
   "appointment.recurringCheckbox": "Marcação recorrente",
