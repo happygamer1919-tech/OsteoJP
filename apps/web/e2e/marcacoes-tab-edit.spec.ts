@@ -15,15 +15,31 @@
  *   3. Cancel a row.
  *
  * Determinism: each test books on its own future day (the seed creates no
- * appointments) so parallel runs never collide. Strict-mode safety: rows share
- * accessible names ("Gerir marcação", "Reagendar", "Estado"), so every locator
- * is scoped to a single row Card via its unique date·time text.
+ * appointments) so parallel runs never collide. These tests book REAL rows with
+ * no cleanup, so a Playwright RETRY of the same test must NOT re-book the same
+ * day — otherwise duplicate rows accumulate and the per-time row() locator (which
+ * relies on one row per "· HH:MM") matches 2+ elements and fails strict mode. So
+ * each test derives its day from `bandDay(base, testInfo.retry)`, which pushes
+ * every retry onto a distinct, far-away future day. Strict-mode safety: rows
+ * share accessible names ("Gerir marcação", "Reagendar", "Estado"), so every
+ * locator is scoped to a single row Card via its unique date·time text.
  */
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { openNewAppointment, fillAppointment } from "./helpers";
+import { openNewAppointment, fillAppointment, fillTime } from "./helpers";
 import { PATIENTS, LOCATION, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
 
 const SAVE = "Guardar";
+
+/**
+ * A future day for a test that leaves REAL rows behind: the base offset shifts
+ * far away on each Playwright retry so a re-run of the same test books a fresh,
+ * empty day instead of colliding with the rows its previous attempt created.
+ * 100-day bands keep every retry clear of both sibling tests (base offsets 1 day
+ * apart) and every other spec's offsets (max ~50).
+ */
+function bandDay(base: number, retry: number): string {
+  return futureDate(RUN_DAY_BASE + base + retry * 100);
+}
 
 /** Books a one-off appointment for a patient at the given date/time (as admin). */
 async function book(page: Page, patient: string, date: string, time: string) {
@@ -62,8 +78,8 @@ async function openConsultas(page: Page) {
 
 test("reschedule from Consultas is blocked by a therapist conflict, then overridable (W5-09)", async ({
   page,
-}) => {
-  const date = futureDate(RUN_DAY_BASE + 40);
+}, testInfo) => {
+  const date = bandDay(40, testInfo.retry);
   // Two of Maria's appointments same day/therapist: 09:00 and 11:00.
   await book(page, PATIENTS.maria.name, date, "09:00");
   await book(page, PATIENTS.maria.name, date, "11:00");
@@ -76,8 +92,11 @@ test("reschedule from Consultas is blocked by a therapist conflict, then overrid
 
   const drawer = page.getByRole("dialog");
   await expect(drawer).toBeVisible();
-  // Move 09:00 onto 11:00 — same therapist → conflict.
-  await drawer.locator('input[type="time"]').fill("11:00");
+  // Move 09:00 onto 11:00 — same therapist → conflict. The reschedule drawer's
+  // time control is the W4-02 TimeField (Horas/Minutos selects), not a native
+  // input[type=time], so drive it via the shared fillTime helper (same as the
+  // agenda scheduling specs).
+  await fillTime(drawer, "11:00");
   await drawer.getByRole("button", { name: /^Reagendar$/ }).click();
 
   // Conflict surfaces in-drawer; override is offered, not auto-applied.
@@ -88,8 +107,8 @@ test("reschedule from Consultas is blocked by a therapist conflict, then overrid
 
 test("Estado control offers only lifecycle-legal transitions and applies one (W5-09)", async ({
   page,
-}) => {
-  const date = futureDate(RUN_DAY_BASE + 41);
+}, testInfo) => {
+  const date = bandDay(41, testInfo.retry);
   await book(page, PATIENTS.maria.name, date, "13:00");
 
   await openConsultas(page);
@@ -113,8 +132,8 @@ test("Estado control offers only lifecycle-legal transitions and applies one (W5
   await expect(row(page, "13:00").getByText("Confirmada")).toBeVisible({ timeout: 8_000 });
 });
 
-test("cancel a row from Consultas (W5-09)", async ({ page }) => {
-  const date = futureDate(RUN_DAY_BASE + 42);
+test("cancel a row from Consultas (W5-09)", async ({ page }, testInfo) => {
+  const date = bandDay(42, testInfo.retry);
   await book(page, PATIENTS.maria.name, date, "15:00");
 
   await openConsultas(page);
