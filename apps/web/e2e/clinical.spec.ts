@@ -71,6 +71,54 @@ test.describe("authoring (therapist)", () => {
     await expect(page.getByText("Rascunho")).toBeVisible();
   });
 
+  // W5-14 (SPEC-ficha-medica.md sec 3-5): a new Ficha Médica renders the
+  // read-only patient header strip, the 5.1 header row with Peso/Altura
+  // adjacent, the four-column Problemas de Saúde grid with all 19 conditions +
+  // Outros after the grid, and NO manual created-date picker.
+  test("a new Ficha Médica renders the sec 5.0-5.9 structure (header strip, Peso/Altura, 19-condition grid, no created-date picker)", async ({
+    page,
+  }) => {
+    await page.goto("/clinical/new");
+    const patient = page.getByRole("combobox", { name: /Paciente/i });
+    await patient.click();
+    await patient.fill(PATIENTS.maria.name);
+    await page.getByRole("option", { name: PATIENTS.maria.name }).click();
+    await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
+    await page.getByRole("button", { name: "Criar ficha" }).click();
+    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+
+    const form = page.locator("#record-form");
+
+    // 5.0 read-only patient header strip: patient name + "Criado em" timestamp,
+    // OUTSIDE the record form (display-only, no duplicated inputs).
+    await expect(page.getByText("Criado em", { exact: false }).first()).toBeVisible();
+    // NO-DUPLICATION: the form itself requests no NIF / Profissão field.
+    await expect(form.getByText("NIF", { exact: false })).toHaveCount(0);
+    await expect(form.getByText("Profissão", { exact: false })).toHaveCount(0);
+
+    // 5.1 header row: Data do Episódio prefilled today, Peso + Altura present.
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date());
+    await expect(form.locator('input[type="date"]').first()).toHaveValue(today);
+    await expect(form.getByText("Peso (kg)")).toBeVisible();
+    await expect(form.getByText("Altura (cm)")).toBeVisible();
+
+    // 5.4 Problemas de Saúde: all 19 conditions render as checkboxes (Lúpus
+    // included) with the free-text Outros present. Scope to the form to avoid
+    // the header strip / rail. Assert a representative spread incl. Lúpus.
+    for (const label of ["Fumador", "Lúpus", "Diabetes", "COVID-19", "Hipotensão", "Neoplasia"]) {
+      await expect(form.getByText(label, { exact: false }).first()).toBeVisible();
+    }
+    await expect(form.getByText("Outros", { exact: false }).first()).toBeVisible();
+
+    // 5.4 four-column grid: the checkbox grid carries the lg:grid-cols-4 class.
+    await expect(form.locator(".lg\\:grid-cols-4").first()).toBeAttached();
+
+    // SPEC sec 4: NO manual created-date picker. The only date input is
+    // episode_date (the header row); there is no second "created"/"criado" date
+    // field to hand-type.
+    await expect(form.locator('input[type="date"]')).toHaveCount(1);
+  });
+
   // W2-06: fichas entry points live in the patient-profile Registos clínicos tab.
   test("patient Registos tab creates a ficha (scoped) and surfaces the addendum action", async ({
     page,

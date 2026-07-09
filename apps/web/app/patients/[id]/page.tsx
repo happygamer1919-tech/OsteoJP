@@ -62,6 +62,12 @@ const INVOICE_STATUS_KEY: Record<InvoiceStatus, keyof typeof s> = {
 };
 
 const dateFmt = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" });
+// SPEC-ficha-medica.md sec 4: record created_at shown in Europe/Lisbon.
+const dateTimeFmt = new Intl.DateTimeFormat("pt-PT", {
+  timeZone: "Europe/Lisbon",
+  dateStyle: "short",
+  timeStyle: "short",
+});
 
 export default async function PatientProfilePage({
   params,
@@ -289,6 +295,11 @@ export default async function PatientProfilePage({
                     <Link href={`/clinical/${r.id}`} className="flex min-w-0 flex-col gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
                       <span className="font-medium text-text-primary">
                         {r.templateTitle ? r.templateTitle[DEFAULT_LOCALE] : s["patients.recordDefaultName"]}
+                      </span>
+                      {/* SPEC-ficha-medica.md sec 4: the record's auto-stamped
+                          creation instant (Lisbon display), never hand-typed. */}
+                      <span className="text-sm text-text-secondary">
+                        {s["clinical.recordCreatedAt"]}: {dateTimeFmt.format(new Date(r.createdAt))}
                       </span>
                       <span className="text-sm text-text-secondary">{dateFmt.format(new Date(r.updatedAt))}</span>
                     </Link>
