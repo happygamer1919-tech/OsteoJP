@@ -39,12 +39,16 @@ async function book(page: Page, patient: string, date: string, time: string) {
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 }
 
-/** The single row Card on the Consultas tab whose header shows this time. */
+/** The single appointment Card on the Consultas tab whose header shows this time. */
 function row(page: Page, hhmm: string): Locator {
-  // The row header renders "DD/MM/YYYY · HH:MM"; filtering the Card by the time
-  // pins the locator to exactly one row even when several rows share action
-  // labels (strict-mode safe).
-  return page.locator("div").filter({ hasText: new RegExp(`· ${hhmm}$`) }).first();
+  // The header renders "DD/MM/YYYY · HH:MM" and the practitioner / service /
+  // status / "Gerir marcação" text follows, so the time is NOT at the end of the
+  // Card. Target the UI Card root (rounded-lg border bg-surface p-6) and filter
+  // by "· HH:MM" (word-boundary, not end-anchored) to pin exactly one row Card,
+  // which also contains that row's "Gerir marcação" details.
+  return page
+    .locator("div.rounded-lg.border.bg-surface.p-6")
+    .filter({ hasText: new RegExp(`· ${hhmm}\\b`) });
 }
 
 async function openConsultas(page: Page) {
