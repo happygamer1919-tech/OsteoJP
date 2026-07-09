@@ -372,6 +372,11 @@ export const patients = pgTable(
     region: text("region"),
     // Wave 01 — clinically relevant (sedentary work, job-driven strain).
     profession: text("profession"),
+    // Wave 05 (W5-11) — staff-entered "Como nos conheceu?" referral source,
+    // captured on the new-patient form (Redes sociais / Website / Recomendacao
+    // de um amigo / Outro). A single column holds either the chosen option label
+    // or the Outro free-text. Excluded from the patient self-update grant (0033).
+    referralSource: text("referral_source"),
     notes: text("notes"),
     // NESA contraindication flags (0031, DECISIONS 2026-07-03 ruling A): drive a
     // SOFT booking-time warning (W2-08), never a hard block. Columns only store

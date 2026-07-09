@@ -38,6 +38,14 @@ describe("parseCreatePatient", () => {
     expect(parseCreatePatient({ fullName: "X" }).profession).toBeNull();
   });
 
+  it("parses and trims referralSource, normalizing empty to null (W5-11)", () => {
+    expect(
+      parseCreatePatient({ fullName: "X", referralSource: "  Redes sociais  " }).referralSource,
+    ).toBe("Redes sociais");
+    expect(parseCreatePatient({ fullName: "X", referralSource: "" }).referralSource).toBeNull();
+    expect(parseCreatePatient({ fullName: "X" }).referralSource).toBeNull();
+  });
+
   it("rejects an invalid email", () => {
     expect(() =>
       parseCreatePatient({ fullName: "X", email: "not-an-email" }),
@@ -82,6 +90,12 @@ describe("parseUpdatePatient", () => {
     expect(parseUpdatePatient({ profession: "Osteopata" })).toEqual({ profession: "Osteopata" });
     expect(parseUpdatePatient({ profession: "" })).toEqual({ profession: null });
     expect("profession" in parseUpdatePatient({ phone: "912345678" })).toBe(false);
+  });
+
+  it("includes referralSource only when provided, clearing on explicit empty (W5-11)", () => {
+    expect(parseUpdatePatient({ referralSource: "Website" })).toEqual({ referralSource: "Website" });
+    expect(parseUpdatePatient({ referralSource: "" })).toEqual({ referralSource: null });
+    expect("referralSource" in parseUpdatePatient({ phone: "912345678" })).toBe(false);
   });
 
   it("coerces contraindication flags to booleans, only when provided (W2-08)", () => {

@@ -143,6 +143,9 @@ export default async function PatientProfilePage({
   if (patient.profession) personalRows.push([s["patients.fieldProfession"], patient.profession]);
   if (patient.city) personalRows.push([s["patients.fieldCity"], patient.city]);
   if (patient.region) personalRows.push([s["patients.fieldRegion"], patient.region]);
+  // W5-11 — "Como nos conheceu?" referral source (staff-entered on intake).
+  if (patient.referralSource)
+    personalRows.push([s["patients.fieldReferralSource"], patient.referralSource]);
   // Patient notes moved to the append-only Notas tab (W2-11); the profile
   // summary no longer reads patients.notes.
 
