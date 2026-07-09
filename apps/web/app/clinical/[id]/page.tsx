@@ -11,6 +11,7 @@ import { s, locale } from "@/lib/i18n";
 import { Attachments } from "./Attachments";
 import { DownloadReportButton } from "./DownloadReportButton";
 import { fieldAnchorId } from "./anchors";
+import { PatientHeaderStrip } from "./PatientHeaderStrip";
 import { RecordForm } from "./RecordForm";
 import { canDownloadReport, statusLabel } from "./record-status";
 import { SectionRail } from "./section-rail";
@@ -102,6 +103,19 @@ export default async function RecordDetailPage({
         )}
 
         <div className="min-w-0 flex-1 lg:max-w-180">
+          {/* SPEC-ficha-medica.md sec 3 / 5.0: read-only patient header strip.
+              Display-only demographics pulled from the patient record + the
+              record's auto-stamped creation instant (sec 4). NO-DUPLICATION:
+              no ficha input re-requests a profile field. */}
+          <PatientHeaderStrip
+            name={record.patientName}
+            patientNumber={record.patientNumber}
+            dateOfBirth={record.patientDateOfBirth}
+            sex={record.patientSex}
+            profession={record.patientProfession}
+            createdAt={record.createdAt}
+          />
+
           {/* Finalized records: a single info Banner stating immutability (the
               ai_review_state review banner is deferred — not in the query). */}
           {readOnly && (

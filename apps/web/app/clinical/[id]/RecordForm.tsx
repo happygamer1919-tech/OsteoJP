@@ -21,6 +21,23 @@ export type SaveState = { ok: boolean; errors?: Record<string, string>; code?: s
 
 const initialState: SaveState = { ok: false };
 
+/**
+ * SPEC-ficha-medica.md sec 5.1 header row. These fields render as ONE compact
+ * grid row (not stacked full-width) so `weight_kg` (Peso) and `height_cm`
+ * (Altura) sit ADJACENT with nothing between them. Only the contiguous leading
+ * run of these keys, in template order, is grouped; anything else falls through
+ * to the normal one-field-per-row layout.
+ */
+const HEADER_ROW_KEYS = ["episode_date", "weight_kg", "height_cm", "linked_appointment"];
+
+/** Today in Europe/Lisbon as an ISO date (YYYY-MM-DD) for the <input type=date>
+ *  value. SPEC sec 4 / 5.1 + Q-W5-1: episode_date is prefilled to today and
+ *  stays editable. Display timezone is Lisbon (CLAUDE.md). */
+function todayLisbonISODate(): string {
+  // en-CA renders ISO-shaped YYYY-MM-DD; timeZone pins the civil date to Lisbon.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date());
+}
+
 function asString(v: unknown): string {
   return typeof v === "string" ? v : v == null ? "" : String(v);
 }
@@ -61,7 +78,18 @@ export function RecordForm({
   patientSex?: string | null;
 }) {
   const [state, formAction, pending] = useActionState(saveAction, initialState);
-  const [data, setData] = useState<Record<string, unknown>>(initialData);
+  // SPEC sec 5.1 / 4: prefill episode_date to today (Lisbon) when the template
+  // carries the field and the record has no value yet (a fresh draft). Editable
+  // afterwards — this only seeds the initial state, it never overrides a saved
+  // value. Read-only records are never re-stamped.
+  const [data, setData] = useState<Record<string, unknown>>(() => {
+    const hasEpisodeDate = "episode_date" in schema.properties;
+    const current = initialData["episode_date"];
+    if (!readOnly && hasEpisodeDate && (current == null || current === "")) {
+      return { ...initialData, episode_date: todayLisbonISODate() };
+    }
+    return initialData;
+  });
 
   const required = new Set(schema.required ?? []);
   const setField = (key: string, value: unknown) => setData((d) => ({ ...d, [key]: value }));
@@ -83,27 +111,54 @@ export function RecordForm({
       )}
       {state.ok && <p role="status" className="text-sm text-success">{s["clinical.saved"]}</p>}
 
-      {topLevelFields(schema).map(([key, field]) => {
-        const widget = widgetOf(key, field);
-        const label = labelOf(field, locale, key);
-        const isRequired = required.has(key) || field["x-required"] === true;
-        const hint = hintOf(field, locale);
-        const err = errors[key] ? s["clinical.required"] : undefined;
+      {(() => {
+        const fields = topLevelFields(schema);
+        // SPEC sec 5.1: the leading contiguous run of header-row keys renders as
+        // one grid row (Peso/Altura adjacent). Everything after keeps the normal
+        // one-field-per-row layout. Each field stays its own rail anchor.
+        let headerRunEnd = 0;
+        while (
+          headerRunEnd < fields.length &&
+          HEADER_ROW_KEYS.includes(fields[headerRunEnd]![0])
+        ) {
+          headerRunEnd++;
+        }
+        const headerFields = fields.slice(0, headerRunEnd);
+        const restFields = fields.slice(headerRunEnd);
+
+        const renderField = ([key, field]: (typeof fields)[number]) => {
+          const widget = widgetOf(key, field);
+          const label = labelOf(field, locale, key);
+          const isRequired = required.has(key) || field["x-required"] === true;
+          const hint = hintOf(field, locale);
+          const err = errors[key] ? s["clinical.required"] : undefined;
+          return (
+            <div key={key} id={fieldAnchorId(key)} className="scroll-mt-24 min-w-0">
+              <Field label={label} required={isRequired} helperText={hint ?? undefined} error={err}>
+                <FieldWidget
+                  widget={widget}
+                  field={field}
+                  value={data[key]}
+                  readOnly={readOnly}
+                  onChange={(v) => setField(key, v)}
+                  patientSex={patientSex}
+                />
+              </Field>
+            </div>
+          );
+        };
+
         return (
-          <div key={key} id={fieldAnchorId(key)} className="scroll-mt-24 min-w-0">
-            <Field label={label} required={isRequired} helperText={hint ?? undefined} error={err}>
-              <FieldWidget
-                widget={widget}
-                field={field}
-                value={data[key]}
-                readOnly={readOnly}
-                onChange={(v) => setField(key, v)}
-                patientSex={patientSex}
-              />
-            </Field>
-          </div>
+          <>
+            {headerFields.length > 0 && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {headerFields.map(renderField)}
+              </div>
+            )}
+            {restFields.map(renderField)}
+          </>
         );
-      })}
+      })()}
 
     </form>
 
@@ -179,39 +234,48 @@ function FieldWidget({
       );
     }
     case "checkbox_group": {
+      // SPEC-ficha-medica.md sec 5.4: fix the orphaned-render bug. Previously a
+      // full-width `sm:col-span-2` text sub-field ("Outros") was interleaved into
+      // the same grid as single-column checkboxes, disrupting grid flow so only
+      // one checkbox rendered under the header and the rest orphaned below the
+      // text field. Fix: partition the sub-fields — every boolean checkbox
+      // renders in a FOUR-COLUMN grid; text sub-fields render AFTER the grid,
+      // full-width, never interleaved.
       const obj = asObject(value);
       const props = field.properties ?? {};
+      const isTextSub = (subField: FieldSchema): boolean =>
+        subField["x-widget"] === "text" ||
+        (Array.isArray(subField.type)
+          ? subField.type.includes("string")
+          : subField.type === "string");
+      const entries = Object.entries(props);
+      const checkboxEntries = entries.filter(([, f]) => !isTextSub(f));
+      const textEntries = entries.filter(([, f]) => isTextSub(f));
       return (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {Object.entries(props).map(([sub, subField]) => {
-            const subLabel = labelOf(subField, locale, sub);
-            const isText =
-              subField["x-widget"] === "text" ||
-              (Array.isArray(subField.type) ? subField.type.includes("string") : subField.type === "string");
-            if (isText) {
-              return (
-                <Field key={sub} label={subLabel} className="min-w-0 sm:col-span-2">
-                  <Input
-                    type="text"
-                    disabled={readOnly}
-                    value={asString(obj[sub])}
-                    onChange={(e) => onChange({ ...obj, [sub]: e.target.value })}
-                  />
-                </Field>
-              );
-            }
-            return (
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+            {checkboxEntries.map(([sub, subField]) => (
               <div key={sub} className="min-w-0">
                 <Checkbox
-                  label={subLabel}
+                  label={labelOf(subField, locale, sub)}
                   disabled={readOnly}
                   className="w-full"
                   checked={obj[sub] === true}
                   onChange={(e) => onChange({ ...obj, [sub]: e.target.checked })}
                 />
               </div>
-            );
-          })}
+            ))}
+          </div>
+          {textEntries.map(([sub, subField]) => (
+            <Field key={sub} label={labelOf(subField, locale, sub)} className="min-w-0">
+              <Input
+                type="text"
+                disabled={readOnly}
+                value={asString(obj[sub])}
+                onChange={(e) => onChange({ ...obj, [sub]: e.target.value })}
+              />
+            </Field>
+          ))}
         </div>
       );
     }

@@ -41,6 +41,10 @@ export type RecordListItem = {
   version: number;
   templateTitle: Localized | null;
   signedAt: string | null;
+  /** Auto-stamped record creation instant (UTC in DB, Lisbon on display).
+   *  SPEC-ficha-medica.md sec 4: no manual created-date picker; shown on the
+   *  patient profile alongside the record. */
+  createdAt: string;
   updatedAt: string;
 };
 
@@ -58,6 +62,10 @@ export type RecordDetail = {
   patientId: string;
   patientName: string;
   patientSex: string | null;
+  patientNumber: number | null;
+  patientDateOfBirth: string | null;
+  patientProfession: string | null;
+  createdAt: string;
   episodeId: string | null;
   episodeTitle: string | null;
   formTemplateId: string | null;
@@ -96,6 +104,7 @@ export async function listRecords(
         version: clinicalRecords.version,
         templateTitle: formTemplates.title,
         signedAt: clinicalRecords.signedAt,
+        createdAt: clinicalRecords.createdAt,
         updatedAt: clinicalRecords.updatedAt,
       })
       .from(clinicalRecords)
@@ -112,6 +121,7 @@ export async function listRecords(
       version: r.version,
       templateTitle: (r.templateTitle as Localized | null) ?? null,
       signedAt: r.signedAt ? r.signedAt.toISOString() : null,
+      createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     }));
   });
@@ -130,6 +140,9 @@ export async function getRecordDetail(
         patientId: clinicalRecords.patientId,
         patientName: patients.fullName,
         patientSex: patients.sex,
+        patientNumber: patients.patientNumber,
+        patientDateOfBirth: patients.dateOfBirth,
+        patientProfession: patients.profession,
         episodeId: clinicalRecords.episodeId,
         episodeTitle: clinicalEpisodes.title,
         formTemplateId: clinicalRecords.formTemplateId,
@@ -139,6 +152,7 @@ export async function getRecordDetail(
         data: clinicalRecords.data,
         signedAt: clinicalRecords.signedAt,
         signedByName: signer.fullName,
+        createdAt: clinicalRecords.createdAt,
         updatedAt: clinicalRecords.updatedAt,
         templateTitle: formTemplates.title,
         templateSchema: formTemplates.schema,
@@ -171,6 +185,9 @@ export async function getRecordDetail(
       patientId: r.patientId,
       patientName: r.patientName,
       patientSex: r.patientSex,
+      patientNumber: r.patientNumber ?? null,
+      patientDateOfBirth: r.patientDateOfBirth ?? null,
+      patientProfession: r.patientProfession ?? null,
       episodeId: r.episodeId,
       episodeTitle: r.episodeTitle,
       formTemplateId: r.formTemplateId,
@@ -180,6 +197,7 @@ export async function getRecordDetail(
       data: (r.data as Record<string, unknown>) ?? {},
       signedAt: r.signedAt ? r.signedAt.toISOString() : null,
       signedByName: r.signedByName,
+      createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
       template: r.formTemplateId
         ? { title: (r.templateTitle as Localized | null) ?? null, schema: r.templateSchema }
