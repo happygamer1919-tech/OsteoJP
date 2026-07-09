@@ -141,6 +141,8 @@ export default async function RecordDetailPage({
               statusChip={statusChip}
               extraActions={extraActions}
               patientSex={record.patientSex}
+              patientId={record.patientId}
+              recordId={id}
             />
           ) : (
             <p className="text-sm text-text-secondary">—</p>
