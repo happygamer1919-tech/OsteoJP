@@ -270,23 +270,25 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 ### Batch 2 - migration-free (run in numeric order)
 | ID | Loop | Status | Gate / note |
 |----|------|--------|-------------|
-| W5-09 | marcacoes-tab-edit | OPEN | migration-free; per-row reschedule/estado/cancel on the profile Marcacoes tab, reusing Agenda actions; axes never collapsed; primary-only |
-| W5-10 | documentos-upload | OPEN | migration-free; upload on the Documentos tab reusing the attachments infra; HALT if a patient-document relation needs a schema change |
+| W5-09 | marcacoes-tab-edit | DONE (#525, 2026-07-09) | migration-free; per-row reschedule/estado/cancel on the profile Marcacoes tab, reusing Agenda actions; axes never collapsed; primary-only |
+| W5-10 | documentos-upload | DONE (#524, 2026-07-08) | migration-free; upload on the Documentos tab reusing the attachments infra; HALT if a patient-document relation needs a schema change |
 
 ### Batch 3 - MIGRATIONS, strictly sequential (one in flight), live-apply verification before DONE
 | ID | Loop | Status | Gate / note |
 |----|------|--------|-------------|
-| W5-11 | referral-source | OPEN | **migration 0033** (head is 0032): `patients.referral_source` nullable; "Como nos conheceu?" dropdown; genuine net-new column; live-apply before DONE; sequential (lands before W5-12) |
-| W5-12 | therapist-blocks | OPEN | **RECON MISMATCH (Q-W5-7): `time_off` already exists (migration 0006) and models both modes; migration 0034 likely UNNECESSARY.** Default = build migration-FREE on `time_off` (admin UI + integrate into `getTherapistAvailability`/lote exclusion; warn-not-cancel, Q-W5-4). A minimal 0034 only if the owner confirms a needed column. Relates to Q-V2W2-1 (blocked-time band). Migration disposition resolved BEFORE any migration |
+| W5-11 | referral-source | DONE (#526, migration 0033 live-applied, 2026-07-09) | **migration 0033** (head is 0032): `patients.referral_source` nullable; "Como nos conheceu?" dropdown; genuine net-new column; live-apply before DONE; sequential (lands before W5-12) |
+| W5-12 | therapist-blocks | DONE (#527, migration-FREE on time_off; 0034 NOT created, 2026-07-09) | **RECON MISMATCH (Q-W5-7): `time_off` already exists (migration 0006) and models both modes; migration 0034 likely UNNECESSARY.** Default = build migration-FREE on `time_off` (admin UI + integrate into `getTherapistAvailability`/lote exclusion; warn-not-cancel, Q-W5-4). A minimal 0034 only if the owner confirms a needed column. Relates to Q-V2W2-1 (blocked-time band). Migration disposition resolved BEFORE any migration |
 
 ### Batch 4 - Ficha Medica, per `docs/design/SPEC-ficha-medica.md` (authoritative; must merge first; run in numeric order)
 | ID | Loop | Status | Gate / note |
 |----|------|--------|-------------|
-| W5-13 | ficha-unification | OPEN | single Ficha Medica template; retire others from creation; existing records untouched; **compatibility test posts `template=osteopathy` + the twelve keys -> correct draft** (PRODUCT halt if a key cannot map); migration-free (seed + `form_templates`) |
-| W5-14 | ficha-structure | OPEN | SPEC sec 3-5: full field sequence, read-only patient header strip, auto creation timestamp, Problemas de Saude 4-col grid restructure (fix the orphaned-render bug), Outros rules; migration-free |
-| W5-15 | mobilidade-component | OPEN | SPEC 5.10-5.13: three-circle Mobilidade Activa(dot)/Passiva(star) widget + Limpar + Observacoes, Testes Neurologicos/Especiais, Diagnostico, Tratamento (keep Plano+Objectivos, Q-W5-2), Observacoes; migration-free |
-| W5-16 | ficha-signature-consent | OPEN | SPEC sec 7: canvas signature -> Documentos (attachments infra), Gerar PDF A4 + logo (RGPD), Consinto block with explicit check/X; all consent/RGPD wording PENDENTE-JP (Max drafts 2-3 variants, Q-W5-3); migration-free |
-| W5-17 | revisao-consulta-flow | OPEN | **closes the core wave scope:** Assumir opens the AI draft inside the Ficha Medica editor with the twelve AI-filled fields visible+editable; edit+complete+sign; `record_status` and `ai_review_state` stay separate; signed record in Registos clinicos; migration-free |
+| W5-13 | ficha-unification | DONE (#528, 2026-07-09) | single Ficha Medica template; retire others from creation; existing records untouched; **compatibility test posts `template=osteopathy` + the twelve keys -> correct draft** (PRODUCT halt if a key cannot map); migration-free (seed + `form_templates`) |
+| W5-14 | ficha-structure | DONE (#529, 2026-07-09) | SPEC sec 3-5: full field sequence, read-only patient header strip, auto creation timestamp, Problemas de Saude 4-col grid restructure (fix the orphaned-render bug), Outros rules; migration-free |
+| W5-15 | mobilidade-component | DONE (#530, 2026-07-09) | SPEC 5.10-5.13: three-circle Mobilidade Activa(dot)/Passiva(star) widget + Limpar + Observacoes, Testes Neurologicos/Especiais, Diagnostico, Tratamento (keep Plano+Objectivos, Q-W5-2), Observacoes; migration-free |
+| W5-16 | ficha-signature-consent | DONE (#531, 2026-07-09) | SPEC sec 7: canvas signature -> Documentos (attachments infra), Gerar PDF A4 + logo (RGPD), Consinto block with explicit check/X; all consent/RGPD wording PENDENTE-JP (Max drafts 2-3 variants, Q-W5-3); migration-free |
+| W5-17 | revisao-consulta-flow | DONE (#532, closes core wave scope, 2026-07-09) | **closes the core wave scope:** Assumir opens the AI draft inside the Ficha Medica editor with the twelve AI-filled fields visible+editable; edit+complete+sign; `record_status` and `ai_review_state` stay separate; signed record in Registos clinicos; migration-free |
+
+> **WAVE 05 CLOSED - 2026-07-09.** All 17 loops merged (W5-01..W5-17). One migration this wave: **0033** (referral_source, live-applied, verified; head 0033, mirror 34/34). **0034 NOT created** - W5-12 was migration-free on `time_off`. Ficha Medica unified on `osteopathy` v3 (identity ingestion mapping, zero external change). Consent wording still PENDENTE-JP (JP pick pending). See DECISIONS 2026-07-09 for the full close + carried owner items.
 
 ## Wave 05 candidates
 
