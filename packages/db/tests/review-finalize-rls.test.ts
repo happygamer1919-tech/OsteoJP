@@ -123,28 +123,48 @@ describe.skipIf(!live)("review/finalize write path RLS + lifecycle", () => {
      paths at claim, and the two axes transition INDEPENDENTLY. ---- */
   it("W5-17 AI: claim projects the twelve keys to field paths; axes stay separate through finalize", async () => {
     await asTherapistA(async (tx) => {
-      // Seed a fuller _aiIngestionRaw (mirrors the ingestion store shape) so the
-      // projection has real values to lift onto field paths.
-      await tx`update clinical_records set data = ${JSON.stringify({
-        _aiIngestionRaw: {
-          template: "osteopathy",
-          consultation_reason: "dor lombar",
-          systems_review: { neurological: "sem alteracoes" },
-          observations: "obs IA",
-        },
-      })}::jsonb where id = ${A.aiRecord}`;
+      // The raw AI payload the ingestion endpoint stored under `_aiIngestionRaw`
+      // (mirrors the ingestion store shape) — the source of truth the projection
+      // lifts onto field paths.
+      const aiRaw = {
+        template: "osteopathy",
+        consultation_reason: "dor lombar",
+        systems_review: { neurological: "sem alteracoes" },
+        observations: "obs IA",
+      };
+      await tx`update clinical_records set data = ${tx.json({
+        _aiIngestionRaw: aiRaw,
+      })} where id = ${A.aiRecord}`;
 
-      // CLAIM (the service's claim UPDATE): flip ai_review_state AND project the
-      // twelve keys onto their field paths in ONE update. record_status stays
-      // 'draft' (the record_status axis does NOT move on claim).
+      // CLAIM (the service's claim UPDATE, review.ts claimReviewItem): flip
+      // ai_review_state AND write the WHOLE projected `data` in ONE update, exactly
+      // as the service does — it computes `projectAiPayloadOntoFichaFields(data)` in
+      // JS and persists `.set({ aiReviewState: "in_review", data: projected })`, a
+      // whole-value jsonb assignment (NOT a SQL `data || …` merge). `projected` is
+      // the raw payload with the twelve keys copied to their Ficha Médica field
+      // paths and `_aiIngestionRaw` preserved untouched. record_status stays 'draft'
+      // (the record_status axis does NOT move on claim).
+      //
+      // jsonb is bound with `tx.json(obj)` (native jsonb param), the way Drizzle
+      // binds `.set({ data })`. Two postgres.js pitfalls this deliberately avoids —
+      // both silently corrupted the earlier hand-rolled version of this test:
+      //   1. `data = data || ${JSON.stringify(obj)}::jsonb` does NOT merge keys: a
+      //      stringified object bound then cast to jsonb becomes a jsonb *string
+      //      scalar*, so `||` yields a jsonb ARRAY (`[obj, "…"]`), not a key merge.
+      //   2. writing a value via `${JSON.stringify(obj)}::jsonb` (text→jsonb cast)
+      //      makes a subsequent `select data` come back as an UNPARSED string, so
+      //      `d.consultation_reason` reads undefined. `tx.json` round-trips as an
+      //      object. The service issues neither pattern; it writes the full object.
+      const projected = {
+        _aiIngestionRaw: aiRaw, // source of truth kept
+        consultation_reason: aiRaw.consultation_reason,
+        systems_review: { neurological: aiRaw.systems_review.neurological },
+        observations: aiRaw.observations,
+      };
       const claimed = await tx<{ status: string; ai_review_state: string }[]>`
         update clinical_records
         set ai_review_state = 'in_review',
-            data = data || ${JSON.stringify({
-              consultation_reason: "dor lombar",
-              systems_review: { neurological: "sem alteracoes" },
-              observations: "obs IA",
-            })}::jsonb
+            data = ${tx.json(projected)}
         where id = ${A.aiRecord} and status = 'draft' and ai_review_state = 'pending_review'
         returning status, ai_review_state`;
       expect(claimed.length).toBe(1);
