@@ -156,7 +156,10 @@ export function TherapistBlocks({
                     >
                       {labels.edit}
                     </Button>
-                    <form action={deleteTimeOffBlockAction}>
+                    <form
+                      action={deleteTimeOffBlockAction}
+                      onSubmit={() => setOpen(false)}
+                    >
                       <input type="hidden" name="id" value={b.id} />
                       <input type="hidden" name="userId" value={therapistId} />
                       <Button type="submit" variant="destructive" size="sm">
@@ -172,6 +175,7 @@ export function TherapistBlocks({
           {/* Create / edit form */}
           <form
             action={editing ? updateTimeOffBlockAction : createTimeOffBlockAction}
+            onSubmit={() => setOpen(false)}
             className="flex flex-col gap-3 rounded-v2 border border-v2-border p-3"
             key={editing?.id ?? "new"}
           >

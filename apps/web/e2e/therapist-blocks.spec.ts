@@ -71,6 +71,9 @@ async function clearBlocks(page: Page) {
     if ((await firstRemove.count()) === 0) break;
     await firstRemove.click();
     await page.waitForURL(/working-hours/);
+    // The save closes the dialog; wait for it to be gone before re-opening so its
+    // ::backdrop can't intercept the next open-blocks click.
+    await expect(modal).toBeHidden();
     await therapistCard(page).getByTestId("open-blocks").click();
     await expect(blocksModal(page)).toBeVisible();
   }
@@ -115,6 +118,7 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await modal.getByLabel("Até").fill(futureDate(RUN_DAY_BASE + 42));
   await modal.getByRole("button", { name: SAVE }).click();
   await page.waitForURL(/working-hours/);
+  await expect(modal).toBeHidden();
 
   // --- Create a Bloqueio pontual (date + hour range) OVER the booked 09:00 slot. ---
   await therapistCard(page).getByTestId("open-blocks").click();
@@ -126,6 +130,7 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await modal.getByLabel("Fim").fill("13:00");
   await modal.getByRole("button", { name: SAVE }).click();
   await page.waitForURL(/working-hours/);
+  await expect(modal).toBeHidden();
 
   // WARNING shown (block overlaps the existing 09:00 appointment), NOT cancelled.
   await expect(page.getByTestId("wh-banner")).toBeVisible({ timeout: 8_000 });
@@ -139,6 +144,7 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await expect(list.getByText("Bloqueio pontual")).toHaveCount(1);
   await expect(list.getByText("Ausência prolongada")).toHaveCount(1);
   await page.keyboard.press("Escape");
+  await expect(modal).toBeHidden();
 
   // --- Exclusion: the 09:00 free-slot chip is now GONE from the availability panel. ---
   const dialogAfter = await openNewAppointment(page, date);
