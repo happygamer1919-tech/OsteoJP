@@ -871,6 +871,8 @@
   "agenda.pickDate": "Escolher data",
   "appointment.recurringCheckbox": "Marcação recorrente",
   "appointment.saved": "Marcação guardada",
+  "appointment.patientRecordLink": "Ficha do paciente",
+  "appointment.patientTwoRecordLink": "Ficha do paciente 2",
   "appointment.delete": "Eliminar marcação",
   "appointment.deleteConfirm": "Eliminar",
   "appointment.deletePasswordPrompt": "Introduza a palavra-passe para eliminar esta marcação definitivamente.",

@@ -871,6 +871,8 @@
   "agenda.pickDate": "Choose date",
   "appointment.recurringCheckbox": "Recurring appointment",
   "appointment.saved": "Appointment saved",
+  "appointment.patientRecordLink": "Patient record",
+  "appointment.patientTwoRecordLink": "Patient 2 record",
   "appointment.delete": "Delete appointment",
   "appointment.deleteConfirm": "Delete",
   "appointment.deletePasswordPrompt": "Enter the password to permanently delete this appointment.",
