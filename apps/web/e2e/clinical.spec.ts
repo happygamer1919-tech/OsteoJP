@@ -184,6 +184,10 @@ test.describe("authoring (therapist)", () => {
     await expect(cervical.locator('[data-marker]')).toHaveCount(2);
     await expect(lombar.locator('[data-marker]')).toHaveCount(2);
 
+    // Motivos (consultation_reason) is a required field — the save validates the
+    // schema's required set (episode_date is prefilled), so fill it before Guardar.
+    await form.getByLabel(/Motivos da Consulta/i).fill("Dor lombar de esforço.");
+
     // Persist (Guardar) then reload — markers restore from mobilidade.*.
     await page.getByRole("button", { name: "Guardar" }).click();
     await expect(page.getByText("Ficha guardada", { exact: false }).first()).toBeVisible({
