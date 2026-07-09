@@ -93,7 +93,14 @@ export default async function WorkingHoursPage({
   // W4-14 (deep link, W4-01 part b): reached from the Equipa row
   // (?t=<therapistId>), focus the view on that therapist's card and auto-open
   // its Editar horário modal. The CRUD is unchanged; this is just scoping.
+  //
+  // A block save/edit/delete (runBlock) also redirects with &t=<id> to keep the
+  // therapist focused, but ALWAYS carries an ?m=<code>. Auto-opening the schedule
+  // modal after a block op would stack a second modal over the just-reloaded
+  // page and its fieldsets would intercept the next open-blocks click. So only
+  // the PURE Equipa deep-link (no m) auto-opens the schedule modal.
   const focused = focusId ? therapists.find((u) => u.id === focusId) ?? null : null;
+  const autoOpenSchedule = focused != null && !m;
   const shownTherapists = focused ? therapists.filter((u) => u.id === focused.id) : therapists;
 
   // First ACTIVE template per (therapist, weekday). The modal tracks exactly one
@@ -178,7 +185,7 @@ export default async function WorkingHoursPage({
               labels={LABELS}
               blocks={blocksByTherapist.get(u.id) ?? []}
               blockLabels={BLOCK_LABELS}
-              autoOpen={focused?.id === u.id}
+              autoOpen={autoOpenSchedule && focused?.id === u.id}
             />
           ))}
         </div>

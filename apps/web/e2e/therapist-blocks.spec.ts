@@ -35,6 +35,23 @@ function therapistCard(page: Page) {
   return page.locator("section.glass-card").filter({ hasText: THERAPIST_NAME }).first();
 }
 
+/** The schedule modal for the E2E therapist, scoped by its exact accessible name. */
+function scheduleModal(page: Page) {
+  return page.getByRole("dialog", { name: new RegExp(`Horário de ${THERAPIST_NAME}`) });
+}
+
+/**
+ * Open the Bloqueios modal for the E2E therapist, robustly. Any lingering
+ * schedule dialog (native <dialog> top-layer) would intercept the open-blocks
+ * click, so ensure it is closed first, then click and assert the blocks modal is
+ * actually the visible top-layer before the caller interacts with it.
+ */
+async function openBlocks(page: Page) {
+  await expect(scheduleModal(page)).toBeHidden();
+  await therapistCard(page).getByTestId("open-blocks").click();
+  await expect(blocksModal(page)).toBeVisible();
+}
+
 /** Set the E2E therapist to 09:00-13:00 at LOCATION_B on `weekday`, via the
  *  schedule modal, so the availability panel has a working window to block. */
 async function setWorkingHours(page: Page, weekday: number) {
@@ -59,10 +76,8 @@ async function setWorkingHours(page: Page, weekday: number) {
 /** Delete every block currently shown for the therapist (leave a clean slate). */
 async function clearBlocks(page: Page) {
   await page.goto("/admin/working-hours");
-  const card = therapistCard(page);
-  await card.getByTestId("open-blocks").click();
+  await openBlocks(page);
   const modal = blocksModal(page);
-  await expect(modal).toBeVisible();
   // Each delete redirects + revalidates; re-open and repeat until the list empties.
   for (let guard = 0; guard < 12; guard++) {
     const list = modal.getByTestId("blocks-list");
@@ -74,8 +89,7 @@ async function clearBlocks(page: Page) {
     // The save closes the dialog; wait for it to be gone before re-opening so its
     // ::backdrop can't intercept the next open-blocks click.
     await expect(modal).toBeHidden();
-    await therapistCard(page).getByTestId("open-blocks").click();
-    await expect(blocksModal(page)).toBeVisible();
+    await openBlocks(page);
   }
 }
 
@@ -109,11 +123,13 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await page.waitForURL(/agenda/);
 
   // --- Create an Ausência prolongada (date range) — a time_off row, reason vacation. ---
+  // A fresh navigation guarantees no schedule/blocks dialog lingers from booking.
   await page.goto("/admin/working-hours");
-  await therapistCard(page).getByTestId("open-blocks").click();
+  await openBlocks(page);
   let modal = blocksModal(page);
-  await expect(modal).toBeVisible();
   await modal.getByLabel("Tipo").selectOption("prolongada");
+  // The mode switch re-renders the form; wait for the prolongada fields to mount.
+  await expect(modal.getByLabel("De")).toBeVisible();
   await modal.getByLabel("De").fill(futureDate(RUN_DAY_BASE + 40));
   await modal.getByLabel("Até").fill(futureDate(RUN_DAY_BASE + 42));
   await modal.getByRole("button", { name: SAVE }).click();
@@ -121,10 +137,12 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await expect(modal).toBeHidden();
 
   // --- Create a Bloqueio pontual (date + hour range) OVER the booked 09:00 slot. ---
-  await therapistCard(page).getByTestId("open-blocks").click();
+  await openBlocks(page);
   modal = blocksModal(page);
-  await expect(modal).toBeVisible();
   await modal.getByLabel("Tipo").selectOption("pontual");
+  // The mode switch re-renders the form; wait for the pontual fields to mount so
+  // the time inputs are not detached mid-fill.
+  await expect(modal.getByLabel("Data")).toBeVisible();
   await modal.getByLabel("Data").fill(date);
   await modal.getByLabel("Início").fill("09:00");
   await modal.getByLabel("Fim").fill("13:00");
@@ -137,9 +155,8 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await expect(page.getByTestId("wh-banner")).toContainText(/não foram canceladas/i);
 
   // Both blocks are listed in the modal (pontual + prolongada).
-  await therapistCard(page).getByTestId("open-blocks").click();
+  await openBlocks(page);
   modal = blocksModal(page);
-  await expect(modal).toBeVisible();
   const list = modal.getByTestId("blocks-list");
   await expect(list.getByText("Bloqueio pontual")).toHaveCount(1);
   await expect(list.getByText("Ausência prolongada")).toHaveCount(1);
