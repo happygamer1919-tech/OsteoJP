@@ -90,6 +90,7 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
         postalCode: input.postalCode,
         city: input.city,
         profession: input.profession,
+        referralSource: input.referralSource,
         contraindicationEpilepsy: input.contraindicationEpilepsy,
         contraindicationPregnancy: input.contraindicationPregnancy,
       })
@@ -124,6 +125,7 @@ export async function updatePatient(
     ...(input.postalCode !== undefined && { postalCode: input.postalCode }),
     ...(input.city !== undefined && { city: input.city }),
     ...(input.profession !== undefined && { profession: input.profession }),
+    ...(input.referralSource !== undefined && { referralSource: input.referralSource }),
     ...(input.contraindicationEpilepsy !== undefined && {
       contraindicationEpilepsy: input.contraindicationEpilepsy,
     }),

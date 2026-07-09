@@ -101,6 +101,35 @@ test("create patient with all fields persists and displays them", async ({ page 
   await expect(page.getByText(/Morada/i)).toHaveCount(0);
 });
 
+test("create with each 'Como nos conheceu?' option shows it on the profile (W5-11)", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  // The three fixed options: the chosen label persists and shows on the profile.
+  for (const option of ["Redes sociais", "Website", "Recomendação de um amigo"]) {
+    const name = `Referral ${uniq()}`;
+    await createPatient(page, { fullName: name, referral: option });
+    await expect(page.getByRole("heading", { name })).toBeVisible();
+    await expect(page.getByText(option).first()).toBeVisible();
+  }
+
+  // Outro: the free-text is what persists (not the "Outro" label).
+  const outroName = `Referral Outro ${uniq()}`;
+  const freeText = `Feira de saúde ${uniq()}`;
+  await createPatient(page, {
+    fullName: outroName,
+    referral: "Outro",
+    referralOther: freeText,
+  });
+  await expect(page.getByRole("heading", { name: outroName })).toBeVisible();
+  await expect(page.getByText(freeText).first()).toBeVisible();
+  // The bare "Outro" label is never stored as the value — the free-text replaces
+  // it. The profile shows the "Como nos conheceu?" row (label) with the free-text
+  // as its value, so we assert the sentinel label "Outro" is absent, not the row.
+  await expect(page.getByText("Outro", { exact: true })).toHaveCount(0);
+});
+
 test("Notas tab appends an append-only note; the edit form no longer has a notes field (W2-11)", async ({
   page,
 }) => {

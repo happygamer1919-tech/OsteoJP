@@ -35,6 +35,11 @@ export type PatientFields = {
   city?: string;
   postalCode?: string;
   profession?: string;
+  // W5-11 — "Como nos conheceu?". `referral` is the exact option LABEL to pick
+  // (e.g. "Redes sociais") or the "Outro" label; when it is "Outro" the free-text
+  // `referralOther` is typed into the revealed input.
+  referral?: string;
+  referralOther?: string;
 };
 
 /** Fills the patient form (caller is already on /patients/new or /edit). */
@@ -53,6 +58,14 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
   if (f.postalCode) await page.getByLabel(/Código postal/i).pressSequentially(f.postalCode);
   // Street address (Morada) is no longer surfaced in the form (W2-02 item 3).
   if (f.profession) await page.getByLabel(/Profissão/i).pressSequentially(f.profession);
+  if (f.referral) {
+    // The "Como nos conheceu?" <select> is labelled by its question text.
+    await page.getByLabel(/Como nos conheceu/i).selectOption({ label: f.referral });
+    // Outro reveals a free-text "Especifique" input.
+    if (f.referralOther) {
+      await page.getByLabel(/Especifique/i).pressSequentially(f.referralOther);
+    }
+  }
 }
 
 /** Creates a patient and returns the new patient id (from the redirect URL). */
