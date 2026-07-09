@@ -39,10 +39,10 @@ function readFlag(path: string): boolean | undefined {
 }
 
 describe("osteopathy v3 stays key osteopathy / version 3 (identity ingestion)", () => {
-  it("is key=osteopathy, version=3, title Ficha Médica", () => {
+  it("is key=osteopathy, version=3, title Ficha Clínica (W5-23 display rename)", () => {
     expect(v3.key).toBe("osteopathy");
     expect(v3.version).toBe(3);
-    expect(v3.title.pt).toBe("Ficha Médica");
+    expect(v3.title.pt).toBe("Ficha Clínica");
   });
 });
 

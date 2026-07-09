@@ -93,7 +93,7 @@ export const THERAPIST_MULTI_LOCATION = "E2E Terapeuta Varias Clinicas";
  * (ficha_geral / physiotherapy / nesa). The superseded osteopathy labels below
  * must NOT appear on creation.
  */
-export const TEMPLATE_CURRENT_LABEL = "Ficha Médica v3";
+export const TEMPLATE_CURRENT_LABEL = "Ficha Clínica v3";
 export const TEMPLATE_SUPERSEDED_LABEL = "Osteopatia — Avaliação de Episódio v2";
 /** A retired-from-creation template (still a real row; just not selectable). */
 export const TEMPLATE_RETIRED_LABEL = "Fisioterapia — Avaliação de Episódio v4";

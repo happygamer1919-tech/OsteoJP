@@ -23,7 +23,7 @@ const ALL_TEMPLATES: Row[] = [
   { id: "nesa-1", key: "nesa", version: 1, title: "NESA" },
   { id: "osteo-1", key: "osteopathy", version: 1, title: "Osteopatia" },
   { id: "osteo-2", key: "osteopathy", version: 2, title: "Osteopatia" },
-  { id: "osteo-3", key: "osteopathy", version: 3, title: "Ficha Médica" },
+  { id: "osteo-3", key: "osteopathy", version: 3, title: "Ficha Clínica" },
   { id: "physio-3", key: "physiotherapy", version: 3, title: "Fisioterapia" },
   { id: "physio-4", key: "physiotherapy", version: 4, title: "Fisioterapia" },
 ];
@@ -58,13 +58,13 @@ describe("key-identity decision (SPEC sec 2, recommended path)", () => {
   });
 });
 
-describe("creation picker offers ONLY Ficha Médica (SPEC sec 1)", () => {
-  it("offers exactly one template — Ficha Médica (osteopathy, current version)", () => {
+describe("creation picker offers ONLY Ficha Clínica (SPEC sec 1)", () => {
+  it("offers exactly one template — Ficha Clínica (osteopathy, current version)", () => {
     const offered = pickerOffers(ALL_TEMPLATES);
     expect(offered).toHaveLength(1);
     expect(offered[0]!.key).toBe("osteopathy");
     expect(offered[0]!.version).toBe(3);
-    expect(offered[0]!.title).toBe("Ficha Médica");
+    expect(offered[0]!.title).toBe("Ficha Clínica");
   });
 
   it("retires ficha_geral / physiotherapy / nesa from creation (not selectable)", () => {
