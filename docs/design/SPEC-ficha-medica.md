@@ -306,3 +306,136 @@ Batch-4 loop is SYNTHETIC-DATA-ONLY (real-data go-live separately gated).
   untouched; only the NESA *template* leaves the creation flow.
 - **No manual created-date entry.** `created_at` is machine-stamped (sec 4).
 - **No final consent wording.** All consent/RGPD copy is PENDENTE-JP placeholder.
+
+---
+
+## AMENDMENTS 2026-07-09 (Wave 05 Hotfix, W5-18..W5-23)
+
+> Appended by YELLOW (Wave 05 Hotfix authoring), from the owner QA pass on the
+> deployed app plus clinic-staff feedback (six residual items). This section is
+> AUTHORITATIVE and SUPERSEDES the earlier body of this SPEC and the Wave 05 / sec 5
+> sequence wherever they differ. It is consumed by loops W5-18..W5-23
+> (`docs/loops/wave-05/`). Presentation-layer only unless a ruling states
+> otherwise; the frozen ingestion contract (`template=osteopathy` + the twelve AI
+> keys) does not change. Plain hyphens throughout, pt-PT UI copy.
+
+### A. NAMING RULING - "Ficha Clinica"
+
+The unified template's user-facing name is **"Ficha Clinica"**, superseding "Ficha
+Medica" everywhere this SPEC references the presentation layer (record-creation
+template selector, record-view header, the patient's Registos clinicos list,
+Revisao Consulta).
+
+Internal identifiers are **FROZEN and unchanged**:
+- the template key `osteopathy` - the shipped unified template is `osteopathy`
+  **v3**, the highest active version. (The hotfix brief's shorthand "osteopathy-v2"
+  denotes this frozen osteopathy lineage; the accurate active version is **v3**, and
+  **v2 stays immutable** for records that reference it, CLAUDE.md rule 5.)
+- the ingestion selector `template=osteopathy` (`M1_TEMPLATE`,
+  `apps/web/lib/consultation/m1-webhook.ts`),
+- the twelve AI field keys (SPEC sec 2), frozen by identity.
+
+The display name lives ONLY in `form_templates.title` (seeded from
+`packages/db/seed/form-templates/osteopathy-v3.json`); there are **ZERO** hardcoded
+display-name literals in TSX - every surface reads `title[locale]`. The rename is
+therefore a **title-only value change** (`pt "Ficha Medica" -> "Ficha Clinica"`, `en
+"Medical Record" -> "Clinical Record"`) re-upserted into the dev DB; the schema body
+and key are untouched, so record rendering and rule-5 immutability are unaffected.
+Existing records keep their stored template refs and titles. Detailed in loop W5-23.
+
+### B. RULING OVERRIDE (supersedes Q-W5-1) - no Data do Episodio input
+
+Q-W5-1 (Data do Episodio editable, prefilled today) is **SUPERSEDED**. **Data do
+Episodio is removed from the creation AND edit form.** Date and time are
+auto-stamped at creation (`created_at`) and displayed **read-only** on the record
+view and in the patient-profile Registos clinicos list. There is **no date input
+anywhere in the ficha**.
+
+Implementation notes (recorded; the executor recons and decides in W5-19):
+- `episode_date` is currently the position-1 field in `osteopathy` v3 AND is listed
+  in the template `required` array. Removing the input must not break save-time
+  required-validation: either populate `episode_date` server-side from `created_at`
+  on save (keeps the field valid without an input) OR drop it from the template
+  `required`. **Prefer the server-populate path** (migration-free, no template
+  version bump, rule-5 safe).
+- RecordForm.tsx currently carries `episode_date` in `HEADER_ROW_KEYS` (the header
+  grid row) and prefills it to today; both must go.
+- Display timezone is Europe/Lisbon (CLAUDE.md); the DB stores UTC.
+
+### C. RULING - "Outros" (renames + restructures the Problemas de Saude section)
+
+The section currently titled **"Problemas de Saude"** is renamed and restructured to
+a single section titled **"Outros"**, containing, in order:
+1. the checkbox grid **exactly as currently shipped** - Lupus in-grid, four columns
+   on desktop, responsive collapse (the W5-14 grid, unchanged);
+2. below the grid, the free-text field with placeholder **"Outras condicoes,
+   alergias, medicamentos..."** and **no visible label**.
+
+The words "Problemas de Saude" disappear from the form. This is **presentation only -
+no data model change**: the `health_problems` key, its nineteen booleans, and the
+`other` free-text sub-key are all unchanged. Detailed in loop W5-19.
+
+### D. AUTHORITATIVE FIELD SEQUENCE (supersedes the Wave 05 / sec 5 sequence where they differ)
+
+The Ficha Clinica renders top-to-bottom in exactly this order, on **both** the
+creation and edit form. Reordering NEVER alters the twelve AI key bindings - keys
+bind to fields, not positions.
+
+1. **Peso (kg)** + **Altura (cm)** + **Marcacao respectiva** as one row - **no date
+   field**. Peso and Altura strictly adjacent, nothing between them.
+2. **Alertas (sinais de alarme)**
+3. **Codigos CID associados**
+4. **Outros** - checkbox grid + free-text, per ruling C above
+5. **Motivos da Consulta / Inicio / Contexto em que ocorre**
+6. **Condicoes Alivio / Agravamento**
+7. **Antecedentes Clinicos / Cirurgia / Medicacao**
+8. **Anamnese por Sistemas** (Neurologico, Cardiovascular, Respiratorio,
+   Gastrointestinal, Urologico / Ginecologico, Endocrino)
+9. **Bodychart** - the existing component, untouched
+10. **Mobilidade Activa / Passiva** (component spec E below), followed by
+    **Observacoes Mobilidade Activa / Passiva** textarea
+11. **Testes Neurologicos**, then **Testes Especiais**
+12. **Diagnostico**, **Tratamento**, **Plano de Tratamento**, **Objectivos do
+    Tratamento**
+13. **Observacoes**
+14. **Signature and consent** section, as shipped in W5-16
+
+Ground-truth note (recorded 2026-07-09): the shipped `osteopathy` v3 property order
+ALREADY realizes this sequence for fields 2-13 (delivered by W5-14/W5-15). The only
+deltas this sequence introduces are (a) removal of the position-1 Data do Episodio
+input (ruling B) and (b) the Outros rename/restructure at position 4 (ruling C).
+W5-19 enforces both and pastes a full top-to-bottom audit.
+
+### E. MOBILIDADE ACTIVA / PASSIVA - component spec
+
+Section header **"Mobilidade Activa / Passiva"** with helper line **"Pode inserir
+tantos pontos quantos desejar apos clicar em Inserir marcador"**.
+
+- **Three equal circle diagrams side by side**, labeled **Cervical**, **Dorsal**,
+  **Lombar** beneath each circle.
+- Each circle renders **reference spokes** as an SVG: vertical top, two upper
+  diagonals, full horizontal, vertical bottom.
+- **Two marker types with a selectable toggle:** **Mobilidade Activa** (filled dot)
+  and **Mobilidade Passiva** (star).
+- **Inserir marcador** arms placement; a click or tap on any circle then places a
+  marker of the selected type at that point. **Unlimited** markers.
+- **Limpar marcadores** clears **all** markers on the record.
+- Marker data persists in the record's `data` JSON as a list of **{circle, type, x,
+  y}** in normalized 0-1 coordinates. (Implementation note: the shipped W5-15 widget
+  persists the equivalent shape keyed by circle - `mobilidade.{cervical,dorsal,lombar}`,
+  each an array of `{marker_type, x, y}` - which carries the same four facts, the
+  circle being the object key. W5-20 recon decides whether to keep that shipped
+  keying - **RECOMMENDED**, to avoid churning any already-stored marker data - or
+  flatten to the literal list; either shape satisfies this spec.)
+- **Touch-friendly on mobile; toggle controls min 44px.**
+- **Read-only render on signed records.**
+
+Ground-truth note: the W5-15 `MobilidadeChart` component (`apps/web/app/clinical/[id]/MobilidadeChart.tsx`)
+EXISTS and is MOUNTED at sequence position 10 - RecordForm.tsx renders it via the
+`mobilidade` x-widget. It conforms on the three circles, the two marker types
+(Activa=dot, Passiva=star), unlimited markers, per-circle persistence, and read-only
+gating, but DIVERGES from this spec on: the marker-type control (a `<select>`, not
+min-44px toggle buttons), the absence of an explicit "Inserir marcador" arm step (it
+places on direct click), a per-circle rather than single record-wide "Limpar
+marcadores", and the **missing reference spokes**. W5-20 reconciles these; it does
+NOT rebuild from zero.
