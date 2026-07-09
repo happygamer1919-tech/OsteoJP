@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   clinicalRecords,
@@ -16,7 +16,7 @@ import {
   validateRecordData,
   type TemplateSchema,
 } from "./form-template";
-import { projectAiPayloadOntoFichaFields } from "./ficha-medica";
+import { projectAiPayloadOntoFichaFields, FICHA_MEDICA_KEY } from "./ficha-medica";
 import { partitionNarrativeEdit } from "./review-fields";
 import {
   FINALIZED_REVIEW_STATE,
@@ -172,6 +172,7 @@ export async function claimReviewItem(
           source: clinicalRecords.source,
           state: clinicalRecords.aiReviewState,
           data: clinicalRecords.data,
+          formTemplateId: clinicalRecords.formTemplateId,
         })
         .from(clinicalRecords)
         .where(eq(clinicalRecords.id, ref.recordId))
@@ -183,6 +184,27 @@ export async function claimReviewItem(
       if (state === "in_review") return { recordId: ref.recordId }; // idempotent
       if (isTerminalReviewState(state)) throw new ClinicalError("already_reviewed");
       assertReviewTransition(state, "in_review");
+
+      // Bind the current Ficha Médica template to the AI draft AT CLAIM (AI records
+      // arrive with formTemplateId = null — store.ts persists only the raw
+      // payload). Without a bound template the finalized record has no schema and
+      // the clinical viewer (/clinical/[id]) renders no fields, so an edit made
+      // during review is not shown after signing. Binding here (not only on save)
+      // makes the record a proper Ficha Médica record even if the reviewer signs
+      // with no intermediate save. Set only when currently null so a referenced
+      // template is never rewritten (rule #5). Highest active version = current
+      // Ficha Médica (rule #5 version collapse).
+      let bindTemplateId: string | null = null;
+      if (row.formTemplateId == null) {
+        const fichaRows = await tx
+          .select({ id: formTemplates.id, version: formTemplates.version })
+          .from(formTemplates)
+          .where(and(eq(formTemplates.isActive, true), eq(formTemplates.key, FICHA_MEDICA_KEY)))
+          .orderBy(asc(formTemplates.version));
+        if (fichaRows.length > 0) {
+          bindTemplateId = fichaRows.reduce((a, b) => (b.version > a.version ? b : a)).id;
+        }
+      }
 
       // W5-17: project the twelve `_aiIngestionRaw` keys onto their Ficha Médica
       // field paths (identity mapping, W5-13) IN THE CLAIM UPDATE, so the AI
@@ -199,7 +221,11 @@ export async function claimReviewItem(
 
       const updated = await tx
         .update(clinicalRecords)
-        .set({ aiReviewState: "in_review", data: projected })
+        .set(
+          bindTemplateId != null
+            ? { aiReviewState: "in_review", data: projected, formTemplateId: bindTemplateId }
+            : { aiReviewState: "in_review", data: projected },
+        )
         .where(
           and(
             eq(clinicalRecords.id, ref.recordId),
@@ -383,6 +409,7 @@ export async function saveReviewFicha(
   recordId: string,
   data: Record<string, unknown>,
   schema: TemplateSchema | null,
+  formTemplateId?: string | null,
 ): Promise<void> {
   assertCan(ctx.role, "clinical_records:review");
   const ip = await clientIp();
@@ -392,6 +419,7 @@ export async function saveReviewFicha(
         status: clinicalRecords.status,
         source: clinicalRecords.source,
         aiState: clinicalRecords.aiReviewState,
+        formTemplateId: clinicalRecords.formTemplateId,
       })
       .from(clinicalRecords)
       .where(eq(clinicalRecords.id, recordId))
@@ -408,10 +436,17 @@ export async function saveReviewFicha(
       if (!result.ok) throw new ClinicalError("validation", result.errors);
     }
 
-    // data ONLY — never status / ai_review_state (the two axes stay separate).
+    // Bind the Ficha Médica template to the record the FIRST time it is saved
+    // under review. AI drafts arrive with formTemplateId = null (store.ts persists
+    // only the raw payload); without a bound template the finalized record has no
+    // schema and the clinical viewer (/clinical/[id]) renders no fields. Set it
+    // only when currently null so a template, once referenced, is never rewritten
+    // (rule #5 immutability). data is written every save; the two axes
+    // (status / ai_review_state) are untouched here.
+    const bindTemplate = row.formTemplateId == null && formTemplateId != null;
     await tx
       .update(clinicalRecords)
-      .set({ data })
+      .set(bindTemplate ? { data, formTemplateId } : { data })
       .where(and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft")));
 
     await writeClinicalAudit(tx, {

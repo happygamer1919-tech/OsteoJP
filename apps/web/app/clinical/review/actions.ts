@@ -97,11 +97,13 @@ export async function saveFichaReviewAction(
     return { ok: false, code: "error" };
   }
   // AI drafts carry no formTemplateId — resolve the Ficha Médica schema by key
-  // so the payload is validated against the same template the editor rendered.
+  // so the payload is validated against the same template the editor rendered,
+  // and pass the template id so the record is BOUND to it on first save (else the
+  // finalized record has no schema and the clinical viewer renders no fields).
   const ficha = await getFichaMedicaTemplate(ctx);
   const schema = parseTemplateSchema(ficha?.schema ?? null);
   try {
-    await saveReviewFicha(ctx, recordId, data, schema);
+    await saveReviewFicha(ctx, recordId, data, schema, ficha?.id ?? null);
   } catch (e) {
     if (isClinicalError(e)) {
       return { ok: false, code: e.code, errors: e.fieldErrors };
