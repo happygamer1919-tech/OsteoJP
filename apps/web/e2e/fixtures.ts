@@ -66,11 +66,17 @@ export const THERAPIST_ONE_LOCATION = "E2E Terapeuta Clinica Unica";
 export const THERAPIST_MULTI_LOCATION = "E2E Terapeuta Varias Clinicas";
 
 /**
- * The current osteopathy template the "Modelo" picker should offer (PR #96
- * version resolver → highest active version). v1 must NOT appear.
+ * The single template the "Modelo" picker offers on record CREATION (W5-13,
+ * SPEC-ficha-medica.md sec 1): Ficha Médica = the osteopathy lineage evolved to
+ * v3, the current active version. The version resolver (PR #96) collapses
+ * osteopathy v1/v2/v3 to v3; the W5-13 creation filter drops every other key
+ * (ficha_geral / physiotherapy / nesa). The superseded osteopathy labels below
+ * must NOT appear on creation.
  */
-export const TEMPLATE_CURRENT_LABEL = "Osteopatia — Avaliação de Episódio v2";
-export const TEMPLATE_SUPERSEDED_LABEL = "Osteopatia — Avaliação de Episódio v1";
+export const TEMPLATE_CURRENT_LABEL = "Ficha Médica v3";
+export const TEMPLATE_SUPERSEDED_LABEL = "Osteopatia — Avaliação de Episódio v2";
+/** A retired-from-creation template (still a real row; just not selectable). */
+export const TEMPLATE_RETIRED_LABEL = "Fisioterapia — Avaliação de Episódio v4";
 
 /**
  * A future calendar date (yyyy-mm-dd) `offsetDays` out, anchored at noon UTC so

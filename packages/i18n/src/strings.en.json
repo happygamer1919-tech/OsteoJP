@@ -444,6 +444,8 @@
   "clinical.patientTypeToSearch": "Type to search…",
   "clinical.patientSearchEmpty": "No patients found.",
   "clinical.template": "Template",
+  "clinical.fichaMedica": "Medical Record",
+  "clinical.fichaMedicaHelp": "All new records use the Medical Record template.",
   "clinical.episode": "Episode",
   "clinical.episodeNone": "No episode",
   "clinical.episodeDefaultName": "Episode",
