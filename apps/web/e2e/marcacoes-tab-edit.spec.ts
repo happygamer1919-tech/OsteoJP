@@ -46,9 +46,13 @@ function row(page: Page, hhmm: string): Locator {
   // Card. Target the UI Card root (rounded-lg border bg-surface p-6) and filter
   // by "· HH:MM" (word-boundary, not end-anchored) to pin exactly one row Card,
   // which also contains that row's "Gerir marcação" details.
+  // Plain substring (not a regex boundary): the Card's text content concatenates
+  // the header and practitioner spans as "…09:00Dr…", so there is no word
+  // boundary after the time. "· HH:MM" is unique per row (tests book distinct
+  // times), so a substring match pins exactly one Card.
   return page
     .locator("div.rounded-lg.border.bg-surface.p-6")
-    .filter({ hasText: new RegExp(`· ${hhmm}\\b`) });
+    .filter({ hasText: `· ${hhmm}` });
 }
 
 async function openConsultas(page: Page) {
