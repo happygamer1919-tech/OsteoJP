@@ -16,6 +16,7 @@ import { s, locale } from "@/lib/i18n";
 
 import { fieldAnchorId } from "./anchors";
 import { BodyChart, type Marker } from "./BodyChart";
+import { MobilidadeChart, type MobilidadeValue } from "./MobilidadeChart";
 
 export type SaveState = { ok: boolean; errors?: Record<string, string>; code?: string };
 
@@ -46,6 +47,9 @@ function asObject(v: unknown): Record<string, unknown> {
 }
 function asMarkers(v: unknown): Marker[] {
   return Array.isArray(v) ? (v as Marker[]) : [];
+}
+function asMobilidade(v: unknown): MobilidadeValue {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as MobilidadeValue) : {};
 }
 
 /**
@@ -308,6 +312,12 @@ function FieldWidget({
         </Card>
       );
     }
+    case "mobilidade":
+      return (
+        <Card>
+          <MobilidadeChart value={asMobilidade(value)} onChange={(v) => onChange(v)} readOnly={readOnly} />
+        </Card>
+      );
     default:
       return (
         <Input type="text" disabled={readOnly} value={asString(value)} onChange={(e) => onChange(e.target.value)} />
