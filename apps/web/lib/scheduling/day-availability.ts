@@ -1,46 +1,39 @@
 import "server-only";
 import { and, asc, eq, gt, lt, notInArray, type SQL } from "drizzle-orm";
 import type { RequestContext } from "@osteojp/auth";
-import { appointments, availabilityTemplates, type DbTx } from "@osteojp/db";
+import { appointments, availabilityTemplates, timeOff, type DbTx } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
-import { mergeIntervals, subtractIntervals, type TimeInterval } from "./intervals";
-import { isWithinValidity, lisbonWeekday, type AvailabilityTemplate } from "./availability";
-import { addDays, lisbonDateTimeToUtc, lisbonMidnightUtc } from "./time";
+import { type AvailabilityTemplate } from "./availability";
+import { addDays, lisbonMidnightUtc } from "./time";
 import type { AppointmentStatusValue } from "./types";
+import {
+  buildDay,
+  type BlockRow,
+  type BookedRow,
+  type DayAvailability,
+} from "./day-availability-core";
 
 /**
  * Read-only availability query. Given a therapist and a date range (a single
  * day or a week), returns per Lisbon day the working windows, the booked
- * intervals, and the free intervals (working minus booked). Shared by the
- * new-appointment panel, the batch engine, and multi-therapist conflict
- * reporting - build once, consume three times.
+ * intervals, the time_off blocks, and the free intervals (working minus booked
+ * minus blocks). Shared by the new-appointment panel, the batch engine, and
+ * multi-therapist conflict reporting - build once, consume three times.
+ *
+ * The interval math lives in day-availability-core.ts (pure, unit-tested); this
+ * module only does the tenant-scoped DB reads that feed it.
  *
  * Runs through runScoped, so RLS scopes every read to the caller's tenant;
  * this module never filters tenant_id by hand and never touches getDbAdmin.
  * tenant_id comes from the verified JWT (RequestContext), never from input.
  */
 
-/** A time span crossing the wire as ISO-8601 UTC strings (see types.ts). */
-export type IsoInterval = { start: string; end: string };
-
-/** A booked appointment span. Carries the id + status so conflict reporting
- * can attribute the block without a second query. */
-export type BookedInterval = IsoInterval & {
-  appointmentId: string;
-  status: AppointmentStatusValue;
-};
-
-/** Availability for one Lisbon calendar day. */
-export type DayAvailability = {
-  /** Lisbon calendar date, "yyyy-mm-dd". */
-  date: string;
-  /** Working windows from availability_templates (merged, sorted). */
-  working: IsoInterval[];
-  /** Booked appointments overlapping the day (cancelled/no_show excluded). */
-  booked: BookedInterval[];
-  /** Working minus booked - the bookable gaps (merged, sorted). */
-  free: IsoInterval[];
-};
+export type {
+  IsoInterval,
+  BookedInterval,
+  BlockInterval,
+  DayAvailability,
+} from "./day-availability-core";
 
 export type AvailabilityQuery = {
   therapistId: string;
@@ -56,11 +49,6 @@ export type AvailabilityQuery = {
 // completed) counts as booked. Kept as a const tuple so the query stays in sync
 // with the appointment_status enum without a manual list of the "booked" side.
 const NON_BLOCKING: AppointmentStatusValue[] = ["cancelled", "no_show"];
-
-const iso = (i: TimeInterval): IsoInterval => ({
-  start: i.start.toISOString(),
-  end: i.end.toISOString(),
-});
 
 /** Inclusive list of Lisbon calendar dates from `from` to `to`. */
 function datesInRange(from: string, to: string): string[] {
@@ -80,9 +68,12 @@ export async function getTherapistAvailability(
   const rangeEnd = lisbonMidnightUtc(addDays(to, 1));
 
   return runScoped(ctx, async (tx) => {
-    const [bookedRows, templateRows] = await Promise.all([
+    const [bookedRows, templateRows, blockRows] = await Promise.all([
       readBookedRows(tx, { therapistId, rangeStart, rangeEnd, locationId }),
       readTemplateRows(tx, { therapistId, locationId }),
+      // time_off is therapist-wide (not per location), so it is NOT filtered by
+      // locationId: an absence blocks the therapist everywhere for that span.
+      readBlockRows(tx, { therapistId, rangeStart, rangeEnd }),
     ]);
 
     const templates: AvailabilityTemplate[] = templateRows.map((r) => ({
@@ -95,17 +86,10 @@ export async function getTherapistAvailability(
     }));
 
     return datesInRange(from, to).map((date) =>
-      buildDay(date, templates, bookedRows),
+      buildDay(date, templates, bookedRows, blockRows),
     );
   });
 }
-
-type BookedRow = {
-  id: string;
-  startsAt: Date;
-  endsAt: Date;
-  status: AppointmentStatusValue;
-};
 
 function readBookedRows(
   tx: DbTx,
@@ -132,6 +116,30 @@ function readBookedRows(
     .orderBy(asc(appointments.startsAt));
 }
 
+/** time_off blocks overlapping the query range (half-open). Therapist-wide, so
+ *  never scoped to a location — an absence blocks every clinic for that span. */
+function readBlockRows(
+  tx: DbTx,
+  args: { therapistId: string; rangeStart: Date; rangeEnd: Date },
+): Promise<BlockRow[]> {
+  return tx
+    .select({
+      id: timeOff.id,
+      startsAt: timeOff.startsAt,
+      endsAt: timeOff.endsAt,
+      reason: timeOff.reason,
+    })
+    .from(timeOff)
+    .where(
+      and(
+        eq(timeOff.userId, args.therapistId),
+        lt(timeOff.startsAt, args.rangeEnd),
+        gt(timeOff.endsAt, args.rangeStart),
+      ),
+    )
+    .orderBy(asc(timeOff.startsAt));
+}
+
 function readTemplateRows(
   tx: DbTx,
   args: { therapistId: string; locationId?: string | null },
@@ -151,47 +159,4 @@ function readTemplateRows(
     })
     .from(availabilityTemplates)
     .where(and(...conds));
-}
-
-/** Assemble one day's working / booked / free intervals. Pure given its rows. */
-function buildDay(
-  date: string,
-  templates: AvailabilityTemplate[],
-  bookedRows: BookedRow[],
-): DayAvailability {
-  const dayStart = lisbonMidnightUtc(date).getTime();
-  const dayEnd = lisbonMidnightUtc(addDays(date, 1)).getTime();
-  const weekday = lisbonWeekday(date);
-
-  // Working windows: templates for this weekday, still inside their validity
-  // window, converted from Lisbon wall-clock "time" columns to UTC instants.
-  const working: TimeInterval[] = templates
-    .filter((t) => t.weekday === weekday && isWithinValidity(date, t.validFrom, t.validUntil))
-    .map((t) => ({
-      start: lisbonDateTimeToUtc(date, t.startTime),
-      end: lisbonDateTimeToUtc(date, t.endTime),
-    }));
-
-  // Bookings overlapping this specific day (rows are pre-filtered to the range).
-  const bookedForDay = bookedRows.filter(
-    (r) => r.startsAt.getTime() < dayEnd && r.endsAt.getTime() > dayStart,
-  );
-  const bookedIntervals: TimeInterval[] = bookedForDay.map((r) => ({
-    start: r.startsAt,
-    end: r.endsAt,
-  }));
-
-  const free = subtractIntervals(working, bookedIntervals);
-
-  return {
-    date,
-    working: mergeIntervals(working).map(iso), // merged + sorted
-    booked: bookedForDay.map((r) => ({
-      appointmentId: r.id,
-      status: r.status,
-      start: r.startsAt.toISOString(),
-      end: r.endsAt.toISOString(),
-    })),
-    free: free.map(iso),
-  };
 }

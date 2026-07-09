@@ -208,7 +208,10 @@ export async function getTherapistDayAvailability(
       to: input.date,
       locationId: input.locationId ?? null,
     });
-    return { ok: true, data: days[0] ?? { date: input.date, working: [], booked: [], free: [] } };
+    return {
+      ok: true,
+      data: days[0] ?? { date: input.date, working: [], booked: [], blocks: [], free: [] },
+    };
   } catch (e) {
     return fail("availability", e);
   }

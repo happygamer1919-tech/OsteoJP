@@ -22,7 +22,10 @@ test("Horários: card modal saves 24h hours (booking panel reflects) + in-modal 
   const card = page.locator("section.glass-card").filter({ hasText: THERAPIST_NAME }).first();
   await expect(card).toBeVisible();
   await card.getByTestId("edit-schedule").click();
-  const modal = page.getByRole("dialog", { name: new RegExp(THERAPIST_NAME) });
+  // Scope to the schedule modal by its exact accessible name ("Horário de …") —
+  // the card now also renders a "Bloqueios de …" dialog (W5-12), so a bare
+  // /THERAPIST_NAME/ match would be strict-mode ambiguous if both were open.
+  const modal = page.getByRole("dialog", { name: new RegExp(`Horário de ${THERAPIST_NAME}`) });
   await expect(modal).toBeVisible();
 
   // The weekday row for `date` — scoped by its per-day location select.
@@ -50,7 +53,7 @@ test("Horários: card modal saves 24h hours (booking panel reflects) + in-modal 
   await page.goto("/admin/working-hours");
   const card2 = page.locator("section.glass-card").filter({ hasText: THERAPIST_NAME }).first();
   await card2.getByTestId("edit-schedule").click();
-  const modal2 = page.getByRole("dialog", { name: new RegExp(THERAPIST_NAME) });
+  const modal2 = page.getByRole("dialog", { name: new RegExp(`Horário de ${THERAPIST_NAME}`) });
   await expect(modal2).toBeVisible();
   const row2 = modal2.locator("fieldset").filter({
     has: page.locator(`select[name="d${weekday}_location"]`),
@@ -81,7 +84,7 @@ test("Horários: deep link from Equipa focuses the therapist and opens the modal
   await page.goto(href!);
   // Focused on that therapist (scoped view) and the modal auto-opens.
   await expect(page.getByText(THERAPIST_NAME).first()).toBeVisible();
-  await expect(page.getByRole("dialog", { name: new RegExp(THERAPIST_NAME) })).toBeVisible({
-    timeout: 8_000,
-  });
+  await expect(
+    page.getByRole("dialog", { name: new RegExp(`Horário de ${THERAPIST_NAME}`) }),
+  ).toBeVisible({ timeout: 8_000 });
 });

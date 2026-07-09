@@ -5,6 +5,7 @@ import { Button, GlassPanel, useAnimatedDialog } from "@osteojp/ui";
 import { TimeFieldInput } from "@/components/time-field-input";
 import { adminInputInline, adminLabel } from "../admin-ui";
 import { saveTherapistScheduleAction } from "./actions";
+import { TherapistBlocks, type BlockView, type BlockLabels } from "./TherapistBlocks";
 
 export type ScheduleDay = {
   weekday: number;
@@ -46,6 +47,8 @@ export function TherapistScheduleCard({
   days,
   locations,
   labels,
+  blocks,
+  blockLabels,
   autoOpen = false,
 }: {
   therapistId: string;
@@ -53,6 +56,8 @@ export function TherapistScheduleCard({
   days: ScheduleDay[];
   locations: ScheduleLocation[];
   labels: ScheduleLabels;
+  blocks: BlockView[];
+  blockLabels: BlockLabels;
   autoOpen?: boolean;
 }) {
   const [open, setOpen] = useState(autoOpen);
@@ -65,15 +70,23 @@ export function TherapistScheduleCard({
     <GlassPanel
       title={therapistName}
       headerAction={
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setOpen(true)}
-          data-testid="edit-schedule"
-        >
-          {labels.editSchedule}
-        </Button>
+        <div className="flex gap-1">
+          <TherapistBlocks
+            therapistId={therapistId}
+            therapistName={therapistName}
+            blocks={blocks}
+            labels={blockLabels}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setOpen(true)}
+            data-testid="edit-schedule"
+          >
+            {labels.editSchedule}
+          </Button>
+        </div>
       }
     >
       {workedDays.length === 0 ? (

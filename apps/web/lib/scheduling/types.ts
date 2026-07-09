@@ -10,7 +10,7 @@ import type { RecurrenceSpec, SeriesScope } from "./recurrence";
 
 export type { AgendaView };
 export type { RecurrenceSpec, SeriesScope, Frequency } from "./recurrence";
-export type { DayAvailability, IsoInterval, BookedInterval } from "./day-availability";
+export type { DayAvailability, IsoInterval, BookedInterval, BlockInterval } from "./day-availability";
 
 export type AppointmentStatusValue =
   (typeof appointmentStatus.enumValues)[number];
