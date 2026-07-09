@@ -441,6 +441,8 @@
   "clinical.patientTypeToSearch": "Escreva para pesquisar…",
   "clinical.patientSearchEmpty": "Nenhum paciente encontrado.",
   "clinical.template": "Modelo",
+  "clinical.fichaMedica": "Ficha Médica",
+  "clinical.fichaMedicaHelp": "Todas as fichas novas usam o modelo Ficha Médica.",
   "clinical.episode": "Episódio",
   "clinical.episodeNone": "Sem episódio",
   "clinical.episodeDefaultName": "Episódio",

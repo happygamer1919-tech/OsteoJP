@@ -10,6 +10,7 @@ import {
   users,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { FICHA_MEDICA_KEY } from "./ficha-medica";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
 import {
@@ -196,9 +197,18 @@ export async function getRecordDetail(
 }
 
 /**
- * Templates for the "Modelo" picker: ONE entry per key — the current (highest)
- * version among active rows. Without this collapse the picker would list every
- * version (osteopathy v1+v2, physiotherapy v3+v4 since PR #91) as duplicates.
+ * Templates for the "Modelo" picker on record CREATION. W5-13 (SPEC sec 1):
+ * record creation offers a SINGLE template — Ficha Médica — so the picker is
+ * restricted to the Ficha Médica key (`FICHA_MEDICA_KEY`) and collapsed to its
+ * current (highest) active version. The other templates (ficha_geral /
+ * physiotherapy / nesa / the x-form-ref wrappers) are retired FROM CREATION by
+ * this filter — no row is deleted and no existing record is rewritten.
+ *
+ * The retirement is a code-level scope of THIS creation query only; every
+ * template row stays in `form_templates` and `is_active=true`, so existing
+ * records keep resolving their pinned template unchanged (immutability). The
+ * version collapse (resolveCurrentTemplates) still guards against listing more
+ * than one Ficha Médica version once W5-14/W5-15 bump the schema again.
  *
  * This is the new-record path only. Existing records pin formTemplateId and are
  * resolved by id elsewhere (immutability) — never through this resolver.
@@ -214,7 +224,9 @@ export async function listActiveTemplates(ctx: RequestContext): Promise<Template
         version: formTemplates.version,
       })
       .from(formTemplates)
-      .where(eq(formTemplates.isActive, true))
+      // Creation offers ONLY Ficha Médica (SPEC sec 1); other templates are not
+      // selectable when creating a new record.
+      .where(and(eq(formTemplates.isActive, true), eq(formTemplates.key, FICHA_MEDICA_KEY)))
       // key asc, version asc → resolveCurrentTemplates keeps the picker key-sorted.
       .orderBy(asc(formTemplates.key), asc(formTemplates.version));
     const options: TemplateOption[] = rows.map((r) => ({

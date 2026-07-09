@@ -62,6 +62,10 @@ export default async function NewRecordPage({
                 </option>
               ))}
             </select>
+            {/* W5-13: record creation offers a single template — Ficha Médica. */}
+            <span className="block text-xs text-text-secondary">
+              {s["clinical.fichaMedicaHelp"]}
+            </span>
           </label>
         </PatientEpisodeFields>
 
