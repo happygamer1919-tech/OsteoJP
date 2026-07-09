@@ -119,6 +119,67 @@ describe.skipIf(!live)("review/finalize write path RLS + lifecycle", () => {
     });
   });
 
+  /* ---- W5-17: Assumir maps the twelve AI keys onto the Ficha Médica field
+     paths at claim, and the two axes transition INDEPENDENTLY. ---- */
+  it("W5-17 AI: claim projects the twelve keys to field paths; axes stay separate through finalize", async () => {
+    await asTherapistA(async (tx) => {
+      // Seed a fuller _aiIngestionRaw (mirrors the ingestion store shape) so the
+      // projection has real values to lift onto field paths.
+      await tx`update clinical_records set data = ${JSON.stringify({
+        _aiIngestionRaw: {
+          template: "osteopathy",
+          consultation_reason: "dor lombar",
+          systems_review: { neurological: "sem alteracoes" },
+          observations: "obs IA",
+        },
+      })}::jsonb where id = ${A.aiRecord}`;
+
+      // CLAIM (the service's claim UPDATE): flip ai_review_state AND project the
+      // twelve keys onto their field paths in ONE update. record_status stays
+      // 'draft' (the record_status axis does NOT move on claim).
+      const claimed = await tx<{ status: string; ai_review_state: string }[]>`
+        update clinical_records
+        set ai_review_state = 'in_review',
+            data = data || ${JSON.stringify({
+              consultation_reason: "dor lombar",
+              systems_review: { neurological: "sem alteracoes" },
+              observations: "obs IA",
+            })}::jsonb
+        where id = ${A.aiRecord} and status = 'draft' and ai_review_state = 'pending_review'
+        returning status, ai_review_state`;
+      expect(claimed.length).toBe(1);
+      // Axis separation on claim: review axis moved, record_status did NOT.
+      expect(claimed[0]?.ai_review_state).toBe("in_review");
+      expect(claimed[0]?.status).toBe("draft");
+
+      // The twelve keys are now reachable at their FIELD PATHS (editable in the
+      // Ficha Médica editor), while _aiIngestionRaw is preserved.
+      const afterClaim = await tx<{ data: Record<string, unknown> }[]>`
+        select data from clinical_records where id = ${A.aiRecord}`;
+      const d = afterClaim[0]!.data as Record<string, unknown>;
+      expect(d.consultation_reason).toBe("dor lombar");
+      expect((d.systems_review as Record<string, unknown>).neurological).toBe("sem alteracoes");
+      expect(d.observations).toBe("obs IA");
+      expect(d._aiIngestionRaw).toBeTruthy(); // source of truth kept
+
+      // FINALIZE (single-statement): record_status → signed AND ai_review_state →
+      // approved. The two axes move together HERE but by DISTINCT columns — never
+      // collapsed into one. A finalize BEFORE claim would have matched 0 rows.
+      const finalized = await tx<{ status: string; ai_review_state: string }[]>`
+        update clinical_records
+        set status = 'signed', signed_by = ${A.user}, signed_at = now(), ai_review_state = 'approved'
+        where id = ${A.aiRecord} and status = 'draft' and ai_review_state = 'in_review'
+        returning status, ai_review_state`;
+      expect(finalized[0]?.status).toBe("signed");
+      expect(finalized[0]?.ai_review_state).toBe("approved");
+
+      // Immutability: the projected field-path values are now frozen.
+      await expect(
+        tx`update clinical_records set data = data || ${JSON.stringify({ consultation_reason: "x" })}::jsonb where id = ${A.aiRecord}`,
+      ).rejects.toThrow(/immutable/i);
+    });
+  });
+
   it("AI: NEVER auto-finalize — finalizing a pending_review item matches 0 rows", async () => {
     await asTherapistA(async (tx) => {
       const jumped = await tx<{ id: string }[]>`

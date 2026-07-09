@@ -11,7 +11,12 @@ import {
 import { runScoped } from "@/lib/auth/context";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
-import { parseTemplateSchema } from "./form-template";
+import {
+  parseTemplateSchema,
+  validateRecordData,
+  type TemplateSchema,
+} from "./form-template";
+import { projectAiPayloadOntoFichaFields } from "./ficha-medica";
 import { partitionNarrativeEdit } from "./review-fields";
 import {
   FINALIZED_REVIEW_STATE,
@@ -166,6 +171,7 @@ export async function claimReviewItem(
           status: clinicalRecords.status,
           source: clinicalRecords.source,
           state: clinicalRecords.aiReviewState,
+          data: clinicalRecords.data,
         })
         .from(clinicalRecords)
         .where(eq(clinicalRecords.id, ref.recordId))
@@ -178,9 +184,22 @@ export async function claimReviewItem(
       if (isTerminalReviewState(state)) throw new ClinicalError("already_reviewed");
       assertReviewTransition(state, "in_review");
 
+      // W5-17: project the twelve `_aiIngestionRaw` keys onto their Ficha Médica
+      // field paths (identity mapping, W5-13) IN THE CLAIM UPDATE, so the AI
+      // values are durably at their field paths from the moment the record enters
+      // review — the editor loads them and they survive finalize even if the
+      // reviewer signs without an intermediate save. `_aiIngestionRaw` is kept
+      // untouched as the source of truth; a value already at a field path (should
+      // never happen on first claim) is never overwritten. This does NOT touch
+      // status/ai_review_state axis semantics — the transition below is unchanged
+      // (pending_review → in_review) and the two axes stay separate.
+      const { data: projected } = projectAiPayloadOntoFichaFields(
+        (row.data as Record<string, unknown>) ?? {},
+      );
+
       const updated = await tx
         .update(clinicalRecords)
-        .set({ aiReviewState: "in_review" })
+        .set({ aiReviewState: "in_review", data: projected })
         .where(
           and(
             eq(clinicalRecords.id, ref.recordId),
@@ -333,6 +352,75 @@ export async function editReviewNarrative(
       entityType: "clinical_record",
       entityId: recordId,
       metadata: { review: true, fields: Object.keys(narrative) },
+      ip,
+    });
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Edit the whole Ficha Médica — while in_review, full-form (W5-17)    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Save the WHOLE Ficha Médica `data` for a claimed AI draft (W5-17). Unlike
+ * `editReviewNarrative` (narrative free-text only), this accepts EVERY Ficha
+ * Médica field: the reviewer opens the AI draft in the Ficha Médica editor, edits
+ * any field (the twelve AI-filled ones AND the non-AI ones), and saves before
+ * signing. Still bounded to a DRAFT that is currently under review:
+ *
+ *   * `clinical_records:review` gate (owner + therapist) — unchanged permission.
+ *   * app guard on status='draft' + the DB immutability trigger (the real wall):
+ *     a locked/signed record is rejected, never rewritten (rule #4).
+ *   * `assertUnderReview` — only an item in `in_review` is writable here; the two
+ *     axes stay separate (this writes `data` only, NEVER `status` or
+ *     `ai_review_state`). Signing/approval remain the finalizeReview transition.
+ *
+ * The record's template is resolved BY KEY (AI drafts carry no formTemplateId);
+ * when a schema is present the payload is validated against it. Audited.
+ */
+export async function saveReviewFicha(
+  ctx: RequestContext,
+  recordId: string,
+  data: Record<string, unknown>,
+  schema: TemplateSchema | null,
+): Promise<void> {
+  assertCan(ctx.role, "clinical_records:review");
+  const ip = await clientIp();
+  await runScoped(ctx, async (tx) => {
+    const rows = await tx
+      .select({
+        status: clinicalRecords.status,
+        source: clinicalRecords.source,
+        aiState: clinicalRecords.aiReviewState,
+      })
+      .from(clinicalRecords)
+      .where(eq(clinicalRecords.id, recordId))
+      .limit(1);
+    const row = rows[0];
+    if (!row) throw new ClinicalError("not_found");
+    // App-level guard for a clean message; the DB trigger is the real wall.
+    if (row.status !== "draft") throw new ClinicalError("finalized");
+
+    await assertUnderReview(tx, recordId, row.source, row.aiState as AiReviewState | null);
+
+    if (schema) {
+      const result = validateRecordData(schema, data);
+      if (!result.ok) throw new ClinicalError("validation", result.errors);
+    }
+
+    // data ONLY — never status / ai_review_state (the two axes stay separate).
+    await tx
+      .update(clinicalRecords)
+      .set({ data })
+      .where(and(eq(clinicalRecords.id, recordId), eq(clinicalRecords.status, "draft")));
+
+    await writeClinicalAudit(tx, {
+      tenantId: ctx.tenantId,
+      actorUserId: ctx.userId,
+      action: "clinical_record.update",
+      entityType: "clinical_record",
+      entityId: recordId,
+      metadata: { review: true, ficha: true, fields: Object.keys(data) },
       ip,
     });
   });

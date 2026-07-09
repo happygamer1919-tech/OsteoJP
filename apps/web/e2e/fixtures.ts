@@ -45,6 +45,26 @@ export const PATIENTS = {
   },
 } as const;
 
+/**
+ * A seeded AI-ingested clinical_record draft awaiting review (W5-17). It sits on
+ * João Pereira, source='ai_ingested', status='draft', ai_review_state=
+ * 'pending_review', with the TWELVE Ficha Médica AI keys under
+ * data._aiIngestionRaw at their field paths (identity mapping). The
+ * Revisão Consulta "Assumir" opens it in the Ficha Médica editor with these
+ * values visible + editable. Fixed id so the spec targets it deterministically.
+ */
+export const AI_REVIEW_DRAFT = {
+  id: "00000000-0000-0000-0000-00000000ad17",
+  patientId: PATIENTS.joao.id,
+  patientName: PATIENTS.joao.name,
+  /** Sentinel values seeded under _aiIngestionRaw — asserted visible + editable. */
+  values: {
+    consultation_reason: "AI Motivo consulta lombar",
+    observations: "AI Observacoes iniciais",
+    neurological: "AI Neurologico sem alteracoes",
+  },
+} as const;
+
 /** A patient that belongs to tenant B — used for the cross-tenant denial test. */
 export const PATIENT_OTHER_TENANT = {
   id: "00000000-0000-0000-0000-00000000b301",

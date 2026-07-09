@@ -367,6 +367,60 @@ async function ensureFormTemplates() {
 }
 
 // ---------------------------------------------------------------------------
+// AI-ingested review draft (W5-17) — an ai_ingested clinical_record awaiting
+// review, mirroring the ingestion store's write (store.ts): status='draft',
+// ai_review_state='pending_review', form_template_id NULL, and the raw partner
+// payload verbatim under data._aiIngestionRaw. The twelve Ficha Médica AI keys
+// sit at their field paths inside the raw payload (identity mapping). The
+// Revisão Consulta "Assumir" opens it in the Ficha Médica editor.
+// Deterministic id so revisao-consulta.spec.ts targets it. Reset to
+// pending_review on every run so the claim → sign flow is repeatable.
+// ---------------------------------------------------------------------------
+
+const AI_REVIEW_DRAFT_ID = "00000000-0000-0000-0000-00000000ad17";
+const AI_REVIEW_DRAFT_PATIENT = "00000000-0000-0000-0000-00000000a302"; // João Pereira
+
+async function ensureAiReviewDraft() {
+  const rawPayload = {
+    template: "osteopathy",
+    consultation_reason: "AI Motivo consulta lombar",
+    relief_aggravation: "AI Alivio em repouso",
+    clinical_history: "AI Antecedentes",
+    systems_review: {
+      neurological: "AI Neurologico sem alteracoes",
+      cardiovascular: "AI Cardiovascular normal",
+      respiratory: "AI Respiratorio normal",
+      gastrointestinal: "AI GI normal",
+      urological_gynecological: "AI Uro normal",
+      endocrine: "AI Endocrino normal",
+    },
+    treatment_objectives: "AI Objectivos",
+    treatment_plan: "AI Plano",
+    observations: "AI Observacoes iniciais",
+  };
+  // Upsert resets the row to a fresh pending_review draft on every run, so the
+  // claim + sign flow always starts from the same state (idempotent, re-runnable).
+  const { error } = await db.from("clinical_records").upsert(
+    {
+      id: AI_REVIEW_DRAFT_ID,
+      tenant_id: TENANT_A,
+      patient_id: AI_REVIEW_DRAFT_PATIENT,
+      source: "ai_ingested",
+      status: "draft",
+      ai_review_state: "pending_review",
+      form_template_id: null,
+      version: 1,
+      supersedes_id: null,
+      signed_by: null,
+      signed_at: null,
+      data: { _aiIngestionRaw: rawPayload },
+    },
+    { onConflict: "id" },
+  );
+  must(error, "ai review draft");
+}
+
+// ---------------------------------------------------------------------------
 // Portal patient — an auth user linked to Maria Silva's patient row.
 // Used by portal-reminders.spec.ts. Credentials: E2E_PORTAL_PATIENT_EMAIL /
 // E2E_PASSWORD. The seed resets reminder prefs to a known initial state on
@@ -407,12 +461,16 @@ async function main() {
   await ensureLocationFixtures(userIds);
   await ensurePortalPatient();
   const templates = await ensureFormTemplates();
+  // AI review draft depends on templates existing (the editor resolves the Ficha
+  // Médica template by key when the record's form_template_id is null).
+  await ensureAiReviewDraft();
 
   console.log("[seed-e2e] tenant A:", TENANT_A);
   console.log("[seed-e2e] tenant B:", TENANT_B);
   console.log("[seed-e2e] users:", USERS.map((u) => `${u.email} (${u.slug})`).join(", "));
   console.log("[seed-e2e] patients A:", PATIENTS_A.length, "(1 soft-deleted)");
   console.log("[seed-e2e] portal patient:", E2E_PORTAL_PATIENT_EMAIL, "→", MARIA_SILVA_ID);
+  console.log("[seed-e2e] ai review draft:", AI_REVIEW_DRAFT_ID, "→", AI_REVIEW_DRAFT_PATIENT);
   console.log("[seed-e2e] templates:", templates.join(", "));
   console.log("[seed-e2e] done.");
 }
