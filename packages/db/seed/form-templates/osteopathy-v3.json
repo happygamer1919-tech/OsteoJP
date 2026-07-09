@@ -2,8 +2,8 @@
   "key": "osteopathy",
   "version": 3,
   "title": {
-    "pt": "Ficha Médica",
-    "en": "Medical Record"
+    "pt": "Ficha Clínica",
+    "en": "Clinical Record"
   },
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
