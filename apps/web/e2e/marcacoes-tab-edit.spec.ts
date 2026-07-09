@@ -55,20 +55,28 @@ async function book(page: Page, patient: string, date: string, time: string) {
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 }
 
-/** The single appointment Card on the Consultas tab whose header shows this time. */
-function row(page: Page, hhmm: string): Locator {
-  // The header renders "DD/MM/YYYY · HH:MM" and the practitioner / service /
-  // status / "Gerir marcação" text follows, so the time is NOT at the end of the
-  // Card. Target the UI Card root (rounded-lg border bg-surface p-6) and filter
-  // by "· HH:MM" (word-boundary, not end-anchored) to pin exactly one row Card,
-  // which also contains that row's "Gerir marcação" details.
-  // Plain substring (not a regex boundary): the Card's text content concatenates
-  // the header and practitioner spans as "…09:00Dr…", so there is no word
-  // boundary after the time. "· HH:MM" is unique per row (tests book distinct
-  // times), so a substring match pins exactly one Card.
+/** pt-PT dd/MM/yyyy header date for an ISO (yyyy-mm-dd) date — mirrors the app's
+ *  Intl.DateTimeFormat("pt-PT", { day/month/year: 2-digit/numeric }) header. */
+function ptHeaderDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Intl.DateTimeFormat("pt-PT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(y!, m! - 1, d!));
+}
+
+/** The single appointment Card on the Consultas tab for a given day+time. */
+function row(page: Page, iso: string, hhmm: string): Locator {
+  // Maria's Consultas list shows EVERY editable appointment across ALL specs and
+  // days (e.g. location-delete.spec also books Maria at 15:00 on another day), so
+  // filtering by "· HH:MM" alone matches multiple Cards and breaks strict mode.
+  // The header renders "DD/MM/YYYY · HH:MM"; each test books on its own day, so
+  // the full "DD/MM/YYYY · HH:MM" substring pins exactly one Card — which also
+  // contains that row's "Gerir marcação" details.
   return page
     .locator("div.rounded-lg.border.bg-surface.p-6")
-    .filter({ hasText: `· ${hhmm}` });
+    .filter({ hasText: `${ptHeaderDate(iso)} · ${hhmm}` });
 }
 
 async function openConsultas(page: Page) {
@@ -85,7 +93,7 @@ test("reschedule from Consultas is blocked by a therapist conflict, then overrid
   await book(page, PATIENTS.maria.name, date, "11:00");
 
   await openConsultas(page);
-  const nineRow = row(page, "09:00");
+  const nineRow = row(page, date, "09:00");
   // Open the row-actions disclosure, then Reagendar.
   await nineRow.getByText("Gerir marcação").click();
   await nineRow.getByRole("button", { name: /Reagendar/i }).click();
@@ -112,7 +120,7 @@ test("Estado control offers only lifecycle-legal transitions and applies one (W5
   await book(page, PATIENTS.maria.name, date, "13:00");
 
   await openConsultas(page);
-  const r = row(page, "13:00");
+  const r = row(page, date, "13:00");
   await r.getByText("Gerir marcação").click();
 
   const estado = r.getByLabel(/^Estado/i);
@@ -129,7 +137,7 @@ test("Estado control offers only lifecycle-legal transitions and applies one (W5
   await r.getByRole("button", { name: /^Aplicar$/ }).click();
 
   // The list refreshes; the row now reads Confirmada.
-  await expect(row(page, "13:00").getByText("Confirmada")).toBeVisible({ timeout: 8_000 });
+  await expect(row(page, date, "13:00").getByText("Confirmada")).toBeVisible({ timeout: 8_000 });
 });
 
 test("cancel a row from Consultas (W5-09)", async ({ page }, testInfo) => {
@@ -137,7 +145,7 @@ test("cancel a row from Consultas (W5-09)", async ({ page }, testInfo) => {
   await book(page, PATIENTS.maria.name, date, "15:00");
 
   await openConsultas(page);
-  const r = row(page, "15:00");
+  const r = row(page, date, "15:00");
   await r.getByText("Gerir marcação").click();
   await r.getByRole("button", { name: /Cancelar marcação/i }).click();
 
@@ -146,7 +154,7 @@ test("cancel a row from Consultas (W5-09)", async ({ page }, testInfo) => {
   await drawer.getByRole("button", { name: /Cancelar marcação/i }).click();
 
   // The row refreshes to Cancelada and no longer offers edit actions.
-  const cancelled = row(page, "15:00");
+  const cancelled = row(page, date, "15:00");
   await expect(cancelled.getByText("Cancelada")).toBeVisible({ timeout: 8_000 });
   await expect(cancelled.getByText("Gerir marcação")).toHaveCount(0);
 });
