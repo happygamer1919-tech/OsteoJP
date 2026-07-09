@@ -17,6 +17,9 @@ import type { AgendaAppointment, AgendaOptions } from "@/lib/scheduling/types";
 // Select is rendered. Server actions are stubbed (only called on submit).
 
 vi.mock("server-only", () => ({}));
+// W5-22 — the drawer now calls useRouter() for the "Ficha do paciente" links;
+// stub next/navigation so the static render has a router in context.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/scheduling/actions", () => ({
   createAppointment: vi.fn(),
   batchScheduleAppointments: vi.fn(),
@@ -152,5 +155,31 @@ describe("AppointmentDrawer — Estado selector removed from creation (W3-01)", 
   it("never shows the delete control in create mode", () => {
     const html = render({ mode: "create" }, true);
     expect(html).not.toContain("Eliminar marcação");
+  });
+});
+
+// W5-22 — read-only "Ficha do paciente" navigation from the marcação edit view.
+describe("AppointmentDrawer — patient-record links (W5-22)", () => {
+  it("renders the primary 'Ficha do paciente' link in edit mode", () => {
+    const html = render({ mode: "edit", appt: editAppt });
+    expect(html).toContain("Ficha do paciente");
+  });
+
+  it("does NOT render any patient-record link in create mode", () => {
+    const html = render({ mode: "create" });
+    expect(html).not.toContain("Ficha do paciente");
+  });
+
+  it("renders no second link when there is no Paciente 2", () => {
+    const html = render({ mode: "edit", appt: editAppt }); // patientTwoId: null
+    expect(html).not.toContain("Ficha do paciente 2");
+  });
+
+  it("renders the second link when Paciente 2 is linked", () => {
+    const html = render({
+      mode: "edit",
+      appt: { ...editAppt, patientTwoId: "patient-2", patientTwoName: "João Pereira" },
+    });
+    expect(html).toContain("Ficha do paciente 2");
   });
 });

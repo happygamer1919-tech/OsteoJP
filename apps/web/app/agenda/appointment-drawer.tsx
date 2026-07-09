@@ -17,6 +17,7 @@ import {
   useToast,
   type ComboboxOption,
 } from "@osteojp/ui";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { s } from "@/lib/i18n";
@@ -118,6 +119,9 @@ export function AppointmentDrawer({
 }) {
   const toast = useToast();
   const editing = state.mode === "edit" ? state.appt : null;
+  // W5-22: read-only navigation from the marcação edit view to the patient
+  // profile(s). Client-side push, no data change.
+  const router = useRouter();
   const isRecurring = !!(editing && (editing.recurrenceRule || editing.recurrenceParentId));
 
   const init = useMemo<FormState>(() => {
@@ -898,6 +902,30 @@ export function AppointmentDrawer({
 
         {error && (
           <p role="alert" className="text-sm text-error">{error}</p>
+        )}
+
+        {/* W5-22: "Ficha do paciente" — read-only navigation from the marcação
+            edit view to the patient profile(s). Primary always; a second link
+            when Paciente 2 is linked. No data change. */}
+        {editing && (
+          <div className="mt-2 flex flex-col gap-2 border-t border-border pt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => router.push(`/patients/${editing.patientId}`)}
+            >
+              {s["appointment.patientRecordLink"]}
+            </Button>
+            {editing.patientTwoId && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => router.push(`/patients/${editing.patientTwoId}`)}
+              >
+                {s["appointment.patientTwoRecordLink"]}
+              </Button>
+            )}
+          </div>
         )}
 
         {/* Password-gated hard delete (W3-06) — edit-only, admin-only. */}
