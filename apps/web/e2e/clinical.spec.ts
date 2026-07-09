@@ -119,12 +119,13 @@ test.describe("authoring (therapist)", () => {
     await expect(form.locator('input[type="date"]')).toHaveCount(1);
   });
 
-  // W5-15 (SPEC-ficha-medica.md sec 5.10-5.13): the Mobilidade Activa/Passiva
-  // three-circle widget (unlimited dot/star markers per circle, Limpar per
-  // circle, persist + restore) plus the 5.10-5.13 fields in the authoritative
-  // sequence. Locators are scoped to #record-form and to each circle's
-  // aria-label to avoid strict-mode ambiguity across the three circles.
-  test("Mobilidade widget: place Activa/Passiva markers on all three circles, Limpar clears one, persist + restore; 5.10-5.13 render in order", async ({
+  // W5-15 + W5-20 (SPEC-ficha-medica.md sec 5.10-5.13, AMENDMENTS ruling E): the
+  // Mobilidade Activa/Passiva three-circle widget — min-44px marker-type toggle,
+  // "Inserir marcador" arm step, unlimited dot/star markers, record-wide Limpar,
+  // persist + restore — plus the 5.10-5.13 fields in the authoritative sequence.
+  // Locators are scoped to #record-form and to each circle's aria-label to avoid
+  // strict-mode ambiguity across the three circles.
+  test("Mobilidade widget: toggle + Inserir marcador places Activa/Passiva on all three circles, record-wide Limpar clears all, persist + restore; 5.10-5.13 render in order", async ({
     page,
   }) => {
     await page.goto("/clinical/new");
@@ -156,15 +157,16 @@ test.describe("authoring (therapist)", () => {
     const cervical = form.getByRole("application", { name: "Cervical" });
     const dorsal = form.getByRole("application", { name: "Dorsal" });
     const lombar = form.getByRole("application", { name: "Lombar" });
-    const markerSelect = form.getByRole("combobox").filter({ hasText: "Mobilidade Activa" }).first();
 
-    // Place an Activa (dot) marker on each circle.
-    await markerSelect.selectOption({ label: "Mobilidade Activa" });
+    // Select Activa via the min-44px toggle, ARM placement (Inserir marcador),
+    // then place a dot on each circle. Placement only lands while armed.
+    await form.getByRole("button", { name: "Mobilidade Activa", exact: true }).click();
+    await form.getByRole("button", { name: "Inserir marcador", exact: true }).click();
     for (const circle of [cervical, dorsal, lombar]) {
       await circle.click({ position: { x: 40, y: 40 } });
     }
-    // Switch to Passiva and place a star marker on each circle.
-    await markerSelect.selectOption({ label: "Mobilidade Passiva" });
+    // Switch to Passiva (still armed) and place a star on each circle.
+    await form.getByRole("button", { name: "Mobilidade Passiva", exact: true }).click();
     for (const circle of [cervical, dorsal, lombar]) {
       await circle.click({ position: { x: 100, y: 100 } });
     }
@@ -174,15 +176,6 @@ test.describe("authoring (therapist)", () => {
       await expect(circle.locator('[data-marker="activa"]')).toHaveCount(1);
       await expect(circle.locator('[data-marker="passiva"]')).toHaveCount(1);
     }
-
-    // Limpar clears exactly the Dorsal circle; Cervical + Lombar keep their markers.
-    await dorsal
-      .locator("xpath=ancestor::div[1]")
-      .getByRole("button", { name: "Limpar marcadores" })
-      .click();
-    await expect(dorsal.locator('[data-marker]')).toHaveCount(0);
-    await expect(cervical.locator('[data-marker]')).toHaveCount(2);
-    await expect(lombar.locator('[data-marker]')).toHaveCount(2);
 
     // Motivos (consultation_reason) is a required field — the save validates the
     // schema's required set (episode_date is prefilled), so fill it before Guardar.
@@ -197,18 +190,26 @@ test.describe("authoring (therapist)", () => {
     });
     await page.reload();
 
-    const cervical2 = page.locator("#record-form").getByRole("application", { name: "Cervical" });
-    const dorsal2 = page.locator("#record-form").getByRole("application", { name: "Dorsal" });
-    const lombar2 = page.locator("#record-form").getByRole("application", { name: "Lombar" });
-    await expect(cervical2.locator('[data-marker="activa"]')).toHaveCount(1);
-    await expect(cervical2.locator('[data-marker="passiva"]')).toHaveCount(1);
-    await expect(lombar2.locator('[data-marker]')).toHaveCount(2);
-    await expect(dorsal2.locator('[data-marker]')).toHaveCount(0);
+    const form2 = page.locator("#record-form");
+    const cervical2 = form2.getByRole("application", { name: "Cervical" });
+    const dorsal2 = form2.getByRole("application", { name: "Dorsal" });
+    const lombar2 = form2.getByRole("application", { name: "Lombar" });
+    // All three circles restored their 1 Activa + 1 Passiva.
+    for (const circle of [cervical2, dorsal2, lombar2]) {
+      await expect(circle.locator('[data-marker="activa"]')).toHaveCount(1);
+      await expect(circle.locator('[data-marker="passiva"]')).toHaveCount(1);
+    }
+
+    // A single record-wide "Limpar marcadores" clears ALL three circles at once.
+    await form2.getByRole("button", { name: "Limpar marcadores", exact: true }).click();
+    for (const circle of [cervical2, dorsal2, lombar2]) {
+      await expect(circle.locator('[data-marker]')).toHaveCount(0);
+    }
   });
 
-  // W5-15: a finalized (signed/locked) record renders the Mobilidade widget
-  // read-only — no marker-type select, no Limpar action, and clicking a circle
-  // places nothing (the circle is not an interactive application).
+  // W5-15 + W5-20: a finalized (signed/locked) record renders the Mobilidade
+  // widget read-only — no marker-type toggle, no "Inserir marcador", no Limpar,
+  // and clicking a circle places nothing (not an interactive application).
   test("Mobilidade widget is read-only on a finalized record", async ({ page }) => {
     await page.goto("/clinical/new");
     const patient = page.getByRole("combobox", { name: /Paciente/i });
@@ -219,8 +220,9 @@ test.describe("authoring (therapist)", () => {
     await page.getByRole("button", { name: "Criar ficha" }).click();
     await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 
-    // Place one Activa marker on Cervical, then sign/lock.
+    // Arm placement, then place one Activa marker on Cervical, then sign/lock.
     const form = page.locator("#record-form");
+    await form.getByRole("button", { name: "Inserir marcador", exact: true }).click();
     await form.getByRole("application", { name: "Cervical" }).click({ position: { x: 40, y: 40 } });
     await page.getByRole("button", { name: "Assinar e bloquear" }).click();
     await expect(page.getByText("Ficha finalizada e imutável.", { exact: false })).toBeVisible({
