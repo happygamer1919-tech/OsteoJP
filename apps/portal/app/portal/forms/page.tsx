@@ -32,7 +32,7 @@ function review(state: string): { label: string; tone: StatusTone } {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/Lisbon' })
 }
 
 export default async function FormsPage() {

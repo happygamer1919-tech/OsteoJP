@@ -13,9 +13,9 @@ import { s } from '@/lib/i18n'
 function dateParts(iso: string) {
   const d = new Date(iso)
   return {
-    month: d.toLocaleDateString('pt-PT', { month: 'short' }).replace('.', ''),
-    day: d.toLocaleDateString('pt-PT', { day: 'numeric' }),
-    time: d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', hour12: false }),
+    month: d.toLocaleDateString('pt-PT', { month: 'short', timeZone: 'Europe/Lisbon' }).replace('.', ''),
+    day: d.toLocaleDateString('pt-PT', { day: 'numeric', timeZone: 'Europe/Lisbon' }),
+    time: d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Lisbon' }),
   }
 }
 
