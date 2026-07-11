@@ -244,6 +244,59 @@ test.describe("authoring (therapist)", () => {
     await expect(page.locator('[data-marker="activa"]').first()).toBeVisible();
   });
 
+  // W5-25 (SPEC-ficha-medica.md AMENDMENTS ruling G): the Local da dor bodychart
+  // gives each marker type a UNIQUE shape + colour and shows an always-visible
+  // legend. Place two distinct types, assert distinct shapes render + the nine-
+  // entry legend is present, then persist + reload and confirm both restore
+  // (marker array shape { marker_type, x, y, view } unchanged).
+  test("Bodychart markers: distinct shapes + always-visible legend, persist + restore", async ({
+    page,
+  }) => {
+    await page.goto("/clinical/new");
+    const patient = page.getByRole("combobox", { name: /Paciente/i });
+    await patient.click();
+    await patient.fill(PATIENTS.maria.name);
+    await page.getByRole("option", { name: PATIENTS.maria.name }).click();
+    await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
+    await page.getByRole("button", { name: "Criar ficha" }).click();
+    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+
+    const form = page.locator("#record-form");
+    const canvas = form.getByTestId("bodychart-canvas");
+    const typeSelect = form.getByRole("combobox", { name: /Tipo de marcador/i });
+
+    // Always-visible legend: all nine types listed (not a hover/disclosure).
+    const legend = form.getByTestId("bodychart-legend");
+    await expect(legend).toBeVisible();
+    await expect(legend.locator("[data-legend-type]")).toHaveCount(9);
+
+    // Place a Bloqueio / Disfunção (square) and a Local da dor (circle).
+    await typeSelect.selectOption({ label: "Bloqueio / Disfunção" });
+    await canvas.click({ position: { x: 30, y: 40 } });
+    await typeSelect.selectOption({ label: "Local da dor" });
+    await canvas.click({ position: { x: 90, y: 120 } });
+
+    // Two on-chart markers with DISTINCT shapes (scoped to the canvas so the
+    // legend's own shape glyphs are not counted).
+    await expect(canvas.locator('[data-marker-shape="square"]')).toHaveCount(1);
+    await expect(canvas.locator('[data-marker-shape="circle"]')).toHaveCount(1);
+
+    await form.getByLabel(/Motivos da Consulta/i).fill("Marcadores no diagrama corporal.");
+    await page.getByRole("button", { name: "Guardar", exact: true }).click();
+    await expect(page.getByText("Ficha guardada", { exact: false }).first()).toBeVisible({
+      timeout: 12_000,
+    });
+    await page.reload();
+
+    // Both markers restore with their type-driven shapes (stored data untouched).
+    const canvas2 = page.locator("#record-form").getByTestId("bodychart-canvas");
+    await expect(canvas2.locator('[data-marker-shape="square"]')).toHaveCount(1);
+    await expect(canvas2.locator('[data-marker-shape="circle"]')).toHaveCount(1);
+    await expect(
+      page.locator("#record-form").getByTestId("bodychart-legend").locator("[data-legend-type]"),
+    ).toHaveCount(9);
+  });
+
   // W2-06: fichas entry points live in the patient-profile Registos clínicos tab.
   test("patient Registos tab creates a ficha (scoped) and surfaces the addendum action", async ({
     page,

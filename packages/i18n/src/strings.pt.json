@@ -554,6 +554,7 @@
   "clinical.bodychartViewLateralLeft": "Lateral Esq.",
   "clinical.bodychartViewLateralRight": "Lateral Dir.",
   "clinical.bodychartEmpty": "Sem marcadores.",
+  "clinical.bodychartLegendTitle": "Legenda dos marcadores",
   "clinical.bodychartNoTypes": "Tipos de marcador não configurados.",
   "clinical.bodychartFigureMale": "Figura masculina",
   "clinical.bodychartFigureFemale": "Figura feminina",

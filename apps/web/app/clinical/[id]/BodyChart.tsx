@@ -43,6 +43,82 @@ function deriveFigSex(sex: string | null | undefined): FigSex {
   return sex === "female" ? "female" : "male";
 }
 
+// W5-25 (SPEC-ficha-medica AMENDMENTS ruling G): each of the nine frozen
+// `marker_type` values renders with a UNIQUE geometric shape AND a unique colour
+// token. SHAPE carries the meaning (greyscale-legible; the chart must read for
+// colour-vision-deficient users), colour reinforces. The colour tokens live in
+// apps/web/app/globals.css and are documented in docs/design/UI-STYLE.md; filled
+// shapes carry a thin `stroke-surface` halo so they separate from the figure
+// line-art, stroked shapes (cross, ring) carry only their colour stroke.
+type MarkerShape =
+  | "square"
+  | "cross"
+  | "triangle"
+  | "diamond"
+  | "star"
+  | "circle"
+  | "ring"
+  | "arrow_right"
+  | "arrow_left";
+
+const MARKER_STYLE: Record<string, { shape: MarkerShape; cls: string }> = {
+  blockage_dysfunction: { shape: "square", cls: "fill-marker-blockage stroke-surface" },
+  scar: { shape: "cross", cls: "stroke-marker-scar" },
+  hypertonicity: { shape: "triangle", cls: "fill-marker-hypertonicity stroke-surface" },
+  hypotonicity: { shape: "diamond", cls: "fill-marker-hypotonicity stroke-surface" },
+  pain_radiation: { shape: "star", cls: "fill-marker-radiation stroke-surface" },
+  pain_location: { shape: "circle", cls: "fill-marker-location stroke-surface" },
+  paresthesia: { shape: "ring", cls: "stroke-marker-paresthesia" },
+  rotation_right: { shape: "arrow_right", cls: "fill-marker-rotation-right stroke-surface" },
+  rotation_left: { shape: "arrow_left", cls: "fill-marker-rotation-left stroke-surface" },
+};
+
+// Fallback for any value outside the frozen enum (should never happen — the enum
+// is immutable in osteopathy-v3.json): render a neutral filled circle.
+const FALLBACK_STYLE = { shape: "circle" as MarkerShape, cls: "fill-marker-location stroke-surface" };
+
+const styleFor = (markerType: string) => MARKER_STYLE[markerType] ?? FALLBACK_STYLE;
+
+function glyphShape(shape: MarkerShape) {
+  switch (shape) {
+    case "square":
+      return <rect x="3.5" y="3.5" width="9" height="9" strokeWidth="0.75" />;
+    case "cross":
+      return <path d="M4 4 L12 12 M12 4 L4 12" fill="none" strokeWidth="2.6" strokeLinecap="round" />;
+    case "triangle":
+      return <path d="M8 2.5 L13.6 13 L2.4 13 Z" strokeWidth="0.75" strokeLinejoin="round" />;
+    case "diamond":
+      return <path d="M8 2 L14 8 L8 14 L2 8 Z" strokeWidth="0.75" strokeLinejoin="round" />;
+    case "star":
+      return (
+        <path
+          d="M8 1.5 L9.65 6.1 L14.5 6.2 L10.6 9.1 L12 13.8 L8 10.9 L4 13.8 L5.4 9.1 L1.5 6.2 L6.35 6.1 Z"
+          strokeWidth="0.6"
+          strokeLinejoin="round"
+        />
+      );
+    case "circle":
+      return <circle cx="8" cy="8" r="5.8" strokeWidth="0.75" />;
+    case "ring":
+      return <circle cx="8" cy="8" r="5" fill="none" strokeWidth="2.6" />;
+    case "arrow_right":
+      return <path d="M2 6 L8 6 L8 3.4 L14.2 8 L8 12.6 L8 10 L2 10 Z" strokeWidth="0.75" strokeLinejoin="round" />;
+    case "arrow_left":
+      return <path d="M14 6 L8 6 L8 3.4 L1.8 8 L8 12.6 L8 10 L14 10 Z" strokeWidth="0.75" strokeLinejoin="round" />;
+  }
+}
+
+/** A single marker glyph. `cls` supplies the fill/stroke colour token(s); the
+ *  shape is greyscale-legible on its own. `aria-hidden` — the accessible name is
+ *  carried by the marker's `title` and the legend. */
+function MarkerGlyph({ shape, cls, size = 16 }: { shape: MarkerShape; cls: string; size?: number }) {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" className={cls}>
+      {glyphShape(shape)}
+    </svg>
+  );
+}
+
 export function BodyChart({
   markers,
   onChange,
@@ -142,6 +218,7 @@ export function BodyChart({
 
       <div className="flex items-start gap-3">
         <div
+          data-testid="bodychart-canvas"
           role={canInteract ? "application" : undefined}
           tabIndex={canInteract ? 0 : undefined}
           aria-describedby={canInteract ? hintId : undefined}
@@ -166,14 +243,21 @@ export function BodyChart({
               style={{ left: `${cursor.x * 100}%`, top: `${cursor.y * 100}%` }}
             />
           )}
-          {inView.map(({ m, i }) => (
-            <span
-              key={i}
-              title={labelFor(m.marker_type)}
-              className="absolute -ml-1.5 -mt-1.5 h-3 w-3 rounded-full border border-surface bg-brand-magenta"
-              style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%` }}
-            />
-          ))}
+          {inView.map(({ m, i }) => {
+            const style = styleFor(m.marker_type);
+            return (
+              <span
+                key={i}
+                title={labelFor(m.marker_type)}
+                data-marker-type={m.marker_type}
+                data-marker-shape={style.shape}
+                className="absolute -ml-2 -mt-2 flex h-4 w-4 items-center justify-center"
+                style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%` }}
+              >
+                <MarkerGlyph shape={style.shape} cls={style.cls} />
+              </span>
+            );
+          })}
         </div>
 
         {/* Sex toggle — stacked vertically beside the chart */}
@@ -200,6 +284,33 @@ export function BodyChart({
           </div>
         )}
       </div>
+
+      {/* W5-25 ruling G: a compact, ALWAYS-VISIBLE legend mapping each shape +
+          colour to its pt-PT type name (not a hover/disclosure). Reuses the
+          template-derived marker labels so it stays in sync with the enum. */}
+      {markerOptions.length > 0 && (
+        <div data-testid="bodychart-legend" className="rounded border border-border bg-surface p-2">
+          <p className="mb-1 text-xs font-medium text-text-secondary">
+            {s["clinical.bodychartLegendTitle"]}
+          </p>
+          <ul className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-3">
+            {markerOptions.map((o) => {
+              const style = styleFor(o.value);
+              return (
+                <li
+                  key={o.value}
+                  data-legend-type={o.value}
+                  data-marker-shape={style.shape}
+                  className="flex min-w-0 items-center gap-1.5 text-xs text-text-secondary"
+                >
+                  <MarkerGlyph shape={style.shape} cls={style.cls} size={14} />
+                  <span className="min-w-0 break-words">{o.label}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       <ul className="space-y-1 text-sm">
         {markers.length === 0 && (
