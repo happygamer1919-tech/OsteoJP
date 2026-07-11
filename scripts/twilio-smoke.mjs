@@ -2,10 +2,15 @@
 // Twilio SMS integration — live smoke proof. RUN LOCALLY ONLY, never in CI.
 //
 // Usage:
-//   node scripts/twilio-smoke.mjs                 # Proof 1 only (zero cost)
+//   node scripts/twilio-smoke.mjs                 # Proof 0 (render-only) + Proof 1 (zero cost)
 //   TWILIO_SMOKE_CONFIRM=yes SMOKE_TO_NUMBER=+3519XXXXXXXX \
-//     node scripts/twilio-smoke.mjs               # Proof 1 + Proof 2 (~cents, 1 SMS)
+//     node scripts/twilio-smoke.mjs               # Proof 0 + 1 + Proof 2 (~cents, 1 SMS)
 //
+// Proof 0 (render-only, zero cost, NO network, NO creds): renders every PT SMS
+//   template through the REAL production path with the longest prod clinic name
+//   ("Castelo Branco"), prints the multi-line body, and asserts pure GSM-7 /
+//   single segment. Always runs first so the copy can be reviewed with no
+//   Twilio account and nothing is ever sent.
 // Proof 1 (zero cost): authenticates against the Twilio REST API (account
 //   fetch) and inspects the messaging/sender configuration to show the
 //   "OsteoJP" alphanumeric sender registration.
@@ -133,6 +138,65 @@ async function twilioPostForm(url, form) {
 /** The exact sender resolution the production code performs (clients.ts). */
 function resolveFrom() {
   return process.env.TWILIO_SMS_FROM ?? process.env.TWILIO_MESSAGING_SERVICE_SID;
+}
+
+/* ------------------------------------------------------------------ */
+/* Proof 0 — render-only preview (zero cost, no network, no creds)      */
+/* ------------------------------------------------------------------ */
+
+async function proof0() {
+  console.log("\n=== Proof 0: render-only preview (zero cost, no network, no send) ===");
+
+  // REAL production render path — same module the send path imports.
+  const templates = await import(
+    new URL("../apps/web/lib/reminders/templates.ts", import.meta.url).href
+  );
+
+  // Longest prod clinic name is "Castelo Branco" (Montemor-o-Novo stays hidden).
+  const ctx = {
+    patientFirstName: "(unused in SMS)",
+    appointmentDateLong: "(unused in SMS)",
+    appointmentDateShort: "23/05",
+    appointmentTime: "14:30",
+    practitionerName: "(unused in SMS)",
+    clinicLocation: "Castelo Branco",
+    clinicPhone: "+351 210 000 000",
+    rescheduleLink: "(unused in SMS)",
+  };
+  const followUpCtx = {
+    patientFirstName: "(unused in SMS)",
+    appointmentDateLong: "(unused in SMS)",
+    appointmentDateShort: "23/05",
+    clinicPhone: "+351 210 000 000",
+  };
+
+  const previews = [
+    ["confirmation PT", templates.renderConfirmationSms("pt", ctx)],
+    ["reminder 48h PT", templates.renderSms("48h", "pt", ctx)],
+    ["reminder 24h PT", templates.renderSms("24h", "pt", ctx)],
+    ["no_show PT", templates.renderNoShowSms("pt", ctx)],
+    ["follow_up PT", templates.renderFollowUpSms("pt", followUpCtx)],
+  ];
+
+  let allOk = true;
+  for (const [label, body] of previews) {
+    // renderSms already asserted GSM-7 at render; recompute here for the proof.
+    const gsm7 = templates.isGsm7(body);
+    // GSM-7 single-segment ceiling is 160; above that carriers split at 153.
+    const segments = body.length <= 160 ? 1 : Math.ceil(body.length / 153);
+    if (!gsm7 || segments !== 1) allOk = false;
+    console.log(
+      `\n[proof0] ${label} — ${body.length} chars, GSM-7=${gsm7}, ${segments} segment:\n${body}`,
+    );
+  }
+
+  if (!allOk) {
+    console.error("\n[proof0] FAIL — a template is not GSM-7 or exceeds one segment.");
+    process.exit(2);
+  }
+  console.log(
+    '\n[proof0] PASS — every PT SMS renders pure GSM-7, 1 segment (longest clinic "Castelo Branco").',
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -303,12 +367,24 @@ async function proof2() {
 
 /* ------------------------------------------------------------------ */
 
+// Proof 0 is render-only: no creds, no network, no send. Always first so the
+// restyled copy can be reviewed even with no Twilio account configured.
+await proof0();
+
 loadLocalEnv();
 if (!credsPresent()) {
   tryVercelEnvPull();
   loadLocalEnv();
 }
-if (!credsPresent()) failMissingCreds();
+if (!credsPresent()) {
+  // Only the live path (Proof 2) needs credentials. In render-only mode there is
+  // nothing left to do — exit clean rather than failing on absent creds.
+  if (process.env.TWILIO_SMOKE_CONFIRM === "yes") failMissingCreds();
+  console.log(
+    "\n[env] No Twilio credentials present — skipping live Proof 1/2 (render-only run). Nothing sent.",
+  );
+  process.exit(0);
+}
 
 await proof1();
 await proof2();
