@@ -134,7 +134,35 @@ TWILIO_SMOKE_CONFIRM=yes SMOKE_TO_NUMBER=+3519XXXXXXXX node scripts/twilio-smoke
 - Exit codes: 0 ok · 1 missing creds · 2 proof failure (auth failed, send
   rejected, >1 segment, or not delivered).
 
-## 5. Proof status (2026-07-08)
+## 5. Proof status (updated 2026-07-11 — delivery proof PASS)
+
+### 2026-07-11 — full delivery proof PASS (account upgraded → pay-as-you-go)
+
+The commercial precondition below (trial → paid Twilio) was cleared: the account
+was upgraded to pay-as-you-go and the live delivery proof **SUCCEEDED** on
+2026-07-11. The same production template path (renderSms) dispatched one SMS
+through the real sender and reached a `delivered` terminal status. This closes
+the proof — wiring, sender resolution, template compliance, error propagation,
+and now end-to-end delivery are all proven.
+
+| Field | Value |
+| --- | --- |
+| Message SID | `SMd09aa137e6de1ff6f44b1a2fc227c227` |
+| Final status | **delivered** (per Twilio API status) |
+| Segments | 1 |
+| From shown on handset | `OsteoJP` (alphanumeric sender) |
+| Timestamp (UTC) | 2026-07-11T15:08:55.137Z |
+| Destination | owner test handset (+373 — Moldova SMS geo permission enabled 2026-07-11 for this test; production patients are +351, already enabled) |
+| Run by | owner-side session |
+
+Notes: delivered per Twilio API status; the alphanumeric sender resolved to
+`"OsteoJP"` on dispatch. The +373 destination required enabling Moldova in the
+Twilio SMS geo-permissions for the owner's test handset (2026-07-11) — a
+one-off for this proof; production patient numbers are Portuguese (+351), a geo
+already permitted. No product code, flags, or credentials changed by this
+status update.
+
+### 2026-07-08 — trial-tier history (superseded by the PASS above)
 
 - **Proof 1 — PASS** on rotated token (2026-07-08): credential validation
   (account GET) succeeded and the prod-resolved sender was confirmed.
