@@ -132,7 +132,7 @@ export default async function DashboardPage() {
           <EmptyState
             icon={Calendar}
             title={s.dashboard.next_appointment_empty}
-            description={s.dashboard.next_appointment_empty}
+            description={s.dashboard.next_appointment_empty_description}
             action={
               <NavButton href="/portal/booking" variant="primary" className="min-h-11">
                 <Plus size={20} strokeWidth={1.75} aria-hidden="true" />

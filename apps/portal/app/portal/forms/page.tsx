@@ -45,7 +45,6 @@ export default async function FormsPage() {
         <EmptyState
           icon={ClipboardList}
           title={s.forms.empty}
-          description={s.forms.empty}
         />
       ) : (
         <div className="flex flex-col gap-3">
