@@ -3,9 +3,9 @@
 // the same availability + conflict source the booking confirm validates
 // against. The client only groups and formats what the API returns.
 
-/** YYYY-MM-DD in the viewer's local time (matches the DatePicker value format). */
+/** YYYY-MM-DD Europe/Lisbon calendar day (matches the DatePicker value format). */
 export function localDateKey(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA')
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Europe/Lisbon' })
 }
 
 export function formatTime(iso: string): string {
@@ -13,6 +13,7 @@ export function formatTime(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
+    timeZone: 'Europe/Lisbon',
   })
 }
 

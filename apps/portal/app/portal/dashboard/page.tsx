@@ -19,13 +19,13 @@ function isUpcoming(appt: AppointmentView): boolean {
 
 function heroDateTime(iso: string): string {
   const d = new Date(iso)
-  const date = d.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' })
-  const time = d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const date = d.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Lisbon' })
+  const time = d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Lisbon' })
   return `${date} · ${time}`
 }
 
 function shortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' })
+  return new Date(iso).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', timeZone: 'Europe/Lisbon' })
 }
 
 type QuickAction = { href: string; label: string; icon: LucideIcon }
@@ -80,6 +80,7 @@ export default async function DashboardPage() {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
+    timeZone: 'Europe/Lisbon',
   })
 
   // Pending-forms banner (SPEC §5.3) is omitted: the portal API exposes no

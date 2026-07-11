@@ -6,7 +6,7 @@ import { DownloadButton } from './DownloadButton'
 import { s } from '@/lib/i18n'
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/Lisbon' })
 }
 
 function formatType(mime: string | null): string {

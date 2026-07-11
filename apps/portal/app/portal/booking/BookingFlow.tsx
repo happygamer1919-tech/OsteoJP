@@ -139,7 +139,7 @@ export function BookingFlow({
   }
 
   const summaryDate = slotIso
-    ? `${new Date(slotIso).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' })} · ${formatTime(slotIso)}`
+    ? `${new Date(slotIso).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Lisbon' })} · ${formatTime(slotIso)}`
     : ''
 
   return (
