@@ -244,7 +244,7 @@ export const services = pgTable(
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     locationId: uuid("location_id").references(() => locations.id), // null = all locations
-    // Osteopatia, Fisioterapia, RPG, NESA, Massagem, Pilates Terapêutico, Formação...
+    // Osteopatia, Fisioterapia, NESA, Massagem, Pilates Terapêutico, Formação...
     name: text("name").notNull(),
     description: text("description"),
     durationMin: integer("duration_min").notNull().default(60),

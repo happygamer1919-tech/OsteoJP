@@ -16,16 +16,11 @@ describe("normalizeServiceName", () => {
 });
 
 describe("isBookableServiceName (OsteoJP self-bookable set)", () => {
-  it("includes RPG by default", () => {
-    expect(isBookableServiceName("RPG")).toBe(true);
-    expect(isBookableServiceName("rpg")).toBe(true);
-    expect(PHYSIO_WRAPPER_SERVICE_NAMES).toContain("rpg");
-  });
-
-  it("includes the other two physio wrappers (accent/case tolerant)", () => {
+  it("includes the two physio wrappers (accent/case tolerant)", () => {
     expect(isBookableServiceName("Massagem Terapêutica")).toBe(true);
     expect(isBookableServiceName("massagem terapeutica")).toBe(true);
     expect(isBookableServiceName("Pilates Terapêutico")).toBe(true);
+    expect(PHYSIO_WRAPPER_SERVICE_NAMES).toEqual(["massagem terapeutica", "pilates terapeutico"]);
   });
 
   it("includes the core consultations", () => {
@@ -37,6 +32,10 @@ describe("isBookableServiceName (OsteoJP self-bookable set)", () => {
     expect(isBookableServiceName("Formação")).toBe(false);
     expect(isBookableServiceName("NESA")).toBe(false);
     expect(isBookableServiceName("Consulta de Avaliação Desportiva")).toBe(false);
+    // RPG is the RGPD consent document, not a service (JP ruling 2026-07-11).
+    expect(isBookableServiceName("RPG")).toBe(false);
+    expect(isBookableServiceName("rpg")).toBe(false);
+    expect(PHYSIO_WRAPPER_SERVICE_NAMES).not.toContain("rpg");
   });
 
   it("every allowlist entry is already normalized", () => {
