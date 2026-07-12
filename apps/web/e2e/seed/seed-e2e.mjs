@@ -274,11 +274,29 @@ async function ensureTherapistServices(therapistUserId) {
 }
 
 /**
- * availability_templates row (0006) = the therapist↔location association W4-12
- * derives locations from. One weekday window per (therapist, location) is enough
- * to make the location "assigned". Deduped on the natural key so re-seeding is
- * idempotent.
+ * W5-31: one FAR-PAST completed marcação for Maria at Linda-a-Velha, so the
+ * Declaração de Presença dialog has a marcação to prefill date/hora início/hora
+ * fim from. Deliberately in 2022 so it never collides with the date-specific
+ * agenda/consultas specs (they band future days) or the "today" dashboard KPIs.
  */
+async function ensureDeclaracaoAppointment(therapistUserId) {
+  const { error } = await db.from("appointments").upsert(
+    {
+      id: "00000000-0000-0000-0000-0000000ad001",
+      tenant_id: TENANT_A,
+      patient_id: "00000000-0000-0000-0000-00000000a301", // Maria Silva
+      practitioner_id: therapistUserId,
+      location_id: LOCATION_A, // Linda-a-Velha
+      service_id: SERVICE_A,
+      starts_at: "2022-03-15T09:30:00.000Z",
+      ends_at: "2022-03-15T10:30:00.000Z",
+      status: "completed",
+    },
+    { onConflict: "id" },
+  );
+  must(error, "declaracao appointment (Maria)");
+}
+
 async function ensureAvailability(therapistUserId, locationId, weekday) {
   const { error } = await db.from("availability_templates").upsert(
     {
@@ -484,6 +502,7 @@ async function main() {
   const userIds = await ensureUsers();
   await ensureBaseData();
   await ensureTherapistServices(userIds.therapist);
+  await ensureDeclaracaoAppointment(userIds.therapist);
   await ensureLocationFixtures(userIds);
   await ensurePortalPatient();
   const templates = await ensureFormTemplates();
