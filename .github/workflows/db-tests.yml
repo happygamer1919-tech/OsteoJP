@@ -40,6 +40,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    defaults:
+      run:
+        # Explicit `bash` (unlike the implicit default shell) enables pipefail, so
+        # a failing `vitest ... | tee` cannot be masked by tee's exit 0. Without
+        # this, a red RLS test soft-passes the DB gate (precedent PR #449).
+        shell: bash
+
     env:
       # Local Supabase fixed default. The packages/db RLS suites connect ONLY
       # through this (owner/postgres role over TCP); they do not use the Supabase
@@ -111,6 +118,7 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: supabase db reset
 
+      # fail-closed by owner ruling, never soft-pass
       - name: Run RLS isolation suite (DATABASE_URL set)
         if: steps.changes.outputs.code == 'true'
         working-directory: packages/db
