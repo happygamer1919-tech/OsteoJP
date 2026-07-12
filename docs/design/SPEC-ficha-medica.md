@@ -439,3 +439,145 @@ min-44px toggle buttons), the absence of an explicit "Inserir marcador" arm step
 places on direct click), a per-circle rather than single record-wide "Limpar
 marcadores", and the **missing reference spokes**. W5-20 reconciles these; it does
 NOT rebuild from zero.
+
+---
+
+## AMENDMENTS 2026-07-11 (Wave 05 Ficha Final, W5-24..W5-26)
+
+> Appended by YELLOW (Wave 05 Ficha Final authoring), from the owner ruling after a
+> read-only layout extraction of the legacy Fisiozero episode form (the clinic staff
+> already know that layout). This section is AUTHORITATIVE and SUPERSEDES the earlier
+> body of this SPEC and the AMENDMENTS 2026-07-09 rulings wherever they differ (noted
+> per ruling). It is consumed by loops W5-24..W5-26 (`docs/loops/wave-05/`). All three
+> rulings are **presentation / stored-value-additive only** - the frozen ingestion
+> contract (`template=osteopathy` + the twelve AI keys) does not change, the nineteen
+> `health_problems` booleans + `other` do not change, and no DB migration is
+> introduced. Plain hyphens throughout, pt-PT UI copy.
+>
+> **Recon verdicts recorded at authoring (read-only, 2026-07-11):**
+> - **Outros grid (a):** the `checkbox_group` renderer in
+>   `apps/web/app/clinical/[id]/RecordForm.tsx` (case `checkbox_group`) renders the
+>   booleans in `grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4` and the `other`
+>   free-text in a SEPARATE full-width `<Input>` block AFTER the grid (ruling C
+>   below-grid placement), no visible label, placeholder `clinical.healthProblemsOtherPlaceholder`.
+>   The `osteopathy` v3 seed (`packages/db/seed/form-templates/osteopathy-v3.json`)
+>   `health_problems` property order ALREADY equals the legacy 4x5 reading order
+>   one-for-one (the nineteen booleans in the ruling-F sequence, then `other` last).
+>   So the W5-24 work is purely the two presentation deltas (strict 4->2 columns; the
+>   free-text pulled inline as the 20th cell), NOT a checkbox reorder.
+> - **Bodychart markers (b):** the nine marker types are enumerated in the v3 seed
+>   (`bodychart.items.properties.marker_type.enum`) and rendered by the `bodychart`
+>   x-widget `apps/web/app/clinical/[id]/BodyChart.tsx`. Each marker persists in the
+>   record `data` jsonb as `{ marker_type, x, y, view }` (normalized 0-1 coords, view
+>   enum). Current visual state: **NO per-type differentiation** - every marker draws
+>   as one identical magenta dot (`h-3 w-3 rounded-full bg-brand-magenta`, BodyChart.tsx),
+>   type shown ONLY on the hover `title` tooltip and the bottom marker-list text. The
+>   differentiation ruling is therefore a real, needed change.
+> - **Intensity attribute feasibility (c): YES, migration-free.** The record `data`
+>   column is jsonb and markers are free-form JSON objects inside `data.bodychart`;
+>   adding `intensity` (a 0-10 number) to a marker object is an extra jsonb key, NOT a
+>   schema migration. No DB migration is required and NONE is authorized for this batch.
+
+### F. OUTROS GRID LAYOUT (supersedes the ruling-C free-text placement)
+
+The **Outros** section (the renamed Problemas de Saude section, ruling C) renders its
+checkboxes as a **4-column, 5-row grid** in this exact cell order (the legacy Fisiozero
+layout the clinic staff know), reading left-to-right then top-to-bottom:
+
+- **row 1:** Fumador, Gravidez, Osteoporose, Anemia
+- **row 2:** Lupus, Neoplasia, Demencia / Alzheimer, Parkinson
+- **row 3:** Depressao, Epilepsia, Esclerose multipla, Artrite reumatoide
+- **row 4:** Alergias Alimentares, Alergias Medicamentosas, Hipertensao, Hipotensao
+- **row 5:** Diabetes, Problemas Respiratorios, COVID-19, then the **free-text input
+  INLINE as the 20th grid cell**, placeholder **"Outras..."**, no visible label.
+
+The **separate below-grid free-text block from ruling C is removed**; the free-text now
+occupies the final (20th) grid cell. Its stored value maps unchanged - it is still the
+`health_problems.other` sub-key, same read and same write; only its rendered position
+moves (from a full-width block under the grid into the last grid cell). The ruling-C
+placeholder ("Outras condicoes, alergias, medicamentos...") is superseded by **"Outras..."**.
+
+**Responsive collapse to 2 columns** preserves this reading order (2-up on narrow
+viewports, 4-up on desktop; drop the intermediate 3-column step so the legacy 4x5
+reading is exact). The section title stays **"Outros"**. This is **presentation only -
+no data model change**: the `health_problems` key, its nineteen booleans, and the
+`other` sub-key are unchanged. Ground-truth: the v3 seed property order already realizes
+this cell sequence one-for-one, so W5-24 changes the renderer, not the template. Detailed
+in loop W5-24.
+
+### G. BODYCHART MARKER DIFFERENTIATION (shape + color + legend)
+
+Each of the nine bodychart marker types renders with a **UNIQUE geometric shape AND a
+unique color**. **Shape carries the meaning; color reinforces it - never color alone**
+(accessibility: the chart must be legible in greyscale and to color-vision-deficient
+users, so the shape alone must disambiguate every type). Authoritative shape mapping
+(SVG marker glyphs, keyed by the frozen `marker_type` enum value):
+
+| `marker_type` | pt-PT label | Shape |
+|---|---|---|
+| `blockage_dysfunction` | Bloqueio / Disfuncao | square |
+| `scar` | Cicatriz | cross (X) |
+| `hypertonicity` | Hipertonicidade | triangle (apex up) |
+| `hypotonicity` | Hipotonicidade | diamond |
+| `pain_radiation` | Irradiacao da dor | star |
+| `pain_location` | Local da dor | filled circle |
+| `paresthesia` | Parestesia | ring (hollow circle) |
+| `rotation_right` | Rotacao direita | right-pointing arrow |
+| `rotation_left` | Rotacao esquerda | left-pointing arrow |
+
+The two rotation types use directional arrows (right / left) as required. The nine shapes
+must be visually distinct at the marker's on-chart size (min ~12px) and each also carries
+its own color.
+
+**Palette (design instruction, note the token gap).** UI-STYLE.md is token-only and its
+named palette (teal, grey, status green/amber, error red; **magenta is reserved for the
+brand lockup**) does NOT supply nine distinct AA-safe hues. W5-25 therefore **extends
+UI-STYLE.md in the same PR** with a dedicated nine-entry **bodychart marker palette** of
+AA-checked tokens (the UI-STYLE conformance note explicitly permits a surface to extend
+that document); no raw hex in components. Because shape is the authoritative carrier, a
+palette that is merely *distinguishable* (not necessarily nine textbook-distinct hues) is
+acceptable - color reinforces, shape decides. This is a design-doc extension, not a new
+vendor and not an owner-confirmable scope change.
+
+**Legend.** A **compact, always-visible legend** renders beside or below the chart,
+mapping each shape+color to its pt-PT type name (the same nine labels). It is presentation
+chrome, always shown (not a hover/disclosure).
+
+**Unchanged.** Existing stored markers render with the new visuals automatically - the
+render is type-driven off the persisted `marker_type`, so no stored data is touched.
+Bodychart placement, the four views, the marker array shape `{ marker_type, x, y, view }`,
+and read-only gating are all UNCHANGED. This is a **render-only change to `BodyChart.tsx`
+plus a UI-STYLE.md palette addition**; the v3 template `bodychart` schema is untouched.
+Detailed in loop W5-25.
+
+### H. PAIN SCALE (EVA) on Local da dor markers
+
+When the therapist places a marker of type **Local da dor** (`pain_location`), a **0-10
+intensity selector (EVA)** appears. The chosen value stores on that marker in the record
+`data` jsonb as **`intensity`** (e.g. `intensity: 7`), alongside the existing
+`{ marker_type, x, y, view }`. Rules:
+
+- **Only `pain_location` carries a scale.** Markers of the other eight types carry no
+  `intensity` and show no selector.
+- **Optional per marker.** If the therapist skips the selector, the marker saves WITHOUT
+  `intensity` (a valid, scale-less Local da dor marker). No value is forced.
+- **Tap-friendly.** The selector targets are **min 44px** (mobile-usable), consistent with
+  the Mobilidade toggle sizing (AMENDMENTS ruling E).
+- **Display.** The bottom marker-list entry shows the value - **"Local da dor - EVA 7/10"**;
+  the marker's on-chart label or tooltip shows it too (e.g. appended to the existing
+  `title`).
+- **Editable while draft, read-only on signed records** - the selector follows the same
+  `readOnly` gate the bodychart already honors; a signed record shows the stored EVA value
+  but no editable control.
+
+**Migration-free.** `intensity` is an additive jsonb key on the marker object (recon
+verdict c); **no DB migration and none authorized.** W5-26 recons whether the form save
+path preserves unknown/undeclared jsonb keys through the record `data` write: if it does,
+store `intensity` component-side with **no template change** (preferred, most rule-5-safe);
+if the save path strips keys not declared in the template schema, the migration-free
+fallback is to declare an optional `intensity` on the `bodychart` item by seeding
+`osteopathy` **v4** and re-upserting (a seed value change, NOT a DB migration - v3 stays
+immutable for records that reference it, CLAUDE.md rule 5). Either path is migration-free;
+W5-26 picks after recon and records the choice. If W5-26 recon finds the marker `data`
+CANNOT carry `intensity` without a DB migration, that is a **HALT** (Field 6), not an
+improvisation. Detailed in loop W5-26.

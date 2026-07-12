@@ -14,7 +14,8 @@ const CUTOFF_MS = 24 * 60 * 60 * 1000
  * Detail actions (SPEC-portal §6.4). Cancel is offered only for an upcoming
  * appointment and only outside the 24h cutoff (a destructive-confirm Dialog);
  * inside the cutoff the button is disabled with the 24h rule stated. Reschedule
- * is email-link only — never an in-portal action, never an SMS promise (§0.6).
+ * is phone-only — call the clinic; never an in-portal action, never an SMS or
+ * email promise (§0.6; no confirmation email is sent).
  */
 export function AppointmentActions({
   id,
