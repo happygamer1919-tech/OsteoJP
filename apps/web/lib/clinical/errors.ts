@@ -10,7 +10,11 @@ export type ClinicalErrorCode =
   | "not_reviewable" // item is not an AI/patient review-queue item
   | "not_under_review" // must be claimed (in_review) before edit/finalize
   | "already_reviewed" // review decision is terminal (approved/rejected)
-  | "not_narrative_field"; // edit touched a coded/safety field (narrative-only)
+  | "not_narrative_field" // edit touched a coded/safety field (narrative-only)
+  // --- W5-30 delete / annul ---
+  | "not_draft" // hard delete is draft / AI-pending only (locked/signed blocked by trigger)
+  | "not_signed" // Anular applies only to a signed record
+  | "already_annulled"; // the signed record already has an annulment
 
 export class ClinicalError extends Error {
   override readonly name = "ClinicalError";

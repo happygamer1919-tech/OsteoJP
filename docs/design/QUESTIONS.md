@@ -592,3 +592,9 @@ The responsavel line "(Dr. Joao Paulo Santos Silva)" (W5-31) is sourced from a t
 W5-29 renamed the Inicio tile ("Registo clinico" -> "Ficha Clinica") and the new-ficha button ("Novo registo clinico" -> "Nova ficha clinica") in i18n. The remaining user-visible version suffix - the Modelo picker option "Ficha Clinica v4" - is composed in TSX (`apps/web/app/clinical/new/page.tsx:61`, `title + \` v${version}\``), NOT an i18n display string. Per W5-29 Field 6 (a version suffix baked into code is surfaced, not stripped, in this i18n-only loop), it was left untouched.
 - **Recommended default:** a small follow-up loop strips the ` v${version}` concatenation from the picker label (display-only), and updates the E2E fixture `TEMPLATE_CURRENT_LABEL` + the picker selectors that currently match "Ficha Clinica v4". Low-risk, but it is a code+E2E change, out of W5-29's i18n-only scope.
 - **Owner:** Ivan. Non-blocking; the two named renames shipped in W5-29 (#TBD).
+
+### Q-W5-30 - Delete/annul secret + capability (proceeded on recommended defaults)
+W5-30 needed two decisions the loop left open; both proceeded on the recommended default (non-blocking).
+1. **Shared vs separate delete-password secret** — REUSED the shared tenant delete-password (`appointmentDeletePasswordHash`, default "1234") for both hard-delete and Anular, per the W5-30 Field-2 recommendation. No new secret introduced.
+2. **Capability** — both hard-delete (draft) and Anular (signed) require `clinical_records:author` (the therapist who owns fichas), NOT `settings:manage`. Rationale: admin is read-only on clinical records (permission matrix), so a clinical-content lifecycle action belongs to the author. The password gate is the destructive-action confirmation on top.
+- **Owner:** Ivan. If a distinct secret or an admin-only gate is preferred, say so and it becomes a small follow-up. Shipped in W5-30 (#TBD) on these defaults.

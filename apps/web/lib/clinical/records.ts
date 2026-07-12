@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
   attachments,
@@ -7,6 +7,7 @@ import {
   clinicalRecords,
   formTemplates,
   patients,
+  recordAnnulments,
   users,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
@@ -46,6 +47,9 @@ export type RecordListItem = {
    *  patient profile alongside the record. */
   createdAt: string;
   updatedAt: string;
+  /** W5-30: the record has a `record_annulments` row (shown ANULADO). The signed
+   *  record row itself is untouched; this is a separate append-only fact. */
+  annulled: boolean;
 };
 
 export type AttachmentItem = {
@@ -96,7 +100,7 @@ export type EpisodeOption = { id: string; title: string };
 
 export async function listRecords(
   ctx: RequestContext,
-  filter: { patientId?: string } = {},
+  filter: { patientId?: string; includeAnnulled?: boolean } = {},
 ): Promise<RecordListItem[]> {
   assertCan(ctx.role, "clinical_records:read");
   return runScoped(ctx, async (tx) => {
@@ -118,18 +122,35 @@ export async function listRecords(
       .leftJoin(formTemplates, eq(formTemplates.id, clinicalRecords.formTemplateId))
       .where(filter.patientId ? eq(clinicalRecords.patientId, filter.patientId) : undefined)
       .orderBy(desc(clinicalRecords.updatedAt));
-    return rows.map((r) => ({
-      id: r.id,
-      patientId: r.patientId,
-      patientName: r.patientName,
-      status: r.status as RecordStatus,
-      aiReviewState: (r.aiReviewState as AiReviewState | null) ?? null,
-      version: r.version,
-      templateTitle: (r.templateTitle as Localized | null) ?? null,
-      signedAt: r.signedAt ? r.signedAt.toISOString() : null,
-      createdAt: r.createdAt.toISOString(),
-      updatedAt: r.updatedAt.toISOString(),
-    }));
+
+    // W5-30: which of these records are annulled? One extra tenant-scoped read
+    // (RLS) rather than a join, so a record with >1 annulment can't fan out rows.
+    const ids = rows.map((r) => r.id);
+    const annulledIds = new Set<string>();
+    if (ids.length > 0) {
+      const annuls = await tx
+        .select({ recordId: recordAnnulments.recordId })
+        .from(recordAnnulments)
+        .where(inArray(recordAnnulments.recordId, ids));
+      for (const a of annuls) annulledIds.add(a.recordId);
+    }
+
+    return rows
+      .map((r) => ({
+        id: r.id,
+        patientId: r.patientId,
+        patientName: r.patientName,
+        status: r.status as RecordStatus,
+        aiReviewState: (r.aiReviewState as AiReviewState | null) ?? null,
+        version: r.version,
+        templateTitle: (r.templateTitle as Localized | null) ?? null,
+        signedAt: r.signedAt ? r.signedAt.toISOString() : null,
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+        annulled: annulledIds.has(r.id),
+      }))
+      // Default list hides annulled records behind the "Mostrar anulados" toggle.
+      .filter((r) => (filter.includeAnnulled ? true : !r.annulled));
   });
 }
 
@@ -535,6 +556,105 @@ export async function signAndLockRecord(ctx: RequestContext, id: string): Promis
       entityType: "clinical_record",
       entityId: id,
       metadata: { signedAt: signedAt.toISOString() },
+      ip,
+    });
+  });
+}
+
+/**
+ * W5-30 — hard-delete a DRAFT (or AI-pending, which is also status=draft)
+ * clinical record. The password gate + capability check live in the server
+ * action; this does the tenant-scoped DB work. Draft-only by construction: the
+ * status check refuses non-draft, and the clinical_records BEFORE UPDATE OR
+ * DELETE immutability trigger is the backstop (locked/signed can never be
+ * deleted — the trigger is NOT touched). Attachment children are removed
+ * child-first (RETURNING). Idempotent: a missing/cross-tenant id → not_found.
+ */
+export async function hardDeleteClinicalRecord(ctx: RequestContext, id: string): Promise<void> {
+  assertCan(ctx.role, "clinical_records:author");
+  const ip = await clientIp();
+  await runScoped(ctx, async (tx) => {
+    const [target] = await tx
+      .select({ status: clinicalRecords.status, version: clinicalRecords.version })
+      .from(clinicalRecords)
+      .where(eq(clinicalRecords.id, id))
+      .limit(1);
+    if (!target) throw new ClinicalError("not_found");
+    // Only draft / AI-pending (status=draft) is deletable; the trigger blocks the rest.
+    if (target.status !== "draft") throw new ClinicalError("not_draft");
+
+    // Child-first: remove attachment rows referencing this record (RETURNING).
+    // Storage objects are left to lifecycle cleanup, mirroring hardDeletePatient.
+    await tx
+      .delete(attachments)
+      .where(eq(attachments.clinicalRecordId, id))
+      .returning({ id: attachments.id });
+
+    // Delete the record; the AND status=draft keeps it draft-only even under a race.
+    const deleted = await tx
+      .delete(clinicalRecords)
+      .where(and(eq(clinicalRecords.id, id), eq(clinicalRecords.status, "draft")))
+      .returning({ id: clinicalRecords.id });
+    if (deleted.length === 0) throw new ClinicalError("not_found");
+
+    await writeClinicalAudit(tx, {
+      tenantId: ctx.tenantId,
+      actorUserId: ctx.userId,
+      action: "clinical_record.hard_delete",
+      entityType: "clinical_record",
+      entityId: id,
+      metadata: { status: target.status, version: target.version },
+      ip,
+    });
+  });
+}
+
+/**
+ * W5-30 — Anular (void) a SIGNED clinical record. INSERTs an append-only
+ * `record_annulments` row; the locked/signed record row is NEVER updated or
+ * deleted (the immutability trigger stays intact). Signed-only; a second annul
+ * on the same record is refused (already_annulled). reason is optional. The
+ * password gate + capability check live in the server action.
+ */
+export async function annulRecord(
+  ctx: RequestContext,
+  id: string,
+  reason: string | null,
+): Promise<void> {
+  assertCan(ctx.role, "clinical_records:author");
+  const ip = await clientIp();
+  await runScoped(ctx, async (tx) => {
+    const [target] = await tx
+      .select({ status: clinicalRecords.status })
+      .from(clinicalRecords)
+      .where(eq(clinicalRecords.id, id))
+      .limit(1);
+    if (!target) throw new ClinicalError("not_found");
+    if (target.status !== "signed") throw new ClinicalError("not_signed");
+
+    const [{ n: existing }] = await tx
+      .select({ n: count() })
+      .from(recordAnnulments)
+      .where(eq(recordAnnulments.recordId, id));
+    if (Number(existing) > 0) throw new ClinicalError("already_annulled");
+
+    // Append-only INSERT — the signed record row is untouched. tenant_id is set
+    // explicitly (rule 3); RLS WITH CHECK also pins it to the JWT tenant.
+    const trimmed = reason?.trim();
+    await tx.insert(recordAnnulments).values({
+      tenantId: ctx.tenantId,
+      recordId: id,
+      reason: trimmed && trimmed.length > 0 ? trimmed : null,
+      annulledByUserId: ctx.userId,
+    });
+
+    await writeClinicalAudit(tx, {
+      tenantId: ctx.tenantId,
+      actorUserId: ctx.userId,
+      action: "clinical_record.annul",
+      entityType: "clinical_record",
+      entityId: id,
+      metadata: { hadReason: Boolean(trimmed && trimmed.length > 0) },
       ip,
     });
   });

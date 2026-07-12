@@ -9,6 +9,8 @@ export type ClinicalAuditAction =
   | "clinical_record.sign"
   | "clinical_record.review_claim" // therapist claimed a review-queue item (→ in_review)
   | "clinical_record.review_finalize" // therapist finalized a review item (→ approved + locked/signed)
+  | "clinical_record.hard_delete" // W5-30: password-gated hard delete of a draft / AI-pending record
+  | "clinical_record.annul" // W5-30: append-only Anular of a signed record (record row untouched)
   | "clinical_episode.create"
   | "attachment.create"
   | "patient_document.create"; // staff uploaded an administrative doc to a patient
