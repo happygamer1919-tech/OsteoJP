@@ -77,6 +77,26 @@ For a row-actions group that is too dense to read as an inline `<details>` drawe
 - **Zero logic change:** the modal holds the **exact same controls**, each still posting to its **same existing server-action handler**. A server-enforced gate (e.g. the scrypt-gated delete) stays **unchanged** — restyle/relocate only, never weakened (§5).
 - **Playwright:** open the modal by clicking the trigger button, then interact with the controls inside `getByRole("dialog")`.
 
+## 9. Bodychart marker palette — W5-25
+
+The **Local da dor** bodychart (`apps/web/app/clinical/[id]/BodyChart.tsx`) plots nine clinical marker types (SPEC-ficha-medica.md AMENDMENTS ruling G). Each type renders with a **unique geometric SHAPE and a unique COLOUR**. **Shape is the authoritative carrier of meaning; colour reinforces — never colour alone** (the chart must read in greyscale and for colour-vision-deficient users, so the shape alone disambiguates every type). An **always-visible legend** (not a hover/disclosure) maps each shape+colour to its pt-PT type name.
+
+The §7 token palette does not supply nine distinct hues (magenta is reserved for the brand lockup), so W5-25 adds a dedicated nine-entry marker palette in `apps/web/app/globals.css` (`@theme`). Tailwind v4 generates the `fill-marker-*` / `stroke-marker-*` utilities; components reference them by name, **no raw hex**. Every hue is **AA (≥ 4.5:1) against the chart surface `--color-surface-muted` (#F0F3F6)**; filled shapes carry a thin `stroke-surface` halo to separate from the figure line-art, stroked shapes (cross, ring) carry only their colour stroke.
+
+| `marker_type` | pt-PT label | Shape | Colour token | Hex | Contrast vs #F0F3F6 |
+|---|---|---|---|---|---|
+| `blockage_dysfunction` | Bloqueio / Disfunção | square | `marker-blockage` | #3538CD | 7.26:1 |
+| `scar` | Cicatriz | cross (X) | `marker-scar` | #B42318 | 5.90:1 |
+| `hypertonicity` | Hipertonicidade | triangle | `marker-hypertonicity` | #B54708 | 4.87:1 |
+| `hypotonicity` | Hipotonicidade | diamond | `marker-hypotonicity` | #107569 | 5.00:1 |
+| `pain_radiation` | Irradiação da dor | star | `marker-radiation` | #6941C6 | 5.94:1 |
+| `pain_location` | Local da dor | filled circle | `marker-location` | #C11574 | 5.20:1 |
+| `paresthesia` | Parestesia | ring (hollow) | `marker-paresthesia` | #175CD3 | 5.38:1 |
+| `rotation_right` | Rotação direita | arrow → | `marker-rotation-right` | #027A48 | 4.86:1 |
+| `rotation_left` | Rotação esquerda | arrow ← | `marker-rotation-left` | #854A0E | 6.32:1 |
+
+The nine `marker_type` values are the frozen `osteopathy-v3.json` bodychart enum; the shape/colour mapping binds to those values (render-only — the template and the stored marker shape `{ marker_type, x, y, view }` are untouched). The marker glyphs + legend live in `apps/web` (BodyChart.tsx); no `packages/ui` primitive is added.
+
 ---
 
 **Conformance note:** W4-14 (Horários), W4-15 (Serviços), W4-16 (Pacientes), W4-17 (Agenda header), W4-18 (Início) follow the card/table/spacing/badge/button/toolbar/token patterns above. Any surface that needs a pattern not covered here extends this document in the same PR.
