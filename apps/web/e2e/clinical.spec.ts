@@ -37,6 +37,56 @@ test.describe("authoring (therapist)", () => {
     await expect(picker.getByRole("option", { name: TEMPLATE_RETIRED_LABEL })).toHaveCount(0);
   });
 
+  test("FF2-A: new ficha renders v4 canonical order, Peso/Altura thin card + Alertas/CID row, no Marcação respectiva / Testes Neurológicos", async ({
+    page,
+  }) => {
+    await page.goto("/clinical/new");
+    const patient = page.getByRole("combobox", { name: /Paciente/i });
+    await patient.click();
+    await patient.fill(PATIENTS.maria.name);
+    await page.getByRole("option", { name: PATIENTS.maria.name }).click();
+    await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
+    await page.getByRole("button", { name: "Criar ficha" }).click();
+    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+
+    const form = page.locator("#record-form");
+
+    // FF2-A position 1 + 2: the Peso/Altura thin card and the Alertas/CID row.
+    await expect(form.getByTestId("ficha-peso-altura-card")).toBeVisible();
+    await expect(form.getByTestId("ficha-alertas-cid-row")).toBeVisible();
+
+    // FF2-B: neither removed field renders.
+    await expect(form.getByText("Marcação respectiva", { exact: false })).toHaveCount(0);
+    await expect(form.getByText("Testes Neurológicos", { exact: false })).toHaveCount(0);
+
+    // FF2-A left-nav order: the section rail lists sections in the exact v4 order
+    // (anchor ids = section-<key>). episode_date is hidden (ruling B).
+    const railLinks = page.getByRole("navigation", { name: "Registos Clínicos" }).locator("a");
+    const hrefs = await railLinks.evaluateAll((els) =>
+      els.map((e) => (e as HTMLAnchorElement).getAttribute("href")),
+    );
+    expect(hrefs).toEqual([
+      "#section-weight_kg",
+      "#section-height_cm",
+      "#section-red_flags",
+      "#section-cid_codes",
+      "#section-bodychart",
+      "#section-observations",
+      "#section-mobilidade",
+      "#section-mobilidade_observacoes",
+      "#section-consultation_reason",
+      "#section-tratamento",
+      "#section-treatment_plan",
+      "#section-treatment_objectives",
+      "#section-diagnostico",
+      "#section-relief_aggravation",
+      "#section-systems_review",
+      "#section-health_problems",
+      "#section-clinical_history",
+      "#section-special_tests",
+    ]);
+  });
+
   test("create a record from the current form, then sign/lock and version it", async ({ page }) => {
     // --- Create from the current template version ---
     await page.goto("/clinical/new");
@@ -154,11 +204,11 @@ test.describe("authoring (therapist)", () => {
 
     const form = page.locator("#record-form");
 
-    // 5.10-5.13 fields render in the authoritative sequence (scoped to the form).
+    // FF2-A (SPEC AMENDMENT 2026-07-12): these kept sections all render on v4.
+    // "Testes Neurológicos" was removed by FF2-B, so it is no longer asserted.
     for (const label of [
       "Mobilidade Activa / Passiva",
       "Observações Mobilidade Activa / Passiva",
-      "Testes Neurológicos",
       "Testes Especiais",
       "Diagnóstico",
       "Tratamento",

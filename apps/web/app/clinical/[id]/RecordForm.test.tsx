@@ -57,13 +57,26 @@ vi.mock("@osteojp/ui", () => {
 
 import { RecordForm } from "./RecordForm";
 
-const v3 = JSON.parse(
-  readFileSync(
-    path.join(__dirname, "../../../../../packages/db/seed/form-templates/osteopathy-v3.json"),
-    "utf8",
+const SEED_DIR = "../../../../../packages/db/seed/form-templates";
+const loadTpl = (file: string) =>
+  JSON.parse(readFileSync(path.join(__dirname, SEED_DIR, file), "utf8")) as {
+    schema: { properties: Record<string, unknown> } & Record<string, unknown>;
+  };
+// v4 is the FF2-A active template (W5-27); v3 is retained for the old-record proof.
+const v4 = loadTpl("osteopathy-v4.json");
+const v3 = loadTpl("osteopathy-v3.json");
+
+// The live `schema` column is jsonb, which returns object keys LENGTH-sorted — NOT
+// the authored FF2-A order. Reproduce that here so the order proofs below verify the
+// renderer follows `x-order` (via topLevelFields), not the file's property key order.
+const jsonbShape = (s: { properties: Record<string, unknown> } & Record<string, unknown>) => ({
+  ...s,
+  properties: Object.fromEntries(
+    Object.entries(s.properties).sort(([a], [b]) => a.length - b.length || a.localeCompare(b)),
   ),
-) as { schema: unknown };
-const schema = parseTemplateSchema(v3.schema)!;
+});
+const schema = parseTemplateSchema(jsonbShape(v4.schema))!;
+const schemaV3 = parseTemplateSchema(jsonbShape(v3.schema))!;
 
 /** The 19 grid conditions (SPEC 5.4), by their PT label as they appear in v3. */
 const NINETEEN_CONDITIONS = [
@@ -88,10 +101,10 @@ const NINETEEN_CONDITIONS = [
   "COVID-19",
 ];
 
-function render(overrides: Record<string, unknown> = {}, readOnly = false): string {
+function render(overrides: Record<string, unknown> = {}, readOnly = false, useSchema = schema): string {
   return renderToStaticMarkup(
     createElement(RecordForm, {
-      schema,
+      schema: useSchema,
       initialData: overrides,
       readOnly,
       saveAction: async () => ({ ok: true }),
@@ -231,11 +244,14 @@ describe("Stored values unchanged on an existing draft (ruling F is presentation
   });
 });
 
-describe("Header row (SPEC 5.1) — Peso and Altura adjacent", () => {
+describe("FF2-A position 1 — Peso + Altura thin card under the Paciente card", () => {
   const html = render();
 
-  it("renders the header row as a grid (Peso/Altura/Marcação in one row, no Data)", () => {
-    expect(html).toContain("sm:grid-cols-4");
+  it("renders the Peso/Altura group as a bordered thin card (2-up grid, not the old 4-up)", () => {
+    expect(html).toContain('data-testid="ficha-peso-altura-card"');
+    // FF2-A: the thin card is a bordered 2-column grid; the old sm:grid-cols-4
+    // header row is gone.
+    expect(html).not.toContain("sm:grid-cols-4");
   });
 
   it("renders Peso (kg) immediately adjacent to Altura (cm), nothing between", () => {
@@ -243,10 +259,79 @@ describe("Header row (SPEC 5.1) — Peso and Altura adjacent", () => {
     const alturaIdx = html.indexOf("Altura (cm)");
     expect(pesoIdx).toBeGreaterThan(-1);
     expect(alturaIdx).toBeGreaterThan(pesoIdx);
-    // No other top-level field label falls between Peso and Altura.
     const between = html.slice(pesoIdx, alturaIdx);
     expect(between).not.toContain("Marcação");
     expect(between).not.toContain("Alertas");
+  });
+});
+
+describe("FF2-A position 2 — Alertas + Códigos CID as one row", () => {
+  const html = render();
+  it("renders the Alertas/CID group as one row", () => {
+    expect(html).toContain('data-testid="ficha-alertas-cid-row"');
+  });
+  it("places Alertas immediately before Códigos CID, nothing between", () => {
+    const alertasIdx = html.indexOf("Alertas (sinais de alarme)");
+    const cidIdx = html.indexOf("Códigos CID associados");
+    expect(alertasIdx).toBeGreaterThan(-1);
+    expect(cidIdx).toBeGreaterThan(alertasIdx);
+  });
+});
+
+describe("FF2-A canonical order (SPEC AMENDMENT 2026-07-12) — top-to-bottom section order v4", () => {
+  const html = render();
+  // FF2-A positions 1..16 (position 0 Paciente card + 17 signature block are not
+  // template fields), by a stable label substring for each kept section.
+  const FF2A_LABELS = [
+    "Peso (kg)",                              // 1
+    "Altura (cm)",                            // 1
+    "Alertas (sinais de alarme)",             // 2
+    "Códigos CID associados",                 // 2
+    "Bodychart",                              // 3 (bodychart stub renders after its Field label)
+    "Observações",                            // 4 observations
+    "Mobilidade Activa / Passiva",            // 5
+    "Observações Mobilidade",                 // 6
+    "Motivos da Consulta",                    // 7 required
+    "Tratamento",                             // 8
+    "Plano de Tratamento",                    // 9
+    "Objectivos do Tratamento",               // 10
+    "Diagnóstico",                            // 11
+    "Condições Alívio",                       // 12 relief_aggravation
+    "Anamnese por Sistemas",                  // 13
+    "Outros",                                 // 14 health_problems (renderer override)
+    "Antecedentes Clínicos",                  // 15 clinical_history
+    "Testes Especiais",                       // 16 special_tests
+  ];
+
+  it("renders every FF2-A section in the exact canonical order", () => {
+    const positioned = FF2A_LABELS.map((label) => ({ label, idx: html.indexOf(label) }));
+    for (const p of positioned) expect(p.idx, `"${p.label}" must render`).toBeGreaterThan(-1);
+    const domOrder = [...positioned].sort((a, b) => a.idx - b.idx).map((p) => p.label);
+    expect(domOrder).toEqual(FF2A_LABELS);
+  });
+});
+
+describe("FF2-B removals — Marcação respectiva + Testes Neurológicos absent from v4", () => {
+  const html = render();
+  it("renders NO Marcação respectiva (linked_appointment) control", () => {
+    expect(html).not.toContain("Marcação respectiva");
+    // v4 property set does not carry linked_appointment.
+    expect(Object.keys((v4.schema as { properties: Record<string, unknown> }).properties))
+      .not.toContain("linked_appointment");
+  });
+  it("renders NO Testes Neurológicos section", () => {
+    expect(html).not.toContain("Testes Neurológicos");
+    expect(Object.keys((v4.schema as { properties: Record<string, unknown> }).properties))
+      .not.toContain("neurological_tests");
+  });
+});
+
+describe("Old-record proof (rule #5) — a v3-bound record still renders its ORIGINAL structure", () => {
+  const html = render({}, false, schemaV3);
+  it("still renders Marcação respectiva and Testes Neurológicos on the v3 template", () => {
+    // v3 is immutable; records referencing it keep the removed fields forever.
+    expect(html).toContain("Marcação respectiva");
+    expect(html).toContain("Testes Neurológicos");
   });
 });
 

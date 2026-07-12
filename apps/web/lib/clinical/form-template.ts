@@ -33,6 +33,14 @@ export type TemplateSchema = {
   type?: string;
   required?: string[];
   properties: Record<string, FieldSchema>;
+  /**
+   * FF2-A (W5-27): explicit top-level field render order. The `schema` column is
+   * jsonb, which normalizes OBJECT key order (so `properties` insertion order does
+   * NOT survive the DB) but PRESERVES ARRAY order — so this array, not the
+   * `properties` key order, is the authoritative sequence. Absent on v1/v2/v3,
+   * whose Object.entries order stays their original structure (rule 5).
+   */
+  order?: string[];
 };
 
 /** The widgets the renderer understands; everything else falls back to text. */
@@ -58,11 +66,38 @@ export function parseTemplateSchema(raw: unknown): TemplateSchema | null {
       ? r.required.filter((k): k is string => typeof k === "string")
       : [],
     properties: r.properties as Record<string, FieldSchema>,
+    order: Array.isArray(r["x-order"])
+      ? (r["x-order"] as unknown[]).filter((k): k is string => typeof k === "string")
+      : undefined,
   };
 }
 
+/**
+ * Top-level fields in render order. When the template carries `x-order` (FF2-A,
+ * W5-27) the sequence follows it exactly — the SINGLE source of truth for both the
+ * form body and the in-ficha left nav (jsonb does not preserve `properties` key
+ * order, so we cannot rely on it). Keys present in `properties` but missing from
+ * `x-order` fall to the end in their Object.entries order; `x-order` keys with no
+ * matching property are skipped. Without `x-order` (v1/v2/v3), the original
+ * Object.entries order is returned unchanged (rule 5).
+ */
 export function topLevelFields(schema: TemplateSchema): Array<[string, FieldSchema]> {
-  return Object.entries(schema.properties);
+  const entries = Object.entries(schema.properties);
+  if (!schema.order || schema.order.length === 0) return entries;
+  const byKey = new Map(entries);
+  const ordered: Array<[string, FieldSchema]> = [];
+  const used = new Set<string>();
+  for (const key of schema.order) {
+    const field = byKey.get(key);
+    if (field !== undefined && !used.has(key)) {
+      ordered.push([key, field]);
+      used.add(key);
+    }
+  }
+  for (const [key, field] of entries) {
+    if (!used.has(key)) ordered.push([key, field]);
+  }
+  return ordered;
 }
 
 export function labelOf(field: FieldSchema, locale: Locale, fallback: string): string {

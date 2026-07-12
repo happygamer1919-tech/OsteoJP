@@ -32,13 +32,19 @@ export type SaveState = { ok: boolean; errors?: Record<string, string>; code?: s
 const initialState: SaveState = { ok: false };
 
 /**
- * SPEC-ficha-medica.md sec 5.1 header row. These fields render as ONE compact
- * grid row (not stacked full-width) so `weight_kg` (Peso) and `height_cm`
- * (Altura) sit ADJACENT with nothing between them. Only the contiguous leading
- * run of these keys, in template order, is grouped; anything else falls through
- * to the normal one-field-per-row layout.
+ * FF2-A grouped rows (SPEC-ficha-medica.md AMENDMENT 2026-07-12). Any contiguous
+ * run of top-level fields (in template order) that exactly matches a group's keys
+ * renders as ONE row instead of the default one-field-per-row layout. Each field
+ * still keeps its own rail anchor. `linked_appointment` was removed by FF2-B, so
+ * the Peso/Altura group no longer carries it.
+ *   - Position 1: Peso (weight_kg) + Altura (height_cm) as a thin card directly
+ *     under the Paciente card, nothing else on it.
+ *   - Position 2: Alertas (red_flags) + Códigos CID (cid_codes) as one row.
  */
-const HEADER_ROW_KEYS = ["weight_kg", "height_cm", "linked_appointment"];
+const ROW_GROUPS: { keys: string[]; testid: string; card: boolean }[] = [
+  { keys: ["weight_kg", "height_cm"], testid: "ficha-peso-altura-card", card: true },
+  { keys: ["red_flags", "cid_codes"], testid: "ficha-alertas-cid-row", card: false },
+];
 
 function asString(v: unknown): string {
   return typeof v === "string" ? v : v == null ? "" : String(v);
@@ -124,18 +130,6 @@ export function RecordForm({
 
       {(() => {
         const fields = topLevelFields(schema).filter(([key]) => !HIDDEN_FIELD_KEYS.has(key));
-        // SPEC sec 5.1: the leading contiguous run of header-row keys renders as
-        // one grid row (Peso/Altura adjacent). Everything after keeps the normal
-        // one-field-per-row layout. Each field stays its own rail anchor.
-        let headerRunEnd = 0;
-        while (
-          headerRunEnd < fields.length &&
-          HEADER_ROW_KEYS.includes(fields[headerRunEnd]![0])
-        ) {
-          headerRunEnd++;
-        }
-        const headerFields = fields.slice(0, headerRunEnd);
-        const restFields = fields.slice(headerRunEnd);
 
         const renderField = ([key, field]: (typeof fields)[number]) => {
           const widget = widgetOf(key, field);
@@ -159,16 +153,39 @@ export function RecordForm({
           );
         };
 
-        return (
-          <>
-            {headerFields.length > 0 && (
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {headerFields.map(renderField)}
-              </div>
-            )}
-            {restFields.map(renderField)}
-          </>
-        );
+        // FF2-A: walk fields in template (= v4) order; collapse any contiguous run
+        // that exactly matches a ROW_GROUP into one grid row (each field keeps its
+        // rail anchor); everything else renders one field per row, top-to-bottom.
+        const out: ReactNode[] = [];
+        let i = 0;
+        while (i < fields.length) {
+          const grp = ROW_GROUPS.find(
+            (g) =>
+              i + g.keys.length <= fields.length &&
+              g.keys.every((k, j) => fields[i + j]![0] === k),
+          );
+          if (grp) {
+            const items = fields.slice(i, i + grp.keys.length);
+            out.push(
+              <div
+                key={`grp-${grp.testid}`}
+                data-testid={grp.testid}
+                className={
+                  grp.card
+                    ? "grid grid-cols-1 gap-4 rounded-lg border border-border bg-surface p-4 sm:grid-cols-2"
+                    : "grid grid-cols-1 gap-4 sm:grid-cols-2"
+                }
+              >
+                {items.map(renderField)}
+              </div>,
+            );
+            i += grp.keys.length;
+          } else {
+            out.push(renderField(fields[i]!));
+            i++;
+          }
+        }
+        return <>{out}</>;
       })()}
 
       {/* SPEC sec 5.14 / 7: signature + Gerar PDF + Consinto block, after the

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseTemplateSchema,
   projectAiExtractableData,
+  topLevelFields,
   validateRecordData,
   widgetOf,
   type FieldSchema,
@@ -211,5 +212,91 @@ describe("validateRecordData — additive marker `intensity` passes the save gat
     expect(result.ok).toBe(true);
     // The validator never mutates the input — no intensity is added.
     expect(other.bodychart[0]).not.toHaveProperty("intensity");
+  });
+});
+
+describe("topLevelFields — x-order drives render sequence, NOT jsonb property key order (W5-27)", () => {
+  // The `schema` column is jsonb; Postgres returns object keys length-sorted, so the
+  // driver hands the app a `properties` object whose key order is length-sorted, NOT
+  // the authored FF2-A order. This fixture reproduces that: `properties` keys are in
+  // deliberate jsonb length-then-alpha order, while `x-order` carries FF2-A. The proof
+  // is that topLevelFields follows x-order, defeating the length-sorted key order.
+  const JSONB_LENGTH_SORTED_KEYS = [
+    // length 2..: exactly what Postgres jsonb yields for these keys
+    "cc", // shortest — would be FIRST if key order drove the sequence
+    "aaa",
+    "bbbb",
+    "eeeee",
+    "dddddd",
+  ];
+  const FF2A_LIKE_ORDER = ["aaa", "bbbb", "cc", "dddddd", "eeeee"];
+
+  // Build the raw jsonb-shaped object with keys inserted in length-sorted order.
+  const rawProperties: Record<string, unknown> = {};
+  for (const k of JSONB_LENGTH_SORTED_KEYS) {
+    rawProperties[k] = { type: "string", "x-label": { pt: k, en: k } };
+  }
+  const raw = {
+    type: "object",
+    required: [],
+    "x-order": FF2A_LIKE_ORDER,
+    properties: rawProperties,
+  };
+
+  it("sorts by x-order even though the property keys arrive length-sorted (jsonb)", () => {
+    // Sanity: the incoming property key order is the length-sorted (jsonb) order.
+    expect(Object.keys(rawProperties)).toEqual(JSONB_LENGTH_SORTED_KEYS);
+    const schema = parseTemplateSchema(raw)!;
+    expect(schema.order).toEqual(FF2A_LIKE_ORDER);
+    const rendered = topLevelFields(schema).map(([k]) => k);
+    // Order follows x-order, NOT the length-sorted key order.
+    expect(rendered).toEqual(FF2A_LIKE_ORDER);
+    expect(rendered).not.toEqual(JSONB_LENGTH_SORTED_KEYS);
+  });
+
+  it("appends keys missing from x-order at the end, and skips x-order keys with no property", () => {
+    const raw2 = {
+      type: "object",
+      required: [],
+      "x-order": ["bbbb", "ghost", "aaa"], // ghost has no property; cc/dddddd/eeeee omitted
+      properties: rawProperties,
+    };
+    const schema = parseTemplateSchema(raw2)!;
+    const rendered = topLevelFields(schema).map(([k]) => k);
+    // x-order keys first (ghost skipped), then the rest in Object.entries order.
+    expect(rendered).toEqual(["bbbb", "aaa", "cc", "eeeee", "dddddd"]);
+  });
+
+  it("without x-order, preserves the original Object.entries order (v1/v2/v3, rule 5)", () => {
+    const raw3 = { type: "object", required: [], properties: rawProperties };
+    const schema = parseTemplateSchema(raw3)!;
+    expect(schema.order).toBeUndefined();
+    expect(topLevelFields(schema).map(([k]) => k)).toEqual(JSONB_LENGTH_SORTED_KEYS);
+  });
+
+  it("the real osteopathy-v4 seed carries x-order = FF2-A and drives that exact sequence", () => {
+    const v4 = JSON.parse(
+      readFileSync(
+        path.join(__dirname, "../../../../packages/db/seed/form-templates/osteopathy-v4.json"),
+        "utf8",
+      ),
+    ) as { schema: unknown };
+    const schema = parseTemplateSchema(v4.schema)!;
+    const FF2A = [
+      "episode_date", "weight_kg", "height_cm", "red_flags", "cid_codes", "bodychart",
+      "observations", "mobilidade", "mobilidade_observacoes", "consultation_reason",
+      "tratamento", "treatment_plan", "treatment_objectives", "diagnostico",
+      "relief_aggravation", "systems_review", "health_problems", "clinical_history",
+      "special_tests",
+    ];
+    expect(schema.order).toEqual(FF2A);
+    // Even after simulating jsonb by length-sorting the property keys, order holds.
+    const lengthSorted = Object.fromEntries(
+      Object.entries(schema.properties).sort(
+        ([a], [b]) => a.length - b.length || a.localeCompare(b),
+      ),
+    );
+    const jsonbShaped = parseTemplateSchema({ ...(v4.schema as object), properties: lengthSorted })!;
+    expect(topLevelFields(jsonbShaped).map(([k]) => k)).toEqual(FF2A);
   });
 });
