@@ -3,11 +3,13 @@
 // in isolation; the DB layer (store.ts) filters the live services catalog through
 // `isBookableServiceName` and resolves price through `effectivePriceCents`.
 //
-// Grounding: OsteoJP's clinical service set. The three physiotherapy "wrappers"
-// (RPG, Massagem Terapêutica, Pilates Terapêutico) are explicitly INCLUDED for
-// online booking alongside the core consultations — RPG is bookable by default,
-// not filtered out. Out-of-V1-scope offerings (Formação) and the deferred NESA
-// form are not patient-self-bookable.
+// Grounding: OsteoJP's clinical service set. The two physiotherapy "wrappers"
+// (Massagem Terapêutica, Pilates Terapêutico) are explicitly INCLUDED for online
+// booking alongside the core consultations. RPG is NOT a bookable service — it
+// is the RGPD/privacy consent DOCUMENT that was mis-entered in the catalog (JP
+// ruling 2026-07-11); it survives only as a form template, never a service.
+// Out-of-V1-scope offerings (Formação) and the deferred NESA form are not
+// patient-self-bookable.
 //
 // Parcerias (partner / protocol pricing): the price shown is whatever the clinic
 // has configured for that service+location (the per-location override, else the
@@ -28,21 +30,21 @@ export function normalizeServiceName(name: string): string {
 }
 
 /**
- * Canonical patient-self-bookable OsteoJP services, by normalized name. The
- * physio wrappers are first-class entries here — RPG included by default.
- * Kept as normalized keys so seed/casing/accent variations still match.
+ * Canonical patient-self-bookable OsteoJP services, by normalized name. The two
+ * physio wrappers (Massagem Terapêutica, Pilates Terapêutico) are first-class
+ * entries here; RPG is deliberately absent — it is the RGPD consent document,
+ * not a service. Kept as normalized keys so seed/casing/accent variations still
+ * match.
  */
 export const BOOKABLE_SERVICE_NAMES: readonly string[] = [
   "osteopatia",
   "fisioterapia",
-  "rpg",
   "massagem terapeutica",
   "pilates terapeutico",
 ];
 
-/** The three physiotherapy wrapper services, surfaced for tests/UX grouping. */
+/** The two physiotherapy wrapper services, surfaced for tests/UX grouping. */
 export const PHYSIO_WRAPPER_SERVICE_NAMES: readonly string[] = [
-  "rpg",
   "massagem terapeutica",
   "pilates terapeutico",
 ];
