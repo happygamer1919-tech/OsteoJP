@@ -3,7 +3,7 @@
 import { Field, Input } from "@osteojp/ui";
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
 import { Search } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
 const s = getStrings(DEFAULT_LOCALE);
@@ -21,14 +21,21 @@ export function SearchBox({
   placeholder?: string;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [q, setQ] = useState(initialQuery);
   const [, startTransition] = useTransition();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function navigate(value: string) {
     const query = value.trim();
+    // Preserve sibling filter params (e.g. W5-32 ?location=) so search composes
+    // with them instead of clobbering them; only the `q` param is (re)written.
+    const params = new URLSearchParams(searchParams.toString());
+    if (query) params.set("q", query);
+    else params.delete("q");
+    const qs = params.toString();
     startTransition(() => {
-      router.replace(query ? `${path}?q=${encodeURIComponent(query)}` : path);
+      router.replace(qs ? `${path}?${qs}` : path);
     });
   }
 
