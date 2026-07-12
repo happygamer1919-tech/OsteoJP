@@ -270,8 +270,33 @@ async function upsertOne(
   return "updated";
 }
 
+/**
+ * Structural equality for the seed's title/schema vs the stored jsonb. Must be
+ * ORDER-INDEPENDENT on object keys: the `schema`/`title` columns are jsonb, and
+ * Postgres normalizes object-key order (length, then bytewise), so a naive
+ * `JSON.stringify` comparison would report a spurious "updated" on every re-run for
+ * any human-authored seed file (its key order never matches jsonb's). ARRAY order is
+ * preserved (it is semantically meaningful — e.g. W5-27 `x-order`, `required`, enum
+ * lists), so a genuine reordering of those still registers as a real change.
+ */
 function deepEqual(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return canonicalJson(a) === canonicalJson(b);
+}
+
+function canonicalJson(value: unknown): string {
+  const normalize = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(normalize);
+    if (v && typeof v === "object") {
+      const obj = v as Record<string, unknown>;
+      return Object.fromEntries(
+        Object.keys(obj)
+          .sort()
+          .map((k) => [k, normalize(obj[k])]),
+      );
+    }
+    return v;
+  };
+  return JSON.stringify(normalize(value));
 }
 
 /* ------------------------------------------------------------------ */
