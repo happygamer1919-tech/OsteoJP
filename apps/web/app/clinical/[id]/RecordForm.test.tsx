@@ -47,11 +47,11 @@ vi.mock("@osteojp/ui", () => {
     Card: passthrough("div"),
     Field: ({ label, children }: { label?: ReactNode; children?: ReactNode }) =>
       createElement("label", null, label as ReactNode, children as ReactNode),
-    Input: ({ type, placeholder, "aria-label": ariaLabel }: { type?: string; placeholder?: string; "aria-label"?: string }) =>
-      createElement("input", { type: type ?? "text", placeholder, "aria-label": ariaLabel }),
+    Input: ({ type, placeholder, "aria-label": ariaLabel, value }: { type?: string; placeholder?: string; "aria-label"?: string; value?: string }) =>
+      createElement("input", { type: type ?? "text", placeholder, "aria-label": ariaLabel, "data-value": value ?? "" }),
     Textarea: () => createElement("textarea"),
-    Checkbox: ({ label }: { label?: ReactNode }) =>
-      createElement("label", { "data-role": "checkbox" }, label as ReactNode),
+    Checkbox: ({ label, checked }: { label?: ReactNode; checked?: boolean }) =>
+      createElement("label", { "data-role": "checkbox", "data-checked": checked ? "true" : "false" }, label as ReactNode),
   };
 });
 
@@ -104,9 +104,10 @@ function render(overrides: Record<string, unknown> = {}, readOnly = false): stri
   );
 }
 
-describe("Outros grid (SPEC 5.4 + W5-19 ruling C) — 19 conditions, four columns, unlabeled free-text after", () => {
+describe("Outros grid (SPEC-ficha-medica AMENDMENTS ruling F, W5-24) — legacy 4x5 grid, free-text as inline 20th cell", () => {
   const html = render();
-  const PLACEHOLDER = "Outras condições, alergias, medicamentos...";
+  // Ruling F supersedes ruling C's placeholder; the free-text now guides with "Outras...".
+  const PLACEHOLDER = "Outras...";
 
   it("renders exactly 19 checkboxes", () => {
     const checkboxes = html.match(/data-role="checkbox"/g) ?? [];
@@ -123,22 +124,110 @@ describe("Outros grid (SPEC 5.4 + W5-19 ruling C) — 19 conditions, four column
     expect(html).toContain("Lúpus");
   });
 
-  it("renders in a four-column grid (lg:grid-cols-4)", () => {
+  it("renders a strict 4-up desktop / 2-up collapse grid (lg:grid-cols-4, NO sm:grid-cols-3 intermediate)", () => {
+    // Ruling F: drop the intermediate 3-column step so the legacy 4x5 reading is
+    // exact. lg:grid-cols-4 stays; the sm:grid-cols-3 step is gone (it existed
+    // ONLY on the Outros grid, so its absence anywhere in the markup proves it).
     expect(html).toContain("lg:grid-cols-4");
+    expect(html).not.toContain("sm:grid-cols-3");
   });
 
-  it("titles the section 'Outros', not 'Problemas de Saúde' (ruling C override)", () => {
+  it("titles the section 'Outros', not 'Problemas de Saúde' (ruling C override, kept)", () => {
     expect(html).toContain("Outros");
     expect(html).not.toContain("Problemas de Saúde");
   });
 
-  it("renders the free-text unlabeled with the guidance placeholder, AFTER the grid", () => {
-    // The free-text sub-field carries the placeholder and no visible label; it
-    // renders after the last checkbox (the orphaned-render bug stays fixed).
+  it("renders the free-text unlabeled with the 'Outras...' placeholder, as the LAST cell after the grid", () => {
+    // Ruling F: the free-text is the 20th grid cell — still after the last
+    // checkbox in DOM/reading order, one cell wide, no visible label.
     const lastCheckboxIdx = html.lastIndexOf('data-role="checkbox"');
-    const placeholderIdx = html.indexOf(PLACEHOLDER);
+    const placeholderIdx = html.indexOf(`placeholder="${PLACEHOLDER}"`);
     expect(placeholderIdx).toBeGreaterThan(-1);
     expect(placeholderIdx).toBeGreaterThan(lastCheckboxIdx);
+    // The superseded ruling-C placeholder is gone.
+    expect(html).not.toContain("Outras condições, alergias, medicamentos...");
+  });
+});
+
+describe("Outros 20-cell reading-order audit (ruling F, W5-24 DoD)", () => {
+  const html = render();
+  const PLACEHOLDER = "Outras...";
+  // Ruling F cell order, left-to-right then top-to-bottom, cells 1..19 = booleans,
+  // cell 20 = the free-text input.
+  const EXPECTED_20 = [...NINETEEN_CONDITIONS, `[free-text placeholder="${PLACEHOLDER}"]`];
+
+  it("renders all 20 cells in the exact ruling-F reading order", () => {
+    const positioned = NINETEEN_CONDITIONS.map((label) => ({
+      id: label,
+      idx: html.indexOf(`data-checked="false">${label}`),
+    }));
+    positioned.push({
+      id: `[free-text placeholder="${PLACEHOLDER}"]`,
+      idx: html.indexOf(`placeholder="${PLACEHOLDER}"`),
+    });
+    // Every cell is present.
+    for (const cell of positioned) expect(cell.idx).toBeGreaterThan(-1);
+    // Sorting by DOM position reproduces the authoritative 4x5 sequence.
+    const domOrder = [...positioned].sort((a, b) => a.idx - b.idx).map((c) => c.id);
+    expect(domOrder).toEqual(EXPECTED_20);
+    expect(domOrder).toHaveLength(20);
+  });
+});
+
+describe("Stored values unchanged on an existing draft (ruling F is presentation-only, W5-24 DoD)", () => {
+  // An existing draft's health_problems: nineteen booleans + `other` free-text.
+  const EXISTING_DRAFT = {
+    health_problems: {
+      smoker: true,
+      pregnancy: false,
+      osteoporosis: false,
+      anemia: false,
+      lupus: true,
+      neoplasia: false,
+      dementia_alzheimer: false,
+      parkinson: false,
+      depression: false,
+      epilepsy: false,
+      multiple_sclerosis: false,
+      rheumatoid_arthritis: false,
+      food_allergies: true,
+      medication_allergies: false,
+      hypertension: false,
+      hypotension: false,
+      diabetes: false,
+      respiratory_problems: false,
+      covid_19: false,
+      other: "Alergia à penicilina",
+    },
+  };
+  const SEED_KEYS = Object.keys(EXISTING_DRAFT.health_problems);
+  const html = render(EXISTING_DRAFT);
+
+  it("binds all 20 stored sub-keys to the render (byte-identical key set to the v3 seed)", () => {
+    // The grid maps the template's health_problems.properties in seed order; that
+    // key set is the 20 sub-keys the loop freezes. Confirm none dropped/added.
+    expect(SEED_KEYS).toHaveLength(20);
+    expect(new Set(SEED_KEYS)).toEqual(
+      new Set([
+        "smoker", "pregnancy", "osteoporosis", "anemia", "lupus", "neoplasia",
+        "dementia_alzheimer", "parkinson", "depression", "epilepsy",
+        "multiple_sclerosis", "rheumatoid_arthritis", "food_allergies",
+        "medication_allergies", "hypertension", "hypotension", "diabetes",
+        "respiratory_problems", "covid_19", "other",
+      ]),
+    );
+  });
+
+  it("reads the stored boolean values back (checked state reflects the draft)", () => {
+    // smoker/lupus/food_allergies are true; the other sixteen booleans are false.
+    expect((html.match(/data-checked="true"/g) ?? []).length).toBe(3);
+    expect((html.match(/data-checked="false"/g) ?? []).length).toBe(16);
+  });
+
+  it("reads the stored `other` free-text value back from the `other` sub-key", () => {
+    // The free-text cell reads obj.other and writes onChange({...obj, other}) — the
+    // render change moved only its position, not its read/write binding.
+    expect(html).toContain('data-value="Alergia à penicilina"');
   });
 });
 

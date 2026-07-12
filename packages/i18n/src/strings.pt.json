@@ -951,7 +951,7 @@
   "marcacoes.errorTitle": "Não foi possível carregar as marcações",
   "marcacoes.errorHelp": "Verifique a ligação e tente novamente.",
   "clinical.stringListPlaceholder": "A, B, C",
-  "clinical.healthProblemsOtherPlaceholder": "Outras condições, alergias, medicamentos...",
+  "clinical.healthProblemsOtherPlaceholder": "Outras...",
   "app.title": "Plataforma clínica OsteoJP",
   "nav.ariaLabel": "Navegação principal",
   "nav.label": "Navegação",

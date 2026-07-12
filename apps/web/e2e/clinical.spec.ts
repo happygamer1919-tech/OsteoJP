@@ -109,14 +109,23 @@ test.describe("authoring (therapist)", () => {
     }
     await expect(form.getByText("Outros", { exact: false }).first()).toBeVisible();
     await expect(form.getByText("Problemas de Saúde", { exact: false })).toHaveCount(0);
-    // The free-text renders with NO visible label — an unlabeled input carrying
-    // the exact placeholder (accessible name via aria-label).
+    // AMENDMENTS ruling F (W5-24): the free-text renders with NO visible label —
+    // an unlabeled input carrying the "Outras..." placeholder (accessible name via
+    // aria-label). The superseded ruling-C placeholder is gone.
+    await expect(form.getByPlaceholder("Outras...")).toBeVisible();
     await expect(
       form.getByPlaceholder("Outras condições, alergias, medicamentos..."),
-    ).toBeVisible();
+    ).toHaveCount(0);
 
-    // 5.4 four-column grid: the checkbox grid carries the lg:grid-cols-4 class.
-    await expect(form.locator(".lg\\:grid-cols-4").first()).toBeAttached();
+    // Ruling F: the Outros section is the legacy 4x5 grid — strict 4-up desktop
+    // (lg:grid-cols-4), with the free-text pulled INLINE as the 20th (last) grid
+    // cell. Exactly 20 cells; the last one holds the "Outras..." free-text input.
+    const outrosGrid = form.locator(".lg\\:grid-cols-4").first();
+    await expect(outrosGrid).toBeAttached();
+    await expect(outrosGrid.locator(":scope > div")).toHaveCount(20);
+    await expect(
+      outrosGrid.locator(":scope > div").last().getByPlaceholder("Outras..."),
+    ).toBeVisible();
 
     // W5-19 ruling B: NO manual created-date picker anywhere — there is no
     // date input and no "Data do Episódio" label in the form. The created
