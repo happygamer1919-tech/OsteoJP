@@ -144,8 +144,9 @@ describe("BodyChart existing markers (ruling G) — type-driven render, no store
   });
 
   it("adds NO new stored key — the render reads only marker_type (shape) and x/y (position)", () => {
-    // Exhaustive four-key object; TypeScript's Marker is still
-    // { marker_type, x, y, view }. Rendering must not require any other key.
+    // W5-25 added no stored key. (W5-26 later adds an OPTIONAL `intensity` on
+    // pain_location markers only; a non-pain marker still has exactly these four
+    // keys.) Rendering the shape must not require any key beyond marker_type/x/y/view.
     const marker: Marker = { marker_type: "hypertonicity", x: 0.5, y: 0.5, view: "anterior" };
     expect(Object.keys(marker).sort()).toEqual(["marker_type", "view", "x", "y"]);
     const html = render([marker]);
