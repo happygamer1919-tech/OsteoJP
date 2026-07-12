@@ -97,8 +97,11 @@ export function DatePicker({
   const fullDateFmt = new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const triggerFmt = new Intl.DateTimeFormat(locale);
 
-  // Mon..Sun header labels (2024-01-01 is a Monday).
-  const weekdays = Array.from({ length: 7 }, (_, i) => weekdayFmt.format(new Date(2024, 0, 1 + i)));
+  // Mon..Sun header labels (2024-01-01 is a Monday). pt-PT's Intl "short"
+  // weekday is the full word ("segunda", "terça", … "domingo"), which overflows
+  // the narrow header cells and collides. Clamp to a 3-letter abbreviation
+  // ("seg", "ter", … "dom"; "Mon".."Sun" in en) so labels always fit one cell.
+  const weekdays = Array.from({ length: 7 }, (_, i) => weekdayFmt.format(new Date(2024, 0, 1 + i)).slice(0, 3));
 
   const openMenu = () => {
     if (disabled) return;
@@ -201,7 +204,7 @@ export function DatePicker({
               // SPEC §2 says weekday text-muted, but as meaningful column labels
               // text-muted (#8A98A6 ≈3.0:1) fails AA; brand-tokens §1.8 reserves
               // text-muted for placeholders/deemphasis, so use text-secondary.
-              <span key={i} className="flex h-8 items-center justify-center text-xs text-text-secondary">
+              <span key={i} className="flex size-9 items-center justify-center text-xs text-text-secondary">
                 {w}
               </span>
             ))}
