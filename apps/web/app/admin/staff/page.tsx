@@ -9,6 +9,8 @@ import { listStaff } from "@/lib/admin/staff";
 import { listServices } from "@/lib/admin/services";
 import { listTherapistPrimaries } from "@/lib/admin/therapist-primary-service";
 import { listAvailabilityTemplates } from "@/lib/admin/availability";
+import { listLocations } from "@/lib/admin/locations";
+import { EquipaLocationFilter } from "./EquipaLocationFilter";
 import { StaffInviteForm } from "./StaffInviteForm";
 import { StaffManageModal } from "./StaffManageModal";
 import { setPrimaryServiceAction } from "./actions";
@@ -31,7 +33,7 @@ const ROLE_LABEL: Record<Role, string> = {
 export default async function StaffPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string; q?: string }>;
+  searchParams: Promise<{ m?: string; q?: string; location?: string }>;
 }) {
   const actor = await requireRequestContext();
   const staff = await listStaff(actor);
@@ -39,17 +41,34 @@ export default async function StaffPage({
   // ALL active tenant services — the primary dropdown lists these so a therapist
   // with ZERO mappings can still be assigned a first/primary service (W4-01).
   const activeServices = (await listServices(actor)).filter((svc) => svc.isActive);
-  // Active working-hours templates — used only to derive the "with hours set"
-  // summary count (reuse of the W2-12 read; no new query shape, no raw SQL).
+  // Active working-hours templates — the "with hours set" summary count AND
+  // (W5-32) the team↔location assignment source: a member is "assigned" to the
+  // locations they hold availability at (the W4-12 association).
   const availability = await listAvailabilityTemplates(actor);
-  const { m, q } = await searchParams;
+  // W5-32: active tenant locations for the filter select (same source the Agenda
+  // location select reads; not a hardcoded list).
+  const locations = (await listLocations(actor)).filter((l) => l.isActive);
+  const { m, q, location } = await searchParams;
   const query = (q ?? "").trim();
+  const locationId = (location ?? "").trim();
 
-  // W5-02 Equipa search: presentation-only filter (name/role) over the SAME
-  // role-scoped listStaff read — never a query or visibility change. Summary
-  // KPIs stay computed from the full team, only the table rows filter.
-  const visibleStaff = staff.filter((u) =>
-    matchesSearch(query, u.fullName, u.roleSlug ? ROLE_LABEL[u.roleSlug] : null),
+  // W5-32: each member's assigned location set (from availability_templates).
+  // Members with no availability (admin/reception/therapists without hours) have
+  // an empty set — they match only under "Todas as localizações".
+  const assignedLocations = new Map<string, Set<string>>();
+  for (const a of availability) {
+    const set = assignedLocations.get(a.userId) ?? new Set<string>();
+    set.add(a.locationId);
+    assignedLocations.set(a.userId, set);
+  }
+
+  // Presentation-only filter over the SAME role-scoped listStaff read (W5-02):
+  // name/role search AND (W5-32) assigned location compose as an AND. Summary
+  // KPIs stay computed from the full team; only the table rows filter.
+  const visibleStaff = staff.filter(
+    (u) =>
+      matchesSearch(query, u.fullName, u.roleSlug ? ROLE_LABEL[u.roleSlug] : null) &&
+      (locationId === "" || (assignedLocations.get(u.id)?.has(locationId) ?? false)),
   );
 
   // Only an owner may assign/modify the owner tier; hide it from admins. The
@@ -113,6 +132,11 @@ export default async function StaffPage({
             path="/admin/staff"
             placeholder={s["admin.staff.searchPlaceholder"]}
           />
+        </div>
+        {/* W5-32: the Agenda location select, immediately RIGHT of the search
+            bar; ?location= composes with ?q= (AND). Default Todas. */}
+        <div className="w-56">
+          <EquipaLocationFilter locations={locations} />
         </div>
       </div>
 

@@ -475,3 +475,9 @@ Recorded by YELLOW from the owner-approved package "Ficha Final 2" (FF2), 2026-0
 - **Responsável + stamp:** read from tenants.settings.declaracao with sane defaults (declaracao-settings.ts); the PDF renderer holds no responsável literal. Code-default + tenant override → renders everywhere with NO live-DB step (Q-W5-31).
 - **UI:** Documentos tab "Imprimir Declaração de Presença" button + dialog (marcação select prefills date/hora início/hora fim, all editable, or manual). Signed-URL PDF download (reused RGPD pattern), tenant-prefixed, 60s, patients:read gated.
 - **Tests:** model (localidade fallback, responsável config-sourced, stamp gating) + PDF (verbatim text, interpolation, accents, stamp-embed non-zero, no-literal-in-renderer) unit; E2E prefill + editable + manual. One far-past seeded Maria marcação (seed-e2e) for the prefill E2E.
+
+### 2026-07-12 - W5-32 execution: Equipa location filter (presentation-only)
+- Added the Agenda-style location select (@osteojp/ui Select, "Todas as localizações" first, then `listLocations` active locations - not hardcoded) immediately right of the Equipa search bar, driving a `?location=` URL param.
+- **Team↔location source:** a member is "assigned" to the locations they hold availability at (availability_templates, the W4-12 association). Members with no availability (admin/reception/therapists without hours) match only under Todas.
+- **Compose:** server filter ANDs `matchesSearch(q, ...)` with the assigned-location membership; Todas/empty imposes no location constraint. `SearchBox` was made param-preserving (merges the current URLSearchParams instead of clobbering) so `?q=` and `?location=` compose; no effect on /patients (no sibling params there).
+- Migration-free, no schema change, no new vendor. E2E: default Todas, filter-by-location, compose with search, clear widens.
