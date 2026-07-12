@@ -28,6 +28,7 @@ import { AppointmentsList } from "./appointments-list";
 import { createEpisodeAction } from "./episode-actions";
 import { ProfileTabs } from "./profile-tabs";
 import { PatientDocuments } from "./PatientDocuments";
+import { DeclaracaoDialog, type DeclaracaoAppointment } from "./DeclaracaoDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -183,6 +184,18 @@ export default async function PatientProfilePage({
   // Documentos tab: patient-level administrative documents (attachments with a
   // patient_id and no clinical_record_id). Tenant + role scoped in the query.
   const patientDocuments = tab === "documentos" ? await listPatientDocuments(ctx, id) : [];
+  // W5-31: the Documentos tab's Declaração de Presença dialog prefills from the
+  // patient's marcações (appointments:read; reception/therapist/admin all hold it).
+  const declaracaoAppointments: DeclaracaoAppointment[] =
+    tab === "documentos" && can(ctx.role, "appointments:read")
+      ? (await listPatientAppointments(ctx, id)).map((a) => ({
+          id: a.id,
+          startsAt: a.startsAt,
+          endsAt: a.endsAt,
+          locationId: a.locationId,
+          locationName: a.locationName,
+        }))
+      : [];
 
   return (
     <main>
@@ -375,6 +388,10 @@ export default async function PatientProfilePage({
 
       {tab === "documentos" && (
         <div role="tabpanel" id="tabpanel-documentos" aria-label={s["patients.tabDocuments"]}>
+          {/* W5-31: attendance-declaration (Declaração de Presença) generator. */}
+          <div className="mb-4 flex justify-end">
+            <DeclaracaoDialog patientId={patient.id} appointments={declaracaoAppointments} />
+          </div>
           <PatientDocuments
             patientId={patient.id}
             items={patientDocuments}
