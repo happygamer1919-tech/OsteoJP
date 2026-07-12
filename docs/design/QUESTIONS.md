@@ -562,3 +562,22 @@ unreachable without a `packages/ui` change (the loop's explicit halt trigger).
   Non-breaking for every consumer; smallest honest change that meets the scope.
   Alternatives (important-override hack, or staying at 48px) are worse or fail the goal.
 - **Owner:** Ivan. Consumed by W5-01 (blocked on this answer; recon complete and reusable).
+
+## 2026-07-12 - Wave 05 Ficha Final 2 (FF2) open items (W5-31 Declaracao de Presenca)
+
+Raised by YELLOW at FF2 authoring 2026-07-12. Three non-blocking items on the Declaracao de Presenca (W5-31); each has a recommended default so the loop ships without a decision.
+
+### Q-W5-9 - Signature/stamp image asset for the Declaracao de Presenca
+The Declaracao (W5-31) renders a signature/stamp image slot only if a tenant asset exists (a settings key); the asset is pending from the owner.
+- **Recommended default:** render **blank vertical space** for a physical stamp + signature until the owner sources the asset (from the Fisiozero export or JP). The settings key + conditional render ship now; the asset drops in later with no code change.
+- **Owner:** Ivan (source the stamp/signature image from Fisiozero or JP). Consumed by W5-31. Non-blocking.
+
+### Q-W5-10 - Localidade line default on the Declaracao (per-location vs fixed "Lisboa")
+The "{localidade}, {dia}" line (W5-31) takes `localidade` from the selected marcacao's location, falling back to the tenant default location.
+- **Recommended default:** **per-location** (from the marcacao, tenant-default fallback), as built. Confirm with JP whether a **fixed "Lisboa"** is preferred instead.
+- **Owner:** Ivan (confirm with JP). Consumed by W5-31. Non-blocking (default is per-location).
+
+### Q-W5-11 - Responsavel name on the Declaracao (configurable per tenant)
+The responsavel line "(Dr. Joao Paulo Santos Silva)" (W5-31) is sourced from a tenant setting, not hardcoded.
+- **Recommended default:** keep it a **tenant setting** with the current value defaulted to "Dr. Joao Paulo Santos Silva"; confirm the exact current value + spelling with JP.
+- **Owner:** Ivan (confirm current value with JP). Consumed by W5-31. Non-blocking.

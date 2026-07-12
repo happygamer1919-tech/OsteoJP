@@ -581,3 +581,101 @@ immutable for records that reference it, CLAUDE.md rule 5). Either path is migra
 W5-26 picks after recon and records the choice. If W5-26 recon finds the marker `data`
 CANNOT carry `intensity` without a DB migration, that is a **HALT** (Field 6), not an
 improvisation. Detailed in loop W5-26.
+
+---
+
+## AMENDMENT 2026-07-12 (FF2): canonical sequence v4
+
+> Appended by YELLOW (Ficha Final 2 authoring), from the owner ruling 2026-07-12
+> (owner-approved package "Ficha Final 2", FF2). This section is AUTHORITATIVE and
+> **SUPERSEDES ALL PRIOR SEQUENCE RULINGS** in this SPEC, including sec 5 (FIELD
+> SEQUENCE), AMENDMENTS 2026-07-09 ruling D (AUTHORITATIVE FIELD SEQUENCE), and the
+> Fisiozero-mirror ordering referenced anywhere in this document. **The canonical order
+> in FF2-A below is the SOLE authority on ficha field sequence.** Any agent finding a
+> conflict between this amendment and older SPEC text (sec 5, ruling D, or elsewhere)
+> follows THIS amendment and treats the older sequence text as historical. It is
+> consumed by loops W5-27..W5-34 (`docs/loops/wave-05/`). The frozen ingestion contract
+> (`template=osteopathy` + the twelve AI keys, SPEC sec 2) does NOT change - the twelve
+> AI ingestion keys are untouched by this amendment; reordering never alters a key
+> binding (keys bind to fields, not positions). The nineteen `health_problems` booleans +
+> `other` and the internal Outros grid are unchanged. Plain hyphens throughout, pt-PT UI
+> copy.
+
+### FF2-A. CANONICAL SEQUENCE v4 (sole authority)
+
+The Ficha Clinica renders top-to-bottom in exactly this order, on **both** the creation
+and edit form. The **in-ficha left navigation panel mirrors this order exactly**.
+
+0. **Paciente summary card** - existing, unchanged.
+1. **Peso + Altura** - a **thin card directly under** the Paciente card, carrying `weight_kg`
+   (Peso (kg)) and `height_cm` (Altura (cm)) **only**, nothing else on the card.
+2. **Alertas (sinais de alarme) + Codigos CID associados** - `red_flags` and `cid_codes`
+   as **one row**.
+3. **Bodychart** - the existing `bodychart` component (with the W5-25 shape+color+legend
+   and the W5-26 EVA scale), untouched by this amendment.
+4. **Observacoes** - `observations` (AI key 12).
+5. **Mobilidade Activa / Passiva** - the Mobilidade widget (AMENDMENTS ruling E).
+6. **Observacoes Mobilidade Activa / Passiva** - the mobilidade observations textarea.
+7. **Motivos da Consulta / Inicio / Contexto em que ocorre** - `consultation_reason`
+   (**required**, AI key 1).
+8. **Tratamento** - `tratamento`.
+9. **Plano de Tratamento** - `treatment_plan` (AI key 11).
+10. **Objectivos do Tratamento** - `treatment_objectives` (AI key 10).
+11. **Diagnostico** - `diagnostico`.
+12. **Condicoes Alivio / Agravamento** - `relief_aggravation` (AI key 2).
+13. **Anamnese por Sistemas** - `systems_review`, the **six subsystems unchanged**
+    (Neurologico, Cardiovascular, Respiratorio, Gastrointestinal, Urologico /
+    Ginecologico, Endocrino; AI keys 4-9).
+14. **Outros** - the `health_problems` checkbox grid, **internally unchanged** (nineteen
+    booleans + `other`), with the AMENDMENTS ruling F column-major 4x5 layout and its
+    responsive collapse rule **unchanged**.
+15. **Antecedentes Clinicos / Cirurgia / Medicacao** - `clinical_history` (AI key 3).
+16. **Testes Especiais** - the Testes Especiais section (its existing key, recon at build).
+17. **Signature + consent block** - stays at the **very end** (unchanged position, **NOT
+    removed**).
+
+**Info content of every kept section is unchanged - only position moves.** Each kept
+field retains its key, sub-keys, helper text, and internal layout verbatim; the sequence
+above only relocates it.
+
+### FF2-B. REMOVED FROM THE TEMPLATE
+
+Two items are removed from the active template:
+
+- **Marcacao respectiva** (`linked_appointment`, the appointment picker that lived in the
+  old position-1 header row) - **removed**. Not an AI key.
+- **Testes Neurologicos** - the **entire section removed**. Not an AI key.
+
+No other field is removed; no other field's information content changes.
+
+### FF2-C. IMPLEMENTATION FACTS (binding)
+
+- **New template version = `osteopathy` v4.** The reorder + the two removals ship as a
+  NEW form-template seed `packages/db/seed/form-templates/osteopathy-v4.json`, its
+  property order realizing FF2-A, with `linked_appointment` and the Testes Neurologicos
+  field(s) absent. **v1/v2/v3 stay immutable** (CLAUDE.md rule 5); records that reference
+  them **render their original structure forever**. **New fichas open on v4.** Detailed in
+  loop W5-27.
+  - **Reconciliation with W5-26:** W5-26 (EVA) may already have introduced an `osteopathy`
+    v4 seed under its Path B (an `intensity`-declaring v4 built on the v3 order). If that
+    Path-B v4 has merged before W5-27, **W5-27's FF2 v4 is the authoritative v4** and must
+    supersede it: adopt the FF2-A order + the FF2-B removals AND retain any optional
+    `bodychart.intensity` declaration W5-26 added. If W5-26 took Path A (no v4), W5-27
+    creates v4 fresh. Either way there is exactly ONE `osteopathy-v4.json` at the end, in
+    the FF2-A shape. W5-27 recons which case holds and records it.
+- **Twelve AI keys frozen.** `consultation_reason`, `relief_aggravation`, `clinical_history`,
+  the six `systems_review` subsystems, `treatment_objectives`, `treatment_plan`, and
+  `observations` keep their keys and identities; `template=osteopathy` maps by identity
+  (zero change on the AI partner side). The **W5-13 compatibility test stays green**.
+- **created_at.** Auto-stamped at creation, displayed **read-only** (AMENDMENTS ruling B,
+  sec 4); no date input anywhere. Unchanged.
+- **Display titles.** "Ficha Clinica" (pt) / "Clinical Record" (en) - **unchanged**
+  (AMENDMENTS ruling A). The FF2 UI renames (W5-29) touch the Inicio tile / button strings
+  and strip version suffixes from display strings only; the template `title` is not
+  changed by FF2.
+- **Left nav mirrors the order.** The in-ficha left navigation panel lists the sections in
+  the FF2-A order exactly (position 0 through 17).
+
+This amendment is consumed primarily by **W5-27** (the v4 template + renderer section
+order + in-ficha left nav + the Peso/Altura thin card + the Alertas/CID row). The other FF2
+loops (W5-28..W5-34) touch orthogonal surfaces and do **not** re-order the ficha.
