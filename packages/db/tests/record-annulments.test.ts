@@ -143,7 +143,7 @@ describe.skipIf(!live)("0035 record_annulments — append-only annul (live DB)",
         select status, updated_at::text as updated_at from clinical_records where id = ${recA}`;
       return { before, after };
     });
-    expect(res.after.status).toBe("signed");
+    expect(res.after?.status).toBe("signed");
     expect(res.after).toEqual(res.before);
   });
 });
