@@ -23,6 +23,7 @@ import { listPatientNoteRevisions } from "../../../lib/patients/note-revisions";
 import { NotesComposer } from "./notes-composer";
 import { PatientActions } from "../_components/patient-actions";
 import { versionRecordAction } from "../../clinical/[id]/actions";
+import { RecordLifecycleActions } from "./record-lifecycle-actions";
 import { AppointmentsList } from "./appointments-list";
 import { createEpisodeAction } from "./episode-actions";
 import { ProfileTabs } from "./profile-tabs";
@@ -74,10 +75,12 @@ export default async function PatientProfilePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; m?: string }>;
+  searchParams: Promise<{ tab?: string; m?: string; anulados?: string }>;
 }) {
   const { id } = await params;
-  const { tab: tabParam, m } = await searchParams;
+  const { tab: tabParam, m, anulados } = await searchParams;
+  // W5-30: the "Mostrar anulados" toggle (default off) surfaces annulled fichas.
+  const showAnnulled = anulados === "1";
 
   const ctx = await getRequestContext();
   if (!ctx) {
@@ -166,7 +169,11 @@ export default async function PatientProfilePage({
   // summary no longer reads patients.notes.
 
   // Registos clínicos consumes the existing RLS + role-scoped records query.
-  const records = tab === "registos" && canReadClinical ? await listRecords(ctx, { patientId: id }) : [];
+  // W5-30: annulled fichas are hidden unless the "Mostrar anulados" toggle is on.
+  const records =
+    tab === "registos" && canReadClinical
+      ? await listRecords(ctx, { patientId: id, includeAnnulled: showAnnulled })
+      : [];
   // Faturação tab: fetch invoices for this patient when the tab is active.
   const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
   // Consultas tab: this patient's appointment history (Row 3 — schedule-again).
@@ -287,20 +294,33 @@ export default async function PatientProfilePage({
           {/* Fichas placement (ruling F): all clinical-record entry points live
               here. "Nova ficha" reuses the /clinical/new creation flow, pre-scoped
               to this patient. */}
-          {canStartEpisode && (
-            <div className="mb-4 flex justify-end">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            {/* W5-30: "Mostrar anulados" toggle — a link that flips the ?anulados param. */}
+            <Link
+              href={`/patients/${id}?tab=registos${showAnnulled ? "" : "&anulados=1"}`}
+              className={ghostLink}
+            >
+              {showAnnulled ? s["clinical.hideAnnulled"] : s["clinical.showAnnulled"]}
+            </Link>
+            {canStartEpisode && (
               <Link href={`/clinical/new?patientId=${id}`} className={primaryLink}>
                 <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
                 {s["clinical.new"]}
               </Link>
-            </div>
-          )}
+            )}
+          </div>
           {records.length === 0 ? (
             <EmptyState icon={FileText} title={s["patients.emptyRecordsTitle"]} description={s["patients.emptyRecordsHelp"]} heritage />
           ) : (
             <div className="flex flex-col gap-3">
               {records.map((r) => (
-                <Card key={r.id}>
+                <div
+                  key={r.id}
+                  data-testid="record-row"
+                  data-record-id={r.id}
+                  data-annulled={r.annulled ? "true" : "false"}
+                >
+                <Card>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <Link href={`/clinical/${r.id}`} className="flex min-w-0 flex-col gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
                       <span className="font-medium text-text-primary">
@@ -313,23 +333,40 @@ export default async function PatientProfilePage({
                       </span>
                       <span className="text-sm text-text-secondary">{dateFmt.format(new Date(r.updatedAt))}</span>
                     </Link>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-end gap-3">
                       {/* record_status axis. The ai_review_state second axis is not in
                           the records list query, so it is not shown here (rule #1). */}
                       <StatusChip tone={RECORD_TONE[r.status]} dot>
                         {s[RECORD_KEY[r.status]]}
                       </StatusChip>
+                      {/* W5-30: ANULADO badge — the signed record row is untouched;
+                          this reflects a record_annulments row. */}
+                      {r.annulled && (
+                        <StatusChip tone="error" dot>
+                          {s["clinical.recordAnulado"]}
+                        </StatusChip>
+                      )}
                       {/* Per-ficha addendum: reuse the existing versionRecordAction.
                           A finalized (non-draft) ficha is immutable; changes create a
-                          new version. Author-gated. */}
-                      {canStartEpisode && r.status !== "draft" && (
+                          new version. Author-gated. Not offered on annulled fichas. */}
+                      {canStartEpisode && r.status !== "draft" && !r.annulled && (
                         <form action={versionRecordAction.bind(null, r.id)}>
                           <Button type="submit" variant="secondary">{s["clinical.newVersion"]}</Button>
                         </form>
                       )}
+                      {/* W5-30: password-gated Eliminar (draft) / Anular (signed). */}
+                      {canStartEpisode && (
+                        <RecordLifecycleActions
+                          recordId={r.id}
+                          patientId={id}
+                          status={r.status}
+                          annulled={r.annulled}
+                        />
+                      )}
                     </div>
                   </div>
                 </Card>
+                </div>
               ))}
             </div>
           )}

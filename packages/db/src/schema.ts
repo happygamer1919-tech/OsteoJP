@@ -824,6 +824,45 @@ export const patientNoteRevisions = pgTable(
   ],
 );
 
+/* ================================================================== */
+/* Record annulments (Wave 05 FF2, migration 0035)                    */
+/*                                                                    */
+/* Append-only "Anular" fact for a SIGNED clinical_record (W5-30). A  */
+/* signed ficha is immutable (the clinical_records BEFORE UPDATE OR    */
+/* DELETE trigger, 0001), so it can never be edited or deleted; annul  */
+/* is recorded as a NEW row here instead — the locked record row is    */
+/* never touched. One row per annulment; the record is shown ANULADO   */
+/* and hidden behind a "Mostrar anulados" toggle.                      */
+/*                                                                    */
+/* Append-only via the POLICY pattern (SELECT + INSERT only; UPDATE/   */
+/* DELETE denied by absent policy as 0 rows, table keeps the full DML  */
+/* grant), mirroring patient_note_revisions (0030) / appointment_notes */
+/* (0026) / audit_log (0001). RLS fail-closed on the JWT tenant_id.    */
+/* ================================================================== */
+export const recordAnnulments = pgTable(
+  "record_annulments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    // The finalized clinical_record this annulment voids. The record row is
+    // never updated/deleted (immutability trigger) — this is a separate fact.
+    recordId: uuid("record_id")
+      .notNull()
+      .references(() => clinicalRecords.id),
+    // Optional free-text reason for the annulment.
+    reason: text("reason"),
+    // The staff actor who annulled (nullable FK, always set by the app).
+    annulledByUserId: uuid("annulled_by_user_id").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("record_annulments_tenant_idx").on(t.tenantId),
+    index("record_annulments_record_idx").on(t.tenantId, t.recordId),
+  ],
+);
+
 // AI ingestion request log (Stream D). One row per request from the AI partner,
 // keyed by the partner's idempotency_key. The unique (tenant_id, idempotency_key)
 // constraint is what lets the future endpoint do 24h dedupe (same key + same

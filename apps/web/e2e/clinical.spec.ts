@@ -121,6 +121,84 @@ test.describe("authoring (therapist)", () => {
     await expect(page.getByText("Rascunho")).toBeVisible();
   });
 
+  // W5-30: a DRAFT ficha can be hard-deleted behind the tenant delete-password
+  // gate; the wrong password is refused (server-enforced). Anular is not offered
+  // on a draft.
+  test("W5-30: draft ficha — wrong delete password refused, correct password hard-deletes", async ({
+    page,
+  }) => {
+    await page.goto("/clinical/new");
+    const patient = page.getByRole("combobox", { name: /Paciente/i });
+    await patient.click();
+    await patient.fill(PATIENTS.maria.name);
+    await page.getByRole("option", { name: PATIENTS.maria.name }).click();
+    await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
+    await page.getByRole("button", { name: "Criar ficha" }).click();
+    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    const recordId = page.url().match(/clinical\/([0-9a-f-]{36})/)![1];
+
+    await page.goto(`/patients/${PATIENTS.maria.id}?tab=registos`);
+    const row = page.locator(`[data-record-id="${recordId}"]`);
+    await expect(row).toBeVisible();
+    // Draft → Eliminar present, Anular absent.
+    await expect(row.getByRole("button", { name: "Eliminar", exact: true })).toBeVisible();
+    await expect(row.getByRole("button", { name: "Anular", exact: true })).toHaveCount(0);
+
+    // Wrong password → refused (server-verified scrypt gate).
+    await row.getByRole("button", { name: "Eliminar", exact: true }).click();
+    await row.getByLabel("Palavra-passe").fill("0000");
+    await row.getByRole("button", { name: "Eliminar ficha", exact: true }).click();
+    await expect(row.getByText("Palavra-passe incorreta.")).toBeVisible();
+
+    // Correct password (tenant default 1234) → the draft is hard-deleted.
+    await row.getByLabel("Palavra-passe").fill("1234");
+    await row.getByRole("button", { name: "Eliminar ficha", exact: true }).click();
+    await expect(page.locator(`[data-record-id="${recordId}"]`)).toHaveCount(0, { timeout: 10_000 });
+  });
+
+  // W5-30: a SIGNED ficha can NEVER be hard-deleted (only Anular). Anular INSERTs
+  // an append-only annulment (the locked row is untouched), shows the ANULADO
+  // badge, and the record is hidden behind the "Mostrar anulados" toggle.
+  test("W5-30: signed ficha — no hard delete, Anular adds ANULADO badge, hidden until Mostrar anulados", async ({
+    page,
+  }) => {
+    await page.goto("/clinical/new");
+    const patient = page.getByRole("combobox", { name: /Paciente/i });
+    await patient.click();
+    await patient.fill(PATIENTS.maria.name);
+    await page.getByRole("option", { name: PATIENTS.maria.name }).click();
+    await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
+    await page.getByRole("button", { name: "Criar ficha" }).click();
+    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    const recordId = page.url().match(/clinical\/([0-9a-f-]{36})/)![1];
+    // Sign + lock → signed (immutable).
+    await page.getByRole("button", { name: "Assinar e bloquear" }).click();
+    await expect(page.getByText("Ficha finalizada e imutável.", { exact: false })).toBeVisible({
+      timeout: 12_000,
+    });
+
+    await page.goto(`/patients/${PATIENTS.maria.id}?tab=registos`);
+    const row = page.locator(`[data-record-id="${recordId}"]`);
+    await expect(row).toBeVisible();
+    // Delete-scope proof: signed → Anular present, Eliminar absent.
+    await expect(row.getByRole("button", { name: "Anular", exact: true })).toBeVisible();
+    await expect(row.getByRole("button", { name: "Eliminar", exact: true })).toHaveCount(0);
+
+    // Anular with the correct password.
+    await row.getByRole("button", { name: "Anular", exact: true }).click();
+    await row.getByLabel("Palavra-passe").fill("1234");
+    await row.getByRole("button", { name: "Anular ficha", exact: true }).click();
+    // Default list hides annulled fichas → the row disappears.
+    await expect(page.locator(`[data-record-id="${recordId}"]`)).toHaveCount(0, { timeout: 10_000 });
+
+    // "Mostrar anulados" → the row reappears carrying the ANULADO badge.
+    await page.getByRole("link", { name: "Mostrar anulados" }).click();
+    const annulledRow = page.locator(`[data-record-id="${recordId}"]`);
+    await expect(annulledRow).toBeVisible();
+    await expect(annulledRow).toHaveAttribute("data-annulled", "true");
+    await expect(annulledRow.getByText("ANULADO")).toBeVisible();
+  });
+
   // W5-14 (SPEC-ficha-medica.md sec 3-5): a new Ficha Médica renders the
   // read-only patient header strip, the 5.1 header row with Peso/Altura
   // adjacent, the four-column Problemas de Saúde grid with all 19 conditions +
