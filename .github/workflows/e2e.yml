@@ -90,6 +90,30 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: pnpm install --frozen-lockfile
 
+      # Restore the Next.js webpack build cache for the three dev servers Playwright
+      # boots (web:3000, api:3002, portal:3001). `next dev` compiles routes lazily,
+      # cold, on first request — the single biggest chunk of the "Run Playwright
+      # E2E" step. A warm .next/cache lets SWC/webpack reuse module transforms
+      # instead of recompiling from scratch, cutting first-response latency across
+      # every route the suite visits. This is a COMPILE cache only: the emitted
+      # output is byte-identical whether restored or rebuilt, and Next.js auto-
+      # invalidates it on a version/config mismatch — so E2E determinism is
+      # unaffected. Keyed per-commit with lockfile + os restore-key fallbacks so a
+      # fresh branch still warms from the newest prior run (webpack's cache is
+      # incremental, so partial reuse across source changes is expected).
+      - name: Cache Next.js build cache (web + api + portal dev servers)
+        if: steps.changes.outputs.code == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/web/.next/cache
+            apps/api/.next/cache
+            apps/portal/.next/cache
+          key: nextcache-e2e-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            nextcache-e2e-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            nextcache-e2e-${{ runner.os }}-
+
       - name: Resolve pinned Playwright version
         if: steps.changes.outputs.code == 'true'
         id: pw
