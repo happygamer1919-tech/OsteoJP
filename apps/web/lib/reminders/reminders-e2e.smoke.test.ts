@@ -107,7 +107,7 @@ const EXPECT: Record<
 > = {
   pt: {
     greeting: "Olá Madalena,",
-    smsVerb: "ligue", // "Para remarcar ligue {phone}"
+    smsVerb: "Remarcar:", // multi-line SMS "Remarcar: {phone}" CTA line
     subject: {
       "48h": "Lembrete: consulta em 48 horas",
       "24h": "Lembrete: consulta amanhã",
@@ -115,7 +115,7 @@ const EXPECT: Record<
   },
   en: {
     greeting: "Dear Mary,",
-    smsVerb: "call", // "To reschedule call {phone}"
+    smsVerb: "Reschedule:", // multi-line SMS "Reschedule: {phone}" CTA line
     subject: {
       "48h": "Reminder: appointment in 48 hours",
       "24h": "Reminder: appointment tomorrow",

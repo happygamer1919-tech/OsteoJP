@@ -119,20 +119,25 @@ Or contact us: {{clinic_phone}}
 // copy below is already accent-free; renderSms() additionally asserts the
 // finished message stays GSM-7 and inside one segment.
 //
+// Layout (owner ruling 2026-07-11, Option A): a scannable multi-line body —
+// header, appointment line, location, reschedule CTA. Line breaks (LF) are
+// GSM-7-safe (one septet each), so the multi-line form stays single-segment.
+// Verified against the longest prod clinic name ("Castelo Branco").
+//
 // Go-live deviation from the doc (Stream E): SMS points to the clinic PHONE, not
 // the reschedule short-link. The signed reschedule token (see link-token.ts) is
 // far too long to fit a single GSM-7 segment alongside this copy, and a
 // two-segment SMS doubles cost. The reschedule LINK lives in the email reminder;
-// SMS keeps the phone CTA. (docs/sms-templates.md to be updated to match.)
+// SMS keeps the phone CTA. (docs/sms-templates.md updated to match.)
 
 const SMS: Record<ReminderOffsetId, Record<Locale, string>> = {
   "48h": {
-    pt: "OsteoJP: lembrete da sua consulta a {date} as {time} em {clinic}. Para remarcar ligue {phone}",
-    en: "OsteoJP: reminder of your appointment on {date} at {time} in {clinic}. To reschedule call {phone}",
+    pt: "OsteoJP - Lembrete\nConsulta: {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}",
+    en: "OsteoJP - Reminder\nAppointment: {date} at {time}\nLocation: {clinic}\nReschedule: {phone}",
   },
   "24h": {
-    pt: "OsteoJP: a sua consulta e amanha, {date}, as {time} em {clinic}. Para remarcar ligue {phone}",
-    en: "OsteoJP: your appointment is tomorrow, {date}, at {time} in {clinic}. To reschedule call {phone}",
+    pt: "OsteoJP - Lembrete\nConsulta: amanha {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}",
+    en: "OsteoJP - Reminder\nAppointment: tomorrow {date} at {time}\nLocation: {clinic}\nReschedule: {phone}",
   },
 };
 
@@ -280,10 +285,11 @@ Or contact us: {{clinic_phone}}
   },
 };
 
-// PT: no accents (GSM-7). "marcacao" = marcação, "as" = às.
+// PT: no accents (GSM-7). "marcacao" = marcação, "as" = às. Multi-line layout
+// mirrors the reminder SMS (owner ruling 2026-07-11, Option A).
 const CONFIRMATION_SMS: Record<Locale, string> = {
-  pt: "OsteoJP: marcacao confirmada a {date} as {time} em {clinic}. Para remarcar ligue {phone}",
-  en: "OsteoJP: appointment confirmed on {date} at {time} in {clinic}. To reschedule call {phone}",
+  pt: "OsteoJP - Marcacao confirmada\nConsulta: {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}",
+  en: "OsteoJP - Appointment confirmed\nAppointment: {date} at {time}\nLocation: {clinic}\nReschedule: {phone}",
 };
 
 export function renderConfirmationEmail(locale: Locale, ctx: ReminderContext): RenderedEmail {
@@ -356,10 +362,12 @@ To book your next appointment contact us: {{clinic_phone}}
   },
 };
 
-// PT: "proxima" = próxima (no tilde/accent).
+// PT: "proxima" = próxima (no tilde/accent). Multi-line layout mirrors the other
+// SMS (owner ruling 2026-07-11, Option A); the post-visit context has no clinic
+// or time, so it uses a visit line + rebooking CTA rather than the 4-line form.
 const FOLLOW_UP_SMS: Record<Locale, string> = {
-  pt: "OsteoJP: obrigado pela sua visita de {date}. Para marcar a proxima consulta ligue {phone}",
-  en: "OsteoJP: thank you for your visit on {date}. To book your next appointment call {phone}",
+  pt: "OsteoJP - Obrigado pela sua visita\nVisita: {date}\nMarcar proxima consulta: {phone}",
+  en: "OsteoJP - Thank you for your visit\nVisit: {date}\nBook next appointment: {phone}",
 };
 
 export function renderFollowUpEmail(locale: Locale, ctx: FollowUpContext): RenderedEmail {
@@ -428,10 +436,12 @@ Or contact us: {{clinic_phone}}
   },
 };
 
-// PT: "nao" = não, "as" = às. No accents in SMS.
+// PT: "nao" = não, "as" = às. No accents in SMS. Multi-line layout mirrors the
+// other SMS (owner ruling 2026-07-11, Option A); the no-show context has no
+// clinic location, so it drops the "Local:" line.
 const NO_SHOW_SMS: Record<Locale, string> = {
-  pt: "OsteoJP: a sua consulta de {date} as {time} nao foi realizada. Para remarcar ligue {phone}",
-  en: "OsteoJP: your appointment on {date} at {time} was not attended. To rebook call {phone}",
+  pt: "OsteoJP - Consulta nao realizada\nConsulta: {date} as {time}\nRemarcar: {phone}",
+  en: "OsteoJP - Missed appointment\nAppointment: {date} at {time}\nRebook: {phone}",
 };
 
 export function renderNoShowEmail(locale: Locale, ctx: NoShowContext): RenderedEmail {

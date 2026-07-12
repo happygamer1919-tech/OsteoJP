@@ -14,8 +14,9 @@ Transactional SMS for appointment lifecycle. PT (primary) + EN. Authored against
 ## Constraints (read before editing)
 
 - **160-character hard limit** per message (single SMS segment). All templates below
-  validated against worst-case placeholder fills (longest location `Montemor-o-Novo`,
-  phone `+351 210 000 000`) — longest rendered message is 111 chars.
+  validated against worst-case placeholder fills (longest prod location `Castelo Branco`,
+  phone `+351 210 000 000`) — longest rendered message is 103 chars. Line breaks (LF)
+  cost one GSM-7 septet each, so the multi-line layout stays single-segment.
 - **No accented characters in PT.** Accents (ã, ç, é, õ…) push the message from GSM-7
   into UCS-2 encoding, which drops the per-segment limit from 160 → 70 chars and roughly
   doubles cost per message. So `marcação` → `marcacao`, `amanhã` → `amanha`. This is the
@@ -51,44 +52,49 @@ needs one.
 
 ## Templates
 
-Each scenario lists PT then EN. "OsteoJP:" prefix doubles as in-body brand signal in case
-the registered sender ID is not yet active.
+Each scenario lists PT then EN. Layout is multi-line (owner ruling 2026-07-11, Option A):
+a header line doubling as an in-body brand signal (in case the registered sender ID is not
+yet active), then one labelled line per fact. `\n` = a literal line break. Templates 1–3 and
+5 that carry a clinic location follow the 4-line `header / Consulta / Local / Remarcar`
+pattern; scenarios without a location (no-show, follow-up) drop the `Local:` line.
 
 ### 1. Booking confirmation
 Sent immediately after a booking is made.
 
-- **PT:** `OsteoJP: marcacao confirmada para {date} as {time} em {clinic}. Para remarcar ligue {phone}`
-- **EN:** `OsteoJP: appointment confirmed for {date} at {time} in {clinic}. To reschedule call {phone}`
+- **PT:** `OsteoJP - Marcacao confirmada\nConsulta: {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}`
+- **EN:** `OsteoJP - Appointment confirmed\nAppointment: {date} at {time}\nLocation: {clinic}\nReschedule: {phone}`
 
 ### 2. Reminder — 48h before
 First reminder, two days out. Gives reschedule runway.
 
-- **PT:** `OsteoJP: lembrete da sua consulta a {date} as {time} em {clinic}. Para remarcar ligue {phone}`
-- **EN:** `OsteoJP: reminder of your appointment on {date} at {time} in {clinic}. To reschedule call {phone}`
+- **PT:** `OsteoJP - Lembrete\nConsulta: {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}`
+- **EN:** `OsteoJP - Reminder\nAppointment: {date} at {time}\nLocation: {clinic}\nReschedule: {phone}`
 
 ### 3. Reminder — 24h before
 Second reminder, day before. "amanha" framing.
 
-- **PT:** `OsteoJP: a sua consulta e amanha, {date}, as {time} em {clinic}. Para remarcar ligue {phone}`
-- **EN:** `OsteoJP: your appointment is tomorrow, {date}, at {time} in {clinic}. To reschedule call {phone}`
+- **PT:** `OsteoJP - Lembrete\nConsulta: amanha {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}`
+- **EN:** `OsteoJP - Reminder\nAppointment: tomorrow {date} at {time}\nLocation: {clinic}\nReschedule: {phone}`
 
 ### 4. Reschedule confirmation
-Sent after a successful reschedule.
+Sent after a successful reschedule. (Drafted for the wider notification layer — not yet built.)
 
-- **PT:** `OsteoJP: consulta remarcada para {date} as {time} em {clinic}. Para alterar ligue {phone}`
-- **EN:** `OsteoJP: appointment moved to {date} at {time} in {clinic}. To change call {phone}`
+- **PT:** `OsteoJP - Consulta remarcada\nConsulta: {date} as {time}\nLocal: {clinic}\nAlterar: {phone}`
+- **EN:** `OsteoJP - Appointment moved\nAppointment: {date} at {time}\nLocation: {clinic}\nChange: {phone}`
 
-### 5. Cancellation / no-show notice
-Sent when an appointment is cancelled (by either side) or marked no-show.
+### 5. No-show notice
+Sent when an appointment is marked no-show. (No clinic location in the notification context,
+so the `Local:` line is dropped.)
 
-- **PT:** `OsteoJP: a sua consulta de {date} as {time} foi cancelada. Para remarcar ligue {phone}`
-- **EN:** `OsteoJP: your appointment on {date} at {time} has been cancelled. To rebook call {phone}`
+- **PT:** `OsteoJP - Consulta nao realizada\nConsulta: {date} as {time}\nRemarcar: {phone}`
+- **EN:** `OsteoJP - Missed appointment\nAppointment: {date} at {time}\nRebook: {phone}`
 
 ### 6. Post-visit follow-up
-Sent a few hours after the visit. No link — closes warmly without a CTA.
+Sent a few hours after the visit. No time or clinic in the context, so it uses a visit line
+plus a rebooking CTA.
 
-- **PT:** `OsteoJP: agradecemos a sua visita. Em caso de duvidas, contacte-nos. Cuide-se.`
-- **EN:** `OsteoJP: thank you for your visit. If you have any questions, contact us. Take care.`
+- **PT:** `OsteoJP - Obrigado pela sua visita\nVisita: {date}\nMarcar proxima consulta: {phone}`
+- **EN:** `OsteoJP - Thank you for your visit\nVisit: {date}\nBook next appointment: {phone}`
 
 ---
 
