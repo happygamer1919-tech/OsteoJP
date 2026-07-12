@@ -61,68 +61,122 @@ function deriveFigSex(sex: string | null | undefined): FigSex {
   return sex === "female" ? "female" : "male";
 }
 
-// W5-25 (SPEC-ficha-medica AMENDMENTS ruling G): each of the nine frozen
-// `marker_type` values renders with a UNIQUE geometric shape AND a unique colour
-// token. SHAPE carries the meaning (greyscale-legible; the chart must read for
-// colour-vision-deficient users), colour reinforces. The colour tokens live in
-// apps/web/app/globals.css and are documented in docs/design/UI-STYLE.md; filled
-// shapes carry a thin `stroke-surface` halo so they separate from the figure
-// line-art, stroked shapes (cross, ring) carry only their colour stroke.
+// W5-28 (SPEC-ficha-medica AMENDMENT 2026-07-12 FF2, supersedes the ruling-G
+// geometric shapes): each of the nine frozen `marker_type` values renders with a
+// FISIOZERO-EXACT glyph, redrawn clean as SVG. SHAPE still carries the meaning
+// (greyscale-legible), and each type KEEPS its W5-25 UI-STYLE palette hue token
+// (`--color-marker-*`, apps/web/app/globals.css). Some glyphs are stroke-based
+// (crosshatch, hatched/dotted ellipse, curved arrows) so the hue is applied via
+// `stroke-marker-*` instead of `fill-marker-*`; the HUE per type is unchanged.
+// Filled glyphs keep a thin `stroke-surface` halo to separate from the figure
+// line-art. Fisiozero fidelity is visually verified by Rodica post-deploy.
 type MarkerShape =
-  | "square"
-  | "cross"
-  | "triangle"
-  | "diamond"
-  | "star"
-  | "circle"
-  | "ring"
-  | "arrow_right"
-  | "arrow_left";
+  | "triangle_up" // Bloqueio / Disfunção — solid upward triangle
+  | "scar_hatch" // Cicatriz — an X of short hatch strokes
+  | "crosshatch" // Hipertonicidade — dense crosshatch patch
+  | "hatch_ellipse" // Hipotonicidade — ellipse filled with diagonal lines
+  | "lightning" // Irradiação da dor — lightning bolt
+  | "target" // Local da dor — circle with center dot (target)
+  | "dotted_ellipse" // Parestesia — ellipse filled with dots
+  | "arrow_cw" // Rotação direita — clockwise curved arrow
+  | "arrow_ccw"; // Rotação esquerda — counterclockwise curved arrow
 
 const MARKER_STYLE: Record<string, { shape: MarkerShape; cls: string }> = {
-  blockage_dysfunction: { shape: "square", cls: "fill-marker-blockage stroke-surface" },
-  scar: { shape: "cross", cls: "stroke-marker-scar" },
-  hypertonicity: { shape: "triangle", cls: "fill-marker-hypertonicity stroke-surface" },
-  hypotonicity: { shape: "diamond", cls: "fill-marker-hypotonicity stroke-surface" },
-  pain_radiation: { shape: "star", cls: "fill-marker-radiation stroke-surface" },
-  pain_location: { shape: "circle", cls: "fill-marker-location stroke-surface" },
-  paresthesia: { shape: "ring", cls: "stroke-marker-paresthesia" },
-  rotation_right: { shape: "arrow_right", cls: "fill-marker-rotation-right stroke-surface" },
-  rotation_left: { shape: "arrow_left", cls: "fill-marker-rotation-left stroke-surface" },
+  blockage_dysfunction: { shape: "triangle_up", cls: "fill-marker-blockage stroke-surface" },
+  scar: { shape: "scar_hatch", cls: "stroke-marker-scar" },
+  hypertonicity: { shape: "crosshatch", cls: "stroke-marker-hypertonicity" },
+  hypotonicity: { shape: "hatch_ellipse", cls: "stroke-marker-hypotonicity" },
+  pain_radiation: { shape: "lightning", cls: "fill-marker-radiation stroke-surface" },
+  pain_location: { shape: "target", cls: "fill-marker-location stroke-marker-location" },
+  paresthesia: { shape: "dotted_ellipse", cls: "stroke-marker-paresthesia fill-marker-paresthesia" },
+  rotation_right: { shape: "arrow_cw", cls: "stroke-marker-rotation-right fill-marker-rotation-right" },
+  rotation_left: { shape: "arrow_ccw", cls: "stroke-marker-rotation-left fill-marker-rotation-left" },
 };
 
 // Fallback for any value outside the frozen enum (should never happen — the enum
-// is immutable in osteopathy-v3.json): render a neutral filled circle.
-const FALLBACK_STYLE = { shape: "circle" as MarkerShape, cls: "fill-marker-location stroke-surface" };
+// is immutable in osteopathy-v*.json): render the Local da dor target glyph.
+const FALLBACK_STYLE = { shape: "target" as MarkerShape, cls: "fill-marker-location stroke-marker-location" };
 
 const styleFor = (markerType: string) => MARKER_STYLE[markerType] ?? FALLBACK_STYLE;
 
 function glyphShape(shape: MarkerShape) {
   switch (shape) {
-    case "square":
-      return <rect x="3.5" y="3.5" width="9" height="9" strokeWidth="0.75" />;
-    case "cross":
-      return <path d="M4 4 L12 12 M12 4 L4 12" fill="none" strokeWidth="2.6" strokeLinecap="round" />;
-    case "triangle":
+    case "triangle_up":
       return <path d="M8 2.5 L13.6 13 L2.4 13 Z" strokeWidth="0.75" strokeLinejoin="round" />;
-    case "diamond":
-      return <path d="M8 2 L14 8 L8 14 L2 8 Z" strokeWidth="0.75" strokeLinejoin="round" />;
-    case "star":
+    case "scar_hatch":
+      // An X of two strokes with short suture-hatch ticks at each arm end.
+      return (
+        <g fill="none" strokeWidth="1.3" strokeLinecap="round">
+          <path d="M4 4 L12 12" />
+          <path d="M12 4 L4 12" />
+          <path d="M5.6 3.1 L7.3 4.8" />
+          <path d="M10.4 3.1 L8.7 4.8" />
+          <path d="M5.6 12.9 L7.3 11.2" />
+          <path d="M10.4 12.9 L8.7 11.2" />
+        </g>
+      );
+    case "crosshatch":
+      // Dense patch of crossing diagonals both directions.
+      return (
+        <g fill="none" strokeWidth="0.8">
+          <path d="M3 8 L8 3 M3 12 L12 3 M6.5 13 L13 6.5 M3 5 L5 3 M9.5 13 L13 9.5" />
+          <path d="M3 8 L8 13 M3 4 L12 13 M6.5 3 L13 9.5 M3 11 L5 13 M9.5 3 L13 6.5" />
+        </g>
+      );
+    case "hatch_ellipse":
+      // Ellipse outline filled with parallel diagonal lines.
+      return (
+        <g fill="none">
+          <ellipse cx="8" cy="8" rx="6" ry="4.3" strokeWidth="1.1" />
+          <path d="M4.2 9.4 L7 5.2 M6.2 10.8 L10.4 4.8 M9 10.6 L11.8 6.4" strokeWidth="0.8" />
+        </g>
+      );
+    case "lightning":
       return (
         <path
-          d="M8 1.5 L9.65 6.1 L14.5 6.2 L10.6 9.1 L12 13.8 L8 10.9 L4 13.8 L5.4 9.1 L1.5 6.2 L6.35 6.1 Z"
-          strokeWidth="0.6"
+          d="M9.2 1.6 L3.8 8.9 L7.2 8.9 L6.2 14.4 L12.2 6.6 L8.7 6.6 Z"
+          strokeWidth="0.5"
           strokeLinejoin="round"
         />
       );
-    case "circle":
-      return <circle cx="8" cy="8" r="5.8" strokeWidth="0.75" />;
-    case "ring":
-      return <circle cx="8" cy="8" r="5" fill="none" strokeWidth="2.6" />;
-    case "arrow_right":
-      return <path d="M2 6 L8 6 L8 3.4 L14.2 8 L8 12.6 L8 10 L2 10 Z" strokeWidth="0.75" strokeLinejoin="round" />;
-    case "arrow_left":
-      return <path d="M14 6 L8 6 L8 3.4 L1.8 8 L8 12.6 L8 10 L14 10 Z" strokeWidth="0.75" strokeLinejoin="round" />;
+    case "target":
+      // Concentric ring + centre dot.
+      return (
+        <>
+          <circle cx="8" cy="8" r="5.6" fill="none" strokeWidth="1.5" />
+          <circle cx="8" cy="8" r="1.9" stroke="none" />
+        </>
+      );
+    case "dotted_ellipse":
+      // Ellipse outline filled with dots.
+      return (
+        <>
+          <ellipse cx="8" cy="8" rx="6" ry="4.3" fill="none" strokeWidth="1.1" />
+          <g stroke="none">
+            <circle cx="5.6" cy="7" r="0.9" />
+            <circle cx="8" cy="5.9" r="0.9" />
+            <circle cx="10.4" cy="7" r="0.9" />
+            <circle cx="6.8" cy="9.4" r="0.9" />
+            <circle cx="9.2" cy="9.4" r="0.9" />
+          </g>
+        </>
+      );
+    case "arrow_cw":
+      // Clockwise curved arrow (near-full arc + arrowhead at the tip).
+      return (
+        <>
+          <path d="M8 2.7 A5.3 5.3 0 1 1 3.6 5" fill="none" strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M3.6 5 L1.9 3.3 L4.8 2.9 Z" stroke="none" />
+        </>
+      );
+    case "arrow_ccw":
+      // Counterclockwise curved arrow (mirror of arrow_cw).
+      return (
+        <>
+          <path d="M8 2.7 A5.3 5.3 0 1 0 12.4 5" fill="none" strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M12.4 5 L14.1 3.3 L11.2 2.9 Z" stroke="none" />
+        </>
+      );
   }
 }
 

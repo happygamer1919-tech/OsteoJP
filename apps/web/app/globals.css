@@ -37,15 +37,16 @@
    Tailwind v4 generates the `fill-marker-*` / `stroke-marker-*` utilities from
    these tokens; components reference them by name, never raw hex. */
 @theme {
-  --color-marker-blockage: #3538CD;        /* blockage_dysfunction — square */
-  --color-marker-scar: #B42318;            /* scar — cross (X) */
-  --color-marker-hypertonicity: #B54708;   /* hypertonicity — triangle */
-  --color-marker-hypotonicity: #107569;    /* hypotonicity — diamond */
-  --color-marker-radiation: #6941C6;       /* pain_radiation — star */
-  --color-marker-location: #C11574;        /* pain_location — filled circle */
-  --color-marker-paresthesia: #175CD3;     /* paresthesia — ring */
-  --color-marker-rotation-right: #027A48;  /* rotation_right — arrow right */
-  --color-marker-rotation-left: #854A0E;   /* rotation_left — arrow left */
+  /* Hues unchanged (W5-25); W5-28 re-drew the glyphs to Fisiozero-exact shapes. */
+  --color-marker-blockage: #3538CD;        /* blockage_dysfunction — solid upward triangle */
+  --color-marker-scar: #B42318;            /* scar — X of hatch strokes */
+  --color-marker-hypertonicity: #B54708;   /* hypertonicity — dense crosshatch */
+  --color-marker-hypotonicity: #107569;    /* hypotonicity — ellipse with diagonal lines */
+  --color-marker-radiation: #6941C6;       /* pain_radiation — lightning bolt */
+  --color-marker-location: #C11574;        /* pain_location — target (circle + center dot) */
+  --color-marker-paresthesia: #175CD3;     /* paresthesia — ellipse with dots */
+  --color-marker-rotation-right: #027A48;  /* rotation_right — clockwise curved arrow */
+  --color-marker-rotation-left: #854A0E;   /* rotation_left — counterclockwise curved arrow */
 }
 
 body {

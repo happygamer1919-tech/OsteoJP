@@ -34,18 +34,21 @@ vi.mock("./BodyFigure", () => ({
 
 import { BodyChart, type Marker } from "./BodyChart";
 
-// The nine frozen marker_type values (osteopathy-v3.json bodychart enum) with
-// their authoritative pt-PT labels (ruling G) and the colour token each maps to.
-const NINE: { value: string; label: string; token: string }[] = [
-  { value: "blockage_dysfunction", label: "Bloqueio / Disfunção", token: "fill-marker-blockage" },
-  { value: "scar", label: "Cicatriz", token: "stroke-marker-scar" },
-  { value: "hypertonicity", label: "Hipertonicidade", token: "fill-marker-hypertonicity" },
-  { value: "hypotonicity", label: "Hipotonicidade", token: "fill-marker-hypotonicity" },
-  { value: "pain_radiation", label: "Irradiação da dor", token: "fill-marker-radiation" },
-  { value: "pain_location", label: "Local da dor", token: "fill-marker-location" },
-  { value: "paresthesia", label: "Parestesia", token: "stroke-marker-paresthesia" },
-  { value: "rotation_right", label: "Rotação direita", token: "fill-marker-rotation-right" },
-  { value: "rotation_left", label: "Rotação esquerda", token: "fill-marker-rotation-left" },
+// The nine frozen marker_type values (osteopathy bodychart enum) with their
+// authoritative pt-PT labels and the palette HUE token each maps to. W5-28 keeps
+// the W5-25 hue per type (`marker-<type>`); the fill/stroke UTILITY may differ per
+// Fisiozero glyph (some are stroke-based), so the proof asserts the hue token, not
+// the fill/stroke prefix. `shape` is the new Fisiozero glyph identifier.
+const NINE: { value: string; label: string; token: string; shape: string }[] = [
+  { value: "blockage_dysfunction", label: "Bloqueio / Disfunção", token: "marker-blockage", shape: "triangle_up" },
+  { value: "scar", label: "Cicatriz", token: "marker-scar", shape: "scar_hatch" },
+  { value: "hypertonicity", label: "Hipertonicidade", token: "marker-hypertonicity", shape: "crosshatch" },
+  { value: "hypotonicity", label: "Hipotonicidade", token: "marker-hypotonicity", shape: "hatch_ellipse" },
+  { value: "pain_radiation", label: "Irradiação da dor", token: "marker-radiation", shape: "lightning" },
+  { value: "pain_location", label: "Local da dor", token: "marker-location", shape: "target" },
+  { value: "paresthesia", label: "Parestesia", token: "marker-paresthesia", shape: "dotted_ellipse" },
+  { value: "rotation_right", label: "Rotação direita", token: "marker-rotation-right", shape: "arrow_cw" },
+  { value: "rotation_left", label: "Rotação esquerda", token: "marker-rotation-left", shape: "arrow_ccw" },
 ];
 const markerOptions = NINE.map(({ value, label }) => ({ value, label }));
 
@@ -78,19 +81,27 @@ const legendShapes = (html: string): string[] =>
 describe("BodyChart marker differentiation (ruling G) — nine distinct shapes + colours", () => {
   const html = render(ONE_OF_EACH);
 
-  it("renders all nine markers on-chart with NINE DISTINCT shapes", () => {
+  it("renders all nine markers on-chart with the NINE DISTINCT Fisiozero glyphs", () => {
     const shapes = onChartShapes(html);
     expect(shapes).toHaveLength(9);
     expect(new Set(shapes).size).toBe(9);
-    // The authoritative shape set (ruling G).
+    // The authoritative Fisiozero glyph set (W5-28, supersedes the ruling-G shapes).
     expect(new Set(shapes)).toEqual(
-      new Set(["square", "cross", "triangle", "diamond", "star", "circle", "ring", "arrow_right", "arrow_left"]),
+      new Set(["triangle_up", "scar_hatch", "crosshatch", "hatch_ellipse", "lightning", "target", "dotted_ellipse", "arrow_cw", "arrow_ccw"]),
     );
   });
 
-  it("renders NINE DISTINCT colour tokens (one per type, magenta not reused)", () => {
+  it("maps each marker_type to its exact Fisiozero glyph", () => {
+    for (const { value, shape } of NINE) {
+      expect(html).toContain(`data-marker-type="${value}" data-marker-shape="${shape}"`);
+    }
+  });
+
+  it("renders NINE DISTINCT colour HUE tokens (one per type, unchanged from W5-25, magenta not reused)", () => {
     const tokens = NINE.map((m) => m.token);
     expect(new Set(tokens).size).toBe(9);
+    // Each type keeps its W5-25 palette hue (`marker-<type>`), whether applied via
+    // fill- or stroke- for its Fisiozero glyph.
     for (const token of tokens) expect(html).toContain(token);
     // Brand magenta stays reserved for the lockup — the old single-dot fill is gone.
     expect(html).not.toContain("bg-brand-magenta");
@@ -137,7 +148,7 @@ describe("BodyChart existing markers (ruling G) — type-driven render, no store
     ];
     const html = render(preExisting);
     const shapes = onChartShapes(html);
-    expect(shapes).toEqual(["cross", "circle"]);
+    expect(shapes).toEqual(["scar_hatch", "target"]);
     // The stored marker keys are untouched — the list still shows each label.
     expect(html).toContain("Cicatriz");
     expect(html).toContain("Local da dor");
@@ -150,7 +161,7 @@ describe("BodyChart existing markers (ruling G) — type-driven render, no store
     const marker: Marker = { marker_type: "hypertonicity", x: 0.5, y: 0.5, view: "anterior" };
     expect(Object.keys(marker).sort()).toEqual(["marker_type", "view", "x", "y"]);
     const html = render([marker]);
-    expect(html).toContain('data-marker-type="hypertonicity" data-marker-shape="triangle"');
+    expect(html).toContain('data-marker-type="hypertonicity" data-marker-shape="crosshatch"');
   });
 });
 
