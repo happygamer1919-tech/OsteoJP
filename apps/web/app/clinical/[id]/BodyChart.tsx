@@ -292,7 +292,11 @@ export function BodyChart({
             return (
               <span
                 key={i}
+osteojp-w5-26-pain-scale-eva
                 title={displayLabel(m)}
+
+                title={labelFor(m.marker_type)}
+main
                 data-marker-type={m.marker_type}
                 data-marker-shape={style.shape}
                 className="absolute -ml-2 -mt-2 flex h-4 w-4 items-center justify-center"

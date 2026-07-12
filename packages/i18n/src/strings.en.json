@@ -555,9 +555,12 @@
   "clinical.bodychartViewLateralRight": "Lateral Right",
   "clinical.bodychartEmpty": "No markers.",
   "clinical.bodychartLegendTitle": "Marker legend",
+ osteojp-w5-26-pain-scale-eva
   "clinical.bodychartEvaLabel": "EVA",
   "clinical.bodychartEvaNone": "No value",
   "clinical.bodychartEvaSelectAria": "EVA intensity (0 to 10)",
+
+ main
   "clinical.bodychartNoTypes": "Marker types not yet configured.",
   "clinical.bodychartFigureMale": "Male figure",
   "clinical.bodychartFigureFemale": "Female figure",
@@ -954,7 +957,7 @@
   "marcacoes.errorTitle": "Could not load the bookings",
   "marcacoes.errorHelp": "Check your connection and try again.",
   "clinical.stringListPlaceholder": "A, B, C",
-  "clinical.healthProblemsOtherPlaceholder": "Other conditions, allergies, medications...",
+  "clinical.healthProblemsOtherPlaceholder": "Other...",
   "app.title": "OsteoJP Clinical Platform",
   "nav.ariaLabel": "Main navigation",
   "nav.label": "Navigation",
