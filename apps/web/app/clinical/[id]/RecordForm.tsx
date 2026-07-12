@@ -255,13 +255,16 @@ function FieldWidget({
       );
     }
     case "checkbox_group": {
-      // SPEC-ficha-medica.md sec 5.4: fix the orphaned-render bug. Previously a
-      // full-width `sm:col-span-2` text sub-field ("Outros") was interleaved into
-      // the same grid as single-column checkboxes, disrupting grid flow so only
-      // one checkbox rendered under the header and the rest orphaned below the
-      // text field. Fix: partition the sub-fields — every boolean checkbox
-      // renders in a FOUR-COLUMN grid; text sub-fields render AFTER the grid,
-      // full-width, never interleaved.
+      // SPEC-ficha-medica.md AMENDMENTS ruling F (Wave 05 Ficha Final): render the
+      // Outros section as the legacy 4-column x 5-row grid — strict 4-up on desktop,
+      // 2-up collapse, with NO intermediate 3-column step so the legacy left-to-right
+      // top-to-bottom reading order is exact. The nineteen boolean checkboxes render
+      // in seed property order; the single free-text sub-field ("other") renders
+      // INLINE as the final (20th) grid cell — one cell wide, no visible label
+      // (aria-label preserved), placeholder "Outras..." — superseding ruling C's
+      // separate below-grid block. Presentation only: read/write against each
+      // sub-key is unchanged, so the stored `health_problems` keys before == after
+      // (nineteen booleans + `other`).
       const obj = asObject(value);
       const props = field.properties ?? {};
       const isTextSub = (subField: FieldSchema): boolean =>
@@ -273,34 +276,34 @@ function FieldWidget({
       const checkboxEntries = entries.filter(([, f]) => !isTextSub(f));
       const textEntries = entries.filter(([, f]) => isTextSub(f));
       return (
-        <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            {checkboxEntries.map(([sub, subField]) => (
-              <div key={sub} className="min-w-0">
-                <Checkbox
-                  label={labelOf(subField, locale, sub)}
-                  disabled={readOnly}
-                  className="w-full"
-                  checked={obj[sub] === true}
-                  onChange={(e) => onChange({ ...obj, [sub]: e.target.checked })}
-                />
-              </div>
-            ))}
-          </div>
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          {checkboxEntries.map(([sub, subField]) => (
+            <div key={sub} className="min-w-0">
+              <Checkbox
+                label={labelOf(subField, locale, sub)}
+                disabled={readOnly}
+                className="w-full"
+                checked={obj[sub] === true}
+                onChange={(e) => onChange({ ...obj, [sub]: e.target.checked })}
+              />
+            </div>
+          ))}
           {textEntries.map(([sub, subField]) => (
-            // Ruling C: the free-text sub-field renders with NO visible label —
-            // an aria-label preserves the accessible name and a placeholder
-            // guides input. `other` is the sole text sub-field (recon).
-            <Input
-              key={sub}
-              type="text"
-              disabled={readOnly}
-              className="min-w-0"
-              aria-label={labelOf(subField, locale, sub)}
-              placeholder={sub === "other" ? s["clinical.healthProblemsOtherPlaceholder"] : undefined}
-              value={asString(obj[sub])}
-              onChange={(e) => onChange({ ...obj, [sub]: e.target.value })}
-            />
+            // Ruling F: the free-text sub-field is the 20th grid cell — same cell
+            // width as a checkbox, NO visible label (aria-label preserves the
+            // accessible name), placeholder "Outras...". `other` is the sole text
+            // sub-field (recon). Read/write against `obj.other` is unchanged.
+            <div key={sub} className="min-w-0">
+              <Input
+                type="text"
+                disabled={readOnly}
+                className="w-full"
+                aria-label={labelOf(subField, locale, sub)}
+                placeholder={sub === "other" ? s["clinical.healthProblemsOtherPlaceholder"] : undefined}
+                value={asString(obj[sub])}
+                onChange={(e) => onChange({ ...obj, [sub]: e.target.value })}
+              />
+            </div>
           ))}
         </div>
       );
