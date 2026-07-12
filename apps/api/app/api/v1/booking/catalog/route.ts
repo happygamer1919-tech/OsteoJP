@@ -5,9 +5,10 @@ import { drizzleAppointmentsStore } from "@/lib/appointments/store";
 import { errorResponse, unauthorized } from "@/lib/appointments/http";
 
 // GET /api/v1/booking/catalog — the bookable service list + locations for the
-// patient's tenant. Services are the OsteoJP self-bookable set (the three physio
-// wrappers — RPG, Massagem Terapêutica, Pilates Terapêutico — included by
-// default), location-scoped to the tenant's active locations. Prices are
+// patient's tenant. Services are the OsteoJP self-bookable set (the two physio
+// wrappers — Massagem Terapêutica, Pilates Terapêutico — included by default;
+// RPG is the RGPD consent document, not a bookable service), location-scoped to
+// the tenant's active locations. Prices are
 // display-only (no payment, no fiscal document); the patient cannot self-claim a
 // parceria — there is no price/discount field in any booking input.
 
