@@ -329,7 +329,7 @@ test.describe("authoring (therapist)", () => {
     await expect(legend).toBeVisible();
     await expect(legend.locator("[data-legend-type]")).toHaveCount(9);
 
-    // Place a Bloqueio / Disfunção (square) and a Local da dor (circle).
+    // Place a Bloqueio / Disfunção (triangle_up) and a Local da dor (target).
     await typeSelect.selectOption({ label: "Bloqueio / Disfunção" });
     await canvas.click({ position: { x: 30, y: 40 } });
     await typeSelect.selectOption({ label: "Local da dor" });
@@ -337,8 +337,8 @@ test.describe("authoring (therapist)", () => {
 
     // Two on-chart markers with DISTINCT shapes (scoped to the canvas so the
     // legend's own shape glyphs are not counted).
-    await expect(canvas.locator('[data-marker-shape="square"]')).toHaveCount(1);
-    await expect(canvas.locator('[data-marker-shape="circle"]')).toHaveCount(1);
+    await expect(canvas.locator('[data-marker-shape="triangle_up"]')).toHaveCount(1);
+    await expect(canvas.locator('[data-marker-shape="target"]')).toHaveCount(1);
 
     await form.getByLabel(/Motivos da Consulta/i).fill("Marcadores no diagrama corporal.");
     await page.getByRole("button", { name: "Guardar", exact: true }).click();
@@ -349,8 +349,8 @@ test.describe("authoring (therapist)", () => {
 
     // Both markers restore with their type-driven shapes (stored data untouched).
     const canvas2 = page.locator("#record-form").getByTestId("bodychart-canvas");
-    await expect(canvas2.locator('[data-marker-shape="square"]')).toHaveCount(1);
-    await expect(canvas2.locator('[data-marker-shape="circle"]')).toHaveCount(1);
+    await expect(canvas2.locator('[data-marker-shape="triangle_up"]')).toHaveCount(1);
+    await expect(canvas2.locator('[data-marker-shape="target"]')).toHaveCount(1);
     await expect(
       page.locator("#record-form").getByTestId("bodychart-legend").locator("[data-legend-type]"),
     ).toHaveCount(9);
