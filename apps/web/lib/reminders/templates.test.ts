@@ -82,35 +82,79 @@ describe("email rendering", () => {
 });
 
 describe("sms rendering", () => {
-  it("renders the PT 48h SMS verbatim, accent-free", () => {
+  it("renders the PT 48h SMS verbatim, accent-free, multi-line", () => {
     const msg = renderSms("48h", "pt", ctx);
     expect(msg).toBe(
-      "OsteoJP: lembrete da sua consulta a 23/05 as 14:30 em Linda-a-Velha. Para remarcar ligue +351 210 000 000",
+      [
+        "OsteoJP - Lembrete",
+        "Consulta: 23/05 as 14:30",
+        "Local: Linda-a-Velha",
+        "Remarcar: +351 210 000 000",
+      ].join("\n"),
     );
   });
 
-  it("renders the EN 48h SMS verbatim", () => {
+  it("renders the EN 48h SMS verbatim, multi-line", () => {
     const msg = renderSms("48h", "en", ctx);
     expect(msg).toBe(
-      "OsteoJP: reminder of your appointment on 23/05 at 14:30 in Linda-a-Velha. To reschedule call +351 210 000 000",
+      [
+        "OsteoJP - Reminder",
+        "Appointment: 23/05 at 14:30",
+        "Location: Linda-a-Velha",
+        "Reschedule: +351 210 000 000",
+      ].join("\n"),
     );
   });
 
-  it("renders the PT 24h SMS with the 'amanha' framing (no tilde)", () => {
+  it("renders the PT 24h SMS with the 'amanha' framing (no tilde), multi-line", () => {
     const msg = renderSms("24h", "pt", ctx);
-    expect(msg).toContain("a sua consulta e amanha, 23/05, as 14:30 em Linda-a-Velha");
+    expect(msg).toBe(
+      [
+        "OsteoJP - Lembrete",
+        "Consulta: amanha 23/05 as 14:30",
+        "Local: Linda-a-Velha",
+        "Remarcar: +351 210 000 000",
+      ].join("\n"),
+    );
     expect(msg).not.toMatch(/amanhã/);
   });
 
-  it("renders the EN 24h SMS", () => {
+  it("renders the EN 24h SMS, multi-line", () => {
     const msg = renderSms("24h", "en", ctx);
-    expect(msg).toContain("your appointment is tomorrow, 23/05, at 14:30 in Linda-a-Velha");
+    expect(msg).toBe(
+      [
+        "OsteoJP - Reminder",
+        "Appointment: tomorrow 23/05 at 14:30",
+        "Location: Linda-a-Velha",
+        "Reschedule: +351 210 000 000",
+      ].join("\n"),
+    );
+  });
+
+  it("lays the reminder body out as four scannable lines", () => {
+    for (const offset of ["48h", "24h"] as const) {
+      for (const locale of ["pt", "en"] as const) {
+        expect(renderSms(offset, locale, ctx).split("\n")).toHaveLength(4);
+      }
+    }
   });
 
   it("keeps every rendered SMS GSM-7 and within one segment", () => {
     for (const offset of ["48h", "24h"] as const) {
       for (const locale of ["pt", "en"] as const) {
         const msg = renderSms(offset, locale, ctx);
+        expect(isGsm7(msg)).toBe(true);
+        expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+      }
+    }
+  });
+
+  it("stays single-segment GSM-7 for the longest prod clinic name (Castelo Branco)", () => {
+    const longest: ReminderContext = { ...ctx, clinicLocation: "Castelo Branco" };
+    for (const offset of ["48h", "24h"] as const) {
+      for (const locale of ["pt", "en"] as const) {
+        const msg = renderSms(offset, locale, longest);
+        expect(msg).toContain("Castelo Branco");
         expect(isGsm7(msg)).toBe(true);
         expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
       }
@@ -185,22 +229,42 @@ describe("confirmation email", () => {
 });
 
 describe("confirmation SMS", () => {
-  it("PT SMS is accent-free and within one segment", () => {
+  it("PT SMS is accent-free, multi-line, and within one segment", () => {
     const msg = renderConfirmationSms("pt", ctx);
     expect(msg).toBe(
-      "OsteoJP: marcacao confirmada a 23/05 as 14:30 em Linda-a-Velha. Para remarcar ligue +351 210 000 000",
+      [
+        "OsteoJP - Marcacao confirmada",
+        "Consulta: 23/05 as 14:30",
+        "Local: Linda-a-Velha",
+        "Remarcar: +351 210 000 000",
+      ].join("\n"),
     );
     expect(isGsm7(msg)).toBe(true);
     expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
   });
 
-  it("EN SMS is within one segment", () => {
+  it("EN SMS is multi-line and within one segment", () => {
     const msg = renderConfirmationSms("en", ctx);
     expect(msg).toBe(
-      "OsteoJP: appointment confirmed on 23/05 at 14:30 in Linda-a-Velha. To reschedule call +351 210 000 000",
+      [
+        "OsteoJP - Appointment confirmed",
+        "Appointment: 23/05 at 14:30",
+        "Location: Linda-a-Velha",
+        "Reschedule: +351 210 000 000",
+      ].join("\n"),
     );
     expect(isGsm7(msg)).toBe(true);
     expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+  });
+
+  it("stays single-segment for the longest prod clinic name (Castelo Branco)", () => {
+    const longest: ReminderContext = { ...ctx, clinicLocation: "Castelo Branco" };
+    for (const locale of ["pt", "en"] as const) {
+      const msg = renderConfirmationSms(locale, longest);
+      expect(msg).toContain("Castelo Branco");
+      expect(isGsm7(msg)).toBe(true);
+      expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+    }
   });
 });
 
@@ -251,19 +315,27 @@ describe("follow-up email", () => {
 });
 
 describe("follow-up SMS", () => {
-  it("PT SMS is accent-free and within one segment", () => {
+  it("PT SMS is accent-free, multi-line, and within one segment", () => {
     const msg = renderFollowUpSms("pt", followUpCtx);
     expect(msg).toBe(
-      "OsteoJP: obrigado pela sua visita de 23/05. Para marcar a proxima consulta ligue +351 210 000 000",
+      [
+        "OsteoJP - Obrigado pela sua visita",
+        "Visita: 23/05",
+        "Marcar proxima consulta: +351 210 000 000",
+      ].join("\n"),
     );
     expect(isGsm7(msg)).toBe(true);
     expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
   });
 
-  it("EN SMS is within one segment", () => {
+  it("EN SMS is multi-line and within one segment", () => {
     const msg = renderFollowUpSms("en", followUpCtx);
     expect(msg).toBe(
-      "OsteoJP: thank you for your visit on 23/05. To book your next appointment call +351 210 000 000",
+      [
+        "OsteoJP - Thank you for your visit",
+        "Visit: 23/05",
+        "Book next appointment: +351 210 000 000",
+      ].join("\n"),
     );
     expect(isGsm7(msg)).toBe(true);
     expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
@@ -321,19 +393,27 @@ describe("no-show email", () => {
 });
 
 describe("no-show SMS", () => {
-  it("PT SMS is accent-free and within one segment", () => {
+  it("PT SMS is accent-free, multi-line, and within one segment", () => {
     const msg = renderNoShowSms("pt", noShowCtx);
     expect(msg).toBe(
-      "OsteoJP: a sua consulta de 23/05 as 14:30 nao foi realizada. Para remarcar ligue +351 210 000 000",
+      [
+        "OsteoJP - Consulta nao realizada",
+        "Consulta: 23/05 as 14:30",
+        "Remarcar: +351 210 000 000",
+      ].join("\n"),
     );
     expect(isGsm7(msg)).toBe(true);
     expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
   });
 
-  it("EN SMS is within one segment", () => {
+  it("EN SMS is multi-line and within one segment", () => {
     const msg = renderNoShowSms("en", noShowCtx);
     expect(msg).toBe(
-      "OsteoJP: your appointment on 23/05 at 14:30 was not attended. To rebook call +351 210 000 000",
+      [
+        "OsteoJP - Missed appointment",
+        "Appointment: 23/05 at 14:30",
+        "Rebook: +351 210 000 000",
+      ].join("\n"),
     );
     expect(isGsm7(msg)).toBe(true);
     expect(msg.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);

@@ -35,7 +35,20 @@ test("location delete is enabled only when unreferenced; archive-only otherwise 
   await dialog.getByRole("button", { name: SAVE }).click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 
-  await page.goto("/admin/locations");
+  // A successful booking triggers the app's OWN client navigation back to the
+  // agenda. On Firefox/WebKit that in-flight navigation aborts an immediate
+  // manual goto (Firefox: NS_BINDING_ABORTED; WebKit: "interrupted by another
+  // navigation"). Retry once — the second goto cleanly supersedes the redirect,
+  // mirroring the same race handled in helpers' openNewAppointment.
+  try {
+    await page.goto("/admin/locations");
+  } catch (e) {
+    if (/interrupted by another navigation|NS_BINDING_ABORTED/i.test(String(e))) {
+      await page.goto("/admin/locations");
+    } else {
+      throw e;
+    }
+  }
 
   // Referenced location → Delete DISABLED + tooltip; Archive still offered.
   const refRow = rowByName(page, LOCATION.name);

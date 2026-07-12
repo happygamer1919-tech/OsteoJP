@@ -77,6 +77,32 @@ const USERS = [
     email: "e2e-therapist-loc-multi@osteojp.test",
     fullName: "E2E Terapeuta Varias Clinicas",
   },
+  // Per-project DISPOSABLE therapists for the destructive password-gated delete
+  // test (equipa-primary-service.spec W4-01). The cross-browser CI job runs
+  // firefox + webkit against ONE shared, non-reset seed DB, so a delete of a
+  // shared therapist would wipe it for whichever engine runs second. Each browser
+  // project deletes the disposable whose name carries its Playwright project name
+  // (`E2E Terapeuta Descartavel <project>`). Like `therapist2`, these get ZERO
+  // therapist_services and ZERO activity, so each renders as a "Sem serviços",
+  // hard-deletable therapist row. Never referenced by any other spec.
+  {
+    slug: "therapistDisposableChromium",
+    roleSlug: "therapist",
+    email: "e2e-therapist-disposable-chromium@osteojp.test",
+    fullName: "E2E Terapeuta Descartavel chromium",
+  },
+  {
+    slug: "therapistDisposableFirefox",
+    roleSlug: "therapist",
+    email: "e2e-therapist-disposable-firefox@osteojp.test",
+    fullName: "E2E Terapeuta Descartavel firefox",
+  },
+  {
+    slug: "therapistDisposableWebkit",
+    roleSlug: "therapist",
+    email: "e2e-therapist-disposable-webkit@osteojp.test",
+    fullName: "E2E Terapeuta Descartavel webkit",
+  },
 ];
 
 const LOCATION_A = "00000000-0000-0000-0000-00000000a101";
