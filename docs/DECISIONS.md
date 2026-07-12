@@ -988,3 +988,32 @@ build clean (portal build fails only on a missing local NEXT_PUBLIC_SUPABASE_URL
 static /auth/activate export — env, not this change; portal imports none of these files).
 `git diff` touches no packages/db/migrations, supabase/migrations, or .github/workflows,
 and does not change the invite flow.
+
+## 2026-07-11 — W5-26 EVA pain scale: Path A (component-side jsonb passthrough), no migration, no v4 seed
+
+Ruling H (SPEC-ficha-medica AMENDMENTS 2026-07-11) requires a 0-10 EVA `intensity`
+on Local da dor (`pain_location`) bodychart markers, stored on the marker object in the
+record `data` jsonb.
+
+Recon of the save path (read-only, before building):
+- `saveRecordAction` (apps/web/app/clinical/[id]/actions.ts) parses the form `data` JSON
+  verbatim and passes it unchanged to `updateRecordData`.
+- `updateRecordData` (apps/web/lib/clinical/records.ts) writes the whole object to
+  `clinicalRecords.data` (`.set({ data: recordData })`) — no key stripping — after
+  `validateRecordData`.
+- `validateRecordData` (apps/web/lib/clinical/form-template.ts) checks required-field
+  PRESENCE only; it does NOT enforce `additionalProperties` and does NOT recurse into
+  array items.
+
+Decision: **Path A (preferred, most rule-5-safe).** `intensity` is written/read
+component-side in `BodyChart.tsx` and rides through the jsonb column untouched. **No
+template change, no `osteopathy-v4` seed, no DB migration** (Path B was not needed; v3
+stays immutable, rule 5). `intensity` is additive and optional — only `pain_location`
+markers carry it; the marker shape stays `{ marker_type, x, y, view (, intensity?) }`.
+
+Evidence: `form-template.test.ts` pins that `validateRecordData` accepts a marker carrying
+`intensity` (and a scale-less one), and never injects `intensity` on other types;
+`BodyChartEva.test.tsx` pins display + optional + signed-read-only; `clinical.spec.ts` E2E
+pins place-select-reload persistence. Migration-free proof: `git diff` touches no
+`packages/db/migrations/`, `supabase/migrations/`, `.github/workflows/`, and does not edit
+`osteopathy-v3.json`.

@@ -306,6 +306,63 @@ test.describe("authoring (therapist)", () => {
     ).toHaveCount(9);
   });
 
+  // W5-26 (SPEC-ficha-medica.md AMENDMENTS ruling H): placing a Local da dor
+  // (pain_location) marker exposes a 0-10 EVA selector; the chosen value stores
+  // as an additive `intensity` jsonb key, shows as "Local da dor - EVA n/10",
+  // persists across reload, appears ONLY on pain_location, and is read-only once
+  // the record is signed.
+  test("Bodychart EVA: Local da dor stores a 0-10 intensity, persists, other types unaffected, signed read-only", async ({
+    page,
+  }) => {
+    await page.goto("/clinical/new");
+    const patient = page.getByRole("combobox", { name: /Paciente/i });
+    await patient.click();
+    await patient.fill(PATIENTS.maria.name);
+    await page.getByRole("option", { name: PATIENTS.maria.name }).click();
+    await page.getByLabel(/Modelo/i).selectOption({ label: TEMPLATE_CURRENT_LABEL });
+    await page.getByRole("button", { name: "Criar ficha" }).click();
+    await expect(page).toHaveURL(/\/clinical\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+
+    const form = page.locator("#record-form");
+    const canvas = form.getByTestId("bodychart-canvas");
+    const typeSelect = form.getByRole("combobox", { name: /Tipo de marcador/i });
+    const evaSelect = form.getByRole("combobox", { name: "Intensidade EVA (0 a 10)" });
+
+    // Place a Local da dor marker, then set EVA = 7 on its list row.
+    await typeSelect.selectOption({ label: "Local da dor" });
+    await canvas.click({ position: { x: 60, y: 80 } });
+    await expect(evaSelect).toHaveCount(1);
+    await evaSelect.selectOption("7");
+    await expect(form.getByText("Local da dor - EVA 7/10")).toBeVisible();
+
+    // Other types get NO EVA selector: place a Hipertonicidade marker; still one EVA select.
+    await typeSelect.selectOption({ label: "Hipertonicidade" });
+    await canvas.click({ position: { x: 120, y: 150 } });
+    await expect(form.getByRole("combobox", { name: "Intensidade EVA (0 a 10)" })).toHaveCount(1);
+
+    // Persist + reload → the stored intensity restores and displays.
+    await form.getByLabel(/Motivos da Consulta/i).fill("EVA na Local da dor.");
+    await page.getByRole("button", { name: "Guardar", exact: true }).click();
+    await expect(page.getByText("Ficha guardada", { exact: false }).first()).toBeVisible({
+      timeout: 12_000,
+    });
+    await page.reload();
+
+    const form2 = page.locator("#record-form");
+    await expect(form2.getByText("Local da dor - EVA 7/10")).toBeVisible();
+    await expect(
+      form2.getByRole("combobox", { name: "Intensidade EVA (0 a 10)" }),
+    ).toHaveValue("7");
+
+    // Sign/lock → the EVA value still shows, but the editable control is gone.
+    await page.getByRole("button", { name: "Assinar e bloquear" }).click();
+    await expect(page.getByText("Ficha finalizada e imutável.", { exact: false })).toBeVisible({
+      timeout: 12_000,
+    });
+    await expect(page.getByText("Local da dor - EVA 7/10")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Intensidade EVA (0 a 10)" })).toHaveCount(0);
+  });
+
   // W2-06: fichas entry points live in the patient-profile Registos clínicos tab.
   test("patient Registos tab creates a ficha (scoped) and surfaces the addendum action", async ({
     page,
