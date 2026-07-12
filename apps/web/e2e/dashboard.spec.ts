@@ -64,10 +64,10 @@ test.describe("admin dashboard", () => {
 test.describe("therapist dashboard", () => {
   test.use({ storageState: STORAGE.therapist });
 
-  test("therapist sees Registo clínico tile and Novas fichas KPI", async ({ page }) => {
+  test("therapist sees Ficha Clínica tile and Novas fichas KPI", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/dashboard(\?|$)/, { timeout: 10_000 });
-    await expect(page.getByRole("link", { name: "Registo clínico" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Ficha Clínica" })).toBeVisible();
     await expect(page.getByText("Novas fichas")).toBeVisible();
   });
 
@@ -102,10 +102,10 @@ test.describe("reception dashboard", () => {
     await expect(page.getByText("Marcações hoje")).toBeVisible();
   });
 
-  test("reception omits Novas fichas KPI, Registo clínico tile, and Administração tile", async ({ page }) => {
+  test("reception omits Novas fichas KPI, Ficha Clínica tile, and Administração tile", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(page.getByText("Novas fichas")).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Registo clínico" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Ficha Clínica" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Administração" })).toHaveCount(0);
   });
 });
