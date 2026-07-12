@@ -1,5 +1,15 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
-import { projectAiExtractableData, widgetOf, type FieldSchema, type TemplateSchema } from "./form-template";
+import {
+  parseTemplateSchema,
+  projectAiExtractableData,
+  validateRecordData,
+  widgetOf,
+  type FieldSchema,
+  type TemplateSchema,
+} from "./form-template";
 
 // Pins the invariant that data.private_notes — the therapist-private
 // "NOTAS PESSOAIS" field — is NEVER included in the payload sent to the AI
@@ -148,5 +158,58 @@ describe("widgetOf — mobilidade x-widget routing (SPEC 5.10)", () => {
     expect(widgetOf("mobilidade_observacoes", ta)).toBe("textarea");
     expect(widgetOf("diagnostico", ta)).toBe("textarea");
     expect(widgetOf("tratamento", ta)).toBe("textarea");
+  });
+});
+
+// W5-26 (ruling H): the EVA `intensity` on a pain_location marker is an additive
+// jsonb key with NO template declaration and NO DB migration. This pins Path A —
+// the save gate (validateRecordData) must ACCEPT record data whose bodychart
+// markers carry an undeclared `intensity`: the validator checks required-field
+// presence only, it does NOT enforce additionalProperties or recurse into array
+// items, so the extra key passes through and persists verbatim.
+describe("validateRecordData — additive marker `intensity` passes the save gate (W5-26 Path A)", () => {
+  const v3 = JSON.parse(
+    readFileSync(
+      path.join(__dirname, "../../../../packages/db/seed/form-templates/osteopathy-v3.json"),
+      "utf8",
+    ),
+  ) as { schema: unknown };
+  const schema = parseTemplateSchema(v3.schema)!;
+
+  // Minimal valid record: v3's required set is { episode_date, consultation_reason }.
+  // In the live save path episode_date is auto-stamped server-side (W5-19) before
+  // validation; here we set both so the check isolates the intensity passthrough.
+  const baseData: Record<string, unknown> = {
+    episode_date: "2026-07-11",
+    consultation_reason: "Dor lombar.",
+  };
+
+  it("accepts a pain_location marker carrying `intensity` (no additionalProperties rejection)", () => {
+    const withEva = {
+      ...baseData,
+      bodychart: [
+        { marker_type: "pain_location", x: 0.4, y: 0.5, view: "anterior", intensity: 7 },
+      ],
+    };
+    expect(validateRecordData(schema, withEva).ok).toBe(true);
+  });
+
+  it("accepts a scale-less pain_location marker (intensity optional)", () => {
+    const noEva = {
+      ...baseData,
+      bodychart: [{ marker_type: "pain_location", x: 0.4, y: 0.5, view: "anterior" }],
+    };
+    expect(validateRecordData(schema, noEva).ok).toBe(true);
+  });
+
+  it("does not require or inject `intensity` on other marker types", () => {
+    const other = {
+      ...baseData,
+      bodychart: [{ marker_type: "hypertonicity", x: 0.2, y: 0.3, view: "anterior" }],
+    };
+    const result = validateRecordData(schema, other);
+    expect(result.ok).toBe(true);
+    // The validator never mutates the input — no intensity is added.
+    expect(other.bodychart[0]).not.toHaveProperty("intensity");
   });
 });

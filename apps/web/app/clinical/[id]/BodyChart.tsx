@@ -11,7 +11,25 @@ import {
   type FigSex,
 } from "./BodyFigure";
 
-export type Marker = { marker_type: string; x: number; y: number; view: string };
+// W5-26 (SPEC-ficha-medica AMENDMENTS ruling H): `intensity` is an OPTIONAL,
+// additive 0-10 EVA (Escala Visual Analógica) value carried ONLY by
+// `pain_location` (Local da dor) markers. It is a plain jsonb key on the marker
+// object — the record `data` write path preserves undeclared keys (recon: save
+// path stores the object verbatim; validateRecordData checks required-field
+// presence only), so no template change and no DB migration are needed.
+export type Marker = {
+  marker_type: string;
+  x: number;
+  y: number;
+  view: string;
+  intensity?: number;
+};
+
+// The frozen marker_type that carries an EVA scale. Only this type shows the
+// selector and can store `intensity`; the other eight are unaffected.
+const PAIN_LOCATION = "pain_location";
+const EVA_MIN = 0;
+const EVA_MAX = 10;
 
 // Line-art figures need much more opacity than the old filled silhouettes did
 // (0.18) to read at all — single constant so it's easy to tune later.
@@ -169,10 +187,36 @@ export function BodyChart({
     onChange(markers.filter((_, i) => i !== index));
   }
 
+  // W5-26: set/clear the EVA `intensity` on a single pain_location marker.
+  // `null` removes the key entirely (optional — a valid scale-less marker).
+  function setIntensity(index: number, value: number | null) {
+    onChange(
+      markers.map((m, i) => {
+        if (i !== index) return m;
+        if (value == null) {
+          // Clear the optional key entirely — a scale-less marker stores no intensity.
+          const rest = { ...m };
+          delete rest.intensity;
+          return rest;
+        }
+        return { ...m, intensity: value };
+      }),
+    );
+  }
+
   const canInteract = !readOnly && markerOptions.length > 0;
 
   const labelFor = (value: string) =>
     markerOptions.find((o) => o.value === value)?.label ?? value;
+
+  // W5-26: the display label appends the EVA value for pain_location markers that
+  // carry one — "Local da dor - EVA 7/10". Other types (and scale-less Local da
+  // dor markers) show the plain label. Used by the marker list AND the on-chart
+  // tooltip so both surfaces show the intensity.
+  const displayLabel = (m: Marker) =>
+    m.marker_type === PAIN_LOCATION && typeof m.intensity === "number"
+      ? `${labelFor(m.marker_type)} - EVA ${m.intensity}/10`
+      : labelFor(m.marker_type);
   const inView = markers
     .map((m, i) => ({ m, i }))
     .filter(({ m }) => m.view === view);
@@ -248,7 +292,7 @@ export function BodyChart({
             return (
               <span
                 key={i}
-                title={labelFor(m.marker_type)}
+                title={displayLabel(m)}
                 data-marker-type={m.marker_type}
                 data-marker-shape={style.shape}
                 className="absolute -ml-2 -mt-2 flex h-4 w-4 items-center justify-center"
@@ -316,22 +360,50 @@ export function BodyChart({
         {markers.length === 0 && (
           <li className="text-xs text-text-secondary">{s["clinical.bodychartEmpty"]}</li>
         )}
-        {markers.map((m, i) => (
-          <li key={i} className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 text-xs text-text-secondary">[{m.view}]</span>
-            <span className="min-w-0 flex-1 break-words">{labelFor(m.marker_type)}</span>
-            {!readOnly && (
-              <Button
-                type="button"
-                onClick={() => remove(i)}
-                variant="ghost"
-                size="sm"
-              >
-                {s["clinical.bodychartRemove"]}
-              </Button>
-            )}
-          </li>
-        ))}
+        {markers.map((m, i) => {
+          const isPain = m.marker_type === PAIN_LOCATION;
+          return (
+            <li key={i} className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="shrink-0 text-xs text-text-secondary">[{m.view}]</span>
+              <span className="min-w-0 flex-1 break-words">{displayLabel(m)}</span>
+              {/* W5-26 ruling H: only Local da dor carries a 0-10 EVA scale.
+                  Draft = an editable selector (min 44px tall, tap-friendly);
+                  the placed marker starts scale-less (optional) and the value
+                  is set here. Signed/locked: no control — displayLabel already
+                  shows the stored "EVA n/10" value. */}
+              {isPain && !readOnly && (
+                <label className="flex shrink-0 items-center gap-1 text-xs">
+                  <span className="text-text-secondary">{s["clinical.bodychartEvaLabel"]}</span>
+                  <select
+                    aria-label={s["clinical.bodychartEvaSelectAria"]}
+                    value={typeof m.intensity === "number" ? String(m.intensity) : ""}
+                    onChange={(e) =>
+                      setIntensity(i, e.target.value === "" ? null : Number(e.target.value))
+                    }
+                    className="min-h-11 rounded border px-2 text-sm"
+                  >
+                    <option value="">{s["clinical.bodychartEvaNone"]}</option>
+                    {Array.from({ length: EVA_MAX - EVA_MIN + 1 }, (_, n) => EVA_MIN + n).map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {!readOnly && (
+                <Button
+                  type="button"
+                  onClick={() => remove(i)}
+                  variant="ghost"
+                  size="sm"
+                >
+                  {s["clinical.bodychartRemove"]}
+                </Button>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

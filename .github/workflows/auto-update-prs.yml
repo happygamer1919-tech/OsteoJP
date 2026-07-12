@@ -1,0 +1,95 @@
+name: Auto-update PR branches
+
+# When main moves, bring every open, non-draft PR that is behind main up to
+# date automatically, so nobody has to click "Update branch" all day.
+#
+# IMPORTANT: branch updates made with the default GITHUB_TOKEN do NOT re-trigger
+# the PR's CI (GitHub anti-recursion), leaving the PR stuck on "expected" checks
+# forever. So this workflow uses a repo secret PAT (AUTO_UPDATE_TOKEN) for the
+# API calls, and no-ops safely if that secret is absent.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: auto-update-prs
+  cancel-in-progress: true
+
+jobs:
+  auto-update:
+    name: Update open PR branches behind main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update open, non-draft PRs that are behind main
+        env:
+          AUTO_UPDATE_TOKEN: ${{ secrets.AUTO_UPDATE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "${AUTO_UPDATE_TOKEN}" ]; then
+            echo "AUTO_UPDATE_TOKEN secret not set, skipping. This workflow no-ops safely until the owner adds the PAT."
+            exit 0
+          fi
+
+          api() {
+            curl -sS -w '\n%{http_code}' \
+              -H "Authorization: token ${AUTO_UPDATE_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$@"
+          }
+
+          # List open PRs (up to 100). Read-only.
+          resp=$(api "https://api.github.com/repos/${REPO}/pulls?state=open&per_page=100")
+          list_body=$(printf '%s' "${resp}" | sed '$d')
+          list_code=$(printf '%s' "${resp}" | tail -n1)
+          if [ "${list_code}" != "200" ]; then
+            echo "Failed to list PRs (HTTP ${list_code}):"
+            printf '%s\n' "${list_body}"
+            exit 1
+          fi
+
+          # Emit one compact JSON object per open, non-draft PR targeting main.
+          printf '%s' "${list_body}" \
+            | jq -c '.[] | select(.draft == false) | select(.base.ref == "main") | {number, ref: .head.ref, label: .head.label}' \
+            | while read -r pr; do
+                num=$(printf '%s' "${pr}" | jq -r '.number')
+                ref=$(printf '%s' "${pr}" | jq -r '.ref')
+                label=$(printf '%s' "${pr}" | jq -r '.label')
+
+                # How far behind main is this PR's head?
+                cmp=$(api "https://api.github.com/repos/${REPO}/compare/main...${label}")
+                cmp_body=$(printf '%s' "${cmp}" | sed '$d')
+                cmp_code=$(printf '%s' "${cmp}" | tail -n1)
+                if [ "${cmp_code}" != "200" ]; then
+                  echo "PR #${num} (${ref}): compare failed (HTTP ${cmp_code}) - skipping."
+                  continue
+                fi
+
+                behind=$(printf '%s' "${cmp_body}" | jq -r '.behind_by // 0')
+                if [ "${behind}" = "0" ]; then
+                  echo "PR #${num} (${ref}): up to date with main - nothing to do."
+                  continue
+                fi
+
+                echo "PR #${num} (${ref}): behind main by ${behind} commit(s) - updating branch."
+                upd=$(api -X PUT "https://api.github.com/repos/${REPO}/pulls/${num}/update-branch")
+                upd_body=$(printf '%s' "${upd}" | sed '$d')
+                upd_code=$(printf '%s' "${upd}" | tail -n1)
+                case "${upd_code}" in
+                  202)
+                    echo "PR #${num} (${ref}): update queued."
+                    ;;
+                  422)
+                    echo "PR #${num} (${ref}): could not auto-update (HTTP 422, most likely a merge conflict). Needs a human rebase."
+                    printf '%s\n' "${upd_body}"
+                    ;;
+                  *)
+                    echo "PR #${num} (${ref}): update failed (HTTP ${upd_code}) - continuing with the rest."
+                    printf '%s\n' "${upd_body}"
+                    ;;
+                esac
+              done
+
+          echo "Auto-update pass complete."
