@@ -114,9 +114,16 @@ test("Equipa: the Gerir management panel opens as a centered modal, traps focus,
 
 test("Equipa: password-gated therapist delete — wrong password refused, correct deletes an activity-free therapist (W4-01)", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.goto("/admin/staff");
-  const row = () => page.locator("tbody tr").filter({ hasText: THER });
+  // This delete is DESTRUCTIVE and the cross-browser CI job runs firefox + webkit
+  // against ONE shared, non-reset seed DB (a single `playwright test
+  // --project=setup --project=firefox --project=webkit` invocation). Deleting the
+  // shared "Sem Servicos" therapist would wipe it for whichever engine runs
+  // second, breaking every test above. So each project deletes its OWN seeded
+  // zero-service, activity-free disposable therapist (see e2e/seed/seed-e2e.mjs).
+  const disposable = `E2E Terapeuta Descartavel ${testInfo.project.name}`;
+  const row = () => page.locator("tbody tr").filter({ hasText: disposable });
   await expect(row()).toHaveCount(1);
   // W5-06: the management actions (incl. the password-gated delete) live in a
   // per-row CENTERED modal — click the row's "Gerir" button to open it, then
