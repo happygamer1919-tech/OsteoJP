@@ -48,7 +48,7 @@ test("a newly created appointment persists as scheduled / pendente (W3-01)", asy
   const edit = page.getByRole("dialog");
   await expect(edit).toBeVisible({ timeout: 8_000 });
   await expect(edit.getByLabel(/^Estado/i)).toHaveValue("scheduled"); // lifecycle
-  await expect(edit.getByText(/Aguarda confirmação/i)).toBeVisible(); // confirmation = pending
+  await expect(edit.getByText(/Confirmação pendente/i)).toBeVisible(); // confirmation = pending
 });
 
 test("archived location is absent from the booking dropdown (W2-02 item 2)", async ({ page }) => {
