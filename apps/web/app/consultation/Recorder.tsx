@@ -13,6 +13,7 @@ import {
 } from "@/lib/consultation/recording";
 import { putToPresignedUrl, uploadRecording } from "@/lib/consultation/upload-audio";
 import { fireConsultationWebhookAction, signAudioUploadAction } from "./actions";
+import { GuiaoPanel } from "./GuiaoPanel";
 
 type Phase =
   | "unsupported"
@@ -203,6 +204,11 @@ export function Recorder({
           {s["recording.micError"]}
         </p>
       )}
+
+      {/* W5-34: read-only "Guião do Exame Subjetivo" reference, collapsed by
+          default, below the controls. Native <details> - never overlaps or
+          blocks the recording controls above. */}
+      <GuiaoPanel />
     </div>
   );
 }
