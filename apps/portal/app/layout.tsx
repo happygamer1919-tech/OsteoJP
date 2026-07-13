@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { htmlLang } from '@osteojp/i18n'
 import { s } from '@/lib/i18n'
@@ -17,6 +17,16 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: s.meta.title,
   description: s.meta.description,
+}
+
+// PWA installability: themeColor tints the browser/standalone UI (brand teal,
+// matching manifest theme_color); viewport-fit=cover lets the standalone window
+// paint under iOS safe areas. Next serves the manifest from app/manifest.ts.
+export const viewport: Viewport = {
+  themeColor: '#45B9A7',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({
