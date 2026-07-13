@@ -52,22 +52,25 @@ test.describe("ficha signature + consent (therapist)", () => {
     // 2. Gerar PDF (A4 RGPD form action).
     await expect(section.getByRole("button", { name: "Gerar PDF" })).toBeVisible();
 
-    // 3. Three Consinto items, each starting in an EXPLICIT unset state (never a
-    //    bare box). Scope every locator by the item's data attribute.
-    for (const key of ["rgpd", "sms", "dataHandling"]) {
+    // 3. The two final Consinto items (W5-33: treatment + RGPD), each starting in
+    //    an EXPLICIT unset state (never a bare box). Scope by the item attribute.
+    for (const key of ["treatment", "rgpd"]) {
       const item = section.locator(`[data-consent-item="${key}"]`);
       await expect(item).toBeVisible();
       await expect(item.locator('[data-consent-state="unset"]')).toBeVisible();
     }
+    // TEXT 1 (treatment) appears in the Consinto block; TEXT 2 (RGPD) too.
+    await expect(section.getByText("Declaro que fui informado/a", { exact: false })).toBeVisible();
+    await expect(section.getByText("Regulamento Geral sobre a Proteção de Dados", { exact: false })).toBeVisible();
 
-    // Toggle rgpd -> granted (check), sms -> denied (X), leave dataHandling unset.
-    await section.locator('[data-consent-action="rgpd:grant"]').click();
-    await section.locator('[data-consent-action="sms:deny"]').click();
+    // Toggle treatment -> granted (check), rgpd -> denied (X).
+    await section.locator('[data-consent-action="treatment:grant"]').click();
+    await section.locator('[data-consent-action="rgpd:deny"]').click();
     await expect(
-      section.locator('[data-consent-item="rgpd"] [data-consent-state="granted"]'),
+      section.locator('[data-consent-item="treatment"] [data-consent-state="granted"]'),
     ).toBeVisible();
     await expect(
-      section.locator('[data-consent-item="sms"] [data-consent-state="denied"]'),
+      section.locator('[data-consent-item="rgpd"] [data-consent-state="denied"]'),
     ).toBeVisible();
 
     // Required field must be filled before Guardar (schema validates it).
@@ -86,13 +89,10 @@ test.describe("ficha signature + consent (therapist)", () => {
 
     const reloaded = page.locator("#signature-consent");
     await expect(
-      reloaded.locator('[data-consent-item="rgpd"] [data-consent-state="granted"]'),
+      reloaded.locator('[data-consent-item="treatment"] [data-consent-state="granted"]'),
     ).toBeVisible();
     await expect(
-      reloaded.locator('[data-consent-item="sms"] [data-consent-state="denied"]'),
-    ).toBeVisible();
-    await expect(
-      reloaded.locator('[data-consent-item="dataHandling"] [data-consent-state="unset"]'),
+      reloaded.locator('[data-consent-item="rgpd"] [data-consent-state="denied"]'),
     ).toBeVisible();
   });
 

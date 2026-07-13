@@ -1,34 +1,35 @@
-// Ficha Médica RGPD / data-consent model (SPEC-ficha-medica.md sec 5.14 / sec 7).
+// Ficha Médica consent model (SPEC-ficha-medica.md sec 5.14 / sec 7).
 //
-// Three individually-confirmable consent items — RGPD data processing, SMS
-// reminders acknowledgment, data handling — persisted MIGRATION-FREE inside the
-// clinical record's `data` jsonb under the reserved `_consent` key (an
-// underscore-prefixed key never collides with a template field or with the
-// twelve AI ingestion keys; validateRecordData only checks required template
-// fields, so the extra key rides along untouched).
+// Two individually-confirmable consent items - TREATMENT consent and RGPD data
+// processing (W5-33 owner ruling 2026-07-12; the wording is now final; the earlier
+// speculative sms / dataHandling items and their drafted variants were removed,
+// SMS communication stays governed by the per-patient reminder opt-out flag) - 
+// persisted MIGRATION-FREE inside the clinical record's `data`
+// jsonb under the reserved `_consent` key (an underscore-prefixed key never
+// collides with a template field or with the twelve AI ingestion keys;
+// validateRecordData only checks required template fields, so the extra key
+// rides along untouched).
 //
-// Each item is ALWAYS in an EXPLICIT ternary state — `granted` (check), `denied`
+// Each item is ALWAYS in an EXPLICIT ternary state - `granted` (check), `denied`
 // (X), or `unset` (no decision recorded yet). The UI never renders a bare
 // unchecked box: `unset` shows an explicit "por decidir" chip, and the clinician
 // toggles each item to an affirmative check OR an affirmative X (SPEC sec 7.3).
 //
-// Pure module — no DB, no React, no `server-only`. Fully unit-testable.
+// Pure module - no DB, no React, no `server-only`. Fully unit-testable.
 //
-// WORDING: every consent/RGPD string is a pt-PT PLACEHOLDER flagged PENDENTE-JP,
-// carried as i18n keys (clinical.consent.*Body / *.v1 / *.v2 / *.v3). NO string
-// here is final: JP picks a variant (Q-W5-3). The i18n keys hold the active
-// placeholder; the 2-3 drafted variants per text live as alternate keys
-// (…​.v1/.v2/.v3) so JP can compare and select without a code change.
+// WORDING: the consent texts are FINAL (owner-delegated, W5-33, JP one-time
+// read-through before real-patient use), carried as i18n keys
+// (clinical.consent.<item>.label / .body), pt-PT authoritative + faithful en-GB.
 
 import type { StringKey } from "@osteojp/i18n";
 
-/** The three consent items, in display order (SPEC sec 7.3). */
-export const CONSENT_ITEM_KEYS = ["rgpd", "sms", "dataHandling"] as const;
+/** The two consent items, in display order (SPEC sec 7.3; W5-33). */
+export const CONSENT_ITEM_KEYS = ["treatment", "rgpd"] as const;
 export type ConsentItemKey = (typeof CONSENT_ITEM_KEYS)[number];
 
 /**
  * The explicit per-item state. `unset` is a first-class state (no decision yet)
- * and is rendered as an explicit "por decidir" indicator — NEVER a bare
+ * and is rendered as an explicit "por decidir" indicator - NEVER a bare
  * unchecked box (SPEC sec 7.3).
  */
 export type ConsentDecision = "granted" | "denied" | "unset";
@@ -41,7 +42,7 @@ export const CONSENT_DATA_KEY = "_consent" as const;
 
 /** A fresh, decision-free consent block (every item explicitly `unset`). */
 export function emptyConsentState(): ConsentState {
-  return { rgpd: "unset", sms: "unset", dataHandling: "unset" };
+  return { treatment: "unset", rgpd: "unset" };
 }
 
 function isDecision(v: unknown): v is ConsentDecision {
@@ -78,47 +79,25 @@ export function writeConsentState(
   return { ...data, [CONSENT_DATA_KEY]: consent };
 }
 
-/** i18n label + PENDENTE-JP body keys for one consent item. */
+/** i18n label + final body keys for one consent item. */
 export type ConsentItemStrings = {
-  /** Short item title (e.g. "Tratamento de dados (RGPD)"). */
+  /** Short item title (e.g. "Consentimento para tratamento"). */
   label: StringKey;
-  /** The ACTIVE placeholder body shown to the patient (PENDENTE-JP). */
+  /** The final body shown to the patient (owner-delegated, W5-33). */
   body: StringKey;
-  /** The 2-3 drafted variants JP chooses between (PENDENTE-JP, alternate keys). */
-  variants: StringKey[];
 };
 
 /**
- * The i18n keys for each consent item's label + active body + drafted variants.
- * The body is a PENDENTE-JP placeholder; `variants` are the alternate drafts JP
- * selects from (Q-W5-3). Keys exist in BOTH strings.pt.json and strings.en.json.
+ * The i18n keys for each consent item's label + final body. Keys exist in BOTH
+ * strings.pt.json and strings.en.json (pt authoritative, en faithful).
  */
 export const CONSENT_ITEM_STRINGS: Record<ConsentItemKey, ConsentItemStrings> = {
+  treatment: {
+    label: "clinical.consent.treatment.label",
+    body: "clinical.consent.treatment.body",
+  },
   rgpd: {
     label: "clinical.consent.rgpd.label",
     body: "clinical.consent.rgpd.body",
-    variants: [
-      "clinical.consent.rgpd.v1",
-      "clinical.consent.rgpd.v2",
-      "clinical.consent.rgpd.v3",
-    ],
-  },
-  sms: {
-    label: "clinical.consent.sms.label",
-    body: "clinical.consent.sms.body",
-    variants: [
-      "clinical.consent.sms.v1",
-      "clinical.consent.sms.v2",
-      "clinical.consent.sms.v3",
-    ],
-  },
-  dataHandling: {
-    label: "clinical.consent.dataHandling.label",
-    body: "clinical.consent.dataHandling.body",
-    variants: [
-      "clinical.consent.dataHandling.v1",
-      "clinical.consent.dataHandling.v2",
-      "clinical.consent.dataHandling.v3",
-    ],
   },
 };

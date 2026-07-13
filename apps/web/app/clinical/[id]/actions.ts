@@ -67,7 +67,7 @@ export async function signRecordAction(id: string): Promise<void> {
  * short-lived SIGNED download URL. The PDF is generated server-side via the
  * read-only lib/clinical/report engine (which itself gates draft/under-review),
  * written to tenant-prefixed Storage, and handed back as a 60s Supabase signed
- * URL — the URL carries an opaque token + expiry only, never fiscal data, and
+ * URL - the URL carries an opaque token + expiry only, never fiscal data, and
  * the bytes are never proxied through Next. Read-only on clinical_records.
  */
 export async function downloadReportUrlAction(
@@ -83,7 +83,7 @@ export async function downloadReportUrlAction(
     // load, print gate in buildClinicalReportModel). Draft / under-review throw.
     const pdf = await generateClinicalReportPdf(toClaims(ctx), id, locale);
 
-    // Tenant-prefixed object path; record id only — no PII, no fiscal data.
+    // Tenant-prefixed object path; record id only - no PII, no fiscal data.
     const path = `${ctx.tenantId}/reports/${id}/${randomUUID()}.pdf`;
     const admin = createSupabaseAdminClient();
     const up = await admin.storage
@@ -97,7 +97,7 @@ export async function downloadReportUrlAction(
     if (signed.error || !signed.data) return { url: null };
     return { url: signed.data.signedUrl };
   } catch {
-    // not_found / not_printable / render failure — never surface internals/PII.
+    // not_found / not_printable / render failure - never surface internals/PII.
     return { url: null };
   }
 }
@@ -106,9 +106,9 @@ export async function downloadReportUrlAction(
  * Generate the branded A4 RGPD print-and-sign form (SPEC sec 7.2) for a record's
  * patient and return a short-lived SIGNED download URL. The PDF is generated
  * server-side via lib/clinical/rgpd (tenant-scoped read), written to
- * tenant-prefixed Storage, and handed back as a 60s Supabase signed URL — the URL
+ * tenant-prefixed Storage, and handed back as a 60s Supabase signed URL - the URL
  * carries an opaque token + expiry only, never PII, and the bytes are never
- * proxied through Next. The wording is PENDENTE-JP placeholder (Q-W5-3).
+ * proxied through Next. The consent wording is final (W5-33).
  * Read-only on clinical_records. Available in any record status (this is a blank
  * consent form the patient signs by hand, not a finalized-record printout).
  */
@@ -123,7 +123,7 @@ export async function generateRgpdFormUrlAction(
   try {
     const pdf = await generateRgpdFormPdf(toClaims(ctx), id, locale);
 
-    // Tenant-prefixed object path; record id only — no PII.
+    // Tenant-prefixed object path; record id only - no PII.
     const path = `${ctx.tenantId}/rgpd-forms/${id}/${randomUUID()}.pdf`;
     const admin = createSupabaseAdminClient();
     const up = await admin.storage
@@ -137,7 +137,7 @@ export async function generateRgpdFormUrlAction(
     if (signed.error || !signed.data) return { url: null };
     return { url: signed.data.signedUrl };
   } catch {
-    // not_found / render failure — never surface internals or PII.
+    // not_found / render failure - never surface internals or PII.
     return { url: null };
   }
 }
@@ -147,7 +147,7 @@ export async function generateRgpdFormUrlAction(
  * (SPEC sec 7.1). Reuses the patient-documents signed-URL path so the signature
  * lands in the patient's Documentos, tenant-scoped, signed URL only, never
  * public. Gated server-side on patients:write inside the lib helper. The bytes
- * are uploaded DIRECTLY to Storage by the client — never through Next.
+ * are uploaded DIRECTLY to Storage by the client - never through Next.
  */
 export async function createSignatureUploadUrlAction(
   patientId: string,

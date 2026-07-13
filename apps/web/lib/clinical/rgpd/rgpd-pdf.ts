@@ -1,22 +1,22 @@
 // RGPD print-and-sign form renderer (SPEC-ficha-medica.md sec 7.2), pdf-lib.
 //
 // Why pdf-lib: it is ALREADY the repo's PDF engine (lib/clinical/report/pdf.ts)
-// — pure JS, no native binary and no headless browser, so it runs in Vercel
+// - pure JS, no native binary and no headless browser, so it runs in Vercel
 // `fra1` / serverless, EU-only, with NO new dependency (CLAUDE.md owner-gate on
 // new vendors is NOT triggered). Deterministic byte buffer, easy to smoke-test.
 //
 // Layout: an A4 page with the OsteoJP branded header (vector mark + clinic
 // fiscal identification), the printing-location contact block, the patient
-// identity line, the three RGPD/consent bodies (PENDENTE-JP placeholder wording
+// identity line, the RGPD data-processing consent body (final wording, W5-33
 // from the i18n consent keys), an explicit Consinto / Não consinto tick line per
 // item, and a hand-signature block for print-and-sign.
 //
-// Labels + bodies are i18n (PT/EN). No PII is logged here — this module only
+// Labels + bodies are i18n (PT/EN). No PII is logged here - this module only
 // draws into the document.
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { getStrings, type Locale, type StringKey } from "@osteojp/i18n";
-import { CONSENT_ITEM_KEYS, CONSENT_ITEM_STRINGS } from "../consent";
+import { CONSENT_ITEM_STRINGS } from "../consent";
 import type { RgpdFormModel } from "./rgpd-model";
 
 // Brand tokens (CLAUDE.md).
@@ -112,7 +112,7 @@ class Cursor {
 function drawHeader(cur: Cursor, model: RgpdFormModel, s: Record<StringKey, string>) {
   const top = cur.y;
   // Brand mark: a teal rounded square with a magenta accent bar (matches the
-  // clinical-report header — one visual language).
+  // clinical-report header - one visual language).
   cur.page.drawRectangle({ x: MARGIN, y: top - 26, width: 26, height: 26, color: TEAL });
   cur.page.drawRectangle({ x: MARGIN + 20, y: top - 26, width: 6, height: 26, color: MAGENTA });
   cur.page.drawText("OsteoJP", {
@@ -171,7 +171,7 @@ function drawConsentItem(
   cur.text(label, { size: 10, bold: true, color: MAGENTA });
   cur.text(body, { size: 9, color: INK });
   cur.gap(2);
-  // Explicit blank tick boxes for the printed form — the patient hand-ticks one.
+  // Explicit blank tick boxes for the printed form - the patient hand-ticks one.
   cur.text(
     `[  ] ${s["clinical.consent.consent"]}      [  ] ${s["clinical.consent.decline"]}`,
     { size: 9, color: MUTED },
@@ -181,8 +181,7 @@ function drawConsentItem(
 
 /**
  * Render the A4 RGPD print-and-sign form to PDF bytes. The body wording is the
- * PENDENTE-JP placeholder from the i18n consent keys — this document is a DRAFT
- * for print-and-sign until JP finalizes the wording (Q-W5-3).
+ * final RGPD wording from the i18n consent keys (W5-33) - a print-and-sign form.
  */
 export async function renderRgpdFormPdf(
   model: RgpdFormModel,
@@ -200,9 +199,8 @@ export async function renderRgpdFormPdf(
   drawHeader(cur, model, s);
   drawLocation(cur, model, s);
 
-  // Title + PENDENTE-JP draft notice.
+  // Title.
   cur.text(s["clinical.consent.pdfTitle"], { size: 15, bold: true, color: INK });
-  cur.text(s["clinical.consent.pdfDraftNotice"], { size: 8, color: MUTED });
   cur.gap(6);
 
   // Patient identity line.
@@ -214,11 +212,9 @@ export async function renderRgpdFormPdf(
   cur.gap(4);
   cur.rule();
 
-  // The three RGPD/consent bodies (PENDENTE-JP), each with an explicit tick line.
-  for (const key of CONSENT_ITEM_KEYS) {
-    const item = CONSENT_ITEM_STRINGS[key];
-    drawConsentItem(cur, s, s[item.label], s[item.body]);
-  }
+  // The RGPD data-processing consent (TEXT 2, W5-33), with an explicit tick line.
+  const rgpd = CONSENT_ITEM_STRINGS.rgpd;
+  drawConsentItem(cur, s, s[rgpd.label], s[rgpd.body]);
 
   // Hand-signature block for print-and-sign.
   cur.gap(10);

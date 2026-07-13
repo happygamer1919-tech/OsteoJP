@@ -481,3 +481,10 @@ Recorded by YELLOW from the owner-approved package "Ficha Final 2" (FF2), 2026-0
 - **Team↔location source:** a member is "assigned" to the locations they hold availability at (availability_templates, the W4-12 association). Members with no availability (admin/reception/therapists without hours) match only under Todas.
 - **Compose:** server filter ANDs `matchesSearch(q, ...)` with the assigned-location membership; Todas/empty imposes no location constraint. `SearchBox` was made param-preserving (merges the current URLSearchParams instead of clobbering) so `?q=` and `?location=` compose; no effect on /patients (no sibling params there).
 - Migration-free, no schema change, no new vendor. E2E: default Todas, filter-by-location, compose with search, clear widens.
+
+### 2026-07-13 - W5-33 execution: final consent texts (owner ruling 2026-07-12)
+- Ficha Consinto block reduced to TWO items: `treatment` (new, TEXT 1) + `rgpd` (TEXT 2), verbatim pt-PT + faithful en-GB. `sms` + `dataHandling` items and all nine `.v1/.v2/.v3` variant keys + both PENDENTE-JP notices REMOVED (SMS stays governed by the per-patient reminder opt-out flag, untouched).
+- TEXT 3 (recording + AI consent) replaces `consultation.consentLabel` on the Iniciar consulta step. The RGPD PDF now renders only the RGPD consent (TEXT 2), not iterate all items.
+- **Keys-frozen override:** the loop's "only values change" clause was overridden for the CONSENT keys ONLY by the owner ruling. The twelve AI ingestion keys stay frozen; W5-13 compat 3/3.
+- **Signed-record guard (case a):** consent DECISIONS are read from the record's stored `data._consent`; the text is live i18n but the deleted keys (sms/dataHandling/variants/notices) are no longer referenced by ANY code path, so no signed-record view breaks. A pre-existing signed record renders its captured decisions on the kept items; the new `treatment` item shows "por decidir" (read-only, no data change). Nothing preserved as deprecated (nothing resolves the deleted keys).
+- Zero em/en dashes in the consent copy (verbatim proof + a dash-check test); faithful en-GB. Migration-free, template-free.

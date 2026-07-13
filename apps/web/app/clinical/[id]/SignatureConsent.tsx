@@ -49,10 +49,10 @@ type UploadState = "idle" | "uploading" | "saved" | "error";
  *     never public, never proxied through Next (CLAUDE.md rule 8).
  *  2. GERAR PDF: an A4 RGPD print-and-sign form (clinic logo + print-branding),
  *     server-generated, handed back as a 60s signed URL.
- *  3. CONSINTO block: three individually-confirmable items (RGPD, SMS, data
- *     handling), each with an EXPLICIT check / X state (never a bare unchecked
- *     box). The state persists in the record's `data` (migration-free) — this
- *     component reports changes up to RecordForm which folds them into `data`.
+ *  3. CONSINTO block: two individually-confirmable items (treatment consent, RGPD
+ *     data processing; W5-33), each with an EXPLICIT check / X state (never a bare
+ *     unchecked box). The state persists in the record's `data` (migration-free) - 
+ *     this component reports changes up to RecordForm which folds them into `data`.
  *
  * Finalized (locked/signed) records render read-only: no drawing, no toggles,
  * the persisted consent state shown as static check / X (rule 4).
@@ -123,7 +123,7 @@ export function SignatureConsent({
     try {
       canvasRef.current?.releasePointerCapture(e.pointerId);
     } catch {
-      /* pointer already released — ignore */
+      /* pointer already released - ignore */
     }
     redraw();
   }
@@ -280,10 +280,9 @@ export function SignatureConsent({
         </div>
       </div>
 
-      {/* 3. Consinto block — three items, explicit check / X each. */}
+      {/* 3. Consinto block - two items (treatment, RGPD), explicit check / X each. */}
       <div className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold text-text-primary">{s["clinical.consentHeading"]}</h3>
-        <p className="text-xs text-text-secondary">{s["clinical.consentPendingNotice"]}</p>
         <ul className="flex flex-col gap-4" data-locale={locale}>
           {CONSENT_ITEM_KEYS.map((key) => {
             const item = CONSENT_ITEM_STRINGS[key];
@@ -313,7 +312,7 @@ export function SignatureConsent({
 
 /**
  * The explicit check / X control for one consent item. NEVER a bare unchecked
- * box: the current decision is always shown affirmatively — a green check
+ * box: the current decision is always shown affirmatively - a green check
  * (Consinto), a red X (Não consinto), or an explicit "por decidir" chip
  * (unset). In a draft, two toggle buttons set the decision; read-only records
  * show the persisted decision as a static badge.
