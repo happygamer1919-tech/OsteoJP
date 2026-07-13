@@ -5,9 +5,9 @@
 // patient to print and sign by hand. This is the PURE projection: it reuses the
 // clinical-report branding helpers (resolveLocationContact, resolveClinicFiscal)
 // so the RGPD form and the clinical report share ONE branding source. No DB, no
-// PDF lib, no i18n here — the renderer applies labels + draws.
+// PDF lib, no i18n here - the renderer applies labels + draws.
 //
-// The RGPD body wording is PENDENTE-JP (placeholder); the renderer pulls it from
+// The RGPD body wording is final (W5-33); the renderer pulls it from
 // the i18n consent keys. This module only assembles patient identity + branding.
 
 // Import the PURE leaf modules directly (not the report barrel): the barrel

@@ -18,7 +18,7 @@ import { renderRgpdFormPdf } from "./rgpd-pdf";
 
 // Tenant-scoped, READ-ONLY load + render for the RGPD print-and-sign form
 // (SPEC-ficha-medica.md sec 7.2). Mirrors lib/clinical/report/load.ts: every
-// query runs through withTenantContext so RLS enforces tenant isolation — we
+// query runs through withTenantContext so RLS enforces tenant isolation - we
 // never filter tenant_id by hand and never use a BYPASSRLS handle. No writes to
 // clinical_records (read-only). The printing location comes from the record's
 // appointment; a record without an appointment falls back to the tenant's first
@@ -26,7 +26,7 @@ import { renderRgpdFormPdf } from "./rgpd-pdf";
 
 export type RgpdFormPdf = {
   bytes: Uint8Array;
-  /** Suggested download filename — record id prefix only, never patient PII. */
+  /** Suggested download filename - record id prefix only, never patient PII. */
   filename: string;
 };
 
@@ -47,7 +47,7 @@ async function resolvePrintingLocation(
 
 /**
  * Generate the branded A4 RGPD print-and-sign form for a record's patient. The
- * wording is PENDENTE-JP placeholder (Q-W5-3). Read-only: available for a record
+ * wording is final (W5-33). Read-only: available for a record
  * in ANY status (unlike the clinical report, this is a blank consent form the
  * patient signs by hand, not a finalized-record printout). Throws
  * ClinicalError("not_found") if the record isn't visible in this tenant context.

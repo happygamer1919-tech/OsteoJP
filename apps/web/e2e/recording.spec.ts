@@ -44,7 +44,7 @@ async function reachRecorder(page: Page) {
   await patient.click();
   await patient.fill(PATIENTS.maria.name);
   await page.getByRole("option", { name: PATIENTS.maria.name }).click();
-  await page.getByRole("checkbox", { name: /consente a gravação/i }).check();
+  await page.getByRole("checkbox", { name: /Autorizo a gravação/i }).check();
   await page.getByRole("button", { name: "Iniciar gravação" }).click();
 }
 

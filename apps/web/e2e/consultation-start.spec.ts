@@ -22,7 +22,7 @@ test.describe("start-consultation (therapist)", () => {
     // Consent gate: Record is disabled until consent is checked.
     const start = page.getByRole("button", { name: "Iniciar gravação" });
     await expect(start).toBeDisabled();
-    await page.getByRole("checkbox", { name: /consente a gravação/i }).check();
+    await page.getByRole("checkbox", { name: /Autorizo a gravação/i }).check();
     await expect(start).toBeEnabled();
 
     await start.click();
@@ -46,7 +46,7 @@ test.describe("start-consultation (therapist)", () => {
     await expect(page.getByText(/Paciente criado/)).toBeVisible();
     const start = page.getByRole("button", { name: "Iniciar gravação" });
     await expect(start).toBeDisabled();
-    await page.getByRole("checkbox", { name: /consente a gravação/i }).check();
+    await page.getByRole("checkbox", { name: /Autorizo a gravação/i }).check();
     await start.click();
     // Consent captured -> the recording UI (W4-07) mounts; Chromium supports
     // webm/opus so the Record control is available.
