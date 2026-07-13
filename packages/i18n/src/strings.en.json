@@ -198,7 +198,7 @@
   "appointment.statusConfirmed": "Confirmed",
   "appointment.statusCancelled": "Cancelled",
   "appointment.confirmation": "Confirmation",
-  "appointment.confirmationPending": "Awaiting confirmation",
+  "appointment.confirmationPending": "Confirmation pending",
   "appointment.confirmationConfirmed": "Confirmation received",
   "appointment.confirmationDeclined": "Confirmation declined",
   "appointment.confirmationReceivedAt": "Received on",

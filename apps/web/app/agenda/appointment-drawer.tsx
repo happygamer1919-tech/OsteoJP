@@ -704,7 +704,9 @@ export function AppointmentDrawer({
         )}
 
         <Field label={s["appointment.room"]}>
-          <Input value={form.room} onChange={(e) => set("room", e.target.value)} />
+          {/* autoComplete off: Chrome heuristically fills this with a saved
+              email when the drawer opens (QA 2026-07-12, reproduced twice). */}
+          <Input autoComplete="off" value={form.room} onChange={(e) => set("room", e.target.value)} />
         </Field>
 
         <Field label={s["header.location"]} required>
@@ -886,7 +888,7 @@ export function AppointmentDrawer({
         )}
 
         <Field label={s["appointment.notes"]}>
-          <Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} />
+          <Textarea autoComplete="off" value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} />
         </Field>
 
         {conflicts && (

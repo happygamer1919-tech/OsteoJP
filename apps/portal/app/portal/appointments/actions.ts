@@ -1,6 +1,7 @@
 'use server'
 
 import { cancelAppointment, ApiError } from '@/lib/api/client'
+import { s } from '@/lib/i18n'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
@@ -14,13 +15,12 @@ export async function cancelAppointmentAction(
   } catch (err) {
     if (err instanceof ApiError) {
       if (err.status === 401) redirect('/auth/login')
+      // The 24h cutoff rejection gets its own message so the patient knows to
+      // phone the clinic; every other failure gets a distinct generic one.
       if (err.isCutoffError()) {
-        return {
-          error:
-            'Não é possível cancelar com menos de 24 horas de antecedência. Por favor ligue para a clínica.',
-        }
+        return { error: s.appointments.cancel_too_late }
       }
-      return { error: 'Não foi possível cancelar. Tente novamente.' }
+      return { error: s.appointments.cancel_error }
     }
     throw err
   }
