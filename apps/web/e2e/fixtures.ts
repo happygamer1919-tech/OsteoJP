@@ -65,6 +65,21 @@ export const AI_REVIEW_DRAFT = {
   },
 } as const;
 
+/**
+ * W6-01a: a seeded AI-ingested draft that carries an ai_ingestion_requests
+ * back-pointer (clinical_record_id → this record). Pre-fix, hard-deleting it
+ * raised a Postgres FK violation that surfaced as the opaque "Ocorreu um erro"
+ * (the paol / paul failure). It sits on João Pereira with ai_review_state=
+ * 'in_review' so it stays OFF the "Por rever" queue (never perturbing the
+ * Revisão Consulta spec). Distinct id from AI_REVIEW_DRAFT; the delete spec
+ * targets it by data-record-id only.
+ */
+export const AI_DELETE_DRAFT = {
+  id: "00000000-0000-0000-0000-00000000ad18",
+  patientId: PATIENTS.joao.id,
+  patientName: PATIENTS.joao.name,
+} as const;
+
 /** A patient that belongs to tenant B — used for the cross-tenant denial test. */
 export const PATIENT_OTHER_TENANT = {
   id: "00000000-0000-0000-0000-00000000b301",

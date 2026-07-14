@@ -12,11 +12,16 @@ import {
 
 const s = getStrings(DEFAULT_LOCALE);
 
-const ERROR_TEXT: Partial<Record<RecordActionError, string>> = {
+// W6-01a: every KNOWN outcome maps to a distinct pt-PT message; only truly
+// unexpected codes (forbidden / validation / not_found) fall through to the
+// generic fallback. The server-error case (`error`) now has its own message so
+// a failed delete/annul no longer surfaces as the opaque "Ocorreu um erro".
+export const ERROR_TEXT: Partial<Record<RecordActionError, string>> = {
   password: s["clinical.recordActionWrongPassword"],
   not_draft: s["clinical.recordDeleteNotDraft"],
   not_signed: s["clinical.recordAnnulNotSigned"],
   already_annulled: s["clinical.recordAlreadyAnnulled"],
+  error: s["clinical.recordActionServerError"],
 };
 
 /**
