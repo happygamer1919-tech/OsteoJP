@@ -10,6 +10,8 @@ export type AdminErrorCode =
   | "owner_tier" // non-owner tried to assign or change the owner role
   | "email_taken" // edited email collides with another user in the tenant
   | "already_invited" // invite target email already belongs to a staff member in the tenant
+  | "auth_email_taken" // invite target email is already a Supabase auth login (auth emails are unique platform-wide, not per-tenant)
+  | "provisioning_unavailable" // the privileged auth path could not create the user (admin-client env absent, role missing, auth API failure)
   | "has_appointments" // location delete refused: appointments still reference it (W3-07)
   | "has_references" // service delete refused: appointments/mappings/prices/analytics reference it (W4-15)
   | "password" // wrong delete password (W4-01 staff delete)

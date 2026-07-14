@@ -91,6 +91,8 @@ export default defineConfig({
         "**/consultation-start.spec.ts",
         // W4-07: recording spec (MediaRecorder mock) — Chromium-only.
         "**/recording.spec.ts",
+        // W7-01: staff-invite spec provisions a real auth user — Chromium-only.
+        "**/staff-invite.spec.ts",
       ],
     },
     {
@@ -113,6 +115,8 @@ export default defineConfig({
         "**/consultation-start.spec.ts",
         // W4-07: recording spec (MediaRecorder mock) — Chromium-only.
         "**/recording.spec.ts",
+        // W7-01: staff-invite spec provisions a real auth user — Chromium-only.
+        "**/staff-invite.spec.ts",
       ],
     },
   ],

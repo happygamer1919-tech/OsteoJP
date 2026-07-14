@@ -16,14 +16,19 @@ export function StaffInviteForm({
 }) {
   const [state, action, pending] = useActionState(inviteAction, initial);
 
-  const errorText =
-    state.code === "owner_tier"
-      ? s["admin.staff.ownerTierBlocked"]
-      : state.code === "already_invited"
-        ? s["admin.staff.alreadyInvitedBlocked"]
-        : state.code
-          ? s["admin.staff.error"]
-          : null;
+  // Every failure inviteStaff can raise has a specific message. The generic
+  // s["admin.staff.error"] is the last resort for a genuinely unknown throw
+  // only — it must never be what the admin sees for a known invite outcome
+  // (W7-01: it masked every provisioning failure and dropped the temp password).
+  const errorByCode: Record<string, string> = {
+    owner_tier: s["admin.staff.ownerTierBlocked"],
+    already_invited: s["admin.staff.alreadyInvitedBlocked"],
+    auth_email_taken: s["admin.staff.authEmailTakenBlocked"],
+    provisioning_unavailable: s["admin.staff.provisioningUnavailableBlocked"],
+  };
+  const errorText = state.code
+    ? (errorByCode[state.code] ?? s["admin.staff.error"])
+    : null;
 
   return (
     <GlassPanel title={s["admin.staff.inviteTitle"]} className="max-w-xl">
