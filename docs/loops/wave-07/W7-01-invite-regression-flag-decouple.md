@@ -80,14 +80,53 @@ Recon report + recorded root-cause finding, the migration-free diff, the (a)/(b)
 
 ## Root-cause finding + live-invite env set (executor fills this appendix in the PR before the fix commit)
 
-**Root-cause finding (record here, before the fix commit):**
-- Reproduction (PII-free, no secret values): _to be recorded_
-- Candidate 1 (`provisionStaffUser` throws): _verdict + evidence_
-- Candidate 2 (`generateSetPasswordLink` / `sendEmail` escape the guard): _verdict + evidence_
-- Candidate 3 (module-load / import-time client throw): _verdict + evidence_
-- Candidate 4 (`inviteDeliveryFromSend` mislabels sandbox): _verdict + evidence_
-- Identified root cause: _to be recorded_
-- Fix summary (migration-free): _to be recorded_
+**Root-cause finding (recorded 2026-07-14, before the fix commit):**
+
+**Correction to this loop file's ground truth (Field 1, para "pre/post regression framing").** The loop states the regression was introduced by W6-02 (#573), which "wired the real Resend send". That is **false**. `git show --stat 130d0a4` ("W6-02: self-service profile page; invite email is env-only (#573)") shows #573 touched **zero** invite-path files:
+
+```
+apps/web/app/perfil/{actions.test.tsx,actions.ts,layout.tsx,page.tsx,profile-client.tsx}
+apps/web/components/app-shell.tsx
+apps/web/e2e/profile.spec.ts
+docs/design/{DECISIONS.md,QUESTIONS.md}
+packages/i18n/src/strings.{en,pt}.json
+```
+
+`git log -- apps/web/lib/admin/staff.ts apps/web/lib/auth/provision.ts apps/web/app/admin/staff/actions.ts` shows the invite path was last touched by **#516**, and the Resend send was wired in **#110** (`ac714bf feat(#3): email invite/set-password`), long before Wave 06. The generic-failure defect is therefore **latent and pre-existing**, not a W6-02 regression. What changed is the deployed *environment/data* state, not the invite code. The required deliverable ((a)/(b)/(c) + flag decoupling) is unaffected by this correction.
+
+**Reproduction (PII-free, no secret values).** A scratch vitest harness drove `inviteStaff` with its collaborators mocked, replicating `actions.ts:32` (`isAdminError(e) ? e.code : "error"`). Verbatim output:
+
+```
+[repro:env-absent-admin-client]      thrown: Error | state: {"ok":false,"code":"error"}
+[repro:auth-email-already-registered] thrown: Error | state: {"ok":false,"code":"error"}
+[cand2:send-throws]        delivery: temp_password | tempPassword present: true
+[cand2:link-throws]        delivery: temp_password | tempPassword present: true
+[cand2:env-absent-resend]  delivery: temp_password | tempPassword present: true
+[cand4:live-send]          delivery: email         | tempPassword present: false
+[coupling] liveSendEnabled reads: REMINDERS_LIVE_SEND
+Tests  7 passed (7)
+```
+
+`code: "error"` renders `admin.staff.error` = "A operação falhou. Tente novamente." (`strings.pt.json:440`) - the exact string the owner observed - and no temp password, because `tempPassword` only rides the `ok: true` result.
+
+- **Candidate 1 (`provisionStaffUser` throws): ROOT CAUSE (confirmed).** `provisionStaffUser` raises **plain `Error`s** at three sites: role-not-found (`provision.ts:35`), admin-client env absent (`supabase/admin.ts:10`, thrown from the unguarded `createSupabaseAdminClient()` call at `provision.ts:38`), and auth `createUser` failure (`provision.ts:45`). `inviteStaff` re-throws anything that is not a PG unique violation (`staff.ts:140`), and `inviteAction` maps every non-`AdminError` to `code: "error"` (`actions.ts:32`). Both repro lines above confirm the collapse to the generic mask with no temp password.
+- **Candidate 2 (`generateSetPasswordLink` / `sendEmail` escape the guard): RULED OUT.** The `staff.ts:146-157` try/catch holds in all three sub-cases: a `sendEmail` runtime throw, a `generateSetPasswordLink` throw, and a Resend-env-absent sandbox return all yield `delivery: temp_password` **with** the password. `generateSetPasswordLink` additionally never throws (returns `null`, `provision.ts:126`). No defect here.
+- **Candidate 3 (module-load / import-time client throw): RULED OUT.** `grep -rn "new Resend\|createClient(\|createSupabaseAdminClient()" apps/web/lib/` shows every client is constructed **inside a function body**; `Resend` is `await import`ed lazily on the live branch only (`clients.ts:82-83`). No module-scope construction exists to bypass the in-function guards.
+- **Candidate 4 (`inviteDeliveryFromSend` mislabels sandbox): RULED OUT.** A sandbox send returns `temp_password` **with** the password; only a live non-sandbox send returns `email`. The pure function behaves as specified and never raises.
+
+**Identified root cause.** `inviteStaff` leaks raw, unclassified `Error`s from the provisioning step, and `inviteAction` masks every unclassified error as the generic `code: "error"`, discarding the temporary password. Any provisioning failure therefore presents to the owner as "A operação falhou. Tente novamente." with no recovery path. The **two provisioning failures that fire on a live deployment** are:
+
+1. **Supabase auth already holds the email.** Auth emails are unique **platform-wide**, but the invite's idempotency pre-check (`staff.ts:120-125`) only queries the tenant's `users` table. `deleteStaffMember` (`staff.ts:467`) deletes the `users` row but **never deletes the Supabase auth user** - it has no `admin.auth.admin.deleteUser` call. So any email that was invited once and later deleted leaves an **orphaned auth user**: re-inviting it passes the pre-check, then `createUser` returns "already registered", which becomes a raw `Error` -> the generic mask. This failure is **permanent and repeatable** for that email, which matches the owner's report of an invite that used to work and now always fails.
+2. **`SUPABASE_SERVICE_ROLE_KEY` / `NEXT_PUBLIC_SUPABASE_URL` absent or misconfigured** on `osteojp-platform`, making the unguarded `createSupabaseAdminClient()` throw. Login is unaffected (it uses the anon/SSR client), so the app looks healthy while every privileged invite fails.
+
+Deployed logs and Vercel env names were **not** readable from this session (the authenticated Vercel CLI account has no OsteoJP projects), so the two are not distinguished from here. **They do not need to be:** both are provisioning failures, both are fixed by the same change, and the loop already rules that a genuine provisioning failure must surface as "a distinct, specific error (not the generic mask)" (Field 1, step 3).
+
+**Fix summary (migration-free).**
+1. **Classify provisioning failures.** `provisionStaffUser` now throws typed `AdminError`s instead of plain `Error`s: `auth_email_taken` when Supabase auth already holds the email (detected on the auth error `code`/`status`, not on message text), and `provisioning_unavailable` for a missing admin-client env, a missing tenant role, or any other auth-API failure. `createSupabaseAdminClient()` is called inside a guard. All messages stay PII-free (rule 7).
+2. **Remove the generic mask for known invite outcomes.** Every failure `inviteStaff` can produce is now an `AdminError` with a specific pt-PT message; `code: "error"` remains only for a genuinely unknown throw. No auth or security control is weakened: a provisioning failure still fails the invite, it just says why.
+3. **Decouple the flag.** New `apps/web/lib/invites/email.ts` owns `invitesLiveSendEnabled()` (reads `INVITES_LIVE_SEND` only) and `sendInviteEmail()`. `apps/web/lib/reminders/clients.ts` is **not modified**, so `REMINDERS_LIVE_SEND` behaviour is byte-for-byte unchanged and the two switches share no state. Resend remains the single vendor.
+4. **Messaging.** `admin.staff.inviteEmailFailed` is reworded to "O email de convite não foi enviado." so it is accurate for both the not-attempted (live-send off) and the send-failed cases; the temp password is shown alongside it in both.
+5. **Out of scope, escalated.** Deleting the orphaned Supabase auth user in `deleteStaffMember`, or adopting an orphaned auth user on re-invite, is a **product + security decision** and is NOT self-decided here. Logged to `docs/design/QUESTIONS.md` as **Q-W7-01-1** with a recommended default. After this fix that case surfaces as a clear `auth_email_taken` message instead of the generic mask.
 
 **Live-invite env set (names only, never a value):**
 - `RESEND_API_KEY` (Vercel osteojp-platform) - _the Resend API key_

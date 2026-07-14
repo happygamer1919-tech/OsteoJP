@@ -19,7 +19,8 @@ import {
 } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { provisionStaffUser, generateSetPasswordLink, updateStaffAuthEmail } from "@/lib/auth/provision";
-import { sendEmail, type SendResult } from "@/lib/reminders/clients";
+import { invitesLiveSendEnabled, sendInviteEmail } from "@/lib/invites/email";
+import { type SendResult } from "@/lib/reminders/clients";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import { verifyDeletePassword } from "./appointment-delete-password";
@@ -70,7 +71,7 @@ export type InviteResult =
  * Decide invite delivery from the email-send outcome. The temp password is the
  * fallback whenever the invite mail did NOT actually leave the system: a failed
  * send (caught upstream as `null`) OR a sandbox/suppressed send
- * (REMINDERS_LIVE_SEND !== "true"). Only a real, live delivery counts as
+ * (INVITES_LIVE_SEND !== "true"). Only a real, live delivery counts as
  * `email` — otherwise the new staff member would have no way to sign in. Pure
  * so the rule is unit-testable without the IO.
  */
@@ -86,14 +87,19 @@ export function inviteDeliveryFromSend(
  * sanctioned admin-privilege path), which also writes the staff.invite audit row
  * inside its insert transaction.
  *
- * Delivery: a single-use, expiring set-password link is emailed via the shared
- * Resend path so the new member sets their own password. The one-time temporary
- * password is kept ONLY as a fallback for when the email is not delivered (send
- * error or sandbox suppression) — see inviteDeliveryFromSend.
+ * Delivery: when INVITES_LIVE_SEND is on, a single-use, expiring set-password
+ * link is emailed via Resend so the new member sets their own password. The
+ * one-time temporary password is the fallback for every other outcome (gate
+ * off, key absent, send error) — see inviteDeliveryFromSend.
  *
  * Idempotent: an email already belonging to a staff member in this tenant is
  * rejected with `already_invited` (no duplicate auth user created). A race with
  * a concurrent invite is caught as the (tenant_id, email) unique violation.
+ *
+ * W7-01: every failure path throws a typed AdminError, so the caller can render
+ * a specific pt-PT message. Nothing here may leak a raw Error — inviteAction
+ * masks those as the generic "A operação falhou" AND drops the temporary
+ * password, which is the exact regression this loop fixed.
  */
 export async function inviteStaff(
   actor: RequestContext,
@@ -140,20 +146,25 @@ export async function inviteStaff(
     throw e;
   }
 
-  // Email the set-password link. Any failure (link generation or send) leaves
-  // `send` null and falls through to the temp-password hand-off.
+  // Email the set-password link, but only when the invite gate is on. Any
+  // failure (link generation or send) leaves `send` null and falls through to
+  // the temp-password hand-off — the invite itself never fails because of the
+  // email. With the gate off we skip the privileged link call entirely: the
+  // temp password is the delivery, so a set-password link would be dead weight.
   let send: SendResult | null = null;
-  try {
-    const link = await generateSetPasswordLink(email);
-    if (link) {
-      // Staff invite copy uses the default (clinic) locale; there is no
-      // per-user locale preference at invite time.
-      const s = getStrings(DEFAULT_LOCALE);
-      const body = `${s["admin.invite.email.intro"]}\n\n${link}\n\n${s["admin.invite.email.outro"]}`;
-      send = await sendEmail({ to: email, subject: s["admin.invite.email.subject"], body });
+  if (invitesLiveSendEnabled()) {
+    try {
+      const link = await generateSetPasswordLink(email);
+      if (link) {
+        // Staff invite copy uses the default (clinic) locale; there is no
+        // per-user locale preference at invite time.
+        const s = getStrings(DEFAULT_LOCALE);
+        const body = `${s["admin.invite.email.intro"]}\n\n${link}\n\n${s["admin.invite.email.outro"]}`;
+        send = await sendInviteEmail({ to: email, subject: s["admin.invite.email.subject"], body });
+      }
+    } catch {
+      send = null;
     }
-  } catch {
-    send = null;
   }
 
   return inviteDeliveryFromSend(send) === "email"

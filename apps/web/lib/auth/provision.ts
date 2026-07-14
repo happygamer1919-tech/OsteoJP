@@ -4,6 +4,7 @@ import { assertCan, toClaims, type Role } from "@osteojp/auth";
 import { getDbAdmin, withTenantContext, roles, users, tenants } from "@osteojp/db";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/admin/audit";
+import { AdminError } from "@/lib/admin/errors";
 import type { RequestContext } from "./context";
 
 // Tenant onboarding (tenant + roles + audit) now lives in @osteojp/db so the
@@ -14,9 +15,33 @@ export { provisionTenant, type ProvisionTenantResult } from "@osteojp/db";
 type NewStaff = { email: string; fullName: string; roleSlug: Role; password: string };
 
 /**
+ * Supabase auth error codes meaning "this login email is already registered".
+ * Auth emails are unique PLATFORM-WIDE, not per-tenant, so the invite's
+ * tenant-scoped pre-check cannot see them (W7-01 root cause).
+ */
+const AUTH_EMAIL_TAKEN_CODES = new Set(["email_exists", "user_already_exists"]);
+
+/**
+ * Classify a Supabase auth error as "email already registered". Reads the
+ * structured `code` (auth-js sets it on every HTTP-borne error) and falls back
+ * to the 422 status only when no code is present, so the rule never depends on
+ * matching provider message TEXT. Pure + exported for unit testing.
+ */
+export function isAuthEmailTaken(error: { code?: string; status?: number } | null | undefined): boolean {
+  if (!error) return false;
+  if (error.code) return AUTH_EMAIL_TAKEN_CODES.has(error.code);
+  return error.status === 422;
+}
+
+/**
  * Owner/admin invites a staff member. Capability-gated, RLS-scoped insert.
  * The staff.invite audit row is written in the SAME transaction as the users
  * insert, so the new staff row never lands without its audit entry.
+ *
+ * Every failure mode leaves here as a typed AdminError (W7-01). A raw Error
+ * would be masked by inviteAction as the generic "A operação falhou" with no
+ * temporary password, stranding the admin with no recovery path. Messages carry
+ * no email, name, or env value (rule 7).
  */
 export async function provisionStaffUser(
   actor: RequestContext,
@@ -32,17 +57,27 @@ export async function provisionStaffUser(
     return r[0]?.id ?? null;
   });
   if (!roleId) {
-    throw new Error(`provisionStaffUser: role '${staff.roleSlug}' not found in tenant ${actor.tenantId}`);
+    throw new AdminError("provisioning_unavailable", `role '${staff.roleSlug}' not seeded in tenant`);
   }
 
-  const admin = createSupabaseAdminClient();
+  // Guarded: createSupabaseAdminClient() throws when the service-role env is
+  // absent. Unguarded, that throw was the generic-failure path (W7-01).
+  let admin: ReturnType<typeof createSupabaseAdminClient>;
+  try {
+    admin = createSupabaseAdminClient();
+  } catch {
+    throw new AdminError("provisioning_unavailable", "supabase admin client unavailable");
+  }
+
   const { data, error } = await admin.auth.admin.createUser({
     email: staff.email,
     password: staff.password,
     email_confirm: true,
   });
   if (error || !data.user) {
-    throw new Error(`provisionStaffUser: auth user creation failed: ${error?.message ?? "unknown"}`);
+    if (isAuthEmailTaken(error)) throw new AdminError("auth_email_taken");
+    // Never echo error.message: it is provider text and may carry the address.
+    throw new AdminError("provisioning_unavailable", "auth user creation failed");
   }
   const userId = data.user.id;
 
