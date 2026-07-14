@@ -3,7 +3,8 @@
 // never add a tenant_id filter here.
 
 import "server-only";
-import { and, asc, count, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, ilike, isNotNull, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { assertCan } from "@osteojp/auth";
 import {
   analyticsEvents,
@@ -42,6 +43,57 @@ export async function getPatient(
       : and(eq(patients.id, id), activePatientsOnly);
     const [row] = await tx.select().from(patients).where(where).limit(1);
     return row ?? null;
+  });
+}
+
+export type DeletedPatientRow = {
+  id: string;
+  fullName: string;
+  nif: string | null;
+  patientNumber: number | null;
+  /** ISO instant of the soft delete; null for a merge-only (duplicate) row. */
+  deletedAt: string | null;
+  /** The survivor this patient was merged into (duplicate marking); null otherwise. */
+  mergedIntoId: string | null;
+  /** The survivor's display name, when merged. */
+  survivorName: string | null;
+};
+
+/**
+ * W6-04: owner-only listing for the "Pacientes eliminados" recovery view:
+ * soft-deleted (deletedAt) OR duplicate-marked (mergedIntoId) patients, with the
+ * disambiguating NIF and (for merges) the survivor's name. Gated on the
+ * owner-only `patients:recover` capability (query-level enforcement, defense in
+ * depth with the route redirect). Tenant-scoped by RLS.
+ */
+export async function listDeletedPatients(): Promise<DeletedPatientRow[]> {
+  const ctx = await requireRequestContext();
+  assertCan(ctx.role, "patients:recover");
+  const survivor = alias(patients, "survivor");
+  return runScoped(ctx, async (tx) => {
+    const rows = await tx
+      .select({
+        id: patients.id,
+        fullName: patients.fullName,
+        nif: patients.nif,
+        patientNumber: patients.patientNumber,
+        deletedAt: patients.deletedAt,
+        mergedIntoId: patients.mergedIntoId,
+        survivorName: survivor.fullName,
+      })
+      .from(patients)
+      .leftJoin(survivor, eq(survivor.id, patients.mergedIntoId))
+      .where(or(isNotNull(patients.deletedAt), isNotNull(patients.mergedIntoId)))
+      .orderBy(asc(patients.fullName));
+    return rows.map((r) => ({
+      id: r.id,
+      fullName: r.fullName,
+      nif: r.nif ?? null,
+      patientNumber: r.patientNumber ?? null,
+      deletedAt: r.deletedAt ? r.deletedAt.toISOString() : null,
+      mergedIntoId: r.mergedIntoId ?? null,
+      survivorName: r.survivorName ?? null,
+    }));
   });
 }
 

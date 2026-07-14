@@ -14,6 +14,9 @@ export const USERS = {
   admin: "e2e-admin@osteojp.test",
   therapist: "e2e-therapist@osteojp.test",
   reception: "e2e-reception@osteojp.test",
+  // W6-04: the Proprietario (owner) user, for owner-only views (Pacientes
+  // eliminados, Estatisticas). Log in fresh with E2E_PASSWORD (no storage state).
+  owner: "e2e-owner@osteojp.test",
 } as const;
 
 /** Storage-state files written by auth.setup.ts (one per role). */
@@ -78,6 +81,14 @@ export const AI_DELETE_DRAFT = {
   id: "00000000-0000-0000-0000-00000000ad18",
   patientId: PATIENTS.joao.id,
   patientName: PATIENTS.joao.name,
+} as const;
+
+/** W6-04: a dedicated soft-deleted patient for the Pacientes eliminados restore
+ *  e2e (digit-free name, no associated data, re-soft-deleted each seed run). */
+export const RECOVER_PATIENT = {
+  id: "00000000-0000-0000-0000-00000000a3d4",
+  name: "Recuperavel Teste Seis",
+  nif: "999000444",
 } as const;
 
 /** A patient that belongs to tenant B — used for the cross-tenant denial test. */

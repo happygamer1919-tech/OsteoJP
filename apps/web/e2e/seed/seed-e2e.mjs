@@ -51,6 +51,9 @@ const USERS = [
   { slug: "admin", email: "e2e-admin@osteojp.test", fullName: "E2E Admin" },
   { slug: "therapist", email: "e2e-therapist@osteojp.test", fullName: "E2E Therapist" },
   { slug: "reception", email: "e2e-reception@osteojp.test", fullName: "E2E Reception" },
+  // W6-04: the Proprietario (owner) role, for the owner-only Pacientes eliminados
+  // view (and W6-05 Estatisticas). Not a therapist, so never in therapist/equipa lists.
+  { slug: "owner", email: "e2e-owner@osteojp.test", fullName: "E2E Owner" },
   // A SECOND therapist with ZERO therapist_services (Catarina-Vieira case, W4-01):
   // `roleSlug` is the real role; `slug` is only the unique key for idBySlug.
   {
@@ -160,6 +163,18 @@ const PATIENTS_A = [
     phone: "+351 919 999 999",
     email: null,
     deleted_at: new Date("2026-01-01T00:00:00Z").toISOString(),
+  },
+  {
+    // W6-04: a DEDICATED soft-deleted patient for the Pacientes eliminados
+    // restore e2e. Digit-free name (never trips the NIF/phone search matcher).
+    // No associated data, so it is also permanent-delete eligible. Re-soft-deleted
+    // on every seed run (idempotent upsert), so a restore in one run self-heals.
+    id: "00000000-0000-0000-0000-00000000a3d4",
+    full_name: "Recuperavel Teste Seis",
+    nif: "999000444",
+    phone: "+351 919 000 444",
+    email: null,
+    deleted_at: new Date("2026-02-02T00:00:00Z").toISOString(),
   },
 ];
 
