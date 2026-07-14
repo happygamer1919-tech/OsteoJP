@@ -60,7 +60,7 @@ Token-only (no raw hex in components), on the 4px grid, with the global focus ri
 - **Surfaces:** `bg-v2-surface`, `bg-v2-surface-hover`, `bg-surface-muted`; glass via `GlassPanel`/`glass-card`.
 - **Borders / radius:** `border-v2-border`, `rounded-v2`.
 - **Text:** `text-v2-text-primary`, `text-v2-text-secondary`, `text-text-primary`, `text-text-secondary`.
-- **Brand:** `text-brand-teal` (links/accents), magenta reserved for brand lockup.
+- **Brand equity (55 / 25 / 20, W6-06):** structure is 55 percent white + grey (surfaces, borders, `text-*-primary`/`-secondary`); cyan (accent-2) is 25 percent for PRIMARY interaction (links/CTAs use `accent-2-700 #2F7E72` for text, AA 4.83:1; never the base `#45B9A7` for text); purple (accent-1 `#8B1863` + its tints) is 20 percent for SECONDARY emphasis (selected/active states, section accents, owner-scope headers). Semantic status tints and the Agenda service tints are unchanged. Every introduced purple pairing meets AA (see `docs/design/W6-06-color-equity-palette-plan.md`). The bodychart `marker-*` palette is out of scope and never touched. Canonical hexes never drift (`packages/ui/src/tokens.test.ts`).
 - **Status tints:** `bg-v2-green-100/text-v2-green-800` (confirmed), `bg-warning-bg/text-warning-700` (pending), `bg-surface-muted/text-text-secondary` (cancelled); `text-error`/`border-success`/`bg-success-bg` for form feedback.
 - **Focus:** `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2` on every interactive element.
 

@@ -8,7 +8,9 @@ import { type KeyboardEvent, type ReactNode, useRef } from "react";
  * Section navigation within a screen (e.g. patient-profile sections). Renders
  * only the tablist; the screen renders the active section (no lazy-mount).
  * Roving tabindex + arrow/Home/End keys move and activate; active tab gets a
- * 2px accent-2-600 underline. Pass `aria-controls` per item to associate panels.
+ * 2px accent-1-700 (logo purple) underline - the W6-06 55/25/20 equity uses
+ * purple for selected states (AA 8.72:1 on white). Pass `aria-controls` per item
+ * to associate panels.
  *
  * @example
  * <Tabs aria-label={t("patient.sections")} value={tab} onValueChange={setTab}
@@ -87,7 +89,7 @@ export function Tabs({
               "transition-colors duration-fast ease-standard",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
               selected
-                ? "border-accent-2-600 text-text-primary"
+                ? "border-accent-1-700 text-text-primary"
                 : "border-transparent text-text-secondary hover:text-text-primary",
             )}
           >

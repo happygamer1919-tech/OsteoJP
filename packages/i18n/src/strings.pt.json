@@ -965,6 +965,8 @@
   "patients.emptyDocumentsTitle": "Sem documentos",
   "patients.emptyDocumentsHelp": "Os documentos do paciente aparecem aqui.",
   "patients.documentsEmpty": "Ainda não existem documentos para este paciente.",
+  "patients.documentsEmptyTitle": "Sem documentos",
+  "patients.dangerZone": "Ações destrutivas",
   "patients.documentUpload": "Carregar documento",
   "patients.documentUploading": "A carregar…",
   "patients.documentUploadHelp": "PDF, imagem ou documento Word, até 15 MB.",

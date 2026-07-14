@@ -6,7 +6,7 @@ import { Tabs } from "../src/components/Tabs";
 /**
  * Tabs (SPEC-foundation §4.8): section navigation within a screen. Renders
  * only the `role="tablist"` — the screen is responsible for rendering the
- * active panel. Active tab gets a 2 px `accent-2-600` underline.
+ * active panel. Active tab gets a 2 px `accent-1-700` (logo purple) underline (W6-06 equity).
  *
  * **Props**
  * - `items` — `TabItem[]`: `{ value, label, "aria-controls"? }`. Each

@@ -1,7 +1,8 @@
 "use client";
 import { useState, useTransition, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@osteojp/ui";
+import { Button, Card, EmptyState } from "@osteojp/ui";
+import { FileText } from "lucide-react";
 import { s } from "@/lib/i18n";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
@@ -135,51 +136,46 @@ export function PatientDocuments({
         </p>
       )}
 
+      {/* W6-06b: strengthened Documentos - Card rows with a clear name / meta
+          hierarchy (matching the Registos + Faturacao tabs) and a heritage empty
+          state, replacing the flat bordered table. */}
       {items.length === 0 ? (
-        <p className="text-sm text-text-secondary">{s["patients.documentsEmpty"]}</p>
+        <EmptyState
+          icon={FileText}
+          title={s["patients.documentsEmptyTitle"]}
+          description={s["patients.documentsEmpty"]}
+          heritage
+        />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr>
-                <th className="py-2 pr-4 text-left text-xs font-medium text-v2-text-secondary">
-                  {s["patients.documentColumnName"]}
-                </th>
-                <th className="py-2 pr-4 text-left text-xs font-medium text-v2-text-secondary">
-                  {s["patients.documentColumnSize"]}
-                </th>
-                <th className="py-2 pr-4 text-left text-xs font-medium text-v2-text-secondary">
-                  {s["patients.documentColumnDate"]}
-                </th>
-                <th className="py-2 pr-4 text-left text-xs font-medium text-v2-text-secondary">
-                  {s["patients.documentColumnActions"]}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((d) => (
-                <tr key={d.id} className="border-b border-v2-border">
-                  <td className="py-3 pr-4 align-top text-sm text-v2-text-primary">{d.fileName}</td>
-                  <td className="py-3 pr-4 align-top text-sm text-v2-text-primary">
-                    {formatSize(d.sizeBytes)}
-                  </td>
-                  <td className="py-3 pr-4 align-top text-sm text-v2-text-primary">
-                    {dateFmt.format(new Date(d.createdAt))}
-                  </td>
-                  <td className="py-3 pr-4 align-top text-sm text-v2-text-primary">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => download(d.storagePath)}
-                    >
-                      {s["patients.documentOpen"]}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex flex-col gap-3">
+          {items.map((d) => (
+            <Card key={d.id}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <FileText
+                    size={20}
+                    strokeWidth={1.75}
+                    aria-hidden="true"
+                    className="mt-0.5 shrink-0 text-text-secondary"
+                  />
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="truncate font-medium text-text-primary">{d.fileName}</span>
+                    <span className="text-sm tabular-nums text-text-secondary">
+                      {formatSize(d.sizeBytes)} · {dateFmt.format(new Date(d.createdAt))}
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => download(d.storagePath)}
+                >
+                  {s["patients.documentOpen"]}
+                </Button>
+              </div>
+            </Card>
+          ))}
         </div>
       )}
     </div>
