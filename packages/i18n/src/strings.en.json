@@ -12,7 +12,7 @@
   "statistics.dateFrom": "From",
   "statistics.dateTo": "To",
   "statistics.kpiRevenue": "Total revenue",
-  "statistics.kpiAppointments": "Appointments",
+  "statistics.kpiAppointments": "Total appointments",
   "statistics.kpiUtilization": "Booked time",
   "statistics.revenueByMonth": "Revenue by month",
   "statistics.revenueByTherapist": "Revenue by therapist",

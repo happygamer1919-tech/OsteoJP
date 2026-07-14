@@ -25,15 +25,17 @@ test.describe("Estatisticas - owner", () => {
     await expect(page.getByRole("link", { name: "Estatísticas" }).first()).toBeVisible();
 
     await page.goto("/estatisticas");
-    await expect(page.getByRole("heading", { name: "Estatísticas", exact: true })).toBeVisible();
+    const content = page.locator("main");
+    await expect(content.getByRole("heading", { name: "Estatísticas", exact: true })).toBeVisible();
 
-    // KPI cards render (revenue + volume + utilization).
-    await expect(page.getByText("Receita total")).toBeVisible();
-    await expect(page.getByText("Marcações", { exact: true })).toBeVisible();
-    await expect(page.getByText("Tempo ocupado")).toBeVisible();
+    // KPI cards render (revenue + volume + utilization). Scoped to main so the
+    // sidebar nav (which also has a "Marcações" item) can't cause a clash.
+    await expect(content.getByText("Receita total")).toBeVisible();
+    await expect(content.getByText("Total de marcações")).toBeVisible();
+    await expect(content.getByText("Tempo ocupado")).toBeVisible();
 
     // The polished chart area renders.
-    await expect(page.getByRole("heading", { name: "Receita por mês" })).toBeVisible();
+    await expect(content.getByRole("heading", { name: "Receita por mês" })).toBeVisible();
   });
 });
 
