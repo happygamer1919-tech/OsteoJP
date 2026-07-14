@@ -183,3 +183,22 @@ describe("AppointmentDrawer — patient-record links (W5-22)", () => {
     expect(html).toContain("Ficha do paciente 2");
   });
 });
+
+// W6-03: a deep-linked create ("Nova marcação" from a patient profile) preselects
+// AND locks the patient. The patient field renders read-only (the locked label,
+// aria-readonly) instead of the editable search Combobox.
+describe("AppointmentDrawer W6-03: locked patient on deep-link create", () => {
+  const LOCKED = { value: "patient-9", label: "Rui Preso (NIF 999000111)" };
+
+  it("renders the patient read-only with the locked label", () => {
+    const html = render({ mode: "create", lockedPatient: LOCKED });
+    expect(html).toContain("Rui Preso (NIF 999000111)");
+    expect(html).toContain('aria-readonly="true"');
+  });
+
+  it("a normal create (no lockedPatient) shows no read-only patient field", () => {
+    const html = render({ mode: "create" });
+    expect(html).not.toContain('aria-readonly="true"');
+    expect(html).not.toContain("Rui Preso");
+  });
+});

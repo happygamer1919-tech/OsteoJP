@@ -55,7 +55,13 @@ import { AvailabilityPanel } from "./availability-panel";
 import { ConfirmationIndicator } from "./confirmation-indicator";
 
 export type ModalState =
-  | { mode: "create"; slot?: { date: string; time: string } }
+  | {
+      mode: "create";
+      slot?: { date: string; time: string };
+      // W6-03: a deep-link from a patient profile preselects + LOCKS this patient
+      // (the user then picks only therapist + date/time). Absent on a normal create.
+      lockedPatient?: { value: string; label: string };
+    }
   | { mode: "edit"; appt: AgendaAppointment };
 
 type StringKey = keyof typeof s;
@@ -146,8 +152,10 @@ export function AppointmentDrawer({
       };
     }
     const slot = state.mode === "create" ? state.slot : undefined;
+    // W6-03: a deep-linked create preselects the locked patient.
+    const lockedPatient = state.mode === "create" ? state.lockedPatient : undefined;
     return {
-      patientId: "",
+      patientId: lockedPatient?.value ?? "",
       serviceId: "",
       practitionerId: "",
       patientTwoId: "",
@@ -209,21 +217,30 @@ export function AppointmentDrawer({
   // Patient search — async, search-as-you-type (min 2 chars, 300 ms debounce).
   // Edit mode pre-populates the query with the existing patient name so the
   // current selection is visible without a round-trip.
+  // W6-03: a deep-linked create carries a locked patient. Treat it like the
+  // edit-mode preset for DISPLAY (value + label), but also lock the field so the
+  // user cannot change the patient in this flow (they pick only therapist +
+  // date/time). `presetPatient` unifies both preset sources for the combobox.
+  const lockedPatient = state.mode === "create" ? state.lockedPatient ?? null : null;
+  const patientLocked = lockedPatient !== null;
   const editingPatient = editing
     ? { value: editing.patientId, label: editing.patientName }
     : null;
-  const [patientQuery, setPatientQuery] = useState(editingPatient?.label ?? "");
+  const presetPatient = editingPatient ?? lockedPatient;
+  const [patientQuery, setPatientQuery] = useState(presetPatient?.label ?? "");
   const [patientSearchResults, setPatientSearchResults] = useState<ComboboxOption[]>([]);
   const [patientLoading, setPatientLoading] = useState(false);
 
-  // When query is below the minimum, show the current patient (edit) or nothing
-  // (create). When at or above minimum, show the debounced search results.
+  // When query is below the minimum, show the current patient (edit / locked) or
+  // nothing (create). When at or above minimum, show the debounced search results.
   const patientOptions = useMemo<ComboboxOption[]>(() => {
-    if (patientQuery.trim().length < 2) return editingPatient ? [editingPatient] : [];
+    if (patientQuery.trim().length < 2) return presetPatient ? [presetPatient] : [];
     return patientSearchResults;
-  }, [patientQuery, patientSearchResults, editingPatient]);
+  }, [patientQuery, patientSearchResults, presetPatient]);
 
   useEffect(() => {
+    // W6-03: the locked (deep-link) patient is fixed; never search for it.
+    if (patientLocked) return;
     const q = patientQuery.trim();
     if (q.length < 2) return;
     const timer = setTimeout(() => {
@@ -605,17 +622,30 @@ export function AppointmentDrawer({
             {s["appointment.patient"]}
             <span aria-hidden="true" className="text-error"> *</span>
           </label>
-          <Combobox
-            id="appt-patient"
-            options={patientOptions}
-            value={form.patientId || null}
-            onChange={(v) => set("patientId", v)}
-            query={patientQuery}
-            onQueryChange={setPatientQuery}
-            loading={patientLoading}
-            placeholder={s["appointment.patientTypeToSearch"]}
-            emptyLabel={s["appointment.patientSearchEmpty"]}
-          />
+          {patientLocked ? (
+            // W6-03: deep-link flow. The patient is fixed. Show it read-only so
+            // the user only picks therapist + date/time. The id is already in the
+            // form state (init from lockedPatient.value), which is what submit uses.
+            <div
+              id="appt-patient"
+              aria-readonly="true"
+              className="flex items-center rounded border border-border-strong bg-surface-muted px-3 py-2 text-sm text-text-primary"
+            >
+              {lockedPatient?.label}
+            </div>
+          ) : (
+            <Combobox
+              id="appt-patient"
+              options={patientOptions}
+              value={form.patientId || null}
+              onChange={(v) => set("patientId", v)}
+              query={patientQuery}
+              onQueryChange={setPatientQuery}
+              loading={patientLoading}
+              placeholder={s["appointment.patientTypeToSearch"]}
+              emptyLabel={s["appointment.patientSearchEmpty"]}
+            />
+          )}
         </div>
 
         {/* Booking form order (W3-03, DECISIONS 2026-07-05): Terapeuta FIRST,
