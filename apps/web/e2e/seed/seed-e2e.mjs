@@ -465,6 +465,56 @@ async function ensureAiReviewDraft() {
 }
 
 // ---------------------------------------------------------------------------
+// W6-01a: an AI-ingested draft that carries an ai_ingestion_requests
+// back-pointer (clinical_record_id → this record). This is the shape that made
+// the ficha hard-delete fail on the owner's test patients (paol / paul): the
+// NO-ACTION FK from ai_ingestion_requests blocked the record DELETE, surfacing
+// as the opaque "Ocorreu um erro". ai_review_state='in_review' keeps it OFF the
+// "Por rever" queue so the Revisão Consulta spec is untouched. Upserted (reset)
+// every run so the delete spec starts from the same state.
+// ---------------------------------------------------------------------------
+
+const AI_DELETE_DRAFT_ID = "00000000-0000-0000-0000-00000000ad18";
+const AI_DELETE_DRAFT_PATIENT = "00000000-0000-0000-0000-00000000a302"; // João Pereira
+const AI_DELETE_INGESTION_ID = "00000000-0000-0000-0000-00000000a1d8";
+
+async function ensureAiDeleteDraft() {
+  const draft = await db.from("clinical_records").upsert(
+    {
+      id: AI_DELETE_DRAFT_ID,
+      tenant_id: TENANT_A,
+      patient_id: AI_DELETE_DRAFT_PATIENT,
+      source: "ai_ingested",
+      status: "draft",
+      ai_review_state: "in_review",
+      form_template_id: null,
+      version: 1,
+      supersedes_id: null,
+      signed_by: null,
+      signed_at: null,
+      data: { _aiIngestionRaw: { template: "osteopathy", consultation_reason: "AI Motivo (a eliminar)" } },
+    },
+    { onConflict: "id" },
+  );
+  must(draft.error, "ai delete draft");
+
+  // The back-pointer that triggers the pre-fix FK violation on delete.
+  const ingestion = await db.from("ai_ingestion_requests").upsert(
+    {
+      id: AI_DELETE_INGESTION_ID,
+      tenant_id: TENANT_A,
+      idempotency_key: "e2e-w6-01a-delete-draft",
+      request_id: "e2e-w6-01a-req",
+      payload_hash: "e2e-w6-01a-hash",
+      clinical_record_id: AI_DELETE_DRAFT_ID,
+      status: "received",
+    },
+    { onConflict: "id" },
+  );
+  must(ingestion.error, "ai delete draft ingestion back-pointer");
+}
+
+// ---------------------------------------------------------------------------
 // Portal patient — an auth user linked to Maria Silva's patient row.
 // Used by portal-reminders.spec.ts. Credentials: E2E_PORTAL_PATIENT_EMAIL /
 // E2E_PASSWORD. The seed resets reminder prefs to a known initial state on
@@ -509,6 +559,8 @@ async function main() {
   // AI review draft depends on templates existing (the editor resolves the Ficha
   // Médica template by key when the record's form_template_id is null).
   await ensureAiReviewDraft();
+  // W6-01a: an AI-ingested draft with an ai_ingestion_requests back-pointer.
+  await ensureAiDeleteDraft();
 
   console.log("[seed-e2e] tenant A:", TENANT_A);
   console.log("[seed-e2e] tenant B:", TENANT_B);
@@ -516,6 +568,7 @@ async function main() {
   console.log("[seed-e2e] patients A:", PATIENTS_A.length, "(1 soft-deleted)");
   console.log("[seed-e2e] portal patient:", E2E_PORTAL_PATIENT_EMAIL, "→", MARIA_SILVA_ID);
   console.log("[seed-e2e] ai review draft:", AI_REVIEW_DRAFT_ID, "→", AI_REVIEW_DRAFT_PATIENT);
+  console.log("[seed-e2e] ai delete draft:", AI_DELETE_DRAFT_ID, "(+ ingestion back-pointer)");
   console.log("[seed-e2e] templates:", templates.join(", "));
   console.log("[seed-e2e] done.");
 }

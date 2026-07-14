@@ -12,6 +12,7 @@
  */
 import { test, expect } from "@playwright/test";
 import {
+  AI_DELETE_DRAFT,
   PATIENTS,
   STORAGE,
   TEMPLATE_CURRENT_LABEL,
@@ -154,6 +155,32 @@ test.describe("authoring (therapist)", () => {
     await row.getByLabel("Palavra-passe").fill("1234");
     await row.getByRole("button", { name: "Eliminar ficha", exact: true }).click();
     await expect(page.locator(`[data-record-id="${recordId}"]`)).toHaveCount(0, { timeout: 10_000 });
+  });
+
+  // W6-01a: the actual bug. An AI-ingested draft carries an
+  // ai_ingestion_requests back-pointer, whose NO-ACTION FK blocked the record
+  // DELETE and surfaced as the opaque generic error on the owner's test patients
+  // (paol / paul). Post-fix, hardDeleteClinicalRecord detaches that pointer, so
+  // the draft deletes cleanly and NO opaque "Ocorreu um erro" is shown.
+  test("W6-01a: AI-ingested draft with an ingestion back-pointer hard-deletes cleanly (no opaque error)", async ({
+    page,
+  }) => {
+    await page.goto(`/patients/${AI_DELETE_DRAFT.patientId}?tab=registos`);
+    const row = page.locator(`[data-record-id="${AI_DELETE_DRAFT.id}"]`);
+    await expect(row).toBeVisible();
+    // It is a draft → Eliminar is offered.
+    await expect(row.getByRole("button", { name: "Eliminar", exact: true })).toBeVisible();
+
+    // Correct password (tenant default 1234) → deletes without the FK error.
+    await row.getByRole("button", { name: "Eliminar", exact: true }).click();
+    await row.getByLabel("Palavra-passe").fill("1234");
+    await row.getByRole("button", { name: "Eliminar ficha", exact: true }).click();
+
+    // The row is gone, and the generic fallback never appeared.
+    await expect(page.locator(`[data-record-id="${AI_DELETE_DRAFT.id}"]`)).toHaveCount(0, {
+      timeout: 10_000,
+    });
+    await expect(page.getByText("Ocorreu um erro. Tente novamente.")).toHaveCount(0);
   });
 
   // W5-30: a SIGNED ficha can NEVER be hard-deleted (only Anular). Anular INSERTs

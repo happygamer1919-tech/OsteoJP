@@ -2,10 +2,12 @@ import "server-only";
 import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
+  aiIngestionRequests,
   attachments,
   clinicalEpisodes,
   clinicalRecords,
   formTemplates,
+  patientFormSubmissions,
   patients,
   recordAnnulments,
   users,
@@ -583,6 +585,26 @@ export async function hardDeleteClinicalRecord(ctx: RequestContext, id: string):
     // Only draft / AI-pending (status=draft) is deletable; the trigger blocks the rest.
     if (target.status !== "draft") throw new ClinicalError("not_draft");
 
+    // W6-01a: detach the nullable back-pointers that reference this draft before
+    // deleting it. An AI-ingested draft is pointed at by ai_ingestion_requests,
+    // and a patient-submission-materialised draft by patient_form_submissions;
+    // both FKs are NO-ACTION, so leaving them set makes the record DELETE raise a
+    // Postgres foreign-key violation (23503) that surfaced to the owner as the
+    // opaque "Ocorreu um erro". Both columns are nullable pointers, so we null
+    // them here (the request / submission log rows are preserved, just unlinked)
+    // in the SAME tenant-scoped tx. The fix is app-layer DML only: no schema
+    // change, no migration, no touch to the immutability trigger.
+    const detachedIngestion = await tx
+      .update(aiIngestionRequests)
+      .set({ clinicalRecordId: null })
+      .where(eq(aiIngestionRequests.clinicalRecordId, id))
+      .returning({ id: aiIngestionRequests.id });
+    const detachedSubmission = await tx
+      .update(patientFormSubmissions)
+      .set({ clinicalRecordId: null })
+      .where(eq(patientFormSubmissions.clinicalRecordId, id))
+      .returning({ id: patientFormSubmissions.id });
+
     // Child-first: remove attachment rows referencing this record (RETURNING).
     // Storage objects are left to lifecycle cleanup, mirroring hardDeletePatient.
     await tx
@@ -603,7 +625,13 @@ export async function hardDeleteClinicalRecord(ctx: RequestContext, id: string):
       action: "clinical_record.hard_delete",
       entityType: "clinical_record",
       entityId: id,
-      metadata: { status: target.status, version: target.version },
+      metadata: {
+        status: target.status,
+        version: target.version,
+        // PII-free counts of detached back-pointers (rule 7): ids never logged.
+        detachedIngestionRequests: detachedIngestion.length,
+        detachedFormSubmissions: detachedSubmission.length,
+      },
       ip,
     });
   });
