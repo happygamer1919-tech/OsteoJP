@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { assertCan, can, ForbiddenError, type RequestContext } from "@osteojp/auth";
 import { requireRequestContext } from "@/lib/auth/context";
+import { getPatient } from "@/lib/patients/queries";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
 import {
   rangeForView,
@@ -60,7 +61,13 @@ export default async function AgendaPage({
 
   const { startUtc, endUtc } = rangeForView(view, anchor);
 
-  const [options, appointments] = await Promise.all([
+  // W6-03: "Nova marcação" on a patient profile deep-links here with the patient
+  // id. Resolve the patient (tenant-scoped, active only) so the create drawer can
+  // open with that patient preselected + locked. An unknown/deleted id resolves to
+  // null and the agenda opens normally (no lock).
+  const novaMarcacaoPacienteId = firstParam(sp.novaMarcacaoPaciente);
+
+  const [options, appointments, lockedPatientRow] = await Promise.all([
     getAgendaOptions(actor),
     listAppointments(actor, {
       startUtc,
@@ -68,7 +75,19 @@ export default async function AgendaPage({
       practitionerId,
       locationId,
     }),
+    novaMarcacaoPacienteId ? getPatient(novaMarcacaoPacienteId) : Promise.resolve(null),
   ]);
+
+  const lockedPatient = lockedPatientRow
+    ? {
+        value: lockedPatientRow.id,
+        // Carry the disambiguating NIF so same-name patients are unambiguous
+        // (Rodica disambiguates by NIF in the patient list).
+        label: lockedPatientRow.nif
+          ? `${lockedPatientRow.fullName} (NIF ${lockedPatientRow.nif})`
+          : lockedPatientRow.fullName,
+      }
+    : null;
 
   return (
     <AgendaViewClient
@@ -78,6 +97,7 @@ export default async function AgendaPage({
       lockTherapist={lockTherapist}
       options={options}
       appointments={appointments}
+      lockedPatient={lockedPatient}
       canHardDelete={can(actor.role, "settings:manage")}
     />
   );

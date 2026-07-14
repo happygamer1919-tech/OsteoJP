@@ -3,7 +3,7 @@
 import { DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { s } from "@/lib/i18n";
 import {
@@ -36,6 +36,7 @@ export function AgendaView({
   lockTherapist,
   options,
   appointments,
+  lockedPatient,
   canHardDelete,
 }: {
   view: View;
@@ -44,11 +45,28 @@ export function AgendaView({
   lockTherapist: boolean;
   options: AgendaOptions;
   appointments: AgendaAppointment[];
+  /** W6-03: when deep-linked from a patient profile, the create drawer opens
+   *  with this patient preselected + locked. Null on a normal agenda visit. */
+  lockedPatient: { value: string; label: string } | null;
   canHardDelete: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [modal, setModal] = useState<ModalState | null>(null);
+
+  // W6-03: on a deep-link from a patient profile ("Nova marcação"), open the
+  // create drawer ONCE with the patient preselected + locked, then strip the
+  // param so a refresh/back does not re-trigger the autopen. history.replaceState
+  // (not router.replace) avoids a server refetch and keeps this modal state.
+  const deepLinkOpened = useRef(false);
+  useEffect(() => {
+    if (!lockedPatient || deepLinkOpened.current) return;
+    deepLinkOpened.current = true;
+    setModal({ mode: "create", lockedPatient });
+    const url = new URL(window.location.href);
+    url.searchParams.delete("novaMarcacaoPaciente");
+    window.history.replaceState(null, "", url.pathname + url.search);
+  }, [lockedPatient]);
 
   // SPEC-v2-agenda §4: mobile collapses to the Dia view. This is a presentation
   // override — the URL `view` (and the server fetch range) are untouched; below

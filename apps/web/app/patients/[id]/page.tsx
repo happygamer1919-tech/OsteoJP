@@ -224,7 +224,10 @@ export default async function PatientProfilePage({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link href="/agenda" className={primaryLink}>
+            {/* W6-03: deep-link into Agenda with the create drawer open and THIS
+                patient preselected + locked (the user then picks only therapist +
+                date/time). Mirrors the /clinical/new?patientId= precedent. */}
+            <Link href={`/agenda?novaMarcacaoPaciente=${id}`} className={primaryLink}>
               <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
               {s["patients.newAppointment"]}
             </Link>
