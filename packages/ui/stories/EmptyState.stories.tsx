@@ -32,12 +32,15 @@ export const WithAction: Story = {
   },
 };
 
-/** `heritage` renders the decorative azulejo HeritageDivider above the badge. */
-export const Heritage: Story = {
+/**
+ * W7-03: the decorative azulejo motif band above the badge is gone platform-wide
+ * (the "unwanted line"). An empty state is icon, title, subtitle, action — the
+ * badge itself now carries the brand in accent-1 (logo purple).
+ */
+export const FirstRun: Story = {
   args: {
     icon: Users,
     title: "Ainda não há pacientes",
     description: "Adicione o primeiro paciente para começar.",
-    heritage: true,
   },
 };

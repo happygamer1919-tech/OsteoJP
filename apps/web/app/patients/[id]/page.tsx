@@ -307,6 +307,12 @@ export default async function PatientProfilePage({
 
       {tab === "registos" && (
         <div role="tabpanel" id="tabpanel-registos" aria-label={s["patients.tabRecords"]}>
+          {/* W7-03: section header - purple (accent-1-700) left rule + count,
+              matching Documentos so the two tabs read as one system. */}
+          <div className="mb-4 flex items-center gap-3 border-l-2 border-accent-1-700 pl-3">
+            <h2 className="text-lg text-text-primary">{s["patients.tabRecords"]}</h2>
+            <span className="text-sm tabular-nums text-text-secondary">{records.length}</span>
+          </div>
           {/* Fichas placement (ruling F): all clinical-record entry points live
               here. "Nova ficha" reuses the /clinical/new creation flow, pre-scoped
               to this patient. */}
@@ -326,7 +332,7 @@ export default async function PatientProfilePage({
             )}
           </div>
           {records.length === 0 ? (
-            <EmptyState icon={FileText} title={s["patients.emptyRecordsTitle"]} description={s["patients.emptyRecordsHelp"]} heritage />
+            <EmptyState icon={FileText} title={s["patients.emptyRecordsTitle"]} description={s["patients.emptyRecordsHelp"]} />
           ) : (
             <div className="flex flex-col gap-3">
               {records.map((r) => (
@@ -338,18 +344,25 @@ export default async function PatientProfilePage({
                 >
                 <Card>
                   <div className="flex flex-wrap items-center justify-between gap-3">
+                    {/* W7-03: two lines, not three. The title leads; the two
+                        dates collapse into ONE labelled, tabular meta line (the
+                        old row stacked an unlabelled updatedAt under a labelled
+                        createdAt, three lines of near-equal weight). */}
                     <Link href={`/clinical/${r.id}`} className="flex min-w-0 flex-col gap-1 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
                       <span className="font-medium text-text-primary">
                         {r.templateTitle ? r.templateTitle[DEFAULT_LOCALE] : s["patients.recordDefaultName"]}
                       </span>
                       {/* SPEC-ficha-medica.md sec 4: the record's auto-stamped
                           creation instant (Lisbon display), never hand-typed. */}
-                      <span className="text-sm text-text-secondary">
+                      <span className="text-sm tabular-nums text-text-secondary">
                         {s["clinical.recordCreatedAt"]}: {dateTimeFmt.format(new Date(r.createdAt))}
+                        {" · "}
+                        {s["clinical.recordUpdatedAt"]}: {dateFmt.format(new Date(r.updatedAt))}
                       </span>
-                      <span className="text-sm text-text-secondary">{dateFmt.format(new Date(r.updatedAt))}</span>
                     </Link>
-                    <div className="flex flex-wrap items-center justify-end gap-3">
+                    {/* Status first, then actions, with a visible gap between the
+                        two groups: state must never read as an action. */}
+                    <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-3">
                       {/* record_status axis. The ai_review_state second axis is not in
                           the records list query, so it is not shown here (rule #1). */}
                       <StatusChip tone={RECORD_TONE[r.status]} dot>

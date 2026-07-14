@@ -634,6 +634,7 @@
   "clinical.headerStripProfession": "Profession",
   "clinical.headerStripEmpty": "—",
   "clinical.recordCreatedAt": "Created at",
+  "clinical.recordUpdatedAt": "Updated at",
   "clinical.signatureConsentHeading": "Signature and consent",
   "clinical.signatureHeading": "Patient signature",
   "clinical.signatureHelp": "The patient signs on screen. The image is saved to the patient's Documents.",

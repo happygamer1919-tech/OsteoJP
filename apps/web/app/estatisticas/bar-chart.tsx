@@ -2,6 +2,12 @@
 // Q-W6-05-1). Horizontal bars keep every label + value readable and AA-safe: the
 // numeric value is always rendered as text, so the bar colour is decorative only.
 // Cyan (accent-2) fill per the brand palette.
+//
+// W7-03 - the PEAK bar takes the logo purple (accent-1-700), the rest stay cyan.
+// This is the Estatisticas purple accent in the 55/25/20 equity, and it is tied
+// to MEANING (the highest value) rather than being a decorative repaint. Colour
+// remains a redundant cue: every value is printed as text beside its bar, so
+// nothing is lost to a colourblind reader or a screen reader.
 
 export type BarDatum = { label: string; value: number };
 
@@ -37,6 +43,9 @@ export function BarChart({
       {data.map((d, i) => {
         const y = i * (rowH + gap);
         const w = Math.max(2, Math.round((d.value / max) * barMaxW));
+        // Peak bar = purple emphasis. `max` is clamped to >= 1, so an all-zero
+        // dataset highlights nothing rather than painting every bar purple.
+        const isPeak = d.value > 0 && d.value === max;
         return (
           <g key={`${d.label}-${i}`}>
             <text
@@ -55,8 +64,14 @@ export function BarChart({
               width={w}
               height={rowH}
               rx={6}
-              // Cyan / accent-2 (canonical brand teal), the KPI accent.
-              style={{ fill: "var(--color-brand-teal)" }}
+              data-peak={isPeak ? "true" : "false"}
+              // Peak = accent-1-700 (logo purple, 8.72:1 on white); every other
+              // bar keeps cyan / accent-2 (canonical brand teal).
+              style={{
+                fill: isPeak
+                  ? "var(--color-accent-1-700)"
+                  : "var(--color-brand-teal)",
+              }}
             />
             <text
               x={labelW + w + 8}

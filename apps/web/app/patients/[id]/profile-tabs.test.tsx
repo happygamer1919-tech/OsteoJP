@@ -28,4 +28,25 @@ describe("ProfileTabs W6-06b purple selected state", () => {
     expect(html).toContain("border-accent-1-700");
     expect(html).not.toContain("border-accent-2-600");
   });
+
+  // W7-03: W6-06b purpled ONLY the 2px hairline under a near-black label, which
+  // the owner reported as imperceptible. The active LABEL is purple too now.
+  it("W7-03: the active tab LABEL is purple, not just the underline", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProfileTabs, {
+        patientId: "p1",
+        current: "registos",
+        label: "Secções",
+        items: [
+          { value: "resumo", label: "Resumo" },
+          { value: "registos", label: "Registos" },
+          { value: "documentos", label: "Documentos" },
+        ],
+      }),
+    );
+    // The selected tab carries BOTH the purple underline and the purple label.
+    expect(html).toContain("border-accent-1-700 text-accent-1-700");
+    // Inactive tabs stay neutral, so purple still means "selected".
+    expect(html).toContain("border-transparent text-text-secondary");
+  });
 });

@@ -88,8 +88,13 @@ export function Tabs({
               "-mb-px border-b-2 px-1 pb-3 pt-2 text-sm font-medium",
               "transition-colors duration-fast ease-standard",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
+              // W7-03: the LABEL is purple too, not just the 2px underline.
+              // W6-06b purpled only the hairline beneath a near-black label,
+              // which the owner reported (correctly) as imperceptible.
+              // accent-1-700 on white = 8.72:1. The underline and font-weight
+              // still carry the selected state, so colour is never the only cue.
               selected
-                ? "border-accent-1-700 text-text-primary"
+                ? "border-accent-1-700 text-accent-1-700"
                 : "border-transparent text-text-secondary hover:text-text-primary",
             )}
           >

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
+import { AlertTriangle, ChevronDown } from "lucide-react";
 import { Button } from "@osteojp/ui";
 import {
   hardDeletePatient,
@@ -79,12 +80,34 @@ export function PatientActions({
   }
 
   return (
-    // W6-06b: contained danger zone. Previously a naked full-width `border-t`
-    // rule that floated mid-layout on short tabs (the "stray line" the owner saw);
-    // now a titled, bordered card so the destructive controls read as an
-    // intentional, visually-separated section (destructive-emphasis).
-    <div className="flex flex-col gap-3 rounded-lg border border-border-strong p-4">
-      <h2 className="text-sm font-semibold text-text-primary">{s["patients.dangerZone"]}</h2>
+    // W7-03: CONTAINED danger zone. W6-06b made this a bordered card, but it is
+    // mounted OUTSIDE the tabpanels, so it sat permanently expanded at the bottom
+    // of every single tab. It is now a <details> disclosure, collapsed by default
+    // and carrying the error token, so the destructive controls are present but
+    // out of the way until deliberately opened (progressive disclosure +
+    // destructive-emphasis).
+    //
+    // It is CONTAINED, not MOVED: the DOM position is unchanged. Relocating it to
+    // one tab or an overflow menu is a product decision and is logged as
+    // Q-W7-03-1 for the owner, never self-decided here.
+    //
+    // Presentation only: the password gate and every server-side guard are
+    // untouched.
+    <details className="group rounded-lg border border-error-200 bg-surface">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2">
+        <span className="flex items-center gap-2">
+          <AlertTriangle size={16} strokeWidth={2} aria-hidden="true" className="text-error" />
+          <span className="text-sm font-semibold text-error">{s["patients.dangerZone"]}</span>
+        </span>
+        <ChevronDown
+          size={16}
+          strokeWidth={2}
+          aria-hidden="true"
+          className="shrink-0 text-text-secondary transition-transform duration-fast ease-standard group-open:rotate-180"
+        />
+      </summary>
+
+      <div className="flex flex-col gap-3 border-t border-error-200 p-4">
       <div className="flex flex-wrap gap-3">
         {isDeleted ? (
           <Button
@@ -208,6 +231,7 @@ export function PatientActions({
       )}
 
       {error && <p role="alert" className="text-sm text-error">{error}</p>}
-    </div>
+      </div>
+    </details>
   );
 }
