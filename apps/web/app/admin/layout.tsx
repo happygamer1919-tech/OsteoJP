@@ -32,6 +32,12 @@ export default async function AdminLayout({
   // sub-sections (SPEC-v2-admin §1.2: Tabs are the only navigation across admin
   // areas). The title + subtitle (§1.1) sit above the tab row, consistent on
   // every tab; the HeritageFrame wraps the content area via the SidebarAppShell.
+  // W6-04: the Pacientes eliminados recovery tab is OWNER-ONLY (patients:recover);
+  // the route itself also redirects any non-owner (not just nav hiding).
+  const nav: AdminNavItem[] = can(actor.role, "patients:recover")
+    ? [...NAV, { href: "/admin/pacientes-eliminados", label: s["admin.nav.deletedPatients"] }]
+    : NAV;
+
   return (
     <AppShell>
       <main className="flex flex-col gap-6">
@@ -39,7 +45,7 @@ export default async function AdminLayout({
           <h1 className="text-3xl text-v2-text-primary">{s["admin.title"]}</h1>
           <p className="text-v2-text-secondary">{s["admin.overview.intro"]}</p>
         </div>
-        <AdminNav items={NAV} label={s["admin.title"]} />
+        <AdminNav items={nav} label={s["admin.title"]} />
         {children}
       </main>
     </AppShell>

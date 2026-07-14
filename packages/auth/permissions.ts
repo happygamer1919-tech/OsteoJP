@@ -27,6 +27,11 @@ export type Capability =
   | "patients:read"
   | "patients:write"
   | "patients:delete"
+  // Owner-only (W6-04): reach the "Pacientes eliminados" recovery view (list /
+  // restore soft-deleted + duplicate-marked patients). Tighter than
+  // patients:delete (which admins/therapists also hold); this management surface
+  // is owner-only.
+  | "patients:recover"
   | "appointments:read"
   | "appointments:write"
   | "appointments:delete"
@@ -53,6 +58,7 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   "patients:read",
   "patients:write",
   "patients:delete",
+  "patients:recover",
   "appointments:read",
   "appointments:write",
   "appointments:delete",
