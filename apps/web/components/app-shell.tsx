@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { UserAreaCluster } from "@osteojp/ui";
@@ -66,11 +67,19 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
 
   const userArea = (
     <div className="flex items-center gap-4">
-      <UserAreaCluster
-        name={name || roleLabel}
-        roleLabel={roleLabel}
-        initials={initials || roleLabel.charAt(0).toUpperCase()}
-      />
+      {/* W6-02: the user cluster links to the self-service profile (all roles). */}
+      <Link
+        href="/perfil"
+        aria-label={s["nav.profile"]}
+        title={s["nav.profile"]}
+        className="rounded-v2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+      >
+        <UserAreaCluster
+          name={name || roleLabel}
+          roleLabel={roleLabel}
+          initials={initials || roleLabel.charAt(0).toUpperCase()}
+        />
+      </Link>
       <form action={logout}>
         <button
           type="submit"
