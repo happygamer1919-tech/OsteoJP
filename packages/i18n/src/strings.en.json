@@ -965,6 +965,8 @@
   "patients.emptyDocumentsTitle": "No documents",
   "patients.emptyDocumentsHelp": "The patient's documents will appear here.",
   "patients.documentsEmpty": "There are no documents for this patient yet.",
+  "patients.documentsEmptyTitle": "No documents",
+  "patients.dangerZone": "Destructive actions",
   "patients.documentUpload": "Upload document",
   "patients.documentUploading": "Uploading…",
   "patients.documentUploadHelp": "PDF, image or Word document, up to 15 MB.",

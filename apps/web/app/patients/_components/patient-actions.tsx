@@ -79,7 +79,12 @@ export function PatientActions({
   }
 
   return (
-    <div className="flex flex-col gap-3 border-t border-border pt-4">
+    // W6-06b: contained danger zone. Previously a naked full-width `border-t`
+    // rule that floated mid-layout on short tabs (the "stray line" the owner saw);
+    // now a titled, bordered card so the destructive controls read as an
+    // intentional, visually-separated section (destructive-emphasis).
+    <div className="flex flex-col gap-3 rounded-lg border border-border-strong p-4">
+      <h2 className="text-sm font-semibold text-text-primary">{s["patients.dangerZone"]}</h2>
       <div className="flex flex-wrap gap-3">
         {isDeleted ? (
           <Button
