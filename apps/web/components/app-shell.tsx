@@ -65,6 +65,12 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     typeof data?.claims?.email === "string" ? data.claims.email : undefined;
   const { name, initials } = displayFromEmail(email);
 
+  // W7-02: the profile was already routed and already linked — but ONLY as the
+  // avatar/name chip, whose sole affordance was an aria-label. Sighted users had
+  // no way to know it was clickable, so the page was effectively unreachable and
+  // the owner never found it. The chip keeps its link; a VISIBLE "O meu perfil"
+  // entry now sits beside it, next to Terminar sessão, for every role. Same link
+  // primitive and the same styling as the sign-out control — no new shell pattern.
   const userArea = (
     <div className="flex items-center gap-4">
       {/* W6-02: the user cluster links to the self-service profile (all roles). */}
@@ -79,6 +85,12 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
           roleLabel={roleLabel}
           initials={initials || roleLabel.charAt(0).toUpperCase()}
         />
+      </Link>
+      <Link
+        href="/perfil"
+        className="inline-flex h-10 items-center rounded-v2 px-3 text-sm font-medium text-v2-text-secondary transition-colors hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+      >
+        {s["nav.myProfile"]}
       </Link>
       <form action={logout}>
         <button
