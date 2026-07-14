@@ -8,7 +8,7 @@ describe("navItemsForRole — role-aware nav gating", () => {
   // Ruling F (W2-06): the top-level "Registos Clínicos" (/clinical) section left
   // the primary nav; fichas now live in the patient profile tab. /clinical/review
   // (AI review queue) is a separate section and stays.
-  it("owner sees Marcações, Invoicing, Review and Admin — but NOT the top-level /clinical", () => {
+  it("owner sees Marcações, Invoicing, Review, Estatisticas and Admin, but NOT the top-level /clinical", () => {
     expect(hrefs("owner")).toEqual([
       "/dashboard",
       "/agenda",
@@ -16,8 +16,17 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/marcacoes",
       "/invoicing",
       "/clinical/review",
+      "/estatisticas",
       "/admin",
     ]);
+  });
+
+  // W6-05: Estatisticas is owner-only (statistics:read).
+  it("Estatisticas is limited to the owner", () => {
+    const seesStats = (["owner", "admin", "therapist", "reception"] as const).filter((r) =>
+      hrefs(r).includes("/estatisticas"),
+    );
+    expect(seesStats).toEqual(["owner"]);
   });
 
   it("admin sees Invoicing and Admin but NOT Review and NOT the top-level /clinical", () => {

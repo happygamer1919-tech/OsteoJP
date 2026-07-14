@@ -34,10 +34,12 @@ const DENIED: Record<Role, Capability[]> = {
     "roles:manage",
     // the Pacientes eliminados recovery view is owner-only (W6-04)
     "patients:recover",
+    "statistics:read",
   ],
   therapist: [
     "patients:delete",
     "patients:recover",
+    "statistics:read",
     "appointments:delete",
     "invoices:issue",
     "invoices:void",
@@ -59,6 +61,7 @@ const DENIED: Record<Role, Capability[]> = {
     "clinical_records:sign",
     "patients:delete",
     "patients:recover",
+    "statistics:read",
     "invoices:void",
     "services:write",
     "locations:write",
