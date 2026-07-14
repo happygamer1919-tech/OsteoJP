@@ -1,21 +1,23 @@
 import { type LucideIcon } from "lucide-react";
 import { type ReactNode } from "react";
 
-import { HeritageBand } from "./HeritageBand";
-
 /**
  * EmptyState — SPEC-foundation §4.10.
  *
- * Centered column (gap space-4, py space-12): a 48px surface-muted icon badge
- * (24px text-secondary icon), an h3 headline, a one-line body-sm guidance, and
- * an optional action. Tone per brand-voice: an empty screen is an invitation to
+ * Centered column (gap space-4, py space-12): a 48px accent-1-50 icon badge
+ * (24px accent-1-700 icon), an h3 headline, a one-line body-sm guidance, and an
+ * optional action. Tone per brand-voice: an empty screen is an invitation to
  * act, never an apology. Strings come from screens via i18n.
  *
- * When `heritage` is set, the azulejo HeritageBand renders above the badge
- * (SPEC §7.7): a space-12 motif band at a legible space-6 tile height, with a
- * space-6 gap down to the badge so the heavier band has room. It is decorative
- * (aria-hidden) and, like every heritage surface, stays off patient-facing
- * portal screens until JP sign-off (Q6).
+ * W7-03: the decorative azulejo motif band (HeritageBand) that used to render
+ * ABOVE the badge is GONE, platform-wide — it was the "unwanted line" the owner
+ * kept seeing. The `heritage` prop and the HeritageBand component were removed
+ * outright rather than merely left unset, so no future call site can bring the
+ * ornament back. An empty state is now exactly: icon, title, subtitle, action.
+ *
+ * The badge carries the brand instead of the ornament: accent-1-700 (logo
+ * purple) on accent-1-50 — 8.43:1, far above the 3:1 a graphical object needs.
+ * One of the defined purple roles in the 55/25/20 equity.
  *
  * @example
  * <EmptyState icon={Users} title={t("patients.empty.title")}
@@ -28,8 +30,6 @@ export interface EmptyStateProps {
   description?: ReactNode;
   /** Optional primary/secondary action button. */
   action?: ReactNode;
-  /** Render the azulejo HeritageBand above the badge (decorative, §7.7). */
-  heritage?: boolean;
   className?: string;
 }
 
@@ -41,7 +41,6 @@ export function EmptyState({
   title,
   description,
   action,
-  heritage = false,
   className,
 }: EmptyStateProps) {
   return (
@@ -51,14 +50,12 @@ export function EmptyState({
         className,
       )}
     >
-      {heritage && <HeritageBand className="mb-2" />}
-
-      <span className="flex size-12 items-center justify-center rounded-full bg-surface-muted">
+      <span className="flex size-12 items-center justify-center rounded-full bg-accent-1-50">
         <Icon
           size={24}
           strokeWidth={1.75}
           aria-hidden="true"
-          className="text-text-secondary"
+          className="text-accent-1-700"
         />
       </span>
 

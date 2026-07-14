@@ -85,7 +85,6 @@ export {
   type HeritageCornersVariant,
   type HeritageCornersTone,
 } from "./src/components/HeritageCorners";
-export { HeritageBand, type HeritageBandProps } from "./src/components/HeritageBand";
 export {
   StaffAppShell,
   PortalShell,

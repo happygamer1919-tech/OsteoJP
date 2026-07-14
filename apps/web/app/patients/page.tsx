@@ -141,12 +141,11 @@ async function PatientsResults({ query }: { query: string }) {
     ? await searchPatients(query)
     : await listPatients();
 
-  // Zero-patients: a first-run welcome with the create action and the heritage
-  // band (an allowed empty surface), standalone so the band has room.
+  // Zero-patients: a first-run welcome with the create action. W7-03 removed the
+  // decorative motif band; the empty state is icon, title, subtitle, action.
   if (rows.length === 0 && !query) {
     return (
       <EmptyState
-        heritage
         icon={Users}
         title={s["patients.emptyTitle"]}
         description={s["patients.emptyHelp"]}

@@ -9,7 +9,7 @@
  * Scenario 4.1 (test-scenarios-staff.md): the result row also shows the
  * patient NIF (below the name) and phone (in the phone column).
  */
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { createPatient, fillPatientForm, goToPatients, searchPatients } from "./helpers";
 import { PATIENTS, PATIENT_OTHER_TENANT } from "./fixtures";
 
@@ -184,9 +184,27 @@ test("edit patient phone and see the updated value on the profile", async ({ pag
 // ---------------------------------------------------------------------------
 // Soft-delete / restore / merge
 // ---------------------------------------------------------------------------
+
+/**
+ * W7-03: the destructive controls now live inside a COLLAPSED "Ações destrutivas"
+ * disclosure (progressive disclosure - they used to sit permanently open at the
+ * bottom of every tab). They are unchanged and still server-gated; they just have
+ * to be revealed first. Idempotent: opening an already-open disclosure is a no-op.
+ */
+async function openDangerZone(page: Page) {
+  const summary = page.getByText("Ações destrutivas", { exact: true });
+  await expect(summary).toBeVisible({ timeout: 8_000 });
+  const details = page.locator("details").filter({ has: summary });
+  if (!(await details.evaluate((el) => (el as HTMLDetailsElement).open))) {
+    await summary.click();
+  }
+  await expect(details).toHaveJSProperty("open", true);
+}
+
 test("soft-deleting a patient shows the Eliminado badge", async ({ page }) => {
   const id = await createPatient(page, { fullName: `Apagar ${uniq()}` });
   await page.goto(`/patients/${id}`);
+  await openDangerZone(page);
   page.once("dialog", (d) => d.accept()); // window.confirm
   // exact: true so this soft-delete "Eliminar" does not also match the
   // hard-delete "Eliminar definitivamente" button (W5-08).
@@ -197,10 +215,12 @@ test("soft-deleting a patient shows the Eliminado badge", async ({ page }) => {
 test("restoring a soft-deleted patient clears the Eliminado badge", async ({ page }) => {
   const id = await createPatient(page, { fullName: `Restaurar ${uniq()}` });
   await page.goto(`/patients/${id}`);
+  await openDangerZone(page);
   page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Eliminar", exact: true }).click();
   await expect(page.getByText("Eliminado")).toBeVisible({ timeout: 8_000 });
 
+  await openDangerZone(page);
   await page.getByRole("button", { name: "Restaurar" }).click();
   await expect(page.getByText("Eliminado")).toBeHidden({ timeout: 8_000 });
 });
@@ -215,6 +235,7 @@ test("merging two patients marks the loser as Fundido", async ({ page }) => {
   const loserId = await createPatient(page, { fullName: `Perdedor ${uniq()}` });
 
   await page.goto(`/patients/${loserId}`);
+  await openDangerZone(page);
 
   // Wait for React hydration before filling: the PatientActions component
   // renders client-side and the input appears after JS hydration completes.

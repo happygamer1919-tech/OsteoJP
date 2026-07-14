@@ -114,6 +114,14 @@ export function PatientDocuments({
 
   return (
     <div className="space-y-4">
+      {/* W7-03: section header - a purple (accent-1-700) left rule + a count, so
+          the tab announces what it holds before it lists it. Registos uses the
+          same pattern, so the two tabs read as one system. */}
+      <div className="flex items-center gap-3 border-l-2 border-accent-1-700 pl-3">
+        <h2 className="text-lg text-text-primary">{s["patients.tabDocuments"]}</h2>
+        <span className="text-sm tabular-nums text-text-secondary">{items.length}</span>
+      </div>
+
       {canUpload && (
         <div className="flex flex-wrap items-center gap-2">
           <label className="inline-flex cursor-pointer items-center rounded-v2 border border-v2-border bg-v2-surface px-3 py-1.5 text-sm font-medium text-v2-text-primary transition-colors duration-fast ease-standard hover:bg-v2-surface-hover has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-focus-ring has-[:focus-visible]:ring-offset-2">
@@ -136,28 +144,30 @@ export function PatientDocuments({
         </p>
       )}
 
-      {/* W6-06b: strengthened Documentos - Card rows with a clear name / meta
-          hierarchy (matching the Registos + Faturacao tabs) and a heritage empty
-          state, replacing the flat bordered table. */}
+      {/* W7-03: Card rows with a contained accent-1 icon badge as the row anchor
+          (the W6-06b bare grey glyph left every row reading as undifferentiated
+          grey text), a name/meta hierarchy, and a clean empty state with no
+          motif band above the icon. */}
       {items.length === 0 ? (
         <EmptyState
           icon={FileText}
           title={s["patients.documentsEmptyTitle"]}
           description={s["patients.documentsEmpty"]}
-          heritage
         />
       ) : (
         <div className="flex flex-col gap-3">
           {items.map((d) => (
             <Card key={d.id}>
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                  <FileText
-                    size={20}
-                    strokeWidth={1.75}
-                    aria-hidden="true"
-                    className="mt-0.5 shrink-0 text-text-secondary"
-                  />
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-1-50">
+                    <FileText
+                      size={18}
+                      strokeWidth={1.75}
+                      aria-hidden="true"
+                      className="text-accent-1-700"
+                    />
+                  </span>
                   <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate font-medium text-text-primary">{d.fileName}</span>
                     <span className="text-sm tabular-nums text-text-secondary">
