@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { assertCan, ForbiddenError, type RequestContext } from "@osteojp/auth";
 
 import { requireRequestContext } from "@/lib/auth/context";
+import { listServices } from "@/lib/admin/services";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
 import {
   addDays,
@@ -102,7 +103,7 @@ export default async function MarcacoesPage({
   const startUtc = lisbonMidnightUtc(from);
   const endUtc = lisbonMidnightUtc(addDays(to, 1));
 
-  const [options, appointments] = await Promise.all([
+  const [options, appointments, serviceRows] = await Promise.all([
     getAgendaOptions(actor),
     listAppointments(actor, {
       startUtc,
@@ -110,7 +111,17 @@ export default async function MarcacoesPage({
       practitionerId,
       locationId,
     }),
+    // W6-01b: the Serviço FILTER options are data-driven from the tenant's real
+    // services. Filters INCLUDE inactive services (historic marcações still
+    // reference them, e.g. NESA), so this uses the full listServices(actor) with
+    // NO isActive filter, unlike creation forms, which show active only. Read
+    // gate: services:read, held by every role that can reach this page.
+    listServices(actor),
   ]);
+
+  // Already name-sorted by listServices; map to the minimal {id, name} the
+  // filter dropdown needs.
+  const serviceFilterOptions = serviceRows.map((svc) => ({ id: svc.id, name: svc.name }));
 
   const filters: MarcacoesFilters = {
     from,
@@ -126,6 +137,7 @@ export default async function MarcacoesPage({
       filters={filters}
       lockTherapist={lockTherapist}
       options={options}
+      serviceFilterOptions={serviceFilterOptions}
       appointments={appointments}
     />
   );
