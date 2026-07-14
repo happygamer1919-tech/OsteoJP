@@ -43,9 +43,12 @@ test("a therapist opens their own profile, edits their name (round-trip), and se
   await expect(page.getByText("Nome atualizado.")).toBeVisible();
 
   // Password form: the shared strength precheck rejects a weak password client-side
-  // (no submission, no auth change).
+  // (no submission, no auth change). Assert the specific too-short message so the
+  // check is unambiguous (the page can carry more than one role="alert").
   await page.getByLabel("Nova palavra-passe", { exact: true }).fill("short");
   await page.getByLabel("Confirmar palavra-passe", { exact: true }).fill("short");
   await page.getByRole("button", { name: "Alterar palavra-passe", exact: true }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(
+    page.getByText("A palavra-passe deve ter pelo menos 8 caracteres."),
+  ).toBeVisible();
 });
