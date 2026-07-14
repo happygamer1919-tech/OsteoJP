@@ -39,9 +39,13 @@ export type MarcacoesFilters = {
   locationId: string | null;
   /** Presentation-only (client-side); not an Agenda query field. */
   status: string | null;
-  /** Presentation-only (client-side); service accent or "other". */
+  /** Presentation-only (client-side); a tenant service id (W6-01b), or null. */
   service: string | null;
 };
+
+/** A tenant service the Serviço filter offers (W6-01b: data-driven, DB-sourced).
+ *  Filters include INACTIVE services, so this list is the full listServices set. */
+export type ServiceFilterOption = { id: string; name: string };
 
 // v2 glass toolbar idiom — mirrors the agenda toolbar controls.
 
@@ -55,30 +59,18 @@ export type MarcacoesFilters = {
 /* ------------------------------------------------------------------ */
 type ServiceAccent = "green" | "lavender" | "gold" | "blue" | "burgundy";
 
-const SERVICE_ORDER: ServiceAccent[] = [
-  "green",
-  "lavender",
-  "gold",
-  "blue",
-  "burgundy",
-];
-
 // 100 fill + 200 hairline with v2-text-primary label (≥11:1 on every 100 tint),
-// so AA never depends on the accent (§2.1 / §3.4).
+// so AA never depends on the accent (§2.1 / §3.4). Presentation only: this is
+// the fixed colour-tint palette for the KNOWN colour-coded service names. The
+// Serviço FILTER options are NOT sourced from here (W6-01b): they come from the
+// tenant's real services via listServices; any service outside this palette
+// renders with the neutral tint below.
 const SERVICE_TINT: Record<ServiceAccent, string> = {
   green: "bg-v2-green-100 border-v2-green-200",
   lavender: "bg-v2-lavender-100 border-v2-lavender-200",
   gold: "bg-v2-gold-100 border-v2-gold-200",
   blue: "bg-v2-blue-100 border-v2-blue-200",
   burgundy: "bg-v2-burgundy-100 border-v2-burgundy-200",
-};
-
-const SERVICE_LABEL: Record<ServiceAccent, StringKey> = {
-  green: "agenda.serviceMassagemTerapeutica",
-  lavender: "agenda.serviceMassagemRelaxamento",
-  gold: "agenda.serviceDrenagemLinfatica",
-  blue: "agenda.serviceMassagemDesportiva",
-  burgundy: "agenda.serviceOsteopatia",
 };
 
 /** Match a service name (accent- and case-insensitive) to its colour category. */
@@ -245,11 +237,14 @@ export function MarcacoesView({
   filters,
   lockTherapist,
   options,
+  serviceFilterOptions,
   appointments,
 }: {
   filters: MarcacoesFilters;
   lockTherapist: boolean;
   options: AgendaOptions;
+  /** DB-sourced tenant services for the Serviço filter (W6-01b), inactive included. */
+  serviceFilterOptions: ServiceFilterOption[];
   appointments: AgendaAppointment[];
 }) {
   const router = useRouter();
@@ -282,14 +277,9 @@ export function MarcacoesView({
   const visible = appointments.filter((a) => {
     if (!matchesSearch(search, a.patientName)) return false;
     if (filters.status && a.status !== filters.status) return false;
-    if (filters.service) {
-      const acc = serviceAccent(a.serviceName);
-      if (filters.service === "other") {
-        if (!(a.serviceName != null && acc === null)) return false;
-      } else if (acc !== filters.service) {
-        return false;
-      }
-    }
+    // W6-01b: filter by the actual tenant service id (data-driven), not a
+    // hardcoded colour category. The tint below stays name-keyed for display.
+    if (filters.service && a.serviceId !== filters.service) return false;
     return true;
   });
 
@@ -400,12 +390,11 @@ export function MarcacoesView({
             onChange={(e) => navigate({ service: e.target.value || null })}
           >
             <option value="">{s["marcacoes.allServices"]}</option>
-            {SERVICE_ORDER.map((a) => (
-              <option key={a} value={a}>
-                {s[SERVICE_LABEL[a]]}
+            {serviceFilterOptions.map((svc) => (
+              <option key={svc.id} value={svc.id}>
+                {svc.name}
               </option>
             ))}
-            <option value="other">{s["agenda.serviceOther"]}</option>
           </Select>
         </div>
 
