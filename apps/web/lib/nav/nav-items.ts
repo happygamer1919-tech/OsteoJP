@@ -24,6 +24,10 @@ const ALL: (NavItem & { capability?: Capability })[] = [
   // Faturação: all roles have invoices:read so this shows for every authenticated user.
   { href: "/invoicing", label: s["nav.invoicing"], capability: "invoices:read" },
   { href: "/clinical/review", label: s["nav.review"], capability: "clinical_records:review" },
+  // Estatisticas (W6-05): owner-only KPI dashboard. Gated on the owner-only
+  // statistics:read capability, so the nav item shows for the owner only (and the
+  // route + KPI queries re-enforce it server-side, not nav hiding alone).
+  { href: "/estatisticas", label: s["nav.statistics"], capability: "statistics:read" },
   { href: "/admin", label: s["nav.admin"], capability: "settings:read" },
 ];
 

@@ -52,7 +52,10 @@ export type Capability =
   | "roles:manage"
   | "settings:read"
   | "settings:manage"
-  | "audit_log:read";
+  | "audit_log:read"
+  // Owner-only (W6-05): reach the Estatisticas KPI dashboard (revenue + volume
+  // aggregates). Owner-only, enforced route-level AND query-level.
+  | "statistics:read";
 
 const ALL_CAPABILITIES: readonly Capability[] = [
   "patients:read",
@@ -80,6 +83,7 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   "settings:read",
   "settings:manage",
   "audit_log:read",
+  "statistics:read",
 ];
 
 export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
