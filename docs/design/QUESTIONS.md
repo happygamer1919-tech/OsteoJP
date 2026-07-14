@@ -610,3 +610,17 @@ The signature/stamp asset (owner ADDENDUM) was extracted from ~/Downloads/Fisioz
 The owner's 3 FF2 final texts (TEXT 1 treatment / TEXT 2 RGPD / TEXT 3 recording) don't line up with the ficha Consinto block, which has 3 DIFFERENT items (`rgpd`, `sms`, `dataHandling`, each body + `.v1/.v2/.v3` variants) + PENDENTE-JP notices. CLEAN: TEXT 2 -> `rgpd` + RGPD PDF; TEXT 3 -> `consultation.consentLabel`. UNDETERMINED (needs owner decision, do not guess on legal copy): TEXT 1 (treatment) has no consent item; `sms` + `dataHandling` have no owner text; the `.v1/.v2/.v3` variant keys are obsolete now the wording is final. Resolving these is a consent-STRUCTURE change, conflicting with the loop's "keys frozen, only values change". GREEN HALTED W5-33 before any edit (Field 6: does not map cleanly, do not guess).
 - **Recommended default:** Consinto block = {treatment (new item, TEXT 1), RGPD (TEXT 2)}; DROP `sms` (lives in reminder prefs 0019) + `dataHandling` (subsumed by TEXT 2) + the variant keys; recording (TEXT 3) on the Iniciar consulta step; remove the pending/draft notices. Faithful en-GB, zero em/en dashes.
 - **Owner:** Ivan / CYAN. Full detail: ~/osteojp-mailbox/escalations/W5-33-consent-mapping-ambiguity.md + inbox/W5-33-consent-mapping-question.md. Blocks W5-33 + W5-34.
+
+## 2026-07-14 - Wave 05 Ficha Final 2 (FF2) close: QUESTIONS sweep
+
+FF2 (W5-27..W5-34) is merged (#559-#566, main c541e8b) and staff-verified. Sweep by YELLOW at close.
+
+### CLOSED this sweep (ruled + shipped)
+- [x] **Q-W5-27 CLOSED as ruled (2026-07-12).** The jsonb render-order finding was ruled: `x-order` array is the standing order authority for v4 and onward; v1/v2/v3 are never retrofitted. Shipped in W5-27 (#559). See DECISIONS.md 2026-07-12 "W5-27 execution" and the 2026-07-14 close-out entry.
+- [x] **Q-W5-33 CLOSED as ruled (2026-07-12).** Consinto = treatment (TEXT 1) + rgpd (TEXT 2); recording (TEXT 3) at Iniciar consulta; sms + dataHandling + the `.v1/.v2/.v3` variants + PENDENTE-JP notices removed; SMS governed by the per-patient reminder opt-out flag. **JP reviewed and confirmed the three consent texts 2026-07-12.** Shipped in W5-33 (#565). See DECISIONS.md 2026-07-13 "W5-33 execution".
+
+### STILL OPEN after this sweep (JP batch, non-blocking)
+- [ ] **Q-W5-10 - Declaracao localidade line default.** Per-location (from the marcacao, tenant-default fallback) shipped in W5-31 (#563). Confirm with JP whether a fixed "Lisboa" is preferred instead. Default is per-location; non-blocking.
+- [ ] **Q-W5-11 - Declaracao responsavel name (tenant setting).** The responsavel line is a tenant setting defaulted to "Dr. Joao Paulo Santos Silva" (code-default + `tenants.settings.declaracao` override, per Q-W5-31). Confirm the exact current value and spelling with JP. Non-blocking.
+
+Other FF2 items (Q-W5-9 stamp asset, Q-W5-29 Modelo picker v4 suffix, Q-W5-30 delete/annul defaults, Q-W5-31 declaracao stamp design) proceeded on recommended defaults and shipped; each notes its follow-up above and is not a blocker.
