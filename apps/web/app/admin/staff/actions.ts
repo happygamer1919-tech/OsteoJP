@@ -88,6 +88,8 @@ export async function editStaffAction(formData: FormData): Promise<void> {
     await editStaff(actor, String(formData.get("userId") ?? ""), {
       fullName: String(formData.get("fullName") ?? ""),
       email: String(formData.get("email") ?? ""),
+      phone: String(formData.get("phone") ?? ""),
+      jobTitle: String(formData.get("jobTitle") ?? ""),
     });
   } catch (e) {
     code = isAdminError(e) ? `err:${e.code}` : "err";

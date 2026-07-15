@@ -199,6 +199,15 @@ export const users = pgTable(
     roleId: uuid("role_id").references(() => roles.id),
     email: text("email").notNull(),
     fullName: text("full_name").notNull(),
+    // W8-02: a staff contact phone number. PII — never logged (rule 7); the
+    // audit trail records the fact of a change, not the number. Admin-entered
+    // in Administracao > Equipa; ships NULL for every existing row.
+    phone: text("phone"),
+    // W8-02: a professional/display title (Fisioterapeuta, Osteopata,
+    // Recepcionista, ...). ORTHOGONAL to the permission role (roleId /
+    // roles.slug / packages/auth ROLES) — a "therapist" may hold job_title
+    // "Osteopata". It NEVER gates a capability. Nullable, ships empty.
+    jobTitle: text("job_title"),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

@@ -147,6 +147,7 @@ export default async function StaffPage({
               <tr className={adminTrBorder}>
                 <th className={adminTh}>{s["admin.staff.colName"]}</th>
                 <th className={adminTh}>{s["admin.staff.colEmail"]}</th>
+                <th className={adminTh}>{s["admin.staff.colPhone"]}</th>
                 <th className={adminTh}>{s["admin.staff.colRole"]}</th>
                 <th className={adminTh}>{s["admin.staff.colPrimaryService"]}</th>
                 <th className={adminTh}>{s["admin.staff.colStatus"]}</th>
@@ -156,7 +157,7 @@ export default async function StaffPage({
             <tbody>
               {visibleStaff.length === 0 && (
                 <tr>
-                  <td colSpan={6} className={adminTd}>
+                  <td colSpan={7} className={adminTd}>
                     <span className="text-v2-text-secondary">
                       {s["admin.staff.searchEmpty"]}
                     </span>
@@ -169,7 +170,24 @@ export default async function StaffPage({
                   <tr key={u.id} className={adminTrBorder}>
                     <td className={adminTd}>{u.fullName}</td>
                     <td className={adminTd}>{u.email}</td>
-                    <td className={adminTd}>{u.roleSlug ? ROLE_LABEL[u.roleSlug] : "—"}</td>
+                    <td className={adminTd}>
+                      {u.phone ? (
+                        u.phone
+                      ) : (
+                        <span className="text-v2-text-secondary">—</span>
+                      )}
+                    </td>
+                    <td className={adminTd}>
+                      {/* Role label, with the W8-02 professional job title as a
+                          secondary line beneath it when set — a display title,
+                          independent of the permission role. */}
+                      <div className="flex flex-col gap-0.5">
+                        <span>{u.roleSlug ? ROLE_LABEL[u.roleSlug] : "—"}</span>
+                        {u.jobTitle && (
+                          <span className="text-xs text-v2-text-secondary">{u.jobTitle}</span>
+                        )}
+                      </div>
+                    </td>
                     <td className={adminTd}>
                       {u.roleSlug === "therapist" ? (
                         activeServices.length === 0 ? (
@@ -227,6 +245,8 @@ export default async function StaffPage({
                           userId={u.id}
                           fullName={u.fullName}
                           email={u.email}
+                          phone={u.phone ?? ""}
+                          jobTitle={u.jobTitle ?? ""}
                           roleSlug={u.roleSlug ?? ""}
                           isActive={u.isActive}
                           roleOptions={roleOptions}

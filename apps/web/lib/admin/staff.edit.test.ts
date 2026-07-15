@@ -24,7 +24,7 @@ vi.mock("./appointment-delete-password", () => ({ verifyDeletePassword: vi.fn() 
 import { runScoped } from "@/lib/auth/context";
 import { updateStaffAuthEmail } from "@/lib/auth/provision";
 import { writeAudit } from "./audit";
-import { editStaff, maskEmail } from "./staff";
+import { editStaff, maskEmail, normalizeStaffProfile, normalizeOptionalText } from "./staff";
 import type { RequestContext } from "@osteojp/auth";
 
 const mockRunScoped = vi.mocked(runScoped);
@@ -35,12 +35,21 @@ const admin: RequestContext = { tenantId: "tenant-A", role: "admin", userId: "ad
 const owner: RequestContext = { tenantId: "tenant-A", role: "owner", userId: "own-1" };
 const reception: RequestContext = { tenantId: "tenant-A", role: "reception", userId: "recep-1" };
 
-type Target = { isActive: boolean; roleSlug: string | null; fullName: string; email: string };
+type Target = {
+  isActive: boolean;
+  roleSlug: string | null;
+  fullName: string;
+  email: string;
+  phone: string | null;
+  jobTitle: string | null;
+};
 const THERAPIST: Target = {
   isActive: true,
   roleSlug: "therapist",
   fullName: "Old Name",
   email: "old@osteojp.pt",
+  phone: null,
+  jobTitle: null,
 };
 
 /**
@@ -99,8 +108,14 @@ describe("editStaff — email sync (auth + public.users)", () => {
 
     await editStaff(admin, "ther-1", { fullName: "Old Name", email: "New@OsteoJP.pt" });
 
-    // public.users written with the normalized (lowercased) email.
-    expect(stats.updated).toEqual({ fullName: "Old Name", email: "new@osteojp.pt" });
+    // public.users written with the normalized (lowercased) email; phone +
+    // job_title normalize to null when omitted (unchanged from the null target).
+    expect(stats.updated).toEqual({
+      fullName: "Old Name",
+      email: "new@osteojp.pt",
+      phone: null,
+      jobTitle: null,
+    });
     // auth login email synced to the same normalized address.
     expect(mockAuthEmail).toHaveBeenCalledExactlyOnceWith("ther-1", "new@osteojp.pt");
     // audit: email field recorded, values masked (never the full address).
@@ -152,7 +167,12 @@ describe("editStaff — email sync (auth + public.users)", () => {
 
     await editStaff(admin, "ther-1", { fullName: "New Name", email: "old@osteojp.pt" });
 
-    expect(stats.updated).toEqual({ fullName: "New Name", email: "old@osteojp.pt" });
+    expect(stats.updated).toEqual({
+      fullName: "New Name",
+      email: "old@osteojp.pt",
+      phone: null,
+      jobTitle: null,
+    });
     expect(mockAuthEmail).not.toHaveBeenCalled();
     // audit records only the changed field, with no email values.
     const meta = mockAudit.mock.calls[0][2].metadata as Record<string, unknown>;
@@ -210,6 +230,116 @@ describe("editStaff — email sync (auth + public.users)", () => {
       editStaff(reception, "ther-1", { fullName: "X", email: "x@osteojp.pt" }),
     ).rejects.toThrow();
     expect(mockRunScoped).not.toHaveBeenCalled();
+  });
+});
+
+describe("editStaff — W8-02 phone + job title", () => {
+  it("persists phone + job title and audits the field names, never the number", async () => {
+    const { tx, stats } = makeTx({});
+    wireRunScoped(tx, stats);
+
+    // Synthetic phone only — never a real number in tests (PII rule 7).
+    await editStaff(admin, "ther-1", {
+      fullName: "Old Name",
+      email: "old@osteojp.pt",
+      phone: "  +351 900 000 000 ",
+      jobTitle: "  Osteopata ",
+    });
+
+    // Both fields persist, trimmed; name/email carried unchanged in the same write.
+    expect(stats.updated).toEqual({
+      fullName: "Old Name",
+      email: "old@osteojp.pt",
+      phone: "+351 900 000 000",
+      jobTitle: "Osteopata",
+    });
+
+    // Audit records WHICH fields changed (phone + job_title) but NEVER the phone
+    // value itself — the number must not leak into audit_log (rule 7).
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    const meta = mockAudit.mock.calls[0][2].metadata as Record<string, unknown>;
+    expect(meta.fields).toEqual(expect.arrayContaining(["phone", "job_title"]));
+    expect(JSON.stringify(meta)).not.toContain("900 000 000");
+    expect(JSON.stringify(meta)).not.toContain("+351");
+    // A pure phone/title edit never touches the auth login email.
+    expect(mockAuthEmail).not.toHaveBeenCalled();
+  });
+
+  it("job_title is decoupled from the permission role — the write NEVER sets role_id", async () => {
+    const { tx, stats } = makeTx({});
+    wireRunScoped(tx, stats);
+
+    await editStaff(admin, "ther-1", {
+      fullName: "Old Name",
+      email: "old@osteojp.pt",
+      jobTitle: "Fisioterapeuta",
+    });
+
+    // The persisted write carries only profile columns; role_id/roleId is absent,
+    // so a job-title change can never alter the role or its capabilities.
+    expect(stats.updated).toBeDefined();
+    expect(stats.updated).not.toHaveProperty("roleId");
+    expect(stats.updated).not.toHaveProperty("role_id");
+    expect(stats.updated).toMatchObject({ jobTitle: "Fisioterapeuta" });
+    // The audit is a profile_update, not a role_change.
+    expect(mockAudit.mock.calls[0][2].action).toBe("staff.profile_update");
+  });
+
+  it("clearing phone/job title writes NULL (blank normalizes to null)", async () => {
+    // Target already HAS a phone + title; the edit blanks them.
+    const withValues: Target = { ...THERAPIST, phone: "+351900000000", jobTitle: "Osteopata" };
+    const { tx, stats } = makeTx({ target: withValues });
+    wireRunScoped(tx, stats);
+
+    await editStaff(admin, "ther-1", {
+      fullName: "Old Name",
+      email: "old@osteojp.pt",
+      phone: "   ",
+      jobTitle: "",
+    });
+
+    expect(stats.updated).toMatchObject({ phone: null, jobTitle: null });
+    const meta = mockAudit.mock.calls[0][2].metadata as Record<string, unknown>;
+    expect(meta.fields).toEqual(expect.arrayContaining(["phone", "job_title"]));
+  });
+
+  it("no-op when phone/job title are unchanged (both already null)", async () => {
+    const { tx, stats } = makeTx({});
+    wireRunScoped(tx, stats);
+
+    await editStaff(admin, "ther-1", {
+      fullName: "Old Name",
+      email: "old@osteojp.pt",
+      phone: "",
+      jobTitle: "",
+    });
+
+    expect(stats.updated).toBeUndefined();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("normalizeStaffProfile / normalizeOptionalText — W8-02", () => {
+  it("trims phone + job title and maps blank to null", () => {
+    expect(normalizeStaffProfile({ fullName: " Ana ", email: " A@B.pt ", phone: " 912 ", jobTitle: " Osteopata " }))
+      .toEqual({ fullName: "Ana", email: "a@b.pt", phone: "912", jobTitle: "Osteopata" });
+    expect(normalizeStaffProfile({ fullName: "Ana", email: "a@b.pt", phone: "  ", jobTitle: "" }))
+      .toEqual({ fullName: "Ana", email: "a@b.pt", phone: null, jobTitle: null });
+    // Omitted entirely → null (optional fields).
+    expect(normalizeStaffProfile({ fullName: "Ana", email: "a@b.pt" }))
+      .toEqual({ fullName: "Ana", email: "a@b.pt", phone: null, jobTitle: null });
+  });
+
+  it("normalizeOptionalText: blank/whitespace/undefined -> null, else trimmed", () => {
+    expect(normalizeOptionalText(undefined)).toBeNull();
+    expect(normalizeOptionalText(null)).toBeNull();
+    expect(normalizeOptionalText("   ")).toBeNull();
+    expect(normalizeOptionalText("  Osteopata ")).toBe("Osteopata");
+  });
+
+  it("still rejects a blank name or malformed email (phone/title are optional)", () => {
+    expect(() => normalizeStaffProfile({ fullName: "", email: "a@b.pt", phone: "912" })).toThrow();
+    expect(() => normalizeStaffProfile({ fullName: "Ana", email: "no-at", jobTitle: "X" })).toThrow();
   });
 });
 

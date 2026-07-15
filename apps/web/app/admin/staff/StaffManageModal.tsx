@@ -30,6 +30,8 @@ export function StaffManageModal({
   userId,
   fullName,
   email,
+  phone,
+  jobTitle,
   roleSlug,
   isActive,
   roleOptions,
@@ -38,6 +40,10 @@ export function StaffManageModal({
   userId: string;
   fullName: string;
   email: string;
+  /** W8-02: optional staff contact phone; empty string when unset. */
+  phone: string;
+  /** W8-02: optional professional job title; empty string when unset. */
+  jobTitle: string;
   roleSlug: string;
   isActive: boolean;
   roleOptions: { slug: string; label: string }[];
@@ -119,6 +125,30 @@ export function StaffManageModal({
                   defaultValue={email}
                   required
                   aria-label={s["admin.staff.email"]}
+                  className={adminInputInline}
+                />
+              </label>
+              {/* W8-02: optional professional title (Fisioterapeuta, Osteopata,
+                  ...) — a DISPLAY field, decoupled from the permission role. */}
+              <label className="flex flex-col gap-1">
+                <span className={adminLabel}>{s["admin.staff.jobTitleLabel"]}</span>
+                <input
+                  name="jobTitle"
+                  defaultValue={jobTitle}
+                  aria-label={s["admin.staff.jobTitleLabel"]}
+                  placeholder={s["admin.staff.jobTitlePlaceholder"]}
+                  className={adminInputInline}
+                />
+              </label>
+              {/* W8-02: optional staff contact phone (PII — never logged). */}
+              <label className="flex flex-col gap-1">
+                <span className={adminLabel}>{s["admin.staff.phoneLabel"]}</span>
+                <input
+                  name="phone"
+                  type="tel"
+                  defaultValue={phone}
+                  aria-label={s["admin.staff.phoneLabel"]}
+                  placeholder={s["admin.staff.phonePlaceholder"]}
                   className={adminInputInline}
                 />
               </label>
