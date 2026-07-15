@@ -542,3 +542,31 @@ osteojp-availability-seed
 
 - [x] **E.164 normalization** — `normalizePhonePT` added (`apps/web/lib/reminders/phone.ts`, pure + exported; mirrored at `apps/api/lib/notify/phone.ts` per the clients.ts mirror pattern). Accepts `9xxxxxxxx` / `2xxxxxxxx` / `+351…` / `00351…` / `351…` with space/dash/dot/paren noise → canonical `+351xxxxxxxxx`; anything else → `null`. Wired at TWO layers: `dispatch.ts` skips the SMS channel on `null` with a structured warning (`tenantId`/`appointmentId`/`patientId` — ids only, never the raw number, PII rule #7; email still sends), and both `sendSms` wrappers guard again so nothing reaches `messages.create` un-normalized (invalid → `{ sandbox: true, id: "skipped:invalid_phone" }`, Twilio never constructed). The #485 characterization tests are converted to real expectations; table-driven format coverage in `phone.test.ts` (32 cases). Prefix-level assignment validity (91/92/93/96 vs unassigned 9x) is deliberately delegated to Twilio. No schema change — stored values stay as-typed; normalization happens at the send boundary (and must ALSO happen at the future Fisiozero migration boundary — noted in `docs/migration-notes.md` 2026-07-07).
 - [x] **Runbook env var** — `docs/cutover-runbook.md` §1.5 + env table now say `TWILIO_SMS_FROM=OsteoJP`, with a note that `TWILIO_SENDER_ID` is ignored by code (pinned by test in #485) and should be removed from Vercel if set.
+
+## 2026-07-15 — W8-01a services catalog: gaps + cross-location merges (one owner/JP batch)
+
+Recorded from the owner's canonical catalog (W8-01a loop). NOT seeded with guessed values;
+the seed transcribes only what the owner provided. Answer as one batch before/with the
+CATALOG OWNER CONFIRMATION.
+
+- [ ] **CB missing services (present at LV, absent from CB's price table):** 1.ª consulta /
+  Avaliação; Drenagem Linfática Manual (Método Wodere); Tratamento Terapêutico; and any
+  Osteopatia PACKS at CB. Are these truly not offered at Castelo Branco, or missing from the
+  photographed table? Recommended default: leave unseeded at CB (offered-only-where-priced —
+  no price row = not offered there); add later if the owner supplies CB prices.
+- [ ] **LV missing services (present at CB, absent from LV):** Medicina Chinesa/Acupuntura;
+  Massagem 4 Mãos; Sessão Família/Amigos. Same question + default (leave unseeded at LV).
+- [ ] **Cross-location canonicalization (merge or keep separate?):** the seed CONSERVATIVELY
+  keeps distinct names as separate service rows. Confirm whether these are the SAME service
+  (one row, offered at both locations) or genuinely distinct:
+    (a) CB "Osteopatia/Posturologia" (60.00) vs LV "Osteopatia" (70.00)
+    (b) CB "NESA" (50.00) vs LV "Tratamento NESA" (50.00)
+    (c) CB "Pressoterapia" (30.00) vs LV "Pressoterapia / Drenagem Linfática Mecânica" (35.00)
+  Recommended default: keep SEPARATE (different names + different prices; merging is a
+  one-line change once confirmed). Only "Fisioterapia" is listed identically at both, so it
+  is already ONE row offered at both (LV 55.00 / CB 45.00).
+- [ ] **Diacritics / exact service strings:** the seed applies proper pt-PT diacritics
+  (Avaliação, Fisioenergética, Sessão, Máquinas, Família, sessões) to the owner's ASCII
+  transcription. Confirm the display strings at the CATALOG OWNER CONFIRMATION.
+- Owner: Ivan + JP. Blocked work: the W8-01a CLOUD seed (owner-confirmation-gated + waits on
+  the manual prod-apply path); build + local dry-run are complete and unblocked.

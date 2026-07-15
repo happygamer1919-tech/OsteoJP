@@ -266,6 +266,58 @@ export async function resolveServicePriceCents(
 }
 
 /**
+ * W8-01a — "offered only where priced" semantic. A service is OFFERED at a
+ * location when an ACTIVE service_location_prices row exists for that
+ * (service, location) pair. Deliberately does NOT consult services.price_cents:
+ * the base price is a fallback AMOUNT, never an implicit "offered everywhere"
+ * signal. Derived + non-destructive — no schema change, no change to existing
+ * pricing behaviour (a destructive price_cents change would be a Field-6 owner
+ * HALT, not done here).
+ */
+export async function isServiceOfferedAtLocation(
+  actor: RequestContext,
+  serviceId: string,
+  locationId: string,
+): Promise<boolean> {
+  assertCan(actor.role, "services:read");
+  return runScoped(actor, async (tx) => {
+    const rows = await tx
+      .select({ id: serviceLocationPrices.id })
+      .from(serviceLocationPrices)
+      .where(
+        and(
+          eq(serviceLocationPrices.serviceId, serviceId),
+          eq(serviceLocationPrices.locationId, locationId),
+          eq(serviceLocationPrices.isActive, true),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  });
+}
+
+/**
+ * W8-01a — every (serviceId, locationId) pair a service is offered at (an active
+ * price row exists). The offered-only-where-priced set the admin UI (W8-01b) and
+ * booking read: a service surfaces at a location iff it has an active price
+ * there. RLS-scoped.
+ */
+export async function listServiceOfferings(
+  actor: RequestContext,
+): Promise<{ serviceId: string; locationId: string }[]> {
+  assertCan(actor.role, "services:read");
+  return runScoped(actor, (tx) =>
+    tx
+      .select({
+        serviceId: serviceLocationPrices.serviceId,
+        locationId: serviceLocationPrices.locationId,
+      })
+      .from(serviceLocationPrices)
+      .where(eq(serviceLocationPrices.isActive, true)),
+  );
+}
+
+/**
  * Set per-location prices for one service in a single tenant-scoped tx. Each
  * entry either upserts an override (priceCents) or clears it (null) so the
  * location falls back to the base price. One audit row records the change.
