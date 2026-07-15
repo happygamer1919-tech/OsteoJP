@@ -1072,6 +1072,7 @@ owner merges. Post-merge the 0036 live-apply to production (drizzle-kit +
 DATABASE_URL_DIRECT) is verified with a pasted query before DONE. GREEN never
 self-merges a migration loop and never writes to the production DB pre-merge.
 
+ osteojp-w8-01a-services-catalog-packs
 ## 2026-07-15 — W8-01a pack model (0037) + catalog seed: decisions (branch osteojp-w8-01a-services-catalog-packs)
 
 Wave 08 Dados e KPI, second loop (after W8-02's 0036 merged + applied live). Net-new pack
@@ -1109,3 +1110,25 @@ model + the offered-only-where-priced semantic + the owner's real LV+CB catalog 
   any cloud write. The 0037 prod apply + cloud seed follow the SAME manual drizzle-kit path
   (DATABASE_URL_DIRECT from packages/db/.env, session 5432) as 0036 — NO workflow, NO Actions
   secret (owner ruling 2026-07-15) — after owner merge + catalog confirmation.
+
+## 2026-07-15 — W8-02 0036 applied to production (manual drizzle-kit, sanctioned path) — W8-02 DONE
+
+Owner HALT ruling (2026-07-15): the `PROD_DATABASE_URL_DIRECT` Actions secret is REFUSED;
+workflow-based prod apply (`prod-migrate.yml`) is NOT sanctioned. Migration apply is MANUAL
+via drizzle-kit using `DATABASE_URL_DIRECT` from `packages/db/.env` (Supabase session pooler
+5432), exactly as done for 0033-0035. Recorded so the executor never routes a prod migration
+through the workflow or an Actions secret again this wave.
+
+Provenance accounting (owner-requested): `prod-migrate.yml` was introduced in `a56a2e7`
+(PR #165, 2026-06-11) — predates Wave 08; no Wave 08 branch touched it; W8-02 (#585) touched
+zero workflow files. Left as-is for the owner to rule on separately. #585 mergedBy =
+happygamer1919-tech (owner); GREEN issued no merge command (no self-merge).
+
+Apply + live verification (2026-07-15T19:33:13Z): from main @c167874 (has 0036, NOT 0037 —
+one migration in flight), `cd packages/db` + `drizzle-kit migrate` with DATABASE_URL_DIRECT
+sourced from `packages/db/.env` (credential never printed). drizzle journal on prod =
+37 applied migrations. `information_schema` on prod: `users.phone` + `users.job_title` both
+`text`, nullable, no default; empty-by-design = 19 users, 0 non-null phone, 0 non-null
+job_title (no backfill). **W8-02 flipped DONE.** 0037 (W8-01a) stays local-only until now;
+its prod apply follows the SAME manual path after owner merge + catalog confirmation.
+ main
