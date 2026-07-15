@@ -19,7 +19,7 @@ describe("normalizeStaffProfile", () => {
   it("trims the name and lowercases + trims the email", () => {
     expect(
       normalizeStaffProfile({ fullName: "  Ana Silva  ", email: "  Ana.Silva@OsteoJP.PT " }),
-    ).toEqual({ fullName: "Ana Silva", email: "ana.silva@osteojp.pt" });
+    ).toEqual({ fullName: "Ana Silva", email: "ana.silva@osteojp.pt", phone: null, jobTitle: null });
   });
 
   it("rejects an empty full name", () => {

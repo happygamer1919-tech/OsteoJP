@@ -93,6 +93,8 @@ export default defineConfig({
         "**/recording.spec.ts",
         // W7-01: staff-invite spec provisions a real auth user — Chromium-only.
         "**/staff-invite.spec.ts",
+        // W8-02: staff-contact-fields provisions a real auth user, Chromium-only.
+        "**/staff-contact-fields.spec.ts",
         // W7-02: profile-reachability changes real passwords — Chromium-only, so
         // three browsers never race on the same account's password.
         "**/profile-reachability.spec.ts",
@@ -120,6 +122,8 @@ export default defineConfig({
         "**/recording.spec.ts",
         // W7-01: staff-invite spec provisions a real auth user — Chromium-only.
         "**/staff-invite.spec.ts",
+        // W8-02: staff-contact-fields provisions a real auth user, Chromium-only.
+        "**/staff-contact-fields.spec.ts",
         // W7-02: profile-reachability changes real passwords — Chromium-only, so
         // three browsers never race on the same account's password.
         "**/profile-reachability.spec.ts",

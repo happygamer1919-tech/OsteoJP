@@ -32,6 +32,10 @@ export type StaffMember = {
   fullName: string;
   roleSlug: Role | null;
   isActive: boolean;
+  // W8-02: staff contact phone + professional job title (both nullable, admin-
+  // managed, ship empty). jobTitle is a DISPLAY field, orthogonal to roleSlug.
+  phone: string | null;
+  jobTitle: string | null;
 };
 
 export async function listStaff(actor: RequestContext): Promise<StaffMember[]> {
@@ -45,6 +49,8 @@ export async function listStaff(actor: RequestContext): Promise<StaffMember[]> {
         fullName: users.fullName,
         roleSlug: roles.slug,
         isActive: users.isActive,
+        phone: users.phone,
+        jobTitle: users.jobTitle,
       })
       .from(users)
       .leftJoin(roles, eq(users.roleId, roles.id))
@@ -270,21 +276,41 @@ export async function changeStaffRole(
 }
 
 /**
+ * Trim an optional free-text field to its stored form: an empty/whitespace-only
+ * value normalizes to NULL (the column is nullable and ships empty), otherwise
+ * the trimmed string. Pure so the rule is unit-testable. Used for the W8-02
+ * phone + job-title fields, which are optional and admin-entered by hand.
+ */
+export function normalizeOptionalText(value: string | null | undefined): string | null {
+  const trimmed = (value ?? "").trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+/**
  * Validate + normalize a staff profile edit. Pure (no DB) so the rule is
  * unit-testable. Email is trimmed + lowercased to match the invite path and the
  * (tenant_id, email) uniqueness intent; full name is trimmed. Throws `invalid`
- * when either is empty or the email is obviously malformed.
+ * when either is empty or the email is obviously malformed. W8-02: phone +
+ * jobTitle are optional — each normalizes to NULL when blank (never validated
+ * as required); phone is PII and is never logged by the caller.
  */
 export function normalizeStaffProfile(input: {
   fullName: string;
   email: string;
-}): { fullName: string; email: string } {
+  phone?: string | null;
+  jobTitle?: string | null;
+}): { fullName: string; email: string; phone: string | null; jobTitle: string | null } {
   const email = input.email.trim().toLowerCase();
   const fullName = input.fullName.trim();
   if (!email.includes("@") || !fullName) {
     throw new AdminError("invalid", "email and full name are required");
   }
-  return { fullName, email };
+  return {
+    fullName,
+    email,
+    phone: normalizeOptionalText(input.phone),
+    jobTitle: normalizeOptionalText(input.jobTitle),
+  };
 }
 
 const PG_UNIQUE_VIOLATION = "23505";
@@ -332,10 +358,10 @@ export function maskEmail(email: string): string {
 export async function editStaff(
   actor: RequestContext,
   userId: string,
-  input: { fullName: string; email: string },
+  input: { fullName: string; email: string; phone?: string | null; jobTitle?: string | null },
 ): Promise<void> {
   assertCan(actor.role, "users:manage");
-  const { fullName, email } = normalizeStaffProfile(input);
+  const { fullName, email, phone, jobTitle } = normalizeStaffProfile(input);
 
   await runScoped(actor, async (tx) => {
     const target = await loadTarget(tx, userId);
@@ -350,13 +376,18 @@ export async function editStaff(
     const changed: string[] = [];
     if (target.fullName !== fullName) changed.push("full_name");
     if (emailChanged) changed.push("email");
+    // W8-02: phone + job_title are additional editable profile fields. job_title
+    // is a display title, decoupled from the permission role — this write NEVER
+    // touches role_id, so a job-title change cannot alter capabilities.
+    if (target.phone !== phone) changed.push("phone");
+    if (target.jobTitle !== jobTitle) changed.push("job_title");
     if (changed.length === 0) return; // no-op
 
     // (1) Write public.users first, INSIDE the RLS transaction. A
     // (tenant_id, email) collision is caught HERE as email_taken — before we
     // touch Supabase auth — so a rejected edit never desyncs the two stores.
     try {
-      await tx.update(users).set({ fullName, email }).where(eq(users.id, userId));
+      await tx.update(users).set({ fullName, email, phone, jobTitle }).where(eq(users.id, userId));
     } catch (e) {
       // Defense-in-depth against a concurrent email collision: the unique index
       // is the source of truth, so translate its violation, not a pre-check.
@@ -391,6 +422,8 @@ type Target = {
   roleSlug: Role | null;
   fullName: string;
   email: string;
+  phone: string | null;
+  jobTitle: string | null;
 };
 
 async function loadTarget(tx: DbTx, userId: string): Promise<Target | null> {
@@ -400,6 +433,8 @@ async function loadTarget(tx: DbTx, userId: string): Promise<Target | null> {
       roleSlug: roles.slug,
       fullName: users.fullName,
       email: users.email,
+      phone: users.phone,
+      jobTitle: users.jobTitle,
     })
     .from(users)
     .leftJoin(roles, eq(users.roleId, roles.id))
@@ -411,6 +446,8 @@ async function loadTarget(tx: DbTx, userId: string): Promise<Target | null> {
     roleSlug: isRole(row.roleSlug) ? row.roleSlug : null,
     fullName: row.fullName,
     email: row.email,
+    phone: row.phone,
+    jobTitle: row.jobTitle,
   };
 }
 

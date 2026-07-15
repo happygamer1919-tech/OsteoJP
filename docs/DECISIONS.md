@@ -1017,3 +1017,57 @@ Evidence: `form-template.test.ts` pins that `validateRecordData` accepts a marke
 pins place-select-reload persistence. Migration-free proof: `git diff` touches no
 `packages/db/migrations/`, `supabase/migrations/`, `.github/workflows/`, and does not edit
 `osteopathy-v3.json`.
+
+## 2026-07-15 — W8-02 staff phone + job title: two nullable columns on users, migration 0036 (branch osteojp-w8-02-staff-phone-job-title)
+
+Wave 08 Dados e KPI, first loop (runs before W8-01a; it unblocks the owner's
+manual staff-data entry). Adds a staff contact phone and a professional job
+title, both surfaced in Administracao > Equipa; both ship EMPTY (nullable), the
+owner fills them by hand after merge.
+
+Recon (against origin/main at 86ebcfd): confirmed `users` (`packages/db/src/schema.ts:190-213`)
+had no phone and no job_title column; next migration number is 0036 (0035 latest
+in both migration dirs); the edit seam is `editStaff`/`editStaffAction`/`StaffManageModal`;
+the `admin.staff.*` i18n namespace exists. No column-scoped GRANT on `users` (only
+a table-level `GRANT SELECT` + tenant-isolation RLS + anon REVOKE), so additive
+nullable columns need no policy/grant change.
+
+Decisions:
+- **Migration 0036 (both migration dirs + journal, snapshot-free).** Two NULLABLE
+  text columns on `users` — `phone`, `job_title` — via `ADD COLUMN IF NOT EXISTS`,
+  no default, no backfill, no NOT NULL. RLS untouched (columns ride the existing
+  `users_tenant_isolation` policy). The repo dropped per-migration drizzle
+  snapshots after 0014; the convention since is a `meta/_journal.json` entry plus
+  the byte-exact `supabase/migrations/` mirror (`scripts/sync-supabase-migrations.mjs`).
+  Followed that convention; `check-journal.mjs` + the supabase sync `--check` both
+  pass (37/37).
+- **`job_title` is a DISPLAY field, decoupled from the permission role.** It is a
+  free-text professional title (Fisioterapeuta, Osteopata, Recepcionista, ...),
+  orthogonal to `roleId`/`roles.slug`/`packages/auth` ROLES. `editStaff` never
+  writes `roleId`, so a title change can never alter capabilities. Locked by a
+  unit test asserting the persisted write has no `roleId`/`role_id` key.
+- **Phone is PII (rule 7).** The value is never logged; the audit `staff.profile_update`
+  row records only the changed FIELD NAMES (`phone`, `job_title`) via the existing
+  `fields` metadata, never the number. A unit test asserts the number never appears
+  in audit metadata.
+- **Both optional, blank -> NULL.** `normalizeOptionalText` trims and maps blank to
+  null; `normalizeStaffProfile` extended to carry phone + jobTitle (name/email
+  validation unchanged). Money/format: no phone-format validation (owner enters
+  international numbers by hand).
+- **UI:** phone + job title are editable in the same Gerir edit form (one
+  `editStaffAction` submit); the Equipa list gains a Telefone column and renders
+  the job title beneath the role label. Empty when null.
+
+Evidence: schema diff (both columns nullable, no default); local `supabase migration up`
+applied 0036 — `information_schema` shows `phone`/`job_title` `text`, `is_nullable=YES`;
+empty-by-design query = 15 users, 0 non-null phone, 0 non-null job_title (no backfill);
+RLS still enabled on `users`. Gates: lint 0 errors, typecheck 9/9, unit web 1118 passed,
+packages/db RLS isolation 348 passed against local DB (DATABASE_URL set), build 4/4 apps,
+E2E `staff-contact-fields.spec.ts` green (invite a disposable member, edit phone + job
+title in Gerir, both persist across reload, role unchanged). Migration-safe: additive
+nullable, `git diff` touches no `.github/workflows/`.
+
+Merge: **OWNER-MERGE (migration loop).** GREEN pushes + pastes evidence + HALTs; the
+owner merges. Post-merge the 0036 live-apply to production (drizzle-kit +
+DATABASE_URL_DIRECT) is verified with a pasted query before DONE. GREEN never
+self-merges a migration loop and never writes to the production DB pre-merge.
