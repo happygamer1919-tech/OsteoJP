@@ -1072,6 +1072,45 @@ owner merges. Post-merge the 0036 live-apply to production (drizzle-kit +
 DATABASE_URL_DIRECT) is verified with a pasted query before DONE. GREEN never
 self-merges a migration loop and never writes to the production DB pre-merge.
 
+ osteojp-w8-01a-services-catalog-packs
+## 2026-07-15 — W8-01a pack model (0037) + catalog seed: decisions (branch osteojp-w8-01a-services-catalog-packs)
+
+Wave 08 Dados e KPI, second loop (after W8-02's 0036 merged + applied live). Net-new pack
+model + the offered-only-where-priced semantic + the owner's real LV+CB catalog seed.
+
+- **MANUAL no-show / under-24h enforcement (business rule on record).** A pack/group session
+  counts as CONSUMED on a no-show or a cancellation under 24h. The platform NEVER auto-charges
+  and NEVER auto-decrements on cancellation — staff enforce it via the manual adjust control
+  (W8-01c). `patient_pack_instances.sessions_remaining` is decremented at BOOKING (W8-01c) and
+  adjusted (consume/restore) manually, audited, never as a charge. Encoded here only as schema
+  that supports a monotonic remaining count + a manual adjust trail; the logic is W8-01c.
+- **Migration 0037 = two additive domain tables, non-destructive.** `service_packs`
+  (definitions) + `patient_pack_instances` (per-patient purchases), each tenant_id + tenant
+  isolation RLS + grants + a DB-gated isolation test (`packages/db/tests/pack-model-rls.test.ts`,
+  9 assertions incl. offered-tracks-price + rename-preserves-serviceId). `services.price_cents`
+  and `service_location_prices` are UNTOUCHED (a destructive price_cents change would be a
+  Field-6 owner HALT). Snapshot-free journal convention (post-0014) + byte-exact supabase mirror.
+- **"Offered only where priced" is DERIVED, not a new column.** `isServiceOfferedAtLocation` /
+  `listServiceOfferings` (`apps/web/lib/admin/services.ts`) read the PRESENCE of an active
+  `service_location_prices` row. Canonical service rows seed with `price_cents = NULL` (the base
+  is a fallback amount, never an "offered everywhere" signal); every price lives in a location
+  row. So a service surfaces at a location iff it has an active price there.
+- **Conservative canonicalization for the seed.** Each distinct listed name is its own service
+  row; only "Fisioterapia" (identical at both locations) is one row offered at both (LV 55.00 /
+  CB 45.00). Plausible cross-location merges (Osteopatia/Posturologia, NESA, Pressoterapia) are
+  NOT presumed — QUESTIONS.md 2026-07-15, owner confirms at the CATALOG OWNER CONFIRMATION.
+- **Rename-not-recreate for the LIVE reconcile (post-confirmation).** Canonical service renames
+  are UPDATEs of `services.name`; historic `appointments.service_id` references stay intact
+  (DB-gated proof). "campo 9 - Externos" is DROPPED (placeholder, unreferenced); R.P.G. migrates
+  as a REAL service (LV 60.00). The cloud write reconciles by rename, never delete-recreate.
+- **Local dry-run counts (127.0.0.1):** 22 canonical services, 23 service_location_prices
+  (offers), 14 pack definitions. Matches the loop catalog (12 LV + 11 CB distinct, Fisioterapia
+  shared; 8 LV + 6 CB packs).
+- **Merge policy:** OWNER-MERGE (migration loop 0037) + CATALOG OWNER CONFIRMATION HALT before
+  any cloud write. The 0037 prod apply + cloud seed follow the SAME manual drizzle-kit path
+  (DATABASE_URL_DIRECT from packages/db/.env, session 5432) as 0036 — NO workflow, NO Actions
+  secret (owner ruling 2026-07-15) — after owner merge + catalog confirmation.
+
 ## 2026-07-15 — W8-02 0036 applied to production (manual drizzle-kit, sanctioned path) — W8-02 DONE
 
 Owner HALT ruling (2026-07-15): the `PROD_DATABASE_URL_DIRECT` Actions secret is REFUSED;
@@ -1092,3 +1131,4 @@ sourced from `packages/db/.env` (credential never printed). drizzle journal on p
 `text`, nullable, no default; empty-by-design = 19 users, 0 non-null phone, 0 non-null
 job_title (no backfill). **W8-02 flipped DONE.** 0037 (W8-01a) stays local-only until now;
 its prod apply follows the SAME manual path after owner merge + catalog confirmation.
+ main

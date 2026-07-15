@@ -312,6 +312,83 @@ export const serviceLocationPrices = pgTable(
   ],
 );
 
+// Wave 08 (W8-01a, migration 0037) — pack model. A service_pack is a bookable
+// pack TYPE: a base service each session draws down, a session count, a pack
+// price (integer cents), and location scoping consistent with services
+// (location_id null = all locations). is_active soft-archives (never hard-delete
+// a referenced pack). "Offered only where priced" is DERIVED in the service
+// layer from service_location_prices presence; this table does not re-encode
+// pricing and does not touch services.price_cents.
+export const servicePacks = pgTable(
+  "service_packs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    baseServiceId: uuid("base_service_id")
+      .notNull()
+      .references(() => services.id),
+    locationId: uuid("location_id").references(() => locations.id), // null = all locations
+    name: text("name").notNull(),
+    sessionCount: integer("session_count").notNull(),
+    priceCents: integer("price_cents").notNull(), // minor units (cents), never float
+    currency: char("currency", { length: 3 }).notNull().default("EUR"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("service_packs_tenant_idx").on(t.tenantId),
+    index("service_packs_tenant_location_idx").on(t.tenantId, t.locationId),
+    index("service_packs_tenant_base_service_idx").on(t.tenantId, t.baseServiceId),
+    check("service_packs_session_count_pos", sql`${t.sessionCount} > 0`),
+    check("service_packs_price_nonneg", sql`${t.priceCents} >= 0`),
+  ],
+);
+
+// Wave 08 (W8-01a, migration 0037) — one patient's purchase of one pack.
+// sessions_remaining is monotonic (0..sessions_total); W8-01c registers,
+// decrements, and manually adjusts it (audited, never an auto-charge). Checks
+// forbid a negative balance and an over-grant beyond the total.
+export const patientPackInstances = pgTable(
+  "patient_pack_instances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    packId: uuid("pack_id")
+      .notNull()
+      .references(() => servicePacks.id),
+    sessionsTotal: integer("sessions_total").notNull(),
+    sessionsRemaining: integer("sessions_remaining").notNull(),
+    status: text("status").notNull().default("active"),
+    purchasedAt: timestamp("purchased_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("patient_pack_instances_tenant_idx").on(t.tenantId),
+    index("patient_pack_instances_tenant_patient_idx").on(t.tenantId, t.patientId),
+    index("patient_pack_instances_tenant_pack_idx").on(t.tenantId, t.packId),
+    check("patient_pack_instances_total_pos", sql`${t.sessionsTotal} > 0`),
+    check(
+      "patient_pack_instances_remaining_range",
+      sql`${t.sessionsRemaining} >= 0 AND ${t.sessionsRemaining} <= ${t.sessionsTotal}`,
+    ),
+  ],
+);
+
 // Wave 01 (migration 0023) — therapist-to-service mapping. Greenfield: the
 // 2026-06-30 audit confirmed no such relation existed. A care-deliverer is a
 // `users` row with role therapist (no dedicated therapist table); this
