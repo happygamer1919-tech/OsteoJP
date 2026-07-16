@@ -9,6 +9,7 @@ import {
   setServiceLocationPrices,
   updateService,
 } from "@/lib/admin/services";
+import { createPack, deletePack, setPackActive, updatePack } from "@/lib/admin/packs";
 import { AdminError, isAdminError } from "@/lib/admin/errors";
 
 function parsePriceToCents(raw: string): number | null {
@@ -25,6 +26,19 @@ function parseDuration(raw: string): number {
   return n;
 }
 
+function parseSessionCount(raw: string): number {
+  const n = Number(raw.trim());
+  if (!Number.isInteger(n) || n <= 0) throw new AdminError("invalid", "invalid session count");
+  return n;
+}
+
+// Empty select value ("") means "all locations" (locationId null), consistent
+// with the service_packs schema (location_id null = all locations).
+function parseLocationId(raw: string): string | null {
+  const t = raw.trim();
+  return t ? t : null;
+}
+
 async function run(fn: () => Promise<void>): Promise<never> {
   let code = "ok";
   try {
@@ -34,6 +48,20 @@ async function run(fn: () => Promise<void>): Promise<never> {
   }
   revalidatePath("/admin/services");
   redirect(`/admin/services?m=${code}`);
+}
+
+// Pack mutations report on a separate `mp` param so the pack banner is distinct
+// from the service banner (both live on /admin/services). Accepts any resolved
+// value (createPack returns the new id).
+async function runPack(fn: () => Promise<unknown>): Promise<never> {
+  let code = "ok";
+  try {
+    await fn();
+  } catch (e) {
+    code = isAdminError(e) ? `err:${e.code}` : "err";
+  }
+  revalidatePath("/admin/services");
+  redirect(`/admin/services?mp=${code}`);
 }
 
 export async function createServiceAction(formData: FormData): Promise<void> {
@@ -88,4 +116,49 @@ export async function setServiceLocationPricesAction(formData: FormData): Promis
     });
   }
   await run(() => setServiceLocationPrices(actor, serviceId, entries));
+}
+
+/* ------------------------------------------------------------------ */
+/* Pack definitions (W8-01b) — admin CRUD over the W8-01a pack model.  */
+/* Per-patient instances are booking-side (W8-01c), never here.        */
+/* ------------------------------------------------------------------ */
+
+export async function createPackAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  await runPack(() =>
+    createPack(actor, {
+      name: String(formData.get("name") ?? ""),
+      baseServiceId: String(formData.get("baseServiceId") ?? ""),
+      locationId: parseLocationId(String(formData.get("locationId") ?? "")),
+      sessionCount: parseSessionCount(String(formData.get("sessionCount") ?? "")),
+      priceCents: parsePriceToCents(String(formData.get("price") ?? "")) ?? 0,
+    }),
+  );
+}
+
+export async function updatePackAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  const id = String(formData.get("id") ?? "");
+  await runPack(() =>
+    updatePack(actor, id, {
+      name: String(formData.get("name") ?? ""),
+      baseServiceId: String(formData.get("baseServiceId") ?? ""),
+      locationId: parseLocationId(String(formData.get("locationId") ?? "")),
+      sessionCount: parseSessionCount(String(formData.get("sessionCount") ?? "")),
+      priceCents: parsePriceToCents(String(formData.get("price") ?? "")) ?? 0,
+    }),
+  );
+}
+
+export async function setPackActiveAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  const id = String(formData.get("id") ?? "");
+  const active = String(formData.get("active") ?? "") === "true";
+  await runPack(() => setPackActive(actor, id, active));
+}
+
+export async function deletePackAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  const id = String(formData.get("id") ?? "");
+  await runPack(() => deletePack(actor, id));
 }
