@@ -1,5 +1,5 @@
 "use server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
 import {
@@ -61,6 +61,10 @@ async function runPack(fn: () => Promise<unknown>): Promise<never> {
     code = isAdminError(e) ? `err:${e.code}` : "err";
   }
   revalidatePath("/admin/services");
+  // W8-01c — packs are bookable types in the agenda drawer, sourced from the
+  // cached agenda reference data. Bust that tag so a pack's active state (new /
+  // archived / edited) reflects in booking promptly, not after the 60s TTL.
+  revalidateTag("agenda-reference-data", "max");
   redirect(`/admin/services?mp=${code}`);
 }
 

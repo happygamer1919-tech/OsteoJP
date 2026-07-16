@@ -73,7 +73,7 @@ function mkAppt(over: Partial<AgendaAppointment>): AgendaAppointment {
   };
 }
 
-const OPTIONS: AgendaOptions = { therapists: [], locations: [], services: [] };
+const OPTIONS: AgendaOptions = { therapists: [], locations: [], services: [], packs: [] };
 
 const baseFilters = {
   from: "2026-07-20",
