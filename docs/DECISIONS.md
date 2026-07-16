@@ -1132,3 +1132,22 @@ sourced from `packages/db/.env` (credential never printed). drizzle journal on p
 job_title (no backfill). **W8-02 flipped DONE.** 0037 (W8-01a) stays local-only until now;
 its prod apply follows the SAME manual path after owner merge + catalog confirmation.
  main
+
+## 2026-07-15 — W8-01a cloud catalog seed applied (Option A amended) — W8-01a DONE
+
+Owner ruled the step-3 reconcile HALT as Option A amended: reconcile the 3 clean rows, insert
+net-new + prices + packs, DEACTIVATE the 3 ambiguous legacy rows (never rename/reprice/delete/
+map), interim service count of 25 explicitly accepted.
+
+0037 applied to prod via manual drizzle-kit (session 5432, packages/db/.env, credential never
+printed); prod journal = 38; service_packs + patient_pack_instances live with RLS enabled +
+tenant-isolation policies + all check constraints. The single authorized cloud catalog write
+ran as ONE atomic transaction (assertions roll back on any count miss). Reconciliation log:
+- RENAME "1ª Avaliação" -> "1.ª consulta / Avaliação (…)" (LV 75.00).
+- KEEP "Osteopatia" (LV 70.00) + "Fisioterapia" (LV 55.00 / CB 45.00) on existing rows —
+  marcação references INTACT (verified: still referenced post-seed), never delete-recreate.
+- INSERT 19 net-new canonical services; 23 service_location_prices; 14 service_packs.
+- DEACTIVATE (frozen, name/price unchanged) "Pilates Terapêutico" 40.00, "NESA" 39.00,
+  "Massagem Terapêutica" 50.00 — pending JP batch (QUESTIONS 2026-07-15).
+Post-commit verified: active(canonical)=22 / prices=23 / packs=14 / frozen=3 / total=25.
+Cloud DB is read-only again; this was the single authorized cloud data write of Wave 08.
