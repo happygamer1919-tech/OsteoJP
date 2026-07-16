@@ -48,7 +48,10 @@ export function EstatisticasView({
     if (merged.locationId) params.set("location", merged.locationId);
     if (merged.serviceId) params.set("service", merged.serviceId);
     const qs = params.toString();
-    startTransition(() => router.push(qs ? `/estatisticas?${qs}` : "/estatisticas"));
+    // W8-03: the dashboard now lives at /estatisticas/painel (the chooser owns
+    // /estatisticas). Only its self-navigation target changes; the view is
+    // otherwise unchanged.
+    startTransition(() => router.push(qs ? `/estatisticas/painel?${qs}` : "/estatisticas/painel"));
   }
 
   return (
