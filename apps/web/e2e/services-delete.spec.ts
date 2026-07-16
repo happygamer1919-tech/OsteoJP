@@ -15,10 +15,12 @@ test("Serviços: zero-reference service deletes; referenced service is archive-o
 
   // Create a throwaway ZERO-reference service (no appointments / mappings / prices).
   const name = `E2E Servico Temp ${Date.now()}`;
-  const addForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Adicionar" }) });
+  // "Adicionar serviço" (not bare "Adicionar") — the Packs section (W8-01b)
+  // adds an "Adicionar pacote" button on the same page.
+  const addForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Adicionar serviço" }) });
   await addForm.locator('input[name="name"]').fill(name);
   await addForm.locator('input[name="durationMin"]').fill("30");
-  await addForm.getByRole("button", { name: "Adicionar" }).click();
+  await addForm.getByRole("button", { name: "Adicionar serviço" }).click();
   await page.waitForURL(/admin\/services/);
 
   const row = page.locator("tbody tr").filter({ hasText: name }).first();
