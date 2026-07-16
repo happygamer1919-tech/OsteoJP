@@ -19,12 +19,14 @@ import { getPatient, getPatientHardDeleteBlockers } from "../../../lib/patients/
 import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
 import { listPatientAppointments } from "../../../lib/scheduling/data";
+import { listPatientPackInstances } from "../../../lib/packs/instances";
 import { listPatientNoteRevisions } from "../../../lib/patients/note-revisions";
 import { NotesComposer } from "./notes-composer";
 import { PatientActions } from "../_components/patient-actions";
 import { versionRecordAction } from "../../clinical/[id]/actions";
 import { RecordLifecycleActions } from "./record-lifecycle-actions";
 import { AppointmentsList } from "./appointments-list";
+import { PatientPacks } from "./patient-packs";
 import { createEpisodeAction } from "./episode-actions";
 import { ProfileTabs } from "./profile-tabs";
 import { PatientDocuments } from "./PatientDocuments";
@@ -179,6 +181,9 @@ export default async function PatientProfilePage({
   const patientInvoices = tab === "faturacao" && canInvoice ? await listInvoices(ctx, { patientId: id }) : [];
   // Consultas tab: this patient's appointment history (Row 3 — schedule-again).
   const patientAppointments = tab === "consultas" ? await listPatientAppointments(ctx, id) : [];
+  // Consultas tab: this patient's pack instances + remaining sessions (W8-01c).
+  const patientPackInstances =
+    tab === "consultas" ? await listPatientPackInstances(ctx, id) : [];
   // Notas tab: append-only note history from patient_note_revisions (0030).
   const noteRevisions = tab === "notas" ? await listPatientNoteRevisions(ctx, id) : [];
   // Documentos tab: patient-level administrative documents (attachments with a
@@ -271,7 +276,17 @@ export default async function PatientProfilePage({
       )}
 
       {tab === "consultas" && (
-        <div role="tabpanel" id="tabpanel-consultas" aria-label={s["patients.tabAppointments"]}>
+        <div
+          role="tabpanel"
+          id="tabpanel-consultas"
+          aria-label={s["patients.tabAppointments"]}
+          className="flex flex-col gap-6"
+        >
+          <PatientPacks
+            patientId={id}
+            instances={patientPackInstances}
+            canAdjust={canEditAppointments}
+          />
           <AppointmentsList
             appointments={patientAppointments}
             canEdit={canEditAppointments}

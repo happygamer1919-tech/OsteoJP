@@ -66,10 +66,20 @@ export type ServiceOption = Option & {
   contraindicationSensitive: boolean;
 };
 
+// W8-01c — an active pack offered as a bookable type in the create drawer. The
+// booking draws down the base service each session; locationId null = offered
+// at all locations. sessionCount seeds a fresh instance's total.
+export type PackOption = Option & {
+  baseServiceId: string;
+  locationId: string | null;
+  sessionCount: number;
+};
+
 export type AgendaOptions = {
   therapists: Option[];
   locations: Option[];
   services: ServiceOption[];
+  packs: PackOption[];
 };
 
 export type AgendaFilters = {
@@ -99,6 +109,11 @@ export type CreateAppointmentInput = {
   allowConflict?: boolean;
   // When set (count >= 2), create a materialized recurring series.
   recurrence?: RecurrenceSpec | null;
+  // W8-01c — booking a PACK. When set, the appointment's serviceId is forced to
+  // the pack's base service and one pack session is registered/decremented in
+  // the SAME tx. Pack booking is single-session: it is rejected with recurrence
+  // (a pack session is one appointment). NULL = a normal service booking.
+  packId?: string | null;
 };
 
 /** Non-temporal field edits. Time/therapist/location changes go via reschedule. */

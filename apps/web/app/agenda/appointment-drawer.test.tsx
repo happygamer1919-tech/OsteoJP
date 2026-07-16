@@ -63,7 +63,7 @@ vi.mock("@osteojp/ui", () => {
 
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
 
-const options: AgendaOptions = { therapists: [], locations: [], services: [] };
+const options: AgendaOptions = { therapists: [], locations: [], services: [], packs: [] };
 
 const editAppt: AgendaAppointment = {
   id: "appt-1",

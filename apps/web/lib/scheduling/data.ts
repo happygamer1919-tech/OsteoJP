@@ -9,6 +9,7 @@ import {
   locations,
   patients,
   roles,
+  servicePacks,
   services,
   users,
   type DbTx,
@@ -184,7 +185,7 @@ export async function listPatientAppointments(
 const fetchStableAgendaRef = unstable_cache(
   async (ctx: RequestContext) =>
     runScoped(ctx, async (tx) => {
-      const [therapistRows, locationRows, serviceRows] = await Promise.all([
+      const [therapistRows, locationRows, serviceRows, packRows] = await Promise.all([
         tx
           .select({ id: users.id, label: users.fullName })
           .from(users)
@@ -206,8 +207,20 @@ const fetchStableAgendaRef = unstable_cache(
           .from(services)
           .where(eq(services.isActive, true))
           .orderBy(asc(services.name)),
+        // W8-01c — ACTIVE packs as bookable types (creation-active-only, W6-01b).
+        tx
+          .select({
+            id: servicePacks.id,
+            label: servicePacks.name,
+            baseServiceId: servicePacks.baseServiceId,
+            locationId: servicePacks.locationId,
+            sessionCount: servicePacks.sessionCount,
+          })
+          .from(servicePacks)
+          .where(eq(servicePacks.isActive, true))
+          .orderBy(asc(servicePacks.name)),
       ]);
-      return { therapistRows, locationRows, serviceRows };
+      return { therapistRows, locationRows, serviceRows, packRows };
     }),
   ["agenda-stable-ref"],
   { revalidate: 60, tags: ["agenda-reference-data"] },
@@ -217,11 +230,12 @@ const fetchStableAgendaRef = unstable_cache(
 export async function getAgendaOptions(
   ctx: RequestContext,
 ): Promise<AgendaOptions> {
-  const { therapistRows, locationRows, serviceRows } =
+  const { therapistRows, locationRows, serviceRows, packRows } =
     await fetchStableAgendaRef(ctx);
   return {
     therapists: therapistRows,
     locations: locationRows,
     services: serviceRows,
+    packs: packRows,
   };
 }

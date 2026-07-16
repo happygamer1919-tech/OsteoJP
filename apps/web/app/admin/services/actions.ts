@@ -1,5 +1,5 @@
 "use server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
 import {
@@ -61,6 +61,12 @@ async function runPack(fn: () => Promise<unknown>): Promise<never> {
     code = isAdminError(e) ? `err:${e.code}` : "err";
   }
   revalidatePath("/admin/services");
+  // W8-01c — packs are bookable types in the agenda drawer, sourced from the
+  // cached agenda reference data. updateTag (not revalidateTag(tag,"max"))
+  // invalidates IMMEDIATELY (read-your-writes) so the drawer sees a just-created
+  // pack on the very next agenda load, not after the 60s TTL. The "max"-profile
+  // form defers invalidation and left new packs invisible in booking.
+  updateTag("agenda-reference-data");
   redirect(`/admin/services?mp=${code}`);
 }
 

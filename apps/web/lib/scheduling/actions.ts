@@ -31,6 +31,7 @@ import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
 import { getTherapistServiceIds } from "./therapist-services";
 import { getTherapistLocationIds } from "./therapist-locations";
+import { bookPackSessionTx } from "@/lib/packs/instances";
 import {
   enqueueRemindersAfterCommit,
   enqueueStatusNotificationsAfterCommit,
@@ -284,6 +285,11 @@ export async function createAppointment(
   }
 
   const recurring = !!input.recurrence && input.recurrence.count >= 2;
+  // W8-01c — a pack booking is single-session (one appointment consumes one
+  // session). Recurrence + pack is rejected rather than silently draining N.
+  if (input.packId && recurring) {
+    return { ok: false, error: "validation" };
+  }
   const durationMin = (firstEnd.getTime() - firstStart.getTime()) / 60_000;
   const occ = recurring
     ? expandRecurrence(
@@ -358,10 +364,23 @@ export async function createAppointment(
           if (!u2) return { ok: false, error: "validation" };
         }
 
+        // W8-01c — booking a PACK: register/decrement one session in THIS tx
+        // (so it commits or rolls back with the appointment) and force the
+        // appointment's serviceId to the pack's base service. Reads before it
+        // writes, so a missing/inactive pack returns validation with nothing
+        // written. Non-recurring only (guarded above).
+        let serviceIdForAppt = common.serviceId;
+        if (input.packId) {
+          const booked = await bookPackSessionTx(tx, actor, input.patientId, input.packId);
+          if (!booked) return { ok: false, error: "validation" };
+          serviceIdForAppt = booked.baseServiceId;
+        }
+
         const [parent] = await tx
           .insert(appointments)
           .values({
             ...common,
+            serviceId: serviceIdForAppt,
             startsAt: occ[0].startsAt,
             endsAt: occ[0].endsAt,
             recurrenceRule: recurring ? toRRule(input.recurrence!) : null,
@@ -399,7 +418,8 @@ export async function createAppointment(
               patientId: input.patientId,
               practitionerId: input.practitionerId,
               locationId: input.locationId,
-              serviceId: input.serviceId ?? null,
+              serviceId: serviceIdForAppt,
+              packId: input.packId ?? null,
               status: "scheduled",
               startsAt: created[i].startsAt.toISOString(),
               seriesId: recurring ? parent.id : null,

@@ -34,6 +34,7 @@ import {
   updateAppointment,
 } from "@/lib/scheduling/actions";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
+import { getPatientPackBalanceAction } from "@/lib/packs/actions";
 import type { BatchFailure } from "@/lib/scheduling/batch-core";
 import type { RebookOutcome } from "@/lib/scheduling/batch-failure-core";
 import { BatchFailureDialog } from "./batch-failure-dialog";
@@ -68,6 +69,9 @@ type StringKey = keyof typeof s;
 type FormState = {
   patientId: string;
   serviceId: string;
+  // W8-01c — when set, this booking consumes a pack session; serviceId is the
+  // pack's base service and the lote/recurrence path is disabled (single-session).
+  packId: string;
   practitionerId: string;
   // Optional secondary participants (W4-19) — de-emphasized, create-only capture.
   patientTwoId: string;
@@ -138,6 +142,7 @@ export function AppointmentDrawer({
       return {
         patientId: editing.patientId,
         serviceId: editing.serviceId ?? "",
+        packId: "",
         practitionerId: editing.practitionerId,
         patientTwoId: editing.patientTwoId ?? "",
         practitionerTwoId: editing.practitionerTwoId ?? "",
@@ -157,6 +162,7 @@ export function AppointmentDrawer({
     return {
       patientId: lockedPatient?.value ?? "",
       serviceId: "",
+      packId: "",
       practitionerId: "",
       patientTwoId: "",
       practitionerTwoId: "",
@@ -307,6 +313,39 @@ export function AppointmentDrawer({
   const patientCI =
     ciResult && ciResult.patientId === form.patientId ? ciResult.flags : null;
 
+  // W8-01c — the selected patient's active balance for the selected pack,
+  // fetched reactively. Stored WITH the (patientId, packId) it belongs to so the
+  // derived value reads null the instant either selection changes (same pattern
+  // as the NESA fetch above), then updates when the current fetch lands.
+  const [packBalanceResult, setPackBalanceResult] = useState<{
+    patientId: string;
+    packId: string;
+    balance: { sessionsTotal: number; sessionsRemaining: number } | null;
+  } | null>(null);
+  useEffect(() => {
+    const pid = form.patientId;
+    const packId = form.packId;
+    if (!pid || !packId) return;
+    let cancelled = false;
+    getPatientPackBalanceAction(pid, packId).then((balance) => {
+      if (!cancelled) setPackBalanceResult({ patientId: pid, packId, balance });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.patientId, form.packId]);
+  const packBalance =
+    packBalanceResult &&
+    packBalanceResult.patientId === form.patientId &&
+    packBalanceResult.packId === form.packId
+      ? packBalanceResult.balance
+      : null;
+  const selectedPack = options.packs.find((p) => p.id === form.packId) ?? null;
+  // Packs offered at the chosen location (or at all locations). Create-only.
+  const packOptions = options.packs.filter(
+    (p) => p.locationId === null || p.locationId === form.locationId,
+  );
+
   const dirty = JSON.stringify(form) !== JSON.stringify(init);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -318,6 +357,25 @@ export function AppointmentDrawer({
   }
   function onServiceChange(serviceId: string) {
     applyService(serviceId);
+  }
+  // W8-01c — selecting a pack forces the base service + its duration and locks
+  // the Serviço field; clearing it frees Serviço again. A pack booking is
+  // single-session, so the lote path is turned off while a pack is selected.
+  function onPackChange(packId: string) {
+    const pack = options.packs.find((p) => p.id === packId);
+    if (!pack) {
+      setForm((f) => ({ ...f, packId: "" }));
+      return;
+    }
+    setLoteMode(false);
+    setLoteRows([]);
+    const base = options.services.find((sv) => sv.id === pack.baseServiceId);
+    setForm((f) => ({
+      ...f,
+      packId,
+      serviceId: pack.baseServiceId,
+      durationMin: base ? base.durationMin : f.durationMin,
+    }));
   }
   // Auto-fill Serviço from the therapist's default service (W3-03) WITHOUT ever
   // overwriting a service the user has already chosen — the Select stays
@@ -471,6 +529,9 @@ export function AppointmentDrawer({
           endsAt: endISO,
           notes: form.notes || null,
           recurrence: null,
+          // W8-01c — when set, the server forces serviceId to the pack's base
+          // service and registers/decrements a pack session in the same tx.
+          packId: form.packId || null,
           allowConflict,
         });
         if (!handleResult(r)) return;
@@ -668,13 +729,39 @@ export function AppointmentDrawer({
         </Field>
 
         <Field label={s["appointment.service"]}>
-          <Select value={form.serviceId} onChange={(e) => onServiceChange(e.target.value)}>
+          {/* Locked to the pack's base service while a pack is selected (W8-01c). */}
+          <Select
+            value={form.serviceId}
+            disabled={!!form.packId}
+            onChange={(e) => onServiceChange(e.target.value)}
+          >
             <option value="">{s["appointment.selectService"]}</option>
             {serviceOptions.map((o) => (
               <option key={o.id} value={o.id}>{o.label}</option>
             ))}
           </Select>
         </Field>
+
+        {/* Pacote (W8-01c) — create-only bookable type. Selecting a pack forces
+            its base service (above) and registers/decrements a patient session at
+            booking. Only packs offered at the chosen location are listed. */}
+        {!editing && packOptions.length > 0 && (
+          <Field label={s["appointment.pack"]}>
+            <Select value={form.packId} onChange={(e) => onPackChange(e.target.value)}>
+              <option value="">{s["appointment.noPack"]}</option>
+              {packOptions.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </Select>
+          </Field>
+        )}
+        {!editing && selectedPack && form.patientId && (
+          <Banner tone="info">
+            {packBalance
+              ? `${s["appointment.packRemaining"]}: ${packBalance.sessionsRemaining}/${packBalance.sessionsTotal}`
+              : `${s["appointment.packNew"]} (${selectedPack.sessionCount} ${s["appointment.packSessions"]})`}
+          </Banner>
+        )}
 
         {/* Optional secondary participants (W4-19) — de-emphasized, create-only.
             Primary-only semantics: these are linked DISPLAY data and never affect
@@ -744,7 +831,14 @@ export function AppointmentDrawer({
             value={form.locationId}
             onChange={(e) => {
               userChangedLocation.current = true;
-              set("locationId", e.target.value);
+              const newLoc = e.target.value;
+              // W8-01c — a selected pack that isn't offered at the new location is
+              // cleared (packs are location-scoped; null = all locations).
+              setForm((f) => {
+                const pack = options.packs.find((p) => p.id === f.packId);
+                const packOk = !pack || pack.locationId === null || pack.locationId === newLoc;
+                return { ...f, locationId: newLoc, packId: packOk ? f.packId : "" };
+              });
             }}
           >
             <option value="">{s["appointment.selectLocation"]}</option>
@@ -779,8 +873,9 @@ export function AppointmentDrawer({
           onPickTime={(hhmm) => set("time", hhmm)}
         />
 
-        {/* Agendar lote (W2-10) — replaces the V1 recorrente control. */}
-        {!editing && (
+        {/* Agendar lote (W2-10) — replaces the V1 recorrente control. Hidden while
+            a pack is selected (W8-01c): a pack booking is single-session. */}
+        {!editing && !form.packId && (
           <div className="flex flex-col gap-3">
             <Checkbox
               label={s["lote.checkbox"]}
