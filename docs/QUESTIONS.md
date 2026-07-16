@@ -570,3 +570,20 @@ CATALOG OWNER CONFIRMATION.
   transcription. Confirm the display strings at the CATALOG OWNER CONFIRMATION.
 - Owner: Ivan + JP. Blocked work: the W8-01a CLOUD seed (owner-confirmation-gated + waits on
   the manual prod-apply path); build + local dry-run are complete and unblocked.
+
+## 2026-07-15 — W8-01a JP BATCH: 3 frozen legacy service rows (deactivated, pending owner/JP ruling)
+
+After the owner-confirmed cloud catalog seed (Option A amended), three pre-existing service
+rows on tenant OsteoJP were DEACTIVATED (frozen) rather than mapped — no rename, no reprice,
+no delete. Each awaits an explicit owner/JP ruling: map to a canonical row or drop.
+
+- [ ] **"Pilates Terapêutico" (40.00, now inactive)** — map to canonical "Pilates Terapêutico —
+  aula individual" (LV 50.00), map to a group Pilates, or drop? Price differs (40 vs 50).
+- [ ] **"NESA" (39.00, already inactive)** — map to canonical "NESA" (CB 50.00) or "Tratamento
+  NESA" (LV 50.00), or drop? Price differs (39 vs 50); location LV vs CB unresolved.
+- [ ] **"Massagem Terapêutica" (50.00, now inactive)** — is this actually offered, at which
+  location and price? Or drop? No canonical match today (nearest "Massagem 4 Mãos" CB 70.00,
+  different service). Unreferenced by marcações, so droppable if the owner rules so.
+- Owner: Ivan + JP. Expected end state: each legacy row MAPPED (rename onto a canonical row,
+  never delete-recreate) or DROPPED by explicit owner instruction. Until then they remain
+  inactive — per W6-01b they show in filter dropdowns and are absent from creation dropdowns.

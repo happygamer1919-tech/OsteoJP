@@ -148,3 +148,14 @@ The recon report + LIVE catalog state, the `0037` diff + isolation tests, the se
 - **W8-01a is OWNER-MERGE (migration loop) AND carries the CATALOG OWNER CONFIRMATION HALT.** All required checks green (DB-gated tests, Lint+typecheck+test, Playwright E2E) AND all three Vercel deploys (osteojp-api, osteojp-platform, osteojp-portal) green, read from the checks API NOT the banner, is NECESSARY. Additionally: (1) the catalog is confirmed by the owner BEFORE the cloud write, and (2) the `0037` live-apply + catalog write evidence is pasted BEFORE the owner merges. GREEN NEVER self-merges.
 - **One migration in flight:** W8-01a's `0037` starts only after W8-02's `0036` merged and `origin/main` is fast-forwarded. Never stacked, strict sequence, fresh `origin/main` after each merge. W8-01b + W8-01c (migration-free, GREEN self-merge) run only after W8-01a merged.
 - Workflow files are NEVER touched. JSON.parse both i18n files in every gate. HALT-LOUD on scope/product/data/reality mismatch; any immutability-bypass claim escalates instantly.
+
+---
+
+## POST-EXECUTION NOTE (2026-07-15) — cloud seed done, 3 legacy rows frozen (Option A amended)
+
+Owner-confirmed cloud seed applied: 22 canonical / 23 prices / 14 packs / 3 frozen legacy
+(total 25 services on tenant OsteoJP), reconciled by rename-not-recreate (marcação references
+intact). Three pre-existing ambiguous rows were DEACTIVATED, not mapped: "Pilates Terapêutico"
+(40.00), "NESA" (39.00), "Massagem Terapêutica" (50.00). **Expected end state after the JP
+batch: each legacy row is either MAPPED onto a canonical row (rename, never delete-recreate) or
+DROPPED, by explicit owner instruction.** Tracked in docs/QUESTIONS.md 2026-07-15 (JP BATCH).
