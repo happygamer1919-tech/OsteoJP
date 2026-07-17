@@ -1,8 +1,12 @@
 import "server-only";
 
-import { resolveLocationContact, type SourceLocation } from "../report/location-contacts";
+import {
+  normalizeLocationKey,
+  resolveLocationContact,
+  type SourceLocation,
+} from "../report/location-contacts";
 import { readDeclaracaoSettings } from "./declaracao-settings";
-import { signatureStampBytes } from "./signature-stamp-asset";
+import { signatureStampBytesForLocation } from "./signature-stamp-asset";
 
 // W5-31 — pure, testable projection for the Declaração de Presença PDF. The
 // orchestrator (generate.ts) resolves the raw inputs (patient, appointment
@@ -28,6 +32,30 @@ export function resolveLocalidade(
   return (appointmentLocation?.name ?? tenantDefaultLocation?.name ?? "").trim();
 }
 
+/**
+ * The location key the CARIMBO resolves through (W9-03, CB QA item 2).
+ *
+ * Deliberately mirrors `resolveLocalidade` above: same two candidates, same
+ * order (the marcação's location, then the tenant default), same canonical
+ * `normalizeLocationKey`. The localidade line and the stamp therefore always
+ * describe the SAME clinic - a CB declaration cannot say "Castelo Branco" and
+ * carry the LV carimbo, which is precisely the reported defect.
+ *
+ * Returns null when neither location is known, which resolves to a blank stamp
+ * area rather than a fallback to some other clinic's stamp.
+ */
+export function resolveStampLocationKey(
+  appointmentLocation: SourceLocation | null,
+  tenantDefaultLocation: SourceLocation | null,
+): string | null {
+  for (const loc of [appointmentLocation, tenantDefaultLocation]) {
+    if (!loc?.name) continue;
+    const key = normalizeLocationKey(loc.name);
+    if (key) return key;
+  }
+  return null;
+}
+
 export type DeclaracaoInputs = {
   patientName: string;
   /** Pre-formatted Europe/Lisbon date, e.g. "12/07/2026". */
@@ -37,6 +65,10 @@ export type DeclaracaoInputs = {
   /** Pre-formatted Europe/Lisbon end time, e.g. "10:30". */
   horaFim: string;
   localidade: string;
+  /** W9-03: canonical key of the clinic this declaration is FOR, from
+   *  resolveStampLocationKey. Drives per-location carimbo resolution; null ->
+   *  blank stamp area. */
+  stampLocationKey: string | null;
   /** The tenant's raw `settings` JSONB (declaracao namespace read here). */
   tenantSettings: unknown;
 };
@@ -48,7 +80,8 @@ export type DeclaracaoModel = {
   horaFim: string;
   localidade: string;
   responsavel: string;
-  /** The owner-supplied signature + carimbo image, or null → blank stamp space. */
+  /** The owner-supplied signature + carimbo image FOR THIS LOCATION, or null
+   *  -> blank stamp space (W9-03). Never another location's stamp. */
   stampBytes: Uint8Array | null;
 };
 
@@ -61,6 +94,12 @@ export function buildDeclaracaoModel(inputs: DeclaracaoInputs): DeclaracaoModel 
     horaFim: inputs.horaFim,
     localidade: inputs.localidade,
     responsavel: settings.responsavel,
-    stampBytes: settings.signatureStamp ? signatureStampBytes() : null,
+    // W9-03: per-location. The tenant switch still wins (settings.signatureStamp
+    // = false means "leave blank for a physical stamp" everywhere); when it is
+    // on, the stamp is resolved for THIS declaration's location, and a location
+    // with no asset yet gets a blank area - never another clinic's carimbo.
+    stampBytes: settings.signatureStamp
+      ? signatureStampBytesForLocation(inputs.stampLocationKey)
+      : null,
   };
 }

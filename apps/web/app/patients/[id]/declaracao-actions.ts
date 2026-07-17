@@ -42,9 +42,17 @@ export async function generateDeclaracaoUrlAction(
       .upload(path, pdf.bytes, { contentType: "application/pdf", upsert: true });
     if (up.error) return { url: null };
 
+    // W9-03 (CB QA item 2): NO `download` option, so Supabase Storage serves the
+    // object `Content-Disposition: inline` and the tab the client already opens
+    // (`window.open`, DeclaracaoDialog.tsx) PREVIEWS the PDF instead of firing a
+    // download. Passing `{ download: pdf.filename }` here forced
+    // `Content-Disposition: attachment`, which overrides anything the client
+    // does - that is why the document downloaded on BOTH paths, including the
+    // "Introdução manual" one. The user can still save from the viewer.
+    // Storage write above is untouched: same bytes, same path, same upload.
     const signed = await admin.storage
       .from(ATTACHMENTS_BUCKET)
-      .createSignedUrl(path, 60, { download: pdf.filename });
+      .createSignedUrl(path, 60);
     if (signed.error || !signed.data) return { url: null };
     return { url: signed.data.signedUrl };
   } catch {
