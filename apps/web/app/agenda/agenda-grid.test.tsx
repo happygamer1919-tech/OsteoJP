@@ -140,3 +140,25 @@ describe("W9-05 item 8 - same-hour overlap keeps the patient name legible", () =
     expect(html).toContain("Rui Lopes");
   });
 });
+
+describe("W9-06 item 9 - the note hover card (staff-side)", () => {
+  const NOTE = "Paciente com lesao no ombro direito";
+
+  it("renders the note content in a hover card when the marcacao has a note", () => {
+    const html = render([appt({ notes: NOTE })]);
+    expect(html).toContain(NOTE);
+    expect(html).toContain('data-testid="agenda-card-note"');
+    // The popover is display-only (role=tooltip), revealed on group hover/focus.
+    expect(html).toContain('role="tooltip"');
+  });
+
+  it("renders NO note affordance when there is no note", () => {
+    const html = render([appt({ notes: null })]);
+    expect(html).not.toContain('data-testid="agenda-card-note"');
+  });
+
+  it("trims whitespace-only notes to nothing (no empty hover card)", () => {
+    const html = render([appt({ notes: "   " })]);
+    expect(html).not.toContain('data-testid="agenda-card-note"');
+  });
+});

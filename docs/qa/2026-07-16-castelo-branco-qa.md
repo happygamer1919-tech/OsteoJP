@@ -39,7 +39,7 @@ first) · Recorded (already sequenced elsewhere, no new Wave 09 action).
 | 6 | Portal privacy invariant: marcacao historico / internal comments must NEVER be visible to patients in the portal | Invariant to verify | **W9-01** recon, guard test in **W9-06** |
 | 7 | Therapist name not visible on agenda cards; all cards same colour; want one colour per therapist | Display gap | **W9-05** |
 | 8 | Same-hour overlapping cards unreadable, patient name invisible; Fisiozero-style compact rendering requested | Display gap | **W9-05** |
-| 9 | Marcacao notes / historico visible on hover in the agenda and in the marcacoes list (staff-side only) | Display gap (CB: "grave") | **W9-06** |
+| 9 | Marcacao notes / historico NOT visible on hover in the agenda or the marcacoes list - staff must open the marcacao to read it; CB requests staff-side hover display | Display gap / feature request (CB: "grave") | **W9-06** |
 | 10 | Created-by and created-at not visible on marcacoes | Display gap | **W9-06** (schema verification in **W9-01**) |
 | 11 | Schedule model: therapists have variable hours per day and per week; current model is one fixed weekly pattern | Spec-required (largest item) | **EXCLUDED from Wave 09** - registered as **Wave 10 headline candidate** |
 | 12 | Declaracao editable before generation (acompanhantes case) - patient-facing document content | Spec-required | **JP-gated backlog** (excluded from Wave 09) |
@@ -107,11 +107,24 @@ first) · Recorded (already sequenced elsewhere, no new Wave 09 action).
    and hide the patient name; CB wants Fisiozero-style compact cards that keep the
    patient name legible. W9-05, display layer only.
 
-9. **Notes/historico leak on the staff side (W9-06).** Marcacao notes/historico show on
-   hover in the agenda and in the marcacoes list. This is staff-side (not the portal
-   leak of item 6), but CB marks it "grave" because internal notes should be a
-   deliberate, contained affordance, not an always-on hover. W9-06 provides a contained
-   staff-side hover card and keeps the portal guarded (item 6).
+9. **Notes/historico not visible on hover, staff-side (W9-06).** CB reports that a
+   marcacao's notes/historico are NOT visible on hover in the agenda or the marcacoes list -
+   staff have to OPEN the marcacao to read them, which CB marks "grave". Source language in
+   the CB record: "o historico nao esta visivel ... quando passamos o cursor por cima ... tem
+   de se abrir a marcacao (grave)". This is a FEATURE REQUEST for a staff-side hover display,
+   not a leak: the absence of on-hover notes is the complaint. W9-06 builds a staff-side note
+   hover card on both surfaces (agenda card + marcacoes row) and keeps the PORTAL guarded
+   (item 6) - the NOTA restricts patients, not staff, so reception-screen visibility is the
+   clinic's own call and CB explicitly requested it.
+
+   **Escalation closure (2026-07-17):** GREEN initially escalated item 9 as a possible
+   no-op, reading the code correctly (no note is on hover today) but INVERTING the premise
+   (reading "notes on hover" as a leak to contain, when CB meant the opposite - the note is
+   missing from hover). The owner corrected it from the source language and confirmed the
+   feature scope. Standing lesson recorded in DECISIONS: when a QA item's premise appears
+   false against the code, return to the reporter's SOURCE LANGUAGE in the QA record before
+   concluding they were wrong - absence-of-feature and presence-of-defect produce identical
+   code reads.
 
 10. **Created-by / created-at on marcacoes (W9-06).** The marcacao detail and list do
     not show who created the appointment or when. W9-06 surfaces created-by and

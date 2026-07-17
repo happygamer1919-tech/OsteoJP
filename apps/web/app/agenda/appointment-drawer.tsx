@@ -1012,6 +1012,19 @@ export function AppointmentDrawer({
           <StatusChip tone="warning">{s["appointment.noNote"]}</StatusChip>
         )}
 
+        {/* Audit provenance (W9-06, item 10): who created the marcacao and when.
+            createdByName is NULL for a portal booking (no staff users row) - the
+            owner-ruled label "Reserva online (portal)" stands in for the name,
+            never blank. createdAt is the row insert time, in Lisbon locale. */}
+        {editing && (
+          <p className="text-xs text-text-secondary">
+            {s["appointment.createdBy"]}{": "}
+            {editing.createdByName ?? s["appointment.createdByPortal"]}
+            {" · "}
+            {new Date(editing.createdAt).toLocaleString("pt-PT")}
+          </p>
+        )}
+
         <Field label={s["appointment.notes"]}>
           <Textarea autoComplete="off" value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} />
         </Field>

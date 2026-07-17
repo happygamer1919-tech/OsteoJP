@@ -1,5 +1,43 @@
 # Loop W9-06 - Marcacao audit and notes surfacing (Wave 09 Correcoes CB)
 
+> **STATE 2026-07-17: EXECUTED. Migration-free GREEN self-merge (W9-01 (e) resolved: `created_by` present, head stays 0037). Docs delta rides this loop's PR; the close-out YELLOW reconciles.**
+>
+> All three items shipped, no migration, no data/axis change:
+> - **(10) created-by / created-at.** Added `createdBy` + `createdByName` + `createdAt` to the
+>   `AgendaAppointment` type, the `appointmentSelection` select, `mapAppointment`, and an
+>   aliased `users` LEFT join (`createdByUser`, mirroring the secondary-practitioner join) to
+>   resolve the creator's display name. Shown on the marcacao DETAIL (edit drawer: creator +
+>   created-at, Lisbon locale) and the marcacoes LIST (creator, compact). **NULL `created_by`
+>   (every patient-portal booking - a patient has no `users` row) renders "Reserva online
+>   (portal)" / "Online booking (portal)" per the owner ruling, NEVER blank.** Q-W9-01-4's
+>   stale default ("Marcado pelo utente") is reconciled to the ruling and the question closed.
+> - **(9) note on hover - PREMISE INVERTED, then corrected by owner ruling.** The loop framed
+>   this as "notes visible on an always-on hover (a leak to contain)". Recon found - correctly
+>   - that NO note content is on hover today (`appointments.notes` is shown only in the edit
+>   drawer; the card `title` hovers carry NAMES). GREEN escalated it as a possible no-op. **The
+>   owner corrected the PREMISE from the CB source language** ("o historico nao esta visivel
+>   ... quando passamos o cursor por cima ... tem de se abrir a marcacao (grave)"): CB reported
+>   the ABSENCE of on-hover notes and REQUESTED a staff-side hover display. It is a feature,
+>   not a leak. Built a staff-side note hover card (`app/agenda/note-hover-card.tsx`) on the
+>   marcacoes row, and an escaping popover on the agenda card (the card is overflow-hidden, so
+>   the popover is a sibling of the button inside a positioned `group` wrapper). Shows on hover
+>   AND keyboard focus; a note-presence icon means it is never hover-only. Staff-only surfaces;
+>   the portal never receives notes (item 6).
+> - **(6) portal privacy guard.** `apps/api/lib/appointments/notes-privacy.test.ts` asserts the
+>   portal `AppointmentView` envelope never carries a note (fichas-style `not.toContain`), plus
+>   a compile-time `@ts-expect-error` that a note-bearing object is not assignable to
+>   `AppointmentView`. W9-01 (c) confirmed no live exposure; this locks it.
+>
+> **Standing lesson (recorded in DECISIONS 2026-07-17):** when a QA item's premise appears
+> false against the code, return to the reporter's SOURCE LANGUAGE in the QA record before
+> concluding the reporter was wrong - absence-of-feature and presence-of-defect produce
+> identical code reads. The item-9 escalation and its closure are recorded in
+> `docs/qa/2026-07-16-castelo-branco-qa.md` (item 9 reworded) and the mailbox outbox.
+>
+> **Board hygiene (owner ruling 2026-07-17):** W9-05 flipped IN-FLIGHT -> DONE (owner-merged
+> #600 @`4f3c23b`) in this delta; the W9-05 design ruling (service-tinted body kept;
+> whole-card therapist colouring is a registered Wave 10 fallback) is recorded on its row.
+
 GATE: **Wave 09 Correcoes CB, CONDITIONAL merge per W9-01 (e).** Surfaces created-by / created-at on marcacoes, moves the staff-side notes/historico into a contained hover card (not an always-on hover), and ships an automated guard test that the portal never exposes notes. **Consumes W9-01 findings (c) and (e).** Runs AFTER W9-05 merged and `origin/main` fast-forwarded. Starts from **fresh `origin/main`**; never stacked.
 
 **Conditional merge (resolved by W9-01 (e)):**
