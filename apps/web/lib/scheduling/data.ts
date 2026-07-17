@@ -15,6 +15,8 @@ import {
   type DbTx,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { filterTherapistsByLocation } from "./therapist-location-filter";
+import { listTherapistLocationAssignments } from "./therapist-locations";
 import type {
   AgendaAppointment,
   AgendaFilters,
@@ -226,14 +228,50 @@ const fetchStableAgendaRef = unstable_cache(
   { revalidate: 60, tags: ["agenda-reference-data"] },
 );
 
-/** Dropdown options for the toolbar filters and the appointment modal. */
+// W9-02 - therapist-to-location assignment map, derived from
+// availability_templates. Reference data on the same cadence as the rows above
+// (it changes only when an admin edits a therapist's working hours), so it gets
+// the same 60s cache and the same invalidation tag. Cached SEPARATELY from
+// `fetchStableAgendaRef` on purpose: the ref data is location-independent, so
+// keying it per location would multiply four cached lists to narrow only one.
+const fetchTherapistLocationAssignments = unstable_cache(
+  async (ctx: RequestContext) => {
+    const assignments = await listTherapistLocationAssignments(ctx);
+    // unstable_cache serializes its return value - a Map does not survive the
+    // round-trip, so store entries and rebuild on read.
+    return [...assignments.entries()];
+  },
+  ["agenda-therapist-locations"],
+  { revalidate: 60, tags: ["agenda-reference-data"] },
+);
+
+/**
+ * Dropdown options for the toolbar filters and the appointment modal.
+ *
+ * `locationId` (W9-02) narrows the therapist list to that location's assigned
+ * therapists, per the owner ruling of 2026-07-17. Passing null/undefined means
+ * "Todas as localizações" and returns every therapist - the only view in which
+ * an unassigned therapist appears. See ./therapist-location-filter.ts for the
+ * ruling and the predicate.
+ *
+ * Callers that pass no locationId keep their pre-W9-02 behaviour exactly.
+ */
 export async function getAgendaOptions(
   ctx: RequestContext,
+  locationId?: string | null,
 ): Promise<AgendaOptions> {
-  const { therapistRows, locationRows, serviceRows, packRows } =
-    await fetchStableAgendaRef(ctx);
+  const [{ therapistRows, locationRows, serviceRows, packRows }, assignmentEntries] =
+    await Promise.all([
+      fetchStableAgendaRef(ctx),
+      locationId ? fetchTherapistLocationAssignments(ctx) : Promise.resolve(null),
+    ]);
+
+  const therapists = assignmentEntries
+    ? filterTherapistsByLocation(therapistRows, new Map(assignmentEntries), locationId ?? null)
+    : therapistRows;
+
   return {
-    therapists: therapistRows,
+    therapists,
     locations: locationRows,
     services: serviceRows,
     packs: packRows,

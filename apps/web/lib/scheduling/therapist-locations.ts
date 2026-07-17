@@ -36,3 +36,41 @@ export async function getTherapistLocationIds(
     return rows.map((r) => r.locationId);
   });
 }
+
+/**
+ * The same derivation as `getTherapistLocationIds`, for EVERY therapist at once
+ * (W9-02). Feeds the agenda's therapist-by-location filter, which needs the
+ * whole roster's assignments rather than one therapist's.
+ *
+ * The predicate is deliberately IDENTICAL to the single-therapist read above -
+ * active availability row AND active location, no `valid_from`/`valid_until`
+ * window check. W9-01 (f) flagged the drift risk: if the agenda filter honoured
+ * the validity window while the booking auto-fill did not, the two surfaces
+ * would disagree about what "assigned" means. They must move together, so keep
+ * these two functions' WHERE clauses in lock-step.
+ *
+ * Returns a Map so the caller's filter is a set lookup, not an N-query loop.
+ * A therapist with no active assignment is simply absent from the map.
+ */
+export async function listTherapistLocationAssignments(
+  ctx: RequestContext,
+): Promise<Map<string, string[]>> {
+  return runScoped(ctx, async (tx) => {
+    const rows = await tx
+      .selectDistinct({
+        userId: availabilityTemplates.userId,
+        locationId: availabilityTemplates.locationId,
+      })
+      .from(availabilityTemplates)
+      .innerJoin(locations, eq(availabilityTemplates.locationId, locations.id))
+      .where(and(eq(availabilityTemplates.isActive, true), eq(locations.isActive, true)));
+
+    const byTherapist = new Map<string, string[]>();
+    for (const row of rows) {
+      const existing = byTherapist.get(row.userId);
+      if (existing) existing.push(row.locationId);
+      else byTherapist.set(row.userId, [row.locationId]);
+    }
+    return byTherapist;
+  });
+}

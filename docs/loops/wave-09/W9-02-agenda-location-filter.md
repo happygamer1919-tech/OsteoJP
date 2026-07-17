@@ -1,5 +1,63 @@
 # Loop W9-02 - Agenda location filter (Wave 09 Correcoes CB)
 
+> **STATE 2026-07-17: executed with two owner-ruled amendments. Docs delta rides this loop's PR; the close-out YELLOW reconciles.**
+>
+> **AMENDMENT 1 - policy ruling (owner, 2026-07-17), the loop's central open question.**
+> W9-01 (f) found the fix is expressible without a migration but surfaced a blocking policy
+> question (Q-W9-01-2): only **3 of 18** active therapists have ANY `availability_templates`
+> row, so a strict location filter narrows a specific-location view to almost nobody. GREEN
+> recommended showing unassigned therapists everywhere. **The owner ruled otherwise, and the
+> ruling governs:**
+>
+> > Filter therapists by assigned location. Therapists with no location assignment appear
+> > ONLY under "Todas as localizacoes", never inside a specific location view. A thin CB list
+> > short-term is accepted; owner data entry populates it.
+>
+> Encoded verbatim in `apps/web/lib/scheduling/therapist-location-filter.ts` and pinned by
+> unit tests + E2E so a later loop cannot quietly reverse it. **Corroboration found at
+> execution (not known at authoring): W5-32 already shipped this EXACT policy on the Equipa
+> list** - `apps/web/app/admin/staff/page.tsx:55-57` reads "Members with no availability ...
+> have an empty set - they match only under 'Todas as localizacoes'". The ruling therefore
+> makes the agenda CONSISTENT with a Wave 05 behaviour rather than introducing a new one; the
+> agenda was the surface still missing the predicate.
+>
+> **AMENDMENT 2 - scope correction from W9-01 (f): there are no therapist columns.** This
+> loop's Field 1/Field 3 require the filter to restrict "the rendered agenda columns" /
+> "rendered therapists". **That half is not satisfiable as written and was not built.** The
+> grid renders DAY columns (`agenda-grid.tsx:245`, `dates.map`), not therapist columns; there
+> is no therapist column axis in this design, and building one would be a redesign far
+> outside a migration-free bug-fix loop. The satisfiable reading, delivered here: the
+> **dropdown** narrows to the location's assigned therapists, and the **rendered
+> appointments** are already location-filtered by `listAppointments`
+> (`data.ts:137-139`, untouched). Zero LV therapists are reachable or rendered under a CB
+> selection, which is CB QA item 1's actual requirement.
+>
+> **Composition decision (in scope per Field 1 "the location filter must interact correctly
+> with the therapist filter"):** narrowing the dropdown made a new stale state reachable - a
+> therapist held over from another location would be a filter ACTIVE in the URL but absent
+> from its own Select, silently narrowing the grid to a therapist the user cannot see
+> selected. Changing location therefore CLEARS the therapist filter
+> (`agenda-view.tsx`, location `onChange`). No-op for the therapist role (`navigate()` never
+> sets the param under `lockTherapist`). Covered by E2E.
+>
+> **Deliberately NOT done (scope):** `marcacoes` (`page.tsx:97`) and `estatisticas/painel`
+> (`page.tsx:40`) both hold a `locationId` and both call `getAgendaOptions(actor)` without
+> it, so they retain the pre-W9-02 behaviour and still list every therapist. `getAgendaOptions`
+> gained an OPTIONAL `locationId`, so both are a one-line change when the owner wants them.
+> They were left alone because QA item 1 and this loop's scope are the agenda, and narrowing a
+> KPI panel's therapist filter is a product decision, not a bug fix. Recorded as a follow-up
+> candidate rather than self-authorized.
+>
+> **Semantics lock (from W9-01 (f)'s drift warning):** `listTherapistLocationAssignments`
+> uses a WHERE clause IDENTICAL to `getTherapistLocationIds` (active availability row AND
+> active location; NO `valid_from`/`valid_until` window check). If the agenda honoured the
+> validity window while the W4-12 booking auto-fill did not, the two surfaces would disagree
+> about what "assigned" means. Keep them in lock-step.
+>
+> **Live-data note (Q-W9-01-3, owner verifying):** `OsteoJP (LV)` is `is_active = false` in
+> the cloud, so the agenda location dropdown currently offers only CB. The E2E uses seeded
+> fixtures and does not depend on that state.
+
 GATE: **Wave 09 Correcoes CB, migration-free, BUG FIX.** Selecting a location in the agenda must restrict both the therapist dropdown and the rendered therapists to that location. **Consumes W9-01 finding (f).** Runs AFTER W9-01 merged and `origin/main` fast-forwarded. Starts from **fresh `origin/main`**; never stacked. **GREEN self-merge** (migration-free).
 
 ## Field 1. Scope and ground truth
