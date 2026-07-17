@@ -4,8 +4,15 @@ import { Repeat, User } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { locale, s } from "@/lib/i18n";
+import {
+  isSlotBlocked,
+  placeBlocksOnDate,
+  type BlockPlacement,
+  type BlockSpan,
+} from "@/lib/scheduling/blocked-time-core";
 import { intervalsOverlap } from "@/lib/scheduling/overlap";
 import {
+  DAY_END_HOUR,
   DAY_START_HOUR,
   daySlots,
   formatDayHeader,
@@ -23,7 +30,11 @@ import { ConfirmationIndicator } from "./confirmation-indicator";
 
 const SLOT_HEIGHT = 48; // px per 30-min slot
 const DAY_START_MIN = DAY_START_HOUR * 60;
+const DAY_END_MIN = DAY_END_HOUR * 60;
 const GUTTER = 64;
+
+/** Minutes from the grid's first row -> px. Shared by cards and blocked bands. */
+const minToPx = (min: number) => ((min - DAY_START_MIN) / 30) * SLOT_HEIGHT;
 
 type StringKey = keyof typeof s;
 
@@ -151,12 +162,17 @@ export function AgendaGrid({
   view,
   anchor,
   appointments,
+  blocks = [],
   onSelectAppointment,
   onSelectSlot,
 }: {
   view: AgendaView;
   anchor: string;
   appointments: AgendaAppointment[];
+  /** W9-04: time_off spans for the visible range. Non-empty ONLY when the agenda
+   *  is scoped to one therapist (page.tsx), since the grid has no therapist axis
+   *  and a full-width band would otherwise claim the whole clinic is blocked. */
+  blocks?: BlockSpan[];
   onSelectAppointment: (appt: AgendaAppointment) => void;
   onSelectSlot: (date: string, time: string) => void;
 }) {
@@ -247,20 +263,43 @@ export function AgendaGrid({
             const dayAppts = byDate.get(d) ?? [];
             const layout = layoutOverlaps(dayAppts);
             const isToday = d === today;
+            // W9-04: this day's blocked spans, clipped to the visible window.
+            const dayBlocks = placeBlocksOnDate(blocks, d, DAY_END_MIN);
             return (
               <div key={d} className="relative border-r border-v2-border last:border-r-0" style={{ height: totalHeight }}>
-                {/* Grid lines + clickable empty slots */}
-                {slots.map((m, i) => (
-                  <button
-                    key={m}
-                    type="button"
-                    aria-label={`${formatDayHeader(d, locale)} ${slotLabel(m)}`}
-                    onClick={() => onSelectSlot(d, slotLabel(m))}
-                    className={`absolute inset-x-0 transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
-                      m % 60 === 0 ? "border-b border-v2-border" : "border-b border-surface-muted"
-                    }`}
-                    style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }}
-                  />
+                {/* Grid lines + clickable empty slots. A slot inside a blocked
+                    span is DISABLED, not merely covered: an overlay alone would
+                    still let a keyboard user tab to it and press Enter, which is
+                    exactly the "bookable over blocked time" hole (CB QA item 3). */}
+                {slots.map((m, i) => {
+                  const blocked = isSlotBlocked(m, dayBlocks);
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      disabled={blocked}
+                      aria-label={
+                        blocked
+                          ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.blockedTime"]}`
+                          : `${formatDayHeader(d, locale)} ${slotLabel(m)}`
+                      }
+                      onClick={blocked ? undefined : () => onSelectSlot(d, slotLabel(m))}
+                      className={`absolute inset-x-0 transition duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
+                        blocked
+                          ? "cursor-not-allowed"
+                          : "motion-safe:active:scale-[0.97] hover:bg-v2-green-50"
+                      } ${m % 60 === 0 ? "border-b border-v2-border" : "border-b border-surface-muted"}`}
+                      style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }}
+                    />
+                  );
+                })}
+
+                {/* W9-04: blocked-time bands (SPEC-v2-agenda 2.1: muted,
+                    non-interactive). Drawn above the slot layer so the hatch
+                    reads, below the appointment cards (z-10) so a booking made
+                    before the block was entered stays visible and fixable. */}
+                {dayBlocks.map((p) => (
+                  <BlockedBand key={p.id} placement={p} />
                 ))}
 
                 {/* Appointment blocks */}
@@ -310,6 +349,40 @@ export function AgendaGrid({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * W9-04 - a muted, non-interactive blocked-time band (SPEC-v2-agenda 2.1,
+ * closing Q-V2W2-1, which deferred this until a data model existed; `time_off`
+ * has existed since migration 0006).
+ *
+ * pointer-events-none so it never intercepts a click: the slot buttons beneath
+ * are already `disabled`, which is what actually makes the span non-bookable for
+ * mouse AND keyboard. The band is the visual half of the same fact.
+ *
+ * The label is text, never colour alone (the standing colour-not-only rule), and
+ * is hidden on very short bands where it would not fit - the disabled slots
+ * still carry the state in their aria-label, so the information is never
+ * colour-only for a screen reader either.
+ */
+function BlockedBand({ placement }: { placement: BlockPlacement }) {
+  const top = minToPx(placement.startMin);
+  const height = minToPx(placement.endMin) - top;
+  const showLabel = height >= SLOT_HEIGHT;
+
+  return (
+    <div
+      data-testid="agenda-blocked-band"
+      className="pointer-events-none absolute inset-x-0 z-10 overflow-hidden rounded-v2 border border-v2-border bg-surface-muted/80 bg-[repeating-linear-gradient(45deg,transparent,transparent_6px,rgba(0,0,0,0.05)_6px,rgba(0,0,0,0.05)_12px)]"
+      style={{ top, height }}
+    >
+      {showLabel && (
+        <span className="block truncate px-2 py-1 text-xs font-medium text-v2-text-secondary">
+          {s["agenda.blockedTime"]}
+        </span>
+      )}
+    </div>
   );
 }
 

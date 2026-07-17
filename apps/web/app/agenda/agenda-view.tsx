@@ -14,6 +14,7 @@ import {
   viewDates,
   type AgendaView as View,
 } from "@/lib/scheduling/time";
+import type { BlockSpan } from "@/lib/scheduling/blocked-time-core";
 import type {
   AgendaAppointment,
   AgendaFilters,
@@ -36,6 +37,7 @@ export function AgendaView({
   lockTherapist,
   options,
   appointments,
+  blocks,
   lockedPatient,
   canHardDelete,
 }: {
@@ -45,6 +47,9 @@ export function AgendaView({
   lockTherapist: boolean;
   options: AgendaOptions;
   appointments: AgendaAppointment[];
+  /** W9-04: time_off spans for the visible range. Non-empty ONLY when the agenda
+   *  is scoped to one therapist - see page.tsx for why. */
+  blocks: BlockSpan[];
   /** W6-03: when deep-linked from a patient profile, the create drawer opens
    *  with this patient preselected + locked. Null on a normal agenda visit. */
   lockedPatient: { value: string; label: string } | null;
@@ -249,6 +254,7 @@ export function AgendaView({
         view={effectiveView}
         anchor={anchor}
         appointments={appointments}
+        blocks={blocks}
         onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
         onSelectSlot={(date, time) => setModal({ mode: "create", slot: { date, time } })}
       />

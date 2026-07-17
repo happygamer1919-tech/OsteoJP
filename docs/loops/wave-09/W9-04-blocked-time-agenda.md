@@ -1,5 +1,61 @@
 # Loop W9-04 - Blocked time on agenda (Wave 09 Correcoes CB)
 
+> **STATE 2026-07-17: RESEQUENCED ahead of W9-03 and executed. Docs delta rides this loop's PR; the close-out YELLOW reconciles.**
+>
+> **AMENDMENT 1 - resequencing (owner ruling, 2026-07-17).** This loop's Field 2 A0 guard
+> requires `origin/main` to contain W9-03's merge. **The owner superseded that:** "if the CB
+> carimbo and logo assets are not in the repo by the time W9-02 merges, run W9-04 first and
+> return to W9-03 when assets land." At W9-02's merge (`286bd63`) neither asset existed
+> (W9-01 (d): the repo holds exactly ONE stamp, the LV/Fisiozero block, and no logo raster at
+> all), and the mailbox carried no reply to the asset request
+> (`outbox/W9-03-ASSET-REQUEST-carimbo-CB-plus-logo-2026-07-17.md`). So W9-04 ran off fresh
+> `origin/main` containing W9-02, NOT W9-03. W9-03 returns when the assets land.
+>
+> **AMENDMENT 2 - scope question OPEN, one half deliberately not built.** This loop's ground
+> truth says to draw blocks "for the visible range + **the rendered therapists**". That
+> phrase presumes therapist columns. **There are none** - `agenda-grid.tsx` renders DAY
+> columns (`dates.map`), exactly the false premise W9-01 (f) found in W9-02's DoD. It bites
+> harder here because it decides what the feature IS: `time_off` is PER THERAPIST, so a
+> full-width band in a day column is only TRUE when the agenda shows exactly one therapist.
+>
+> Concrete failure if built naively: therapist A is away 10:00-11:00, therapist B is working.
+> Under "Todos os terapeutas" a full-width band would tell reception the CLINIC is blocked -
+> false, and worse than today's nothing, because it would suppress real bookable time with B.
+>
+> Nothing committed resolves it. SPEC-v2-agenda 2.1 says only "Blocked time renders as a
+> muted, non-interactive band"; Q-V2W2-1 deferred the band entirely ("no blocked-time data
+> model ... left unrendered"). Neither says WHOSE band.
+>
+> **Built (the unambiguous half):** the band renders when the agenda is scoped to ONE
+> therapist - a therapist filter is selected, or the viewer is a therapist (whose agenda is
+> always locked to their own calendar, `page.tsx:57-59`). No band under "Todos os
+> terapeutas". This delivers QA item 3's need: staff booking FOR a therapist filter to them,
+> see the block, and cannot book over it; a therapist always sees their own blocks.
+>
+> **NOT built, pending the owner ruling** (`inbox/W9-04-SCOPE-blocked-band-therapist-axis-2026-07-17.md`):
+> what the unfiltered view should show. Options offered: (A) accept the gap - recommended;
+> (B) per-therapist strips reusing the overlap layout - truthful but noisy at 16 therapists;
+> (C) a summary marker ("2 terapeutas indisponiveis") - new UI, needs a design call + both
+> i18n files. **Recommended default (A) now, (C) as a Wave 10 candidate if reception reports
+> the gap.** Not self-authorized: (B)/(C) await the ruling. Note the gap is a VISIBILITY gap
+> only - the booking drawer already excludes blocked slots from availability (W5-12), so a
+> real double-book is already prevented.
+>
+> **Non-bookable is enforced by `disabled`, not by an overlay.** The slot buttons inside a
+> block are `disabled`; the band is `pointer-events-none` on top. A pointer-events overlay
+> alone would still let a keyboard user Tab to the slot and press Enter - a genuine
+> "bookable over blocked time" hole. Covered by E2E (mouse AND keyboard reachability).
+>
+> **Divergence guard (this loop's own Field 5 restriction).** Rather than write a second
+> block reader, the half-open overlap predicate was EXTRACTED into `blockOverlapsRange` in
+> `day-availability.ts` and is now composed by BOTH the booking availability read
+> (`readBlockRows`) and the agenda band read (`listTherapistBlocks`). They cannot drift.
+> Recon confirmed `time_off` IS the source `getTherapistAvailability` uses
+> (`day-availability.ts:121-141`), so the Field 6 divergent-model HALT does not trigger.
+>
+> **Closes Q-V2W2-1** (blocked-time band deferred in V2-W2 for want of a data model). The
+> model has existed since migration 0006; this loop renders the band.
+
 GATE: **Wave 09 Correcoes CB, migration-free, DISPLAY GAP.** Blocked therapist time must render visibly on the agenda with distinct non-bookable styling, so staff cannot double-book over it. Runs AFTER W9-03 merged and `origin/main` fast-forwarded. Starts from **fresh `origin/main`**; never stacked. **GREEN self-merge** (migration-free).
 
 ## Field 1. Scope and ground truth

@@ -3,6 +3,7 @@ import { assertCan, can, ForbiddenError, type RequestContext } from "@osteojp/au
 import { requireRequestContext } from "@/lib/auth/context";
 import { getPatient } from "@/lib/patients/queries";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
+import { listTherapistBlocks } from "@/lib/scheduling/day-availability";
 import {
   rangeForView,
   todayInLisbon,
@@ -67,7 +68,7 @@ export default async function AgendaPage({
   // null and the agenda opens normally (no lock).
   const novaMarcacaoPacienteId = firstParam(sp.novaMarcacaoPaciente);
 
-  const [options, appointments, lockedPatientRow] = await Promise.all([
+  const [options, appointments, lockedPatientRow, blocks] = await Promise.all([
     // W9-02: the selected location narrows the therapist dropdown to that
     // location's assigned therapists (owner ruling 2026-07-17). Null here means
     // "Todas as localizações" and restores the full roster.
@@ -79,6 +80,20 @@ export default async function AgendaPage({
       locationId,
     }),
     novaMarcacaoPacienteId ? getPatient(novaMarcacaoPacienteId) : Promise.resolve(null),
+    // W9-04 (CB QA item 3): blocked time is drawn ONLY when the agenda is scoped
+    // to exactly one therapist. `time_off` is per therapist, but the grid has DAY
+    // columns and no therapist axis (W9-01 (f)) - so under "Todos os terapeutas"
+    // a full-width band would claim the whole clinic is blocked when only one
+    // therapist is away, suppressing real bookable time. A therapist's own
+    // agenda is always locked to them, so they always see their own blocks.
+    // Owner question filed 2026-07-17 (inbox W9-04-SCOPE-blocked-band-therapist-axis).
+    practitionerId
+      ? listTherapistBlocks(actor, {
+          therapistId: practitionerId,
+          rangeStart: startUtc,
+          rangeEnd: endUtc,
+        })
+      : Promise.resolve([]),
   ]);
 
   const lockedPatient = lockedPatientRow
@@ -92,6 +107,15 @@ export default async function AgendaPage({
       }
     : null;
 
+  // Serialize the block instants for the client boundary, exactly as the
+  // appointment rows already are (ISO 8601 UTC in, Lisbon placement at render).
+  const blockSpans = blocks.map((b) => ({
+    id: b.id,
+    startsAt: b.startsAt.toISOString(),
+    endsAt: b.endsAt.toISOString(),
+    reason: b.reason,
+  }));
+
   return (
     <AgendaViewClient
       view={view}
@@ -100,6 +124,7 @@ export default async function AgendaPage({
       lockTherapist={lockTherapist}
       options={options}
       appointments={appointments}
+      blocks={blockSpans}
       lockedPatient={lockedPatient}
       canHardDelete={can(actor.role, "settings:manage")}
     />
