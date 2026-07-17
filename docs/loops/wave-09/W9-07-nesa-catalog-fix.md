@@ -1,5 +1,63 @@
 # Loop W9-07 - NESA catalog fix (Wave 09 Correcoes CB)
 
+> **STATE 2026-07-17: CLOSED as NO-DEFECT by owner ruling. No code shipped. Docs delta only.**
+>
+> **The conditional below resolved to a third path that this loop file did not anticipate:
+> neither the code path nor the cloud-write path. There is no defect to fix.** W9-01 finding
+> (a) (`docs/recon/W9-01-findings.md`, merged #595 @ `022a31c`) established, with read-only
+> cloud evidence, that NESA is ALREADY selectable at Castelo Branco:
+>
+> - The booking dropdown filters `services.is_active` ONLY and never reads
+>   `service_location_prices` (`apps/web/lib/scheduling/data.ts:200-209`). **The
+>   offered-only-where-priced premise in Field 1 of this loop file is FALSE.** Hypothesis
+>   (i) is refuted, not merely unconfirmed: a missing or inactive CB price row cannot hide a
+>   service from a dropdown that never reads price rows.
+> - The canonical CB NESA (`270fb115-154a-4c4e-a2f7-f4976c71cfbd`) is `is_active = true`
+>   with an ACTIVE CB `service_location_prices` row at 5000 (50.00). Hypothesis (ii) refuted.
+> - The sole CB-assigned therapist has ZERO `therapist_services` rows, so the drawer's
+>   client-side narrowing is bypassed entirely (`appointment-drawer.tsx:457-465` - an empty
+>   mapping means "show all", by design). The remaining candidate refuted.
+>
+> **Cause of the QA observation:** it predates the W8-01a catalog seed (#587), which merged
+> the SAME day the QA was delivered (2026-07-16) and created the canonical active CB-priced
+> NESA row. Before that seed the only row named NESA was the frozen legacy row (39.00,
+> `is_active = false`), which `data.ts:208` correctly hides. The seed resolved item 4.
+>
+> **Owner ruling 2026-07-17 (amendments recorded here per the ruling's docs-delta
+> instruction; the close-out YELLOW reconciles):**
+> 1. **W9-07 closes as NO-DEFECT.** No code, no cloud write, no migration. Flip DONE
+>    referencing the findings once W9-01 merged (it did: #595).
+> 2. **Do NOT make the booking dropdown price/location-aware this wave.** A strict
+>    offered-only-where-priced filter applied today would HIDE services CB actually performs
+>    but which lack price rows, colliding with the still-open JP catalog-gaps ruling
+>    (`docs/QUESTIONS.md:546-571`, "CB missing services (present at LV, absent from CB's
+>    price table)" and the LV counterpart, both defaulting to "leave unseeded"). Tightening
+>    the filter before that ruling lands would convert a cosmetic over-inclusion into a real
+>    booking outage.
+> 3. **Registered as a Wave 10 candidate, explicitly gated on the JP catalog-gaps ruling:**
+>    "booking dropdown per-location offering filter" (see `docs/design/BACKLOG.md`, Wave 10
+>    candidates). The over-inclusion defect W9-01 found is real and recorded there - the
+>    dropdown offers every active service at every location, contradicting W8-01a, while
+>    packs in the same drawer ARE location-filtered (`appointment-drawer.tsx:345-347`).
+>
+> **Frozen legacy rows: untouched, as required.** Read-only confirmation in W9-01 - all three
+> `is_active = false` (Pilates Terapeutico 40.00, NESA 39.00, Massagem Terapeutica 50.00).
+> Nothing in this wave reactivated, renamed, repriced, mapped or deleted any of them.
+> Standing hazard recorded for any future loop: the legacy and canonical NESA rows share the
+> EXACT display name "NESA" and differ only by id / price / active flag, so any future fix
+> must match by **id**, never by name.
+>
+> **Residual, deliberately not actioned:** if item 4 referred to the PATIENT PORTAL rather
+> than the staff platform, it is still live and is a code fix - the portal hard-codes
+> `BOOKABLE_SERVICE_NAMES` (osteopatia, fisioterapia, massagem terapeutica, pilates
+> terapeutico) at `apps/api/lib/appointments/services.ts:39-44`, which excludes NESA. The QA
+> doc states "staff-platform QA" (`docs/qa/2026-07-16-castelo-branco-qa.md:3-4`), so the
+> staff reading governs and this loop closes. Recorded in W9-01 Q-W9-01-1 for Rodica's
+> re-check.
+>
+> Everything below is the ORIGINAL authored loop file, preserved unchanged for the record.
+> It was never executed as written, because its premise did not survive recon.
+
 GATE: **Wave 09 Correcoes CB, CONDITIONAL per W9-01 (a); any cloud DB write requires explicit owner authorization.** Makes NESA appear in the CB booking dropdown. **Consumes W9-01 finding (a).** Runs AFTER W9-06 merged and `origin/main` fast-forwarded. Starts from **fresh `origin/main`**; never stacked.
 
 **Conditional path (resolved by W9-01 (a)):**
