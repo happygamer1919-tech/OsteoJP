@@ -11,6 +11,7 @@ import {
   type BlockSpan,
 } from "@/lib/scheduling/blocked-time-core";
 import { intervalsOverlap } from "@/lib/scheduling/overlap";
+import { therapistColor } from "@/lib/scheduling/therapist-color";
 import {
   DAY_END_HOUR,
   DAY_START_HOUR,
@@ -404,9 +405,17 @@ function AppointmentBlock({
   const top = Math.max(0, ((startMin - DAY_START_MIN) / 30) * SLOT_HEIGHT);
   const rawHeight = ((endMin - startMin) / 30) * SLOT_HEIGHT;
   const height = Math.max(SLOT_HEIGHT - 4, Math.min(rawHeight, totalHeight - top) - 2);
-  const showService = appt.serviceName && rawHeight >= 72; // drop service under 45min
   const cancelled = appt.status === "cancelled";
   const widthPct = 100 / place.cols;
+
+  // W9-05: the therapist name is required on EVERY card (item 7), so it is never
+  // height-gated - a 30-min card shows time / patient / therapist as three dense
+  // lines (the Fisiozero-compact look item 8 asks for), with the patient name
+  // the middle priority and overflow-hidden clipping the rest gracefully. The
+  // SERVICE line is the droppable one: the body tint + the title already carry
+  // the service, so it shows only on taller cards.
+  const showTherapist = !!appt.practitionerName;
+  const showService = appt.serviceName && rawHeight >= 96;
 
   const accent = cancelled ? null : serviceAccent(appt.serviceName);
   const tint = cancelled
@@ -415,14 +424,20 @@ function AppointmentBlock({
       ? SERVICE_TINT[accent]
       : "bg-v2-surface border-v2-border";
 
+  // W9-05 (item 7): deterministic per-therapist colour. Colour is REINFORCEMENT
+  // (the spine + the dot); the therapist NAME below is the authoritative,
+  // always-AA identifier. Reused -700 tokens, so no canonical hex drifts.
+  const tColor = therapistColor(appt.practitionerId);
+
   return (
     <button
       type="button"
       onClick={onClick}
-      // §2.1 tinted-glass card by service category. rounded-lg (12px) keeps small
-      // blocks legible — the v2 radius scale only defines 24/28px for large
-      // containers (foundation §4.2 keeps the brand radius scale for the rest).
-      className={`hover-lift motion-safe:active:scale-[0.97] absolute overflow-hidden rounded-lg border p-2 text-left text-v2-text-primary shadow-v2-float hover:z-10 ${tint} ${
+      title={appt.practitionerName ? `${appt.patientName} · ${appt.practitionerName}` : appt.patientName}
+      // §2.1 tinted-glass card by service category (body). rounded-lg (12px)
+      // keeps small blocks legible - the v2 radius scale only defines 24/28px
+      // for large containers. The per-therapist colour is a spine drawn below.
+      className={`hover-lift motion-safe:active:scale-[0.97] absolute overflow-hidden rounded-lg border p-2 pl-3 text-left text-v2-text-primary shadow-v2-float hover:z-10 ${tint} ${
         conflicting ? "ring-2 ring-warning" : ""
       } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1`}
       style={{
@@ -432,6 +447,11 @@ function AppointmentBlock({
         width: `calc(${widthPct}% - 4px)`,
       }}
     >
+      {/* W9-05 (item 7): per-therapist colour SPINE on the left edge. A
+          positioned background bar, not a border-left colour, so it never fights
+          the service-tint border shorthand for precedence. Decorative (the
+          therapist NAME carries the identity as text), so aria-hidden. */}
+      <span className={`pointer-events-none absolute inset-y-0 left-0 w-1.5 ${tColor.fill}`} aria-hidden="true" />
       {conflicting && (
         // The warning is carried by the ring (ring-warning); the label text uses
         // v2-text-primary so it clears AA on every service tint (warning-700 is
@@ -442,11 +462,18 @@ function AppointmentBlock({
         <span className="truncate">
           {formatTimeOfDay(new Date(appt.startsAt))}-{formatTimeOfDay(new Date(appt.endsAt))}
         </span>
-        {/* Confirmation axis (0024) — orthogonal to `status`/`cancelled` above,
-            always shown independently regardless of lifecycle. */}
-        <ConfirmationIndicator state={appt.confirmationState} />
+        {/* Confirmation axis (0024) - orthogonal to `status`. W9-05 (item 5,
+            owner ruling 2026-07-17): a CANCELLED appointment SUPPRESSES the
+            confirmation tick, so a cancelled-and-previously-confirmed card can
+            never render a check + a strikethrough as one combined glyph (the
+            reader read that as "strikethrough on a confirmation"). Strikethrough
+            stays bound to cancelled (below); the axes are untouched in data. */}
+        {!cancelled && <ConfirmationIndicator state={appt.confirmationState} />}
       </span>
-      <span className={`flex items-center gap-1 truncate text-sm font-medium ${cancelled ? "text-v2-text-secondary line-through" : "text-v2-text-primary"}`}>
+      <span
+        data-testid="agenda-card-patient"
+        className={`flex items-center gap-1 truncate text-sm font-medium ${cancelled ? "text-v2-text-secondary line-through" : "text-v2-text-primary"}`}
+      >
         <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
         {(appt.recurrenceRule || appt.recurrenceParentId) && (
           <>
@@ -467,6 +494,18 @@ function AppointmentBlock({
           </span>
         )}
       </span>
+      {/* W9-05 (item 7): therapist identity on every card. The dot carries the
+          per-therapist colour (reinforcement); the NAME is the authoritative
+          text identifier, in AA-safe secondary ink regardless of the hue. */}
+      {showTherapist && (
+        <span
+          data-testid="agenda-card-therapist"
+          className="flex items-center gap-1 truncate text-xs text-v2-text-secondary"
+        >
+          <span className={`size-2 shrink-0 rounded-full ${tColor.fill}`} aria-hidden="true" />
+          <span className="truncate">{appt.practitionerName}</span>
+        </span>
+      )}
       {showService && <span className="block truncate text-xs text-v2-text-primary">{appt.serviceName}</span>}
       {/* No-note indicator (W2-04): completed visit with no per-visit note yet. */}
       {appt.status === "completed" && !appt.hasNote && (

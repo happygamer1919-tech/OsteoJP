@@ -99,6 +99,15 @@ The §7 token palette does not supply nine distinct hues (magenta is reserved fo
 
 The nine `marker_type` values are the frozen `osteopathy-v3.json` bodychart enum; the shape/colour mapping binds to those values (render-only — the template and the stored marker shape `{ marker_type, x, y, view }` are untouched). The marker glyphs + legend live in `apps/web` (BodyChart.tsx); no `packages/ui` primitive is added.
 
+### Per-therapist agenda colour (W9-05)
+
+The agenda appointment card carries a **deterministic per-therapist colour**, so staff can tell therapists apart at a glance (CB QA item 7). It is defined in `apps/web/lib/scheduling/therapist-color.ts` as a **stable hash (FNV-1a) of the therapist id → a 7-hue palette**, so the same therapist is the same colour on every render and across sessions.
+
+- **Reuses existing tokens, adds no hex.** The seven hues are the `-700` step of `accent-2` (teal), `accent-1` (purple), and `v2-blue / -burgundy / -green / -gold / -lavender` - all documented in `theme.css` as "AA label text on light surfaces (§3.4)". No new palette entry, so `packages/ui/src/tokens.test.ts` and the canonical hexes are untouched.
+- **Colour is reinforcement, never the only cue.** The therapist **name** (text, `text-v2-text-secondary`, always AA) is the authoritative identifier on every card; the colour is a left **spine** (a positioned `bg-*-700` bar, not a border-left colour, so it never fights the service-tint border shorthand) plus a matching dot beside the name. Two therapists that hash to the same hue are still unambiguous by name. Same discipline as the W5-25 bodychart markers (shape carries meaning, colour reinforces).
+- **Distinct from the service tint.** The palette LEADS with the two hues the service tint does not use (teal, purple); the spine is a saturated `-700` bar while the card body stays the pale `-100` service tint (SPEC-v2-agenda §2.1, unchanged), so the two colour axes read as separate.
+- **Cancelled semantics (item 5, owner ruling 2026-07-17):** strikethrough stays bound to `status = cancelled` (no remap of the axes); a cancelled card additionally **suppresses the confirmation tick**, so a cancelled-and-confirmed card can never render a check + a strikethrough as one combined glyph.
+
 ---
 
 **Conformance note:** W4-14 (Horários), W4-15 (Serviços), W4-16 (Pacientes), W4-17 (Agenda header), W4-18 (Início) follow the card/table/spacing/badge/button/toolbar/token patterns above. Any surface that needs a pattern not covered here extends this document in the same PR.

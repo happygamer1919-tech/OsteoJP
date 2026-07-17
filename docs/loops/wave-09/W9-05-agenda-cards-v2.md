@@ -1,5 +1,57 @@
 # Loop W9-05 - Agenda cards v2 (Wave 09 Correcoes CB)
 
+> **STATE 2026-07-17: EXECUTED and pushed for the OWNER VISUAL GATE. Docs delta rides this loop's PR; the close-out YELLOW reconciles.**
+>
+> Fixes CB QA items 7, 8, and 5 in one display-layer pass on the agenda card. Migration-free,
+> no data or axis change.
+>
+> - **(7) Therapist name + deterministic per-therapist colour.** Consumed W9-01 (b): the card
+>   carried NO therapist name (`practitionerName` was on the type but never rendered) and was
+>   tinted by SERVICE, so at CB every card fell to the neutral "Outros" tint and looked
+>   identical. Added: the therapist NAME on every card (authoritative text identifier), plus a
+>   deterministic per-therapist colour as a left SPINE + a dot beside the name. The colour is
+>   `apps/web/lib/scheduling/therapist-color.ts` - an FNV-1a hash of the therapist id into a
+>   7-hue palette, so the same id is the same colour every render. The palette REUSES existing
+>   `-700` tokens (accent-2, accent-1, and the five v2 hues), all documented AA on light
+>   surfaces, so **no new hex and `tokens.test.ts` stays green** (the loop's hard constraint).
+>   Colour is reinforcement; the name is authoritative; colour is never the only cue.
+> - **(8) Same-hour overlap.** The existing greedy side-by-side `layoutOverlaps` is unchanged;
+>   the card now prioritises the PATIENT NAME (always rendered, truncating) with the therapist
+>   line below it and the service line dropped first, so 2+ same-hour cards keep the patient
+>   name legible (the Fisiozero-compact look). The therapist name is required on EVERY card
+>   (item 7), so it is NOT height-gated - a 30-min card shows time / patient / therapist as
+>   three dense lines, overflow-hidden clipping the rest gracefully.
+> - **(5) Cancelled vs confirmed.** Consumed W9-01 (b): strikethrough was ALREADY bound to
+>   `status = cancelled` (not to the confirmation axis), so the QA premise ("strikethrough on
+>   confirmations") did not reproduce - the real defect was a cancelled-and-confirmed card
+>   rendering BOTH a strikethrough AND the confirmation tick, read as one glyph. Per the owner
+>   ruling (2026-07-17 item 4): **strikethrough stays bound to cancelled (NO remap of the
+>   axes); the cancelled state SUPPRESSES the confirmation tick**, so the two can never
+>   combine. Display-only; the dual axes are untouched in data.
+>
+> **Scope discipline:** only the appointment CARD render changed. The grid (6-day + 24h), the
+> toolbar filters, the W9-02 location filter, the W9-04 blocked-time band, booking, the
+> appointment count, and secondary-participant rules are untouched. `marcacoes` is a separate
+> surface and out of scope.
+>
+> **UI-STYLE.md extended** with a "Per-therapist agenda colour (W9-05)" subsection documenting
+> the palette (reused tokens, no drift), the reinforcement rule, and the cancelled semantics,
+> per this loop's requirement to document a new agenda palette.
+>
+> **Tests:** 8 unit (`therapist-color.test.ts`: determinism - same id -> same token across 50
+> calls, palette integrity - only `-700` tokens, no raw hex, teal/purple lead, null-safe
+> fallback); 7 component (`agenda-grid.test.tsx`, rendered to static markup: therapist name on
+> the card, deterministic spine token, two therapists two tokens, cancelled strikes + drops
+> the tick, a declined-not-cancelled card is NOT struck, all overlap names present); 1 E2E
+> (`agenda-cards.spec.ts`: book -> therapist name + colour dot on the card, then cancel ->
+> struck-through + no confirmation tick, on disposable fixtures, reference therapist the E2E
+> therapist).
+>
+> **NOTE flagged for the owner visual gate:** the card keeps its service-category BODY tint
+> (SPEC-v2-agenda §2.1, locked); per-therapist identity is the coloured SPINE + the name. If
+> the owner would rather the whole card be per-therapist coloured (dropping the service tint),
+> that is a spec change to rule at the gate - this loop did not self-authorize it.
+
 GATE: **Wave 09 Correcoes CB, migration-free, DISPLAY LAYER, OWNER VISUAL GATE.** Rebuilds the agenda card visuals: therapist name on every card, deterministic per-therapist colour, legible same-hour overlap, and corrected cancelled-vs-confirmed semantics (strikethrough = cancelled). **Consumes W9-01 finding (b).** Runs AFTER W9-04 merged and `origin/main` fast-forwarded. Starts from **fresh `origin/main`**; never stacked. **OWNER VISUAL GATE:** all checks green is NECESSARY but NOT sufficient; GREEN pushes + pastes the osteojp-platform PREVIEW URL + the agenda surface, then HALTs; the owner merges.
 
 ## Field 1. Scope and ground truth
