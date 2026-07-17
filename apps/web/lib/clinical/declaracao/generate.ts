@@ -10,7 +10,11 @@ import {
 } from "@osteojp/db";
 import { ClinicalError } from "../errors";
 import type { SourceLocation } from "../report/location-contacts";
-import { buildDeclaracaoModel, resolveLocalidade } from "./declaracao-model";
+import {
+  buildDeclaracaoModel,
+  resolveLocalidade,
+  resolveStampLocationKey,
+} from "./declaracao-model";
 import { renderDeclaracaoPdf } from "./declaracao-pdf";
 
 // Tenant-scoped, READ-ONLY load + render for the Declaração de Presença (W5-31).
@@ -76,6 +80,11 @@ export async function generateDeclaracaoPdf(
       patientName: patient.fullName,
       tenantSettings: tenant?.settings ?? {},
       localidade: resolveLocalidade(appointmentLocation, fallback),
+      // W9-03: carry the location IDENTITY through, not just the derived
+      // localidade string. Before this, the resolved location was dropped here,
+      // so the model layer could not tell which clinic the declaration was for
+      // and every declaration got the LV carimbo (CB QA item 2, "erro grave").
+      stampLocationKey: resolveStampLocationKey(appointmentLocation, fallback),
     };
   });
 
@@ -87,6 +96,7 @@ export async function generateDeclaracaoPdf(
     horaInicio: inputs.startTime,
     horaFim: inputs.endTime,
     localidade: built.localidade,
+    stampLocationKey: built.stampLocationKey,
     tenantSettings: built.tenantSettings,
   });
   const bytes = await renderDeclaracaoPdf(model);

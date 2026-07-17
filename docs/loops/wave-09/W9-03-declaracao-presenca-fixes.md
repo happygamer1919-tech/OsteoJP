@@ -1,5 +1,50 @@
 # Loop W9-03 - Declaracao de Presenca fixes (Wave 09 Correcoes CB)
 
+> **STATE 2026-07-17 (2nd) - EXECUTED and pushed for the OWNER VISUAL GATE. What shipped vs
+> the blank-stamp ruling:**
+>
+> All three defects fixed, migration-free, no document content changed:
+> - **Carimbo (the erro grave): per-location resolution.** `signatureStampBytesForLocation`
+>   keys on `normalizeLocationKey` (the SAME canonical key the localidade line uses). LV keeps
+>   its existing stamp (renamed `signature-stamp-linda-a-velha.png`); **CB resolves to a
+>   defined-but-empty slot -> a clean BLANK stamp area, NEVER the LV carimbo.** An unknown or
+>   null location also renders blank - the fallback is never another clinic's stamp. The model
+>   layer now receives the location identity (`resolveStampLocationKey`, mirroring
+>   `resolveLocalidade`); before, `generate.ts` resolved the location then DISCARDED it, which
+>   is exactly why every declaration got the LV stamp.
+> - **Logo: the real mark now renders.** W9-01 (d) said no PNG/JPEG logo existed; **at
+>   execution one DOES** - `apps/portal/public/icon-512.png`, the canonical OsteoJP brand mark
+>   (verified by eye: the teal/magenta/grey figure, not a padded app icon), 512x512 RGBA. Per
+>   the ruling ("wire from the canonical app logo asset if one exists in the repo"), it was
+>   inlined as `clinic-logo-asset.ts` and embedded via pdf-lib `embedPng`, replacing W5-31's
+>   hand-drawn teal-rectangle stand-in. **No slot left blank - the asset existed, so it was
+>   wired.** (The wordmark stays as Helvetica type, as before.) The incoming clinic-staff logo,
+>   if different, regenerates that one file.
+> - **Download -> preview.** Dropped the `{ download: pdf.filename }` option from the single
+>   `createSignedUrl` call (`declaracao-actions.ts`), so Storage serves the object
+>   `Content-Disposition: inline` and the tab the client already opens previews it. Both paths
+>   (marcacao and "Introducao manual") share that one action, so both now preview. The storage
+>   upload, path, and bytes are untouched.
+>
+> **VISUAL PROOF rendered at execution** (CB + LV declarations generated locally, first page
+> inspected): the LV declaration shows the real logo at top and the LV carimbo at the bottom;
+> the CB declaration shows the same real logo and a BLANK stamp area with "Castelo Branco" as
+> the localidade. This is exactly the ruling's gate criteria. Pasted in the PR for the owner.
+>
+> **STILL OPEN - Q-W9-01-7 (not resolved by this loop):** the "Introducao manual" path sets
+> `locationId = null`, so `resolveStampLocationKey` falls through to the tenant default
+> (oldest ACTIVE location). Since the owner re-activated LV on 2026-07-17 (ruling 5a), a
+> manually-entered CB declaration would resolve to LV's stamp - the dialog exposes no location
+> selector on the manual path. **This loop does NOT add editable declaration fields (item 12
+> is JP-gated), and adding a manual-path location selector is a UI change the loop did not
+> scope.** Recorded as a follow-up so the manual path's stamp selection is decided
+> deliberately; the marcacao path (the common case) is fully correct.
+>
+> **Content-unchanged:** the W5-31 responsavel (Q-W5-11 default "Dr. Joao Paulo Santos Silva")
+> and localidade (Q-W5-10) behaviour are preserved; no editable declaration fields added; the
+> verbatim pt-PT legal body is untouched. `docs/pdf-templates/declaration-presenca.html` was
+> already marked DEPRECATED in the W9-04 docs delta.
+
 > **STATE 2026-07-17: UNBLOCKED by owner ruling with a BLANK-STAMP default. Resequenced to run
 > AFTER W9-04. Recorded here (docs delta riding the W9-04 PR) so the executing loop reads this
 > from committed authority, not from a session.**

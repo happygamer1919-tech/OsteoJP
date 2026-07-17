@@ -8,7 +8,11 @@ import {
   declaracaoParagraph1,
   renderDeclaracaoPdf,
 } from "./declaracao-pdf";
-import { signatureStampBytes } from "./signature-stamp-asset";
+import { signatureStampBytesForLocation } from "./signature-stamp-asset";
+
+// W9-03: the stamp is resolved PER LOCATION now. These render tests just need
+// real stamp bytes, so they ask for Linda-a-Velha's (the only asset that exists).
+const signatureStampBytes = () => signatureStampBytesForLocation("linda-a-velha") as Uint8Array;
 import type { DeclaracaoModel } from "./declaracao-model";
 
 const model = (over: Partial<DeclaracaoModel> = {}): DeclaracaoModel => ({
