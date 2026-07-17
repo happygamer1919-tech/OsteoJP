@@ -1,5 +1,20 @@
 # Loop W9-03 - Declaracao de Presenca fixes (Wave 09 Correcoes CB)
 
+> **STATE 2026-07-17 (W9-03b) - asset micro follow-up, OWNER VISUAL GATE.** The owner
+> supplied the canonical logo (`Logotipo_OsteoJP_2023.jpg`, the full lockup: figure mark +
+> "osteojp" wordmark + "Osteopatia, Fisioterapia e Formacao" tagline) on 2026-07-17. Per the
+> ruling 2026-07-17 item 2 ("when the owner pastes local file paths, commit them into the
+> slots ... otherwise as a micro follow-up PR that carries the same OWNER VISUAL GATE"), W9-03
+> having merged (#599), this lands as **W9-03b**: `apps/web/lib/clinical/assets/clinic-logo.jpg`
+> replaces the W9-03 stand-in (the icon-512 mark drawn next to a Helvetica "OsteoJP" wordmark),
+> embedded via pdf-lib `embedJpg` as a single centered lockup. The per-location carimbo wiring
+> is UNCHANGED: CB still renders a BLANK stamp area (never the LV carimbo). **The CB carimbo
+> asset is still pending** - a separate micro follow-up when the owner supplies it; its slot
+> stays defined-but-empty (blank area). Rendered CB + LV locally: both carry the canonical
+> logo; CB blank stamp, LV keeps its carimbo. Same OWNER VISUAL GATE (owner inspects, then
+> merges).
+
+
 > **STATE 2026-07-17 (2nd) - EXECUTED and pushed for the OWNER VISUAL GATE. What shipped vs
 > the blank-stamp ruling:**
 >
