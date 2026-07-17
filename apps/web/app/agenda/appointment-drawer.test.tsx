@@ -90,6 +90,9 @@ const editAppt: AgendaAppointment = {
   confirmationReceivedAt: null,
   confirmationChannel: null,
   hasNote: false,
+  createdBy: null,
+  createdByName: null,
+  createdAt: "2026-07-01T09:00:00.000Z",
 };
 
 function render(state: ModalState, canHardDelete = false): string {
@@ -200,5 +203,26 @@ describe("AppointmentDrawer W6-03: locked patient on deep-link create", () => {
     const html = render({ mode: "create" });
     expect(html).not.toContain('aria-readonly="true"');
     expect(html).not.toContain("Rui Preso");
+  });
+});
+
+describe("AppointmentDrawer - created-by / created-at provenance (W9-06 item 10)", () => {
+  it("shows the creator name + created-at on the edit detail when created by staff", () => {
+    const html = render({
+      mode: "edit",
+      appt: { ...editAppt, createdBy: "u-recep", createdByName: "Rita Rececao" },
+    });
+    expect(html).toContain("Criado por");
+    expect(html).toContain("Rita Rececao");
+  });
+
+  it("shows the owner-ruled portal label when createdBy is null (a portal booking), never blank", () => {
+    const html = render({ mode: "edit", appt: { ...editAppt, createdBy: null, createdByName: null } });
+    expect(html).toContain("Reserva online (portal)");
+  });
+
+  it("does not render the provenance line in the creation flow (no editing appt)", () => {
+    const html = render({ mode: "create" });
+    expect(html).not.toContain("Criado por");
   });
 });

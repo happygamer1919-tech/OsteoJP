@@ -54,11 +54,15 @@ function mapAppointment(r: {
   confirmationReceivedAt: Date | null;
   confirmationChannel: string | null;
   hasNote: boolean;
+  createdBy: string | null;
+  createdByName: string | null;
+  createdAt: Date;
 }): AgendaAppointment {
   return {
     ...r,
     startsAt: r.startsAt.toISOString(),
     endsAt: r.endsAt.toISOString(),
+    createdAt: r.createdAt.toISOString(),
     confirmationReceivedAt: r.confirmationReceivedAt
       ? r.confirmationReceivedAt.toISOString()
       : null,
@@ -70,6 +74,10 @@ function mapAppointment(r: {
 // (+1 badge) and appointment details. Primary-only semantics elsewhere.
 const patientTwo = alias(patients, "patient_two");
 const practitionerTwo = alias(users, "practitioner_two");
+// W9-06 (item 10): a THIRD users reference to resolve `created_by` into a display
+// name. Aliased because `users` is already joined for the primary practitioner;
+// LEFT because created_by is nullable (portal bookings set it null).
+const createdByUser = alias(users, "created_by_user");
 
 const appointmentSelection = {
   id: appointments.id,
@@ -107,6 +115,12 @@ const appointmentSelection = {
     where ${appointmentNotes.appointmentId} = ${appointments.id}
       and ${appointmentNotes.tenantId} = ${appointments.tenantId}
   )`.as("has_note"),
+  // Audit provenance (W9-06, item 10). createdBy is nullable (portal bookings);
+  // createdByName is resolved via the aliased LEFT join below, null when the
+  // creator is not a staff user.
+  createdBy: appointments.createdBy,
+  createdByName: createdByUser.fullName,
+  createdAt: appointments.createdAt,
 } as const;
 
 function baseAppointmentQuery(tx: DbTx) {
@@ -120,7 +134,10 @@ function baseAppointmentQuery(tx: DbTx) {
     // Secondary participants (W4-19) — LEFT joins (optional); aliased so patients
     // and users can be joined a second time without colliding with the primaries.
     .leftJoin(patientTwo, eq(patientTwo.id, appointments.patientTwoId))
-    .leftJoin(practitionerTwo, eq(practitionerTwo.id, appointments.practitionerTwoId));
+    .leftJoin(practitionerTwo, eq(practitionerTwo.id, appointments.practitionerTwoId))
+    // W9-06 (item 10): resolve created_by -> creator display name. LEFT: null for
+    // portal bookings, which have no users row.
+    .leftJoin(createdByUser, eq(createdByUser.id, appointments.createdBy));
 }
 
 /** Appointments whose start falls in [startUtc, endUtc), optionally filtered. */

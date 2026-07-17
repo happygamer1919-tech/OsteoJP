@@ -638,7 +638,7 @@ is not a bug and must not be "fixed" with a migration or a backfill.
 
 **W9-06 consequence:** the created-by display must handle NULL as a **first-class value**,
 not an empty cell. Recommended default: render it as the portal/patient origin (for
-example "Marcado pelo utente" / "Portal do utente") rather than blank, since NULL here
+the owner-ruled "Reserva online (portal)" / "Online booking (portal)") rather than blank, since NULL here
 carries real provenance meaning. This is a copy decision - it needs both i18n files and is
 recorded as an open question below rather than self-authorized.
 
@@ -897,10 +897,11 @@ None of these are self-authorized. Each carries a recommended default.
    the only active location. Deliberate, or a data error? **Recommended default:** treat as
    a data error to be confirmed and corrected by the owner. No loop flips it. The cloud DB
    is read-only.
-4. **Q-W9-01-4 (W9-06 copy):** `created_by` is NULL for every portal-booked appointment by
-   design. What should the marcacao detail/list show? **Recommended default:** an explicit
-   portal-origin label (pt "Marcado pelo utente" / en "Booked by patient"), both i18n
-   files, never a blank cell.
+4. **Q-W9-01-4 (W9-06 copy) - CLOSED 2026-07-17 (owner ruling).** `created_by` is NULL for
+   every portal-booked appointment by design. The marcacao detail + list render the NULL case
+   as **pt "Reserva online (portal)" / en "Online booking (portal)"**, both i18n files, never
+   a blank cell. (This supersedes the stale recommended default first recorded here, "Marcado
+   pelo utente"; the ruling stands.) Implemented in W9-06.
 5. **Q-W9-01-5 (W9-03 asset, blocking):** no CB carimbo asset exists; the only stamp in the
    repo is the LV/Fisiozero block. **Recommended default:** owner supplies the CB carimbo
    (Q-W5-9 relation); W9-03 lands the per-location wiring keyed on `normalizeLocationKey`

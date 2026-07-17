@@ -1,6 +1,6 @@
 "use client";
 
-import { Repeat, User } from "lucide-react";
+import { Repeat, StickyNote, User } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { locale, s } from "@/lib/i18n";
@@ -429,7 +429,23 @@ function AppointmentBlock({
   // always-AA identifier. Reused -700 tokens, so no canonical hex drifts.
   const tColor = therapistColor(appt.practitionerId);
 
+  // W9-06 (item 9): the marcacao note, surfaced on hover so staff need not open
+  // the marcacao to read the historico. Staff-only surface (the portal never
+  // receives notes - item 6 guard). The card is overflow-hidden, so the popover
+  // is a SIBLING of the button inside a positioned `group` wrapper, letting it
+  // escape the clip; it shows on group-hover AND group-focus-within (keyboard).
+  const noteText = appt.notes?.trim() || null;
+
   return (
+    <div
+      className="group absolute hover:z-20"
+      style={{
+        top,
+        height,
+        left: `calc(${place.col * widthPct}% + 2px)`,
+        width: `calc(${widthPct}% - 4px)`,
+      }}
+    >
     <button
       type="button"
       onClick={onClick}
@@ -437,15 +453,9 @@ function AppointmentBlock({
       // §2.1 tinted-glass card by service category (body). rounded-lg (12px)
       // keeps small blocks legible - the v2 radius scale only defines 24/28px
       // for large containers. The per-therapist colour is a spine drawn below.
-      className={`hover-lift motion-safe:active:scale-[0.97] absolute overflow-hidden rounded-lg border p-2 pl-3 text-left text-v2-text-primary shadow-v2-float hover:z-10 ${tint} ${
+      className={`hover-lift motion-safe:active:scale-[0.97] absolute inset-0 overflow-hidden rounded-lg border p-2 pl-3 text-left text-v2-text-primary shadow-v2-float ${tint} ${
         conflicting ? "ring-2 ring-warning" : ""
       } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1`}
-      style={{
-        top,
-        height,
-        left: `calc(${place.col * widthPct}% + 2px)`,
-        width: `calc(${widthPct}% - 4px)`,
-      }}
     >
       {/* W9-05 (item 7): per-therapist colour SPINE on the left edge. A
           positioned background bar, not a border-left colour, so it never fights
@@ -462,13 +472,25 @@ function AppointmentBlock({
         <span className="truncate">
           {formatTimeOfDay(new Date(appt.startsAt))}-{formatTimeOfDay(new Date(appt.endsAt))}
         </span>
-        {/* Confirmation axis (0024) - orthogonal to `status`. W9-05 (item 5,
-            owner ruling 2026-07-17): a CANCELLED appointment SUPPRESSES the
-            confirmation tick, so a cancelled-and-previously-confirmed card can
-            never render a check + a strikethrough as one combined glyph (the
-            reader read that as "strikethrough on a confirmation"). Strikethrough
-            stays bound to cancelled (below); the axes are untouched in data. */}
-        {!cancelled && <ConfirmationIndicator state={appt.confirmationState} />}
+        <span className="flex shrink-0 items-center gap-1">
+          {/* W9-06 (item 9): a note-presence icon signals a note exists even
+              before hover (never hover-only); the content is in the popover. */}
+          {noteText && (
+            <StickyNote
+              size={12}
+              strokeWidth={1.75}
+              aria-label={s["appointment.hasNoteLabel"]}
+              className="text-v2-text-secondary"
+            />
+          )}
+          {/* Confirmation axis (0024) - orthogonal to `status`. W9-05 (item 5,
+              owner ruling 2026-07-17): a CANCELLED appointment SUPPRESSES the
+              confirmation tick, so a cancelled-and-previously-confirmed card can
+              never render a check + a strikethrough as one combined glyph (the
+              reader read that as "strikethrough on a confirmation"). Strikethrough
+              stays bound to cancelled (below); the axes are untouched in data. */}
+          {!cancelled && <ConfirmationIndicator state={appt.confirmationState} />}
+        </span>
       </span>
       <span
         data-testid="agenda-card-patient"
@@ -514,5 +536,21 @@ function AppointmentBlock({
         </span>
       )}
     </button>
+    {/* W9-06 (item 9): the note hover card. Sibling of the button so it escapes
+        the card's overflow-hidden; shown on hover of the card OR keyboard focus
+        of the card (group-focus-within). Non-interactive text. */}
+    {noteText && (
+      <div
+        role="tooltip"
+        data-testid="agenda-card-note"
+        className="pointer-events-none absolute left-1 top-full z-50 mt-1 hidden w-56 max-w-[16rem] whitespace-pre-line rounded-v2 border border-v2-border bg-v2-surface p-2 text-xs text-v2-text-primary shadow-v2-float group-hover:block group-focus-within:block"
+      >
+        <span className="mb-1 block font-medium text-v2-text-secondary">
+          {s["appointment.noteHoverLabel"]}
+        </span>
+        {noteText}
+      </div>
+    )}
+    </div>
   );
 }

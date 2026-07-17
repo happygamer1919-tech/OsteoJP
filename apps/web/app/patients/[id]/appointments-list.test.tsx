@@ -43,6 +43,9 @@ const base: AgendaAppointment = {
   confirmationReceivedAt: null,
   confirmationChannel: null,
   hasNote: false,
+  createdBy: null,
+  createdByName: null,
+  createdAt: "2026-07-01T09:00:00.000Z",
 };
 
 function render(

@@ -29,6 +29,7 @@ import type {
   AgendaOptions,
   AppointmentStatusValue,
 } from "@/lib/scheduling/types";
+import { NoteHoverCard } from "../agenda/note-hover-card";
 
 type StringKey = keyof typeof s;
 
@@ -210,6 +211,19 @@ function AppointmentRow({
         {/* Location + therapist. */}
         <span className="text-xs text-v2-text-secondary">{appt.locationName}</span>
         <span className="text-xs text-v2-text-secondary">{appt.practitionerName}</span>
+
+        {/* Audit provenance (W9-06, item 10): who created the marcacao. NULL
+            createdByName = a portal booking, shown as the owner-ruled label, never
+            blank. Compact form on the list (creator only); the full created-at
+            timestamp is on the detail drawer. */}
+        <span className="text-xs text-v2-text-secondary">
+          {s["appointment.createdBy"]}: {appt.createdByName ?? s["appointment.createdByPortal"]}
+        </span>
+
+        {/* W9-06 (item 9): the marcacao note on hover/focus, so staff read the
+            historico without opening the marcacao. Staff-only (the portal never
+            receives notes - item 6 guard). Renders nothing when there is no note. */}
+        <NoteHoverCard note={appt.notes} />
 
         {/* Conflict marker, consistent with the agenda (warning tone, not red). */}
         {conflicting && (

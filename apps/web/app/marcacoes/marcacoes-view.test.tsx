@@ -69,6 +69,9 @@ function mkAppt(over: Partial<AgendaAppointment>): AgendaAppointment {
     confirmationReceivedAt: null,
     confirmationChannel: null,
     hasNote: false,
+    createdBy: null,
+    createdByName: null,
+    createdAt: "2026-07-01T09:00:00.000Z",
     ...over,
   };
 }
@@ -139,5 +142,41 @@ describe("MarcacoesView Serviço filter (W6-01b data-driven)", () => {
       />,
     );
     expect(html).toContain("bg-v2-burgundy-100");
+  });
+});
+
+describe("W9-06 items 9 + 10 - created-by provenance + note hover on marcacoes rows", () => {
+  function renderRow(over: Partial<AgendaAppointment>) {
+    return render(
+      <MarcacoesView
+        filters={baseFilters}
+        lockTherapist={false}
+        options={OPTIONS}
+        serviceFilterOptions={SERVICES}
+        appointments={[mkAppt(over)]}
+      />,
+    );
+  }
+
+  it("item 10: shows the creator's name when created by staff", () => {
+    const html = renderRow({ createdBy: "u-recep", createdByName: "Rita Rececao" });
+    expect(html).toContain("Rita Rececao");
+  });
+
+  it("item 10: a portal booking (createdBy null) shows the owner-ruled label, never blank", () => {
+    const html = renderRow({ createdBy: null, createdByName: null });
+    // Owner ruling 2026-07-17: pt "Reserva online (portal)".
+    expect(html).toContain("Reserva online (portal)");
+  });
+
+  it("item 9: renders the note content in a hover card when the marcacao has a note", () => {
+    const html = renderRow({ notes: "Trazer exames anteriores" });
+    expect(html).toContain("Trazer exames anteriores");
+    expect(html).toContain('role="tooltip"');
+  });
+
+  it("item 9: renders no note affordance for a note-less marcacao", () => {
+    const html = renderRow({ notes: null });
+    expect(html).not.toContain('role="tooltip"');
   });
 });
