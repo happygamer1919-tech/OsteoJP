@@ -8,7 +8,7 @@ recorded here so the visual work can ship without inventing data models.
 
 ## V2-W2 Agenda (PR #245)
 
-### Q-V2W2-1 — Blocked-time band needs a data model (backend functional follow-up) — **ANSWERED / CLOSED 2026-07-17 (W9-04)**
+### Q-V2W2-1 — Blocked-time band needs a data model (backend functional follow-up) - **ANSWERED / CLOSED 2026-07-17 (W9-04)**
 
 > **CLOSED by W9-04 (Wave 09, CB QA item 3).** The premise ("there is no blocked-time data
 > model in scheduling today") was already stale when this was written: `time_off` has existed
@@ -415,7 +415,7 @@ backend signs both presigned PUT and GET; M1 webhook gains API-key auth; contrac
 ### STILL OPEN after this sweep (for report-back)
 
 - [ ] **SMS — Twilio as a new vendor + EU residency / signed DPA** (route: owner). The only SMS item still blocking the build. No vendor introduced yet; approve only with Twilio EU region + DPA, else re-evaluate an EU-native SMS provider. (2026-07-03 SMS entry, item 1.)
-- [x] **Q-V2W2-1 — blocked-time band data model** (route: Ivan/backend). **ANSWERED / CLOSED 2026-07-17 by W9-04:** no new model was ever needed - `time_off` has existed since migration 0006 (W5-12 confirmed it). The band was unrendered for want of a RENDER; W9-04 draws it (muted non-interactive hatch, disabled slot buttons underneath). One caveat open: the band renders only when the agenda is scoped to one therapist, since the grid has no therapist axis (owner question filed 2026-07-17).
+- [x] **Q-V2W2-1 - blocked-time band data model** (route: Ivan/backend). **ANSWERED / CLOSED 2026-07-17 by W9-04:** no new model was ever needed - `time_off` has existed since migration 0006 (W5-12 confirmed it). The band was unrendered for want of a RENDER; W9-04 draws it (muted non-interactive hatch, disabled slot buttons underneath). One caveat open: the band renders only when the agenda is scoped to one therapist, since the grid has no therapist axis (owner question filed 2026-07-17).
 - [ ] **Q-V2W2-2 — missing v2 glass primitives** (foundation follow-up, non-blocking). Green Button variant + glass DatePicker/SegmentedControl/Select; add in a `packages/ui` foundation pass, not a section wave.
 - [ ] **Q-V2W2-3 — service catalogue → colour-category mapping** (non-blocking). Confirm live service names map to the five categories, or provide the mapping.
 - [ ] **Q-V2W7-1 — service-tinted chip has no glass primitive** (foundation follow-up, non-blocking). Add a glass `ServiceChip` / lift service+conflict helpers into `lib/scheduling` in a later foundation pass.

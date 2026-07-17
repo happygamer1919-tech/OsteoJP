@@ -880,7 +880,7 @@ logo).
 
 None of these are self-authorized. Each carries a recommended default.
 
-1. **Q-W9-01-1 (W9-07 scope):** item 4 does not reproduce - the canonical CB NESA is active
+1. **Q-W9-01-1 (W9-07 scope) - CLOSED 2026-07-17, human-verified.** Owner ruling 2026-07-17 (item 5b): "Clinic staff confirmed NESA is selectable at CB in production; W9-07 no-defect closure is human-verified." The staff-platform reading was correct, so the portal residual below did not apply to item 4. W9-07 closed as NO-DEFECT (#596, @`8910b3e`). The per-location offering filter stays a Wave 10 candidate gated on the JP catalog ruling (owner ruling item 5b). ORIGINAL QUESTION: item 4 does not reproduce - the canonical CB NESA is active
    and CB-priced, and the CB therapist has no service mapping, so NESA is offered. Should
    W9-07 become a verification loop (prove-and-close), or should Rodica re-test first?
    **Recommended default:** convert W9-07 to a verification loop with an E2E against
@@ -888,12 +888,12 @@ None of these are self-authorized. Each carries a recommended default.
    platform before the wave closes. Also confirm whether item 4 referred to the staff
    platform (as the QA doc states) or the patient portal - under the portal reading it is
    still live and is a code fix (`BOOKABLE_SERVICE_NAMES` excludes NESA).
-2. **Q-W9-01-2 (W9-02 policy, blocking):** 15 of 18 active therapists have zero
+2. **Q-W9-01-2 (W9-02 policy, blocking) - ANSWERED 2026-07-17.** Owner ruling 2026-07-17 OVERRODE the recommended default below: "filter therapists by assigned location. Therapists with no location assignment appear ONLY under Todas as localizacoes, never inside a specific location view. A thin CB list short-term is accepted; owner data entry populates it." Implemented + pinned by unit tests and E2E in W9-02 (#597, @`286bd63`). Corroboration found at execution: W5-32 already ships this exact policy on the Equipa list (`app/admin/staff/page.tsx:55-57`). ORIGINAL QUESTION: 15 of 18 active therapists have zero
    `availability_templates` rows. Should a therapist with no availability assignment be
    hidden from every location filter, or shown at all of them? **Recommended default:**
    show them at every location, and union the template-derived set with the range's
    actually-booked practitioners. A strict filter would cut the CB dropdown to 1 entry.
-3. **Q-W9-01-3 (data, owner):** `OsteoJP (LV)` is `is_active = false` in the cloud; CB is
+3. **Q-W9-01-3 (data, owner) - CLOSED 2026-07-17, recommended default CONFIRMED CORRECT.** Owner ruling 2026-07-17 (item 5a): "OsteoJP (LV) is_active=false was a data error; owner activated it via the app UI 2026-07-17; no agent action, archive the question." The read-only recon call was right: it was a data error, no loop touched it, and the owner corrected it through the app. ORIGINAL QUESTION: `OsteoJP (LV)` is `is_active = false` in the cloud; CB is
    the only active location. Deliberate, or a data error? **Recommended default:** treat as
    a data error to be confirmed and corrected by the owner. No loop flips it. The cloud DB
    is read-only.

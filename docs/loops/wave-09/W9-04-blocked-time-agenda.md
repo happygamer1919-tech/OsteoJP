@@ -2,14 +2,32 @@
 
 > **STATE 2026-07-17: RESEQUENCED ahead of W9-03 and executed. Docs delta rides this loop's PR; the close-out YELLOW reconciles.**
 >
-> **AMENDMENT 1 - resequencing (owner ruling, 2026-07-17).** This loop's Field 2 A0 guard
-> requires `origin/main` to contain W9-03's merge. **The owner superseded that:** "if the CB
-> carimbo and logo assets are not in the repo by the time W9-02 merges, run W9-04 first and
-> return to W9-03 when assets land." At W9-02's merge (`286bd63`) neither asset existed
-> (W9-01 (d): the repo holds exactly ONE stamp, the LV/Fisiozero block, and no logo raster at
-> all), and the mailbox carried no reply to the asset request
-> (`outbox/W9-03-ASSET-REQUEST-carimbo-CB-plus-logo-2026-07-17.md`). So W9-04 ran off fresh
-> `origin/main` containing W9-02, NOT W9-03. W9-03 returns when the assets land.
+> **AMENDMENT 1 - resequencing (owner ruling, 2026-07-17; CONFIRMED for the record in the
+> owner's follow-up ruling of the same day, item 3).** This loop's Field 2 A0 guard requires
+> `origin/main` to contain W9-03's merge. **The owner superseded that.** The authorizing text,
+> committed here verbatim so the record exists in-repo and not only in a session:
+>
+> > "W9-03 resequencing authorized: if the CB carimbo and logo assets are not in the repo by
+> > the time W9-02 merges, run W9-04 first and return to W9-03 when assets land."
+> > (session ruling 2026-07-17, item 6)
+>
+> > "Resequence CONFIRMED for the record: owner authorized W9-04 before W9-03 on
+> > asset-blocked grounds (session ruling 2026-07-17 item 6). Include this authorization text
+> > in the W9-04 PR body and docs delta so the committed record exists. Order from here:
+> > W9-04 (in flight), W9-03, W9-05, W9-06, W9-07 flip, W9-08."
+> > (owner ruling 2026-07-17, item 3)
+>
+> At W9-02's merge (`286bd63`) neither asset existed (W9-01 (d): the repo holds exactly ONE
+> stamp, the LV/Fisiozero block, and no logo raster at all), and the mailbox carried no reply
+> to the asset request (`outbox/W9-03-ASSET-REQUEST-carimbo-CB-plus-logo-2026-07-17.md`). So
+> W9-04 ran off fresh `origin/main` containing W9-02, NOT W9-03.
+>
+> **Order from here (owner, 2026-07-17):** W9-04 (this loop), W9-03, W9-05, W9-06, W9-07
+> flip, W9-08. **Note for the close-out YELLOW:** the "W9-07 flip" step is ALREADY COMPLETE -
+> W9-07 closed as NO-DEFECT and merged as #596 (@`8910b3e`) earlier the same day, before this
+> ruling was issued, and the owner's ruling 5(b) independently confirms the closure is
+> human-verified ("Clinic staff confirmed NESA is selectable at CB in production"). No
+> further W9-07 work is outstanding.
 >
 > **AMENDMENT 2 - scope question OPEN, one half deliberately not built.** This loop's ground
 > truth says to draw blocks "for the visible range + **the rendered therapists**". That
@@ -32,14 +50,23 @@
 > terapeutas". This delivers QA item 3's need: staff booking FOR a therapist filter to them,
 > see the block, and cannot book over it; a therapist always sees their own blocks.
 >
-> **NOT built, pending the owner ruling** (`inbox/W9-04-SCOPE-blocked-band-therapist-axis-2026-07-17.md`):
-> what the unfiltered view should show. Options offered: (A) accept the gap - recommended;
-> (B) per-therapist strips reusing the overlap layout - truthful but noisy at 16 therapists;
-> (C) a summary marker ("2 terapeutas indisponiveis") - new UI, needs a design call + both
-> i18n files. **Recommended default (A) now, (C) as a Wave 10 candidate if reception reports
-> the gap.** Not self-authorized: (B)/(C) await the ruling. Note the gap is a VISIBILITY gap
-> only - the booking drawer already excludes blocked slots from availability (W5-12), so a
-> real double-book is already prevented.
+> **RESOLVED - owner ruling 2026-07-17 (item 1): option (A) ACCEPTED.** The question was
+> filed at `inbox/W9-04-SCOPE-blocked-band-therapist-axis-2026-07-17.md` with three options:
+> (A) accept the gap; (B) per-therapist strips reusing the overlap layout; (C) a summary
+> marker in the all-therapists view. The ruling, verbatim:
+>
+> > "W9-04 band scope: option (A) accepted. Blocked-time bands render in single-therapist
+> > views only. Under Todos os terapeutas blocked time stays invisible; the drawer already
+> > refuses the slot (W5-12), so safety is intact. Register option (C), a summary marker in
+> > the all-therapists view, as a Wave 10 candidate. Your accessibility approach (disabling
+> > the underlying slot buttons, no pointer-events overlay) is approved."
+>
+> So what is built IS the ruling: band in single-therapist views only; no band under "Todos
+> as terapeutas"; the gap is accepted as VISIBILITY-only because W5-12 already refuses the
+> slot at booking time, leaving safety intact. **Option (C) registered as a Wave 10 candidate**
+> (`docs/design/BACKLOG.md`). Option (B) declined. The `disabled`-slot-buttons approach
+> (rather than a pointer-events overlay, which a keyboard user could tab straight past) is
+> **owner-approved**.
 >
 > **Non-bookable is enforced by `disabled`, not by an overlay.** The slot buttons inside a
 > block are `disabled`; the band is `pointer-events-none` on top. A pointer-events overlay

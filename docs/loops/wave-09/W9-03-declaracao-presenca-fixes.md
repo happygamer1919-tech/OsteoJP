@@ -1,5 +1,80 @@
 # Loop W9-03 - Declaracao de Presenca fixes (Wave 09 Correcoes CB)
 
+> **STATE 2026-07-17: UNBLOCKED by owner ruling with a BLANK-STAMP default. Resequenced to run
+> AFTER W9-04. Recorded here (docs delta riding the W9-04 PR) so the executing loop reads this
+> from committed authority, not from a session.**
+>
+> **Why it was blocked.** W9-01 (d) found there is **no CB carimbo asset anywhere in the
+> repo** - exactly ONE stamp exists (`apps/web/lib/clinical/declaracao/assets/signature-stamp.png`,
+> the LV/Fisiozero block), resolved with **no location parameter at all**
+> (`declaracao-model.ts:64`, `signatureStampBytes()` is zero-argument). This loop's Field 6
+> therefore required a HALT rather than fabricating an image. The asset request went to
+> `outbox/W9-03-ASSET-REQUEST-carimbo-CB-plus-logo-2026-07-17.md`; W9-04 was run first under
+> the owner's resequencing authorization (session ruling 2026-07-17 item 6, confirmed item 3).
+>
+> **The unblocking ruling (owner, 2026-07-17, item 2), verbatim:**
+>
+> > "W9-03 unblocked with the blank-stamp default, built as per-location asset resolution: LV
+> > keeps its existing stamp; CB renders a clean blank stamp area with a defined asset slot.
+> > The erro grave (LV stamp on CB documents) dies immediately with no image needed. Logo:
+> > wire from the canonical app logo asset if one exists in the repo; if none exists, place
+> > the slot and leave it blank. The CB carimbo and logo files are incoming from clinic staff;
+> > when the owner pastes local file paths, commit them into the slots - inside W9-03 if still
+> > open, otherwise as a micro follow-up PR that carries the same OWNER VISUAL GATE. W9-03
+> > gate inspection: CB declaration shows blank stamp and never the LV stamp; LV declaration
+> > unchanged plus logo state as built."
+>
+> **What this means for the executor:**
+> - **Build per-location asset RESOLUTION**, keyed on `normalizeLocationKey` (the same
+>   canonical key the localidade line already uses: `linda-a-velha` / `castelo-branco`,
+>   `location-contacts.ts:70,79`). LV resolves to the existing stamp. CB resolves to an
+>   EMPTY slot -> a clean blank stamp area, never the LV stamp.
+> - **The "erro grave" dies with no image needed.** A CB declaration stops printing the LV
+>   carimbo the moment resolution is per-location; the blank area is the already-supported
+>   `signatureStamp: false` behaviour (`declaracao-pdf.ts:110-113` leaves blank vertical space
+>   for a physical stamp). This is a fix, not a placeholder.
+> - **Logo:** wire from a canonical app logo asset **if one exists in the repo**. W9-01 (d)
+>   established the committed brand assets are **SVG** (`packages/ui/src/assets/brand/logo-*.svg`)
+>   and pdf-lib embeds **only PNG/JPEG**, which is why W5-31 hand-drew a rectangle stand-in
+>   (`declaracao-pdf.ts:66-76`). **The executor VERIFIES whether a canonical PNG/JPEG logo
+>   exists at execution; if none does, place the slot and leave it blank** per the ruling - do
+>   NOT fabricate or rasterise one absent a further ruling.
+> - **Incoming assets:** the CB carimbo + logo files are coming from clinic staff. When the
+>   owner pastes local paths, commit them into the slots - **inside W9-03 if still open,
+>   otherwise as a micro follow-up PR carrying the same OWNER VISUAL GATE.**
+> - **OWNER VISUAL GATE inspection (per the ruling):** a **CB declaration shows a blank stamp
+>   area and NEVER the LV stamp**; an **LV declaration is unchanged**, plus the logo state as
+>   built.
+>
+> **Corrections from W9-01 (d) that still stand (the loop file's starting map is wrong):**
+> - `docs/pdf-templates/declaration-presenca.html` is **NOT the template** - it is dead
+>   documentation (`docs/pdf-templates/SPEC.md:5`: "awaiting wire-up to PDF renderer"; zero
+>   code references). The renderer is **pdf-lib** (`declaracao-pdf.ts`). Editing that HTML
+>   changes nothing. **Mark it deprecated in this loop's docs delta** (owner ruling item 6:
+>   "Mark the dead declaration HTML template deprecated in the docs delta; renderer stays
+>   pdf-lib").
+> - The **"manual option" is not a download-vs-preview toggle**. It is
+>   `documents.declaracao.manualOption` = "Introducao manual", the empty-value first entry in
+>   the marcacao dropdown (`DeclaracaoDialog.tsx:118`). BOTH paths force the same download.
+>   There is no preview option today to fix - the default must be flipped to inline. The
+>   download is one option on one call: `createSignedUrl(path, 60, { download: pdf.filename })`
+>   (`declaracao-actions.ts:45-47`); dropping it yields `inline`. The client already tries to
+>   preview (`window.open`, `DeclaracaoDialog.tsx:84`).
+> - **The manual path sets `locationId = null`** (`DeclaracaoDialog.tsx:65`), so it falls back
+>   to `tenantDefaultLocation` (the oldest ACTIVE location). Per-location stamp resolution
+>   keyed off a null `locationId` inherits that fallback, and the dialog exposes no location
+>   selector on the manual path. **Q-W9-01-7 remains open** on how the manual path picks a
+>   stamp. NOTE: LV was `is_active = false` at recon and the owner **re-activated it via the
+>   app on 2026-07-17** (ruling item 5a), so the oldest-active-location fallback may now
+>   resolve to LV again - the executor must not assume the recon-time state.
+> - The generation path **writes to Storage** (`declaracao-actions.ts:38-43`, admin
+>   service-role, tenant-prefixed path). The download flag sits 3 lines below the upload, so
+>   W9-03 must touch this file, but the change is narrow: `createSignedUrl` only - no bytes,
+>   no path, no upload change, and the path construction at :38 is untouched. This is a signed
+>   URL, **not** the clinical `record_status` state machine: no `clinical_records` row, no
+>   therapist signature, so the Field 6 "alters how the declaration is stored or signed" HALT
+>   does not trigger.
+
 GATE: **Wave 09 Correcoes CB, migration-free expected, OWNER VISUAL GATE.** Fixes the three Declaracao de Presenca defects the CB team calls an "erro grave": the wrong (LV) carimbo on CB declarations, the missing clinic logo, and the forced auto-download in the manual option. Runs AFTER W9-02 merged and `origin/main` fast-forwarded. Starts from **fresh `origin/main`**; never stacked. **OWNER VISUAL GATE:** all checks green is NECESSARY but NOT sufficient; GREEN pushes + pastes the osteojp-platform PREVIEW URL + a CB and an LV declaration to inspect, then HALTs; the owner merges.
 
 ## Field 1. Scope and ground truth
