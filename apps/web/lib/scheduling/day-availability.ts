@@ -116,6 +116,25 @@ function readBookedRows(
     .orderBy(asc(appointments.startsAt));
 }
 
+/**
+ * The half-open overlap predicate shared by EVERY time_off read (W9-04).
+ *
+ * Extracted so the agenda's band read and the booking availability read cannot
+ * drift apart: the loop's own restriction is "reuse the existing time_off read;
+ * do not derive a second, divergent block source". Any new block reader must
+ * compose this, never restate it.
+ */
+function blockOverlapsRange(rangeStart: Date, rangeEnd: Date): SQL {
+  return and(lt(timeOff.startsAt, rangeEnd), gt(timeOff.endsAt, rangeStart)) as SQL;
+}
+
+const blockSelection = {
+  id: timeOff.id,
+  startsAt: timeOff.startsAt,
+  endsAt: timeOff.endsAt,
+  reason: timeOff.reason,
+} as const;
+
 /** time_off blocks overlapping the query range (half-open). Therapist-wide, so
  *  never scoped to a location — an absence blocks every clinic for that span. */
 function readBlockRows(
@@ -123,21 +142,29 @@ function readBlockRows(
   args: { therapistId: string; rangeStart: Date; rangeEnd: Date },
 ): Promise<BlockRow[]> {
   return tx
-    .select({
-      id: timeOff.id,
-      startsAt: timeOff.startsAt,
-      endsAt: timeOff.endsAt,
-      reason: timeOff.reason,
-    })
+    .select(blockSelection)
     .from(timeOff)
-    .where(
-      and(
-        eq(timeOff.userId, args.therapistId),
-        lt(timeOff.startsAt, args.rangeEnd),
-        gt(timeOff.endsAt, args.rangeStart),
-      ),
-    )
+    .where(and(eq(timeOff.userId, args.therapistId), blockOverlapsRange(args.rangeStart, args.rangeEnd)))
     .orderBy(asc(timeOff.startsAt));
+}
+
+/**
+ * ONE therapist's time_off blocks overlapping a range, for the agenda band
+ * (W9-04, CB QA item 3). Same source and same predicate as the booking
+ * availability read above - only the caller differs.
+ *
+ * Scoped to a single therapist on purpose. `time_off` is per therapist but the
+ * agenda grid has DAY columns and no therapist axis (W9-01 (f)), so a band is
+ * only truthful when the agenda is showing exactly one therapist. The caller
+ * enforces that; see the loop file and the owner question filed 2026-07-17.
+ *
+ * Runs through runScoped, so RLS scopes it to the caller's tenant.
+ */
+export async function listTherapistBlocks(
+  ctx: RequestContext,
+  args: { therapistId: string; rangeStart: Date; rangeEnd: Date },
+): Promise<BlockRow[]> {
+  return runScoped(ctx, (tx) => readBlockRows(tx, args));
 }
 
 function readTemplateRows(

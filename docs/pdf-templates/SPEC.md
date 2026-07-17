@@ -2,7 +2,22 @@
 
 > **Owner:** Ivan (PDF rendering wiring)
 > **Templates:** `invoice-fatura-recibo.html`, `declaration-presenca.html`, `declaration-tratamento.html`, `clinical-report.html`
-> **Status:** HTML layouts complete, awaiting wire-up to PDF renderer.
+> **Status:** **DEPRECATED for `declaration-presenca.html` (2026-07-17, owner ruling; W9-01 (d) finding).**
+> The declaracao HTML was NEVER wired: grep for `declaration-presenca` / `pdf-templates` /
+> `puppeteer` across all `*.ts/tsx/json/mjs` returns **zero** code references, and no
+> puppeteer/chromium appears in any `package.json`. **The shipped renderer is `pdf-lib`**,
+> drawing primitives imperatively in `apps/web/lib/clinical/declaracao/declaracao-pdf.ts`
+> (W5-31, #563). **Editing `declaration-presenca.html` produces ZERO user-visible change** -
+> change the pdf-lib renderer instead. The owner ruling of 2026-07-17 confirms: "Mark the
+> dead declaration HTML template deprecated in the docs delta; renderer stays pdf-lib."
+>
+> The other three templates (`invoice-fatura-recibo.html`, `declaration-tratamento.html`,
+> `clinical-report.html`) were NOT audited by W9-01 and keep their original status below.
+> Note `clinical-report.html` has a pdf-lib counterpart shipped at
+> `apps/web/lib/clinical/report/pdf.ts`, so it is likely dead too - unverified, do not
+> assume.
+>
+> **Original status (pre-2026-07-17):** HTML layouts complete, awaiting wire-up to PDF renderer.
 
 ---
 

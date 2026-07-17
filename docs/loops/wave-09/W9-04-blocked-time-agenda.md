@@ -1,5 +1,88 @@
 # Loop W9-04 - Blocked time on agenda (Wave 09 Correcoes CB)
 
+> **STATE 2026-07-17: RESEQUENCED ahead of W9-03 and executed. Docs delta rides this loop's PR; the close-out YELLOW reconciles.**
+>
+> **AMENDMENT 1 - resequencing (owner ruling, 2026-07-17; CONFIRMED for the record in the
+> owner's follow-up ruling of the same day, item 3).** This loop's Field 2 A0 guard requires
+> `origin/main` to contain W9-03's merge. **The owner superseded that.** The authorizing text,
+> committed here verbatim so the record exists in-repo and not only in a session:
+>
+> > "W9-03 resequencing authorized: if the CB carimbo and logo assets are not in the repo by
+> > the time W9-02 merges, run W9-04 first and return to W9-03 when assets land."
+> > (session ruling 2026-07-17, item 6)
+>
+> > "Resequence CONFIRMED for the record: owner authorized W9-04 before W9-03 on
+> > asset-blocked grounds (session ruling 2026-07-17 item 6). Include this authorization text
+> > in the W9-04 PR body and docs delta so the committed record exists. Order from here:
+> > W9-04 (in flight), W9-03, W9-05, W9-06, W9-07 flip, W9-08."
+> > (owner ruling 2026-07-17, item 3)
+>
+> At W9-02's merge (`286bd63`) neither asset existed (W9-01 (d): the repo holds exactly ONE
+> stamp, the LV/Fisiozero block, and no logo raster at all), and the mailbox carried no reply
+> to the asset request (`outbox/W9-03-ASSET-REQUEST-carimbo-CB-plus-logo-2026-07-17.md`). So
+> W9-04 ran off fresh `origin/main` containing W9-02, NOT W9-03.
+>
+> **Order from here (owner, 2026-07-17):** W9-04 (this loop), W9-03, W9-05, W9-06, W9-07
+> flip, W9-08. **Note for the close-out YELLOW:** the "W9-07 flip" step is ALREADY COMPLETE -
+> W9-07 closed as NO-DEFECT and merged as #596 (@`8910b3e`) earlier the same day, before this
+> ruling was issued, and the owner's ruling 5(b) independently confirms the closure is
+> human-verified ("Clinic staff confirmed NESA is selectable at CB in production"). No
+> further W9-07 work is outstanding.
+>
+> **AMENDMENT 2 - scope question OPEN, one half deliberately not built.** This loop's ground
+> truth says to draw blocks "for the visible range + **the rendered therapists**". That
+> phrase presumes therapist columns. **There are none** - `agenda-grid.tsx` renders DAY
+> columns (`dates.map`), exactly the false premise W9-01 (f) found in W9-02's DoD. It bites
+> harder here because it decides what the feature IS: `time_off` is PER THERAPIST, so a
+> full-width band in a day column is only TRUE when the agenda shows exactly one therapist.
+>
+> Concrete failure if built naively: therapist A is away 10:00-11:00, therapist B is working.
+> Under "Todos os terapeutas" a full-width band would tell reception the CLINIC is blocked -
+> false, and worse than today's nothing, because it would suppress real bookable time with B.
+>
+> Nothing committed resolves it. SPEC-v2-agenda 2.1 says only "Blocked time renders as a
+> muted, non-interactive band"; Q-V2W2-1 deferred the band entirely ("no blocked-time data
+> model ... left unrendered"). Neither says WHOSE band.
+>
+> **Built (the unambiguous half):** the band renders when the agenda is scoped to ONE
+> therapist - a therapist filter is selected, or the viewer is a therapist (whose agenda is
+> always locked to their own calendar, `page.tsx:57-59`). No band under "Todos os
+> terapeutas". This delivers QA item 3's need: staff booking FOR a therapist filter to them,
+> see the block, and cannot book over it; a therapist always sees their own blocks.
+>
+> **RESOLVED - owner ruling 2026-07-17 (item 1): option (A) ACCEPTED.** The question was
+> filed at `inbox/W9-04-SCOPE-blocked-band-therapist-axis-2026-07-17.md` with three options:
+> (A) accept the gap; (B) per-therapist strips reusing the overlap layout; (C) a summary
+> marker in the all-therapists view. The ruling, verbatim:
+>
+> > "W9-04 band scope: option (A) accepted. Blocked-time bands render in single-therapist
+> > views only. Under Todos os terapeutas blocked time stays invisible; the drawer already
+> > refuses the slot (W5-12), so safety is intact. Register option (C), a summary marker in
+> > the all-therapists view, as a Wave 10 candidate. Your accessibility approach (disabling
+> > the underlying slot buttons, no pointer-events overlay) is approved."
+>
+> So what is built IS the ruling: band in single-therapist views only; no band under "Todos
+> as terapeutas"; the gap is accepted as VISIBILITY-only because W5-12 already refuses the
+> slot at booking time, leaving safety intact. **Option (C) registered as a Wave 10 candidate**
+> (`docs/design/BACKLOG.md`). Option (B) declined. The `disabled`-slot-buttons approach
+> (rather than a pointer-events overlay, which a keyboard user could tab straight past) is
+> **owner-approved**.
+>
+> **Non-bookable is enforced by `disabled`, not by an overlay.** The slot buttons inside a
+> block are `disabled`; the band is `pointer-events-none` on top. A pointer-events overlay
+> alone would still let a keyboard user Tab to the slot and press Enter - a genuine
+> "bookable over blocked time" hole. Covered by E2E (mouse AND keyboard reachability).
+>
+> **Divergence guard (this loop's own Field 5 restriction).** Rather than write a second
+> block reader, the half-open overlap predicate was EXTRACTED into `blockOverlapsRange` in
+> `day-availability.ts` and is now composed by BOTH the booking availability read
+> (`readBlockRows`) and the agenda band read (`listTherapistBlocks`). They cannot drift.
+> Recon confirmed `time_off` IS the source `getTherapistAvailability` uses
+> (`day-availability.ts:121-141`), so the Field 6 divergent-model HALT does not trigger.
+>
+> **Closes Q-V2W2-1** (blocked-time band deferred in V2-W2 for want of a data model). The
+> model has existed since migration 0006; this loop renders the band.
+
 GATE: **Wave 09 Correcoes CB, migration-free, DISPLAY GAP.** Blocked therapist time must render visibly on the agenda with distinct non-bookable styling, so staff cannot double-book over it. Runs AFTER W9-03 merged and `origin/main` fast-forwarded. Starts from **fresh `origin/main`**; never stacked. **GREEN self-merge** (migration-free).
 
 ## Field 1. Scope and ground truth
