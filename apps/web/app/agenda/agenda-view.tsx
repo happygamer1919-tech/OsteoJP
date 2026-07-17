@@ -206,7 +206,15 @@ export function AgendaView({
             <Select
               aria-label={s["header.location"]}
               value={filters.locationId ?? ""}
-              onChange={(e) => navigate({ location: e.target.value || null })}
+              // W9-02: changing location also clears the therapist filter. The
+              // dropdown now only lists the selected location's assigned
+              // therapists, so a therapist held over from another location would
+              // be a filter that is ACTIVE in the URL but absent from its own
+              // Select - the grid would silently narrow to a therapist the user
+              // can no longer see selected. Clearing keeps the toolbar and the
+              // grid describing the same thing. (No-op for the therapist role:
+              // navigate() never sets the param when lockTherapist.)
+              onChange={(e) => navigate({ location: e.target.value || null, therapist: null })}
             >
               <option value="">{s["agenda.allLocations"]}</option>
               {options.locations.map((o) => (

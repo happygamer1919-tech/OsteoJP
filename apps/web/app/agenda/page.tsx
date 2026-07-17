@@ -68,7 +68,10 @@ export default async function AgendaPage({
   const novaMarcacaoPacienteId = firstParam(sp.novaMarcacaoPaciente);
 
   const [options, appointments, lockedPatientRow] = await Promise.all([
-    getAgendaOptions(actor),
+    // W9-02: the selected location narrows the therapist dropdown to that
+    // location's assigned therapists (owner ruling 2026-07-17). Null here means
+    // "Todas as localizações" and restores the full roster.
+    getAgendaOptions(actor, locationId),
     listAppointments(actor, {
       startUtc,
       endUtc,
