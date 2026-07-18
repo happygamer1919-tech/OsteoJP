@@ -11,12 +11,13 @@
 // left for a physical stamp.
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
-import { clinicLogoMarkBytes } from "../assets/clinic-logo-asset";
+import { clinicLogoBytes } from "../assets/clinic-logo-asset";
 import type { DeclaracaoModel } from "./declaracao-model";
 
 // (The teal brand hex lives in the embedded mark itself now - W5-31's
 // hand-drawn teal rectangle was replaced by the real logo raster in W9-03.)
-const MAGENTA = rgb(0x8b / 255, 0x18 / 255, 0x63 / 255);
+// (The magenta wordmark hex lived in the drawn stand-in; the embedded lockup
+// carries the brand colours now - W9-03b.)
 const INK = rgb(0.13, 0.13, 0.13);
 const MUTED = rgb(0.4, 0.4, 0.4);
 
@@ -65,30 +66,18 @@ export async function renderDeclaracaoPdf(model: DeclaracaoModel): Promise<Uint8
 
   let y = PAGE_H - MARGIN;
 
-  // 1. Clinic logo - the REAL centered OsteoJP brand mark + wordmark (W9-03).
+  // 1. Clinic logo - the canonical OsteoJP lockup, centered (W9-03b).
   //
-  // W5-31 drew a teal rectangle + magenta bar + the word "OsteoJP" here as a
-  // stand-in, because pdf-lib embeds PNG/JPEG only and the committed brand
-  // assets are SVG. The stand-in rendered fine but was not the logo, which is
-  // what CB reported as "the logo does not render" (QA item 2). This embeds the
-  // canonical mark raster instead; the wordmark stays type, as before.
-  const markH = 34;
-  const logoPng = await doc.embedPng(clinicLogoMarkBytes());
-  const markW = (logoPng.width / logoPng.height) * markH; // preserve aspect
-  const wordmark = "OsteoJP";
-  const wordmarkSize = 22;
-  const wordmarkW = bold.widthOfTextAtSize(wordmark, wordmarkSize);
-  const blockW = markW + 10 + wordmarkW;
-  const startX = (PAGE_W - blockW) / 2;
-  page.drawImage(logoPng, { x: startX, y: y - markH, width: markW, height: markH });
-  page.drawText(wordmark, {
-    x: startX + markW + 10,
-    y: y - markH + (markH - wordmarkSize) / 2 + 3,
-    size: wordmarkSize,
-    font: bold,
-    color: MAGENTA,
-  });
-  y -= markH + 40;
+  // W5-31 drew a rectangle + text stand-in; W9-03 embedded the icon-512 mark next
+  // to a Helvetica "OsteoJP" wordmark (the best raster available then). W9-03b
+  // embeds the OWNER-SUPPLIED canonical logo (Logotipo_OsteoJP_2023): a single
+  // image carrying the figure mark, the "osteojp" wordmark, and the tagline. No
+  // more drawn wordmark - the lockup is the whole thing.
+  const logo = await doc.embedJpg(clinicLogoBytes());
+  const logoH = 76; // portrait lockup; width derives from the native aspect
+  const logoW = (logo.width / logo.height) * logoH;
+  page.drawImage(logo, { x: (PAGE_W - logoW) / 2, y: y - logoH, width: logoW, height: logoH });
+  y -= logoH + 30;
 
   // 2. Title, centered.
   center(DECLARACAO_TITLE, y, 20, bold, INK);

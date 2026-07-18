@@ -82,3 +82,21 @@ describe("ADDENDUM: the extracted signature/stamp asset embeds into a real PDF",
     expect(pdf.length).toBeGreaterThan(0);
   });
 });
+
+describe("W9-03b - the canonical clinic logo asset embeds into the declaration", () => {
+  it("clinicLogoBytes() returns valid JPEG bytes (SOI marker FFD8)", async () => {
+    const { clinicLogoBytes } = await import("../assets/clinic-logo-asset");
+    const bytes = clinicLogoBytes();
+    expect(bytes.length).toBeGreaterThan(1000);
+    // JPEG start-of-image marker, so pdf-lib embedJpg accepts it.
+    expect(bytes[0]).toBe(0xff);
+    expect(bytes[1]).toBe(0xd8);
+  });
+
+  it("the rendered declaration embeds the logo (materially larger than a no-image render would be)", async () => {
+    // A logo-bearing, blank-stamp render still carries the embedded JPEG.
+    const bytes = await renderDeclaracaoPdf(model({ stampBytes: null }));
+    expect(bytes.length).toBeGreaterThan(20_000);
+    expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
+  });
+});
