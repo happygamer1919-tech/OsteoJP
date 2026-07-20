@@ -180,3 +180,29 @@ describe("BodyChart placement gating (ruling G) — unchanged by the render swap
     expect(html).not.toContain("<select");
   });
 });
+
+describe("W10-02b Defect 1 — mobile marker list wraps at word boundaries, never per character", () => {
+  // A pain_location marker with an EVA value produces the longest row label
+  // ("Local da dor - EVA 7/10") AND the busiest row (EVA selector + Remover),
+  // i.e. exactly the case the CB phone screenshot broke on.
+  const painRow: Marker = { marker_type: "pain_location", x: 0.5, y: 0.5, view: "anterior", intensity: 7 };
+
+  it("gives the marker label a min-width FLOOR so break-words wraps by word, not by character", () => {
+    const html = render([painRow], false);
+    // the label column now has a min-width floor and keeps flex-1 + break-words
+    expect(html).toContain("min-w-[7rem] flex-1 break-words");
+    // the old collapse pattern (min-w-0 flex-1) that let the column shrink to a
+    // few pixels — and forced per-character wrap — is gone from the label
+    expect(html).not.toContain("min-w-0 flex-1 break-words");
+  });
+
+  it("lets the canvas/controls row wrap and never force horizontal overflow on a phone", () => {
+    const html = render([painRow], false);
+    expect(html).toContain("flex flex-wrap items-start gap-3 min-w-0");
+  });
+
+  it("keeps the whole chart from forcing overflow (root is min-w-0)", () => {
+    const html = render([painRow], false);
+    expect(html).toContain("min-w-0 space-y-2");
+  });
+});

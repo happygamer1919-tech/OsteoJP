@@ -107,12 +107,24 @@ export function SignatureConsent({
     if (readOnly) return;
     e.preventDefault();
     drawingRef.current = true;
-    canvasRef.current?.setPointerCapture(e.pointerId);
+    // W10-02b Defect 3: pointer capture is BEST-EFFORT. On some touch pointers
+    // setPointerCapture can throw (InvalidStateError/NotFoundError); if it did so
+    // before the first point was recorded the whole stroke was lost and the pad
+    // read as "not accepting touch". Start the stroke regardless - on-canvas
+    // pointermove still delivers points without capture.
     strokesRef.current.push([pointFrom(e)]);
+    try {
+      canvasRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture unsupported on this pointer - drawing still works on-canvas */
+    }
     redraw();
   }
   function onPointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (readOnly || !drawingRef.current) return;
+    // W10-02b Defect 3: preventDefault on the move too, so a residual touch
+    // gesture can never reinterpret the drag as a scroll/pan mid-stroke.
+    e.preventDefault();
     const stroke = strokesRef.current[strokesRef.current.length - 1];
     if (stroke) stroke.push(pointFrom(e));
     redraw();
@@ -124,6 +136,19 @@ export function SignatureConsent({
       canvasRef.current?.releasePointerCapture(e.pointerId);
     } catch {
       /* pointer already released - ignore */
+    }
+    redraw();
+  }
+  // W10-02b Defect 3: a cancelled touch pointer (gesture takeover / interruption)
+  // must end the stroke cleanly, otherwise drawingRef stays true and the next
+  // touch appends to a stale stroke.
+  function onPointerCancel(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    try {
+      canvasRef.current?.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released - ignore */
     }
     redraw();
   }
@@ -222,6 +247,7 @@ export function SignatureConsent({
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerLeave={onPointerUp}
+              onPointerCancel={onPointerCancel}
               className="w-full max-w-xl touch-none rounded-v2 border border-v2-border bg-v2-surface"
             />
             <div className="flex flex-wrap items-center gap-2">

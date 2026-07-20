@@ -578,6 +578,8 @@
   "clinical.statusLocked": "Locked",
   "clinical.statusSigned": "Signed",
   "clinical.save": "Save",
+  "clinical.redFlagPromptText": "Red flag recorded. Fill in the Reason for Consultation.",
+  "clinical.redFlagPromptAction": "Go to Reason for Consultation",
   "clinical.saved": "Record saved.",
   "clinical.signLock": "Sign and lock",
   "clinical.signLockConfirm": "Signing locks the record permanently. Continue?",

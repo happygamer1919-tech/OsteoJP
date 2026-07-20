@@ -129,3 +129,65 @@ test.describe("ficha signature + consent (therapist)", () => {
     ).toBeVisible();
   });
 });
+
+/**
+ * W10-02b Defect 3 — the signature pad must accept TOUCH drawing on phones.
+ *
+ * Runs at a phone viewport with touch enabled. A synthetic touch drag (pointer
+ * events, pointerType "touch", a pointerId that setPointerCapture cannot claim -
+ * exactly the condition that aborted the old handler before the first point was
+ * recorded) must register a stroke: the pad stops being empty, so "Guardar
+ * assinatura" (disabled while empty) becomes enabled. Bucket-independent - it
+ * asserts the DRAWING registered, not the Storage upload (the CI seed provisions
+ * no clinical-attachments bucket, as this spec's header notes).
+ */
+test.describe("ficha signature TOUCH drawing (therapist, phone)", () => {
+  test.use({
+    storageState: STORAGE.therapist,
+    hasTouch: true,
+    viewport: { width: 390, height: 844 },
+  });
+
+  test("a touch drag draws on the canvas and enables Guardar assinatura", async ({ page }) => {
+    await createDraftFicha(page);
+
+    const section = page.locator("#signature-consent");
+    const canvas = section.getByTestId("signature-canvas");
+    const save = section.getByRole("button", { name: "Guardar assinatura" });
+
+    await canvas.scrollIntoViewIfNeeded();
+    await expect(canvas).toBeVisible();
+    // An empty pad keeps Guardar disabled.
+    await expect(save).toBeDisabled();
+
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error("signature canvas has no bounding box");
+    const at = (fx: number, fy: number) => ({
+      clientX: box.x + box.width * fx,
+      clientY: box.y + box.height * fy,
+    });
+    const base = {
+      pointerType: "touch",
+      pointerId: 1,
+      isPrimary: true,
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      buttons: 1,
+    };
+
+    await canvas.dispatchEvent("pointerdown", { ...base, ...at(0.2, 0.4) });
+    for (const [fx, fy] of [
+      [0.35, 0.5],
+      [0.5, 0.55],
+      [0.65, 0.6],
+      [0.8, 0.65],
+    ] as const) {
+      await canvas.dispatchEvent("pointermove", { ...base, ...at(fx, fy) });
+    }
+    await canvas.dispatchEvent("pointerup", { ...base, ...at(0.8, 0.65), buttons: 0 });
+
+    // The touch stroke registered -> the pad is no longer empty -> Guardar enables.
+    await expect(save).toBeEnabled();
+  });
+});
