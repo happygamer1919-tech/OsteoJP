@@ -1,6 +1,8 @@
 # W10-01 findings - Cloud DB patient-domain cleanup recon (Wave 10 Dados Reais e Isolamento)
 
-> Loop: `docs/loops/wave-10/W10-01-cleanup-recon.md`. Read-only recon, authored 2026-07-20. **No DB write of any kind was performed.** All cloud reads ran inside a single `SET TRANSACTION READ ONLY` transaction on `DATABASE_URL_DIRECT` (Supabase project `jaxmkwoxjcgzkwxgbayx`, session role `postgres`), counts/ids/timestamps only, zero patient PII printed, credential-free. This document ends in a **versioned PROPOSED CLEANUP PLAN (PLAN v1)** that W10-02 executes ONLY after the owner replies `AUTORIZO LIMPEZA plan v1`.
+> Loop: `docs/loops/wave-10/W10-01-cleanup-recon.md`. Read-only recon, authored 2026-07-20. **No DB write of any kind was performed.** All cloud reads ran inside a single `SET TRANSACTION READ ONLY` transaction on `DATABASE_URL_DIRECT` (Supabase project `jaxmkwoxjcgzkwxgbayx`, session role `postgres`), counts/ids/timestamps only, zero patient PII printed, credential-free. This document ends in a **versioned PROPOSED CLEANUP PLAN (PLAN v2)** that W10-02 executes ONLY after the owner replies `AUTORIZO LIMPEZA plan v2`.
+>
+> **Owner rulings (2026-07-20), recorded here for audit:** Q-W10-01-1 CONFIRMED - both residual slices (the 15 UI-created patients and the 4 signed-ficha owners) are synthetic, no exclusions. Q-W10-01-2 Option A - the 4-patient immutability island stays; the trigger stays enabled throughout, no bypass under any framing. Plan check: 3 of the 4 blocked patients are LIVE, so a soft-delete step was added and the plan bumped **v1 -> v2** (see the plan changelog).
 
 ## (a) Inventory - patient-domain row counts by state
 
@@ -74,9 +76,11 @@ All four app hard-delete paths share the scrypt gate `verifyDeletePassword` (has
 
 ---
 
-## (f) PROPOSED CLEANUP PLAN - PLAN v1
+## (f) PROPOSED CLEANUP PLAN - PLAN v2
 
-**Authorization required before W10-02 opens the write window:** owner reply `AUTORIZO LIMPEZA plan v1` (exact phrase + this version), which also confirms the two residual boundary slices in (b) are synthetic.
+**Changelog:** v1 (initial recon, 2026-07-20) -> **v2** (owner live-patient check, 2026-07-20): the recon confirmed **3 of the 4 blocked patients are LIVE** (`22ce09b0`, `8cd8c310`, `c53c36aa`; `cae30d86` already soft-deleted). Because the post-cleanup cloud is real-data-only and synthetic residue must not be visible in the app, v2 adds **step 9** - a soft-delete `UPDATE` of the 3 live blocked patients. This is a `patients`-row `UPDATE` only; the `clinical_records` immutability trigger is NOT touched (it fires on `clinical_records`, not `patients`), and soft-delete is the sanctioned `softDeletePatient` operation. After step 9 all 4 blocked patients are soft-deleted -> invisible in the normal app; the island survives only in the owner/admin-only "Pacientes eliminados" recovery surface (hard delete remains impossible while the signed records pin them, Option A).
+
+**Authorization required before W10-02 opens the write window:** owner reply `AUTORIZO LIMPEZA plan v2` (exact phrase + this version), which also confirms the two residual boundary slices in (b) are synthetic.
 
 **Model:** direct parameterized SQL inside the single W10-02 audited session, run as ONE atomic transaction (all-or-nothing), capturing BEFORE/AFTER counts per step; **any per-step count that does not match the expected value, any FK `23503`, or any `check_violation` -> ROLLBACK and HALT to the mailbox** (no improvised workaround, no trigger bypass). The immutability trigger stays enabled throughout as the backstop.
 
@@ -94,8 +98,9 @@ Children-first, bottom-up (expected counts are the recon figures; W10-02 pastes 
 | 6 | `appointments` where `patient_id` in D OR `patient_2_id` in D | 10 |
 | 7 | `patient_locations` / `patient_form_submissions` / `invoices` where `patient_id` in D | 0 / 0 / 0 |
 | 8 | `patients` where `id` in D | 42 |
+| 9 | `patients` **soft-delete** (`UPDATE SET deleted_at = now()`) where `id` in the 3 LIVE blocked patients (`22ce09b0`, `8cd8c310`, `c53c36aa`); `cae30d86` already soft-deleted. UPDATE only, trigger untouched | 3 updated |
 
-**Expected END STATE:** `patients = 4`, `appointments = 5`, `clinical_records = 26` (5 signed + 21 draft), `clinical_episodes = 3`, `attachments = 2`, `patient_note_revisions = 3`, `record_annulments = 0` - all belonging to the 4 blocked patients (the accepted residue). **Retained UNCHANGED:** `users = 19`, `services = 25`, `service_location_prices = 23`, `service_packs = 14`, `locations = 2` (OsteoJP CB + LV, both active), `tenants = 1`, `roles = 4`, `tenants.settings` (incl. the delete-password secret). The 3 frozen legacy service rows are inside `services` and untouched.
+**Expected END STATE:** `patients = 4` (all 4 now `deleted_at NOT NULL` -> invisible in the normal app, present only in owner/admin "Pacientes eliminados"), `appointments = 5`, `clinical_records = 26` (5 signed + 21 draft), `clinical_episodes = 3`, `attachments = 2`, `patient_note_revisions = 3`, `record_annulments = 0` - all belonging to the 4 blocked patients (the accepted residue). **Retained UNCHANGED:** `users = 19`, `services = 25`, `service_location_prices = 23`, `service_packs = 14`, `locations = 2` (OsteoJP CB + LV, both active), `tenants = 1`, `roles = 4`, `tenants.settings` (incl. the delete-password secret). The 3 frozen legacy service rows are inside `services` and untouched.
 
 **Not patient-domain (owner's call, default LEAVE):** the 7 `analytics_events` have `patient_id NULL` and are out of the strict patient-domain scope. Default: leave; purge only if the owner wants QA analytics gone (does not affect the boundary).
 
@@ -112,4 +117,4 @@ Children-first, bottom-up (expected counts are the recon figures; W10-02 pastes 
 - **No-write proof:** all reads inside `SET TRANSACTION READ ONLY`; the only repo change from this loop is this file, the QUESTIONS.md W10-01/02 sub-batch, and the BACKLOG W10-01 row flip (`git diff --name-only origin/main` is docs-only).
 - **Counts** are pasted per table in (a); the blocked island footprint in (e); the boundary aggregates in (b).
 - **Immutability** determination in (e): trigger enabled (`tgenabled='O'`), blocks UPDATE+DELETE of locked/signed even for `postgres`; 5 signed rows are the blocked set; 0 locked, 0 annulled.
-- **Plan** is versioned **PLAN v1** with per-step expected counts, path (direct SQL, trigger intact), and a BLOCKED section with owner options.
+- **Plan** is versioned **PLAN v2** with per-step expected counts, path (direct SQL, trigger intact), the added soft-delete step 9 for the 3 live blocked patients, and a BLOCKED section with owner options (owner ruled Option A).
