@@ -252,6 +252,8 @@
   "appointment.createdBy": "Created by",
   "appointment.createdByPortal": "Online booking (portal)",
   "appointment.createdAt": "Created on",
+  "appointment.minutesAbbrev": "min",
+  "appointment.detailsHoverLabel": "Appointment details",
   "appointment.noteHoverLabel": "Appointment note",
   "appointment.hasNoteLabel": "Has note",
   "appointment.notes": "Notes",

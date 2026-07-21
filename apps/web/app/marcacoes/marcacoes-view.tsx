@@ -29,7 +29,7 @@ import type {
   AgendaOptions,
   AppointmentStatusValue,
 } from "@/lib/scheduling/types";
-import { NoteHoverCard } from "../agenda/note-hover-card";
+import { AppointmentHoverCard } from "../agenda/appointment-hover-card";
 
 type StringKey = keyof typeof s;
 
@@ -220,10 +220,11 @@ function AppointmentRow({
           {s["appointment.createdBy"]}: {appt.createdByName ?? s["appointment.createdByPortal"]}
         </span>
 
-        {/* W9-06 (item 9): the marcacao note on hover/focus, so staff read the
-            historico without opening the marcacao. Staff-only (the portal never
-            receives notes - item 6 guard). Renders nothing when there is no note. */}
-        <NoteHoverCard note={appt.notes} />
+        {/* W10-05: the shared unified hover popup (mini-dashboard), replacing the
+            W9-06 note-only NoteHoverCard. The SAME AppointmentHoverPanel the agenda
+            card renders; staff-only (the portal never imports it). Shown on hover
+            AND keyboard focus of its trigger. */}
+        <AppointmentHoverCard appt={appt} />
 
         {/* Conflict marker, consistent with the agenda (warning tone, not red). */}
         {conflicting && (

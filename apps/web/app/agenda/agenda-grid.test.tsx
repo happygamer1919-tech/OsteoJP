@@ -46,6 +46,9 @@ function appt(over: Partial<AgendaAppointment> = {}): AgendaAppointment {
     confirmationReceivedAt: `${DAY}T07:00:00Z`,
     confirmationChannel: null,
     hasNote: false,
+    createdBy: "u-1",
+    createdByName: "Rececao Teste",
+    createdAt: `${DAY}T06:00:00Z`,
     ...over,
   } as AgendaAppointment;
 }
@@ -141,24 +144,40 @@ describe("W9-05 item 8 - same-hour overlap keeps the patient name legible", () =
   });
 });
 
-describe("W9-06 item 9 - the note hover card (staff-side)", () => {
+describe("W10-05 - the unified hover popup (mini-dashboard, staff-side)", () => {
   const NOTE = "Paciente com lesao no ombro direito";
 
-  it("renders the note content in a hover card when the marcacao has a note", () => {
+  it("renders the unified hover panel on EVERY card (with a note)", () => {
     const html = render([appt({ notes: NOTE })]);
+    expect(html).toContain('data-testid="agenda-card-hover"');
+    expect(html).toContain('data-testid="appointment-hover-panel"');
+    expect(html).toContain('role="tooltip"'); // display-only, revealed on hover/focus
+    // the note preview section + text appear when a note exists
+    expect(html).toContain('data-testid="hover-note"');
     expect(html).toContain(NOTE);
-    expect(html).toContain('data-testid="agenda-card-note"');
-    // The popover is display-only (role=tooltip), revealed on group hover/focus.
-    expect(html).toContain('role="tooltip"');
   });
 
-  it("renders NO note affordance when there is no note", () => {
+  it("renders the unified hover panel on a card WITHOUT a note (no note preview section)", () => {
     const html = render([appt({ notes: null })]);
-    expect(html).not.toContain('data-testid="agenda-card-note"');
+    // the panel still renders on every card (unlike the old note-only popover)
+    expect(html).toContain('data-testid="agenda-card-hover"');
+    expect(html).toContain('data-testid="appointment-hover-panel"');
+    // but there is no note-preview section
+    expect(html).not.toContain('data-testid="hover-note"');
   });
 
-  it("trims whitespace-only notes to nothing (no empty hover card)", () => {
+  it("shows no note-preview section for a whitespace-only note", () => {
     const html = render([appt({ notes: "   " })]);
-    expect(html).not.toContain('data-testid="agenda-card-note"');
+    expect(html).toContain('data-testid="appointment-hover-panel"');
+    expect(html).not.toContain('data-testid="hover-note"');
+  });
+
+  it("restates lifecycle + provenance as text (patient, therapist, location, created-by)", () => {
+    const html = render([appt({ createdBy: null, createdByName: null })]);
+    // provenance: a NULL createdBy renders the portal label
+    expect(html).toContain("Reserva online (portal)");
+    // the panel carries the dashboard fields as text (colour-not-only)
+    expect(html).toContain('data-testid="hover-state"');
+    expect(html).toContain('data-testid="hover-created"');
   });
 });
