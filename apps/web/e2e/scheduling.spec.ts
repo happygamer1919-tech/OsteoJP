@@ -145,11 +145,14 @@ test("reschedule an appointment to a different time", async ({ page }) => {
   await dialog.getByRole("button", { name: SAVE }).click();
 
   await expect(dialog).toBeHidden({ timeout: 12_000 });
-  // The block now renders the 11:00 slot. Scope to the card BUTTON: since W10-05
-  // the shared hover popup (a sibling of the button) also prints the time, so a
-  // page-wide getByText for it would match two nodes.
+  // The appointment moved to 11:00. Since W10-05b the agenda card face is
+  // name-only (no time on the face); the time lives in the hover popup, so hover
+  // the card and read "11:00-12:00" there.
+  const movedCard = page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) });
+  await expect(movedCard).toBeVisible({ timeout: 8_000 });
+  await movedCard.hover();
   await expect(
-    page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) }).getByText("11:00-12:00"),
+    page.getByTestId("appointment-hover-panel").filter({ hasText: "11:00-12:00" }),
   ).toBeVisible({ timeout: 8_000 });
 });
 
@@ -399,5 +402,8 @@ test("completed appointment with no note shows the 'Sem nota' indicator (W2-04)"
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 
   // Present-state indicator: completed + zero appointment_notes -> "Sem nota".
+  // W10-05b: the agenda card face is now name-only, so the "Sem nota" chip moved
+  // off the agenda card; it still shows on the Marcacoes list (W2-04). Verify there.
+  await page.goto(`/marcacoes?from=${date}&to=${date}`);
   await expect(page.getByText("Sem nota").first()).toBeVisible({ timeout: 8_000 });
 });
