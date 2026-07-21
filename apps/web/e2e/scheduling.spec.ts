@@ -145,8 +145,12 @@ test("reschedule an appointment to a different time", async ({ page }) => {
   await dialog.getByRole("button", { name: SAVE }).click();
 
   await expect(dialog).toBeHidden({ timeout: 12_000 });
-  // The block now renders the 11:00 slot.
-  await expect(page.getByText("11:00-12:00")).toBeVisible({ timeout: 8_000 });
+  // The block now renders the 11:00 slot. Scope to the card BUTTON: since W10-05
+  // the shared hover popup (a sibling of the button) also prints the time, so a
+  // page-wide getByText for it would match two nodes.
+  await expect(
+    page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) }).getByText("11:00-12:00"),
+  ).toBeVisible({ timeout: 8_000 });
 });
 
 test("booking the same therapist at an overlapping time is flagged as a conflict", async ({
