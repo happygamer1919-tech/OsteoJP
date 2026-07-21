@@ -13,6 +13,7 @@ import {
   users,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { therapistPatientScope } from "@/lib/patients/scope";
 import { FICHA_MEDICA_KEY } from "./ficha-medica";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
@@ -105,6 +106,11 @@ export async function listRecords(
   filter: { patientId?: string; includeAnnulled?: boolean } = {},
 ): Promise<RecordListItem[]> {
   assertCan(ctx.role, "clinical_records:read");
+  // W10-04: a therapist sees fichas only for their own patients (own-only).
+  const scope = therapistPatientScope(ctx, clinicalRecords.patientId);
+  const patientFilter = filter.patientId
+    ? eq(clinicalRecords.patientId, filter.patientId)
+    : undefined;
   return runScoped(ctx, async (tx) => {
     const rows = await tx
       .select({
@@ -122,7 +128,7 @@ export async function listRecords(
       .from(clinicalRecords)
       .innerJoin(patients, eq(patients.id, clinicalRecords.patientId))
       .leftJoin(formTemplates, eq(formTemplates.id, clinicalRecords.formTemplateId))
-      .where(filter.patientId ? eq(clinicalRecords.patientId, filter.patientId) : undefined)
+      .where(and(patientFilter, scope))
       .orderBy(desc(clinicalRecords.updatedAt));
 
     // W5-30: which of these records are annulled? One extra tenant-scoped read
@@ -161,6 +167,8 @@ export async function getRecordDetail(
   id: string,
 ): Promise<RecordDetail | null> {
   assertCan(ctx.role, "clinical_records:read");
+  // W10-04: a therapist can only open a ficha for one of their own patients.
+  const scope = therapistPatientScope(ctx, clinicalRecords.patientId);
   return runScoped(ctx, async (tx) => {
     const signer = users;
     const rows = await tx
@@ -193,7 +201,7 @@ export async function getRecordDetail(
       .leftJoin(clinicalEpisodes, eq(clinicalEpisodes.id, clinicalRecords.episodeId))
       .leftJoin(formTemplates, eq(formTemplates.id, clinicalRecords.formTemplateId))
       .leftJoin(signer, eq(signer.id, clinicalRecords.signedBy))
-      .where(eq(clinicalRecords.id, id))
+      .where(scope ? and(eq(clinicalRecords.id, id), scope) : eq(clinicalRecords.id, id))
       .limit(1);
     const r = rows[0];
     if (!r) return null;
@@ -329,11 +337,13 @@ export async function getFichaMedicaTemplate(
 
 export async function listPatients(ctx: RequestContext): Promise<PatientOption[]> {
   assertCan(ctx.role, "clinical_records:read");
+  // W10-04: the ficha "Paciente" picker offers a therapist only their own patients.
+  const scope = therapistPatientScope(ctx, patients.id);
   return runScoped(ctx, (tx) =>
     tx
       .select({ id: patients.id, fullName: patients.fullName })
       .from(patients)
-      .where(isNull(patients.deletedAt))
+      .where(scope ? and(isNull(patients.deletedAt), scope) : isNull(patients.deletedAt))
       .orderBy(asc(patients.fullName)),
   );
 }

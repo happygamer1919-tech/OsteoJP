@@ -367,6 +367,9 @@ export function MarcacoesView({
           />
         </div>
 
+        {/* W10-04 isolation: therapist loses the location switcher (mirrors the
+            therapist-switcher gate below and the agenda). */}
+        {!lockTherapist && (
         <div className="w-56">
           <Select
             aria-label={s["header.location"]}
@@ -381,6 +384,7 @@ export function MarcacoesView({
             ))}
           </Select>
         </div>
+        )}
 
         <div className="w-48">
           <Select

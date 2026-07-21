@@ -186,6 +186,19 @@ const PATIENT_B = {
   email: null,
 };
 
+// W10-04 isolation: a SAME-TENANT patient owned by the SECOND therapist
+// (created_by = therapist2), with NO appointment involving the E2E therapist.
+// The negative-isolation spec asserts the E2E therapist CANNOT see this patient
+// (own-only), while admin/owner CAN (cross-visibility positive control).
+const PATIENT_OTHER_THERAPIST_A = {
+  id: "00000000-0000-0000-0000-00000000a304",
+  full_name: "Outro Terapeuta Paciente",
+  nif: "456789123",
+  phone: "+351 915 000 004",
+  email: null,
+  deleted_at: null,
+};
+
 const ROLE_ROWS = (tenantId) => [
   { tenant_id: tenantId, slug: "owner", name: "Owner", description: "Full access." },
   { tenant_id: tenantId, slug: "admin", name: "Admin", description: "Tenant admin." },
@@ -347,7 +360,7 @@ async function ensureLocationFixtures(idBySlug) {
   await ensureTherapistServices(idBySlug.therapistLocMulti);
 }
 
-async function ensureBaseData() {
+async function ensureBaseData(userIds) {
   must(
     (await db.from("locations").upsert(
       { id: LOCATION_A, tenant_id: TENANT_A, name: "Linda-a-Velha", phone: "+351 210 000 000", is_active: true },
@@ -384,12 +397,32 @@ async function ensureBaseData() {
     "service-nesa",
   );
 
+  // W10-04 isolation: the three ACTIVE tenant-A patients (Maria/João/Ana) are
+  // created_by the E2E therapist, so under per-therapist scoping the therapist
+  // still sees them and every existing therapist-role spec keeps working.
+  const OWNED_BY_E2E_THERAPIST = new Set([
+    "00000000-0000-0000-0000-00000000a301",
+    "00000000-0000-0000-0000-00000000a302",
+    "00000000-0000-0000-0000-00000000a303",
+  ]);
   for (const p of PATIENTS_A) {
+    const createdBy = OWNED_BY_E2E_THERAPIST.has(p.id) ? userIds.therapist : null;
     must(
-      (await db.from("patients").upsert({ tenant_id: TENANT_A, ...p }, { onConflict: "id" })).error,
+      (await db
+        .from("patients")
+        .upsert({ tenant_id: TENANT_A, created_by: createdBy, ...p }, { onConflict: "id" })).error,
       `patient ${p.full_name}`,
     );
   }
+  // W10-04: the other-therapist patient (created_by = therapist2, no E2E-therapist
+  // appointment) - the negative-isolation target.
+  must(
+    (await db.from("patients").upsert(
+      { tenant_id: TENANT_A, created_by: userIds.therapist2, ...PATIENT_OTHER_THERAPIST_A },
+      { onConflict: "id" },
+    )).error,
+    "patient other-therapist",
+  );
   must(
     (await db.from("patients").upsert(
       { tenant_id: TENANT_B, deleted_at: null, ...PATIENT_B },
@@ -565,7 +598,7 @@ async function main() {
   await ensureRoles(TENANT_A);
   await ensureRoles(TENANT_B);
   const userIds = await ensureUsers();
-  await ensureBaseData();
+  await ensureBaseData(userIds);
   await ensureTherapistServices(userIds.therapist);
   await ensureDeclaracaoAppointment(userIds.therapist);
   await ensureLocationFixtures(userIds);
@@ -580,7 +613,7 @@ async function main() {
   console.log("[seed-e2e] tenant A:", TENANT_A);
   console.log("[seed-e2e] tenant B:", TENANT_B);
   console.log("[seed-e2e] users:", USERS.map((u) => `${u.email} (${u.slug})`).join(", "));
-  console.log("[seed-e2e] patients A:", PATIENTS_A.length, "(1 soft-deleted)");
+  console.log("[seed-e2e] patients A:", PATIENTS_A.length + 1, "(1 soft-deleted, +1 other-therapist)");
   console.log("[seed-e2e] portal patient:", E2E_PORTAL_PATIENT_EMAIL, "→", MARIA_SILVA_ID);
   console.log("[seed-e2e] ai review draft:", AI_REVIEW_DRAFT_ID, "→", AI_REVIEW_DRAFT_PATIENT);
   console.log("[seed-e2e] ai delete draft:", AI_DELETE_DRAFT_ID, "(+ ingestion back-pointer)");

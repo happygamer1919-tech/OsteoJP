@@ -32,7 +32,12 @@ export default async function InvoicingPage({
   const ctx = await getRequestContext();
   if (!ctx) redirect("/login");
 
-  if (!can(ctx.role, "invoices:read")) {
+  // W10-04 isolation (owner ruling 2026-07-21): Faturacao is owner/admin/reception
+  // only - the therapist role has NO access. Gate on `invoices:issue` (held by
+  // owner/admin/reception, NOT therapist, which carries only `invoices:read`); the
+  // therapist keeps its `invoices:read` capability for any read-only surface
+  // elsewhere, but the Faturacao page itself is denied.
+  if (!can(ctx.role, "invoices:issue")) {
     return (
       <main className="py-16 text-center">
         <p className="text-sm text-error">{s["errors.forbidden"]}</p>
