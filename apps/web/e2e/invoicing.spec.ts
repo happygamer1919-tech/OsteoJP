@@ -85,22 +85,22 @@ test.describe("/invoicing — reception", () => {
 });
 
 // ---------------------------------------------------------------------------
-// /invoicing — therapist (read-only: invoices:read but no invoices:issue)
+// /invoicing — therapist (W10-04 isolation: NO access; owner ruling 2026-07-21)
 // ---------------------------------------------------------------------------
 
-test.describe("/invoicing — therapist (read-only)", () => {
+test.describe("/invoicing — therapist (no access)", () => {
   test.use({ storageState: STORAGE.therapist });
 
-  test("therapist can access /invoicing (has invoices:read)", async ({ page }) => {
+  test("therapist is DENIED /invoicing (Faturação is owner/admin/reception only)", async ({
+    page,
+  }) => {
     await page.goto("/invoicing");
-    await expect(page).toHaveURL(/\/invoicing(\?|$)/, { timeout: 10_000 });
+    // The route renders the forbidden guard for a therapist (invoices:read but
+    // NOT invoices:issue): no Faturação heading, no issue button.
     await expect(
       page.getByRole("heading", { level: 1, name: /Fatura[cç][aã]o/i }),
-    ).toBeVisible();
-    // Therapist has invoices:read but not invoices:issue — no issue button.
-    await expect(
-      page.getByRole("button", { name: /Nova fatura/i }),
     ).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Nova fatura/i })).toHaveCount(0);
   });
 });
 
