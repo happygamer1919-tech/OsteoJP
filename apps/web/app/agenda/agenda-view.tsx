@@ -207,6 +207,11 @@ export function AgendaView({
               </Select>
             </div>
           )}
+          {/* W10-04 isolation: the therapist role loses the location switcher
+              too (it already loses the therapist switcher above). A therapist is
+              scoped to their own calendar + location server-side; the switcher is
+              hidden so the two selectors disappear together for that role. */}
+          {!lockTherapist && (
           <div className="w-56">
             <Select
               aria-label={s["header.location"]}
@@ -217,8 +222,7 @@ export function AgendaView({
               // be a filter that is ACTIVE in the URL but absent from its own
               // Select - the grid would silently narrow to a therapist the user
               // can no longer see selected. Clearing keeps the toolbar and the
-              // grid describing the same thing. (No-op for the therapist role:
-              // navigate() never sets the param when lockTherapist.)
+              // grid describing the same thing.
               onChange={(e) => navigate({ location: e.target.value || null, therapist: null })}
             >
               <option value="">{s["agenda.allLocations"]}</option>
@@ -229,6 +233,7 @@ export function AgendaView({
               ))}
             </Select>
           </div>
+          )}
           {/* Primary action: filled Wellness Green (SPEC-v2-agenda §1.4). The
               packages/ui Button is brand-teal with no green variant; styled
               in-route on v2 tokens to meet the spec (green-700 fill + inverse

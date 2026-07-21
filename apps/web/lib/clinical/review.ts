@@ -9,6 +9,7 @@ import {
   type DbTx,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { therapistPatientScope } from "@/lib/patients/scope";
 import { writeClinicalAudit, clientIp } from "./audit";
 import { ClinicalError } from "./errors";
 import {
@@ -83,6 +84,9 @@ export type ReviewQueueItem = {
 /** Active review-queue items (pending_review + in_review) across both sources. */
 export async function listReviewQueue(ctx: RequestContext): Promise<ReviewQueueItem[]> {
   assertCan(ctx.role, "clinical_records:review");
+  // W10-04: a therapist's review queue is scoped to their own patients too.
+  const aiScope = therapistPatientScope(ctx, clinicalRecords.patientId);
+  const submissionScope = therapistPatientScope(ctx, patientFormSubmissions.patientId);
   return runScoped(ctx, async (tx) => {
     const aiRows = await tx
       .select({
@@ -100,6 +104,7 @@ export async function listReviewQueue(ctx: RequestContext): Promise<ReviewQueueI
         and(
           eq(clinicalRecords.source, "ai_ingested"),
           inArray(clinicalRecords.aiReviewState, ACTIVE_REVIEW_STATES),
+          aiScope,
         ),
       )
       .orderBy(desc(clinicalRecords.updatedAt));
@@ -117,7 +122,7 @@ export async function listReviewQueue(ctx: RequestContext): Promise<ReviewQueueI
       })
       .from(patientFormSubmissions)
       .innerJoin(patients, eq(patients.id, patientFormSubmissions.patientId))
-      .where(inArray(patientFormSubmissions.reviewState, ACTIVE_REVIEW_STATES))
+      .where(and(inArray(patientFormSubmissions.reviewState, ACTIVE_REVIEW_STATES), submissionScope))
       .orderBy(desc(patientFormSubmissions.updatedAt));
 
     const ai: ReviewQueueItem[] = aiRows.map((r) => ({

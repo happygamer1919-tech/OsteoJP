@@ -42,15 +42,17 @@ describe("navItemsForRole — role-aware nav gating", () => {
     expect(hrefs("admin")).not.toContain("/clinical/review");
   });
 
-  it("therapist sees Invoicing and Review but NOT Admin and NOT the top-level /clinical", () => {
+  // W10-04 isolation (owner ruling 2026-07-21): the therapist role loses
+  // Faturação (owner/admin/reception only); Review stays.
+  it("therapist sees Review but NOT Invoicing, NOT Admin, NOT the top-level /clinical", () => {
     expect(hrefs("therapist")).toEqual([
       "/dashboard",
       "/agenda",
       "/patients",
       "/marcacoes",
-      "/invoicing",
       "/clinical/review",
     ]);
+    expect(hrefs("therapist")).not.toContain("/invoicing");
     expect(hrefs("therapist")).not.toContain("/clinical");
   });
 
@@ -75,10 +77,12 @@ describe("navItemsForRole — role-aware nav gating", () => {
     expect(seesAdmin).toEqual(["owner", "admin"]);
   });
 
-  it("Invoicing link appears for all roles (invoices:read is universal)", () => {
+  // W10-04 isolation: Faturação is owner/admin/reception only (invoices:issue);
+  // the therapist role (invoices:read only) does not see it.
+  it("Invoicing link appears for owner, admin, reception but NOT therapist", () => {
     const seesInvoicing = (["owner", "admin", "therapist", "reception"] as const).filter(
       (role) => hrefs(role).includes("/invoicing"),
     );
-    expect(seesInvoicing).toEqual(["owner", "admin", "therapist", "reception"]);
+    expect(seesInvoicing).toEqual(["owner", "admin", "reception"]);
   });
 });

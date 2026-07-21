@@ -97,6 +97,17 @@ export const PATIENT_OTHER_TENANT = {
   name: "Beatriz Outro-Tenant",
 } as const;
 
+/**
+ * W10-04 isolation: a SAME-tenant (tenant A) patient owned by the SECOND
+ * therapist (created_by = therapist2), with no appointment involving the E2E
+ * therapist. The negative-isolation spec asserts the E2E therapist canNOT see
+ * this patient (own-only), while admin CAN (cross-visibility positive control).
+ */
+export const PATIENT_OTHER_THERAPIST = {
+  id: "00000000-0000-0000-0000-00000000a304",
+  name: "Outro Terapeuta Paciente",
+} as const;
+
 export const LOCATION = { id: "00000000-0000-0000-0000-00000000a101", name: "Linda-a-Velha" } as const;
 /** Seeded is_active=false — must never appear in a selection dropdown (W2-02 item 2). */
 export const LOCATION_ARCHIVED = { id: "00000000-0000-0000-0000-00000000a102", name: "Sede Antiga (Arquivada)" } as const;

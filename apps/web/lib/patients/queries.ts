@@ -20,6 +20,7 @@ import {
 } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { activePatientsOnly } from "./filters";
+import { therapistPatientScope } from "./scope";
 import { escapeLike, parseSearch } from "./validation";
 import type { Patient } from "./types";
 
@@ -37,10 +38,14 @@ export async function getPatient(
 ): Promise<Patient | null> {
   const ctx = await requireRequestContext();
   assertCan(ctx.role, "patients:read");
+  // W10-04: a therapist may only load a patient that is theirs (own-only);
+  // a non-own id returns null -> the detail page 404s.
+  const scope = therapistPatientScope(ctx, patients.id);
   return runScoped(ctx, async (tx) => {
-    const where = opts.includeDeleted
+    const base = opts.includeDeleted
       ? eq(patients.id, id)
       : and(eq(patients.id, id), activePatientsOnly);
+    const where = scope ? and(base, scope) : base;
     const [row] = await tx.select().from(patients).where(where).limit(1);
     return row ?? null;
   });
@@ -104,11 +109,13 @@ export async function listPatients(
   assertCan(ctx.role, "patients:read");
   const limit = clampLimit(opts.limit);
   const offset = Math.max(0, opts.offset ?? 0);
+  // W10-04: therapist sees only their own patients; owner/admin tenant-wide.
+  const scope = therapistPatientScope(ctx, patients.id);
   return runScoped(ctx, async (tx) =>
     tx
       .select()
       .from(patients)
-      .where(activePatientsOnly)
+      .where(scope ? and(activePatientsOnly, scope) : activePatientsOnly)
       .orderBy(asc(patients.fullName)) // uses patients_tenant_name_idx
       .limit(limit)
       .offset(offset),
@@ -133,6 +140,8 @@ export async function searchPatients(
 
   const limit = clampLimit(opts.limit);
   const nameLike = `%${escapeLike(text)}%`;
+  // W10-04: therapist search is scoped to their own patients too.
+  const scope = therapistPatientScope(ctx, patients.id);
 
   return runScoped(ctx, async (tx) => {
     const matchers = [ilike(patients.fullName, nameLike)];
@@ -142,10 +151,13 @@ export async function searchPatients(
         sql`"phone_digits" like ${`%${digits}%`}`,
       );
     }
+    const where = scope
+      ? and(activePatientsOnly, scope, or(...matchers))
+      : and(activePatientsOnly, or(...matchers));
     return tx
       .select()
       .from(patients)
-      .where(and(activePatientsOnly, or(...matchers)))
+      .where(where)
       .orderBy(asc(patients.fullName))
       .limit(limit);
   });
