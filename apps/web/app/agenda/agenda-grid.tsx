@@ -27,6 +27,7 @@ import {
 } from "@/lib/scheduling/time";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
+import { AppointmentHoverPanel } from "./appointment-hover-card";
 import { ConfirmationIndicator } from "./confirmation-indicator";
 
 const SLOT_HEIGHT = 48; // px per 30-min slot
@@ -468,6 +469,33 @@ function AppointmentBlock({
         // sub-AA on the 100 tints — SPEC §3.4).
         <span className="block text-xs font-semibold uppercase text-v2-text-primary">{s["agenda.conflict"]}</span>
       )}
+      {/* W10-05: card face INVERTED - the PATIENT NAME is the first + largest
+          element (was the 2nd/3rd line). Therapist stays the spine + dot; the
+          service tint stays on the body; strikethrough-cancelled is unchanged. */}
+      <span
+        data-testid="agenda-card-patient"
+        className={`flex items-center gap-1 truncate text-sm font-semibold ${cancelled ? "text-v2-text-secondary line-through" : "text-v2-text-primary"}`}
+      >
+        <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
+        {(appt.recurrenceRule || appt.recurrenceParentId) && (
+          <>
+            <Repeat size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
+            <span className="sr-only">{s["appointment.recurring"]}</span>
+          </>
+        )}
+        <span className="truncate">{appt.patientName}</span>
+        {/* Secondary participants (W4-19) — compact +1 badge; the secondary
+            names sit in the title for hover/details. Rendered under the PRIMARY
+            therapist column only (dual-column is a deferred follow-up). */}
+        {(appt.patientTwoId || appt.practitionerTwoId) && (
+          <span
+            className="ml-1 shrink-0 rounded-full bg-surface-muted px-1.5 text-[10px] font-semibold text-v2-text-secondary"
+            title={[appt.patientTwoName, appt.practitionerTwoName].filter(Boolean).join(" · ")}
+          >
+            {s["appointment.plusOne"]}
+          </span>
+        )}
+      </span>
       <span className="flex items-center justify-between gap-1 text-xs text-v2-text-primary">
         <span className="truncate">
           {formatTimeOfDay(new Date(appt.startsAt))}-{formatTimeOfDay(new Date(appt.endsAt))}
@@ -492,30 +520,6 @@ function AppointmentBlock({
           {!cancelled && <ConfirmationIndicator state={appt.confirmationState} />}
         </span>
       </span>
-      <span
-        data-testid="agenda-card-patient"
-        className={`flex items-center gap-1 truncate text-sm font-medium ${cancelled ? "text-v2-text-secondary line-through" : "text-v2-text-primary"}`}
-      >
-        <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
-        {(appt.recurrenceRule || appt.recurrenceParentId) && (
-          <>
-            <Repeat size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
-            <span className="sr-only">{s["appointment.recurring"]}</span>
-          </>
-        )}
-        <span className="truncate">{appt.patientName}</span>
-        {/* Secondary participants (W4-19) — compact +1 badge; the secondary
-            names sit in the title for hover/details. Rendered under the PRIMARY
-            therapist column only (dual-column is a deferred follow-up). */}
-        {(appt.patientTwoId || appt.practitionerTwoId) && (
-          <span
-            className="ml-1 shrink-0 rounded-full bg-surface-muted px-1.5 text-[10px] font-semibold text-v2-text-secondary"
-            title={[appt.patientTwoName, appt.practitionerTwoName].filter(Boolean).join(" · ")}
-          >
-            {s["appointment.plusOne"]}
-          </span>
-        )}
-      </span>
       {/* W9-05 (item 7): therapist identity on every card. The dot carries the
           per-therapist colour (reinforcement); the NAME is the authoritative
           text identifier, in AA-safe secondary ink regardless of the hue. */}
@@ -536,21 +540,18 @@ function AppointmentBlock({
         </span>
       )}
     </button>
-    {/* W9-06 (item 9): the note hover card. Sibling of the button so it escapes
-        the card's overflow-hidden; shown on hover of the card OR keyboard focus
-        of the card (group-focus-within). Non-interactive text. */}
-    {noteText && (
-      <div
-        role="tooltip"
-        data-testid="agenda-card-note"
-        className="pointer-events-none absolute left-1 top-full z-50 mt-1 hidden w-56 max-w-[16rem] whitespace-pre-line rounded-v2 border border-v2-border bg-v2-surface p-2 text-xs text-v2-text-primary shadow-v2-float group-hover:block group-focus-within:block"
-      >
-        <span className="mb-1 block font-medium text-v2-text-secondary">
-          {s["appointment.noteHoverLabel"]}
-        </span>
-        {noteText}
-      </div>
-    )}
+    {/* W10-05: the shared unified hover popup (mini-dashboard), replacing the
+        W9-06 note-only popover. Sibling of the button so it escapes the card's
+        overflow-hidden; shown on card hover OR keyboard focus (group-focus-within)
+        on EVERY card. Non-interactive; the SAME AppointmentHoverPanel renders on
+        the Marcacoes row. */}
+    <div
+      role="tooltip"
+      data-testid="agenda-card-hover"
+      className="pointer-events-none absolute left-1 top-full z-50 mt-1 hidden rounded-v2 border border-v2-border bg-v2-surface p-2 shadow-v2-float group-hover:block group-focus-within:block"
+    >
+      <AppointmentHoverPanel appt={appt} />
+    </div>
     </div>
   );
 }

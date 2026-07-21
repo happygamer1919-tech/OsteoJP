@@ -169,14 +169,23 @@ describe("W9-06 items 9 + 10 - created-by provenance + note hover on marcacoes r
     expect(html).toContain("Reserva online (portal)");
   });
 
-  it("item 9: renders the note content in a hover card when the marcacao has a note", () => {
+  // W10-05: the note-only hover was REPLACED by the shared unified popup
+  // (AppointmentHoverPanel), which renders on EVERY row (not only when a note
+  // exists). The note preview section (hover-note) is what is note-gated now.
+  it("W10-05: renders the shared unified popup with the note preview when a note exists", () => {
     const html = renderRow({ notes: "Trazer exames anteriores" });
-    expect(html).toContain("Trazer exames anteriores");
+    expect(html).toContain('data-testid="appointment-hover-panel"');
     expect(html).toContain('role="tooltip"');
+    expect(html).toContain('data-testid="hover-note"');
+    expect(html).toContain("Trazer exames anteriores");
   });
 
-  it("item 9: renders no note affordance for a note-less marcacao", () => {
+  it("W10-05: renders the shared unified popup on a note-less row, without the note preview", () => {
     const html = renderRow({ notes: null });
-    expect(html).not.toContain('role="tooltip"');
+    // the mini-dashboard renders on every row now
+    expect(html).toContain('data-testid="appointment-hover-panel"');
+    expect(html).toContain('role="tooltip"');
+    // but there is no note-preview section
+    expect(html).not.toContain('data-testid="hover-note"');
   });
 });

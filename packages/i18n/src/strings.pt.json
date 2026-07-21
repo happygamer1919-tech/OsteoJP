@@ -252,6 +252,8 @@
   "appointment.createdBy": "Criado por",
   "appointment.createdByPortal": "Reserva online (portal)",
   "appointment.createdAt": "Criado em",
+  "appointment.minutesAbbrev": "min",
+  "appointment.detailsHoverLabel": "Detalhes da marcação",
   "appointment.noteHoverLabel": "Nota da marcação",
   "appointment.hasNoteLabel": "Tem nota",
   "appointment.notes": "Notas",
