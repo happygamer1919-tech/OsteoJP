@@ -768,3 +768,21 @@ Three of the five JP-batch items are ANSWERED this sitting (answers appended in-
 
 ### MX / email migration - PARKED (not a question, recorded so it is not re-raised)
 - **MX / email migration POSTPONED INDEFINITELY (owner, 2026-07-21).** Staff stay on their current webhs + Outlook email; the "GO" MX package is PARKED (not purchased/configured). No vendor change, no DNS MX change now; revisit only on an explicit owner decision. (Distinct from the pending app-DNS records in `docs/dns-records-pending.md`, which are unaffected.)
+
+### Q-W11-00-1 — osteojp-platform Production auto-deploy stopped after #617 (owner to confirm the pipeline, not just redeploy once)
+
+Raised by W11-00 (2026-07-21). Evidence: every `main` merge auto-deployed to
+osteojp-platform Production from ~12:42Z through #617 `479cb47` @ 15:48Z; then #618
+`75c56a1` (merged 17:07Z) and #619 `7efdb3f` (18:30Z) produced NO Production
+deployment at all (`75c56a1` has zero deployments of any target/state). Current
+Production (`app.osteojp.pt`) is still #617. A one-off "Redeploy" of current `main`
+fixes the visible symptom (the card face), but if the Git production auto-deploy is
+paused/disconnected the NEXT merge will silently fail to ship too - the same class
+of "source fixed, production stale" the owner just hit.
+
+**Recommended default:** owner redeploys/promotes osteojp-platform Production to
+current `origin/main` (>= `75c56a1`) to clear W11-00's visual gate, AND checks
+Vercel -> osteojp-platform -> Settings -> Git that Production auto-deploy on `main`
+is enabled and connected (and the same for osteojp-api + osteojp-portal). If it was
+intentionally paused (e.g. ahead of the Wave 11 split), note that so W11-04's
+repoint accounts for it. No code loop can fix this - deploys are owner-performed.

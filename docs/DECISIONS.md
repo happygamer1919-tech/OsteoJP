@@ -1151,3 +1151,38 @@ ran as ONE atomic transaction (assertions roll back on any count miss). Reconcil
   "Massagem Terapêutica" 50.00 — pending JP batch (QUESTIONS 2026-07-15).
 Post-commit verified: active(canonical)=22 / prices=23 / packs=14 / frozen=3 / total=25.
 Cloud DB is read-only again; this was the single authorized cloud data write of Wave 08.
+
+## 2026-07-21 — W11-00 cartoes-nome-apenas-v2: DIAGNOSIS A (stale production deploy), no source change
+
+Diagnosis-first loop (OWNER VISUAL GATE). The owner reported the agenda card face
+still showing icon/time/therapist/service at overlap in production, in INCOGNITO,
+after #618 (`75c56a1`, W10-05b) made the face name-only.
+
+Finding (read off Vercel, not assumed): osteojp-platform Production
+(`app.osteojp.pt` -> `dpl_8rjBarztYU2EUihWrxUbg1abGH2k`, target production, READY,
+`fra1`) serves `githubCommitSha 479cb47` = #617, two merges behind `main`. #618
+`75c56a1` merged to `main` at 17:07:38Z but produced ZERO Production deployment of
+any state; the newest Production-target deploy is #617 @ 15:48:39Z. Every `main`
+merge auto-deployed through #617, then Production auto-deploy stopped. So the owner
+hits a Production SERVER running the pre-#618 W10-05 detailed face; incognito could
+not help (it clears client cache, not what the server serves), which also
+eliminates the stale-client-bundle hypothesis (B).
+
+Decision: this is DIAGNOSIS A (stale deploy), a deploy/pipeline finding, NOT a code
+defect. Per the loop policy for A, NO card-source change was made - the source on
+`origin/main` is already name-only (one `AppointmentBlock`, both Dia + Semana route
+through it; grep confirmed no second card-face renderer). Resolution is an OWNER
+redeploy of Production to post-#618 `main`. Because auto-deploy stopped after #617
+(not a one-off), Q-W11-00-1 is filed for the owner to confirm the pipeline, not
+just redeploy once.
+
+Tests HARDENED regardless (loop step 6, mandatory): the #618-era unit assertions
+(`toContain(therapistName)` / `toContain(CONFIRM_LABEL)`) passed only via the HOVER
+markup; they are now FACE-SCOPED (the button carrying `agenda-card-patient`,
+excluding the `agenda-card-hover` sibling) and assert the ABSENCE of
+time/service/therapist-name/icon/confirmation text on the face, name present +
+wrapping, in single + cancelled + 3-overlap; the E2E 3-overlap now runs BOTH Dia
+and Semana at 1/3 width with a per-view screenshot. Negative control: injecting a
+detail row onto the face fails the new assertions; reverting is green. Migration-
+free, hover + Marcacoes untouched, no i18n, no new hex. GREEN pushed + HALTED at
+the owner visual gate; NOT self-merged.

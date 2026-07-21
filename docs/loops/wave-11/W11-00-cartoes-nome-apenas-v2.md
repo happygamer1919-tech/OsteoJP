@@ -62,3 +62,44 @@ The diagnosis (A/B/C + evidence), the name-only + both-views-overlap + kept-cues
 ## Merge policy (embed, Wave 11 Separacao de Producao)
 - **W11-00 is the OWNER VISUAL GATE.** All required checks (DB-gated tests, Lint+typecheck+test, Playwright E2E) AND all three Vercel deploys (osteojp-api, osteojp-platform, osteojp-portal) green (read from the checks API NOT the banner) is NECESSARY but NOT sufficient. GREEN pushes + pastes the preview URL + the diagnosis + the both-view 3-overlap steps + screenshots, then HALTs; the owner verifies the face is name-only at overlap and merges. GREEN NEVER self-merges.
 - **Runs FIRST in Wave 11**, fresh `origin/main` (contains #618), never stacked. Migration-free, hover untouched, Marcacoes untouched, workflow files NEVER touched. HALT-LOUD on scope/product/reality mismatch. This loop is a UI blocker and is INDEPENDENT of the W11-01..05 production-split chain (it may run in parallel with W11-01 authoring/recon, but merges on its own visual gate).
+
+## Field 8. Diagnosis outcome + execution record (GREEN, 2026-07-21)
+
+**VERDICT: DIAGNOSIS A - STALE PRODUCTION DEPLOY. No source defect, no client cache. No card-source change made. Tests hardened (step 6, mandatory regardless of A/B/C).**
+
+### A0 isolation (passed)
+Worktree `../osteojp-w11-00-cartoes-nome-apenas-v2` off fresh `origin/main` @ `7efdb3f` (#619), which contains #618 `75c56a1` (`git merge-base --is-ancestor 75c56a1 origin/main` = true). Clean tree, HEAD == origin/main tip. (Local `main` was stale at `479cb47` on entry; `git fetch` reconciled before the guard.)
+
+### Step 2 - source is already name-only (read-only, no regression)
+`AppointmentBlock` (`apps/web/app/agenda/agenda-grid.tsx:434-471`) face `<button>` = therapist spine (`:449`, aria-hidden) + one `agenda-card-patient` span (`:458-470`) carrying the therapist-colour dot (`:464-468`, aria-hidden) + the patient-name span (`:469`, `min-w-0 break-words`). No time / service / therapist-name / icon / badge on the face. Grep confirms ONE renderer: `AgendaGrid` -> `AppointmentBlock`, both Dia + Semana via `agenda-view.tsx:258` (`step = week ? 7 : 1`); no second card-face component. Diagnosis C ruled out on `origin/main`.
+
+### Step 3 - Diagnosis A PROVEN (the Production SHA, read off Vercel)
+The deployment currently aliased to the Production domain `app.osteojp.pt` (osteojp-platform, `prj_sIUzsxnGm7xJ1EL3tkXMcr5zfIbm`):
+- `dpl_8rjBarztYU2EUihWrxUbg1abGH2k`, `target: production`, `readyState: READY`, region `fra1`
+- `githubCommitRef: main`, **`githubCommitSha: 479cb4729e53d96a2b6349c0b010fce3c934017a` = #617** (Wave 10 close-out)
+- created `2026-07-21T15:48:39Z`; `alias` includes `app.osteojp.pt`, `osteojp-platform.vercel.app`
+
+Timeline (Vercel deployment list, osteojp-platform):
+- Every `main` merge from ~12:42Z through #617 `479cb47` @ **15:48Z** auto-deployed to Production.
+- #618 `75c56a1` merged to `main` at **17:07:38Z** (PR #618, `gh pr view 618`). #619 `7efdb3f` merged at **18:30Z**.
+- **After #617, Production auto-deploy STOPPED. `75c56a1` (#618) has ZERO deployments of any target/state; the newest Production-target deployment is `479cb47` (#617).**
+
+Production is therefore serving the pre-#618 build (the W10-05 v3 detailed face). The owner's INCOGNITO re-test still showed detail because incognito removes only client cache (service worker / PWA) - it does NOT change what the Production SERVER serves, which is #617. Diagnosis B (stale client bundle) is thereby eliminated by the same incognito evidence; Diagnosis A is the cause.
+
+### Resolution (OWNER action - the redeploy)
+Get Production onto post-#618 `main`: redeploy / promote `osteojp-platform` Production to current `origin/main` (>= `75c56a1`). This is the owner's action (Field 6). NO card-source edit is warranted. See Q-W11-00-1 (QUESTIONS): auto-deploy stopped after #617, so a one-off redeploy fixes the symptom but the deploy pipeline itself needs the owner's check.
+
+### Step 6 - tests hardened (mandatory, done)
+The pre-W11-00 assertions passed only via the HOVER markup. Now FACE-SCOPED (the `<button>` carrying `agenda-card-patient`, excluding the `agenda-card-hover` sibling):
+- **Unit** `agenda-grid.test.tsx`: `expectNameOnlyFace()` asserts the patient full name present + `break-words` (never `truncate`) AND the ABSENCE on the face of therapist-name / service / time / confirmation text, and that the face's ONLY testids are `agenda-card-patient` + `agenda-card-therapist-dot` (no icon/badge). Applied to single, cancelled, and 3-overlap renders. Stale `toContain(therapistName)` / `toContain(CONFIRM_LABEL)` full-string assertions replaced with face-scoped checks (therapist name asserted in the hover, absent from the face). **Negative control:** injecting a service row onto the face fails exactly these 3 tests; reverting returns green - the guard catches the regression #618 could not.
+- **E2E** `agenda-cards.spec.ts`: `expectNameOnlyFace(card)` (button-scoped) asserts name present + dot kept + absence of therapist/service/time/confirmation on the face; the 3-overlap test now runs BOTH `view=day` AND `view=week` at 1/3 width with a per-view proof screenshot (`test-results/w11-00-3-overlap-{day,week}.png`).
+
+### Gates (local, from repo root)
+- `pnpm typecheck`: 9/9 successful.
+- `pnpm lint`: 0 errors (7 pre-existing warnings, none in the two changed files).
+- `pnpm test`: 1239 passed / 5 skipped / 1 todo (143 files); `agenda-grid.test.tsx` 14/14; `tokens.test` green (no new hex).
+- `pnpm build`: `web:build` GREEN (the only app changed). `portal:build` fails LOCALLY on a missing `NEXT_PUBLIC_SUPABASE_URL` - pre-existing + change-independent: the portal has only `.env.example` on every checkout and builds only with Vercel-injected env in CI. Zero portal files touched. Authoritative build gate = the 3 Vercel deploys (checks API).
+- `pnpm test:e2e`: NOT run locally (Docker daemon down -> no local `127.0.0.1` Supabase). Authoritative Playwright E2E = CI (per the Wave 11 merge policy, read from the checks API); it runs against local-synthetic data and produces the per-view screenshots. E2E was NOT run against the Preview (Preview uses the cloud DB = real-data-only; synthetic bookings there would violate the standing rule).
+
+### Diff scope (migration-free, hover/Marcacoes untouched)
+`git diff --name-only origin/main`: `apps/web/app/agenda/agenda-grid.test.tsx`, `apps/web/e2e/agenda-cards.spec.ts`, plus this loop file + board + DECISIONS + QUESTIONS docs. ZERO migration, ZERO workflow, ZERO i18n, ZERO `agenda-grid.tsx` (source unchanged - diagnosis A), ZERO `appointment-hover-card.tsx` / Marcacoes.
