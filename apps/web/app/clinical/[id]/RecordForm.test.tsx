@@ -44,6 +44,8 @@ vi.mock("@osteojp/ui", () => {
   return {
     Button: ({ children }: { children?: ReactNode }) =>
       createElement("button", null, children as ReactNode),
+    Banner: ({ children, action }: { children?: ReactNode; action?: ReactNode }) =>
+      createElement("div", { "data-role": "banner" }, children as ReactNode, action as ReactNode),
     Card: passthrough("div"),
     Field: ({ label, children }: { label?: ReactNode; children?: ReactNode }) =>
       createElement("label", null, label as ReactNode, children as ReactNode),
@@ -359,5 +361,37 @@ describe("NO-DUPLICATION (SPEC 3) — the ficha never re-requests profile data",
     for (const forbidden of ["NIF", "Contactos", "Telemóvel", "Morada", "Profissão", "Nome completo"]) {
       expect(html).not.toContain(forbidden);
     }
+  });
+});
+
+describe("W10-02b Defect 2 — a red flag surfaces the required consultation_reason (render-flow, NO template change)", () => {
+  const PROMPT_TESTID = 'data-testid="red-flag-consultation-prompt"';
+  const PROMPT_TEXT = "Sinal de alarme registado";
+  const PROMPT_ACTION = "Ir para Motivos da Consulta";
+
+  it("shows the anchored prompt when red_flags is filled and consultation_reason is still empty", () => {
+    const html = render({ red_flags: "dor noturna progressiva" });
+    expect(html).toContain(PROMPT_TESTID);
+    expect(html).toContain(PROMPT_TEXT);
+    expect(html).toContain(PROMPT_ACTION);
+  });
+
+  it("does NOT show the prompt when no red flag is present", () => {
+    const html = render({});
+    expect(html).not.toContain(PROMPT_TESTID);
+    expect(html).not.toContain(PROMPT_TEXT);
+  });
+
+  it("clears the prompt once consultation_reason is filled (it is a nudge, not a permanent banner)", () => {
+    const html = render({ red_flags: "sinal de alarme", consultation_reason: "motivo preenchido" });
+    expect(html).not.toContain(PROMPT_TESTID);
+  });
+
+  it("adds NO second bound input — the textarea count is identical with and without the prompt", () => {
+    const withoutPrompt = (render({}).match(/<textarea/g) ?? []).length;
+    const withPrompt = (render({ red_flags: "sinal" }).match(/<textarea/g) ?? []).length;
+    expect(withPrompt).toBe(withoutPrompt);
+    // and the consultation_reason field still renders (a single instance in template order)
+    expect(withoutPrompt).toBeGreaterThan(0);
   });
 });

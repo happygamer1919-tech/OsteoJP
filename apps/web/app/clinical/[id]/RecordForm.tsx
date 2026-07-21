@@ -1,5 +1,5 @@
 "use client";
-import { Button, Card, Checkbox, Field, Input, Textarea } from "@osteojp/ui";
+import { Banner, Button, Card, Checkbox, Field, Input, Textarea } from "@osteojp/ui";
 import { Lock } from "lucide-react";
 import { type ReactNode, useActionState, useState } from "react";
 
@@ -131,6 +131,46 @@ export function RecordForm({
       {(() => {
         const fields = topLevelFields(schema).filter(([key]) => !HIDDEN_FIELD_KEYS.has(key));
 
+        // W10-02b Defect 2 (Q-W10-02b-1, render-flow default; NO template/x-order/
+        // schema change): when a red flag (`red_flags`) is noted, surface the
+        // REQUIRED `consultation_reason` field IMMEDIATELY at that moment via an
+        // inline anchored prompt below the Alertas row - it reveals + scrolls to +
+        // focuses the SINGLE existing field (never a second bound input). Shown only
+        // while a red flag is present and the required reason is still empty, so it
+        // clears itself once the reason is filled.
+        const redFlagsFilled = asString(data["red_flags"]).trim().length > 0;
+        const hasConsultationReason = fields.some(([k]) => k === "consultation_reason");
+        const consultationReasonEmpty = asString(data["consultation_reason"]).trim().length === 0;
+        const showRedFlagPrompt = redFlagsFilled && hasConsultationReason && consultationReasonEmpty;
+        const redFlagPrompt: ReactNode = showRedFlagPrompt ? (
+          <div
+            key="red-flag-consultation-prompt"
+            data-testid="red-flag-consultation-prompt"
+            className="scroll-mt-24"
+          >
+            <Banner
+              tone="warning"
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    const el = document.getElementById(fieldAnchorId("consultation_reason"));
+                    if (!el) return;
+                    el.scrollIntoView({ behavior: "smooth", block: "center" });
+                    el.querySelector("textarea")?.focus({ preventScroll: true });
+                  }}
+                >
+                  {s["clinical.redFlagPromptAction"]}
+                </Button>
+              }
+            >
+              {s["clinical.redFlagPromptText"]}
+            </Banner>
+          </div>
+        ) : null;
+
         const renderField = ([key, field]: (typeof fields)[number]) => {
           const widget = widgetOf(key, field);
           const label = sectionLabel(field, locale, key);
@@ -179,9 +219,12 @@ export function RecordForm({
                 {items.map(renderField)}
               </div>,
             );
+            if (redFlagPrompt && grp.keys.includes("red_flags")) out.push(redFlagPrompt);
             i += grp.keys.length;
           } else {
+            const [key] = fields[i]!;
             out.push(renderField(fields[i]!));
+            if (redFlagPrompt && key === "red_flags") out.push(redFlagPrompt);
             i++;
           }
         }

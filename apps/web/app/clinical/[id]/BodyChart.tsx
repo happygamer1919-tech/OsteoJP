@@ -276,7 +276,7 @@ export function BodyChart({
     .filter(({ m }) => m.view === view);
 
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <p id={hintId} className="text-xs text-text-secondary">{s["clinical.bodychartHint"]}</p>
 
       <div className="flex flex-wrap gap-2">
@@ -314,7 +314,7 @@ export function BodyChart({
         <p className="text-xs text-text-muted">{s["clinical.bodychartNoTypes"]}</p>
       )}
 
-      <div className="flex items-start gap-3">
+      <div className="flex flex-wrap items-start gap-3 min-w-0">
         <div
           data-testid="bodychart-canvas"
           role={canInteract ? "application" : undefined}
@@ -419,7 +419,12 @@ export function BodyChart({
           return (
             <li key={i} className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="shrink-0 text-xs text-text-secondary">[{m.view}]</span>
-              <span className="min-w-0 flex-1 break-words">{displayLabel(m)}</span>
+              {/* W10-02b: a min-width floor keeps long labels ("Local da dor - EVA
+                  7/10") wrapping at WORD boundaries on a phone; without it flex-1 +
+                  min-w-0 lets the column collapse and break-words breaks per
+                  character. The row is flex-wrap so the EVA/Remover controls drop
+                  to the next line instead of starving the label. */}
+              <span className="min-w-[7rem] flex-1 break-words">{displayLabel(m)}</span>
               {/* W5-26 ruling H: only Local da dor carries a 0-10 EVA scale.
                   Draft = an editable selector (min 44px tall, tap-friendly);
                   the placed marker starts scale-less (optional) and the value

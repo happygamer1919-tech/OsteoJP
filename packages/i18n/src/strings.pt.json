@@ -578,6 +578,8 @@
   "clinical.statusLocked": "Bloqueada",
   "clinical.statusSigned": "Assinada",
   "clinical.save": "Guardar",
+  "clinical.redFlagPromptText": "Sinal de alarme registado. Preencha os Motivos da Consulta.",
+  "clinical.redFlagPromptAction": "Ir para Motivos da Consulta",
   "clinical.saved": "Ficha guardada.",
   "clinical.signLock": "Assinar e bloquear",
   "clinical.signLockConfirm": "Ao assinar, a ficha fica bloqueada de forma permanente e não poderá ser alterada. Deseja continuar?",
