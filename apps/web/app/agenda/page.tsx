@@ -58,7 +58,10 @@ export default async function AgendaPage({
   const lockTherapist = actor.role === "therapist";
   let practitionerId = firstParam(sp.therapist);
   if (lockTherapist) practitionerId = actor.userId;
-  const locationId = firstParam(sp.location);
+  // W10-04 isolation: a therapist loses the location switch entirely - the server
+  // ignores any location param for them so they cannot scope to another location's
+  // agenda (they are already practitioner-locked to their own appointments).
+  const locationId = lockTherapist ? null : firstParam(sp.location);
 
   const { startUtc, endUtc } = rangeForView(view, anchor);
 

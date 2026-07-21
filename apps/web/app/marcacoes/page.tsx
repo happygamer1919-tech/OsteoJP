@@ -94,7 +94,9 @@ export default async function MarcacoesPage({
   const lockTherapist = actor.role === "therapist";
   let practitionerId = firstParam(sp.therapist);
   if (lockTherapist) practitionerId = actor.userId;
-  const locationId = firstParam(sp.location);
+  // W10-04 isolation: therapist loses the location switch; ignore any location
+  // param for them (they are practitioner-locked to their own marcacoes).
+  const locationId = lockTherapist ? null : firstParam(sp.location);
 
   // Presentation-only filters (client-side over the fetched window).
   const status = firstParam(sp.status);

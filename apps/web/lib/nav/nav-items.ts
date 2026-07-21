@@ -21,8 +21,10 @@ const ALL: (NavItem & { capability?: Capability })[] = [
   // scheduling data the agenda renders as a grid; open to every role like the
   // agenda. V2-W7 ships the list view and the dedicated `nav.bookings` key.
   { href: "/marcacoes", label: s["nav.bookings"] },
-  // Faturação: all roles have invoices:read so this shows for every authenticated user.
-  { href: "/invoicing", label: s["nav.invoicing"], capability: "invoices:read" },
+  // Faturação (W10-04 isolation, owner ruling 2026-07-21): owner/admin/reception
+  // only - gated on invoices:issue (therapist holds only invoices:read, so it is
+  // hidden for the therapist role, matching the /invoicing route guard).
+  { href: "/invoicing", label: s["nav.invoicing"], capability: "invoices:issue" },
   { href: "/clinical/review", label: s["nav.review"], capability: "clinical_records:review" },
   // Estatisticas (W6-05): owner-only KPI dashboard. Gated on the owner-only
   // statistics:read capability, so the nav item shows for the owner only (and the
