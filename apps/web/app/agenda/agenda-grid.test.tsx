@@ -181,3 +181,39 @@ describe("W10-05 - the unified hover popup (mini-dashboard, staff-side)", () => 
     expect(html).toContain('data-testid="hover-created"');
   });
 });
+
+describe("W10-05b - the card face is the patient NAME ONLY (readable at overlap)", () => {
+  it("keeps the patient name element and lets it WRAP (no truncate) instead of clipping", () => {
+    const html = render([appt({ patientName: "Maria Madalena dos Santos Figueiredo" })]);
+    expect(html).toContain('data-testid="agenda-card-patient"');
+    // the name text span wraps (break-words), it is NOT a single truncated line
+    expect(html).toContain("min-w-0 break-words");
+    expect(html).toContain("Maria Madalena dos Santos Figueiredo");
+  });
+
+  it("drops the therapist NAME row from the face but KEEPS the therapist colour dot + spine", () => {
+    const html = render([appt()]);
+    // the therapist-name row testid is gone from the face...
+    expect(html).not.toContain('data-testid="agenda-card-therapist"');
+    // ...but the colour dot (kept per the ruling: stripe + dot + colour) stays,
+    // and the spine token is present.
+    expect(html).toContain('data-testid="agenda-card-therapist-dot"');
+    expect(html).toContain(therapistColor(THERAPIST_A.id).fill);
+  });
+
+  it("keeps strikethrough-cancelled on the name and the W10-05 hover popup intact", () => {
+    const cancelledHtml = render([appt({ status: "cancelled" })]);
+    expect(cancelledHtml).toContain("line-through");
+    // the hover popup (which now carries all the detail that left the face) is untouched
+    expect(cancelledHtml).toContain('data-testid="appointment-hover-panel"');
+  });
+
+  it("renders every overlapping patient's name at 3-up (names survive, not clipped to a few chars)", () => {
+    const html = render([
+      appt({ id: "a", patientName: "Maria Silva" }),
+      appt({ id: "b", patientName: "Ana Costa", startsAt: `${DAY}T08:00:00Z`, endsAt: `${DAY}T09:00:00Z` }),
+      appt({ id: "c", patientName: "Rui Lopes", startsAt: `${DAY}T08:00:00Z`, endsAt: `${DAY}T09:00:00Z` }),
+    ]);
+    for (const name of ["Maria Silva", "Ana Costa", "Rui Lopes"]) expect(html).toContain(name);
+  });
+});

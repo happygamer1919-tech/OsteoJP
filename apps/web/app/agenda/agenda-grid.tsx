@@ -1,6 +1,5 @@
 "use client";
 
-import { Repeat, StickyNote, User } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { locale, s } from "@/lib/i18n";
@@ -17,7 +16,6 @@ import {
   DAY_START_HOUR,
   daySlots,
   formatDayHeader,
-  formatTimeOfDay,
   lisbonMinutesFromMidnight,
   lisbonParts,
   slotLabel,
@@ -28,7 +26,6 @@ import {
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
 import { AppointmentHoverPanel } from "./appointment-hover-card";
-import { ConfirmationIndicator } from "./confirmation-indicator";
 
 const SLOT_HEIGHT = 48; // px per 30-min slot
 const DAY_START_MIN = DAY_START_HOUR * 60;
@@ -409,15 +406,9 @@ function AppointmentBlock({
   const cancelled = appt.status === "cancelled";
   const widthPct = 100 / place.cols;
 
-  // W9-05: the therapist name is required on EVERY card (item 7), so it is never
-  // height-gated - a 30-min card shows time / patient / therapist as three dense
-  // lines (the Fisiozero-compact look item 8 asks for), with the patient name
-  // the middle priority and overflow-hidden clipping the rest gracefully. The
-  // SERVICE line is the droppable one: the body tint + the title already carry
-  // the service, so it shows only on taller cards.
-  const showTherapist = !!appt.practitionerName;
-  const showService = appt.serviceName && rawHeight >= 96;
-
+  // Service-tint body (§2.1). W10-05b: the face is the patient name only; the
+  // service is no longer printed on the face (it is in the hover popup), but the
+  // tint still colours the card body by service category.
   const accent = cancelled ? null : serviceAccent(appt.serviceName);
   const tint = cancelled
     ? "bg-surface-muted border-v2-border"
@@ -426,16 +417,9 @@ function AppointmentBlock({
       : "bg-v2-surface border-v2-border";
 
   // W9-05 (item 7): deterministic per-therapist colour. Colour is REINFORCEMENT
-  // (the spine + the dot); the therapist NAME below is the authoritative,
-  // always-AA identifier. Reused -700 tokens, so no canonical hex drifts.
+  // (the spine + the dot). Reused -700 tokens, so no canonical hex drifts. W10-05b
+  // keeps the spine + dot; the therapist NAME moved to the hover popup.
   const tColor = therapistColor(appt.practitionerId);
-
-  // W9-06 (item 9): the marcacao note, surfaced on hover so staff need not open
-  // the marcacao to read the historico. Staff-only surface (the portal never
-  // receives notes - item 6 guard). The card is overflow-hidden, so the popover
-  // is a SIBLING of the button inside a positioned `group` wrapper, letting it
-  // escape the clip; it shows on group-hover AND group-focus-within (keyboard).
-  const noteText = appt.notes?.trim() || null;
 
   return (
     <div
@@ -463,82 +447,27 @@ function AppointmentBlock({
           the service-tint border shorthand for precedence. Decorative (the
           therapist NAME carries the identity as text), so aria-hidden. */}
       <span className={`pointer-events-none absolute inset-y-0 left-0 w-1.5 ${tColor.fill}`} aria-hidden="true" />
-      {conflicting && (
-        // The warning is carried by the ring (ring-warning); the label text uses
-        // v2-text-primary so it clears AA on every service tint (warning-700 is
-        // sub-AA on the 100 tints — SPEC §3.4).
-        <span className="block text-xs font-semibold uppercase text-v2-text-primary">{s["agenda.conflict"]}</span>
-      )}
-      {/* W10-05: card face INVERTED - the PATIENT NAME is the first + largest
-          element (was the 2nd/3rd line). Therapist stays the spine + dot; the
-          service tint stays on the body; strikethrough-cancelled is unchanged. */}
+      {/* W10-05b (owner ruling after live use): the card face shows ONLY the
+          patient name, wrapping to multiple lines before it EVER truncates, so it
+          stays readable at overlap widths (the W10-05 extra rows - time, service,
+          therapist name, icons, +1/Sem-nota badges, conflict label - crowded the
+          name out at 1/3 width). Everything that left the face is in the W10-05
+          hover popup (untouched). KEPT: the therapist spine (above) + a colour dot,
+          the service-tint body (button `tint`), the `ring-warning` conflict ring
+          (non-text), and strikethrough-cancelled on the name. */}
       <span
         data-testid="agenda-card-patient"
-        className={`flex items-center gap-1 truncate text-sm font-semibold ${cancelled ? "text-v2-text-secondary line-through" : "text-v2-text-primary"}`}
+        className={`flex gap-1.5 text-sm font-semibold leading-tight ${cancelled ? "text-v2-text-secondary line-through" : "text-v2-text-primary"}`}
       >
-        <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
-        {(appt.recurrenceRule || appt.recurrenceParentId) && (
-          <>
-            <Repeat size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
-            <span className="sr-only">{s["appointment.recurring"]}</span>
-          </>
-        )}
-        <span className="truncate">{appt.patientName}</span>
-        {/* Secondary participants (W4-19) — compact +1 badge; the secondary
-            names sit in the title for hover/details. Rendered under the PRIMARY
-            therapist column only (dual-column is a deferred follow-up). */}
-        {(appt.patientTwoId || appt.practitionerTwoId) && (
-          <span
-            className="ml-1 shrink-0 rounded-full bg-surface-muted px-1.5 text-[10px] font-semibold text-v2-text-secondary"
-            title={[appt.patientTwoName, appt.practitionerTwoName].filter(Boolean).join(" · ")}
-          >
-            {s["appointment.plusOne"]}
-          </span>
-        )}
-      </span>
-      <span className="flex items-center justify-between gap-1 text-xs text-v2-text-primary">
-        <span className="truncate">
-          {formatTimeOfDay(new Date(appt.startsAt))}-{formatTimeOfDay(new Date(appt.endsAt))}
-        </span>
-        <span className="flex shrink-0 items-center gap-1">
-          {/* W9-06 (item 9): a note-presence icon signals a note exists even
-              before hover (never hover-only); the content is in the popover. */}
-          {noteText && (
-            <StickyNote
-              size={12}
-              strokeWidth={1.75}
-              aria-label={s["appointment.hasNoteLabel"]}
-              className="text-v2-text-secondary"
-            />
-          )}
-          {/* Confirmation axis (0024) - orthogonal to `status`. W9-05 (item 5,
-              owner ruling 2026-07-17): a CANCELLED appointment SUPPRESSES the
-              confirmation tick, so a cancelled-and-previously-confirmed card can
-              never render a check + a strikethrough as one combined glyph (the
-              reader read that as "strikethrough on a confirmation"). Strikethrough
-              stays bound to cancelled (below); the axes are untouched in data. */}
-          {!cancelled && <ConfirmationIndicator state={appt.confirmationState} />}
-        </span>
-      </span>
-      {/* W9-05 (item 7): therapist identity on every card. The dot carries the
-          per-therapist colour (reinforcement); the NAME is the authoritative
-          text identifier, in AA-safe secondary ink regardless of the hue. */}
-      {showTherapist && (
+        {/* therapist-colour dot (kept per the ruling: stripe + dot + colour);
+            aligned to the name's first line so it never blocks the wrap. */}
         <span
-          data-testid="agenda-card-therapist"
-          className="flex items-center gap-1 truncate text-xs text-v2-text-secondary"
-        >
-          <span className={`size-2 shrink-0 rounded-full ${tColor.fill}`} aria-hidden="true" />
-          <span className="truncate">{appt.practitionerName}</span>
-        </span>
-      )}
-      {showService && <span className="block truncate text-xs text-v2-text-primary">{appt.serviceName}</span>}
-      {/* No-note indicator (W2-04): completed visit with no per-visit note yet. */}
-      {appt.status === "completed" && !appt.hasNote && (
-        <span className="mt-0.5 inline-block rounded bg-warning-bg px-1 text-[10px] font-semibold text-warning-700">
-          {s["appointment.noNote"]}
-        </span>
-      )}
+          data-testid="agenda-card-therapist-dot"
+          className={`mt-1 size-2 shrink-0 rounded-full ${tColor.fill}`}
+          aria-hidden="true"
+        />
+        <span className="min-w-0 break-words">{appt.patientName}</span>
+      </span>
     </button>
     {/* W10-05: the shared unified hover popup (mini-dashboard), replacing the
         W9-06 note-only popover. Sibling of the button so it escapes the card's
