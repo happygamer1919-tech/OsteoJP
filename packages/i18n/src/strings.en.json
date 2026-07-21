@@ -982,7 +982,7 @@
   "lote.noDates": "Generate the dates before confirming.",
   "lote.rowDate": "Appointment date",
   "appointment.nesaServiceSensitive": "contraindication-sensitive service",
-  "patients.contraindicationsLabel": "NESA contraindications",
+  "patients.contraindicationsLabel": "General contraindications",
   "patients.fieldContraindicationEpilepsy": "Epilepsy",
   "patients.fieldContraindicationPregnancy": "Pregnancy",
   "patients.fieldContraindicationPacemaker": "Pacemaker fitted",
