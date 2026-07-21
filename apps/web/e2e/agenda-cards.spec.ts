@@ -1,49 +1,80 @@
 /**
- * agenda-cards.spec.ts - W9-05, CB QA items 5 + 7.
+ * agenda-cards.spec.ts - W9-05 (CB QA items 5 + 7) + W11-00 (W10-05b) face-only.
  *
- * Runs as ADMIN. Proves end to end, on real booked data, the two card changes
- * that need integration coverage (the geometry + colour + tick-suppression
- * logic is unit-tested in agenda-grid.test.tsx and therapist-color.test.ts):
- *   - (7) the therapist NAME renders on the card, with a per-therapist colour
- *     dot/spine beside it.
+ * Runs as ADMIN. Proves end to end, on real booked data, the card contract that
+ * needs integration coverage (geometry + colour + tick-suppression logic is
+ * unit-tested in agenda-grid.test.tsx and therapist-color.test.ts):
+ *   - (7) a per-therapist colour dot/spine is on the card, the therapist NAME is
+ *     NOT (it left the face for the hover in #618).
  *   - (5) cancelling a card strikes the patient name through AND suppresses the
  *     confirmation tick, so a cancelled-and-confirmed card never shows both.
+ *   - (W11-00) the card FACE is the patient name ONLY - readable at 3-overlap in
+ *     BOTH Dia and Semana at 1/3 width - and carries NO time / service /
+ *     therapist-name / confirmation text (that detail lives in the hover popup).
  *
- * Books its own appointment on a dedicated future day and cancels it in place,
- * so it accrues no shared state. Reference therapist is the E2E therapist.
+ * The face is the <button> carrying the patient name; the hover panel is a
+ * SIBLING of that button, so a locator scoped to the card button asserts the
+ * face alone and never trips on the hover's (legitimate) detail.
+ *
+ * Books its own appointments on dedicated future days and cancels in place, so it
+ * accrues no shared state. Reference therapist is the E2E therapist.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator } from "@playwright/test";
 import { openNewAppointment, fillAppointment } from "./helpers";
-import { PATIENTS, LOCATION, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
+import {
+  PATIENTS,
+  LOCATION,
+  SERVICE,
+  THERAPIST_NAME,
+  futureDate,
+  RUN_DAY_BASE,
+} from "./fixtures";
 
 const SAVE = "Guardar";
 const DAY = futureDate(RUN_DAY_BASE + 28); // no other spec books this day
+const BOOK_TIME = "14:00";
 
-test("W9-05: the card shows the therapist name + a per-therapist colour, and cancelling strikes it through and drops the tick", async ({
+/**
+ * Assert a card FACE (the button locator) is the patient name ONLY: the name is
+ * present and readable, and NONE of the detail that W10-05 crowded onto the face
+ * (time / service / therapist name / confirmation tick) is on it. The therapist
+ * colour dot is kept.
+ */
+async function expectNameOnlyFace(card: Locator, patientName: string) {
+  await expect(card).toBeVisible({ timeout: 8_000 });
+  // the patient full name is on the face (present, not clipped to a few chars).
+  await expect(card.getByTestId("agenda-card-patient")).toContainText(patientName);
+  // KEPT: the per-therapist colour dot.
+  await expect(card.getByTestId("agenda-card-therapist-dot")).toHaveCount(1);
+  // ABSENCE of every detail row on the face (all of it is in the hover popup).
+  await expect(card.getByText(THERAPIST_NAME)).toHaveCount(0); // therapist name
+  await expect(card.getByText(SERVICE.name)).toHaveCount(0); // service text
+  await expect(card.getByText(BOOK_TIME)).toHaveCount(0); // time row
+  await expect(card.getByText(/Confirmação/)).toHaveCount(0); // confirmation tick
+}
+
+test("W9-05: the card face is name-only (dot kept, therapist/service/time off it), and cancelling strikes it through and drops the tick", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  // Book a 1h appointment (tall enough for the therapist line to render).
+  // Book a 1h appointment (tall enough that a detail row WOULD have fit).
   const dialog = await openNewAppointment(page, DAY);
   await fillAppointment(dialog, {
     patient: PATIENTS.maria.name,
     therapist: THERAPIST_NAME,
     location: LOCATION.name,
     date: DAY,
-    time: "14:00",
+    time: BOOK_TIME,
   });
   await dialog.getByRole("button", { name: SAVE }).click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 
   // The card is the button carrying the patient name.
   const card = page.getByRole("button", { name: new RegExp(PATIENTS.maria.name) });
-  await expect(card).toBeVisible({ timeout: 8_000 });
 
-  // W10-05b: the card face is the patient NAME ONLY - the therapist NAME left the
-  // face (it is in the hover popup now), but the therapist colour DOT is kept.
-  await expect(card.getByTestId("agenda-card-therapist-dot")).toHaveCount(1);
-  await expect(card.getByText(THERAPIST_NAME)).toHaveCount(0);
+  // W11-00: the face is the patient NAME ONLY - dot kept, therapist/service/time off.
+  await expectNameOnlyFace(card, PATIENTS.maria.name);
 
   // Baseline: a freshly booked card is NOT struck through.
   await expect(card.getByTestId("agenda-card-patient")).toHaveCSS(
@@ -74,7 +105,7 @@ test("W9-05: the card shows the therapist name + a per-therapist colour, and can
   await expect(cancelledCard.getByText(/Confirmação/)).toHaveCount(0);
 });
 
-test("W10-05b: three overlapping cards keep their patient names readable at 1/3 width", async ({
+test("W11-00: three overlapping cards stay name-only and readable at 1/3 width in BOTH Dia and Semana", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -91,7 +122,7 @@ test("W10-05b: three overlapping cards keep their patient names readable at 1/3 
       therapist: THERAPIST_NAME,
       location: LOCATION.name,
       date,
-      time: "14:00",
+      time: BOOK_TIME,
     });
     await dialog.getByRole("button", { name: SAVE }).click();
     if (i > 0) {
@@ -100,14 +131,15 @@ test("W10-05b: three overlapping cards keep their patient names readable at 1/3 
     await expect(dialog).toBeHidden({ timeout: 12_000 });
   }
 
-  // Day view: three overlapping cards at 1/3 width. Each patient name is readable
-  // (present + not clipped to a few chars - the W10-05b name-only, wrapping face).
-  await page.goto(`/agenda?view=day&date=${date}`);
-  for (const name of names) {
-    const card = page.getByRole("button", { name: new RegExp(name) });
-    await expect(card).toBeVisible({ timeout: 8_000 });
-    await expect(card.getByTestId("agenda-card-patient")).toContainText(name);
+  // BOTH views at 1/3 width: each face is the patient name only, readable, no
+  // time/service/therapist/tick text leaking back onto the crowded face.
+  for (const view of ["day", "week"] as const) {
+    await page.goto(`/agenda?view=${view}&date=${date}`);
+    for (const name of names) {
+      const card = page.getByRole("button", { name: new RegExp(name) });
+      await expectNameOnlyFace(card, name);
+    }
+    // Proof screenshot of the 3-overlap at 1/3 width, per view (owner visual gate).
+    await page.screenshot({ path: `test-results/w11-00-3-overlap-${view}.png` });
   }
-  // Proof screenshot of the 3-overlap at 1/3 width (owner visual gate artifact).
-  await page.screenshot({ path: "test-results/w10-05b-3-overlap.png" });
 });
