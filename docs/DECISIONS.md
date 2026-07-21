@@ -1186,3 +1186,44 @@ and Semana at 1/3 width with a per-view screenshot. Negative control: injecting 
 detail row onto the face fails the new assertions; reverting is green. Migration-
 free, hover + Marcacoes untouched, no i18n, no new hex. GREEN pushed + HALTED at
 the owner visual gate; NOT self-merged.
+
+## 2026-07-21 (evening) — W11-00 v3 SUPERSEDES v2: agenda names as a vertical list (Fisiozero), not cards
+
+Owner ruling (2026-07-21 evening). v2 (name-only cards, #620) is merged, deployed,
+and owner-confirmed. The REMAINING defect is the LAYOUT MODEL; v3 supersedes the v2
+definition of done in the loop file. Per the ruling the loop file is NOT edited by
+GREEN (owner-merge surface) - it keeps the merged Field 8; the superseding ruling
+is recorded verbatim in the v3 PR and the deltas are flagged for YELLOW at wave
+close-out.
+
+v3 target (reference: Fisiozero weekly view): an appointment is NOT a card. It is
+ONE line - the patient full name, coloured in the assigned therapist hue - and
+nothing else on the grid face. Implemented (display layer, both Dia + Semana):
+- `agenda-grid.tsx`: removed the card renderer (`AppointmentBlock`), the horizontal
+  overlap-split (`layoutOverlaps` / per-column widths), the service tint
+  (`serviceAccent`/`SERVICE_TINT`), the conflict-ring machinery
+  (`conflictingIds`/`sameRoom`/`intervalsOverlap`), and the service-colour legend.
+  Added `groupByStart` + an `AppointmentName` line component. Same-start-slot
+  appointments stack VERTICALLY (one name per line, full column width, alphabetical
+  within a slot); no side-by-side splitting. Start-row position math UNCHANGED (the
+  known 9:00-on-9:30 defect is neither fixed nor worsened; Wave 12).
+- `therapist-color.ts`: added a `text` utility (`text-*-700`) beside the existing
+  `fill` (`bg-*-700`) - SAME token, no new palette, no new hex; AA on the light grid.
+- Cancelled name = line-through (never a non-cancelled one). The W10-05 hover popup
+  is UNCHANGED on both Agenda views + Marcacoes and stays the sole detail carrier.
+
+Deltas flagged for YELLOW (consequences of the model change):
+1. The SERVICE-colour legend + tint are removed (colour now encodes THERAPIST, not
+   service). No therapist legend added (the name text is the authoritative cue).
+2. The conflict RING is removed (no card box to ring); conflicts read as two names
+   stacked at the same slot. Booking still excludes conflicts (W5-12), unchanged.
+3. Unused agenda i18n keys (`agenda.legend`, `agenda.serviceOther`,
+   `agenda.serviceMassagem*`, etc.) left in place; dead-key cleanup is a YELLOW
+   follow-up (removing keys touches both i18n files; Marcacoes keeps its own labels).
+
+Tests rewritten (name-only line, therapist TEXT colour, no bg/stripe/dot/tint/icon,
+cancelled strike, same-slot vertical stack + no horizontal-split width, alphabetical
+order; E2E adds the (9b) equal-left-x / strictly-different-y proof in BOTH views +
+per-view screenshot). `therapist-color.test.ts` green. Negative control: a `bg-`
+tint on the face fails the chrome guard. Migration-free, no new hex, hover +
+Marcacoes untouched. OWNER VISUAL GATE, not self-merged.
