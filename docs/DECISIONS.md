@@ -1187,6 +1187,35 @@ detail row onto the face fails the new assertions; reverting is green. Migration
 free, hover + Marcacoes untouched, no i18n, no new hex. GREEN pushed + HALTED at
 the owner visual gate; NOT self-merged.
 
+ osteojp-w11-01-recon-split-plan
+## 2026-07-21 — W11-01 recon + SPLIT PLAN v1 (read-only; production-split ground truth)
+
+Read-only recon of the live Supabase project `jaxmkwoxjcgzkwxgbayx` (PostgreSQL 17.6,
+eu-central-1 / Frankfurt). No DB write, no dashboard mutation, no secret values, no PII;
+live reads ran in one `SET TRANSACTION READ ONLY` transaction (counts + object metadata).
+Output: `docs/recon/W11-01-split-plan.md` ending in SPLIT PLAN v1.
+
+Findings: mirror parity HOLDS (supabase/migrations = drizzle source + provenance header,
+byte-identical after the header; journal-sync 38<->38); schema head `0037`; no live
+security/privacy exposure (clinical-attachments bucket PRIVATE, RLS enabled on all 28
+domain tables, immutability trigger `clinical_records_enforce_immutability` ENABLED
+`tgenabled='O'`, auth hook `custom_access_token_hook` present). Live extensions: pg_trgm,
+pgcrypto, uuid-ossp, supabase_vault, pg_stat_statements, plpgsql - W11-02 enables the full
+set before applying migrations (only pg_trgm is migration-created). RLS: 50 live policies
+vs 51 CREATE POLICY in migrations - a W11-02 reconcile/verify item (migrations are the
+source of truth). Live footprint captured (patients 7 = 6 soft-deleted + 1 active;
+clinical_records 29 = 24 draft + 5 signed; audit_log 674; catalog services 19 /
+prices 28 / packs 14; users 19).
+
+Decisions/questions: Q-W11-01-1 RULED by owner - the signed immutable residue island +
+soft-deleted patients STAY BEHIND on the frozen old project; new prod starts clean (the
+governing W11-03 partition rule). Q-W11-01-2 OPEN - audit_log/analytics_events start fresh
+on new prod (recommended default), owner rules at W11-03. SPLIT PLAN v1 defines the W11-02
+provisioning checklist, the W11-03 freeze-window runbook (expected counts + HALT-on-
+mismatch identical to W10-02 + Preview-smoke-before-repoint + CYAN checkpoints), the W11-04
+repoint checklist, and the rollback story (old project READ-ONLY-then-FROZEN, 30-day
+retention). W11-01 is OWNER-MERGE (docs-only, no code/migration/DB-write/dashboard change).
+
 ## 2026-07-21 (evening) — W11-00 v3 SUPERSEDES v2: agenda names as a vertical list (Fisiozero), not cards
 
 Owner ruling (2026-07-21 evening). v2 (name-only cards, #620) is merged, deployed,
@@ -1227,3 +1256,4 @@ order; E2E adds the (9b) equal-left-x / strictly-different-y proof in BOTH views
 per-view screenshot). `therapist-color.test.ts` green. Negative control: a `bg-`
 tint on the face fails the chrome guard. Migration-free, no new hex, hover +
 Marcacoes untouched. OWNER VISUAL GATE, not self-merged.
+ main

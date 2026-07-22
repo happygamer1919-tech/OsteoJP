@@ -786,3 +786,22 @@ Vercel -> osteojp-platform -> Settings -> Git that Production auto-deploy on `ma
 is enabled and connected (and the same for osteojp-api + osteojp-portal). If it was
 intentionally paused (e.g. ahead of the Wave 11 split), note that so W11-04's
 repoint accounts for it. No code loop can fix this - deploys are owner-performed.
+
+### Q-W11-01-1 — Does the BLOCKED residue island travel to the new prod project or stay behind? — RULED
+
+Raised + RULED at W11-01 recon (2026-07-21). **OWNER-RULED (2026-07-21 evening): the
+immutable signed-record island STAYS BEHIND on the frozen old project; new prod starts
+clean.** The 5 `signed` clinical_records (immutable, trigger-pinned) + their episodes/
+attachments/note-revisions/appointments and the 6 soft-deleted patients do NOT migrate;
+they remain on the frozen old project (rollback + any legal-retention need). This is the
+governing partition rule for the W11-03 pre-flight. See `docs/recon/W11-01-split-plan.md`.
+
+### Q-W11-01-2 — Do `audit_log` (674) and `analytics_events` (8) travel, or start fresh on new prod? — OPEN
+
+Raised at W11-01 recon (2026-07-21). **Recommended default: START FRESH on the new
+project; the frozen old project retains the full audit/analytics history.** Copying the
+append-only audit_log drags synthetic build-era history into the clean prod and
+complicates the immutability guarantees; the old project preserves the complete trail.
+Alternative (if continuous audit history on new prod is required): copy only the
+real-usage-era rows, a per-row classification scoped at the W11-03 pre-flight. Owner rules
+at W11-03 (`AUTORIZO MIGRACAO`). See `docs/recon/W11-01-split-plan.md`.
