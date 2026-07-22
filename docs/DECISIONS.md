@@ -1292,3 +1292,35 @@ cycle-2 findings. (Follow-up to the merged #620/#621/#622.)
 
 W11-02 (provisioning) is next: after this addendum merges, GREEN delivers the W11-02
 click-by-click provisioning instruction set and HALTs for the owner to execute.
+
+## 2026-07-22 - W11-02 provisioning verified (new project dfotoodqvmjhbdcxyaxf, empty schema clone at 0037)
+
+Owner performed the dashboard steps; GREEN executed the DB-reachable steps (delegated
+2026-07-22) against the NEW project only, old project untouched (zero writes).
+
+DB-side (all PASS): sanity guard (not-old + is-expected ref + empty); extensions (pg_trgm
+enabled, full set present); pnpm db:migrate to head 0037 (drizzle count=38) + db:check
+clean; immutability trigger ENABLED (tgenabled=O); record_annulments + audit_log
+append-only ({INSERT,SELECT}); auth-hook FUNCTION present; claim-flow isolation probe
+tenant A=1 / tenant B=0 (rolled back, zero residue); RLS 28 tables / 0 force-off / 50
+policies (== old; 50-vs-51 reconciled - migrations net to 50); all 28 domain tables EMPTY.
+Storage: bucket clinical-attachments private + empty; storage.objects RLS on; ZERO custom
+storage policies on BOTH old and new (signed-URL-only model - nothing to replicate).
+Benign migrate WARNING "no privileges were granted for auth/jwt" flagged for owner review
+(schema check clean, isolation proven). Evidence: docs/recon/W11-02-provisioning-evidence.md.
+
+Dashboard (owner-attested): Frankfurt Pro; data-prefs OFF; auth-hook REGISTERED
+(custom_access_token_hook); auth config + templates 4/4 + SMTP (Resend EU, key from vault)
+mirrored; 5 Supabase-scoped values present (legacy anon + service_role). Real-JWT hook
+confirmation deferred to the W11-03 Preview smoke.
+
+Security: a prior malformed credential paste leaked the DB password once in session output
+(driver Invalid-URL throw); scripts hardened to redact; owner advised to rotate the new
+project's DB password. Credential never committed; referenced as <NEW_DIRECT>.
+
+Also drafted MIGRACAO plan v1 (docs/recon/W11-03-migracao-plan-v1.md) - the W11-03
+freeze-window runbook: migrates operational config ONLY (11 tables, parents-before-children,
+per-table count assertions, HALT-on-mismatch), 0 patient-linked rows, 0 storage objects
+(all residue stays behind), audit/analytics fresh; safety re-enumeration + quiescence guard;
+Preview smoke before repoint. Authorization phrase: AUTORIZO MIGRACAO plan v1 (MIGRACAO plan
+versioned independently from SPLIT PLAN v2). W11-02 is OWNER-MERGE.
