@@ -20,23 +20,26 @@
 //   never collide with a service-category card body.
 
 /**
- * The per-therapist palette: Tailwind BACKGROUND utilities used for the card's
- * left spine and the dot beside the therapist name. A background on a positioned
- * spine (not a border-left colour) avoids fighting the card's service-tint
- * border shorthand for `border-*-color` precedence. Ordered so the earliest
- * therapists get hues distinct from the five service-category tints.
+ * The per-therapist palette. Each hue exposes two Tailwind utilities on the SAME
+ * token (no new palette, no raw hex):
+ * - `fill` (BACKGROUND) - used pre-W11-00v3 for the card spine + dot.
+ * - `text` (TEXT COLOUR) - used by the W11-00 v3 Fisiozero list: the appointment
+ *   is a single line of the patient name coloured in the therapist's hue.
  *
- * Every entry is an existing token at the -700 step. Keep this in sync with
- * UI-STYLE.md if a hue is added; never introduce a raw hex here.
+ * Every entry is an existing token at the -700 step (documented in theme.css as
+ * "AA label text on light surfaces (§3.4)"), so the name text meets AA on the
+ * light grid surface and `packages/ui/src/tokens.test.ts` stays green. Ordered
+ * so the earliest therapists get hues distinct from the five service tints. Keep
+ * in sync with UI-STYLE.md if a hue is added; never introduce a raw hex here.
  */
 export const THERAPIST_COLORS = [
-  { key: "teal", fill: "bg-accent-2-700" },
-  { key: "purple", fill: "bg-accent-1-700" },
-  { key: "blue", fill: "bg-v2-blue-700" },
-  { key: "burgundy", fill: "bg-v2-burgundy-700" },
-  { key: "green", fill: "bg-v2-green-700" },
-  { key: "gold", fill: "bg-v2-gold-700" },
-  { key: "lavender", fill: "bg-v2-lavender-700" },
+  { key: "teal", fill: "bg-accent-2-700", text: "text-accent-2-700" },
+  { key: "purple", fill: "bg-accent-1-700", text: "text-accent-1-700" },
+  { key: "blue", fill: "bg-v2-blue-700", text: "text-v2-blue-700" },
+  { key: "burgundy", fill: "bg-v2-burgundy-700", text: "text-v2-burgundy-700" },
+  { key: "green", fill: "bg-v2-green-700", text: "text-v2-green-700" },
+  { key: "gold", fill: "bg-v2-gold-700", text: "text-v2-gold-700" },
+  { key: "lavender", fill: "bg-v2-lavender-700", text: "text-v2-lavender-700" },
 ] as const;
 
 export type TherapistColor = (typeof THERAPIST_COLORS)[number];
