@@ -1257,3 +1257,38 @@ per-view screenshot). `therapist-color.test.ts` green. Negative control: a `bg-`
 tint on the face fails the chrome guard. Migration-free, no new hex, hover +
 Marcacoes untouched. OWNER VISUAL GATE, not self-merged.
  main
+
+## 2026-07-22 - W11 rulings: named exclusion set (SPLIT PLAN v2), Q-W11-01-2 fresh audit, board collapse
+
+Owner rulings 2026-07-22, finalizing the W11-03 migration scope and folding in CYAN
+cycle-2 findings. (Follow-up to the merged #620/#621/#622.)
+
+1. **Exclusion set FINAL (SPLIT PLAN v2, extends Q-W11-01-1).** MIGRACAO plan v2 EXCLUDES
+   patient_number {94, 108, 109, 118, 119, 120, 121, 122} and their ENTIRE data trees, via
+   BOTH FK paths (patient_id AND clinical_record_id of excluded records). NO cloud
+   deletions, NO new deletion feature this wave - the exclusion set is the mechanism;
+   nothing is destroyed; the immutability trigger is never touched. Verified read-only
+   2026-07-22: the island HALT-check PASSED (the 5 signed immutable records belong to
+   exactly #94/#108/#109/#118); #122 (duplicate re-entry of #109) ruled EXCLUDED after the
+   safety-rule HALT. Active patients = 0 - owner attests (with staff confirmation) no real
+   patient needs to travel, so new prod migrates OPERATIONAL CONFIG ONLY (users 19, roles 4,
+   tenants 1, locations 2, services 19, service_location_prices 28, service_packs 14,
+   therapist_services 4, availability_templates 13, form_templates 8, time_off 3); every
+   patient-linked table migrates 0 rows. W11-03 pre-flight re-enumerates ALL soft-deleted
+   patients (any not on the list HALTs) and re-verifies quiescence from the 2026-07-22
+   #122 write forward (any new write HALTs).
+
+2. **Q-W11-01-2 RULED:** audit_log (674) + analytics_events (8) START FRESH on new prod;
+   the frozen old project retains the full history.
+
+3. **Wave 12 registered (Q-W12-DEL-1, BLOCKED):** password-gated deletion of notes +
+   documents from a patient record (lawful hard delete), gated on the lawyer's
+   retention-prazo answer + JP approval. Not built in Wave 11.
+
+4. **Board collapse (CYAN cycle-2):** the Wave 11 queue rows for W11-00 and W11-01 are
+   collapsed to single DONE rows - W11-00 DONE (#620 diagnosis/v2 + #621 v3 layout),
+   W11-01 DONE (#622) - dropping the stale v2 "DIAGNOSIS A" narrative and the OPEN/v2/v3
+   duplicate descriptions. W11-02..05 stay OPEN.
+
+W11-02 (provisioning) is next: after this addendum merges, GREEN delivers the W11-02
+click-by-click provisioning instruction set and HALTs for the owner to execute.

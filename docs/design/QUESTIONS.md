@@ -796,12 +796,32 @@ attachments/note-revisions/appointments and the 6 soft-deleted patients do NOT m
 they remain on the frozen old project (rollback + any legal-retention need). This is the
 governing partition rule for the W11-03 pre-flight. See `docs/recon/W11-01-split-plan.md`.
 
-### Q-W11-01-2 — Do `audit_log` (674) and `analytics_events` (8) travel, or start fresh on new prod? — OPEN
+### Q-W11-01-2 - Do `audit_log` (674) and `analytics_events` (8) travel, or start fresh on new prod? - RULED
 
-Raised at W11-01 recon (2026-07-21). **Recommended default: START FRESH on the new
-project; the frozen old project retains the full audit/analytics history.** Copying the
-append-only audit_log drags synthetic build-era history into the clean prod and
-complicates the immutability guarantees; the old project preserves the complete trail.
-Alternative (if continuous audit history on new prod is required): copy only the
-real-usage-era rows, a per-row classification scoped at the W11-03 pre-flight. Owner rules
-at W11-03 (`AUTORIZO MIGRACAO`). See `docs/recon/W11-01-split-plan.md`.
+Raised at W11-01 recon (2026-07-21). **OWNER-RULED (2026-07-22): START FRESH on the new
+project.** `audit_log` and `analytics_events` are NOT migrated; the frozen old project
+retains the full audit/analytics history for any retention/legal need. A clean prod starts
+with an empty append-only audit trail. See `docs/recon/W11-01-split-plan.md` (SPLIT PLAN
+v2) + DECISIONS 2026-07-22.
+
+### Q-W11-01-1 UPDATE (2026-07-22) - residue disposition extended to a NAMED exclusion set
+
+The 2026-07-21 island ruling is extended: MIGRACAO plan v2 EXCLUDES patient_number
+`{94, 108, 109, 118, 119, 120, 121, 122}` and their ENTIRE data trees (via BOTH FK paths,
+`patient_id` AND `clinical_record_id` of excluded records). NO cloud deletions, NO new
+deletion feature this wave - the exclusion set is the mechanism; nothing destroyed; the
+immutability trigger untouched. Island HALT-check PASSED (the 4 named numbers own exactly
+the 5 signed records); #122 ruled EXCLUDED after the safety-rule HALT. Active patients = 0;
+new prod migrates operational config only. W11-03 pre-flight re-enumerates ALL soft-deleted
+patients - any not on the list HALTs for an explicit owner ruling; any write after
+2026-07-22 HALTs (quiescence). See `docs/recon/W11-01-split-plan.md`.
+
+### Q-W12-DEL-1 - Password-gated deletion of notes + documents from a patient record (lawful hard delete) - REGISTERED for Wave 12, BLOCKED
+
+Registered 2026-07-22 (owner). Build a password-gated deletion of NOTES and DOCUMENTS from
+a patient record, enabling a lawful hard delete of the residue that is currently blocked by
+the immutability trigger. **Do NOT build in Wave 11.** Gated on (1) the lawyer's
+retention-prazo (clinical-record retention period) answer and (2) JP approval - clinical
+record erasure is a legal/clinical decision, not an engineering one. Until then, Wave 11
+uses the migration exclusion set (above) to keep residue OFF new prod without deleting
+anything.
