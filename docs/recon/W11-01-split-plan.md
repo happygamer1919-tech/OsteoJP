@@ -1,10 +1,15 @@
-# W11-01 - Recon + SPLIT PLAN v1 (Wave 11 Separacao de Producao)
+# W11-01 - Recon + SPLIT PLAN v2 (Wave 11 Separacao de Producao)
+
+> v2 (2026-07-22) folds in the owner's exclusion-set ruling: the migration EXCLUDES a
+> named set of soft-deleted patients + their full data trees (nothing is deleted; the old
+> project keeps everything; the immutability trigger is never touched). See section (c)
+> and Q-W11-01-1/-2. v1 was the initial recon + plan (2026-07-21).
 
 Read-only recon of the live Supabase project `jaxmkwoxjcgzkwxgbayx`, produced by
 GREEN 2026-07-21. No DB write, no dashboard mutation, no secret VALUES, no row PII.
 The live reads ran inside a single `SET TRANSACTION READ ONLY` transaction (counts +
 object metadata only) using the repo's own postgres.js driver on
-`DATABASE_URL_DIRECT`. Ends in a versioned **SPLIT PLAN v1** that W11-02/03/04
+`DATABASE_URL_DIRECT`. Ends in a versioned **SPLIT PLAN v2** that W11-02/03/04
 execute. **OWNER-MERGE.**
 
 ## Verdict summary
@@ -15,8 +20,12 @@ execute. **OWNER-MERGE.**
 - One reconcile item for W11-02: migrations define 51 `CREATE POLICY`; live shows 50
   policies. The new project (built from migrations) will land 51; verify the intended
   set at provisioning.
-- Residue disposition (Q-W11-01-1) is OWNER-RULED: the immutable signed-record island
-  + soft-deleted patients STAY BEHIND on the frozen old project; new prod starts clean.
+- Residue disposition RULED (Q-W11-01-1, 2026-07-22): a NAMED exclusion set of soft-
+  deleted patients `{94,108,109,118,119,120,121,122}` + full data trees STAYS BEHIND on
+  the frozen old project (no deletions, trigger untouched). Active patients = 0, so new
+  prod migrates operational config ONLY. `audit_log`/`analytics_events` start fresh
+  (Q-W11-01-2 RULED). The island HALT-check and safety re-enumeration are baked into the
+  W11-03 pre-flight.
 
 ---
 
@@ -145,23 +154,42 @@ read-only pre-flight immediately before the freeze (below).
 | audit_log | 674 | disposition: start fresh on new prod (default); old keeps full history |
 | appointment_notes / invoices / migration_staging_rows / patient_form_submissions / patient_locations / patient_pack_instances / quick_notes / record_annulments | 0 | empty |
 
-**Residue island (STAYS BEHIND, per Q-W11-01-1 ruling):** the 5 `signed` (immutable,
-trigger-pinned) `clinical_records` + their `clinical_episodes`/`attachments`/
-`patient_note_revisions`/`appointments`, and the 6 soft-deleted `patients`. The exact
-per-record partition (which of the 24 drafts / 4 episodes / 6 attachments / 5 note
-revisions / 4 appointments / 1 ingestion request are residue-linked vs real) is
-resolved at the W11-03 read-only pre-flight, governed by the rule below.
+**Named exclusion set (STAYS BEHIND on the frozen old project, per the 2026-07-22 owner
+ruling extending Q-W11-01-1).** By patient_number: **{94, 108, 109, 118, 119, 120, 121,
+122}** - all 8 currently soft-deleted patients. Their ENTIRE data trees stay behind,
+followed via BOTH FK paths (`patient_id` AND `clinical_record_id` of the excluded
+records). Verified read-only 2026-07-22:
+- Immutability island (5 signed records) = exactly #94 (1), #108 (1), #109 (2), #118 (1)
+  - the HALT-check that the named numbers map to the island PASSES.
+- #119, #120, #121 (`ttt`) are soft-deleted test residue on the ruling list; #122 (a
+  duplicate re-entry of #109) was ruled EXCLUDED after the safety-rule HALT.
+- **There are ZERO active patients** (all 8 soft-deleted). Owner attests (with staff
+  confirmation) that no real patient record entered on the platform needs to travel.
 
-**Retained-real set (TRAVELS to clean prod):** the operational config (users, roles,
-tenants incl. `settings`, locations, services, service_location_prices, service_packs,
-therapist_services, availability_templates, form_templates, time_off) + the 1 active
-patient and its NON-signed real clinical data + the 26 storage objects that belong to
-travelling attachments. `analytics_events` and `audit_log` start fresh on new prod
-(default; old project retains the full history) - see Q-W11-01-2.
+**Net-of-exclusion reconciliation (what MIGRATES to new prod):** operational config ONLY.
+Every patient-linked table migrates ZERO rows.
+
+| Table | live total | excluded (stays behind) | MIGRATES |
+|---|---|---|---|
+| patients | 8 | 8 | **0** |
+| clinical_records | 29 | 27 patient-linked + 2 non-patient-linked (see note) | **0** |
+| clinical_episodes | 5 | 5 | **0** |
+| attachments | 6 | 3 via patient_id + 3 via clinical_record_id of excluded records | **0** |
+| patient_note_revisions | 5 | 5 | **0** |
+| appointments | 2 | 2 (1 island + 1 #122) | **0** |
+| invoices / patient_locations / patient_form_submissions / patient_pack_instances / appointment_notes | 0 | 0 | **0** |
+| audit_log | 674 | start fresh (Q-W11-01-2 RULED) | **0** |
+| analytics_events | 8 | start fresh (Q-W11-01-2 RULED) | **0** |
+| **Operational config (TRAVELS):** users 19, roles 4, tenants 1 (incl. `settings`), locations 2, services 19, service_location_prices 28, service_packs 14, therapist_services 4, availability_templates 13, form_templates 8, time_off 3 | | | **as-is** |
+
+Note: 2 `clinical_records` do not join a patient via `patient_id` (null patient_id /
+AI-ingestion staging). The W11-03 pre-flight classifies these 2 explicitly (expected:
+residue - no real patient exists to own them) and confirms they stay behind; they must
+never migrate as orphans.
 
 ---
 
-## SPLIT PLAN v1
+## SPLIT PLAN v2
 
 ### W11-02 - Provisioning checklist (owner-performed; GREEN verifies + HALTs on gap)
 1. NEW Supabase project, **Frankfurt (eu-central-1), Pro**. (A US region = HALT.)
@@ -185,20 +213,27 @@ travelling attachments. `analytics_events` and `audit_log` start fresh on new pr
    real data present yet. Any gap (EU-residency / auth-hook / immutability) = HALT-LOUD.
 
 ### W11-03 - Freeze-window data-migration runbook (OWNER-GATED)
-- Opens ONLY on the exact owner phrase `AUTORIZO MIGRACAO plan v1` + the mandatory
+- Opens ONLY on the exact owner phrase `AUTORIZO MIGRACAO plan v2` + the mandatory
   **CYAN-before** checkpoint + staff writes PAUSED. The OLD project is READ-ONLY
   throughout (source + rollback); the target is the NEW project.
-- **Read-only pre-flight** (authoritative re-count): capture the CURRENT per-table
-  counts on the OLD project and compute the travels/stays partition:
-  - STAYS BEHIND: `clinical_records` where `status='signed'` (immutable) + their
-    episodes/attachments/note_revisions/appointments; `patients` where
-    `deleted_at IS NOT NULL`. Never write to these; never attempt to delete the signed
-    island (the trigger blocks it - do not fight it).
-  - TRAVELS: operational config (users/roles/tenants/locations/services/
-    service_location_prices/service_packs/therapist_services/availability_templates/
-    form_templates/time_off) + `patients` where `deleted_at IS NULL` + their NON-signed
-    real clinical data + the storage objects of travelling attachments.
-  - `analytics_events` + `audit_log`: start fresh on new prod (Q-W11-01-2 default).
+- **Read-only pre-flight** (authoritative re-count + drift guard):
+  - **EXCLUSION SET (stays behind):** patient_number `{94, 108, 109, 118, 119, 120, 121,
+    122}` and their ENTIRE data trees, followed via BOTH FK paths (`patient_id` AND the
+    `clinical_record_id` of every excluded record - so an attachment/annulment/note on an
+    excluded record is also excluded). Never write to these; never attempt to delete the
+    signed island (the trigger blocks it - do not fight it).
+  - **SAFETY RE-ENUMERATION:** re-list ALL soft-deleted patients at pre-flight. Any
+    soft-deleted patient NOT in the exclusion set above is NOT auto-excluded - **HALT** and
+    present it to the owner for an explicit keep/exclude ruling (real staff may have
+    legitimately soft-deleted a real patient during live usage).
+  - **TRAVELS:** operational config only (users/roles/tenants incl. `settings`/locations/
+    services/service_location_prices/service_packs/therapist_services/
+    availability_templates/form_templates/time_off). Zero patient-linked rows (owner
+    attests no real patient needs to travel; active patients = 0).
+  - `analytics_events` + `audit_log`: start FRESH on new prod (Q-W11-01-2 RULED).
+  - **Quiescence guard:** the last accounted cleanup write is the #122 soft-delete of
+    2026-07-22. Re-verify quiescence FROM that point forward; any NEW write after the
+    2026-07-22 exclusion ruling HALTs per standing drift discipline (as W10-02).
 - **Dump/restore parents-before-children**, per-table source->target EXPECTED before/
   after counts, with the **HALT-on-mismatch protocol identical to W10-02**: any count
   mismatch, FK `23503`, immutability/`check_violation`, or storage shortfall HALTs with
@@ -226,27 +261,29 @@ deleted during the split. Rollback at ANY step = repoint the Vercel envs back to
 project (it still holds all data + the signed residue). Retention: frozen 30 days after
 cutover, then the owner decides (W11-05). Decommission is a future owner-gated action.
 
-**Plan version: SPLIT PLAN v1.** W11-03's authorization phrase names this version
-(`AUTORIZO MIGRACAO plan v1`).
+**Plan version: SPLIT PLAN v2.** W11-03's authorization phrase names this version
+(`AUTORIZO MIGRACAO plan v2`).
 
 ---
 
 ## Open questions (recommended defaults; never self-decided)
 
-### Q-W11-01-1 - Does the BLOCKED residue island travel to the new project or stay behind? - RULED
-**OWNER-RULED (2026-07-21 evening):** the immutable signed-record island STAYS BEHIND on
-the frozen old project; new prod starts clean. So the 5 `signed` clinical_records (+ their
-episodes/attachments/note-revisions/appointments) and the 6 soft-deleted patients do NOT
-migrate. Recorded here as the governing partition rule for W11-03. (Rationale: a clean
-prod holds only live real data; the frozen old project preserves the signed residue for
-any legal-retention need; migrating immutable signed synthetic records would re-import
-exactly what the split exists to shed.)
+### Q-W11-01-1 - Residue disposition - RULED (extended to a named exclusion set, 2026-07-22)
+**OWNER-RULED.** (v1, 2026-07-21 evening) the immutable signed-record island STAYS BEHIND;
+new prod starts clean. (v2, 2026-07-22) extended to a NAMED exclusion set: patient_number
+`{94, 108, 109, 118, 119, 120, 121, 122}` and their ENTIRE data trees (via BOTH FK paths,
+`patient_id` AND `clinical_record_id` of excluded records) stay behind on the frozen old
+project. NO cloud deletions and NO new deletion feature this wave - the migration
+exclusion set is the mechanism; nothing is destroyed; the immutability trigger is never
+touched. The island HALT-check (the 4 named numbers own exactly the 5 signed records)
+PASSED read-only 2026-07-22; #122 (a duplicate re-entry of #109) was ruled EXCLUDED after
+the safety-rule HALT. Owner attests (with staff confirmation) that NO active real patient
+needs to travel (active patients = 0). Governing rule for the W11-03 pre-flight, with the
+SAFETY RE-ENUMERATION (any soft-deleted patient not on the list = HALT for an explicit
+owner ruling) and the quiescence guard (any write after 2026-07-22 = HALT).
 
-### Q-W11-01-2 - Do `audit_log` (674) and `analytics_events` (8) travel, or start fresh? - OPEN
-**Recommended default: START FRESH on the new project; the old (frozen) project retains
-the full audit/analytics history.** The audit_log is append-only history spanning the
-synthetic build era + real usage; copying it drags synthetic history into the clean prod
-and complicates the trigger/immutability guarantees, while the frozen old project
-preserves the complete trail for any retention/legal need. If the owner needs continuous
-audit history on new prod, the alternative is to copy only the real-usage-era rows - a
-per-row classification to be scoped at the W11-03 pre-flight. Owner rules at W11-03.
+### Q-W11-01-2 - Do `audit_log` (674) and `analytics_events` (8) travel, or start fresh? - RULED
+**OWNER-RULED (2026-07-22): START FRESH on the new project.** `audit_log` and
+`analytics_events` are NOT migrated; the frozen old project retains the full audit/
+analytics history for any retention/legal need. A clean prod starts with an empty
+append-only audit trail. Recorded durable here + in DECISIONS 2026-07-22.
