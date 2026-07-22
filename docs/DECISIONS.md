@@ -1324,3 +1324,39 @@ per-table count assertions, HALT-on-mismatch), 0 patient-linked rows, 0 storage 
 (all residue stays behind), audit/analytics fresh; safety re-enumeration + quiescence guard;
 Preview smoke before repoint. Authorization phrase: AUTORIZO MIGRACAO plan v1 (MIGRACAO plan
 versioned independently from SPLIT PLAN v2). W11-02 is OWNER-MERGE.
+
+## 2026-07-22 (evening) — W11-03 owner ruling: authorized OLD hard-deletes + MIGRACAO plan v2 re-baseline
+
+Ruling of record: `osteojp-mailbox/rulings/OWNER-RULING-20260722-old-hard-deletes.md`
+(committed to main by the owner account via #625 — the direct owner commit is the signature).
+Supersedes the earlier "NO cloud deletions, nothing is destroyed" posture **for exactly five
+rows and nothing else.**
+
+- **Deliberate owner cleanup on OLD (`jaxmkwoxjcgzkwxgbayx`), via the Supabase dashboard.**
+  Five hard-deletes, verified live against the audit log as an EXACT match to the ruling (no
+  extra row): 20:20:58Z patient #123 (12b0704d), 20:21:14Z appointment 3d82fe24, 20:21:27Z
+  appointment 883e8eef, 20:22:11Z patient #122 (9aa565ec), 20:22:20Z patient #120 (065b8add).
+- **Identity correction.** Actor `48a34faa` is the OWNER account (per the ruling), not staff.
+  Any prior file labeling it staff (incl. `GREEN-ESCALATION-W10-02-plan-v2-drift`) is stale and
+  superseded. Reasoning: the owner attested the account is his; the immutability trigger was
+  never defeated and the signed island was untouched, consistent with owner-scoped cleanup.
+- **Scope of the override.** ONLY the five rows above. The immutability island (patients
+  {94,108,109,118}, five signed records) is untouched — verified present, trigger
+  `clinical_records_enforce_immutability` still ENABLED (tgenabled=O). The append-only
+  audit_log/record_annulments model stands.
+- **Quiescence re-anchored** to `2026-07-22T20:22:20.097Z` (the last owner write). Verified:
+  `max(audit_log.created_at)` = the anchor event; zero writes after it; all table
+  max-timestamps pre-anchor. Any write on OLD after the anchor HALTs W11-03.
+- **Exclusion set v1 → v2:** `{94,108,109,118,119,120,121,122}` → `{94,108,109,118,119,121}`
+  (#120/#122 physically gone; #123 never in any set). Verified: live soft-deleted set equals v2
+  exactly; active patients = 0; every patient-linked table `would_migrate = 0` via BOTH FK
+  paths (patient_id AND clinical_record_id).
+- **MIGRACAO plan v1 is SUPERSEDED and must never be authorized.** Re-baseline runbook:
+  `docs/recon/W11-03-migracao-plan-v2.md`. Authorization phrase is now
+  `AUTORIZO MIGRACAO plan v2` (v1's phrase is dead). Same structure: operational config only
+  (11 tables, parents-before-children, per-table count assertions, HALT-on-mismatch, atomic on
+  NEW), 0 patient rows, 0 storage objects, audit/analytics fresh, Preview smoke before repoint.
+- **Evidence reconcile (W11-02).** CYAN observed 29 tables with `relrowsecurity`; GREEN reported
+  28. The delta is `storage.objects`: GREEN counted the `public` schema (28 app tables); CYAN's
+  29 = those 28 + the Supabase-managed `storage.objects` (RLS on, part of the private-bucket /
+  signed-URL model). Both correct at their scope; no gap. Noted inline in the W11-02 evidence doc.

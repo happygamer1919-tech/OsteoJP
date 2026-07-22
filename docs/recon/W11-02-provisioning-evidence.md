@@ -50,6 +50,10 @@ verified everything against SPLIT PLAN v2. **OWNER-MERGE.**
 
 ### RLS
 - tables with RLS enabled: **28**; tables with RLS force-off: **0** (no gap)
+  - **28-vs-29 reconcile (W11-03):** CYAN observed **29** tables with `relrowsecurity`; this
+    count of **28** is the `public` schema (app tables) only. The delta is `storage.objects`
+    (Supabase-managed, RLS on, part of the private-bucket / signed-URL model): 28 public + 1
+    `storage.objects` = 29. Both correct at their scope; no gap.
 - policy count: **50** - matches the old project's 50.
   - **50-vs-51 reconcile:** `packages/db/migrations` has 51 `CREATE POLICY` statements;
     the net policy set is 50 (one policy is superseded/replaced across migrations). The
