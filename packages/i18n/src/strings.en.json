@@ -1087,6 +1087,7 @@
   "marcacoes.filterTherapist": "Therapist",
   "marcacoes.allTherapists": "All therapists",
   "marcacoes.searchPlaceholder": "Search by patient",
+  "marcacoes.openAppointment": "Open appointment",
   "marcacoes.emptyTitle": "No bookings for the selected filters.",
   "marcacoes.emptyHelp": "Adjust the filters or the date range.",
   "marcacoes.errorTitle": "Could not load the bookings",

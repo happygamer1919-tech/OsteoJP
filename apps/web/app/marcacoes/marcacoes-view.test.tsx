@@ -32,6 +32,9 @@ vi.mock("@osteojp/ui", () => {
       createElement("select", rest, children as ReactNode),
     StatusBadge: withClass("span"),
     StatusChip: withClass("span"),
+    // W12-00: the view now wraps its output in ToastProvider (for the reused
+    // AppointmentDrawer's toasts). In this static render it is a passthrough.
+    ToastProvider: withClass("div"),
   };
 });
 
@@ -99,6 +102,7 @@ describe("MarcacoesView Serviço filter (W6-01b data-driven)", () => {
         lockTherapist={false}
         options={OPTIONS}
         serviceFilterOptions={SERVICES}
+        canHardDelete={false}
         appointments={[]}
       />,
     );
@@ -124,6 +128,7 @@ describe("MarcacoesView Serviço filter (W6-01b data-driven)", () => {
         lockTherapist={false}
         options={OPTIONS}
         serviceFilterOptions={SERVICES}
+        canHardDelete={false}
         appointments={appts}
       />,
     );
@@ -138,6 +143,7 @@ describe("MarcacoesView Serviço filter (W6-01b data-driven)", () => {
         lockTherapist={false}
         options={OPTIONS}
         serviceFilterOptions={SERVICES}
+        canHardDelete={false}
         appointments={[mkAppt({ serviceName: "Osteopatia", serviceId: "svc-osteo" })]}
       />,
     );
@@ -153,6 +159,7 @@ describe("W9-06 items 9 + 10 - created-by provenance + note hover on marcacoes r
         lockTherapist={false}
         options={OPTIONS}
         serviceFilterOptions={SERVICES}
+        canHardDelete={false}
         appointments={[mkAppt(over)]}
       />,
     );
@@ -187,5 +194,49 @@ describe("W9-06 items 9 + 10 - created-by provenance + note hover on marcacoes r
     expect(html).toContain('role="tooltip"');
     // but there is no note-preview section
     expect(html).not.toContain('data-testid="hover-note"');
+  });
+});
+
+describe("W12-00 - marcacoes row exposes an open/edit control", () => {
+  function renderRow(over: Partial<AgendaAppointment>) {
+    return render(
+      <MarcacoesView
+        filters={baseFilters}
+        lockTherapist={false}
+        options={OPTIONS}
+        serviceFilterOptions={SERVICES}
+        canHardDelete={false}
+        appointments={[mkAppt(over)]}
+      />,
+    );
+  }
+
+  it("renders a native, keyboard-focusable button per row, labelled with the patient (not an inert card)", () => {
+    const html = renderRow({ patientName: "Paciente Um" });
+    // A real <button> (native Enter/Space + tab focus), not the whole GlassCard
+    // (which would nest the hover trigger's role="button").
+    expect(html).toMatch(/<button[^>]*aria-label="Abrir marcação: Paciente Um"/);
+    // The visible label is text, never colour/icon alone (colour-not-only rule).
+    expect(html).toContain("Abrir marcação");
+    // The control is NOT tab-removed.
+    expect(html).not.toMatch(/<button[^>]*aria-label="Abrir marcação: Paciente Um"[^>]*tabindex="-1"/);
+  });
+
+  it("labels each row's control with its own patient so screen readers disambiguate", () => {
+    const html = render(
+      <MarcacoesView
+        filters={baseFilters}
+        lockTherapist={false}
+        options={OPTIONS}
+        serviceFilterOptions={SERVICES}
+        canHardDelete={false}
+        appointments={[
+          mkAppt({ id: "r1", patientName: "Ana Costa" }),
+          mkAppt({ id: "r2", patientName: "Rui Alves", startsAt: "2026-07-20T11:00:00.000Z", endsAt: "2026-07-20T12:00:00.000Z" }),
+        ]}
+      />,
+    );
+    expect(html).toContain('aria-label="Abrir marcação: Ana Costa"');
+    expect(html).toContain('aria-label="Abrir marcação: Rui Alves"');
   });
 });
