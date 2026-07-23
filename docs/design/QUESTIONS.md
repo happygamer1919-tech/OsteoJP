@@ -856,6 +856,8 @@ Test lock (deterministic, covers every status - the machine-verifiable substitut
 
 Return to CB's exact words ("confirmed appointments showing struck-through"): a `confirmed` STATUS does not strike and a `declined` CONFIRMATION does not strike, so any struck-through row CB saw was a `status = cancelled` appointment (correct behaviour) read as "confirmed" - i.e. exactly the Cancelada-vs-confirmation labelling ambiguity this Q already captures, not a binding defect. **No strikethrough bug exists; the interim invariant is correct.** Recommended default UNCHANGED: no code change now; the final estado visual language (incl. a distinct Cancelada glyph that never looks like Falta) is set in W12-10. **ACTION for Rodica:** identify the specific appointment she saw struck through and its estado in Administracao, to confirm it was `cancelled` (expected) and not `confirmed` (which would reopen this as a defect).
 
+**W12-10 cross-ref (2026-07-23):** the full estado visual language now lives in `docs/design/SPEC-estados-lifecycle.md` (section 3). It carries the recommended defaults for this Q - Falta = strikethrough on the name, Cancelada = a distinct red glyph (never a strikethrough), estado glyphs as a small leading marker (colour-not-only, else hover/Marcacoes only if the owner keeps the face pure name-only) - plus a minor note on the two "confirmed" notions (lifecycle `status=confirmed` vs `confirmation_state=confirmed`; see spec 2.2). This Q gates the W12-11 build.
+
 ### Q-W12-02 - Hour-only slots: global vs per-location - REGISTERED for Rodica
 
 Q-W9-00-3 was CLOSED as **per-location** (default 30 min, 60 for Castelo Branco; LV + the portal unchanged). Rodica now asks for hour-only **globally**.
@@ -865,6 +867,8 @@ Q-W9-00-3 was CLOSED as **per-location** (default 30 min, 60 for Castelo Branco;
 
 The estado build (W12-11) adds a NET-NEW inbound-SMS capability (patient confirms or replies negative -> Confirmada / Cancelada) that does not exist today. This needs legal + product decisions before build.
 **Recommended defaults (owner/JP to confirm):** (1) **Twilio EU region + a signed DPA** before any live SMS (CLAUDE.md rule 8, the W11-05 follow-up) - a US region or a missing DPA is a hard blocker; (2) inbound **consent + STOP/opt-out** honoured (STOP -> opt-out, no further SMS); (3) the **negative keywords** that map to Cancelada (e.g. NAO / CANCELAR) + the confirm keywords (SIM / CONFIRMAR) defined by Rodica/JP in pt-PT; (4) send times + copy per the existing 2026-07-03 SMS-confirmation questions (reference, do not duplicate). No inbound build until (1)-(3) are ruled.
+
+**W12-10 cross-ref (2026-07-23):** the inbound-SMS design (public Twilio webhook + signature validation, tenant/appointment resolution, idempotent axis+status flip, STOP/opt-out, abuse/rate, no-PII logging) is specced in `docs/design/SPEC-estados-lifecycle.md` (section 4.4) with the build-gate list (section 5). That spec SUPERSEDES `SPEC-sms-confirmation.md` section 8 (which had made inbound parsing a non-goal). This Q + the vendor/EU-DPA approval gate the W12-11 build.
 
 ### Q-W12-04 - "Diversos" internal-only service (never portal-bookable) - REGISTERED for owner
 
