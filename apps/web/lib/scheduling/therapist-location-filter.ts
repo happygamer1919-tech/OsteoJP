@@ -53,3 +53,22 @@ export function filterTherapistsByLocation<T extends TherapistLike>(
   if (!locationId) return [...therapists];
   return therapists.filter((t) => (assignments.get(t.id) ?? []).includes(locationId));
 }
+
+/**
+ * W12-23 - the therapist options for the BOOKING drawer's dropdown: the location
+ * team (same predicate as above), plus the currently-selected therapist kept in
+ * the list even if they are not assigned to the chosen location, so editing an
+ * existing appointment (or a location change) never drops the current value from
+ * the Select. `locationId = null` returns the full list unchanged.
+ */
+export function therapistOptionsForBooking<T extends TherapistLike>(
+  therapists: readonly T[],
+  assignments: TherapistLocationAssignments,
+  locationId: string | null,
+  keepId?: string | null,
+): T[] {
+  const scoped = filterTherapistsByLocation(therapists, assignments, locationId);
+  if (!locationId || !keepId || scoped.some((t) => t.id === keepId)) return scoped;
+  const kept = therapists.find((t) => t.id === keepId);
+  return kept ? [...scoped, kept] : scoped;
+}

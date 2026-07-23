@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   filterTherapistsByLocation,
+  therapistOptionsForBooking,
   type TherapistLocationAssignments,
 } from "./therapist-location-filter";
 
@@ -112,5 +113,37 @@ describe("filterTherapistsByLocation - multi-location and composition", () => {
     // the picked therapist must be present for the location.
     const at = filterTherapistsByLocation(ROSTER, ASSIGNMENTS, CB);
     expect(at.some((t) => t.id === BERNARDO.id)).toBe(true);
+  });
+});
+
+describe("therapistOptionsForBooking - W12-23 booking dropdown scoping", () => {
+  const optsAt = (locationId: string | null, keepId?: string | null) =>
+    therapistOptionsForBooking(ROSTER, ASSIGNMENTS, locationId, keepId).map((t) => t.id);
+
+  it("null location returns the full roster (no location chosen yet)", () => {
+    expect(optsAt(null)).toEqual(ROSTER.map((t) => t.id));
+  });
+
+  it("a location scopes to its team (same as the toolbar predicate)", () => {
+    expect(optsAt(CB)).toEqual([ANA.id, BERNARDO.id]);
+  });
+
+  it("keeps the currently-selected therapist even if they are not at the location (edit safety)", () => {
+    // Editing an appointment whose therapist (TIAGO, LV-only) is not on the CB
+    // team must not drop TIAGO from the Select and lose the value.
+    expect(optsAt(CB, TIAGO.id)).toEqual([ANA.id, BERNARDO.id, TIAGO.id]);
+  });
+
+  it("does not duplicate the current therapist when they are already at the location", () => {
+    expect(optsAt(CB, BERNARDO.id)).toEqual([ANA.id, BERNARDO.id]);
+  });
+
+  it("a location with no team yields empty (drives the empty state) unless a current therapist is kept", () => {
+    expect(optsAt(MTM)).toEqual([]);
+    expect(optsAt(MTM, ANA.id)).toEqual([ANA.id]);
+  });
+
+  it("keepId is ignored under Todas (full list already includes it)", () => {
+    expect(optsAt(null, TIAGO.id)).toEqual(ROSTER.map((t) => t.id));
   });
 });

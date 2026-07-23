@@ -277,18 +277,27 @@ export async function getAgendaOptions(
   ctx: RequestContext,
   locationId?: string | null,
 ): Promise<AgendaOptions> {
+  // W12-23: the assignment map is now ALWAYS fetched (it is cached 60s), so the
+  // booking drawer can scope its therapist dropdown to the form-selected location
+  // regardless of the W9-02 toolbar location. The `therapists` field keeps its
+  // W9-02 page/toolbar scoping unchanged.
   const [{ therapistRows, locationRows, serviceRows, packRows }, assignmentEntries] =
     await Promise.all([
       fetchStableAgendaRef(ctx),
-      locationId ? fetchTherapistLocationAssignments(ctx) : Promise.resolve(null),
+      fetchTherapistLocationAssignments(ctx),
     ]);
 
-  const therapists = assignmentEntries
-    ? filterTherapistsByLocation(therapistRows, new Map(assignmentEntries), locationId ?? null)
+  const assignmentMap = new Map(assignmentEntries);
+  const therapists = locationId
+    ? filterTherapistsByLocation(therapistRows, assignmentMap, locationId)
     : therapistRows;
+  const therapistLocationIds: Record<string, string[]> = {};
+  for (const [id, locs] of assignmentMap) therapistLocationIds[id] = [...locs];
 
   return {
     therapists,
+    allTherapists: therapistRows,
+    therapistLocationIds,
     locations: locationRows,
     services: serviceRows,
     packs: packRows,

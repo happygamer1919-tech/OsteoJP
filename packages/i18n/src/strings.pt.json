@@ -276,6 +276,7 @@
   "packs.adjustExhausted": "Sem sessões para consumir.",
   "packs.adjustComplete": "O pacote já está completo.",
   "appointment.selectTherapist": "Selecionar terapeuta",
+  "appointment.noTherapistsAtLocation": "Sem terapeutas nesta localização. Atribua-os na Equipa.",
   "appointment.secondaryParticipants": "Participantes secundários (opcional)",
   "appointment.patientTwo": "Paciente 2",
   "appointment.therapistTwo": "Terapeuta 2",
