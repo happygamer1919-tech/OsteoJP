@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { assertCan, ForbiddenError, type RequestContext } from "@osteojp/auth";
+import { assertCan, can, ForbiddenError, type RequestContext } from "@osteojp/auth";
 
 import { requireRequestContext } from "@/lib/auth/context";
 import { listServices } from "@/lib/admin/services";
@@ -141,6 +141,10 @@ export default async function MarcacoesPage({
       options={options}
       serviceFilterOptions={serviceFilterOptions}
       appointments={appointments}
+      // W12-00: same authority the agenda passes the drawer - the drawer's
+      // admin-only password hard-delete is server-enforced; this only shows/hides
+      // the control. Reception/therapist get false, never see the delete button.
+      canHardDelete={can(actor.role, "settings:manage")}
     />
   );
 }

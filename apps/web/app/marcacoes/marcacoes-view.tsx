@@ -9,6 +9,7 @@ import {
   Select,
   StatusBadge,
   StatusChip,
+  ToastProvider,
 } from "@osteojp/ui";
 import type { AppointmentTone } from "@osteojp/ui";
 import { CalendarClock, Repeat, Search, TriangleAlert, User } from "lucide-react";
@@ -30,6 +31,12 @@ import type {
   AppointmentStatusValue,
 } from "@/lib/scheduling/types";
 import { AppointmentHoverCard } from "../agenda/appointment-hover-card";
+// W12-00: the marcacoes list row reuses the SAME appointment manage surface the
+// agenda card opens - the AppointmentDrawer in edit mode and its existing server
+// actions (updateAppointment / rescheduleAppointment / cancelAppointment /
+// cloneAppointment). No parallel edit path, no schema change: the list row was
+// the only appointment surface with no open/edit affordance (CB GRAVE).
+import { AppointmentDrawer, type ModalState } from "../agenda/appointment-drawer";
 
 type StringKey = keyof typeof s;
 
@@ -168,9 +175,12 @@ function ServiceChip({ name, cancelled }: { name: string | null; cancelled: bool
 function AppointmentRow({
   appt,
   conflicting,
+  onOpen,
 }: {
   appt: AgendaAppointment;
   conflicting: boolean;
+  /** W12-00: opens this marcacao in the shared AppointmentDrawer (edit mode). */
+  onOpen: (appt: AgendaAppointment) => void;
 }) {
   const cancelled = appt.status === "cancelled";
   const recurring = !!(appt.recurrenceRule || appt.recurrenceParentId);
@@ -243,6 +253,23 @@ function AppointmentRow({
             {s[STATUS_KEY[appt.status]]}
           </StatusBadge>
         </span>
+
+        {/* W12-00 (CB GRAVE): the row's open/edit affordance. Before this loop the
+            /marcacoes rows were inert display cards with no way to open or edit a
+            marcacao (edit lived only on the agenda card + the patient Consultas
+            tab). A real, keyboard-focusable button (never the whole GlassCard,
+            which would nest the hover trigger's role="button" - GlassCard's own
+            interactive contract forbids nested interactive children) opens the
+            SAME AppointmentDrawer in edit mode. The aria-label carries the patient
+            name so screen readers disambiguate one row's control from the next. */}
+        <button
+          type="button"
+          onClick={() => onOpen(appt)}
+          aria-label={`${s["marcacoes.openAppointment"]}: ${appt.patientName}`}
+          className="inline-flex h-9 shrink-0 items-center rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        >
+          {s["marcacoes.openAppointment"]}
+        </button>
       </div>
     </GlassCard>
   );
@@ -254,6 +281,7 @@ export function MarcacoesView({
   options,
   serviceFilterOptions,
   appointments,
+  canHardDelete,
 }: {
   filters: MarcacoesFilters;
   lockTherapist: boolean;
@@ -261,9 +289,19 @@ export function MarcacoesView({
   /** DB-sourced tenant services for the Serviço filter (W6-01b), inactive included. */
   serviceFilterOptions: ServiceFilterOption[];
   appointments: AgendaAppointment[];
+  /** W12-00: gates the drawer's admin-only password hard-delete, exactly as the
+   *  agenda passes it (`can(role, "settings:manage")`). The reused drawer, not
+   *  this view, enforces every action server-side. */
+  canHardDelete: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+
+  // W12-00: modal state for the shared AppointmentDrawer, mirroring the agenda
+  // (agenda-view.tsx `setModal`). The list only ever opens edit mode; create/lote
+  // stay on the agenda. Reuses the drawer's existing wiring with zero logic
+  // duplication.
+  const [modal, setModal] = useState<ModalState | null>(null);
 
   // W5-02 patient-name search: client-side, presentation-only filter over the
   // already-fetched (role-scoped) window, same tier as the Status/Serviço
@@ -313,6 +351,11 @@ export function MarcacoesView({
   }
 
   return (
+    // ToastProvider wraps the whole view (not just the drawer) exactly as the
+    // agenda does: the drawer's success/delete Toasts fire in `succeed()` right
+    // before `onDone` closes it, so the region must outlive the drawer or the
+    // toast would unmount the instant it appears.
+    <ToastProvider regionLabel={s["toast.regionLabel"]}>
     <main className="space-y-6">
       <div className="space-y-1">
         <h1 className="text-2xl text-v2-text-primary">{s["marcacoes.title"]}</h1>
@@ -457,7 +500,12 @@ export function MarcacoesView({
                 </h2>
                 <div className="flex flex-col gap-3">
                   {g.items.map((a) => (
-                    <AppointmentRow key={a.id} appt={a} conflicting={conflicts.has(a.id)} />
+                    <AppointmentRow
+                      key={a.id}
+                      appt={a}
+                      conflicting={conflicts.has(a.id)}
+                      onOpen={(appt) => setModal({ mode: "edit", appt })}
+                    />
                   ))}
                 </div>
               </section>
@@ -466,5 +514,26 @@ export function MarcacoesView({
         </GlassPanel>
       )}
     </main>
+
+    {/* W12-00: the SAME drawer the agenda mounts, in edit mode. onDone refetches
+        the list (router.refresh) so a saved estado/reschedule/cancel is reflected
+        without a manual reload. anchor is a create-only default (edit reads the
+        appointment's own start), passed here as the range start for completeness.
+        Every server action + the permission matrix live inside the drawer,
+        unchanged; this view only supplies the entry point. */}
+    {modal && (
+      <AppointmentDrawer
+        state={modal}
+        options={options}
+        anchor={filters.from}
+        canHardDelete={canHardDelete}
+        onClose={() => setModal(null)}
+        onDone={() => {
+          setModal(null);
+          startTransition(() => router.refresh());
+        }}
+      />
+    )}
+    </ToastProvider>
   );
 }

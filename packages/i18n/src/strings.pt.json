@@ -1087,6 +1087,7 @@
   "marcacoes.filterTherapist": "Terapeuta",
   "marcacoes.allTherapists": "Todos os terapeutas",
   "marcacoes.searchPlaceholder": "Pesquisar por paciente",
+  "marcacoes.openAppointment": "Abrir marcação",
   "marcacoes.emptyTitle": "Sem marcações para os filtros selecionados.",
   "marcacoes.emptyHelp": "Ajuste os filtros ou o intervalo de datas.",
   "marcacoes.errorTitle": "Não foi possível carregar as marcações",
