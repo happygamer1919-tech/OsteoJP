@@ -846,6 +846,16 @@ owner's intended principal set. Escalation (resolved):
 Rodica's estado set (W12-10 SPEC) gives **Falta** = "patient name crossed with a line" (a strikethrough) AND **Cancelada** = a red thumbs-down. But W11-00 v3 locked the agenda face to a NAME-ONLY list where `cancelled = line-through` is the sole non-name cue. So two strikethrough-like cues (Cancelada line-through vs Falta crossed name) would collide, and the estado glyphs re-introduce non-name cues onto a face the owner deliberately made name-only.
 **Recommended default (confirm with Rodica):** Falta = strikethrough on the name; **Cancelada = a distinct red glyph, NOT a strikethrough**, so the two never look alike; estado glyphs live as a small leading marker (colour-not-only, estado also in aria + hover) with the name still authoritative. If the owner wants the face to stay pure name-only, glyphs live only in the hover + Marcacoes. W12-01 holds the interim `strikethrough = cancelled` invariant; W12-10 sets the final language once this is ruled.
 
+**W12-01 VERIFICATION OUTCOME (2026-07-23, GREEN): interim invariant HELD across all four surfaces, NO code change.** Verified read-only that `line-through` binds EXCLUSIVELY to `status === "cancelled"`, never to the confirmation axis:
+- Agenda face: `apps/web/app/agenda/agenda-grid.tsx:263,275` (`const cancelled = appt.status === "cancelled"` -> `cancelled ? "line-through" : ""`)
+- Marcacoes row: `apps/web/app/marcacoes/marcacoes-view.tsx:185,200`
+- Hover popup: `apps/web/app/agenda/appointment-hover-card.tsx:50,64`
+- Portal: `apps/portal/app/portal/appointments/AppointmentsView.tsx:26,38`
+
+Test lock (deterministic, covers every status - the machine-verifiable substitute for live screenshots, local Supabase stack is down): `apps/web/app/agenda/agenda-grid.test.tsx:160-168` asserts `cancelled` -> line-through; `scheduled`/`confirmed`/`completed`/`no_show` -> NOT line-through; and a `declined` confirmation on a non-cancelled appointment -> NOT line-through. Ran green (1 passed).
+
+Return to CB's exact words ("confirmed appointments showing struck-through"): a `confirmed` STATUS does not strike and a `declined` CONFIRMATION does not strike, so any struck-through row CB saw was a `status = cancelled` appointment (correct behaviour) read as "confirmed" - i.e. exactly the Cancelada-vs-confirmation labelling ambiguity this Q already captures, not a binding defect. **No strikethrough bug exists; the interim invariant is correct.** Recommended default UNCHANGED: no code change now; the final estado visual language (incl. a distinct Cancelada glyph that never looks like Falta) is set in W12-10. **ACTION for Rodica:** identify the specific appointment she saw struck through and its estado in Administracao, to confirm it was `cancelled` (expected) and not `confirmed` (which would reopen this as a defect).
+
 ### Q-W12-02 - Hour-only slots: global vs per-location - REGISTERED for Rodica
 
 Q-W9-00-3 was CLOSED as **per-location** (default 30 min, 60 for Castelo Branco; LV + the portal unchanged). Rodica now asks for hour-only **globally**.
