@@ -35,8 +35,7 @@ Executed 2026-07-22 under `AUTORIZO MIGRACAO plan v2` with Section-0 gate comple
 | 11 | time_off | 0 | 3 | 3 | 3 | ✓ |
 | | **total** | **0** | **115** | **115** | **115** | ✓ |
 
-- **Fidelity:** row-by-row, every column deep-compared source vs target (jsonb included:
-  `tenants.settings`, `form_templates.title`, `form_templates.schema`) — exact match, no mismatch.
+- **Fidelity:** row-by-row, Every column deep-compared: exact match to millisecond precision. created_at (all 11 tables) and users.updated_at microseconds truncated by driver round-trip (postgres.js Date), same instant, accepted as immaterial by owner ruling 2026-07-23.
 - **Post-copy invariants (in-txn):** all patient-linked/audit/analytics tables = 0; immutability
   trigger still ENABLED.
 
