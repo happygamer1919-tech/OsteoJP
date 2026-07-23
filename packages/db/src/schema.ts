@@ -531,6 +531,49 @@ export const patientLocations = pgTable(
   ],
 );
 
+// staff_locations (W12-15 / migration 0038) — the staff<->location junction.
+// Many-to-many: a staff member (reception OR therapist) can belong to multiple
+// clinics, and a clinic has many staff. Before this table, staff<->location was
+// DERIVED only from availability_templates (bookable therapists only), so
+// RECEPTION had no location scope. This junction gives every funcao an explicit
+// location membership, which the reception-location model and the per-therapist
+// clinical_records RLS tighten (migration 0039) will derive scope from.
+//
+// `color` (nullable) stores the per-location therapist colour (Q-W12-08): the
+// junction is already keyed by (user, location), so the colour lives here.
+// Duplicates across locations are accepted (Rodica: a therapist may reuse a
+// colour at a different clinic); a NULL colour falls back to the FNV-1a hash in
+// therapist-color.ts, so nothing breaks pre-seed. Colour is decoupled from the
+// RLS surface — editing it is a plain UPDATE under the same write policy.
+export const staffLocations = pgTable(
+  "staff_locations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    color: text("color"), // per-location colour; null = FNV-1a fallback
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One membership per (tenant, user, location).
+    uniqueIndex("staff_locations_tenant_user_location_uq").on(
+      t.tenantId,
+      t.userId,
+      t.locationId,
+    ),
+    index("staff_locations_tenant_idx").on(t.tenantId),
+    index("staff_locations_user_idx").on(t.userId),
+    index("staff_locations_location_idx").on(t.locationId),
+  ],
+);
+
 /* ================================================================== */
 /* Scheduling                                                         */
 /* ================================================================== */
