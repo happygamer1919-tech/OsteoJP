@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button, StatusBadge, useAnimatedDialog } from "@osteojp/ui";
+import { TimeFieldInput } from "@/components/time-field-input";
 import { adminInputInline, adminLabel } from "../admin-ui";
 import {
   createTimeOffBlockAction,
@@ -214,27 +215,13 @@ export function TherapistBlocks({
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className={adminLabel}>{labels.start}</span>
-                  <input
-                    type="time"
-                    name="startTime"
-                    step={900}
-                    defaultValue={f?.startTime ?? "09:00"}
-                    required
-                    aria-label={labels.start}
-                    className={adminInputInline}
-                  />
+                  {/* W12-31: 24h TimeFieldInput (selects + hidden name) replaces the
+                      native time input, which rendered AM/PM under a 12h locale. */}
+                  <TimeFieldInput name="startTime" defaultValue={f?.startTime ?? "09:00"} className={adminInputInline} />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className={adminLabel}>{labels.end}</span>
-                  <input
-                    type="time"
-                    name="endTime"
-                    step={900}
-                    defaultValue={f?.endTime ?? "10:00"}
-                    required
-                    aria-label={labels.end}
-                    className={adminInputInline}
-                  />
+                  <TimeFieldInput name="endTime" defaultValue={f?.endTime ?? "10:00"} className={adminInputInline} />
                 </label>
               </div>
             ) : (

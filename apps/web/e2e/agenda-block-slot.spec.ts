@@ -10,6 +10,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
+import { fillTime } from "./helpers";
 
 test("W12-28: block a slot from the agenda; it renders as a band + is non-bookable", async ({
   page,
@@ -26,8 +27,9 @@ test("W12-28: block a slot from the agenda; it renders as a band + is non-bookab
   // Block 09:00-11:00 for the therapist, straight from the agenda.
   await dialog.getByTestId("block-therapist").selectOption({ label: THERAPIST_NAME });
   await dialog.getByTestId("block-date").fill(date);
-  await dialog.getByTestId("block-start").fill("09:00");
-  await dialog.getByTestId("block-end").fill("11:00");
+  // W12-31: block times are 24h TimeFields (select-based), driven via fillTime.
+  await fillTime(dialog.getByTestId("block-start"), "09:00");
+  await fillTime(dialog.getByTestId("block-end"), "11:00");
   await dialog.getByRole("button", { name: "Bloquear", exact: true }).click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 
