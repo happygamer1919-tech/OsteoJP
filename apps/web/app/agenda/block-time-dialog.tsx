@@ -73,7 +73,7 @@ export function BlockTimeDialog({
     >
       <div className="flex flex-col gap-3">
         <Field label={s["appointment.therapist"]} required>
-          <Select value={userId} onChange={(e) => setUserId(e.target.value)}>
+          <Select value={userId} onChange={(e) => setUserId(e.target.value)} data-testid="block-therapist">
             <option value="">{s["appointment.selectTherapist"]}</option>
             {therapists.map((o) => (
               <option key={o.id} value={o.id}>{o.label}</option>
