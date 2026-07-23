@@ -34,6 +34,7 @@ import {
   updateAppointment,
 } from "@/lib/scheduling/actions";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
+import { therapistOptionsForBooking } from "@/lib/scheduling/therapist-location-filter";
 import { getPatientPackBalanceAction } from "@/lib/packs/actions";
 import type { BatchFailure } from "@/lib/scheduling/batch-core";
 import type { RebookOutcome } from "@/lib/scheduling/batch-failure-core";
@@ -464,6 +465,33 @@ export function AppointmentDrawer({
       ? options.services.filter((o) => therapistServiceIds.includes(o.id))
       : options.services;
 
+  // W12-23: scope the therapist dropdown to the form-selected location's team
+  // (derived from availability_templates / staff_locations), keeping the current
+  // therapist selectable in edit mode. Falls back to the full list when no
+  // location is chosen or the assignment map is absent (old option mocks). This
+  // consumes the location assignment DATA; a missing assignment surfaces as the
+  // empty state below, not a code fix (the Equipa data task is owner/Rodica's).
+  const therapistAssignments = useMemo(
+    () => new Map<string, string[]>(Object.entries(options.therapistLocationIds ?? {})),
+    [options.therapistLocationIds],
+  );
+  const therapistPool = options.allTherapists ?? options.therapists;
+  // Scope ONLY after the user actively picks a location (userChangedLocation).
+  // On open, the default location keeps the FULL list, so a therapist-first
+  // booking is unaffected and an unassigned therapist stays bookable until the
+  // Equipa data assigns them (the loop's "default-location behaviour applies"
+  // clause). keepId retains the already-selected therapist across the change.
+  const therapistOptions = userChangedLocation.current
+    ? therapistOptionsForBooking(
+        therapistPool,
+        therapistAssignments,
+        form.locationId || null,
+        form.practitionerId || null,
+      )
+    : therapistPool;
+  const noTherapistsAtLocation =
+    userChangedLocation.current && !!form.locationId && therapistOptions.length === 0;
+
   function handleResult(r: { ok: boolean; error?: string; conflicts?: ConflictInfo[] }): boolean {
     if (r.ok) return true;
     if (r.error === "conflict") setConflicts(r.conflicts ?? []);
@@ -714,6 +742,7 @@ export function AppointmentDrawer({
             therapist's default service (see the effect above) and stays
             editable for per-booking exceptions. */}
         <Field label={s["appointment.therapist"]} required>
+          {/* W12-23: options scoped to the selected location's team. */}
           <Select
             value={form.practitionerId}
             onChange={(e) => {
@@ -722,10 +751,15 @@ export function AppointmentDrawer({
             }}
           >
             <option value="">{s["appointment.selectTherapist"]}</option>
-            {options.therapists.map((o) => (
+            {therapistOptions.map((o) => (
               <option key={o.id} value={o.id}>{o.label}</option>
             ))}
           </Select>
+          {noTherapistsAtLocation && (
+            <p className="mt-1 text-xs text-v2-text-secondary">
+              {s["appointment.noTherapistsAtLocation"]}
+            </p>
+          )}
         </Field>
 
         <Field label={s["appointment.service"]}>

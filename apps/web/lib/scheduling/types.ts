@@ -85,6 +85,16 @@ export type PackOption = Option & {
 
 export type AgendaOptions = {
   therapists: Option[];
+  // W12-23: the FULL therapist roster (unfiltered by the W9-02 page/toolbar
+  // location), so the booking drawer can scope its therapist dropdown to the
+  // location the FORM selects (which may differ from the toolbar). Optional so
+  // existing option mocks keep type-checking; the drawer falls back to
+  // `therapists` when absent.
+  allTherapists?: Option[];
+  // W12-23: therapist id -> the ACTIVE location ids they are assigned to
+  // (derived from availability_templates, or staff_locations after W12-15). Drives
+  // the booking dropdown's per-location scoping. Optional (see above).
+  therapistLocationIds?: Record<string, string[]>;
   locations: Option[];
   services: ServiceOption[];
   packs: PackOption[];

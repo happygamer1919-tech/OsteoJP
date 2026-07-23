@@ -276,6 +276,7 @@
   "packs.adjustExhausted": "No sessions left to consume.",
   "packs.adjustComplete": "The pack is already full.",
   "appointment.selectTherapist": "Select therapist",
+  "appointment.noTherapistsAtLocation": "No therapists at this location. Assign them in Equipa.",
   "appointment.secondaryParticipants": "Secondary participants (optional)",
   "appointment.patientTwo": "Patient 2",
   "appointment.therapistTwo": "Therapist 2",
