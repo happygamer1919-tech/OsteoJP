@@ -1,5 +1,13 @@
 # Runbook: Prod Migrations
 
+> **W11 cutover update (2026-07-23): single migration path.** Production is now the NEW project
+> (`dfotoodqvmjhbdcxyaxf`). **`prod-migrate.yml` (Path 1) is RETIRED** and removed by the owner in
+> W11-05. The single sanctioned path is the **manual `drizzle-kit` direct-connection apply** (was
+> "Path 2"): from `packages/db`, `DATABASE_URL_DIRECT` = the NEW project's **session pooler
+> (port 5432)**, `pnpm db:migrate`, then verify the journal + tracking rows. This is the same path
+> W11-02 used to stand up the NEW schema. Ignore the `prod-migrate.yml` / `MIGRATE-PROD` steps
+> below (kept for history only); use the manual path.
+
 This document covers the full lifecycle of a Drizzle migration from authoring to production, including the two application paths, the hard lesson from the June 2026 tracking reconstruction, and how the daily drift check surfaces missed migrations.
 
 ---

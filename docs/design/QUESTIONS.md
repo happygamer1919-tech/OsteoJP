@@ -825,3 +825,14 @@ retention-prazo (clinical-record retention period) answer and (2) JP approval - 
 record erasure is a legal/clinical decision, not an engineering one. Until then, Wave 11
 uses the migration exclusion set (above) to keep residue OFF new prod without deleting
 anything.
+
+### Q-W11-05-1 - Max Tribe holds `owner` role on new prod - RULED (intentional)
+
+Registered + RULED 2026-07-23. W11-05 access review flagged that **Max Tribe holds `owner`, not
+`therapist`** on new prod (`dfotoodqvmjhbdcxyaxf`) - owner-role = tenant-wide access to all
+patients, outside the W10-04 per-therapist isolation. Distribution: owner 3 / admin 0 /
+therapist 16 / reception 0. **OWNER RULING (2026-07-23): Max is intentionally an owner - he is the
+developer as well as a therapist.** Not a defect; no change. GREEN changed nothing throughout.
+The review is CLEAN with this ruling; the remaining owner-role accounts are accepted as the
+owner's intended principal set. Escalation (resolved):
+`osteojp-mailbox/escalations/W11-05-max-owner-role-access-anomaly-20260723T125038Z.md`.
