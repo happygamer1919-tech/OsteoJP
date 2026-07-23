@@ -123,7 +123,13 @@ export function AgendaGrid({
           {slots.map((m, i) => (
             <div
               key={m}
-              className={`absolute inset-x-0 ${m % 60 === 0 ? "border-b border-v2-border" : ""}`}
+              // W12-02: the strong hour rule sits on the TOP edge of the
+              // on-the-hour slot, so it coincides with the hour label (also drawn
+              // at the slot top) and an on-the-hour appointment. Drawing it on the
+              // bottom edge (border-b) put the bold "09:00" line one 30-min slot
+              // BELOW - on the 09:30 gridline. i===0 (08:00) omits it: the
+              // header/body divider already delimits the first hour.
+              className={`absolute inset-x-0 ${m % 60 === 0 && i !== 0 ? "border-t border-v2-border" : ""}`}
               style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }}
             >
               {m % 60 === 0 && (
@@ -156,6 +162,18 @@ export function AgendaGrid({
                   exactly the "bookable over blocked time" hole (CB QA item 3). */}
               {slots.map((m, i) => {
                 const blocked = isSlotBlocked(m, dayBlocks);
+                // W12-02: gridline on the TOP edge so the STRONG hour rule
+                // coincides with the hour label + an on-the-hour appointment (all
+                // at the slot top), not one 30-min slot below on the :30 line.
+                // Faint rule for the :30 slots; i===0 (08:00) omits it (the
+                // header/body divider is the first hour rule). Placement math
+                // (minToPx/daySlots/SLOT_HEIGHT) is UNCHANGED - only the edge.
+                const rule =
+                  m % 60 === 0
+                    ? i === 0
+                      ? ""
+                      : "border-t border-v2-border"
+                    : "border-t border-surface-muted";
                 return (
                   <button
                     key={m}
@@ -171,7 +189,7 @@ export function AgendaGrid({
                       blocked
                         ? "cursor-not-allowed"
                         : "motion-safe:active:scale-[0.97] hover:bg-v2-green-50"
-                    } ${m % 60 === 0 ? "border-b border-v2-border" : "border-b border-surface-muted"}`}
+                    } ${rule}`}
                     style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }}
                   />
                 );

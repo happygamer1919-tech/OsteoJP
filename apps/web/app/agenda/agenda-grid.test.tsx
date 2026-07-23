@@ -231,3 +231,51 @@ describe("W10-05 - the unified hover popup (UNCHANGED, sole detail carrier)", ()
     expect(html).toContain('data-testid="hover-created"');
   });
 });
+
+// W12-02: CB reported a 09:00 appointment reading as if it were on the 09:30 row.
+// The placement math was correct; the STRONG hour rule was drawn on the slot's
+// BOTTOM edge (border-b on m%60===0), so the bold "09:00" line landed one 30-min
+// slot below - on the 09:30 gridline - while the label + booking sat at the slot
+// top. The fix moves the strong rule to the slot TOP edge (border-t) so the rule,
+// the label, and an on-the-hour booking coincide. These assertions FAIL on the
+// pre-fix code (border-b) and pass on the fix.
+describe("W12-02 - strong hour rule on the on-the-hour slot TOP, coincident with the booking", () => {
+  // Empty 30-min slot buttons carry aria-label "<day> HH:MM" + an inline
+  // top/height; the appointment face buttons carry agenda-card-patient and no
+  // time. The appt fixture starts 08:00Z == 09:00 Lisbon (WEST) -> top 96px.
+  function emptySlotsAt(html: string, hhmm: string): string[] {
+    return (html.match(BUTTON_RE) ?? []).filter(
+      (b) =>
+        !b.includes('data-testid="agenda-card-patient"') &&
+        new RegExp(`aria-label="[^"]*${hhmm}"`).test(b),
+    );
+  }
+
+  it("draws the strong hour rule on the 09:00 slot TOP, coincident with a 09:00 booking", () => {
+    const html = render([appt()]); // Maria Silva at 09:00 Lisbon
+
+    const nine = emptySlotsAt(html, "09:00");
+    expect(nine.length).toBeGreaterThan(0); // one empty 09:00 slot per day column
+    for (const b of nine) {
+      // Strong hour rule on the TOP edge (the fix) ...
+      expect(b).toContain("border-t border-v2-border");
+      // ... never the bottom edge (the pre-fix bug that pushed it to 09:30).
+      expect(b).not.toContain("border-b");
+      // and the slot sits at the 09:00 row top.
+      expect(b).toMatch(/top:\s*96px/);
+    }
+
+    // The 09:00 booking's name line is in a group positioned at the SAME 96px
+    // top, so the bold rule, the hour label, and the booking all coincide.
+    expect(html).toMatch(/<div[^>]*style="[^"]*top:96px[^"]*"[^>]*>[\s\S]*?Maria Silva/);
+  });
+
+  it("keeps the :30 gridline faint (surface-muted), never strong", () => {
+    const half = emptySlotsAt(render([]), "09:30");
+    expect(half.length).toBeGreaterThan(0);
+    for (const b of half) {
+      expect(b).toContain("border-t border-surface-muted");
+      expect(b).not.toContain("border-v2-border");
+    }
+  });
+});
