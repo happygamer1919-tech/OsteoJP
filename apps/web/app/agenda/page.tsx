@@ -130,6 +130,8 @@ export default async function AgendaPage({
       blocks={blockSpans}
       lockedPatient={lockedPatient}
       canHardDelete={can(actor.role, "settings:manage")}
+      // W12-28: same capability createTimeOffBlock server-enforces (settings:manage).
+      canBlockTime={can(actor.role, "settings:manage")}
     />
   );
 }
