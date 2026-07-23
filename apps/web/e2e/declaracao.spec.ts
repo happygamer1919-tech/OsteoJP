@@ -27,6 +27,10 @@ test.describe("Declaração de Presença (therapist)", () => {
     const end = page.getByTestId("declaracao-end");
     await expect(date).toBeVisible();
 
+    // W12-24: the NIF field prefills from the patient (editable).
+    const nif = page.getByTestId("declaracao-nif");
+    await expect(nif).toHaveValue(PATIENTS.maria.nif);
+
     // Select the seeded marcação → date + hora início + hora fim prefill from it.
     await page.getByTestId("declaracao-marcacao").selectOption(SEEDED_APPT_ID);
     await expect(date).toHaveValue("2022-03-15");
@@ -37,8 +41,16 @@ test.describe("Declaração de Presença (therapist)", () => {
     await start.fill("08:00");
     await expect(start).toHaveValue("08:00");
 
-    // Manual-entry path: switch to "Introdução manual" and type the fields.
+    // W12-24: switching to "Introdução manual" CLEARS the marcação-derived fields
+    // (previously they kept the stale prefill), so manual always starts blank.
     await page.getByTestId("declaracao-marcacao").selectOption("");
+    await expect(date).toHaveValue("");
+    await expect(start).toHaveValue("");
+    await expect(end).toHaveValue("");
+    // NIF is the patient's, not the marcação's - it survives the switch.
+    await expect(nif).toHaveValue(PATIENTS.maria.nif);
+
+    // Manual-entry path: type the fields.
     await date.fill("2026-07-12");
     await start.fill("14:00");
     await end.fill("15:00");

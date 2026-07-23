@@ -123,6 +123,7 @@
   "documents.declaracao.dateLabel": "Date",
   "documents.declaracao.startLabel": "Start time",
   "documents.declaracao.endLabel": "End time",
+  "documents.declaracao.nifLabel": "NIF",
   "documents.declaracao.generate": "Generate",
   "documents.declaracao.incomplete": "Fill in the date and times.",
   "documents.declaracao.error": "Could not generate the declaration.",

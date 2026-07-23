@@ -33,6 +33,9 @@ export type GenerateDeclaracaoInputs = {
   endTime: string;
   /** The chosen marcação's location, if any (drives the localidade). */
   locationId?: string | null;
+  /** W12-24: patient NIF as entered in the dialog (prefilled from `patients.nif`,
+   *  editable). Threaded to the model; the declaration is not persisted. */
+  nif?: string | null;
 };
 
 async function tenantDefaultLocation(tx: DbTx): Promise<SourceLocation | null> {
@@ -97,6 +100,7 @@ export async function generateDeclaracaoPdf(
     horaFim: inputs.endTime,
     localidade: built.localidade,
     stampLocationKey: built.stampLocationKey,
+    nif: inputs.nif,
     tenantSettings: built.tenantSettings,
   });
   const bytes = await renderDeclaracaoPdf(model);
