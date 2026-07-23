@@ -1,7 +1,7 @@
 "use client";
 
 import { DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
@@ -23,6 +23,7 @@ import type {
 
 import { AgendaGrid } from "./agenda-grid";
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
+import { BlockTimeDialog } from "./block-time-dialog";
 
 // v2 glass toolbar controls (SPEC-v2-foundation §7 nav-button idiom): no opaque
 // border/fill, neutral hover tint, the global focus ring. Mirrors the shell's
@@ -40,6 +41,7 @@ export function AgendaView({
   blocks,
   lockedPatient,
   canHardDelete,
+  canBlockTime,
 }: {
   view: View;
   anchor: string;
@@ -54,10 +56,17 @@ export function AgendaView({
    *  with this patient preselected + locked. Null on a normal agenda visit. */
   lockedPatient: { value: string; label: string } | null;
   canHardDelete: boolean;
+  /** W12-28: gates the "Bloquear horário" affordance = can(role,"settings:manage"),
+   *  the SAME capability createTimeOffBlock server-enforces. Reception scoping is a
+   *  separate matrix decision (Q-W12-10); this never relaxes the guard. */
+  canBlockTime: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [modal, setModal] = useState<ModalState | null>(null);
+  // W12-28: "Bloquear horário" dialog state (null = closed). Prefills from a slot
+  // when opened from an empty cell; the current therapist filter preselects.
+  const [blockOpen, setBlockOpen] = useState<{ slot?: { date: string; time: string } } | null>(null);
 
   // W6-03: on a deep-link from a patient profile ("Nova marcação"), open the
   // create drawer ONCE with the patient preselected + locked, then strip the
@@ -234,14 +243,26 @@ export function AgendaView({
             </Select>
           </div>
           )}
+          {/* W12-28: "Bloquear horário" writes a time_off block via the existing
+              model (settings:manage-gated), replacing the informal "Não Marcar"
+              fake-appointment hack. Shown only to roles that can manage blocks
+              (canBlockTime); reception scoping is Q-W12-10. */}
+          {canBlockTime && (
+            <button
+              type="button"
+              onClick={() => setBlockOpen({})}
+              className="inline-flex h-10 items-center gap-2 rounded-v2 border border-v2-border px-4 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            >
+              <Ban size={18} strokeWidth={1.75} aria-hidden="true" />
+              {s["agenda.blockTime"]}
+            </button>
+          )}
           {/* Primary action: filled Wellness Green (SPEC-v2-agenda §1.4). The
               packages/ui Button is brand-teal with no green variant; styled
               in-route on v2 tokens to meet the spec (green-700 fill + inverse
               text = 4.7:1 AA). A green Button variant is logged as a foundation
               follow-up in docs/design/QUESTIONS.md (Q-V2W2-2), never added inside
-              a section wave.
-              Blocked-time has no data model, so the single action ships as Nova
-              Marcação (preserves the e2e action). */}
+              a section wave. */}
           <button
             type="button"
             onClick={() => setModal({ mode: "create" })}
@@ -273,6 +294,21 @@ export function AgendaView({
           onClose={() => setModal(null)}
           onDone={() => {
             setModal(null);
+            startTransition(() => router.refresh());
+          }}
+        />
+      )}
+
+      {/* W12-28: block a slot from the agenda (reuses createTimeOffBlock + the
+          BlockSpan render + booking exclusion). Preselects the filtered therapist. */}
+      {blockOpen && (
+        <BlockTimeDialog
+          therapists={options.therapists}
+          defaultTherapistId={filters.practitionerId}
+          slot={blockOpen.slot ?? null}
+          onClose={() => setBlockOpen(null)}
+          onDone={() => {
+            setBlockOpen(null);
             startTransition(() => router.refresh());
           }}
         />
