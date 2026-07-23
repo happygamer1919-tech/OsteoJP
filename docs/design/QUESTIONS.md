@@ -894,3 +894,29 @@ Notes are fragmented across five stores; three surfaces write three different on
 
 The Equipa overhaul (SPEC-equipa-overhaul.md) needs a staff<->location model that does not exist today (no `staff_locations` junction, no `users.location_id`; location is derived from `availability_templates`, so reception has none). This is the migration `0038` Q-W10-04-1 asked for (reception-location model + the deferred per-therapist `clinical_records` RLS tighten). Two shape decisions:
 **Recommended defaults (SPEC-equipa-overhaul.md threads b + e):** (1) a many-to-many **`staff_locations` junction** (a therapist or reception can span multiple clinics) rather than a single `users.location_id`; (2) per-location therapist **colours stored on `staff_locations`** (duplicates across locations accepted per Rodica), with the FNV-1a hash as the pre-seed fallback. The RLS tighten is defense-in-depth over the server matrix - reception clinical read stays DENIED, isolation is derived-then-tightened, never widened; CYAN audit + an isolation test ship with the migration. Advances Q-W10-04-1 (the `0038` design) + Q-W7-01-2 (orphaned-auth = adopt-on-re-invite, audited; auth never hard-deleted). No W12-15 build until (1)-(2) + the two referenced Qs are ruled.
+
+### Q-W12-09 - Ficha v5 field order: place 3 unlisted fields + resolve "Outros" - REGISTERED for Rodica (W12-22)
+
+W12-22 removes "Codigos CID" from the ficha and re-sequences sections to Rodica's stated 0-15 order, as a NEW immutable template `osteopathy-v5` (v4/signed records untouched). But Rodica's 0-15 list does NOT place three existing v4 fields, and one item is ambiguous - building a guessed field order into the LIVE clinical ficha is a product/clinical decision, not to be guessed. HALT to this Q; do NOT seed v5 until Rodica confirms.
+
+**Recommended complete v5 order (Rodica to confirm; cid_codes removed throughout):**
+1. Data do Episodio (`episode_date`, required) - DEFAULT: kept first (not in her list; it is the episode date)
+2. Peso (`weight_kg`) [her 1]
+3. Altura (`height_cm`) [her 2]
+4. Alertas / sinais de alarme (`red_flags`) - DEFAULT: kept here after Altura (loop says "Alertas stays"; not numbered by her). CID removed from its row so Alertas renders alone.
+5. Motivos da Consulta / Inicio / Contexto (`consultation_reason`) [her 3]
+6. Condicoes Alivio / Agravamento (`relief_aggravation`) [her 4]
+7. Observacoes (`observations`) [her 5]
+8. Mobilidade Activa / Passiva (`mobilidade`) [her 6]
+9. Testes Especiais (`special_tests`) [her 7]
+10. Observacoes Mobilidade Activa / Passiva (`mobilidade_observacoes`) [her 8]
+11. Bodychart (`bodychart`) - DEFAULT: placed here in the physical-exam cluster (not in her list; a clinical diagram)
+12. Anamnese por Sistemas (`systems_review`) [her 9]
+13. Problemas de Saude / Outros (`health_problems`, the condition checkbox grid + the "Outros" free-text) [her 10 "Outros" - AMBIGUOUS mapping, confirm]
+14. Antecedentes Clinicos / Cirurgia / Medicacao (`clinical_history`) [her 11]
+15. Diagnostico (`diagnostico`) [her 12]
+16. Objectivos do Tratamento (`treatment_objectives`) [her 13]
+17. Plano de Tratamento (`treatment_plan`) [her 14]
+18. Tratamento (`tratamento`) [her 15]
+
+**Four points to confirm with Rodica:** (a) `episode_date` at the top; (b) `red_flags`/Alertas kept after Altura; (c) `bodychart` position (physical-exam cluster); (d) item 10 "Outros" = the "Problemas de Saude" condition grid + its "Outros" free-text (`health_problems`), not a new standalone field. Field SEMANTICS/labels are unchanged (display-order only); a name needing a NEW field is a separate ficha loop, not this one. Once ruled, the build authors `osteopathy-v5.json` in the confirmed order, wires the resolver, proves signed records unchanged, and the owner authorizes the v5 template-row seed.
