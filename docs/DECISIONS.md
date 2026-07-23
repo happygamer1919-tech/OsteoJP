@@ -1360,3 +1360,26 @@ rows and nothing else.**
   28. The delta is `storage.objects`: GREEN counted the `public` schema (28 app tables); CYAN's
   29 = those 28 + the Supabase-managed `storage.objects` (RLS on, part of the private-bucket /
   signed-URL model). Both correct at their scope; no gap. Noted inline in the W11-02 evidence doc.
+
+## 2026-07-22 (evening) — W11-03 MIGRACAO plan v2 EXECUTED (config copy OLD → NEW)
+
+Gate complete: `AUTORIZO MIGRACAO plan v2` + plan v2 on main (#626) + CYAN-before CLEAN on main
+(#627) + OLD frozen/quiescent. GREEN executed the config copy per
+`docs/recon/W11-03-migracao-plan-v2.md`.
+
+- **Copied 11 operational config tables, 115 rows total** (tenants 1, roles 4, locations 2,
+  users 19, services 19, service_location_prices 28, service_packs 14, therapist_services 4,
+  availability_templates 13, form_templates 8, time_off 3), OLD `jaxmkwoxjcgzkwxgbayx` →
+  NEW `dfotoodqvmjhbdcxyaxf`.
+- **Method:** single atomic transaction on NEW, `session_replication_role=replica` (no
+  audit/trigger side-effects), parents-before-children, per-table `source==target==plan-expected`
+  assertion + row-by-row column-level fidelity check (jsonb included). Verified end-to-end via a
+  full dry-run (rolled back) before committing. OLD read-only throughout; zero writes to OLD.
+- **Zero patient data migrated:** every patient-linked table + audit_log + analytics_events = 0 on
+  NEW (fresh), confirmed pre- and post-commit. Immutability trigger ENABLED on NEW; head 0037.
+- **Post-commit verify (independent, read-only):** NEW counts exact, all zero-tables 0, jsonb
+  intact; OLD untouched (anchor still 2026-07-22T20:22:20.097694Z, newest write still the #120
+  hard_delete). Evidence: `docs/recon/W11-03-migration-evidence.md`.
+- **Not done (next gates):** CYAN-after reconciliation, then Preview smoke against NEW before any
+  Production repoint. W11-04 repoints Production (owner Vercel env swaps) only after both green.
+  OLD stays read-only-then-frozen (rollback = repoint envs to OLD).
