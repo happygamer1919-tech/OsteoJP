@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect, vi } from "vitest";
 
 /**
- * W7-03: the "Ações destrutivas" block is CONTAINED, not relocated.
+ * W7-03: the danger-zone block ("Zona de risco", W12-27) is CONTAINED, not relocated.
  *
  * It is mounted outside the tabpanels, so before this loop it sat permanently
  * expanded at the bottom of EVERY tab. It is now a <details> disclosure,
@@ -46,7 +46,7 @@ describe("PatientActions W7-03 containment", () => {
     const html = render();
     expect(html).toContain("border-error-200");
     expect(html).toContain("text-error");
-    expect(html).toContain("Ações destrutivas");
+    expect(html).toContain("Zona de risco");
   });
 
   it("still renders the destructive controls inside (nothing was removed)", () => {

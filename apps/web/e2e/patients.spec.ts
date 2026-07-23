@@ -186,13 +186,14 @@ test("edit patient phone and see the updated value on the profile", async ({ pag
 // ---------------------------------------------------------------------------
 
 /**
- * W7-03: the destructive controls now live inside a COLLAPSED "Ações destrutivas"
- * disclosure (progressive disclosure - they used to sit permanently open at the
- * bottom of every tab). They are unchanged and still server-gated; they just have
- * to be revealed first. Idempotent: opening an already-open disclosure is a no-op.
+ * W7-03: the destructive controls live inside a COLLAPSED disclosure (progressive
+ * disclosure - they used to sit permanently open at the bottom of every tab). They
+ * are unchanged and still server-gated; they just have to be revealed first.
+ * W12-27 relabelled the disclosure to "Zona de risco". Idempotent: opening an
+ * already-open disclosure is a no-op.
  */
 async function openDangerZone(page: Page) {
-  const summary = page.getByText("Ações destrutivas", { exact: true });
+  const summary = page.getByText("Zona de risco", { exact: true });
   await expect(summary).toBeVisible({ timeout: 8_000 });
   const details = page.locator("details").filter({ has: summary });
   if (!(await details.evaluate((el) => (el as HTMLDetailsElement).open))) {
