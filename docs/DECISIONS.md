@@ -1383,3 +1383,42 @@ Gate complete: `AUTORIZO MIGRACAO plan v2` + plan v2 on main (#626) + CYAN-befor
 - **Not done (next gates):** CYAN-after reconciliation, then Preview smoke against NEW before any
   Production repoint. W11-04 repoints Production (owner Vercel env swaps) only after both green.
   OLD stays read-only-then-frozen (rollback = repoint envs to OLD).
+
+## 2026-07-23 — W11-03 Addendum A: auth identity copy + jsonb double-encode incident + repair
+
+Plan v2 migrated `public.users` (19) but no `auth` rows, so nobody could authenticate on NEW.
+Addendum A (`docs/recon/W11-03-migracao-plan-v2-addendum-A-auth.md`) copied `auth.users` +
+`auth.identities` for exactly the 19 migrated staff (UUIDs, emails, `encrypted_password` hashes,
+confirmation preserved); OLD read-only; atomic; dry-run before commit. OLD's other 7 auth accounts
+(non-staff) correctly stayed behind.
+
+- **Incident:** login still 500'd — Supabase Auth log `Scan error on column "raw app meta data":
+  json: cannot unmarshal string`. My copy's jsonb write path double-encoded 3 `auth` jsonb columns
+  (`raw_app_meta_data`, `raw_user_meta_data`, `identity_data`) as jsonb **string scalars** instead
+  of objects (19 rows each). Count + fidelity checks missed it because the driver decodes one level
+  on read-back. **Config-migration jsonb was NOT affected** (correct method there).
+- **Repair:** in-place `col = (col #>> '{}')::jsonb WHERE jsonb_typeof(col)='string'`, atomic,
+  dry-run first, every row verified byte-identical to OLD (canonical `::text`) before commit. Login
+  worked after. Evidence: `docs/recon/W11-03-addendum-A-auth-evidence.md`.
+- **Lesson (standing):** a cross-DB jsonb copy must assert `jsonb_typeof` object-vs-string parity,
+  not only value equality — the driver's read decode hides a double-encode from a naive check.
+
+## 2026-07-23 — W11-04 Production cutover COMPLETE (repoint to NEW) + DATABASE_URL pooler incident
+
+Production repointed to NEW across platform + api (+ portal URL/anon); owner performed the Vercel
+env swaps + redeploys; GREEN verified read-only. Preview smoke was skipped (owner repointed
+Production directly), so the smoke ran on Production.
+
+- **Incident:** data pages failed (dashboard "Sem dados", agenda error, `/admin/working-hours` 500)
+  while login worked. Server-side only (`.rsc` fetches). Vercel runtime: `getaddrinfo ENOTFOUND
+  db.dfotoodqvmjhbdcxyaxf.supabase.co`. Root cause: `DATABASE_URL` held the **dedicated/direct**
+  host `db.<ref>.supabase.co` (IPv6-only, no IPv4 add-on → unreachable from Vercel), not the shared
+  pooler. `DATABASE_URL` is Sensitive/unviewable, so it couldn't be re-verified by eye; runtime was
+  ground truth. Confirmed no integration/duplicate var and code reads only `DATABASE_URL`.
+- **Resolution:** owner rebuilt `DATABASE_URL` (shared pooler, 6543) + `DATABASE_URL_DIRECT`
+  (5432) on host `aws-0-eu-central-1.pooler.supabase.com`, redeployed.
+- **Production smoke GREEN:** login, dashboard (real 0s), agenda (18 therapists + 2 locations),
+  `/admin/working-hours` (schedules render), Pacientes (empty); zero console errors; zero traffic
+  to OLD. OLD frozen (anchor `2026-07-22T20:22:20.097694Z`, audit 700, newest #120) — rollback
+  intact. Evidence: `docs/recon/W11-04-repoint-evidence.md`. W11-05 (hardening/close) is next,
+  after the owner declares cutover final.
