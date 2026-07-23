@@ -1,10 +1,17 @@
 # Runbook: applying Drizzle migrations to production
 
-Workflow: `.github/workflows/prod-migrate.yml` ("Prod Migrate (manual)").
+> **RETIRED 2026-07-23 (W11 cutover).** `prod-migrate.yml` targeted the OLD project's migration
+> path and is removed by the owner in W11-05. Production is now the NEW project
+> (`dfotoodqvmjhbdcxyaxf`). The single sanctioned path is the **manual `drizzle-kit`
+> direct-connection apply**: from `packages/db`, set `DATABASE_URL_DIRECT` to the NEW project's
+> **session pooler (port 5432)** and run `pnpm db:migrate`, then verify the journal + tracking
+> rows (drift check). See `docs/runbook-prod-migrations.md`. The steps below are history only.
+
+Workflow: `.github/workflows/prod-migrate.yml` ("Prod Migrate (manual)") — RETIRED, see banner.
 
 Merging a PR to `main` does **not** apply its `packages/db/migrations/*.sql`
 to the production database. Prod drifts behind `main` until the migrations are
-applied. This workflow is the only sanctioned way to apply them.
+applied.
 
 ## Hard preconditions before FIRST use
 

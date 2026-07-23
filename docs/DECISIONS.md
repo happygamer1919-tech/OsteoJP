@@ -1422,3 +1422,34 @@ Production directly), so the smoke ran on Production.
   to OLD. OLD frozen (anchor `2026-07-22T20:22:20.097694Z`, audit 700, newest #120) — rollback
   intact. Evidence: `docs/recon/W11-04-repoint-evidence.md`. W11-05 (hardening/close) is next,
   after the owner declares cutover final.
+
+## 2026-07-23 — W11-05 hardening + close: standing rules + Wave 11 closed (reversible parts)
+
+GREEN performed the reversible W11-05 items + records; the irreversible items wait on the owner's
+explicit "cutover final" declaration (OLD stays the live rollback until then).
+
+- **GREEN self-merge RETIRED (standing rule).** From Wave 12 on, EVERY merge to `main` is
+  OWNER-MERGE / OWNER VISUAL GATE — no agent self-merge, permanently. The branch-protection change
+  is the owner's GitHub authority (owner-performed); this entry is the standing rule. (Mirrors the
+  existing agent-governing-files posture on `.github/workflows/` and `.claude/skills/`.)
+- **Single migration path.** `prod-migrate.yml` (Path 1, OLD project) is RETIRED and removed by the
+  owner (workflow files are owner class). The one sanctioned path is the manual `drizzle-kit`
+  direct-connection apply against NEW (`packages/db`, `DATABASE_URL_DIRECT` session pooler 5432).
+  Docs updated: `docs/runbook-prod-migrations.md`, `docs/ops/prod-migrate.md`,
+  `docs/ops/prod-drift-check.md` (drift-check secret must target NEW).
+- **Max access review — CLEAN.** Review flagged Max Tribe holding `owner` (not `therapist`);
+  **owner ruled Max is intentionally an owner (he is the developer as well).** Not a defect; no
+  change made (Q-W11-05-1). GREEN changed no access.
+- **Old-project residue policy.** OLD (`jaxmkwoxjcgzkwxgbayx`, frozen at anchor
+  `2026-07-22T20:22:20.097694Z`, carrying the accepted residue island {94,108,109,118,119,121})
+  is RETAINED as the rollback. The [30]-day retention clock + the branch-protection re-harden +
+  the OLD "freeze final" start on the owner's explicit **cutover-final** declaration (PENDING as of
+  this entry). Decommission is a future owner-gated action, never automatic; GREEN never deletes OLD.
+- **Backup/restore drill — DEFERRED (documented, not faked).** A full drill (backup -> disposable
+  restore -> verify real counts + a signed-URL attachment) is not runnable now: no `pg_dump`/restore
+  target in the ops environment, and NEW has no real data/attachments yet. Owner-verify: Supabase Pro
+  daily backups + PITR enabled in the NEW dashboard. A real-data drill is a follow-up once real data
+  + attachments exist. NOT claimed as passed.
+- **Twilio EU + DPA** already on record (`docs/QUESTIONS.md`, owner as actor) — reaffirmed as the
+  live-SMS precondition; not built here. Wave 11 close-out report:
+  `docs/status/2026-07-23-wave-11-report.md`.

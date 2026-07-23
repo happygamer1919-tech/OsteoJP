@@ -19,10 +19,12 @@ If `PROD_DATABASE_URL_DIRECT` is not configured, the job exits green with a noti
 
 1. Open the failing daily run → **Summary** tab — it lists every pending migration by name.
 2. Verify the pending migrations look expected (i.e. they landed on main intentionally via merged PRs).
-3. If yes — trigger the **[Prod Migrate (manual)](../prod-migrate.yml)** workflow:
-   - Go to Actions → *Prod Migrate (manual)* → *Run workflow*.
-   - Type `MIGRATE-PROD` in the confirmation field.
-   - The workflow applies only the pending migrations (idempotent; already-applied ones are skipped).
+3. If yes — apply via the **manual `drizzle-kit` direct-connection path** (the `prod-migrate.yml`
+   workflow was RETIRED at the W11 cutover, 2026-07-23; see `docs/runbook-prod-migrations.md`):
+   - From `packages/db`, set `DATABASE_URL_DIRECT` to the NEW project (`dfotoodqvmjhbdcxyaxf`)
+     **session pooler, port 5432**, then run `pnpm db:migrate`.
+   - Idempotent; already-applied migrations are skipped. Verify the journal + tracking rows after.
+   - Ensure this drift check's `PROD_DATABASE_URL_DIRECT` secret targets the NEW project.
 4. After the migrate run, check the next drift-check run (or trigger one manually) to confirm **UP TO DATE**.
 
 ## Secret required
