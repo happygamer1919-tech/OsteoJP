@@ -23,6 +23,7 @@ const model = (over: Partial<DeclaracaoModel> = {}): DeclaracaoModel => ({
   localidade: "Linda-a-Velha",
   responsavel: "Dr. João Paulo Santos Silva",
   stampBytes: null,
+  nif: null,
   ...over,
 });
 
@@ -30,9 +31,14 @@ describe("Declaração template text (verbatim Fisiozero) + interpolation", () =
   it("title is exactly 'Declaração de Presença'", () => {
     expect(DECLARACAO_TITLE).toBe("Declaração de Presença");
   });
-  it("paragraph 1 interpolates name / dia / hora início / hora fim", () => {
+  it("paragraph 1 interpolates name / dia / hora início / hora fim (no NIF)", () => {
     expect(declaracaoParagraph1(model())).toBe(
       "Para os devidos efeitos se declara que João Conção esteve em tratamento nas nossas instalações no dia 12/07/2026 entre as 09:30 e as 10:30.",
+    );
+  });
+  it("W12-24: paragraph 1 names the NIF right after the patient when present", () => {
+    expect(declaracaoParagraph1(model({ nif: "123456789" }))).toBe(
+      "Para os devidos efeitos se declara que João Conção, portador(a) do NIF 123456789, esteve em tratamento nas nossas instalações no dia 12/07/2026 entre as 09:30 e as 10:30.",
     );
   });
   it("paragraph 2 is the verbatim Fisiozero legal text", () => {

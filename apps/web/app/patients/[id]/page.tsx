@@ -421,7 +421,7 @@ export default async function PatientProfilePage({
         <div role="tabpanel" id="tabpanel-documentos" aria-label={s["patients.tabDocuments"]}>
           {/* W5-31: attendance-declaration (Declaração de Presença) generator. */}
           <div className="mb-4 flex justify-end">
-            <DeclaracaoDialog patientId={patient.id} appointments={declaracaoAppointments} />
+            <DeclaracaoDialog patientId={patient.id} appointments={declaracaoAppointments} patientNif={patient.nif} />
           </div>
           <PatientDocuments
             patientId={patient.id}

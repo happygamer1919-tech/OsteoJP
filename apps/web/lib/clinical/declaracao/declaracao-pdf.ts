@@ -29,7 +29,10 @@ const CONTENT_W = PAGE_W - MARGIN * 2;
 // Verbatim Fisiozero template text (pt-PT). Placeholders interpolated for para 1.
 export const DECLARACAO_TITLE = "Declaração de Presença";
 export function declaracaoParagraph1(m: DeclaracaoModel): string {
-  return `Para os devidos efeitos se declara que ${m.patientName} esteve em tratamento nas nossas instalações no dia ${m.dia} entre as ${m.horaInicio} e as ${m.horaFim}.`;
+  // W12-24: name the NIF right after the patient when present (identifies the
+  // person on a semi-legal document); omitted entirely when no NIF was entered.
+  const nif = m.nif ? `, portador(a) do NIF ${m.nif},` : "";
+  return `Para os devidos efeitos se declara que ${m.patientName}${nif} esteve em tratamento nas nossas instalações no dia ${m.dia} entre as ${m.horaInicio} e as ${m.horaFim}.`;
 }
 export const DECLARACAO_PARAGRAPH_2 =
   "Por ser verdade se passa a presente declaração que vai assinada pelo responsável dos serviços e autenticada com o carimbo em uso nesta clínica.";

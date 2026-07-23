@@ -40,9 +40,12 @@ const apptLabel = (a: DeclaracaoAppointment): string =>
 export function DeclaracaoDialog({
   patientId,
   appointments,
+  patientNif,
 }: {
   patientId: string;
   appointments: DeclaracaoAppointment[];
+  /** W12-24: the patient's stored NIF, prefilled into the (editable) NIF field. */
+  patientNif?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [apptId, setApptId] = useState<string>("");
@@ -50,6 +53,9 @@ export function DeclaracaoDialog({
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [locationId, setLocationId] = useState<string | null>(null);
+  // W12-24: NIF is the PATIENT's (not the marcação's), so it prefills once from
+  // patients.nif and is untouched by the marcação/manual switch; stays editable.
+  const [nif, setNif] = useState(patientNif ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -62,6 +68,12 @@ export function DeclaracaoDialog({
       setEndTime(lisbonTime(a.endsAt));
       setLocationId(a.locationId);
     } else {
+      // W12-24: "Introdução manual" starts fully blank - explicitly clear the
+      // marcação-derived fields (previously only locationId was reset, leaving
+      // stale date/hora when switching back from a selected marcação).
+      setDate("");
+      setStartTime("");
+      setEndTime("");
       setLocationId(null);
     }
   }
@@ -79,6 +91,7 @@ export function DeclaracaoDialog({
         startTime,
         endTime,
         locationId,
+        nif: nif.trim() || null,
       });
       if (url) {
         window.open(url, "_blank", "noopener,noreferrer");
@@ -137,6 +150,19 @@ export function DeclaracaoDialog({
               <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className={field} data-testid="declaracao-end" />
             </label>
           </div>
+          {/* W12-24: NIF, prefilled from the patient (editable). Optional - a
+              blank NIF is simply omitted from the generated declaration. */}
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">{s["documents.declaracao.nifLabel"]}</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={nif}
+              onChange={(e) => setNif(e.target.value)}
+              className={field}
+              data-testid="declaracao-nif"
+            />
+          </label>
           {error && <p role="alert" className="text-sm text-error">{error}</p>}
         </div>
       </Dialog>

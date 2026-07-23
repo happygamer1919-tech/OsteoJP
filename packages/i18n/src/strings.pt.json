@@ -123,6 +123,7 @@
   "documents.declaracao.dateLabel": "Data",
   "documents.declaracao.startLabel": "Hora de início",
   "documents.declaracao.endLabel": "Hora de fim",
+  "documents.declaracao.nifLabel": "NIF",
   "documents.declaracao.generate": "Gerar",
   "documents.declaracao.incomplete": "Preencha a data e as horas.",
   "documents.declaracao.error": "Não foi possível gerar a declaração.",

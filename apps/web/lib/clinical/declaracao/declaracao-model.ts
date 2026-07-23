@@ -69,6 +69,9 @@ export type DeclaracaoInputs = {
    *  resolveStampLocationKey. Drives per-location carimbo resolution; null ->
    *  blank stamp area. */
   stampLocationKey: string | null;
+  /** W12-24: the patient NIF as entered in the dialog (prefilled from
+   *  `patients.nif`, editable). Trimmed; null/empty -> omitted from the body. */
+  nif?: string | null;
   /** The tenant's raw `settings` JSONB (declaracao namespace read here). */
   tenantSettings: unknown;
 };
@@ -80,6 +83,8 @@ export type DeclaracaoModel = {
   horaFim: string;
   localidade: string;
   responsavel: string;
+  /** W12-24: patient NIF, or null when not provided (omitted from the body). */
+  nif: string | null;
   /** The owner-supplied signature + carimbo image FOR THIS LOCATION, or null
    *  -> blank stamp space (W9-03). Never another location's stamp. */
   stampBytes: Uint8Array | null;
@@ -94,6 +99,8 @@ export function buildDeclaracaoModel(inputs: DeclaracaoInputs): DeclaracaoModel 
     horaFim: inputs.horaFim,
     localidade: inputs.localidade,
     responsavel: settings.responsavel,
+    // W12-24: carry the (trimmed) NIF, or null so the body omits it entirely.
+    nif: inputs.nif?.trim() || null,
     // W9-03: per-location. The tenant switch still wins (settings.signatureStamp
     // = false means "leave blank for a physical stamp" everywhere); when it is
     // on, the stamp is resolved for THIS declaration's location, and a location
