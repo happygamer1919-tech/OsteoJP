@@ -836,3 +836,37 @@ developer as well as a therapist.** Not a defect; no change. GREEN changed nothi
 The review is CLEAN with this ruling; the remaining owner-role accounts are accepted as the
 owner's intended principal set. Escalation (resolved):
 `osteojp-mailbox/escalations/W11-05-max-owner-role-access-anomaly-20260723T125038Z.md`.
+
+## 2026-07-23 - Wave 12 Lote Castelo Branco + Rodica batch (YELLOW authoring)
+
+> Wave 12 was scoped into 22 loop files (`docs/loops/wave-12/`) + the Wave 12 Loop Queue in BACKLOG. Six new questions registered below; each carries a recommended default so a blocked loop never stalls the wave. Advanced (not re-opened): Q-W10-04-1 (reception-location model + per-therapist RLS tighten `0038` - taken as the W12-14/15 default) and Q-W7-01-2 (orphaned-auth-on-delete adopt-on-re-invite default - folded into W12-14/15). Parked unchanged: Q-W12-DEL-1 (below, lawyer + JP gated).
+
+### Q-W12-01 - Cancelada vs Falta distinct visuals (vs W11-00 cancelled = line-through) - REGISTERED for Rodica
+
+Rodica's estado set (W12-10 SPEC) gives **Falta** = "patient name crossed with a line" (a strikethrough) AND **Cancelada** = a red thumbs-down. But W11-00 v3 locked the agenda face to a NAME-ONLY list where `cancelled = line-through` is the sole non-name cue. So two strikethrough-like cues (Cancelada line-through vs Falta crossed name) would collide, and the estado glyphs re-introduce non-name cues onto a face the owner deliberately made name-only.
+**Recommended default (confirm with Rodica):** Falta = strikethrough on the name; **Cancelada = a distinct red glyph, NOT a strikethrough**, so the two never look alike; estado glyphs live as a small leading marker (colour-not-only, estado also in aria + hover) with the name still authoritative. If the owner wants the face to stay pure name-only, glyphs live only in the hover + Marcacoes. W12-01 holds the interim `strikethrough = cancelled` invariant; W12-10 sets the final language once this is ruled.
+
+### Q-W12-02 - Hour-only slots: global vs per-location - REGISTERED for Rodica
+
+Q-W9-00-3 was CLOSED as **per-location** (default 30 min, 60 for Castelo Branco; LV + the portal unchanged). Rodica now asks for hour-only **globally**.
+**Recommended default:** keep it **per-location** and **build the per-location toggle regardless** (W12-29) - a platform-wide change would silently halve LV's + the portal's bookable slots (both read the same `listOpenSlots` source of truth). If the owner later rules global, the per-location setting is simply set to 60 everywhere - no rework. Confirm with Rodica whether "global" is a genuine want or shorthand for "CB on the hour".
+
+### Q-W12-03 - Inbound SMS: consent / STOP / negative keywords + Twilio EU-region/DPA - REGISTERED for owner/JP
+
+The estado build (W12-11) adds a NET-NEW inbound-SMS capability (patient confirms or replies negative -> Confirmada / Cancelada) that does not exist today. This needs legal + product decisions before build.
+**Recommended defaults (owner/JP to confirm):** (1) **Twilio EU region + a signed DPA** before any live SMS (CLAUDE.md rule 8, the W11-05 follow-up) - a US region or a missing DPA is a hard blocker; (2) inbound **consent + STOP/opt-out** honoured (STOP -> opt-out, no further SMS); (3) the **negative keywords** that map to Cancelada (e.g. NAO / CANCELAR) + the confirm keywords (SIM / CONFIRMAR) defined by Rodica/JP in pt-PT; (4) send times + copy per the existing 2026-07-03 SMS-confirmation questions (reference, do not duplicate). No inbound build until (1)-(3) are ruled.
+
+### Q-W12-04 - "Diversos" internal-only service (never portal-bookable) - REGISTERED for owner
+
+A "Diversos" service that staff can book internally but that never appears in the patient-portal booking wizard. No internal/portal-bookable flag exists today (booking + portal both filter `is_active`).
+**Recommended default:** add a decoupled `services.internal_only` boolean (the coupled-flags lesson); the portal wizard excludes `internal_only = true`; staff can book it; then create the "Diversos" service (owner-gated DATA). Confirm the flag approach (vs a naming/location convention) + that "Diversos" is the intended name. W12-26 does not build before this is ruled.
+
+### Q-W12-05 - Team-data bulk-update file (number - role - services per therapist) - REGISTERED for owner
+
+W12-40 (team data bulk update) is BLOCKED until the owner supplies the source file: per therapist, number/phone - role/funcao - services. This is the DATA counterpart to the CB "wrong filter / wrong therapists" complaints (the isolation model derives scope from real assignments, so it is only as correct as this data).
+**Recommended default:** owner supplies a simple table (one row per therapist: full name as it appears in Equipa, phone, role, services); every row is validated against Equipa (unresolved rows HALT, never guessed), rehearsed on local, applied owner-gated with per-row before/after counts, then owner visual-checks. Until the file arrives, W12-40 stays BLOCKED (no synthetic data).
+
+### Q-W12-06 - Zona de risco scope: per-patient block vs admin-level section - REGISTERED for owner
+
+Q-W7-03-1 closed with "relocate Acoes destrutivas to a collapsed 'Zona de risco' at the bottom of Administracao". But recon shows the destructive block currently lives on the PATIENT profile, and the per-patient destructive controls (delete THIS patient, delete THIS ficha) need a patient context - they cannot simply move to the global Administracao screen.
+**Recommended default (W12-27):** (1) add a collapsed "Zona de risco" at the bottom of the Administracao overview holding the ADMIN-level destructive entry points (Pacientes eliminados / permanent delete / delete-password config), "not too obvious"; (2) relabel the existing patient-profile collapsed block to "Zona de risco" + keep it patient-scoped at the bottom of the profile. No control weakened. Confirm whether the owner instead wants the per-patient destructive controls fully moved OFF the profile (which needs a patient picker on Administracao).
