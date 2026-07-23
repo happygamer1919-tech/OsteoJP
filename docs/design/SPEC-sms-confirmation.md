@@ -99,8 +99,17 @@ Tapping **SIM** / **NÃO** on the confirm page flips the appointment's existing
 
 ## 8. Explicit non-goals
 
+> **SUPERSEDED (2026-07-23, W12-10):** the "NO inbound reply-text parsing"
+> non-goal below is REVISED by `docs/design/SPEC-estados-lifecycle.md`, which
+> adds inbound SMS reply handling (SIM/NAO) as a net-new capability and subsumes
+> this spec's link-page confirm flow (sections 5-6). The rest of this section
+> (no build this wave, no other channel, no new schema) still described the
+> original SMS-confirmation loop; the estados-lifecycle spec + the W12-11 build
+> now own the confirm/inbound design and its build gates. Kept for history.
+
 - **NO inbound reply-text parsing** — confirming by replying "SIM"/"NÃO" as an
-  SMS reply is OUT OF SCOPE; only the link page confirms.
+  SMS reply is OUT OF SCOPE; only the link page confirms. _(Superseded by
+  SPEC-estados-lifecycle.md; inbound reply parsing is now in scope for W12-11.)_
 - **NO build this wave** — no Twilio dependency/account, no Inngest job, no
   confirm route, no `packages/integrations` wiring, no env/secret, no schema.
 - **No other channel** (WhatsApp/email confirmation) in this SPEC.
