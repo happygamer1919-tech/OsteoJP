@@ -4,10 +4,11 @@ import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import {
   effectivePriceCents,
-  getReferencedServiceIds,
+  getServiceDeleteBlockers,
   listServiceLocationPrices,
   listServiceOfferings,
   listServices,
+  type ServiceDeleteBlocker,
   type ServiceView,
 } from "@/lib/admin/services";
 import { getReferencedPackIds, listPacks, type PackView } from "@/lib/admin/packs";
@@ -45,18 +46,33 @@ function euros(cents: number | null): string {
   return cents === null ? "" : (cents / 100).toFixed(2);
 }
 
+// W12-03: name WHY a service's hard-delete is refused, per blocker class, so
+// archive-vs-delete is legible (a service blocked only by its own price overrides
+// is now deletable and never reaches this path).
+const SERVICE_BLOCKER_KEY: Record<ServiceDeleteBlocker, keyof typeof s> = {
+  appointments: "admin.services.deleteBlocked.appointments",
+  therapist_services: "admin.services.deleteBlocked.therapistServices",
+  analytics: "admin.services.deleteBlocked.analytics",
+  pack: "admin.services.deleteBlocked.pack",
+};
+
+function serviceBlockedTooltip(blockers: ServiceDeleteBlocker[]): string {
+  const reasons = blockers.map((b) => s[SERVICE_BLOCKER_KEY[b]]).join(", ");
+  return `${s["admin.services.deleteBlockedPrefix"]} ${reasons}. ${s["admin.services.deleteBlockedSuffix"]}`;
+}
+
 export default async function ServicesPage({
   searchParams,
 }: {
   searchParams: Promise<{ m?: string; mp?: string; pf?: string }>;
 }) {
   const actor = await requireRequestContext();
-  const [services, locations, locationPrices, referencedIds, offerings, packs, referencedPackIds] =
+  const [services, locations, locationPrices, serviceBlockers, offerings, packs, referencedPackIds] =
     await Promise.all([
       listServices(actor),
       listLocations(actor),
       listServiceLocationPrices(actor),
-      getReferencedServiceIds(actor),
+      getServiceDeleteBlockers(actor),
       listServiceOfferings(actor),
       listPacks(actor),
       getReferencedPackIds(actor),
@@ -135,7 +151,11 @@ export default async function ServicesPage({
             </thead>
             <tbody>
               {services.map((svc) => {
-                const referenced = referencedIds.has(svc.id);
+                // W12-03: the delete is refused only by REAL history/relationships
+                // (blockers), not by the service's own price overrides (config,
+                // cleaned up in the delete tx). Empty => hard-deletable.
+                const blockers = serviceBlockers.get(svc.id) ?? [];
+                const referenced = blockers.length > 0;
                 return (
                   <Fragment key={svc.id}>
                     <tr className={adminTrBorder}>
@@ -182,7 +202,7 @@ export default async function ServicesPage({
                                   service → disabled control + tooltip (archive-only);
                                   zero-reference → hard-delete. Server-enforced regardless. */}
                               {referenced ? (
-                                <span title={s["admin.services.deleteBlockedTooltip"]} className="inline-flex">
+                                <span title={serviceBlockedTooltip(blockers)} className="inline-flex">
                                   <Button type="button" variant="ghost" size="sm" disabled>
                                     {s["admin.services.delete"]}
                                   </Button>

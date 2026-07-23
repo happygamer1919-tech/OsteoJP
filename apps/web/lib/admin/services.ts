@@ -5,6 +5,7 @@ import {
   analyticsEvents,
   appointments,
   serviceLocationPrices,
+  servicePacks,
   services,
   therapistServices,
 } from "@osteojp/db";
@@ -12,6 +13,19 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import { effectivePriceCents } from "./pricing";
+import {
+  serviceDeleteBlockers,
+  type ServiceDeleteBlocker,
+} from "./service-delete";
+
+// Re-export the pure delete-guard decision so callers (the Admin > Services page)
+// can name the blocker without importing this server-only module's DB deps.
+export {
+  serviceDeleteBlockers,
+  isServiceDeletable,
+  SERVICE_DELETE_BLOCKERS,
+  type ServiceDeleteBlocker,
+} from "./service-delete";
 
 // Re-export so callers can pull the pure fallback helper from the services lib
 // alongside the read functions that use it.
@@ -146,26 +160,38 @@ export async function setServiceActive(
 }
 
 /**
- * W4-15 — the CONFIRMED reference set for a service. Recon (schema FKs into
- * `services.id`) found FOUR relations, one more than the loop's three named:
+ * W12-03 — the per-service HARD-delete blocker map for the tenant, so the Admin
+ * page can disable the delete control AND name WHY it is refused. The guard set is
+ * the real history/relationships that must never cascade:
  *   appointments.service_id, therapist_services.service_id,
- *   service_location_prices.service_id, analytics_events.service_id.
- * A service is "zero-reference" (hard-deletable) only when NONE of these
- * reference it. Returns the set of referenced service ids for the tenant, so the
- * UI can disable the delete control (archive-only) for referenced services.
+ *   analytics_events.service_id, service_packs.base_service_id.
+ * `service_location_prices` is intentionally EXCLUDED (W4-15 counted it, which is
+ * why every catalog service was archive-only): a service's own price overrides are
+ * config, removed inside `deleteService`'s tx, so they no longer block. A service
+ * absent from the map (or mapping to `[]`) is hard-deletable. Blockers come back in
+ * canonical order per service.
  */
-export async function getReferencedServiceIds(actor: RequestContext): Promise<Set<string>> {
+export async function getServiceDeleteBlockers(
+  actor: RequestContext,
+): Promise<Map<string, ServiceDeleteBlocker[]>> {
   assertCan(actor.role, "services:read");
   return runScoped(actor, async (tx) => {
-    const referenced = new Set<string>();
-    const add = (rows: { serviceId: string | null }[]) => {
-      for (const r of rows) if (r.serviceId) referenced.add(r.serviceId);
+    const present = new Map<string, Partial<Record<ServiceDeleteBlocker, boolean>>>();
+    const add = (rows: { serviceId: string | null }[], cls: ServiceDeleteBlocker) => {
+      for (const r of rows) {
+        if (!r.serviceId) continue;
+        const p = present.get(r.serviceId) ?? {};
+        p[cls] = true;
+        present.set(r.serviceId, p);
+      }
     };
-    add(await tx.selectDistinct({ serviceId: appointments.serviceId }).from(appointments));
-    add(await tx.selectDistinct({ serviceId: therapistServices.serviceId }).from(therapistServices));
-    add(await tx.selectDistinct({ serviceId: serviceLocationPrices.serviceId }).from(serviceLocationPrices));
-    add(await tx.selectDistinct({ serviceId: analyticsEvents.serviceId }).from(analyticsEvents));
-    return referenced;
+    add(await tx.selectDistinct({ serviceId: appointments.serviceId }).from(appointments), "appointments");
+    add(await tx.selectDistinct({ serviceId: therapistServices.serviceId }).from(therapistServices), "therapist_services");
+    add(await tx.selectDistinct({ serviceId: analyticsEvents.serviceId }).from(analyticsEvents), "analytics");
+    add(await tx.selectDistinct({ serviceId: servicePacks.baseServiceId }).from(servicePacks), "pack");
+    const out = new Map<string, ServiceDeleteBlocker[]>();
+    for (const [id, p] of present) out.set(id, serviceDeleteBlockers(p));
+    return out;
   });
 }
 
@@ -184,16 +210,33 @@ export async function deleteService(actor: RequestContext, id: string): Promise<
     const [svc] = await tx.select({ id: services.id }).from(services).where(eq(services.id, id)).limit(1);
     if (!svc) throw new AdminError("not_found");
 
-    // Reference guard across the confirmed set (defense-in-depth; the UI also
-    // disables delete for these). Any single reference → archive-only.
-    const refChecks: Array<Promise<{ id: string }[]>> = [
+    // W12-03 reference guard: the real history/relationships that must NEVER be
+    // cascaded (defense-in-depth; the UI also disables delete + names these).
+    // service_location_prices is deliberately NOT here - a service's own price
+    // overrides are config, removed below as part of the delete. Any hard
+    // reference => refuse (archive-only).
+    const [appt, ts, analytics, pack] = await Promise.all([
       tx.select({ id: appointments.id }).from(appointments).where(eq(appointments.serviceId, id)).limit(1),
       tx.select({ id: therapistServices.id }).from(therapistServices).where(eq(therapistServices.serviceId, id)).limit(1),
-      tx.select({ id: serviceLocationPrices.id }).from(serviceLocationPrices).where(eq(serviceLocationPrices.serviceId, id)).limit(1),
       tx.select({ id: analyticsEvents.id }).from(analyticsEvents).where(eq(analyticsEvents.serviceId, id)).limit(1),
-    ];
-    const results = await Promise.all(refChecks);
-    if (results.some((rows) => rows.length > 0)) throw new AdminError("has_references");
+      tx.select({ id: servicePacks.id }).from(servicePacks).where(eq(servicePacks.baseServiceId, id)).limit(1),
+    ]);
+    const blockers = serviceDeleteBlockers({
+      appointments: appt.length > 0,
+      therapist_services: ts.length > 0,
+      analytics: analytics.length > 0,
+      pack: pack.length > 0,
+    });
+    if (blockers.length > 0) throw new AdminError("has_references");
+
+    // No hard reference: remove the service's OWN per-location price overrides
+    // (config) in the same tx, then hard-delete. The service_location_prices FK is
+    // ON DELETE no action, so the price rows must go first or the service delete
+    // would FK-fail. This is the only reference class a delete may cascade.
+    const removedPrices = await tx
+      .delete(serviceLocationPrices)
+      .where(eq(serviceLocationPrices.serviceId, id))
+      .returning({ id: serviceLocationPrices.id });
 
     const del = await tx.delete(services).where(eq(services.id, id)).returning({ id: services.id });
     if (!del[0]) throw new AdminError("not_found");
@@ -201,6 +244,7 @@ export async function deleteService(actor: RequestContext, id: string): Promise<
       action: "service.delete",
       entityType: "service",
       entityId: id,
+      metadata: { removedPriceOverrides: removedPrices.length },
     });
   });
 }
