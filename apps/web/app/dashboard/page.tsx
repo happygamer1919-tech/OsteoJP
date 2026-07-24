@@ -332,7 +332,9 @@ export default async function DashboardPage({
           )}
         </GlassPanel>
 
-        {/* Notas rápidas — saved via saveQuickNotesAction to public.quick_notes (content column), keyed on tenant_id + staff_user_id (migration 0018). Untouched. */}
+        {/* Notas rápidas (W12-13) — appends to the unified appointment_notes store,
+            in two modes: a patient-level note, or a note on one specific
+            appointment (chosen via the appointment selector). */}
         <GlassCard title={s["dashboard.notes"]}>
           <NotasRapidas />
         </GlassCard>

@@ -123,6 +123,8 @@
   "dashboard.quickNotePatientRequired": "Select a patient.",
   "dashboard.quickNoteRequired": "The note cannot be empty.",
   "dashboard.quickNoteNoPatient": "No patient found",
+  "dashboard.quickNoteAppointment": "Appointment (optional)",
+  "dashboard.quickNotePatientLevel": "General patient note (no appointment)",
   "patients.tabDocuments": "Documents",
   "documents.declaracao.button": "Print Attendance Declaration",
   "documents.declaracao.title": "Attendance Declaration",

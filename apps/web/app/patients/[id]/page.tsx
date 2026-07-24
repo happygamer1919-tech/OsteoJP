@@ -20,7 +20,7 @@ import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
 import { listPatientAppointments } from "../../../lib/scheduling/data";
 import { listPatientPackInstances } from "../../../lib/packs/instances";
-import { listPatientNoteRevisions } from "../../../lib/patients/note-revisions";
+import { listPatientNotes } from "../../../lib/patients/note-revisions";
 import { NotesComposer } from "./notes-composer";
 import { PatientActions } from "../_components/patient-actions";
 import { versionRecordAction } from "../../clinical/[id]/actions";
@@ -190,8 +190,9 @@ export default async function PatientProfilePage({
   // Consultas tab: this patient's pack instances + remaining sessions (W8-01c).
   const patientPackInstances =
     tab === "consultas" ? await listPatientPackInstances(ctx, id) : [];
-  // Notas tab: append-only note history from patient_note_revisions (0030).
-  const noteRevisions = tab === "notas" ? await listPatientNoteRevisions(ctx, id) : [];
+  // Notas tab: unified note history (W12-13) — appointment_notes (patient-level
+  // + per-appointment) merged with the legacy patient_note_revisions (0030).
+  const noteRevisions = tab === "notas" ? await listPatientNotes(ctx, id) : [];
   // Documentos tab: patient-level administrative documents (attachments with a
   // patient_id and no clinical_record_id). Tenant + role scoped in the query.
   const patientDocuments = tab === "documentos" ? await listPatientDocuments(ctx, id) : [];

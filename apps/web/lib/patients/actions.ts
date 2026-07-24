@@ -398,9 +398,13 @@ export async function getPatientContraindications(
 }
 
 /**
- * Append a new patient note revision (W2-11). Append-only: never edits/deletes
- * an existing revision. author = current user, tenant from JWT. Used by the
- * profile Notas tab composer and the dashboard Notas Rápidas quick-note.
+ * Append a PATIENT-LEVEL note (W12-13, notes unification R3). Append-only:
+ * never edits/deletes an existing note. Writes the UNIFIED `appointment_notes`
+ * relation with `appointment_id = NULL` (a note that belongs to the patient, not
+ * a specific visit — 0042 made appointment_id nullable). author = current user,
+ * tenant from JWT. Used by the profile Notas composer and the dashboard Notas
+ * Rápidas patient-mode quick-note. The legacy `patient_note_revisions` writer is
+ * retired here; its historical rows stay readable (merged in `listPatientNotes`).
  */
 export async function appendPatientNoteAction(
   patientId: string,
@@ -411,15 +415,56 @@ export async function appendPatientNoteAction(
   const text = content.trim();
   if (!patientId || text.length === 0 || text.length > 5000) return { ok: false };
   await runScoped(ctx, async (tx) => {
-    await tx.insert(patientNoteRevisions).values({
+    await tx.insert(appointmentNotes).values({
       tenantId: ctx.tenantId, // NOT NULL + RLS WITH CHECK
       patientId,
-      content: text,
+      appointmentId: null, // patient-level note (no specific visit)
       authorUserId: ctx.userId,
+      body: text,
     });
   });
   revalidatePatient(patientId);
   return { ok: true };
+}
+
+/**
+ * Append a note on ONE specific appointment (W12-13, notes unification R3).
+ * Append-only into the UNIFIED `appointment_notes` relation with `appointment_id`
+ * set. `patient_id` is derived SERVER-SIDE from the appointment (never trusted
+ * from the client), so the note can never be mis-linked cross-patient. Used by
+ * the dashboard Notas Rápidas appointment-mode quick-note. A note added this way
+ * reflects on the Agenda / Marcações hover AND on the patient profile Notas tab.
+ */
+export async function appendAppointmentNoteAction(
+  appointmentId: string,
+  content: string,
+): Promise<{ ok: boolean }> {
+  const ctx = await requireRequestContext();
+  assertCan(ctx.role, "patients:write");
+  const text = content.trim();
+  if (!appointmentId || text.length === 0 || text.length > 5000) return { ok: false };
+  const result = await runScoped(ctx, async (tx) => {
+    const [appt] = await tx
+      .select({ patientId: appointments.patientId })
+      .from(appointments)
+      .where(eq(appointments.id, appointmentId))
+      .limit(1);
+    if (!appt) return { ok: false as const };
+    await tx.insert(appointmentNotes).values({
+      tenantId: ctx.tenantId, // NOT NULL + RLS WITH CHECK
+      patientId: appt.patientId,
+      appointmentId,
+      authorUserId: ctx.userId,
+      body: text,
+    });
+    return { ok: true as const, patientId: appt.patientId };
+  });
+  if (result.ok) {
+    revalidatePatient(result.patientId);
+    revalidatePath("/agenda");
+    revalidatePath("/marcacoes");
+  }
+  return { ok: result.ok };
 }
 
 /**

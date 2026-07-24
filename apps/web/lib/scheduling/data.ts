@@ -98,7 +98,22 @@ const appointmentSelection = {
   startsAt: appointments.startsAt,
   endsAt: appointments.endsAt,
   status: appointments.status,
-  notes: appointments.notes,
+  // W12-13 (notes unification, R3): the agenda/Marcacoes note now reads the
+  // UNIFIED store (appointment_notes) — the LATEST note appended for this visit —
+  // and falls back to the legacy `appointments.notes` while the one-time backfill
+  // (owner-gated, held) has not run. COALESCE picks exactly one string, so it is
+  // dedup-safe in every state: pre-backfill an appointment with only a legacy
+  // note shows it; once a note is appended (or after backfill) the unified row
+  // wins and the legacy fallback is dormant. Correlated + tenant-pinned; the
+  // outer query runs under RLS.
+  notes: sql<string | null>`coalesce(
+    (select ${appointmentNotes.body} from ${appointmentNotes}
+      where ${appointmentNotes.appointmentId} = ${appointments.id}
+        and ${appointmentNotes.tenantId} = ${appointments.tenantId}
+      order by ${appointmentNotes.createdAt} desc
+      limit 1),
+    ${appointments.notes}
+  )`.as("notes"),
   recurrenceRule: appointments.recurrenceRule,
   recurrenceParentId: appointments.recurrenceParentId,
   // Confirmation axis (0024) — orthogonal to `status`, read-only here.
@@ -110,10 +125,16 @@ const appointmentSelection = {
   // appointment_notes NOW — NOT the immutable analytics_events.note_present
   // (which stays the historical KPI record). Tenant-scoped: the surrounding
   // query runs under RLS, and the correlation is pinned to the same tenant_id.
-  hasNote: sql<boolean>`exists (
-    select 1 from ${appointmentNotes}
-    where ${appointmentNotes.appointmentId} = ${appointments.id}
-      and ${appointmentNotes.tenantId} = ${appointments.tenantId}
+  // W12-13: kept consistent with the coalesced `notes` above — a legacy
+  // `appointments.notes` (not yet backfilled into appointment_notes) also counts
+  // as "has note", so the chip never contradicts the note the hover shows.
+  hasNote: sql<boolean>`(
+    exists (
+      select 1 from ${appointmentNotes}
+      where ${appointmentNotes.appointmentId} = ${appointments.id}
+        and ${appointmentNotes.tenantId} = ${appointments.tenantId}
+    )
+    or nullif(btrim(${appointments.notes}), '') is not null
   )`.as("has_note"),
   // Audit provenance (W9-06, item 10). createdBy is nullable (portal bookings);
   // createdByName is resolved via the aliased LEFT join below, null when the
