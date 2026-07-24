@@ -1,6 +1,7 @@
 "use server";
 
 import { requireRequestContext } from "@/lib/auth/context";
+import { getPatient } from "@/lib/patients/queries";
 import { listPatientAppointments } from "@/lib/scheduling/data";
 
 /**
@@ -19,6 +20,16 @@ export async function listPatientAppointmentsForNoteAction(
 ): Promise<{ id: string; label: string }[]> {
   const ctx = await requireRequestContext();
   if (!patientId) return [];
+  // W10-04 scope (restored — regressed by W12-13): a therapist may read the
+  // appointments of their OWN patients only. `listPatientAppointments` enforces
+  // `appointments:read` + tenant RLS but NOT the therapist "own-patients"
+  // narrowing, so we precheck patient visibility with `getPatient`, which applies
+  // `therapistPatientScope` exactly as getPatient/searchPatients do — a non-own
+  // patient returns null → empty. `includeDeleted` keeps the check to the
+  // therapist-scope narrowing alone, so owner/admin/reception (unscoped, tenant-
+  // wide) are unaffected and match the patient profile page gate.
+  const patient = await getPatient(patientId, { includeDeleted: true });
+  if (!patient) return [];
   const appts = await listPatientAppointments(ctx, patientId);
   const fmt = new Intl.DateTimeFormat("pt-PT", {
     day: "2-digit",

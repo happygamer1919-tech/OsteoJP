@@ -43,7 +43,7 @@ import {
   type MergePatientsInput,
   type UpdatePatientInput,
 } from "./validation";
-import { searchPatients } from "./queries";
+import { getPatient, searchPatients } from "./queries";
 import type { Patient } from "./types";
 
 function revalidatePatient(id: string): void {
@@ -443,28 +443,39 @@ export async function appendAppointmentNoteAction(
   assertCan(ctx.role, "patients:write");
   const text = content.trim();
   if (!appointmentId || text.length === 0 || text.length > 5000) return { ok: false };
-  const result = await runScoped(ctx, async (tx) => {
+  // patient_id is derived SERVER-SIDE from the appointment (never trusted from the
+  // client), tenant-scoped by RLS.
+  const patientId = await runScoped(ctx, async (tx) => {
     const [appt] = await tx
       .select({ patientId: appointments.patientId })
       .from(appointments)
       .where(eq(appointments.id, appointmentId))
       .limit(1);
-    if (!appt) return { ok: false as const };
+    return appt?.patientId ?? null;
+  });
+  if (!patientId) return { ok: false };
+  // W10-04 scope (restored — regressed by W12-13): a therapist may append a note
+  // only on an appointment of one of their OWN patients. The derivation above is
+  // tenant-RLS only, so we precheck patient visibility with `getPatient`, which
+  // applies `therapistPatientScope` exactly as getPatient/searchPatients do — a
+  // non-own patient returns null → deny. `includeDeleted` keeps the check to the
+  // therapist-scope narrowing alone, so owner/admin/reception (unscoped, tenant-
+  // wide) are unaffected.
+  const patient = await getPatient(patientId, { includeDeleted: true });
+  if (!patient) return { ok: false };
+  await runScoped(ctx, async (tx) => {
     await tx.insert(appointmentNotes).values({
       tenantId: ctx.tenantId, // NOT NULL + RLS WITH CHECK
-      patientId: appt.patientId,
+      patientId,
       appointmentId,
       authorUserId: ctx.userId,
       body: text,
     });
-    return { ok: true as const, patientId: appt.patientId };
   });
-  if (result.ok) {
-    revalidatePatient(result.patientId);
-    revalidatePath("/agenda");
-    revalidatePath("/marcacoes");
-  }
-  return { ok: result.ok };
+  revalidatePatient(patientId);
+  revalidatePath("/agenda");
+  revalidatePath("/marcacoes");
+  return { ok: true };
 }
 
 /**
