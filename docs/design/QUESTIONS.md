@@ -363,10 +363,16 @@ actually signed off on.
 > Source: `docs/design/SPEC-sms-confirmation.md` (SPEC ONLY, no build this wave). A build
 > loop is gated on all four items below.
 
-- [ ] **Twilio as a new vendor (owner-confirmable).** The SMS flow introduces Twilio (new
+- [x] **Twilio as a new vendor (owner-confirmable).** The SMS flow introduces Twilio (new
   third-party vendor, CLAUDE.md). Needs owner approval AND confirmation of an EU region /
   signed DPA before any integration is wired. **Recommended default:** approve only with
-  Twilio EU region + DPA; otherwise re-evaluate an EU-native SMS provider.
+  Twilio EU region + DPA; otherwise re-evaluate an EU-native SMS provider. **ANSWERED
+  2026-07-24 (owner console session):** approved. Lawful transfer mechanism verified —
+  account region US1 (no EU switch on this account), Portugal geo-permissions enabled +
+  screenshotted, Twilio DPA 2026-04-09 in force (EU SCCs + Twilio BCRs + EU-US Data Privacy
+  Framework, Schedule 3). Owner ruling R2 amended: the gate is "lawful transfer mechanism
+  verified", now SATISFIED (not strictly "EU region"). One-line lawyer confirmation queued
+  with the RGPD package, non-blocking.
 - [ ] **Message + confirm-page copy (pt-PT).** Exact SMS body and the SIM/NÃO confirm-page
   wording (JP tone: serious, "padrão ouro", no emoji). **Recommended default:** a two-line
   SMS (clinic + appointment date/time + short link) and a page showing date/time/therapist/
@@ -414,7 +420,7 @@ backend signs both presigned PUT and GET; M1 webhook gains API-key auth; contrac
 
 ### STILL OPEN after this sweep (for report-back)
 
-- [ ] **SMS — Twilio as a new vendor + EU residency / signed DPA** (route: owner). The only SMS item still blocking the build. No vendor introduced yet; approve only with Twilio EU region + DPA, else re-evaluate an EU-native SMS provider. (2026-07-03 SMS entry, item 1.)
+- [x] **SMS — Twilio as a new vendor + EU residency / signed DPA** (route: owner). The only SMS item still blocking the build. No vendor introduced yet; approve only with Twilio EU region + DPA, else re-evaluate an EU-native SMS provider. (2026-07-03 SMS entry, item 1.) — **ANSWERED 2026-07-24:** lawful transfer mechanism verified (Twilio US1 + PT geo enabled + DPA 2026-04-09: EU SCCs + BCRs + EU-US DPF Schedule 3); R2 amended, gate = lawful-transfer-verified = SATISFIED; senders +13367334880 (two-way) + alphanumeric OsteoJP; lawyer one-liner queued with the RGPD package, non-blocking.
 - [x] **Q-V2W2-1 - blocked-time band data model** (route: Ivan/backend). **ANSWERED / CLOSED 2026-07-17 by W9-04:** no new model was ever needed - `time_off` has existed since migration 0006 (W5-12 confirmed it). The band was unrendered for want of a RENDER; W9-04 draws it (muted non-interactive hatch, disabled slot buttons underneath). One caveat open: the band renders only when the agenda is scoped to one therapist, since the grid has no therapist axis (owner question filed 2026-07-17).
 - [ ] **Q-V2W2-2 — missing v2 glass primitives** (foundation follow-up, non-blocking). Green Button variant + glass DatePicker/SegmentedControl/Select; add in a `packages/ui` foundation pass, not a section wave.
 - [ ] **Q-V2W2-3 — service catalogue → colour-category mapping** (non-blocking). Confirm live service names map to the five categories, or provide the mapping.
@@ -439,7 +445,7 @@ backend signs both presigned PUT and GET; M1 webhook gains API-key auth; contrac
 - **DISPOSITIONED — W4-03 nova-marcação Serviço auto-select halt:** the escalated 2026-07-06 QA symptom closed **resolved-unreproducible** (docs-only, #495; owner live QA 2026-07-07). No open design question remains in this shelf (the halt lived in the GREEN↔CYAN mailbox, not here); recorded for the trail. Ref DECISIONS 2026-07-07.
 
 ### STILL OPEN after this sweep (carried into Wave 05, unchanged)
-- [ ] **SMS — Twilio as a new vendor + EU residency / signed DPA** (route: owner). The only SMS item still blocking the build. Approve only with Twilio EU region + DPA, else re-evaluate an EU-native provider. (JP still picks the final pt-PT wording from Max's variants — mechanism decided, string pending, non-blocking to structure.)
+- [x] **SMS — Twilio as a new vendor + EU residency / signed DPA** (route: owner). The only SMS item still blocking the build. Approve only with Twilio EU region + DPA, else re-evaluate an EU-native provider. (JP still picks the final pt-PT wording from Max's variants — mechanism decided, string pending, non-blocking to structure.) — **ANSWERED 2026-07-24:** lawful transfer mechanism verified (Twilio US1 + PT geo + DPA 2026-04-09: EU SCCs + BCRs + EU-US DPF Schedule 3); R2 amended, gate = lawful-transfer-verified = SATISFIED; senders +13367334880 (two-way) + alphanumeric OsteoJP; lawyer one-liner queued, non-blocking.
 - [ ] **Q-V2W2-1 — blocked-time band data model** (route: Ivan/backend).
 - [ ] **Q-V2W2-2 — missing v2 glass primitives** (foundation follow-up, non-blocking).
 - [ ] **Q-V2W2-3 — service catalogue → colour-category mapping** (non-blocking).
