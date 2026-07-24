@@ -123,6 +123,8 @@
   "dashboard.quickNotePatientRequired": "Selecione um paciente.",
   "dashboard.quickNoteRequired": "A nota não pode estar vazia.",
   "dashboard.quickNoteNoPatient": "Nenhum paciente encontrado",
+  "dashboard.quickNoteAppointment": "Consulta (opcional)",
+  "dashboard.quickNotePatientLevel": "Nota geral do paciente (sem consulta)",
   "patients.tabDocuments": "Documentos",
   "documents.declaracao.button": "Imprimir Declaração de Presença",
   "documents.declaracao.title": "Declaração de Presença",

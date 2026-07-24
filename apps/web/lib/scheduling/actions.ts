@@ -320,9 +320,14 @@ export async function createAppointment(
     // is left unset so its DB default (`pending`) applies; the two axes stay
     // orthogonal. Lifecycle transitions happen later via updateAppointment.
     status: "scheduled" as const,
-    notes: input.notes ?? null,
+    // W12-13 (notes unification R3): the per-visit note is no longer written to
+    // the legacy `appointments.notes` column — it is APPENDED to the unified
+    // `appointment_notes` relation below (append-only history). The legacy column
+    // stays readable (coalesced in the agenda read) until the owner-gated
+    // backfill retires it.
     createdBy: actor.userId,
   };
+  const noteBody = input.notes?.trim() ? input.notes.trim() : null;
 
   const ip = await clientIp();
   // Captured inside the tx, enqueued AFTER commit (network out of the tx).
@@ -405,6 +410,23 @@ export async function createAppointment(
             .returning({ id: appointments.id });
           children.forEach((c, i) =>
             created.push({ id: c.id, startsAt: occ[i + 1].startsAt }),
+          );
+        }
+
+        // W12-13: append the per-visit note to the UNIFIED store, one row per
+        // created occurrence (mirrors the pre-W12-13 behaviour of the same note
+        // on every occurrence of a recurring booking). Append-only; author =
+        // current staff; patient from the appointment. Same tx, so the note
+        // commits or rolls back with the appointment(s).
+        if (noteBody) {
+          await tx.insert(appointmentNotes).values(
+            created.map((c) => ({
+              tenantId: actor.tenantId,
+              patientId: input.patientId,
+              appointmentId: c.id,
+              authorUserId: actor.userId,
+              body: noteBody,
+            })),
           );
         }
 
@@ -596,8 +618,18 @@ export async function updateAppointment(
   if ("serviceId" in patch) set.serviceId = patch.serviceId ?? null;
   if ("room" in patch) set.room = patch.room ?? null;
   if ("status" in patch && patch.status) set.status = patch.status;
-  if ("notes" in patch) set.notes = patch.notes ?? null;
-  if (Object.keys(set).length === 0) return { ok: false, error: "validation" };
+  // W12-13 (notes unification R3): a note edit is an APPEND to the unified
+  // `appointment_notes` (not an in-place mutation of `appointments.notes`), so it
+  // is handled separately from `set`. Appended to the TARGET appointment only (a
+  // note documents one visit). Clearing a note is a no-op under append-only —
+  // prior notes stay as history and the latest non-empty one keeps showing.
+  const noteBody =
+    "notes" in patch && patch.notes != null && patch.notes.trim()
+      ? patch.notes.trim()
+      : null;
+  if (Object.keys(set).length === 0 && !noteBody) {
+    return { ok: false, error: "validation" };
+  }
 
   const scope: SeriesScope = opts?.scope ?? "one";
   const newRoom = typeof set.room === "string" ? set.room.trim() : "";
@@ -641,18 +673,46 @@ export async function updateAppointment(
           }
         }
 
-        await tx
-          .update(appointments)
-          .set(set)
-          .where(inArray(appointments.id, ids)); // RLS scopes tenant
+        // Only run the column update when there is a column to change; a
+        // notes-only edit (W12-13) touches no `appointments` column.
+        if (Object.keys(set).length > 0) {
+          await tx
+            .update(appointments)
+            .set(set)
+            .where(inArray(appointments.id, ids)); // RLS scopes tenant
+        }
 
+        // W12-13: append the note to the UNIFIED store for the TARGET appointment
+        // (patient derived server-side). Before the completion event below so a
+        // "concluída + nota" save captures note_present = true.
+        if (noteBody) {
+          const [tgt] = await tx
+            .select({ patientId: appointments.patientId })
+            .from(appointments)
+            .where(eq(appointments.id, id))
+            .limit(1);
+          if (tgt) {
+            await tx.insert(appointmentNotes).values({
+              tenantId: actor.tenantId,
+              patientId: tgt.patientId,
+              appointmentId: id,
+              authorUserId: actor.userId,
+              body: noteBody,
+            });
+          }
+        }
+
+        const setChanged = Object.keys(set);
         for (const aid of ids) {
+          const changed =
+            aid === id && noteBody ? [...setChanged, "notes"] : setChanged;
+          if (changed.length === 0) continue;
           await writeAppointmentAudit(tx, {
             tenantId: actor.tenantId,
             actorUserId: actor.userId,
             action: "appointment.update",
             appointmentId: aid,
-            metadata: { changed: Object.keys(set), scope },
+            metadata: { changed, scope },
             ip,
           });
         }

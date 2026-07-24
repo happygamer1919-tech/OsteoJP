@@ -1,48 +1,37 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { Button, Combobox, type ComboboxOption } from "@osteojp/ui";
+import { useState, useTransition } from "react";
+import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
-import { appendPatientNoteAction, searchPatientsAction } from "@/lib/patients/actions";
+import { AppointmentSelector } from "@/components/appointment-selector";
+import { PatientSelector } from "@/components/patient-selector";
+import { appendAppointmentNoteAction, appendPatientNoteAction } from "@/lib/patients/actions";
 
 const MAX_LEN = 5000;
 
 /**
- * Notas Rápidas (W2-11 rewire) — a quick way to append a note to a SELECTED
- * patient's append-only history (`patient_note_revisions`). Pick a patient, type
- * the note, save. No patient selected → cannot save. (The former per-staff
- * scratchpad on `quick_notes` is retired from this card; its rows are left in
- * the DB, untouched.)
+ * Notas Rápidas (W12-13, notes unification R3/R6) — append a note to the UNIFIED
+ * store, in two modes:
+ *   - PATIENT mode (default): pick a patient, leave the appointment as "nota
+ *     geral" → a patient-level note (`appointment_id = NULL`).
+ *   - APPOINTMENT mode: also pick one of the patient's appointments → a note on
+ *     that specific visit (`appointment_id` set), which reflects on the Agenda /
+ *     Marcações hover too.
+ * The mode is the AppointmentSelector's value: null = patient-level, an id =
+ * appointment. A note added here shows on the patient profile Notas tab.
  */
 export function NotasRapidas() {
   const [patientId, setPatientId] = useState<string | null>(null);
-  const [selectedOption, setSelectedOption] = useState<ComboboxOption | null>(null);
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ComboboxOption[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [appointmentId, setAppointmentId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  useEffect(() => {
-    const q = query.trim();
-    if (q.length < 2) return;
-    const timer = setTimeout(() => {
-      setLoading(true);
-      searchPatientsAction(q)
-        .then((rows) => setResults(rows.map((r) => ({ value: r.id, label: r.label }))))
-        .finally(() => setLoading(false));
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  // Keep the selected patient visible even after the query is cleared.
-  const options = query.trim().length < 2 ? (selectedOption ? [selectedOption] : []) : results;
-
-  function onSelect(value: string): void {
+  function onSelectPatient(value: string): void {
     setPatientId(value);
-    setSelectedOption(results.find((r) => r.value === value) ?? selectedOption);
+    // A new patient invalidates any appointment picked for the previous one.
+    setAppointmentId(null);
   }
 
   function onSubmit(e: React.FormEvent): void {
@@ -59,7 +48,9 @@ export function NotasRapidas() {
       return;
     }
     startTransition(async () => {
-      const r = await appendPatientNoteAction(patientId, content);
+      const r = appointmentId
+        ? await appendAppointmentNoteAction(appointmentId, content)
+        : await appendPatientNoteAction(patientId, content);
       if (!r.ok) {
         setError(s["errors.generic"]);
         return;
@@ -71,17 +62,30 @@ export function NotasRapidas() {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <Combobox
-        options={options}
-        value={patientId}
-        onChange={onSelect}
-        query={query}
-        onQueryChange={setQuery}
-        loading={loading}
-        emptyLabel={s["dashboard.quickNoteNoPatient"]}
-        placeholder={s["dashboard.quickNotePatientPlaceholder"]}
-        aria-label={s["dashboard.quickNotePatient"]}
-      />
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-v2-text-secondary">
+          {s["dashboard.quickNotePatient"]}
+        </span>
+        <PatientSelector
+          value={patientId}
+          onChange={onSelectPatient}
+          emptyLabel={s["dashboard.quickNoteNoPatient"]}
+          placeholder={s["dashboard.quickNotePatientPlaceholder"]}
+          ariaLabel={s["dashboard.quickNotePatient"]}
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-v2-text-secondary">
+          {s["dashboard.quickNoteAppointment"]}
+        </span>
+        <AppointmentSelector
+          patientId={patientId}
+          value={appointmentId}
+          onChange={setAppointmentId}
+          patientLevelLabel={s["dashboard.quickNotePatientLevel"]}
+          ariaLabel={s["dashboard.quickNoteAppointment"]}
+        />
+      </div>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
