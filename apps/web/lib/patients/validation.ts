@@ -27,6 +27,9 @@ export type CreatePatientInput = {
   contraindicationEpilepsy?: boolean;
   contraindicationPregnancy?: boolean;
   contraindicationPacemaker?: boolean;
+  // W12-25: decoupled "Outra" contraindication + its free-text note.
+  contraindicationOther?: boolean;
+  contraindicationOtherNote?: string | null;
 };
 export type UpdatePatientInput = Partial<CreatePatientInput>;
 
@@ -46,6 +49,8 @@ export type CreatePatientValues = {
   contraindicationEpilepsy: boolean;
   contraindicationPregnancy: boolean;
   contraindicationPacemaker: boolean;
+  contraindicationOther: boolean;
+  contraindicationOtherNote: string | null;
 };
 export type UpdatePatientValues = Partial<CreatePatientValues>;
 
@@ -108,6 +113,8 @@ export function parseCreatePatient(raw: CreatePatientInput): CreatePatientValues
     contraindicationEpilepsy: r.contraindicationEpilepsy === true,
     contraindicationPregnancy: r.contraindicationPregnancy === true,
     contraindicationPacemaker: r.contraindicationPacemaker === true,
+    contraindicationOther: r.contraindicationOther === true,
+    contraindicationOtherNote: optionalText(r.contraindicationOtherNote, "contraindicationOtherNote", 500),
   };
 }
 
@@ -130,6 +137,9 @@ export function parseUpdatePatient(raw: UpdatePatientInput): UpdatePatientValues
   if ("contraindicationEpilepsy" in r) out.contraindicationEpilepsy = r.contraindicationEpilepsy === true;
   if ("contraindicationPregnancy" in r) out.contraindicationPregnancy = r.contraindicationPregnancy === true;
   if ("contraindicationPacemaker" in r) out.contraindicationPacemaker = r.contraindicationPacemaker === true;
+  if ("contraindicationOther" in r) out.contraindicationOther = r.contraindicationOther === true;
+  if ("contraindicationOtherNote" in r)
+    out.contraindicationOtherNote = optionalText(r.contraindicationOtherNote, "contraindicationOtherNote", 500);
   return out;
 }
 

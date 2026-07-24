@@ -165,6 +165,12 @@ export default async function PatientProfilePage({
     patient.contraindicationEpilepsy ? s["patients.fieldContraindicationEpilepsy"] : null,
     patient.contraindicationPregnancy ? s["patients.fieldContraindicationPregnancy"] : null,
     patient.contraindicationPacemaker ? s["patients.fieldContraindicationPacemaker"] : null,
+    // W12-25: "Outra" shows its free-text note when present.
+    patient.contraindicationOther
+      ? patient.contraindicationOtherNote
+        ? `${s["patients.fieldContraindicationOther"]}: ${patient.contraindicationOtherNote}`
+        : s["patients.fieldContraindicationOther"]
+      : null,
   ].filter((x): x is string => x !== null);
   if (contraindications.length > 0)
     personalRows.push([s["patients.contraindicationsLabel"], contraindications.join(", ")]);

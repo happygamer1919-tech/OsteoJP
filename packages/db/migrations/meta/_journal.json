@@ -281,6 +281,13 @@
 			"when": 1784864136000,
 			"tag": "0039_services_internal_only",
 			"breakpoints": true
+		},
+		{
+			"idx": 40,
+			"version": "7",
+			"when": 1784866000000,
+			"tag": "0040_contraindication_other",
+			"breakpoints": true
 		}
 	]
 }

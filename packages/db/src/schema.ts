@@ -478,6 +478,11 @@ export const patients = pgTable(
     // 0034 (W5-21): "Portador de pacemaker" — third NESA contraindication flag,
     // same SOFT-warning semantics; staff data, excluded from patient self-update.
     contraindicationPacemaker: boolean("contraindication_pacemaker").notNull().default(false),
+    // W12-25 (migration 0040): a decoupled "Outra" contraindication + its free-text
+    // note, beside the three NESA flags. Kept SEPARATE from the existing flags'
+    // columns/migration (coupled-flags lesson). Ships false/null for every row.
+    contraindicationOther: boolean("contraindication_other").notNull().default(false),
+    contraindicationOtherNote: text("contraindication_other_note"),
     // Patient identity layer — links a patient to their Supabase auth principal
     // (the patient portal login at api.osteojp.pt). A patient is a DISTINCT
     // principal from a staff `users` row: there is no users row for a patient.
