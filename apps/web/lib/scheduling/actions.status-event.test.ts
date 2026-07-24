@@ -35,6 +35,7 @@ const actor: RequestContext = { tenantId: "tenant-A", role: "admin", userId: "us
 
 const targetRow = {
   id: "appt-1",
+  patientId: "patient-1", // W12-13: read by updateAppointment's note-append path
   startsAt: new Date("2026-01-05T09:00:00Z"),
   endsAt: new Date("2026-01-05T10:00:00Z"),
   practitionerId: "therapist-1",
@@ -44,13 +45,15 @@ const targetRow = {
   recurrenceParentId: null,
 };
 
-// A fake tx that satisfies resolveSeries (scope "one") and the status update.
+// A fake tx that satisfies resolveSeries (scope "one"), the status update, and
+// the W12-13 notes-only append (a patientId select + an appointment_notes insert).
 function fakeTx() {
   return {
     select: () => ({
       from: () => ({ where: () => ({ limit: async () => [targetRow] }) }),
     }),
     update: () => ({ set: () => ({ where: async () => undefined }) }),
+    insert: () => ({ values: async () => undefined }),
   };
 }
 
