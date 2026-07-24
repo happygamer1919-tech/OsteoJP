@@ -134,6 +134,7 @@
   "documents.declaracao.nifLabel": "NIF",
   "documents.declaracao.generate": "Gerar",
   "documents.declaracao.incomplete": "Preencha a data e as horas.",
+  "documents.declaracao.endBeforeStart": "A hora de fim deve ser posterior à de início.",
   "documents.declaracao.error": "Não foi possível gerar a declaração.",
   "patients.tabInvoicing": "Faturação",
   "patients.alertsRedFlags": "Alertas / Sinais de Alarme",

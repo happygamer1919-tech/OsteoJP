@@ -144,8 +144,9 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   // the time inputs are not detached mid-fill.
   await expect(modal.getByLabel("Data")).toBeVisible();
   await modal.getByLabel("Data").fill(date);
-  await modal.getByLabel("Início").fill("09:00");
-  await modal.getByLabel("Fim").fill("13:00");
+  // W12-31: pontual block times are 24h TimeFields (select-based), driven via fillTime.
+  await fillTime(modal.locator("label").filter({ hasText: "Início" }), "09:00");
+  await fillTime(modal.locator("label").filter({ hasText: "Fim" }), "13:00");
   await modal.getByRole("button", { name: SAVE }).click();
   await page.waitForURL(/working-hours/);
   await expect(modal).toBeHidden();

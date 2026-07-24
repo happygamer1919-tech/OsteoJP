@@ -1,9 +1,22 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, Dialog } from "@osteojp/ui";
+import { Button, Dialog, TimeField } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { generateDeclaracaoUrlAction } from "./declaracao-actions";
+
+// W12-31: "HH:mm" time helpers. Lexical compare on zero-padded "HH:mm" equals
+// chronological order, so no Date needed.
+const HHMM = /^\d{2}:\d{2}$/;
+const isAfter = (end: string, start: string): boolean =>
+  HHMM.test(end) && HHMM.test(start) && end > start;
+/** start + `mins`, clamped to 23:59 so a manual default never spills past the day. */
+const addMinutesSameDay = (hhmm: string, mins: number): string => {
+  if (!HHMM.test(hhmm)) return hhmm;
+  const [h, m] = hhmm.split(":").map(Number);
+  const total = Math.min(h * 60 + m + mins, 23 * 60 + 59);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+};
 
 export type DeclaracaoAppointment = {
   id: string;
@@ -78,9 +91,20 @@ export function DeclaracaoDialog({
     }
   }
 
+  // W12-31: typing Início defaults Fim to one hour later (same day) whenever Fim
+  // is unset or not after the new start, so Fim can never land before Início.
+  function changeStart(v: string) {
+    setStartTime(v);
+    setEndTime((prev) => (isAfter(prev, v) ? prev : addMinutesSameDay(v, 60)));
+  }
+
   function submit() {
     if (!date || !startTime || !endTime) {
       setError(s["documents.declaracao.incomplete"]);
+      return;
+    }
+    if (!isAfter(endTime, startTime)) {
+      setError(s["documents.declaracao.endBeforeStart"]);
       return;
     }
     setError(null);
@@ -143,11 +167,17 @@ export function DeclaracaoDialog({
           <div className="flex gap-3">
             <label className="flex flex-1 flex-col gap-1 text-sm">
               <span className="font-medium">{s["documents.declaracao.startLabel"]}</span>
-              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className={field} data-testid="declaracao-start" />
+              {/* W12-31: 24h TimeField (hour/minute selects) replaces the native
+                  time input, which rendered AM/PM under a 12h browser locale. */}
+              <div data-testid="declaracao-start">
+                <TimeField value={startTime} onChange={changeStart} className="w-full" />
+              </div>
             </label>
             <label className="flex flex-1 flex-col gap-1 text-sm">
               <span className="font-medium">{s["documents.declaracao.endLabel"]}</span>
-              <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className={field} data-testid="declaracao-end" />
+              <div data-testid="declaracao-end">
+                <TimeField value={endTime} onChange={setEndTime} className="w-full" />
+              </div>
             </label>
           </div>
           {/* W12-24: NIF, prefilled from the patient (editable). Optional - a

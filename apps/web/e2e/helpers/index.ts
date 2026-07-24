@@ -140,3 +140,19 @@ export async function fillTime(scope: Locator, hhmm: string) {
   await scope.getByLabel("Horas").selectOption(String(Number(h)));
   await scope.getByLabel("Minutos").selectOption(String(Number(m)));
 }
+
+/**
+ * Assert a 24h TimeField inside `scope` shows `hhmm` ("HH:mm"). The hour/minute
+ * selects carry the numeric value (no zero-pad), matching fillTime.
+ */
+export async function expectTime(scope: Locator, hhmm: string) {
+  const [h, m] = hhmm.split(":");
+  await expect(scope.getByLabel("Horas")).toHaveValue(String(Number(h)));
+  await expect(scope.getByLabel("Minutos")).toHaveValue(String(Number(m)));
+}
+
+/** Assert a 24h TimeField inside `scope` is unset (both selects blank). */
+export async function expectTimeEmpty(scope: Locator) {
+  await expect(scope.getByLabel("Horas")).toHaveValue("");
+  await expect(scope.getByLabel("Minutos")).toHaveValue("");
+}
