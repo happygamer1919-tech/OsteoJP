@@ -236,6 +236,13 @@ export const locations = pgTable(
     address: text("address"),
     phone: varchar("phone", { length: 32 }),
     isActive: boolean("is_active").notNull().default(true),
+    // W12-29 (migration 0041): per-location slot granularity in minutes (default
+    // 30 = today's behaviour everywhere, so NOTHING changes until a location is
+    // set otherwise, e.g. Castelo Branco -> 60 for hourly). Decoupled column;
+    // the booking slot generator reads it. Setting a location's value + the
+    // agenda-view wiring + the admin toggle are owner/CYAN-gated (R13 + portal-
+    // safety) — see docs/design/QUESTIONS.md Q-W12-29-1.
+    slotGranularityMin: smallint("slot_granularity_min").notNull().default(30),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
