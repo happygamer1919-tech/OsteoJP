@@ -1480,3 +1480,48 @@ defects on the shared appointment hover popup (agenda card + Marcações row).
   `pnpm --filter web build`. Updated the agenda-grid hover test (Confirmada no longer prints a
   confirmation line) and added hover-card unit tests for both defects. OWNER VISUAL GATE — no
   self-merge.
+
+## 2026-07-24 — W12-13 authz regression fix: restore W10-04 therapist scope on note actions (+ NUL-byte dedup key)
+
+Security fix (HIGH) + reviewability fix. No migration, no schema, no flags. W12-13 (#656)
+introduced two `"use server"` note actions that bypassed the W10-04 therapist
+"own-patients-only" narrowing (`therapistPatientScope`, `apps/web/lib/patients/scope.ts`).
+
+- **FINDING 1 (HIGH, authz).** Two actions read/wrote another therapist's patient data by UUID:
+  `listPatientAppointmentsForNoteAction` (`apps/web/lib/notes/appointment-options.ts`) called
+  `listPatientAppointments`, which enforces only `appointments:read` + tenant RLS — so a therapist
+  POSTing another therapist's patient UUID got that patient's full appointment schedule; and
+  `appendAppointmentNoteAction` (`apps/web/lib/patients/actions.ts`) derived `patient_id` from the
+  appointment under tenant RLS only, so a therapist could append a note to ANY tenant appointment
+  by UUID. Every other patient-data path (`getPatient`, `searchPatients`) AND-in
+  `therapistPatientScope`; these two did not.
+- **Fix mechanism (reuse the established model, not a new one).** Both actions now precheck patient
+  visibility with `getPatient(patientId, { includeDeleted: true })`, which applies
+  `therapistPatientScope` exactly as `getPatient`/`searchPatients`/the patient-profile page gate do:
+  a non-own patient → `null` → the action returns empty / `{ ok: false }` (deny). `includeDeleted`
+  keeps the check to the therapist-scope narrowing ALONE, so owner/admin/reception (unscoped,
+  tenant-wide) are provably unaffected — confirmed by unit tests and the `isolation-therapist` E2E
+  positive control (admin cross-visibility still green). `appendPatientNoteAction`'s gating is
+  untouched (it took a client `patientId` pre-PR; not this PR's regression).
+- **FINDING 2 (MEDIUM, reviewability).** `apps/web/lib/patients/notes-merge.ts` built the dedup
+  natural key with a LITERAL NUL byte (raw 0x00) between content and timestamp, which made git
+  classify the file as binary (`file` → "data"; `git grep -I` skipped it). Replaced the raw NUL
+  with the `\0` escape sequence — byte-identical separator at runtime, source stays UTF-8 text and
+  reviewable (`file` → "UTF-8 text"). Dedup behaviour unchanged (existing `notes-merge` unit tests
+  stay green).
+- **Tests added (fail-before / pass-after, verified by reverting the fix).**
+  `appointment-options.test.ts` and `actions.append-appointment-note.test.ts` mirror the
+  `getPatient`/`searchPatients` therapist-scope pattern (real `@osteojp/auth` matrix; therapist +
+  reception both hold `patients:write`/`appointments:read`, so the capability gate genuinely passes
+  and the SCOPE check is what denies). On origin/main these FAIL (non-own therapist gets the other
+  patient's schedule / `{ ok: true }`); with the fix they PASS.
+- **Gates.** `pnpm lint` (0 errors), `pnpm typecheck` (9/9), `pnpm test` (all green incl. new +
+  existing `notes-merge`/`scope` suites), `pnpm build` (4/4 apps, portal build needs the same
+  `NEXT_PUBLIC_SUPABASE_*` env CI/Vercel already provide). `pnpm test:e2e`: the directly-relevant
+  `isolation-therapist` spec is GREEN (therapist own-only + admin cross-visibility), and
+  `notes-unification` TWO-MODE (the only spec exercising BOTH changed actions, as admin) is GREEN.
+  The broader chromium suite has pre-existing failures that reproduce IDENTICALLY on origin/main
+  (stale accumulated local-DB state — AI drafts ad17/ad18 already signed from prior runs — plus
+  flaky agenda hover/location specs); a clean `supabase db reset` + reseed clears them but is a
+  destructive, owner-gated action, not run autonomously. This change introduces ZERO E2E regression.
+- **AUTHZ change → OWNER MERGE GATE. No self-merge, no `--admin`, no force-push.**
