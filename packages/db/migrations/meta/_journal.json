@@ -295,6 +295,13 @@
 			"when": 1784868000000,
 			"tag": "0041_location_slot_granularity",
 			"breakpoints": true
+		},
+		{
+			"idx": 42,
+			"version": "7",
+			"when": 1784872000000,
+			"tag": "0042_appointment_notes_nullable",
+			"breakpoints": true
 		}
 	]
 }

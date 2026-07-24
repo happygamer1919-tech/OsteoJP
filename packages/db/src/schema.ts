@@ -906,10 +906,11 @@ export const appointmentNotes = pgTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
-    // The visit this note documents (SPEC §2: "tied to appointment").
-    appointmentId: uuid("appointment_id")
-      .notNull()
-      .references(() => appointments.id),
+    // The visit this note documents. W12-13 (migration 0042, R3): NULLABLE so
+    // this one relation also holds a PATIENT-LEVEL note (no specific appointment)
+    // — the unified-notes target. NULL appointment_id = a patient note; a set
+    // value = a note on that visit. patient_id is always present.
+    appointmentId: uuid("appointment_id").references(() => appointments.id),
     // Denormalized patient link (SPEC §2: "tied to ... patient") so the ficha
     // tab lists a patient's per-visit notes without walking through appointments.
     patientId: uuid("patient_id")
@@ -919,9 +920,10 @@ export const appointmentNotes = pgTable(
     // the note lives in the patient's ficha continuity. Nullable: an ad-hoc note
     // need not belong to a formal episode.
     episodeId: uuid("episode_id").references(() => clinicalEpisodes.id),
-    authorUserId: uuid("author_user_id")
-      .notNull()
-      .references(() => users.id),
+    // W12-13 (migration 0042, R3): NULLABLE for the backfill — historical notes
+    // migrated from appointments.notes / patient_note_revisions may carry no
+    // resolvable author. New notes still set the author server-side.
+    authorUserId: uuid("author_user_id").references(() => users.id),
     body: text("body").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
