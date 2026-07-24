@@ -1,0 +1,686 @@
+{
+  "key": "osteopathy",
+  "version": 5,
+  "title": {
+    "pt": "Ficha Clínica",
+    "en": "Clinical Record"
+  },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "Ficha Médica (unified clinical record). Evolves the osteopathy template (W5-13, SPEC-ficha-medica.md sec 2): all twelve AI field keys are UNCHANGED from osteopathy v2 so the template=osteopathy ingestion selector and the twelve inbound keys map to Ficha Médica by identity (zero change on the external Make.com side). Clinical intake + evaluation form for an osteopathy episode. Field structure transcribed from the current Fisiozero osteopathy episode form (NOVO EPISODIO). PT is the source language; EN labels are provided for the bilingual UI. ai_extractable reflects João Pedro's signed-off Group A/B split (see docs/ai-ingestion/ai-extractable-audit.md §4.1): narrative free-text fields the session transcription captures are true; safety-critical/coded/structured fields stay false. Placement normalized per §2 — one flag on each writeable leaf, none on grouping containers, one flag on the bodychart field and none on its item sub-properties.",
+    "type": "object",
+    "required": [
+      "episode_date",
+      "consultation_reason"
+    ],
+    "x-order": [
+      "weight_kg",
+      "height_cm",
+      "consultation_reason",
+      "relief_aggravation",
+      "observations",
+      "mobilidade",
+      "special_tests",
+      "mobilidade_observacoes",
+      "systems_review",
+      "health_problems",
+      "clinical_history",
+      "diagnostico",
+      "treatment_objectives",
+      "treatment_plan",
+      "tratamento",
+      "episode_date",
+      "red_flags",
+      "bodychart"
+    ],
+    "properties": {
+      "episode_date": {
+        "type": "string",
+        "format": "date",
+        "x-label": {
+          "pt": "Data do Episódio",
+          "en": "Episode Date"
+        },
+        "x-required": true,
+        "ai_extractable": false
+      },
+      "weight_kg": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "x-label": {
+          "pt": "Peso (kg)",
+          "en": "Weight (kg)"
+        },
+        "ai_extractable": false
+      },
+      "height_cm": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "x-label": {
+          "pt": "Altura (cm)",
+          "en": "Height (cm)"
+        },
+        "ai_extractable": false
+      },
+      "red_flags": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Alertas (sinais de alarme)",
+          "en": "Alerts (Red Flags)"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "bodychart": {
+        "type": "array",
+        "x-label": {
+          "pt": "Bodychart",
+          "en": "Bodychart"
+        },
+        "x-hint": {
+          "pt": "Clique no bodychart e seleccione o marcador pretendido. Pode inserir tantos pontos quantos desejar.",
+          "en": "Click on the bodychart and select the desired marker. Insert as many points as needed."
+        },
+        "description": "Array of markers placed on the body diagram. Each marker has a type and coordinates.",
+        "items": {
+          "type": "object",
+          "required": [
+            "marker_type",
+            "x",
+            "y"
+          ],
+          "properties": {
+            "marker_type": {
+              "type": "string",
+              "x-label": {
+                "pt": "Tipo de marcador",
+                "en": "Marker type"
+              },
+              "enum": [
+                "blockage_dysfunction",
+                "scar",
+                "hypertonicity",
+                "hypotonicity",
+                "pain_radiation",
+                "pain_location",
+                "paresthesia",
+                "rotation_right",
+                "rotation_left"
+              ],
+              "x-enum-labels": {
+                "blockage_dysfunction": {
+                  "pt": "Bloqueio / Disfunção",
+                  "en": "Blockage / Dysfunction"
+                },
+                "scar": {
+                  "pt": "Cicatriz",
+                  "en": "Scar"
+                },
+                "hypertonicity": {
+                  "pt": "Hipertonicidade",
+                  "en": "Hypertonicity"
+                },
+                "hypotonicity": {
+                  "pt": "Hipotonicidade",
+                  "en": "Hypotonicity"
+                },
+                "pain_radiation": {
+                  "pt": "Irradiação da dor",
+                  "en": "Pain radiation"
+                },
+                "pain_location": {
+                  "pt": "Local da dor",
+                  "en": "Pain location"
+                },
+                "paresthesia": {
+                  "pt": "Parestesia",
+                  "en": "Paresthesia"
+                },
+                "rotation_right": {
+                  "pt": "Rotação direita",
+                  "en": "Rotation right"
+                },
+                "rotation_left": {
+                  "pt": "Rotação esquerda",
+                  "en": "Rotation left"
+                }
+              }
+            },
+            "x": {
+              "type": "number",
+              "x-note": "Normalized X coordinate on the bodychart (0–1)."
+            },
+            "y": {
+              "type": "number",
+              "x-note": "Normalized Y coordinate on the bodychart (0–1)."
+            },
+            "view": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "x-note": "Which of the 4 body views the marker sits on.",
+              "enum": [
+                "anterior",
+                "lateral_left",
+                "lateral_right",
+                "posterior",
+                null
+              ]
+            }
+          }
+        },
+        "ai_extractable": false
+      },
+      "observations": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Observações",
+          "en": "Observations"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": true
+      },
+      "mobilidade": {
+        "type": "object",
+        "x-label": {
+          "pt": "Mobilidade Activa / Passiva",
+          "en": "Active / Passive Mobility"
+        },
+        "x-widget": "mobilidade",
+        "x-hint": {
+          "pt": "Clique num círculo (Cervical, Dorsal, Lombar) para colocar marcadores. Ponto = Mobilidade Activa, estrela = Mobilidade Passiva. Pode inserir tantos marcadores quantos desejar por círculo.",
+          "en": "Click a circle (Cervical, Dorsal, Lumbar) to place markers. Dot = Active Mobility, star = Passive Mobility. Insert as many markers as needed per circle."
+        },
+        "description": "Three circle diagrams (Cervical, Dorsal, Lombar). Each holds an unlimited array of markers { marker_type: 'activa'|'passiva', x, y } at 0-1 normalized coordinates.",
+        "properties": {
+          "cervical": {
+            "type": "array",
+            "x-label": {
+              "pt": "Cervical",
+              "en": "Cervical"
+            },
+            "items": {
+              "type": "object",
+              "required": [
+                "marker_type",
+                "x",
+                "y"
+              ],
+              "properties": {
+                "marker_type": {
+                  "type": "string",
+                  "enum": [
+                    "activa",
+                    "passiva"
+                  ]
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "dorsal": {
+            "type": "array",
+            "x-label": {
+              "pt": "Dorsal",
+              "en": "Dorsal"
+            },
+            "items": {
+              "type": "object",
+              "required": [
+                "marker_type",
+                "x",
+                "y"
+              ],
+              "properties": {
+                "marker_type": {
+                  "type": "string",
+                  "enum": [
+                    "activa",
+                    "passiva"
+                  ]
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "lombar": {
+            "type": "array",
+            "x-label": {
+              "pt": "Lombar",
+              "en": "Lumbar"
+            },
+            "items": {
+              "type": "object",
+              "required": [
+                "marker_type",
+                "x",
+                "y"
+              ],
+              "properties": {
+                "marker_type": {
+                  "type": "string",
+                  "enum": [
+                    "activa",
+                    "passiva"
+                  ]
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "ai_extractable": false
+      },
+      "mobilidade_observacoes": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Observações Mobilidade Activa / Passiva",
+          "en": "Active / Passive Mobility Notes"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "consultation_reason": {
+        "type": "string",
+        "x-label": {
+          "pt": "Motivos da Consulta / Início / Contexto em que ocorre",
+          "en": "Reason for Consultation / Onset / Context"
+        },
+        "x-required": true,
+        "x-widget": "textarea",
+        "ai_extractable": true
+      },
+      "tratamento": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Tratamento",
+          "en": "Treatment"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "treatment_plan": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Plano de Tratamento",
+          "en": "Treatment Plan"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": true
+      },
+      "treatment_objectives": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Objectivos do Tratamento",
+          "en": "Treatment Objectives"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": true
+      },
+      "diagnostico": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Diagnóstico",
+          "en": "Diagnosis"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      },
+      "relief_aggravation": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Condições Alívio / Agravamento",
+          "en": "Relieving / Aggravating Factors"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": true
+      },
+      "systems_review": {
+        "type": "object",
+        "x-label": {
+          "pt": "Anamnese por Sistemas",
+          "en": "Systems Review"
+        },
+        "description": "Free-text review per body system.",
+        "properties": {
+          "neurological": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-label": {
+              "pt": "Neurológico",
+              "en": "Neurological"
+            },
+            "x-widget": "textarea",
+            "ai_extractable": true
+          },
+          "cardiovascular": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-label": {
+              "pt": "Cardiovascular",
+              "en": "Cardiovascular"
+            },
+            "x-widget": "textarea",
+            "ai_extractable": true
+          },
+          "respiratory": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-label": {
+              "pt": "Respiratório",
+              "en": "Respiratory"
+            },
+            "x-widget": "textarea",
+            "ai_extractable": true
+          },
+          "gastrointestinal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-label": {
+              "pt": "Gastrointestinal",
+              "en": "Gastrointestinal"
+            },
+            "x-widget": "textarea",
+            "ai_extractable": true
+          },
+          "urological_gynecological": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-label": {
+              "pt": "Urológico / Ginecológico",
+              "en": "Urological / Gynecological"
+            },
+            "x-widget": "textarea",
+            "ai_extractable": true
+          },
+          "endocrine": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-label": {
+              "pt": "Endócrino",
+              "en": "Endocrine"
+            },
+            "x-widget": "textarea",
+            "ai_extractable": true
+          }
+        }
+      },
+      "health_problems": {
+        "type": "object",
+        "x-label": {
+          "pt": "Problemas de Saúde",
+          "en": "Health Problems"
+        },
+        "x-widget": "checkbox_group",
+        "description": "Boolean checkbox grid from the live form, plus a free-text 'Outros' field.",
+        "properties": {
+          "smoker": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Fumador",
+              "en": "Smoker"
+            },
+            "ai_extractable": false
+          },
+          "pregnancy": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Gravidez",
+              "en": "Pregnancy"
+            },
+            "ai_extractable": false
+          },
+          "osteoporosis": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Osteoporose",
+              "en": "Osteoporosis"
+            },
+            "ai_extractable": false
+          },
+          "anemia": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Anemia",
+              "en": "Anemia"
+            },
+            "ai_extractable": false
+          },
+          "lupus": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Lúpus",
+              "en": "Lupus"
+            },
+            "ai_extractable": false
+          },
+          "neoplasia": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Neoplasia",
+              "en": "Neoplasia"
+            },
+            "ai_extractable": false
+          },
+          "dementia_alzheimer": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Demência / Alzheimer",
+              "en": "Dementia / Alzheimer"
+            },
+            "ai_extractable": false
+          },
+          "parkinson": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Parkinson",
+              "en": "Parkinson's"
+            },
+            "ai_extractable": false
+          },
+          "depression": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Depressão",
+              "en": "Depression"
+            },
+            "ai_extractable": false
+          },
+          "epilepsy": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Epilepsia",
+              "en": "Epilepsy"
+            },
+            "ai_extractable": false
+          },
+          "multiple_sclerosis": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Esclerose múltipla",
+              "en": "Multiple Sclerosis"
+            },
+            "ai_extractable": false
+          },
+          "rheumatoid_arthritis": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Artrite reumatóide",
+              "en": "Rheumatoid Arthritis"
+            },
+            "ai_extractable": false
+          },
+          "food_allergies": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Alergias Alimentares",
+              "en": "Food Allergies"
+            },
+            "ai_extractable": false
+          },
+          "medication_allergies": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Alergias Medicamentosas",
+              "en": "Medication Allergies"
+            },
+            "ai_extractable": false
+          },
+          "hypertension": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Hipertensão",
+              "en": "Hypertension"
+            },
+            "ai_extractable": false
+          },
+          "hypotension": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Hipotensão",
+              "en": "Hypotension"
+            },
+            "ai_extractable": false
+          },
+          "diabetes": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Diabetes",
+              "en": "Diabetes"
+            },
+            "ai_extractable": false
+          },
+          "respiratory_problems": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "Problemas Respiratórios",
+              "en": "Respiratory Problems"
+            },
+            "ai_extractable": false
+          },
+          "covid_19": {
+            "type": "boolean",
+            "x-label": {
+              "pt": "COVID-19",
+              "en": "COVID-19"
+            },
+            "ai_extractable": false
+          },
+          "other": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "x-label": {
+              "pt": "Outros",
+              "en": "Other"
+            },
+            "x-widget": "text",
+            "ai_extractable": false
+          }
+        }
+      },
+      "clinical_history": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Antecedentes Clínicos / Cirurgia / Medicação",
+          "en": "Clinical History / Surgery / Medication"
+        },
+        "x-hint": {
+          "pt": "Colesterol, hipertensão, ácido úrico, diabetes, quedas, acidentes de viação",
+          "en": "Cholesterol, hypertension, uric acid, diabetes, falls, road accidents"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": true
+      },
+      "special_tests": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "x-label": {
+          "pt": "Testes Especiais",
+          "en": "Special Tests"
+        },
+        "x-widget": "textarea",
+        "ai_extractable": false
+      }
+    },
+    "x-open-questions": [
+      "Bodychart coordinate model: confirm whether the existing system stores normalized (0–1) coords + view, or pixel coords against a fixed image. Modelled here as normalized + 4-view enum (anterior / lateral_left / lateral_right / posterior).",
+      "Are weight_kg / height_cm required for osteopathy episodes, or optional as modelled? Live form does not mark them required.",
+      "CID codes — single or multiple per episode? Modelled as array.",
+      "'NOTAS PESSOAIS' (private practitioner notes) appears on the physio form and is described as not shared with other users. It does NOT clearly appear on the osteopathy form. Omitted here — confirm whether osteopathy episodes also need a private-notes field, and if so whether it belongs in the clinical template or is handled separately at the app/permissions layer (likely the latter).",
+      "Lupus/COVID-19 etc. label casing and accents normalized to PT-PT (e.g. 'Lúpus'). Confirm acceptable."
+    ]
+  },
+  "_meta": {
+    "source": "W5-27 FF2 canonical sequence v4 (SPEC-ficha-medica.md AMENDMENT 2026-07-12 FF2-A/B). Reorders v3 to the FF2-A sequence and removes linked_appointment (Marcação respectiva) and neurological_tests (Testes Neurológicos) per FF2-B. v1/v2/v3 immutable (CLAUDE.md rule 5); records referencing them render their original structure.",
+    "reviewed_by": "W5-27 (Claude Opus 4.8)",
+    "version_note": "v4 — FF2-A property order realized (Peso+Altura thin card, Alertas+CID row, bodychart, observations, mobilidade, mobilidade_observacoes, consultation_reason[required], tratamento, treatment_plan, treatment_objectives, diagnostico, relief_aggravation, systems_review, health_problems/Outros, clinical_history, special_tests). FF2-B removals: linked_appointment + neurological_tests absent. Twelve AI keys + template=osteopathy identity UNCHANGED (consultation_reason, relief_aggravation, clinical_history, systems_review.{neurological,cardiovascular,respiratory,gastrointestinal,urological_gynecological,endocrine}, treatment_objectives, treatment_plan, observations) — W5-13 compat stays green. Titles unchanged. bodychart carries the W5-25 shapes/legend + W5-26 optional intensity (Path A undeclared passthrough key, no schema change). W5-26 reconcile: Path A held (no pre-existing v4). created_at read-only, no date input (ruling B). Bumped not edited: v3 immutable once referenced.",
+    "derivedFrom": "osteopathy-v4",
+    "loop": "W12-22",
+    "note": "R12 display order; cid_codes removed; 3 unlisted fields appended after pos 15"
+  }
+}
