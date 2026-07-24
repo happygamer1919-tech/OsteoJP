@@ -25,7 +25,7 @@ import {
 } from "@/lib/scheduling/time";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
-import { AppointmentHoverPanel } from "./appointment-hover-card";
+import { HoverPopover } from "./appointment-hover-card";
 import { EstadoMarker } from "./estado-marker";
 
 const SLOT_HEIGHT = 48; // px per 30-min slot
@@ -289,7 +289,12 @@ function AppointmentName({ appt, onClick }: { appt: AgendaAppointment; onClick: 
   const tColor = therapistColor(appt.practitionerId);
 
   return (
-    <div className="group relative">
+    // W12-33: the shared unified hover popup (mini-dashboard). Rendered through a
+    // PORTAL (HoverPopover) so it escapes the grid's `.glass-card` overflow +
+    // backdrop-filter clip and the z-10 start-slot stacking context that used to
+    // paint it UNDER neighbouring name lines. Shown on hover OR keyboard focus;
+    // non-interactive; the SAME panel renders on the Marcacoes row.
+    <HoverPopover appt={appt} containerTestId="agenda-card-hover" className="block w-full">
       <button
         type="button"
         onClick={onClick}
@@ -303,17 +308,6 @@ function AppointmentName({ appt, onClick }: { appt: AgendaAppointment; onClick: 
           {appt.patientName}
         </span>
       </button>
-      {/* W10-05: the shared unified hover popup (mini-dashboard) - UNCHANGED.
-          Sibling of the button so it escapes any clipping; shown on hover OR
-          keyboard focus (group-focus-within). Non-interactive; the SAME
-          AppointmentHoverPanel renders on the Marcacoes row. */}
-      <div
-        role="tooltip"
-        data-testid="agenda-card-hover"
-        className="pointer-events-none absolute left-1 top-full z-50 mt-1 hidden rounded-v2 border border-v2-border bg-v2-surface p-2 shadow-v2-float group-hover:block group-focus-within:block"
-      >
-        <AppointmentHoverPanel appt={appt} />
-      </div>
-    </div>
+    </HoverPopover>
   );
 }
