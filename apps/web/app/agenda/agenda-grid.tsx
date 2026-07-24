@@ -9,6 +9,7 @@ import {
   type BlockPlacement,
   type BlockSpan,
 } from "@/lib/scheduling/blocked-time-core";
+import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
 import { therapistColor } from "@/lib/scheduling/therapist-color";
 import {
   DAY_END_HOUR,
@@ -25,6 +26,7 @@ import {
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
 import { AppointmentHoverPanel } from "./appointment-hover-card";
+import { EstadoMarker } from "./estado-marker";
 
 const SLOT_HEIGHT = 48; // px per 30-min slot
 const DAY_START_MIN = DAY_START_HOUR * 60;
@@ -270,15 +272,20 @@ function BlockedBand({ placement }: { placement: BlockPlacement }) {
 /**
  * W11-00 v3 (owner ruling, Fisiozero model): one appointment = one line of the
  * patient full name, coloured in the assigned therapist hue (`therapistColor().
- * text`, the SAME source of truth as the pre-v3 spine/dot). NO card container,
- * background, stripe, dot, tint, icon, time, service, or therapist text on the
- * face - the name only. The name WRAPS before it truncates (`break-words`, never
- * `truncate`). A cancelled appointment is struck through (line-through), never a
- * non-cancelled one. The W10-05 hover popup is UNCHANGED and remains the sole
- * carrier of every detail; the line stays click-to-open.
+ * text`, the SAME source of truth as the pre-v3 spine/dot). The name WRAPS
+ * before it truncates (`break-words`, never `truncate`). The W10-05 hover popup
+ * is UNCHANGED and remains the sole carrier of every detail; the line stays
+ * click-to-open.
+ *
+ * W12-11 R10 (Q-W12-01 ruling): a small leading estado glyph precedes the name
+ * (EstadoMarker; a controlled amendment to the name-only face — the estado is in
+ * the aria-label, not visible text, so the visible face stays exactly the name).
+ * The strikethrough now belongs to Falta ONLY (name crossed with a line);
+ * Cancelada is a distinct red glyph and is never struck.
  */
 function AppointmentName({ appt, onClick }: { appt: AgendaAppointment; onClick: () => void }) {
-  const cancelled = appt.status === "cancelled";
+  const estado = deriveEstado(appt.status, appt.confirmationState);
+  const struck = estadoStrikesName(estado);
   const tColor = therapistColor(appt.practitionerId);
 
   return (
@@ -286,11 +293,12 @@ function AppointmentName({ appt, onClick }: { appt: AgendaAppointment; onClick: 
       <button
         type="button"
         onClick={onClick}
-        className={`block w-full rounded-v2 px-2 py-0.5 text-left text-sm font-semibold leading-tight ${tColor.text} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1`}
+        className={`flex w-full items-start gap-1 rounded-v2 px-2 py-0.5 text-left text-sm font-semibold leading-tight ${tColor.text} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1`}
       >
+        <EstadoMarker estado={estado} className="mt-0.5" />
         <span
           data-testid="agenda-card-patient"
-          className={`block min-w-0 break-words ${cancelled ? "line-through" : ""}`}
+          className={`block min-w-0 break-words ${struck ? "line-through" : ""}`}
         >
           {appt.patientName}
         </span>

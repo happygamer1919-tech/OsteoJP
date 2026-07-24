@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { s } from "@/lib/i18n";
+import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
 import { matchesSearch } from "@/lib/search/text-filter";
 import { intervalsOverlap } from "@/lib/scheduling/overlap";
 import {
@@ -31,6 +32,7 @@ import type {
   AppointmentStatusValue,
 } from "@/lib/scheduling/types";
 import { AppointmentHoverCard } from "../agenda/appointment-hover-card";
+import { EstadoMarker } from "../agenda/estado-marker";
 // W12-00: the marcacoes list row reuses the SAME appointment manage surface the
 // agenda card opens - the AppointmentDrawer in edit mode and its existing server
 // actions (updateAppointment / rescheduleAppointment / cancelAppointment /
@@ -182,7 +184,11 @@ function AppointmentRow({
   /** W12-00: opens this marcacao in the shared AppointmentDrawer (edit mode). */
   onOpen: (appt: AgendaAppointment) => void;
 }) {
+  // W12-11 R10: the estado drives the leading glyph + the name strikethrough
+  // (Falta only). `cancelled` still de-emphasises the service chip below.
   const cancelled = appt.status === "cancelled";
+  const estado = deriveEstado(appt.status, appt.confirmationState);
+  const struck = estadoStrikesName(estado);
   const recurring = !!(appt.recurrenceRule || appt.recurrenceParentId);
   return (
     <GlassCard
@@ -194,12 +200,13 @@ function AppointmentRow({
           {formatTimeOfDay(new Date(appt.startsAt))}-{formatTimeOfDay(new Date(appt.endsAt))}
         </span>
 
-        {/* Patient. */}
+        {/* Patient, led by the estado glyph. */}
         <span
           className={`flex min-w-0 items-center gap-1 text-sm font-medium sm:flex-1 ${
-            cancelled ? "text-v2-text-secondary line-through" : "text-v2-text-primary"
+            struck ? "text-v2-text-secondary line-through" : "text-v2-text-primary"
           }`}
         >
+          <EstadoMarker estado={estado} />
           <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
           {recurring && (
             <>

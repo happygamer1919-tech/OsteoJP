@@ -1129,5 +1129,17 @@
   "time.hours": "Hours",
   "time.minutes": "Minutes",
   "calendar.previousMonth": "Previous month",
-  "calendar.nextMonth": "Next month"
+  "calendar.nextMonth": "Next month",
+  "remindersReview.title": "Replies to review",
+  "remindersReview.subtitle": "Patient replies that do not match a keyword",
+  "remindersReview.emptyTitle": "No replies to review",
+  "remindersReview.emptyHelp": "Replies that do not match a keyword appear here for review.",
+  "remindersReview.disabledTitle": "Reply review unavailable",
+  "remindersReview.disabledHelp": "This feature turns on once inbound reply storage is available.",
+  "remindersReview.markConfirmed": "Mark as confirmed",
+  "remindersReview.markCancelled": "Mark as cancelled",
+  "remindersReview.markRead": "Mark as read",
+  "remindersReview.receivedAt": "Received on",
+  "remindersReview.noPatient": "Patient not identified",
+  "remindersReview.flag": "reply to review"
 }

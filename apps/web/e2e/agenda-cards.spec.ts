@@ -7,8 +7,9 @@
  *     therapist text on the grid face.
  *   - same-slot appointments STACK VERTICALLY: equal left x, strictly different y
  *     (never side by side).
- *   - cancelling strikes the name through (line-through) and drops the tick; a
- *     non-cancelled name is never struck.
+ *   - W12-11 R10: cancelling shows the distinct RED "Cancelada" estado glyph and
+ *     does NOT strike the name (the strikethrough now belongs to Falta/no_show);
+ *     the confirmation tick is dropped. A freshly booked name is never struck.
  * (The colour hashing + grouping logic is unit-tested in agenda-grid.test.tsx and
  * therapist-color.test.ts.)
  *
@@ -52,7 +53,7 @@ async function expectNameLine(card: Locator, patientName: string) {
   await expect(card.getByText(/Confirmação/)).toHaveCount(0);
 }
 
-test("W11-00 v3: an appointment is a therapist-coloured name line; cancelling strikes it and drops the tick", async ({
+test("W11-00 v3 + W12-11 R10: an appointment is a therapist-coloured name line; cancelling shows the Cancelada glyph (no strikethrough) and drops the tick", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -86,12 +87,15 @@ test("W11-00 v3: an appointment is a therapist-coloured name line; cancelling st
   if (await saveBtn.count()) await saveBtn.click();
   await expect(edit).toBeHidden({ timeout: 12_000 });
 
-  // (7/9d) the cancelled name is struck through...
+  // (W12-11 R10) the cancelled line shows the distinct Cancelada estado glyph...
   const cancelledCard = page.getByRole("button", { name: new RegExp(PATIENTS.maria.name) });
+  await expect(cancelledCard.locator('[data-estado="cancelada"]')).toBeVisible({
+    timeout: 8_000,
+  });
+  // ...and is NOT struck through (the strikethrough belongs to Falta/no_show).
   await expect(cancelledCard.getByTestId("agenda-card-patient")).toHaveCSS(
     "text-decoration-line",
-    "line-through",
-    { timeout: 8_000 },
+    "none",
   );
   // ...and the confirmation tick is suppressed (it lives in the hover, never the face).
   await expect(cancelledCard.getByText(/Confirmação/)).toHaveCount(0);

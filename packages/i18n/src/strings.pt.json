@@ -1129,5 +1129,17 @@
   "time.hours": "Horas",
   "time.minutes": "Minutos",
   "calendar.previousMonth": "Mês anterior",
-  "calendar.nextMonth": "Mês seguinte"
+  "calendar.nextMonth": "Mês seguinte",
+  "remindersReview.title": "Respostas por rever",
+  "remindersReview.subtitle": "Respostas de pacientes que não correspondem a uma palavra-chave",
+  "remindersReview.emptyTitle": "Sem respostas por rever",
+  "remindersReview.emptyHelp": "As respostas que não correspondem a uma palavra-chave aparecem aqui para revisão.",
+  "remindersReview.disabledTitle": "Respostas por rever indisponível",
+  "remindersReview.disabledHelp": "Esta funcionalidade é ativada quando o armazenamento de respostas estiver disponível.",
+  "remindersReview.markConfirmed": "Marcar como confirmada",
+  "remindersReview.markCancelled": "Marcar como cancelada",
+  "remindersReview.markRead": "Marcar como lida",
+  "remindersReview.receivedAt": "Recebida em",
+  "remindersReview.noPatient": "Paciente não identificado",
+  "remindersReview.flag": "resposta por rever"
 }
