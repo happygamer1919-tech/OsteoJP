@@ -38,7 +38,7 @@ test.describe("authoring (therapist)", () => {
     await expect(picker.getByRole("option", { name: TEMPLATE_RETIRED_LABEL })).toHaveCount(0);
   });
 
-  test("FF2-A: new ficha renders v4 canonical order, Peso/Altura thin card + Alertas/CID row, no Marcação respectiva / Testes Neurológicos", async ({
+  test("W12-22: new ficha renders the v5 order (R12), Peso/Altura thin card, Alertas alone (no CID row), no Marcação respectiva / Testes Neurológicos", async ({
     page,
   }) => {
     await page.goto("/clinical/new");
@@ -52,16 +52,20 @@ test.describe("authoring (therapist)", () => {
 
     const form = page.locator("#record-form");
 
-    // FF2-A position 1 + 2: the Peso/Altura thin card and the Alertas/CID row.
+    // Peso/Altura thin card still renders (weight_kg + height_cm first).
     await expect(form.getByTestId("ficha-peso-altura-card")).toBeVisible();
-    await expect(form.getByTestId("ficha-alertas-cid-row")).toBeVisible();
+    // W12-22: CID is removed in v5, so Alertas (red_flags) renders ALONE - the
+    // paired Alertas/CID row is gone, and no "Códigos CID" field appears.
+    await expect(form.getByTestId("ficha-alertas-cid-row")).toHaveCount(0);
+    await expect(form.getByText("Códigos CID", { exact: false })).toHaveCount(0);
 
     // FF2-B: neither removed field renders.
     await expect(form.getByText("Marcação respectiva", { exact: false })).toHaveCount(0);
     await expect(form.getByText("Testes Neurológicos", { exact: false })).toHaveCount(0);
 
-    // FF2-A left-nav order: the section rail lists sections in the exact v4 order
-    // (anchor ids = section-<key>). episode_date is hidden (ruling B).
+    // W12-22 left-nav order: the section rail lists sections in the exact v5 order
+    // (Rodica R12: 0-15 then the 3 unlisted appended). anchor ids = section-<key>;
+    // episode_date is hidden (ruling B), cid_codes is gone.
     const railLinks = page.getByRole("navigation", { name: "Registos Clínicos" }).locator("a");
     const hrefs = await railLinks.evaluateAll((els) =>
       els.map((e) => (e as HTMLAnchorElement).getAttribute("href")),
@@ -69,22 +73,21 @@ test.describe("authoring (therapist)", () => {
     expect(hrefs).toEqual([
       "#section-weight_kg",
       "#section-height_cm",
-      "#section-red_flags",
-      "#section-cid_codes",
-      "#section-bodychart",
+      "#section-consultation_reason",
+      "#section-relief_aggravation",
       "#section-observations",
       "#section-mobilidade",
+      "#section-special_tests",
       "#section-mobilidade_observacoes",
-      "#section-consultation_reason",
-      "#section-tratamento",
-      "#section-treatment_plan",
-      "#section-treatment_objectives",
-      "#section-diagnostico",
-      "#section-relief_aggravation",
       "#section-systems_review",
       "#section-health_problems",
       "#section-clinical_history",
-      "#section-special_tests",
+      "#section-diagnostico",
+      "#section-treatment_objectives",
+      "#section-treatment_plan",
+      "#section-tratamento",
+      "#section-red_flags",
+      "#section-bodychart",
     ]);
   });
 

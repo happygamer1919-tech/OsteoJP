@@ -299,4 +299,29 @@ describe("topLevelFields — x-order drives render sequence, NOT jsonb property 
     const jsonbShaped = parseTemplateSchema({ ...(v4.schema as object), properties: lengthSorted })!;
     expect(topLevelFields(jsonbShaped).map(([k]) => k)).toEqual(FF2A);
   });
+
+  it("W12-22: the osteopathy-v5 seed carries Rodica's R12 order, cid_codes removed, 3 unlisted appended", () => {
+    const v5 = JSON.parse(
+      readFileSync(
+        path.join(__dirname, "../../../../packages/db/seed/form-templates/osteopathy-v5.json"),
+        "utf8",
+      ),
+    ) as { version: number; schema: unknown };
+    expect(v5.version).toBe(5);
+    const schema = parseTemplateSchema(v5.schema)!;
+    // Rodica 0-15 (0 = the app patient header, not a field) then the 3 unlisted
+    // fields (episode_date, red_flags, bodychart) in v4 relative order. No cid_codes.
+    const V5 = [
+      "weight_kg", "height_cm", "consultation_reason", "relief_aggravation",
+      "observations", "mobilidade", "special_tests", "mobilidade_observacoes",
+      "systems_review", "health_problems", "clinical_history", "diagnostico",
+      "treatment_objectives", "treatment_plan", "tratamento",
+      "episode_date", "red_flags", "bodychart",
+    ];
+    expect(schema.order).toEqual(V5);
+    expect(schema.order).not.toContain("cid_codes");
+    expect("cid_codes" in schema.properties).toBe(false);
+    // 18 fields = v4's 19 minus cid_codes (no field invented or lost).
+    expect(schema.order).toHaveLength(18);
+  });
 });
