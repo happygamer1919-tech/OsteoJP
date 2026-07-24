@@ -255,7 +255,16 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           locationId: services.locationId,
         })
         .from(services)
-        .where(and(eq(services.tenantId, principal.tenantId), eq(services.isActive, true)))
+        // W12-26: internal_only services (e.g. "Diversos") are staff-bookable but
+        // NEVER offered in the patient-portal wizard. Staff booking (web) does not
+        // apply this filter.
+        .where(
+          and(
+            eq(services.tenantId, principal.tenantId),
+            eq(services.isActive, true),
+            eq(services.internalOnly, false),
+          ),
+        )
         .orderBy(services.name),
     ]);
 
