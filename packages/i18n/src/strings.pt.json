@@ -1009,6 +1009,8 @@
   "patients.fieldContraindicationEpilepsy": "Epilepsia",
   "patients.fieldContraindicationPregnancy": "Gravidez",
   "patients.fieldContraindicationPacemaker": "Portador de pacemaker",
+  "patients.fieldContraindicationOther": "Outra",
+  "patients.fieldContraindicationOtherNote": "Especifique qual",
   "admin.services.contraindicationSensitive": "Sensível a contraindicações NESA",
   "admin.services.offeredHere": "Oferecido aqui",
   "admin.services.notOfferedHere": "Não oferecido aqui",

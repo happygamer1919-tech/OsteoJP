@@ -42,6 +42,8 @@ type Fields = {
   contraindicationEpilepsy: boolean;
   contraindicationPregnancy: boolean;
   contraindicationPacemaker: boolean;
+  contraindicationOther: boolean;
+  contraindicationOtherNote: string;
 };
 
 function toFields(p?: Patient | null): Fields {
@@ -66,6 +68,8 @@ function toFields(p?: Patient | null): Fields {
     contraindicationEpilepsy: p?.contraindicationEpilepsy ?? false,
     contraindicationPregnancy: p?.contraindicationPregnancy ?? false,
     contraindicationPacemaker: p?.contraindicationPacemaker ?? false,
+    contraindicationOther: p?.contraindicationOther ?? false,
+    contraindicationOtherNote: p?.contraindicationOtherNote ?? "",
   };
 }
 
@@ -242,6 +246,26 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
           />
           {s["patients.fieldContraindicationPacemaker"]}
         </label>
+        {/* W12-25: decoupled "Outra" contraindication + a free-text note (shown
+            when checked), mirroring the referral "Outro" pattern. */}
+        <label className="flex items-center gap-2 text-sm text-text-primary">
+          <input
+            type="checkbox"
+            checked={fields.contraindicationOther}
+            onChange={(e) => set("contraindicationOther", e.target.checked)}
+          />
+          {s["patients.fieldContraindicationOther"]}
+        </label>
+        {fields.contraindicationOther && (
+          <input
+            value={fields.contraindicationOtherNote}
+            onChange={(e) => set("contraindicationOtherNote", e.target.value)}
+            placeholder={s["patients.fieldContraindicationOtherNote"]}
+            maxLength={500}
+            className={inputCls}
+            data-testid="contraindication-other-note"
+          />
+        )}
       </fieldset>
       {/* Street address input intentionally not surfaced (address-reduction,
           2026-06-30). `fields.address` is preserved from the loaded patient and

@@ -46,6 +46,29 @@ describe("parseCreatePatient", () => {
     expect(parseCreatePatient({ fullName: "X" }).referralSource).toBeNull();
   });
 
+  it("W12-25: parses the decoupled 'Outra' contraindication + free-text note", () => {
+    const v = parseCreatePatient({
+      fullName: "X",
+      contraindicationOther: true,
+      contraindicationOtherNote: "  Alergia a látex  ",
+    });
+    expect(v.contraindicationOther).toBe(true);
+    expect(v.contraindicationOtherNote).toBe("Alergia a látex");
+    // defaults: off + null when absent
+    const d = parseCreatePatient({ fullName: "X" });
+    expect(d.contraindicationOther).toBe(false);
+    expect(d.contraindicationOtherNote).toBeNull();
+    // empty note normalizes to null even when the flag is on
+    expect(
+      parseCreatePatient({ fullName: "X", contraindicationOther: true, contraindicationOtherNote: "" })
+        .contraindicationOtherNote,
+    ).toBeNull();
+    // partial update only touches the keys present
+    const u = parseUpdatePatient({ contraindicationOther: true });
+    expect(u.contraindicationOther).toBe(true);
+    expect("contraindicationOtherNote" in u).toBe(false);
+  });
+
   it("rejects an invalid email", () => {
     expect(() =>
       parseCreatePatient({ fullName: "X", email: "not-an-email" }),

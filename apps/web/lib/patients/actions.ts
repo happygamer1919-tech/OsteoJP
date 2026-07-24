@@ -94,6 +94,8 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
         contraindicationEpilepsy: input.contraindicationEpilepsy,
         contraindicationPregnancy: input.contraindicationPregnancy,
         contraindicationPacemaker: input.contraindicationPacemaker,
+        contraindicationOther: input.contraindicationOther,
+        contraindicationOtherNote: input.contraindicationOtherNote,
       })
       .returning();
     if (!row) throw new Error("Patient insert returned no row");
@@ -135,6 +137,12 @@ export async function updatePatient(
     }),
     ...(input.contraindicationPacemaker !== undefined && {
       contraindicationPacemaker: input.contraindicationPacemaker,
+    }),
+    ...(input.contraindicationOther !== undefined && {
+      contraindicationOther: input.contraindicationOther,
+    }),
+    ...(input.contraindicationOtherNote !== undefined && {
+      contraindicationOtherNote: input.contraindicationOtherNote,
     }),
   };
 
