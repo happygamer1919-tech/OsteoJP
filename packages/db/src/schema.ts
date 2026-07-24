@@ -264,6 +264,12 @@ export const services = pgTable(
     // service as sensitive so booking surfaces a SOFT warning (W2-08). Never a
     // hard block — warning logic lives in the UI, the column only stores state.
     contraindicationSensitive: boolean("contraindication_sensitive").notNull().default(false),
+    // W12-26 (migration 0039): a service staff CAN book internally but that NEVER
+    // appears in the patient-portal booking wizard (e.g. "Diversos"). Decoupled
+    // from is_active (coupled-flags lesson): is_active controls whether a service
+    // is bookable at all; internal_only controls portal visibility only. Ships
+    // false for every existing row, so nothing changes until a service is flagged.
+    internalOnly: boolean("internal_only").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
