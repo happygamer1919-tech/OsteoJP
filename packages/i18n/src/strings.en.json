@@ -134,6 +134,7 @@
   "documents.declaracao.nifLabel": "NIF",
   "documents.declaracao.generate": "Generate",
   "documents.declaracao.incomplete": "Fill in the date and times.",
+  "documents.declaracao.endBeforeStart": "The end time must be after the start time.",
   "documents.declaracao.error": "Could not generate the declaration.",
   "patients.tabInvoicing": "Invoicing",
   "patients.alertsRedFlags": "Alerts / Red Flags",
