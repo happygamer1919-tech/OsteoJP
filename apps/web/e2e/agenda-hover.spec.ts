@@ -53,7 +53,12 @@ test("W10-05: the unified hover popup shows on the agenda card AND the Marcacoes
   // Focus the hover trigger (keyboard-reachable) -> the shared panel reveals.
   const trigger = row.getByRole("button", { name: /Detalhes da marca/i });
   await trigger.focus();
-  const rowPanel = row.getByTestId("appointment-hover-panel");
+  // W12-33: the open popover is portaled to document.body (escapes the row's
+  // .glass-card overflow/backdrop-filter clip), so it is NOT a descendant of the
+  // row once open. Assert it document-scoped, exactly as the agenda card does
+  // above. Only maria's row is present on this dedicated day, so a single open
+  // panel exists.
+  const rowPanel = page.getByTestId("appointment-hover-panel").first();
   await expect(rowPanel).toBeVisible({ timeout: 8_000 });
   await expect(rowPanel).toContainText(PATIENTS.maria.name);
   await expect(rowPanel).toContainText(THERAPIST_NAME);
