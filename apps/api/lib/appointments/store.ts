@@ -349,7 +349,10 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         cross join lateral generate_series(
           d.day::date + av.start_time,
           d.day::date + av.end_time - make_interval(mins => ${durationMin}::int),
-          interval '30 minutes'
+          -- W12-29: per-location slot granularity (default 30 -> unchanged).
+          make_interval(mins => coalesce(
+            (select l.slot_granularity_min from locations l
+             where l.id = ${locationId} and l.tenant_id = ${principal.tenantId}), 30)::int)
         ) as t(local_start)
         where av.tenant_id = ${principal.tenantId}
           and av.location_id = ${locationId}
