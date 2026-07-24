@@ -1453,3 +1453,30 @@ explicit "cutover final" declaration (OLD stays the live rollback until then).
 - **Twilio EU + DPA** already on record (`docs/QUESTIONS.md`, owner as actor) — reaffirmed as the
   live-SMS precondition; not built here. Wave 11 close-out report:
   `docs/status/2026-07-23-wave-11-report.md`.
+
+## 2026-07-24 — W12-33 agenda hover popup: isolation/stacking + estado display (defect loop)
+
+Presentation-only defect fix (no migration, no schema, no flags). Two owner-screenshot
+defects on the shared appointment hover popup (agenda card + Marcações row).
+
+- **Defect A (isolation/stacking).** The popup rendered UNDER/through neighbouring name
+  lines and was clipped by the grid edge. Root cause: the agenda grid root is `.glass-card`
+  = `overflow-hidden` + `backdrop-filter: blur(24px)` (a backdrop-filter ancestor is a
+  containing block AND paint boundary for descendants), and each start-slot group is a
+  `z-10` stacking context — so no z-index or `position:fixed` on the in-tree popup could
+  escape. Fix: render the popup through a **portal to document.body** (new shared
+  `HoverPopover`), with an opaque surface (`bg-v2-surface` = #FFFFFF, AA on the panel text),
+  `isolate` + `z-50`, and viewport-edge-aware anchoring (flip left near the right edge, flip
+  above near the bottom, clamp to margins; repositions on scroll/resize). `renderToStaticMarkup`
+  forbids portals, so the panel is rendered inline (hidden) on the server/closed state — markup
+  stays present for SSR + tests.
+- **Defect B (contradictory estado).** The popup showed the estado label ("Confirmada") AND a
+  separate confirmation line ("Confirmação pendente") at once. Reconciled the DISPLAY with the
+  #653 estados model: the estado (`deriveEstado`) is authoritative; the confirmation line is
+  shown ONLY when non-redundant — `estado === "agendada" && confirmation === "pending"`
+  (i.e. "aguarda confirmação"). Collapsed for Confirmada and every terminal estado. No data
+  or derivation change; only what the panel renders. Reused `EstadoMarker` + `ConfirmationIndicator`.
+- **Gates GREEN:** `pnpm lint` (0 errors), `pnpm typecheck`, `pnpm test` (1312 passed),
+  `pnpm --filter web build`. Updated the agenda-grid hover test (Confirmada no longer prints a
+  confirmation line) and added hover-card unit tests for both defects. OWNER VISUAL GATE — no
+  self-merge.

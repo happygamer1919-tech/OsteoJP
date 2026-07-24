@@ -237,7 +237,7 @@ describe("W11-00 v3 - same-slot appointments stack vertically (no side-by-side s
   });
 });
 
-describe("W10-05 - the unified hover popup (UNCHANGED, sole detail carrier)", () => {
+describe("W10-05 / W12-33 - the unified hover popup (portaled, sole detail carrier)", () => {
   const NOTE = "Paciente com lesao no ombro direito";
 
   it("renders the hover panel on EVERY line (with a note)", () => {
@@ -256,12 +256,30 @@ describe("W10-05 - the unified hover popup (UNCHANGED, sole detail carrier)", ()
     expect(html).not.toContain('data-testid="hover-note"');
   });
 
-  it("carries the confirmation tick in the HOVER (not the face); a cancelled line suppresses it", () => {
-    const confirmed = render([appt({ status: "scheduled", confirmationState: "confirmed" })]);
+  // W12-33 defect B: the separate confirmation line is shown ONLY when it is
+  // non-redundant with the estado (Agendada + pending). It is collapsed for
+  // Confirmada and every terminal estado, so the popup never shows a
+  // confirmation-pending line alongside "Confirmada".
+  it("shows the confirmation line only for Agendada; collapses it for Confirmada / terminal estados", () => {
+    const PENDING = "Confirmação pendente";
+    const agendada = render([appt({ status: "scheduled", confirmationState: "pending" })]);
+    const confirmada = render([appt({ status: "scheduled", confirmationState: "confirmed" })]);
+    // the exact owner-reported defect: staff-confirmed (estado Confirmada) while
+    // the patient axis is still pending must NOT print both at once.
+    const staffConfirmed = render([appt({ status: "confirmed", confirmationState: "pending" })]);
     const cancelled = render([appt({ status: "cancelled", confirmationState: "confirmed" })]);
-    expect(confirmed).toContain(CONFIRM_LABEL); // present, in the hover
-    expect(cancelled).not.toContain(CONFIRM_LABEL); // suppressed once cancelled
-    expect(visibleText(faceFor(confirmed, "Maria Silva"))).not.toContain(CONFIRM_LABEL); // never on the face
+
+    // Agendada carries the pending line (non-redundant signal), in the hover only.
+    expect(agendada).toContain(PENDING);
+    expect(visibleText(faceFor(agendada, "Maria Silva"))).not.toContain(PENDING);
+    // Confirmada never shows a separate confirmation line (received OR pending).
+    expect(confirmada).not.toContain(CONFIRM_LABEL);
+    expect(confirmada).not.toContain(PENDING);
+    expect(staffConfirmed).toContain('data-estado="confirmada"');
+    expect(staffConfirmed).not.toContain(PENDING);
+    // Terminal estado suppresses it too.
+    expect(cancelled).not.toContain(CONFIRM_LABEL);
+    expect(cancelled).not.toContain(PENDING);
   });
 
   it("restates lifecycle + provenance as text (colour-not-only)", () => {
