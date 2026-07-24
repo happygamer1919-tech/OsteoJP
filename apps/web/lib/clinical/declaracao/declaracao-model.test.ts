@@ -8,6 +8,7 @@ import {
   resolveLocalidade,
   resolveStampLocationKey,
 } from "./declaracao-model";
+import { signatureStampBytesForLocation } from "./signature-stamp-asset";
 
 const base = {
   patientName: "Maria Silva",
@@ -15,8 +16,8 @@ const base = {
   horaInicio: "09:30",
   horaFim: "10:30",
   localidade: "Linda-a-Velha",
-  // W9-03: declarations are now stamped per location. Default the shared base to
-  // Linda-a-Velha, the only location with a stamp asset today.
+  // W9-03: declarations are stamped per location. W12-32 filled the Castelo
+  // Branco slot, so both LVA and CB now have their own carimbo.
   stampLocationKey: "linda-a-velha",
 };
 
@@ -117,23 +118,36 @@ describe("resolveStampLocationKey - mirrors the localidade resolution", () => {
   });
 });
 
-describe("W9-03 per-location carimbo - the erro grave", () => {
+describe("W9-03/W12-32 per-location carimbo - the erro grave", () => {
   it("a Linda-a-Velha declaration still embeds the LV stamp (no regression)", () => {
     const m = buildDeclaracaoModel({ ...base, stampLocationKey: "linda-a-velha", tenantSettings: {} });
     expect(m.stampBytes).toBeInstanceOf(Uint8Array);
     expect((m.stampBytes as Uint8Array).length).toBeGreaterThan(0);
   });
 
-  it("a Castelo Branco declaration carries NO stamp - blank area, NEVER the LV carimbo", () => {
-    // The whole point of the loop: CB has no asset yet, so it must render blank
-    // rather than borrow Linda-a-Velha's.
+  it("W12-32: a Castelo Branco declaration embeds the CB stamp - NEVER the LV carimbo", () => {
+    // W12-32 filled the CB slot with the owner's official Castelo Branco carimbo.
+    // CB must carry ITS OWN stamp, and specifically NOT Linda-a-Velha's.
     const cb = buildDeclaracaoModel({ ...base, stampLocationKey: "castelo-branco", tenantSettings: {} });
-    expect(cb.stampBytes).toBeNull();
+    expect(cb.stampBytes).toBeInstanceOf(Uint8Array);
+    expect((cb.stampBytes as Uint8Array).length).toBeGreaterThan(0);
 
-    // ...and specifically NOT the LV bytes.
     const lv = buildDeclaracaoModel({ ...base, stampLocationKey: "linda-a-velha", tenantSettings: {} });
     expect(lv.stampBytes).not.toBeNull();
+    // The two locations carry DISTINCT carimbos - no swap, no shared fallback.
     expect(cb.stampBytes).not.toEqual(lv.stampBytes);
+  });
+
+  it("W12-32: the raw resolver returns distinct bytes for CB vs LV, and null for anything else", () => {
+    const cb = signatureStampBytesForLocation("castelo-branco");
+    const lv = signatureStampBytesForLocation("linda-a-velha");
+    expect(cb).toBeInstanceOf(Uint8Array);
+    expect(lv).toBeInstanceOf(Uint8Array);
+    expect(cb).not.toEqual(lv);
+    // A defined-but-empty / unknown / missing slot is ALWAYS blank, never a fallback.
+    expect(signatureStampBytesForLocation("montemor-o-novo")).toBeNull();
+    expect(signatureStampBytesForLocation("")).toBeNull();
+    expect(signatureStampBytesForLocation(null)).toBeNull();
   });
 
   it("an UNKNOWN location renders blank, never a fallback to some other clinic's stamp", () => {
