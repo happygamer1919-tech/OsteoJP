@@ -157,15 +157,55 @@ describe("W11-00 v3 - appointment is a therapist-coloured name line (no card chr
     expect(therapistColor(THERAPIST_A.id).text).not.toBe(therapistColor(THERAPIST_B.id).text);
   });
 
-  it("strikes through a cancelled name, never a non-cancelled one", () => {
-    expect(faceFor(render([appt({ status: "cancelled" })]), "Maria Silva")).toContain("line-through");
-    for (const status of ["scheduled", "confirmed", "completed", "no_show"] as const) {
+  // W12-11 R10 (Q-W12-01 ruling): the strikethrough now belongs to Falta
+  // (no_show), NOT to Cancelada. Cancelada is a distinct red glyph and is never
+  // struck. This supersedes the interim W11-00 `cancelled = line-through`.
+  it("strikes through a Falta (no_show) name, and NO other estado — Cancelada is never struck", () => {
+    expect(faceFor(render([appt({ status: "no_show" })]), "Maria Silva")).toContain("line-through");
+    for (const status of ["scheduled", "confirmed", "completed", "cancelled"] as const) {
       expect(faceFor(render([appt({ status })]), "Maria Silva")).not.toContain("line-through");
     }
-    // a declined-but-not-cancelled appointment is not struck (confirmation != status)
+    // a declined-but-still-scheduled appointment derives Cancelada -> not struck
     expect(
       faceFor(render([appt({ status: "scheduled", confirmationState: "declined" })]), "Maria Silva"),
     ).not.toContain("line-through");
+  });
+});
+
+// W12-11 R10: the five-estado glyph language. A small leading EstadoMarker
+// precedes the name on the face; the estado is announced via aria-label (no
+// visible text), so the visible face stays exactly the name. Cancelada = a
+// distinct RED glyph (never a strikethrough); Falta = red glyph + strikethrough;
+// Confirmada = green tick.
+describe("W12-11 R10 - estado glyph on the agenda face (colour-not-only)", () => {
+  function markerFor(html: string, name: string): string {
+    const face = faceFor(html, name);
+    const m = face.match(/data-estado="[^"]*"[^>]*/);
+    if (!m) throw new Error(`no estado marker on the face for "${name}"`);
+    return m[0];
+  }
+
+  it("renders the derived estado marker with the estado colour token for each estado", () => {
+    // scheduled + pending -> Agendada (yellow)
+    expect(markerFor(render([appt({ status: "scheduled", confirmationState: "pending" })]), "Maria Silva"))
+      .toMatch(/data-estado="agendada"[\s\S]*text-warning|text-warning[\s\S]*data-estado="agendada"/);
+    // confirmed -> Confirmada (green)
+    expect(markerFor(render([appt({ status: "scheduled", confirmationState: "confirmed" })]), "Maria Silva"))
+      .toContain('data-estado="confirmada"');
+    // cancelled -> Cancelada (RED glyph, NOT a strikethrough)
+    const cancelledFace = faceFor(render([appt({ status: "cancelled" })]), "Maria Silva");
+    expect(cancelledFace).toContain('data-estado="cancelada"');
+    expect(cancelledFace).toContain("text-error");
+    expect(cancelledFace).not.toContain("line-through");
+    // no_show -> Falta (RED glyph AND strikethrough)
+    const faltaFace = faceFor(render([appt({ status: "no_show" })]), "Maria Silva");
+    expect(faltaFace).toContain('data-estado="falta"');
+    expect(faltaFace).toContain("line-through");
+  });
+
+  it("keeps the visible face text exactly the patient name (estado is aria-only on the face)", () => {
+    const face = faceFor(render([appt({ status: "confirmed" })]), "Maria Silva");
+    expect(visibleText(face)).toBe("Maria Silva");
   });
 });
 

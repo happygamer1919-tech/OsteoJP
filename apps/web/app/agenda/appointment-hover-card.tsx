@@ -1,11 +1,13 @@
 import { Clock, Info, MapPin, Stethoscope, StickyNote, User } from "lucide-react";
 
 import { s } from "@/lib/i18n";
+import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
 import { formatTimeOfDay } from "@/lib/scheduling/time";
 import { therapistColor } from "@/lib/scheduling/therapist-color";
-import type { AgendaAppointment, AppointmentStatusValue } from "@/lib/scheduling/types";
+import type { AgendaAppointment } from "@/lib/scheduling/types";
 
 import { ConfirmationIndicator } from "./confirmation-indicator";
+import { EstadoMarker } from "./estado-marker";
 
 // W10-05: ONE shared unified hover popup (a mini-dashboard), mounted on BOTH the
 // agenda card AND the Marcacoes list row, replacing the W9-06 note-only hover on
@@ -15,14 +17,6 @@ import { ConfirmationIndicator } from "./confirmation-indicator";
 // every state is TEXT, colour only reinforces), explicitly better than
 // Fisiozero's plain black tooltip. Staff-only (agenda + marcacoes); the portal
 // never imports this.
-
-const STATUS_KEY: Record<AppointmentStatusValue, keyof typeof s> = {
-  scheduled: "appointment.status.scheduled",
-  confirmed: "appointment.status.confirmed",
-  completed: "appointment.status.completed",
-  cancelled: "appointment.status.cancelled",
-  no_show: "appointment.status.no_show",
-};
 
 function durationMinutes(startsAt: string, endsAt: string): number {
   return Math.max(0, Math.round((new Date(endsAt).getTime() - new Date(startsAt).getTime()) / 60000));
@@ -47,7 +41,19 @@ function formatCreatedAt(iso: string): string {
  * its `group` wrapper, the Marcacoes row via `AppointmentHoverCard` below.
  */
 export function AppointmentHoverPanel({ appt }: { appt: AgendaAppointment }) {
-  const cancelled = appt.status === "cancelled";
+  // W12-11 R10: derive the estado from the two axes. Falta strikes the name;
+  // Cancelada is de-emphasised (secondary) but never struck. Terminal estados
+  // (Concluída/Cancelada/Falta) suppress the separate confirmation indicator —
+  // the estado marker already carries the state.
+  const estado = deriveEstado(appt.status, appt.confirmationState);
+  const struck = estadoStrikesName(estado);
+  const terminal =
+    estado === "concluida" || estado === "cancelada" || estado === "falta";
+  const nameClass = struck
+    ? "text-v2-text-secondary line-through"
+    : estado === "cancelada"
+      ? "text-v2-text-secondary"
+      : "text-v2-text-primary";
   const tColor = therapistColor(appt.practitionerId);
   const note = appt.notes?.trim() || null;
   const dur = durationMinutes(appt.startsAt, appt.endsAt);
@@ -60,9 +66,7 @@ export function AppointmentHoverPanel({ appt }: { appt: AgendaAppointment }) {
       {/* Patient name — first + largest element of the panel. */}
       <span
         data-testid="hover-patient"
-        className={`flex items-center gap-1 text-sm font-semibold ${
-          cancelled ? "text-v2-text-secondary line-through" : "text-v2-text-primary"
-        }`}
+        className={`flex items-center gap-1 text-sm font-semibold ${nameClass}`}
       >
         <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
         <span className="truncate">{appt.patientName}</span>
@@ -97,10 +101,12 @@ export function AppointmentHoverPanel({ appt }: { appt: AgendaAppointment }) {
         <span className="truncate">{appt.locationName}</span>
       </span>
 
-      {/* Lifecycle + confirmation, restated as TEXT (dual axes LOCKED, unchanged). */}
+      {/* Estado (derived from the two axes) + confirmation, restated as TEXT
+          (colour-not-only). The confirmation indicator shows only while the
+          estado is non-terminal — it distinguishes Agendada from Confirmada. */}
       <span data-testid="hover-state" className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-        <span className="font-medium">{s[STATUS_KEY[appt.status]]}</span>
-        {!cancelled && <ConfirmationIndicator state={appt.confirmationState} showLabel />}
+        <EstadoMarker estado={estado} showLabel className="font-medium" />
+        {!terminal && <ConfirmationIndicator state={appt.confirmationState} showLabel />}
       </span>
 
       {/* Note preview — only when a note exists. */}

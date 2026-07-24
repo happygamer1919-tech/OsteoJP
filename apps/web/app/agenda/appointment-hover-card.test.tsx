@@ -56,12 +56,18 @@ describe("AppointmentHoverPanel (W10-05 shared unified popup)", () => {
     expect(html).toContain("min");
   });
 
-  it("shows lifecycle + provenance as TEXT (colour-not-only)", () => {
-    const html = render(appt({ status: "scheduled" }));
+  it("shows the derived estado + provenance as TEXT (colour-not-only)", () => {
+    // scheduled + pending -> Agendada
+    const html = render(appt({ status: "scheduled", confirmationState: "pending" }));
     expect(html).toContain('data-testid="hover-state"');
-    expect(html).toContain("Agendada"); // lifecycle status label
+    expect(html).toContain('data-estado="agendada"');
+    expect(html).toContain("Agendada"); // estado label as visible text
     expect(html).toContain('data-testid="hover-created"');
     expect(html).toContain("Rececao Teste"); // created-by
+    // confirmed -> Confirmada
+    expect(render(appt({ status: "scheduled", confirmationState: "confirmed" }))).toContain(
+      'data-estado="confirmada"',
+    );
   });
 
   it("renders the note preview ONLY when a note exists", () => {
@@ -76,10 +82,19 @@ describe("AppointmentHoverPanel (W10-05 shared unified popup)", () => {
     expect(html).toContain("Reserva online (portal)");
   });
 
-  it("a cancelled appointment strikes the patient name and drops the confirmation label", () => {
+  // W12-11 R10: Cancelada is a distinct red glyph, NOT a strikethrough; the
+  // strikethrough belongs to Falta (no_show) only.
+  it("a Cancelada appointment shows the red estado glyph, is NOT struck, and drops the confirmation label", () => {
     const html = render(appt({ status: "cancelled", confirmationState: "confirmed" }));
-    expect(html).toContain("line-through");
-    // the confirmation indicator (its label) is suppressed when cancelled
+    expect(html).toContain('data-estado="cancelada"');
+    expect(html).not.toContain("line-through");
+    // terminal estado suppresses the separate confirmation indicator
     expect(html).not.toContain("Confirmação recebida");
+  });
+
+  it("a Falta (no_show) appointment strikes the patient name", () => {
+    const html = render(appt({ status: "no_show" }));
+    expect(html).toContain('data-estado="falta"');
+    expect(html).toContain("line-through");
   });
 });
