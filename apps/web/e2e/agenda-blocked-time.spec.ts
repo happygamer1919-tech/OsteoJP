@@ -17,6 +17,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
+import { fillTime } from "./helpers";
 
 const SAVE = "Guardar";
 const BLOCK_DATE = futureDate(RUN_DAY_BASE + 26); // no other spec books this day
@@ -59,8 +60,9 @@ async function createBlock(page: Page) {
   // The mode switch re-renders the form; wait for the fields to mount.
   await expect(modal.getByLabel("Data")).toBeVisible();
   await modal.getByLabel("Data").fill(BLOCK_DATE);
-  await modal.getByLabel("Início").fill("09:00");
-  await modal.getByLabel("Fim").fill("11:00");
+  // W12-31: pontual block times are 24h TimeFields (select-based), driven via fillTime.
+  await fillTime(modal.locator("label").filter({ hasText: "Início" }), "09:00");
+  await fillTime(modal.locator("label").filter({ hasText: "Fim" }), "11:00");
   await modal.getByRole("button", { name: SAVE }).click();
   await page.waitForURL(/working-hours/);
   await expect(modal).toBeHidden();
