@@ -30,7 +30,7 @@
 import { randomUUID } from "node:crypto";
 import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { asRole, claimsFor, connect, live } from "./rls-harness";
+import { asRole, claimsFor, connect, live, type AppRole } from "./rls-harness";
 
 type Ids = {
   tenant: string;
@@ -115,10 +115,12 @@ async function seedTenant(p: Sql, x: Ids, label: string): Promise<void> {
 }
 
 // Standard FOR ALL `tenant_id = jwt_tenant_id()` tables + the own-row id whose
-// tenant_id we attempt to flip to B. clinical_records also has a role gate, so
-// the re-homing UPDATE runs under an admin JWT that satisfies the role part —
-// isolating WITH CHECK (tenant_id) as the thing doing the rejection.
-const REHOME_TARGETS: { table: string; ownRowId: string; role?: "admin" }[] = [
+// tenant_id we attempt to flip to B. clinical_records has the R16 (0043)
+// location/patient gate: admin WRITE is removed, so the re-homing UPDATE runs
+// under an OWNER JWT (owner = all in-tenant write) that satisfies the row gate —
+// isolating WITH CHECK (tenant_id) as the thing doing the rejection. Under admin
+// the UPDATE would match 0 rows (no write path), proving nothing about tenant_id.
+const REHOME_TARGETS: { table: string; ownRowId: string; role?: AppRole }[] = [
   { table: "roles", ownRowId: A.role },
   { table: "users", ownRowId: A.user },
   { table: "locations", ownRowId: A.location },
@@ -127,7 +129,7 @@ const REHOME_TARGETS: { table: string; ownRowId: string; role?: "admin" }[] = [
   { table: "appointments", ownRowId: A.appointment },
   { table: "form_templates", ownRowId: A.formTemplate },
   { table: "clinical_episodes", ownRowId: A.episode },
-  { table: "clinical_records", ownRowId: A.record, role: "admin" },
+  { table: "clinical_records", ownRowId: A.record, role: "owner" },
   { table: "attachments", ownRowId: A.attachment },
   { table: "invoices", ownRowId: A.invoice },
   { table: "patient_locations", ownRowId: A.patientLocation },

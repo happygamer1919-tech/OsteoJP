@@ -30,6 +30,13 @@ export type CreatePatientInput = {
   // W12-25: decoupled "Outra" contraindication + its free-text note.
   contraindicationOther?: boolean;
   contraindicationOtherNote?: string | null;
+  // R16 (0043) — the create action's location context, captured EXPLICITLY and
+  // server-side (never inferred from created_by.staff_locations). Persisted to
+  // patients.primary_location_id as the clinical_records admin FALLBACK location,
+  // consulted ONLY for zero-appointment patients. Optional: absent -> null ->
+  // unassigned (owner-only) until an appointment establishes the location basis.
+  // Tenant consistency is verified server-side in createPatient.
+  primaryLocationId?: string | null;
 };
 export type UpdatePatientInput = Partial<CreatePatientInput>;
 
@@ -51,6 +58,8 @@ export type CreatePatientValues = {
   contraindicationPacemaker: boolean;
   contraindicationOther: boolean;
   contraindicationOtherNote: string | null;
+  // R16 (0043) — validated (UUID or null); tenant-consistency checked in the action.
+  primaryLocationId: string | null;
 };
 export type UpdatePatientValues = Partial<CreatePatientValues>;
 
@@ -96,6 +105,15 @@ function optionalDate(v: unknown): string | null {
   return t;
 }
 
+function optionalUuid(v: unknown, field: string): string | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "string") throw new ValidationError(`${field} must be a UUID`);
+  const t = v.trim();
+  if (t.length === 0) return null;
+  if (!UUID_RE.test(t)) throw new ValidationError(`Invalid ${field}`);
+  return t;
+}
+
 export function parseCreatePatient(raw: CreatePatientInput): CreatePatientValues {
   const r = raw as Record<string, unknown>;
   return {
@@ -115,6 +133,7 @@ export function parseCreatePatient(raw: CreatePatientInput): CreatePatientValues
     contraindicationPacemaker: r.contraindicationPacemaker === true,
     contraindicationOther: r.contraindicationOther === true,
     contraindicationOtherNote: optionalText(r.contraindicationOtherNote, "contraindicationOtherNote", 500),
+    primaryLocationId: optionalUuid(r.primaryLocationId, "primaryLocationId"),
   };
 }
 

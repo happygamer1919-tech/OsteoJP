@@ -22,6 +22,7 @@ import {
   clinicalEpisodes,
   clinicalRecords,
   invoices,
+  locations,
   patientFormSubmissions,
   patientLocations,
   patients,
@@ -39,6 +40,7 @@ import {
   parseCreatePatient,
   parseMergeInput,
   parseUpdatePatient,
+  ValidationError,
   type CreatePatientInput,
   type MergePatientsInput,
   type UpdatePatientInput,
@@ -71,6 +73,24 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
       .where(eq(patients.tenantId, ctx.tenantId));
     const patientNumber = Number(agg?.maxNumber ?? 0) + 1;
 
+    // R16 (0043) — the create action's location context becomes the clinical
+    // fallback location. Captured EXPLICITLY here (from the validated input),
+    // never inferred from created_by.staff_locations. Tenant consistency is
+    // verified server-side: the id must resolve to a location visible under the
+    // caller's tenant RLS, else it is rejected (a cross-tenant/unknown id is
+    // never silently written). Absent -> null -> unassigned (owner-only) until an
+    // appointment establishes the location basis.
+    let primaryLocationId: string | null = null;
+    if (input.primaryLocationId) {
+      const [loc] = await tx
+        .select({ id: locations.id })
+        .from(locations)
+        .where(eq(locations.id, input.primaryLocationId))
+        .limit(1);
+      if (!loc) throw new ValidationError("Invalid primaryLocationId");
+      primaryLocationId = loc.id;
+    }
+
     // tenant_id is set explicitly because it is NOT NULL; RLS WITH CHECK then
     // verifies it equals the caller's tenant. This is the required INSERT value,
     // not a hand-rolled tenant filter.
@@ -80,6 +100,7 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
         tenantId: ctx.tenantId,
         patientNumber,
         createdBy: ctx.userId,
+        primaryLocationId,
         fullName: input.fullName,
         dateOfBirth: input.dateOfBirth,
         sex: input.sex,

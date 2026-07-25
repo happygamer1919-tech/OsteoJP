@@ -26,9 +26,25 @@ export const live = Boolean(url);
 
 export type AppRole = "owner" | "admin" | "therapist" | "reception";
 
-/** The request.jwt.claims blob jwt_tenant_id()/jwt_role() read. */
-export const claimsFor = (tenantId: string, userRole: AppRole = "admin"): string =>
-  JSON.stringify({ tenant_id: tenantId, user_role: userRole });
+/**
+ * A stable, non-matching `sub` used when a test does not pin auth.uid() to a
+ * seeded user (tenant-isolation cases that never touch auth.uid()). It is a
+ * valid UUID so `auth.uid()` casts cleanly; it matches no seeded user, so any
+ * auth.uid()-based predicate correctly evaluates FALSE.
+ */
+export const NO_USER = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * The request.jwt.claims blob jwt_tenant_id()/jwt_role() read. Also sets `sub`
+ * so auth.uid() resolves (R16/0043 clinical_records policies + helpers key on
+ * auth.uid() = public.users.id). Pass the seeded user id when a case must match
+ * a specific staff principal (therapist author/own-patient, admin location).
+ */
+export const claimsFor = (
+  tenantId: string,
+  userRole: AppRole = "admin",
+  userId: string = NO_USER,
+): string => JSON.stringify({ tenant_id: tenantId, user_role: userRole, sub: userId });
 
 /**
  * Claims for a PATIENT principal — what public.jwt_tenant_id()/jwt_patient_id()

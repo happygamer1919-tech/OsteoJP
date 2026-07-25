@@ -1525,3 +1525,86 @@ introduced two `"use server"` note actions that bypassed the W10-04 therapist
   flaky agenda hover/location specs); a clean `supabase db reset` + reseed clears them but is a
   destructive, owner-gated action, not run autonomously. This change introduces ZERO E2E regression.
 - **AUTHZ change → OWNER MERGE GATE. No self-merge, no `--admin`, no force-push.**
+
+## 2026-07-25 — 0043 clinical_records RLS tighten R16 (strict single-location admin) — branch db/0043-clinical-rls-r16
+
+Highest-risk change in the wave. Built AGAINST CYAN's pre-audit frame
+(CYAN-LEDGER-R16-0043-clinical-rls-AUDIT-FRAME-20260724T170931Z). Migration 0043
+is hand-authored (mirrors 0038 style; no drizzle-kit generate). Ends in a PR the
+executor does NOT merge — CYAN post-audit + owner apply-before-merge.
+
+- **Matrix.** clinical_records staff policies rewritten: owner = all in-tenant
+  (unchanged); admin = own-location READ only (scoped to the admin's
+  `staff_locations`), admin WRITE REMOVED (matches the app permission matrix
+  where admin holds `clinical_records:read` only); therapist = OWN patients;
+  reception = DENIED (unchanged, re-proven). The 0001 immutability trigger and
+  the 0010 patient self-scope policy (TO patient) are ORTHOGONAL and UNTOUCHED.
+- **Patient→location basis = EXISTS-over-appointments.** A patient with
+  appointments at N locations is visible to admins of ALL N (never collapsed to a
+  single primary column). PLUS a persisted `patients.primary_location_id`
+  FALLBACK consulted ONLY for patients with NO appointment carrying a non-null
+  `location_id`. The fallback never overrides the appointment basis.
+- **Nullability = documented "unassigned → owner-only".** `primary_location_id`
+  is NULLABLE. A zero-appointment patient whose fallback is NULL is visible to
+  OWNER ONLY (owner = all in-tenant), never to any admin — no silent-NULL
+  orphaning (owner always sees it). Chosen over NOT NULL so patient creation is
+  never blocked by a missing location context; once an appointment exists the
+  appointment basis takes over.
+- **Backfill written (idempotent), not skipped.** Even though the table is empty
+  post-purge, the backfill statement exists and is correct for any future
+  environment: derive from the earliest non-null-location appointment, else the
+  creator's SINGLE `staff_locations` membership (only when unambiguous — a creator
+  in 2+ clinics stays NULL → owner-only), else NULL. `array_agg(...)[1]` +
+  `HAVING count(*)=1` (uuid has no `max()`). Fills only rows still NULL.
+- **Helpers.** Two SECURITY DEFINER, STABLE, `search_path=public`-pinned
+  functions (`clinical_admin_sees_patient`, `clinical_therapist_sees_patient`),
+  each tenant-filtered on `jwt_tenant_id()` on every table read (no cross-tenant
+  leak despite DEFINER bypassing RLS); `auth.uid()` = `public.users.id`.
+- **Therapist scope = app W10-04 UNION, not CYAN's literal wording.** CYAN's
+  frame says "author/practitioner=auth.uid() OR treating appointment". The
+  owner-approved app scope (`therapistPatientScope`, W10-04, 2026-07-21) is
+  `patients.created_by = uid` OR treating appointment (primary/secondary). The
+  RLS predicate is the UNION: record author (`practitioner_id=auth.uid()`) OR
+  created_by OR treating appointment. Rationale: RLS is defense-in-depth and must
+  NEVER be STRICTER than the app, or it silently hides rows the app intends to
+  show (e.g. `listReviewQueue`, which already applies `therapistPatientScope`).
+  Including `created_by` is owner-sanctioned (W10-04). Flagged to CYAN as Q.
+- **`appointments.location_id` is NOT NULL (CYAN frame said NULLABLE).** Verified
+  against origin/main DDL (0000, never dropped). The null-location-appointment
+  edge is therefore UNREACHABLE by construction; the helper's fallback guard also
+  keys on non-null location (future-proof if ever relaxed). Did NOT weaken the
+  column (a core-table constraint = owner-confirmable). Edge proven closed via the
+  NOT NULL constraint assertion + the zero-appointment fallback case. Flagged to
+  CYAN as Q.
+- **Go-forward population = explicit server-side capture.** `createPatient` gains
+  an optional, tenant-validated `primaryLocationId` (the create action's location
+  context, captured server-side — NOT inferred from `created_by.staff_locations`,
+  which is ambiguous for a staffer in 2 clinics). The create FORM does not yet
+  supply it (no active-clinic context in the form today) → NULL → owner-only until
+  an appointment exists. UI wiring flagged as an owner/CYAN follow-up.
+- **Test re-base (no weakening).** Harness `claimsFor` now sets `sub` so
+  `auth.uid()` resolves. clinical_records isolation extracted from
+  cross-tenant-rls-isolation into a dedicated `clinical-records-location-rls.test.ts`
+  (full R16 matrix: owner-all / admin single+both-clinics / therapist-own /
+  reception-denied / zero-appointment fallback / null-location edge / cross-tenant
+  / admin-cannot-write). adversarial re-home for clinical_records runs as OWNER
+  (admin write removed → 0 rows, not a WITH CHECK throw). review-finalize +
+  hard-delete-fk re-seeded so the acting therapist OWNS the patient (created_by /
+  practitioner_id) + pinned `sub`. migration-upsert-idempotency moved from admin →
+  OWNER: a historical clinical-history import writes clinical_records, so under
+  R16 it must run as owner or service_role (NOT admin, now read-only on clinical);
+  the pipeline has no production caller yet (Q for when it is wired). All security
+  assertions preserved.
+- **Gates.** `db:check-journal` GREEN (44 files). supabase mirror parity GREEN
+  (byte-identical). `pnpm lint` GREEN (0 errors). `pnpm typecheck` GREEN (9/9
+  packages). Full `@osteojp/db` RLS/unit suite GREEN (402/402, incl. the new R16
+  matrix) against local Supabase with 0043 applied. `pnpm build` GREEN (with local
+  dev Supabase env; the bare-worktree portal prerender failure is the known
+  QUESTIONS Q1 missing-env issue). `test:e2e` — clinical.spec 18/18 GREEN
+  (therapist authoring/sign/version/delete/anular + scoped ficha + reception
+  denied), isolation-therapist GREEN; patients.spec 22/24 (the 2 failures are a
+  pre-existing responsive-table strict-locator artifact — reproduce with a fresh
+  seed, single patient in DB, untouched by 0043).
+- **apply-BEFORE-merge; do NOT merge.** AUTHZ + clinical-data change → OWNER
+  MERGE GATE. CYAN post-audit → owner terminal apply with pasted journal → merge.
+  No self-merge, no `--admin`, no force-push.

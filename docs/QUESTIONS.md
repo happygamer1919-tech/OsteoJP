@@ -587,3 +587,43 @@ no delete. Each awaits an explicit owner/JP ruling: map to a canonical row or dr
 - Owner: Ivan + JP. Expected end state: each legacy row MAPPED (rename onto a canonical row,
   never delete-recreate) or DROPPED by explicit owner instruction. Until then they remain
   inactive — per W6-01b they show in filter dropdowns and are absent from creation dropdowns.
+
+## 2026-07-25 — Q: 0043 R16 clinical_records RLS — four items back to CYAN/owner (recommended defaults applied)
+
+Migration 0043 is BUILT and gated GREEN; these are review points for CYAN's
+post-audit and owner apply-before-merge, each already implemented with the safe
+default noted. None block the build.
+
+- **Q1 (CYAN): `appointments.location_id` nullability.** The audit frame states
+  it is NULLABLE; verified against origin/main DDL it is NOT NULL (created NOT
+  NULL in 0000, never dropped). The null-location-appointment edge is therefore
+  UNREACHABLE by construction. Recommended default (APPLIED): keep the column NOT
+  NULL (weakening a core-table constraint is owner-confirmable and out of scope);
+  the helper's fallback still guards on non-null `location_id` (future-proof); the
+  isolation test proves the edge closed via the NOT NULL constraint + the
+  zero-appointment fallback case. Confirm this satisfies the frame's edge item.
+
+- **Q2 (CYAN): therapist RLS scope includes `patients.created_by`.** The frame's
+  wording is "author/practitioner=auth.uid() OR treating appointment". The RLS
+  predicate ALSO includes `created_by = auth.uid()` because the owner-approved app
+  scope (`therapistPatientScope`, W10-04, 2026-07-21) does, and RLS must not be
+  STRICTER than the app (else it silently hides rows the app shows, e.g. the
+  review queue). Recommended default (APPLIED): keep the union. Confirm.
+
+- **Q3 (owner/CYAN): go-forward fallback-location population — UI wiring.**
+  `createPatient` now accepts an explicit, tenant-validated `primaryLocationId`
+  (server-side; never inferred from `created_by.staff_locations`). The create FORM
+  does not yet pass it (no active-clinic context in the form today), so new
+  zero-appointment patients are NULL → owner-only until an appointment establishes
+  the location basis. Recommended default (APPLIED): ship the writer now, wire the
+  form's active clinic in a follow-up. Owner decision: should the create form
+  require/auto-capture a clinic, or is "owner-only until first appointment"
+  acceptable? (Recommendation: acceptable — appointment basis covers the common
+  path; forcing a clinic at create adds UI friction.)
+
+- **Q4 (owner/CYAN): historical clinical-migration pipeline principal.** Under
+  R16 admin can no longer write clinical_records. The Fisiozero import pipeline
+  (`importRecords`, packages/db/src/migration) writes clinical_records but has NO
+  production caller yet. The idempotency test was moved admin → OWNER to reflect
+  this. Recommended default (APPLIED in the test): when the pipeline is wired, run
+  it as OWNER or service_role, not admin. Confirm the intended principal.
