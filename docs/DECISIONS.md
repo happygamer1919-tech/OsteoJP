@@ -1526,6 +1526,7 @@ introduced two `"use server"` note actions that bypassed the W10-04 therapist
   destructive, owner-gated action, not run autonomously. This change introduces ZERO E2E regression.
 - **AUTHZ change → OWNER MERGE GATE. No self-merge, no `--admin`, no force-push.**
 
+ ficha/W12-30-polish-and-bodychart
 ## 2026-07-25 — W12-30 template polish (top-5, PDF templates) + bodychart order (v5) (branch ficha/W12-30-polish-and-bodychart)
 
 Two related ficha/template changes, one PR (DO NOT MERGE — owner visual gate on
@@ -1601,3 +1602,56 @@ separately — no seed executed here.
 - **DO NOT MERGE — owner visual gate.** Owner reviews the three rendered PDFs
   (logo, ink headings, neutral hairline, Declaração footer) and the new-ficha field
   order on the preview before merge.
+
+## 2026-07-25 — W12-20 Pacotes per-location pricing (migration 0044) (branch db/W12-20-pack-location-pricing)
+
+Owner ruling 2026-07-25: "I need the pacote edits to be the SAME as services — to
+put pricing per location. Copy the same edit configuration from services into
+pacotes." Mirror the Stream-F per-location SERVICE pricing onto PACKS. No new shape
+invented — the pack layer is a byte-for-byte analogue of `service_location_prices`.
+
+- **Migration 0044 `service_pack_location_prices`** (hand-authored, mirrors 0007;
+  `drizzle-kit generate` NOT used — snapshots stale since 0014). Net-new override
+  junction over `service_packs.price_cents`: `tenant_id` NOT NULL + `pack_id` →
+  service_packs + `location_id` → locations, `price_cents` NOT NULL, `currency`,
+  `is_active`, `created_at`; `unique(tenant_id, pack_id, location_id)`; nonneg CHECK;
+  `(tenant_id, location_id)` index. FK ON DELETE: tenant_id cascade, pack_id +
+  location_id **no action** (history-safe — a pack/location delete never cascades
+  through a price row). Numbered **0044** (0043 reserved for the concurrent
+  clinical-RLS migration; NOT taken here). Journal entry idx 43 appended; supabase
+  mirror regenerated via `scripts/sync-supabase-migrations.mjs`.
+- **RLS mirrors `service_location_prices` EXACTLY:** one `FOR ALL` tenant_isolation
+  policy, USING / WITH CHECK both `tenant_id = (select public.jwt_tenant_id())`,
+  fail-closed (missing/invalid claim → NULL → predicate FALSE → row invisible), plus
+  the table GRANT to `authenticated`. Isolation test `pack-location-prices-rls.test.ts`
+  (8 assertions) proves: tenant B sees ZERO of tenant A's override rows (by id AND by
+  pack scan), owner BYPASSRLS negative control, WITH CHECK denies a cross-tenant insert,
+  and offered-only-where-priced (a pack IS offered at L iff an active price row exists).
+- **base-vs-override model (the flagged ambiguity — resolved, NOT halted).** Services:
+  `services.price_cents` (nullable base) + per-location override rows; `effectivePriceCents`
+  = override ?? base. Packs already carry `service_packs.price_cents` NOT NULL. Decision:
+  keep it as the base/fallback and layer the override on top, identical to services. The
+  pack base is a strict subset of the service case (base is ALWAYS defined, so no null-base
+  branch), so the mirror is unambiguous — no QUESTIONS entry needed. The pack's existing
+  single `location_id` scoping field is left untouched (decoupled — coupled-flags lesson).
+- **App + UI mirror.** `packs.ts` gains `setPackLocationPrices` / `listPackLocationPrices`
+  / `resolvePackPriceCents` / `isPackOfferedAtLocation` / `listPackOfferings` +
+  re-exports the shared `effectivePriceCents` (same resolver as services). `deletePack`
+  now clears a pack's OWN override rows inside its delete tx (mirrors `deleteService`) so a
+  pack blocked only by price config stays hard-deletable. `setPackLocationPricesAction`
+  (through `runPack` → invalidates the agenda-reference cache). `PacksSection` renders a
+  sibling per-location price grid (`price__<locationId>` inputs + Oferecido/Não-oferecido
+  badge + effective hint), the exact analogue of the services editor. New pack-namespaced
+  i18n keys (pt + en). Existing pack CRUD (W8-01b) untouched and green.
+- **Gates.** `pnpm db:check-journal` (44/44), `pnpm lint` (0 errors), `pnpm typecheck`
+  (9/9), `pnpm test` (web 1330 passed; db 396 passed incl. the new RLS isolation suite,
+  run live against local Supabase), `pnpm build` (4/4 — portal needs the same
+  `NEXT_PUBLIC_SUPABASE_*` env CI/Vercel already provide), `pnpm test:e2e` admin-packs
+  chromium 7/7 (incl. the new W12-20 per-location pack-price spec; existing W8-01b CRUD
+  still green).
+- **Migration 0044 is apply-BEFORE-merge.** Prod NOT touched — the owner applies 0044
+  (CYAN clear → terminal apply with pasted journal evidence) THEN merges. Merging before
+  apply would deploy app code querying `service_pack_location_prices` before the column/table
+  exists. OWNER-MERGE + OWNER VISUAL GATE on the pricing grid. No self-merge, no `--admin`,
+  no force-push.
+ main

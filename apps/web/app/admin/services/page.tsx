@@ -11,7 +11,13 @@ import {
   type ServiceDeleteBlocker,
   type ServiceView,
 } from "@/lib/admin/services";
-import { getReferencedPackIds, listPacks, type PackView } from "@/lib/admin/packs";
+import {
+  getReferencedPackIds,
+  listPackLocationPrices,
+  listPackOfferings,
+  listPacks,
+  type PackView,
+} from "@/lib/admin/packs";
 import {
   activeBaseServiceOptions,
   canHardDeletePack,
@@ -26,6 +32,7 @@ import {
   deletePackAction,
   deleteServiceAction,
   setPackActiveAction,
+  setPackLocationPricesAction,
   setServiceActiveAction,
   setServiceLocationPricesAction,
   updatePackAction,
@@ -67,16 +74,27 @@ export default async function ServicesPage({
   searchParams: Promise<{ m?: string; mp?: string; pf?: string }>;
 }) {
   const actor = await requireRequestContext();
-  const [services, locations, locationPrices, serviceBlockers, offerings, packs, referencedPackIds] =
-    await Promise.all([
-      listServices(actor),
-      listLocations(actor),
-      listServiceLocationPrices(actor),
-      getServiceDeleteBlockers(actor),
-      listServiceOfferings(actor),
-      listPacks(actor),
-      getReferencedPackIds(actor),
-    ]);
+  const [
+    services,
+    locations,
+    locationPrices,
+    serviceBlockers,
+    offerings,
+    packs,
+    referencedPackIds,
+    packLocationPrices,
+    packOfferings,
+  ] = await Promise.all([
+    listServices(actor),
+    listLocations(actor),
+    listServiceLocationPrices(actor),
+    getServiceDeleteBlockers(actor),
+    listServiceOfferings(actor),
+    listPacks(actor),
+    getReferencedPackIds(actor),
+    listPackLocationPrices(actor),
+    listPackOfferings(actor),
+  ]);
   const { m, mp, pf } = await searchParams;
 
   // Active locations only; overrides keyed by `${serviceId}:${locationId}`.
@@ -89,6 +107,16 @@ export default async function ServicesPage({
   // an active price row exists there. Drives the "Oferecido aqui" affordance.
   const offeredServiceLocation = new Set<string>();
   for (const o of offerings) offeredServiceLocation.add(`${o.serviceId}:${o.locationId}`);
+
+  // W12-20 — the pack equivalents (exact mirror of the service maps above):
+  // per-location pack overrides keyed by `${packId}:${locationId}`, and the
+  // offered-only-where-priced set that drives the pack "Oferecido aqui" badge.
+  const overrideByPackLocation = new Map<string, number>();
+  for (const p of packLocationPrices) {
+    overrideByPackLocation.set(`${p.packId}:${p.locationId}`, p.priceCents);
+  }
+  const offeredPackLocation = new Set<string>();
+  for (const o of packOfferings) offeredPackLocation.add(`${o.packId}:${o.locationId}`);
 
   // Pack table filter INCLUDES inactive by default (W6-01b split).
   const packFilter = parsePackStatusFilter(pf);
@@ -295,6 +323,8 @@ export default async function ServicesPage({
         packFilter={packFilter}
         serviceNameById={serviceNameById}
         locationNameById={locationNameById}
+        overrideByPackLocation={overrideByPackLocation}
+        offeredPackLocation={offeredPackLocation}
       />
     </section>
   );
@@ -314,6 +344,8 @@ function PacksSection({
   packFilter,
   serviceNameById,
   locationNameById,
+  overrideByPackLocation,
+  offeredPackLocation,
 }: {
   packs: PackView[];
   activeServices: ServiceView[];
@@ -322,6 +354,8 @@ function PacksSection({
   packFilter: PackStatusFilter;
   serviceNameById: Map<string, string>;
   locationNameById: Map<string, string>;
+  overrideByPackLocation: Map<string, number>;
+  offeredPackLocation: Set<string>;
 }) {
   return (
     <>
@@ -437,7 +471,8 @@ function PacksSection({
                     editServiceOptions.push({ id: pack.baseServiceId, name: baseName });
                   }
                   return (
-                    <tr key={pack.id} className={adminTrBorder}>
+                    <Fragment key={pack.id}>
+                    <tr className={adminTrBorder}>
                       <td className={adminTd}>{pack.name}</td>
                       <td className={adminTd}>{baseName}</td>
                       <td className={adminTd}>{pack.sessionCount}</td>
@@ -541,6 +576,66 @@ function PacksSection({
                         </details>
                       </td>
                     </tr>
+                    <tr className={adminTrBorder}>
+                      <td colSpan={7} className="pb-3 pr-4">
+                        {/* Per-location pack pricing (W12-20) — the exact mirror of
+                            the services price editor above: a sibling disclosure row
+                            with a `price__<locationId>` input per active location,
+                            the offered-only-where-priced badge, and the
+                            override-then-base effective hint. */}
+                        <details className="text-sm text-v2-text-primary">
+                          <summary className={`cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${adminHelp}`}>
+                            {s["admin.packs.locationPrices"]}
+                          </summary>
+                          {activeLocations.length === 0 ? (
+                            <p className={`mt-2 ${adminHelp}`}>{s["admin.packs.noLocations"]}</p>
+                          ) : (
+                            <form action={setPackLocationPricesAction} className="mt-2 flex flex-wrap items-end gap-3">
+                              <input type="hidden" name="packId" value={pack.id} />
+                              <p className={`w-full ${adminHelp}`}>
+                                {s["admin.packs.basePrice"]}: {euros(pack.priceCents)} {pack.currency}
+                              </p>
+                              {activeLocations.map((loc) => {
+                                const override =
+                                  overrideByPackLocation.get(`${pack.id}:${loc.id}`) ?? null;
+                                const effective = effectivePriceCents(pack.priceCents, override);
+                                // Offered-only-where-priced: an active price row AT
+                                // this location = offered here (mirror of services).
+                                const offered = offeredPackLocation.has(`${pack.id}:${loc.id}`);
+                                return (
+                                  <Labeled key={loc.id} label={loc.name}>
+                                    <input
+                                      name={`price__${loc.id}`}
+                                      type="text"
+                                      inputMode="decimal"
+                                      defaultValue={euros(override)}
+                                      placeholder={euros(pack.priceCents) || "0.00"}
+                                      className={`w-24 ${adminInputInline}`}
+                                    />
+                                    <span className="mt-1 flex items-center gap-2">
+                                      <StatusBadge tone={offered ? "confirmed" : "cancelled"}>
+                                        {offered
+                                          ? s["admin.packs.offeredHere"]
+                                          : s["admin.packs.notOfferedHere"]}
+                                      </StatusBadge>
+                                      <span className={adminHelp}>
+                                        {override === null
+                                          ? s["admin.packs.usesBasePrice"]
+                                          : `${s["admin.packs.effective"]}: ${euros(effective)}`}
+                                      </span>
+                                    </span>
+                                  </Labeled>
+                                );
+                              })}
+                              <Button type="submit" variant="primary">
+                                {s["admin.packs.savePrices"]}
+                              </Button>
+                            </form>
+                          )}
+                        </details>
+                      </td>
+                    </tr>
+                    </Fragment>
                   );
                 })}
               </tbody>
