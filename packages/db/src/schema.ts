@@ -363,6 +363,43 @@ export const servicePacks = pgTable(
   ],
 );
 
+// W12-20 (migration 0044) — per-location PACK pricing. The exact mirror of
+// serviceLocationPrices for packs: an OVERRIDE layer over service_packs.price_cents
+// (the pack base/catalog price). When a row exists here for a (pack, location) pair
+// it WINS for that location; otherwise the location inherits service_packs.price_cents.
+// is_active toggles an override off (falling back to base) without deleting it.
+// Decoupled from the pack's single price_cents (kept as the base/fallback) and from
+// its single location_id (kept as its own scoping field) — the coupled-flags lesson.
+export const servicePackLocationPrices = pgTable(
+  "service_pack_location_prices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    packId: uuid("pack_id")
+      .notNull()
+      .references(() => servicePacks.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    priceCents: integer("price_cents").notNull(), // minor units (cents), never float
+    currency: char("currency", { length: 3 }).notNull().default("EUR"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One price row per (tenant, pack, location).
+    unique("service_pack_location_prices_tenant_pack_location_uq").on(
+      t.tenantId,
+      t.packId,
+      t.locationId,
+    ),
+    index("service_pack_location_prices_tenant_location_idx").on(t.tenantId, t.locationId),
+    check("service_pack_location_prices_price_nonneg", sql`${t.priceCents} >= 0`),
+  ],
+);
+
 // Wave 08 (W8-01a, migration 0037) — one patient's purchase of one pack.
 // sessions_remaining is monotonic (0..sessions_total); W8-01c registers,
 // decrements, and manually adjusts it (audited, never an auto-charge). Checks

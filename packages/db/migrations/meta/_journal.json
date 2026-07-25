@@ -302,6 +302,13 @@
 			"when": 1784872000000,
 			"tag": "0042_appointment_notes_nullable",
 			"breakpoints": true
+		},
+		{
+			"idx": 43,
+			"version": "7",
+			"when": 1784880000000,
+			"tag": "0044_service_pack_location_prices",
+			"breakpoints": true
 		}
 	]
 }

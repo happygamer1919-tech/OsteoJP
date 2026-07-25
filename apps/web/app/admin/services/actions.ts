@@ -9,7 +9,13 @@ import {
   setServiceLocationPrices,
   updateService,
 } from "@/lib/admin/services";
-import { createPack, deletePack, setPackActive, updatePack } from "@/lib/admin/packs";
+import {
+  createPack,
+  deletePack,
+  setPackActive,
+  setPackLocationPrices,
+  updatePack,
+} from "@/lib/admin/packs";
 import { AdminError, isAdminError } from "@/lib/admin/errors";
 
 function parsePriceToCents(raw: string): number | null {
@@ -167,4 +173,22 @@ export async function deletePackAction(formData: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const id = String(formData.get("id") ?? "");
   await runPack(() => deletePack(actor, id));
+}
+
+export async function setPackLocationPricesAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  const packId = String(formData.get("packId") ?? "");
+  // One input per location, named `price__<locationId>` (mirrors the services
+  // grid). Empty clears the override (the location falls back to the pack base
+  // price). Runs through runPack so the agenda reference cache is invalidated —
+  // a pack's per-location price feeds booking display just like its base price.
+  const entries: { locationId: string; priceCents: number | null }[] = [];
+  for (const [key, value] of formData.entries()) {
+    if (!key.startsWith("price__")) continue;
+    entries.push({
+      locationId: key.slice("price__".length),
+      priceCents: parsePriceToCents(String(value)),
+    });
+  }
+  await runPack(() => setPackLocationPrices(actor, packId, entries));
 }
