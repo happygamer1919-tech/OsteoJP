@@ -1,10 +1,21 @@
 import "server-only";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { patientPackInstances, servicePacks, services } from "@osteojp/db";
+import {
+  patientPackInstances,
+  servicePackLocationPrices,
+  servicePacks,
+  services,
+} from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
+import { effectivePriceCents } from "./pricing";
+
+// Re-export so the packs admin surface can pull the pure override-then-base
+// fallback helper from the packs lib alongside the read functions that use it.
+// The SAME resolver services use (per-location override wins, else base price).
+export { effectivePriceCents };
 
 /**
  * Pack definitions (W8-01a). A pack is a bookable TYPE: a base service each
@@ -192,8 +203,212 @@ export async function deletePack(actor: RequestContext, id: string): Promise<voi
       .limit(1);
     if (inst.length > 0) throw new AdminError("has_references");
 
+    // No patient instances: remove the pack's OWN per-location price overrides
+    // (config) in the same tx, then hard-delete. The service_pack_location_prices
+    // FK is ON DELETE no action, so the price rows must go first or the pack
+    // delete would FK-fail. Mirrors deleteService's service_location_prices cleanup:
+    // a pack's own price overrides are config, never a hard reference.
+    const removedPrices = await tx
+      .delete(servicePackLocationPrices)
+      .where(eq(servicePackLocationPrices.packId, id))
+      .returning({ id: servicePackLocationPrices.id });
+
     const del = await tx.delete(servicePacks).where(eq(servicePacks.id, id)).returning({ id: servicePacks.id });
     if (!del[0]) throw new AdminError("not_found");
-    await writeAudit(tx, actor, { action: "pack.delete", entityType: "service_pack", entityId: id });
+    await writeAudit(tx, actor, {
+      action: "pack.delete",
+      entityType: "service_pack",
+      entityId: id,
+      metadata: { removedPriceOverrides: removedPrices.length },
+    });
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Per-location PACK pricing — overrides over service_packs.price_cents */
+/* (the pack base). The exact mirror of the services per-location layer  */
+/* (see services.ts): a row wins for its (pack, location); absent -> the */
+/* pack base price. W12-20 (owner ruling 2026-07-25 — pacote edits SAME  */
+/* as services).                                                         */
+/* ------------------------------------------------------------------ */
+
+export type PackLocationPriceView = {
+  packId: string;
+  locationId: string;
+  priceCents: number;
+};
+
+/** All active per-location pack price overrides for the tenant (RLS-scoped). */
+export async function listPackLocationPrices(
+  actor: RequestContext,
+): Promise<PackLocationPriceView[]> {
+  assertCan(actor.role, "services:read");
+  return runScoped(actor, (tx) =>
+    tx
+      .select({
+        packId: servicePackLocationPrices.packId,
+        locationId: servicePackLocationPrices.locationId,
+        priceCents: servicePackLocationPrices.priceCents,
+      })
+      .from(servicePackLocationPrices)
+      .where(eq(servicePackLocationPrices.isActive, true)),
+  );
+}
+
+/**
+ * Read path: the effective price of a pack at a given location, resolving the
+ * per-location override first, then the pack base price. Mirrors
+ * resolveServicePriceCents. service_packs.price_cents is NOT NULL, so a pack
+ * always has a base — this returns null only when the pack itself is not found.
+ */
+export async function resolvePackPriceCents(
+  actor: RequestContext,
+  packId: string,
+  locationId: string,
+): Promise<number | null> {
+  assertCan(actor.role, "services:read");
+  return runScoped(actor, async (tx) => {
+    const base = await tx
+      .select({ priceCents: servicePacks.priceCents })
+      .from(servicePacks)
+      .where(eq(servicePacks.id, packId))
+      .limit(1);
+    if (!base[0]) return null;
+    const override = await tx
+      .select({ priceCents: servicePackLocationPrices.priceCents })
+      .from(servicePackLocationPrices)
+      .where(
+        and(
+          eq(servicePackLocationPrices.packId, packId),
+          eq(servicePackLocationPrices.locationId, locationId),
+          eq(servicePackLocationPrices.isActive, true),
+        ),
+      )
+      .limit(1);
+    return effectivePriceCents(base[0].priceCents, override[0]?.priceCents ?? null);
+  });
+}
+
+/**
+ * Offered-only-where-priced for packs (mirrors isServiceOfferedAtLocation): a
+ * pack is OFFERED at a location when an ACTIVE service_pack_location_prices row
+ * exists for that (pack, location) pair. The base price is a fallback AMOUNT,
+ * never an implicit "offered everywhere" signal.
+ */
+export async function isPackOfferedAtLocation(
+  actor: RequestContext,
+  packId: string,
+  locationId: string,
+): Promise<boolean> {
+  assertCan(actor.role, "services:read");
+  return runScoped(actor, async (tx) => {
+    const rows = await tx
+      .select({ id: servicePackLocationPrices.id })
+      .from(servicePackLocationPrices)
+      .where(
+        and(
+          eq(servicePackLocationPrices.packId, packId),
+          eq(servicePackLocationPrices.locationId, locationId),
+          eq(servicePackLocationPrices.isActive, true),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  });
+}
+
+/**
+ * Every (packId, locationId) pair a pack is offered at (an active price row
+ * exists). Drives the "Oferecido aqui" affordance on the pack price grid, the
+ * mirror of listServiceOfferings. RLS-scoped.
+ */
+export async function listPackOfferings(
+  actor: RequestContext,
+): Promise<{ packId: string; locationId: string }[]> {
+  assertCan(actor.role, "services:read");
+  return runScoped(actor, (tx) =>
+    tx
+      .select({
+        packId: servicePackLocationPrices.packId,
+        locationId: servicePackLocationPrices.locationId,
+      })
+      .from(servicePackLocationPrices)
+      .where(eq(servicePackLocationPrices.isActive, true)),
+  );
+}
+
+/**
+ * Set per-location prices for one pack in a single tenant-scoped tx. Each entry
+ * either upserts an override (priceCents) or clears it (null) so the location
+ * falls back to the pack base price. One audit row records the change. The exact
+ * mirror of setServiceLocationPrices.
+ */
+export async function setPackLocationPrices(
+  actor: RequestContext,
+  packId: string,
+  entries: { locationId: string; priceCents: number | null }[],
+): Promise<void> {
+  assertCan(actor.role, "services:write");
+  if (!packId) throw new AdminError("invalid", "pack id is required");
+  for (const e of entries) {
+    if (e.priceCents !== null && (!Number.isInteger(e.priceCents) || e.priceCents < 0)) {
+      throw new AdminError("invalid", "price must be a non-negative integer (cents)");
+    }
+  }
+
+  await runScoped(actor, async (tx) => {
+    // Confirm the pack exists in this tenant (RLS scopes the read).
+    const pack = await tx
+      .select({ id: servicePacks.id })
+      .from(servicePacks)
+      .where(eq(servicePacks.id, packId))
+      .limit(1);
+    if (!pack[0]) throw new AdminError("not_found");
+
+    for (const e of entries) {
+      if (e.priceCents === null) {
+        // Clear the override: removing the row lets the location inherit base.
+        await tx
+          .delete(servicePackLocationPrices)
+          .where(
+            and(
+              eq(servicePackLocationPrices.packId, packId),
+              eq(servicePackLocationPrices.locationId, e.locationId),
+            ),
+          );
+      } else {
+        // tenant_id is set explicitly (NOT NULL, no default); RLS WITH CHECK
+        // validates it against the JWT claim.
+        await tx
+          .insert(servicePackLocationPrices)
+          .values({
+            tenantId: actor.tenantId,
+            packId,
+            locationId: e.locationId,
+            priceCents: e.priceCents,
+          })
+          .onConflictDoUpdate({
+            target: [
+              servicePackLocationPrices.tenantId,
+              servicePackLocationPrices.packId,
+              servicePackLocationPrices.locationId,
+            ],
+            set: { priceCents: e.priceCents, isActive: true },
+          });
+      }
+    }
+
+    await writeAudit(tx, actor, {
+      action: "pack.price.set",
+      entityType: "service_pack",
+      entityId: packId,
+      // PII-free: only ids and which locations were cleared, never amounts.
+      metadata: {
+        locationIds: entries.map((e) => e.locationId),
+        clearedLocationIds: entries
+          .filter((e) => e.priceCents === null)
+          .map((e) => e.locationId),
+      },
+    });
   });
 }
