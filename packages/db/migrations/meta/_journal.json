@@ -309,6 +309,13 @@
 			"when": 1784880000000,
 			"tag": "0044_service_pack_location_prices",
 			"breakpoints": true
+		},
+		{
+			"idx": 44,
+			"version": "7",
+			"when": 1784959000000,
+			"tag": "0045_clinical_records_location_rls",
+			"breakpoints": true
 		}
 	]
 }

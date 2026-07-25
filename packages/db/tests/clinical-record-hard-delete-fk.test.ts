@@ -33,16 +33,30 @@ afterAll(async () => {
 
 type Tx = Parameters<Parameters<typeof asRole>[3]>[0];
 
-/** Seed a tenant + patient + a DRAFT clinical_record (as the privileged role). */
-async function seedDraft(tx: Tx, tenant: string): Promise<{ patientId: string; recordId: string }> {
+/**
+ * Seed a tenant + therapist + patient + a DRAFT clinical_record (as the
+ * privileged role). R16 (0043): the therapist OWNS the draft — they created the
+ * patient (created_by) and authored the record (practitioner_id) — so the
+ * tightened therapist RLS write scope lets them detach + delete it. `userId` is
+ * returned so the acting JWT can pin auth.uid() to that therapist.
+ */
+async function seedDraft(
+  tx: Tx,
+  tenant: string,
+): Promise<{ userId: string; patientId: string; recordId: string }> {
   await tx`insert into tenants (id, name, slug)
            values (${tenant}, ${`HD ${tenant}`}, ${`hd-${tenant}`})`;
+  // users.id has no DB default — provide it explicitly.
+  const userId = randomUUID();
+  await tx`insert into users (id, tenant_id, email, full_name)
+           values (${userId}, ${tenant}, ${`t-${tenant}@x.pt`}, 'Therapist')`;
   const [pt] = await tx<{ id: string }[]>`
-    insert into patients (tenant_id, full_name) values (${tenant}, ${"Paulo"}) returning id`;
+    insert into patients (tenant_id, full_name, created_by)
+    values (${tenant}, ${"Paulo"}, ${userId}) returning id`;
   const [rec] = await tx<{ id: string }[]>`
-    insert into clinical_records (tenant_id, patient_id, status)
-    values (${tenant}, ${pt!.id}, 'draft') returning id`;
-  return { patientId: pt!.id, recordId: rec!.id };
+    insert into clinical_records (tenant_id, patient_id, practitioner_id, status)
+    values (${tenant}, ${pt!.id}, ${userId}, 'draft') returning id`;
+  return { userId, patientId: pt!.id, recordId: rec!.id };
 }
 
 describe.skipIf(!live)("W6-01a hard-delete draft ficha FK detach (live DB)", () => {
@@ -50,12 +64,12 @@ describe.skipIf(!live)("W6-01a hard-delete draft ficha FK detach (live DB)", () 
     await expect(
       asRole(p!, "service_role", null, async (tx) => {
         const t = randomUUID();
-        const { recordId } = await seedDraft(tx, t);
+        const { userId, recordId } = await seedDraft(tx, t);
         await tx`insert into ai_ingestion_requests
           (tenant_id, idempotency_key, request_id, payload_hash, clinical_record_id)
           values (${t}, ${`k-${recordId}`}, 'req', 'hash', ${recordId})`;
         await tx.unsafe("set local role authenticated");
-        await tx`select set_config('request.jwt.claims', ${claimsFor(t, "therapist")}, true)`;
+        await tx`select set_config('request.jwt.claims', ${claimsFor(t, "therapist", userId)}, true)`;
         // No detach → the NO-ACTION FK blocks the delete.
         await tx`delete from clinical_records where id = ${recordId} and status = 'draft'`;
       }),
@@ -66,12 +80,12 @@ describe.skipIf(!live)("W6-01a hard-delete draft ficha FK detach (live DB)", () 
     await expect(
       asRole(p!, "service_role", null, async (tx) => {
         const t = randomUUID();
-        const { patientId, recordId } = await seedDraft(tx, t);
+        const { userId, patientId, recordId } = await seedDraft(tx, t);
         await tx`insert into patient_form_submissions
           (tenant_id, patient_id, form_key, source, clinical_record_id)
           values (${t}, ${patientId}, 'ficha_medica', 'patient', ${recordId})`;
         await tx.unsafe("set local role authenticated");
-        await tx`select set_config('request.jwt.claims', ${claimsFor(t, "therapist")}, true)`;
+        await tx`select set_config('request.jwt.claims', ${claimsFor(t, "therapist", userId)}, true)`;
         await tx`delete from clinical_records where id = ${recordId} and status = 'draft'`;
       }),
     ).rejects.toThrow(/foreign key|23503/i);
@@ -80,7 +94,7 @@ describe.skipIf(!live)("W6-01a hard-delete draft ficha FK detach (live DB)", () 
   it("POST-FIX: detaching both back-pointers under staff RLS lets the draft delete and preserves the referencing rows", async () => {
     const res = await asRole(p!, "service_role", null, async (tx) => {
       const t = randomUUID();
-      const { patientId, recordId } = await seedDraft(tx, t);
+      const { userId, patientId, recordId } = await seedDraft(tx, t);
       await tx`insert into ai_ingestion_requests
         (tenant_id, idempotency_key, request_id, payload_hash, clinical_record_id)
         values (${t}, ${`k-${recordId}`}, 'req', 'hash', ${recordId})`;
@@ -90,7 +104,7 @@ describe.skipIf(!live)("W6-01a hard-delete draft ficha FK detach (live DB)", () 
 
       // Act as the staff actor, exactly as runScoped does.
       await tx.unsafe("set local role authenticated");
-      await tx`select set_config('request.jwt.claims', ${claimsFor(t, "therapist")}, true)`;
+      await tx`select set_config('request.jwt.claims', ${claimsFor(t, "therapist", userId)}, true)`;
 
       const detachedIng = (await tx`update ai_ingestion_requests set clinical_record_id = null
         where clinical_record_id = ${recordId} returning id`) as { id: string }[];
@@ -124,9 +138,9 @@ describe.skipIf(!live)("W6-01a hard-delete draft ficha FK detach (live DB)", () 
   it("a plain draft with no back-pointers still deletes (no regression)", async () => {
     const deleted = await asRole(p!, "service_role", null, async (tx) => {
       const t = randomUUID();
-      const { recordId } = await seedDraft(tx, t);
+      const { userId, recordId } = await seedDraft(tx, t);
       await tx.unsafe("set local role authenticated");
-      await tx`select set_config('request.jwt.claims', ${claimsFor(t, "therapist")}, true)`;
+      await tx`select set_config('request.jwt.claims', ${claimsFor(t, "therapist", userId)}, true)`;
       return (await tx`delete from clinical_records where id = ${recordId} and status = 'draft'
         returning id`) as { id: string }[];
     });

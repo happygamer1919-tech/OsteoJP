@@ -535,6 +535,19 @@ export const patients = pgTable(
     // column, and patient-portal RLS self-scope keys on that claim.
     authUserId: uuid("auth_user_id").unique(),
     activatedAt: timestamp("activated_at", { withTimezone: true }),
+    // R16 (migration 0043) — persisted FALLBACK location for the clinical_records
+    // admin location-scope. NULLABLE by design: used ONLY for patients with NO
+    // appointment carrying a non-null location_id; a patient WITH such appointments
+    // is resolved by the appointment basis (visible to admins of EVERY such
+    // location) and this column is not consulted. A zero-appointment patient whose
+    // value is NULL is UNASSIGNED -> visible to OWNER ONLY (never orphaned: owner
+    // sees all in-tenant), never to any admin. Populated server-side at create time
+    // from the create action's location context (NOT inferred from
+    // created_by.staff_locations). ON DELETE SET NULL (a removed clinic falls the
+    // patient back to owner-only rather than blocking the delete).
+    primaryLocationId: uuid("primary_location_id").references(() => locations.id, {
+      onDelete: "set null",
+    }),
     // Stream A — patient merge: the losing record points at the survivor.
     mergedIntoId: uuid("merged_into_id"),
     reminderSmsEnabled: boolean("reminder_sms_enabled").notNull().default(true),
@@ -550,6 +563,8 @@ export const patients = pgTable(
   (t) => [
     index("patients_tenant_idx").on(t.tenantId),
     index("patients_tenant_name_idx").on(t.tenantId, t.fullName),
+    // R16 (0043) — supports the clinical_records admin fallback location match.
+    index("patients_tenant_primary_location_idx").on(t.tenantId, t.primaryLocationId),
     // Patient number is unique per tenant; the same number may recur across
     // tenants. Also serves MAX(patient_number) lookups in the assignment path.
     unique("patients_tenant_number_uq").on(t.tenantId, t.patientNumber),

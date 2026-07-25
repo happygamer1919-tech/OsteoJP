@@ -23,12 +23,14 @@
  *                        the identity row, so there is no own-tenant INSERT case
  *                        (id already exists). Cross-tenant SELECT/UPDATE/DELETE +
  *                        foreign-INSERT rejection are asserted.
- *     clinical_records — per-verb policies gated on tenant_id AND
- *                        jwt_role() IN ('owner','admin','therapist'). The
- *                        four-verb cross-tenant template runs under an admin JWT;
- *                        an extra suite proves the ROLE gate (reception denied,
- *                        therapist allowed) — the dimension a plain tenant test
- *                        would miss.
+ *     clinical_records — R16 (migration 0043) made this LOCATION/PATIENT-scoped,
+ *                        not a uniform tenant+role gate: admin READ is scoped to
+ *                        the admin's staff_locations, admin WRITE is removed, and
+ *                        therapist is narrowed to own patients. It therefore no
+ *                        longer fits this file's uniform four-verb template and its
+ *                        full isolation matrix (owner/admin single+both-clinics/
+ *                        therapist/reception/fallback/null-location edge/cross-
+ *                        tenant) lives in clinical-records-location-rls.test.ts.
  *     audit_log        — append-only: only SELECT + INSERT policies exist, so
  *                        UPDATE/DELETE are denied for ALL rows (0 rows, no error),
  *                        including the tenant's own. Asserted as the append-only
@@ -137,8 +139,8 @@ async function seedTenant(p: Sql, x: Ids, label: string): Promise<void> {
                   ${JSON.stringify({ fields: [] })}::jsonb)`;
   await p`insert into clinical_episodes (id, tenant_id, patient_id, primary_practitioner_id, title)
           values (${x.episode}, ${x.tenant}, ${x.patient}, ${x.user}, 'Episode')`;
-  await p`insert into clinical_records (id, tenant_id, patient_id, episode_id, practitioner_id, status)
-          values (${x.record}, ${x.tenant}, ${x.patient}, ${x.episode}, ${x.user}, 'draft')`;
+  // clinical_records isolation moved to clinical-records-location-rls.test.ts (R16
+  // location/patient scoping); not seeded here.
   await p`insert into attachments (id, tenant_id, patient_id, storage_path, file_name)
           values (${x.attachment}, ${x.tenant}, ${x.patient}, ${`path/${x.attachment}`}, 'file.pdf')`;
   await p`insert into invoices (id, tenant_id, patient_id, amount_cents)
@@ -321,20 +323,6 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
       updateCrossSet: "title = 'mutated'",
     },
     {
-      table: "clinical_records",
-      policyDesc: "per-verb, tenant_id = jwt AND jwt_role() IN (owner,admin,therapist)",
-      role: "admin",
-      ownRowId: A.record,
-      otherRowId: B.record,
-      insertOwn: (tx) =>
-        tx<{ id: string }[]>`insert into clinical_records (tenant_id, patient_id)
-          values (${A.tenant}, ${A.patient}) returning id`,
-      insertCross: (tx) =>
-        tx`insert into clinical_records (tenant_id, patient_id)
-          values (${B.tenant}, ${B.patient}) returning id`,
-      updateCrossSet: "version = 1",
-    },
-    {
       table: "attachments",
       policyDesc: "FOR ALL, tenant_id = jwt_tenant_id()",
       ownRowId: A.attachment,
@@ -511,41 +499,9 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
     });
   });
 
-  /* ---- clinical_records — the ROLE dimension the tenant test misses --- */
-  describe("clinical_records — role gate (jwt_role() IN owner/admin/therapist)", () => {
-    it("SELECT as RECEPTION (tenant-A) returns 0 rows — clinical reads denied to reception", async () => {
-      const rows = await asRole(
-        sql,
-        "authenticated",
-        claimsFor(A.tenant, "reception"),
-        async (tx) => (await tx`select id::text as id from clinical_records`) as { id: string }[],
-      );
-      // Reception is in-tenant but the role gate denies the read entirely.
-      expect(rows.length).toBe(0);
-      expect(rows.map((r) => r.id)).not.toContain(A.record);
-    });
-
-    it("SELECT as THERAPIST (tenant-A) sees tenant-A's record — role gate allows", async () => {
-      const rows = await asRole(
-        sql,
-        "authenticated",
-        claimsFor(A.tenant, "therapist"),
-        async (tx) => (await tx`select id::text as id from clinical_records`) as { id: string }[],
-      );
-      const ids = rows.map((r) => r.id);
-      expect(ids).toContain(A.record);
-      expect(ids).not.toContain(B.record);
-    });
-
-    it("INSERT as RECEPTION (own tenant) is rejected by WITH CHECK — role gate on writes", async () => {
-      await expect(
-        asRole(sql, "authenticated", claimsFor(A.tenant, "reception"), async (tx) =>
-          tx`insert into clinical_records (tenant_id, patient_id)
-             values (${A.tenant}, ${A.patient}) returning id`,
-        ),
-      ).rejects.toThrow(/row-level security/i);
-    });
-  });
+  // clinical_records role/location matrix (reception denied, admin location-scope,
+  // therapist own-patient, owner-all, fallback + null-location edge) is proven in
+  // clinical-records-location-rls.test.ts under the R16 (0043) model.
 
   /* ---- audit_log — append-only (SELECT + INSERT policies only) -------- */
   describe("audit_log — append-only (no UPDATE/DELETE policy ⇒ denied for all rows)", () => {

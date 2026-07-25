@@ -63,7 +63,11 @@ async function seed(p: Sql, f: Fixture, label: string): Promise<void> {
   await p`insert into tenants (id, name, slug) values (${f.tenant}, ${`Rev ${label}`}, ${`rev-${label}-${f.tenant}`})`;
   await p`insert into users (id, tenant_id, email, full_name)
           values (${f.user}, ${f.tenant}, ${`t-${f.user}@x.pt`}, 'Therapist')`;
-  await p`insert into patients (id, tenant_id, full_name) values (${f.patient}, ${f.tenant}, 'Utente')`;
+  // R16 (0043): the reviewing therapist OWNS the patient (created_by), so the
+  // tightened therapist RLS scope lets them see/claim/finalize the draft. Without
+  // an ownership link (created / treats) a therapist can no longer touch the record.
+  await p`insert into patients (id, tenant_id, full_name, created_by)
+          values (${f.patient}, ${f.tenant}, 'Utente', ${f.user})`;
   // AI draft awaiting review.
   await p`insert into clinical_records (id, tenant_id, patient_id, source, status, ai_review_state, data)
           values (${f.aiRecord}, ${f.tenant}, ${f.patient}, 'ai_ingested', 'draft', 'pending_review',
@@ -90,7 +94,7 @@ describe.skipIf(!live)("review/finalize write path RLS + lifecycle", () => {
   });
 
   const asTherapistA = <R>(fn: Parameters<typeof asRole<R>>[3]) =>
-    asRole(sql, "authenticated", claimsFor(A.tenant, "therapist"), fn);
+    asRole(sql, "authenticated", claimsFor(A.tenant, "therapist", A.user), fn);
 
   /* ---- AI source: full lifecycle pending_review → in_review → approved ---- */
   it("AI: claim → narrative edit → single-statement finalize signs + approves", async () => {
