@@ -66,7 +66,10 @@ export async function generateDeclaracaoPdf(
       .limit(1);
     if (!patient) return null;
 
-    const [tenant] = await tx.select({ settings: tenants.settings }).from(tenants).limit(1);
+    const [tenant] = await tx
+      .select({ settings: tenants.settings, name: tenants.name, nif: tenants.nif })
+      .from(tenants)
+      .limit(1);
 
     let appointmentLocation: SourceLocation | null = null;
     if (inputs.locationId) {
@@ -88,6 +91,11 @@ export async function generateDeclaracaoPdf(
       // so the model layer could not tell which clinic the declaration was for
       // and every declaration got the LV carimbo (CB QA item 2, "erro grave").
       stampLocationKey: resolveStampLocationKey(appointmentLocation, fallback),
+      // W12-30 C1: the location this declaration is FOR (marcação's, else the
+      // tenant default) drives the branded footer contact block; the tenant row
+      // supplies the fiscal identity (placeholders when unset — never invented).
+      sourceLocation: appointmentLocation ?? fallback,
+      fiscalSource: { tenantName: tenant?.name ?? null, tenantNif: tenant?.nif ?? null },
     };
   });
 
@@ -101,6 +109,8 @@ export async function generateDeclaracaoPdf(
     localidade: built.localidade,
     stampLocationKey: built.stampLocationKey,
     nif: inputs.nif,
+    sourceLocation: built.sourceLocation,
+    fiscalSource: built.fiscalSource,
     tenantSettings: built.tenantSettings,
   });
   const bytes = await renderDeclaracaoPdf(model);

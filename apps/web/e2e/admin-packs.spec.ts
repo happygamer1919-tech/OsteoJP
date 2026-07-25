@@ -106,3 +106,57 @@ test("Serviços: pack CRUD + filter split (W8-01b)", async ({ page }) => {
   await page.waitForURL(/pf=active/);
   await expect(page.locator("tbody tr").filter({ hasText: packName })).toHaveCount(0);
 });
+
+test("Pacotes: per-location price toggles the offered-here affordance (W12-20)", async ({
+  page,
+}) => {
+  await page.goto("/admin/services");
+
+  // Create a fresh pack to price. Scope pack lookups to the PACKS table (the last
+  // table): a pack name never appears in the services table.
+  const packsTable = page.locator("table").last();
+  const packName = `E2E Pack Price ${Date.now()}`;
+  const addPack = page
+    .locator("form")
+    .filter({ has: page.getByRole("button", { name: "Adicionar pacote" }) });
+  await addPack.locator('input[name="name"]').fill(packName);
+  await addPack.locator('select[name="baseServiceId"]').selectOption({ label: SERVICE.name });
+  await addPack.locator('input[name="sessionCount"]').fill("5");
+  await addPack.locator('input[name="price"]').fill("325.00");
+  await Promise.all([
+    page.waitForURL(/mp=ok/),
+    addPack.getByRole("button", { name: "Adicionar pacote" }).click(),
+  ]);
+
+  // Opens the per-location pack price editor (the sibling row below the pack row)
+  // and returns its Linda-a-Velha field (mirror of the services editor).
+  const openPriceField = async () => {
+    const packRow = packsTable.locator("tbody > tr").filter({ hasText: packName }).first();
+    await expect(packRow).toBeVisible();
+    const priceRow = packRow.locator("xpath=following-sibling::tr[1]");
+    await priceRow.getByText("Preços por local").click();
+    const priceInput = priceRow.locator(`input[name="price__${LOCATION.id}"]`);
+    await expect(priceInput).toBeVisible();
+    const locField = priceRow.locator("label").filter({ hasText: LOCATION.name }).first();
+    return { priceInput, locField, priceRow };
+  };
+
+  // No override row yet -> not offered here (the base price is a fallback amount,
+  // never an "offered everywhere" signal).
+  const before = await openPriceField();
+  await expect(before.locField.getByText("Não oferecido aqui", { exact: true })).toBeVisible();
+
+  await before.priceInput.fill("300.00");
+  await Promise.all([
+    page.waitForURL(/mp=ok/),
+    before.priceRow.getByRole("button", { name: "Guardar preços" }).click(),
+  ]);
+
+  // Fresh reload -> deterministically-closed details; reopen and assert the active
+  // override row now marks the pack as offered at that location.
+  await page.goto("/admin/services");
+  const after = await openPriceField();
+  await expect(after.locField.getByText("Oferecido aqui", { exact: true })).toBeVisible();
+  // The saved override (3.00 EUR less than base) round-trips into the input.
+  await expect(after.priceInput).toHaveValue("300.00");
+});

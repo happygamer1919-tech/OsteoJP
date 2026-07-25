@@ -17,6 +17,7 @@
       "weight_kg",
       "height_cm",
       "consultation_reason",
+      "bodychart",
       "relief_aggravation",
       "observations",
       "mobilidade",
@@ -30,8 +31,7 @@
       "treatment_plan",
       "tratamento",
       "episode_date",
-      "red_flags",
-      "bodychart"
+      "red_flags"
     ],
     "properties": {
       "episode_date": {

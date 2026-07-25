@@ -24,6 +24,10 @@ const model = (over: Partial<DeclaracaoModel> = {}): DeclaracaoModel => ({
   responsavel: "Dr. João Paulo Santos Silva",
   stampBytes: null,
   nif: null,
+  // W12-30 C1: branded footer sources. Null contact + placeholder fiscal is the
+  // minimal shape; individual tests override `contact`/`fiscal` as needed.
+  contact: null,
+  fiscal: { fiscalName: "OsteoJP (nome fiscal por confirmar)", nif: "000000000" },
   ...over,
 });
 
@@ -61,6 +65,29 @@ describe("renderDeclaracaoPdf — bytes, stamp slot, accents", () => {
     // The embedded PNG makes the PDF materially larger than the blank-slot render.
     expect(withStamp.length).toBeGreaterThan(withoutStamp.length + 10_000);
     expect(withStamp.length).toBeGreaterThan(0);
+  });
+
+  it("W12-30 C1: renders the branded contacts + fiscal footer without throwing", async () => {
+    // A full canonical contact block (accents, two phones, an email) + real fiscal
+    // identity must encode cleanly in the footer and still produce a valid PDF.
+    const withFooter = await renderDeclaracaoPdf(
+      model({
+        contact: {
+          name: "OsteoJP — Linda-a-Velha",
+          addressLines: ["Praça Central Plaza, n.º 1-A"],
+          postalCode: "2795-246",
+          city: "Linda-a-Velha",
+          phones: ["214 191 988", "969 472 111"],
+          email: "geral.castelobranco@osteojp.pt",
+        },
+        fiscal: { fiscalName: "OsteoJP, Lda.", nif: "515123456" },
+      }),
+    );
+    expect(withFooter).toBeInstanceOf(Uint8Array);
+    expect(new TextDecoder().decode(withFooter.slice(0, 5))).toBe("%PDF-");
+    // The fiscal line always prints, even with no location contact block.
+    const fiscalOnly = await renderDeclaracaoPdf(model({ contact: null }));
+    expect(new TextDecoder().decode(fiscalOnly.slice(0, 5))).toBe("%PDF-");
   });
 
   it("renders pt-PT accents without throwing (Helvetica WinAnsi)", async () => {

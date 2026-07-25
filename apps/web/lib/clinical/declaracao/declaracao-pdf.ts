@@ -10,7 +10,7 @@
 // embedded only when `model.stampBytes` is present, else blank vertical space is
 // left for a physical stamp.
 
-import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { clinicLogoBytes } from "../assets/clinic-logo-asset";
 import type { DeclaracaoModel } from "./declaracao-model";
 
@@ -20,6 +20,11 @@ import type { DeclaracaoModel } from "./declaracao-model";
 // carries the brand colours now - W9-03b.)
 const INK = rgb(0.13, 0.13, 0.13);
 const MUTED = rgb(0.4, 0.4, 0.4);
+// W12-30 C1: brand tokens for the branded contacts + fiscal footer. Teal names
+// the clinic (matching the report/RGPD location block); neutral-200 is the
+// hairline rule.
+const TEAL = rgb(0x45 / 255, 0xb9 / 255, 0xa7 / 255);
+const RULE = rgb(0xe2 / 255, 0xe8 / 255, 0xee / 255); // neutral-200 #E2E8EE
 
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
@@ -51,6 +56,64 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   }
   if (line) lines.push(line);
   return lines;
+}
+
+/**
+ * W12-30 C1 — the branded contacts + fiscal footer required on every printed
+ * declaration (CLAUDE.md print-branding rule). Anchored to the page foot and
+ * centered to match the declaration's centered layout. Reuses the SAME data the
+ * report/RGPD footers draw (model.contact from resolveLocationContact,
+ * model.fiscal from resolveClinicFiscal). The verbatim legal BODY is untouched;
+ * this only adds the surrounding chrome.
+ */
+function drawFooter(
+  page: PDFPage,
+  fonts: { regular: PDFFont; bold: PDFFont },
+  model: DeclaracaoModel,
+): void {
+  const c = model.contact;
+  const lines: { text: string; size: number; color: ReturnType<typeof rgb>; font: PDFFont }[] = [];
+  if (c) {
+    lines.push({ text: c.name, size: 9, color: TEAL, font: fonts.bold });
+    for (const a of c.addressLines) {
+      lines.push({ text: a, size: 8, color: MUTED, font: fonts.regular });
+    }
+    const cityLine = [c.postalCode, c.city].filter(Boolean).join(" ");
+    if (cityLine) lines.push({ text: cityLine, size: 8, color: MUTED, font: fonts.regular });
+    if (c.phones.length > 0) {
+      lines.push({ text: `Tel.: ${c.phones.join(" · ")}`, size: 8, color: MUTED, font: fonts.regular });
+    }
+    if (c.email) {
+      lines.push({ text: `Email: ${c.email}`, size: 8, color: MUTED, font: fonts.regular });
+    }
+  }
+  // Clinic fiscal identity always prints (placeholders when the tenant has none).
+  lines.push({
+    text: `${model.fiscal.fiscalName} · NIF: ${model.fiscal.nif}`,
+    size: 8,
+    color: MUTED,
+    font: fonts.regular,
+  });
+
+  const lineGap = 3;
+  const totalTextH = lines.reduce((h, l) => h + l.size + lineGap, 0);
+  const footerBottom = 40; // sits just above the physical page foot
+  const ruleY = footerBottom + totalTextH + 8;
+
+  // Hairline rule above the block (brand neutral-200), spanning the content width.
+  page.drawLine({
+    start: { x: MARGIN, y: ruleY },
+    end: { x: PAGE_W - MARGIN, y: ruleY },
+    thickness: 0.5,
+    color: RULE,
+  });
+
+  let y = ruleY - 10;
+  for (const l of lines) {
+    const w = l.font.widthOfTextAtSize(l.text, l.size);
+    page.drawText(l.text, { x: (PAGE_W - w) / 2, y, size: l.size, font: l.font, color: l.color });
+    y -= l.size + lineGap;
+  }
 }
 
 /** Render the Declaração de Presença to PDF bytes. The legal body is verbatim
@@ -120,6 +183,9 @@ export async function renderDeclaracaoPdf(model: DeclaracaoModel): Promise<Uint8
 
   // 7. Responsável line — from the model (tenant setting), never hardcoded here.
   center(`(${model.responsavel})`, y, 12, regular, MUTED);
+
+  // 8. Branded contacts + fiscal footer (W12-30 C1) — print-branding rule.
+  drawFooter(page, { regular, bold }, model);
 
   return doc.save();
 }

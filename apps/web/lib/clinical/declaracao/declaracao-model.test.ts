@@ -86,6 +86,41 @@ describe("buildDeclaracaoModel — responsável is config-sourced; stamp bytes g
   });
 });
 
+describe("W12-30 C1 — branded footer sources (contact + fiscal), reusing the report helpers", () => {
+  it("resolves the canonical contact block for a known source location", () => {
+    const m = buildDeclaracaoModel({
+      ...base,
+      sourceLocation: { name: "Linda-a-Velha", address: null, phone: null },
+      fiscalSource: { tenantName: "OsteoJP, Lda.", tenantNif: "515123456" },
+      tenantSettings: {},
+    });
+    expect(m.contact?.city).toBe("Linda-a-Velha");
+    expect(m.contact?.phones.length).toBeGreaterThan(0);
+    expect(m.fiscal.fiscalName).toBe("OsteoJP, Lda.");
+    expect(m.fiscal.nif).toBe("515123456");
+  });
+
+  it("leaves contact null when no source location is supplied; fiscal still resolves", () => {
+    const m = buildDeclaracaoModel({ ...base, tenantSettings: {} });
+    expect(m.contact).toBeNull();
+    // Never invents fiscal values — falls back to the owner-gated placeholders.
+    expect(m.fiscal.fiscalName).toContain("por confirmar");
+    expect(m.fiscal.nif).toBe("000000000");
+  });
+
+  it("falls back to clinic placeholders when the tenant carries no fiscal data", () => {
+    const m = buildDeclaracaoModel({
+      ...base,
+      sourceLocation: { name: "Castelo Branco", address: null, phone: null },
+      fiscalSource: { tenantName: null, tenantNif: null },
+      tenantSettings: {},
+    });
+    expect(m.contact?.city).toBe("Castelo Branco");
+    expect(m.fiscal.fiscalName).toContain("por confirmar");
+    expect(m.fiscal.nif).toBe("000000000");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // W9-03 - CB QA item 2 ("erro grave"): a Castelo Branco declaration printed the
 // Linda-a-Velha carimbo. The cause: the stamp was resolved by a zero-argument
