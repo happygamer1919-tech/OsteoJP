@@ -587,3 +587,32 @@ no delete. Each awaits an explicit owner/JP ruling: map to a canonical row or dr
 - Owner: Ivan + JP. Expected end state: each legacy row MAPPED (rename onto a canonical row,
   never delete-recreate) or DROPPED by explicit owner instruction. Until then they remain
   inactive — per W6-01b they show in filter dropdowns and are absent from creation dropdowns.
+
+## 2026-07-25 — W12-30-Q1: email-voice polish items (D1/D2/D3) deferred out of the PDF-template PR
+
+The W12-30 audit's recommended top-5 includes two email-voice items alongside the
+PDF-template ones. The W12-30 PR was scoped to "the 3 live PDF templates: report /
+RGPD / declaração", so the email items were NOT implemented and are logged here.
+They are `lib/reminders/templates.ts` (reminders pipeline), presentation-only:
+
+- **D1 — PT email open.** Change "Olá {{patient_first_name}}," to the brand-voice
+  6.7 formal open "Caro(a) {{patient_first_name}}," (EN already uses "Dear").
+  Applies to all PT emails (48h / 24h / confirmation / follow-up / no-show).
+- **D2 — clinic sign-off.** Extend the bare "— OsteoJP" sign-off with clinic
+  location + phone (brand-voice 6.7). `clinicLocation`/`clinicPhone` are already on
+  `ReminderContext` (48h/24h/confirmation), but the follow-up + no-show contexts
+  carry only `clinicPhone` — a full location sign-off there needs `clinicLocation`
+  threaded through `dispatch.ts` (extra blast radius), so those two would ship a
+  phone-only sign-off unless the context is extended.
+- **D3 — confirmation-email padding.** Drop the monospace space-padded label
+  alignment ("  Data:      {{...}}") that only aligns in a monospace client; use
+  plain "Label: value" lines.
+
+Recommended default: ship D1/D2/D3 as a SEPARATE small "email-voice" PR (copy-only,
+its own preview verification: trigger a reminder → check the greeting + sign-off),
+keeping the W12-30 PR a clean PDF-template visual gate. For D2, extend the
+follow-up/no-show contexts with `clinicLocation` so all five emails sign off
+consistently.
+
+- [ ] Owner: confirm whether to fold D1/D2/D3 into a follow-up email-voice PR
+  (recommended) or leave the reminder emails as-is. Not blocking the W12-30 PDF PR.

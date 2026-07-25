@@ -1525,3 +1525,79 @@ introduced two `"use server"` note actions that bypassed the W10-04 therapist
   flaky agenda hover/location specs); a clean `supabase db reset` + reseed clears them but is a
   destructive, owner-gated action, not run autonomously. This change introduces ZERO E2E regression.
 - **AUTHZ change → OWNER MERGE GATE. No self-merge, no `--admin`, no force-push.**
+
+## 2026-07-25 — W12-30 template polish (top-5, PDF templates) + bodychart order (v5) (branch ficha/W12-30-polish-and-bodychart)
+
+Two related ficha/template changes, one PR (DO NOT MERGE — owner visual gate on
+the printed documents + the new-ficha field order).
+
+**TASK A — W12-30 template polish.** The audit (`docs/design/W12-30-template-polish-audit.md`,
+merged #651) lists 19 presentation-only items with a recommended top-5. Owner
+picked "the best ones / finish this one". Implemented the PDF-template portion of
+the recommended top-5 against the three live pdf-lib renderers:
+
+- **A1 + B1 — real logo on the clinical report + RGPD PDFs.** Replaced the drawn
+  teal-square + magenta-bar + Helvetica "OsteoJP" stand-in mark with the real
+  embedded logo raster (`clinicLogoBytes()` / `doc.embedJpg`) the Declaração
+  already ships — one brand identity across every printed document. Sized to a
+  40pt header lockup (native aspect 322×358); fiscal-ID block unchanged.
+- **A3 + B2 — restrain the magenta.** Every section heading (Paciente / Registo /
+  Assinatura on the report; consent-item + patient + signature headings on RGPD)
+  moved off magenta to INK. Magenta now appears only inside the embedded logo,
+  matching the token rule "accent, sparingly, never a dominant surface". The
+  `MAGENTA` const is fully removed from both renderers.
+- **A5 — brand-neutral hairline.** The ad-hoc `rgb(0.85,0.85,0.85)` rule colour
+  is now brand neutral-200 `#E2E8EE` (shared `rule()` in report + RGPD, and the
+  new Declaração footer rule).
+- **C1 — Declaração print-branding-rule gap.** Added the branded location-contacts
+  + clinic-fiscal footer the print rule requires on every declaration (the report
+  + RGPD already carry it; the Declaração did not). Reuses the SAME data helpers
+  as the report: `resolveLocationContact()` (contact block) and
+  `resolveClinicFiscal()` (fiscal identity). Threaded `sourceLocation` +
+  `fiscalSource` through `generate.ts` → `buildDeclaracaoModel` → the renderer.
+  The verbatim Fisiozero legal BODY is untouched; only the surrounding chrome was
+  added. Fiscal values remain the owner-gated F1/F2 placeholders (nome fiscal por
+  confirmar / NIF 000000000) — visible layout now, "real" once the owner supplies
+  them; no value invented.
+
+**Scope call — email-voice items D1/D2/D3 deferred, not implemented.** The audit's
+recommended top-5 also includes email register + sign-off (D1+D2) and the
+confirmation-email monospace-padding cleanup (D3). Those live in
+`lib/reminders/templates.ts` (the reminders pipeline), not the three PDF templates
+this PR was scoped to ("the 3 live PDF templates: report / RGPD / declaração").
+D2 additionally needs `clinicLocation` threaded into the follow-up/no-show contexts
+(dispatch blast radius). Per the safe-subset instruction and the owner-confirmable-
+scope rule, the PDF items ship here and the email-voice items are logged to
+QUESTIONS.md (W12-30-Q1) with a recommended default (ship as a separate email-voice
+PR). Deferred items the audit itself flagged (Source Serif A4/B3/C3; em-dash vs
+hyphen D4; fiscal placeholders F1–F4) were NOT touched.
+
+**TASK B — bodychart order in ficha v5 (owner ruling 2026-07-25).** In
+`packages/db/seed/form-templates/osteopathy-v5.json`, moved `bodychart` in the
+schema `x-order` array from LAST to right AFTER `consultation_reason`. New order:
+weight_kg, height_cm, consultation_reason, **bodychart**, relief_aggravation,
+observations, mobilidade, special_tests, mobilidade_observacoes, systems_review,
+health_problems, clinical_history, diagnostico, treatment_objectives,
+treatment_plan, tratamento, episode_date, red_flags. Display-order-only change
+(x-order): no property/schema change, no version bump (still v5), JSON valid +
+pretty-printed, 18 keys unchanged. Matches byte-for-byte the x-order already
+applied to the staged prod-seed copy (`osteojp-prod-apply/.../ficha-v5-only/`).
+Updated the two order assertions: the unit test (`form-template.test.ts` v5 order)
+and the E2E section-rail order (`clinical.spec.ts`). The v5 PROD seed is owner-run
+separately — no seed executed here.
+
+- **Gates.** `pnpm lint` (0 errors; 9 pre-existing warnings in untouched files),
+  `pnpm typecheck` (9/9), `pnpm test` (all green: 1330 passed / 5 skipped / 1 todo
+  across 7 packages, incl. the PDF render tests, the new Declaração footer +
+  model tests, and the v5 form-template order test; DB/RLS suite ran against local
+  Supabase). `pnpm build` (4/4 apps; portal build needs the same
+  `NEXT_PUBLIC_SUPABASE_*` env CI/Vercel already provide — supplied locally from
+  the running local Supabase, no prod). `pnpm test:e2e`: per `apps/web/e2e/README.md`
+  the suite is NOT a CI/PR gate (vitest-only) and requires a destructive
+  `supabase db reset` + fixture seed + 3 dev servers, not run autonomously; the one
+  affected assertion (ficha section-rail order in `clinical.spec.ts`) is updated to
+  the new order and mirrored by the passing unit order-test. Owner verifies on the
+  preview (visual gate).
+- **DO NOT MERGE — owner visual gate.** Owner reviews the three rendered PDFs
+  (logo, ink headings, neutral hairline, Declaração footer) and the new-ficha field
+  order on the preview before merge.
