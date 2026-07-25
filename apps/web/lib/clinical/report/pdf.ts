@@ -2,31 +2,41 @@
 //
 // Why pdf-lib: pure JS, no native binaries and no headless browser, so it runs
 // in Vercel `fra1` / serverless and EU-only with no extra infra, and produces a
-// deterministic byte buffer that is easy to smoke-test. The OsteoJP logo is
-// drawn as a VECTOR brand mark from the documented brand tokens (teal #45B9A7 /
-// magenta #8B1863) — the repo has no official logo asset yet; swap in the real
-// raster/SVG from packages/ui once it exists.
+// deterministic byte buffer that is easy to smoke-test. The header embeds the
+// real OsteoJP logo raster (the canonical Logotipo_OsteoJP_2023 lockup) — the
+// same asset the Declaração already ships — so every printed document carries one
+// brand identity (W12-30 A1; superseded the earlier drawn teal/magenta stand-in).
 //
-// Layout: branded header (mark + clinic fiscal identification), printing-location
+// Layout: branded header (logo + clinic fiscal identification), printing-location
 // contact block, patient + record blocks, the clinical body sections, a
 // signature block, and a footer that states this is NOT a fiscal document.
 //
 // Labels are i18n (PT/EN). No PII or fiscal data is logged here — this module
 // only draws into the document.
 
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import {
+  PDFDocument,
+  StandardFonts,
+  rgb,
+  type PDFFont,
+  type PDFImage,
+  type PDFPage,
+} from "pdf-lib";
 import { getStrings, type Locale, type StringKey } from "@osteojp/i18n";
+import { clinicLogoBytes } from "../assets/clinic-logo-asset";
 import {
   REPORT_BODY_KEYS,
   type ClinicalReportModel,
   type ReportBodyKey,
 } from "./report-model";
 
-// Brand tokens (docs/brand-tokens.md).
+// Brand tokens (docs/brand-tokens.md). Section headings use INK, not magenta:
+// magenta is an accent reserved for the logo lockup, never the standing heading
+// colour (W12-30 A3). The hairline rule uses brand neutral-200 (W12-30 A5).
 const TEAL = rgb(0x45 / 255, 0xb9 / 255, 0xa7 / 255);
-const MAGENTA = rgb(0x8b / 255, 0x18 / 255, 0x63 / 255);
 const INK = rgb(0.13, 0.13, 0.13);
 const MUTED = rgb(0.4, 0.4, 0.4);
+const RULE = rgb(0xe2 / 255, 0xe8 / 255, 0xee / 255); // neutral-200 #E2E8EE
 
 // A4 in points.
 const PAGE_W = 595.28;
@@ -117,25 +127,26 @@ class Cursor {
       start: { x: MARGIN, y: this.y },
       end: { x: PAGE_W - MARGIN, y: this.y },
       thickness: 0.5,
-      color: rgb(0.85, 0.85, 0.85),
+      color: RULE,
     });
     this.y -= 4;
   }
 }
 
-/** Draw the vector brand mark + clinic fiscal identification at the top. */
-function drawHeader(cur: Cursor, model: ClinicalReportModel, s: Record<StringKey, string>) {
+/** Draw the real embedded logo lockup + clinic fiscal identification at the top. */
+function drawHeader(
+  cur: Cursor,
+  model: ClinicalReportModel,
+  s: Record<StringKey, string>,
+  logo: PDFImage,
+) {
   const top = cur.y;
-  // Brand mark: a teal rounded square with a magenta accent bar.
-  cur.page.drawRectangle({ x: MARGIN, y: top - 26, width: 26, height: 26, color: TEAL });
-  cur.page.drawRectangle({ x: MARGIN + 20, y: top - 26, width: 6, height: 26, color: MAGENTA });
-  cur.page.drawText("OsteoJP", {
-    x: MARGIN + 34,
-    y: top - 20,
-    size: 16,
-    font: cur.fonts.bold,
-    color: MAGENTA,
-  });
+  // Brand identity: the real OsteoJP logo raster (the same canonical lockup the
+  // Declaração embeds), replacing the earlier drawn teal-square + magenta-bar
+  // stand-in — one brand mark across every printed document (W12-30 A1).
+  const logoH = 40;
+  const logoW = (logo.width / logo.height) * logoH;
+  cur.page.drawImage(logo, { x: MARGIN, y: top - logoH, width: logoW, height: logoH });
 
   // Clinic fiscal identification, right-aligned-ish in the header.
   const fiscal = cur.fonts.regular;
@@ -144,20 +155,20 @@ function drawHeader(cur: Cursor, model: ClinicalReportModel, s: Record<StringKey
   const nifW = fiscal.widthOfTextAtSize(nifLine, 9);
   cur.page.drawText(model.clinic.fiscalName, {
     x: PAGE_W - MARGIN - nameW,
-    y: top - 12,
+    y: top - 15,
     size: 10,
     font: fiscal,
     color: INK,
   });
   cur.page.drawText(nifLine, {
     x: PAGE_W - MARGIN - nifW,
-    y: top - 24,
+    y: top - 27,
     size: 9,
     font: fiscal,
     color: MUTED,
   });
 
-  cur.y = top - 34;
+  cur.y = top - logoH - 6;
   cur.rule();
 }
 
@@ -191,9 +202,10 @@ export async function renderClinicalReportPdf(
     regular: await doc.embedFont(StandardFonts.Helvetica),
     bold: await doc.embedFont(StandardFonts.HelveticaBold),
   };
+  const logo = await doc.embedJpg(clinicLogoBytes());
   const cur = new Cursor(doc, fonts);
 
-  drawHeader(cur, model, s);
+  drawHeader(cur, model, s, logo);
   drawLocation(cur, model, s);
 
   // Title.
@@ -201,14 +213,14 @@ export async function renderClinicalReportPdf(
   cur.gap(4);
 
   // Patient block.
-  cur.text(s["report.patient.heading"], { size: 11, bold: true, color: MAGENTA });
+  cur.text(s["report.patient.heading"], { size: 11, bold: true, color: INK });
   cur.field(s["report.patient.name"], model.patient.fullName);
   cur.field(s["report.patient.dob"], model.patient.dateOfBirth);
   cur.field(s["report.patient.nif"], model.patient.nif);
   cur.gap(2);
 
   // Record block.
-  cur.text(s["report.record.heading"], { size: 11, bold: true, color: MAGENTA });
+  cur.text(s["report.record.heading"], { size: 11, bold: true, color: INK });
   cur.field(s["report.record.consultationDate"], model.record.consultationDate);
   cur.field(s["report.record.episode"], model.record.episodeId);
   cur.field(s["report.record.version"], String(model.record.version));
@@ -224,7 +236,7 @@ export async function renderClinicalReportPdf(
 
   // Signature block.
   cur.gap(18);
-  cur.text(s["report.signature.heading"], { size: 11, bold: true, color: MAGENTA });
+  cur.text(s["report.signature.heading"], { size: 11, bold: true, color: INK });
   cur.gap(20);
   cur.page.drawLine({
     start: { x: MARGIN, y: cur.y },

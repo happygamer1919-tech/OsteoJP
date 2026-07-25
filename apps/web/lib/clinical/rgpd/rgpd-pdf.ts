@@ -5,25 +5,35 @@
 // `fra1` / serverless, EU-only, with NO new dependency (CLAUDE.md owner-gate on
 // new vendors is NOT triggered). Deterministic byte buffer, easy to smoke-test.
 //
-// Layout: an A4 page with the OsteoJP branded header (vector mark + clinic
-// fiscal identification), the printing-location contact block, the patient
-// identity line, the RGPD data-processing consent body (final wording, W5-33
+// Layout: an A4 page with the OsteoJP branded header (real embedded logo lockup
+// + clinic fiscal identification), the printing-location contact block, the
+// patient identity line, the RGPD data-processing consent body (final wording, W5-33
 // from the i18n consent keys), an explicit Consinto / Não consinto tick line per
 // item, and a hand-signature block for print-and-sign.
 //
 // Labels + bodies are i18n (PT/EN). No PII is logged here - this module only
 // draws into the document.
 
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import {
+  PDFDocument,
+  StandardFonts,
+  rgb,
+  type PDFFont,
+  type PDFImage,
+  type PDFPage,
+} from "pdf-lib";
 import { getStrings, type Locale, type StringKey } from "@osteojp/i18n";
+import { clinicLogoBytes } from "../assets/clinic-logo-asset";
 import { CONSENT_ITEM_STRINGS } from "../consent";
 import type { RgpdFormModel } from "./rgpd-model";
 
-// Brand tokens (CLAUDE.md).
+// Brand tokens (CLAUDE.md). Headings use INK, not magenta: magenta is an accent
+// reserved for the logo lockup, never the standing heading colour (W12-30 B2).
+// The hairline rule uses brand neutral-200 (W12-30 A5).
 const TEAL = rgb(0x45 / 255, 0xb9 / 255, 0xa7 / 255);
-const MAGENTA = rgb(0x8b / 255, 0x18 / 255, 0x63 / 255);
 const INK = rgb(0.13, 0.13, 0.13);
 const MUTED = rgb(0.4, 0.4, 0.4);
+const RULE = rgb(0xe2 / 255, 0xe8 / 255, 0xee / 255); // neutral-200 #E2E8EE
 
 // A4 in points.
 const PAGE_W = 595.28;
@@ -102,26 +112,26 @@ class Cursor {
       start: { x: MARGIN, y: this.y },
       end: { x: PAGE_W - MARGIN, y: this.y },
       thickness: 0.5,
-      color: rgb(0.85, 0.85, 0.85),
+      color: RULE,
     });
     this.y -= 4;
   }
 }
 
-/** Draw the vector brand mark + clinic fiscal identification at the top. */
-function drawHeader(cur: Cursor, model: RgpdFormModel, s: Record<StringKey, string>) {
+/** Draw the real embedded logo lockup + clinic fiscal identification at the top. */
+function drawHeader(
+  cur: Cursor,
+  model: RgpdFormModel,
+  s: Record<StringKey, string>,
+  logo: PDFImage,
+) {
   const top = cur.y;
-  // Brand mark: a teal rounded square with a magenta accent bar (matches the
-  // clinical-report header - one visual language).
-  cur.page.drawRectangle({ x: MARGIN, y: top - 26, width: 26, height: 26, color: TEAL });
-  cur.page.drawRectangle({ x: MARGIN + 20, y: top - 26, width: 6, height: 26, color: MAGENTA });
-  cur.page.drawText("OsteoJP", {
-    x: MARGIN + 34,
-    y: top - 20,
-    size: 16,
-    font: cur.fonts.bold,
-    color: MAGENTA,
-  });
+  // Brand identity: the real OsteoJP logo raster (the same canonical lockup the
+  // Declaração and clinical report embed), replacing the earlier drawn teal-square
+  // + magenta-bar stand-in — one brand mark across every printed document (W12-30 B1).
+  const logoH = 40;
+  const logoW = (logo.width / logo.height) * logoH;
+  cur.page.drawImage(logo, { x: MARGIN, y: top - logoH, width: logoW, height: logoH });
 
   const fiscal = cur.fonts.regular;
   const nifLine = `${s["report.clinic.nif"]}: ${model.clinic.nif}`;
@@ -129,20 +139,20 @@ function drawHeader(cur: Cursor, model: RgpdFormModel, s: Record<StringKey, stri
   const nifW = fiscal.widthOfTextAtSize(nifLine, 9);
   cur.page.drawText(model.clinic.fiscalName, {
     x: PAGE_W - MARGIN - nameW,
-    y: top - 12,
+    y: top - 15,
     size: 10,
     font: fiscal,
     color: INK,
   });
   cur.page.drawText(nifLine, {
     x: PAGE_W - MARGIN - nifW,
-    y: top - 24,
+    y: top - 27,
     size: 9,
     font: fiscal,
     color: MUTED,
   });
 
-  cur.y = top - 34;
+  cur.y = top - logoH - 6;
   cur.rule();
 }
 
@@ -168,7 +178,7 @@ function drawConsentItem(
   label: string,
   body: string,
 ) {
-  cur.text(label, { size: 10, bold: true, color: MAGENTA });
+  cur.text(label, { size: 10, bold: true, color: INK });
   cur.text(body, { size: 9, color: INK });
   cur.gap(2);
   // Explicit blank tick boxes for the printed form - the patient hand-ticks one.
@@ -194,9 +204,10 @@ export async function renderRgpdFormPdf(
     regular: await doc.embedFont(StandardFonts.Helvetica),
     bold: await doc.embedFont(StandardFonts.HelveticaBold),
   };
+  const logo = await doc.embedJpg(clinicLogoBytes());
   const cur = new Cursor(doc, fonts);
 
-  drawHeader(cur, model, s);
+  drawHeader(cur, model, s, logo);
   drawLocation(cur, model, s);
 
   // Title.
@@ -204,7 +215,7 @@ export async function renderRgpdFormPdf(
   cur.gap(6);
 
   // Patient identity line.
-  cur.text(s["clinical.consent.patientHeading"], { size: 11, bold: true, color: MAGENTA });
+  cur.text(s["clinical.consent.patientHeading"], { size: 11, bold: true, color: INK });
   cur.text(`${s["report.patient.name"]}: ${model.patient.fullName}`, { size: 10 });
   if (model.patient.nif) {
     cur.text(`${s["report.patient.nif"]}: ${model.patient.nif}`, { size: 10 });
@@ -219,7 +230,7 @@ export async function renderRgpdFormPdf(
   // Hand-signature block for print-and-sign.
   cur.gap(10);
   cur.rule();
-  cur.text(s["clinical.consent.signHeading"], { size: 11, bold: true, color: MAGENTA });
+  cur.text(s["clinical.consent.signHeading"], { size: 11, bold: true, color: INK });
   cur.gap(24);
   cur.page.drawLine({
     start: { x: MARGIN, y: cur.y },
