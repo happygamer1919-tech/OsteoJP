@@ -1,5 +1,9 @@
+-- AUTO-GENERATED — DO NOT EDIT.
+-- Mirror of packages/db/migrations/0045_clinical_records_location_rls.sql for Supabase branching.
+-- Edit the drizzle source, then run: node scripts/sync-supabase-migrations.mjs
+
 /* ================================================================== */
-/* 0043 — clinical_records RLS tighten (R16): strict single-location    */
+/* 0045 — clinical_records RLS tighten (R16): strict single-location    */
 /*         admin, therapist own-patients, admin WRITE removed.          */
 /*                                                                    */
 /* OWNER RULING (R16, folded in via CYAN audit frame 20260724T170931Z): */
