@@ -3,8 +3,14 @@ import "server-only";
 import {
   normalizeLocationKey,
   resolveLocationContact,
+  type LocationContact,
   type SourceLocation,
 } from "../report/location-contacts";
+import {
+  resolveClinicFiscal,
+  type ClinicFiscal,
+  type ClinicFiscalSource,
+} from "../report/clinic-fiscal";
 import { readDeclaracaoSettings } from "./declaracao-settings";
 import { signatureStampBytesForLocation } from "./signature-stamp-asset";
 
@@ -72,6 +78,14 @@ export type DeclaracaoInputs = {
   /** W12-24: the patient NIF as entered in the dialog (prefilled from
    *  `patients.nif`, editable). Trimmed; null/empty -> omitted from the body. */
   nif?: string | null;
+  /** W12-30 C1: the clinic this declaration is FOR (the marcação's location,
+   *  else the tenant default), resolved to the print-ready contact block for the
+   *  branded footer. null -> no contact block (the fiscal identity still prints). */
+  sourceLocation?: SourceLocation | null;
+  /** W12-30 C1: clinic fiscal identity source (tenants.name / tenants.nif),
+   *  resolved via resolveClinicFiscal into the footer fiscal line. Falls back to
+   *  the owner-gated placeholders when absent (never invents values). */
+  fiscalSource?: ClinicFiscalSource;
   /** The tenant's raw `settings` JSONB (declaracao namespace read here). */
   tenantSettings: unknown;
 };
@@ -88,6 +102,12 @@ export type DeclaracaoModel = {
   /** The owner-supplied signature + carimbo image FOR THIS LOCATION, or null
    *  -> blank stamp space (W9-03). Never another location's stamp. */
   stampBytes: Uint8Array | null;
+  /** W12-30 C1: print-ready location contact block for the branded footer, or
+   *  null when the source location is unknown. */
+  contact: LocationContact | null;
+  /** W12-30 C1: resolved clinic fiscal identity (name + NIF) for the footer;
+   *  owner-gated placeholders when the tenant carries none. */
+  fiscal: ClinicFiscal;
 };
 
 export function buildDeclaracaoModel(inputs: DeclaracaoInputs): DeclaracaoModel {
@@ -108,5 +128,9 @@ export function buildDeclaracaoModel(inputs: DeclaracaoInputs): DeclaracaoModel 
     stampBytes: settings.signatureStamp
       ? signatureStampBytesForLocation(inputs.stampLocationKey)
       : null,
+    // W12-30 C1: branded-footer sources — reuse the report/RGPD data helpers, so
+    // the three printed documents draw contacts + fiscal identity from one place.
+    contact: inputs.sourceLocation ? resolveLocationContact(inputs.sourceLocation) : null,
+    fiscal: resolveClinicFiscal(inputs.fiscalSource ?? { tenantName: null, tenantNif: null }),
   };
 }
