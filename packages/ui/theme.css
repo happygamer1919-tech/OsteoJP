@@ -373,6 +373,44 @@
   --color-v2-gold-800: #6F5028;
   --color-v2-gold-900: #4F391D;
 
+  /* ---- W12-21 Therapist agenda palette (Rodica's per-location colours) ----
+   * Named tokens for the per-(therapist, location) agenda colour + legend
+   * (loop docs/loops/wave-12/W12-21-therapist-colors-legend.md). The
+   * owner-approved swatch proposal (2026-07-25) maps Rodica's CB + LVA colours
+   * to named design tokens so components carry NO raw hex; the hexes and the
+   * AA-on-white ratios below are the approved proposal's, verbatim. Every hue is
+   * an AA label-text colour on the light agenda surface (>=4.5:1 on white, WCAG
+   * AA) — colour is never the only cue (the name + legend stay authoritative).
+   *
+   * ADDITIVE only. Four of the approved hues reuse EXISTING tokens as-is and are
+   * NOT redefined here (redefining them would drift the brand/v2 palette and
+   * break the token tests): green -> v2-green-700, blue -> v2-blue-700,
+   * teal -> accent-2-700, purple -> accent-1-700. The 15 tokens below are the
+   * genuinely new named hues. Only the -700 step (and ink -900) is supplied by
+   * the proposal, so only that step is defined — the rest of a 50..900 ramp is
+   * intentionally NOT invented. 13 close-pairs (delta-E < 25) were flagged and
+   * accepted in the proposal (the name is authoritative; duplicates across
+   * locations are allowed, per Rodica).
+   *
+   * This loop only DEFINES the tokens. The per-(therapist, location) colour
+   * VALUES are seeded later (W12-40); the agenda hash->stored-colour swap and
+   * the legend footer land with that data. */
+  --color-v2-forest-700: #14532D; /* dark green — AA 9.11:1 on white */
+  --color-v2-chartreuse-700: #5A7D00; /* yellow-green — AA 4.81:1 on white */
+  --color-v2-olive-700: #556B2F; /* dark grey-green — AA 5.95:1 on white */
+  --color-v2-cyan-700: #00697A; /* cyan — AA 6.36:1 on white */
+  --color-v2-navy-700: #283593; /* dark blue — AA 10.39:1 on white */
+  --color-v2-violet-700: #7E3FF2; /* bright purple — AA 5.41:1 on white */
+  --color-v2-magenta-700: #A21CAF; /* magenta — AA 6.32:1 on white */
+  --color-v2-pink-700: #BE185D; /* pink — AA 6.04:1 on white */
+  --color-v2-orange-700: #B5480B; /* orange — AA 5.39:1 on white */
+  --color-v2-mustard-700: #8A6D0B; /* mustard — AA 4.91:1 on white */
+  --color-v2-red-700: #C0392B; /* red — AA 5.44:1 on white */
+  --color-v2-brick-700: #9A3324; /* brick red — AA 7.31:1 on white */
+  --color-v2-wine-700: #7B2D3A; /* wine — AA 9.22:1 on white */
+  --color-v2-brown-700: #5D4037; /* dark brown — AA 9.32:1 on white */
+  --color-v2-ink-900: #16221F; /* black (ink) — AA 16.37:1 on white */
+
   /* ---- §4.1 Glass colors (color namespace; emits bg- and border- utilities) ---- */
   --color-v2-glass-card-bg: rgba(255, 255, 255, 0.72);
   --color-v2-glass-nav-bg: rgba(255, 255, 255, 0.75); /* §4.1 nav opacity 75% */
