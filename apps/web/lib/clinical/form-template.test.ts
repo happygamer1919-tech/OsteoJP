@@ -300,7 +300,7 @@ describe("topLevelFields — x-order drives render sequence, NOT jsonb property 
     expect(topLevelFields(jsonbShaped).map(([k]) => k)).toEqual(FF2A);
   });
 
-  it("W12-22: the osteopathy-v5 seed carries Rodica's R12 order, cid_codes removed, 3 unlisted appended", () => {
+  it("W12-22/W12-30: the osteopathy-v5 seed carries Rodica's R12 order (bodychart hoisted after consultation_reason), cid_codes removed", () => {
     const v5 = JSON.parse(
       readFileSync(
         path.join(__dirname, "../../../../packages/db/seed/form-templates/osteopathy-v5.json"),
@@ -309,14 +309,17 @@ describe("topLevelFields — x-order drives render sequence, NOT jsonb property 
     ) as { version: number; schema: unknown };
     expect(v5.version).toBe(5);
     const schema = parseTemplateSchema(v5.schema)!;
-    // Rodica 0-15 (0 = the app patient header, not a field) then the 3 unlisted
-    // fields (episode_date, red_flags, bodychart) in v4 relative order. No cid_codes.
+    // Rodica 0-15 (0 = the app patient header, not a field) then the unlisted
+    // fields (episode_date, red_flags) in v4 relative order. No cid_codes.
+    // W12-30 (owner ruling 2026-07-25): bodychart is display-hoisted to sit right
+    // AFTER consultation_reason (it was appended last in v4/W12-22). x-order only —
+    // no property/schema change, no version bump.
     const V5 = [
-      "weight_kg", "height_cm", "consultation_reason", "relief_aggravation",
-      "observations", "mobilidade", "special_tests", "mobilidade_observacoes",
-      "systems_review", "health_problems", "clinical_history", "diagnostico",
-      "treatment_objectives", "treatment_plan", "tratamento",
-      "episode_date", "red_flags", "bodychart",
+      "weight_kg", "height_cm", "consultation_reason", "bodychart",
+      "relief_aggravation", "observations", "mobilidade", "special_tests",
+      "mobilidade_observacoes", "systems_review", "health_problems",
+      "clinical_history", "diagnostico", "treatment_objectives", "treatment_plan",
+      "tratamento", "episode_date", "red_flags",
     ];
     expect(schema.order).toEqual(V5);
     expect(schema.order).not.toContain("cid_codes");

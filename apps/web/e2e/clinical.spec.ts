@@ -63,9 +63,10 @@ test.describe("authoring (therapist)", () => {
     await expect(form.getByText("Marcação respectiva", { exact: false })).toHaveCount(0);
     await expect(form.getByText("Testes Neurológicos", { exact: false })).toHaveCount(0);
 
-    // W12-22 left-nav order: the section rail lists sections in the exact v5 order
-    // (Rodica R12: 0-15 then the 3 unlisted appended). anchor ids = section-<key>;
-    // episode_date is hidden (ruling B), cid_codes is gone.
+    // W12-22 / W12-30 left-nav order: the section rail lists sections in the exact
+    // v5 order. anchor ids = section-<key>; episode_date is hidden (ruling B),
+    // cid_codes is gone. W12-30 (owner ruling 2026-07-25): bodychart is hoisted to
+    // sit right AFTER consultation_reason (was appended last).
     const railLinks = page.getByRole("navigation", { name: "Registos Clínicos" }).locator("a");
     const hrefs = await railLinks.evaluateAll((els) =>
       els.map((e) => (e as HTMLAnchorElement).getAttribute("href")),
@@ -74,6 +75,7 @@ test.describe("authoring (therapist)", () => {
       "#section-weight_kg",
       "#section-height_cm",
       "#section-consultation_reason",
+      "#section-bodychart",
       "#section-relief_aggravation",
       "#section-observations",
       "#section-mobilidade",
@@ -87,7 +89,6 @@ test.describe("authoring (therapist)", () => {
       "#section-treatment_plan",
       "#section-tratamento",
       "#section-red_flags",
-      "#section-bodychart",
     ]);
   });
 
