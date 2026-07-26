@@ -22,8 +22,16 @@ import { isAdminError } from "@/lib/admin/errors";
 // behaviour (the availability/time-off writes and their invariants) is unchanged;
 // only the post-write revalidate + redirect target moved to the consolidated
 // Equipa surface, which now hosts the schedule + blocks editors inside the
-// per-member Gerir modal. `&t=<userId>` re-opens that member's modal on return.
-async function run(fn: () => Promise<void>, userId?: string): Promise<never> {
+// per-member Gerir modal.
+//
+// The redirect deliberately does NOT carry `&t=` (no modal auto-reopen after a
+// write). Auto-reopening the manage modal on page load raced with the stacked
+// Bloquear-horário dialog (a fast user or the e2e could interact before the
+// nested dialog settled). After a write the page returns clean, the banner
+// confirms, and the card summary reflects the change; the deep link
+// (/admin/working-hours?t=<id> → /admin/staff?t=<id>) still auto-opens via the
+// page-level ?t= handler, which is the only auto-open path.
+async function run(fn: () => Promise<void>): Promise<never> {
   let code = "ok";
   try {
     await fn();
@@ -31,18 +39,15 @@ async function run(fn: () => Promise<void>, userId?: string): Promise<never> {
     code = isAdminError(e) ? `err:${e.code}` : "err";
   }
   revalidatePath("/admin/staff");
-  const t = userId ? `&t=${encodeURIComponent(userId)}` : "";
-  redirect(`/admin/staff?m=${code}${t}`);
+  redirect(`/admin/staff?m=${code}`);
 }
 
 /**
- * Variant of `run` for the Bloquear horário actions: keeps the therapist focused
- * (?t=) so the block list stays visible after the op, and can pass a `warn:<n>`
+ * Variant of `run` for the Bloquear horário actions: can pass a `warn:<n>`
  * message when a block overlaps existing appointments (they are warned, never
  * cancelled — Q-W5-4).
  */
 async function runBlock(
-  userId: string,
   fn: () => Promise<{ overlaps: unknown[] } | void>,
 ): Promise<never> {
   let code = "ok";
@@ -54,8 +59,7 @@ async function runBlock(
     code = isAdminError(e) ? `err:${e.code}` : "err";
   }
   revalidatePath("/admin/staff");
-  const t = userId ? `&t=${encodeURIComponent(userId)}` : "";
-  redirect(`/admin/staff?m=${code}${t}`);
+  redirect(`/admin/staff?m=${code}`);
 }
 
 function parseBlockInput(fd: FormData): TimeOffBlockInput {
@@ -74,21 +78,20 @@ function parseBlockInput(fd: FormData): TimeOffBlockInput {
 export async function createTimeOffBlockAction(fd: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const input = parseBlockInput(fd);
-  await runBlock(input.userId, () => createTimeOffBlock(actor, input));
+  await runBlock(() => createTimeOffBlock(actor, input));
 }
 
 export async function updateTimeOffBlockAction(fd: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const input = parseBlockInput(fd);
   const id = String(fd.get("id") ?? "");
-  await runBlock(input.userId, () => updateTimeOffBlock(actor, id, input));
+  await runBlock(() => updateTimeOffBlock(actor, id, input));
 }
 
 export async function deleteTimeOffBlockAction(fd: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const id = String(fd.get("id") ?? "");
-  const userId = String(fd.get("userId") ?? "");
-  await runBlock(userId, () => deleteTimeOffBlock(actor, id));
+  await runBlock(() => deleteTimeOffBlock(actor, id));
 }
 
 function parseInput(fd: FormData): AvailabilityTemplateInput {
@@ -157,5 +160,5 @@ export async function saveTherapistScheduleAction(fd: FormData): Promise<void> {
         await archiveAvailabilityTemplate(actor, id);
       }
     }
-  }, userId);
+  });
 }

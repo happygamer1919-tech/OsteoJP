@@ -1774,10 +1774,14 @@ for the card + modal + interaction design.
   mounted, the Horários surface still carries NO delete-password field (W4-14 invariant).
 - **Server actions.** `working-hours/actions.ts` data behaviour (availability/time-off
   writes + invariants) is UNCHANGED; only the post-write `revalidatePath`/`redirect` target
-  moved from `/admin/working-hours` to `/admin/staff` (with `&t=<id>` to re-focus the
-  member's modal). This is routing, not a contract change. `TherapistScheduleCard.tsx`
-  deleted (its inline schedule editor now lives in the modal); `TherapistBlocks.tsx` reused
-  as-is.
+  moved from `/admin/working-hours` to `/admin/staff`. This is routing, not a contract
+  change. The redirect deliberately does NOT carry `&t=` (no modal auto-reopen after a
+  write): auto-opening the manage modal on page load raced with the stacked Bloquear-horário
+  dialog and flaked the time-off e2e (a fast real user could hit it too). After a write the
+  page returns clean, the banner confirms, and the card summary updates; the deep link
+  (`/admin/working-hours?t=<id>` → `/admin/staff?t=<id>`) still auto-opens via the page-level
+  `?t=` handler — the only auto-open path. `TherapistScheduleCard.tsx` deleted (its inline
+  schedule editor now lives in the modal); `TherapistBlocks.tsx` reused as-is.
 - **Guards preserved.** No-invite gate, owner-tier visibility (`manageable`), location-
   scoped `listStaff` (0045), the 24h `TimeFieldInput` (W12-31), and the scrypt delete gate
   all intact.
