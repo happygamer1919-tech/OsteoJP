@@ -1,45 +1,58 @@
 /**
- * equipa-primary-service.spec.ts — Equipa tab: zero-mapping therapist gets a
- * primary service + a per-therapist Horários entry point (W4-01). Runs as admin.
+ * equipa-primary-service.spec.ts — Equipa tab (W12-40 consolidated cards + Gerir
+ * modal). A zero-mapping therapist gets a primary service, and everything about a
+ * member (contact, role, service, working hours) is managed from ONE Gerir modal.
+ * Runs as admin.
  *
  * "E2E Terapeuta Sem Servicos" is seeded with NO therapist_services (the
- * Catarina-Vieira case): before W4-01 the row showed "Sem serviços" with no
- * control; now the dropdown lists all active services so a first primary can be
- * assigned, and Nova marcação then auto-fills it.
+ * Catarina-Vieira case): the Serviço principal section lists all active services
+ * so a first primary can be assigned, and Nova marcação then auto-fills it.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { openNewAppointment } from "./helpers";
 import { futureDate, RUN_DAY_BASE, THERAPIST_ONE_LOCATION } from "./fixtures";
 
 const THER = "E2E Terapeuta Sem Servicos";
 
-test("Equipa: assign a primary to a zero-mapping therapist + Horários link + Nova marcação auto-fill (W4-01)", async ({
+/** The member card for `name`. */
+function card(page: Page, name: string) {
+  return page.locator('[data-testid="equipa-card"]').filter({ hasText: name });
+}
+/** The (single open) Gerir management modal. */
+function manageModal(page: Page) {
+  return page.getByRole("dialog", { name: /Gerir/i });
+}
+/** Open the Gerir modal for `name` and switch to a named section. */
+async function openSection(page: Page, name: string, section: string) {
+  const modal = manageModal(page);
+  if (!(await modal.isVisible())) {
+    await card(page, name).getByRole("button", { name: "Gerir", exact: true }).click();
+    await expect(modal).toBeVisible();
+  }
+  await modal.getByRole("radio", { name: section, exact: true }).click();
+  return modal;
+}
+
+test("Equipa: assign a primary to a zero-mapping therapist from the Gerir modal + Nova marcação auto-fill (W4-01/W12-40)", async ({
   page,
 }) => {
   await page.goto("/admin/staff");
-  const row = page.locator("tbody tr").filter({ hasText: THER });
-  const select = row.locator('select[name="serviceId"]');
 
-  // The primary dropdown lists ALL active services (not "Sem serviços").
+  // Working hours are managed from the SAME modal (Horários section exists) —
+  // the consolidation guarantee.
+  const modal = await openSection(page, THER, "Serviço principal");
+  await expect(modal.getByRole("radio", { name: "Horários", exact: true })).toBeVisible();
+
+  // The Serviço principal dropdown lists ALL active services (not "Sem serviços").
+  const select = modal.locator('select[name="serviceId"]');
   await expect(select).toBeVisible();
   await expect(select.locator("option", { hasText: "Osteopatia" })).toHaveCount(1);
 
-  // A per-therapist Horários entry point deep-links into the working-hours view.
-  await expect(row.getByRole("link", { name: "Horários" })).toHaveAttribute(
-    "href",
-    /\/admin\/working-hours\?t=/,
-  );
-
-  // Assign a first/primary service → it persists.
+  // Assign a first/primary service → it persists and shows on the card.
   await select.selectOption({ label: "Osteopatia" });
-  await row.getByRole("button", { name: "Definir" }).click();
+  await modal.getByRole("button", { name: "Definir" }).click();
   await page.waitForURL(/admin\/staff/);
-  await expect(
-    page
-      .locator("tbody tr")
-      .filter({ hasText: THER })
-      .locator('select[name="serviceId"] option:checked'),
-  ).toHaveText("Osteopatia");
+  await expect(card(page, THER)).toContainText("Osteopatia");
 
   // Nova marcação now auto-fills that primary when the therapist is chosen.
   const date = futureDate(RUN_DAY_BASE + 23);
@@ -48,65 +61,67 @@ test("Equipa: assign a primary to a zero-mapping therapist + Horários link + No
   await expect(dialog.getByLabel(/Serviço/i).locator("option:checked")).toHaveText("Osteopatia");
 });
 
-test("Equipa: name/role search filters the staff table and clearing restores it (W5-02)", async ({
+test("Equipa: name/role search filters the member cards and clearing restores them (W5-02)", async ({
   page,
 }) => {
   await page.goto("/admin/staff");
 
-  // Baseline: the table lists several seeded members, including the reception
+  // Baseline: the grid lists several seeded members, including the reception
   // account, which the query below must exclude.
-  await expect(page.locator("tbody tr").filter({ hasText: "E2E Reception" })).toHaveCount(1);
+  await expect(card(page, "E2E Reception")).toHaveCount(1);
 
-  // Type a name query → the table narrows to the matching therapist. Same
+  // Type a name query → the grid narrows to the matching therapist. Same
   // SearchBox as Pacientes (URL ?q= + server-side filter of the same read).
   const box = page.getByPlaceholder(/Pesquisar por nome ou função/i);
   await box.pressSequentially("Sem Servicos");
   await box.press("Enter");
   await expect(page).toHaveURL(/\/admin\/staff\?q=/, { timeout: 8_000 });
 
-  await expect(page.locator("tbody tr").filter({ hasText: THER })).toHaveCount(1);
-  await expect(page.locator("tbody tr").filter({ hasText: "E2E Reception" })).toHaveCount(0);
+  await expect(card(page, THER)).toHaveCount(1);
+  await expect(card(page, "E2E Reception")).toHaveCount(0);
 
-  // Clearing the query restores the full table (reception is back).
+  // Clearing the query restores the full grid (reception is back).
   await box.fill("");
   await box.press("Enter");
   await expect(page).toHaveURL(/\/admin\/staff$/, { timeout: 8_000 });
-  await expect(page.locator("tbody tr").filter({ hasText: "E2E Reception" })).toHaveCount(1);
+  await expect(card(page, "E2E Reception")).toHaveCount(1);
 });
 
-test("Equipa: the Gerir management panel opens as a centered modal, traps focus, deactivate/reactivate fire, Escape closes (W5-06)", async ({
+test("Equipa: the Gerir modal opens centered, switches sections, traps focus, deactivate/reactivate fire, Escape closes (W5-06/W12-40)", async ({
   page,
 }) => {
   await page.goto("/admin/staff");
-  const row = page.locator("tbody tr").filter({ hasText: THERAPIST_ONE_LOCATION });
-  await expect(row).toHaveCount(1);
+  const target = card(page, THERAPIST_ONE_LOCATION);
+  await expect(target).toHaveCount(1);
+  const modal = manageModal(page);
 
-  const modal = page.getByRole("dialog", { name: /Gerir/i });
-
-  // The row's Gerir trigger is a button (not a <summary>); clicking it opens a
-  // centered modal <dialog> holding the same management controls.
-  await row.getByRole("button", { name: "Gerir", exact: true }).click();
+  // The card's Gerir trigger opens a centered modal <dialog>; Contacto is the
+  // default section with its Guardar submit.
+  await target.getByRole("button", { name: "Gerir", exact: true }).click();
   await expect(modal).toBeVisible();
   // Native <dialog> modal: focus moves inside on open (focus trap / :modal).
   await expect(modal.locator(":focus")).toHaveCount(1);
-  // Same controls as before, now inside the modal.
   await expect(modal.getByRole("button", { name: "Guardar" })).toBeVisible();
+
+  // Switch to Função e acesso → the role select + activate control live here.
+  await modal.getByRole("radio", { name: "Função e acesso", exact: true }).click();
   await expect(modal.locator('select[name="role"]')).toBeVisible();
 
-  // Deactivate fires its SAME server-action handler → badge flips to Inativo.
+  // Deactivate fires its SAME server-action handler → the card badge flips to Inativo.
   await modal.getByRole("button", { name: "Desativar" }).click();
   await page.waitForURL(/admin\/staff/);
-  await expect(row.getByText("Inativo", { exact: true })).toBeVisible();
+  await expect(target.getByText("Inativo", { exact: true })).toBeVisible();
 
   // Reactivate through the modal restores the seeded state (Ativo again).
-  await row.getByRole("button", { name: "Gerir", exact: true }).click();
+  await target.getByRole("button", { name: "Gerir", exact: true }).click();
   await expect(modal).toBeVisible();
+  await modal.getByRole("radio", { name: "Função e acesso", exact: true }).click();
   await modal.getByRole("button", { name: "Reativar" }).click();
   await page.waitForURL(/admin\/staff/);
-  await expect(row.getByText("Ativo", { exact: true })).toBeVisible();
+  await expect(target.getByText("Ativo", { exact: true })).toBeVisible();
 
   // Escape closes the modal (native <dialog> onCancel).
-  await row.getByRole("button", { name: "Gerir", exact: true }).click();
+  await target.getByRole("button", { name: "Gerir", exact: true }).click();
   await expect(modal).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(modal).toBeHidden();
@@ -117,38 +132,35 @@ test("Equipa: password-gated therapist delete — wrong password refused, correc
 }, testInfo) => {
   await page.goto("/admin/staff");
   // This delete is DESTRUCTIVE and the cross-browser CI job runs firefox + webkit
-  // against ONE shared, non-reset seed DB (a single `playwright test
-  // --project=setup --project=firefox --project=webkit` invocation). Deleting the
-  // shared "Sem Servicos" therapist would wipe it for whichever engine runs
-  // second, breaking every test above. So each project deletes its OWN seeded
+  // against ONE shared, non-reset seed DB. So each project deletes its OWN seeded
   // zero-service, activity-free disposable therapist (see e2e/seed/seed-e2e.mjs).
   const disposable = `E2E Terapeuta Descartavel ${testInfo.project.name}`;
-  const row = () => page.locator("tbody tr").filter({ hasText: disposable });
-  await expect(row()).toHaveCount(1);
-  // W5-06: the management actions (incl. the password-gated delete) live in a
-  // per-row CENTERED modal — click the row's "Gerir" button to open it, then
-  // interact with the controls inside the dialog. The gate itself is unchanged
-  // (restyle only). The modal traps focus; Escape/overlay close it.
-  const modal = () => page.getByRole("dialog", { name: /Gerir/i });
-  const openManage = async () => {
-    if (!(await modal().isVisible())) {
-      await row().getByRole("button", { name: "Gerir", exact: true }).click();
-      await expect(modal()).toBeVisible();
+  const target = () => card(page, disposable);
+  await expect(target()).toHaveCount(1);
+
+  // W12-40: the password-gated delete lives in the Gerir modal's Função e acesso
+  // section (danger zone). The scrypt gate itself is unchanged (server-enforced).
+  const modal = manageModal(page);
+  const openDelete = async () => {
+    if (!(await modal.isVisible())) {
+      await target().getByRole("button", { name: "Gerir", exact: true }).click();
+      await expect(modal).toBeVisible();
     }
+    await modal.getByRole("radio", { name: "Função e acesso", exact: true }).click();
   };
 
   // Wrong password → refused; the therapist is still there.
-  await openManage();
-  await modal().locator('input[name="password"]').fill("0000");
-  await modal().getByRole("button", { name: "Eliminar", exact: true }).click();
+  await openDelete();
+  await modal.locator('input[name="password"]').fill("0000");
+  await modal.getByRole("button", { name: "Eliminar", exact: true }).click();
   await page.waitForURL(/admin\/staff/);
   await expect(page.getByText(/Palavra-passe incorreta/i)).toBeVisible();
-  await expect(row()).toHaveCount(1);
+  await expect(target()).toHaveCount(1);
 
   // Correct password (tenant default 1234) → the activity-free therapist is deleted.
-  await openManage();
-  await modal().locator('input[name="password"]').fill("1234");
-  await modal().getByRole("button", { name: "Eliminar", exact: true }).click();
+  await openDelete();
+  await modal.locator('input[name="password"]').fill("1234");
+  await modal.getByRole("button", { name: "Eliminar", exact: true }).click();
   await page.waitForURL(/admin\/staff/);
-  await expect(row()).toHaveCount(0);
+  await expect(target()).toHaveCount(0);
 });

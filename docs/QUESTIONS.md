@@ -658,3 +658,40 @@ consistently.
 - [ ] Owner: confirm whether to fold D1/D2/D3 into a follow-up email-voice PR
   (recommended) or leave the reminder emails as-is. Not blocking the W12-30 PDF PR.
  main
+
+## 2026-07-25 — W12-40-Q1: Horários route kept as a redirect (not a hard 404)
+
+Horários was folded into Equipa, so `/admin/working-hours` is no longer a tab. Chosen
+default: keep the route as a server redirect into Equipa —
+`/admin/working-hours[?t=<id>]` → `/admin/staff[?t=<id>]` (a `?t=<id>` deep link re-opens
+that member's Gerir modal on the Horários section). This preserves any bookmarked schedule
+URLs and the existing `?t=` deep-link contract other surfaces used. Alternative would be a
+hard removal (404) once we're sure nothing links in.
+
+- [ ] Owner: confirm the redirect is acceptable, or ask for a hard removal of
+  `/admin/working-hours`. Not blocking — the redirect is safe and reversible.
+
+## 2026-07-25 — W12-40-Q2: staff_locations membership + per-location colour editing not yet wired
+
+The build brief asked to edit "locations (staff_locations membership)" and "colour" from
+the Equipa modal, reusing existing server actions `setStaffLocations` / colour. Those
+server actions DO NOT EXIST: `staff_locations` (migration 0038) is defined in the schema
+(with a nullable `color`) but has ZERO application read/write layer, and the ticket boundary
+explicitly forbids NEW server-action contracts / schema changes. So, per the
+pick-a-sensible-default rule:
+
+- A member's **locations** are DISPLAYED as chips derived from `availability_templates` (the
+  live W5-32 assignment) and are edited today by setting the per-day location inside the
+  Horários section (the availability-derived clinic membership).
+- A member's **colour** is DISPLAYED from the deterministic `therapistColor()` FNV palette
+  (W9-05 / W12-21 tokens). It is NOT yet an editable picker, because writing
+  `staff_locations.color` needs a new server action.
+
+Recommended default: a FOLLOW-UP ticket adds `setStaffLocations(actor, userId, locationIds)`
+and `setStaffColor(actor, userId, locationId, color)` (+ their reads), then the Gerir modal
+gains an explicit "Localizações" membership section and a colour picker bound to the
+W12-21 palette. This keeps the current PR within its UI/UX + wiring boundary.
+
+- [ ] Owner: confirm explicit staff_locations membership + colour editing should be a
+  separate follow-up ticket (recommended), or expand this PR's boundary to add the two
+  server actions. Not blocking the visual gate on the consolidated tab.

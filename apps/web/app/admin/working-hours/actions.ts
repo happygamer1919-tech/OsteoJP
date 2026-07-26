@@ -18,15 +18,21 @@ import {
 } from "@/lib/admin/time-off";
 import { isAdminError } from "@/lib/admin/errors";
 
-async function run(fn: () => Promise<void>): Promise<never> {
+// W12-40: Horários was folded INTO Equipa (/admin/staff). These actions' data
+// behaviour (the availability/time-off writes and their invariants) is unchanged;
+// only the post-write revalidate + redirect target moved to the consolidated
+// Equipa surface, which now hosts the schedule + blocks editors inside the
+// per-member Gerir modal. `&t=<userId>` re-opens that member's modal on return.
+async function run(fn: () => Promise<void>, userId?: string): Promise<never> {
   let code = "ok";
   try {
     await fn();
   } catch (e) {
     code = isAdminError(e) ? `err:${e.code}` : "err";
   }
-  revalidatePath("/admin/working-hours");
-  redirect(`/admin/working-hours?m=${code}`);
+  revalidatePath("/admin/staff");
+  const t = userId ? `&t=${encodeURIComponent(userId)}` : "";
+  redirect(`/admin/staff?m=${code}${t}`);
 }
 
 /**
@@ -47,9 +53,9 @@ async function runBlock(
   } catch (e) {
     code = isAdminError(e) ? `err:${e.code}` : "err";
   }
-  revalidatePath("/admin/working-hours");
+  revalidatePath("/admin/staff");
   const t = userId ? `&t=${encodeURIComponent(userId)}` : "";
-  redirect(`/admin/working-hours?m=${code}${t}`);
+  redirect(`/admin/staff?m=${code}${t}`);
 }
 
 function parseBlockInput(fd: FormData): TimeOffBlockInput {
@@ -151,5 +157,5 @@ export async function saveTherapistScheduleAction(fd: FormData): Promise<void> {
         await archiveAvailabilityTemplate(actor, id);
       }
     }
-  });
+  }, userId);
 }

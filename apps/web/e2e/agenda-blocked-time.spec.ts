@@ -26,13 +26,25 @@ function blocksModal(page: Page) {
   return page.getByRole("dialog", { name: new RegExp(`Bloqueios de ${THERAPIST_NAME}`) });
 }
 
+// W12-40: the blocks editor now lives inside the Equipa Gerir modal's Horários
+// section (Bloquear horário), not a separate Horários tab.
 function therapistCard(page: Page) {
-  return page.locator("section.glass-card").filter({ hasText: THERAPIST_NAME }).first();
+  return page.locator('[data-testid="equipa-card"]').filter({ hasText: THERAPIST_NAME }).first();
+}
+
+function manageModal(page: Page) {
+  return page.getByRole("dialog", { name: /Gerir/i });
 }
 
 async function openBlocks(page: Page) {
-  await page.goto("/admin/working-hours");
-  await therapistCard(page).getByTestId("open-blocks").click();
+  await page.goto("/admin/staff");
+  const manage = manageModal(page);
+  if (!(await manage.isVisible())) {
+    await therapistCard(page).getByRole("button", { name: "Gerir", exact: true }).click();
+    await expect(manage).toBeVisible();
+  }
+  await manage.getByRole("radio", { name: "Horários", exact: true }).click();
+  await manage.getByTestId("open-blocks").click();
   await expect(blocksModal(page)).toBeVisible();
 }
 
@@ -46,7 +58,7 @@ async function clearBlocks(page: Page) {
     const remove = list.getByRole("button", { name: "Eliminar" }).first();
     if ((await remove.count()) === 0) break;
     await remove.click();
-    await page.waitForURL(/working-hours/);
+    await page.waitForURL(/admin\/staff/);
     await expect(modal).toBeHidden();
     await openBlocks(page);
   }
@@ -64,7 +76,7 @@ async function createBlock(page: Page) {
   await fillTime(modal.locator("label").filter({ hasText: "Início" }), "09:00");
   await fillTime(modal.locator("label").filter({ hasText: "Fim" }), "11:00");
   await modal.getByRole("button", { name: SAVE }).click();
-  await page.waitForURL(/working-hours/);
+  await page.waitForURL(/admin\/staff/);
   await expect(modal).toBeHidden();
 }
 
