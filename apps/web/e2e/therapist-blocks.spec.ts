@@ -1,23 +1,20 @@
 /**
  * therapist-blocks.spec.ts — W5-12 therapist availability blocks (Bloquear
- * horário). Runs as admin (settings:manage). Migration-free: both modes write a
- * `time_off` row (0006). Proves the loop's Definition of Done end to end:
+ * horário), re-pointed to the W12-40 consolidated Equipa surface. The blocks
+ * editor is now opened from inside a member's Gerir modal → Horários section (the
+ * "Bloquear horário" button), stacking the "Bloqueios de …" dialog above the
+ * manage modal. Runs as admin. Migration-free: both modes write a `time_off` row
+ * (0006). Proves the loop's Definition of Done end to end:
  *
- *  1. Both modes create a block (Bloqueio pontual = date + hour range; Ausência
- *     prolongada = date range), both listed in the Bloqueios modal.
- *  2. A pontual block is EXCLUDED from the availability panel (the blocked free
- *     slot chip disappears) — the same getTherapistAvailability the batch/Agendar
- *     lote engine consumes.
+ *  1. Both modes create a block (pontual = date + hour range; prolongada = date
+ *     range), both listed in the Bloqueios modal.
+ *  2. A pontual block is EXCLUDED from the availability panel.
  *  3. A block overlapping an existing appointment surfaces a WARNING and the
  *     appointment SURVIVES (never auto-cancelled — Q-W5-4).
  *
- * Determinism: derives its day from RUN_DAY_BASE (the seed creates no
- * appointments), sets the therapist's hours through the UI first, and cleans up
- * every block it creates so re-runs never accrue state.
- *
- * Strict-mode: the card renders TWO dialogs per therapist — "Horário de …"
- * (schedule) and "Bloqueios de …" (blocks). Every dialog locator here is scoped
- * to the blocks modal by its exact accessible name so the two never collide.
+ * Determinism: derives its day from RUN_DAY_BASE, sets the therapist's hours
+ * through the UI first, and cleans up every block it creates so re-runs never
+ * accrue state.
  */
 import { test, expect, type Page } from "@playwright/test";
 import { openNewAppointment, fillAppointment, fillTime } from "./helpers";
@@ -25,41 +22,46 @@ import { LOCATION_B, THERAPIST_NAME, futureDate, RUN_DAY_BASE, PATIENTS } from "
 
 const SAVE = "Guardar";
 
+/** The member card for THERAPIST_NAME. */
+function therapistCard(page: Page) {
+  return page.locator('[data-testid="equipa-card"]').filter({ hasText: THERAPIST_NAME }).first();
+}
+/** The (single open) Gerir modal. */
+function manageModal(page: Page) {
+  return page.getByRole("dialog", { name: /Gerir/i });
+}
 /** The blocks modal for the E2E therapist, scoped by its exact accessible name. */
 function blocksModal(page: Page) {
   return page.getByRole("dialog", { name: new RegExp(`Bloqueios de ${THERAPIST_NAME}`) });
 }
 
-/** The therapist's card on /admin/working-hours. */
-function therapistCard(page: Page) {
-  return page.locator("section.glass-card").filter({ hasText: THERAPIST_NAME }).first();
-}
-
-/** The schedule modal for the E2E therapist, scoped by its exact accessible name. */
-function scheduleModal(page: Page) {
-  return page.getByRole("dialog", { name: new RegExp(`Horário de ${THERAPIST_NAME}`) });
+/** Open THERAPIST_NAME's Gerir modal, switched to the Horários section. */
+async function openManageHours(page: Page) {
+  const modal = manageModal(page);
+  if (!(await modal.isVisible())) {
+    await therapistCard(page).getByRole("button", { name: "Gerir", exact: true }).click();
+    await expect(modal).toBeVisible();
+  }
+  await modal.getByRole("radio", { name: "Horários", exact: true }).click();
+  return modal;
 }
 
 /**
- * Open the Bloqueios modal for the E2E therapist, robustly. Any lingering
- * schedule dialog (native <dialog> top-layer) would intercept the open-blocks
- * click, so ensure it is closed first, then click and assert the blocks modal is
- * actually the visible top-layer before the caller interacts with it.
+ * Open the Bloqueios modal: ensure the manage modal is open on the Horários
+ * section, then click its "Bloquear horário" trigger. The blocks dialog stacks in
+ * the top layer above the manage modal.
  */
 async function openBlocks(page: Page) {
-  await expect(scheduleModal(page)).toBeHidden();
-  await therapistCard(page).getByTestId("open-blocks").click();
+  const manage = await openManageHours(page);
+  await manage.getByTestId("open-blocks").click();
   await expect(blocksModal(page)).toBeVisible();
 }
 
-/** Set the E2E therapist to 09:00-13:00 at LOCATION_B on `weekday`, via the
- *  schedule modal, so the availability panel has a working window to block. */
+/** Set the E2E therapist to 09:00-13:00 at LOCATION_B on `weekday`, via the Gerir
+ *  modal's Horários section, so the availability panel has a window to block. */
 async function setWorkingHours(page: Page, weekday: number) {
-  await page.goto("/admin/working-hours");
-  const card = therapistCard(page);
-  await card.getByTestId("edit-schedule").click();
-  const modal = page.getByRole("dialog", { name: new RegExp(`Horário de ${THERAPIST_NAME}`) });
-  await expect(modal).toBeVisible();
+  await page.goto("/admin/staff");
+  const modal = await openManageHours(page);
   const row = modal.locator("fieldset").filter({
     has: page.locator(`select[name="d${weekday}_location"]`),
   });
@@ -69,25 +71,24 @@ async function setWorkingHours(page: Page, weekday: number) {
   await fillTime(row.locator("label").filter({ hasText: "Fim" }), "13:00");
   await row.locator(`select[name="d${weekday}_location"]`).selectOption({ label: LOCATION_B.name });
   await modal.getByRole("button", { name: SAVE }).click();
-  await page.waitForURL(/working-hours/);
+  await page.waitForURL(/admin\/staff/);
   await expect(page.getByText("Horário guardado")).toBeVisible({ timeout: 8_000 });
 }
 
 /** Delete every block currently shown for the therapist (leave a clean slate). */
 async function clearBlocks(page: Page) {
-  await page.goto("/admin/working-hours");
+  await page.goto("/admin/staff");
   await openBlocks(page);
   const modal = blocksModal(page);
-  // Each delete redirects + revalidates; re-open and repeat until the list empties.
   for (let guard = 0; guard < 12; guard++) {
     const list = modal.getByTestId("blocks-list");
     if ((await list.count()) === 0) break;
     const firstRemove = list.getByRole("button", { name: "Eliminar" }).first();
     if ((await firstRemove.count()) === 0) break;
     await firstRemove.click();
-    await page.waitForURL(/working-hours/);
-    // The save closes the dialog; wait for it to be gone before re-opening so its
-    // ::backdrop can't intercept the next open-blocks click.
+    await page.waitForURL(/admin\/staff/);
+    // The save closes the dialog (page reload); wait for it to be gone before
+    // re-opening so its ::backdrop can't intercept the next open-blocks click.
     await expect(modal).toBeHidden();
     await openBlocks(page);
   }
@@ -123,37 +124,33 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await page.waitForURL(/agenda/);
 
   // --- Create an Ausência prolongada (date range) — a time_off row, reason vacation. ---
-  // A fresh navigation guarantees no schedule/blocks dialog lingers from booking.
-  await page.goto("/admin/working-hours");
+  await page.goto("/admin/staff");
   await openBlocks(page);
   let modal = blocksModal(page);
   await modal.getByLabel("Tipo").selectOption("prolongada");
-  // The mode switch re-renders the form; wait for the prolongada fields to mount.
   await expect(modal.getByLabel("De")).toBeVisible();
   await modal.getByLabel("De").fill(futureDate(RUN_DAY_BASE + 40));
   await modal.getByLabel("Até").fill(futureDate(RUN_DAY_BASE + 42));
   await modal.getByRole("button", { name: SAVE }).click();
-  await page.waitForURL(/working-hours/);
+  await page.waitForURL(/admin\/staff/);
   await expect(modal).toBeHidden();
 
   // --- Create a Bloqueio pontual (date + hour range) OVER the booked 09:00 slot. ---
   await openBlocks(page);
   modal = blocksModal(page);
   await modal.getByLabel("Tipo").selectOption("pontual");
-  // The mode switch re-renders the form; wait for the pontual fields to mount so
-  // the time inputs are not detached mid-fill.
   await expect(modal.getByLabel("Data")).toBeVisible();
   await modal.getByLabel("Data").fill(date);
   // W12-31: pontual block times are 24h TimeFields (select-based), driven via fillTime.
   await fillTime(modal.locator("label").filter({ hasText: "Início" }), "09:00");
   await fillTime(modal.locator("label").filter({ hasText: "Fim" }), "13:00");
   await modal.getByRole("button", { name: SAVE }).click();
-  await page.waitForURL(/working-hours/);
+  await page.waitForURL(/admin\/staff/);
   await expect(modal).toBeHidden();
 
   // WARNING shown (block overlaps the existing 09:00 appointment), NOT cancelled.
-  await expect(page.getByTestId("wh-banner")).toBeVisible({ timeout: 8_000 });
-  await expect(page.getByTestId("wh-banner")).toContainText(/não foram canceladas/i);
+  await expect(page.getByTestId("equipa-banner")).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByTestId("equipa-banner")).toContainText(/não foram canceladas/i);
 
   // Both blocks are listed in the modal (pontual + prolongada).
   await openBlocks(page);

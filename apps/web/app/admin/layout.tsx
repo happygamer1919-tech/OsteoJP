@@ -8,11 +8,13 @@ import { AdminNav, type AdminNavItem } from "./admin-nav.client";
 
 const s = getStrings(DEFAULT_LOCALE);
 
+// W12-40: Horários was folded INTO Equipa (working hours are edited inside each
+// member's Gerir modal), so it is no longer a top-level tab. The /admin/working-
+// hours route survives as a redirect into Equipa for old deep links.
 const NAV: AdminNavItem[] = [
   { href: "/admin", label: s["admin.nav.overview"] },
   { href: "/admin/settings", label: s["admin.nav.settings"] },
   { href: "/admin/staff", label: s["admin.nav.staff"] },
-  { href: "/admin/working-hours", label: s["admin.nav.workingHours"] },
   { href: "/admin/services", label: s["admin.nav.services"] },
   { href: "/admin/locations", label: s["admin.nav.locations"] },
 ];

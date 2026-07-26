@@ -1740,3 +1740,65 @@ invented — the pack layer is a byte-for-byte analogue of `service_location_pri
   no force-push.
  main
  main
+
+## 2026-07-25 — W12-40: Equipa + Horários consolidated into ONE member-management tab
+
+Folded the separate **Horários** (working-hours) admin tab INTO **Equipa** so a team
+member is managed end-to-end from one place. UI/UX + wiring only — NO migration, NO
+schema change, NO new server-action contracts, NO prod writes. `ui-ux-pro-max` invoked
+for the card + modal + interaction design.
+
+- **One tab.** Removed the `/admin/working-hours` nav entry (`admin/layout.tsx`). The
+  route survives as a pure redirect: `/admin/working-hours[?t=<id>]` →
+  `/admin/staff[?t=<id>]` (old deep links keep working; `?t=` re-opens that member's
+  Gerir modal on the Horários section). Rationale for keeping it as a redirect (not a
+  hard 404): preserves any bookmarked/linked schedule URLs and the deep-link contract the
+  Agenda/other surfaces relied on. Logged as a resolvable default in QUESTIONS (Q1).
+- **Per-member cards.** Replaced the Equipa data TABLE with a responsive card grid
+  (`sm:2 / xl:3` cols, light+dark, tokens only, no raw hex). Each card: member colour
+  spine + dot (from `therapistColor()` FNV palette — the W9-05/W12-21 `*-700` tokens),
+  name (authoritative id, colour is reinforcement per W9-05), role chip + job title,
+  Ativo/Inativo `StatusBadge`, location chips (derived from `availability_templates`, the
+  W5-32 assignment), primary service, and a compact tabular working-hours summary, plus a
+  single "Gerir" primary action. Kept `EquipaLocationFilter` + the `SearchBox` toolbar and
+  the KPI summary + invite panel unchanged.
+- **One Gerir modal** (`StaffManageModal`, extended): a centered top-layer native
+  `<dialog>` (`useAnimatedDialog`) with a `SegmentedControl` switching sections, ONLY the
+  active section mounted (progressive disclosure): **Contacto** (name/email/jobTitle/phone
+  → `editStaffAction`), **Função e acesso** (role → `changeRoleAction`, activate/deactivate
+  → `setActiveAction`, password-gated delete → `deleteStaffAction`, in a visually separated
+  danger zone), **Serviço principal** for therapists (→ `setPrimaryServiceAction`), and
+  **Horários** for non-reception (weekday reconcile → `saveTherapistScheduleAction` + the
+  W5-12 Bloquear-horário editor → time-off actions, stacked above). Every control calls its
+  SAME existing server action — zero contract change. Because only the active section is
+  mounted, the Horários surface still carries NO delete-password field (W4-14 invariant).
+- **Server actions.** `working-hours/actions.ts` data behaviour (availability/time-off
+  writes + invariants) is UNCHANGED; only the post-write `revalidatePath`/`redirect` target
+  moved from `/admin/working-hours` to `/admin/staff`. This is routing, not a contract
+  change. The redirect deliberately does NOT carry `&t=` (no modal auto-reopen after a
+  write): auto-opening the manage modal on page load raced with the stacked Bloquear-horário
+  dialog and flaked the time-off e2e (a fast real user could hit it too). After a write the
+  page returns clean, the banner confirms, and the card summary updates; the deep link
+  (`/admin/working-hours?t=<id>` → `/admin/staff?t=<id>`) still auto-opens via the page-level
+  `?t=` handler — the only auto-open path. `TherapistScheduleCard.tsx` deleted (its inline
+  schedule editor now lives in the modal); `TherapistBlocks.tsx` reused as-is.
+- **Guards preserved.** No-invite gate, owner-tier visibility (`manageable`), location-
+  scoped `listStaff` (0045), the 24h `TimeFieldInput` (W12-31), and the scrypt delete gate
+  all intact.
+- **Tests.** `StaffManageModal.test.tsx` rewritten (sections + contact form pins).
+  Re-pointed every working-hours/staff e2e spec to the Equipa surface: `working-hours`,
+  `therapist-blocks`, `agenda-blocked-time`, `equipa-location-filter`,
+  `equipa-primary-service`, `staff-primary-service`, `staff-contact-fields` (all now drive
+  the card grid + Gerir modal; a `data-user-id` card hook backs the deep-link test).
+  `staff-invite` unchanged (invite form untouched).
+- **Deferred (QUESTIONS Q2).** `staff_locations` (migration 0038) membership + per-location
+  `staff_locations.color` EDITING have NO server action in the app yet, and the boundary
+  forbids new contracts. Locations + colour are therefore DISPLAYED (derived: availability
+  assignment + FNV palette) but not yet editable as explicit membership/colour. Editing the
+  per-day location in the Horários section is the current (availability-derived) way to
+  change a member's clinics. A follow-up ticket should add `setStaffLocations` /
+  `setStaffColor` + wire the colour picker.
+- **Gates.** `pnpm lint` (0 errors), `pnpm typecheck` (0 errors), `pnpm test`
+  (155 files, 1335 passed / 5 skipped / 1 todo), `pnpm build` (4/4 — portal needs the same
+  `NEXT_PUBLIC_SUPABASE_*` env CI/Vercel already provide), `pnpm test:e2e` affected specs on
+  chromium (serial). DO-NOT-MERGE: owner VISUAL gate on the new card grid + Gerir modal.
