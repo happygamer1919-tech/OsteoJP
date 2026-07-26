@@ -9,8 +9,9 @@ import { listServices } from "@/lib/admin/services";
 import { listTherapistPrimaries } from "@/lib/admin/therapist-primary-service";
 import { listAvailabilityTemplates } from "@/lib/admin/availability";
 import { listLocations } from "@/lib/admin/locations";
+import { listStaffLocations } from "@/lib/admin/staff-locations";
 import { listTimeOffBlocks } from "@/lib/admin/time-off";
-import { therapistColor } from "@/lib/scheduling/therapist-color";
+import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import { EquipaLocationFilter } from "./EquipaLocationFilter";
 import { StaffInviteForm } from "./StaffInviteForm";
 import { StaffManageModal, type ScheduleDay } from "./StaffManageModal";
@@ -61,6 +62,9 @@ export default async function StaffPage({
   // per-day location select in the schedule editor.
   const locations = (await listLocations(actor)).filter((l) => l.isActive);
   const locationName = new Map(locations.map((l) => [l.id, l.name]));
+  // W12-40-Q2: each member's staff_locations memberships (+colour) — seeds the
+  // Gerir modal's membership picker/colour pickers and the card colour.
+  const staffLocationsByUser = await listStaffLocations(actor);
   const { m, q, location, t: focusId } = await searchParams;
   const query = (q ?? "").trim();
   const locationId = (location ?? "").trim();
@@ -214,7 +218,11 @@ export default async function StaffPage({
             const manageable = isOwner || u.roleSlug !== "owner";
             const isTherapist = u.roleSlug === "therapist";
             const showHours = u.roleSlug !== "reception";
-            const color = therapistColor(u.id);
+            const memberships = staffLocationsByUser.get(u.id) ?? [];
+            // Prefer an explicitly-set membership colour; else the deterministic
+            // FNV colour (W9-05). Card shows one colour, so take the first set.
+            const storedColorKey = memberships.find((mem) => mem.color)?.color ?? null;
+            const color = paletteColorByKey(storedColorKey) ?? therapistColor(u.id);
             const days = buildDays(u.id);
             const workedDays = days.filter((d) => d.on);
             const locIds = [...(assignedLocations.get(u.id) ?? new Set<string>())];
@@ -339,6 +347,7 @@ export default async function StaffPage({
                       showHours={showHours}
                       days={days}
                       locations={locations.map((l) => ({ id: l.id, name: l.name }))}
+                      memberships={memberships}
                       blocks={blocksByMember.get(u.id) ?? []}
                       autoOpen={focusId === u.id}
                     />

@@ -695,3 +695,14 @@ W12-21 palette. This keeps the current PR within its UI/UX + wiring boundary.
 - [ ] Owner: confirm explicit staff_locations membership + colour editing should be a
   separate follow-up ticket (recommended), or expand this PR's boundary to add the two
   server actions. Not blocking the visual gate on the consolidated tab.
+- [x] (2026-07-26) RESOLVED — BUILT as W12-40-Q2: `setStaffLocations` + `setStaffColor` +
+  the "Locais e cor" section in the Gerir modal (this run).
+- [ ] Owner (W12-40-Q2 colour granularity): the colour picker is per (member, clinic) —
+  matches the `staff_locations.color` schema + W12-21's per-(therapist,location) values.
+  Confirm, or if you want ONE colour per person applied across all their clinics.
+  Recommended default: keep per-clinic.
+- [ ] Owner (0045-Q3): new patients' `primary_location_id`. The write path in `createPatient`
+  is correct (actions.ts:83-103), but the create-patient FORM does not send a location, so new
+  app-created patients are owner-only until their first located appointment. Recommended:
+  default to the registering staff's location when they have exactly one membership, else an
+  optional picker; correct the migration comment. Non-migration follow-up, not a blocker.
