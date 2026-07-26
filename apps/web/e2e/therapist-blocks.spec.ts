@@ -98,11 +98,11 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   page,
 }) => {
   // Long multi-dialog flow (clearBlocks → setWorkingHours → book → 2 blocks →
-  // assertions → clearBlocks). ~7.8s locally, but a heavily-loaded CI runner has
-  // been seen ~12x slower (96s), exceeding even the raised 120s global timeout —
-  // this is the single longest test in the suite. Proven correct locally; give it
-  // the most headroom so slow-runner variance can't red it.
-  test.setTimeout(180_000);
+  // assertions → clearBlocks). ~7s locally, but overloaded CI runners have been
+  // seen 26x slower (186s), exceeding even 180s — this is the single longest test
+  // in the suite. Proven correct locally (7.1s, repeatedly). Give it wide headroom
+  // so slow-runner variance can't red it; revisit downward once CI infra is stable.
+  test.setTimeout(420_000);
 
   const date = futureDate(RUN_DAY_BASE + 24);
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
