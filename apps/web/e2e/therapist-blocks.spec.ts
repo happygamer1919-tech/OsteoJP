@@ -97,6 +97,12 @@ async function clearBlocks(page: Page) {
 test("W5-12: both modes create time_off blocks; pontual excluded from availability; overlap warns not cancels", async ({
   page,
 }) => {
+  // Long multi-dialog flow (clearBlocks → setWorkingHours → book → 2 blocks →
+  // assertions → clearBlocks). ~7.8s locally, but ~4x slower on a loaded CI
+  // runner, tripping the 30s default test timeout — the sole cause of this spec's
+  // documented flakiness (it passes deterministically locally). Give it headroom.
+  test.setTimeout(90_000);
+
   const date = futureDate(RUN_DAY_BASE + 24);
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
 
