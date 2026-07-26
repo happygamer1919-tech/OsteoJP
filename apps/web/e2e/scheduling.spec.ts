@@ -138,7 +138,7 @@ test("reschedule an appointment to a different time", async ({ page }) => {
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 
   // Open it from the grid and move it to 11:00.
-  await page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) }).click();
+  await page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) }).first().click();
   dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await fillTime(dialog, "11:00");
@@ -147,13 +147,17 @@ test("reschedule an appointment to a different time", async ({ page }) => {
   await expect(dialog).toBeHidden({ timeout: 12_000 });
   // The appointment moved to 11:00. Since W10-05b the agenda card face is
   // name-only (no time on the face); the time lives in the hover popup, so hover
-  // the card and read "11:00-12:00" there.
-  const movedCard = page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) });
+  // the card and read "11:00-12:00" there. The popover opens on hover and can be
+  // lost to an agenda revalidation re-render, so retry hover+assert together (same
+  // guard as notes-unification) — this was the intermittent toBeVisible flake.
+  const movedCard = page.getByRole("button", { name: new RegExp(PATIENTS.joao.name) }).first();
   await expect(movedCard).toBeVisible({ timeout: 8_000 });
-  await movedCard.hover();
-  await expect(
-    page.getByTestId("appointment-hover-panel").filter({ hasText: "11:00-12:00" }),
-  ).toBeVisible({ timeout: 8_000 });
+  await expect(async () => {
+    await movedCard.hover();
+    await expect(
+      page.getByTestId("appointment-hover-panel").filter({ hasText: "11:00-12:00" }),
+    ).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
 });
 
 test("booking the same therapist at an overlapping time is flagged as a conflict", async ({

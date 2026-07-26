@@ -1827,3 +1827,24 @@ for the card + modal + interaction design.
   build fails only on the pre-existing `NEXT_PUBLIC_SUPABASE_*` prerender prereq). e2e +
   db-tests run in CI (REQUIRED). Non-migration → self-merge on green per policy, unless the
   owner takes the visual gate (recommended, per the #663 precedent).
+
+## 2026-07-26 — e2e suite stabilization (owner-chosen; unblocks #664 normally)
+
+- **Why.** #664's required e2e check reded across 3 CI runs on PRE-EXISTING flaky
+  specs unrelated to the W12-40-Q2 change (proven: the feature + those specs pass
+  locally). Root cause = pathologically slow/overloaded CI runners (a 7.8s-local
+  test observed at 96s on CI) plus two locator/hover races. Owner chose "stabilize
+  the suite first, then merge #664 normally" over an admin-merge.
+- **Fixes (root cause, not masking; all verified locally — 20/20 pass in 50s):**
+  1. `playwright.config.ts`: global test `timeout` 30s → **120s** — absorbs the
+     slow-runner variance that was the dominant timeout-class flake.
+  2. `therapist-blocks.spec.ts:97`: explicit `test.setTimeout(180_000)` — the
+     single longest test (multi-dialog); a bad runner hit 96s.
+  3. `notes-unification.spec.ts`: `.first()` on the "Detalhes da marca" trigger —
+     fixes the strict-mode "resolved to N elements" flake at its root (both tests).
+  4. `scheduling.spec.ts:125`: wrapped the post-reschedule hover+assert in a
+     `.toPass()` retry loop (same guard notes-unification uses) — fixes the
+     hover-popover revalidation race that caused the intermittent `toBeVisible` fail.
+- **Scope note.** These touch pre-existing specs unrelated to W12-40-Q2 but are
+  required to get #664's e2e green; they harden the suite for every future PR. No
+  product/source logic changed.

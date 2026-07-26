@@ -60,7 +60,7 @@ test("REFLECT: an Agenda drawer note shows on the Marcações hover AND the prof
   await safeGoto(page, `/marcacoes?from=${day}&to=${day}`);
   const row = page.locator(".glass-card", { hasText: name }).first();
   await expect(row).toBeVisible({ timeout: 8_000 });
-  const trigger = row.getByRole("button", { name: /Detalhes da marca/i });
+  const trigger = row.getByRole("button", { name: /Detalhes da marca/i }).first();
   const panel = page.getByTestId("appointment-hover-panel").first();
   await expect(async () => {
     await trigger.focus();
@@ -124,7 +124,7 @@ test("TWO-MODE: Notas Rápidas adds a patient-level note and an appointment-scop
   await safeGoto(page, `/marcacoes?from=${day}&to=${day}`);
   const row = page.locator(".glass-card", { hasText: name }).first();
   await expect(row).toBeVisible({ timeout: 8_000 });
-  const trigger = row.getByRole("button", { name: /Detalhes da marca/i });
+  const trigger = row.getByRole("button", { name: /Detalhes da marca/i }).first();
   const panel = page.getByTestId("appointment-hover-panel").first();
   await expect(async () => {
     await trigger.focus();
