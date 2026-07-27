@@ -1872,3 +1872,59 @@ for the card + modal + interaction design.
   exercises null→FNV fallback (seed sets no colours in the e2e fixture).
 - **Non-migration.** The colour VALUES + any missing memberships are an owner-run
   prod seed, staged separately (per-person colour + clinic membership per the list).
+
+## 2026-07-27 - Pre-Launch loop set + board governance + handoff correction (YELLOW)
+
+Wave 12 is CLOSED; opened the PRE-LAUNCH phase (not a numbered wave). Authored the
+loop set `docs/loops/prelaunch/` (PL-01, PL-02, PL-03a, PL-04, PL-05, INC-02),
+moved the board to a committed source of truth, and corrected a stale handoff
+claim. Docs-only; owner-merge; YELLOW does not merge its own PR.
+
+- **Board is now a committed source of truth, not an artifact.** Renamed
+  "OsteoJP - Wave 12 board" -> "OsteoJP - Pre-Launch Board". `docs/board/prelaunch-board.json`
+  is the source of truth; the claude.ai artifact is only a RENDER of it. A board
+  claim is never truth on its own - the `evidence` field carries the proof.
+  `docs/board/validate-board.mjs` is the board's own definition of done: it exits
+  non-zero if any card is `status=shipped` with `evidence=null` (or a launch gate
+  is `state=pass` with `evidence=null`), plus enum/lane/blocked-on integrity.
+  Proven: valid board exits 0; a broken copy (shipped-with-null-evidence,
+  pass-with-null-evidence, blocked-with-null-blocked_on) exits 1. Spec:
+  `docs/board/BOARD-SPEC.md`.
+- **Launch readiness is COUNTED, never estimated:** gates passed / 9 (G1..G9,
+  pass/fail, no partial credit). Seeded fail-closed at 0/9 until each gate's
+  evidence exists.
+- **Three briefing-versus-reality mismatches caught at authoring (rule 11), encoded
+  in the loops and flagged to the owner rather than guessed past:**
+  1. **PL-01** - the briefing hypothesised the agenda should "split same-hour
+     appointments into columns" on an "hour-only grid (migration 0041)". Recon:
+     the vertical stack is INTENTIONAL and locked by a test
+     (`agenda-grid.tsx:39-46`; `agenda-cards.spec.ts:104`), and 0041's
+     `slot_granularity_min` is STORED but has ZERO grid consumers (inert). The loop
+     fixes by BOUNDING the vertical stack to the hour band (satisfies the DoD),
+     NOT by columns, and halts-loud if columns are the only path. Q-PL-01-1.
+  2. **PL-04** - the briefing framed NESA as a service to ADD ("currently 20
+     services"). Recon: NESA is ALREADY seeded ("Tratamento NESA" LAV + "NESA" CB +
+     template + pack; 22 services). So the loop authors a QUESTION (missing for a
+     therapist / at a location / not seeded on prod) + a CYAN prod-existence check,
+     NOT a catalogue insert. Recommended default: the NESA therapist David Batista
+     has no user row yet (deferred-invite set). Q-PL-04-1.
+  3. **PL-05** - the naive fix (filter Terapeuta dropdown to `role='therapist'`)
+     would drop the owner JP, who is a practicing clinician (role=owner). "Bookable"
+     is the `therapist_services` signal, not raw role. Q-PL-05-1.
+- **PL-03: no migration.** Recon proved declaracoes are transient (no DB table/
+  column; `generate.ts:20-23`), so PL-03a (UI + PDF observacoes) is the whole fix.
+  No PL-03b build loop authored; persistence would be a future owner design
+  decision (rule 8 immutability), tracked as a loose-end.
+- **INC-02 root cause named.** The synthetic "Teste CB" on prod is a symptom; the
+  cause is that Rodica has no usable non-prod target (`seed-e2e.mjs` defaults to
+  local; no Vercel-preview-for-Rodica exists). Authored the pt-PT sheet template
+  `docs/ops/rodica-ambiente-de-teste.md` + Q-INC-02-1 (owner provisions the env).
+  Purge = CYAN read-only inventory -> owner AUTORIZO; signed records ANNULLED not
+  deleted (rule 8). YELLOW scopes NO data and runs NO prod write.
+- **Handoff correction (append-only, not silent).** `docs/handoff/WAVE-12-CLOSE-20260727.md`
+  listed Tiago Grilo + David Batista as rowless invite-flow deferrals. Owner
+  reports both in the live Terapeuta dropdown carrying seeded colours (a seeded
+  colour needs a user row). Added Correction C-1 (original text preserved, inline
+  pointer added) correcting the record and routing the row/colour/role mechanism to
+  a CYAN read-only check (YELLOW has no prod access). Lesson: close-out state must
+  be re-derived from a live CYAN read, never carried from a seed script's ID_MAP.
