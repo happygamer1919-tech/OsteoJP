@@ -1,6 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
-import { and, asc, desc, eq, gte, lt, ne, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
@@ -12,10 +12,12 @@ import {
   servicePacks,
   services,
   staffLocations,
+  therapistServices,
   users,
   type DbTx,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { filterBookableTherapists } from "./therapist-bookable";
 import { filterTherapistsByLocation } from "./therapist-location-filter";
 import { listTherapistLocationAssignments } from "./therapist-locations";
 import type {
@@ -239,12 +241,26 @@ export async function listPatientAppointments(
 const fetchStableAgendaRef = unstable_cache(
   async (ctx: RequestContext) =>
     runScoped(ctx, async (tx) => {
-      const [therapistRows, locationRows, serviceRows, packRows] = await Promise.all([
+      const [rawTherapistRows, locationRows, serviceRows, packRows] = await Promise.all([
+        // PL-05: the Terapeuta source is BOOKABLE practitioners, not every
+        // non-reception user. Fetch each active user's role + service-mapping
+        // count, then apply the bookable rule in ./therapist-bookable.ts. A
+        // therapist stays even with zero mappings; the practising owner (role
+        // owner WITH a mapping) stays; the operator owner + the admin, with no
+        // mappings, drop. therapist_services SELECT is tenant-wide RLS, so the
+        // count is correct for every viewer.
         tx
-          .select({ id: users.id, label: users.fullName })
+          .select({
+            id: users.id,
+            label: users.fullName,
+            roleSlug: roles.slug,
+            serviceCount: sql<number>`cast(count(${therapistServices.id}) as int)`,
+          })
           .from(users)
           .innerJoin(roles, eq(users.roleId, roles.id))
-          .where(and(eq(users.isActive, true), ne(roles.slug, "reception")))
+          .leftJoin(therapistServices, eq(therapistServices.therapistUserId, users.id))
+          .where(eq(users.isActive, true))
+          .groupBy(users.id, users.fullName, roles.slug)
           .orderBy(asc(users.fullName)),
         tx
           .select({ id: locations.id, label: locations.name })
@@ -274,6 +290,13 @@ const fetchStableAgendaRef = unstable_cache(
           .where(eq(servicePacks.isActive, true))
           .orderBy(asc(servicePacks.name)),
       ]);
+      // Bookable-practitioner rule applied here so `therapistRows` (and thus both
+      // `therapists` and `allTherapists` downstream) never carries the operator
+      // owner or the admin. Map back to the {id,label} shape the callers expect.
+      const therapistRows = filterBookableTherapists(rawTherapistRows).map(({ id, label }) => ({
+        id,
+        label,
+      }));
       return { therapistRows, locationRows, serviceRows, packRows };
     }),
   ["agenda-stable-ref"],
