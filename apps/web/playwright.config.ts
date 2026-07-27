@@ -42,6 +42,12 @@ export default defineConfig({
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
+  // Per-test wall-clock budget. The default 30s is too tight for this suite's
+  // longer multi-dialog flows on overloaded CI runners, where actions can run
+  // 4-12x slower than local (observed: a 7.8s-local test taking 96s on CI). That
+  // slow-runner timeout was the dominant e2e flake; 120s absorbs the variance
+  // without masking real hangs. Individual long tests may still raise it further.
+  timeout: 120_000,
   reporter: [["html", { open: "never" }], ["list"]],
 
   use: {

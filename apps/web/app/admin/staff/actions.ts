@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
 import { changeStaffRole, deleteStaffMember, editStaff, inviteStaff, setStaffActive } from "@/lib/admin/staff";
 import { setTherapistPrimaryService } from "@/lib/admin/therapist-primary-service";
+import { setStaffColor, setStaffLocations } from "@/lib/admin/staff-locations";
 import { isAdminError } from "@/lib/admin/errors";
 
 export type InviteState = {
@@ -104,6 +105,44 @@ export async function setActiveAction(formData: FormData): Promise<void> {
   let code = "ok";
   try {
     await setStaffActive(actor, String(formData.get("userId") ?? ""), active);
+  } catch (e) {
+    code = isAdminError(e) ? `err:${e.code}` : "err";
+  }
+  revalidatePath("/admin/staff");
+  redirect(`/admin/staff?m=${code}`);
+}
+
+// W12-40-Q2 — set a member's clinic memberships (checkbox multi-picker). The
+// checkbox group posts zero-or-more `locationIds`; an empty set clears them.
+export async function setStaffLocationsAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  let code = "ok";
+  try {
+    await setStaffLocations(
+      actor,
+      String(formData.get("userId") ?? ""),
+      formData.getAll("locationIds").map((v) => String(v)),
+    );
+  } catch (e) {
+    code = isAdminError(e) ? `err:${e.code}` : "err";
+  }
+  revalidatePath("/admin/staff");
+  redirect(`/admin/staff?m=${code}`);
+}
+
+// W12-40-Q2 — set the agenda colour for one (member, location) membership. An
+// empty `color` clears it back to the deterministic FNV colour.
+export async function setStaffColorAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  let code = "ok";
+  try {
+    const color = String(formData.get("color") ?? "");
+    await setStaffColor(
+      actor,
+      String(formData.get("userId") ?? ""),
+      String(formData.get("locationId") ?? ""),
+      color === "" ? null : color,
+    );
   } catch (e) {
     code = isAdminError(e) ? `err:${e.code}` : "err";
   }

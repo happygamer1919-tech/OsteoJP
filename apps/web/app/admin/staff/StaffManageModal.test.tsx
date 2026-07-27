@@ -17,6 +17,8 @@ vi.mock("./actions", () => ({
   deleteStaffAction: vi.fn(),
   setActiveAction: vi.fn(),
   setPrimaryServiceAction: vi.fn(),
+  setStaffLocationsAction: vi.fn(),
+  setStaffColorAction: vi.fn(),
 }));
 vi.mock("../working-hours/actions", () => ({
   saveTherapistScheduleAction: vi.fn(),
@@ -59,6 +61,7 @@ const baseProps = {
   currentPrimaryId: "",
   days: [],
   locations: [{ id: "loc-1", name: "Linda-a-Velha" }],
+  memberships: [] as { locationId: string; color: string | null }[],
   blocks: [],
 };
 
@@ -100,6 +103,7 @@ describe("StaffManageModal — W12-40 consolidated member management", () => {
     );
     expect(html).toContain("Contacto");
     expect(html).toContain("Função e acesso");
+    expect(html).toContain("Locais e cor");
     expect(html).toContain("Serviço principal");
     expect(html).toContain("Horários");
   });
@@ -116,6 +120,8 @@ describe("StaffManageModal — W12-40 consolidated member management", () => {
     );
     expect(html).toContain("Contacto");
     expect(html).toContain("Função e acesso");
+    // Locations & colour is universal (membership drives the 0045 admin basis).
+    expect(html).toContain("Locais e cor");
     expect(html).not.toContain("Serviço principal");
     expect(html).not.toContain("Horários");
   });

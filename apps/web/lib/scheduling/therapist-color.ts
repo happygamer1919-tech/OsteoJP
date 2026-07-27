@@ -69,3 +69,59 @@ export function therapistColor(therapistId: string | null | undefined): Therapis
   if (!therapistId) return THERAPIST_COLORS[0];
   return THERAPIST_COLORS[hashId(therapistId) % THERAPIST_COLORS.length]!;
 }
+
+/**
+ * W12-21 SELECTABLE therapist palette (owner-approved 2026-07-25) — the full set
+ * a colour picker offers when assigning a (member, location) colour in Equipa
+ * (W12-40-Q2). It is the 15 net-new named tokens PLUS the 4 reused hues
+ * (green/blue/teal/purple), i.e. the exact palette proposal the owner approved.
+ *
+ * Every entry is an EXISTING token utility at the -700 (or -900 for ink) step —
+ * NO raw hex here (brand hard constraint) — and its name text clears WCAG AA on
+ * white, machine-guarded by packages/ui/src/tokens-therapist-palette.test.ts.
+ * As with the FNV palette above, colour is REINFORCEMENT: `label` (the
+ * Portuguese colour name) is the authoritative cue, never the hue alone (W9-05).
+ *
+ * The value persisted in `staff_locations.color` is the `key`; `null`/absent
+ * means "no explicit colour" and the agenda keeps the deterministic FNV colour.
+ */
+export const THERAPIST_PALETTE = [
+  { key: "teal", fill: "bg-accent-2-700", text: "text-accent-2-700", label: "Turquesa" },
+  { key: "purple", fill: "bg-accent-1-700", text: "text-accent-1-700", label: "Roxo" },
+  { key: "blue", fill: "bg-v2-blue-700", text: "text-v2-blue-700", label: "Azul" },
+  { key: "green", fill: "bg-v2-green-700", text: "text-v2-green-700", label: "Verde" },
+  { key: "forest", fill: "bg-v2-forest-700", text: "text-v2-forest-700", label: "Verde-escuro" },
+  { key: "chartreuse", fill: "bg-v2-chartreuse-700", text: "text-v2-chartreuse-700", label: "Verde-lima" },
+  { key: "olive", fill: "bg-v2-olive-700", text: "text-v2-olive-700", label: "Azeitona" },
+  { key: "cyan", fill: "bg-v2-cyan-700", text: "text-v2-cyan-700", label: "Ciano" },
+  { key: "navy", fill: "bg-v2-navy-700", text: "text-v2-navy-700", label: "Azul-marinho" },
+  { key: "violet", fill: "bg-v2-violet-700", text: "text-v2-violet-700", label: "Violeta" },
+  { key: "magenta", fill: "bg-v2-magenta-700", text: "text-v2-magenta-700", label: "Magenta" },
+  { key: "pink", fill: "bg-v2-pink-700", text: "text-v2-pink-700", label: "Rosa" },
+  { key: "orange", fill: "bg-v2-orange-700", text: "text-v2-orange-700", label: "Laranja" },
+  { key: "mustard", fill: "bg-v2-mustard-700", text: "text-v2-mustard-700", label: "Mostarda" },
+  { key: "red", fill: "bg-v2-red-700", text: "text-v2-red-700", label: "Vermelho" },
+  { key: "brick", fill: "bg-v2-brick-700", text: "text-v2-brick-700", label: "Telha" },
+  { key: "wine", fill: "bg-v2-wine-700", text: "text-v2-wine-700", label: "Vinho" },
+  { key: "brown", fill: "bg-v2-brown-700", text: "text-v2-brown-700", label: "Castanho" },
+  { key: "ink", fill: "bg-v2-ink-900", text: "text-v2-ink-900", label: "Tinta" },
+] as const;
+
+export type TherapistPaletteColor = (typeof THERAPIST_PALETTE)[number];
+
+const PALETTE_BY_KEY: ReadonlyMap<string, TherapistPaletteColor> = new Map(
+  THERAPIST_PALETTE.map((c) => [c.key, c]),
+);
+
+/** True when `key` is one of the W12-21 palette keys (the setStaffColor allowlist). */
+export function isTherapistPaletteColor(key: string): boolean {
+  return PALETTE_BY_KEY.has(key);
+}
+
+/** The palette entry for a stored key, or null when unset/unknown (→ FNV fallback). */
+export function paletteColorByKey(
+  key: string | null | undefined,
+): TherapistPaletteColor | null {
+  if (!key) return null;
+  return PALETTE_BY_KEY.get(key) ?? null;
+}

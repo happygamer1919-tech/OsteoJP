@@ -97,6 +97,13 @@ async function clearBlocks(page: Page) {
 test("W5-12: both modes create time_off blocks; pontual excluded from availability; overlap warns not cancels", async ({
   page,
 }) => {
+  // Long multi-dialog flow (clearBlocks → setWorkingHours → book → 2 blocks →
+  // assertions → clearBlocks). ~7s locally; the single longest test in the suite.
+  // 180s covers a healthy-but-slow runner with wide margin without letting a hung
+  // run eat the job's 25-min budget. (Pathological CI-infra degradation — a job
+  // killed at its 25-min wall-clock limit — is not fixable by a per-test timeout.)
+  test.setTimeout(180_000);
+
   const date = futureDate(RUN_DAY_BASE + 24);
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
 

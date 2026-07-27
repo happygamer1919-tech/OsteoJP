@@ -4,6 +4,7 @@ import { type MouseEvent, useState } from "react";
 import { Button, SegmentedControl, useAnimatedDialog } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { TimeFieldInput } from "@/components/time-field-input";
+import { THERAPIST_PALETTE } from "@/lib/scheduling/therapist-color";
 import { adminInputInline, adminLabel } from "../admin-ui";
 import { saveTherapistScheduleAction } from "../working-hours/actions";
 import {
@@ -17,6 +18,8 @@ import {
   editStaffAction,
   setActiveAction,
   setPrimaryServiceAction,
+  setStaffColorAction,
+  setStaffLocationsAction,
 } from "./actions";
 
 /**
@@ -51,7 +54,7 @@ export type ScheduleDay = {
   locationId: string;
 };
 
-type Section = "contact" | "role" | "service" | "hours";
+type Section = "contact" | "role" | "locations" | "service" | "hours";
 
 export function StaffManageModal({
   userId,
@@ -69,6 +72,7 @@ export function StaffManageModal({
   showHours,
   days,
   locations,
+  memberships,
   blocks,
   autoOpen = false,
 }: {
@@ -94,8 +98,10 @@ export function StaffManageModal({
   showHours: boolean;
   /** Weekday rows for the schedule editor (Monday-first order). */
   days: ScheduleDay[];
-  /** Active tenant locations for the per-day location select. */
+  /** Active tenant locations for the per-day location select + membership picker. */
   locations: { id: string; name: string }[];
+  /** W12-40-Q2: this member's current staff_locations memberships (+colour). */
+  memberships: { locationId: string; color: string | null }[];
   /** Existing time-off blocks for this member. */
   blocks: BlockView[];
   /** Deep-link (?t=<id>): open the modal on the Horários section. */
@@ -108,6 +114,7 @@ export function StaffManageModal({
   const sectionItems = [
     { value: "contact" as const, label: s["admin.staff.sectionContact"] },
     { value: "role" as const, label: s["admin.staff.sectionRole"] },
+    { value: "locations" as const, label: s["admin.staff.sectionLocations"] },
     ...(isTherapist
       ? [{ value: "service" as const, label: s["admin.staff.sectionService"] }]
       : []),
@@ -124,6 +131,8 @@ export function StaffManageModal({
   };
 
   const fallbackLocation = locations[0]?.id ?? "";
+  const locationName = new Map(locations.map((l) => [l.id, l.name]));
+  const membershipIds = new Set(memberships.map((m) => m.locationId));
 
   const blockLabels: BlockLabels = {
     block: s["admin.workingHours.block"],
@@ -321,6 +330,93 @@ export function StaffManageModal({
                     </div>
                   </form>
                 )}
+              </div>
+            )}
+
+            {section === "locations" && (
+              <div className="flex flex-col gap-5">
+                <p className="text-xs text-v2-text-secondary">
+                  {s["admin.staff.locationsHelp"]}
+                </p>
+
+                {/* Clinic membership multi-picker — one Guardar → setStaffLocationsAction.
+                    Drives the 0045 admin clinical-visibility basis. */}
+                <form action={setStaffLocationsAction} className="flex flex-col gap-2">
+                  <input type="hidden" name="userId" value={userId} />
+                  <span className={adminLabel}>{s["admin.staff.cardLocations"]}</span>
+                  {locations.length === 0 ? (
+                    <p className="text-sm text-v2-text-secondary">
+                      {s["admin.staff.cardNoLocations"]}
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {locations.map((l) => (
+                        <label key={l.id} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            name="locationIds"
+                            value={l.id}
+                            defaultChecked={membershipIds.has(l.id)}
+                            aria-label={l.name}
+                          />
+                          <span className="text-sm text-v2-text-primary">{l.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <div>
+                    <Button type="submit" variant="primary" size="sm">
+                      {s["common.save"]}
+                    </Button>
+                  </div>
+                </form>
+
+                {/* Per-membership agenda colour — one Guardar per clinic →
+                    setStaffColorAction. Colour reinforces; the name stays the id (W9-05). */}
+                <div className="flex flex-col gap-2">
+                  <span className={adminLabel}>{s["admin.staff.colorLabel"]}</span>
+                  {memberships.length === 0 ? (
+                    <p className="text-sm text-v2-text-secondary">
+                      {s["admin.staff.colorNoLocations"]}
+                    </p>
+                  ) : (
+                    memberships.map((mem) => {
+                      const current = THERAPIST_PALETTE.find((c) => c.key === mem.color);
+                      const name = locationName.get(mem.locationId) ?? "—";
+                      return (
+                        <form
+                          key={mem.locationId}
+                          action={setStaffColorAction}
+                          className="flex flex-wrap items-center gap-2"
+                        >
+                          <input type="hidden" name="userId" value={userId} />
+                          <input type="hidden" name="locationId" value={mem.locationId} />
+                          <span className="min-w-28 text-sm text-v2-text-primary">{name}</span>
+                          <span
+                            aria-hidden="true"
+                            className={`h-3 w-3 shrink-0 rounded-full ${current?.fill ?? "bg-v2-border"}`}
+                          />
+                          <select
+                            name="color"
+                            defaultValue={mem.color ?? ""}
+                            aria-label={`${s["admin.staff.colorLabel"]} — ${name}`}
+                            className={adminInputInline}
+                          >
+                            <option value="">{s["admin.staff.colorAuto"]}</option>
+                            {THERAPIST_PALETTE.map((c) => (
+                              <option key={c.key} value={c.key}>
+                                {c.label}
+                              </option>
+                            ))}
+                          </select>
+                          <Button type="submit" variant="ghost" size="sm">
+                            {s["common.save"]}
+                          </Button>
+                        </form>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             )}
 

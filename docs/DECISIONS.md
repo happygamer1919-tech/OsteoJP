@@ -1802,3 +1802,49 @@ for the card + modal + interaction design.
   (155 files, 1335 passed / 5 skipped / 1 todo), `pnpm build` (4/4 — portal needs the same
   `NEXT_PUBLIC_SUPABASE_*` env CI/Vercel already provide), `pnpm test:e2e` affected specs on
   chromium (serial). DO-NOT-MERGE: owner VISUAL gate on the new card grid + Gerir modal.
+
+## 2026-07-26 — W12-40-Q2: editable staff location membership + agenda colour (GREEN)
+
+- **Built the write layer #663 deferred.** New `apps/web/lib/admin/staff-locations.ts`:
+  `listStaffLocations` (read, `users:read`), `setStaffLocations` (exact add/remove diff of a
+  member's clinics; unknown/cross-tenant id rejected; `users:manage` + audited), `setStaffColor`
+  (per-(member,location) colour; W12-21 palette allowlist; no-op when unchanged; requires an
+  existing membership → `not_found`). Server actions `setStaffLocationsAction` /
+  `setStaffColorAction` mirror the existing void→revalidate→redirect pattern. New "Locais e cor"
+  section in the Gerir modal (membership checkboxes + per-clinic colour picker).
+- **Non-migration.** `staff_locations` (0038) already exists; its RLS write policy
+  (owner/admin) already matches the `users:manage` gate, so no schema/RLS change.
+- **Colour model = per (member, location)** (matches the schema's per-row `color` + W12-21's
+  "per-(therapist, location) values"), not one-colour-per-person. Card shows the first set
+  colour; picker is per-clinic. Owner-confirmable (QUESTIONS).
+- **Colour source.** Added an exported `THERAPIST_PALETTE` (the 15 W12-21 tokens + 4 reused) in
+  `therapist-color.ts` — the picker and the `setStaffColor` allowlist share one source. No raw
+  hex (brand constraint); AA guarded by `tokens-therapist-palette.test.ts`.
+- **Card reflection.** The Equipa card colour now prefers a saved membership colour, falling
+  back to the FNV hash. The AGENDA still uses the FNV hash — wiring the scheduling view to the
+  stored per-location colour is a separate follow-up (the W12-21 legend/values work).
+- **Gates.** typecheck 9/9, lint 0 errors, test 1347 passed / 5 skipped, `web` build ✓ (portal
+  build fails only on the pre-existing `NEXT_PUBLIC_SUPABASE_*` prerender prereq). e2e +
+  db-tests run in CI (REQUIRED). Non-migration → self-merge on green per policy, unless the
+  owner takes the visual gate (recommended, per the #663 precedent).
+
+## 2026-07-26 — e2e suite stabilization (owner-chosen; unblocks #664 normally)
+
+- **Why.** #664's required e2e check reded across 3 CI runs on PRE-EXISTING flaky
+  specs unrelated to the W12-40-Q2 change (proven: the feature + those specs pass
+  locally). Root cause = pathologically slow/overloaded CI runners (a 7.8s-local
+  test observed at 96s on CI) plus two locator/hover races. Owner chose "stabilize
+  the suite first, then merge #664 normally" over an admin-merge.
+- **Fixes (root cause, not masking; all verified locally — 20/20 pass in 50s):**
+  1. `playwright.config.ts`: global test `timeout` 30s → **120s** — absorbs the
+     slow-runner variance that was the dominant timeout-class flake.
+  2. `therapist-blocks.spec.ts:97`: explicit `test.setTimeout(180_000)` — the
+     single longest test (multi-dialog); a bad runner hit 96s.
+  3. `notes-unification.spec.ts`: `.first()` on the "Detalhes da marca" trigger —
+     fixes the strict-mode "resolved to N elements" flake at its root (both tests).
+  4. `scheduling.spec.ts:125`: wrapped the post-reschedule hover+assert in a
+     `.toPass()` retry loop (same guard notes-unification uses) — fixes the
+     hover-popover revalidation race that caused the intermittent `toBeVisible` fail.
+- **Scope note.** These touch pre-existing specs unrelated to W12-40-Q2 but are
+  required to get #664's e2e green; they harden the suite for every future PR. No
+  product/source logic changed.
