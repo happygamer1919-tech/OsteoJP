@@ -10,7 +10,7 @@ import {
   type BlockSpan,
 } from "@/lib/scheduling/blocked-time-core";
 import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
-import { therapistColor } from "@/lib/scheduling/therapist-color";
+import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import {
   DAY_END_HOUR,
   DAY_START_HOUR,
@@ -286,7 +286,9 @@ function BlockedBand({ placement }: { placement: BlockPlacement }) {
 function AppointmentName({ appt, onClick }: { appt: AgendaAppointment; onClick: () => void }) {
   const estado = deriveEstado(appt.status, appt.confirmationState);
   const struck = estadoStrikesName(estado);
-  const tColor = therapistColor(appt.practitionerId);
+  // W12-40-T2: prefer the practitioner's assigned colour (staff_locations), fall
+  // back to the deterministic FNV colour when unset. Same rule everywhere.
+  const tColor = paletteColorByKey(appt.colorKey) ?? therapistColor(appt.practitionerId);
 
   return (
     // W12-33: the shared unified hover popup (mini-dashboard). Rendered through a

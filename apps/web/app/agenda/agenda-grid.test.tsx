@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { AgendaGrid } from "./agenda-grid";
-import { therapistColor } from "@/lib/scheduling/therapist-color";
+import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
 // W11-00 v3 (owner ruling 2026-07-21 evening, Fisiozero list model): an
@@ -155,6 +155,21 @@ describe("W11-00 v3 - appointment is a therapist-coloured name line (no card chr
     expect(faceFor(html, "Maria Silva")).toContain(therapistColor(THERAPIST_A.id).text);
     expect(faceFor(html, "Ana Costa")).toContain(therapistColor(THERAPIST_B.id).text);
     expect(therapistColor(THERAPIST_A.id).text).not.toBe(therapistColor(THERAPIST_B.id).text);
+  });
+
+  // W12-40-T2: an assigned colour (staff_locations.color → appt.colorKey) wins
+  // over the deterministic FNV hash, so the agenda matches what admins set in Equipa.
+  it("uses the ASSIGNED colour (colorKey) over the FNV hash when one is set", () => {
+    const assigned = paletteColorByKey("violet")!; // a W12-21 palette hue, not in the FNV set
+    const face = faceFor(render([appt({ colorKey: "violet" })]), "Maria Silva");
+    expect(face).toContain(assigned.text); // text-v2-violet-700
+    expect(assigned.text).not.toBe(therapistColor(THERAPIST_A.id).text);
+    expect(face).not.toContain(therapistColor(THERAPIST_A.id).text);
+  });
+
+  it("falls back to the FNV colour when no colour is assigned (colorKey null)", () => {
+    const face = faceFor(render([appt({ colorKey: null })]), "Maria Silva");
+    expect(face).toContain(therapistColor(THERAPIST_A.id).text);
   });
 
   // W12-11 R10 (Q-W12-01 ruling): the strikethrough now belongs to Falta

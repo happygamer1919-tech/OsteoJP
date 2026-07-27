@@ -104,6 +104,7 @@ export const THERAPIST_PALETTE = [
   { key: "brick", fill: "bg-v2-brick-700", text: "text-v2-brick-700", label: "Telha" },
   { key: "wine", fill: "bg-v2-wine-700", text: "text-v2-wine-700", label: "Vinho" },
   { key: "brown", fill: "bg-v2-brown-700", text: "text-v2-brown-700", label: "Castanho" },
+  { key: "gray", fill: "bg-v2-gray-700", text: "text-v2-gray-700", label: "Cinzento" },
   { key: "ink", fill: "bg-v2-ink-900", text: "text-v2-ink-900", label: "Tinta" },
 ] as const;
 

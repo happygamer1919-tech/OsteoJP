@@ -11,6 +11,7 @@ import {
   roles,
   servicePacks,
   services,
+  staffLocations,
   users,
   type DbTx,
 } from "@osteojp/db";
@@ -35,6 +36,7 @@ function mapAppointment(r: {
   patientName: string;
   practitionerId: string;
   practitionerName: string;
+  colorKey: string | null;
   patientTwoId: string | null;
   patientTwoName: string | null;
   practitionerTwoId: string | null;
@@ -85,6 +87,18 @@ const appointmentSelection = {
   patientName: patients.fullName,
   practitionerId: appointments.practitionerId,
   practitionerName: users.fullName,
+  // W12-40-T2: the practitioner's assigned agenda colour — the first non-null
+  // staff_locations.color for this user (oldest membership = one colour per
+  // person, the SAME rule the Equipa card uses). Correlated + tenant-pinned
+  // (the outer query runs under RLS); NULL → the agenda's FNV fallback.
+  colorKey: sql<string | null>`(
+    select ${staffLocations.color} from ${staffLocations}
+    where ${staffLocations.userId} = ${appointments.practitionerId}
+      and ${staffLocations.tenantId} = ${appointments.tenantId}
+      and ${staffLocations.color} is not null
+    order by ${staffLocations.createdAt} asc
+    limit 1
+  )`.as("colorKey"),
   // Secondary participants (W4-19) — nullable display names.
   patientTwoId: appointments.patientTwoId,
   patientTwoName: patientTwo.fullName,

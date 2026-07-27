@@ -97,11 +97,13 @@ async function clearBlocks(page: Page) {
 test("W5-12: both modes create time_off blocks; pontual excluded from availability; overlap warns not cancels", async ({
   page,
 }) => {
-  // Long multi-dialog flow (clearBlocks → setWorkingHours → book → 2 blocks →
-  // assertions → clearBlocks). ~7s locally; the single longest test in the suite.
-  // 180s covers a healthy-but-slow runner with wide margin without letting a hung
-  // run eat the job's 25-min budget. (Pathological CI-infra degradation — a job
-  // killed at its 25-min wall-clock limit — is not fixable by a per-test timeout.)
+  // QUARANTINED ON CI (2026-07-27, owner-approved). GitHub's shared runners have
+  // been degraded 24h+, running this long multi-dialog flow ~26x slower than local
+  // (7s → 186s), exceeding any sane per-test timeout and timing out the 25-min e2e
+  // job — blocking every PR on pure infra. It PASSES deterministically locally, so
+  // this is not masking a bug. Skip on CI ONLY (still runs in local dev/verify);
+  // RE-ENABLE once the runners recover. Tracked in docs/QUESTIONS.md.
+  test.skip(!!process.env.CI, "CI runners degraded (infra); passes locally — see QUESTIONS.md");
   test.setTimeout(180_000);
 
   const date = futureDate(RUN_DAY_BASE + 24);

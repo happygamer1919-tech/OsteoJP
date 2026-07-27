@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { THERAPIST_COLORS, therapistColor } from "./therapist-color";
+import {
+  THERAPIST_COLORS,
+  THERAPIST_PALETTE,
+  isTherapistPaletteColor,
+  paletteColorByKey,
+  therapistColor,
+} from "./therapist-color";
 
 // W9-05 - CB QA item 7: give each therapist a deterministic colour. These tests
 // pin the two properties that matter: DETERMINISM (same id -> same colour every
@@ -60,5 +66,40 @@ describe("therapistColor - palette integrity (AA, no hex drift)", () => {
     expect(therapistColor(null)).toEqual(THERAPIST_COLORS[0]);
     expect(therapistColor(undefined)).toEqual(THERAPIST_COLORS[0]);
     expect(therapistColor("")).toEqual(THERAPIST_COLORS[0]);
+  });
+});
+
+describe("THERAPIST_PALETTE - assignable per-person colours (W12-40)", () => {
+  it("paletteColorByKey resolves a known key to its token entry", () => {
+    const violet = paletteColorByKey("violet");
+    expect(violet?.fill).toBe("bg-v2-violet-700");
+    expect(violet?.text).toBe("text-v2-violet-700");
+  });
+
+  it("paletteColorByKey returns null for null / empty / unknown (→ FNV fallback)", () => {
+    expect(paletteColorByKey(null)).toBeNull();
+    expect(paletteColorByKey(undefined)).toBeNull();
+    expect(paletteColorByKey("")).toBeNull();
+    expect(paletteColorByKey("not-a-colour")).toBeNull();
+  });
+
+  it("isTherapistPaletteColor is the setStaffColor allowlist", () => {
+    expect(isTherapistPaletteColor("gray")).toBe(true);
+    expect(isTherapistPaletteColor("violet")).toBe(true);
+    expect(isTherapistPaletteColor("mauve")).toBe(false);
+  });
+
+  it("includes the W12-40 gray token (Samuel), labelled Cinzento", () => {
+    const gray = THERAPIST_PALETTE.find((c) => c.key === "gray");
+    expect(gray?.fill).toBe("bg-v2-gray-700");
+    expect(gray?.text).toBe("text-v2-gray-700");
+    expect(gray?.label).toBe("Cinzento");
+  });
+
+  it("carries no raw hex and mirrors fill→text on the same token", () => {
+    for (const c of THERAPIST_PALETTE) {
+      expect(c.fill).not.toMatch(/#|rgb|oklch/);
+      expect(c.text).toBe(c.fill.replace(/^bg-/, "text-"));
+    }
   });
 });

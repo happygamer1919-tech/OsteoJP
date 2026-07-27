@@ -31,6 +31,10 @@ export type AgendaAppointment = {
   patientName: string;
   practitionerId: string;
   practitionerName: string;
+  // W12-40-T2: the practitioner's assigned agenda colour — a W12-21 palette key
+  // (from staff_locations.color, first-non-null membership = one colour per
+  // person, matching the Equipa card). NULL → the deterministic FNV colour.
+  colorKey: string | null;
   // Secondary participants (W4-19, 0032) — optional, display-only. NULL when
   // absent. Primary-only semantics everywhere else.
   patientTwoId: string | null;
