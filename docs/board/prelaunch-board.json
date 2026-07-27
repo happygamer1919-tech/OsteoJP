@@ -33,15 +33,15 @@
   "cards": [
     {
       "id": "GOV-prelaunch-authoring",
-      "title": "Pre-Launch loop set + board governance + handoff correction (this PR)",
-      "lane": "in_flight",
-      "status": "in_flight",
+      "title": "Pre-Launch loop set + board governance + handoff correction (#667)",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "yellow",
       "gate": "owner_merge",
-      "evidence": null,
+      "evidence": { "kind": "pr", "ref": "#667", "at": "2026-07-27" },
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
-      "notes": "YELLOW authoring PR: docs/loops/prelaunch/ (PL-01, PL-02, PL-03a, PL-03b, PL-04, PL-05, INC-02), docs/board/ (spec + JSON + validator), and the WAVE-12-CLOSE handoff correction. Owner-merge; YELLOW never merges its own PR."
+      "notes": "YELLOW authoring PR MERGED as #667 (squash, origin/main @025c20c): docs/loops/prelaunch/ (PL-01, PL-02, PL-03a, PL-03b, PL-04, PL-05, INC-02), docs/board/ (spec + JSON + validator), and the WAVE-12-CLOSE handoff correction. Owner-merged; YELLOW never merged its own PR."
     },
     {
       "id": "PL-01",
@@ -106,14 +106,14 @@
     {
       "id": "PL-05",
       "title": "Terapeuta dropdown lists all staff (owner + admin), not bookable therapists",
-      "lane": "loose_ends",
-      "status": "todo",
+      "lane": "in_flight",
+      "status": "in_flight",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": null,
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
-      "notes": "Claude-found, not reported by Rodica. Same screenshot shows 'Ivan M' (owner) + 'Lurdes Cruz' (admin) as selectable Terapeuta options. Filter the dropdown source to bookable therapists; assert owner/admin-only rows absent; count matches expected bookable set. Loop: PL-05-terapeuta-dropdown-scope.md."
+      "notes": "GREEN IN FLIGHT 2026-07-27: worktree osteojp-pl-05-terapeuta-scope off fresh origin/main (A0 pass @025c20c); filter re-verified data.ts:246 ne(roles.slug,'reception') - bug real & unchanged. Building local synthetic repro + fix (bookable = role='therapist' OR >=1 therapist_services mapping, keeps practising owner JP, drops Ivan M + Lurdes + reception). Owner-visual expected PROD count pinned by CYAN roster inventory REQUESTED 2026-07-27 (Tiago Grilo + David Batista status). OWNER VISUAL GATE - GREEN does NOT self-merge. Loop: PL-05-terapeuta-dropdown-scope.md."
     },
     {
       "id": "INC-02a",
@@ -146,10 +146,10 @@
       "status": "in_flight",
       "owner_terminal": "yellow",
       "gate": "owner_merge",
-      "evidence": null,
+      "evidence": { "kind": "pr", "ref": "#667", "at": "2026-07-27" },
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
-      "notes": "Handoff item 5 lists both as 'genuinely-new, deferred to invite flow' (no rows). Owner reports both visible in the live Terapeuta dropdown carrying seeded colours -> they have rows. Correction appended (not silently edited) in this PR; the row/colour mechanism routed to CYAN read-only confirmation. Overlaps PL-05 (dropdown reads all staff)."
+      "notes": "Doc correction MERGED in #667 (appended, not silently edited). Owner reports both visible in the live Terapeuta dropdown carrying seeded colours -> they have rows, contradicting the handoff's 'no-rows'. REMAINING: CYAN read-only prod confirmation of role + therapist_services mapping, REQUESTED by GREEN 2026-07-27 (GREEN-to-CYAN-PL-05-roster-mapping-inventory). Overlaps PL-05; closes when CYAN returns the inventory."
     },
     {
       "id": "LE-ci-quarantine-reenable",
