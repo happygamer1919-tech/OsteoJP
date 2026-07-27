@@ -8,7 +8,7 @@ import { Clock, Info, MapPin, Stethoscope, StickyNote, User } from "lucide-react
 import { s } from "@/lib/i18n";
 import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
 import { formatTimeOfDay } from "@/lib/scheduling/time";
-import { therapistColor } from "@/lib/scheduling/therapist-color";
+import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
 import { ConfirmationIndicator } from "./confirmation-indicator";
@@ -66,7 +66,9 @@ export function AppointmentHoverPanel({ appt }: { appt: AgendaAppointment }) {
     : estado === "cancelada"
       ? "text-v2-text-secondary"
       : "text-v2-text-primary";
-  const tColor = therapistColor(appt.practitionerId);
+  // W12-40-T2: prefer the practitioner's assigned colour (staff_locations), else
+  // the deterministic FNV colour. Same source as the agenda card + Equipa.
+  const tColor = paletteColorByKey(appt.colorKey) ?? therapistColor(appt.practitionerId);
   const note = appt.notes?.trim() || null;
   const dur = durationMinutes(appt.startsAt, appt.endsAt);
 

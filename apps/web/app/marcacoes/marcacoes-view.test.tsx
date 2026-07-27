@@ -53,6 +53,7 @@ function mkAppt(over: Partial<AgendaAppointment>): AgendaAppointment {
     patientName: "Paciente Um",
     practitionerId: "t1",
     practitionerName: "Terapeuta",
+    colorKey: null,
     patientTwoId: null,
     patientTwoName: null,
     practitionerTwoId: null,

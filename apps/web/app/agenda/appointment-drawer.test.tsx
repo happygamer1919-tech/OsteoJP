@@ -71,6 +71,7 @@ const editAppt: AgendaAppointment = {
   patientName: "Ana Silva",
   practitionerId: "therapist-1",
   practitionerName: "Dr. Costa",
+  colorKey: null,
   patientTwoId: null,
   patientTwoName: null,
   practitionerTwoId: null,

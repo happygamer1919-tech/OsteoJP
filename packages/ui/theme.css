@@ -409,6 +409,7 @@
   --color-v2-brick-700: #9A3324; /* brick red — AA 7.31:1 on white */
   --color-v2-wine-700: #7B2D3A; /* wine — AA 9.22:1 on white */
   --color-v2-brown-700: #5D4037; /* dark brown — AA 9.32:1 on white */
+  --color-v2-gray-700: #4B5563; /* gray (slate) — AA 7.56:1 on white (W12-40) */
   --color-v2-ink-900: #16221F; /* black (ink) — AA 16.37:1 on white */
 
   /* ---- §4.1 Glass colors (color namespace; emits bg- and border- utilities) ---- */

@@ -24,6 +24,7 @@ const base: AgendaAppointment = {
   patientName: "Ana Paciente",
   practitionerId: "00000000-0000-0000-0000-0000000000b1",
   practitionerName: "Dr. Terapeuta",
+  colorKey: null,
   patientTwoId: null,
   patientTwoName: null,
   practitionerTwoId: null,

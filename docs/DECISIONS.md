@@ -1848,3 +1848,27 @@ for the card + modal + interaction design.
 - **Scope note.** These touch pre-existing specs unrelated to W12-40-Q2 but are
   required to get #664's e2e green; they harden the suite for every future PR. No
   product/source logic changed.
+
+## 2026-07-27 — W12-40-T2: therapist colours wired across the agenda (GREEN)
+
+- **Colour model = per PERSON** (owner ruling 2026-07-27, supersedes the artifact's
+  per-location proposal). Stored as `staff_locations.color`, collapsed to the
+  first-non-null membership = the person's colour — the SAME rule the Equipa card
+  already uses (`staff/page.tsx`), so agenda and Equipa always agree.
+- **Wiring (one seam).** A correlated subquery in the agenda `appointmentSelection`
+  (`lib/scheduling/data.ts`) attaches `colorKey` to every `AgendaAppointment`
+  (tenant-pinned, mirrors the `notes` coalesce). The two render sites —
+  `agenda-grid.tsx` (name-line) and `appointment-hover-card.tsx` (the shared hover
+  panel that feeds BOTH the agenda card and Marcações) — resolve
+  `paletteColorByKey(appt.colorKey) ?? therapistColor(id)`. One change → colours
+  reflect on agenda + hover + Marcações + Equipa consistently.
+- **New AA-safe token** `--color-v2-gray-700 #4B5563` (7.56:1 on white) +
+  `THERAPIST_PALETTE` entry `gray`/"Cinzento" (for Samuel). Palette AA test → 16.
+- **Owner colour list → AA-safe palette keys** (2026-07-27): exact where possible;
+  forced substitutions (AA / missing token) = yellow→mustard, light-green→
+  chartreuse, plum→wine, teal-blue→teal, gray→new token. See QUESTIONS.
+- **Gates:** typecheck 9/9, test 1354 pass (incl. new resolver + stored-colour
+  render + gray token), lint 0, web build ok. Stored path unit-covered; e2e
+  exercises null→FNV fallback (seed sets no colours in the e2e fixture).
+- **Non-migration.** The colour VALUES + any missing memberships are an owner-run
+  prod seed, staged separately (per-person colour + clinic membership per the list).

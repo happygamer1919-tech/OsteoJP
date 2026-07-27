@@ -21,8 +21,8 @@ const themeCss = readFileSync(
   "utf8",
 );
 
-// The 15 named tokens W12-21 ADDS, with the approved hex for each. Order matches
-// the proposal table.
+// The 15 named tokens W12-21 ADDS + the W12-40 gray, with the approved hex for
+// each. Order matches the proposal table (gray appended before ink, W12-40).
 const THERAPIST_PALETTE: ReadonlyArray<readonly [token: string, hex: string]> = [
   ["--color-v2-forest-700", "#14532D"], // dark green
   ["--color-v2-chartreuse-700", "#5A7D00"], // yellow-green
@@ -38,6 +38,7 @@ const THERAPIST_PALETTE: ReadonlyArray<readonly [token: string, hex: string]> = 
   ["--color-v2-brick-700", "#9A3324"], // brick red
   ["--color-v2-wine-700", "#7B2D3A"], // wine
   ["--color-v2-brown-700", "#5D4037"], // dark brown
+  ["--color-v2-gray-700", "#4B5563"], // gray (slate) — W12-40 (Samuel)
   ["--color-v2-ink-900", "#16221F"], // black (ink)
 ];
 
@@ -59,11 +60,11 @@ function contrastOnWhite(hex: string): number {
 }
 
 describe("W12-21 therapist palette (approved proposal 2026-07-25)", () => {
-  it("defines exactly the 15 new named tokens W12-21 adds", () => {
+  it("defines exactly the 15 W12-21 tokens + the W12-40 gray", () => {
     for (const [token] of THERAPIST_PALETTE) {
       expect(themeCss.includes(`${token}:`)).toBe(true);
     }
-    expect(THERAPIST_PALETTE).toHaveLength(15);
+    expect(THERAPIST_PALETTE).toHaveLength(16);
   });
 
   it.each(THERAPIST_PALETTE)(
