@@ -1,0 +1,179 @@
+{
+  "board": "OsteoJP - Pre-Launch Board",
+  "schema_version": 1,
+  "phase": "pre-launch",
+  "as_of": "2026-07-27",
+  "renders_to": "claude.ai artifact (a RENDER of this file; this JSON is the source of truth)",
+  "doctrine": "A board claim is never truth on its own. The evidence field carries the proof. GREEN updates this JSON at every checkpoint and re-renders. A card may not enter status=shipped with evidence=null; a launch gate may not be state=pass with evidence=null. See docs/board/BOARD-SPEC.md; enforced by docs/board/validate-board.mjs.",
+  "lanes": [
+    { "id": "launch_gate", "order": 1, "title": "LAUNCH GATE", "note": "Explicit go/no-go conditions, each pass or fail, nothing else. Readiness = passed / 9, counted never estimated." },
+    { "id": "blocked_on_people", "order": 2, "title": "BLOCKED ON PEOPLE", "columns": ["ivan", "jp", "rodica"], "note": "Split into Ivan / JP / Rodica columns; answer latency = now - last_checkpoint, made visible." },
+    { "id": "in_flight", "order": 3, "title": "IN FLIGHT" },
+    { "id": "rodica_batch", "order": 4, "title": "RODICA BATCH", "note": "Live inbox; cards move out of here into In Flight when dispatched." },
+    { "id": "incidents", "order": 5, "title": "INCIDENTS" },
+    { "id": "loose_ends", "order": 6, "title": "LOOSE ENDS" },
+    { "id": "shipped", "order": 7, "title": "SHIPPED", "collapsed": true, "note": "Collapsed by default, count only, expandable." }
+  ],
+  "launch_gate": {
+    "denominator": 9,
+    "readiness_passed": 0,
+    "note": "The launch readiness figure is passed-over-nine. It is NOT a percentage of work done and it is NEVER estimated. No partial credit: each condition is pass or fail.",
+    "conditions": [
+      { "id": "G1", "title": "Working-hours seeded for the real team (availability_templates non-empty)", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "availability_templates is EMPTY for the real roster. Linchpin: also powers PORTAL booking slots. Owner enters hours in Equipa -> Horarios or provides schedules to seed." },
+      { "id": "G2", "title": "REMINDERS_LIVE_SEND resolved and canary sender confirmed", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "Canary was run (env set); awaiting the reminder SMS to fire to confirm the FROM sender. Two-way capability read off the SMS feeds W12-11." },
+      { "id": "G3", "title": "NEW_DB_PASSWORD rotated with full propagation", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "Rotate the NEW prod DB password and propagate to every consumer (Vercel platform/api/portal env, local .env). Owner-terminal only; GREEN never sources prod creds." },
+      { "id": "G4", "title": "Prod free of synthetic data (CYAN PASS, post INC-02)", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "Synthetic 'Teste CB' (+ appts + a Declaracao) on live DB; prior 'Max' residue too. CYAN produces the read-only inventory; owner runs the purge under an AUTORIZO phrase; signed records annulled not deleted. Gate is PASS only on CYAN post-purge PASS." },
+      { "id": "G5", "title": "Rodica batch cleared or explicitly deferred with her sign-off", "state": "fail", "blocked_on": "rodica", "evidence": null, "notes": "The four Telegram items (PL-01..PL-04) plus PL-05 either shipped-and-confirmed by Rodica or explicitly deferred with her written sign-off." },
+      { "id": "G6", "title": "Nine staff mailboxes created on webhs, invite tested to Chris Macov", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "Owner creates the nine @osteojp mailboxes on webhs manually, then a test invite to Chris Macov proves the invite flow end-to-end." },
+      { "id": "G7", "title": "estados flags ON", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "W12-11 estados shipped with ALL flags OFF (REMINDERS_INBOUND, REMINDERS_LIVE_SEND, inbound webhook). Turning them ON is a prod-config decision gated on CYAN review of the inbound-SMS classifier path." },
+      { "id": "G8", "title": "Lawyer sign-off on the RGPD package incl. Twilio DPF/SCC line", "state": "fail", "blocked_on": "jp", "evidence": null, "notes": "External legal sign-off on the RGPD package including the Twilio Data Privacy Framework / Standard Contractual Clauses line. Routed through JP (legal/clinical decisions); not a GREEN-decidable item." },
+      { "id": "G9", "title": "Rodica green light + freeze lift", "state": "fail", "blocked_on": "rodica", "evidence": null, "notes": "Final go: Rodica's explicit green light and the lift of the testing freeze. Distinct from G5 (batch cleared) - this is the launch go/no-go itself." }
+    ]
+  },
+  "cards": [
+    {
+      "id": "GOV-prelaunch-authoring",
+      "title": "Pre-Launch loop set + board governance + handoff correction (this PR)",
+      "lane": "in_flight",
+      "status": "in_flight",
+      "owner_terminal": "yellow",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-27",
+      "notes": "YELLOW authoring PR: docs/loops/prelaunch/ (PL-01, PL-02, PL-03a, PL-03b, PL-04, PL-05, INC-02), docs/board/ (spec + JSON + validator), and the WAVE-12-CLOSE handoff correction. Owner-merge; YELLOW never merges its own PR."
+    },
+    {
+      "id": "PL-01",
+      "title": "Agenda same-hour render: concurrent appointments read as the next hour",
+      "lane": "rodica_batch",
+      "status": "todo",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-27",
+      "notes": "Rodica: 'Agenda continua mal configurada .. as marcacoes descem para a hora seguinte'. Terca 28: 4 appts at 09:00 + 3 at 10:00 stack vertically past their hour line. Loop: docs/loops/prelaunch/PL-01-agenda-same-hour-render.md. Prior art W12-02 (#635), W12-29 (#652). OWNER VISUAL GATE."
+    },
+    {
+      "id": "PL-02",
+      "title": "Patient Marcacoes tab: cannot edit + no authorship line",
+      "lane": "rodica_batch",
+      "status": "todo",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-27",
+      "notes": "Rodica: 'Continuamos a nao conseguir editar as marcacoes do utente, e nao e visivel por quem nem quando foi feita a marcacao'. (a) Gerir marcacao unreachable from the tab; (b) add 'Criada por {staff} em {DD/MM/AAAA HH:mm}'. W12-00 (#633) claimed shipped -> regression-or-incomplete. Loop: PL-02-patient-marcacoes-edit-authorship.md."
+    },
+    {
+      "id": "PL-03a",
+      "title": "Declaracao de Presenca: editable free-text observacoes (UI, non-migration)",
+      "lane": "rodica_batch",
+      "status": "todo",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-27",
+      "notes": "Rodica: 'Continua a nao ser possivel editar as declaracoes de presenca para acrescentar informacoes'. Transient free-text observacoes injected into the PDF between the treatment sentence and the 'Por ser verdade' paragraph. Non-migration path satisfies the DoD. Loop: PL-03a-declaracao-observacoes-ui.md. Persistence split to PL-03b."
+    },
+    {
+      "id": "PL-03b",
+      "title": "Declaracao observacoes persistence - NOT required now (future owner decision)",
+      "lane": "loose_ends",
+      "status": "todo",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-27",
+      "notes": "Recon (2026-07-27) proved declaracoes are TRANSIENT (no DB table/column; generate.ts:20-23 'nothing persisted'), so PL-03a's UI+PDF change is the whole fix and needs NO migration. No PL-03b build loop authored. Persisting a declaracao would be a future owner design decision touching immutability rule 8. See PL-03a section 'Why there is no PL-03b'."
+    },
+    {
+      "id": "PL-04",
+      "title": "NESA: servico to add vs specialty tag on David Batista (AMBIGUOUS)",
+      "lane": "blocked_on_people",
+      "status": "blocked",
+      "owner_terminal": "yellow",
+      "gate": "stakeholder",
+      "evidence": null,
+      "blocked_on": "rodica",
+      "last_checkpoint": "2026-07-27",
+      "notes": "Rodica: 'Falta a opcao NESA'. RECON CORRECTION: NESA is ALREADY seeded as a service (LAV 'Tratamento NESA' + CB 'NESA' + form template + pack, wave08-catalog.ts) - the catalogue is NOT missing it (22 services, not 20). HALTED pending a batched question to Rodica (missing for a therapist / at a location / not seeded on prod) + a CYAN read-only prod-existence check. Recommended default: the NESA therapist (David Batista) has no user row yet (deferred-invite set), so no therapist_services mapping. Loop authors the question, not the fix. Loop: PL-04-nesa-halted-question.md."
+    },
+    {
+      "id": "PL-05",
+      "title": "Terapeuta dropdown lists all staff (owner + admin), not bookable therapists",
+      "lane": "loose_ends",
+      "status": "todo",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-27",
+      "notes": "Claude-found, not reported by Rodica. Same screenshot shows 'Ivan M' (owner) + 'Lurdes Cruz' (admin) as selectable Terapeuta options. Filter the dropdown source to bookable therapists; assert owner/admin-only rows absent; count matches expected bookable set. Loop: PL-05-terapeuta-dropdown-scope.md."
+    },
+    {
+      "id": "INC-02a",
+      "title": "Root cause: Rodica has no safe test target (env fix)",
+      "lane": "incidents",
+      "status": "blocked",
+      "owner_terminal": "ivan",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-07-27",
+      "notes": "Rodica keeps testing on prod because she has no usable target. Give her a named Vercel preview or local target with credentials she can actually use + a one-page pt-PT instruction sheet she can follow without Ivan. This is the root cause of the repeat synthetic-data incidents. Loop: INC-02-synthetic-data-env-and-purge.md (half a)."
+    },
+    {
+      "id": "INC-02b",
+      "title": "Purge synthetic 'Teste CB' from prod (CYAN inventory -> owner AUTORIZO)",
+      "lane": "incidents",
+      "status": "blocked",
+      "owner_terminal": "cyan",
+      "gate": "owner_authorizo",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-07-27",
+      "notes": "Rodica created 'Teste CB' + multiple appts + >=1 generated Declaracao on the live DB (repeat of the July incident). CYAN produces the read-only inventory; owner runs the purge under an AUTORIZO phrase; signed clinical records ANNULLED never deleted (rule 8). YELLOW authors, does NOT scope the data. CYAN counts. Loop: INC-02 (half b)."
+    },
+    {
+      "id": "LE-handoff-correction",
+      "title": "WAVE-12-CLOSE handoff stale: Tiago Grilo + David Batista shown DEFER/no-rows",
+      "lane": "loose_ends",
+      "status": "in_flight",
+      "owner_terminal": "yellow",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-27",
+      "notes": "Handoff item 5 lists both as 'genuinely-new, deferred to invite flow' (no rows). Owner reports both visible in the live Terapeuta dropdown carrying seeded colours -> they have rows. Correction appended (not silently edited) in this PR; the row/colour mechanism routed to CYAN read-only confirmation. Overlaps PL-05 (dropdown reads all staff)."
+    },
+    {
+      "id": "LE-ci-quarantine-reenable",
+      "title": "Re-enable therapist-blocks.spec.ts:97 on CI when runners recover",
+      "lane": "loose_ends",
+      "status": "blocked",
+      "owner_terminal": "green",
+      "gate": "green_self_merge",
+      "evidence": null,
+      "blocked_on": "infra",
+      "last_checkpoint": "2026-07-27",
+      "notes": "Owner-approved quarantine 2026-07-27: skipped on CI only (test.skip(!!process.env.CI, ...)) because GitHub shared runners degraded 24h+ (7s local -> ~186s CI). Runs+passes locally. Delete the test.skip line when runners recover. Tracked in docs/QUESTIONS.md."
+    },
+    {
+      "id": "SHIPPED-wave-12-closeout",
+      "title": "Wave 12 (22 loops + follow-ups) closed & deployed",
+      "lane": "shipped",
+      "status": "shipped",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": { "kind": "pr", "ref": "#666", "at": "2026-07-27" },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-27",
+      "notes": "Wave 12 CLOSED 2026-07-27. Per-loop PRs #633-#665; close-out state #666. Not re-listed here (count only) - see docs/handoff/WAVE-12-CLOSE-20260727.md."
+    }
+  ]
+}
