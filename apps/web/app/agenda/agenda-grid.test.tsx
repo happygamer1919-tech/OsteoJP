@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { AgendaGrid } from "./agenda-grid";
+import { AgendaGrid, groupBandPx } from "./agenda-grid";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
@@ -350,5 +350,53 @@ describe("W12-02 - strong hour rule on the on-the-hour slot TOP, coincident with
       expect(b).toContain("border-t border-surface-muted");
       expect(b).not.toContain("border-v2-border");
     }
+  });
+});
+
+// PL-01: Rodica - "as marcacoes descem para a hora seguinte". A large same-hour
+// cluster of the (intentional) vertical stack grew down past its hour band and
+// read as the next hour. The fix keeps the vertical stack but BOUNDS each
+// same-start group to the nearer of its next hour line and its next start-group,
+// scrolling any overflow WITHIN the band (never truncating a name, never hiding).
+describe("PL-01 - same-start group bounded to its hour band (no bleed into the next hour)", () => {
+  const DAY_BOTTOM = 24 * 48; // 08:00-20:00, 24 half-hour slots x SLOT_HEIGHT.
+
+  it("groupBandPx caps a group to the nearer of the next hour and the next group", () => {
+    // 09:00, nothing after -> the full hour band (96px), never past 10:00.
+    expect(groupBandPx(540, null, DAY_BOTTOM)).toBe(96);
+    // 09:00 with a 10:00 group -> 96px (coincides with the hour line).
+    expect(groupBandPx(540, 600, DAY_BOTTOM)).toBe(96);
+    // 09:00 with a 09:30 group -> only 48px, so it cannot overlap the 09:30 group.
+    expect(groupBandPx(540, 570, DAY_BOTTOM)).toBe(48);
+    // a 09:30 group -> 48px (to the 10:00 hour line).
+    expect(groupBandPx(570, null, DAY_BOTTOM)).toBe(48);
+    // never below half a slot even in a tight sub-slot band (09:50 -> 10:00).
+    expect(groupBandPx(590, 600, DAY_BOTTOM)).toBe(24);
+  });
+
+  it("renders the 09:00 start-group with a max-height bound + internal scroll (FAILS pre-fix)", () => {
+    const html = render([
+      appt({ id: "a", patientName: "Ana Costa" }),
+      appt({ id: "b", patientName: "Bruno Dias" }),
+      appt({ id: "c", patientName: "Carla Nunes" }),
+      appt({ id: "d", patientName: "Diogo Reis" }),
+    ]);
+    // The four share the 09:00 start (08:00Z, summer) -> one group at data-start-min 540.
+    const group = html.match(
+      /<div[^>]*data-testid="agenda-start-group"[^>]*data-start-min="540"[^>]*>/,
+    );
+    expect(group, "the 09:00 start-group div").not.toBeNull();
+    // Bounded to the 09:00 hour band (96px) and scrolls within, never bleeding down.
+    expect(group![0]).toContain("overflow-y-auto");
+    expect(group![0]).toMatch(/max-height:\s*96px/);
+  });
+
+  it("preserves the vertical stack under the bound (no side-by-side split)", () => {
+    const html = render([
+      appt({ id: "a", patientName: "Ana Costa" }),
+      appt({ id: "b", patientName: "Bruno Dias" }),
+    ]);
+    expect(html).not.toMatch(/width:\s*calc\([^)]*%/); // never columnised
+    expect(faces(html)).toHaveLength(2); // still two stacked name lines
   });
 });
