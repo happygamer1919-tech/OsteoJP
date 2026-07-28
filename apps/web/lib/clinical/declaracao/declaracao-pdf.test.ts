@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   DECLARACAO_PARAGRAPH_2,
   DECLARACAO_TITLE,
+  declaracaoBodyParagraphs,
   declaracaoParagraph1,
   renderDeclaracaoPdf,
 } from "./declaracao-pdf";
@@ -24,6 +25,7 @@ const model = (over: Partial<DeclaracaoModel> = {}): DeclaracaoModel => ({
   responsavel: "Dr. João Paulo Santos Silva",
   stampBytes: null,
   nif: null,
+  observacoes: null,
   // W12-30 C1: branded footer sources. Null contact + placeholder fiscal is the
   // minimal shape; individual tests override `contact`/`fiscal` as needed.
   contact: null,
@@ -104,6 +106,48 @@ describe("renderDeclaracaoPdf — bytes, stamp slot, accents", () => {
     // The renderer must not hardcode the responsável; it draws model.responsavel.
     expect(src).not.toContain("João Paulo Santos Silva");
     expect(src).toContain("model.responsavel");
+  });
+});
+
+describe("PL-03a — free-text observações in the body", () => {
+  const OBS_200 = (
+    "Reavaliacao clinica: evolucao favoravel, mobilidade aumentada e dor reduzida. " +
+    "Manter o plano de tratamento e reavaliar dentro de duas semanas conforme combinado. " +
+    "Paciente colaborante, sem intercorrencias durante a sessao de hoje."
+  ).slice(0, 200);
+
+  it("OBS_200 is exactly 200 chars", () => {
+    expect(OBS_200).toHaveLength(200);
+  });
+
+  it("PLACEMENT: observações sits BETWEEN the treatment sentence and 'Por ser verdade'", () => {
+    const blocks = declaracaoBodyParagraphs(model({ observacoes: OBS_200 }));
+    expect(blocks).toEqual([declaracaoParagraph1(model()), OBS_200, DECLARACAO_PARAGRAPH_2]);
+    expect(blocks.indexOf(OBS_200)).toBeGreaterThan(blocks.indexOf(declaracaoParagraph1(model())));
+    expect(blocks.indexOf(OBS_200)).toBeLessThan(blocks.indexOf(DECLARACAO_PARAGRAPH_2));
+  });
+
+  it("EMPTY-SAFE: with no observações the body is exactly the two original paragraphs (no stray block)", () => {
+    expect(declaracaoBodyParagraphs(model({ observacoes: null }))).toEqual([
+      declaracaoParagraph1(model()),
+      DECLARACAO_PARAGRAPH_2,
+    ]);
+  });
+
+  it("CONTENT: a 200-char observações is drawn - the PDF is materially larger than without it", async () => {
+    const withObs = await renderDeclaracaoPdf(model({ observacoes: OBS_200 }));
+    const withoutObs = await renderDeclaracaoPdf(model({ observacoes: null }));
+    expect(new TextDecoder().decode(withObs.slice(0, 5))).toBe("%PDF-");
+    // Drawing 200 chars of new body text adds content-stream bytes.
+    expect(withObs.length).toBeGreaterThan(withoutObs.length);
+  });
+
+  it("renders pt-PT accents in observações without throwing", async () => {
+    await expect(
+      renderDeclaracaoPdf(
+        model({ observacoes: "Sessão de reavaliação: evolução positiva, sem contraindicações." }),
+      ),
+    ).resolves.toBeInstanceOf(Uint8Array);
   });
 });
 
