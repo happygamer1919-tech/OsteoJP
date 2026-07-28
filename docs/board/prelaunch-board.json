@@ -113,7 +113,7 @@
       "evidence": { "kind": "pr", "ref": "#669", "at": "2026-07-27" },
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
-      "notes": "SHIPPED - owner merged #669 (2026-07-27) after the visual gate. Fix = bookable practitioners only (role='therapist' OR >=1 therapist_services mapping): drops Ivan M + Lurdes + reception, keeps every therapist + the practising owner JP. Migration-free. Full CI green incl. the complete e2e suite (proves no regression) + red-then-green proof. PROD expected count pinned by CYAN roster inventory (requested; Tiago Grilo + David Batista role/mapping). Loop: PL-05-terapeuta-dropdown-scope.md."
+      "notes": "SHIPPED (merged #669) BUT carries a LIVE PROD DEFECT found 2026-07-28: the predicate role='therapist' OR >=1 mapping DROPS JP, because on prod JP is role!=therapist with ZERO service mappings (both arms false) -> JP is OUT of the Terapeuta dropdown. The PL-05 loop file's premise that JP carries mappings was false vs prod; the inclusion unit test used a fabricated mapped-owner fixture, so it passed without matching JP's real row. CYAN's hold was correct. Fix tracked under PL-06 (owner must choose the corrected bookability signal - explicit role vs is_bookable flag). Migration-free fix originally, drops Ivan M + Lurdes + reception correctly. Loop: PL-05-terapeuta-dropdown-scope.md."
     },
     {
       "id": "INC-02a",
@@ -162,6 +162,42 @@
       "blocked_on": "infra",
       "last_checkpoint": "2026-07-27",
       "notes": "Owner-approved quarantine 2026-07-27: skipped on CI only (test.skip(!!process.env.CI, ...)) because GitHub shared runners degraded 24h+ (7s local -> ~186s CI). Runs+passes locally. Delete the test.skip line when runners recover. Tracked in docs/QUESTIONS.md."
+    },
+    {
+      "id": "PL-06",
+      "title": "Service mapping = PRESELECTION not RESTRICTION (owner ruling) + PL-05 predicate fix",
+      "lane": "blocked_on_people",
+      "status": "blocked",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-07-28",
+      "notes": "Owner ruling 2026-07-28: the Equipa per-therapist service mapping is a PRESELECTION, never a restriction - all active services stay bookable for every therapist; the mapping only sets the default. Loop authored (PL-06-service-preselection-not-restriction.md); HALTED for the owner gate before building. Blocks on TASK 2d: PL-05's merged predicate (therapist-bookable.ts:36-38, roleSlug==='therapist' OR serviceCount>0) uses the mapping arm as bookability, which the ruling voids AND which DROPS JP on prod (role!=therapist + zero mappings -> JP OUT of the Terapeuta dropdown = a LIVE DEFECT on merged PL-05 #669). GREEN will NOT pick the replacement signal: Option 1 explicit role set (non-migration, but can't split JP vs Ivan M, both owner) or Option 2 an is_bookable flag (migration PL-06b, recommended, durable). 2c settled: services.location_id scopes availability per-location - that STAYS. AWAITING IVAN: choose Option 1/2 + authorize build."
+    },
+    {
+      "id": "CB-NESA",
+      "title": "NESA at Castelo Branco - FROZEN; location gap vs therapist-mapping artifact",
+      "lane": "blocked_on_people",
+      "status": "blocked",
+      "owner_terminal": "green",
+      "gate": "stakeholder",
+      "evidence": null,
+      "blocked_on": "rodica",
+      "last_checkpoint": "2026-07-28",
+      "notes": "FROZEN 2026-07-28 (was the CB-NESA one-row roster write). Under PL-06 the therapist-mapping premise may dissolve. 2c: services.location_id exists. Two branches, decided by NESA(270fb115).location_id (one read-only field, owner-run): (a) location_id=LV -> NESA is LV-only, a real SERVICE-level location gap (fix = a CB NESA service or location_id=null), NOT a therapist mapping; (b) location_id=null -> NESA available at CB, only missing because no CB therapist was mapped -> DISSOLVES under PL-06, no write. Either way the one-row THERAPIST mapping write is the wrong fix and stays frozen. The named-therapist question goes to RODICA in a batch, not Ivan."
+    },
+    {
+      "id": "JP-mapping-frozen",
+      "title": "JP therapist_services map script (sha256 d5acddca) - FROZEN, wrong shape",
+      "lane": "blocked_on_people",
+      "status": "blocked",
+      "owner_terminal": "cyan",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-07-28",
+      "notes": "FROZEN pending the PL-06 predicate ruling. CYAN staged pl05-jp-therapist-services-map-20260728.mjs (sha256 d5acddca) mapping JP to EVERY active service - WRONG shape under PL-06 (mappings become preselection, so all-services makes JP's default preselect ambiguous across ~20). If JP needs mapping data at all it is ONE PRIMARY (Osteopatia/Posturologia per his profile), not all - but the real JP-out fix is the PL-06 bookability signal (2d), possibly not a mapping at all. Do NOT run, do NOT stage a replacement until TASK 1 + 2d settled. Told CYAN 20260728."
     },
     {
       "id": "SHIPPED-wave-12-closeout",
