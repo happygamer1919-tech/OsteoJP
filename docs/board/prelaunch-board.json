@@ -2,7 +2,7 @@
   "board": "OsteoJP - Pre-Launch Board",
   "schema_version": 1,
   "phase": "pre-launch",
-  "as_of": "2026-07-27",
+  "as_of": "2026-07-28",
   "renders_to": "claude.ai artifact (a RENDER of this file; this JSON is the source of truth)",
   "doctrine": "A board claim is never truth on its own. The evidence field carries the proof. GREEN updates this JSON at every checkpoint and re-renders. A card may not enter status=shipped with evidence=null; a launch gate may not be state=pass with evidence=null. See docs/board/BOARD-SPEC.md; enforced by docs/board/validate-board.mjs.",
   "lanes": [
