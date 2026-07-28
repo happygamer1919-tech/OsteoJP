@@ -101,7 +101,7 @@
       "evidence": null,
       "blocked_on": "rodica",
       "last_checkpoint": "2026-07-27",
-      "notes": "Rodica: 'Falta a opcao NESA'. RECON CORRECTION: NESA is ALREADY seeded as a service (LAV 'Tratamento NESA' + CB 'NESA' + form template + pack, wave08-catalog.ts) - the catalogue is NOT missing it. OWNER CONFIRMED 2026-07-28: 'I also see it is present' -> the service exists + is visible, corroborating the recon. Very likely resolved; still waiting on Rodica's SPECIFIC context if she still sees it missing somewhere (a booking context / a therapist without the NESA mapping - e.g. David Batista, see the roster correction). No fix to build - NESA already exists. Loop: PL-04-nesa-halted-question.md."
+      "notes": "Rodica: 'Falta a opcao NESA'. FULLY DIAGNOSED 2026-07-28 (attested read-only prod, sha256 52781a27): NESA the service EXISTS (id 270fb115, active) AND David Batista - the NESA therapist - IS mapped to it, at Linda-a-Velha. So NESA is NOT missing and there is NO mapping gap. The only NESA therapist (David) is LV-ONLY, so NESA will not appear when booking at CASTELO BRANCO (Tiago Grilo is CB but does Fisioterapia) or via a non-NESA therapist - that is the likely 'Falta NESA'. NOT a code defect: if CB needs NESA it is a ROSTER decision (assign the NESA mapping to a CB therapist, or confirm NESA is LV-only) = owner/Rodica call. No build. Loop: PL-04-nesa-halted-question.md."
     },
     {
       "id": "PL-05",
@@ -142,14 +142,14 @@
     {
       "id": "LE-handoff-correction",
       "title": "WAVE-12-CLOSE handoff stale: Tiago Grilo + David Batista shown DEFER/no-rows",
-      "lane": "loose_ends",
-      "status": "in_flight",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "yellow",
       "gate": "owner_merge",
-      "evidence": { "kind": "pr", "ref": "#667", "at": "2026-07-27" },
+      "evidence": { "kind": "sha256", "ref": "52781a27 attested read-only 2026-07-28", "at": "2026-07-28" },
       "blocked_on": null,
-      "last_checkpoint": "2026-07-27",
-      "notes": "Doc correction MERGED in #667 (appended, not silently edited). Owner reports both visible in the live Terapeuta dropdown carrying seeded colours -> they have rows, contradicting the handoff's 'no-rows'. REMAINING: CYAN read-only prod confirmation of role + therapist_services mapping, REQUESTED by GREEN 2026-07-27 (GREEN-to-CYAN-PL-05-roster-mapping-inventory). Overlaps PL-05; closes when CYAN returns the inventory."
+      "last_checkpoint": "2026-07-28",
+      "notes": "CLOSED - attested by an owner-run read-only prod query 2026-07-28 (sha256 52781a27, GREEN-verified before the run). BOTH have real rows: Tiago Grilo 92fc1fb3 (therapist, active, CB, colour blue, maps Fisioterapia) + David Batista f67541b0 (therapist, active, LV, colour chartreuse, maps NESA). Handoff 'deferred/no-rows' was STALE for both. PL-05 correct (both role=therapist -> kept). Ledger: GREEN-LEDGER-tiago-david-nesa-attested-20260728."
     },
     {
       "id": "LE-ci-quarantine-reenable",
