@@ -713,3 +713,13 @@ W12-21 palette. This keeps the current PR within its UI/UX + wiring boundary.
   blocking every PR on pure infra). It still runs + passes in local dev. When the runners
   recover, delete the `test.skip(...)` line to restore CI coverage. Colour/agenda work (#665)
   and the portal PRs merged normally with this in place.
+
+- [ ] PL-06 DoD "Location PROOF" contradicts BLOCKER-1 (web booking ignores
+  `services.location_id`). PL-06a (#682) removes ONLY the therapist coupling and adds
+  no location clause (Field 5 directs exactly this; `data.ts` booking query filters
+  only `isActive`). The DoD's "a location-scoped service must not be offered at
+  another location" cannot hold on the web surface. Recommended default: treat the
+  Location PROOF as SUPERSEDED by the 2c correction; per-location service availability
+  is a separate future loop if ever wanted. Owner: confirm no location enforcement is
+  expected for launch. (Portal `getCatalog` DOES honour `location_id`, but portal is
+  out of V1.)
