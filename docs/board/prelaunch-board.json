@@ -137,7 +137,7 @@
       "evidence": null,
       "blocked_on": "ivan",
       "last_checkpoint": "2026-07-27",
-      "notes": "Rodica created 'Teste CB' + multiple appts + >=1 generated Declaracao on the live DB (repeat of the July incident). CYAN produces the read-only inventory; owner runs the purge under an AUTORIZO phrase; signed clinical records ANNULLED never deleted (rule 8). YELLOW authors, does NOT scope the data. CYAN counts. Loop: INC-02 (half b)."
+      "notes": "Rodica created 'Teste CB' + appts + >=1 Declaracao on the live DB (repeat of July). PLUS (attested read 9815cd63) Ivan M (owner, 48a34faa) has 2 clinical_records as practitioner, 1 SIGNED - synthetic test residue (incl. the known 'Max' 2026-07-25), the only clinical records on prod. The purge inventory MUST include these; the SIGNED one is ANNULLED never deleted (rule 8, immutability). CYAN produces the read-only inventory; owner runs the purge under AUTORIZO. This is the G4 launch-gate blocker. Loop: INC-02 (half b)."
     },
     {
       "id": "LE-handoff-correction",
@@ -164,8 +164,8 @@
       "notes": "Owner-approved quarantine 2026-07-27: skipped on CI only (test.skip(!!process.env.CI, ...)) because GitHub shared runners degraded 24h+ (7s local -> ~186s CI). Runs+passes locally. Delete the test.skip line when runners recover. Tracked in docs/QUESTIONS.md."
     },
     {
-      "id": "PL-06",
-      "title": "Service mapping = PRESELECTION not RESTRICTION (owner ruling) + PL-05 predicate fix",
+      "id": "PL-06a",
+      "title": "Service mapping = preselection not restriction - booking UI/logic (non-migration)",
       "lane": "blocked_on_people",
       "status": "blocked",
       "owner_terminal": "green",
@@ -173,19 +173,31 @@
       "evidence": null,
       "blocked_on": "ivan",
       "last_checkpoint": "2026-07-28",
-      "notes": "Owner ruling 2026-07-28: the Equipa per-therapist service mapping is a PRESELECTION, never a restriction - all active services stay bookable for every therapist; the mapping only sets the default. Loop authored (PL-06-service-preselection-not-restriction.md); HALTED for the owner gate before building. Blocks on TASK 2d: PL-05's merged predicate (therapist-bookable.ts:36-38, roleSlug==='therapist' OR serviceCount>0) uses the mapping arm as bookability, which the ruling voids AND which DROPS JP on prod (role!=therapist + zero mappings -> JP OUT of the Terapeuta dropdown = a LIVE DEFECT on merged PL-05 #669). GREEN will NOT pick the replacement signal: Option 1 explicit role set (non-migration, but can't split JP vs Ivan M, both owner) or Option 2 an is_bookable flag (migration PL-06b, recommended, durable). 2c settled: services.location_id scopes availability per-location - that STAYS. AWAITING IVAN: choose Option 1/2 + authorize build."
+      "notes": "Owner ruling 2026-07-28: the Equipa service mapping is a PRESELECTION, never a restriction - all active services stay bookable for every therapist. PL-06a (non-migration): the booking service Select stops filtering by the therapist's mapping (getTherapistServices) and lists ALL active services, preselecting the primary; NO location clause (BLOCKER 1 RESOLVED - booking already ignores services.location_id, data.ts:271-278); remove any therapist+service reject (none found). DoD: NESA-primary therapist -> change service -> save -> re-read + a negative no-reject assertion, red-then-green. Owner visual gate. BLOCKED pending BLOCKER 2 (JP prod role read) + Ivan's go. Loop: PL-06-service-preselection-not-restriction.md."
     },
     {
-      "id": "CB-NESA",
-      "title": "NESA at Castelo Branco - FROZEN; location gap vs therapist-mapping artifact",
+      "id": "PL-06b",
+      "title": "is_bookable flag (RULED Option 2) - migration + Equipa checkbox + predicate replace",
       "lane": "blocked_on_people",
       "status": "blocked",
       "owner_terminal": "green",
-      "gate": "stakeholder",
+      "gate": "owner_merge",
       "evidence": null,
-      "blocked_on": "rodica",
+      "blocked_on": "ivan",
       "last_checkpoint": "2026-07-28",
-      "notes": "FROZEN 2026-07-28 (was the CB-NESA one-row roster write). Under PL-06 the therapist-mapping premise may dissolve. 2c: services.location_id exists. Two branches, decided by NESA(270fb115).location_id (one read-only field, owner-run): (a) location_id=LV -> NESA is LV-only, a real SERVICE-level location gap (fix = a CB NESA service or location_id=null), NOT a therapist mapping; (b) location_id=null -> NESA available at CB, only missing because no CB therapist was mapped -> DISSOLVES under PL-06, no write. Either way the one-row THERAPIST mapping write is the wrong fix and stays frozen. The named-therapist question goes to RODICA in a batch, not Ivan."
+      "notes": "RULED 2026-07-28: Option 2 - an is_bookable boolean on the staff row (governs Terapeuta-dropdown presence, independent of role AND mappings; three concerns three signals). Replaces therapist-bookable.ts:36-38 (BOTH arms removed). Equipa checkbox in the Gerir modal. FIXES the PL-05 JP-out defect (JP -> is_bookable=true). ATTESTED id-map DERIVED (read c6540cc6, verbatim ids, no fuzzy match): TRUE for 16 (15 therapists + JP), FALSE for 5 (Lurdes, Ivan M, Carlos/Raquel/Tamara reception) - full list in GREEN-LEDGER-pl06-attested-idmap-and-jp-role-20260728. AWAITING Ivan's per-value confirmation, THEN stage. Apply-before-merge, ONE migration in flight, next free number after 0045. Not built (freeze)."
+    },
+    {
+      "id": "CB-NESA",
+      "title": "NESA at Castelo Branco - RESOLVED: dissolves (NESA tenant-wide), no write",
+      "lane": "shipped",
+      "status": "shipped",
+      "owner_terminal": "green",
+      "gate": "stakeholder",
+      "evidence": { "kind": "sha256", "ref": "c6540cc6 - NESA.location_id=NULL", "at": "2026-07-28" },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-28",
+      "notes": "CLOSED 2026-07-28 - dissolves, no write. Attested read c6540cc6: NESA.location_id=NULL (tenant-wide). Web staff booking ignores location_id (data.ts:271-278); portal getCatalog honours it (store.ts:274-288, CYAN's surface that GREEN missed) BUT maps null -> all locations - so NESA is offered at CB on BOTH surfaces once PL-06a removes the therapist filter. No therapist write, no service write. 'Falta NESA' was purely the therapist-mapping artifact. Latent finding (separate future loop): services.location_id is unenforced in the WEB staff query. Ledger: GREEN-LEDGER-pl06-attested-idmap-and-jp-role-20260728."
     },
     {
       "id": "JP-mapping-frozen",
@@ -197,7 +209,31 @@
       "evidence": null,
       "blocked_on": "ivan",
       "last_checkpoint": "2026-07-28",
-      "notes": "FROZEN pending the PL-06 predicate ruling. CYAN staged pl05-jp-therapist-services-map-20260728.mjs (sha256 d5acddca) mapping JP to EVERY active service - WRONG shape under PL-06 (mappings become preselection, so all-services makes JP's default preselect ambiguous across ~20). If JP needs mapping data at all it is ONE PRIMARY (Osteopatia/Posturologia per his profile), not all - but the real JP-out fix is the PL-06 bookability signal (2d), possibly not a mapping at all. Do NOT run, do NOT stage a replacement until TASK 1 + 2d settled. Told CYAN 20260728."
+      "notes": "FROZEN / SUPERSEDED. CYAN staged pl05-jp-therapist-services-map (sha256 d5acddca) mapping JP to EVERY active service - WRONG shape (mappings are preselection under PL-06, so all-services makes JP's default preselect ambiguous). RULING: the JP-out fix is is_bookable=true (PL-06b), NOT a mapping. If JP is ever mapped it is ONE PRIMARY (Osteopatia/Posturologia), not all. Do NOT run, do NOT stage a replacement. Told CYAN 20260728."
+    },
+    {
+      "id": "JP-role-defect",
+      "title": "JP prod role = admin (confirmed) - role-change to owner STAGED for AUTORIZO",
+      "lane": "blocked_on_people",
+      "status": "blocked",
+      "owner_terminal": "green",
+      "gate": "owner_authorizo",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-07-28",
+      "notes": "CONFIRMED (attested read c6540cc6): JP 54d486e0 = role ADMIN, 0 mappings. Owner ruled JP is owner tenant-wide. GREEN's earlier admin-vs-owner self-contradiction corrected (attested = admin). Role-change write STAGED: green-jp-role-admin-to-owner-AUTORIZO (sha256 3c625388), single guarded row (dry-run default; --confirm under AUTORIZO), audited, ref-guarded. Owner runs it. Fixes both the roster defect AND the 0045 access defect (admin write denied). AWAITING owner run."
+    },
+    {
+      "id": "INC-03-0045-jp-write",
+      "title": "0045 access defect: JP (admin) is DENIED clinical-record write - ABOVE PL-06",
+      "lane": "incidents",
+      "status": "blocked",
+      "owner_terminal": "green",
+      "gate": "owner_authorizo",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-07-28",
+      "notes": "0045 clinical_records write permits ONLY role='owner' OR role='therapist'(own) - admin has NO write branch. JP is admin on prod, so he CANNOT write/sign his own patients' clinical records. SEVERITY = LATENT (attested read 9815cd63): JP has ZERO clinical records - the defect has NOT been triggered and there is NO bypass (no write the model denies happened). It would fail the FIRST time he tries to sign. FIX before that = the staged JP admin->owner role-change (sha256 3c625388, AUTORIZO); once JP is owner he can write all in-tenant. Closes when the role-change lands + JP writes a record. No deeper access-model defect found."
     },
     {
       "id": "SHIPPED-wave-12-closeout",

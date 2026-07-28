@@ -34,33 +34,58 @@ zero memory):
   service.ts`, W3-04 / the equipa-primary-service flow), so preselection has a
   data source WITHOUT a new column - the primary drives the default, the form
   shows all active services.
-- **2c ANSWER - service availability IS location-scoped, and that STAYS.**
-  `services.location_id` exists (`packages/db/src/schema.ts:262`, "null = all
-  locations"). So a service can be unavailable at a location independently of
-  therapist; that constraint is UNAFFECTED by this ruling. `service_packs` are
-  also per-location (`locationId`) with per-location pricing (0044) - also
-  untouched. This is NOT ambiguous, so no halt on 2c. **PL-06 changes therapist ->
-  service narrowing ONLY; it must NOT widen a location-scoped service to a location
-  it is not offered at.** The booking form's service list stays filtered by
-  location (via `services.location_id` and pack `locationId`), just never by
-  therapist mapping.
+- **2c CORRECTED (BLOCKER 1, 2026-07-28) - the column EXISTS but booking IGNORES
+  it, so PL-06a has NO location clause.** `services.location_id` exists
+  (`schema.ts:262`, null = all locations) BUT the booking service query does NOT
+  filter on it: `data.ts:271-278` filters ONLY `eq(services.isActive, true)`, and
+  no drawer filters services by location (verified on merged main). So services
+  are ALREADY tenant-wide in the booking form - there is no enforced location
+  constraint to preserve. **PL-06a therefore only removes the therapist coupling
+  (`getTherapistServices` filter); it leaves the service query untouched and adds
+  NO location clause.** Consequence: **CB-NESA DISSOLVES** - it was a
+  therapist-mapping artifact, since booking never scoped services by location.
+  SEPARATE latent finding (NOT PL-06's fix): `services.location_id` is unenforced
+  in booking; a service intended location-scoped is not honoured - a future loop
+  if per-location service availability is wanted. `NESA.location_id` on prod
+  (BLOCKER 1b, owner-run read sha256 c6540cc6) is captured for the record but does
+  not change the booking outcome. (My earlier "keep the location filter" claim was
+  wrong; there is no location filter in booking to keep.)
+- **CORRECTIONS RECORDED (2026-07-28, owner directive):** (i) the SCHEMA call was
+  GREEN's and CORRECT (`services.location_id` exists); (ii) the SURFACE coverage
+  was CYAN's and GREEN MISSED it - GREEN read only the web staff query (`data.ts`,
+  ignores `location_id`); the API/portal `getCatalog`
+  (`apps/api/lib/appointments/store.ts:274-288`) DOES honour it (drops a
+  location-bound service whose location is inactive; scopes bound -> its location,
+  null -> all). (iii) DECIDING VALUE landed: **`NESA.location_id = NULL`** (attested
+  c6540cc6) - NESA is tenant-wide, portal maps null -> all locations -> **CB-NESA
+  DISSOLVES on BOTH surfaces, no write, CLOSED**. (iv) **YELLOW's loop-file premise
+  was WRONG before the code was**: "bookable is the therapist_services signal, not
+  raw role" produced the predicate that dropped JP; PL-06 (is_bookable) SUPERSEDES
+  it - bookability is neither role nor mapping.
 
 **Scope (PL-06a, non-migration):** the booking drawer service Select stops
-filtering by the therapist's mapping and instead lists all active services
-available at the selected location, preselecting the therapist's primary; remove
-any therapist+service reject path if found; Marcações create/edit, batch
-scheduling ("Agendar lote"), and portal booking made consistent (portal is
-out-of-V1 but must not keep the old filter). ZERO migration in PL-06a.
+filtering by the therapist's mapping and instead lists ALL active services
+(tenant-wide, as the booking query already is - NO location clause, see 2c),
+preselecting the therapist's primary; remove any therapist+service reject path if
+found; Marcações create/edit, batch scheduling ("Agendar lote"), and portal
+booking made consistent (portal is out-of-V1 but must not keep the old filter).
+ZERO migration in PL-06a.
 
-## Field 6-consequence (TASK 2d) - the PL-05 bookability signal is now WRONG. HALT for Ivan.
+## Field 6-consequence (TASK 2d) - PL-05 bookability signal RULED: Option 2 (is_bookable flag).
 
 PL-05's merged predicate (`therapist-bookable.ts:36-38`) is
 `roleSlug === "therapist" || serviceCount > 0`. Under this ruling, `serviceCount`
 means PRESELECTION, not bookability - so the second arm no longer means what the
 product says, AND (independently) it currently DROPS JP on prod (role != therapist,
 zero mappings -> both arms false -> JP OUT of the Terapeuta dropdown = a live
-defect, see the CYAN disclosure 20260728). The bookability signal must be
-replaced. **GREEN does NOT pick it. Two options for Ivan:**
+defect, see the CYAN disclosure 20260728). The bookability signal is replaced.
+
+**RULED by Ivan 2026-07-28: Option 2 - an `is_bookable` flag (PL-06b migration).**
+Rationale (for holding the line downstream): role governs AUTHORISATION, mapping
+governs DEFAULT PRESELECTION, the flag governs DROPDOWN PRESENCE - three concerns,
+three signals, no overloading. Role sets are hand-curated and rot at every hire,
+the exact failure that produced the JP defect. Option 1 (role set) is REJECTED.
+The two options considered were:
 
 - **Option 1 - explicit role set (non-migration, PL-06a).** Bookable = role in an
   explicit practitioner set. PROBLEM: JP (practising) and Ivan M (operator) are
@@ -101,18 +126,28 @@ The pre/post service list for a NESA-primary therapist, the change-service-and-r
 
 ## Field 5. Restrictions and scope boundary
 - A0 worktree isolation off fresh `origin/main`. **PL-06a is migration-free**; any flag is PL-06b (owner-gated).
-- **Do NOT widen a location-scoped service** to a location it is not offered at (2c). Therapist filter out, location filter stays.
+- **Location scoping is UNENFORCED in booking (2c / BLOCKER 1)** - the service query ignores `services.location_id`, so there is NO location filter to keep or flatten. PL-06a removes ONLY the therapist coupling. Per-location service availability, if ever wanted, is a separate loop - do not add it here.
 - Server booking guards unchanged except the removal of a therapist+service reject if one exists. Permission matrix untouched.
 - Verify on local `127.0.0.1` synthetic data; cloud REAL DATA ONLY. pt-PT; both i18n files parse; no emoji; plain hyphens; no em/en dashes; no new hex. Never force-push / `--admin`.
 
 ## Field 6. Halt loud if
 - The A0 guard fails.
-- **Before building: the bookability-signal choice (Option 1 vs 2) is not yet ruled by Ivan** - this whole loop is owner-gated on that (Field 6-consequence). Do not build until ruled.
+- **BLOCKER 1 + BLOCKER 2 must be stated as fact before PL-06a builds** (owner directive 2026-07-28). BLOCKER 1 RESOLVED: booking ignores `location_id`, no location clause, CB-NESA dissolves. BLOCKER 2 (JP prod role) + the backfill id-map are pending the attested read (sha256 c6540cc6); do not build until both land.
 - Recon finds a therapist+service REJECT path with a data dependency (e.g. an invoice/pack constraint) that makes removing it unsafe - HALT with the finding.
-- Option 2 chosen -> PL-06b is a migration -> apply-before-merge, owner runs it; never compose into PL-06a.
+- Signal RULED Option 2 -> PL-06b IS a migration -> apply-before-merge, owner runs it; never compose into PL-06a. The backfill id-map must be attested + owner-approved before staging.
 
 ## Field 7. Report back
 The recon of narrowing/reject sites, the owner's signal ruling, the change-service e2e + JP red-then-green + location proof + no-reject assertion, the no-schema diff (PL-06a), suite counts, PR number(s).
+
+## PL-06b build spec (migration, owner-gated, RULED Option 2)
+- **Column:** `is_bookable boolean not null` on the staff row (`users`, tenant-scoped). The flag governs Terapeuta-dropdown presence, independent of role and of service mappings.
+- **Predicate replaced:** `therapist-bookable.ts:36-38` bookability becomes `row.isBookable` - BOTH current arms (`roleSlug==='therapist'` and `serviceCount>0`) REMOVED; `data.ts` selects the flag instead of role + serviceCount.
+- **Equipa control:** an `is_bookable` checkbox in the Gerir modal alongside location + colour (users:manage-gated, audited), mirroring the W12-40 controls.
+- **Backfill (ATTESTED id-map, owner-approved BEFORE staging):** every current role=therapist -> true; JP -> true; Ivan M -> false; Lurdes -> false; reception -> false. An explicit `{user_id: bool}` map DERIVED FROM THE ATTESTED PROD READ (sha256 c6540cc6), never fuzzy-matched (Tiago Grilo nearly overwrote Tiago Reis). GREEN hands the id-map to Ivan; Ivan confirms each value; THEN the migration is staged.
+- **Apply-before-merge:** CYAN CLEAR -> Ivan applies -> journal pasted -> merge. ONE migration in flight; nothing queues behind it until it lands. Migration number = next free after 0045 (check the journal on-branch, never reuse). RLS/isolation assertion in the same PR.
+
+## TEST FIXTURE RULE (permanent, adopted 2026-07-28 - applies to PL-06 and every loop after)
+A test fixture that NAMES A REAL PERSON must be DERIVED FROM AN ATTESTED PROD READ-ONLY SNAPSHOT, or it must not name them (use an anonymous synthetic row). The PL-05 inclusion test passed on a FABRICATED mapped-owner "JP" (serviceCount 3) that did not match JP's real unmapped row - an invented fixture for a real row produces GREEN CI on a live defect. Named-real = attested; unattested = anonymous only.
 
 ## Merge policy (embed, Pre-Launch)
 - **PL-06a is OWNER VISUAL GATE** (booking-form behaviour is visual, migration-free): checks + three Vercel deploys green NECESSARY not sufficient; GREEN pushes the Preview + role steps and HALTs; owner books a NESA-primary therapist for a different service and confirms it saves. GREEN does NOT self-merge.
