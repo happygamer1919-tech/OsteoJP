@@ -501,6 +501,8 @@
   "admin.staff.jobTitlePlaceholder": "Ex.: Fisioterapeuta, Osteopata",
   "admin.staff.phoneLabel": "Telefone",
   "admin.staff.phonePlaceholder": "Ex.: +351 912 345 678",
+  "admin.staff.isBookableLabel": "Disponível para marcações",
+  "admin.staff.isBookableHelp": "Aparece na lista Terapeuta ao marcar. Independente da função e dos serviços atribuídos.",
   "admin.staff.role": "Função",
   "admin.staff.tempPasswordNotice": "Palavra-passe temporária. Entregue-a ao novo utilizador por um canal seguro:",
   "admin.staff.invited": "Membro convidado.",

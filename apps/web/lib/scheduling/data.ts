@@ -8,11 +8,9 @@ import {
   appointments,
   locations,
   patients,
-  roles,
   servicePacks,
   services,
   staffLocations,
-  therapistServices,
   users,
   type DbTx,
 } from "@osteojp/db";
@@ -242,25 +240,19 @@ const fetchStableAgendaRef = unstable_cache(
   async (ctx: RequestContext) =>
     runScoped(ctx, async (tx) => {
       const [rawTherapistRows, locationRows, serviceRows, packRows] = await Promise.all([
-        // PL-05: the Terapeuta source is BOOKABLE practitioners, not every
-        // non-reception user. Fetch each active user's role + service-mapping
-        // count, then apply the bookable rule in ./therapist-bookable.ts. A
-        // therapist stays even with zero mappings; the practising owner (role
-        // owner WITH a mapping) stays; the operator owner + the admin, with no
-        // mappings, drop. therapist_services SELECT is tenant-wide RLS, so the
-        // count is correct for every viewer.
+        // PL-06b: the Terapeuta source is BOOKABLE practitioners, decided by the
+        // explicit is_bookable flag (migration 0046) — NOT derived from role or
+        // service-mapping count (the PL-05 derivation that dropped JP). Fetch each
+        // active user's flag and apply the rule in ./therapist-bookable.ts. No
+        // roles/therapist_services join is needed any more.
         tx
           .select({
             id: users.id,
             label: users.fullName,
-            roleSlug: roles.slug,
-            serviceCount: sql<number>`cast(count(${therapistServices.id}) as int)`,
+            isBookable: users.isBookable,
           })
           .from(users)
-          .innerJoin(roles, eq(users.roleId, roles.id))
-          .leftJoin(therapistServices, eq(therapistServices.therapistUserId, users.id))
           .where(eq(users.isActive, true))
-          .groupBy(users.id, users.fullName, roles.slug)
           .orderBy(asc(users.fullName)),
         tx
           .select({ id: locations.id, label: locations.name })
@@ -290,9 +282,10 @@ const fetchStableAgendaRef = unstable_cache(
           .where(eq(servicePacks.isActive, true))
           .orderBy(asc(servicePacks.name)),
       ]);
-      // Bookable-practitioner rule applied here so `therapistRows` (and thus both
-      // `therapists` and `allTherapists` downstream) never carries the operator
-      // owner or the admin. Map back to the {id,label} shape the callers expect.
+      // Bookable-practitioner rule (is_bookable flag) applied here so
+      // `therapistRows` (and thus both `therapists` and `allTherapists`
+      // downstream) never carries a non-bookable staff row. Map back to the
+      // {id,label} shape the callers expect.
       const therapistRows = filterBookableTherapists(rawTherapistRows).map(({ id, label }) => ({
         id,
         label,

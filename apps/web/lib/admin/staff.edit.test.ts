@@ -42,6 +42,7 @@ type Target = {
   email: string;
   phone: string | null;
   jobTitle: string | null;
+  isBookable: boolean;
 };
 const THERAPIST: Target = {
   isActive: true,
@@ -50,6 +51,7 @@ const THERAPIST: Target = {
   email: "old@osteojp.pt",
   phone: null,
   jobTitle: null,
+  isBookable: false,
 };
 
 /**
@@ -316,6 +318,63 @@ describe("editStaff — W8-02 phone + job title", () => {
 
     expect(stats.updated).toBeUndefined();
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("editStaff — PL-06b is_bookable flag", () => {
+  it("persists is_bookable when it changes and records it in the audit fields", async () => {
+    const { tx, stats } = makeTx({ target: { ...THERAPIST, isBookable: false } });
+    wireRunScoped(tx, stats);
+
+    await editStaff(admin, "ther-1", {
+      fullName: THERAPIST.fullName,
+      email: THERAPIST.email,
+      isBookable: true,
+    });
+
+    // The write carries is_bookable alongside the unchanged profile fields.
+    expect(stats.updated).toEqual({
+      fullName: "Old Name",
+      email: "old@osteojp.pt",
+      phone: null,
+      jobTitle: null,
+      isBookable: true,
+    });
+    // Non-PII boolean — safe to name in the audit trail.
+    const meta = mockAudit.mock.calls[0][2].metadata as Record<string, unknown>;
+    expect(meta.fields).toContain("is_bookable");
+    expect(mockAuthEmail).not.toHaveBeenCalled(); // email unchanged
+  });
+
+  it("is a no-op when is_bookable is unchanged and nothing else changed", async () => {
+    const { tx, stats } = makeTx({ target: { ...THERAPIST, isBookable: true } });
+    wireRunScoped(tx, stats);
+
+    await editStaff(admin, "ther-1", {
+      fullName: THERAPIST.fullName,
+      email: THERAPIST.email,
+      isBookable: true,
+    });
+
+    expect(stats.updated).toBeUndefined();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("leaves is_bookable untouched when the caller omits it", async () => {
+    const { tx, stats } = makeTx({ target: { ...THERAPIST, isBookable: true } });
+    wireRunScoped(tx, stats);
+
+    await editStaff(admin, "ther-1", { fullName: "New Name", email: THERAPIST.email });
+
+    // Profile write happens (name changed) but carries NO isBookable key.
+    expect(stats.updated).toEqual({
+      fullName: "New Name",
+      email: "old@osteojp.pt",
+      phone: null,
+      jobTitle: null,
+    });
+    const meta = mockAudit.mock.calls[0][2].metadata as Record<string, unknown>;
+    expect(meta.fields).not.toContain("is_bookable");
   });
 });
 

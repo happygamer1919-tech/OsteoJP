@@ -64,6 +64,7 @@ export function StaffManageModal({
   jobTitle,
   roleSlug,
   isActive,
+  isBookable,
   roleOptions,
   canDelete,
   isTherapist,
@@ -85,6 +86,8 @@ export function StaffManageModal({
   jobTitle: string;
   roleSlug: string;
   isActive: boolean;
+  /** PL-06b (0046): whether this member appears in the Terapeuta booking dropdown. */
+  isBookable: boolean;
   roleOptions: { slug: string; label: string }[];
   /** Delete row shown only when server-side allows it (never an owner / self). */
   canDelete: boolean;
@@ -255,6 +258,26 @@ export function StaffManageModal({
                     placeholder={s["admin.staff.phonePlaceholder"]}
                     className={adminInputInline}
                   />
+                </label>
+                {/* PL-06b (0046): presence in the Terapeuta booking dropdown, set
+                    explicitly per staff row (decoupled from role and from service
+                    mappings). Unchecked = absent from FormData = false. */}
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    name="isBookable"
+                    defaultChecked={isBookable}
+                    aria-label={s["admin.staff.isBookableLabel"]}
+                    className="mt-1"
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="font-medium text-v2-text-primary">
+                      {s["admin.staff.isBookableLabel"]}
+                    </span>
+                    <span className="text-xs text-v2-text-secondary">
+                      {s["admin.staff.isBookableHelp"]}
+                    </span>
+                  </span>
                 </label>
                 <div>
                   <Button type="submit" variant="primary" size="sm">
