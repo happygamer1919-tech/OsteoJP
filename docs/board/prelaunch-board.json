@@ -70,14 +70,14 @@
     {
       "id": "PL-03a",
       "title": "Declaracao de Presenca: editable free-text observacoes (UI, non-migration)",
-      "lane": "rodica_batch",
-      "status": "todo",
+      "lane": "in_flight",
+      "status": "in_flight",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": null,
+      "evidence": { "kind": "pr", "ref": "#671", "at": "2026-07-27" },
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
-      "notes": "Rodica: 'Continua a nao ser possivel editar as declaracoes de presenca para acrescentar informacoes'. Transient free-text observacoes injected into the PDF between the treatment sentence and the 'Por ser verdade' paragraph. Non-migration path satisfies the DoD. Loop: PL-03a-declaracao-observacoes-ui.md. Persistence split to PL-03b."
+      "notes": "GREEN 2026-07-27: PR #671 OPEN, OWNER VISUAL GATE. Optional free-text observacoes typed in the dialog, rendered in the PDF BETWEEN the treatment sentence and 'Por ser verdade'. TRANSIENT - recon re-verified on-branch, no table/column, no PL-03b needed. Threaded request->generate->model->pdf via new pure declaracaoBodyParagraphs (empty renders byte-identical). maxLength 500 protects the single-page layout. Gates GREEN: lint 0 err, typecheck 9/9, test (web 156 files), build 4/4, e2e declaracao 6/6 + unit placement/content(200)/empty-safe. AWAITING OWNER: generate a declaracao with a note on the Preview, confirm placement + intact signature/footer, then merge."
     },
     {
       "id": "PL-03b",
@@ -106,14 +106,14 @@
     {
       "id": "PL-05",
       "title": "Terapeuta dropdown lists all staff (owner + admin), not bookable therapists",
-      "lane": "in_flight",
-      "status": "in_flight",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": { "kind": "pr", "ref": "#669", "at": "2026-07-27" },
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
-      "notes": "GREEN 2026-07-27: PR #669 OPEN, OWNER VISUAL GATE (GREEN does NOT self-merge). Fix = bookable practitioners only (role='therapist' OR >=1 therapist_services mapping): drops Ivan M + Lurdes + reception, keeps every therapist + the practising owner JP. New pure module therapist-bookable.ts + data.ts filter; migration-free, apps/web only. Gates GREEN: lint 0 err, typecheck 9/9, test 1363, build 4/4, e2e 14/14 (setup+chromium) incl. red-then-green (pre-fix dropdown array contained 'E2E Owner'+'E2E Admin'; fix removes them). AWAITING OWNER: open booking on the Preview, confirm Ivan M + Lurdes gone while therapists + JP remain, then merge. PROD expected count pinned by CYAN roster inventory (requested). Loop: PL-05-terapeuta-dropdown-scope.md."
+      "notes": "SHIPPED - owner merged #669 (2026-07-27) after the visual gate. Fix = bookable practitioners only (role='therapist' OR >=1 therapist_services mapping): drops Ivan M + Lurdes + reception, keeps every therapist + the practising owner JP. Migration-free. Full CI green incl. the complete e2e suite (proves no regression) + red-then-green proof. PROD expected count pinned by CYAN roster inventory (requested; Tiago Grilo + David Batista role/mapping). Loop: PL-05-terapeuta-dropdown-scope.md."
     },
     {
       "id": "INC-02a",
