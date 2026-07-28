@@ -110,10 +110,10 @@
       "status": "in_flight",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": null,
+      "evidence": { "kind": "pr", "ref": "#669", "at": "2026-07-27" },
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
-      "notes": "GREEN IN FLIGHT 2026-07-27: worktree osteojp-pl-05-terapeuta-scope off fresh origin/main (A0 pass @025c20c); filter re-verified data.ts:246 ne(roles.slug,'reception') - bug real & unchanged. Building local synthetic repro + fix (bookable = role='therapist' OR >=1 therapist_services mapping, keeps practising owner JP, drops Ivan M + Lurdes + reception). Owner-visual expected PROD count pinned by CYAN roster inventory REQUESTED 2026-07-27 (Tiago Grilo + David Batista status). OWNER VISUAL GATE - GREEN does NOT self-merge. Loop: PL-05-terapeuta-dropdown-scope.md."
+      "notes": "GREEN 2026-07-27: PR #669 OPEN, OWNER VISUAL GATE (GREEN does NOT self-merge). Fix = bookable practitioners only (role='therapist' OR >=1 therapist_services mapping): drops Ivan M + Lurdes + reception, keeps every therapist + the practising owner JP. New pure module therapist-bookable.ts + data.ts filter; migration-free, apps/web only. Gates GREEN: lint 0 err, typecheck 9/9, test 1363, build 4/4, e2e 14/14 (setup+chromium) incl. red-then-green (pre-fix dropdown array contained 'E2E Owner'+'E2E Admin'; fix removes them). AWAITING OWNER: open booking on the Preview, confirm Ivan M + Lurdes gone while therapists + JP remain, then merge. PROD expected count pinned by CYAN roster inventory (requested). Loop: PL-05-terapeuta-dropdown-scope.md."
     },
     {
       "id": "INC-02a",
