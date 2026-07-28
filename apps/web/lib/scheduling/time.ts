@@ -230,3 +230,20 @@ export function daySlots(): number[] {
   }
   return slots;
 }
+
+/**
+ * Provenance timestamp for an appointment: "DD/MM/AAAA HH:mm" in Europe/Lisbon,
+ * 24h. Shared by the agenda hover card and the patient Marcações row (PL-02) so
+ * "Criado por ... Criado em ..." reads identically on both surfaces.
+ */
+export function formatCreatedAt(iso: string): string {
+  return new Intl.DateTimeFormat("pt-PT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: LISBON_TZ,
+  }).format(new Date(iso));
+}

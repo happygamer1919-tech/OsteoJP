@@ -7,7 +7,7 @@ import { Clock, Info, MapPin, Stethoscope, StickyNote, User } from "lucide-react
 
 import { s } from "@/lib/i18n";
 import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
-import { formatTimeOfDay } from "@/lib/scheduling/time";
+import { formatCreatedAt, formatTimeOfDay } from "@/lib/scheduling/time";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
@@ -39,17 +39,6 @@ function durationMinutes(startsAt: string, endsAt: string): number {
 
 // created_at is stored UTC; display in Europe/Lisbon (CLAUDE.md dates rule), the
 // clinic locale (pt-PT), as a compact date + time distinct from the appointment time.
-function formatCreatedAt(iso: string): string {
-  return new Intl.DateTimeFormat("pt-PT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Lisbon",
-  }).format(new Date(iso));
-}
-
 /**
  * The shared mini-dashboard PANEL (pure content, no trigger/positioning). Both
  * surfaces render this inside HoverPopover: the agenda card and the Marcacoes
