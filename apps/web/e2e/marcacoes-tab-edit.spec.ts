@@ -158,3 +158,42 @@ test("cancel a row from Consultas (W5-09)", async ({ page }, testInfo) => {
   await expect(cancelled.getByText("Cancelada")).toBeVisible({ timeout: 8_000 });
   await expect(cancelled.getByText("Gerir marcação")).toHaveCount(0);
 });
+
+test("PL-02 (b): the Marcações row shows who created the appointment and when", async ({
+  page,
+}, testInfo) => {
+  const date = bandDay(44, testInfo.retry);
+  await book(page, PATIENTS.maria.name, date, "16:00");
+
+  await openConsultas(page);
+  const created = row(page, date, "16:00").getByTestId("marcacao-created");
+  await expect(created).toBeVisible();
+  // Reuses the agenda hover-card provenance: "Criado por {staff} · Criado em {DD/MM/AAAA HH:mm}".
+  await expect(created).toContainText("Criado por");
+  await expect(created).toContainText("Criado em");
+  await expect(created).toContainText(/\d{2}\/\d{2}\/\d{4}/); // the formatted date renders
+  await expect(created).not.toContainText(/AM|PM/i); // 24h
+});
+
+test("PL-02 (a): reschedule from the Marcações tab saves and the row reflects the new time", async ({
+  page,
+}, testInfo) => {
+  const date = bandDay(45, testInfo.retry);
+  await book(page, PATIENTS.maria.name, date, "09:00");
+
+  await openConsultas(page);
+  const nineRow = row(page, date, "09:00");
+  await nineRow.getByText("Gerir marcação").click();
+  await nineRow.getByRole("button", { name: /Reagendar/i }).click();
+
+  const drawer = page.getByRole("dialog");
+  await expect(drawer).toBeVisible();
+  // A conflict-free target on this isolated band day -> the save succeeds.
+  await fillTime(drawer, "17:00");
+  await drawer.getByRole("button", { name: /^Reagendar$/ }).click();
+
+  // Saved: the drawer closes and the row now reads the new time (re-read).
+  await expect(drawer).toBeHidden({ timeout: 8_000 });
+  await expect(row(page, date, "17:00")).toBeVisible({ timeout: 8_000 });
+  await expect(row(page, date, "09:00")).toHaveCount(0);
+});

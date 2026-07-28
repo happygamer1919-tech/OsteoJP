@@ -31,7 +31,7 @@ import {
   isLegalEstadoTransition,
   legalEstadoTransitions,
 } from "@/lib/scheduling/estado-transitions";
-import { formatTimeOfDay, lisbonDateTimeToUtc, lisbonParts } from "@/lib/scheduling/time";
+import { formatCreatedAt, formatTimeOfDay, lisbonDateTimeToUtc, lisbonParts } from "@/lib/scheduling/time";
 import type {
   AgendaAppointment,
   AppointmentStatusValue,
@@ -186,6 +186,17 @@ function AppointmentRow({
             {a.practitionerName}
             {a.serviceName ? ` · ${a.serviceName}` : ""}
           </span>
+          {/* PL-02 (b): provenance line - who created the marcação and when.
+              Reuses the already-fetched createdByName/createdAt and the SAME
+              i18n + formatter as the agenda hover card (24h Lisbon). A null
+              creator is a portal booking. */}
+          {a.createdAt && (
+            <span data-testid="marcacao-created" className="text-xs text-text-secondary">
+              {s["appointment.createdBy"]}: {a.createdByName ?? s["appointment.createdByPortal"]}
+              {" · "}
+              {s["appointment.createdAt"]} {formatCreatedAt(a.createdAt)}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <StatusChip tone={STATUS_TONE[a.status]} dot>
