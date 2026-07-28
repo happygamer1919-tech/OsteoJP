@@ -20,6 +20,7 @@ export type DeclaracaoRequest = {
   endTime: string; // HH:MM
   locationId?: string | null;
   nif?: string | null; // W12-24 - editable NIF, prefilled from patients.nif
+  observacoes?: string | null; // PL-03a - optional free text, transient
 };
 
 export async function generateDeclaracaoUrlAction(

@@ -42,6 +42,22 @@ export function declaracaoParagraph1(m: DeclaracaoModel): string {
 export const DECLARACAO_PARAGRAPH_2 =
   "Por ser verdade se passa a presente declaração que vai assinada pelo responsável dos serviços e autenticada com o carimbo em uso nesta clínica.";
 
+/**
+ * The ordered body paragraphs drawn between the title and the "{localidade}, {dia}"
+ * line. PL-03a: the optional free-text observações sits BETWEEN the treatment
+ * sentence (paragraph 1) and the "Por ser verdade" paragraph (paragraph 2), and
+ * ONLY when non-empty - so an empty observações leaves the body identical to
+ * before (no stray block). Pure + exported so the ordering is unit-testable
+ * without extracting text from the rendered PDF.
+ */
+export function declaracaoBodyParagraphs(m: DeclaracaoModel): string[] {
+  return [
+    declaracaoParagraph1(m),
+    ...(m.observacoes ? [m.observacoes] : []),
+    DECLARACAO_PARAGRAPH_2,
+  ];
+}
+
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
   const lines: string[] = [];
   let line = "";
@@ -149,19 +165,20 @@ export async function renderDeclaracaoPdf(model: DeclaracaoModel): Promise<Uint8
   center(DECLARACAO_TITLE, y, 20, bold, INK);
   y -= 60;
 
-  // 3. Paragraph 1 (interpolated), left-aligned wrapped.
-  for (const line of wrapText(declaracaoParagraph1(model), regular, 12, CONTENT_W)) {
-    page.drawText(line, { x: MARGIN, y, size: 12, font: regular, color: INK });
-    y -= 18;
+  // 3. Body paragraphs: the treatment sentence, then the optional free-text
+  //    observações (PL-03a), then "Por ser verdade" - each left-aligned wrapped,
+  //    with 12px between paragraphs. An empty observações yields exactly the two
+  //    original paragraphs at the original positions.
+  for (const para of declaracaoBodyParagraphs(model)) {
+    for (const line of wrapText(para, regular, 12, CONTENT_W)) {
+      page.drawText(line, { x: MARGIN, y, size: 12, font: regular, color: INK });
+      y -= 18;
+    }
+    y -= 12;
   }
-  y -= 12;
-
-  // 4. Paragraph 2 (verbatim), left-aligned wrapped.
-  for (const line of wrapText(DECLARACAO_PARAGRAPH_2, regular, 12, CONTENT_W)) {
-    page.drawText(line, { x: MARGIN, y, size: 12, font: regular, color: INK });
-    y -= 18;
-  }
-  y -= 48;
+  // The loop already applied 12px after the last paragraph; add 36 more so the
+  // gap before the localidade line stays the original 48px.
+  y -= 36;
 
   // 5. "{localidade}, {dia}" — centered.
   center(`${model.localidade}, ${model.dia}`, y, 12, regular, INK);

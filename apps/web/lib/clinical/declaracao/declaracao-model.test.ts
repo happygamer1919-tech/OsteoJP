@@ -212,3 +212,15 @@ describe("W9-03/W12-32 per-location carimbo - the erro grave", () => {
     expect(m.dia).toBe("12/07/2026");
   });
 });
+
+describe("PL-03a — observações threads through the model (trimmed, empty -> null)", () => {
+  it("carries the trimmed observações", () => {
+    const m = buildDeclaracaoModel({ ...base, observacoes: "  evolução positiva  ", tenantSettings: {} });
+    expect(m.observacoes).toBe("evolução positiva");
+  });
+  it("empty / whitespace / absent observações becomes null (no body block)", () => {
+    expect(buildDeclaracaoModel({ ...base, observacoes: "   ", tenantSettings: {} }).observacoes).toBeNull();
+    expect(buildDeclaracaoModel({ ...base, observacoes: null, tenantSettings: {} }).observacoes).toBeNull();
+    expect(buildDeclaracaoModel({ ...base, tenantSettings: {} }).observacoes).toBeNull();
+  });
+});

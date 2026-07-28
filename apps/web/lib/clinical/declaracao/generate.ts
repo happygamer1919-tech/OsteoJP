@@ -36,6 +36,9 @@ export type GenerateDeclaracaoInputs = {
   /** W12-24: patient NIF as entered in the dialog (prefilled from `patients.nif`,
    *  editable). Threaded to the model; the declaration is not persisted. */
   nif?: string | null;
+  /** PL-03a: optional free-text observações entered in the dialog. Threaded to
+   *  the model (rendered between the two body paragraphs); never persisted. */
+  observacoes?: string | null;
 };
 
 async function tenantDefaultLocation(tx: DbTx): Promise<SourceLocation | null> {
@@ -109,6 +112,7 @@ export async function generateDeclaracaoPdf(
     localidade: built.localidade,
     stampLocationKey: built.stampLocationKey,
     nif: inputs.nif,
+    observacoes: inputs.observacoes,
     sourceLocation: built.sourceLocation,
     fiscalSource: built.fiscalSource,
     tenantSettings: built.tenantSettings,
