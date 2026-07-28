@@ -46,20 +46,20 @@
     {
       "id": "PL-01",
       "title": "Agenda same-hour render: concurrent appointments read as the next hour",
-      "lane": "rodica_batch",
-      "status": "todo",
+      "lane": "in_flight",
+      "status": "in_flight",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": null,
+      "evidence": { "kind": "pr", "ref": "#675", "at": "2026-07-28" },
       "blocked_on": null,
-      "last_checkpoint": "2026-07-27",
-      "notes": "Rodica: 'Agenda continua mal configurada .. as marcacoes descem para a hora seguinte'. Terca 28: 4 appts at 09:00 + 3 at 10:00 stack vertically past their hour line. Loop: docs/loops/prelaunch/PL-01-agenda-same-hour-render.md. Prior art W12-02 (#635), W12-29 (#652). OWNER VISUAL GATE."
+      "last_checkpoint": "2026-07-28",
+      "notes": "GREEN 2026-07-28: PR #675 OPEN, OWNER VISUAL GATE. Fix keeps the intentional vertical stack but BOUNDS each same-start group to the nearer of its next hour line and its next group (new pure groupBandPx), overflow scrolls WITHIN the band - a cluster no longer descends into the next hour; names never truncated, nothing hidden. Placement math + inert 0041 UNTOUCHED (not columnised, not activated) - confirms YELLOW's briefing-vs-reality flag. Red-then-green SSR test (09:00 group carries max-height:96px + overflow; fails pre-fix) + groupBandPx unit test; vertical-stack tests stay green (agenda-cards:104 equal-x/different-y). Gates GREEN: lint 0, typecheck 9/9, test (web 157), build 4/4, e2e agenda-cards+week 7/7. Bound MECHANISM (scroll vs +N vs compact) = owner call at the gate (Q-PL-01-1). AWAITING OWNER: book a same-hour cluster on the Preview, confirm it reads within its hour, then merge."
     },
     {
       "id": "PL-02",
       "title": "Patient Marcacoes tab: cannot edit + no authorship line",
-      "lane": "in_flight",
-      "status": "in_flight",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": { "kind": "pr", "ref": "#673", "at": "2026-07-28" },
