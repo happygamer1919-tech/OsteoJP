@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addDays,
+  formatCreatedAt,
   formatTimeOfDay,
   isoWeekdayMon0,
   lisbonDateTimeToUtc,
@@ -103,5 +104,23 @@ describe("rangeForView", () => {
     // Lisbon (exclusive), so the range now covers Saturday 2026-04-18.
     expect(startUtc.toISOString()).toBe("2026-04-12T23:00:00.000Z");
     expect(endUtc.toISOString()).toBe("2026-04-18T23:00:00.000Z");
+  });
+});
+
+describe("formatCreatedAt (PL-02 provenance, 24h Europe/Lisbon)", () => {
+  it("formats a UTC instant as DD/MM/AAAA HH:mm in Lisbon, 24h (summer +1)", () => {
+    // July -> Lisbon is UTC+1 (WEST), so 08:30Z -> 09:30 local.
+    const out = formatCreatedAt("2026-07-12T08:30:00Z");
+    expect(out).toContain("12/07/2026");
+    expect(out).toContain("09:30");
+    expect(out).not.toMatch(/AM|PM/i);
+  });
+  it("uses 24h for afternoon times (no 12h/PM)", () => {
+    // 18:05Z -> 19:05 Lisbon (summer).
+    expect(formatCreatedAt("2026-07-12T18:05:00Z")).toContain("19:05");
+  });
+  it("honours the Lisbon winter offset (UTC+0)", () => {
+    // January -> Lisbon is UTC+0, so 08:30Z -> 08:30 local.
+    expect(formatCreatedAt("2026-01-12T08:30:00Z")).toContain("08:30");
   });
 });
