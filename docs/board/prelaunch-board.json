@@ -185,19 +185,19 @@
       "evidence": null,
       "blocked_on": "ivan",
       "last_checkpoint": "2026-07-28",
-      "notes": "RULED 2026-07-28: Option 2 - an is_bookable boolean on the staff row (governs Terapeuta-dropdown presence, independent of role AND mappings; three concerns three signals). Replaces therapist-bookable.ts:36-38 (BOTH arms removed). Equipa checkbox in the Gerir modal. FIXES the PL-05 JP-out live defect (JP -> is_bookable=true). Backfill = an ATTESTED id-map (every role=therapist true; JP true; Ivan M/Lurdes/reception false) derived from the owner-run read sha256 c6540cc6, handed to Ivan for confirmation BEFORE the migration is staged (no fuzzy name matching - Tiago Grilo nearly overwrote Tiago Reis). Apply-before-merge, ONE migration in flight, next free number after 0045. BLOCKED on the attested read + Ivan's id-map approval."
+      "notes": "RULED 2026-07-28: Option 2 - an is_bookable boolean on the staff row (governs Terapeuta-dropdown presence, independent of role AND mappings; three concerns three signals). Replaces therapist-bookable.ts:36-38 (BOTH arms removed). Equipa checkbox in the Gerir modal. FIXES the PL-05 JP-out defect (JP -> is_bookable=true). ATTESTED id-map DERIVED (read c6540cc6, verbatim ids, no fuzzy match): TRUE for 16 (15 therapists + JP), FALSE for 5 (Lurdes, Ivan M, Carlos/Raquel/Tamara reception) - full list in GREEN-LEDGER-pl06-attested-idmap-and-jp-role-20260728. AWAITING Ivan's per-value confirmation, THEN stage. Apply-before-merge, ONE migration in flight, next free number after 0045. Not built (freeze)."
     },
     {
       "id": "CB-NESA",
-      "title": "NESA at Castelo Branco - FROZEN; location gap vs therapist-mapping artifact",
-      "lane": "blocked_on_people",
-      "status": "blocked",
+      "title": "NESA at Castelo Branco - RESOLVED: dissolves (NESA tenant-wide), no write",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
       "gate": "stakeholder",
-      "evidence": null,
-      "blocked_on": "rodica",
+      "evidence": { "kind": "sha256", "ref": "c6540cc6 - NESA.location_id=NULL", "at": "2026-07-28" },
+      "blocked_on": null,
       "last_checkpoint": "2026-07-28",
-      "notes": "FROZEN -> DISSOLVES under PL-06. BLOCKER 1 RESOLVED from code: the booking service query does NOT filter services.location_id (data.ts:271-278, isActive only) - services are already tenant-wide in booking. So NESA was never location-filtered; it only failed to appear for a CB therapist because of the THERAPIST mapping filter, which PL-06a removes. -> No therapist write, no service write for booking. The prod NESA.location_id (owner-run read sha256 c6540cc6) is captured for the record (latent schema intent) but does NOT change the booking outcome. SEPARATE latent finding: services.location_id is unenforced in booking (a future loop only if per-location availability is wanted). Stays blocked only until Ivan confirms the read; then close."
+      "notes": "CLOSED 2026-07-28 - dissolves, no write. Attested read c6540cc6: NESA.location_id=NULL (tenant-wide). Web staff booking ignores location_id (data.ts:271-278); portal getCatalog honours it (store.ts:274-288, CYAN's surface that GREEN missed) BUT maps null -> all locations - so NESA is offered at CB on BOTH surfaces once PL-06a removes the therapist filter. No therapist write, no service write. 'Falta NESA' was purely the therapist-mapping artifact. Latent finding (separate future loop): services.location_id is unenforced in the WEB staff query. Ledger: GREEN-LEDGER-pl06-attested-idmap-and-jp-role-20260728."
     },
     {
       "id": "JP-mapping-frozen",
@@ -213,15 +213,27 @@
     },
     {
       "id": "JP-role-defect",
-      "title": "JP prod role: admin (CYAN read) vs owner (Wave-12 roster intent) - roster defect?",
+      "title": "JP prod role = admin (confirmed) - role-change to owner STAGED for AUTORIZO",
       "lane": "blocked_on_people",
       "status": "blocked",
       "owner_terminal": "green",
-      "gate": "owner_merge",
+      "gate": "owner_authorizo",
       "evidence": null,
       "blocked_on": "ivan",
       "last_checkpoint": "2026-07-28",
-      "notes": "BLOCKER 2: GREEN's report contradicted itself (Task 1 said JP role=admin, Task 2d said owner) - sloppy, corrected: the only ATTESTED prod read (CYAN) says JP=admin; the Wave-12 roster INTENDED JP=owner (role-write allowlist JP->owner). If prod really shows admin, the clinic owner's role is WRONG on prod = a roster defect needing a prod role write (owner-run). MOOT for PL-06 (is_bookable does not read role) but on the board, not a footnote. Definitive value comes from the owner-run read sha256 c6540cc6 (lists JP's role). AWAITING that read; if admin, owner confirms + fixes JP->owner."
+      "notes": "CONFIRMED (attested read c6540cc6): JP 54d486e0 = role ADMIN, 0 mappings. Owner ruled JP is owner tenant-wide. GREEN's earlier admin-vs-owner self-contradiction corrected (attested = admin). Role-change write STAGED: green-jp-role-admin-to-owner-AUTORIZO (sha256 3c625388), single guarded row (dry-run default; --confirm under AUTORIZO), audited, ref-guarded. Owner runs it. Fixes both the roster defect AND the 0045 access defect (admin write denied). AWAITING owner run."
+    },
+    {
+      "id": "INC-03-0045-jp-write",
+      "title": "0045 access defect: JP (admin) is DENIED clinical-record write - ABOVE PL-06",
+      "lane": "incidents",
+      "status": "blocked",
+      "owner_terminal": "green",
+      "gate": "owner_authorizo",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-07-28",
+      "notes": "0045 clinical_records write policy (insert/update/delete WITH CHECK) permits ONLY role='owner' OR role='therapist'(own) - admin has NO write branch (matrix literally 'admin -> WRITE REMOVED'). JP is admin on prod, so he CANNOT write/sign his own patients' clinical records right now. Priority ABOVE PL-06 (owner directive). FIX = the same JP admin->owner role-change (sha256 3c625388, AUTORIZO). SEVERITY depends on JP's clinical-records count (owner-run expanded read sha256 9815cd63): non-zero = a write the model denies already happened (bypass, e.g. service-role or pre-0045 records) = deeper access-model defect; zero = not yet surfaced. AWAITING the count + the role-change."
     },
     {
       "id": "SHIPPED-wave-12-closeout",

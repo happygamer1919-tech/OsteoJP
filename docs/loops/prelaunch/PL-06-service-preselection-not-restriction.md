@@ -50,6 +50,18 @@ zero memory):
   (BLOCKER 1b, owner-run read sha256 c6540cc6) is captured for the record but does
   not change the booking outcome. (My earlier "keep the location filter" claim was
   wrong; there is no location filter in booking to keep.)
+- **CORRECTIONS RECORDED (2026-07-28, owner directive):** (i) the SCHEMA call was
+  GREEN's and CORRECT (`services.location_id` exists); (ii) the SURFACE coverage
+  was CYAN's and GREEN MISSED it - GREEN read only the web staff query (`data.ts`,
+  ignores `location_id`); the API/portal `getCatalog`
+  (`apps/api/lib/appointments/store.ts:274-288`) DOES honour it (drops a
+  location-bound service whose location is inactive; scopes bound -> its location,
+  null -> all). (iii) DECIDING VALUE landed: **`NESA.location_id = NULL`** (attested
+  c6540cc6) - NESA is tenant-wide, portal maps null -> all locations -> **CB-NESA
+  DISSOLVES on BOTH surfaces, no write, CLOSED**. (iv) **YELLOW's loop-file premise
+  was WRONG before the code was**: "bookable is the therapist_services signal, not
+  raw role" produced the predicate that dropped JP; PL-06 (is_bookable) SUPERSEDES
+  it - bookability is neither role nor mapping.
 
 **Scope (PL-06a, non-migration):** the booking drawer service Select stops
 filtering by the therapist's mapping and instead lists ALL active services
