@@ -46,14 +46,14 @@
     {
       "id": "PL-01",
       "title": "Agenda same-hour render: concurrent appointments read as the next hour",
-      "lane": "in_flight",
-      "status": "in_flight",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": { "kind": "pr", "ref": "#675", "at": "2026-07-28" },
       "blocked_on": null,
       "last_checkpoint": "2026-07-28",
-      "notes": "GREEN 2026-07-28: PR #675 OPEN, OWNER VISUAL GATE. Fix keeps the intentional vertical stack but BOUNDS each same-start group to the nearer of its next hour line and its next group (new pure groupBandPx), overflow scrolls WITHIN the band - a cluster no longer descends into the next hour; names never truncated, nothing hidden. Placement math + inert 0041 UNTOUCHED (not columnised, not activated) - confirms YELLOW's briefing-vs-reality flag. Red-then-green SSR test (09:00 group carries max-height:96px + overflow; fails pre-fix) + groupBandPx unit test; vertical-stack tests stay green (agenda-cards:104 equal-x/different-y). Gates GREEN: lint 0, typecheck 9/9, test (web 157), build 4/4, e2e agenda-cards+week 7/7. Bound MECHANISM (scroll vs +N vs compact) = owner call at the gate (Q-PL-01-1). AWAITING OWNER: book a same-hour cluster on the Preview, confirm it reads within its hour, then merge."
+      "notes": "SHIPPED - owner merged #675 (2026-07-28) after the visual gate. Keeps the intentional vertical stack but BOUNDS each same-start group to the nearer of its next hour line and its next group (new pure groupBandPx); overflow scrolls WITHIN the band - a cluster no longer descends into the next hour, names never truncated, nothing hidden. Placement math + inert 0041 UNTOUCHED. Red-then-green SSR test + groupBandPx unit test; vertical-stack tests stayed green. Bound mechanism = scroll-within-band (Q-PL-01-1 default owner-accepted at the gate). ALL FOUR Rodica-batch code loops now shipped."
     },
     {
       "id": "PL-02",
@@ -101,7 +101,7 @@
       "evidence": null,
       "blocked_on": "rodica",
       "last_checkpoint": "2026-07-27",
-      "notes": "Rodica: 'Falta a opcao NESA'. RECON CORRECTION: NESA is ALREADY seeded as a service (LAV 'Tratamento NESA' + CB 'NESA' + form template + pack, wave08-catalog.ts) - the catalogue is NOT missing it (22 services, not 20). HALTED pending a batched question to Rodica (missing for a therapist / at a location / not seeded on prod) + a CYAN read-only prod-existence check. Recommended default: the NESA therapist (David Batista) has no user row yet (deferred-invite set), so no therapist_services mapping. Loop authors the question, not the fix. Loop: PL-04-nesa-halted-question.md."
+      "notes": "Rodica: 'Falta a opcao NESA'. RECON CORRECTION: NESA is ALREADY seeded as a service (LAV 'Tratamento NESA' + CB 'NESA' + form template + pack, wave08-catalog.ts) - the catalogue is NOT missing it. OWNER CONFIRMED 2026-07-28: 'I also see it is present' -> the service exists + is visible, corroborating the recon. Very likely resolved; still waiting on Rodica's SPECIFIC context if she still sees it missing somewhere (a booking context / a therapist without the NESA mapping - e.g. David Batista, see the roster correction). No fix to build - NESA already exists. Loop: PL-04-nesa-halted-question.md."
     },
     {
       "id": "PL-05",
