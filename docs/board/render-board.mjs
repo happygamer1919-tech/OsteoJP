@@ -210,8 +210,8 @@ const html = `<title>OsteoJP · Pre-Launch Board</title>
   <header>
     <div class="eyebrow">OsteoJP · Pre-Launch · GREEN executor</div>
     <h1>Pre-Launch Board</h1>
-    <p class="sub">Rendered from <code>docs/board/prelaunch-board.json</code> by <code>render-board.mjs</code> - the committed source of truth. A board claim is never truth on its own: the evidence field carries the proof, an empty evidence slot renders visibly empty. Wave 12 is closed; this is the pre-launch phase.</p>
-    <div class="live"><span class="dot"></span> Snapshot ${esc(board.as_of ?? "")} · launch readiness ${passed}/${denom} · rendered from committed JSON</div>
+    <p class="sub">Rendered from <code>docs/board/prelaunch-board.json</code> by <code>render-board.mjs</code> - the committed source of truth. <b>Two separate meters:</b> the lanes below track DELIVERY work (what GREEN builds and ships); the Launch Gate tracks 9 GO-LIVE conditions that are human/prod actions, so it stays low until those people act - it is NOT a percentage of the build work. Wave 12 is closed; this is the pre-launch phase.</p>
+    <div class="live"><span class="dot"></span> Snapshot ${esc(board.as_of ?? "")} · delivered: <b>${shipped.length} shipped</b> · ${cardsIn("in_flight").length} in flight · ${cardsIn("blocked_on_people").length} blocked on people · launch gate ${passed}/${denom} (go-live milestones, human/prod)</div>
   </header>
 
   <div class="gate-wrap">
