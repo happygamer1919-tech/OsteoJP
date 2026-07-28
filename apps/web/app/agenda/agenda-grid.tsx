@@ -59,6 +59,28 @@ function groupByStart(appts: AgendaAppointment[]): [string, AgendaAppointment[]]
     ]);
 }
 
+/**
+ * PL-01 - the max height a same-start group may occupy. The intentional vertical
+ * stack (W11-00 v3) is PRESERVED, but bounded to the nearer of (a) the next hour
+ * gridline and (b) the next start-group, so a large same-hour cluster no longer
+ * grows down past its hour ("as marcacoes descem para a hora seguinte"). Overflow
+ * scrolls WITHIN the band (overflow-y-auto on the group) - names are never
+ * truncated and nothing is hidden, it just cannot bleed into the next hour's row.
+ * Placement math (minToPx/SLOT_HEIGHT/daySlots) is untouched; this only caps a
+ * group's rendered height. Pure + exported so the bound is unit-testable.
+ */
+export function groupBandPx(
+  startMin: number,
+  nextGroupStartMin: number | null,
+  dayBottomPx: number,
+): number {
+  const thisTop = minToPx(startMin);
+  const nextHourTop = minToPx((Math.floor(startMin / 60) + 1) * 60);
+  const nextGroupTop = nextGroupStartMin != null ? minToPx(nextGroupStartMin) : dayBottomPx;
+  // Never below half a slot, so a lone group in a tight band stays legible.
+  return Math.max(SLOT_HEIGHT / 2, Math.min(nextHourTop, nextGroupTop) - thisTop);
+}
+
 export function AgendaGrid({
   view,
   anchor,
@@ -208,17 +230,31 @@ export function AgendaGrid({
               {/* W11-00 v3: appointment names as a Fisiozero-style vertical list.
                   Each start slot is a full-width column; same-slot appointments
                   stack one name per line (never side by side). */}
-              {groupByStart(dayAppts).map(([startsAt, group]) => (
-                <div
-                  key={startsAt}
-                  className="absolute inset-x-0 z-10 flex flex-col"
-                  style={{ top: minToPx(lisbonMinutesFromMidnight(new Date(startsAt))) }}
-                >
-                  {group.map((a) => (
-                    <AppointmentName key={a.id} appt={a} onClick={() => onSelectAppointment(a)} />
-                  ))}
-                </div>
-              ))}
+              {groupByStart(dayAppts).map(([startsAt, group], gi, groups) => {
+                const startMin = lisbonMinutesFromMidnight(new Date(startsAt));
+                const nextStartMin =
+                  gi + 1 < groups.length
+                    ? lisbonMinutesFromMidnight(new Date(groups[gi + 1]![0]))
+                    : null;
+                // PL-01: cap the group to its hour band so a large same-hour
+                // cluster stays inside its hour; overflow scrolls within.
+                return (
+                  <div
+                    key={startsAt}
+                    data-testid="agenda-start-group"
+                    data-start-min={startMin}
+                    className="absolute inset-x-0 z-10 flex flex-col overflow-y-auto"
+                    style={{
+                      top: minToPx(startMin),
+                      maxHeight: groupBandPx(startMin, nextStartMin, totalHeight),
+                    }}
+                  >
+                    {group.map((a) => (
+                      <AppointmentName key={a.id} appt={a} onClick={() => onSelectAppointment(a)} />
+                    ))}
+                  </div>
+                );
+              })}
 
               {/* Current-time line (on-palette burgundy, not an error red - §10). */}
               {isToday && nowVisible && (
