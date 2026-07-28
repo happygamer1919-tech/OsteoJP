@@ -137,7 +137,7 @@
       "evidence": null,
       "blocked_on": "ivan",
       "last_checkpoint": "2026-07-27",
-      "notes": "Rodica created 'Teste CB' + multiple appts + >=1 generated Declaracao on the live DB (repeat of the July incident). CYAN produces the read-only inventory; owner runs the purge under an AUTORIZO phrase; signed clinical records ANNULLED never deleted (rule 8). YELLOW authors, does NOT scope the data. CYAN counts. Loop: INC-02 (half b)."
+      "notes": "Rodica created 'Teste CB' + appts + >=1 Declaracao on the live DB (repeat of July). PLUS (attested read 9815cd63) Ivan M (owner, 48a34faa) has 2 clinical_records as practitioner, 1 SIGNED - synthetic test residue (incl. the known 'Max' 2026-07-25), the only clinical records on prod. The purge inventory MUST include these; the SIGNED one is ANNULLED never deleted (rule 8, immutability). CYAN produces the read-only inventory; owner runs the purge under AUTORIZO. This is the G4 launch-gate blocker. Loop: INC-02 (half b)."
     },
     {
       "id": "LE-handoff-correction",
@@ -233,7 +233,7 @@
       "evidence": null,
       "blocked_on": "ivan",
       "last_checkpoint": "2026-07-28",
-      "notes": "0045 clinical_records write policy (insert/update/delete WITH CHECK) permits ONLY role='owner' OR role='therapist'(own) - admin has NO write branch (matrix literally 'admin -> WRITE REMOVED'). JP is admin on prod, so he CANNOT write/sign his own patients' clinical records right now. Priority ABOVE PL-06 (owner directive). FIX = the same JP admin->owner role-change (sha256 3c625388, AUTORIZO). SEVERITY depends on JP's clinical-records count (owner-run expanded read sha256 9815cd63): non-zero = a write the model denies already happened (bypass, e.g. service-role or pre-0045 records) = deeper access-model defect; zero = not yet surfaced. AWAITING the count + the role-change."
+      "notes": "0045 clinical_records write permits ONLY role='owner' OR role='therapist'(own) - admin has NO write branch. JP is admin on prod, so he CANNOT write/sign his own patients' clinical records. SEVERITY = LATENT (attested read 9815cd63): JP has ZERO clinical records - the defect has NOT been triggered and there is NO bypass (no write the model denies happened). It would fail the FIRST time he tries to sign. FIX before that = the staged JP admin->owner role-change (sha256 3c625388, AUTORIZO); once JP is owner he can write all in-tenant. Closes when the role-change lands + JP writes a record. No deeper access-model defect found."
     },
     {
       "id": "SHIPPED-wave-12-closeout",
