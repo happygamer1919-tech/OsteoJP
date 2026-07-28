@@ -78,6 +78,10 @@ export type DeclaracaoInputs = {
   /** W12-24: the patient NIF as entered in the dialog (prefilled from
    *  `patients.nif`, editable). Trimmed; null/empty -> omitted from the body. */
   nif?: string | null;
+  /** PL-03a: optional free-text observações typed in the dialog before
+   *  generation. Trimmed; null/empty -> the body has no observações block.
+   *  Transient (never persisted). */
+  observacoes?: string | null;
   /** W12-30 C1: the clinic this declaration is FOR (the marcação's location,
    *  else the tenant default), resolved to the print-ready contact block for the
    *  branded footer. null -> no contact block (the fiscal identity still prints). */
@@ -99,6 +103,8 @@ export type DeclaracaoModel = {
   responsavel: string;
   /** W12-24: patient NIF, or null when not provided (omitted from the body). */
   nif: string | null;
+  /** PL-03a: trimmed free-text observações, or null -> no observações block. */
+  observacoes: string | null;
   /** The owner-supplied signature + carimbo image FOR THIS LOCATION, or null
    *  -> blank stamp space (W9-03). Never another location's stamp. */
   stampBytes: Uint8Array | null;
@@ -121,6 +127,8 @@ export function buildDeclaracaoModel(inputs: DeclaracaoInputs): DeclaracaoModel 
     responsavel: settings.responsavel,
     // W12-24: carry the (trimmed) NIF, or null so the body omits it entirely.
     nif: inputs.nif?.trim() || null,
+    // PL-03a: carry the (trimmed) observações, or null so the body has no block.
+    observacoes: inputs.observacoes?.trim() || null,
     // W9-03: per-location. The tenant switch still wins (settings.signatureStamp
     // = false means "leave blank for a physical stamp" everywhere); when it is
     // on, the stamp is resolved for THIS declaration's location, and a location

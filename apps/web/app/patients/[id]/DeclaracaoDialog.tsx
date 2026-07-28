@@ -69,6 +69,10 @@ export function DeclaracaoDialog({
   // W12-24: NIF is the PATIENT's (not the marcação's), so it prefills once from
   // patients.nif and is untouched by the marcação/manual switch; stays editable.
   const [nif, setNif] = useState(patientNif ?? "");
+  // PL-03a: optional free text added to THIS declaration only (transient, never
+  // persisted). Length-capped so a long note cannot push the signature/footer
+  // off the single page.
+  const [observacoes, setObservacoes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -116,6 +120,7 @@ export function DeclaracaoDialog({
         endTime,
         locationId,
         nif: nif.trim() || null,
+        observacoes: observacoes.trim() || null,
       });
       if (url) {
         window.open(url, "_blank", "noopener,noreferrer");
@@ -191,6 +196,21 @@ export function DeclaracaoDialog({
               onChange={(e) => setNif(e.target.value)}
               className={field}
               data-testid="declaracao-nif"
+            />
+          </label>
+          {/* PL-03a: optional free-text observações for THIS declaration only
+              (transient, never persisted). Rendered in the PDF between the
+              treatment sentence and "Por ser verdade". maxLength protects the
+              single-page layout (signature + footer). */}
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">{s["documents.declaracao.observacoesLabel"]}</span>
+            <textarea
+              value={observacoes}
+              onChange={(e) => setObservacoes(e.target.value)}
+              rows={3}
+              maxLength={500}
+              className={field}
+              data-testid="declaracao-observacoes"
             />
           </label>
           {error && <p role="alert" className="text-sm text-error">{error}</p>}

@@ -71,4 +71,17 @@ test.describe("Declaração de Presença (therapist)", () => {
     await expectTime(start, "14:00");
     await expectTime(end, "15:30");
   });
+
+  test("PL-03a: the dialog has an editable, length-capped observações field", async ({ page }) => {
+    await page.goto(`/patients/${PATIENTS.maria.id}?tab=documentos`);
+    await page.getByRole("button", { name: "Imprimir Declaração de Presença" }).click();
+
+    const obs = page.getByTestId("declaracao-observacoes");
+    await expect(obs).toBeVisible();
+    await expect(obs).toHaveValue("");
+    await obs.fill("Sessão de reavaliação: evolução positiva, sem contraindicações.");
+    await expect(obs).toHaveValue("Sessão de reavaliação: evolução positiva, sem contraindicações.");
+    // Length-capped so a long note cannot push the signature/footer off the page.
+    await expect(obs).toHaveAttribute("maxlength", "500");
+  });
 });
