@@ -58,26 +58,26 @@
     {
       "id": "PL-02",
       "title": "Patient Marcacoes tab: cannot edit + no authorship line",
-      "lane": "rodica_batch",
-      "status": "todo",
+      "lane": "in_flight",
+      "status": "in_flight",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": null,
+      "evidence": { "kind": "pr", "ref": "#673", "at": "2026-07-28" },
       "blocked_on": null,
-      "last_checkpoint": "2026-07-27",
-      "notes": "Rodica: 'Continuamos a nao conseguir editar as marcacoes do utente, e nao e visivel por quem nem quando foi feita a marcacao'. (a) Gerir marcacao unreachable from the tab; (b) add 'Criada por {staff} em {DD/MM/AAAA HH:mm}'. W12-00 (#633) claimed shipped -> regression-or-incomplete. Loop: PL-02-patient-marcacoes-edit-authorship.md."
+      "last_checkpoint": "2026-07-28",
+      "notes": "GREEN 2026-07-28: PR #673 OPEN, OWNER VISUAL GATE. (b) SHIPPED here: the row now shows 'Criado por {staff} · Criado em {DD/MM/AAAA HH:mm}' from already-fetched fields, reusing the agenda hover-card i18n + shared formatCreatedAt (moved to lib/scheduling/time). (a) edit ALREADY works: Gerir marcacao reaches Reagendar/Estado/Cancelar on editable rows (existing spec + new save+reread e2e prove it); terminal rows intentionally have none. FULL edit (service/therapist) = scope expansion -> Q-PL-02-1 (owner/Rodica), not guessed. Gates GREEN: lint 0, typecheck 9/9, test (web 157), build 4/4, e2e marcacoes-tab-edit 9/9. Migration-free. AWAITING OWNER: see the authorship line + reschedule on the Preview, then merge."
     },
     {
       "id": "PL-03a",
       "title": "Declaracao de Presenca: editable free-text observacoes (UI, non-migration)",
-      "lane": "in_flight",
-      "status": "in_flight",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": { "kind": "pr", "ref": "#671", "at": "2026-07-27" },
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
-      "notes": "GREEN 2026-07-27: PR #671 OPEN, OWNER VISUAL GATE. Optional free-text observacoes typed in the dialog, rendered in the PDF BETWEEN the treatment sentence and 'Por ser verdade'. TRANSIENT - recon re-verified on-branch, no table/column, no PL-03b needed. Threaded request->generate->model->pdf via new pure declaracaoBodyParagraphs (empty renders byte-identical). maxLength 500 protects the single-page layout. Gates GREEN: lint 0 err, typecheck 9/9, test (web 156 files), build 4/4, e2e declaracao 6/6 + unit placement/content(200)/empty-safe. AWAITING OWNER: generate a declaracao with a note on the Preview, confirm placement + intact signature/footer, then merge."
+      "notes": "SHIPPED - owner merged #671 (2026-07-27) after the visual gate. Optional free-text observacoes typed in the dialog, rendered in the PDF between the treatment sentence and 'Por ser verdade'. TRANSIENT (no table/column, no PL-03b). Threaded via pure declaracaoBodyParagraphs (empty renders byte-identical); maxLength 500 protects the single-page layout. Full gates + e2e green."
     },
     {
       "id": "PL-03b",
