@@ -18,7 +18,12 @@ import {
   type DbTx,
 } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
-import { provisionStaffUser, generateSetPasswordLink, updateStaffAuthEmail } from "@/lib/auth/provision";
+import {
+  provisionStaffUser,
+  ensureAuthUserForStaffRow,
+  generateSetPasswordLink,
+  updateStaffAuthEmail,
+} from "@/lib/auth/provision";
 import { invitesLiveSendEnabled, sendInviteEmail } from "@/lib/invites/email";
 import { type SendResult } from "@/lib/reminders/clients";
 import { writeAudit } from "./audit";
@@ -179,6 +184,81 @@ export async function inviteStaff(
   return inviteDeliveryFromSend(send) === "email"
     ? { userId, delivery: "email" }
     : { userId, delivery: "temp_password", tempPassword };
+}
+
+export type ActivateResult =
+  | { delivery: "email" }
+  | { delivery: "temp_password"; tempPassword: string }
+  | { delivery: "link"; setPasswordLink: string };
+
+/**
+ * PL-07: give an EXISTING staff row a Supabase login, keyed to the same id so
+ * the row and its history survive. Unlike inviteStaff (which mints a new row),
+ * this is how the clinic's pre-existing staff — including active therapists whose
+ * rows cannot be deleted — get a first login. Idempotent: a second call on an
+ * already-activated row just re-issues the set-password link.
+ *
+ * Delivery mirrors inviteStaff: the set-password link is emailed when the invite
+ * gate is on; otherwise it is handed back for out-of-band hand-off (the recovery
+ * link, or — only for a freshly created auth user — the temporary password).
+ * users:manage-gated; the activation is audited inside the RLS transaction.
+ */
+export async function activateStaffLogin(
+  actor: RequestContext,
+  userId: string,
+): Promise<ActivateResult> {
+  assertCan(actor.role, "users:manage");
+  if (!userId) throw new AdminError("invalid", "userId is required");
+
+  const rows = await runScoped(actor, (tx) =>
+    tx
+      .select({ email: users.email, isActive: users.isActive, roleSlug: roles.slug })
+      .from(users)
+      .leftJoin(roles, eq(users.roleId, roles.id))
+      .where(eq(users.id, userId))
+      .limit(1),
+  );
+  const row = rows[0];
+  if (!row) throw new AdminError("not_found");
+  // Owner-tier: only an owner may activate another owner's login (anti-escalation).
+  if (row.roleSlug === "owner" && actor.role !== "owner") throw new AdminError("owner_tier");
+  if (!row.isActive) throw new AdminError("invalid", "cannot activate a deactivated staff member");
+
+  const email = row.email; // normalized at write time
+  const tempPassword = randomBytes(18).toString("base64url");
+  const { created } = await ensureAuthUserForStaffRow(userId, email, tempPassword);
+
+  await runScoped(actor, (tx) =>
+    writeAudit(tx, actor, {
+      action: "staff.activate_login",
+      entityType: "user",
+      entityId: userId,
+      // PII-free: whether a new auth user was minted vs. a re-activation.
+      metadata: { created },
+    }),
+  );
+
+  // The set-password link is the durable hand-off (and the ONLY one for a
+  // re-activation, which has no fresh temp password). Email it when the gate is
+  // on; otherwise return it for the admin to relay.
+  const link = await generateSetPasswordLink(email);
+  if (invitesLiveSendEnabled() && link) {
+    try {
+      const s = getStrings(DEFAULT_LOCALE);
+      const body = `${s["admin.invite.email.intro"]}\n\n${link}\n\n${s["admin.invite.email.outro"]}`;
+      const send = await sendInviteEmail({
+        to: email,
+        subject: s["admin.invite.email.subject"],
+        body,
+      });
+      if (inviteDeliveryFromSend(send) === "email") return { delivery: "email" };
+    } catch {
+      // fall through to the out-of-band hand-off
+    }
+  }
+  if (link) return { delivery: "link", setPasswordLink: link };
+  if (created) return { delivery: "temp_password", tempPassword };
+  throw new AdminError("provisioning_unavailable", "could not issue a set-password link");
 }
 
 export async function setStaffActive(

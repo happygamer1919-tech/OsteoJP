@@ -107,6 +107,56 @@ export async function provisionStaffUser(
 }
 
 /**
+ * PL-07: attach a Supabase auth login to an ALREADY-EXISTING staff row, keyed to
+ * the SAME id, so the row and all its history (appointments, clinical records)
+ * stay intact — the invite path (provisionStaffUser) instead mints a brand-new
+ * id and row, which is why it cannot onboard the clinic's pre-existing staff.
+ *
+ * GoTrue admin createUser honours an explicit `id` (verified), so the new
+ * auth.users row shares public.users.id and the token hook + RLS resolve exactly
+ * as for an invited user. Idempotent: if an auth user already exists for this id
+ * (a re-activation), it does nothing and reports created=false so the caller can
+ * just re-issue the set-password link. Never inserts a users row (it exists) and
+ * never writes audit (the caller does that inside its RLS transaction).
+ *
+ * `email_confirm: true`: an admin-initiated activation is trusted, so the address
+ * is confirmed immediately — no round-trip that would strand the staffer.
+ */
+export async function ensureAuthUserForStaffRow(
+  userId: string,
+  email: string,
+  password: string,
+): Promise<{ created: boolean }> {
+  let admin: ReturnType<typeof createSupabaseAdminClient>;
+  try {
+    admin = createSupabaseAdminClient();
+  } catch {
+    throw new AdminError("provisioning_unavailable", "supabase admin client unavailable");
+  }
+
+  // Already has an auth login? Re-activation is a no-op on the auth user; the
+  // caller re-issues the set-password link. getUserById returns an error (not a
+  // throw) when the id is unknown — treat that as "no auth user yet".
+  const existing = await admin.auth.admin.getUserById(userId);
+  if (!existing.error && existing.data?.user) {
+    return { created: false };
+  }
+
+  const { error } = await admin.auth.admin.createUser({
+    id: userId,
+    email,
+    password,
+    email_confirm: true,
+  });
+  if (error) {
+    if (isAuthEmailTaken(error)) throw new AdminError("auth_email_taken");
+    // Never echo error.message: it is provider text and may carry the address.
+    throw new AdminError("provisioning_unavailable", "auth user creation failed");
+  }
+  return { created: true };
+}
+
+/**
  * Sync a staff member's Supabase auth login email to a new address, via the
  * service-role admin API. This is the auth half of an email edit; the public.users
  * half lives in editStaff (apps/web/lib/admin/staff.ts), which calls this INSIDE
@@ -123,6 +173,13 @@ export async function provisionStaffUser(
  */
 export async function updateStaffAuthEmail(userId: string, email: string): Promise<void> {
   const admin = createSupabaseAdminClient();
+  // PL-07: a staff row may not have a Supabase login yet (pre-activation). Then
+  // the email is purely a public.users attribute — there is no auth identity to
+  // sync — so editing it is a clean row-only change, not a 404. This is what lets
+  // an admin set the correct address FIRST and then Ativar login (which creates
+  // the auth user with that address). Once a login exists, edits sync as before.
+  const existing = await admin.auth.admin.getUserById(userId);
+  if (existing.error || !existing.data?.user) return;
   const { error } = await admin.auth.admin.updateUserById(userId, {
     email,
     email_confirm: true,

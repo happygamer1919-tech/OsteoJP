@@ -21,6 +21,7 @@ import {
   setStaffColorAction,
   setStaffLocationsAction,
 } from "./actions";
+import { ActivateLoginForm } from "./ActivateLoginForm";
 
 /**
  * StaffManageModal (W12-40) — the ONE place a team member is managed from the
@@ -324,6 +325,16 @@ export function StaffManageModal({
                     {isActive ? s["admin.staff.deactivate"] : s["admin.staff.reactivate"]}
                   </Button>
                 </form>
+
+                {/* PL-07: give this existing staff row a Supabase login (same id,
+                    history preserved). The only onboarding path for pre-existing
+                    staff whose rows cannot be deleted (active therapists). */}
+                <div className="flex flex-col gap-2 rounded-v2 border border-v2-border p-3">
+                  <span className="text-sm font-semibold text-v2-text-primary">
+                    {s["admin.staff.activateLoginTitle"]}
+                  </span>
+                  <ActivateLoginForm userId={userId} />
+                </div>
 
                 {/* Password-gated hard delete — server-enforced scrypt gate is
                     UNCHANGED. Visually separated as a danger zone. */}
