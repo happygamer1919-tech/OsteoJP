@@ -396,19 +396,15 @@ export function AppointmentDrawer({
     setForm((f) => ({ ...f, locationId }));
   }
 
-  // Therapist -> service mapping (0023, SPEC-appointments §6). `therapistServiceResult`
-  // only ever holds the outcome for the therapist it was fetched for, so a
-  // stale response landing after the therapist changed again is naturally
-  // ignored by the render-time comparison below (same technique the
-  // availability panel uses, row 5) rather than resetting state from inside
-  // the effect body. Preselect only fires when the fetch was triggered by an
-  // actual user edit to the Terapeuta field (userChangedTherapist, set in the
-  // Select's onChange below) — never on the initial mount value — so opening
-  // the edit drawer can never silently rewrite an already-saved serviceId
-  // before the user has touched anything.
-  const [therapistServiceResult, setTherapistServiceResult] = useState<
-    { therapistId: string; ids: string[] } | null
-  >(null);
+  // Therapist -> service mapping (0023, SPEC-appointments §6). PL-06a (owner
+  // ruling 2026-07-28): the mapping is a PRESELECTION, never a RESTRICTION — the
+  // Serviço Select always lists ALL active services, and this fetch only supplies
+  // the default (the therapist's primary = oldest-first ids[0]). Preselect fires
+  // only when the fetch was triggered by an actual user edit to the Terapeuta
+  // field (userChangedTherapist, set in the Select's onChange below) — never on
+  // the initial mount value — so opening the edit drawer can never silently
+  // rewrite an already-saved serviceId. A late response is dropped by the
+  // `cancelled` guard in the effect, so no result state needs to outlive it.
   const userChangedTherapist = useRef(false);
   const userChangedLocation = useRef(false);
 
@@ -419,12 +415,11 @@ export function AppointmentDrawer({
     getTherapistServices(therapistId).then((r) => {
       if (cancelled) return;
       const ids = r.ok ? r.data : [];
-      setTherapistServiceResult({ therapistId, ids });
-      // Default Serviço to the therapist's first mapped service (W3-03). When
-      // W3-04 lands a primary designation, swap ids[0] for the primary here;
-      // getTherapistServices already returns oldest-first so ids[0] is stable.
-      // Only fires on a real Terapeuta change, never on mount, and never over a
-      // service the user already picked (applyDefaultService guards on empty).
+      // PL-06a: preselect the therapist's PRIMARY (oldest-first ids[0]) as the
+      // default Serviço. This NEVER filters the Select — every active service
+      // stays offered. Only fires on a real Terapeuta change, never on mount,
+      // and never over a service the user already picked (applyDefaultService
+      // guards on empty).
       if (userChangedTherapist.current && ids.length >= 1) applyDefaultService(ids[0]);
     });
     // W4-12: on the SAME therapist-selection event, auto-fill Localização when
@@ -450,20 +445,13 @@ export function AppointmentDrawer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.practitionerId]);
 
-  // `null` means "unknown" — no therapist picked yet, or the fetch for the
-  // current therapist hasn't landed — and is treated as "show every service",
-  // same fallback as a therapist with zero mappings (BACKLOG.md doesn't rule
-  // on that case; showing all rather than an empty Select is the least
-  // surprising default, see PR description).
-  const therapistServiceIds =
-    form.practitionerId && therapistServiceResult?.therapistId === form.practitionerId
-      ? therapistServiceResult.ids
-      : null;
-
-  const serviceOptions =
-    therapistServiceIds && therapistServiceIds.length > 0
-      ? options.services.filter((o) => therapistServiceIds.includes(o.id))
-      : options.services;
+  // PL-06a (owner ruling 2026-07-28): the therapist->service mapping is a
+  // PRESELECTION, never a RESTRICTION. The Serviço Select lists ALL active
+  // services for every therapist (tenant-wide, exactly as the booking query
+  // already is — no location clause, no therapist coupling); the mapping only
+  // drives the default preselected above. A therapist whose primary is NESA
+  // stays bookable for any other active service the clinic needs.
+  const serviceOptions = options.services;
 
   // W12-23: scope the therapist dropdown to the form-selected location's team
   // (derived from availability_templates / staff_locations), keeping the current

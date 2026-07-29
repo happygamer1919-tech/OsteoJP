@@ -114,6 +114,10 @@ export const LOCATION_ARCHIVED = { id: "00000000-0000-0000-0000-00000000a102", n
 /** Dedicated active location for the W2-12 working-hours test (no other spec books here). */
 export const LOCATION_B = { id: "00000000-0000-0000-0000-00000000a103", name: "Consultório B (E2E)" } as const;
 export const SERVICE = { id: "00000000-0000-0000-0000-00000000a201", name: "Osteopatia" } as const;
+// PL-06a: an ACTIVE service the E2E therapist is NOT mapped to. The booking
+// Serviço Select must still offer it (preselection, not restriction). Seeded in
+// seed-e2e.mjs and deliberately left out of ensureTherapistServices.
+export const SERVICE_UNMAPPED = { id: "00000000-0000-0000-0000-00000000a203", name: "Drenagem Linfática" } as const;
 export const THERAPIST_NAME = "E2E Therapist";
 // W4-12 location auto-fill fixtures. `THERAPIST_ONE_LOCATION` is seeded with
 // availability at exactly LOCATION_A (Linda-a-Velha) + the Osteopatia service, so
