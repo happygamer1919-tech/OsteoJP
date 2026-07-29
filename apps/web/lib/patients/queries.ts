@@ -19,8 +19,9 @@ import {
   patients,
 } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "../auth/context";
+import { viewerLocationScope } from "../auth/viewer-locations";
 import { activePatientsOnly } from "./filters";
-import { therapistPatientScope } from "./scope";
+import { patientLocationScope, therapistPatientScope } from "./scope";
 import { escapeLike, parseSearch } from "./validation";
 import type { Patient } from "./types";
 
@@ -38,9 +39,13 @@ export async function getPatient(
 ): Promise<Patient | null> {
   const ctx = await requireRequestContext();
   assertCan(ctx.role, "patients:read");
-  // W10-04: a therapist may only load a patient that is theirs (own-only);
-  // a non-own id returns null -> the detail page 404s.
-  const scope = therapistPatientScope(ctx, patients.id);
+  // W10-04: a therapist may only load a patient that is theirs (own-only).
+  // PL-09 Phase 1: reception + admin may only load a patient AT their location.
+  // A non-visible id returns null -> the detail page 404s.
+  const locIds = await viewerLocationScope(ctx);
+  const scope =
+    therapistPatientScope(ctx, patients.id) ??
+    (locIds ? patientLocationScope(patients.id, locIds) : undefined);
   return runScoped(ctx, async (tx) => {
     const base = opts.includeDeleted
       ? eq(patients.id, id)
@@ -109,8 +114,13 @@ export async function listPatients(
   assertCan(ctx.role, "patients:read");
   const limit = clampLimit(opts.limit);
   const offset = Math.max(0, opts.offset ?? 0);
-  // W10-04: therapist sees only their own patients; owner/admin tenant-wide.
-  const scope = therapistPatientScope(ctx, patients.id);
+  // W10-04: therapist sees only their own patients. PL-09 Phase 1: reception +
+  // admin see only patients at their assigned location(s); owner is tenant-wide;
+  // an unassigned reception/admin falls back to tenant-wide (locIds null).
+  const locIds = await viewerLocationScope(ctx);
+  const scope =
+    therapistPatientScope(ctx, patients.id) ??
+    (locIds ? patientLocationScope(patients.id, locIds) : undefined);
   return runScoped(ctx, async (tx) =>
     tx
       .select()
@@ -140,8 +150,13 @@ export async function searchPatients(
 
   const limit = clampLimit(opts.limit);
   const nameLike = `%${escapeLike(text)}%`;
-  // W10-04: therapist search is scoped to their own patients too.
-  const scope = therapistPatientScope(ctx, patients.id);
+  // W10-04: therapist search is scoped to their own patients. PL-09 Phase 1:
+  // reception + admin are scoped to their location's patients (fallback tenant-
+  // wide when unassigned); owner tenant-wide.
+  const locIds = await viewerLocationScope(ctx);
+  const scope =
+    therapistPatientScope(ctx, patients.id) ??
+    (locIds ? patientLocationScope(patients.id, locIds) : undefined);
 
   return runScoped(ctx, async (tx) => {
     const matchers = [ilike(patients.fullName, nameLike)];

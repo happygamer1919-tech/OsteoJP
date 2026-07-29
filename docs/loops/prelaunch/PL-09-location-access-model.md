@@ -7,14 +7,19 @@ fresh `origin/main`.
 
 ## Field 1. Target model (owner, verbatim intent)
 
-- **Therapist** - own data only (own patients, own calendar, own clinical records).
-- **Reception** - a therapist-style view but sees ALL therapists, ONLY at their
-  assigned location. Cannot see any other location.
-- **Admin** - sees only their assigned location's info; the admin panel is
-  available but LIMITED to their location's actions (manage only their clinic's
-  staff/services). Admin ALSO sees statistics/KPI, scoped to their location
-  (confirmed owner 2026-07-29).
-- **Owner** - all locations, all therapists, all info.
+AUTHORITATIVE breakdown, owner 2026-07-29 (supersedes earlier drafts):
+
+- **Therapist** - can ONLY access information about their OWN clients; can ONLY
+  see their OWN agenda.
+- **Reception** - sees ALL therapists and ALL clients, but ONLY from their
+  location (a CB receptionist sees only CB therapists/clients; never another
+  location). PLUS reception EDITS the team schedule (horarios/availability) for
+  therapists AT THEIR LOCATION - they own scheduling. (New write capability,
+  location-scoped.)
+- **Admin** - almost owner but LIMITED to their location: sees KPI + statistics +
+  agenda + all therapists + all clients, ONLY for their location (a CB admin sees
+  only CB). Admin panel available but limited to their location's actions.
+- **Owner** - FULL access everywhere on everything.
 
 "Assigned location" = the location(s) a user holds in `staff_locations` (0038).
 In practice one per reception/admin; the scope is the assignment SET (multi-safe).
@@ -76,6 +81,14 @@ In practice one per reception/admin; the scope is the assignment SET (multi-safe
   (`staff.ts`, `services.ts`, and `staff_locations` writes) to the admin's
   location(s): an admin manages only their clinic's staff/services. May need an
   RLS tightening on `staff_locations` writes (currently owner/admin tenant-wide).
+- **Phase 5 - reception schedule editing (NEW, owner 2026-07-29).** Reception owns
+  scheduling: grant reception a working-hours-manage capability, SCOPED to
+  therapists at their location, and expose the Horarios editor
+  (`saveTherapistScheduleAction`, `availability_templates` + `time_off`) to
+  reception for their-location therapists only. Currently working-hours is admin/
+  therapist-only; reception has no such capability. App-layer scope + capability
+  grant; RLS follow-up on `availability_templates`/`time_off` (currently tenant-
+  only) to enforce the location + role bound.
 
 ## Field 5. Definition of done (per phase)
 

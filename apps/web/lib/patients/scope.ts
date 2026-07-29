@@ -48,3 +48,36 @@ export function therapistPatientScope(
     )
   )`;
 }
+
+/**
+ * PL-09 Phase 1: reception + admin see only patients AT their location(s). A
+ * patient belongs to a location by the SAME basis the 0045 clinical admin rule
+ * uses: they have an appointment there (as primary OR secondary), OR — only via
+ * the persisted fallback — `patients.primary_location_id` is one of those
+ * locations. Runs INSIDE runScoped, so the correlated subqueries stay tenant-safe.
+ *
+ * Pure: takes the already-resolved location ids (from viewerLocationScope).
+ * Returns a Drizzle SQL predicate to AND into the query's WHERE. Callers pass this
+ * only for reception/admin WITH an assignment; owner sees all, therapist uses
+ * therapistPatientScope. `locationIds` must be non-empty.
+ */
+export function patientLocationScope(
+  patientIdCol: AnyPgColumn,
+  locationIds: readonly string[],
+): SQL {
+  const locs = sql.join(
+    locationIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  return sql`(
+    EXISTS (
+      SELECT 1 FROM appointments ap
+      WHERE (ap.patient_id = ${patientIdCol} OR ap.patient_2_id = ${patientIdCol})
+        AND ap.location_id IN (${locs})
+    )
+    OR EXISTS (
+      SELECT 1 FROM patients pl
+      WHERE pl.id = ${patientIdCol} AND pl.primary_location_id IN (${locs})
+    )
+  )`;
+}
