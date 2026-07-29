@@ -3,6 +3,11 @@ import { describe, it, expect, vi } from "vitest";
 // staff.ts (and its provision/audit imports) pull in "server-only"; neutralise
 // it for the node test runner. We only exercise the pure functions here.
 vi.mock("server-only", () => ({}));
+// PL-09 Phase 4: role/active tests; the location guard is a no-op here.
+vi.mock("@/lib/auth/viewer-locations", () => ({
+  viewerLocationScope: vi.fn(async () => null),
+  resolveViewerLocationIds: vi.fn(async () => []),
+}));
 
 import { assignableRoles, canReassignRole, ROLES } from "@osteojp/auth";
 import { inviteDeliveryFromSend, normalizeStaffProfile } from "./staff";

@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { and, asc, count, eq, or } from "drizzle-orm";
+import { and, asc, count, eq, exists, inArray, or } from "drizzle-orm";
 import { assertCan, canReassignRole, isRole, type Role } from "@osteojp/auth";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import {
@@ -12,12 +12,14 @@ import {
   clinicalEpisodes,
   clinicalRecords,
   roles,
+  staffLocations,
   therapistServices,
   timeOff,
   users,
   type DbTx,
 } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import {
   provisionStaffUser,
   ensureAuthUserForStaffRow,
@@ -47,9 +49,12 @@ export type StaffMember = {
 
 export async function listStaff(actor: RequestContext): Promise<StaffMember[]> {
   assertCan(actor.role, "users:read");
+  // PL-09 Phase 4: an admin manages ONLY staff at their location(s); owner sees
+  // all (viewerLocationScope -> null). An unassigned admin falls back to all.
+  const scope = await viewerLocationScope(actor);
 
-  return runScoped(actor, (tx) =>
-    tx
+  return runScoped(actor, (tx) => {
+    const q = tx
       .select({
         id: users.id,
         email: users.email,
@@ -61,15 +66,46 @@ export async function listStaff(actor: RequestContext): Promise<StaffMember[]> {
         isBookable: users.isBookable,
       })
       .from(users)
-      .leftJoin(roles, eq(users.roleId, roles.id))
-      .orderBy(asc(users.fullName))
-      .then((rows) =>
-        rows.map((r) => ({
-          ...r,
-          roleSlug: isRole(r.roleSlug) ? r.roleSlug : null,
-        })),
-      ),
-  );
+      .leftJoin(roles, eq(users.roleId, roles.id));
+    const scoped = scope
+      ? q.where(
+          exists(
+            tx
+              .select({ x: staffLocations.userId })
+              .from(staffLocations)
+              .where(
+                and(eq(staffLocations.userId, users.id), inArray(staffLocations.locationId, scope)),
+              ),
+          ),
+        )
+      : q;
+    return scoped.orderBy(asc(users.fullName)).then((rows) =>
+      rows.map((r) => ({
+        ...r,
+        roleSlug: isRole(r.roleSlug) ? r.roleSlug : null,
+      })),
+    );
+  });
+}
+
+/**
+ * PL-09 Phase 4: an admin may only act on staff AT their location(s). Resolve the
+ * viewer's scope (null for owner / unassigned admin) BEFORE the mutation tx, then
+ * pass it here: a target outside the scope is treated as not_found - it is
+ * invisible to this admin, exactly as it is absent from listStaff. No-op for owner.
+ */
+async function assertStaffInScope(
+  tx: DbTx,
+  userId: string,
+  scope: string[] | null,
+): Promise<void> {
+  if (!scope) return;
+  const rows = await tx
+    .select({ id: staffLocations.userId })
+    .from(staffLocations)
+    .where(and(eq(staffLocations.userId, userId), inArray(staffLocations.locationId, scope)))
+    .limit(1);
+  if (rows.length === 0) throw new AdminError("not_found");
 }
 
 /**
@@ -246,9 +282,11 @@ export async function setStaffActive(
 ): Promise<void> {
   assertCan(actor.role, "users:manage");
 
+  const scope = await viewerLocationScope(actor);
   await runScoped(actor, async (tx) => {
     const target = await loadTarget(tx, userId);
     if (!target) throw new AdminError("not_found");
+    await assertStaffInScope(tx, userId, scope);
 
     // Owner-tier: only an owner may (de)activate an owner.
     if (target.roleSlug === "owner" && actor.role !== "owner") {
@@ -290,9 +328,11 @@ export async function changeStaffRole(
     throw new AdminError("invalid", `unknown role '${newRoleSlug}'`);
   }
 
+  const scope = await viewerLocationScope(actor);
   await runScoped(actor, async (tx) => {
     const target = await loadTarget(tx, userId);
     if (!target) throw new AdminError("not_found");
+    await assertStaffInScope(tx, userId, scope);
 
     const current = target.roleSlug;
     if (current === newRoleSlug) return; // no-op
@@ -434,9 +474,11 @@ export async function editStaff(
   const { fullName, email, phone, jobTitle } = normalizeStaffProfile(input);
   const isBookable = input.isBookable;
 
+  const scope = await viewerLocationScope(actor);
   await runScoped(actor, async (tx) => {
     const target = await loadTarget(tx, userId);
     if (!target) throw new AdminError("not_found");
+    await assertStaffInScope(tx, userId, scope);
 
     // Owner-tier: only an owner may edit an owner's profile (anti-escalation).
     if (target.roleSlug === "owner" && actor.role !== "owner") {
@@ -558,6 +600,8 @@ export async function deleteStaffMember(
   if (!(await verifyDeletePassword(actor, password))) {
     throw new AdminError("password");
   }
+  // PL-09 Phase 4: an admin may only delete staff at their location.
+  const scope = await viewerLocationScope(actor);
 
   await runScoped(actor, async (tx) => {
     const [target] = await tx
@@ -566,6 +610,7 @@ export async function deleteStaffMember(
       .where(eq(users.id, userId))
       .limit(1);
     if (!target) throw new AdminError("not_found");
+    await assertStaffInScope(tx, userId, scope);
 
     // Owner-tier: never delete an owner via this control.
     const [ownerRole] = await tx
