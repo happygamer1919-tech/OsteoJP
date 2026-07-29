@@ -115,9 +115,11 @@ export async function provisionStaffUser(
  * GoTrue admin createUser honours an explicit `id` (verified), so the new
  * auth.users row shares public.users.id and the token hook + RLS resolve exactly
  * as for an invited user. Idempotent: if an auth user already exists for this id
- * (a re-activation), it does nothing and reports created=false so the caller can
- * just re-issue the set-password link. Never inserts a users row (it exists) and
- * never writes audit (the caller does that inside its RLS transaction).
+ * (a re-activation), it RESETS the password (and re-syncs the email) to the
+ * supplied value and reports created=false — so the caller always ends up with a
+ * KNOWN, working password to hand over (PL-08 owner ruling). Never inserts a
+ * users row (it exists) and never writes audit (the caller does that in its RLS
+ * transaction).
  *
  * `email_confirm: true`: an admin-initiated activation is trusted, so the address
  * is confirmed immediately — no round-trip that would strand the staffer.
@@ -134,11 +136,21 @@ export async function ensureAuthUserForStaffRow(
     throw new AdminError("provisioning_unavailable", "supabase admin client unavailable");
   }
 
-  // Already has an auth login? Re-activation is a no-op on the auth user; the
-  // caller re-issues the set-password link. getUserById returns an error (not a
-  // throw) when the id is unknown — treat that as "no auth user yet".
+  // Already has an auth login? Re-activation RESETS the password (and re-syncs
+  // the email) to the supplied value, so the caller can always hand over a
+  // working pair. getUserById returns an error (not a throw) when the id is
+  // unknown — treat that as "no auth user yet".
   const existing = await admin.auth.admin.getUserById(userId);
   if (!existing.error && existing.data?.user) {
+    const { error } = await admin.auth.admin.updateUserById(userId, {
+      email,
+      password,
+      email_confirm: true,
+    });
+    if (error) {
+      if (isAuthEmailTaken(error)) throw new AdminError("auth_email_taken");
+      throw new AdminError("provisioning_unavailable", "auth password reset failed");
+    }
     return { created: false };
   }
 
