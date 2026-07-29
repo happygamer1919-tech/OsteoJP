@@ -1965,3 +1965,21 @@ claim. Docs-only; owner-merge; YELLOW does not merge its own PR.
   NESA is selectable for every therapist. No roster write. CB-NESA stays closed.
 - Merge policy: OWNER VISUAL GATE, no self-merge.
  main
+
+## 2026-07-29 - PL-09: role + location access model (planned, post-test)
+
+- Owner ruling: enforce per-role location scoping - therapist own data; reception
+  all therapists at their location only; admin their location only + admin panel
+  limited to their location; owner all. Basis = staff_locations (0038).
+- Recon (2026-07-29): clinical_records (0045) ALREADY matches the target for all
+  roles. Everything else (appointments, patients, statistics, admin panel) is
+  tenant-wide -> reception + admin currently see MORE than target (real access
+  gaps). No viewer location-resolver, no location JWT claim; two divergent
+  "assigned location" sources (availability_templates vs staff_locations).
+- APPROACH (owner-approved): proper phased build (Phase 0 resolver -> 1 app-layer
+  scope -> 2 RLS migrations w/ isolation tests, apply-before-merge -> 4 admin-panel
+  limit), ENABLED AFTER the acceptance test. Never a broad RLS flip mid-test.
+- Admin panel limited to their location: YES. Admin statistics/KPI: HELD - the
+  typed spec asked for it but the confirmation checkbox left it unchecked;
+  statistics stays owner-only until reconfirmed (Phase 3 not built).
+- Full blueprint: docs/loops/prelaunch/PL-09-location-access-model.md.
