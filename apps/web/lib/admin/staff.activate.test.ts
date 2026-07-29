@@ -1,20 +1,16 @@
 /**
- * PL-07 activateStaffLogin tests.
+ * PL-07/PL-08 activateStaffLogin tests.
  *
- * activateStaffLogin attaches a Supabase login to an EXISTING staff row (same id,
- * history preserved) — the onboarding path for pre-existing staff whose rows
- * cannot be deleted. Delivery mirrors inviteStaff: email when the gate is on,
- * otherwise an out-of-band hand-off (the recovery link, or a temp password only
- * for a freshly created auth user). Each activation is audited.
+ * activateStaffLogin attaches (or re-issues) a Supabase login on an EXISTING staff
+ * row and returns READY credentials — the login email + a freshly generated
+ * password — for the admin to hand over. No link, no email. A re-activation resets
+ * the password. Each activation is audited.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const H = vi.hoisted(() => ({
   loadRows: [] as Array<{ email: string; isActive: boolean; roleSlug: string | null }>,
   ensureAuthUserForStaffRow: vi.fn(),
-  generateSetPasswordLink: vi.fn(),
-  invitesLiveSendEnabled: vi.fn(),
-  sendInviteEmail: vi.fn(),
   writeAudit: vi.fn(),
 }));
 
@@ -22,15 +18,8 @@ vi.mock("server-only", () => ({}));
 vi.mock("@osteojp/db", () => ({
   users: { id: "id", email: "email", fullName: "full_name", isActive: "is_active", roleId: "role_id" },
   roles: { id: "id", slug: "slug" },
-  auditLog: {},
-  appointments: {},
-  appointmentNotes: {},
-  analyticsEvents: {},
-  availabilityTemplates: {},
-  clinicalEpisodes: {},
-  clinicalRecords: {},
-  therapistServices: {},
-  timeOff: {},
+  auditLog: {}, appointments: {}, appointmentNotes: {}, analyticsEvents: {},
+  availabilityTemplates: {}, clinicalEpisodes: {}, clinicalRecords: {}, therapistServices: {}, timeOff: {},
 }));
 vi.mock("./audit", () => ({ writeAudit: (...a: unknown[]) => H.writeAudit(...a) }));
 vi.mock("./guards", () => ({ countActiveOwners: vi.fn(), wouldRemoveLastOwner: vi.fn() }));
@@ -42,24 +31,20 @@ vi.mock("@/lib/auth/context", () => ({
   runScoped: vi.fn(async (_actor: unknown, cb: (tx: unknown) => unknown) =>
     cb({
       select: () => ({
-        from: () => ({
-          leftJoin: () => ({ where: () => ({ limit: async () => H.loadRows }) }),
-        }),
+        from: () => ({ leftJoin: () => ({ where: () => ({ limit: async () => H.loadRows }) }) }),
       }),
     }),
   ),
 }));
 
+// staff.ts still imports these for inviteStaff; provide them, activate uses none.
 vi.mock("@/lib/auth/provision", () => ({
   provisionStaffUser: vi.fn(),
   ensureAuthUserForStaffRow: (...a: unknown[]) => H.ensureAuthUserForStaffRow(...a),
-  generateSetPasswordLink: (...a: unknown[]) => H.generateSetPasswordLink(...a),
+  generateSetPasswordLink: vi.fn(),
   updateStaffAuthEmail: vi.fn(),
 }));
-vi.mock("@/lib/invites/email", () => ({
-  invitesLiveSendEnabled: () => H.invitesLiveSendEnabled(),
-  sendInviteEmail: (...a: unknown[]) => H.sendInviteEmail(...a),
-}));
+vi.mock("@/lib/invites/email", () => ({ invitesLiveSendEnabled: vi.fn(), sendInviteEmail: vi.fn() }));
 
 import { activateStaffLogin } from "./staff";
 import { AdminError } from "./errors";
@@ -72,18 +57,39 @@ beforeEach(() => {
   vi.clearAllMocks();
   H.loadRows = [{ ...THERAPIST_ROW }];
   H.ensureAuthUserForStaffRow.mockResolvedValue({ created: true });
-  H.generateSetPasswordLink.mockResolvedValue("https://supabase/recovery-link");
-  H.invitesLiveSendEnabled.mockReturnValue(false);
 });
 
-describe("activateStaffLogin — attach a login to an existing row", () => {
-  it("creates the auth user keyed to the SAME row id", async () => {
+describe("activateStaffLogin — ready credentials (PL-08)", () => {
+  it("creates the auth user keyed to the SAME id, with a generated password", async () => {
     await activateStaffLogin(admin, "existing-id");
     expect(H.ensureAuthUserForStaffRow).toHaveBeenCalledWith(
       "existing-id",
       "ther@osteojp.pt",
       expect.any(String),
     );
+    const pw = H.ensureAuthUserForStaffRow.mock.calls[0][2] as string;
+    expect(pw.length).toBeGreaterThan(6);
+  });
+
+  it("returns the login email (username) + the SAME password that was set", async () => {
+    const r = await activateStaffLogin(admin, "existing-id");
+    const pw = H.ensureAuthUserForStaffRow.mock.calls[0][2] as string;
+    expect(r.email).toBe("ther@osteojp.pt");
+    expect(r.password).toBe(pw);
+    expect(r.created).toBe(true);
+  });
+
+  it("re-activation (created=false) still returns email + the reset password", async () => {
+    H.ensureAuthUserForStaffRow.mockResolvedValue({ created: false });
+    const r = await activateStaffLogin(admin, "existing-id");
+    expect(r.email).toBe("ther@osteojp.pt");
+    expect(r.password.length).toBeGreaterThan(6);
+    expect(r.created).toBe(false);
+  });
+
+  it("never returns a link or anything but email/password/created", async () => {
+    const r = await activateStaffLogin(admin, "existing-id");
+    expect(Object.keys(r).sort()).toEqual(["created", "email", "password"]);
   });
 
   it("audits the activation (PII-free)", async () => {
@@ -91,37 +97,6 @@ describe("activateStaffLogin — attach a login to an existing row", () => {
     const call = H.writeAudit.mock.calls[0]?.[2] as { action: string; metadata: unknown };
     expect(call.action).toBe("staff.activate_login");
     expect(call.metadata).toEqual({ created: true });
-  });
-
-  it("gate off + new auth user -> hands over the set-password link", async () => {
-    const r = await activateStaffLogin(admin, "existing-id");
-    expect(r.delivery).toBe("link");
-    expect("setPasswordLink" in r && r.setPasswordLink).toBe("https://supabase/recovery-link");
-    expect(H.sendInviteEmail).not.toHaveBeenCalled();
-  });
-
-  it("gate off + new auth user + link generation fails -> temp password fallback", async () => {
-    H.generateSetPasswordLink.mockResolvedValue(null);
-    const r = await activateStaffLogin(admin, "existing-id");
-    expect(r.delivery).toBe("temp_password");
-    expect("tempPassword" in r && r.tempPassword.length).toBeGreaterThan(0);
-  });
-
-  it("gate on + successful send -> email delivery, link in the body", async () => {
-    H.invitesLiveSendEnabled.mockReturnValue(true);
-    H.sendInviteEmail.mockResolvedValue({ channel: "email", sandbox: false, id: "re_1" });
-    const r = await activateStaffLogin(admin, "existing-id");
-    expect(r.delivery).toBe("email");
-    const msg = H.sendInviteEmail.mock.calls[0]?.[0] as { to: string; body: string };
-    expect(msg.to).toBe("ther@osteojp.pt");
-    expect(msg.body).toContain("https://supabase/recovery-link");
-  });
-
-  it("re-activation (auth already existed) -> link, never a temp password", async () => {
-    H.ensureAuthUserForStaffRow.mockResolvedValue({ created: false });
-    const r = await activateStaffLogin(admin, "existing-id");
-    expect(r.delivery).toBe("link");
-    expect("tempPassword" in r).toBe(false);
   });
 
   it("not_found when the row is missing", async () => {
@@ -139,7 +114,7 @@ describe("activateStaffLogin — attach a login to an existing row", () => {
   it("an owner CAN activate another owner's login", async () => {
     H.loadRows = [{ email: "own@osteojp.pt", isActive: true, roleSlug: "owner" }];
     const r = await activateStaffLogin(owner, "owner-row");
-    expect(r.delivery).toBeDefined();
+    expect(r.email).toBe("own@osteojp.pt");
     expect(H.ensureAuthUserForStaffRow).toHaveBeenCalledOnce();
   });
 

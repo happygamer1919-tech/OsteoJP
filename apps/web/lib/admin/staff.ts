@@ -186,22 +186,19 @@ export async function inviteStaff(
     : { userId, delivery: "temp_password", tempPassword };
 }
 
-export type ActivateResult =
-  | { delivery: "email" }
-  | { delivery: "temp_password"; tempPassword: string }
-  | { delivery: "link"; setPasswordLink: string };
+export type ActivateResult = { email: string; password: string; created: boolean };
 
 /**
- * PL-07: give an EXISTING staff row a Supabase login, keyed to the same id so
- * the row and its history survive. Unlike inviteStaff (which mints a new row),
- * this is how the clinic's pre-existing staff — including active therapists whose
- * rows cannot be deleted — get a first login. Idempotent: a second call on an
- * already-activated row just re-issues the set-password link.
+ * PL-07 / PL-08: give an EXISTING staff row a Supabase login, keyed to the same
+ * id so the row and its history survive. Unlike inviteStaff (which mints a new
+ * row), this is how the clinic's pre-existing staff — including active therapists
+ * whose rows cannot be deleted — get a first login.
  *
- * Delivery mirrors inviteStaff: the set-password link is emailed when the invite
- * gate is on; otherwise it is handed back for out-of-band hand-off (the recovery
- * link, or — only for a freshly created auth user — the temporary password).
- * users:manage-gated; the activation is audited inside the RLS transaction.
+ * Owner ruling 2026-07-29: NO set-password link, NO email. Ativar login always
+ * returns READY credentials — the login email + a freshly generated password —
+ * for the admin to hand to the staff member, who signs in with them directly. A
+ * re-activation RESETS the password, so a second call always yields a working
+ * pair. users:manage-gated; audited inside the RLS transaction.
  */
 export async function activateStaffLogin(
   actor: RequestContext,
@@ -224,41 +221,22 @@ export async function activateStaffLogin(
   if (row.roleSlug === "owner" && actor.role !== "owner") throw new AdminError("owner_tier");
   if (!row.isActive) throw new AdminError("invalid", "cannot activate a deactivated staff member");
 
-  const email = row.email; // normalized at write time
-  const tempPassword = randomBytes(18).toString("base64url");
-  const { created } = await ensureAuthUserForStaffRow(userId, email, tempPassword);
+  const email = row.email; // normalized at write time; this is the login username
+  const password = randomBytes(9).toString("base64url"); // ~12 chars, admin hands over
+  const { created } = await ensureAuthUserForStaffRow(userId, email, password);
 
   await runScoped(actor, (tx) =>
     writeAudit(tx, actor, {
       action: "staff.activate_login",
       entityType: "user",
       entityId: userId,
-      // PII-free: whether a new auth user was minted vs. a re-activation.
+      // PII-free: whether a new auth user was minted vs. a re-activation (password reset).
       metadata: { created },
     }),
   );
 
-  // The set-password link is the durable hand-off (and the ONLY one for a
-  // re-activation, which has no fresh temp password). Email it when the gate is
-  // on; otherwise return it for the admin to relay.
-  const link = await generateSetPasswordLink(email);
-  if (invitesLiveSendEnabled() && link) {
-    try {
-      const s = getStrings(DEFAULT_LOCALE);
-      const body = `${s["admin.invite.email.intro"]}\n\n${link}\n\n${s["admin.invite.email.outro"]}`;
-      const send = await sendInviteEmail({
-        to: email,
-        subject: s["admin.invite.email.subject"],
-        body,
-      });
-      if (inviteDeliveryFromSend(send) === "email") return { delivery: "email" };
-    } catch {
-      // fall through to the out-of-band hand-off
-    }
-  }
-  if (link) return { delivery: "link", setPasswordLink: link };
-  if (created) return { delivery: "temp_password", tempPassword };
-  throw new AdminError("provisioning_unavailable", "could not issue a set-password link");
+  // Ready credentials — the admin shows email + password and hands them over.
+  return { email, password, created };
 }
 
 export async function setStaffActive(

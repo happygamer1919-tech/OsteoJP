@@ -21,12 +21,13 @@ export type InviteState = {
   code?: string;
 };
 
-// PL-07: attach a login to an existing staff row (Ativar login in Gerir).
+// PL-07/PL-08: attach a login to an existing staff row (Ativar login in Gerir).
+// Returns ready credentials (login email + password) for the admin to hand over.
 export type ActivateLoginState = {
   ok: boolean;
-  delivery?: "email" | "temp_password" | "link";
-  tempPassword?: string;
-  setPasswordLink?: string;
+  email?: string;
+  password?: string;
+  created?: boolean;
   code?: string;
 };
 
@@ -38,10 +39,7 @@ export async function activateLoginAction(
   try {
     const result = await activateStaffLogin(actor, String(formData.get("userId") ?? ""));
     revalidatePath("/admin/staff");
-    if (result.delivery === "email") return { ok: true, delivery: "email" };
-    if (result.delivery === "temp_password")
-      return { ok: true, delivery: "temp_password", tempPassword: result.tempPassword };
-    return { ok: true, delivery: "link", setPasswordLink: result.setPasswordLink };
+    return { ok: true, email: result.email, password: result.password, created: result.created };
   } catch (e) {
     return { ok: false, code: isAdminError(e) ? e.code : "error" };
   }
