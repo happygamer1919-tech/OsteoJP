@@ -501,6 +501,8 @@
   "admin.staff.jobTitlePlaceholder": "e.g. Physiotherapist, Osteopath",
   "admin.staff.phoneLabel": "Phone",
   "admin.staff.phonePlaceholder": "e.g. +351 912 345 678",
+  "admin.staff.isBookableLabel": "Available for bookings",
+  "admin.staff.isBookableHelp": "Appears in the Terapeuta list when booking. Independent of role and assigned services.",
   "admin.staff.role": "Role",
   "admin.staff.tempPasswordNotice": "Temporary password. Share it with the new staff member via a secure channel:",
   "admin.staff.invited": "Member invited.",

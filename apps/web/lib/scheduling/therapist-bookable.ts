@@ -1,40 +1,38 @@
-// PL-05 - who belongs in the Terapeuta dropdown (Pre-Launch, Claude-found 2026-07-27).
+// PL-06b - who belongs in the Terapeuta dropdown (Pre-Launch, owner ruling
+// 2026-07-28). SUPERSEDES the PL-05 predicate.
 //
 // The booking drawer and the agenda toolbar read the SAME reference list
-// (fetchStableAgendaRef.therapistRows in ./data.ts). Before this loop that query
-// was `is_active AND role != 'reception'`, so it let the owner and the admin
-// through as selectable "therapists" - the CB screenshot showed "Ivan M" (owner)
-// and "Lurdes Cruz" (admin) as Terapeuta options.
+// (fetchStableAgendaRef.therapistRows in ./data.ts). PL-05 made "bookable" a
+// DERIVED signal: `roleSlug === 'therapist' OR serviceCount > 0`. That derivation
+// DROPPED the practising owner JP on prod (role != therapist, zero service
+// mappings -> both arms false -> out of the dropdown = a live defect), and it
+// conflated three separate concerns. PL-06 splits them cleanly:
+//   - role governs AUTHORISATION,
+//   - the service mapping governs DEFAULT PRESELECTION (PL-06a),
+//   - an explicit `users.is_bookable` flag governs DROPDOWN PRESENCE (this).
 //
-// The fix is NOT a naive `role = 'therapist'`: the practising owner (JP) is a
-// clinician who takes appointments while carrying role=owner, so a raw role
-// filter would wrongly drop him. The distinguishing signal is the
-// therapist->service mapping (`therapist_services`, migration 0023):
-// practitioners carry mappings, non-practitioners (the developer/operator owner,
-// the admin) do not.
-//
-// "Bookable" therefore = the user is a therapist (kept even with zero mappings
-// yet - that is a data-entry gap, not a reason to hide a real therapist) OR the
-// user has at least one service mapping (which keeps the practising owner). The
-// DB read lives in ./data.ts; this module is the pure decision so the rule is
-// unit-testable without a DB, mirroring ./therapist-location-filter.ts.
+// "Bookable" is therefore NO LONGER inferred from role or mappings. It is the
+// explicit `is_bookable` boolean (migration 0046), which admins set per staff
+// row in Equipa. Role sets rot at every hire (the exact failure that produced
+// the JP defect); the flag is the only signal that survives dual-role
+// practitioners without hand-curation. The DB read lives in ./data.ts; this
+// module is the pure decision so the rule stays unit-testable without a DB,
+// mirroring ./therapist-location-filter.ts.
 
 /** The minimum signal the bookable rule needs from each candidate row. */
 export interface BookableSignal {
-  /** The user's role slug: owner | admin | therapist | reception. */
-  roleSlug: string;
-  /** How many therapist_services rows the user has (0 for a non-practitioner). */
-  serviceCount: number;
+  /** The explicit is_bookable flag (users.is_bookable, migration 0046). */
+  isBookable: boolean;
 }
 
 /**
- * True when a user belongs in the Terapeuta dropdown: any therapist, or anyone
- * (of any role) mapped to deliver at least one service. Keeps the practising
- * owner (role=owner WITH mappings); drops the operator owner and the admin (no
- * mappings); drops reception (no mappings, not a therapist).
+ * True when a user belongs in the Terapeuta dropdown: exactly when their
+ * `is_bookable` flag is set. Keeps the practising owner (JP, flag true even
+ * though role != therapist and zero mappings); drops the operator owner, the
+ * admin, and reception (flag false).
  */
 export function isBookableTherapist(row: BookableSignal): boolean {
-  return row.roleSlug === "therapist" || row.serviceCount > 0;
+  return row.isBookable;
 }
 
 /** Narrow a candidate list to bookable practitioners. Input order is preserved. */

@@ -55,6 +55,7 @@ const baseProps = {
   jobTitle: "",
   roleSlug: "therapist",
   isActive: true,
+  isBookable: true,
   roleOptions: [{ slug: "therapist", label: "Terapeuta" }],
   canDelete: false,
   services: [{ id: "svc-1", name: "Osteopatia" }],
@@ -83,6 +84,24 @@ describe("StaffManageModal — W12-40 consolidated member management", () => {
     for (const field of ['name="fullName"', 'name="email"', 'name="jobTitle"', 'name="phone"']) {
       expect(firstForm).toContain(field);
     }
+  });
+
+  it("PL-06b: the Contacto form carries the is_bookable checkbox in the SAME edit form, reflecting the prop", () => {
+    const on = renderToStaticMarkup(
+      createElement(StaffManageModal, { ...therapistProps, isBookable: true }),
+    );
+    expect(on).toContain('name="isBookable"');
+    expect(on).toContain("Disponível para marcações"); // pt-PT label from real i18n
+    const onForm = on.slice(on.indexOf("<form"), on.indexOf("</form>"));
+    expect(onForm).toContain('name="isBookable"');
+    expect(onForm).toMatch(/name="isBookable"[^>]*checked|checked[^>]*name="isBookable"/);
+
+    const off = renderToStaticMarkup(
+      createElement(StaffManageModal, { ...therapistProps, isBookable: false }),
+    );
+    const offForm = off.slice(off.indexOf("<form"), off.indexOf("</form>"));
+    expect(offForm).toContain('name="isBookable"');
+    expect(offForm).not.toMatch(/name="isBookable"[^>]*checked|checked[^>]*name="isBookable"/);
   });
 
   it("prefills phone + job title from the current staff values", () => {

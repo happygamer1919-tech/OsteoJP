@@ -36,6 +36,8 @@ export type StaffMember = {
   // managed, ship empty). jobTitle is a DISPLAY field, orthogonal to roleSlug.
   phone: string | null;
   jobTitle: string | null;
+  // PL-06b (0046): presence in the Terapeuta booking dropdown, set in Equipa.
+  isBookable: boolean;
 };
 
 export async function listStaff(actor: RequestContext): Promise<StaffMember[]> {
@@ -51,6 +53,7 @@ export async function listStaff(actor: RequestContext): Promise<StaffMember[]> {
         isActive: users.isActive,
         phone: users.phone,
         jobTitle: users.jobTitle,
+        isBookable: users.isBookable,
       })
       .from(users)
       .leftJoin(roles, eq(users.roleId, roles.id))
@@ -358,10 +361,20 @@ export function maskEmail(email: string): string {
 export async function editStaff(
   actor: RequestContext,
   userId: string,
-  input: { fullName: string; email: string; phone?: string | null; jobTitle?: string | null },
+  input: {
+    fullName: string;
+    email: string;
+    phone?: string | null;
+    jobTitle?: string | null;
+    // PL-06b (0046): Terapeuta-dropdown presence. Optional — when omitted the
+    // flag is left unchanged, so callers that do not manage it (and existing
+    // tests) are unaffected; the Equipa Contacto form always sends it.
+    isBookable?: boolean;
+  },
 ): Promise<void> {
   assertCan(actor.role, "users:manage");
   const { fullName, email, phone, jobTitle } = normalizeStaffProfile(input);
+  const isBookable = input.isBookable;
 
   await runScoped(actor, async (tx) => {
     const target = await loadTarget(tx, userId);
@@ -381,13 +394,20 @@ export async function editStaff(
     // touches role_id, so a job-title change cannot alter capabilities.
     if (target.phone !== phone) changed.push("phone");
     if (target.jobTitle !== jobTitle) changed.push("job_title");
+    // PL-06b: is_bookable is a non-PII boolean (safe to name in the audit). Only
+    // considered when the caller supplied it; a change is a single-field edit.
+    if (isBookable !== undefined && target.isBookable !== isBookable) changed.push("is_bookable");
     if (changed.length === 0) return; // no-op
 
     // (1) Write public.users first, INSIDE the RLS transaction. A
     // (tenant_id, email) collision is caught HERE as email_taken — before we
     // touch Supabase auth — so a rejected edit never desyncs the two stores.
     try {
-      await tx.update(users).set({ fullName, email, phone, jobTitle }).where(eq(users.id, userId));
+      const patch =
+        isBookable === undefined
+          ? { fullName, email, phone, jobTitle }
+          : { fullName, email, phone, jobTitle, isBookable };
+      await tx.update(users).set(patch).where(eq(users.id, userId));
     } catch (e) {
       // Defense-in-depth against a concurrent email collision: the unique index
       // is the source of truth, so translate its violation, not a pre-check.
@@ -424,6 +444,7 @@ type Target = {
   email: string;
   phone: string | null;
   jobTitle: string | null;
+  isBookable: boolean;
 };
 
 async function loadTarget(tx: DbTx, userId: string): Promise<Target | null> {
@@ -435,6 +456,7 @@ async function loadTarget(tx: DbTx, userId: string): Promise<Target | null> {
       email: users.email,
       phone: users.phone,
       jobTitle: users.jobTitle,
+      isBookable: users.isBookable,
     })
     .from(users)
     .leftJoin(roles, eq(users.roleId, roles.id))
@@ -448,6 +470,7 @@ async function loadTarget(tx: DbTx, userId: string): Promise<Target | null> {
     email: row.email,
     phone: row.phone,
     jobTitle: row.jobTitle,
+    isBookable: row.isBookable,
   };
 }
 
