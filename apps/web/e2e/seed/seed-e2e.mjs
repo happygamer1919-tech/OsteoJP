@@ -124,6 +124,12 @@ const SERVICE_A = "00000000-0000-0000-0000-00000000a201";
 // flag to drive the soft booking warning.
 const SERVICE_NESA = "00000000-0000-0000-0000-00000000a202";
 const SERVICE_NESA_NAME = "NESA (sensível)";
+// PL-06a: an ACTIVE service the E2E therapist is NOT mapped to. Proves the
+// booking Serviço Select offers every active service (preselection, not
+// restriction): pre-fix the drawer filtered the Select to the therapist's
+// mapping, so this option was ABSENT; post-fix it is offered and bookable.
+const SERVICE_UNMAPPED = "00000000-0000-0000-0000-00000000a203";
+const SERVICE_UNMAPPED_NAME = "Drenagem Linfática";
 
 const PATIENTS_A = [
   {
@@ -395,6 +401,16 @@ async function ensureBaseData(userIds) {
       { onConflict: "id" },
     )).error,
     "service-nesa",
+  );
+  // PL-06a: active, tenant-A, and deliberately NOT added to ensureTherapistServices
+  // — the therapist has no mapping to it. The preselection-not-restriction e2e
+  // asserts it is still offered in the booking Serviço Select and books cleanly.
+  must(
+    (await db.from("services").upsert(
+      { id: SERVICE_UNMAPPED, tenant_id: TENANT_A, location_id: LOCATION_A, name: SERVICE_UNMAPPED_NAME, duration_min: 60, is_active: true },
+      { onConflict: "id" },
+    )).error,
+    "service-unmapped",
   );
 
   // W10-04 isolation: the three ACTIVE tenant-A patients (Maria/João/Ana) are

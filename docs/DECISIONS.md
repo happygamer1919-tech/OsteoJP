@@ -1928,3 +1928,19 @@ claim. Docs-only; owner-merge; YELLOW does not merge its own PR.
   pointer added) correcting the record and routing the row/colour/role mechanism to
   a CYAN read-only check (YELLOW has no prod access). Lesson: close-out state must
   be re-derived from a live CYAN read, never carried from a seed script's ID_MAP.
+
+## 2026-07-28 - PL-06a: therapist service mapping is a PRESELECTION, not a RESTRICTION (#682)
+
+- Owner ruling (2026-07-28, re-confirmed in his own words): the per-therapist
+  service assignment in Equipa is a default, never a hard constraint. Implemented:
+  the booking Servico Select (appointment-drawer.tsx) now lists ALL active services
+  for every therapist; the mapping only preselects the primary (oldest mapping,
+  W3-04 convention). Removed the drawer filter (serviceOptions no longer narrows by
+  therapistServiceIds) and the now-dead result state.
+- No server-side therapist+service reject exists (createAppointment passes serviceId
+  through), so the negative DoD holds by absence. Migration-free (no schema files).
+- JP's Terapeuta-dropdown restoration is PL-06b (is_bookable flag), a separate
+  owner-gated migration, never composed into PL-06a.
+- Rodica's NESA ruling (all therapists perform NESA) is satisfied by PL-06a alone:
+  NESA is selectable for every therapist. No roster write. CB-NESA stays closed.
+- Merge policy: OWNER VISUAL GATE, no self-merge.
