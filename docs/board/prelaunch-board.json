@@ -20,10 +20,10 @@
     "note": "The launch readiness figure is passed-over-nine. It is NOT a percentage of work done and it is NEVER estimated. No partial credit: each condition is pass or fail.",
     "conditions": [
       { "id": "G1", "title": "Working-hours seeded for the real team (availability_templates non-empty)", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "availability_templates is EMPTY for the real roster. Linchpin: also powers PORTAL booking slots. Owner enters hours in Equipa -> Horarios or provides schedules to seed." },
-      { "id": "G2", "title": "REMINDERS_LIVE_SEND resolved and canary sender confirmed", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "Canary was run (env set); awaiting the reminder SMS to fire to confirm the FROM sender. Two-way capability read off the SMS feeds W12-11." },
+      { "id": "G2", "title": "REMINDERS_LIVE_SEND resolved and canary sender confirmed", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "Canary RE-STAGED (old one died in the purge). Lead windows 24h + 48h (offsets.ts:20-22,43); fires via the appointment/scheduled Inngest event (functions.ts:66) so canary-create = UI booking at now+24h+15min. REMINDERS_LIVE_SEND checked at SEND time (clients.ts:45). Pending Ivan UI booking + the SMS fire (FROM sender) + Twilio/Inngest/Vercel console findings; GREEN stages canary-cleanup only. Two-way capability read off the SMS feeds W12-11." },
       { "id": "G3", "title": "NEW_DB_PASSWORD rotated with full propagation", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "Rotate the NEW prod DB password and propagate to every consumer (Vercel platform/api/portal env, local .env). Owner-terminal only; GREEN never sources prod creds." },
       { "id": "G4", "title": "Prod free of synthetic data (CYAN PASS, post INC-02)", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "Synthetic 'Teste CB' (+ appts + a Declaracao) on live DB; prior 'Max' residue too. CYAN produces the read-only inventory; owner runs the purge under an AUTORIZO phrase; signed records annulled not deleted. Gate is PASS only on CYAN post-purge PASS." },
-      { "id": "G5", "title": "Rodica batch cleared or explicitly deferred with her sign-off", "state": "fail", "blocked_on": "rodica", "evidence": null, "notes": "The four Telegram items (PL-01..PL-04) plus PL-05 either shipped-and-confirmed by Rodica or explicitly deferred with her written sign-off." },
+      { "id": "G5", "title": "Rodica batch cleared or explicitly deferred with her sign-off", "state": "fail", "blocked_on": "rodica", "evidence": null, "notes": "PRE-CLEARED SHAPE: Rodica confirmed all four re-test points (PL-01..PL-04) + PL-05; the gate FLIPS on her actual re-test tomorrow. Shipped-and-confirmed by Rodica or explicitly deferred with her written sign-off." },
       { "id": "G6", "title": "Nine staff mailboxes created on webhs, invite tested to Chris Macov", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "Owner creates the nine @osteojp mailboxes on webhs manually, then a test invite to Chris Macov proves the invite flow end-to-end." },
       { "id": "G7", "title": "estados flags ON", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "W12-11 estados shipped with ALL flags OFF (REMINDERS_INBOUND, REMINDERS_LIVE_SEND, inbound webhook). Turning them ON is a prod-config decision gated on CYAN review of the inbound-SMS classifier path." },
       { "id": "G8", "title": "Lawyer sign-off on the RGPD package incl. Twilio DPF/SCC line", "state": "fail", "blocked_on": "jp", "evidence": null, "notes": "External legal sign-off on the RGPD package including the Twilio Data Privacy Framework / Standard Contractual Clauses line. Routed through JP (legal/clinical decisions); not a GREEN-decidable item." },
@@ -178,14 +178,14 @@
     {
       "id": "PL-06b",
       "title": "is_bookable flag (RULED Option 2) - migration + Equipa checkbox + predicate replace",
-      "lane": "shipped",
-      "status": "shipped",
+      "lane": "incidents",
+      "status": "blocked",
       "owner_terminal": "green",
-      "gate": "owner_merge",
+      "gate": "owner_authorizo",
       "evidence": { "kind": "pr", "ref": "#683", "at": "2026-07-28" },
-      "blocked_on": null,
+      "blocked_on": "ivan",
       "last_checkpoint": "2026-07-28",
-      "notes": "RULED 2026-07-28: Option 2 - an is_bookable boolean on the staff row (governs Terapeuta-dropdown presence, independent of role AND mappings; three concerns three signals). Replaces therapist-bookable.ts:36-38 (BOTH arms removed). Equipa checkbox in the Gerir modal. FIXES the PL-05 JP-out defect (JP -> is_bookable=true). ATTESTED id-map DERIVED (read c6540cc6, verbatim ids, no fuzzy match): TRUE for 16 (15 therapists + JP), FALSE for 5 (Lurdes, Ivan M, Carlos/Raquel/Tamara reception) - full list in GREEN-LEDGER-pl06-attested-idmap-and-jp-role-20260728. id-map SIGNED OFF by owner (16 true / 5 false). BUILT: migration 0046 (is_bookable + tenant-scoped backfill by id), predicate replaced (both arms), data.ts selects the flag, Equipa Contacto checkbox (users:manage, audited), RLS isolation test; JP-inclusion red-then-green at unit level. Gates green; migration validated locally (rolled back). PR #683 - OWNER-MERGE, APPLY-BEFORE-MERGE (CYAN CLEAR -> Ivan applies 0046 from prod-apply -> journal -> merge), ONE migration in flight, next free after 0045."
+      "notes": "RULED 2026-07-28: Option 2 - an is_bookable boolean on the staff row (governs Terapeuta-dropdown presence, independent of role AND mappings; three concerns three signals). Replaces therapist-bookable.ts:36-38 (BOTH arms removed). Equipa checkbox in the Gerir modal. FIXES the PL-05 JP-out defect (JP -> is_bookable=true). ATTESTED id-map DERIVED (read c6540cc6, verbatim ids, no fuzzy match): TRUE for 16 (15 therapists + JP), FALSE for 5 (Lurdes, Ivan M, Carlos/Raquel/Tamara reception) - full list in GREEN-LEDGER-pl06-attested-idmap-and-jp-role-20260728. id-map SIGNED OFF by owner (16 true / 5 false). BUILT: migration 0046 (is_bookable + tenant-scoped backfill by id), predicate replaced (both arms), data.ts selects the flag, Equipa Contacto checkbox (users:manage, audited), RLS isolation test; JP-inclusion red-then-green at unit level. Gates green; migration validated locally (rolled back). PR #683. INCIDENT / PROCESS DRIFT: #683 reached MERGE + prod DEPLOY with NEITHER CYAN CLEAR NOR the owner apply - apply-before-merge was skipped. CYAN prod read confirms users.is_bookable is ABSENT; the deployed predicate (data.ts) reads a missing column, so the booking form + agenda reference data are a LIVE LANDMINE. FIX-FORWARD (no re-litigation): Ivan applies 0046 from the prod-apply worktree (T0 apply block), pastes the drizzle journal + is_bookable=true count 16, CYAN verifies the column present; ONLY THEN does this flip to applied/shipped."
     },
     {
       "id": "CB-NESA",
@@ -250,14 +250,14 @@
     {
       "id": "PL-07",
       "title": "Ativar login - attach a Supabase login to an existing staff row (team onboarding)",
-      "lane": "in_flight",
-      "status": "in_flight",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": { "kind": "pr", "ref": "#685", "at": "2026-07-28" },
       "blocked_on": null,
       "last_checkpoint": "2026-07-28",
-      "notes": "DISCOVERED (T4): the intended 'edit email then invite' order was broken - editing email on an auth-less row 404s + rolls back, and invite only mints NEW rows (active therapists' rows cannot be deleted to re-invite), so existing staff had NO login path. FIX (owner-chosen): idempotent 'Ativar login' in Gerir creates a Supabase auth user keyed to the SAME row id (GoTrue honours explicit id - verified locally), preserving the row + appointments; issues a set-password link (Resend) or on-screen link/temp-password. Also makes editing email on an auth-less row a clean row-only change. Gates green, rebased on main after 682/683/684. CONFIG BLOCKERS (owner/infra, NOT code): (1) Supabase Customize-Access-Token-Hook toggle MUST be ON in prod or first login has no role/tenant claims; (2) email delivery needs INVITES_LIVE_SEND + RESEND_API_KEY + verified sender + STAFF_INVITE_REDIRECT_URL. TEST on Chris Macov (prod) before real staff. PR #685."
+      "notes": "DISCOVERED (T4): the intended 'edit email then invite' order was broken - editing email on an auth-less row 404s + rolls back, and invite only mints NEW rows (active therapists' rows cannot be deleted to re-invite), so existing staff had NO login path. FIX (owner-chosen): idempotent 'Ativar login' in Gerir creates a Supabase auth user keyed to the SAME row id (GoTrue honours explicit id - verified locally), preserving the row + appointments; issues a set-password link (Resend) or on-screen link/temp-password. Also makes editing email on an auth-less row a clean row-only change. Gates green, rebased on main after 682/683/684. CONFIG BLOCKERS (owner/infra, NOT code): (1) Supabase Customize-Access-Token-Hook toggle MUST be ON in prod or first login has no role/tenant claims; (2) email delivery needs INVITES_LIVE_SEND + RESEND_API_KEY + verified sender + STAFF_INVITE_REDIRECT_URL. Code SHIPPED (#685). ACCEPTANCE PENDING from Ivan: (a) flip the Supabase Customize-Access-Token-Hook toggle ON in prod (REQUIRED - else first login carries no claims), (b) run the Chris Macov prod test (activate -> set password -> first login lands with role+locations) and return the acceptance evidence, before onboarding real staff."
     },
     {
       "id": "CANARY-reminder",
@@ -269,7 +269,19 @@
       "evidence": null,
       "blocked_on": "ivan",
       "last_checkpoint": "2026-07-28",
-      "notes": "Fresh canary (old one died in the purge). Reminder lead windows = 48h + 24h before start (offsets.ts:20-22); a reminder is scheduled only if sendAt = startsAt - offset > now (offsets.ts:43). To fire ~15min after booking: book the canary appointment at now + 24h + 15min -> the 24h reminder sends in ~15min. The reminder fires ONLY via the appointment/scheduled Inngest event, emitted by createAppointment (enqueueAppointmentReminders) - a raw DB insert does NOT trigger it, so canary-CREATE = book through the prod UI (canary patient with the owner's phone), NOT a DB script. canary-CLEANUP script (delete canary patient + appt by id, 0/0 verify) pending owner phone + Ivan's Twilio/Inngest/Vercel console findings. BLOCKED on Ivan's console findings + the canary patient phone."
+      "notes": "Fresh canary (old one died in the purge). Reminder lead windows = 48h + 24h before start (offsets.ts:20-22); a reminder is scheduled only if sendAt = startsAt - offset > now (offsets.ts:43). To fire ~15min after booking: book the canary appointment at now + 24h + 15min -> the 24h reminder sends in ~15min. The reminder fires ONLY via the appointment/scheduled Inngest event, emitted by createAppointment (enqueueAppointmentReminders) - a raw DB insert does NOT trigger it, so canary-CREATE = book through the prod UI (canary patient with the owner's phone), NOT a DB script. due-reminder set computed at functions.ts:66 (computeDueReminders). REMINDERS_LIVE_SEND is checked at SEND time (clients.ts:45), NOT at schedule time - so flipping it false tomorrow AM ALSO suppresses reminders already queued tonight. Ivan books the canary in the UI himself (types the phone there; the number never enters AI context). GREEN stages canary-CLEANUP ONLY (delete patient + appt by id, 0/0 verify), parameterised by the patient id Ivan returns after creation. BLOCKED on Ivan's console findings + his UI booking."
+    },
+    {
+      "id": "LE-resend-deferred",
+      "title": "Resend live email for invite/login links - DEFERRED post-launch",
+      "lane": "loose_ends",
+      "status": "todo",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-28",
+      "notes": "DEFERRED to post-launch (owner 2026-07-28). Ativar login shows the set-password link on screen; Ivan creates logins himself and passes links directly, so emailed delivery is a nice-to-have, not a launch blocker. Enable later: INVITES_LIVE_SEND=true + RESEND_API_KEY + a verified osteojp.pt sender + STAFF_INVITE_REDIRECT_URL -> /auth/update-password."
     }
   ]
 }
