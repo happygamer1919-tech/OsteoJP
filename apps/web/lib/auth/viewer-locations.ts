@@ -27,3 +27,25 @@ export async function resolveViewerLocationIds(ctx: RequestContext): Promise<str
       .then((rows) => rows.map((r) => r.locationId)),
   );
 }
+
+/**
+ * PL-09 Phase 1: the location allowlist a viewer's reads are scoped to, or `null`
+ * when the viewer is NOT location-restricted.
+ *
+ *   - owner + therapist  -> null. Owner sees all locations; a therapist is scoped
+ *     by their OWN-data rules (practitioner lock + therapistPatientScope), not by
+ *     location, so a location allowlist would be the wrong axis for them.
+ *   - reception + admin  -> their `staff_locations` assignment set.
+ *   - reception/admin with NO assignment -> null (FALL BACK to all-locations, so
+ *     an unassigned staffer is never locked out mid-onboarding; assign them a
+ *     location in Equipa to make the restriction take effect).
+ *
+ * Callers AND this into their already-authorized, RLS-scoped queries. This is the
+ * app-layer (Phase 1) restriction; Phase 2 adds the matching RLS as defense-in-
+ * depth.
+ */
+export async function viewerLocationScope(ctx: RequestContext): Promise<string[] | null> {
+  if (ctx.role !== "reception" && ctx.role !== "admin") return null;
+  const ids = await resolveViewerLocationIds(ctx);
+  return ids.length > 0 ? ids : null;
+}

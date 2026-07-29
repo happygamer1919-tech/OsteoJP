@@ -1,6 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
-import { and, asc, desc, eq, gte, lt, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { assertCan, type RequestContext } from "@osteojp/auth";
 import {
@@ -15,6 +15,7 @@ import {
   type DbTx,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { filterBookableTherapists } from "./therapist-bookable";
 import { filterTherapistsByLocation } from "./therapist-location-filter";
 import { listTherapistLocationAssignments } from "./therapist-locations";
@@ -180,6 +181,11 @@ export async function listAppointments(
   ctx: RequestContext,
   args: { startUtc: Date; endUtc: Date } & Partial<AgendaFilters>,
 ): Promise<AgendaAppointment[]> {
+  // PL-09 Phase 1: reception + admin only see their assigned location(s)' agenda,
+  // enforced HERE so every caller (agenda, marcacoes, dashboard) is consistent.
+  // owner is unrestricted; a therapist is practitioner-locked by the caller;
+  // an unassigned reception/admin falls back to all (viewerLocationScope -> null).
+  const locationScope = await viewerLocationScope(ctx);
   return runScoped(ctx, async (tx) => {
     const conds: SQL[] = [
       gte(appointments.startsAt, args.startUtc),
@@ -190,6 +196,9 @@ export async function listAppointments(
     }
     if (args.locationId) {
       conds.push(eq(appointments.locationId, args.locationId));
+    }
+    if (locationScope) {
+      conds.push(inArray(appointments.locationId, locationScope));
     }
     const rows = await baseAppointmentQuery(tx)
       .where(and(...conds))
@@ -332,10 +341,11 @@ export async function getAgendaOptions(
   // booking drawer can scope its therapist dropdown to the form-selected location
   // regardless of the W9-02 toolbar location. The `therapists` field keeps its
   // W9-02 page/toolbar scoping unchanged.
-  const [{ therapistRows, locationRows, serviceRows, packRows }, assignmentEntries] =
+  const [{ therapistRows, locationRows, serviceRows, packRows }, assignmentEntries, locationScope] =
     await Promise.all([
       fetchStableAgendaRef(ctx),
       fetchTherapistLocationAssignments(ctx),
+      viewerLocationScope(ctx),
     ]);
 
   const assignmentMap = new Map(assignmentEntries);
@@ -345,11 +355,21 @@ export async function getAgendaOptions(
   const therapistLocationIds: Record<string, string[]> = {};
   for (const [id, locs] of assignmentMap) therapistLocationIds[id] = [...locs];
 
+  // PL-09 Phase 1: reception + admin only pick from their assigned location(s).
+  // The appointment DATA is already location-scoped in listAppointments; this
+  // just narrows the location dropdown so they can't select another clinic. The
+  // therapist-name filter stays full for now (its data is location-locked, and
+  // per-therapist location comes from availability_templates which are not yet
+  // seeded - a Phase 1b refinement once staff_locations drives it).
+  const locations = locationScope
+    ? locationRows.filter((l) => locationScope.includes(l.id))
+    : locationRows;
+
   return {
     therapists,
     allTherapists: therapistRows,
     therapistLocationIds,
-    locations: locationRows,
+    locations,
     services: serviceRows,
     packs: packRows,
   };
