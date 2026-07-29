@@ -2,7 +2,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
-import { changeStaffRole, deleteStaffMember, editStaff, inviteStaff, setStaffActive } from "@/lib/admin/staff";
+import {
+  activateStaffLogin,
+  changeStaffRole,
+  deleteStaffMember,
+  editStaff,
+  inviteStaff,
+  setStaffActive,
+} from "@/lib/admin/staff";
 import { setTherapistPrimaryService } from "@/lib/admin/therapist-primary-service";
 import { setStaffColor, setStaffLocations } from "@/lib/admin/staff-locations";
 import { isAdminError } from "@/lib/admin/errors";
@@ -13,6 +20,32 @@ export type InviteState = {
   tempPassword?: string;
   code?: string;
 };
+
+// PL-07: attach a login to an existing staff row (Ativar login in Gerir).
+export type ActivateLoginState = {
+  ok: boolean;
+  delivery?: "email" | "temp_password" | "link";
+  tempPassword?: string;
+  setPasswordLink?: string;
+  code?: string;
+};
+
+export async function activateLoginAction(
+  _prev: ActivateLoginState,
+  formData: FormData,
+): Promise<ActivateLoginState> {
+  const actor = await requireRequestContext();
+  try {
+    const result = await activateStaffLogin(actor, String(formData.get("userId") ?? ""));
+    revalidatePath("/admin/staff");
+    if (result.delivery === "email") return { ok: true, delivery: "email" };
+    if (result.delivery === "temp_password")
+      return { ok: true, delivery: "temp_password", tempPassword: result.tempPassword };
+    return { ok: true, delivery: "link", setPasswordLink: result.setPasswordLink };
+  } catch (e) {
+    return { ok: false, code: isAdminError(e) ? e.code : "error" };
+  }
+}
 
 export async function inviteAction(
   _prev: InviteState,
