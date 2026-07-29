@@ -6,6 +6,11 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // user (no clinical/audit touch), owner/self protected.
 
 vi.mock("server-only", () => ({}));
+// PL-09 Phase 4: delete-behavior tests; the location guard is a no-op here.
+vi.mock("@/lib/auth/viewer-locations", () => ({
+  viewerLocationScope: vi.fn(async () => null),
+  resolveViewerLocationIds: vi.fn(async () => []),
+}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
 vi.mock("@/lib/auth/provision", () => ({
   provisionStaffUser: vi.fn(),

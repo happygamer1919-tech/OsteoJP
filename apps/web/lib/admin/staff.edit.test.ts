@@ -11,6 +11,12 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // is what makes "auth failure leaves public.users untouched" a faithful check.
 
 vi.mock("server-only", () => ({}));
+// PL-09 Phase 4: these tests exercise edit behavior, not location scoping. Mock
+// the viewer scope to null (owner-like) so the location guard is a no-op here.
+vi.mock("@/lib/auth/viewer-locations", () => ({
+  viewerLocationScope: vi.fn(async () => null),
+  resolveViewerLocationIds: vi.fn(async () => []),
+}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
 vi.mock("@/lib/auth/provision", () => ({
   provisionStaffUser: vi.fn(),
