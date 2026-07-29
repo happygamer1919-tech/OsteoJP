@@ -21,21 +21,24 @@ describe("navItemsForRole — role-aware nav gating", () => {
     ]);
   });
 
-  // W6-05: Estatisticas is owner-only (statistics:read).
-  it("Estatisticas is limited to the owner", () => {
+  // PL-09 Phase 3 (was W6-05 owner-only): Estatisticas is owner + admin. The
+  // admin dashboard is location-scoped in the queries; therapist/reception have
+  // no statistics:read.
+  it("Estatisticas shows for owner and admin only (statistics:read)", () => {
     const seesStats = (["owner", "admin", "therapist", "reception"] as const).filter((r) =>
       hrefs(r).includes("/estatisticas"),
     );
-    expect(seesStats).toEqual(["owner"]);
+    expect(seesStats).toEqual(["owner", "admin"]);
   });
 
-  it("admin sees Invoicing and Admin but NOT Review and NOT the top-level /clinical", () => {
+  it("admin sees Invoicing, Estatisticas and Admin but NOT Review and NOT the top-level /clinical", () => {
     expect(hrefs("admin")).toEqual([
       "/dashboard",
       "/agenda",
       "/patients",
       "/marcacoes",
       "/invoicing",
+      "/estatisticas",
       "/admin",
     ]);
     expect(hrefs("admin")).not.toContain("/clinical");

@@ -26,8 +26,9 @@ beforeEach(() => {
   mockRunScoped.mockReset();
 });
 
-describe("getStatistics query-level owner gate (W6-05)", () => {
-  for (const actor of [admin, therapist, reception]) {
+describe("getStatistics query-level gate (PL-09 Phase 3: owner + admin)", () => {
+  // therapist + reception still have no statistics:read -> refused before any query.
+  for (const actor of [therapist, reception]) {
     it(`refuses a ${actor.role} with ForbiddenError (no data, no query)`, async () => {
       await expect(getStatistics(actor)).rejects.toBeInstanceOf(ForbiddenError);
       expect(mockRunScoped).not.toHaveBeenCalled();
@@ -39,5 +40,14 @@ describe("getStatistics query-level owner gate (W6-05)", () => {
     mockRunScoped.mockResolvedValue(canned as never);
     await expect(getStatistics(owner)).resolves.toBe(canned);
     expect(mockRunScoped).toHaveBeenCalledTimes(1);
+  });
+
+  it("proceeds for an admin (statistics now allowed; scoped to their location in-query)", async () => {
+    const canned = { revenueTotalCents: 0 };
+    mockRunScoped.mockResolvedValue(canned as never);
+    // Admin is NOT refused. It first resolves its location scope (one runScoped)
+    // then runs the aggregate query (another) - both mocked here; the point is
+    // the capability gate lets admin through.
+    await expect(getStatistics(admin)).resolves.toBe(canned);
   });
 });

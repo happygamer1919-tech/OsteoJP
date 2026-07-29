@@ -34,7 +34,8 @@ const DENIED: Record<Role, Capability[]> = {
     "roles:manage",
     // the Pacientes eliminados recovery view is owner-only (W6-04)
     "patients:recover",
-    "statistics:read",
+    // PL-09 Phase 3: admin NOW has statistics:read (location-scoped in-query),
+    // so it is no longer a denied capability for admin.
   ],
   therapist: [
     "patients:delete",

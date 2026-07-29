@@ -9,6 +9,8 @@ import { and, count, desc, eq, gte, inArray, isNull, lt, ne, sql } from "drizzle
 import { assertCan } from "@osteojp/auth";
 import { appointments, invoices, patients, services, users } from "@osteojp/db";
 import { requireRequestContext, runScoped, type RequestContext } from "../auth/context";
+import { viewerLocationScope } from "../auth/viewer-locations";
+import { patientLocationScope } from "../patients/scope";
 import { ageDistribution, categoryCounts, pivotSeries } from "./kpi-transform";
 
 export type KpiFilters = {
@@ -68,19 +70,43 @@ export async function getKpiReports(
 
   const { start, end } = dayBounds(filters.from, filters.to);
   const now = new Date();
+  // PL-09 Phase 3: admin KPIs are scoped to their location(s); owner is all-
+  // locations (viewerLocationScope -> null). The aggregates read three base
+  // tables, so each gets its own location condition below.
+  const locScope = await viewerLocationScope(ctx);
 
   return runScoped(ctx, async (tx) => {
+    const apptLoc = locScope ? inArray(appointments.locationId, locScope) : undefined;
+    // Invoice-only aggregates (revenue-by-month, top-payers) do NOT join
+    // appointments, so scope invoices by their appointment's location via a
+    // subquery. An invoice with no appointment (null location) is excluded - it
+    // cannot be attributed to the admin's location.
+    const invLoc = locScope
+      ? inArray(
+          invoices.appointmentId,
+          tx
+            .select({ id: appointments.id })
+            .from(appointments)
+            .where(inArray(appointments.locationId, locScope)),
+        )
+      : undefined;
+    // Demographics read patients directly (no period -> all patients), so scope
+    // them by the same appointment-basis rule reception/admin use elsewhere.
+    const patLoc = locScope ? patientLocationScope(patients.id, locScope) : undefined;
+
     // Non-cancelled appointments in period (the count-report base).
     const apptWhere = and(
       ne(appointments.status, "cancelled"),
       start ? gte(appointments.startsAt, start) : undefined,
       end ? lt(appointments.startsAt, end) : undefined,
+      apptLoc,
     );
     // Issued/paid invoices in period (the revenue base).
     const invWhere = and(
       inArray(invoices.status, REVENUE_STATUSES),
       start ? gte(invoices.issuedAt, start) : undefined,
       end ? lt(invoices.issuedAt, end) : undefined,
+      invLoc,
     );
     const centsExpr = sql<number>`coalesce(sum(${invoices.amountCents}), 0)`;
 
@@ -196,7 +222,7 @@ export async function getKpiReports(
         city: patients.city,
       })
       .from(patients)
-      .where(and(isNull(patients.deletedAt), inPeriodPatientIds));
+      .where(and(isNull(patients.deletedAt), inPeriodPatientIds, patLoc));
 
     const named = (rows: { id: string | null; name: string; count: number }[]): NamedCount[] =>
       rows.map((r) => ({ id: r.id, name: r.name, count: Number(r.count ?? 0) }));

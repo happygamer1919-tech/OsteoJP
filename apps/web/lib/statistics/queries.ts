@@ -10,6 +10,7 @@ import { and, count, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { appointments, invoices, locations, services, users } from "@osteojp/db";
 import { requireRequestContext, runScoped, type RequestContext } from "../auth/context";
+import { viewerLocationScope } from "../auth/viewer-locations";
 
 export type StatisticsFilters = {
   /** Inclusive YYYY-MM-DD bounds (Europe/Lisbon civil day); optional. */
@@ -65,6 +66,12 @@ export async function getStatistics(
   assertCan(ctx.role, "statistics:read");
 
   const { start, end } = dayBounds(filters.from, filters.to);
+  // PL-09 Phase 3: admin sees statistics ONLY for their location(s); owner is
+  // all-locations (viewerLocationScope -> null). Every query below joins/reads
+  // appointments, so one condition on appointments.location_id scopes them all.
+  const locScope = await viewerLocationScope(ctx);
+  const apptLoc =
+    locScope ? inArray(appointments.locationId, locScope) : undefined;
 
   return runScoped(ctx, async (tx) => {
     // Revenue side: invoices (issued/paid) LEFT JOIN their appointment for the
@@ -76,6 +83,7 @@ export async function getStatistics(
       filters.therapistId ? eq(appointments.practitionerId, filters.therapistId) : undefined,
       filters.serviceId ? eq(appointments.serviceId, filters.serviceId) : undefined,
       filters.locationId ? eq(appointments.locationId, filters.locationId) : undefined,
+      apptLoc,
     );
 
     const centsExpr = sql<number>`coalesce(sum(${invoices.amountCents}), 0)`;
@@ -144,6 +152,7 @@ export async function getStatistics(
       filters.therapistId ? eq(appointments.practitionerId, filters.therapistId) : undefined,
       filters.serviceId ? eq(appointments.serviceId, filters.serviceId) : undefined,
       filters.locationId ? eq(appointments.locationId, filters.locationId) : undefined,
+      apptLoc,
     );
 
     const [volumeRow] = await tx
