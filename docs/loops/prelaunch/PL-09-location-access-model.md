@@ -12,7 +12,8 @@ fresh `origin/main`.
   assigned location. Cannot see any other location.
 - **Admin** - sees only their assigned location's info; the admin panel is
   available but LIMITED to their location's actions (manage only their clinic's
-  staff/services). [Statistics/KPI for admin: HELD - see Decisions.]
+  staff/services). Admin ALSO sees statistics/KPI, scoped to their location
+  (confirmed owner 2026-07-29).
 - **Owner** - all locations, all therapists, all info.
 
 "Assigned location" = the location(s) a user holds in `staff_locations` (0038).
@@ -68,9 +69,9 @@ In practice one per reception/admin; the scope is the assignment SET (multi-safe
   patient`), admin + reception their-location (mirror `clinical_admin_sees_
   patient`), owner all. Isolation test in the SAME PR for every predicate. This is
   the true security layer; app-layer Phase 1 becomes defense-in-depth over it.
-- **Phase 3 - admin statistics [HELD].** Only if owner confirms: grant admin
-  `statistics:read` + location-scope the stat/KPI aggregates. NOT built until
-  confirmed (conflicts with the checkbox answer 2026-07-29).
+- **Phase 3 - admin statistics (CONFIRMED owner 2026-07-29).** Grant admin
+  `statistics:read` + location-scope the stat/KPI aggregates to the admin's
+  `staff_locations`. Owner keeps all-locations statistics.
 - **Phase 4 - admin panel location-limit.** Scope admin-panel reads + writes
   (`staff.ts`, `services.ts`, and `staff_locations` writes) to the admin's
   location(s): an admin manages only their clinic's staff/services. May need an
@@ -104,7 +105,6 @@ In practice one per reception/admin; the scope is the assignment SET (multi-safe
 
 - APPROACH: proper phased build, ENABLE after the acceptance test. (Not rushed.)
 - Admin panel LIMITED to their location: YES.
-- Admin statistics/KPI: HELD. The typed spec said admin gets stats, but the
-  confirmation checkbox left it UNCHECKED - conflict flagged; statistics stays
-  owner-only until the owner reconfirms. Phase 3 is not built until then.
+- Admin statistics/KPI: CONFIRMED (owner 2026-07-29) - admins track statistics
+  but ONLY for their location; owner keeps all-locations. Phase 3 builds.
 - Scope basis = `staff_locations` (0038), the assignment SET (multi-location safe).
