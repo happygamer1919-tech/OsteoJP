@@ -166,8 +166,8 @@
     {
       "id": "PL-06a",
       "title": "Service mapping = preselection not restriction - booking UI/logic (non-migration)",
-      "lane": "in_flight",
-      "status": "in_flight",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": { "kind": "pr", "ref": "#682", "at": "2026-07-28" },
@@ -178,8 +178,8 @@
     {
       "id": "PL-06b",
       "title": "is_bookable flag (RULED Option 2) - migration + Equipa checkbox + predicate replace",
-      "lane": "in_flight",
-      "status": "in_flight",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": { "kind": "pr", "ref": "#683", "at": "2026-07-28" },
@@ -246,6 +246,30 @@
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
       "notes": "Wave 12 CLOSED 2026-07-27. Per-loop PRs #633-#665; close-out state #666. Not re-listed here (count only) - see docs/handoff/WAVE-12-CLOSE-20260727.md."
+    },
+    {
+      "id": "PL-07",
+      "title": "Ativar login - attach a Supabase login to an existing staff row (team onboarding)",
+      "lane": "in_flight",
+      "status": "in_flight",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": { "kind": "pr", "ref": "#685", "at": "2026-07-28" },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-28",
+      "notes": "DISCOVERED (T4): the intended 'edit email then invite' order was broken - editing email on an auth-less row 404s + rolls back, and invite only mints NEW rows (active therapists' rows cannot be deleted to re-invite), so existing staff had NO login path. FIX (owner-chosen): idempotent 'Ativar login' in Gerir creates a Supabase auth user keyed to the SAME row id (GoTrue honours explicit id - verified locally), preserving the row + appointments; issues a set-password link (Resend) or on-screen link/temp-password. Also makes editing email on an auth-less row a clean row-only change. Gates green, rebased on main after 682/683/684. CONFIG BLOCKERS (owner/infra, NOT code): (1) Supabase Customize-Access-Token-Hook toggle MUST be ON in prod or first login has no role/tenant claims; (2) email delivery needs INVITES_LIVE_SEND + RESEND_API_KEY + verified sender + STAFF_INVITE_REDIRECT_URL. TEST on Chris Macov (prod) before real staff. PR #685."
+    },
+    {
+      "id": "CANARY-reminder",
+      "title": "Reminder pipeline canary - prod SMS smoke test (Twilio) via a real booking",
+      "lane": "blocked_on_people",
+      "status": "blocked",
+      "owner_terminal": "green",
+      "gate": "owner_authorizo",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-07-28",
+      "notes": "Fresh canary (old one died in the purge). Reminder lead windows = 48h + 24h before start (offsets.ts:20-22); a reminder is scheduled only if sendAt = startsAt - offset > now (offsets.ts:43). To fire ~15min after booking: book the canary appointment at now + 24h + 15min -> the 24h reminder sends in ~15min. The reminder fires ONLY via the appointment/scheduled Inngest event, emitted by createAppointment (enqueueAppointmentReminders) - a raw DB insert does NOT trigger it, so canary-CREATE = book through the prod UI (canary patient with the owner's phone), NOT a DB script. canary-CLEANUP script (delete canary patient + appt by id, 0/0 verify) pending owner phone + Ivan's Twilio/Inngest/Vercel console findings. BLOCKED on Ivan's console findings + the canary patient phone."
     }
   ]
 }
