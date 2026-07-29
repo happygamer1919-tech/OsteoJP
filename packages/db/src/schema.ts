@@ -209,6 +209,14 @@ export const users = pgTable(
     // "Osteopata". It NEVER gates a capability. Nullable, ships empty.
     jobTitle: text("job_title"),
     isActive: boolean("is_active").notNull().default(true),
+    // PL-06b (migration 0046, owner ruling 2026-07-28): governs PRESENCE in the
+    // Terapeuta booking dropdown, decoupled from role (which governs
+    // AUTHORISATION) and from service mappings (which govern PRESELECTION) — three
+    // concerns, three signals, no overloading. Admins set it per staff row in
+    // Equipa (users:manage-gated, audited). Ships false; the 0046 backfill flips
+    // the attested practitioners (15 therapists + the practising owner JP) to
+    // true. Replaces the PL-05 role-or-mapping predicate that dropped JP.
+    isBookable: boolean("is_bookable").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

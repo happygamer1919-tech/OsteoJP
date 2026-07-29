@@ -339,6 +339,7 @@ export default async function StaffPage({
                       jobTitle={u.jobTitle ?? ""}
                       roleSlug={u.roleSlug ?? ""}
                       isActive={u.isActive}
+                      isBookable={u.isBookable}
                       roleOptions={roleOptions}
                       canDelete={u.roleSlug !== "owner" && u.id !== actor.userId}
                       isTherapist={isTherapist}

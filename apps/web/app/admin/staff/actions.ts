@@ -91,6 +91,9 @@ export async function editStaffAction(formData: FormData): Promise<void> {
       email: String(formData.get("email") ?? ""),
       phone: String(formData.get("phone") ?? ""),
       jobTitle: String(formData.get("jobTitle") ?? ""),
+      // PL-06b: an unchecked native checkbox is ABSENT from FormData, so
+      // "not present" means false. The Contacto form always renders it.
+      isBookable: formData.get("isBookable") === "on",
     });
   } catch (e) {
     code = isAdminError(e) ? `err:${e.code}` : "err";

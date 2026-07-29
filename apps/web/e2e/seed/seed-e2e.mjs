@@ -281,6 +281,11 @@ async function ensureUsers() {
         email: u.email,
         full_name: u.fullName,
         is_active: true,
+        // PL-06b (migration 0046): bookability is the explicit is_bookable flag,
+        // not derived from role. Every therapist-role seed user is bookable; the
+        // admin/reception/owner rows are not (mirroring the attested prod map, and
+        // keeping the operator-owner OUT of the Terapeuta dropdown).
+        is_bookable: (u.roleSlug ?? u.slug) === "therapist",
       },
       { onConflict: "id" },
     );

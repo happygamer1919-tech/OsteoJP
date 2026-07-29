@@ -1929,6 +1929,26 @@ claim. Docs-only; owner-merge; YELLOW does not merge its own PR.
   a CYAN read-only check (YELLOW has no prod access). Lesson: close-out state must
   be re-derived from a live CYAN read, never carried from a seed script's ID_MAP.
 
+ prelaunch/PL-06b-is-bookable
+## 2026-07-28 - PL-06b: users.is_bookable flag governs the Terapeuta dropdown (migration 0046)
+
+- Owner RULING (2026-07-28): Option 2 - an explicit is_bookable boolean, chosen over
+  the role-set option. Rationale: role governs AUTHORISATION, the service mapping
+  governs PRESELECTION (PL-06a), the flag governs DROPDOWN PRESENCE - three concerns,
+  three signals. Role sets rot at every hire (the exact failure that dropped JP).
+- Migration 0046 adds users.is_bookable (default false) + a tenant-scoped backfill of
+  the owner-SIGNED-OFF attested id-map (16 true = 15 therapists + JP; 5 false), keyed
+  BY ID (never fuzzy-matched). therapist-bookable.ts predicate becomes row.isBookable;
+  both PL-05 arms removed. data.ts selects the flag (roles/therapist_services join
+  dropped). Equipa Contacto form gains an is_bookable checkbox (users:manage, audited).
+- RLS: is_bookable inherits users_tenant_isolation (FOR ALL, tenant-keyed); role-gating
+  of staff management is app-layer. Isolation re-proven in users-is-bookable-rls.test.ts.
+- Drizzle numbering note: drizzle-kit generate mis-numbered the file 0045 (the 0043 gap
+  makes it use entries-count, not maxidx+1) and regenerated the whole schema (snapshots
+  stop at 0014 - migrations 0015+ are hand-authored). 0046 was hand-authored to match.
+- Merge policy: OWNER-MERGE, APPLY-BEFORE-MERGE. Ivan applies 0046 from the prod-apply
+  worktree, pastes the journal, then merges. One migration in flight.
+
 ## 2026-07-28 - PL-06a: therapist service mapping is a PRESELECTION, not a RESTRICTION (#682)
 
 - Owner ruling (2026-07-28, re-confirmed in his own words): the per-therapist
@@ -1944,3 +1964,4 @@ claim. Docs-only; owner-merge; YELLOW does not merge its own PR.
 - Rodica's NESA ruling (all therapists perform NESA) is satisfied by PL-06a alone:
   NESA is selectable for every therapist. No roster write. CB-NESA stays closed.
 - Merge policy: OWNER VISUAL GATE, no self-merge.
+ main
