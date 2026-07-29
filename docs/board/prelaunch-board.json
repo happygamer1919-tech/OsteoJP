@@ -166,26 +166,26 @@
     {
       "id": "PL-06a",
       "title": "Service mapping = preselection not restriction - booking UI/logic (non-migration)",
-      "lane": "blocked_on_people",
-      "status": "blocked",
+      "lane": "in_flight",
+      "status": "in_flight",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": null,
-      "blocked_on": "ivan",
+      "evidence": { "kind": "pr", "ref": "#682", "at": "2026-07-28" },
+      "blocked_on": null,
       "last_checkpoint": "2026-07-28",
-      "notes": "Owner ruling 2026-07-28: the Equipa service mapping is a PRESELECTION, never a restriction - all active services stay bookable for every therapist. PL-06a (non-migration): the booking service Select stops filtering by the therapist's mapping (getTherapistServices) and lists ALL active services, preselecting the primary; NO location clause (BLOCKER 1 RESOLVED - booking already ignores services.location_id, data.ts:271-278); remove any therapist+service reject (none found). DoD: NESA-primary therapist -> change service -> save -> re-read + a negative no-reject assertion, red-then-green. Owner visual gate. BLOCKED pending BLOCKER 2 (JP prod role read) + Ivan's go. Loop: PL-06-service-preselection-not-restriction.md."
+      "notes": "Owner ruling 2026-07-28: the Equipa service mapping is a PRESELECTION, never a restriction - all active services stay bookable for every therapist. PL-06a (non-migration): the booking service Select stops filtering by the therapist's mapping (getTherapistServices) and lists ALL active services, preselecting the primary; NO location clause (BLOCKER 1 RESOLVED - booking already ignores services.location_id, data.ts:271-278); remove any therapist+service reject (none found). DoD: NESA-primary therapist -> change service -> save -> re-read + a negative no-reject assertion, red-then-green. Owner visual gate. BUILT + gates green (typecheck/lint/test 1376/build); Playwright e2e (unmapped service offered + booked + re-read) in CI. PR #682 - OWNER VISUAL GATE, no self-merge. Loop: PL-06-service-preselection-not-restriction.md."
     },
     {
       "id": "PL-06b",
       "title": "is_bookable flag (RULED Option 2) - migration + Equipa checkbox + predicate replace",
-      "lane": "blocked_on_people",
-      "status": "blocked",
+      "lane": "in_flight",
+      "status": "in_flight",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": null,
-      "blocked_on": "ivan",
+      "evidence": { "kind": "pr", "ref": "#683", "at": "2026-07-28" },
+      "blocked_on": null,
       "last_checkpoint": "2026-07-28",
-      "notes": "RULED 2026-07-28: Option 2 - an is_bookable boolean on the staff row (governs Terapeuta-dropdown presence, independent of role AND mappings; three concerns three signals). Replaces therapist-bookable.ts:36-38 (BOTH arms removed). Equipa checkbox in the Gerir modal. FIXES the PL-05 JP-out defect (JP -> is_bookable=true). ATTESTED id-map DERIVED (read c6540cc6, verbatim ids, no fuzzy match): TRUE for 16 (15 therapists + JP), FALSE for 5 (Lurdes, Ivan M, Carlos/Raquel/Tamara reception) - full list in GREEN-LEDGER-pl06-attested-idmap-and-jp-role-20260728. AWAITING Ivan's per-value confirmation, THEN stage. Apply-before-merge, ONE migration in flight, next free number after 0045. Not built (freeze)."
+      "notes": "RULED 2026-07-28: Option 2 - an is_bookable boolean on the staff row (governs Terapeuta-dropdown presence, independent of role AND mappings; three concerns three signals). Replaces therapist-bookable.ts:36-38 (BOTH arms removed). Equipa checkbox in the Gerir modal. FIXES the PL-05 JP-out defect (JP -> is_bookable=true). ATTESTED id-map DERIVED (read c6540cc6, verbatim ids, no fuzzy match): TRUE for 16 (15 therapists + JP), FALSE for 5 (Lurdes, Ivan M, Carlos/Raquel/Tamara reception) - full list in GREEN-LEDGER-pl06-attested-idmap-and-jp-role-20260728. id-map SIGNED OFF by owner (16 true / 5 false). BUILT: migration 0046 (is_bookable + tenant-scoped backfill by id), predicate replaced (both arms), data.ts selects the flag, Equipa Contacto checkbox (users:manage, audited), RLS isolation test; JP-inclusion red-then-green at unit level. Gates green; migration validated locally (rolled back). PR #683 - OWNER-MERGE, APPLY-BEFORE-MERGE (CYAN CLEAR -> Ivan applies 0046 from prod-apply -> journal -> merge), ONE migration in flight, next free after 0045."
     },
     {
       "id": "CB-NESA",
