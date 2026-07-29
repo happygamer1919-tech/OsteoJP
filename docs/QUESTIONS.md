@@ -723,3 +723,25 @@ W12-21 palette. This keeps the current PR within its UI/UX + wiring boundary.
   is a separate future loop if ever wanted. Owner: confirm no location enforcement is
   expected for launch. (Portal `getCatalog` DOES honour `location_id`, but portal is
   out of V1.)
+
+- [ ] STAFF LOGINS (PL-07 #685) — two owner/infra prerequisites for tomorrow, NOT
+  code, both verified only in the Supabase/Vercel dashboards:
+  1. REQUIRED — Supabase → Authentication → Hooks → Customize Access Token Hook
+     must be ON in prod, pointing at `public.custom_access_token_hook` (migration
+     0002). If OFF, a staff member's first login carries no tenant_id/role claims
+     and the app rejects the session. This is the single most likely silent blocker.
+  2. For emailed set-password links: `INVITES_LIVE_SEND=true` + `RESEND_API_KEY` +
+     a verified osteojp.pt sender + `STAFF_INVITE_REDIRECT_URL` → the
+     `/auth/update-password` page. If unset, Ativar login still works but shows the
+     link / temp password on screen (hand off out of band) instead of emailing.
+  Recommended default: enable both before the team session; prove the full chain on
+  Chris Macov (prod) before inviting real staff.
+
+- [ ] CANARY (reminder SMS smoke test) — needs from Ivan before staging the cleanup
+  script: (a) the canary patient phone (the owner's number), (b) the Twilio/Inngest/
+  Vercel console findings. Facts already pinned: lead windows 24h + 48h
+  (offsets.ts:20-22); a reminder schedules only if startsAt - offset > now
+  (offsets.ts:43); reminders fire via the appointment/scheduled Inngest event
+  (createAppointment → enqueueAppointmentReminders), so the canary appointment must
+  be BOOKED THROUGH THE UI (a raw DB insert won't trigger it). Book at now + 24h +
+  15min to make the 24h reminder fire ~15 min later.
