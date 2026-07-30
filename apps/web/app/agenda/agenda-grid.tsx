@@ -306,11 +306,26 @@ function BlockedBand({ placement }: { placement: BlockPlacement }) {
 }
 
 /**
+ * PL-10 (owner 2026-07-30): the agenda name-line shows only the patient's FIRST
+ * and LAST name, never the middle names - "Abilio Jose de Carvalho Fernandes"
+ * renders "Abilio Fernandes". Saves horizontal space on the one-line face. A name
+ * of two or fewer words is returned unchanged. The FULL name is still shown by the
+ * hover popup (appointment-hover-card), which remains the carrier of every detail.
+ */
+export function shortPatientName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 2) return parts.join(" ");
+  return `${parts[0]} ${parts[parts.length - 1]}`;
+}
+
+/**
  * W11-00 v3 (owner ruling, Fisiozero model): one appointment = one line of the
- * patient full name, coloured in the assigned therapist hue (`therapistColor().
+ * patient name, coloured in the assigned therapist hue (`therapistColor().
  * text`, the SAME source of truth as the pre-v3 spine/dot). The name WRAPS
- * before it truncates (`break-words`, never `truncate`). The W10-05 hover popup
- * is UNCHANGED and remains the sole carrier of every detail; the line stays
+ * before it truncates (`break-words`, never `truncate`). PL-10 (2026-07-30)
+ * shortened the visible line to first + last name (`shortPatientName`) and made it
+ * smaller + non-bold to save space; the W10-05 hover popup is UNCHANGED and
+ * remains the sole carrier of every detail (incl. the full name); the line stays
  * click-to-open.
  *
  * W12-11 R10 (Q-W12-01 ruling): a small leading estado glyph precedes the name
@@ -336,14 +351,14 @@ function AppointmentName({ appt, onClick }: { appt: AgendaAppointment; onClick: 
       <button
         type="button"
         onClick={onClick}
-        className={`flex w-full items-start gap-1 rounded-v2 px-2 py-0.5 text-left text-sm font-semibold leading-tight ${tColor.text} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1`}
+        className={`flex w-full items-start gap-1 rounded-v2 px-2 py-0.5 text-left text-xs font-normal leading-tight ${tColor.text} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1`}
       >
         <EstadoMarker estado={estado} className="mt-0.5" />
         <span
           data-testid="agenda-card-patient"
           className={`block min-w-0 break-words ${struck ? "line-through" : ""}`}
         >
-          {appt.patientName}
+          {shortPatientName(appt.patientName)}
         </span>
       </button>
     </HoverPopover>
