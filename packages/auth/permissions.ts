@@ -52,6 +52,13 @@ export type Capability =
   | "roles:manage"
   | "settings:read"
   | "settings:manage"
+  // PL-09 Phase 5 (owner 2026-07-29): manage therapist working-hours (availability
+  // templates) + time-off blocks. DECOUPLED from settings:* so RECEPTION can own
+  // scheduling for THEIR LOCATION's therapists without gaining tenant settings.
+  // The capability grant is location-blind; the SCOPE (reception/admin -> own
+  // location's therapists only) is enforced in lib/admin/availability + time-off.
+  | "schedule:read"
+  | "schedule:manage"
   | "audit_log:read"
   // Owner-only (W6-05): reach the Estatisticas KPI dashboard (revenue + volume
   // aggregates). Owner-only, enforced route-level AND query-level.
@@ -82,6 +89,8 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   "roles:manage",
   "settings:read",
   "settings:manage",
+  "schedule:read",
+  "schedule:manage",
   "audit_log:read",
   "statistics:read",
 ];
@@ -115,6 +124,10 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     "roles:read",
     "settings:read",
     "settings:manage",
+    // PL-09 Phase 5: admin manages schedules (was via settings:manage); now the
+    // explicit capability, location-scoped to the admin's own therapists.
+    "schedule:read",
+    "schedule:manage",
     "audit_log:read",
     // PL-09 Phase 3 (owner 2026-07-29): admin sees statistics/KPI, but the
     // queries scope the aggregates to the admin's own location(s) - owner keeps
@@ -155,6 +168,12 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     "locations:read",
     "invoices:read",
     "invoices:issue",
+    // PL-09 Phase 5 (owner 2026-07-29): reception OWNS scheduling for their
+    // location's therapists — manage working-hours + time-off. Location scope
+    // (own-location therapists only) is enforced in lib/admin/availability +
+    // time-off; reception still holds NO settings:* (no tenant settings access).
+    "schedule:read",
+    "schedule:manage",
   ]),
 };
 

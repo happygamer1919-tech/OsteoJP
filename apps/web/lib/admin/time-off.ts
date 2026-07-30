@@ -6,6 +6,7 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { addDays, lisbonDateTimeToUtc, lisbonMidnightUtc, lisbonParts } from "@/lib/scheduling/time";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
+import { assertTargetInScheduleScope, resolveScheduleScope } from "./schedule-scope";
 
 /**
  * W5-12 — therapist availability blocks, migration-free on the existing
@@ -148,8 +149,10 @@ export async function listTimeOffBlocks(
   actor: RequestContext,
   userId: string,
 ): Promise<TimeOffBlockView[]> {
-  assertCan(actor.role, "settings:read");
+  assertCan(actor.role, "schedule:read");
+  const scope = await resolveScheduleScope(actor);
   return runScoped(actor, async (tx) => {
+    await assertTargetInScheduleScope(tx, userId, scope);
     const rows = await tx
       .select({
         id: timeOff.id,
@@ -215,12 +218,14 @@ export async function createTimeOffBlock(
   actor: RequestContext,
   input: TimeOffBlockInput,
 ): Promise<{ id: string; overlaps: OverlappingAppointment[] }> {
-  assertCan(actor.role, "settings:manage");
+  assertCan(actor.role, "schedule:manage");
   validateInput(input);
   const { startsAt, endsAt } = resolveWindow(input);
   const note = input.note?.trim() || null;
+  const scope = await resolveScheduleScope(actor);
 
   return runScoped(actor, async (tx) => {
+    await assertTargetInScheduleScope(tx, input.userId, scope);
     const overlaps = await appointmentsOverlapping(tx, { userId: input.userId, startsAt, endsAt });
     const [row] = await tx
       .insert(timeOff)
@@ -250,13 +255,15 @@ export async function updateTimeOffBlock(
   id: string,
   input: TimeOffBlockInput,
 ): Promise<{ overlaps: OverlappingAppointment[] }> {
-  assertCan(actor.role, "settings:manage");
+  assertCan(actor.role, "schedule:manage");
   validateInput(input);
   if (!id) throw new AdminError("invalid", "id required");
   const { startsAt, endsAt } = resolveWindow(input);
   const note = input.note?.trim() || null;
+  const scope = await resolveScheduleScope(actor);
 
   return runScoped(actor, async (tx) => {
+    await assertTargetInScheduleScope(tx, input.userId, scope);
     const overlaps = await appointmentsOverlapping(tx, { userId: input.userId, startsAt, endsAt });
     const rows = await tx
       .update(timeOff)
@@ -277,9 +284,17 @@ export async function updateTimeOffBlock(
 /** Hard-delete a block. Removing a block only frees availability again; it never
  *  touches appointments, so a plain delete is safe (no soft-archive needed). */
 export async function deleteTimeOffBlock(actor: RequestContext, id: string): Promise<void> {
-  assertCan(actor.role, "settings:manage");
+  assertCan(actor.role, "schedule:manage");
   if (!id) throw new AdminError("invalid", "id required");
+  const scope = await resolveScheduleScope(actor);
   await runScoped(actor, async (tx) => {
+    const [existing] = await tx
+      .select({ userId: timeOff.userId })
+      .from(timeOff)
+      .where(eq(timeOff.id, id))
+      .limit(1);
+    if (!existing) throw new AdminError("not_found");
+    await assertTargetInScheduleScope(tx, existing.userId, scope);
     const rows = await tx
       .delete(timeOff)
       .where(eq(timeOff.id, id))

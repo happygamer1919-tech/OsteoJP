@@ -1,11 +1,12 @@
 import "server-only";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { availabilityTemplates, locations, users } from "@osteojp/db";
+import { availabilityTemplates, locations, staffLocations, users } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import { timesOverlap } from "./availability-core";
+import { assertTargetInScheduleScope, resolveScheduleScope } from "./schedule-scope";
 
 export type AvailabilityTemplateView = {
   id: string;
@@ -34,8 +35,23 @@ function hm(t: string): string {
 export async function listAvailabilityTemplates(
   actor: RequestContext,
 ): Promise<AvailabilityTemplateView[]> {
-  assertCan(actor.role, "settings:read");
+  assertCan(actor.role, "schedule:read");
+  const scope = await resolveScheduleScope(actor);
   return runScoped(actor, async (tx) => {
+    const conds = [eq(availabilityTemplates.isActive, true)];
+    // PL-09 Phase 5: reception/admin see only their own location's therapists'
+    // schedules; owner/therapist/unassigned unrestricted (scope === null).
+    if (scope) {
+      conds.push(
+        inArray(
+          availabilityTemplates.userId,
+          tx
+            .select({ id: staffLocations.userId })
+            .from(staffLocations)
+            .where(inArray(staffLocations.locationId, scope)),
+        ),
+      );
+    }
     const rows = await tx
       .select({
         id: availabilityTemplates.id,
@@ -50,7 +66,7 @@ export async function listAvailabilityTemplates(
       .from(availabilityTemplates)
       .innerJoin(users, eq(users.id, availabilityTemplates.userId))
       .innerJoin(locations, eq(locations.id, availabilityTemplates.locationId))
-      .where(eq(availabilityTemplates.isActive, true))
+      .where(and(...conds))
       .orderBy(asc(users.fullName), asc(availabilityTemplates.weekday), asc(availabilityTemplates.startTime));
     return rows.map((r) => ({ ...r, startTime: hm(r.startTime), endTime: hm(r.endTime) }));
   });
@@ -107,9 +123,11 @@ export async function createAvailabilityTemplate(
   actor: RequestContext,
   input: AvailabilityTemplateInput,
 ): Promise<void> {
-  assertCan(actor.role, "settings:manage");
+  assertCan(actor.role, "schedule:manage");
   validate(input);
+  const scope = await resolveScheduleScope(actor);
   await runScoped(actor, async (tx) => {
+    await assertTargetInScheduleScope(tx, input.userId, scope);
     await assertNoOverlap(tx, input, null);
     const [row] = await tx
       .insert(availabilityTemplates)
@@ -135,9 +153,20 @@ export async function updateAvailabilityTemplate(
   id: string,
   input: AvailabilityTemplateInput,
 ): Promise<void> {
-  assertCan(actor.role, "settings:manage");
+  assertCan(actor.role, "schedule:manage");
   validate(input);
+  const scope = await resolveScheduleScope(actor);
   await runScoped(actor, async (tx) => {
+    // Both the template's CURRENT therapist and the NEW target must be in scope,
+    // so a located actor can neither touch nor retarget an out-of-location row.
+    const [existing] = await tx
+      .select({ userId: availabilityTemplates.userId })
+      .from(availabilityTemplates)
+      .where(and(eq(availabilityTemplates.id, id), eq(availabilityTemplates.isActive, true)))
+      .limit(1);
+    if (!existing) throw new AdminError("not_found");
+    await assertTargetInScheduleScope(tx, existing.userId, scope);
+    await assertTargetInScheduleScope(tx, input.userId, scope);
     await assertNoOverlap(tx, input, id);
     const rows = await tx
       .update(availabilityTemplates)
@@ -165,8 +194,16 @@ export async function archiveAvailabilityTemplate(
   actor: RequestContext,
   id: string,
 ): Promise<void> {
-  assertCan(actor.role, "settings:manage");
+  assertCan(actor.role, "schedule:manage");
+  const scope = await resolveScheduleScope(actor);
   await runScoped(actor, async (tx) => {
+    const [existing] = await tx
+      .select({ userId: availabilityTemplates.userId })
+      .from(availabilityTemplates)
+      .where(and(eq(availabilityTemplates.id, id), eq(availabilityTemplates.isActive, true)))
+      .limit(1);
+    if (!existing) throw new AdminError("not_found");
+    await assertTargetInScheduleScope(tx, existing.userId, scope);
     const rows = await tx
       .update(availabilityTemplates)
       .set({ isActive: false })
