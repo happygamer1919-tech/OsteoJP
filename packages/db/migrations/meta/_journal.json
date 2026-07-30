@@ -330,6 +330,13 @@
 			"when": 1785500000000,
 			"tag": "0047_patients_location_rls",
 			"breakpoints": true
+		},
+		{
+			"idx": 47,
+			"version": "7",
+			"when": 1785600000000,
+			"tag": "0048_appointments_location_rls",
+			"breakpoints": true
 		}
 	]
 }
