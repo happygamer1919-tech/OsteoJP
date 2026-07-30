@@ -766,6 +766,45 @@ W12-21 palette. This keeps the current PR within its UI/UX + wiring boundary.
   0047, already built + staged) now; do Phase 2b as the next migration after Phase 5.
   Blast radius is the booking hot path, hence a dedicated ticket, not folded in.
 
+## Q-PL-13-1 (2026-07-30, OPEN, BLOCKING) - notes-thread model: append-only vs edit-in-place stamps
+Dispatched as "PL-08 appointment notes thread" (renumbered PL-13; PL-08 is the shipped
+"Ativar login" loop). Reconciled against the SHIPPED W12-13 notes-unification (merged
+#654/#656/#657): the notes thread already exists, each note carries author + created, and
+the "notes never reach patient PDFs / Declaracoes / portal" negative assertion is CLEAN and
+CI-guarded (apps/api/lib/appointments/notes-privacy.test.ts). Two DoD items conflict with the
+shipped design and need an owner ruling before any build:
+
+1. EDIT STAMPS ("last-edited-by + datetime persist on re-read"). The shipped model is
+   APPEND-ONLY / immutable: appointment_notes has SELECT+INSERT policies only (no UPDATE),
+   and an edit is modelled as a NEW appended row (SPEC-notes-unification.md, resolves the
+   old Q-W12-07). There are no edited_at / last_edited_by columns. Implementing literal
+   edit-in-place stamps means ADD edited_at + last_edited_by columns + an UPDATE RLS policy
+   (an append-only EXCEPTION) + an edit server path/UI - i.e. relaxing the immutability
+   invariant (hard architecture rule #4 territory). RECOMMENDATION (default): KEEP
+   append-only; treat "last edit" as the newest row in the thread (author + created already
+   shown), and reconcile the DoD wording to the thread model - NO immutability change. If
+   the owner truly wants mutable notes with edit stamps, that is a deliberate invariant
+   change and a dedicated migration.
+
+2. PATIENT-PROFILE STRICTLY READ-ONLY. The DoD says the profile Notas surface is read-only,
+   but the SPEC deliberately KEEPS a composer there (patients/[id]/notes-composer.tsx ->
+   appendPatientNoteAction). The profile SUMMARY is already read-only (no longer reads
+   patients.notes). RECOMMENDATION (default): if "read-only" means authoring moves entirely
+   to the Agenda drawer + Inicio "Notas rapidas", remove the profile composer (small,
+   reversible app-layer change). Confirm this is intended, since it removes a shipped
+   authoring surface.
+
+3. BACKFILL MIGRATION ("PL-08b", owner expects migration ~0047; the next FREE number is now
+   0050). It must backfill legacy appointments.notes + patient_note_revisions into
+   appointment_notes as "note one", idempotent + append-only, touching ONLY appointment_notes.
+   READY TO BUILD, but its "column shape" is coupled to decision (1): if edit stamps are
+   added, the migration also adds those columns. So the migration is BLOCKED on (1).
+   "Nothing lost" holds at READ time today (data.ts coalesce + notes-merge dedup), so no data
+   is currently lost pre-backfill.
+
+STATUS: PL-13 (notes) is HELD pending this ruling. Nothing built (would either break the
+append-only invariant or remove a shipped surface on a guess). The moment (1) is ruled, the
+0050 backfill (+ optional stamp columns) is a same-day build -> apply-before-merge halt.
 ## Q-PL-11-1 (2026-07-30, OPEN) - appointments write-scope: author escape vs fully-open edit
 PL-11 migration 0049 unblocks the save by adding the `created_by = auth.uid()` author
 escape to appointments_rls (mirrors 0047). This makes CREATE open to every active staff
