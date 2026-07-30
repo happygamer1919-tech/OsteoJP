@@ -95,6 +95,16 @@ export function EstatisticasView({
             ))}
           </Select>
         </div>
+        {/* PL-14: one clinic = no choice; the server pins it, the name is a chip. */}
+        {options.locations.length === 1 && (
+          <span
+            data-testid="estatisticas-fixed-location"
+            className="inline-flex h-10 items-center rounded-v2 border border-v2-border bg-v2-surface px-3 text-sm text-v2-text-secondary"
+          >
+            {options.locations[0]!.label}
+          </span>
+        )}
+        {options.locations.length > 1 && (
         <div className="w-48">
           <Select
             aria-label={s["header.location"]}
@@ -107,6 +117,7 @@ export function EstatisticasView({
             ))}
           </Select>
         </div>
+        )}
         <div className="w-48">
           <Select
             aria-label={s["marcacoes.filterService"]}

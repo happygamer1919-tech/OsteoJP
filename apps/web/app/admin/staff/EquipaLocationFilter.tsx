@@ -12,6 +12,12 @@ const s = getStrings(DEFAULT_LOCALE);
  * @osteojp/ui Select, "Todas as localizações" first, then the tenant locations)
  * and drives a `?location=` URL param, PRESERVING the `?q=` search so the two
  * compose. Presentation-only; the server read does the filtering.
+ *
+ * PL-14: `locations` is now the viewer's OWN set, not the tenant's — this select
+ * used to be handed every tenant location, which is how an LV-only admin was
+ * offered Castelo Branco (owner CR 2026-07-30). With a single location there is
+ * nothing to filter, so the control disappears entirely and the caller renders
+ * the clinic name instead.
  */
 export function EquipaLocationFilter({
   locations,

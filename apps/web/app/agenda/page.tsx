@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { assertCan, can, ForbiddenError, type RequestContext } from "@osteojp/auth";
 import { requireRequestContext } from "@/lib/auth/context";
+import { scopedLocationId } from "@/lib/auth/location-choice";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { getPatient } from "@/lib/patients/queries";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
 import { listTherapistBlocks } from "@/lib/scheduling/day-availability";
@@ -61,7 +63,13 @@ export default async function AgendaPage({
   // W10-04 isolation: a therapist loses the location switch entirely - the server
   // ignores any location param for them so they cannot scope to another location's
   // agenda (they are already practitioner-locked to their own appointments).
-  const locationId = lockTherapist ? null : firstParam(sp.location);
+  //
+  // PL-14: for everyone else the location is IMPLICIT when the viewer has exactly
+  // one clinic - scopedLocationId pins it and drops any hand-typed ?location= for
+  // another clinic, so removing the toolbar control (agenda-view) removes a
+  // choice the server was never going to honour either.
+  const locationScope = await viewerLocationScope(actor);
+  const locationId = lockTherapist ? null : scopedLocationId(locationScope, firstParam(sp.location));
 
   const { startUtc, endUtc } = rangeForView(view, anchor);
 

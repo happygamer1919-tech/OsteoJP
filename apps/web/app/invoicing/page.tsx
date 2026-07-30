@@ -2,6 +2,8 @@ import { can } from "@osteojp/auth";
 import { redirect } from "next/navigation";
 
 import { getRequestContext } from "@/lib/auth/context";
+import { scopedLocationId } from "@/lib/auth/location-choice";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { credentialsConfigured } from "@/lib/integrations/invoicexpress";
 import { s } from "@/lib/i18n";
 import { listInvoices, listActiveLocations, type InvoiceStatus } from "@/lib/invoices/queries";
@@ -52,7 +54,11 @@ export default async function InvoicingPage({
     typeof params.status === "string" && VALID_STATUSES.has(params.status)
       ? (params.status as InvoiceStatus)
       : null;
-  const locationParam = typeof params.location === "string" ? params.location : null;
+  const requestedLocation = typeof params.location === "string" ? params.location : null;
+  // PL-14: a single-clinic viewer bills for THEIR clinic - the id is pinned and
+  // an out-of-scope ?location= is dropped, so the toolbar drops the control.
+  const locationScope = await viewerLocationScope(ctx);
+  const locationParam = scopedLocationId(locationScope, requestedLocation);
 
   const filters: InvoicingFilters = {
     from: fromParam,
@@ -76,6 +82,12 @@ export default async function InvoicingPage({
     listActiveLocations(ctx),
   ]);
 
+  // PL-14: the picker only ever lists the viewer's own clinics; with exactly one
+  // the view renders its name instead of a select.
+  const visibleLocations = locationScope
+    ? locationRows.filter((l) => locationScope.includes(l.id))
+    : locationRows;
+
   // "Nova fatura" button is only shown when InvoiceXpress credentials are configured.
   const issueEnabled = credentialsConfigured();
 
@@ -83,7 +95,7 @@ export default async function InvoicingPage({
     <InvoicingView
       filters={filters}
       invoices={invoiceRows}
-      locations={locationRows}
+      locations={visibleLocations}
       issueEnabled={issueEnabled}
     />
   );

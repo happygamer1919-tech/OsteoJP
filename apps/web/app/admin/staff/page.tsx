@@ -2,6 +2,8 @@ import { assignableRoles, type Role } from "@osteojp/auth";
 import { GlassPanel, KpiCard, StatusBadge } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
+import { effectiveLocationId, resolveLocationControl } from "@/lib/auth/location-choice";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { matchesSearch } from "@/lib/search/text-filter";
 import { SearchBox } from "@/app/patients/_components/search-box";
 import { listStaff } from "@/lib/admin/staff";
@@ -62,19 +64,35 @@ export default async function StaffPage({
   // per-day location select in the schedule editor.
   const locations = (await listLocations(actor)).filter((l) => l.isActive);
   const locationName = new Map(locations.map((l) => [l.id, l.name]));
+  // PL-14: the viewer's OWN locations decide the control. This select used to be
+  // handed `locations` (tenant-wide), which is how Lurdes - assigned to LV only -
+  // was offered Castelo Branco. One location => no control at all.
+  const locationScope = await viewerLocationScope(actor);
+  const locationControl = resolveLocationControl(
+    locationScope,
+    locations.map((l) => ({ id: l.id, label: l.name })),
+  );
   // W12-40-Q2: each member's staff_locations memberships (+colour) — seeds the
   // Gerir modal's membership picker/colour pickers and the card colour.
   const staffLocationsByUser = await listStaffLocations(actor);
   const { m, q, location, t: focusId } = await searchParams;
   const query = (q ?? "").trim();
-  const locationId = (location ?? "").trim();
+  // PL-14: a fixed viewer's clinic is applied whatever the URL says; a picker
+  // viewer keeps only a request that names one of their own clinics.
+  const locationId = effectiveLocationId(locationControl, (location ?? "").trim()) ?? "";
 
-  // W5-32: each member's assigned location set (from availability_templates).
+  // W5-32: each member's assigned location set. PL-14 widens it from working
+  // hours alone to hours UNION staff_locations membership - with 5 of 11 members
+  // holding hours, the hours-only set filtered out most of a real team.
   const assignedLocations = new Map<string, Set<string>>();
-  for (const a of availability) {
-    const set = assignedLocations.get(a.userId) ?? new Set<string>();
-    set.add(a.locationId);
-    assignedLocations.set(a.userId, set);
+  const addAssignment = (userId: string, locId: string) => {
+    const set = assignedLocations.get(userId) ?? new Set<string>();
+    set.add(locId);
+    assignedLocations.set(userId, set);
+  };
+  for (const a of availability) addAssignment(a.userId, a.locationId);
+  for (const [userId, memberships] of staffLocationsByUser) {
+    for (const membership of memberships) addAssignment(userId, membership.locationId);
   }
 
   // W12-40: first ACTIVE template per (member, weekday). The schedule editor
@@ -113,10 +131,23 @@ export default async function StaffPage({
 
   // Presentation-only filter over the SAME role-scoped listStaff read (W5-02):
   // name/role search AND (W5-32) assigned location compose as an AND.
+  //
+  // PL-14: when the location is PINNED (the viewer has one clinic and no control
+  // to clear), a member with no assignment at all stays visible - listStaff has
+  // already scoped the read, and hiding an unassigned colleague behind a filter
+  // the viewer cannot see or reset would make them unreachable. An explicitly
+  // CHOSEN filter keeps the strict W5-32 behaviour.
+  const locationPinned = locationControl.kind === "fixed";
+  const atLocation = (userId: string): boolean => {
+    if (locationId === "") return true;
+    const assigned = assignedLocations.get(userId);
+    if (!assigned || assigned.size === 0) return locationPinned;
+    return assigned.has(locationId);
+  };
   const visibleStaff = staff.filter(
     (u) =>
       matchesSearch(query, u.fullName, u.roleSlug ? ROLE_LABEL[u.roleSlug] : null) &&
-      (locationId === "" || (assignedLocations.get(u.id)?.has(locationId) ?? false)),
+      atLocation(u.id),
   );
 
   // Only an owner may assign/modify the owner tier; hide it from admins.
@@ -203,9 +234,21 @@ export default async function StaffPage({
             placeholder={s["admin.staff.searchPlaceholder"]}
           />
         </div>
-        <div className="w-56">
-          <EquipaLocationFilter locations={locations} />
-        </div>
+        {/* PL-14: one clinic = no control, just the clinic's name. */}
+        {locationControl.kind === "fixed" ? (
+          <span
+            data-testid="equipa-fixed-location"
+            className="inline-flex h-10 items-center rounded-v2 border border-v2-border bg-v2-surface px-3 text-sm text-v2-text-secondary"
+          >
+            {locationControl.location.label}
+          </span>
+        ) : (
+          <div className="w-56">
+            <EquipaLocationFilter
+              locations={locationControl.options.map((o) => ({ id: o.id, name: o.label }))}
+            />
+          </div>
+        )}
       </div>
 
       {visibleStaff.length === 0 ? (
