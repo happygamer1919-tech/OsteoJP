@@ -2074,3 +2074,28 @@ smaller font, remove bold to save space, show only first + last name.
 - Self-merged on green per owner authorization (2026-07-30): non-migration,
   staff-facing UI, no agent-governing files. PR #704. Board: PL-10 card added
   (shipped). Owner visual gate on the Vercel preview / prod after deploy.
+
+## 2026-07-30 - Dispatch reconciliation: the three "PL-08/09/10" loops from live testing
+
+The owner dispatched three loops from live team testing under numbers that COLLIDE with
+already-merged/applied work. Reconciled by CONTENT (the DoDs), verified against origin/main:
+
+| Dispatch said | Actually is | Tracked as | State |
+|---|---|---|---|
+| PL-09 = appointment save blocked | new bug (PL-09 = location model, shipped) | **PL-11** | PR #705 DRAFT (migration 0049, apply-before-merge) |
+| PL-10 = therapist self-booking | new UX (PL-10 = name-line #704, merged) | **PL-12** | PR #706 ready (owner visual gate) |
+| PL-08 = notes thread; "PL-08b migration 0047" | PL-08 = Ativar-login (#691); notes = W12-13 (shipped); 0047 taken (patients RLS, applied) | **PL-13** | HELD - Q-PL-13-1 (append-only vs edit-stamps); backfill = 0050 not 0047 |
+
+- Migration numbers: 0047 = patients RLS (applied), 0048 = appointments RLS (applied, #702),
+  0049 = PL-11 appointments write-escape (this run, staged), next free = 0050.
+- PL-11 root cause + fix: see the PL-11 DECISIONS entry on the PL-11 branch (appointments_rls
+  lacked the created_by author escape 0047 has; a located admin/reception saving out of their
+  clinic hit WITH CHECK). Failing->passing proven live; full DB isolation 452/452 on 0049.
+- PL-12: therapist self-lock on the create form (non-migration); serviceOptions not narrowed;
+  agenda read-scope (W10-04) untouched. Held for owner visual gate.
+- PL-13 (notes): W12-13 is merged incl. the CI-guarded no-leak assertion. Remaining edit-stamps
+  + profile-read-only items conflict with the shipped append-only immutable design; HELD on
+  Q-PL-13-1. Backfill (0050) ready to build once the model is ruled.
+- Run authorized by the owner (2026-07-30, "do as you recommend, I authorize decisions, I will
+  review when I come back"). Migrations were NOT applied and migration/RLS PRs were NOT
+  self-merged (doctrine, reaffirmed 3x); they halt for owner terminal apply.
