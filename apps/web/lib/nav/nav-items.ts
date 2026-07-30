@@ -26,8 +26,9 @@ const ALL: (NavItem & { capability?: Capability })[] = [
   // hidden for the therapist role, matching the /invoicing route guard).
   { href: "/invoicing", label: s["nav.invoicing"], capability: "invoices:issue" },
   { href: "/clinical/review", label: s["nav.review"], capability: "clinical_records:review" },
-  // Estatisticas (W6-05): owner-only KPI dashboard. Gated on the owner-only
-  // statistics:read capability, so the nav item shows for the owner only (and the
+  // Estatisticas (W6-05; PL-09 Phase 3): KPI dashboard for owner + admin. Gated on
+  // statistics:read (owner all-locations; admin scoped to their location in the
+  // queries), so the nav item shows for owner + admin (and the
   // route + KPI queries re-enforce it server-side, not nav hiding alone).
   { href: "/estatisticas", label: s["nav.statistics"], capability: "statistics:read" },
   { href: "/admin", label: s["nav.admin"], capability: "settings:read" },

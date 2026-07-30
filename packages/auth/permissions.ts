@@ -116,6 +116,11 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     "settings:read",
     "settings:manage",
     "audit_log:read",
+    // PL-09 Phase 3 (owner 2026-07-29): admin sees statistics/KPI, but the
+    // queries scope the aggregates to the admin's own location(s) - owner keeps
+    // all-locations. The capability grant is location-blind; the SCOPE is applied
+    // in lib/statistics (viewerLocationScope), never here.
+    "statistics:read",
   ]),
 
   // Therapist (clinician): patient + appointment work, full clinical-record
