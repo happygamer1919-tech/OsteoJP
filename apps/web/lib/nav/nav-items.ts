@@ -7,7 +7,7 @@ export type NavItem = { href: string; label: string };
 // each link. Dashboard / Agenda / Patients are open to every authenticated
 // role; Clinical and Admin are capability-gated. Pure + role-only so it is
 // unit-testable (see nav-items.test.ts).
-const ALL: (NavItem & { capability?: Capability })[] = [
+const ALL: (NavItem & { capability?: Capability; hideIfCapability?: Capability })[] = [
   { href: "/dashboard", label: s["nav.dashboard"] },
   { href: "/agenda", label: s["nav.agenda"] },
   { href: "/patients", label: s["nav.patients"] },
@@ -21,6 +21,12 @@ const ALL: (NavItem & { capability?: Capability })[] = [
   // scheduling data the agenda renders as a grid; open to every role like the
   // agenda. V2-W7 ships the list view and the dedicated `nav.bookings` key.
   { href: "/marcacoes", label: s["nav.bookings"] },
+  // Horários (PL-09 Phase 5): reception manages their location's therapist
+  // schedules here. Owner/admin also hold schedule:read but manage schedules
+  // inside Equipa (/admin/staff), so hide this entry for them (settings:read) to
+  // avoid a duplicate surface — reception is the only role with schedule:read and
+  // no settings:read. The route re-enforces schedule:read server-side.
+  { href: "/horarios", label: s["nav.schedule"], capability: "schedule:read", hideIfCapability: "settings:read" },
   // Faturação (W10-04 isolation, owner ruling 2026-07-21): owner/admin/reception
   // only - gated on invoices:issue (therapist holds only invoices:read, so it is
   // hidden for the therapist role, matching the /invoicing route guard).
@@ -35,7 +41,9 @@ const ALL: (NavItem & { capability?: Capability })[] = [
 ];
 
 export function navItemsForRole(role: Role): NavItem[] {
-  return ALL.filter((i) => !i.capability || can(role, i.capability)).map(
-    ({ href, label }) => ({ href, label }),
-  );
+  return ALL.filter(
+    (i) =>
+      (!i.capability || can(role, i.capability)) &&
+      (!i.hideIfCapability || !can(role, i.hideIfCapability)),
+  ).map(({ href, label }) => ({ href, label }));
 }
