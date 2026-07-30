@@ -496,6 +496,54 @@ export async function appendAppointmentNoteAction(
 }
 
 /**
+ * Edit an existing note IN PLACE and stamp it (PL-13, owner ruling 2026-07-30:
+ * "make them editable with last-edited stamps"). Only rows in the unified
+ * `appointment_notes` relation are editable — legacy `patient_note_revisions`
+ * rows have no edit path (they render read-only). The UPDATE is RLS-tenant-scoped
+ * (migration 0050 `appointment_notes_tenant_update`); the finer "who may edit"
+ * rule is enforced HERE, mirroring `appendAppointmentNoteAction`: `patients:write`
+ * capability, and a therapist may edit only a note of one of their OWN patients
+ * (the note's patient_id is loaded server-side, then `getPatient` applies
+ * `therapistPatientScope`). `created_at` is never rewritten — the edit stamps
+ * `edited_at` + `last_edited_by` only. Nothing is deleted; history of who last
+ * touched a note is preserved on the row.
+ */
+export async function editAppointmentNoteAction(
+  noteId: string,
+  content: string,
+): Promise<{ ok: boolean }> {
+  const ctx = await requireRequestContext();
+  assertCan(ctx.role, "patients:write");
+  const text = content.trim();
+  if (!noteId || text.length === 0 || text.length > 5000) return { ok: false };
+  // Load the note's patient SERVER-SIDE (tenant-scoped by RLS) so the therapist
+  // own-patient check below cannot be bypassed by a forged id.
+  const patientId = await runScoped(ctx, async (tx) => {
+    const [note] = await tx
+      .select({ patientId: appointmentNotes.patientId })
+      .from(appointmentNotes)
+      .where(eq(appointmentNotes.id, noteId))
+      .limit(1);
+    return note?.patientId ?? null;
+  });
+  if (!patientId) return { ok: false }; // not found / cross-tenant / wrong table
+  // Same W10-04 own-patient gate as the append path: a non-own patient returns
+  // null under therapistPatientScope → deny; owner/admin/reception unaffected.
+  const patient = await getPatient(patientId, { includeDeleted: true });
+  if (!patient) return { ok: false };
+  await runScoped(ctx, async (tx) => {
+    await tx
+      .update(appointmentNotes)
+      .set({ body: text, editedAt: new Date(), lastEditedBy: ctx.userId })
+      .where(eq(appointmentNotes.id, noteId));
+  });
+  revalidatePatient(patientId);
+  revalidatePath("/agenda");
+  revalidatePath("/marcacoes");
+  return { ok: true };
+}
+
+/**
  * Merge `loserId` into `survivorId`. This delegates to the DB function
  * `merge_patients(source, target, actor)` (packages/db/migrations/0005) — the
  * single, authoritative merge path. The function runs inside this scoped
