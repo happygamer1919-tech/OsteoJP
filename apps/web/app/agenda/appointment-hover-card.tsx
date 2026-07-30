@@ -59,6 +59,8 @@ export function AppointmentHoverPanel({ appt }: { appt: AgendaAppointment }) {
   // the deterministic FNV colour. Same source as the agenda card + Equipa.
   const tColor = paletteColorByKey(appt.colorKey) ?? therapistColor(appt.practitionerId);
   const note = appt.notes?.trim() || null;
+  // Absent (older fixtures / a read that does not project it) reads as "one".
+  const noteCount = appt.noteCount ?? 0;
   const dur = durationMinutes(appt.startsAt, appt.endsAt);
 
   // W12-33 defect B (owner screenshot: "Confirmada" AND "Confirmação pendente"
@@ -138,7 +140,13 @@ export function AppointmentHoverPanel({ appt }: { appt: AgendaAppointment }) {
         >
           <span className="flex items-center gap-1 font-medium text-v2-text-secondary">
             <StickyNote size={12} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />
-            {s["appointment.noteHoverLabel"]}
+            {/* PL-17: the hover has always shown the LATEST note (the read is
+                order by created_at desc limit 1). Now that the thread is visible
+                everywhere else, say so - and how many there are - so a reader
+                never takes one note for the whole conversation. */}
+            {noteCount > 1
+              ? s["appointment.noteHoverLatest"].replace("{n}", String(noteCount))
+              : s["appointment.noteHoverLabel"]}
           </span>
           <span className="whitespace-pre-line">{note}</span>
         </span>

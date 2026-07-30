@@ -2,9 +2,13 @@ import "server-only";
 import { desc, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { assertCan, type RequestContext } from "@osteojp/auth";
-import { appointmentNotes, patientNoteRevisions, users } from "@osteojp/db";
+import { appointmentNotes, appointments, patientNoteRevisions, users } from "@osteojp/db";
 import { runScoped } from "../auth/context";
-import { mergePatientNotes, type MergeableNote } from "./notes-merge";
+import {
+  mergePatientNotes,
+  type MergeableNote,
+  type NoteAppointmentLink,
+} from "./notes-merge";
 
 /** One patient note for the profile Notas tab (unified or legacy leg). */
 export type PatientNoteRevision = {
@@ -19,6 +23,12 @@ export type PatientNoteRevision = {
   editedByName: string | null;
   /** True only for unified `appointment_notes` rows (editable in place, 0050). */
   editable: boolean;
+  /**
+   * PL-17 — the visit this note belongs to, or null for a patient-level note /
+   * a legacy revision. Drives the "Marcação de …" line and the button that opens
+   * that marcação from the Notas tab.
+   */
+  appointment: NoteAppointmentLink | null;
 };
 
 /**
@@ -48,13 +58,15 @@ export async function listPatientNoteRevisions(
       .leftJoin(users, eq(users.id, patientNoteRevisions.authorUserId))
       .where(eq(patientNoteRevisions.patientId, patientId))
       .orderBy(desc(patientNoteRevisions.createdAt));
-    // Legacy revisions have no edit path (no UPDATE policy targets them).
+    // Legacy revisions have no edit path (no UPDATE policy targets them), and no
+    // appointment link (the relation has no appointment_id).
     return rows.map((r) => ({
       ...r,
       createdAt: r.createdAt.toISOString(),
       editedAt: null,
       editedByName: null,
       editable: false,
+      appointment: null,
     }));
   });
 }
@@ -74,8 +86,10 @@ export async function listPatientNotes(
 ): Promise<PatientNoteRevision[]> {
   assertCan(ctx.role, "patients:read");
   return runScoped(ctx, async (tx) => {
-    // Second users reference for the last-editor's name (PL-13).
+    // Second users reference for the last-editor's name (PL-13); a third for the
+    // linked visit's practitioner (PL-17).
     const editor = alias(users, "note_editor");
+    const practitioner = alias(users, "note_appt_practitioner");
     const [unifiedRows, legacyRows] = await Promise.all([
       tx
         .select({
@@ -85,10 +99,17 @@ export async function listPatientNotes(
           createdAt: appointmentNotes.createdAt,
           editedAt: appointmentNotes.editedAt,
           editedByName: editor.fullName,
+          // PL-17: which visit this note documents. LEFT joins - a patient-level
+          // note has no appointment_id, and its link stays null.
+          appointmentId: appointmentNotes.appointmentId,
+          appointmentStartsAt: appointments.startsAt,
+          appointmentPractitionerName: practitioner.fullName,
         })
         .from(appointmentNotes)
         .leftJoin(users, eq(users.id, appointmentNotes.authorUserId))
         .leftJoin(editor, eq(editor.id, appointmentNotes.lastEditedBy))
+        .leftJoin(appointments, eq(appointments.id, appointmentNotes.appointmentId))
+        .leftJoin(practitioner, eq(practitioner.id, appointments.practitionerId))
         .where(eq(appointmentNotes.patientId, patientId))
         .orderBy(desc(appointmentNotes.createdAt)),
       tx
@@ -113,6 +134,15 @@ export async function listPatientNotes(
       editedAt: r.editedAt ? r.editedAt.toISOString() : null,
       editedByName: r.editedByName,
       editable: true,
+      appointment: r.appointmentId
+        ? {
+            id: r.appointmentId,
+            // appointments.starts_at is NOT NULL, so a matched join always has it;
+            // the fallback only satisfies the LEFT-join type.
+            startsAt: (r.appointmentStartsAt ?? r.createdAt).toISOString(),
+            practitionerName: r.appointmentPractitionerName,
+          }
+        : null,
     }));
     const legacy: MergeableNote[] = legacyRows.map((r) => ({
       id: r.id,
@@ -122,6 +152,8 @@ export async function listPatientNotes(
       editedAt: null,
       editedByName: null,
       editable: false,
+      // The legacy relation has no appointment_id at all.
+      appointment: null,
     }));
     return mergePatientNotes(unified, legacy);
   });
@@ -171,6 +203,9 @@ export async function listAppointmentNotes(
       editedAt: r.editedAt ? r.editedAt.toISOString() : null,
       editedByName: r.editedByName,
       editable: true,
+      // Already scoped to one visit: the caller knows which, so the per-note
+      // link would be redundant (and a needless join on a hot path).
+      appointment: null,
     }));
   });
 }

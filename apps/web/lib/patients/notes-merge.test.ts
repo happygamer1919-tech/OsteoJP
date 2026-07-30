@@ -20,6 +20,7 @@ const note = (
   editedAt: null,
   editedByName: null,
   editable: true,
+  appointment: null,
 });
 
 describe("mergePatientNotes", () => {

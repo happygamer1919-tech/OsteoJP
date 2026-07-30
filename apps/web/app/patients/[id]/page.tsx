@@ -18,11 +18,11 @@ import { formatPatientNumber } from "../../../lib/patients/format";
 import { getPatient, getPatientHardDeleteBlockers } from "../../../lib/patients/queries";
 import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
-import { listPatientAppointments } from "../../../lib/scheduling/data";
+import { getAgendaOptions, listPatientAppointments } from "../../../lib/scheduling/data";
 import { listPatientPackInstances } from "../../../lib/packs/instances";
 import { listPatientNotes } from "../../../lib/patients/note-revisions";
 import { NotesComposer } from "./notes-composer";
-import { NotesList } from "./notes-list";
+import { NotesTab } from "./notes-tab";
 import { PatientActions } from "../_components/patient-actions";
 import { versionRecordAction } from "../../clinical/[id]/actions";
 import { RecordLifecycleActions } from "./record-lifecycle-actions";
@@ -201,6 +201,13 @@ export default async function PatientProfilePage({
   // Notas tab: unified note history (W12-13) — appointment_notes (patient-level
   // + per-appointment) merged with the legacy patient_note_revisions (0030).
   const noteRevisions = tab === "notas" ? await listPatientNotes(ctx, id) : [];
+  // PL-17: the appointment panel opened from a note is the shared
+  // AppointmentDrawer, which needs the same reference data the agenda gives it.
+  // Fetched only for the Notas tab (it is a 60s-cached read).
+  const agendaOptions =
+    tab === "notas" && noteRevisions.length > 0
+      ? await getAgendaOptions(ctx)
+      : { therapists: [], locations: [], services: [], packs: [] };
   // Documentos tab: patient-level administrative documents (attachments with a
   // patient_id and no clinical_record_id). Tenant + role scoped in the query.
   const patientDocuments = tab === "documentos" ? await listPatientDocuments(ctx, id) : [];
@@ -320,7 +327,14 @@ export default async function PatientProfilePage({
             {noteRevisions.length === 0 ? (
               <p className="mt-4 text-sm text-text-secondary">{s["patients.notesEmpty"]}</p>
             ) : (
-              <NotesList notes={noteRevisions} />
+              /* PL-17: each note names its marcação and can open it in the same
+                 side panel the agenda uses. */
+              <NotesTab
+                notes={noteRevisions}
+                options={agendaOptions}
+                viewer={{ role: ctx.role, userId: ctx.userId }}
+                canHardDelete={canHardDelete}
+              />
             )}
           </Card>
         </div>

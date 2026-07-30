@@ -35,6 +35,21 @@ export type MergeableNote = {
    * render read-only.
    */
   editable: boolean;
+  /**
+   * PL-17: the visit this note documents, when it has one. Owner CR 2026-07-30:
+   * "you can see the notes but it is not written to which appointment related".
+   * Null for a patient-level note and for every legacy revision (the legacy
+   * relation has no appointment_id at all).
+   */
+  appointment: NoteAppointmentLink | null;
+};
+
+/** PL-17 — the minimum needed to name a visit and open it. */
+export type NoteAppointmentLink = {
+  id: string;
+  /** ISO-8601 UTC start instant. */
+  startsAt: string;
+  practitionerName: string | null;
 };
 
 /** Natural key used by the backfill: content + the exact created_at instant. */
