@@ -986,6 +986,15 @@ export const appointmentNotes = pgTable(
     authorUserId: uuid("author_user_id").references(() => users.id),
     body: text("body").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // PL-13 (owner ruling 2026-07-30): notes are EDITABLE in place with a
+    // last-edited stamp (supersedes the earlier append-only-for-edits model on
+    // the thread surface). edited_at NULL = never edited; a set value + the
+    // last_edited_by author render the "Editada por X · <datetime>" stamp.
+    // Migration 0050 adds these columns AND the appointment_notes_tenant_update
+    // RLS policy (in-tenant UPDATE now allowed; DELETE still denied by absent
+    // policy). created_at is never rewritten — an edit stamps edited_at only.
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    lastEditedBy: uuid("last_edited_by").references(() => users.id),
   },
   (t) => [
     index("appointment_notes_tenant_idx").on(t.tenantId),

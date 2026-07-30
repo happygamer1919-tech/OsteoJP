@@ -131,3 +131,40 @@ test("TWO-MODE: Notas Rápidas adds a patient-level note and an appointment-scop
     await expect(panel.getByTestId("hover-note")).toContainText(apptNote, { timeout: 2_000 });
   }).toPass({ timeout: 15_000 });
 });
+
+// PL-13 (owner ruling 2026-07-30): a note in the profile Notas thread is EDITABLE
+// in place and shows a last-edited stamp. Proves the DoD: edit → text changes →
+// "editada por … · …" stamp appears → survives a re-read.
+test("EDIT: a profile Notas note is editable in place and shows a last-edited stamp", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const name = `Editavel ${uniq()}`;
+  const id = await createPatient(page, { fullName: name });
+  const original = `Nota original ${uniq()}`;
+  const edited = `Nota corrigida ${uniq()}`;
+
+  // Add a note via the profile composer (patient-level, unified => editable).
+  await safeGoto(page, `/patients/${id}?tab=notas`);
+  await page.getByPlaceholder(/Escreva uma nota/i).fill(original);
+  await page.getByRole("button", { name: "Adicionar nota" }).click();
+  await expect(page.getByText(original)).toBeVisible({ timeout: 8_000 });
+  // A brand-new note carries no edit stamp yet.
+  await expect(page.getByTestId("note-edited-stamp")).toHaveCount(0);
+
+  // Open the pen editor, change the text, save.
+  await page.getByRole("button", { name: "Editar nota" }).first().click();
+  const editForm = page.getByTestId("note-edit-form");
+  await editForm.getByRole("textbox").fill(edited);
+  await editForm.getByRole("button", { name: "Guardar" }).click();
+
+  // The edited text + the last-edited stamp appear; the old text is gone.
+  await expect(page.getByText(edited)).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByText(original)).toHaveCount(0);
+  await expect(page.getByTestId("note-edited-stamp").first()).toBeVisible({ timeout: 8_000 });
+
+  // Survives a re-read (the stamp persists from edited_at, not client state).
+  await safeGoto(page, `/patients/${id}?tab=notas`);
+  await expect(page.getByText(edited)).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByTestId("note-edited-stamp").first()).toBeVisible({ timeout: 8_000 });
+});

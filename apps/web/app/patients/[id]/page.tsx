@@ -22,6 +22,7 @@ import { listPatientAppointments } from "../../../lib/scheduling/data";
 import { listPatientPackInstances } from "../../../lib/packs/instances";
 import { listPatientNotes } from "../../../lib/patients/note-revisions";
 import { NotesComposer } from "./notes-composer";
+import { NotesList } from "./notes-list";
 import { PatientActions } from "../_components/patient-actions";
 import { versionRecordAction } from "../../clinical/[id]/actions";
 import { RecordLifecycleActions } from "./record-lifecycle-actions";
@@ -305,23 +306,14 @@ export default async function PatientProfilePage({
       {tab === "notas" && (
         <div role="tabpanel" id="tabpanel-notas" aria-label={s["patients.tabNotes"]}>
           <Card title={s["patients.tabNotes"]}>
-            {/* Append-only note history (0030). Composer adds a new revision;
-                existing revisions are never edited or deleted. */}
+            {/* PL-13: the composer adds a note; unified notes are editable in
+                place with a last-edited stamp (NotesList), legacy revisions are
+                read-only. */}
             <NotesComposer patientId={id} />
             {noteRevisions.length === 0 ? (
               <p className="mt-4 text-sm text-text-secondary">{s["patients.notesEmpty"]}</p>
             ) : (
-              <ul className="mt-4 flex flex-col gap-3">
-                {noteRevisions.map((r) => (
-                  <li key={r.id} className="rounded-lg border border-border-strong p-3">
-                    <p className="whitespace-pre-wrap text-sm text-text-primary">{r.content}</p>
-                    <p className="mt-1 text-xs text-text-secondary">
-                      {r.authorName ?? s["patients.noteSystemAuthor"]} ·{" "}
-                      {new Date(r.createdAt).toLocaleString("pt-PT")}
-                    </p>
-                  </li>
-                ))}
-              </ul>
+              <NotesList notes={noteRevisions} />
             )}
           </Card>
         </div>

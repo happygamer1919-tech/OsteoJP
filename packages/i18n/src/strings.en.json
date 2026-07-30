@@ -124,6 +124,8 @@
   "patients.noteRequired": "The note cannot be empty.",
   "patients.notesEmpty": "No notes.",
   "patients.noteSystemAuthor": "System",
+  "patients.noteEdit": "Edit note",
+  "patients.noteEditedBy": "Edited by",
   "dashboard.quickNotePatient": "Patient",
   "dashboard.quickNotePatientPlaceholder": "Search patient…",
   "dashboard.quickNotePatientRequired": "Select a patient.",

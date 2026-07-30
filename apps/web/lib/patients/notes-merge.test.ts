@@ -12,7 +12,15 @@ const note = (
   content: string,
   createdAt: string,
   authorName: string | null = "Dr. A",
-): MergeableNote => ({ id, content, createdAt, authorName });
+): MergeableNote => ({
+  id,
+  content,
+  createdAt,
+  authorName,
+  editedAt: null,
+  editedByName: null,
+  editable: true,
+});
 
 describe("mergePatientNotes", () => {
   it("newest-first across both stores (PRE-backfill: nothing dropped)", () => {

@@ -684,12 +684,12 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
     });
   });
 
-  /* ---- appointment_notes — per-visit notes, append-only (SELECT + INSERT only, 0026) ---- */
-  // Same append-only shape as analytics_events/audit_log: the UPDATE/DELETE privilege is
-  // granted (0026 keeps the full DML grant) but NO UPDATE/DELETE policy exists, so RLS
-  // filters both to 0 rows deterministically. This is the soft-completion note relation —
-  // notes are immutable once written.
-  describe("appointment_notes — append-only (no UPDATE/DELETE policy ⇒ denied for all rows)", () => {
+  /* ---- appointment_notes — per-visit notes: editable in place (0050), no delete ---- */
+  // PL-13 (migration 0050): notes are EDITABLE in place with a last-edited stamp, so an
+  // in-tenant UPDATE is now allowed (appointment_notes_tenant_update), while DELETE stays
+  // denied (no DELETE policy) — history is preserved, never removed. Both SELECT/INSERT and
+  // the new UPDATE remain strictly tenant-isolated.
+  describe("appointment_notes — editable in place (0050 UPDATE policy), tenant-isolated, no delete", () => {
     it("SELECT under tenant-A returns only A's rows; tenant-B row invisible", async () => {
       const rows = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
         (await tx`select id::text as id, tenant_id::text as scope from appointment_notes`) as {
@@ -722,16 +722,25 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
       ).rejects.toThrow(/row-level security/i);
     });
 
-    it("UPDATE of the tenant's OWN row affects 0 rows — append-only (no UPDATE policy)", async () => {
+    it("UPDATE of the tenant's OWN row is ALLOWED (PL-13 / 0050 appointment_notes_tenant_update)", async () => {
       const updated = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
-        (await tx`update appointment_notes set body = 'mutated' where id = ${A.appointmentNote} returning id`) as {
+        (await tx`update appointment_notes set body = 'mutated', edited_at = now() where id = ${A.appointmentNote} returning id`) as {
+          id: string;
+        }[],
+      );
+      expect(updated.length).toBe(1);
+    });
+
+    it("UPDATE of a tenant-B row under tenant-A JWT affects 0 rows (isolation on the UPDATE policy)", async () => {
+      const updated = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
+        (await tx`update appointment_notes set body = 'hijack' where id = ${B.appointmentNote} returning id`) as {
           id: string;
         }[],
       );
       expect(updated.length).toBe(0);
     });
 
-    it("DELETE of the tenant's OWN row affects 0 rows — append-only (no DELETE policy)", async () => {
+    it("DELETE of the tenant's OWN row affects 0 rows — no DELETE policy (history preserved)", async () => {
       const deleted = await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) =>
         (await tx`delete from appointment_notes where id = ${A.appointmentNote} returning id`) as {
           id: string;

@@ -766,7 +766,14 @@ W12-21 palette. This keeps the current PR within its UI/UX + wiring boundary.
   0047, already built + staged) now; do Phase 2b as the next migration after Phase 5.
   Blast radius is the booking hot path, hence a dedicated ticket, not folded in.
 
-## Q-PL-13-1 (2026-07-30, OPEN, BLOCKING) - notes-thread model: append-only vs edit-in-place stamps
+## Q-PL-13-1 (2026-07-30, ANSWERED 2026-07-30) - notes-thread model: append-only vs edit-in-place stamps
+**ANSWERED (owner, 2026-07-30): make them EDITABLE with last-edited stamps.** Built as PL-13
+migration 0050 (appointment_notes: add `edited_at` + `last_edited_by` + an in-tenant UPDATE
+policy; DELETE still denied) + `editAppointmentNoteAction` + pen-edit UI on the profile Notas
+thread (legacy `patient_note_revisions` rows stay read-only). The profile composer stays (it is
+the thread + edit surface the therapist named). NOT done: the legacy backfill (pre-W12-13 rows
+→ editable) is a separate follow-up 0051; and the agenda drawer / Marcações popup stay single-
+coalesced-note surfaces (converting them to editable threads is out of scope for this ruling).
 Dispatched as "PL-08 appointment notes thread" (renumbered PL-13; PL-08 is the shipped
 "Ativar login" loop). Reconciled against the SHIPPED W12-13 notes-unification (merged
 #654/#656/#657): the notes thread already exists, each note carries author + created, and
@@ -805,7 +812,11 @@ shipped design and need an owner ruling before any build:
 STATUS: PL-13 (notes) is HELD pending this ruling. Nothing built (would either break the
 append-only invariant or remove a shipped surface on a guess). The moment (1) is ruled, the
 0050 backfill (+ optional stamp columns) is a same-day build -> apply-before-merge halt.
-## Q-PL-11-1 (2026-07-30, OPEN) - appointments write-scope: author escape vs fully-open edit
+## Q-PL-11-1 (2026-07-30, ANSWERED 2026-07-30) - appointments write-scope: author escape vs fully-open edit
+**ANSWERED (owner delegated "do as you think", 2026-07-30): keep the escape AUTHOR-SPECIFIC**
+(the shipped 0049 behaviour). Editing an appointment you did NOT author stays bounded by the
+PL-09 read scope — the safer choice that preserves defense-in-depth. No further migration; if
+fully-open cross-clinic edit is ever wanted it is a deliberate follow-up loosening.
 PL-11 migration 0049 unblocks the save by adding the `created_by = auth.uid()` author
 escape to appointments_rls (mirrors 0047). This makes CREATE open to every active staff
 role (you always author your own new row) and keeps EDIT of OTHERS' appointments bounded

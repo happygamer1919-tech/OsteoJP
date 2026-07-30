@@ -2174,3 +2174,35 @@ Closes the dispatch run and reconciles the board to it.
 - NUMBERING: the dispatch used PL-08/09/10 which collide with shipped work; tracked
   by content as PL-11 (save bug), PL-12 (self-lock), PL-13 (notes) per the
   dispatch-reconciliation entry above.
+
+## 2026-07-30 - PL-13: appointment notes made editable in place + last-edited stamp (GREEN)
+
+Owner ruling (Q-PL-13-1): "make them editable with last-edited stamps" (the non-default
+option; the recommended default was keep append-only). Built:
+
+- **Migration 0050** (`0050_appointment_notes_editable`, apply-before-merge): add
+  `edited_at` (NULL = never edited) + `last_edited_by` to appointment_notes, and add the
+  missing in-tenant UPDATE policy (`appointment_notes_tenant_update`). DELETE stays denied
+  (no policy) - editable, never deletable; created_at is never rewritten. UPDATE policy is
+  TENANT-ONLY (like the 0026 SELECT/INSERT policies); the finer "who may edit" rule is
+  app-layer.
+- **`editAppointmentNoteAction`** (patients/actions.ts): patients:write + the same W10-04
+  therapist own-patient re-check as the append path (loads the note's patient_id server-side,
+  then getPatient applies therapistPatientScope); UPDATEs body + stamps edited_at +
+  last_edited_by. Any staff with patients:write may edit (owner spec: "edit freely"), not
+  author-only; last_edited_by records who.
+- **Read + UI**: listPatientNotes returns editedAt/editedByName/editable (unified rows
+  editable, legacy patient_note_revisions read-only). Profile Notas tab gets a pen affordance
+  (NotesList client component) opening an inline editor, and shows "Editada por X · <datetime>"
+  when edited. This is the surface the therapist named ("in the patient's appointment history,
+  everything in one place"). The composer stays.
+- **Scope**: NOT the legacy backfill (pre-W12-13 rows → editable = a separate 0051 follow-up,
+  data migration with dedup risk, not needed for the core ask), and NOT converting the agenda
+  drawer / Marcações popup into editable threads (they stay single-coalesced-note; out of the
+  ruling).
+- **Verification**: the two RLS tests that asserted UPDATE-denied updated to UPDATE-allowed
+  in-tenant / denied cross-tenant / DELETE-denied, PROVEN against a local DB (supabase db reset
+  applied 0050 clean; 102 RLS assertions pass on 127.0.0.1). Unit test for the edit action
+  (therapist scope, trim, blank, reception). e2e edit-flow added to notes-unification.spec.ts
+  (edit → stamp → survives re-read). Gates: typecheck (db+web), lint 0-err, web unit 1424,
+  build, journal 50/50, supabase sync. Q-PL-11-1 also answered (keep author-specific escape).

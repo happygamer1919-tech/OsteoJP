@@ -22,6 +22,19 @@ export type MergeableNote = {
   authorName: string | null;
   /** ISO-8601 UTC timestamp. */
   createdAt: string;
+  /**
+   * PL-13: ISO-8601 UTC of the last in-place edit, or null if never edited.
+   * Legacy `patient_note_revisions` rows are always null (no edit path).
+   */
+  editedAt: string | null;
+  /** Full name of whoever last edited, or null. */
+  editedByName: string | null;
+  /**
+   * True only for unified `appointment_notes` rows, which alone carry the
+   * editable-in-place model + UPDATE policy (migration 0050). Legacy revisions
+   * render read-only.
+   */
+  editable: boolean;
 };
 
 /** Natural key used by the backfill: content + the exact created_at instant. */
