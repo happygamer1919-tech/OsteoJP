@@ -12,7 +12,7 @@
 // (or any other domain rows) still reference the patient.
 
 import { revalidatePath } from "next/cache";
-import { and, count, eq, isNotNull, isNull, max, or, sql } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { assertCan, can } from "@osteojp/auth";
 import {
   analyticsEvents,
@@ -59,19 +59,15 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
   const input = parseCreatePatient(raw);
 
   const patient = await runScoped(ctx, async (tx) => {
-    // Per-tenant sequential patient number (JP ruling, DECISIONS 2026-07-02).
-    // Serialize concurrent inserts for this tenant with the same transaction-
-    // scoped advisory lock the 0029 trigger uses, then assign MAX+1. Setting it
-    // explicitly here makes the trigger pass it through untouched; the trigger
-    // stays the safety net for the other insert paths (import, seeds, tests).
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext('patients_patient_number'), hashtext(${ctx.tenantId}::text))`,
-    );
-    const [agg] = await tx
-      .select({ maxNumber: max(patients.patientNumber) })
-      .from(patients)
-      .where(eq(patients.tenantId, ctx.tenantId));
-    const patientNumber = Number(agg?.maxNumber ?? 0) + 1;
+    // Per-tenant sequential patient number (JP ruling, DECISIONS 2026-07-02) is
+    // assigned ENTIRELY by the 0029 BEFORE INSERT trigger (assign_patient_number):
+    // it holds the advisory lock and sets patient_number = MAX+1 when the column
+    // is NULL. We must NOT compute it here — this runs inside runScoped (RLS on),
+    // and once patients SELECT is role/location-scoped (PL-09) a scoped viewer's
+    // MAX(patient_number) is too low and would collide with an invisible patient's
+    // number. The trigger (SECURITY DEFINER as of 0047) sees the true tenant max
+    // regardless of the caller's RLS view. patient_number is NOT NULL DEFAULT
+    // NULL, so omitting it below lets the trigger fill it.
 
     // R16 (0043) — the create action's location context becomes the clinical
     // fallback location. Captured EXPLICITLY here (from the validated input),
@@ -98,7 +94,7 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
       .insert(patients)
       .values({
         tenantId: ctx.tenantId,
-        patientNumber,
+        // patient_number omitted on purpose — the 0029 trigger assigns it (see above).
         createdBy: ctx.userId,
         primaryLocationId,
         fullName: input.fullName,
