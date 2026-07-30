@@ -1,11 +1,37 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
+import { requireRequestContext } from "@/lib/auth/context";
+import { resolveLocationControl } from "@/lib/auth/location-choice";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
+import { listActiveLocations } from "@/lib/invoices/queries";
 import { PatientForm } from "../_components/patient-form";
 
 const s = getStrings(DEFAULT_LOCALE);
 
-export default function NewPatientPage() {
+export const dynamic = "force-dynamic";
+
+export default async function NewPatientPage() {
+  // PL-15b: a new patient is filed at a clinic, and PL-14 decides whether that is
+  // a question at all - a single-clinic staffer gets it applied silently, a
+  // multi-clinic one picks from their OWN clinics, the owner from all of them.
+  // Without this the column stayed NULL and the patient was invisible to
+  // everyone but the owner and whoever created them.
+  const actor = await requireRequestContext().catch(() => redirect("/login"));
+  const [scope, locations] = await Promise.all([
+    viewerLocationScope(actor),
+    listActiveLocations(actor),
+  ]);
+  const control = resolveLocationControl(
+    scope,
+    locations.map((l) => ({ id: l.id, label: l.name })),
+  );
+  const formLocations =
+    control.kind === "fixed"
+      ? [{ id: control.location.id, name: control.location.label }]
+      : control.options.map((o) => ({ id: o.id, name: o.label }));
+
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-8">
       <Link href="/patients" className="inline-flex items-center gap-1 text-sm text-accent-2-700">
@@ -14,7 +40,7 @@ export default function NewPatientPage() {
       <h1 className="mb-6 mt-2 text-2xl font-semibold tracking-tight">
         {s["patients.new"]}
       </h1>
-      <PatientForm />
+      <PatientForm locations={formLocations} />
     </main>
   );
 }

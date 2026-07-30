@@ -63,3 +63,52 @@ describe("PatientForm — W2-02 field surface", () => {
     expect(html).toContain("Osteopata");
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* PL-15b — the patient's clinic. Owner CR 2026-07-30: the form never   */
+/* sent primary_location_id, so every patient registered since 0045 was  */
+/* location-less and therefore invisible to that clinic's staff until an */
+/* appointment existed. The field follows the PL-14 rule: one clinic is  */
+/* applied silently, several are a required choice.                      */
+/* ------------------------------------------------------------------ */
+const LV = { id: "11111111-1111-1111-1111-111111111111", name: "OsteoJP (LV)" };
+const CB = { id: "22222222-2222-2222-2222-222222222222", name: "OsteoJP (CB)" };
+
+describe("PatientForm — clinic (PL-15b)", () => {
+  it("applies the only reachable clinic without asking (static line, no select)", () => {
+    const html = renderToStaticMarkup(createElement(PatientForm, { locations: [LV] }));
+    expect(html).toContain('data-testid="patient-fixed-location"');
+    expect(html).toContain("OsteoJP (LV)");
+    expect(html).not.toContain("Selecionar localização");
+  });
+
+  it("asks a multi-clinic staffer, offering only their own clinics", () => {
+    const html = renderToStaticMarkup(createElement(PatientForm, { locations: [LV, CB] }));
+    expect(html).toContain("Selecionar localização");
+    expect(html).toContain("OsteoJP (LV)");
+    expect(html).toContain("OsteoJP (CB)");
+    expect(html).not.toContain('data-testid="patient-fixed-location"');
+  });
+
+  it("renders no clinic control at all when the caller passes none (unchanged form)", () => {
+    const html = renderToStaticMarkup(createElement(PatientForm));
+    expect(html).not.toContain('data-testid="patient-fixed-location"');
+    expect(html).not.toContain("Selecionar localização");
+  });
+
+  it("on edit, an existing clinic wins over the single-clinic default (never silently moved)", () => {
+    const html = renderToStaticMarkup(
+      createElement(PatientForm, {
+        patient: {
+          id: "00000000-0000-0000-0000-0000000000aa",
+          fullName: "Paciente CB",
+          primaryLocationId: CB.id,
+        } as never,
+        locations: [LV, CB],
+      }),
+    );
+    // The stored clinic is the SELECTED option, not merely present in the list.
+    expect(html).toContain(`<option value="${CB.id}" selected="">OsteoJP (CB)</option>`);
+    expect(html).not.toContain(`<option value="${LV.id}" selected="">`);
+  });
+});
