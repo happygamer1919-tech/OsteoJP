@@ -40,20 +40,23 @@ export async function findConflicts(
   const exclude = (args.excludeIds ?? []).filter(Boolean);
   const excludeSql = exclude.length
     ? sql`ARRAY[${sql.join(
-        exclude.map((id) => sql`${id}::uuid`),
+        exclude.map((id) => sql`${id}`),
         sql`, `,
       )}]::uuid[]`
     : sql`NULL::uuid[]`;
   const room = args.room?.trim() || null;
 
+  // The timestamptz args MUST be passed as ISO strings + an explicit ::timestamptz
+  // cast. A bound JS Date leaves $n untyped and Postgres cannot resolve the
+  // appointment_conflicts() argument -> the whole booking create throws.
   const result = await tx.execute(sql`
     SELECT id, patient_name, starts_at, ends_at, room, kind
     FROM public.appointment_conflicts(
       ${args.practitionerId}::uuid,
       ${args.locationId}::uuid,
       ${room}::text,
-      ${args.startsAt},
-      ${args.endsAt},
+      ${args.startsAt.toISOString()}::timestamptz,
+      ${args.endsAt.toISOString()}::timestamptz,
       ${excludeSql}
     )
   `);
