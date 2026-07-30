@@ -44,6 +44,12 @@ type Fields = {
   contraindicationPacemaker: boolean;
   contraindicationOther: boolean;
   contraindicationOtherNote: string;
+  // PL-15b — the clinic this patient belongs to (patients.primary_location_id).
+  // "" = not set. The form is the ONLY writer: before this the column existed
+  // (0045) and both the action and the validation accepted it, but no UI ever
+  // sent it, so every patient registered since then was location-less and
+  // therefore invisible to everyone but the owner and whoever created them.
+  primaryLocationId: string;
 };
 
 function toFields(p?: Patient | null): Fields {
@@ -70,6 +76,7 @@ function toFields(p?: Patient | null): Fields {
     contraindicationPacemaker: p?.contraindicationPacemaker ?? false,
     contraindicationOther: p?.contraindicationOther ?? false,
     contraindicationOtherNote: p?.contraindicationOtherNote ?? "",
+    primaryLocationId: p?.primaryLocationId ?? "",
   };
 }
 
@@ -81,9 +88,28 @@ function resolveReferralSource(fields: Fields): string {
   return fields.referralChoice;
 }
 
-export function PatientForm({ patient }: { patient?: Patient | null }) {
+/** PL-15b — the clinics this viewer may file a patient under (already narrowed
+ *  to their own; see lib/auth/location-choice). One entry = no choice to make. */
+export type PatientLocationOption = { id: string; name: string };
+
+export function PatientForm({
+  patient,
+  locations = [],
+}: {
+  patient?: Patient | null;
+  locations?: PatientLocationOption[];
+}) {
   const router = useRouter();
-  const [fields, setFields] = useState<Fields>(() => toFields(patient));
+  const [fields, setFields] = useState<Fields>(() => {
+    const base = toFields(patient);
+    // PL-14 rule: with exactly one reachable clinic there is nothing to choose,
+    // so it is pre-applied rather than offered. On edit an existing value always
+    // wins - a patient already filed at another clinic is never silently moved.
+    if (!base.primaryLocationId && locations.length === 1) {
+      return { ...base, primaryLocationId: locations[0]!.id };
+    }
+    return base;
+  });
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -194,6 +220,33 @@ export function PatientForm({ patient }: { patient?: Patient | null }) {
             className={inputCls}
           />
         </Field>
+        {/* PL-15b — which clinic the patient belongs to. This is what makes a
+            patient visible to that clinic's reception/admin (0047 RLS reads
+            primary_location_id when there is no appointment yet). PL-14 rule:
+            one clinic -> a static line, several -> a required picker. */}
+        {locations.length === 1 ? (
+          <Field label={s["header.location"]}>
+            <p data-testid="patient-fixed-location" className="py-2 text-sm text-text-primary">
+              {locations[0]!.name}
+            </p>
+          </Field>
+        ) : locations.length > 1 ? (
+          <Field label={s["header.location"]} required>
+            <select
+              required
+              value={fields.primaryLocationId}
+              onChange={(e) => set("primaryLocationId", e.target.value)}
+              className={inputCls}
+            >
+              <option value="">{s["appointment.selectLocation"]}</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
         <Field label={s["patients.fieldReferralSource"]}>
           <select
             value={fields.referralChoice}

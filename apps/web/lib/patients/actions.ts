@@ -164,6 +164,26 @@ export async function updatePatient(
   };
 
   const patient = await runScoped(ctx, async (tx) => {
+    // PL-15b: the patient's clinic is editable, so a patient registered before
+    // the form carried a location (or registered at the wrong one) can be
+    // corrected. Same server-side tenant check as createPatient: the id must
+    // resolve under the caller's RLS view or the write is rejected - a
+    // cross-tenant or unknown id is never silently persisted. An explicit null
+    // clears it (back to unassigned).
+    if (input.primaryLocationId !== undefined) {
+      if (input.primaryLocationId === null) {
+        patch.primaryLocationId = null;
+      } else {
+        const [loc] = await tx
+          .select({ id: locations.id })
+          .from(locations)
+          .where(eq(locations.id, input.primaryLocationId))
+          .limit(1);
+        if (!loc) throw new ValidationError("Invalid primaryLocationId");
+        patch.primaryLocationId = loc.id;
+      }
+    }
+
     const [row] = await tx
       .update(patients)
       .set(patch)

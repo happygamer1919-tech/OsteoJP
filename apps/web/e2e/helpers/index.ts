@@ -40,6 +40,12 @@ export type PatientFields = {
   // `referralOther` is typed into the revealed input.
   referral?: string;
   referralOther?: string;
+  /**
+   * PL-15b — which clinic to file the patient at, as the <select> option index
+   * (0 is the "Selecionar localização" placeholder, so 1 is the first real
+   * clinic). Defaults to 1; a spec that needs a SPECIFIC clinic passes its index.
+   */
+  locationIndex?: number;
 };
 
 /** Fills the patient form (caller is already on /patients/new or /edit). */
@@ -58,6 +64,16 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
   if (f.postalCode) await page.getByLabel(/Código postal/i).pressSequentially(f.postalCode);
   // Street address (Morada) is no longer surfaced in the form (W2-02 item 3).
   if (f.profession) await page.getByLabel(/Profissão/i).pressSequentially(f.profession);
+  // PL-15b — a patient is filed at a clinic, and with more than one reachable
+  // clinic that is a REQUIRED choice (the whole point: no more location-less
+  // patients that only their creator can see). The seeded admin has no
+  // staff_locations, so they see the full picker and must choose; a caller that
+  // does not care gets the first clinic. When the viewer has a single clinic the
+  // form renders a static line instead and there is nothing to select.
+  const clinic = page.getByLabel(/Localização/i);
+  if (await clinic.count()) {
+    await clinic.selectOption({ index: f.locationIndex ?? 1 });
+  }
   if (f.referral) {
     // The "Como nos conheceu?" <select> is labelled by its question text.
     await page.getByLabel(/Como nos conheceu/i).selectOption({ label: f.referral });
