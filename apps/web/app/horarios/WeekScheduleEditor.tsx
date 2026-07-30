@@ -50,21 +50,32 @@ export function WeekScheduleEditor({
             <span className={adminLabel}>{s["admin.workingHours.end"]}</span>
             <TimeFieldInput name={`d${d.weekday}_end`} defaultValue={d.end} />
           </label>
-          <label className="flex flex-col gap-1">
-            <span className={adminLabel}>{s["admin.workingHours.location"]}</span>
-            <select
+          {/* PL-14: with one reachable clinic the per-day location select offers
+              no choice - the value still posts (hidden input), the clinic name is
+              printed once instead of seven identical selects. */}
+          {locations.length === 1 ? (
+            <input
+              type="hidden"
               name={`d${d.weekday}_location`}
-              defaultValue={d.locationId || fallbackLocation}
-              aria-label={`${s["admin.workingHours.location"]} — ${d.label}`}
-              className={adminInputInline}
-            >
-              {locations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              value={d.locationId || fallbackLocation}
+            />
+          ) : (
+            <label className="flex flex-col gap-1">
+              <span className={adminLabel}>{s["admin.workingHours.location"]}</span>
+              <select
+                name={`d${d.weekday}_location`}
+                defaultValue={d.locationId || fallbackLocation}
+                aria-label={`${s["admin.workingHours.location"]} — ${d.label}`}
+                className={adminInputInline}
+              >
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </fieldset>
       ))}
       <div className="flex justify-end">

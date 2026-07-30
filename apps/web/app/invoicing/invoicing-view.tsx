@@ -268,7 +268,17 @@ export function InvoicingView({
           </Select>
         </div>
 
-        {locations.length > 0 && (
+        {/* PL-14: one clinic = no choice. The server has already pinned the id,
+            so the name is shown as a chip instead of a one-entry select. */}
+        {locations.length === 1 && (
+          <span
+            data-testid="invoicing-fixed-location"
+            className="inline-flex h-10 items-center rounded-v2 border border-v2-border bg-v2-surface px-3 text-sm text-v2-text-secondary"
+          >
+            {locations[0]!.name}
+          </span>
+        )}
+        {locations.length > 1 && (
           <div className="w-56">
             <Select
               aria-label={s["header.location"]}

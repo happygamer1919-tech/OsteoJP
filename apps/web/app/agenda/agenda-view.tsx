@@ -1,7 +1,7 @@
 "use client";
 
 import { DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
-import { Ban, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight, MapPin, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
@@ -227,8 +227,20 @@ export function AgendaView({
           {/* W10-04 isolation: the therapist role loses the location switcher
               too (it already loses the therapist switcher above). A therapist is
               scoped to their own calendar + location server-side; the switcher is
-              hidden so the two selectors disappear together for that role. */}
-          {!lockTherapist && (
+              hidden so the two selectors disappear together for that role.
+              PL-14: everyone else loses it too as soon as there is only ONE
+              location to choose from - the server has already pinned it, so the
+              name is shown as a static chip instead of a select with one entry. */}
+          {!lockTherapist && options.locations.length === 1 && (
+            <span
+              data-testid="agenda-fixed-location"
+              className="inline-flex h-10 items-center gap-2 rounded-v2 border border-v2-border bg-v2-surface px-3 text-sm text-v2-text-secondary"
+            >
+              <MapPin size={16} strokeWidth={1.75} aria-hidden="true" />
+              {options.locations[0]!.label}
+            </span>
+          )}
+          {!lockTherapist && options.locations.length > 1 && (
           <div className="w-56">
             <Select
               aria-label={s["header.location"]}

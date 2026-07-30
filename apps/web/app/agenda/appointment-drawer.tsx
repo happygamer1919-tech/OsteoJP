@@ -891,6 +891,17 @@ export function AppointmentDrawer({
           <Input autoComplete="off" value={form.room} onChange={(e) => set("room", e.target.value)} />
         </Field>
 
+        {/* PL-14: with a single reachable location there is nothing to choose -
+            the form already defaults to it (options.locations[0]), so the Select
+            becomes a read-only line. The value still travels in `form.locationId`
+            and the server re-checks it, exactly as when the Select was shown. */}
+        {options.locations.length === 1 ? (
+          <Field label={s["header.location"]}>
+            <p data-testid="appointment-fixed-location" className="text-sm text-v2-text-primary">
+              {options.locations[0]!.label}
+            </p>
+          </Field>
+        ) : (
         <Field label={s["header.location"]} required>
           <Select
             value={form.locationId}
@@ -912,6 +923,7 @@ export function AppointmentDrawer({
             ))}
           </Select>
         </Field>
+        )}
 
         <div className="flex flex-wrap gap-3">
           <Field label={s["appointment.date"]} required>

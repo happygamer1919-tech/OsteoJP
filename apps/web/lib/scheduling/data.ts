@@ -17,7 +17,10 @@ import {
 import { runScoped } from "@/lib/auth/context";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { filterBookableTherapists } from "./therapist-bookable";
-import { filterTherapistsByLocation } from "./therapist-location-filter";
+import {
+  filterRosterByViewerScope,
+  filterTherapistsByLocation,
+} from "./therapist-location-filter";
 import { listTherapistLocationAssignments } from "./therapist-locations";
 import type {
   AgendaAppointment,
@@ -349,25 +352,35 @@ export async function getAgendaOptions(
     ]);
 
   const assignmentMap = new Map(assignmentEntries);
+
+  // PL-14: a location-scoped viewer never sees ANOTHER clinic's roster. Before
+  // this, an LV-only admin's "Todos os terapeutas" listed all 16 staff including
+  // CB-only therapists (the W9-02 comment deferred it as "Phase 1b"); the owner
+  // CR of 2026-07-30 closes it. A therapist with NO assignment at all is kept -
+  // they belong to no clinic, so hiding them would be a data-entry gap silently
+  // removing a real person, not isolation. The owner (scope null) is unaffected.
+  const rosterRows = filterRosterByViewerScope(therapistRows, assignmentMap, locationScope);
+
   const therapists = locationId
-    ? filterTherapistsByLocation(therapistRows, assignmentMap, locationId)
-    : therapistRows;
+    ? filterTherapistsByLocation(rosterRows, assignmentMap, locationId)
+    : rosterRows;
   const therapistLocationIds: Record<string, string[]> = {};
   for (const [id, locs] of assignmentMap) therapistLocationIds[id] = [...locs];
 
   // PL-09 Phase 1: reception + admin only pick from their assigned location(s).
   // The appointment DATA is already location-scoped in listAppointments; this
-  // just narrows the location dropdown so they can't select another clinic. The
-  // therapist-name filter stays full for now (its data is location-locked, and
-  // per-therapist location comes from availability_templates which are not yet
-  // seeded - a Phase 1b refinement once staff_locations drives it).
+  // just narrows the location list so they can't select another clinic. PL-14:
+  // when this leaves exactly ONE location the UI renders no control at all and
+  // the server pins it (scopedLocationId) - the list below is then a label, not
+  // a choice. The therapist roster is narrowed on the same axis above (the
+  // "Phase 1b" this comment used to defer), now that staff_locations is seeded.
   const locations = locationScope
     ? locationRows.filter((l) => locationScope.includes(l.id))
     : locationRows;
 
   return {
     therapists,
-    allTherapists: therapistRows,
+    allTherapists: rosterRows,
     therapistLocationIds,
     locations,
     services: serviceRows,

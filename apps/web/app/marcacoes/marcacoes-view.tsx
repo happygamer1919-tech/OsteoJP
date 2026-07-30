@@ -12,7 +12,7 @@ import {
   ToastProvider,
 } from "@osteojp/ui";
 import type { AppointmentTone } from "@osteojp/ui";
-import { CalendarClock, Repeat, Search, TriangleAlert, User } from "lucide-react";
+import { CalendarClock, MapPin, Repeat, Search, TriangleAlert, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { Role } from "@osteojp/auth";
@@ -426,8 +426,19 @@ export function MarcacoesView({
         </div>
 
         {/* W10-04 isolation: therapist loses the location switcher (mirrors the
-            therapist-switcher gate below and the agenda). */}
-        {!lockTherapist && (
+            therapist-switcher gate below and the agenda).
+            PL-14: so does everyone else once only one clinic is reachable - the
+            server has pinned it, so the name is a chip, not a select. */}
+        {!lockTherapist && options.locations.length === 1 && (
+          <span
+            data-testid="marcacoes-fixed-location"
+            className="inline-flex h-10 items-center gap-2 rounded-v2 border border-v2-border bg-v2-surface px-3 text-sm text-v2-text-secondary"
+          >
+            <MapPin size={16} strokeWidth={1.75} aria-hidden="true" />
+            {options.locations[0]!.label}
+          </span>
+        )}
+        {!lockTherapist && options.locations.length > 1 && (
         <div className="w-56">
           <Select
             aria-label={s["header.location"]}
