@@ -157,31 +157,59 @@ describe.skipIf(!live)("PL-09 appointments location RLS matrix", () => {
     expect(seen.has(Z.appt)).toBe(false);
   });
 
-  /* ---- WRITE ---- */
-  it("reception CAN insert an appointment at their location and RETURNING it; NOT at another location", async () => {
+  /* ---- WRITE (PL-11, migration 0049: the created_by author escape) ----
+   *
+   * Owner ruling 2026-07-30: "all active staff roles may create and edit
+   * appointments." 0048 shipped without the `created_by = auth.uid()` branch
+   * the patients policy (0047) already has, so a LOCATION-SCOPED admin/reception
+   * saving OUTSIDE their location failed WITH CHECK -> createAppointment threw ->
+   * "save blocked". These assertions stamp `created_by` exactly as
+   * createAppointment does (`createdBy: actor.userId`); the pre-0049 policy
+   * rejects them, 0049 lets the author's own new row through.
+   */
+  it("PL-11 REPRO: a located reception CAN save an appointment they AUTHOR at ANOTHER location (created_by = self)", async () => {
+    // Lurdes's condition: reception assigned to LocA books at LocB. Fails on 0048
+    // (no author escape) -> passes on 0049.
+    const ok = await asRole(sql, "authenticated", claimsFor(A.tenant, "reception", A.receptionA), (tx) =>
+      tx<{ id: string }[]>`insert into appointments (tenant_id, patient_id, practitioner_id, location_id, created_by, starts_at, ends_at)
+        values (${A.tenant}, ${A.pX}, ${A.therapistT}, ${A.locB}, ${A.receptionA}, ${T2}, ${T3}) returning id`,
+    );
+    expect(ok.length).toBe(1);
+  });
+
+  it("PL-11: a located admin CAN save an appointment they AUTHOR at another location (created_by = self)", async () => {
+    const ok = await asRole(sql, "authenticated", claimsFor(A.tenant, "admin", A.adminA), (tx) =>
+      tx<{ id: string }[]>`insert into appointments (tenant_id, patient_id, practitioner_id, location_id, created_by, starts_at, ends_at)
+        values (${A.tenant}, ${A.pX}, ${A.otherT}, ${A.locB}, ${A.adminA}, ${T2}, ${T3}) returning id`,
+    );
+    expect(ok.length).toBe(1);
+  });
+
+  it("PL-11: a therapist CAN author an appointment for ANOTHER practitioner (created_by = self)", async () => {
+    // App-layer PL-10 self-locks the therapist create form; RLS no longer blocks
+    // the write itself (create is an authored action, not a read-scope one).
+    const ok = await asRole(sql, "authenticated", claimsFor(A.tenant, "therapist", A.therapistT), (tx) =>
+      tx<{ id: string }[]>`insert into appointments (tenant_id, patient_id, practitioner_id, location_id, created_by, starts_at, ends_at)
+        values (${A.tenant}, ${A.pX}, ${A.otherT}, ${A.locA}, ${A.therapistT}, ${T2}, ${T3}) returning id`,
+    );
+    expect(ok.length).toBe(1);
+  });
+
+  it("reception CAN still insert at their OWN location without an explicit author stamp (location scope intact)", async () => {
     const ok = await asRole(sql, "authenticated", claimsFor(A.tenant, "reception", A.receptionA), (tx) =>
       tx<{ id: string }[]>`insert into appointments (tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at)
         values (${A.tenant}, ${A.pX}, ${A.therapistT}, ${A.locA}, ${T2}, ${T3}) returning id`,
     );
     expect(ok.length).toBe(1);
-    await expect(
-      asRole(sql, "authenticated", claimsFor(A.tenant, "reception", A.receptionA), (tx) =>
-        tx`insert into appointments (tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at)
-           values (${A.tenant}, ${A.pX}, ${A.therapistT}, ${A.locB}, ${T2}, ${T3})`,
-      ),
-    ).rejects.toThrow(/row-level security/i);
   });
 
-  it("therapist CAN insert an OWN appointment; CANNOT insert one for another practitioner", async () => {
-    const ok = await asRole(sql, "authenticated", claimsFor(A.tenant, "therapist", A.therapistT), (tx) =>
-      tx<{ id: string }[]>`insert into appointments (tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at)
-        values (${A.tenant}, ${A.pX}, ${A.therapistT}, ${A.locA}, ${T2}, ${T3}) returning id`,
-    );
-    expect(ok.length).toBe(1);
+  it("PL-11: the author escape is AUTHOR-specific — you cannot write a row stamped as authored by someone else, out of your scope", async () => {
+    // Reception A (LocA) stamping created_by = adminB (not self) at LocB is still
+    // rejected: the escape only covers YOUR OWN authored rows; defense preserved.
     await expect(
-      asRole(sql, "authenticated", claimsFor(A.tenant, "therapist", A.therapistT), (tx) =>
-        tx`insert into appointments (tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at)
-           values (${A.tenant}, ${A.pX}, ${A.otherT}, ${A.locA}, ${T2}, ${T3})`,
+      asRole(sql, "authenticated", claimsFor(A.tenant, "reception", A.receptionA), (tx) =>
+        tx`insert into appointments (tenant_id, patient_id, practitioner_id, location_id, created_by, starts_at, ends_at)
+           values (${A.tenant}, ${A.pX}, ${A.therapistT}, ${A.locB}, ${A.adminB}, ${T2}, ${T3})`,
       ),
     ).rejects.toThrow(/row-level security/i);
   });

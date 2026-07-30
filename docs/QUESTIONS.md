@@ -765,3 +765,24 @@ W12-21 palette. This keeps the current PR within its UI/UX + wiring boundary.
   AND as reception. RECOMMENDATION (default): ship Phase 2a (patients RLS, migration
   0047, already built + staged) now; do Phase 2b as the next migration after Phase 5.
   Blast radius is the booking hot path, hence a dedicated ticket, not folded in.
+
+## Q-PL-11-1 (2026-07-30, OPEN) - appointments write-scope: author escape vs fully-open edit
+PL-11 migration 0049 unblocks the save by adding the `created_by = auth.uid()` author
+escape to appointments_rls (mirrors 0047). This makes CREATE open to every active staff
+role (you always author your own new row) and keeps EDIT of OTHERS' appointments bounded
+by the PL-09 read scope + WITH CHECK. The owner ruling "all active staff roles may create
+and edit appointments" is satisfied for create and for editing what you can see. OPEN:
+does the owner also want a located admin/reception to EDIT and MOVE an appointment they
+did NOT author to a location OUTSIDE their scope? DEFAULT (shipped in 0049): no - that
+stays bounded (author-specific escape only), preserving PL-09 defense-in-depth. If yes, a
+follow-up migration widens the admin/reception WITH CHECK to tenant-only. Ratify at apply.
+
+## Q-PL-11-2 (2026-07-30, OPEN) - located-role E2E for appointments RLS
+The Playwright e2e seed (apps/web/e2e/seed/seed-e2e.mjs) assigns NO staff_locations to any
+test role, so PL-09/PL-11 location scoping is a no-op in e2e and the located-admin
+save-block cannot be reproduced there. PL-11's failing->passing repro is carried by the DB
+isolation test (packages/db/tests/appointments-location-rls.test.ts), proven live via a
+policy swap. FOLLOW-UP: seed a located admin + a second location in the e2e harness and add
+a create-form save e2e (admin books a therapist that has zero availability_templates;
+assert the save succeeds and availability is shown advisory, not blocking). Not a PL-11
+blocker.
