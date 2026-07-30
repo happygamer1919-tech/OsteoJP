@@ -68,6 +68,47 @@
 /* ================================================================== */
 
 /* ------------------------------------------------------------------ */
+/* A0. Companion fix — assign_patient_number() must bypass RLS.        */
+/*   The 0029 BEFORE INSERT trigger fills patient_number = MAX+1 per    */
+/*   tenant via `SELECT MAX(patient_number) FROM patients WHERE         */
+/*   tenant_id = NEW.tenant_id`. It ran as the INVOKER, which was fine  */
+/*   while patients RLS was tenant-only (every staff saw all tenant     */
+/*   patients, so MAX was the true tenant max). Once patients SELECT is  */
+/*   role/location-scoped (below), a located reception/admin/therapist   */
+/*   sees only a SUBSET, so their MAX is too low and the trigger assigns  */
+/*   a number already taken by an INVISIBLE patient -> duplicate key on   */
+/*   patients_tenant_number_uq -> patient creation FAILS. Making the      */
+/*   trigger SECURITY DEFINER (search_path pinned) restores the true      */
+/*   per-tenant MAX regardless of the creator's RLS view. It still        */
+/*   filters tenant_id = NEW.tenant_id (which patients_insert's WITH      */
+/*   CHECK pins to jwt_tenant_id()), so there is no cross-tenant reach.   */
+/*   Body is otherwise byte-identical to 0029.                           */
+/* ------------------------------------------------------------------ */
+CREATE OR REPLACE FUNCTION public.assign_patient_number()
+  RETURNS trigger
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = public
+AS $$
+BEGIN
+  IF NEW.patient_number IS NULL THEN
+    -- Serialize concurrent inserts for the same tenant so MAX+1 is race-safe.
+    -- Transaction-scoped: released on COMMIT/ROLLBACK. Two-key form scopes the
+    -- lock to (this trigger, tenant) and avoids collision with other advisory
+    -- locks. Explicit values skip this path entirely (keep original numbers).
+    PERFORM pg_advisory_xact_lock(hashtext('patients_patient_number'),
+                                  hashtext(NEW.tenant_id::text));
+    NEW.patient_number :=
+      COALESCE((SELECT MAX(patient_number)
+                  FROM public.patients
+                 WHERE tenant_id = NEW.tenant_id), 0) + 1;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+--> statement-breakpoint
+
+/* ------------------------------------------------------------------ */
 /* A. Helpers (appointments + staff_locations only; never patients).   */
 /* ------------------------------------------------------------------ */
 
