@@ -293,15 +293,16 @@ describe.skipIf(!live)("PL-09 patients location/patient RLS matrix", () => {
 
   it("patient_number is assigned from the TRUE tenant max (trigger bypasses scoped RLS), not the creator's visible subset", async () => {
     // Global max via the owner connection (RLS-bypassing).
-    const [{ maxn }] = await sql<{ maxn: number }[]>`
+    const maxRows = await sql<{ maxn: number }[]>`
       select coalesce(max(patient_number), 0)::int as maxn from patients where tenant_id = ${A.tenant}`;
+    const maxn = maxRows[0]?.maxn ?? 0;
     // receptionA sees only LocA patients, so a broken (invoker) trigger would
     // compute MAX over that subset and assign a number <= the global max.
-    const [row] = await asRole(sql, "authenticated", claimsFor(A.tenant, "reception", A.receptionA), (tx) =>
+    const inserted = await asRole(sql, "authenticated", claimsFor(A.tenant, "reception", A.receptionA), (tx) =>
       tx<{ patient_number: number }[]>`insert into patients (tenant_id, full_name, created_by)
         values (${A.tenant}, 'Number Check', ${A.receptionA}) returning patient_number`,
     );
-    expect(row.patient_number).toBe(maxn + 1);
+    expect(inserted[0]?.patient_number).toBe(maxn + 1);
   });
 
   it("a tenant-A admin CANNOT forge a tenant-Z patient (WITH CHECK tenant wall)", async () => {
