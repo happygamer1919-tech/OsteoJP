@@ -2218,3 +2218,36 @@ present, appointment_notes_tenant_update policy added, DELETE still denied, driz
 49 -> 50. CI all green incl. DB-gated RLS + the new Playwright edit-flow e2e. #709 merged;
 edit UI deploys with the columns already on prod (DB-ahead window is safe - old app never
 selected the new columns). Board: PL-13 -> shipped; artifact re-published.
+
+## 2026-07-30 - Lurdes change request intake: PL-14, PL-15a, PL-15b, PL-16, PL-17 (GREEN)
+
+Owner CR raised by Lurdes (admin @ Linda-a-Velha), scoped by GREEN into five board cards
+before any build, per the intake rule.
+
+- **PL-14 - implicit location.** RULING (from the CR, no ambiguity): a location-restricted
+  staffer must never see a location CONTROL. One helper resolves the viewer's effective
+  location set (viewerLocationScope); exactly one location -> no control at all, applied
+  implicitly server-side, shown as a static label; more than one -> a picker restricted to
+  that set; unrestricted viewer (owner / unassigned) -> full tenant picker unchanged. Swept
+  across Agenda, Equipa, Marcacoes, Faturacao, the appointment drawer and Horarios. Two live
+  defects folded in: the Equipa picker is fed the TENANT-wide location list (it offers CB to
+  an LV-only admin), and the Agenda therapist dropdown is deliberately unscoped (16 staff
+  incl. CB-only therapists). The therapist filter is re-based on staff_locations (0038)
+  rather than availability_templates, which the PL-09 comment deferred as "Phase 1b".
+- **PL-15a / PL-15b - patient location.** The CR's "why does Lurdes not see all patients"
+  traces to the create-patient form never sending primaryLocationId: the column (0045), the
+  validation and the createPatient action all accept it, only the UI is missing, so every
+  patient created since 0045 is NULL-located and visible only to its creator + owner until a
+  located appointment exists. Evidence before build (PL-15a, read-only prod script run by the
+  owner), then PL-15b adds the field (auto-set for single-location staff, per PL-14),
+  surfaces the location in the list + ficha, and backfills the NULL remainder from the most
+  recent appointment. Zero-appointment patients are NOT guessed - they go to the owner
+  (Q-PL-15-1).
+- **PL-16 / PL-17 - notes.** PL-13 shipped the editable thread on the patient profile only
+  and explicitly left the drawer and the Marcacoes popup as a single coalesced note; the
+  owner re-raised those surfaces, so they are now their own cards. No migration: every save
+  already APPENDS an appointment_notes row, so the thread exists in data and is merely not
+  rendered. PL-16 renders it in the booking panel (Adicionar nota + stamped board, reusing
+  NotesList/NotesComposer, no fork). PL-17 covers the other three surfaces: a Notas button
+  per Marcacoes row, the agenda hover pinned to the LATEST note, and a ficha note that names
+  and links to its marcacao (needs appointmentId in the note projection; column exists).

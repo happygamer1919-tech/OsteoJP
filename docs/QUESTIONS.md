@@ -836,3 +836,20 @@ policy swap. FOLLOW-UP: seed a located admin + a second location in the e2e harn
 a create-form save e2e (admin books a therapist that has zero availability_templates;
 assert the save succeeds and availability is shown advisory, not blocking). Not a PL-11
 blocker.
+
+## Q-PL-14-1 (2026-07-30, OPEN) - multi-location staff: keep a picker, or force one location?
+The CR is unambiguous for the single-location case (no control, auto-applied). It does not
+say what a reception/admin assigned to TWO clinics should get. DEFAULT (what GREEN will
+build unless told otherwise): keep a picker for them, restricted to their own set, with
+"Todas as localizacoes" meaning "all of MINE" - never a location outside the assignment.
+The alternative (force a single active clinic, switchable in the profile) is a bigger change
+and nobody has that shape today. Not a blocker: today's data has no multi-location staffer.
+
+## Q-PL-15-1 (2026-07-30, OPEN) - patients with no location AND no appointment: assign how?
+Migration 0051 can safely backfill patients.primary_location_id from each patient's most
+recent appointment. Patients with ZERO appointments have no derivable location (this is the
+Alfredo case). RECOMMENDED DEFAULT: do NOT guess them in SQL. Leave them NULL, and let the
+owner assign each one in the new patient-edit location field - the list is expected to be
+about three rows on prod today. Guessing (e.g. "everything to LV") would misfile a CB
+patient into LV permanently and is a data write no evidence supports. Confirm at PL-15b
+apply, together with the PL-15a output.
