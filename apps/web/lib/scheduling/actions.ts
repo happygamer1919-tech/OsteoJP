@@ -25,7 +25,7 @@ import { batchSchedule, type BatchScheduleInput, type BatchScheduleResult } from
 import { writeAppointmentStatusChangedEvent } from "./analytics";
 import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
-import { findConflicts, findConflictsForWindow } from "./conflict";
+import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conflict";
 import { getTherapistAvailability, type DayAvailability } from "./day-availability";
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
@@ -180,7 +180,9 @@ async function collectConflicts(
       endsAt: w.endsAt,
       excludeIds,
     });
-    conflicts.push(...c);
+    // PL-11: availability is advisory — never blocks. Filter before the cap so
+    // an outside-hours window can't crowd out a real double-booking.
+    conflicts.push(...blockingConflicts(c));
     if (conflicts.length >= CONFLICT_CAP) break;
   }
   return conflicts.slice(0, CONFLICT_CAP);
@@ -823,7 +825,8 @@ export async function rescheduleAppointment(
               endsAt: t.endsAt,
               excludeIds: ids,
             });
-            conflicts.push(...c);
+            // PL-11: availability is advisory — never blocks a reschedule.
+            conflicts.push(...blockingConflicts(c));
             if (conflicts.length >= CONFLICT_CAP) break;
           }
           if (conflicts.length > 0) {

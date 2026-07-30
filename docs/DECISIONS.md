@@ -2099,3 +2099,49 @@ already-merged/applied work. Reconciled by CONTENT (the DoDs), verified against 
 - Run authorized by the owner (2026-07-30, "do as you recommend, I authorize decisions, I will
   review when I come back"). Migrations were NOT applied and migration/RLS PRs were NOT
   self-merged (doctrine, reaffirmed 3x); they halt for owner terminal apply.
+## 2026-07-30 - PL-11: appointment save unblocked (appointments RLS created_by escape) + availability advisory
+
+Reported by the live team (Lurdes): "appointment save blocked". Dispatched by the
+owner as "PL-09", but PL-09 is the location-access model (shipped) - tracked as a new
+loop PL-11 to avoid the number collision. Owner authorized an autonomous GREEN run.
+
+- ROOT CAUSE (one line): the 0048 `appointments_rls` policy gates writes with the same
+  location/ownership predicate it uses for reads and, UNLIKE the patients policy (0047),
+  has NO `created_by = auth.uid()` escape - so a location-scoped admin/reception saving
+  an appointment whose location_id is outside their staff_locations fails WITH CHECK, the
+  INSERT...RETURNING is rejected, and createAppointment throws.
+- CORRECTION to the dispatch theory: "therapist with zero availability_templates" is NOT
+  the mechanism. evaluateAvailability returns {configured:false, covered:true} for zero
+  templates (availability.ts:115-116), so findScheduleConflicts emits NO availability
+  conflict. A zero-template therapist is not blocked by availability. The block is the
+  appointments RLS write-scope; the availability ruling is a separate correct fix.
+- PERMISSION MATRIX (from code) - appointment actions:
+  - Capability (packages/auth/permissions.ts): appointments:read/write held by owner,
+    admin, therapist, reception (all four). appointments:delete: owner/admin/reception.
+    So "all active staff roles may create/edit appointments" already holds at the
+    capability layer; the block was purely RLS row-scope.
+  - RLS row-scope after 0049 (appointments_rls FOR ALL): owner=all in-tenant;
+    therapist=own (practitioner_id|practitioner_2_id) OR authored (created_by);
+    admin/reception=own-location (location_in_viewer_scope) OR authored (created_by) OR
+    unassigned=>all (no-lockout); every role may CREATE (created_by=self on insert);
+    cross-tenant denied (tenant_id top-level).
+- FIX (migration 0049 `0049_appointments_write_created_by`): add
+  `created_by = (select auth.uid())` to appointments_rls USING + WITH CHECK, mirroring
+  0047 exactly. Only appointments_rls is replaced; no table/column/function touched;
+  appointments_patient_selfscope (0010) intact.
+- SEMANTIC CHOICE (owner ratify at apply, Q-PL-11-1): the escape is AUTHOR-specific,
+  not a blanket write-open. Minimal reading of the ruling that preserves PL-09
+  defense-in-depth (editing an appointment you did NOT author is still read-scope bounded).
+- Availability made ADVISORY (owner ruling): blockingConflicts() (conflict-core.ts, pure)
+  drops availability from the block set in createAppointment + rescheduleAppointment;
+  therapist/room double-bookings and time_off still block (overridable via "Save anyway").
+- REPRO (failing->passing, proven LIVE on local synthetic DB by swapping the policy on one
+  DB): the 3 "located staff author out-of-scope save" assertions fail on the 0048 policy
+  with `new row violates row-level security policy for table "appointments"`; pass on 0049.
+  Full DB isolation suite 452/452 on 0049 (no cross-tenant/adversarial-escape regression).
+- Gates green local: db:check-journal (49/49), lint (0 err), typecheck, DB suite (452),
+  web unit (1401), web build (web app builds; portal build fails only on missing local
+  NEXT_PUBLIC_SUPABASE_* env - pre-existing, green in CI, untouched by PL-11).
+- MIGRATION -> apply-before-merge. PR opened DRAFT; HALTS for owner terminal apply +
+  CYAN read, then merge. Located-admin E2E deferred (Q-PL-11-2; e2e seed has no
+  staff_locations - the DB-isolation test carries the repro).

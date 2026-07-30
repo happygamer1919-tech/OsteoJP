@@ -206,3 +206,7 @@ export async function findConflictsForWindow(
   ]);
   return [...appointmentConflicts, ...scheduleConflicts];
 }
+
+// PL-11 advisory classifier lives in conflict-core.ts (pure, no `server-only`)
+// so it is unit-testable; re-exported here for server callers.
+export { ADVISORY_CONFLICT_KINDS, blockingConflicts } from "./conflict-core";
