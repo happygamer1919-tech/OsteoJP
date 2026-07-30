@@ -314,6 +314,50 @@
       "blocked_on": null,
       "last_checkpoint": "2026-07-30",
       "notes": "Owner feedback 2026-07-30: the agenda patient name-line was too big, bold, and showed every middle name. Three changes, agenda grid line ONLY (apps/web/app/agenda/agenda-grid.tsx, AppointmentName): (1) new exported shortPatientName(fullName) helper - <=2 words unchanged, >2 words -> first + last only ('Abilio Jose de Carvalho Fernandes' -> 'Abilio Fernandes'); (2) typography text-sm -> text-xs and font-semibold -> font-normal; (3) render shortPatientName(appt.patientName) on the line. The W10-05/W12-33 hover popup is UNCHANGED and still carries the FULL name + all detail, so nothing is lost - only the one-line face is compacted. Marcacoes row + hover panel deliberately OUT OF SCOPE (owner named the agenda only). patients.full_name is a single column (no first/last split) so the shortener parses the one string, like the existing firstName()/initialsOf() helpers. e2e de-risked: every agenda e2e fixture is 'Maria Silva' (2 words, unchanged) and the toHaveCSS assertions check text-decoration-line not font. Staff-facing UI, non-migration; owner visual gate on the Vercel preview / prod after deploy. Loop: docs/loops/prelaunch/PL-10-agenda-name-line-compact.md."
+    },
+    {
+      "id": "PL-11",
+      "title": "Appointment save unblocked - appointments RLS created_by author escape (migration 0049) + availability advisory",
+      "lane": "shipped",
+      "status": "shipped",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": {
+        "kind": "journal",
+        "ref": "migration 0049 applied to prod dfotoodqvmjhbdcxyaxf under apply-before-merge; independent read confirms appointments_rls now carries created_by in USING + WITH CHECK; drizzle __drizzle_migrations count 48 -> 49 (count-delta, not inferred); PR #705 merged",
+        "at": "2026-07-30"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-30",
+      "notes": "Live team (Lurdes/Rodica): 'appointment save blocked'. ROOT CAUSE: the 0048 appointments_rls policy gated writes with the same location/ownership predicate as reads and, UNLIKE the patients policy 0047, had NO created_by=auth.uid() escape - a location-scoped admin/reception saving an appointment whose location_id is outside their staff_locations failed WITH CHECK, the INSERT...RETURNING was rejected, createAppointment threw. CORRECTION to the dispatch theory: 'therapist with zero availability_templates' is NOT the mechanism (evaluateAvailability returns configured:false/covered:true for zero templates -> no availability conflict). FIX (migration 0049): add created_by=(select auth.uid()) to appointments_rls USING + WITH CHECK, mirroring 0047 exactly; only appointments_rls replaced, nothing else touched. Every active staff role may now CREATE (author=self) and edit what they author; editing OTHERS' appointments stays PL-09 read-scope-bounded (author-specific escape). Availability made ADVISORY (owner ruling): booking outside a therapist's hours warns but never blocks; real therapist/room double-bookings + time_off still block (Save anyway). REPRO failing->passing proven live on the local synthetic DB by policy swap; full DB isolation 452/452 on 0049. APPLY-BEFORE-MERGE honoured (0046 lesson): PR #705 DRAFT until owner terminal apply + independent read (created_by escape live, count 48->49), then merged. Open follow-ups: Q-PL-11-1 (author-specific vs fully-open cross-clinic edit, default author-only) + Q-PL-11-2 (located-role e2e; DB isolation test carries the repro today). Dispatched as 'PL-09' but renumbered PL-11 (PL-09 = location model, shipped)."
+    },
+    {
+      "id": "PL-12",
+      "title": "Therapist self-lock on the create form - logged-in therapist auto-selected, no therapist picker (self-booking)",
+      "lane": "shipped",
+      "status": "shipped",
+      "owner_terminal": "green",
+      "gate": "green_self_merge",
+      "evidence": {
+        "kind": "pr",
+        "ref": "PR #706 merged on green CI (lint/typecheck/DB-gated/Playwright E2E all pass); self-merged per owner authorization 2026-07-30; owner visual gate on deploy",
+        "at": "2026-07-30"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-30",
+      "notes": "Owner ruling (2026-07-30): when the logged-in user is role=therapist, the create form (Nova marcacao) auto-sets Terapeuta to that therapist and offers NO therapist picker (fixed label of their own name). Servico still follows PL-06a (preselected from their primary mapping, full active-services list stays switchable - preselection NEVER restriction; serviceOptions not narrowed). Reception/admin/owner keep the full Terapeuta dropdown unchanged - role-scoped to therapist only. Date/hour/duration/location/notes unchanged. SCOPE GUARD held: CREATE-form behaviour only; agenda read-scope / whether a therapist can see/edit OTHERS' appointments (isolation question) untouched. Session role from the access-token hook claims (proven landing in prod via Chris Macov). Dispatched as 'PL-10' but renumbered PL-12 (PL-10 = agenda name-line #704, merged). Non-migration, staff-facing UI; self-merged on green; owner reviews the deployed behaviour."
+    },
+    {
+      "id": "PL-13",
+      "title": "Appointment notes thread - edit-stamps vs append-only model ruling (HELD)",
+      "lane": "blocked_on_people",
+      "status": "blocked",
+      "owner_terminal": "green",
+      "gate": "stakeholder",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-07-30",
+      "notes": "Dispatched as 'PL-08 appointment notes thread' (renumbered PL-13; PL-08 = shipped Ativar-login #691, notes-unification = shipped W12-13 #654/#656/#657). The thread already exists: each note carries author+created, and the 'notes never reach patient PDFs/Declaracoes/portal' negative assertion is CLEAN + CI-guarded (notes-privacy.test.ts). HELD on Q-PL-13-1 (owner ruling): the shipped model is APPEND-ONLY/immutable (appointment_notes SELECT+INSERT only, an edit = a NEW appended row; no edited_at/last_edited_by). The dispatched DoD wants literal edit-in-place with last-edited stamps = ADD edited_at+last_edited_by columns + an UPDATE RLS policy (append-only EXCEPTION) + an edit path, i.e. relaxing the immutability invariant (hard rule #4 territory). Also DoD 'patient-profile Notas strictly read-only' would REMOVE a shipped composer surface. RECOMMENDATION (default): KEEP append-only, treat the newest row as the latest edit (author+created already shown), reconcile the DoD wording - no immutability change; confirm whether to remove the profile composer. The 0050 backfill (legacy appointments.notes + patient_note_revisions -> appointment_notes as note-one, idempotent/append-only) is READY to build but its column shape is coupled to this ruling, so it is BLOCKED on it. 'Nothing lost' holds at read time today (coalesce + dedup). Dispatch-note PR #707 merged (records the hold). NEXT FREE migration = 0050 (NOT 0047 as the dispatch guessed; 0047 = patients RLS, applied)."
     }
   ]
 }

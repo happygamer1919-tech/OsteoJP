@@ -2145,3 +2145,32 @@ loop PL-11 to avoid the number collision. Owner authorized an autonomous GREEN r
 - MIGRATION -> apply-before-merge. PR opened DRAFT; HALTS for owner terminal apply +
   CYAN read, then merge. Located-admin E2E deferred (Q-PL-11-2; e2e seed has no
   staff_locations - the DB-isolation test carries the repro).
+
+## 2026-07-30 - PL-11/12/13 landed + board reconciled to 26 cards (GREEN)
+
+Closes the dispatch run and reconciles the board to it.
+
+- PL-11 (#705) SHIPPED + APPLIED: migration 0049 applied to prod under
+  apply-before-merge. The owner ran the terminal apply; the first attempt was a
+  NO-OP (the prod-apply worktree could not checkout the PL-11 branch - it was held
+  by another worktree - so db:migrate ran against main, which lacks 0049). Re-run
+  from the worktree that owns the branch (osteojp-pl-11-appt-save) applied 0049.
+  VERIFIED by independent read: appointments_rls now carries created_by in USING +
+  WITH CHECK, and drizzle __drizzle_migrations count went 48 -> 49 (count-delta,
+  not inferred - the 0046 lesson). Then merged. Appointment save unblocked for the
+  located admin/reception case; availability advisory.
+- PL-12 (#706) SHIPPED: therapist self-lock on the create form (non-migration UI).
+  Self-merged on green per the owner self-merge authorization; owner visual gate on
+  the deploy.
+- PL-13 (#707 dispatch-note) HELD: the notes-thread edit-stamp DoD conflicts with
+  the shipped append-only/immutable model. Blocked on the owner ruling Q-PL-13-1
+  (keep append-only vs. add mutable edit-stamps + relax immutability). The 0050
+  backfill is ready but coupled to that ruling. #707's DECISIONS/QUESTIONS merge
+  conflict with main was resolved by UNION (both sides kept, nothing dropped).
+- BOARD: added PL-11 (shipped), PL-12 (shipped), PL-13 (blocked_on_people/ivan);
+  validator green (26 cards, 15 shipped, launch readiness unchanged 7/9 - none of
+  these is a launch gate). Re-rendered and re-published to the maintained board
+  artifact (83e26fe7, url= in place, never re-minted).
+- NUMBERING: the dispatch used PL-08/09/10 which collide with shipped work; tracked
+  by content as PL-11 (save bug), PL-12 (self-lock), PL-13 (notes) per the
+  dispatch-reconciliation entry above.
