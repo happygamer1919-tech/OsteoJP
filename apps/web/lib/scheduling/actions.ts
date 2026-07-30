@@ -280,6 +280,14 @@ export async function createAppointment(
   if (!input.patientId || !input.practitionerId || !input.locationId) {
     return { ok: false, error: "validation" };
   }
+  // PL-10 (defense in depth): a therapist self-books ONLY. The create form hides
+  // the Terapeuta selector and forces practitionerId = self, so a therapist
+  // request naming a DIFFERENT practitioner did not come from the form — reject
+  // it. Gated on role "therapist" ONLY: admin/reception/owner book on behalf of
+  // any therapist, unchanged. RLS is untouched; this is an app-layer guard.
+  if (actor.role === "therapist" && input.practitionerId !== actor.userId) {
+    return { ok: false, error: "forbidden" };
+  }
   const firstStart = new Date(input.startsAt);
   const firstEnd = new Date(input.endsAt);
   if (!isValidInterval(firstStart, firstEnd)) {
@@ -489,6 +497,12 @@ export async function batchScheduleAppointments(
   const { actor } = auth;
   if (!input.patientId || !input.practitionerId || !input.locationId) {
     return { ok: false, error: "validation" };
+  }
+  // PL-10 (defense in depth): the "Agendar lote" path is also a create form —
+  // a self-locked therapist may only batch-book their OWN calendar. Same guard,
+  // same role gate as createAppointment; admin/reception/owner unaffected.
+  if (actor.role === "therapist" && input.practitionerId !== actor.userId) {
+    return { ok: false, error: "forbidden" };
   }
   try {
     const result = await batchSchedule(actor, input);

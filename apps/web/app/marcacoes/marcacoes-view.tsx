@@ -15,6 +15,7 @@ import type { AppointmentTone } from "@osteojp/ui";
 import { CalendarClock, Repeat, Search, TriangleAlert, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import type { Role } from "@osteojp/auth";
 
 import { s } from "@/lib/i18n";
 import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
@@ -285,6 +286,7 @@ function AppointmentRow({
 export function MarcacoesView({
   filters,
   lockTherapist,
+  viewer,
   options,
   serviceFilterOptions,
   appointments,
@@ -292,6 +294,11 @@ export function MarcacoesView({
 }: {
   filters: MarcacoesFilters;
   lockTherapist: boolean;
+  /** PL-10: forwarded to the shared AppointmentDrawer for the therapist self-lock.
+   *  This view only ever opens the drawer in EDIT mode (create/lote stay on the
+   *  agenda), so the self-lock never fires here — but the drawer requires the prop
+   *  and passing the real viewer keeps behaviour identical to the agenda mount. */
+  viewer: { role: Role; userId: string };
   options: AgendaOptions;
   /** DB-sourced tenant services for the Serviço filter (W6-01b), inactive included. */
   serviceFilterOptions: ServiceFilterOption[];
@@ -534,6 +541,7 @@ export function MarcacoesView({
         options={options}
         anchor={filters.from}
         canHardDelete={canHardDelete}
+        viewer={viewer}
         onClose={() => setModal(null)}
         onDone={() => {
           setModal(null);

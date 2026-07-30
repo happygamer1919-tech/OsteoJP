@@ -5,6 +5,8 @@ import { Ban, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
+import type { Role } from "@osteojp/auth";
+
 import { s } from "@/lib/i18n";
 import {
   addDays,
@@ -36,6 +38,7 @@ export function AgendaView({
   anchor,
   filters,
   lockTherapist,
+  viewer,
   options,
   appointments,
   blocks,
@@ -47,6 +50,11 @@ export function AgendaView({
   anchor: string;
   filters: AgendaFilters;
   lockTherapist: boolean;
+  // PL-10: the logged-in viewer's identity, forwarded to the create drawer so a
+  // THERAPIST self-locks (practitioner forced to self, Terapeuta selector hidden).
+  // Distinct from `lockTherapist`, which governs the OUT-OF-SCOPE agenda toolbar
+  // read-scope (W10-04) — this only reaches the create form.
+  viewer: { role: Role; userId: string };
   options: AgendaOptions;
   appointments: AgendaAppointment[];
   /** W9-04: time_off spans for the visible range. Non-empty ONLY when the agenda
@@ -291,6 +299,7 @@ export function AgendaView({
           options={options}
           anchor={anchor}
           canHardDelete={canHardDelete}
+          viewer={viewer}
           onClose={() => setModal(null)}
           onDone={() => {
             setModal(null);
