@@ -126,3 +126,51 @@ export async function listPatientNotes(
     return mergePatientNotes(unified, legacy);
   });
 }
+
+/**
+ * PL-16 — the note thread of ONE appointment, newest-first. The unified store has
+ * held a thread per visit since W12-13 (every save APPENDS a row); the agenda
+ * drawer simply never rendered it, showing only the latest note in a textarea.
+ * This is the read behind that board, and behind the Marcações "Notas" popup.
+ *
+ * Unified rows only: `appointment_notes` is the only relation with an
+ * appointment_id, so the legacy `patient_note_revisions` leg has nothing to
+ * contribute here (a legacy note belongs to a patient, not to a visit). Every
+ * row is editable in place (PL-13, migration 0050).
+ *
+ * Tenant-scoped via RLS. The therapist own-patient narrowing is applied by the
+ * CALLER (the server action re-checks with getPatient, exactly as the append and
+ * edit paths do) so this stays a plain read.
+ */
+export async function listAppointmentNotes(
+  ctx: RequestContext,
+  appointmentId: string,
+): Promise<PatientNoteRevision[]> {
+  assertCan(ctx.role, "patients:read");
+  return runScoped(ctx, async (tx) => {
+    const editor = alias(users, "note_editor");
+    const rows = await tx
+      .select({
+        id: appointmentNotes.id,
+        content: appointmentNotes.body,
+        authorName: users.fullName,
+        createdAt: appointmentNotes.createdAt,
+        editedAt: appointmentNotes.editedAt,
+        editedByName: editor.fullName,
+      })
+      .from(appointmentNotes)
+      .leftJoin(users, eq(users.id, appointmentNotes.authorUserId))
+      .leftJoin(editor, eq(editor.id, appointmentNotes.lastEditedBy))
+      .where(eq(appointmentNotes.appointmentId, appointmentId))
+      .orderBy(desc(appointmentNotes.createdAt));
+    return rows.map((r) => ({
+      id: r.id,
+      content: r.content,
+      authorName: r.authorName,
+      createdAt: r.createdAt.toISOString(),
+      editedAt: r.editedAt ? r.editedAt.toISOString() : null,
+      editedByName: r.editedByName,
+      editable: true,
+    }));
+  });
+}

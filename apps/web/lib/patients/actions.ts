@@ -46,6 +46,7 @@ import {
   type UpdatePatientInput,
 } from "./validation";
 import { getPatient, searchPatients } from "./queries";
+import { listAppointmentNotes, type PatientNoteRevision } from "./note-revisions";
 import type { Patient } from "./types";
 
 function revalidatePatient(id: string): void {
@@ -462,6 +463,35 @@ export async function appendPatientNoteAction(
   });
   revalidatePatient(patientId);
   return { ok: true };
+}
+
+/**
+ * PL-16 — read ONE appointment's note thread, for the surfaces that are not a
+ * server component: the agenda booking panel's notes board and the Marcações
+ * "Notas" popup. Same authority as every other note path — `patients:read` plus
+ * the W10-04 therapist own-patient narrowing, re-checked HERE via getPatient
+ * (the note read itself is tenant-RLS only, so a forged appointment id must not
+ * be enough). A therapist asking for someone else's visit gets an empty thread,
+ * never someone else's notes.
+ */
+export async function getAppointmentNotesAction(
+  appointmentId: string,
+): Promise<{ ok: boolean; notes: PatientNoteRevision[] }> {
+  const ctx = await requireRequestContext();
+  assertCan(ctx.role, "patients:read");
+  if (!appointmentId) return { ok: false, notes: [] };
+  const patientId = await runScoped(ctx, async (tx) => {
+    const [appt] = await tx
+      .select({ patientId: appointments.patientId })
+      .from(appointments)
+      .where(eq(appointments.id, appointmentId))
+      .limit(1);
+    return appt?.patientId ?? null;
+  });
+  if (!patientId) return { ok: false, notes: [] };
+  const patient = await getPatient(patientId, { includeDeleted: true });
+  if (!patient) return { ok: false, notes: [] };
+  return { ok: true, notes: await listAppointmentNotes(ctx, appointmentId) };
 }
 
 /**
