@@ -1040,6 +1040,7 @@
   "batch.rebook": "Remarcar",
   "batch.allResolved": "Todas as marcações em falta foram remarcadas.",
   "appointment.noNote": "Sem nota",
+  "appointment.notesEmpty": "Ainda sem notas.",
   "appointment.nesaWarning": "Atenção — contraindicação NESA",
   "lote.checkbox": "Agendar lote",
   "lote.count": "Nº de marcações",

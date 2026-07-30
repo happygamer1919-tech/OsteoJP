@@ -364,3 +364,22 @@ describe("AppointmentDrawer — implicit location (PL-14)", () => {
     expect(html).not.toContain('data-testid="appointment-fixed-location"');
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* PL-16 — the booking panel's notes are a THREAD on an existing        */
+/* marcacao (board + "Adicionar nota"), and a single first-note field   */
+/* on create, where there is no appointment row to hang notes on yet.   */
+/* ------------------------------------------------------------------ */
+describe("AppointmentDrawer — notes thread (PL-16)", () => {
+  it("renders the notes board when editing an existing marcacao", () => {
+    const html = render({ mode: "edit", appt: editAppt });
+    expect(html).toContain('data-testid="appointment-notes-board"');
+    expect(html).toContain("Adicionar nota");
+  });
+
+  it("keeps a single note field on create (no appointment id to thread onto)", () => {
+    const html = render({ mode: "create" });
+    expect(html).not.toContain('data-testid="appointment-notes-board"');
+    expect(html).toContain("Notas");
+  });
+});

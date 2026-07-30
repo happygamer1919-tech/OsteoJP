@@ -54,6 +54,7 @@ import type {
   SeriesScope,
 } from "@/lib/scheduling/types";
 import { buildLoteSlots, generateLoteDates, type LoteRow } from "@/lib/scheduling/lote";
+import { AppointmentNotesBoard } from "./appointment-notes-board";
 import { AvailabilityPanel } from "./availability-panel";
 
 import { ConfirmationIndicator } from "./confirmation-indicator";
@@ -1102,9 +1103,19 @@ export function AppointmentDrawer({
           </p>
         )}
 
-        <Field label={s["appointment.notes"]}>
-          <Textarea autoComplete="off" value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} />
-        </Field>
+        {/* PL-16 — notes are a THREAD, not one overwritable box. On an existing
+            marcacao the board renders every note with its author + timestamp and
+            an "Adicionar nota" button above them: this is the reception <-> therapist
+            channel, so nothing is ever replaced. On CREATE there is no appointment
+            row yet to hang notes on, so the first note stays a plain field and is
+            written as note one by createAppointment. */}
+        {editing ? (
+          <AppointmentNotesBoard appointmentId={editing.id} />
+        ) : (
+          <Field label={s["appointment.notes"]}>
+            <Textarea autoComplete="off" value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} />
+          </Field>
+        )}
 
         {conflicts && (
           <Banner tone="warning">
