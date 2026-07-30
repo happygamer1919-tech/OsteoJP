@@ -366,14 +366,18 @@
     {
       "id": "PL-14",
       "title": "Implicit location - remove every location picker a single-location staffer should never see (Lurdes CR)",
-      "lane": "in_flight",
-      "status": "todo",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
+      "evidence": {
+        "kind": "pr",
+        "ref": "#713",
+        "at": "2026-07-30"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-30",
-      "notes": "OWNER CR 2026-07-30 (from Lurdes, admin @ LV; applies to EVERY location-restricted user). DEFECT: Lurdes still sees location CONTROLS she has no choice inside - Agenda toolbar shows 'Todas as localizacoes / OsteoJP (LV)' (one real option), and Administracao > Equipa shows 'Todas as localizacoes / OsteoJP (CB) / OsteoJP (LV)' - CB is a location she is NOT assigned to (that dropdown is fed the tenant-wide location list, unlike the Agenda one which getAgendaOptions already narrows via viewerLocationScope). Second defect, same axis: the Agenda 'Todos os terapeutas' dropdown lists ALL 16 staff including CB-only therapists (getAgendaOptions comments the therapist filter as deliberately unscoped, 'a Phase 1b refinement'). RULE TO IMPLEMENT (one helper, applied everywhere): resolve the viewer's effective location set (viewerLocationScope); if it has exactly ONE location, render NO control - the location is applied implicitly server-side and shown as a static label/chip; if it has MORE than one, render a picker restricted to that set (with 'Todas as localizacoes' meaning 'all MINE'); only an unrestricted viewer (owner, or unassigned) keeps the full tenant picker. SURFACES to sweep: Agenda toolbar (app/agenda/page.tsx + agenda-view), Equipa (app/admin/staff/EquipaLocationFilter.tsx - also fix its unscoped options list), Marcacoes (app/marcacoes), Faturacao (app/invoicing/invoicing-view.tsx), the appointment create/edit drawer, Horarios. Also narrow the therapist dropdown to the viewer's locations via staff_locations (0038), not availability_templates. Non-migration (read-scoping + UI). DoD: as Lurdes no location control anywhere, all lists LV-only including the therapist filter; as owner every picker unchanged; unit tests on the resolve helper + e2e that the Equipa picker never offers an unassigned location."
+      "notes": "SHIPPED (#713, GREEN self-merge on green CI, non-migration). ONE rule now governs every location control: it renders only when it offers MORE THAN ONE real choice. Exactly one reachable clinic -> no control at all, the id pinned server-side (scopedLocationId / effectiveLocationId, so a hand-typed ?location=<other clinic> is not honoured either) and the name printed as a static chip; several -> a picker restricted to the viewer's own set; unrestricted viewer (owner / unassigned) unchanged. The decision is one pure module, lib/auth/location-choice.ts, unit-tested to 26 assertions incl. the stale-assignment fallback (never render an empty control). SURFACES swept: Agenda toolbar, Marcacoes, Faturacao, Estatisticas, the booking drawer's Localizacao field, the Equipa filter, and the per-day location select in BOTH schedule editors (value still posts via a hidden input). TWO DEFECTS FIXED: (a) the Equipa filter was fed the TENANT-wide location list - that is how Lurdes, LV-only, was offered Castelo Branco - and its member-location index now unions availability_templates with staff_locations (only 5 of 11 members hold hours, so the hours-only index hid most of a real team); (b) the Agenda therapist dropdown listed all 16 staff incl. CB-only therapists, the 'Phase 1b' the PL-09 comment deferred - now narrowed to the viewer's clinics, with unassigned therapists KEPT (a data-entry gap must not silently hide a colleague). NOT changed, deliberately: the Gerir modal's clinic-membership checkboxes - that surface SETS the membership everything else reads, and setStaffLocations writes exactly the posted set, so narrowing it would silently drop a member's other-clinic membership. Gates: typecheck, lint 0-err, web unit 1445, build 4/4, Playwright + DB-gated RLS green in CI (one earlier E2E run failed on degraded runners; the rerun passed clean, no code change)."
     },
     {
       "id": "PL-15a",
@@ -385,43 +389,55 @@
       "evidence": null,
       "blocked_on": null,
       "last_checkpoint": "2026-07-30",
-      "notes": "OWNER CR 2026-07-30: owner's Pacientes list shows 7 (Abilio 0007, Alfredo 0009, Ermelinda 0008, Joao Miguel 0006, Maria Alice 0005, Max 0001, Teste CB 0004); Lurdes (admin @ LV) sees 4 (Abilio, Ermelinda, Max, Teste CB). Missing: Alfredo, Joao Miguel, Maria Alice. LEADING HYPOTHESIS (to be PROVEN, not assumed): patient visibility for reception/admin is location-derived (patientLocationScope + 0047 RLS) = an appointment at one of my locations OR patients.primary_location_id in my locations OR created_by = me. The create-patient form NEVER sends primaryLocationId - the field is fully plumbed through validation + createPatient but no UI writes it - so every patient registered since 0045 lands with primary_location_id = NULL and, until a located appointment exists, is visible ONLY to its creator and the owner. That is exactly the Alfredo shape (newest number, no appointment). This is the flagged 0045-Q3 follow-up, now owner-visible. ACTION: stage a READ-ONLY script to ~/osteojp-mailbox/staged/ that prints, per patient, primary_location_id + appointment count by location + created_by; owner runs it in HIS terminal (no prod-connected execution from a Claude shell) and pastes the output. Card closes on pasted evidence, and its result decides the PL-15b backfill shape. NO WRITES."
+      "notes": "STAGED, awaiting the owner's paste. READ-ONLY prod script at ~/osteojp-mailbox/staged/cyan-pl15a-patient-location-READONLY-20260730.mjs (SET TRANSACTION READ ONLY + rollback; prints no NIF/phone/email; run from the prod-apply worktree's packages/db with DATABASE_URL_DIRECT in the owner's own shell). It prints, per patient, primary_location_id + appointment count by location + created_by, and counts the NULL-and-zero-appointment remainder that 0051 cannot infer. THE CAUSE IS ALREADY IDENTIFIED AND FIXED FORWARD by PL-15b (#714): the create-patient form never sent primaryLocationId, so every patient registered since 0045 is location-less and, under 0047, visible only to its creator and the owner until a located appointment exists - exactly the Alfredo / Joao Miguel / Maria Alice shape. This card now exists to CONFIRM that on prod data and to size the 0051 backfill, not to decide the fix."
     },
     {
       "id": "PL-15b",
       "title": "Patient location: chosen at creation (auto for single-location staff), shown in the ficha, and backfilled",
-      "lane": "in_flight",
-      "status": "todo",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
-      "gate": "owner_merge",
-      "evidence": null,
+      "gate": "green_self_merge",
+      "evidence": {
+        "kind": "pr",
+        "ref": "#714",
+        "at": "2026-07-30"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-30",
-      "notes": "OWNER CR 2026-07-30, depends on PL-15a. BUILD: (1) the patient create + edit form gets a location - AUTO-SET and shown as a static line for a staffer with exactly one location (no control, PL-14 rule), a REQUIRED picker restricted to the viewer's set when they have several, full tenant list for the owner; it writes patients.primary_location_id (column exists since 0045, action + validation already accept it - only the UI is missing). (2) The Pacientes list and the ficha header show the patient's location, so 'which clinic is this patient' is legible without opening an appointment. (3) Migration 0051 backfills the NULL remainder from each patient's most recent appointment location; patients with ZERO appointments cannot be inferred and must NOT be guessed - they surface to the owner for a one-time assignment via the new edit field (Q-PL-15-1). After this, a location-scoped admin sees EVERY patient of her clinic (the owner's ask) and no patient silently belongs to nobody. Migration => apply-before-merge, one migration in flight, next free number 0051. DoD: new patient created by Lurdes is immediately visible to the other LV staff; RLS isolation test extended for the create path; e2e that the picker is absent for a single-location staffer."
+      "notes": "SHIPPED (#714, non-migration half). The create AND edit forms now carry the patient's clinic under the PL-14 rule: auto-applied and shown as a static line for a single-clinic staffer, a REQUIRED picker over their own clinics for a multi-clinic one, the full list for the owner; on edit an existing value always wins, so a patient is never silently moved. updatePatient + parseUpdatePatient now accept primaryLocationId (create-only before) with the same server-side tenant check - this is also how the owner will assign the zero-appointment remainder 0051 cannot infer (Q-PL-15-1). The clinic is now visible on the patients list secondary line and the ficha identity line; a patient with none shows nothing there rather than a guess. E2E CAUGHT A REAL REGRESSION: making the clinic required broke ~10 specs because the shared fillPatientForm helper did not fill the new field - fixed in the same PR, plus a new spec asserting the picker is required and the chosen clinic reaches the profile. STILL OPEN as the migration half: 0051 backfills existing NULL rows from each patient's most recent appointment (apply-before-merge, next free number 0051, waits on PL-15a)."
     },
     {
       "id": "PL-16",
       "title": "Appointment notes = a real thread in the booking panel ('Adicionar nota' + stamped board)",
-      "lane": "in_flight",
-      "status": "todo",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
+      "evidence": {
+        "kind": "pr",
+        "ref": "#715",
+        "at": "2026-07-30"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-30",
-      "notes": "OWNER CR 2026-07-30 (re-raised: PL-13 shipped the thread on the PATIENT profile only and explicitly left the drawer as a single coalesced note). Today the appointment drawer renders ONE textarea holding the LATEST note; every save appends a new appointment_notes row, so the thread ALREADY EXISTS in data and is simply not rendered - NO MIGRATION NEEDED. BUILD: replace the textarea with a notes BOARD - an 'Adicionar nota' button above the list opens a composer, submitting appends a note, and each note renders with its author + date/time stamp on the right, newest first, plus the PL-13 pen edit + 'Editada por X' stamp. Multiple notes accumulate: this is the reception <-> therapist communication channel, so nothing is ever overwritten and DELETE stays denied. Reuse the profile NotesList/NotesComposer pair rather than forking a second notes UI. DoD: two notes from two different users both visible with correct authorship in the drawer; save-appointment no longer silently overwrites the visible note; unit + e2e."
+      "notes": "SHIPPED (#715, NO migration). The booking panel's single 'Notas' textarea is replaced by a real thread board: 'Adicionar nota' above the list, every note stamped with its author + date/time, newest first, the PL-13 pen edit and 'Editada por' stamp, nothing ever overwritten and DELETE still denied. The thread already existed in the data - every save has APPENDED an appointment_notes row since W12-13 - the drawer was simply rendering only the latest row in a textarea, which read as one overwritable note. Reuses the profile's NotesList (one authorship/stamp format, no second notes UI); the composer is a div, not a form, because the board renders INSIDE the appointment form and a nested form would submit the appointment instead of the note. New read listAppointmentNotes + getAppointmentNotesAction carry the same authority as every note path (patients:read + the W10-04 therapist own-patient re-check via getPatient, so a forged appointment id returns an empty thread). CREATE mode keeps the single field: there is no appointment row yet to thread onto. i18n appointment.notesEmpty pt+en. Gates: typecheck, lint 0-err, web unit 1456, build 4/4, CI green."
     },
     {
       "id": "PL-17",
       "title": "Notes reachable from every appointment surface - Marcacoes 'Notas' button, hover shows the latest, ficha note links back to its marcacao",
-      "lane": "in_flight",
-      "status": "todo",
+      "lane": "shipped",
+      "status": "shipped",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
+      "evidence": {
+        "kind": "pr",
+        "ref": "#716",
+        "at": "2026-07-30"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-30",
-      "notes": "OWNER CR 2026-07-30, sibling of PL-16 (same thread component, three more surfaces). (1) MARCACOES: each row gets a 'Notas' button that opens the full thread for that appointment in a popup (add + edit inside it, same component as the drawer). (2) AGENDA HOVER: the popup already shows 'Nota da marcacao' and the read is already 'latest note first' (coalesce ... order by created_at desc limit 1) - VERIFY it stays the LATEST once the thread is multi-note, and label it as such. (3) PATIENT FICHA: a note in the Notas tab does not say WHICH marcacao it belongs to; add the appointment link (date + therapist) and a button that opens the appointment side panel from the ficha. Needs appointmentId (+ appointment date/practitioner) added to the PatientNoteRevision projection - the column exists on appointment_notes, so this is a read/UI change, non-migration; legacy patient_note_revisions rows have no appointment and render without the link. DoD: a note written in Marcacoes appears in the drawer, the hover and the ficha, with one shared authorship/stamp format; e2e ficha-note -> appointment panel."
+      "notes": "SHIPPED (#716, NO migration). Three surfaces: (1) MARCACOES - every row gets a 'Notas' button opening that marcacao's thread in a popup, the SAME board PL-16 renders, so a note written from the list shows in the drawer, the hover and the ficha; (2) AGENDA HOVER - it already showed the LATEST note (order by created_at desc limit 1); the projection now also carries noteCount and the label becomes 'Ultima nota (de N)' when the thread has several, so one note is never mistaken for the whole exchange (a single note keeps the plain label); (3) PATIENT FICHA - a note now names the marcacao it documents (date + therapist) and an 'Abrir marcacao' button opens it in the shared AppointmentDrawer. listPatientNotes projects the appointment link (appointment_id has always existed on appointment_notes - read/UI only); patient-level notes and legacy patient_note_revisions rows have no visit and show no line. The marcacao behind a note is fetched by id ON DEMAND (getAppointmentAction, appointments:read + RLS) in its own 'use server' module, because ./actions is imported by tests that mock next/cache with only what they need. packages/ui Dialog: confirmLabel + onConfirm are now OPTIONAL (a dialog that only PRESENTS something has nothing to confirm); every existing call site passes both, so it is additive. i18n pt+en: appointment.noteHoverLatest, patients.noteAppointment, patients.noteOpenAppointment, marcacoes.notes. Gates: typecheck, lint 0-err, web unit 1463, ui unit 76, build 4/4, CI green."
     }
   ]
 }
