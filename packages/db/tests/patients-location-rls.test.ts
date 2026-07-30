@@ -260,10 +260,33 @@ describe.skipIf(!live)("PL-09 patients location/patient RLS matrix", () => {
     expect(no.length).toBe(0);
   });
 
-  /* ---- WRITE: INSERT tenant-only; cross-tenant forge rejected -------- */
-  it("reception CAN insert a new in-tenant patient (tenant-only INSERT gate)", async () => {
+  /* ---- WRITE: INSERT ... RETURNING works for every creating role ----- */
+  // REGRESSION GUARD: createPatient does `insert into patients ... returning`.
+  // The SELECT policy is applied to the RETURNING row, so it MUST be satisfiable
+  // by the NEW row's own columns (created_by) without re-reading the patients
+  // table — else a therapist / located reception cannot create a patient (this
+  // broke consultation-start + booking E2E on the first cut). created_by =
+  // auth.uid() guarantees the creator sees their own new row.
+  it("therapist can INSERT a location-less patient and RETURNING it (created_by = self)", async () => {
+    const inserted = await asRole(sql, "authenticated", claimsFor(A.tenant, "therapist", A.therapistT), (tx) =>
+      tx<{ id: string }[]>`insert into patients (tenant_id, full_name, created_by)
+        values (${A.tenant}, 'Therapist Stub', ${A.therapistT}) returning id`,
+    );
+    expect(inserted.length).toBe(1);
+  });
+
+  it("reception (located) can INSERT a location-less patient and RETURNING it (created_by = self)", async () => {
     const inserted = await asRole(sql, "authenticated", claimsFor(A.tenant, "reception", A.receptionA), (tx) =>
-      tx<{ id: string }[]>`insert into patients (tenant_id, full_name) values (${A.tenant}, 'New Walk-in') returning id`,
+      tx<{ id: string }[]>`insert into patients (tenant_id, full_name, created_by)
+        values (${A.tenant}, 'New Walk-in', ${A.receptionA}) returning id`,
+    );
+    expect(inserted.length).toBe(1);
+  });
+
+  it("admin (located) can INSERT + RETURNING a patient placed at their own location", async () => {
+    const inserted = await asRole(sql, "authenticated", claimsFor(A.tenant, "admin", A.adminA), (tx) =>
+      tx<{ id: string }[]>`insert into patients (tenant_id, full_name, created_by, primary_location_id)
+        values (${A.tenant}, 'Placed at LocA', ${A.adminA}, ${A.locA}) returning id`,
     );
     expect(inserted.length).toBe(1);
   });
