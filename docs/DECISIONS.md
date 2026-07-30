@@ -2046,3 +2046,31 @@ that recorded Phase 2b as "not built; its own ticket."
   (PL-03b, LE-resend). Launch gates open: G2 (Ivan: live-SMS env + UI-booked
   canary) and G8 (JP: lawyer RGPD sign-off). Open owner loose end: rotate the prod
   DB password pasted in chat during the apply window.
+
+## 2026-07-30 - PL-10: agenda name-line compacted (owner feedback) (GREEN)
+
+Owner feedback: the agenda patient name-line is too big, bold, and shows every
+middle name ("Abilio Jose de Carvalho Fernandes" reflects all four). Rulings:
+smaller font, remove bold to save space, show only first + last name.
+
+- Change confined to `apps/web/app/agenda/agenda-grid.tsx` (`AppointmentName`):
+  new exported `shortPatientName(fullName)` (<=2 words unchanged, >2 words -> first
+  + last), typography `text-sm -> text-xs` and `font-semibold -> font-normal`, and
+  render `shortPatientName(appt.patientName)` on the line.
+- **Full name is NOT lost:** the W10-05/W12-33 hover popup is unchanged and still
+  carries the full name + all detail. Disambiguation lives there; the grid line is
+  just the compact face.
+- **Scope guard:** agenda grid line ONLY. The Marcacoes row and the hover panel are
+  deliberately untouched (owner named the agenda). `patients.full_name` is a single
+  column (no first/last split), so the shortener parses the one string like the
+  existing `firstName()`/`initialsOf()` helpers do.
+- **Literal rule:** first token + last token. Smarter surname/particle handling
+  (Junior/Filho) is a future loop if ever wanted - not decided here.
+- Tests: agenda-grid.test.tsx 24 pass (helper unit + render shortened-on-face /
+  full-in-hover + typography). Updated the W11-00 full-name assertion to the
+  shortened expectation + a full-name-in-hover assertion. e2e de-risked (every
+  agenda fixture is "Maria Silva", 2 words; CSS assertions check text-decoration,
+  not font). Lint 0-err, typecheck clean, build ok.
+- Self-merged on green per owner authorization (2026-07-30): non-migration,
+  staff-facing UI, no agent-governing files. PR #704. Board: PL-10 card added
+  (shipped). Owner visual gate on the Vercel preview / prod after deploy.

@@ -298,6 +298,22 @@
       "blocked_on": null,
       "last_checkpoint": "2026-07-30",
       "notes": "Owner-approved APPROACH 2026-07-29: proper phased build, each phase its own PR, ENABLED after the live acceptance test - never a broad RLS flip mid-test. Target model: therapist sees ONLY own clients + own agenda; reception sees ALL therapists/clients but ONLY their location AND owns schedule editing (horarios) for their-location therapists; admin = almost-owner but LIMITED to their location (KPI+stats+agenda+staff+clients); owner FULL everywhere. Scope basis = staff_locations (0038), the assignment SET (multi-location safe). SHIPPED end-to-end: Phase 0 #693 resolveViewerLocationIds foundation (viewer own-location resolver, DB-gated isolation test, no behaviour change); Phase 1 #694 app-layer scoping for reception+admin (listAppointments/listPatients/searchPatients WHERE location_id in viewer set, agenda location+therapist defaults; owner/therapist unchanged); Phase 2a #697 patients RLS migration 0047 (new role-neutral helper patient_visible_to_located_viewer mirroring patientLocationScope + no-lockout rule; does NOT reuse the stricter 0045 clinical helper; reception ALLOWED on demographics unlike clinical); Phase 2b #702 appointments RLS migration 0048 + appointment_conflicts SECURITY DEFINER fn (therapist own via practitioner_id/practitioner_2_id, admin+reception via location_id in staff_locations, owner all; the privileged read-only conflict fn sees the full all-therapist/all-location/all-patient set so room + cross-location double-booking is still caught - also FIXES the conflict-check regression that 2a introduced when the other appt's patient was not visible to the booker; Option A single-apply deploy, apply then merge immediately); Phase 3 #695 admin statistics:read granted + stat/KPI aggregates location-scoped (owner keeps all-locations); Phase 4 #696 admin panel reads/writes limited to admin's location(s); Phase 5 #700 reception working-hours-manage capability + /horarios editor scoped to their-location therapists. MIGRATIONS honoured apply-before-merge (the 0046 drift is the standing lesson): #697/#702 stayed DRAFT until Ivan applied 0047/0048 from the prod-apply worktree (ref-guard dfotoodqvmjhbdcxyaxf) and CYAN ran an independent read; only then merged. clinical_records 0045 untouched (already matched target). Not a launch gate - defense-in-depth over app rules already scoping reads. Blueprint #692."
+    },
+    {
+      "id": "PL-10",
+      "title": "Agenda name-line compacted - first + last name only, smaller, non-bold (owner feedback)",
+      "lane": "shipped",
+      "status": "shipped",
+      "owner_terminal": "green",
+      "gate": "green_self_merge",
+      "evidence": {
+        "kind": "pr",
+        "ref": "PR #704 - agenda-grid.test.tsx 24 pass (shortPatientName unit + render shortened-on-face/full-in-hover + text-xs/font-normal typography); lint 0-err, typecheck clean, build ok; self-merged on green per owner authorization 2026-07-30",
+        "at": "2026-07-30"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-30",
+      "notes": "Owner feedback 2026-07-30: the agenda patient name-line was too big, bold, and showed every middle name. Three changes, agenda grid line ONLY (apps/web/app/agenda/agenda-grid.tsx, AppointmentName): (1) new exported shortPatientName(fullName) helper - <=2 words unchanged, >2 words -> first + last only ('Abilio Jose de Carvalho Fernandes' -> 'Abilio Fernandes'); (2) typography text-sm -> text-xs and font-semibold -> font-normal; (3) render shortPatientName(appt.patientName) on the line. The W10-05/W12-33 hover popup is UNCHANGED and still carries the FULL name + all detail, so nothing is lost - only the one-line face is compacted. Marcacoes row + hover panel deliberately OUT OF SCOPE (owner named the agenda only). patients.full_name is a single column (no first/last split) so the shortener parses the one string, like the existing firstName()/initialsOf() helpers. e2e de-risked: every agenda e2e fixture is 'Maria Silva' (2 words, unchanged) and the toHaveCSS assertions check text-decoration-line not font. Staff-facing UI, non-migration; owner visual gate on the Vercel preview / prod after deploy. Loop: docs/loops/prelaunch/PL-10-agenda-name-line-compact.md."
     }
   ]
 }

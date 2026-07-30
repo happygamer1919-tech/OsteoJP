@@ -1,17 +1,21 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { AgendaGrid, groupBandPx } from "./agenda-grid";
+import { AgendaGrid, groupBandPx, shortPatientName } from "./agenda-grid";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
 // W11-00 v3 (owner ruling 2026-07-21 evening, Fisiozero list model): an
-// appointment is NOT a card. It is one line - the patient full name coloured in
+// appointment is NOT a card. It is one line - the patient name coloured in
 // the assigned therapist hue - and same-slot appointments stack VERTICALLY (one
 // name per line, full column width), never side by side. Nothing else is on the
 // grid face: no card container, background, stripe, dot, tint, icon, time,
 // service, or therapist text. The W10-05 hover popup is UNCHANGED and carries all
 // detail. Cancelled => line-through; a non-cancelled line is never struck.
+//
+// PL-10 (owner 2026-07-30): the visible line shows only FIRST + LAST name
+// (shortPatientName) at text-xs/font-normal to save space; the full name is still
+// carried by the hover popup. A name of <=2 words is shown unchanged.
 //
 // Rendered to static markup (node env, no jsdom); the grid's now-line timer does
 // not run under SSR, so the render is deterministic. The face is the <button>
@@ -124,12 +128,14 @@ function expectNameLine(face: string, patientName: string, therapistId: string, 
 describe("W11-00 v3 - appointment is a therapist-coloured name line (no card chrome)", () => {
   it("renders ONLY the patient name, coloured in the therapist hue, wrapping not truncating", () => {
     const html = render([appt({ patientName: "Maria Madalena dos Santos Figueiredo" })]);
+    // PL-10: the visible line is shortened to first + last; the full name is kept on the hover.
     expectNameLine(
-      faceFor(html, "Maria Madalena dos Santos Figueiredo"),
-      "Maria Madalena dos Santos Figueiredo",
+      faceFor(html, "Maria Figueiredo"),
+      "Maria Figueiredo",
       THERAPIST_A.id,
       THERAPIST_A.name,
     );
+    expect(html).toContain("Maria Madalena dos Santos Figueiredo"); // full name preserved (hover)
   });
 
   it("uses the SAME therapist source of truth as the old spine/dot (text = fill hue)", () => {
@@ -184,6 +190,40 @@ describe("W11-00 v3 - appointment is a therapist-coloured name line (no card chr
     expect(
       faceFor(render([appt({ status: "scheduled", confirmationState: "declined" })]), "Maria Silva"),
     ).not.toContain("line-through");
+  });
+});
+
+// PL-10 (owner 2026-07-30): the agenda name-line is compacted - first + last name
+// only (shortPatientName), rendered smaller (text-xs) and non-bold (font-normal)
+// to save horizontal space. The hover popup still carries the full name.
+describe("PL-10 - agenda name-line: first + last only, smaller, non-bold", () => {
+  it("shortPatientName keeps first + last, drops the middle names", () => {
+    expect(shortPatientName("Abílio José de Carvalho Fernandes")).toBe("Abílio Fernandes");
+    expect(shortPatientName("Maria Madalena dos Santos Figueiredo")).toBe("Maria Figueiredo");
+  });
+
+  it("shortPatientName leaves one- and two-word names unchanged", () => {
+    expect(shortPatientName("Madonna")).toBe("Madonna");
+    expect(shortPatientName("Maria Silva")).toBe("Maria Silva");
+  });
+
+  it("shortPatientName is whitespace-robust (collapses runs, trims edges, empty -> empty)", () => {
+    expect(shortPatientName("  Ana   Rita  Sousa  Melo ")).toBe("Ana Melo");
+    expect(shortPatientName("")).toBe("");
+  });
+
+  it("renders the shortened name on the grid face, full name preserved in the hover", () => {
+    const html = render([appt({ patientName: "Abílio José de Carvalho Fernandes" })]);
+    expect(visibleText(faceFor(html, "Abílio Fernandes"))).toBe("Abílio Fernandes");
+    expect(html).toContain("Abílio José de Carvalho Fernandes"); // hover carries the full name
+  });
+
+  it("renders the name-line smaller (text-xs) and non-bold (font-normal)", () => {
+    const face = faceFor(render([appt()]), "Maria Silva");
+    expect(face).toContain("text-xs");
+    expect(face).toContain("font-normal");
+    expect(face).not.toContain("text-sm");
+    expect(face).not.toContain("font-semibold");
   });
 });
 
