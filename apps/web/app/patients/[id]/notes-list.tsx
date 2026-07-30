@@ -17,17 +17,36 @@ import type { PatientNoteRevision } from "@/lib/patients/note-revisions";
  * always shown; when a note has been edited, the "editada por … · …" stamp is
  * shown beneath it.
  */
-export function NotesList({ notes }: { notes: PatientNoteRevision[] }) {
+/**
+ * PL-16: `onChanged` lets a caller that is NOT a server-rendered page refresh
+ * its own thread after an edit (the agenda notes board fetches through a server
+ * action, where router.refresh() would repaint the page behind the drawer but
+ * not the list inside it). Omitted -> the original router.refresh() behaviour,
+ * which is what the patient profile tab needs.
+ */
+export function NotesList({
+  notes,
+  onChanged,
+}: {
+  notes: PatientNoteRevision[];
+  onChanged?: () => void | Promise<void>;
+}) {
   return (
     <ul className="mt-4 flex flex-col gap-3">
       {notes.map((n) => (
-        <NoteItem key={n.id} note={n} />
+        <NoteItem key={n.id} note={n} onChanged={onChanged} />
       ))}
     </ul>
   );
 }
 
-function NoteItem({ note }: { note: PatientNoteRevision }) {
+function NoteItem({
+  note,
+  onChanged,
+}: {
+  note: PatientNoteRevision;
+  onChanged?: () => void | Promise<void>;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(note.content);
@@ -49,7 +68,8 @@ function NoteItem({ note }: { note: PatientNoteRevision }) {
         return;
       }
       setEditing(false);
-      router.refresh();
+      if (onChanged) await onChanged();
+      else router.refresh();
     });
   }
 

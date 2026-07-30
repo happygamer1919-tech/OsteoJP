@@ -1040,6 +1040,7 @@
   "batch.rebook": "Rebook",
   "batch.allResolved": "All missing appointments have been rebooked.",
   "appointment.noNote": "No note",
+  "appointment.notesEmpty": "No notes yet.",
   "appointment.nesaWarning": "Warning — NESA contraindication",
   "lote.checkbox": "Batch booking",
   "lote.count": "Appointment count",
