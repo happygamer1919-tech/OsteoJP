@@ -2251,3 +2251,40 @@ before any build, per the intake rule.
   NotesList/NotesComposer, no fork). PL-17 covers the other three surfaces: a Notas button
   per Marcacoes row, the agenda hover pinned to the LATEST note, and a ficha note that names
   and links to its marcacao (needs appointmentId in the note projection; column exists).
+
+## 2026-07-30 - Lurdes CR built and shipped: PL-14, PL-15b, PL-16, PL-17 (GREEN)
+
+All four non-migration cards from the intake shipped the same session, self-merged on
+green CI per the owner's standing authorization. #713, #714, #715, #716 on main.
+
+- **PL-14 (#713)** - the implicit-location rule is now ONE pure module
+  (lib/auth/location-choice.ts) applied to seven surfaces. A control renders only when
+  it offers more than one real choice; a single-clinic viewer gets no control and the
+  server pins the id, so removing the control also removes the `?location=` shortcut.
+  Two live defects closed on the way: the Equipa filter was fed the TENANT-wide location
+  list (that is how an LV-only admin was offered Castelo Branco), and the Agenda
+  therapist dropdown listed every staff member including CB-only therapists. "Assigned"
+  is now working hours UNION staff_locations - the hours-only derivation covered 5 of 11
+  members, so it was hiding most of a real team behind a specific-location view.
+  DELIBERATELY UNCHANGED: the Gerir modal's membership checkboxes, because
+  setStaffLocations writes exactly the posted set and a narrowed list would silently
+  drop a member's other-clinic membership.
+- **PL-15b (#714)** - the patient form now writes primary_location_id. The column, the
+  validation and createPatient have accepted it since 0045/R16; no UI ever sent it,
+  which is the whole cause of "Lurdes sees 4 of 7". updatePatient accepts it too now, so
+  a mis-filed or location-less patient is fixable from the UI. The migration half (0051
+  backfill) stays open and apply-before-merge.
+- **PL-16 (#715) / PL-17 (#716)** - the note thread the data has held since W12-13 is
+  now rendered everywhere it belongs: the booking panel (board + "Adicionar nota"), a
+  "Notas" button per Marcacoes row, the agenda hover labelled as the LATEST of N, and a
+  ficha note that names and opens its marcacao. No migration for any of it. packages/ui
+  Dialog gained optional confirm props so a present-only popup has one dismiss button.
+
+**Verification note worth keeping.** Two E2E lessons this session. (1) A Playwright run
+on the PL-14 branch failed four unrelated specs with 2-minute timeouts; a rerun with NO
+code change passed clean - degraded GitHub runners, the same condition that quarantined
+therapist-blocks.spec.ts:97. Do not "fix" code on one red E2E run without a rerun.
+(2) The opposite also happened: PL-15b's required clinic field broke ~10 specs for a
+REAL reason (the shared fillPatientForm helper did not fill it). Red E2E is only
+informative when you read which assertion failed - infra flake times out, a real
+regression fails an assertion the same way every retry.
