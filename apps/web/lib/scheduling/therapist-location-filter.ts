@@ -55,6 +55,30 @@ export function filterTherapistsByLocation<T extends TherapistLike>(
 }
 
 /**
+ * PL-14 - narrow a roster to the VIEWER's clinics (owner CR 2026-07-30). This is
+ * a different question from `filterTherapistsByLocation` above: that one answers
+ * "who works at the clinic the toolbar selected", this one answers "whose names
+ * may this viewer see at all". An LV-only admin was being shown all 16 staff,
+ * including CB-only therapists, because no such predicate existed.
+ *
+ * `scope = null` (owner, or an unassigned staffer) returns the list unchanged.
+ * A therapist with NO assignment anywhere is KEPT: they belong to no clinic, so
+ * dropping them would silently hide a real colleague behind a data-entry gap
+ * rather than isolate anything. Order preserved.
+ */
+export function filterRosterByViewerScope<T extends TherapistLike>(
+  therapists: readonly T[],
+  assignments: TherapistLocationAssignments,
+  scope: readonly string[] | null,
+): T[] {
+  if (!scope) return [...therapists];
+  return therapists.filter((t) => {
+    const assigned = assignments.get(t.id) ?? [];
+    return assigned.length === 0 || assigned.some((l) => scope.includes(l));
+  });
+}
+
+/**
  * W12-23 - the therapist options for the BOOKING drawer's dropdown: the location
  * team (same predicate as above), plus the currently-selected therapist kept in
  * the list even if they are not assigned to the chosen location, so editing an

@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { can, type RequestContext } from "@osteojp/auth";
 
 import { requireRequestContext } from "@/lib/auth/context";
+import { scopedLocationId } from "@/lib/auth/location-choice";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { getStatistics, type StatisticsFilters } from "@/lib/statistics/queries";
 import { getAgendaOptions } from "@/lib/scheduling/data";
 import { s } from "@/lib/i18n";
@@ -37,7 +39,7 @@ export default async function EstatisticasPainelPage({ searchParams }: { searchP
     from: firstParam(sp.from),
     to: firstParam(sp.to),
     therapistId: firstParam(sp.therapist),
-    locationId: firstParam(sp.location),
+    locationId: scopedLocationId(await viewerLocationScope(actor), firstParam(sp.location)),
     serviceId: firstParam(sp.service),
   };
 

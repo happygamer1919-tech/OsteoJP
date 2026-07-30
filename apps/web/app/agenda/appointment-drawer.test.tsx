@@ -327,3 +327,40 @@ describe("AppointmentDrawer — therapist self-lock on create (PL-10)", () => {
     expect(html).not.toContain('data-practitioner-id=');
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* PL-14 — implicit location. Owner CR 2026-07-30 (Lurdes, admin @ LV): */
+/* a staffer with one clinic must not be asked to pick it. The drawer   */
+/* already defaults to options.locations[0]; the control now disappears */
+/* when it would offer exactly one entry, and comes back the moment a   */
+/* real choice exists.                                                  */
+/* ------------------------------------------------------------------ */
+const ONE_LOCATION: AgendaOptions = {
+  ...options,
+  locations: [{ id: "loc-lv", label: "OsteoJP (LV)" }],
+};
+const TWO_LOCATIONS: AgendaOptions = {
+  ...options,
+  locations: [
+    { id: "loc-lv", label: "OsteoJP (LV)" },
+    { id: "loc-cb", label: "OsteoJP (CB)" },
+  ],
+};
+
+describe("AppointmentDrawer — implicit location (PL-14)", () => {
+  it("shows the clinic as a static line, not a picker, when only one is reachable", () => {
+    const html = render({ mode: "create" }, false, DEFAULT_VIEWER, ONE_LOCATION);
+    expect(html).toContain("OsteoJP (LV)");
+    expect(html).toContain('data-testid="appointment-fixed-location"');
+    // The "choose one" placeholder belongs to the Select and must be gone.
+    expect(html).not.toContain("Selecionar localização");
+  });
+
+  it("keeps the picker when the viewer really has two clinics", () => {
+    const html = render({ mode: "create" }, false, DEFAULT_VIEWER, TWO_LOCATIONS);
+    expect(html).toContain("Selecionar localização");
+    expect(html).toContain("OsteoJP (LV)");
+    expect(html).toContain("OsteoJP (CB)");
+    expect(html).not.toContain('data-testid="appointment-fixed-location"');
+  });
+});

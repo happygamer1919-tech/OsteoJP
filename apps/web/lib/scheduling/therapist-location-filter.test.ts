@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  filterRosterByViewerScope,
   filterTherapistsByLocation,
   therapistOptionsForBooking,
   type TherapistLocationAssignments,
@@ -145,5 +146,47 @@ describe("therapistOptionsForBooking - W12-23 booking dropdown scoping", () => {
 
   it("keepId is ignored under Todas (full list already includes it)", () => {
     expect(optsAt(null, TIAGO.id)).toEqual(ROSTER.map((t) => t.id));
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* PL-14 — the VIEWER-scope narrowing (owner CR 2026-07-30). Lurdes,    */
+/* admin at Linda-a-Velha, was shown all 16 staff including CB-only     */
+/* therapists; the roster now follows the same location axis her data   */
+/* already followed.                                                    */
+/* ------------------------------------------------------------------ */
+describe("filterRosterByViewerScope (PL-14)", () => {
+  const lv = "loc-lv";
+  const cb = "loc-cb";
+  const roster = [
+    { id: "t-lv" }, // Linda-a-Velha only
+    { id: "t-cb" }, // Castelo Branco only
+    { id: "t-both" }, // works at both
+    { id: "t-none" }, // no assignment anywhere
+  ];
+  const assignments = new Map<string, string[]>([
+    ["t-lv", [lv]],
+    ["t-cb", [cb]],
+    ["t-both", [lv, cb]],
+  ]);
+
+  it("an LV-scoped viewer never sees a CB-only therapist", () => {
+    const visible = filterRosterByViewerScope(roster, assignments, [lv]).map((t) => t.id);
+    expect(visible).toEqual(["t-lv", "t-both", "t-none"]);
+  });
+
+  it("keeps a therapist with no assignment at all (data gap, not isolation)", () => {
+    expect(filterRosterByViewerScope(roster, assignments, [cb]).map((t) => t.id)).toContain(
+      "t-none",
+    );
+  });
+
+  it("an unrestricted viewer (owner) sees the whole roster", () => {
+    expect(filterRosterByViewerScope(roster, assignments, null)).toHaveLength(4);
+  });
+
+  it("a two-clinic viewer sees both clinics' therapists", () => {
+    const visible = filterRosterByViewerScope(roster, assignments, [lv, cb]).map((t) => t.id);
+    expect(visible).toEqual(["t-lv", "t-cb", "t-both", "t-none"]);
   });
 });

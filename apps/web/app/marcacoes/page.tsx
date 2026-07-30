@@ -3,6 +3,8 @@ import { assertCan, can, ForbiddenError, type RequestContext } from "@osteojp/au
 
 import { requireRequestContext } from "@/lib/auth/context";
 import { listServices } from "@/lib/admin/services";
+import { scopedLocationId } from "@/lib/auth/location-choice";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
 import {
   addDays,
@@ -96,7 +98,10 @@ export default async function MarcacoesPage({
   if (lockTherapist) practitionerId = actor.userId;
   // W10-04 isolation: therapist loses the location switch; ignore any location
   // param for them (they are practitioner-locked to their own marcacoes).
-  const locationId = lockTherapist ? null : firstParam(sp.location);
+  // PL-14: for everyone else a single-clinic viewer has their clinic PINNED and
+  // an out-of-scope ?location= dropped, so the toolbar can drop the control.
+  const locationScope = await viewerLocationScope(actor);
+  const locationId = lockTherapist ? null : scopedLocationId(locationScope, firstParam(sp.location));
 
   // Presentation-only filters (client-side over the fetched window).
   const status = firstParam(sp.status);
