@@ -2,7 +2,7 @@
   "board": "OsteoJP - Pre-Launch Board",
   "schema_version": 1,
   "phase": "pre-launch",
-  "as_of": "2026-07-29",
+  "as_of": "2026-07-30",
   "renders_to": "claude.ai artifact (a RENDER of this file; this JSON is the source of truth)",
   "doctrine": "A board claim is never truth on its own. The evidence field carries the proof. GREEN updates this JSON at every checkpoint and re-renders. A card may not enter status=shipped with evidence=null; a launch gate may not be state=pass with evidence=null. See docs/board/BOARD-SPEC.md; enforced by docs/board/validate-board.mjs.",
   "lanes": [
@@ -282,6 +282,22 @@
       "blocked_on": null,
       "last_checkpoint": "2026-07-28",
       "notes": "DEFERRED to post-launch (owner 2026-07-28). Ativar login shows the set-password link on screen; Ivan creates logins himself and passes links directly, so emailed delivery is a nice-to-have, not a launch blocker. Enable later: INVITES_LIVE_SEND=true + RESEND_API_KEY + a verified osteojp.pt sender + STAFF_INVITE_REDIRECT_URL -> /auth/update-password."
+    },
+    {
+      "id": "PL-09",
+      "title": "Role + location access model - therapist own-scope, reception/admin location-scoped, owner all (6-phase build, post acceptance-test)",
+      "lane": "shipped",
+      "status": "shipped",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": {
+        "kind": "journal",
+        "ref": "migrations 0047 (patients) + 0048 (appointments + appointment_conflicts SECURITY DEFINER) applied to prod dfotoodqvmjhbdcxyaxf under apply-before-merge (PRs #697 + #702 held DRAFT until prod apply + CYAN independent read, then merged); both entries present in packages/db drizzle _journal.json on main; PRs #692/#693/#694/#695/#696/#697/#700/#702 merged",
+        "at": "2026-07-30"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-30",
+      "notes": "Owner-approved APPROACH 2026-07-29: proper phased build, each phase its own PR, ENABLED after the live acceptance test - never a broad RLS flip mid-test. Target model: therapist sees ONLY own clients + own agenda; reception sees ALL therapists/clients but ONLY their location AND owns schedule editing (horarios) for their-location therapists; admin = almost-owner but LIMITED to their location (KPI+stats+agenda+staff+clients); owner FULL everywhere. Scope basis = staff_locations (0038), the assignment SET (multi-location safe). SHIPPED end-to-end: Phase 0 #693 resolveViewerLocationIds foundation (viewer own-location resolver, DB-gated isolation test, no behaviour change); Phase 1 #694 app-layer scoping for reception+admin (listAppointments/listPatients/searchPatients WHERE location_id in viewer set, agenda location+therapist defaults; owner/therapist unchanged); Phase 2a #697 patients RLS migration 0047 (new role-neutral helper patient_visible_to_located_viewer mirroring patientLocationScope + no-lockout rule; does NOT reuse the stricter 0045 clinical helper; reception ALLOWED on demographics unlike clinical); Phase 2b #702 appointments RLS migration 0048 + appointment_conflicts SECURITY DEFINER fn (therapist own via practitioner_id/practitioner_2_id, admin+reception via location_id in staff_locations, owner all; the privileged read-only conflict fn sees the full all-therapist/all-location/all-patient set so room + cross-location double-booking is still caught - also FIXES the conflict-check regression that 2a introduced when the other appt's patient was not visible to the booker; Option A single-apply deploy, apply then merge immediately); Phase 3 #695 admin statistics:read granted + stat/KPI aggregates location-scoped (owner keeps all-locations); Phase 4 #696 admin panel reads/writes limited to admin's location(s); Phase 5 #700 reception working-hours-manage capability + /horarios editor scoped to their-location therapists. MIGRATIONS honoured apply-before-merge (the 0046 drift is the standing lesson): #697/#702 stayed DRAFT until Ivan applied 0047/0048 from the prod-apply worktree (ref-guard dfotoodqvmjhbdcxyaxf) and CYAN ran an independent read; only then merged. clinical_records 0045 untouched (already matched target). Not a launch gate - defense-in-depth over app rules already scoping reads. Blueprint #692."
     }
   ]
 }

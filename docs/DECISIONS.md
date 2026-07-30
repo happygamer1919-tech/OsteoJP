@@ -2009,3 +2009,40 @@ claim. Docs-only; owner-merge; YELLOW does not merge its own PR.
     the caller's tenant tx; any PL-09 restriction on appointments hides those rows
     -> silent double-booking. Needs the conflict queries elevated to SECURITY
     DEFINER first. Not built; its own ticket, after Phase 5.
+
+## 2026-07-30 - PL-09 completed end-to-end + board/handoff reconciled (GREEN)
+
+Closes the PL-09 role + location access model. Supersedes the 2026-07-29 note above
+that recorded Phase 2b as "not built; its own ticket."
+
+- **Phase 2b SHIPPED (#702), migration 0048.** The blocker was resolved as
+  designed: `appointment_conflicts` was added as a SECURITY DEFINER function so the
+  booking conflict check sees the full all-therapist / all-location / all-patient
+  set, and only THEN did appointments RLS restrict the caller (therapist own via
+  practitioner_id/practitioner_2_id; admin + reception via location_id in
+  staff_locations; owner all). This also fixed a real regression Phase 2a had
+  introduced: the room-clash check was silently missing clashes when the other
+  appointment's patient was not visible to the booker. Deployed Option A (apply
+  0048, then merge immediately so Vercel redeploys within minutes; controlled
+  pre-launch traffic makes the window negligible).
+- **Apply-before-merge honoured for both 0047 (#697) and 0048 (#702).** Both PRs
+  were held DRAFT until Ivan applied from the prod-apply worktree (ref-guard
+  dfotoodqvmjhbdcxyaxf) and CYAN ran an independent read; only then merged. Journal
+  idx 48 on main. The 0046 drift lesson held.
+- **Also merged:** #701 (docs: correct the prod project ref, retired jaxm... ->
+  dfoto...). CLAUDE.md now names dfotoodqvmjhbdcxyaxf as prod.
+- **Board reconciliation.** The board JSON had not been updated since #690
+  (readiness 7/9) and carried no PL-09 card despite the entire 6-phase build having
+  merged. Added a single PL-09 card (lane=shipped, gate=owner_merge,
+  evidence.kind=journal citing 0047+0048 applied + PRs #692..#702) and bumped
+  as_of to 2026-07-30. Validator green (22 cards, 12 shipped, launch readiness
+  unchanged at 7/9 - PL-09 is defense-in-depth, not a launch gate). Re-rendered.
+- **Handoff refreshed.** Wrote docs/handoff/PRELAUNCH-20260730.md mirroring the
+  board so repo ground truth survives chat boundaries (the prior handoff,
+  WAVE-12-CLOSE-20260727, predated PL-09 entirely).
+- **State of the run:** the executor feature queue is CLEAR. Every remaining board
+  card is owner/people-blocked (PL-04 rodica; INC-02a/b, JP-role-defect,
+  JP-mapping-frozen, INC-03, CANARY ivan; LE-ci-quarantine infra) or deferred
+  (PL-03b, LE-resend). Launch gates open: G2 (Ivan: live-SMS env + UI-booked
+  canary) and G8 (JP: lawyer RGPD sign-off). Open owner loose end: rotate the prod
+  DB password pasted in chat during the apply window.
