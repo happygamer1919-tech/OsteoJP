@@ -89,7 +89,11 @@ Portuguese (default), English (secondary). All user-facing strings via i18n keys
 - Anything that introduces a new third-party vendor
 
 ## Supabase setup
-- Project linked: `jaxmkwoxjcgzkwxgbayx`, region Central EU (Frankfurt).
+- PRODUCTION project: `dfotoodqvmjhbdcxyaxf` (the "new prod"), region Central EU
+  (Frankfurt). The prod DB connection lives in `~/osteojp-secrets/new-prod.env`
+  (`DATABASE_URL_DIRECT` = session pooler :5432 for migrations; `DATABASE_URL` =
+  transaction pooler :6543). The earlier ref `jaxmkwoxjcgzkwxgbayx` is the OLD prod
+  and is retired — do not target it.
 - Use the `supabase` CLI for all migrations and schema operations (`supabase db push`, `supabase migration new`).
 - `supabase-js` is used only for auth flows. Application-layer queries go through Drizzle ORM via `packages/db`.
 - `supabase/.branches/` and `supabase/.temp/` are gitignored. `supabase/migrations/` and `supabase/config.toml` are tracked.
