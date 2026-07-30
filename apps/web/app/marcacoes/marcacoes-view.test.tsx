@@ -81,6 +81,10 @@ function mkAppt(over: Partial<AgendaAppointment>): AgendaAppointment {
 }
 
 const OPTIONS: AgendaOptions = { therapists: [], locations: [], services: [], packs: [] };
+// PL-10: MarcacoesView forwards `viewer` to the shared drawer. This view only
+// opens the drawer in EDIT mode, so the therapist self-lock never fires here; a
+// non-therapist viewer keeps these render assertions on the unchanged surface.
+const VIEWER = { role: "reception" as const, userId: "recep-1" };
 
 const baseFilters = {
   from: "2026-07-20",
@@ -101,6 +105,7 @@ describe("MarcacoesView Serviço filter (W6-01b data-driven)", () => {
       <MarcacoesView
         filters={baseFilters}
         lockTherapist={false}
+        viewer={VIEWER}
         options={OPTIONS}
         serviceFilterOptions={SERVICES}
         canHardDelete={false}
@@ -127,6 +132,7 @@ describe("MarcacoesView Serviço filter (W6-01b data-driven)", () => {
       <MarcacoesView
         filters={{ ...baseFilters, service: "svc-osteo" }}
         lockTherapist={false}
+        viewer={VIEWER}
         options={OPTIONS}
         serviceFilterOptions={SERVICES}
         canHardDelete={false}
@@ -142,6 +148,7 @@ describe("MarcacoesView Serviço filter (W6-01b data-driven)", () => {
       <MarcacoesView
         filters={baseFilters}
         lockTherapist={false}
+        viewer={VIEWER}
         options={OPTIONS}
         serviceFilterOptions={SERVICES}
         canHardDelete={false}
@@ -158,6 +165,7 @@ describe("W9-06 items 9 + 10 - created-by provenance + note hover on marcacoes r
       <MarcacoesView
         filters={baseFilters}
         lockTherapist={false}
+        viewer={VIEWER}
         options={OPTIONS}
         serviceFilterOptions={SERVICES}
         canHardDelete={false}
@@ -204,6 +212,7 @@ describe("W12-00 - marcacoes row exposes an open/edit control", () => {
       <MarcacoesView
         filters={baseFilters}
         lockTherapist={false}
+        viewer={VIEWER}
         options={OPTIONS}
         serviceFilterOptions={SERVICES}
         canHardDelete={false}
@@ -228,6 +237,7 @@ describe("W12-00 - marcacoes row exposes an open/edit control", () => {
       <MarcacoesView
         filters={baseFilters}
         lockTherapist={false}
+        viewer={VIEWER}
         options={OPTIONS}
         serviceFilterOptions={SERVICES}
         canHardDelete={false}

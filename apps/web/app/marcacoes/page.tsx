@@ -138,6 +138,9 @@ export default async function MarcacoesPage({
     <MarcacoesView
       filters={filters}
       lockTherapist={lockTherapist}
+      // PL-10: forwarded to the shared drawer (self-lock is create-only, so it is
+      // inert here where the list opens edit mode; passed for prop-parity).
+      viewer={{ role: actor.role, userId: actor.userId }}
       options={options}
       serviceFilterOptions={serviceFilterOptions}
       appointments={appointments}

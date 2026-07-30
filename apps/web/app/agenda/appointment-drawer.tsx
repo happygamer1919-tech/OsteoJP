@@ -19,8 +19,10 @@ import {
 } from "@osteojp/ui";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { Role } from "@osteojp/auth";
 
 import { s } from "@/lib/i18n";
+import { isTherapistSelfLocked, shouldPreselectPrimaryService } from "@/lib/scheduling/self-lock-core";
 import { getPatientContraindications, searchPatientsAction } from "@/lib/patients/actions";
 import { matchedContraindications, type PatientContraindications } from "@/lib/scheduling/nesa";
 import {
@@ -118,6 +120,7 @@ export function AppointmentDrawer({
   options,
   anchor,
   canHardDelete,
+  viewer,
   onClose,
   onDone,
 }: {
@@ -125,11 +128,19 @@ export function AppointmentDrawer({
   options: AgendaOptions;
   anchor: string;
   canHardDelete: boolean;
+  // PL-10: the logged-in viewer's identity. When the viewer is a THERAPIST on
+  // the CREATE form, the drawer self-locks: practitioner is forced to `userId`
+  // and the Terapeuta selector is replaced by a static label of their own name.
+  // Owner/admin/reception are never self-locked (full dropdown, unchanged).
+  viewer: { role: Role; userId: string };
   onClose: () => void;
   onDone: () => void;
 }) {
   const toast = useToast();
   const editing = state.mode === "edit" ? state.appt : null;
+  // PL-10 — therapist self-booking self-lock (create form only). See prop doc.
+  const selfLocked = isTherapistSelfLocked(viewer.role, state.mode);
+  const selfUserId = viewer.userId;
   // W5-22: read-only navigation from the marcação edit view to the patient
   // profile(s). Client-side push, no data change.
   const router = useRouter();
@@ -164,7 +175,9 @@ export function AppointmentDrawer({
       patientId: lockedPatient?.value ?? "",
       serviceId: "",
       packId: "",
-      practitionerId: "",
+      // PL-10: a self-locked therapist's practitioner is forced to themselves ON
+      // OPEN (the value submit sends). Everyone else starts empty and picks one.
+      practitionerId: selfLocked ? selfUserId : "",
       patientTwoId: "",
       practitionerTwoId: "",
       locationId: options.locations[0]?.id ?? "",
@@ -176,7 +189,7 @@ export function AppointmentDrawer({
       notes: "",
       scope: "one",
     };
-  }, [editing, state, anchor, options.locations]);
+  }, [editing, state, anchor, options.locations, selfLocked, selfUserId]);
 
   const [form, setForm] = useState<FormState>(init);
   const [error, setError] = useState<string | null>(null);
@@ -417,10 +430,14 @@ export function AppointmentDrawer({
       const ids = r.ok ? r.data : [];
       // PL-06a: preselect the therapist's PRIMARY (oldest-first ids[0]) as the
       // default Serviço. This NEVER filters the Select — every active service
-      // stays offered. Only fires on a real Terapeuta change, never on mount,
-      // and never over a service the user already picked (applyDefaultService
-      // guards on empty).
-      if (userChangedTherapist.current && ids.length >= 1) applyDefaultService(ids[0]);
+      // stays offered, and applyDefaultService never overwrites a service the
+      // user already picked (it guards on empty). Fires on a real Terapeuta
+      // change OR — PL-10 — on OPEN when the form is therapist self-locked (the
+      // therapist can't change Terapeuta, so the preselect must run without a
+      // manual change). Still never fires on a plain create/edit mount.
+      if (shouldPreselectPrimaryService(userChangedTherapist.current, selfLocked) && ids.length >= 1) {
+        applyDefaultService(ids[0]);
+      }
     });
     // W4-12: on the SAME therapist-selection event, auto-fill Localização when
     // the therapist has exactly one active location. Independent fetch/setForm
@@ -464,6 +481,13 @@ export function AppointmentDrawer({
     [options.therapistLocationIds],
   );
   const therapistPool = options.allTherapists ?? options.therapists;
+  // PL-10: a self-locked therapist's own display name, looked up from the same
+  // tenant-wide roster the dropdown draws from (the name is DATA, not a string
+  // key). The therapist is a bookable staff member, so this always resolves;
+  // the empty fallback is defensive only.
+  const selfTherapistName = selfLocked
+    ? therapistPool.find((t) => t.id === selfUserId)?.label ?? ""
+    : "";
   // Scope ONLY after the user actively picks a location (userChangedLocation).
   // On open, the default location keeps the FULL list, so a therapist-first
   // booking is unaffected and an unassigned therapist stays bookable until the
@@ -730,23 +754,42 @@ export function AppointmentDrawer({
             therapist's default service (see the effect above) and stays
             editable for per-booking exceptions. */}
         <Field label={s["appointment.therapist"]} required>
-          {/* W12-23: options scoped to the selected location's team. */}
-          <Select
-            value={form.practitionerId}
-            onChange={(e) => {
-              userChangedTherapist.current = true;
-              set("practitionerId", e.target.value);
-            }}
-          >
-            <option value="">{s["appointment.selectTherapist"]}</option>
-            {therapistOptions.map((o) => (
-              <option key={o.id} value={o.id}>{o.label}</option>
-            ))}
-          </Select>
-          {noTherapistsAtLocation && (
-            <p className="mt-1 text-xs text-v2-text-secondary">
-              {s["appointment.noTherapistsAtLocation"]}
-            </p>
+          {selfLocked ? (
+            // PL-10: a therapist self-books. The practitioner is forced to
+            // themselves (form.practitionerId = own id, set on open) and the
+            // selector is replaced by a static, read-only label of their own
+            // name — they cannot book for anyone else. The id is already in form
+            // state (init), which is what submit sends. data-practitioner-id
+            // surfaces that forced value for the component test (no effects run
+            // in a static render, so state must be visible in the markup).
+            <div
+              aria-readonly="true"
+              data-practitioner-id={form.practitionerId}
+              className="flex items-center rounded border border-border-strong bg-surface-muted px-3 py-2 text-sm text-text-primary"
+            >
+              {selfTherapistName}
+            </div>
+          ) : (
+            <>
+              {/* W12-23: options scoped to the selected location's team. */}
+              <Select
+                value={form.practitionerId}
+                onChange={(e) => {
+                  userChangedTherapist.current = true;
+                  set("practitionerId", e.target.value);
+                }}
+              >
+                <option value="">{s["appointment.selectTherapist"]}</option>
+                {therapistOptions.map((o) => (
+                  <option key={o.id} value={o.id}>{o.label}</option>
+                ))}
+              </Select>
+              {noTherapistsAtLocation && (
+                <p className="mt-1 text-xs text-v2-text-secondary">
+                  {s["appointment.noTherapistsAtLocation"]}
+                </p>
+              )}
+            </>
           )}
         </Field>
 

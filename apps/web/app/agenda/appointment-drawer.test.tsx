@@ -2,6 +2,7 @@
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import type { Role } from "@osteojp/auth";
 import type { AgendaAppointment, AgendaOptions } from "@/lib/scheduling/types";
 
 // W3-01 — the lifecycle "Estado" selector must NOT render in the creation flow
@@ -96,13 +97,24 @@ const editAppt: AgendaAppointment = {
   createdAt: "2026-07-01T09:00:00.000Z",
 };
 
-function render(state: ModalState, canHardDelete = false): string {
+type Viewer = { role: Role; userId: string };
+// Default viewer for the pre-PL-10 tests: a non-therapist (reception) keeps the
+// full Terapeuta dropdown, so those tests observe the unchanged create form.
+const DEFAULT_VIEWER: Viewer = { role: "reception", userId: "recep-1" };
+
+function render(
+  state: ModalState,
+  canHardDelete = false,
+  viewer: Viewer = DEFAULT_VIEWER,
+  opts: AgendaOptions = options,
+): string {
   return renderToStaticMarkup(
     createElement(AppointmentDrawer, {
       state,
-      options,
+      options: opts,
       anchor: "2026-08-06",
       canHardDelete,
+      viewer,
       onClose: vi.fn(),
       onDone: vi.fn(),
     }),
@@ -225,5 +237,93 @@ describe("AppointmentDrawer - created-by / created-at provenance (W9-06 item 10)
   it("does not render the provenance line in the creation flow (no editing appt)", () => {
     const html = render({ mode: "create" });
     expect(html).not.toContain("Criado por");
+  });
+});
+
+// PL-10 — therapist self-booking self-lock on the CREATE form. A therapist's
+// practitioner is forced to themselves and the Terapeuta selector is hidden
+// (replaced by a static label of their OWN name); the FULL active service list
+// stays switchable (preselection is never restriction). Reception/owner/admin
+// keep the full dropdown, unchanged. The Select stub renders "Selecionar
+// terapeuta" (the placeholder <option>) iff the real Terapeuta Select renders,
+// so its presence/absence pins the self-lock. Preselection-ON-OPEN is
+// effect-driven (getTherapistServices is async in useEffect) and NOT observable
+// in a react-dom/server static render, so that half of the DoD is pinned by
+// self-lock-core.test.ts (the predicate) + the therapist-login e2e spec.
+describe("AppointmentDrawer — therapist self-lock on create (PL-10)", () => {
+  const SELF_LOCK_OPTIONS: AgendaOptions = {
+    therapists: [
+      { id: "therapist-self", label: "Dr. Self Terapeuta" },
+      { id: "therapist-other", label: "Dr. Outro Terapeuta" },
+    ],
+    // allTherapists is the roster the self-name lookup + dropdown draw from.
+    allTherapists: [
+      { id: "therapist-self", label: "Dr. Self Terapeuta" },
+      { id: "therapist-other", label: "Dr. Outro Terapeuta" },
+    ],
+    locations: [{ id: "loc-1", label: "Linda-a-Velha" }],
+    services: [
+      { id: "svc-primary", label: "Osteopatia", durationMin: 60, contraindicationSensitive: false },
+      // An UNRELATED active service the therapist is not mapped to — it MUST stay
+      // offered (serviceOptions = all active; preselection is not restriction).
+      { id: "svc-unrelated", label: "Drenagem Linfática", durationMin: 45, contraindicationSensitive: false },
+      { id: "svc-nesa", label: "NESA", durationMin: 30, contraindicationSensitive: true },
+    ],
+    packs: [],
+  };
+
+  const THERAPIST_VIEWER: Viewer = { role: "therapist", userId: "therapist-self" };
+
+  it("hides the Terapeuta Select for a therapist (no placeholder option)", () => {
+    const html = render({ mode: "create" }, false, THERAPIST_VIEWER, SELF_LOCK_OPTIONS);
+    expect(html).not.toContain("Selecionar terapeuta");
+  });
+
+  it("shows the therapist's OWN name as a static read-only label, and no other therapist", () => {
+    const html = render({ mode: "create" }, false, THERAPIST_VIEWER, SELF_LOCK_OPTIONS);
+    expect(html).toContain("Dr. Self Terapeuta");
+    expect(html).toContain('aria-readonly="true"');
+    // The other therapist must be entirely absent — they cannot book for anyone else.
+    expect(html).not.toContain("Dr. Outro Terapeuta");
+  });
+
+  it("forces the practitioner to the logged-in therapist ON OPEN", () => {
+    const html = render({ mode: "create" }, false, THERAPIST_VIEWER, SELF_LOCK_OPTIONS);
+    // The forced value surfaced for assertion (static render runs no effects).
+    expect(html).toContain('data-practitioner-id="therapist-self"');
+  });
+
+  it("keeps the FULL active service list switchable (preselection is not restriction)", () => {
+    const html = render({ mode: "create" }, false, THERAPIST_VIEWER, SELF_LOCK_OPTIONS);
+    // Every active service is still offered, INCLUDING the unrelated one — the
+    // discriminator that serviceOptions was NOT narrowed for the self-locked role.
+    expect(html).toContain("Osteopatia");
+    expect(html).toContain("Drenagem Linfática");
+    expect(html).toContain("NESA");
+  });
+
+  it("reception KEEPS the full Terapeuta dropdown (all therapists, no self-lock)", () => {
+    const html = render(
+      { mode: "create" },
+      false,
+      { role: "reception", userId: "recep-1" },
+      SELF_LOCK_OPTIONS,
+    );
+    expect(html).toContain("Selecionar terapeuta");
+    expect(html).toContain("Dr. Self Terapeuta");
+    expect(html).toContain("Dr. Outro Terapeuta");
+    // No self-lock read-only label for reception.
+    expect(html).not.toContain('data-practitioner-id=');
+  });
+
+  it("owner (JP) KEEPS the full dropdown — role 'owner' is never self-locked", () => {
+    const html = render(
+      { mode: "create" },
+      false,
+      { role: "owner", userId: "owner-1" },
+      SELF_LOCK_OPTIONS,
+    );
+    expect(html).toContain("Selecionar terapeuta");
+    expect(html).not.toContain('data-practitioner-id=');
   });
 });

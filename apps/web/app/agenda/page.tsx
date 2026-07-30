@@ -125,6 +125,10 @@ export default async function AgendaPage({
       anchor={anchor}
       filters={{ practitionerId, locationId }}
       lockTherapist={lockTherapist}
+      // PL-10: the verified viewer identity powers the create-form therapist
+      // self-lock (practitioner forced to self, Terapeuta selector hidden for
+      // role "therapist"). Read-scope isolation stays on `lockTherapist` above.
+      viewer={{ role: actor.role, userId: actor.userId }}
       options={options}
       appointments={appointments}
       blocks={blockSpans}
