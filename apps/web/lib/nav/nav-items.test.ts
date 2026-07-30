@@ -59,12 +59,28 @@ describe("navItemsForRole — role-aware nav gating", () => {
     expect(hrefs("therapist")).not.toContain("/clinical");
   });
 
-  it("reception sees Marcações and Invoicing but NEITHER Clinical NOR Review NOR Admin", () => {
+  it("reception sees Marcações, Horários and Invoicing but NEITHER Clinical NOR Review NOR Admin", () => {
     const r = hrefs("reception");
-    expect(r).toEqual(["/dashboard", "/agenda", "/patients", "/marcacoes", "/invoicing"]);
+    // PL-09 Phase 5: reception gains the Horários entry (schedule:read without
+    // settings:read); order follows the ALL array (after Marcações).
+    expect(r).toEqual([
+      "/dashboard",
+      "/agenda",
+      "/patients",
+      "/marcacoes",
+      "/horarios",
+      "/invoicing",
+    ]);
     expect(r).not.toContain("/clinical");
     expect(r).not.toContain("/clinical/review");
     expect(r).not.toContain("/admin");
+  });
+
+  it("PL-09 Phase 5: Horários nav is reception-only (owner/admin manage schedules in Equipa; therapist has no schedule:read)", () => {
+    const seesHorarios = (["owner", "admin", "therapist", "reception"] as const).filter(
+      (role) => hrefs(role).includes("/horarios"),
+    );
+    expect(seesHorarios).toEqual(["reception"]);
   });
 
   it("NO role sees the top-level Registos Clínicos (/clinical) section (ruling F)", () => {

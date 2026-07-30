@@ -129,4 +129,17 @@ describe("matrix lock — granted capabilities (escalation guard)", () => {
       expect(can(role, "roles:manage")).toBe(false);
     }
   });
+
+  it("PL-09 Phase 5: reception manages schedules but holds NO tenant settings", () => {
+    // Reception OWNS scheduling for their location (schedule:*), decoupled from
+    // settings:* — it must never gain tenant settings by that grant.
+    expect(can("reception", "schedule:read")).toBe(true);
+    expect(can("reception", "schedule:manage")).toBe(true);
+    expect(can("reception", "settings:read")).toBe(false);
+    expect(can("reception", "settings:manage")).toBe(false);
+    // owner + admin also manage schedules; therapist does not.
+    expect(can("owner", "schedule:manage")).toBe(true);
+    expect(can("admin", "schedule:manage")).toBe(true);
+    expect(can("therapist", "schedule:manage")).toBe(false);
+  });
 });

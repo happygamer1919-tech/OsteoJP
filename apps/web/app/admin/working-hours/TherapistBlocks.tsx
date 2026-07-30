@@ -71,11 +71,24 @@ export function TherapistBlocks({
   therapistName,
   blocks,
   labels,
+  // PL-09 Phase 5: the reception surface (/horarios) reuses this editor but posts
+  // to actions that redirect to /horarios instead of /admin/staff. Defaults keep
+  // the admin (Equipa) usage byte-identical.
+  actions = {
+    create: createTimeOffBlockAction,
+    update: updateTimeOffBlockAction,
+    remove: deleteTimeOffBlockAction,
+  },
 }: {
   therapistId: string;
   therapistName: string;
   blocks: BlockView[];
   labels: BlockLabels;
+  actions?: {
+    create: (fd: FormData) => Promise<void>;
+    update: (fd: FormData) => Promise<void>;
+    remove: (fd: FormData) => Promise<void>;
+  };
 }) {
   const [open, setOpen] = useState(false);
   const { ref, shown } = useAnimatedDialog(open);
@@ -158,7 +171,7 @@ export function TherapistBlocks({
                       {labels.edit}
                     </Button>
                     <form
-                      action={deleteTimeOffBlockAction}
+                      action={actions.remove}
                       onSubmit={() => setOpen(false)}
                     >
                       <input type="hidden" name="id" value={b.id} />
@@ -175,7 +188,7 @@ export function TherapistBlocks({
 
           {/* Create / edit form */}
           <form
-            action={editing ? updateTimeOffBlockAction : createTimeOffBlockAction}
+            action={editing ? actions.update : actions.create}
             onSubmit={() => setOpen(false)}
             className="flex flex-col gap-3 rounded-v2 border border-v2-border p-3"
             key={editing?.id ?? "new"}
