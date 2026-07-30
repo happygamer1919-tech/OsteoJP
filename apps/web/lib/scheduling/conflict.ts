@@ -1,12 +1,6 @@
 import "server-only";
-import { and, eq, gt, lt, ne, notInArray, sql, type SQL } from "drizzle-orm";
-import {
-  appointments,
-  availabilityTemplates,
-  patients,
-  timeOff,
-  type DbTx,
-} from "@osteojp/db";
+import { and, eq, gt, lt, sql } from "drizzle-orm";
+import { availabilityTemplates, timeOff, type DbTx } from "@osteojp/db";
 import {
   absencesOverlapping,
   evaluateAvailability,
@@ -14,14 +8,6 @@ import {
   type AvailabilityTemplate,
 } from "./availability";
 import type { ConflictInfo } from "./types";
-
-type ConflictRow = {
-  id: string;
-  patientName: string;
-  startsAt: Date;
-  endsAt: Date;
-  room: string | null;
-};
 
 /**
  * Conflicts for a candidate window, in two flavours:
@@ -45,68 +31,48 @@ export async function findConflicts(
     excludeIds?: string[];
   },
 ): Promise<ConflictInfo[]> {
-  // Shared predicates: not cancelled, half-open overlap, not one of our own rows.
-  const base: SQL[] = [
-    ne(appointments.status, "cancelled"),
-    lt(appointments.startsAt, args.endsAt),
-    gt(appointments.endsAt, args.startsAt),
-  ];
+  // PL-09 Phase 2b: conflict detection must see rows the caller's scoped RLS
+  // hides — a ROOM clash spans therapists, a THERAPIST clash spans locations, and
+  // (since 0047) the patient join would otherwise drop a conflict whose patient
+  // the booker cannot see. public.appointment_conflicts is SECURITY DEFINER: it
+  // runs the SAME therapist-overlap + room-overlap logic over ALL in-tenant
+  // appointments + patients (tenant-filtered inside), so booking stays correct.
   const exclude = (args.excludeIds ?? []).filter(Boolean);
-  if (exclude.length > 0) base.push(notInArray(appointments.id, exclude));
+  const excludeSql = exclude.length
+    ? sql`ARRAY[${sql.join(
+        exclude.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )}]::uuid[]`
+    : sql`NULL::uuid[]`;
+  const room = args.room?.trim() || null;
 
-  const selection = {
-    id: appointments.id,
-    patientName: patients.fullName,
-    startsAt: appointments.startsAt,
-    endsAt: appointments.endsAt,
-    room: appointments.room,
-  } as const;
-
-  const run = (conds: SQL[]) =>
-    tx
-      .select(selection)
-      .from(appointments)
-      .innerJoin(patients, eq(patients.id, appointments.patientId))
-      .where(and(...base, ...conds));
-
-  const room = args.room?.trim();
-  const [therapistRows, roomRows] = await Promise.all([
-    run([eq(appointments.practitionerId, args.practitionerId)]),
-    room
-      ? run([
-          eq(appointments.locationId, args.locationId),
-          sql`lower(${appointments.room}) = lower(${room})`,
-        ])
-      : Promise.resolve([] as ConflictRow[]),
-  ]);
-
-  const toInfo = (r: ConflictRow, kind: ConflictInfo["kind"]): ConflictInfo => ({
-    kind,
+  const result = await tx.execute(sql`
+    SELECT id, patient_name, starts_at, ends_at, room, kind
+    FROM public.appointment_conflicts(
+      ${args.practitionerId}::uuid,
+      ${args.locationId}::uuid,
+      ${room}::text,
+      ${args.startsAt},
+      ${args.endsAt},
+      ${excludeSql}
+    )
+  `);
+  const rows = result as unknown as Array<{
+    id: string;
+    patient_name: string;
+    starts_at: string | Date;
+    ends_at: string | Date;
+    room: string | null;
+    kind: ConflictInfo["kind"];
+  }>;
+  return rows.map((r) => ({
+    kind: r.kind,
     id: r.id,
-    patientName: r.patientName,
-    startsAt: r.startsAt.toISOString(),
-    endsAt: r.endsAt.toISOString(),
+    patientName: r.patient_name,
+    startsAt: new Date(r.starts_at).toISOString(),
+    endsAt: new Date(r.ends_at).toISOString(),
     room: r.room,
-  });
-
-  // Tag each match; an appointment can appear once per kind it conflicts on.
-  const seen = new Set<string>();
-  const out: ConflictInfo[] = [];
-  for (const r of therapistRows) {
-    const key = `therapist:${r.id}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      out.push(toInfo(r, "therapist"));
-    }
-  }
-  for (const r of roomRows) {
-    const key = `room:${r.id}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      out.push(toInfo(r, "room"));
-    }
-  }
-  return out;
+  }));
 }
 
 /**
