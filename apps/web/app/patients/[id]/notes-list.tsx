@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil } from "lucide-react";
+import { CalendarClock, Pencil } from "lucide-react";
 import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { editAppointmentNoteAction } from "@/lib/patients/actions";
@@ -27,14 +27,22 @@ import type { PatientNoteRevision } from "@/lib/patients/note-revisions";
 export function NotesList({
   notes,
   onChanged,
+  onOpenAppointment,
 }: {
   notes: PatientNoteRevision[];
   onChanged?: () => void | Promise<void>;
+  /**
+   * PL-17: when given, a note that belongs to a marcação gets a button that
+   * hands its id back so the caller can open that marcação's panel. Omitted ->
+   * the visit is still NAMED on the note, just not openable (the surfaces that
+   * are already scoped to one marcação have nothing to open).
+   */
+  onOpenAppointment?: (appointmentId: string) => void;
 }) {
   return (
     <ul className="mt-4 flex flex-col gap-3">
       {notes.map((n) => (
-        <NoteItem key={n.id} note={n} onChanged={onChanged} />
+        <NoteItem key={n.id} note={n} onChanged={onChanged} onOpenAppointment={onOpenAppointment} />
       ))}
     </ul>
   );
@@ -43,9 +51,11 @@ export function NotesList({
 function NoteItem({
   note,
   onChanged,
+  onOpenAppointment,
 }: {
   note: PatientNoteRevision;
   onChanged?: () => void | Promise<void>;
+  onOpenAppointment?: (appointmentId: string) => void;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -128,6 +138,29 @@ function NoteItem({
             {note.authorName ?? s["patients.noteSystemAuthor"]} ·{" "}
             {new Date(note.createdAt).toLocaleString("pt-PT")}
           </p>
+          {/* PL-17 — which marcação this note documents. Owner CR 2026-07-30:
+              "you can see the notes but it is not written to which appointment
+              related". A patient-level note has none and shows nothing. */}
+          {note.appointment && (
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-secondary">
+              <span data-testid="note-appointment-line">
+                {s["patients.noteAppointment"]}{" "}
+                {new Date(note.appointment.startsAt).toLocaleString("pt-PT")}
+                {note.appointment.practitionerName ? ` · ${note.appointment.practitionerName}` : ""}
+              </span>
+              {onOpenAppointment && (
+                <button
+                  type="button"
+                  data-testid="note-open-appointment"
+                  onClick={() => onOpenAppointment(note.appointment!.id)}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-medium text-accent-2-700 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                >
+                  <CalendarClock size={14} strokeWidth={1.75} aria-hidden="true" />
+                  {s["patients.noteOpenAppointment"]}
+                </button>
+              )}
+            </p>
+          )}
           {note.editedAt && (
             <p className="mt-0.5 text-xs italic text-text-secondary" data-testid="note-edited-stamp">
               {s["patients.noteEditedBy"]} {note.editedByName ?? s["patients.noteSystemAuthor"]} ·{" "}

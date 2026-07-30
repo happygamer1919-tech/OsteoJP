@@ -159,3 +159,38 @@ describe("W12-33 defect A - popup isolation + solid background", () => {
     expect(html).not.toMatch(/bg-\S+\/\d/); // no `/opacity` alpha on the background
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* PL-17 — the hover shows the LATEST note of the thread. It always did */
+/* (the read is order by created_at desc limit 1), but with the thread  */
+/* now visible in the drawer, Marcações and the ficha, the label must   */
+/* say so and how many notes exist - otherwise one note reads as the    */
+/* whole conversation.                                                  */
+/* ------------------------------------------------------------------ */
+describe("AppointmentHoverPanel — latest note of the thread (PL-17)", () => {
+  it("labels a lone note plainly", () => {
+    const html = renderToStaticMarkup(
+      AppointmentHoverPanel({ appt: appt({ notes: "trouxe exames", hasNote: true, noteCount: 1 }) }),
+    );
+    expect(html).toContain("trouxe exames");
+    expect(html).toContain("Nota da marcação");
+    expect(html).not.toContain("Última nota");
+  });
+
+  it("says which note it is showing when the thread has several", () => {
+    const html = renderToStaticMarkup(
+      AppointmentHoverPanel({
+        appt: appt({ notes: "confirmou por telefone", hasNote: true, noteCount: 3 }),
+      }),
+    );
+    expect(html).toContain("confirmou por telefone");
+    expect(html).toContain("Última nota (de 3)");
+  });
+
+  it("falls back to the plain label when the count is not projected", () => {
+    const html = renderToStaticMarkup(
+      AppointmentHoverPanel({ appt: appt({ notes: "sem contagem", hasNote: true }) }),
+    );
+    expect(html).toContain("Nota da marcação");
+  });
+});

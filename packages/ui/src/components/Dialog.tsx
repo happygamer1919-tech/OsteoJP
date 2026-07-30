@@ -28,8 +28,15 @@ export interface DialogProps {
   /** Optional leading icon (24px); color it with iconTone. */
   icon?: LucideIcon;
   iconTone?: "success" | "warning" | "error" | "info";
-  confirmLabel: ReactNode;
-  onConfirm: () => void;
+  /**
+   * The affirmative action. OPTIONAL since PL-17: a dialog that only PRESENTS
+   * something (a note thread, a detail panel) has nothing to confirm, and a
+   * second button that also just closes reads as a choice the reader does not
+   * have. Omit both `confirmLabel` and `onConfirm` for that case; the dismiss
+   * button then stands alone.
+   */
+  confirmLabel?: ReactNode;
+  onConfirm?: () => void;
   confirmVariant?: Extract<ButtonVariant, "primary" | "destructive">;
   confirmLoading?: boolean;
   cancelLabel: ReactNode;
@@ -104,13 +111,15 @@ export function Dialog({
           <Button variant="ghost" onClick={onClose}>
             {cancelLabel}
           </Button>
-          <Button
-            variant={confirmVariant}
-            loading={confirmLoading}
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </Button>
+          {onConfirm && (
+            <Button
+              variant={confirmVariant}
+              loading={confirmLoading}
+              onClick={onConfirm}
+            >
+              {confirmLabel}
+            </Button>
+          )}
         </div>
       </div>
     </dialog>

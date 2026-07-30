@@ -61,6 +61,9 @@ export type AgendaAppointment = {
   // Present-state existence of a per-visit note (W2-04). Drives the "Sem nota"
   // indicator on completed appointments; clears the moment a note is added.
   hasNote: boolean;
+  /** PL-17: total notes on this visit (thread length). Optional so existing
+   *  fixtures keep type-checking; absent is read as "unknown, show no count". */
+  noteCount?: number;
   // Audit provenance (W9-06, CB QA item 10) - who created the marcacao and when.
   // `createdBy` is the actor's user id, NULL for a patient portal booking (a
   // patient has no users row); `createdByName` is that user's display name,

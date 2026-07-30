@@ -60,6 +60,7 @@ function mapAppointment(r: {
   confirmationReceivedAt: Date | null;
   confirmationChannel: string | null;
   hasNote: boolean;
+  noteCount: number;
   createdBy: string | null;
   createdByName: string | null;
   createdAt: Date;
@@ -154,6 +155,15 @@ const appointmentSelection = {
     )
     or nullif(btrim(${appointments.notes}), '') is not null
   )`.as("has_note"),
+  // PL-17: how many notes this visit carries. The hover shows the LATEST note
+  // (the coalesce above); with a thread that is only honest if the reader can
+  // see there are others - "Última nota (de 3)". ::int because count() is a
+  // bigint, which the driver would hand back as a string.
+  noteCount: sql<number>`(
+    select count(*)::int from ${appointmentNotes}
+    where ${appointmentNotes.appointmentId} = ${appointments.id}
+      and ${appointmentNotes.tenantId} = ${appointments.tenantId}
+  )`.as("note_count"),
   // Audit provenance (W9-06, item 10). createdBy is nullable (portal bookings);
   // createdByName is resolved via the aliased LEFT join below, null when the
   // creator is not a staff user.
