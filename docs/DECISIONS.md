@@ -2206,3 +2206,15 @@ option; the recommended default was keep append-only). Built:
   (therapist scope, trim, blank, reception). e2e edit-flow added to notes-unification.spec.ts
   (edit → stamp → survives re-read). Gates: typecheck (db+web), lint 0-err, web unit 1424,
   build, journal 50/50, supabase sync. Q-PL-11-1 also answered (keep author-specific escape).
+
+## 2026-07-30 - PL-13 SHIPPED: 0050 applied+verified on prod, #709 merged (GREEN)
+
+Migration 0050 applied to prod (dfotoodqvmjhbdcxyaxf) under apply-before-merge. The apply
+used a DETACHED checkout of origin/notes/PL-13-editable-notes-stamps (git checkout
+origin/<branch>) because the branch was held by another worktree - the exact fix for the
+0049 no-op (a plain `git checkout <branch>` in the prod-apply worktree is rejected and
+silently leaves you on main). Independent read verified: edited_at + last_edited_by columns
+present, appointment_notes_tenant_update policy added, DELETE still denied, drizzle count
+49 -> 50. CI all green incl. DB-gated RLS + the new Playwright edit-flow e2e. #709 merged;
+edit UI deploys with the columns already on prod (DB-ahead window is safe - old app never
+selected the new columns). Board: PL-13 -> shipped; artifact re-published.
