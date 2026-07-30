@@ -69,11 +69,31 @@ In practice one per reception/admin; the scope is the assignment SET (multi-safe
   `searchPatients`, and default the agenda location + therapist dropdown to the
   viewer's assignment. Owner/therapist unchanged. Behavior change -> ENABLE AFTER
   the test.
-- **Phase 2 - RLS defense-in-depth (MIGRATION, apply-before-merge).** New RLS on
-  `appointments` and `patients`: therapist own (mirror `clinical_therapist_sees_
-  patient`), admin + reception their-location (mirror `clinical_admin_sees_
-  patient`), owner all. Isolation test in the SAME PR for every predicate. This is
-  the true security layer; app-layer Phase 1 becomes defense-in-depth over it.
+- **Phase 2 - RLS defense-in-depth (MIGRATION, apply-before-merge). SPLIT BY RISK
+  after recon 2026-07-29.**
+  - **Phase 2a - patients RLS (migration 0047, BUILT, staged for apply).** owner
+    all / admin + reception their-location / therapist own. Reuses
+    `clinical_therapist_sees_patient` (it matches `therapistPatientScope` exactly).
+    Does NOT reuse `clinical_admin_sees_patient`: that 0045 helper is STRICTER than
+    the patients app scope (its primary_location_id fallback is GATED on "no
+    appointments", and it ignores `patient_2_id`) - reusing it would hide rows the
+    app shows. New role-neutral helper `patient_visible_to_located_viewer` mirrors
+    `patientLocationScope` (unconditional fallback + patient_2_id) AND
+    `viewerLocationScope`'s no-lockout rule (unassigned admin/reception -> see all).
+    Isolation matrix in the same PR. Reception is ALLOWED (location) on
+    demographics, unlike clinical. Apply-before-merge; NOT self-merged.
+  - **Phase 2b - appointments RLS (BLOCKED on a design decision, see QUESTIONS.md).**
+    Any role/location restriction on `appointments` breaks booking conflict
+    detection. `conflict.ts` runs on the CALLER's tenant-scoped tx and needs rows
+    the caller's PL-09 scope would hide: the ROOM-clash query reads every
+    appointment in a location+room regardless of practitioner, and a therapist's
+    conflicts must be checked across ALL locations (a therapist cannot be in two
+    clinics at once). Location/own-scoping the reader -> the check misses conflicts
+    -> silent double-booking. Requires FIRST elevating the conflict queries
+    (`findConflicts` room+therapist branches, `findScheduleConflicts`) to SECURITY
+    DEFINER so they see the full location/therapist set, THEN appointments RLS can
+    safely restrict. App-code + migration + booking E2E: its own ticket, not a pure
+    migration.
 - **Phase 3 - admin statistics (CONFIRMED owner 2026-07-29).** Grant admin
   `statistics:read` + location-scope the stat/KPI aggregates to the admin's
   `staff_locations`. Owner keeps all-locations statistics.

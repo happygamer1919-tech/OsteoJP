@@ -1983,3 +1983,29 @@ claim. Docs-only; owner-merge; YELLOW does not merge its own PR.
   typed spec asked for it but the confirmation checkbox left it unchecked;
   statistics stays owner-only until reconfirmed (Phase 3 not built).
 - Full blueprint: docs/loops/prelaunch/PL-09-location-access-model.md.
+
+## 2026-07-29 - PL-09 Phase 2 split: patients RLS built, appointments RLS blocked
+
+- App-layer milestone COMPLETE + live: Phases 0/1/3/4 merged to main (#693, #694,
+  #695, #696). #695 (Phase 3 admin stats) had a REAL E2E failure - a stale
+  estatisticas owner-gate spec, not infra - fixed and merged.
+- Phase 2 (RLS defense-in-depth) SPLIT BY RISK after code recon:
+  - Phase 2a - patients RLS: BUILT as migration 0047 (packages/db + byte-identical
+    supabase copy, journal idx 46) with a full isolation matrix
+    (patients-location-rls.test.ts). Gates green locally: lint 0-err, typecheck 9/9,
+    test 1392 passed (the DB-gated test skips without DATABASE_URL; CI runs it),
+    build ok. Apply-before-merge: staged for Ivan's prod apply + CYAN verify, NOT
+    self-merged (migration doctrine outranks the general self-merge delegation).
+  - Correctness note: did NOT reuse clinical_admin_sees_patient (0045) - it is
+    STRICTER than the patients app scope (its primary_location_id fallback is gated
+    on "no appointments", and it ignores patient_2_id), so reusing it would hide
+    rows the app shows. New helper patient_visible_to_located_viewer mirrors
+    patientLocationScope + viewerLocationScope's no-lockout rule exactly. Reused
+    clinical_therapist_sees_patient (exact match to therapistPatientScope).
+    Reception is ALLOWED (location-scoped) on demographics, unlike clinical.
+  - Phase 2b - appointments RLS: BLOCKED on a design decision (logged to
+    QUESTIONS.md). conflict.ts (booking) reads cross-practitioner (room clash) and
+    cross-location (a therapist can't be in two clinics at once) appointments under
+    the caller's tenant tx; any PL-09 restriction on appointments hides those rows
+    -> silent double-booking. Needs the conflict queries elevated to SECURITY
+    DEFINER first. Not built; its own ticket, after Phase 5.

@@ -745,3 +745,23 @@ W12-21 palette. This keeps the current PR within its UI/UX + wiring boundary.
   (createAppointment → enqueueAppointmentReminders), so the canary appointment must
   be BOOKED THROUGH THE UI (a raw DB insert won't trigger it). Book at now + 24h +
   15min to make the 24h reminder fire ~15 min later.
+
+- [ ] PL-09 Phase 2b (appointments RLS) - DESIGN DECISION before build. This is
+  defense-in-depth, NOT an open access gap (Phase 1 already scopes appointment
+  reads for reception/admin at the app layer), so it is safe to schedule as its own
+  ticket. Context: appointments CANNOT carry PL-09 role/location RLS as-is.
+  `conflict.ts` runs on the caller's tenant-scoped tx and legitimately reads rows a
+  PL-09 scope would hide: (a) EVERY appointment in a location+room regardless of
+  practitioner (room clash), and (b) a therapist's appointments across ALL locations
+  (a therapist cannot be in two clinics at once). If appointments RLS restricts the
+  caller to their own/location rows, the conflict check silently misses clashes ->
+  double-booking. FIX: elevate the three conflict queries (`findConflicts` room +
+  therapist branches, `findScheduleConflicts`) to SECURITY DEFINER functions
+  (tenant-filtered on jwt_tenant_id) that return the full conflict set, THEN apply
+  appointments RLS (therapist own via practitioner_id/practitioner_2_id; admin +
+  reception location via appointments.location_id ∈ staff_locations, with the same
+  no-lockout rule as 0047; owner all). Ship with booking E2E proving create +
+  reschedule still detect room and cross-location therapist clashes as a therapist
+  AND as reception. RECOMMENDATION (default): ship Phase 2a (patients RLS, migration
+  0047, already built + staged) now; do Phase 2b as the next migration after Phase 5.
+  Blast radius is the booking hot path, hence a dedicated ticket, not folded in.
