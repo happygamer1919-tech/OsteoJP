@@ -159,6 +159,11 @@ export function parseUpdatePatient(raw: UpdatePatientInput): UpdatePatientValues
   if ("contraindicationOther" in r) out.contraindicationOther = r.contraindicationOther === true;
   if ("contraindicationOtherNote" in r)
     out.contraindicationOtherNote = optionalText(r.contraindicationOtherNote, "contraindicationOtherNote", 500);
+  // PL-15b — the clinic is editable (create already accepted it; update did not,
+  // so a mis-filed or location-less patient could never be corrected from the UI).
+  // Absent key = untouched; "" = cleared; a uuid is tenant-checked in the action.
+  if ("primaryLocationId" in r)
+    out.primaryLocationId = optionalUuid(r.primaryLocationId, "primaryLocationId");
   return out;
 }
 

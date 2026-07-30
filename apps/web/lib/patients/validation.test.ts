@@ -109,6 +109,20 @@ describe("parseUpdatePatient", () => {
     expect(() => parseUpdatePatient({ email: "bad" })).toThrow(ValidationError);
   });
 
+  // PL-15b — the clinic became editable. Create already accepted it; update did
+  // not, so a patient filed at the wrong clinic (or at none, which is every
+  // patient registered before PL-15b) could never be corrected from the UI.
+  it("accepts the clinic on update, clearing it on explicit empty", () => {
+    const id = "11111111-1111-1111-1111-111111111111";
+    expect(parseUpdatePatient({ primaryLocationId: id })).toEqual({ primaryLocationId: id });
+    expect(parseUpdatePatient({ primaryLocationId: "" })).toEqual({ primaryLocationId: null });
+    expect("primaryLocationId" in parseUpdatePatient({ phone: "912345678" })).toBe(false);
+  });
+
+  it("rejects a clinic id that is not a uuid", () => {
+    expect(() => parseUpdatePatient({ primaryLocationId: "loc-lv" })).toThrow(ValidationError);
+  });
+
   it("includes profession only when provided, clearing on explicit empty (W2-02 item 5)", () => {
     expect(parseUpdatePatient({ profession: "Osteopata" })).toEqual({ profession: "Osteopata" });
     expect(parseUpdatePatient({ profession: "" })).toEqual({ profession: null });

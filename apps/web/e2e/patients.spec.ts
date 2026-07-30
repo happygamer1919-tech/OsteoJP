@@ -285,3 +285,33 @@ test("a patient from another tenant is not accessible (404)", async ({ page }) =
   expect(resp?.status()).toBe(404);
   await expect(page.getByText(PATIENT_OTHER_TENANT.name)).toHaveCount(0);
 });
+
+// ---------------------------------------------------------------------------
+// PL-15b — the patient's clinic
+// ---------------------------------------------------------------------------
+// Owner CR 2026-07-30: a patient must be filed at a clinic, because that is what
+// makes them visible to that clinic's reception/admin (0047 RLS reads
+// primary_location_id when the patient has no appointment yet). The form never
+// sent it, so every patient registered since 0045 was location-less and visible
+// only to the owner and whoever created them.
+test("PL-15b: a new patient is filed at a clinic, and the clinic shows on the profile", async ({
+  page,
+}) => {
+  const name = `Clinica ${uniq()}`;
+  await page.goto("/patients/new");
+
+  // The seeded admin has no staff_locations, so they get the full picker: the
+  // clinic is a REQUIRED choice, not a silent default.
+  const clinic = page.getByLabel(/Localização/i);
+  await expect(clinic).toBeVisible();
+  const chosen = (await clinic.locator("option").nth(1).textContent())?.trim() ?? "";
+  expect(chosen.length).toBeGreaterThan(0);
+
+  await fillPatientForm(page, { fullName: name });
+  await page.getByRole("button", { name: "Criar Paciente" }).click();
+  await expect(page).toHaveURL(/\/patients\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+
+  // The clinic is on the identity line of the patient's own record.
+  await expect(page.getByRole("heading", { name })).toBeVisible();
+  await expect(page.getByText(chosen, { exact: false }).first()).toBeVisible();
+});

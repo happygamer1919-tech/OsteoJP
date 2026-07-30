@@ -13,7 +13,7 @@ import { notFound } from "next/navigation";
 
 import { getRequestContext } from "../../../lib/auth/context";
 import { listRecords, type RecordStatus } from "../../../lib/clinical/records";
-import { listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
+import { listActiveLocations, listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
 import { formatPatientNumber } from "../../../lib/patients/format";
 import { getPatient, getPatientHardDeleteBlockers } from "../../../lib/patients/queries";
 import { listPatientDocuments } from "../../../lib/patients/documents";
@@ -97,6 +97,13 @@ export default async function PatientProfilePage({
 
   const patient = await getPatient(id, { includeDeleted: true });
   if (!patient) notFound();
+
+  // PL-15b: the patient's clinic, resolved for the identity line. Null when the
+  // patient has none (pre-PL-15b registrations) - shown as absent, never guessed.
+  const patientLocationName = patient.primaryLocationId
+    ? ((await listActiveLocations(ctx)).find((l) => l.id === patient.primaryLocationId)?.name ??
+      null)
+    : null;
 
   const canReadClinical = can(ctx.role, "clinical_records:read");
   // Documentos tab: every staff role can view/upload administrative patient
@@ -232,7 +239,7 @@ export default async function PatientProfilePage({
                   <StatusChip tone="error">{s["patients.deletedBadge"]}</StatusChip>
                 ) : null}
               </div>
-              <p className="text-sm text-text-secondary">{identityLine(patient)}</p>
+              <p className="text-sm text-text-secondary">{identityLine(patient, patientLocationName)}</p>
               <p className="text-sm text-text-secondary">{contactLine(patient)}</p>
             </div>
           </div>
@@ -502,12 +509,14 @@ function initials(name: string): string {
   return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0] ?? "").join("").toUpperCase() || "?";
 }
 
-function identityLine(p: Patient): string {
+function identityLine(p: Patient, locationName?: string | null): string {
   const parts: string[] = [];
   const age = ageFrom(p.dateOfBirth);
   if (age !== null) parts.push(`${age} ${s["patients.ageSuffix"]}`);
   if (p.sex) parts.push(formatSex(p.sex));
   if (p.nif) parts.push(`${s["patients.fieldNif"]} ${p.nif}`);
+  // PL-15b: the patient's clinic, on the identity line of their own record.
+  if (locationName) parts.push(locationName);
   return parts.join(" · ") || "—";
 }
 function contactLine(p: Patient): string {

@@ -7,6 +7,7 @@ import { Suspense } from "react";
 import { getRequestContext } from "../../lib/auth/context";
 import { s } from "../../lib/i18n";
 import { formatPatientNumber } from "../../lib/patients/format";
+import { listActiveLocations } from "../../lib/invoices/queries";
 import { listPatients, searchPatients } from "../../lib/patients/queries";
 import type { Patient } from "../../lib/patients/types";
 import { SearchBox } from "./_components/search-box";
@@ -48,16 +49,29 @@ function Avatar({ name }: { name: string }) {
 // rendered only when present (NIF may be absent; patient_number is NOT NULL
 // post-backfill but still checked defensively), joined " · " like the
 // profile page's identityLine().
-function personSecondaryLine(patient: Patient): string | null {
+function personSecondaryLine(
+  patient: Patient,
+  locationName?: string | null,
+): string | null {
   const parts = [
     patient.nif ? `${s["patients.fieldNif"]} ${patient.nif}` : null,
     patient.patientNumber ? `${s["patients.patientNumber"]} ${formatPatientNumber(patient.patientNumber)}` : null,
+    // PL-15b: which clinic the patient belongs to. Absent for a patient whose
+    // location was never set - deliberately blank rather than guessed, and the
+    // one thing that makes them invisible to that clinic's staff.
+    locationName ?? null,
   ].filter((p): p is string => p !== null);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-function PersonCell({ patient }: { patient: Patient }) {
-  const secondaryLine = personSecondaryLine(patient);
+function PersonCell({
+  patient,
+  locationName,
+}: {
+  patient: Patient;
+  locationName?: string | null;
+}) {
+  const secondaryLine = personSecondaryLine(patient, locationName);
   return (
     <div className="flex items-center gap-3">
       <Avatar name={patient.fullName} />
@@ -137,9 +151,16 @@ export default async function PatientsPage({
 }
 
 async function PatientsResults({ query }: { query: string }) {
-  const rows: Patient[] = query
-    ? await searchPatients(query)
-    : await listPatients();
+  const ctx = await getRequestContext();
+  // PL-15b: the clinic name for each row's secondary line. listActiveLocations is
+  // RLS-scoped and tiny (three rows), so this is a name lookup, not a join.
+  const [rows, locations]: [Patient[], { id: string; name: string }[]] = await Promise.all([
+    query ? searchPatients(query) : listPatients(),
+    ctx ? listActiveLocations(ctx) : Promise.resolve([]),
+  ]);
+  const locationName = new Map(locations.map((l) => [l.id, l.name]));
+  const nameOf = (patient: Patient) =>
+    patient.primaryLocationId ? (locationName.get(patient.primaryLocationId) ?? null) : null;
 
   // Zero-patients: a first-run welcome with the create action. W7-03 removed the
   // decorative motif band; the empty state is icon, title, subtitle, action.
@@ -206,7 +227,7 @@ async function PatientsResults({ query }: { query: string }) {
                 className="relative border-b border-v2-border transition-colors duration-fast ease-standard last:border-0 hover:bg-v2-green-50"
               >
                 <td className="py-3 pr-4 align-middle">
-                  <PersonCell patient={p} />
+                  <PersonCell patient={p} locationName={nameOf(p)} />
                   <Link
                     href={`/patients/${p.id}`}
                     aria-label={`${s["patients.openLabel"]}: ${p.fullName}`}
@@ -233,7 +254,7 @@ async function PatientsResults({ query }: { query: string }) {
       {/* Mobile: stacked rows, same single-tab-stop link semantics. */}
       <ul className="divide-y divide-v2-border sm:hidden">
         {rows.map((p) => {
-          const secondaryLine = personSecondaryLine(p);
+          const secondaryLine = personSecondaryLine(p, nameOf(p));
           return (
             <li key={p.id}>
               <Link
