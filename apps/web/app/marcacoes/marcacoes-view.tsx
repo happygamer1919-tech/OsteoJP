@@ -2,6 +2,7 @@
 
 import {
   DatePicker,
+  Dialog,
   EmptyState,
   GlassCard,
   GlassPanel,
@@ -12,7 +13,7 @@ import {
   ToastProvider,
 } from "@osteojp/ui";
 import type { AppointmentTone } from "@osteojp/ui";
-import { CalendarClock, MapPin, Repeat, Search, TriangleAlert, User } from "lucide-react";
+import { CalendarClock, FileText, MapPin, Repeat, Search, TriangleAlert, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { Role } from "@osteojp/auth";
@@ -40,6 +41,7 @@ import { EstadoMarker } from "../agenda/estado-marker";
 // cloneAppointment). No parallel edit path, no schema change: the list row was
 // the only appointment surface with no open/edit affordance (CB GRAVE).
 import { AppointmentDrawer, type ModalState } from "../agenda/appointment-drawer";
+import { AppointmentNotesBoard } from "../agenda/appointment-notes-board";
 
 type StringKey = keyof typeof s;
 
@@ -179,11 +181,14 @@ function AppointmentRow({
   appt,
   conflicting,
   onOpen,
+  onOpenNotes,
 }: {
   appt: AgendaAppointment;
   conflicting: boolean;
   /** W12-00: opens this marcacao in the shared AppointmentDrawer (edit mode). */
   onOpen: (appt: AgendaAppointment) => void;
+  /** PL-17: opens this marcacao's note thread in a popup. */
+  onOpenNotes: (appt: AgendaAppointment) => void;
 }) {
   // W12-11 R10: the estado drives the leading glyph + the name strikethrough
   // (Falta only). `cancelled` still de-emphasises the service chip below.
@@ -270,6 +275,20 @@ function AppointmentRow({
             interactive contract forbids nested interactive children) opens the
             SAME AppointmentDrawer in edit mode. The aria-label carries the patient
             name so screen readers disambiguate one row's control from the next. */}
+        {/* PL-17 (owner CR 2026-07-30): the note thread of THIS marcacao, one
+            press away from the list. Same board the booking panel renders, so a
+            note written here shows in the drawer, the hover and the ficha. */}
+        <button
+          type="button"
+          onClick={() => onOpenNotes(appt)}
+          aria-label={`${s["marcacoes.notes"]}: ${appt.patientName}`}
+          data-testid="marcacoes-notes-button"
+          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+        >
+          <FileText size={16} strokeWidth={1.75} aria-hidden="true" />
+          {s["marcacoes.notes"]}
+        </button>
+
         <button
           type="button"
           onClick={() => onOpen(appt)}
@@ -316,6 +335,8 @@ export function MarcacoesView({
   // stay on the agenda. Reuses the drawer's existing wiring with zero logic
   // duplication.
   const [modal, setModal] = useState<ModalState | null>(null);
+  // PL-17: the marcacao whose note thread is open in the popup, or null.
+  const [notesFor, setNotesFor] = useState<AgendaAppointment | null>(null);
 
   // W5-02 patient-name search: client-side, presentation-only filter over the
   // already-fetched (role-scoped) window, same tier as the Status/Serviço
@@ -530,6 +551,7 @@ export function MarcacoesView({
                       appt={a}
                       conflicting={conflicts.has(a.id)}
                       onOpen={(appt) => setModal({ mode: "edit", appt })}
+                      onOpenNotes={(appt) => setNotesFor(appt)}
                     />
                   ))}
                 </div>
@@ -546,6 +568,20 @@ export function MarcacoesView({
         appointment's own start), passed here as the range start for completeness.
         Every server action + the permission matrix live inside the drawer,
         unchanged; this view only supplies the entry point. */}
+    {/* PL-17: the note thread of one marcacao, in a dialog over the list. The
+        board is the SAME component the booking panel renders, so reception and
+        therapists exchange notes in one place whichever screen they are on. */}
+    {notesFor && (
+      <Dialog
+        open
+        onClose={() => setNotesFor(null)}
+        title={`${s["marcacoes.notes"]} · ${notesFor.patientName}`}
+        cancelLabel={s["common.close"]}
+      >
+        <AppointmentNotesBoard appointmentId={notesFor.id} />
+      </Dialog>
+    )}
+
     {modal && (
       <AppointmentDrawer
         state={modal}
