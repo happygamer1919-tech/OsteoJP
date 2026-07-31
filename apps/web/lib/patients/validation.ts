@@ -15,6 +15,9 @@ export type CreatePatientInput = {
   dateOfBirth?: string | null;
   sex?: string | null;
   nif?: string | null;
+  // PL-23 — health insurance plans, a list because a patient may hold more than
+  // one. Entries arrive from the form and are normalized/capped below.
+  healthInsuranceNumbers?: HealthInsuranceEntry[] | null;
   email?: string | null;
   phone?: string | null;
   address?: string | null;
@@ -46,6 +49,7 @@ export type CreatePatientValues = {
   dateOfBirth: string | null;
   sex: string | null;
   nif: string | null;
+  healthInsuranceNumbers: HealthInsuranceEntry[];
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -64,6 +68,16 @@ export type CreatePatientValues = {
 export type UpdatePatientValues = Partial<CreatePatientValues>;
 
 export type MergePatientsInput = { survivorId: string; loserId: string };
+
+/** PL-23 — one health-insurance plan: the number, and who it is with. */
+export type HealthInsuranceEntry = { insurer: string | null; number: string };
+
+/**
+ * At most this many plans per patient. Not a clinical limit - a bound, so a
+ * scripted caller cannot push an unbounded array into a jsonb column that is
+ * read on every patient page.
+ */
+export const MAX_HEALTH_INSURANCE_ENTRIES = 10;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -124,6 +138,34 @@ function optionalSex(v: unknown): string | null {
   return t;
 }
 
+/**
+ * PL-23 — normalize the insurance list: trim, drop entries with no NUMBER (an
+ * insurer with no number is not a plan, it is a half-filled row the user
+ * abandoned), cap the count and each field's length.
+ *
+ * An absent key returns null so `parseUpdatePatient` can leave the column
+ * untouched; an explicitly EMPTY array is a real value meaning "this patient
+ * has no plans", and clears the column.
+ */
+function optionalInsuranceList(v: unknown): HealthInsuranceEntry[] | null {
+  if (v === undefined || v === null) return null;
+  if (!Array.isArray(v)) throw new ValidationError("healthInsuranceNumbers must be a list");
+  if (v.length > MAX_HEALTH_INSURANCE_ENTRIES) {
+    throw new ValidationError("too many health insurance entries");
+  }
+  const out: HealthInsuranceEntry[] = [];
+  for (const raw of v) {
+    if (typeof raw !== "object" || raw === null) {
+      throw new ValidationError("healthInsuranceNumbers entries must be objects");
+    }
+    const entry = raw as Record<string, unknown>;
+    const number = optionalText(entry.number, "insurance number", 60);
+    if (number === null) continue;
+    out.push({ insurer: optionalText(entry.insurer, "insurer", 120), number });
+  }
+  return out;
+}
+
 function optionalUuid(v: unknown, field: string): string | null {
   if (v === undefined || v === null) return null;
   if (typeof v !== "string") throw new ValidationError(`${field} must be a UUID`);
@@ -140,6 +182,7 @@ export function parseCreatePatient(raw: CreatePatientInput): CreatePatientValues
     dateOfBirth: optionalDate(r.dateOfBirth),
     sex: optionalSex(r.sex),
     nif: optionalText(r.nif, "nif", 20),
+    healthInsuranceNumbers: optionalInsuranceList(r.healthInsuranceNumbers) ?? [],
     email: optionalEmail(r.email),
     phone: optionalText(r.phone, "phone", 32),
     address: optionalText(r.address, "address", 500),
@@ -165,6 +208,9 @@ export function parseUpdatePatient(raw: UpdatePatientInput): UpdatePatientValues
   if ("dateOfBirth" in r) out.dateOfBirth = optionalDate(r.dateOfBirth);
   if ("sex" in r) out.sex = optionalSex(r.sex);
   if ("nif" in r) out.nif = optionalText(r.nif, "nif", 20);
+  if ("healthInsuranceNumbers" in r) {
+    out.healthInsuranceNumbers = optionalInsuranceList(r.healthInsuranceNumbers) ?? [];
+  }
   if ("email" in r) out.email = optionalEmail(r.email);
   if ("phone" in r) out.phone = optionalText(r.phone, "phone", 32);
   if ("address" in r) out.address = optionalText(r.address, "address", 500);
