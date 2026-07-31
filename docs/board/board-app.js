@@ -25,7 +25,12 @@
 
   /* ---------------------------------------------------------------- data -- */
   var SEED = JSON.parse(document.getElementById("board-data").textContent);
-  var STORAGE_KEY = "osteojp-board:" + (SEED.board || "board") + ":v" + (SEED.schema_version || 1);
+  // PORTAL_GEN is bumped whenever the app's own data handling changes shape. The
+  // v1 board stored its snapshot under the un-generationed key, and a browser
+  // that had used it would otherwise resurrect that stale copy (16 cards) over
+  // a freshly published 31-card seed. Storage is per generation, per schema.
+  var PORTAL_GEN = "p2";
+  var STORAGE_KEY = "osteojp-board:" + (SEED.board || "board") + ":v" + (SEED.schema_version || 1) + ":" + PORTAL_GEN;
   var UI_KEY = STORAGE_KEY + ":ui";
 
   var KIND_LANES = ["in_flight", "rodica_batch", "incidents", "loose_ends"];
@@ -89,6 +94,7 @@
     shippedOpen: false,
   };
   var undoStack = [];
+  var seedNoticeDismissed = false;
   var drawerId = null;
   var modal = null;
   var dragId = null;
@@ -528,6 +534,22 @@
       '<button class="btn btn-sm ghost" data-act="reset">Discard local changes</button></footer>';
   }
 
+  /** True when the published seed is newer than the copy in this browser. */
+  function seedIsNewer() {
+    if (seedNoticeDismissed) return false;
+    var a = String(board.as_of || ""), b = String(SEED.as_of || "");
+    return !!b && !!a && b > a;
+  }
+  function seedNoticeHTML() {
+    if (!seedIsNewer()) return "";
+    var d = diffVsSeed();
+    return '<div class="notice"><span class="dot"></span>' +
+      "<span>A newer board was published — snapshot <b>" + esc(SEED.as_of) + "</b>, yours is <b>" + esc(board.as_of || "?") +
+      "</b>." + (d.total ? " Taking it discards " + d.total + " local change" + (d.total === 1 ? "" : "s") + "." : "") + "</span>" +
+      '<button class="btn btn-sm primary" data-act="take-seed">Load the new board</button>' +
+      '<button class="btn btn-sm ghost" data-act="dismiss-notice">Keep mine</button></div>';
+  }
+
   function render() {
     var main = ui.view === "board"
       ? filtersHTML() + '<div class="lanes">' + ALL_LANES.map(laneHTML).join("") + "</div>"
@@ -536,7 +558,7 @@
       : ui.view === "timeline" ? filtersHTML() + timelineHTML()
       : filtersHTML() + focusHTML();
 
-    document.getElementById("app").innerHTML = cmdbarHTML() + cockpitHTML() + main + footerHTML();
+    document.getElementById("app").innerHTML = cmdbarHTML() + seedNoticeHTML() + cockpitHTML() + main + footerHTML();
     persistUi();
     if (drawerId) renderDrawer();
   }
@@ -1121,6 +1143,14 @@
       }
       case "export": openExport(); break;
       case "reset": confirmReset(); break;
+      case "take-seed":
+        try { localStorage.removeItem(STORAGE_KEY); } catch (err) {}
+        board = normalize(clone(SEED));
+        undoStack = [];
+        render();
+        toast("Loaded the published board (" + SEED.as_of + ")", false);
+        break;
+      case "dismiss-notice": seedNoticeDismissed = true; render(); break;
       case "undo": undo(); break;
       case "modal-close": closeModal(); break;
     }
