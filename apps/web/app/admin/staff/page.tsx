@@ -12,6 +12,7 @@ import { listTherapistPrimaries } from "@/lib/admin/therapist-primary-service";
 import { listAvailabilityTemplates } from "@/lib/admin/availability";
 import { listLocations } from "@/lib/admin/locations";
 import { listStaffLocations } from "@/lib/admin/staff-locations";
+import { seesEveryLocation } from "@/lib/admin/location-scope-warning";
 import { listTimeOffBlocks } from "@/lib/admin/time-off";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import { EquipaLocationFilter } from "./EquipaLocationFilter";
@@ -269,6 +270,11 @@ export default async function StaffPage({
             const days = buildDays(u.id);
             const workedDays = days.filter((d) => d.on);
             const locIds = [...(assignedLocations.get(u.id) ?? new Set<string>())];
+            // PL-18: only reception and admin are scoped BY LOCATION at all
+            // (viewer-locations.ts). Owner sees every clinic by design, and a
+            // therapist is bounded by their own-data rules, not by location -
+            // so neither can be "missing" an assignment.
+            const noLocationScope = seesEveryLocation(u.roleSlug, u.isActive, memberships.length);
             const primaryId = primaries.get(u.id)?.primaryServiceId ?? "";
             const primaryLabel = primaryId ? serviceName.get(primaryId) ?? "" : "";
 
@@ -302,6 +308,32 @@ export default async function StaffPage({
                     <span className="text-xs text-v2-text-secondary">{u.jobTitle}</span>
                   )}
                 </div>
+
+                {/* PL-18 (owner CR 2026-07-31, reported by reception: "can choose
+                    from locations and are seeing all staff from both locations").
+                    viewerLocationScope returns null - "not location-restricted",
+                    i.e. EVERY clinic and every colleague - when a reception/admin
+                    holds no staff_locations row. That fallback is deliberate, so
+                    onboarding never locks a new staffer out of their own clinic,
+                    but it is silent: the platform looked broken when it was doing
+                    exactly what it was told. This says so on the card that fixes
+                    it, one press from Gerir.
+
+                    Read from `memberships` (staff_locations) and NOT from the
+                    location chips above: those are hours UNION staff_locations
+                    (PL-14), so an admin with working hours shows a clinic chip
+                    while the SCOPE still sees no membership and falls back to
+                    all. The chips answer "where does this person work"; this
+                    answers "what does the platform restrict them to", and the
+                    two genuinely differ. */}
+                {noLocationScope && (
+                  <p
+                    className="text-xs text-warning-700"
+                    data-testid="equipa-no-location-scope"
+                  >
+                    {s["admin.staff.noLocationScopeWarning"]}
+                  </p>
+                )}
 
                 <dl className="flex flex-col gap-2 text-sm">
                   <div className="flex gap-2">

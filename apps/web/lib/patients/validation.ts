@@ -105,6 +105,25 @@ function optionalDate(v: unknown): string | null {
   return t;
 }
 
+/**
+ * PL-24 (owner CR 2026-07-31): "the sex should have only option of either man
+ * either woman". So the column accepts `male`, `female`, or nothing recorded —
+ * there is no third value, and the server says so rather than trusting the
+ * form's option list. Removing the <option> alone would leave a hand-posted
+ * "other" free to re-enter the column it was just removed from.
+ *
+ * Guards WRITES only. A legacy row already holding another value keeps it and
+ * simply displays as "Não especificado"; nothing rewrites patient data in bulk.
+ */
+const SEX_VALUES = new Set(["male", "female"]);
+
+function optionalSex(v: unknown): string | null {
+  const t = optionalText(v, "sex", 16);
+  if (t === null) return null;
+  if (!SEX_VALUES.has(t)) throw new ValidationError("Invalid sex");
+  return t;
+}
+
 function optionalUuid(v: unknown, field: string): string | null {
   if (v === undefined || v === null) return null;
   if (typeof v !== "string") throw new ValidationError(`${field} must be a UUID`);
@@ -119,7 +138,7 @@ export function parseCreatePatient(raw: CreatePatientInput): CreatePatientValues
   return {
     fullName: requiredName(r.fullName),
     dateOfBirth: optionalDate(r.dateOfBirth),
-    sex: optionalText(r.sex, "sex", 16),
+    sex: optionalSex(r.sex),
     nif: optionalText(r.nif, "nif", 20),
     email: optionalEmail(r.email),
     phone: optionalText(r.phone, "phone", 32),
@@ -144,7 +163,7 @@ export function parseUpdatePatient(raw: UpdatePatientInput): UpdatePatientValues
   const out: UpdatePatientValues = {};
   if ("fullName" in r) out.fullName = requiredName(r.fullName);
   if ("dateOfBirth" in r) out.dateOfBirth = optionalDate(r.dateOfBirth);
-  if ("sex" in r) out.sex = optionalText(r.sex, "sex", 16);
+  if ("sex" in r) out.sex = optionalSex(r.sex);
   if ("nif" in r) out.nif = optionalText(r.nif, "nif", 20);
   if ("email" in r) out.email = optionalEmail(r.email);
   if ("phone" in r) out.phone = optionalText(r.phone, "phone", 32);

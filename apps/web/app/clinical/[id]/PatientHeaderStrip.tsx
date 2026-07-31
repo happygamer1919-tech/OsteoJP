@@ -79,5 +79,8 @@ export function PatientHeaderStrip({
 function formatSex(sex: string): string {
   if (sex === "male") return s["patients.sexMale"];
   if (sex === "female") return s["patients.sexFemale"];
-  return s["patients.sexOther"];
+  // PL-24: "Outro" is gone. Anything else - a blank, or a legacy row written
+  // before the option was removed - is sex NOT RECORDED, which is what the
+  // fall-through always meant; it just used to say "Outro".
+  return s["patients.sexNotSpecified"];
 }
