@@ -424,6 +424,8 @@
   "admin.workingHours.blocksFor": "Blocks for",
   "admin.workingHours.blocksNone": "No blocks",
   "admin.workingHours.addBlock": "Add block",
+  "admin.workingHours.blockLote": "Repeating block",
+  "admin.workingHours.blockCount": "Number of blocks",
   "admin.workingHours.blockMode": "Type",
   "admin.workingHours.blockPontual": "Single block",
   "admin.workingHours.blockProlongada": "Extended absence",
