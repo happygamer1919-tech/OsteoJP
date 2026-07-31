@@ -26,15 +26,23 @@ const admin = { tenantId: "tenant-A", role: "admin", userId: "admin-1" } as Requ
 
 type Inserted = { startsAt: Date; endsAt: Date; userId: string; note: string | null };
 
-/** Rows the batch inserts, plus the appointment overlaps it will be told about. */
-function makeTx(overlapsPerWindow: Record<string, { id: string; patientName: string }[]> = {}) {
+type Appt = { id: string; patientName: string; startsAt: Date; endsAt: Date };
+
+/**
+ * Rows the batch inserts, plus the appointments the overlap query will report.
+ *
+ * `overlaps` is returned for EVERY window, which is the realistic shape for the
+ * dedupe case: a long-running appointment sits under more than one generated
+ * block, and the user must be told about it once, not once per day.
+ */
+function makeTx(overlaps: Appt[] = []) {
   const inserted: Inserted[] = [];
   const tx = {
     select: () => ({
       from: () => ({
         innerJoin: () => ({
           where: () => ({
-            orderBy: async () => [],
+            orderBy: async () => overlaps,
           }),
         }),
       }),
@@ -45,7 +53,6 @@ function makeTx(overlapsPerWindow: Record<string, { id: string; patientName: str
       },
     }),
   };
-  void overlapsPerWindow;
   return { tx, inserted };
 }
 
@@ -91,6 +98,46 @@ describe("createTimeOffBlockBatch", () => {
       action: "time_off.create_batch",
       metadata: { blocks: 4, overlappingAppointments: 0 },
     });
+  });
+
+  it("reports an overlapping appointment ONCE, not once per generated day", async () => {
+    const appt: Appt = {
+      id: "appt-1",
+      patientName: "Ana Paciente",
+      startsAt: new Date("2026-08-03T08:00:00.000Z"),
+      endsAt: new Date("2026-08-03T09:00:00.000Z"),
+    };
+    // The same appointment comes back for all four windows.
+    const { tx, inserted } = makeTx([appt]);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    const res = await createTimeOffBlockBatch(admin, base);
+
+    expect(inserted).toHaveLength(4);
+    expect(res.overlaps).toHaveLength(1);
+    expect(res.overlaps[0]!.id).toBe("appt-1");
+    // ...and the audit row carries the deduped count, not the raw hit count.
+    expect(vi.mocked(writeAudit).mock.calls[0]![2]).toMatchObject({
+      metadata: { blocks: 4, overlappingAppointments: 1 },
+    });
+  });
+
+  it("creates the blocks anyway when they overlap - warn, never cancel", async () => {
+    // Q-W5-4, inherited from the single-block path: the clinic decides what to
+    // do about the patients; the system does not silently cancel them.
+    const { tx, inserted } = makeTx([
+      {
+        id: "appt-1",
+        patientName: "Ana Paciente",
+        startsAt: new Date("2026-08-03T08:00:00.000Z"),
+        endsAt: new Date("2026-08-03T09:00:00.000Z"),
+      },
+    ]);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    const res = await createTimeOffBlockBatch(admin, base);
+    expect(inserted).toHaveLength(4);
+    expect(res.overlaps).toHaveLength(1);
   });
 
   it("refuses a recurrence that produces no dates instead of silently doing nothing", async () => {
