@@ -5,6 +5,9 @@ import { can, toClaims } from "@osteojp/auth";
 import { requireRequestContext } from "@/lib/auth/context";
 import { generateDeclaracaoPdf } from "@/lib/clinical/declaracao/generate";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getPatient } from "@/lib/patients/queries";
+import { updatePatient } from "@/lib/patients/actions";
+import { shouldPersistCapturedValue } from "@/lib/patients/known-field";
 import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
 
 // W5-31 — generate the Declaração de Presença PDF for a patient and hand back a
@@ -37,6 +40,30 @@ export async function generateDeclaracaoUrlAction(
   try {
     const pdf = await generateDeclaracaoPdf(toClaims(ctx), input);
 
+    // PL-20: a NIF captured on a document that the PATIENT RECORD did not have
+    // is written back, so the next document does not ask for it a third time.
+    //
+    // Re-decided HERE from the stored row, never from what the client believed:
+    // the dialog's "known" state is a rendering hint, and a stale page must not
+    // be able to talk the server into an overwrite. shouldPersistCapturedValue
+    // fills an EMPTY field only - a one-off NIF typed over a stored one (the
+    // "Alterar" path) is used for this PDF and forgotten, so a correction on a
+    // single declaration never rewrites the patient's fiscal number.
+    //
+    // Deliberately after the PDF is generated and deliberately swallowed: the
+    // document is what the user asked for, and a failed convenience write must
+    // never cost them the declaration.
+    if (can(ctx.role, "patients:write") && knownFieldCandidate(input.nif)) {
+      try {
+        const patient = await getPatient(input.patientId);
+        if (patient && shouldPersistCapturedValue(patient.nif, input.nif)) {
+          await updatePatient(input.patientId, { nif: input.nif });
+        }
+      } catch {
+        // Non-fatal by design - see above.
+      }
+    }
+
     const path = `${ctx.tenantId}/declaracoes/${input.patientId}/${randomUUID()}.pdf`;
     const admin = createSupabaseAdminClient();
     const up = await admin.storage
@@ -60,4 +87,9 @@ export async function generateDeclaracaoUrlAction(
   } catch {
     return { url: null };
   }
+}
+
+/** Cheap pre-check so the common case (no NIF typed) costs no patient read. */
+function knownFieldCandidate(v: string | null | undefined): boolean {
+  return (v ?? "").trim().length > 0;
 }

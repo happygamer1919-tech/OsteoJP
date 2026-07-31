@@ -145,6 +145,7 @@
   "documents.declaracao.startLabel": "Start time",
   "documents.declaracao.endLabel": "End time",
   "documents.declaracao.nifLabel": "NIF",
+  "documents.declaracao.nifSaveHint": "Not on the patient record yet. What you enter here will be saved.",
   "documents.declaracao.observacoesLabel": "Notes (optional)",
   "documents.declaracao.generate": "Generate",
   "documents.declaracao.incomplete": "Fill in the date and times.",

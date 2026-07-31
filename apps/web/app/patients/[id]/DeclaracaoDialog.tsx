@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
+
+import { knownField } from "@/lib/patients/known-field";
 import { Button, Dialog, TimeField } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { generateDeclaracaoUrlAction } from "./declaracao-actions";
@@ -67,8 +69,12 @@ export function DeclaracaoDialog({
   const [endTime, setEndTime] = useState("");
   const [locationId, setLocationId] = useState<string | null>(null);
   // W12-24: NIF is the PATIENT's (not the marcação's), so it prefills once from
-  // patients.nif and is untouched by the marcação/manual switch; stays editable.
-  const [nif, setNif] = useState(patientNif ?? "");
+  // patients.nif and is untouched by the marcação/manual switch.
+  // PL-20: and when it IS on file, it is no longer ASKED - the value is shown,
+  // with "Alterar" for a one-off override that never touches the record.
+  const storedNif = knownField(patientNif);
+  const [nif, setNif] = useState(storedNif.kind === "known" ? storedNif.value : "");
+  const [overrideNif, setOverrideNif] = useState(false);
   // PL-03a: optional free text added to THIS declaration only (transient, never
   // persisted). Length-capped so a long note cannot push the signature/footer
   // off the single page.
@@ -185,19 +191,46 @@ export function DeclaracaoDialog({
               </div>
             </label>
           </div>
-          {/* W12-24: NIF, prefilled from the patient (editable). Optional - a
-              blank NIF is simply omitted from the generated declaration. */}
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{s["documents.declaracao.nifLabel"]}</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={nif}
-              onChange={(e) => setNif(e.target.value)}
-              className={field}
-              data-testid="declaracao-nif"
-            />
-          </label>
+          {/* PL-20: the NIF is the PATIENT's, so a known one is shown, not
+              asked. "Alterar" reveals the input for a one-off value on THIS
+              document; because the record already holds a NIF, nothing typed
+              here is written back (shouldPersistCapturedValue). An UNKNOWN NIF
+              is asked exactly once and saved to the patient, so the next
+              document does not ask again. Still optional either way - a blank
+              NIF is simply omitted from the generated declaration. */}
+          {storedNif.kind === "known" && !overrideNif ? (
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="font-medium">{s["documents.declaracao.nifLabel"]}</span>
+              <span className="flex items-center gap-2">
+                <span data-testid="declaracao-nif-known">{storedNif.value}</span>
+                <button
+                  type="button"
+                  onClick={() => setOverrideNif(true)}
+                  data-testid="declaracao-nif-override"
+                  className="rounded px-1.5 py-0.5 text-xs font-medium text-accent-2-700 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                >
+                  {s["common.edit"]}
+                </button>
+              </span>
+            </div>
+          ) : (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium">{s["documents.declaracao.nifLabel"]}</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={nif}
+                onChange={(e) => setNif(e.target.value)}
+                className={field}
+                data-testid="declaracao-nif"
+              />
+              {storedNif.kind === "unknown" && (
+                <span className="text-xs text-text-secondary" data-testid="declaracao-nif-savehint">
+                  {s["documents.declaracao.nifSaveHint"]}
+                </span>
+              )}
+            </label>
+          )}
           {/* PL-03a: optional free-text observações for THIS declaration only
               (transient, never persisted). Rendered in the PDF between the
               treatment sentence and "Por ser verdade". maxLength protects the
