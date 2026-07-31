@@ -28,7 +28,7 @@ export async function goToAgenda(page: Page) {
 export type PatientFields = {
   fullName: string;
   dateOfBirth?: string;
-  sex?: "male" | "female" | "other";
+  sex?: "male" | "female";
   nif?: string;
   phone?: string;
   email?: string;
