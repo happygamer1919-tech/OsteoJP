@@ -1,31 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { classifyBatchSlots, resolveBatchSlots } from "./batch-core";
 import type { TimeInterval } from "./intervals";
-import { buildLoteSlots, generateLoteDates, type LoteRow } from "./lote";
-
-describe("generateLoteDates (W2-10)", () => {
-  it("generates `count` dates stepping every-X weeks, same weekday", () => {
-    // 2026-08-06 is a Thursday.
-    expect(generateLoteDates("2026-08-06", 1, 4)).toEqual([
-      "2026-08-06",
-      "2026-08-13",
-      "2026-08-20",
-      "2026-08-27",
-    ]);
-  });
-
-  it("honours a multi-week interval (every 2 weeks)", () => {
-    expect(generateLoteDates("2026-08-06", 2, 3)).toEqual([
-      "2026-08-06",
-      "2026-08-20",
-      "2026-09-03",
-    ]);
-  });
-
-  it("clamps count and interval to >= 1", () => {
-    expect(generateLoteDates("2026-08-06", 0, 0)).toEqual(["2026-08-06"]);
-  });
-});
+import {
+  MAX_LOTE_DATES,
+  buildLoteSlots,
+  generateLoteSchedule,
+  type LoteRow,
+} from "./lote";
 
 describe("buildLoteSlots (W2-10)", () => {
   it("builds one explicit slot per row, honouring each row's OWN time and the duration", () => {
@@ -56,7 +37,12 @@ describe("buildLoteSlots (W2-10)", () => {
 describe("per-row date edit (W5-05)", () => {
   /** Weekly Thursday seed (2026-08-06/13/20 at 09:00) with row 1 moved to Friday 14. */
   function editedRows(): LoteRow[] {
-    const rows = generateLoteDates("2026-08-06", 1, 3).map((date) => ({ date, time: "09:00" }));
+    const rows = generateLoteSchedule({
+      from: "2026-08-06",
+      weekdays: [4], // Thursday
+      everyWeeks: 1,
+      end: { kind: "count", count: 3 },
+    }).map((date) => ({ date, time: "09:00" }));
     return rows.map((r, i) => (i === 1 ? { ...r, date: "2026-08-14" } : r));
   }
 
@@ -123,5 +109,169 @@ describe("per-row date edit (W5-05)", () => {
     });
     // Nearest free alternative fitting 60 min: the edited day's 10:00 Lisbon window.
     expect(failures[0]?.nearestAlternative).toMatchObject({ date: "2026-08-14", hhmm: "10:00" });
+  });
+});
+
+describe("generateLoteSchedule — PL-21 flexible recurrence", () => {
+  // 2026-08-03 is a Monday. Weekdays: 0=Sun .. 6=Sat.
+  const MONDAY = "2026-08-03";
+
+  it("books the SAME weekday when only one is chosen (the old behaviour)", () => {
+    expect(
+      generateLoteSchedule({
+        from: MONDAY,
+        weekdays: [1],
+        everyWeeks: 1,
+        end: { kind: "count", count: 4 },
+      }),
+    ).toEqual(["2026-08-03", "2026-08-10", "2026-08-17", "2026-08-24"]);
+  });
+
+  // Rodica's actual complaint: "segundas e quintas" was unreachable.
+  it("books several weekdays in one week", () => {
+    expect(
+      generateLoteSchedule({
+        from: MONDAY,
+        weekdays: [1, 4],
+        everyWeeks: 1,
+        end: { kind: "count", count: 4 },
+      }),
+    ).toEqual(["2026-08-03", "2026-08-06", "2026-08-10", "2026-08-13"]);
+  });
+
+  it("keeps a multi-day pattern together when repeating fortnightly", () => {
+    // Both days stay in the SAME fortnight rather than drifting apart, which is
+    // why the anchor is the Monday of the week and not the start date itself.
+    expect(
+      generateLoteSchedule({
+        from: MONDAY,
+        weekdays: [1, 4],
+        everyWeeks: 2,
+        end: { kind: "count", count: 4 },
+      }),
+    ).toEqual(["2026-08-03", "2026-08-06", "2026-08-17", "2026-08-20"]);
+  });
+
+  it("never books before the start date, even when the weekday is earlier in that week", () => {
+    // Starting Wednesday and picking Monday means NEXT Monday, not two days ago.
+    const WEDNESDAY = "2026-08-05";
+    expect(
+      generateLoteSchedule({
+        from: WEDNESDAY,
+        weekdays: [1, 3],
+        everyWeeks: 1,
+        end: { kind: "count", count: 3 },
+      }),
+    ).toEqual(["2026-08-05", "2026-08-10", "2026-08-12"]);
+  });
+
+  it("orders weekdays Monday-first within a week, whatever order they were ticked", () => {
+    expect(
+      generateLoteSchedule({
+        from: MONDAY,
+        weekdays: [5, 1, 3],
+        everyWeeks: 1,
+        end: { kind: "count", count: 3 },
+      }),
+    ).toEqual(["2026-08-03", "2026-08-05", "2026-08-07"]);
+  });
+
+  it("puts Sunday LAST in the clinical week, not first", () => {
+    expect(
+      generateLoteSchedule({
+        from: MONDAY,
+        weekdays: [0, 6],
+        everyWeeks: 1,
+        end: { kind: "count", count: 2 },
+      }),
+    ).toEqual(["2026-08-08", "2026-08-09"]); // Saturday then Sunday
+  });
+
+  it("stops on an end DATE, inclusive", () => {
+    expect(
+      generateLoteSchedule({
+        from: MONDAY,
+        weekdays: [1],
+        everyWeeks: 1,
+        end: { kind: "until", date: "2026-08-17" },
+      }),
+    ).toEqual(["2026-08-03", "2026-08-10", "2026-08-17"]);
+  });
+
+  it("returns nothing when the end date precedes the start", () => {
+    expect(
+      generateLoteSchedule({
+        from: MONDAY,
+        weekdays: [1],
+        everyWeeks: 1,
+        end: { kind: "until", date: "2026-07-01" },
+      }),
+    ).toEqual([]);
+  });
+
+  it("falls back to the start date's own weekday when none is ticked", () => {
+    expect(
+      generateLoteSchedule({
+        from: MONDAY,
+        weekdays: [],
+        everyWeeks: 1,
+        end: { kind: "count", count: 2 },
+      }),
+    ).toEqual(["2026-08-03", "2026-08-10"]);
+  });
+
+  it("caps both end modes at MAX_LOTE_DATES so one press cannot run away", () => {
+    const byCount = generateLoteSchedule({
+      from: MONDAY,
+      weekdays: [1],
+      everyWeeks: 1,
+      end: { kind: "count", count: 9999 },
+    });
+    expect(byCount).toHaveLength(MAX_LOTE_DATES);
+
+    const byDate = generateLoteSchedule({
+      from: MONDAY,
+      weekdays: [1, 2, 3, 4, 5],
+      everyWeeks: 1,
+      end: { kind: "until", date: "2030-01-01" },
+    });
+    expect(byDate).toHaveLength(MAX_LOTE_DATES);
+  });
+
+  it("crosses a month and a year boundary without drifting", () => {
+    expect(
+      generateLoteSchedule({
+        from: "2026-12-28", // Monday
+        weekdays: [1],
+        everyWeeks: 1,
+        end: { kind: "count", count: 3 },
+      }),
+    ).toEqual(["2026-12-28", "2027-01-04", "2027-01-11"]);
+  });
+
+  it("rejects a malformed or impossible start date instead of inventing one", () => {
+    expect(generateLoteSchedule({ from: "", weekdays: [1], everyWeeks: 1, end: { kind: "count", count: 2 } })).toEqual([]);
+    expect(generateLoteSchedule({ from: "2026-02-31", weekdays: [1], everyWeeks: 1, end: { kind: "count", count: 2 } })).toEqual([]);
+  });
+
+  it("treats a zero or negative interval as weekly rather than looping", () => {
+    expect(
+      generateLoteSchedule({
+        from: MONDAY,
+        weekdays: [1],
+        everyWeeks: 0,
+        end: { kind: "count", count: 3 },
+      }),
+    ).toEqual(["2026-08-03", "2026-08-10", "2026-08-17"]);
+  });
+
+  it("produces dates in ascending order in every case", () => {
+    const dates = generateLoteSchedule({
+      from: "2026-08-05",
+      weekdays: [0, 2, 4, 6],
+      everyWeeks: 3,
+      end: { kind: "count", count: 12 },
+    });
+    expect([...dates].sort()).toEqual(dates);
   });
 });
