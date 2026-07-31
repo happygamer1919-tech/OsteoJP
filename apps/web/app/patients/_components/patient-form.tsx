@@ -6,6 +6,10 @@ import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
 import { Button } from "@osteojp/ui";
 import { createPatient, updatePatient } from "../../../lib/patients/actions";
 import type { Patient } from "../../../lib/patients/types";
+import {
+  MAX_HEALTH_INSURANCE_ENTRIES,
+  type HealthInsuranceEntry,
+} from "../../../lib/patients/validation";
 
 const s = getStrings(DEFAULT_LOCALE);
 
@@ -25,6 +29,10 @@ type Fields = {
   dateOfBirth: string;
   sex: string;
   nif: string;
+  // PL-23 — health insurance plans. A LIST because a patient may hold more than
+  // one (ADSE plus a private insurer is ordinary here); the insurer is optional
+  // beside the number, because a bare number is not usable at the desk.
+  healthInsuranceNumbers: HealthInsuranceEntry[];
   email: string;
   phone: string;
   // `address` (street) is retained in state so its stored value round-trips
@@ -63,6 +71,7 @@ function toFields(p?: Patient | null): Fields {
     dateOfBirth: p?.dateOfBirth ?? "",
     sex: p?.sex ?? "",
     nif: p?.nif ?? "",
+    healthInsuranceNumbers: p?.healthInsuranceNumbers ?? [],
     email: p?.email ?? "",
     phone: p?.phone ?? "",
     address: p?.address ?? "",
@@ -183,6 +192,11 @@ export function PatientForm({
             className={inputCls}
           />
         </Field>
+        <HealthInsuranceFields
+          entries={fields.healthInsuranceNumbers}
+          onChange={(next) => set("healthInsuranceNumbers", next)}
+          inputCls={inputCls}
+        />
         <Field label={s["patients.fieldPhone"]}>
           <input
             value={fields.phone}
@@ -359,5 +373,79 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+/**
+ * PL-23 — the repeatable "Números dos seguros de saúde" block.
+ *
+ * A list rather than one box: the owner's own plural, and a patient holding
+ * ADSE plus a private insurer is ordinary in PT. Empty rows are harmless - the
+ * validator drops any entry with no NUMBER on save, so an abandoned half-filled
+ * row never becomes a stored plan.
+ */
+function HealthInsuranceFields({
+  entries,
+  onChange,
+  inputCls,
+}: {
+  entries: HealthInsuranceEntry[];
+  onChange: (next: HealthInsuranceEntry[]) => void;
+  inputCls: string;
+}) {
+  const update = (i: number, patch: Partial<HealthInsuranceEntry>) =>
+    onChange(entries.map((e, j) => (j === i ? { ...e, ...patch } : e)));
+
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-sm font-medium">{s["patients.fieldHealthInsurance"]}</legend>
+      {entries.length === 0 && (
+        <p className="text-sm text-text-secondary">{s["patients.insuranceNone"]}</p>
+      )}
+      {entries.map((entry, i) => (
+        // Index key: rows are positional and only ever appended or removed
+        // wholesale, exactly like the lote rows in the booking drawer.
+        <div key={i} className="flex flex-wrap items-end gap-2" data-testid="insurance-row">
+          <label className="flex flex-1 flex-col gap-1 text-sm">
+            <span className="text-xs text-text-secondary">{s["patients.insuranceInsurer"]}</span>
+            <input
+              value={entry.insurer ?? ""}
+              onChange={(e) => update(i, { insurer: e.target.value })}
+              className={inputCls}
+            />
+          </label>
+          <label className="flex flex-1 flex-col gap-1 text-sm">
+            <span className="text-xs text-text-secondary">{s["patients.insuranceNumber"]}</span>
+            <input
+              value={entry.number}
+              onChange={(e) => update(i, { number: e.target.value })}
+              className={inputCls}
+              data-testid="insurance-number"
+            />
+          </label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onChange(entries.filter((_, j) => j !== i))}
+          >
+            {s["patients.insuranceRemove"]}
+          </Button>
+        </div>
+      ))}
+      {entries.length < MAX_HEALTH_INSURANCE_ENTRIES && (
+        <div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            data-testid="insurance-add"
+            onClick={() => onChange([...entries, { insurer: "", number: "" }])}
+          >
+            {s["patients.insuranceAdd"]}
+          </Button>
+        </div>
+      )}
+    </fieldset>
   );
 }

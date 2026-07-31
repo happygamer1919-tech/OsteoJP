@@ -506,6 +506,14 @@ export const patients = pgTable(
     dateOfBirth: date("date_of_birth"),
     sex: varchar("sex", { length: 16 }),
     nif: varchar("nif", { length: 20 }), // PT fiscal number (fatura-recibo)
+    // PL-23 (0051) — health insurance plans, as a LIST: a patient may hold more
+    // than one (ADSE plus a private insurer is ordinary in PT). Each entry is
+    // { insurer: string | null, number: string }. NOT NULL DEFAULT '[]' so no
+    // reader has to special-case a null, and a DB CHECK keeps it an array.
+    healthInsuranceNumbers: jsonb("health_insurance_numbers")
+      .$type<{ insurer: string | null; number: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     email: text("email"),
     phone: varchar("phone", { length: 32 }),
     address: text("address"),

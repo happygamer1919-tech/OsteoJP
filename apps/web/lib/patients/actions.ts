@@ -102,6 +102,7 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
         dateOfBirth: input.dateOfBirth,
         sex: input.sex,
         nif: input.nif,
+        healthInsuranceNumbers: input.healthInsuranceNumbers,
         email: input.email,
         phone: input.phone,
         address: input.address,
@@ -140,6 +141,9 @@ export async function updatePatient(
     ...(input.dateOfBirth !== undefined && { dateOfBirth: input.dateOfBirth }),
     ...(input.sex !== undefined && { sex: input.sex }),
     ...(input.nif !== undefined && { nif: input.nif }),
+    ...(input.healthInsuranceNumbers !== undefined && {
+      healthInsuranceNumbers: input.healthInsuranceNumbers,
+    }),
     ...(input.email !== undefined && { email: input.email }),
     ...(input.phone !== undefined && { phone: input.phone }),
     ...(input.address !== undefined && { address: input.address }),
