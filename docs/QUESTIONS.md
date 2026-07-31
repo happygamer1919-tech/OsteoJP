@@ -902,3 +902,30 @@ services the desk books today, and reception must always be able to fit a patien
 Note the mechanics: the granularity is DATA (a hard-gated write), while aligning the slot grid
 to the top of the hour is CODE. Without the alignment half, a therapist whose template starts
 at 09:30 still yields 09:30 and 10:30 at a 60-minute step.
+
+## Q-PL-23-1 (2026-07-31, ANSWERED 2026-07-31) - health-insurance numbers: one field or a repeatable list?
+**ANSWERED by ratification at apply.** The owner applied migration 0051 carrying the recommended
+default - a repeatable LIST, each entry `{ insurer, number }` - and the independent read confirmed
+it live (jsonb NOT NULL DEFAULT '[]', array CHECK present, 10 of 10 patient rows defaulted, journal
+count 51). The shape IS the migration, so applying it settles the question: changing to a single
+free-text field now would be a second migration over real data.
+
+## Q-PL-25-1 (2026-07-31, PARTIALLY ANSWERED 2026-07-31) - hourly portal slots
+(b) STAFF SIDE: **ANSWERED in code.** Staff booking stays free-form; PL-25 constrains only what a
+patient may self-serve from the portal. Forcing the agenda onto the hour would break the 30- and
+45-minute services the desk books today.
+(a) SCOPE: **STILL OPEN, and now the owner's to set.** `locations.slot_granularity_min` became an
+admin control (Admin -> Localizacoes, "Marcacao no portal": *De hora a hora* / *De 30 em 30 min*),
+so nobody has to guess and no prod write is needed. Both clinics remain at 30 until he switches
+them. GREEN deliberately did NOT change the stored value - that is data, and the owner owns it.
+
+## Q-PL-22-1 (2026-07-31, ANSWERED 2026-07-31) - undoing a bloquear lote batch as a unit
+PL-22 writes N `time_off` rows in one transaction, but nothing marks them as ONE batch, so undoing
+a mistaken recurrence means deleting each block by hand. Making it one action needs a `batch_id`
+column on `time_off`, i.e. a migration. NOT built with PL-22 because 0051 was already in flight and
+only one migration is ever in flight at a time.
+RECOMMENDED DEFAULT: ticket it as its own card now that 0051 is applied. A nullable `batch_id uuid`
+plus a "remover lote" control on the blocks list; append-only semantics are unaffected, and existing
+blocks simply carry NULL (they were never a batch).
+**ANSWERED (owner, 2026-07-31): ticket it.** Raised as card PL-26, unblocked now that 0051 is
+applied. Migration takes 0052 and is apply-before-merge like every other.

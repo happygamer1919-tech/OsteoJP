@@ -2319,3 +2319,88 @@ the hour) and half data (the per-location granularity), and only the data half i
 
 Owner authorised self-merge on green required checks for this batch. Migrations and prod
 writes stay hard-gated as always.
+
+## 2026-07-31 - Reception CR built and shipped: PL-18 through PL-25 (GREEN)
+
+Eight cards from the 2026-07-31 reception change request, written to the board first (#719)
+and then executed one PR per card, self-merged on green CI under the owner's standing
+authorization. The migration card is the single exception and stays owner-gated.
+
+**Three of the seven reported items had a different cause than the report implied.** Recording
+that here because the pattern repeats: a user describes a SYMPTOM accurately and infers a cause
+that the code does not support, and building the inferred fix would have added a second
+mechanism beside a working one.
+
+- **PL-18 (reception sees both clinics).** No missing rule. `viewerLocationScope` has covered
+  reception and admin identically since PL-09; `getAgendaOptions` narrows both the location list
+  and the therapist roster (PL-14); the team-schedule editor already drops its per-day select at
+  one clinic; `/admin` is unreachable by reception. The reported screen is the deliberate
+  no-assignment FALLBACK: zero `staff_locations` rows -> scope `null` -> "not location-
+  restricted" -> every clinic, every colleague. Shipped the thing that was actually missing: the
+  fallback is no longer silent (Equipa flags it). Read from `staff_locations`, NOT from the
+  Equipa location chips - those are hours UNION staff_locations, so an admin with working hours
+  displays a clinic chip while the scope still falls back to all. The chips answer "where does
+  this person work"; the warning answers "what does the platform restrict them to". Q-PL-18-1
+  carries the policy question (keep the fallback, or require an assignment at account creation).
+- **PL-20 (declaracao asks for the NIF again).** It already prefilled from `patients.nif`
+  (W12-24). What reads as "asking again" is rendering an editable box seeded with a known value -
+  and the same box looks plainly empty for a patient whose NIF was never captured, so one control
+  meant two different things. Fixed with the PL-14 shape: known -> shown, unknown -> asked once
+  and written BACK. The write-back is re-decided server-side from the stored row (never from the
+  client's belief) and fills an EMPTY field only, so a one-off NIF typed onto a single
+  declaration cannot rewrite a patient's fiscal number.
+- **PL-21 (agendar lote too limited).** The batch ENGINE has accepted an explicit per-slot list
+  since W2-09 - built for exactly this Rodica case. The limit was the FORM, which exposed only
+  a count and an every-N-weeks step. So a generator + UI change, no scheduling-engine change,
+  and PL-22 reuses the same generator over `time_off`.
+
+**Sweep results worth keeping, because they are the answer to "is that all?"**
+
+- PL-20's sweep for other forms that re-ask stored patient data found exactly ONE (the
+  declaracao NIF). Faturacao reads name/NIF/address from the patient through the InvoiceXpress
+  mapper; the RGPD form and ficha medica are generated from the record; Reagendar and Marcar
+  novamente already reuse the marcacao's own therapist and location.
+- PL-24's audit found the clinical `general-anamnese-v1` form template still offers "Outro" for
+  sex. Deliberately NOT changed: form templates are immutable once a clinical record references
+  them (hard rule 5), so that needs a new template version and its own card.
+
+**PL-25 needed two changes, not one.** The per-location step (0041) is necessary but not
+sufficient: `listOpenSlots` started its series at each template's own `start_time`, so a
+therapist beginning at 09:30 produced 09:30/10:30/11:30 at a 60-minute step - an hourly cadence
+that never lands on an hour. The grid is now midnight-ALIGNED, rounding UP so a generated start
+can never precede the therapist's declared hours (rounding down would advertise a slot
+`availabilityCoversExists` then rejects at confirm - the exact disagreement that query exists to
+prevent). Verified against a real PostgreSQL 17.6 rather than asserted. The VALUE became an
+admin control (Admin -> Localizacoes) rather than a prod UPDATE: nothing in the product could
+set `slot_granularity_min`, so "make booking hourly" would otherwise have meant hand-writing to
+prod. Two choices only, 30 and 60; 15 is absent because ":15" is what the CR removes and a
+control that can re-create the reported problem is not worth having.
+
+**Migration discipline.** Exactly ONE migration in the batch (0051, PL-23's insurance column).
+It took 0051 because the PL-15b `primary_location_id` backfill reserved that number but was
+never built; the backfill becomes 0052. Numbers follow build order, not reservations. PL-22's
+"undo a batch as a unit" was NOT built for the same discipline: it needs a `batch_id` column on
+`time_off`, a second migration, and only one is ever in flight.
+
+**Dead code removed rather than left beside its replacement.** `generateLoteDates` was a strict
+subset of `generateLoteSchedule` (`weekdays:[n]` + a count reproduces it exactly, asserted in
+the new suite), so it went rather than becoming a second way to say the same thing.
+
+**Migration 0051 APPLIED and VERIFIED on prod 2026-07-31** (owner ran it from the
+osteojp-prod-apply worktree, detached at `origin/feat/PL-23-patient-insurance-numbers`; GREEN never
+touched prod). Independent read, pasted rather than inferred: column `jsonb`, `nullable=NO`,
+`default='[]'::jsonb`; the array CHECK constraint present; **10 patient rows, 0 with a NULL**;
+`drizzle.__drizzle_migrations` count 51 as expected; last hash
+`9adc86ad8eab1e96503aafefe4d4121247f6e93663cfcbd6b163a5517fd311b0`. Only then was #726 merged.
+
+**One CI catch worth recording, because it is the case the doctrine exists for.** PL-20's Playwright
+run failed `declaracao.spec.ts` on ALL THREE attempts with the same assertion - the signature of a
+real regression, not the degraded-runner flake. The spec asserted the W12-24 contract (the patient's
+NIF arrives PREFILLED INTO AN EDITABLE BOX), which is exactly what PL-20 removes, since that box is
+what reads as "the declaracao asks for the NIF again". The fix was to update the spec to the new
+contract, not to weaken the feature - and it exposed that the write-back had no action-level tests
+at all, which is the riskier half since it writes to patient records. Four were added: saved when the
+record was empty, NEVER when it already held one, no patient read at all when no NIF was supplied,
+and the document still returned when the write-back fails. Two other specs failed in the same run
+(`agenda-cards`, `marcacoes-tab-edit`); neither touches anything PL-20 changed and both passed on
+sibling PRs off the same base, so they were treated as flake and cleared on rerun.
