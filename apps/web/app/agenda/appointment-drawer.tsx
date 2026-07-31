@@ -53,7 +53,12 @@ import type {
   ConflictInfo,
   SeriesScope,
 } from "@/lib/scheduling/types";
-import { buildLoteSlots, generateLoteDates, type LoteRow } from "@/lib/scheduling/lote";
+import {
+  buildLoteSlots,
+  generateLoteSchedule,
+  type LoteEnd,
+  type LoteRow,
+} from "@/lib/scheduling/lote";
 import { AppointmentNotesBoard } from "./appointment-notes-board";
 import { AvailabilityPanel } from "./availability-panel";
 
@@ -91,6 +96,19 @@ type FormState = {
 };
 
 const DURATIONS = [30, 45, 60, 90];
+// PL-21: the lote weekday picker, in clinical week order (Monday first, Sunday
+// last - the same order the schedule editor uses). Values are JS getDay():
+// 0 = Sunday .. 6 = Saturday, which is what generateLoteSchedule expects.
+const LOTE_WEEKDAYS = [
+  { value: 1, key: "admin.workingHours.mon" },
+  { value: 2, key: "admin.workingHours.tue" },
+  { value: 3, key: "admin.workingHours.wed" },
+  { value: 4, key: "admin.workingHours.thu" },
+  { value: 5, key: "admin.workingHours.fri" },
+  { value: 6, key: "admin.workingHours.sat" },
+  { value: 0, key: "admin.workingHours.sun" },
+] as const;
+
 const STATUS_OPTIONS: { value: AppointmentStatusValue; key: StringKey }[] = [
   { value: "scheduled", key: "appointment.statusPending" },
   { value: "confirmed", key: "appointment.statusConfirmed" },
@@ -215,6 +233,14 @@ export function AppointmentDrawer({
   const [loteCount, setLoteCount] = useState(4);
   const [loteEveryWeeks, setLoteEveryWeeks] = useState(1);
   const [loteRows, setLoteRows] = useState<LoteRow[]>([]);
+  // PL-21 (Rodica: "you can only select if 1 per week or twice a week"). The
+  // pattern people describe is WHICH weekdays, HOW OFTEN, and WHEN it stops.
+  // Empty weekdays = "the weekday of the form's own date", which is exactly the
+  // behaviour before this card, so opening the panel and pressing Gerar datas
+  // without touching anything produces what it always did.
+  const [loteWeekdays, setLoteWeekdays] = useState<number[]>([]);
+  const [loteEndMode, setLoteEndMode] = useState<LoteEnd["kind"]>("count");
+  const [loteUntil, setLoteUntil] = useState("");
 
   // A conflict banner describes one specific therapist/date/time/duration
   // combination (checked server-side inside create/update/reschedule — there
@@ -965,16 +991,43 @@ export function AppointmentDrawer({
             />
             {loteMode && (
               <div className="flex flex-col gap-3 rounded-lg border border-border-strong p-3">
+                {/* PL-21: weekday picker. Ticking nothing keeps the pre-PL-21
+                    behaviour (repeat the form date's own weekday), so the panel
+                    is not harder to use for the simple weekly case. Rendered in
+                    clinical week order, Monday first. */}
+                <fieldset className="flex flex-col gap-1">
+                  <legend className="text-xs font-medium text-text-primary">
+                    {s["lote.weekdays"]}
+                  </legend>
+                  <div className="flex flex-wrap gap-1" data-testid="lote-weekdays">
+                    {LOTE_WEEKDAYS.map(({ value, key }) => {
+                      const on = loteWeekdays.includes(value);
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() =>
+                            setLoteWeekdays((prev) =>
+                              prev.includes(value)
+                                ? prev.filter((w) => w !== value)
+                                : [...prev, value],
+                            )
+                          }
+                          className={`h-9 min-w-12 rounded border px-2 text-sm font-medium transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
+                            on
+                              ? "border-brand-teal bg-brand-teal/10 text-brand-teal"
+                              : "border-border-strong text-text-secondary hover:bg-surface-muted"
+                          }`}
+                        >
+                          {s[key].slice(0, 3)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+
                 <div className="flex flex-wrap items-end gap-3">
-                  <Field label={s["lote.count"]}>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={52}
-                      value={String(loteCount)}
-                      onChange={(e) => setLoteCount(Math.max(1, Number(e.target.value) || 1))}
-                    />
-                  </Field>
                   <Field label={s["lote.everyWeeks"]}>
                     <Input
                       type="number"
@@ -984,14 +1037,53 @@ export function AppointmentDrawer({
                       onChange={(e) => setLoteEveryWeeks(Math.max(1, Number(e.target.value) || 1))}
                     />
                   </Field>
+                  {/* PL-21: "termina após N marcações" OR "termina numa data".
+                      Rodica books both ways - a 10-session plan, and a block
+                      that runs until the patient's holiday. */}
+                  <Field label={s["lote.endMode"]}>
+                    <Select
+                      value={loteEndMode}
+                      aria-label={s["lote.endMode"]}
+                      onChange={(e) => setLoteEndMode(e.target.value as LoteEnd["kind"])}
+                    >
+                      <option value="count">{s["lote.endAfterCount"]}</option>
+                      <option value="until">{s["lote.endOnDate"]}</option>
+                    </Select>
+                  </Field>
+                  {loteEndMode === "count" ? (
+                    <Field label={s["lote.count"]}>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={52}
+                        value={String(loteCount)}
+                        onChange={(e) => setLoteCount(Math.max(1, Number(e.target.value) || 1))}
+                      />
+                    </Field>
+                  ) : (
+                    <Field label={s["lote.until"]}>
+                      <Input
+                        type="date"
+                        value={loteUntil}
+                        data-testid="lote-until"
+                        onChange={(e) => setLoteUntil(e.target.value)}
+                      />
+                    </Field>
+                  )}
                   <button
                     type="button"
+                    data-testid="lote-generate"
                     onClick={() =>
                       setLoteRows(
-                        generateLoteDates(form.date, loteEveryWeeks, loteCount).map((date) => ({
-                          date,
-                          time: form.time,
-                        })),
+                        generateLoteSchedule({
+                          from: form.date,
+                          weekdays: loteWeekdays,
+                          everyWeeks: loteEveryWeeks,
+                          end:
+                            loteEndMode === "until"
+                              ? { kind: "until", date: loteUntil }
+                              : { kind: "count", count: loteCount },
+                        }).map((date) => ({ date, time: form.time })),
                       )
                     }
                     className="h-10 rounded border border-brand-teal px-3 text-sm font-medium text-brand-teal hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
