@@ -97,13 +97,22 @@ async function clearBlocks(page: Page) {
 test("W5-12: both modes create time_off blocks; pontual excluded from availability; overlap warns not cancels", async ({
   page,
 }) => {
-  // QUARANTINED ON CI (2026-07-27, owner-approved). GitHub's shared runners have
-  // been degraded 24h+, running this long multi-dialog flow ~26x slower than local
-  // (7s → 186s), exceeding any sane per-test timeout and timing out the 25-min e2e
-  // job — blocking every PR on pure infra. It PASSES deterministically locally, so
-  // this is not masking a bug. Skip on CI ONLY (still runs in local dev/verify);
-  // RE-ENABLE once the runners recover. Tracked in docs/QUESTIONS.md.
-  test.skip(!!process.env.CI, "CI runners degraded (infra); passes locally — see QUESTIONS.md");
+  // Was QUARANTINED ON CI 2026-07-27 (owner-approved): GitHub's shared runners
+  // were degraded 24h+, running this long multi-dialog flow ~26x slower than
+  // local (7s → 186s), timing out the 25-min e2e job and blocking every PR on
+  // pure infra.
+  //
+  // UN-QUARANTINED 2026-07-31. The recovery condition the quarantine named has
+  // been met and measured, not assumed: seven consecutive Playwright jobs on
+  // this repo the same day finished GREEN in 12.4-14.5 min (PRs #720-#727),
+  // tightly clustered and well inside the 25-min budget - the low variance is
+  // the actual health signal, since a degraded runner shows as a wide spread,
+  // not a uniform slowdown.
+  //
+  // The generous per-test budget STAYS. It was never the quarantine: this is a
+  // genuinely long multi-dialog flow, and 180s absorbs normal CI variance
+  // without masking a hang. If this test ever times out again, quarantine is
+  // the wrong first move - read which assertion failed first.
   test.setTimeout(180_000);
 
   const date = futureDate(RUN_DAY_BASE + 24);

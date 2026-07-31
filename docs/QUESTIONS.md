@@ -707,7 +707,7 @@ W12-21 palette. This keeps the current PR within its UI/UX + wiring boundary.
   default to the registering staff's location when they have exactly one membership, else an
   optional picker; correct the migration comment. Non-migration follow-up, not a blocker.
 
-- [ ] RE-ENABLE `therapist-blocks.spec.ts:97` on CI (owner-approved quarantine 2026-07-27).
+- [x] RE-ENABLE `therapist-blocks.spec.ts:97` on CI (owner-approved quarantine 2026-07-27). **DONE 2026-07-31**: runners measured recovered - seven consecutive green Playwright jobs at 12.4-14.5 min (#720-#727), tight spread, well inside the 25-min budget. `test.skip` removed; the 180s per-test budget stays, since it was never the quarantine.
   It is skipped on CI ONLY (`test.skip(!!process.env.CI, …)`) because GitHub's shared runners
   have been degraded 24h+ (this 7s-local test runs ~186s on CI, timing out the 25-min job and
   blocking every PR on pure infra). It still runs + passes in local dev. When the runners

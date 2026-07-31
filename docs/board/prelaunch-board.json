@@ -327,16 +327,20 @@
     {
       "id": "LE-ci-quarantine-reenable",
       "title": "Re-enable therapist-blocks.spec.ts:97 on CI when runners recover",
-      "lane": "loose_ends",
+      "lane": "shipped",
       "home_lane": "loose_ends",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
-      "blocked_on": "infra",
-      "last_checkpoint": "2026-07-27",
-      "notes": "Owner-approved quarantine 2026-07-27: skipped on CI only (test.skip(!!process.env.CI, ...)) because GitHub shared runners degraded 24h+ (7s local -> ~186s CI). Runs+passes locally. Delete the test.skip line when runners recover. Tracked in docs/QUESTIONS.md."
+      "evidence": {
+        "kind": "pr",
+        "ref": "#730",
+        "at": "2026-07-31"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-31",
+      "notes": "Owner-approved quarantine 2026-07-27: skipped on CI only (test.skip(!!process.env.CI, ...)) because GitHub shared runners degraded 24h+ (7s local -> ~186s CI). Runs+passes locally. Delete the test.skip line when runners recover. Tracked in docs/QUESTIONS.md. UN-QUARANTINED 2026-07-31. The recovery condition was MEASURED, not assumed: seven consecutive Playwright jobs on this repo the same day finished green in 12.4-14.5 min (#720, #721, #722, #723, #725, #726, #727), tightly clustered and well inside the 25-min job budget - the low variance is the real health signal, since a degraded runner shows as a wide spread rather than a uniform slowdown. test.skip removed; the 180s per-test budget STAYS, because it was never the quarantine - this is a genuinely long multi-dialog flow and 180s absorbs normal CI variance without masking a hang. Merged only after the un-quarantined test itself went green on CI, so the evidence is the run, not the reasoning."
     },
     {
       "id": "PL-06a",
