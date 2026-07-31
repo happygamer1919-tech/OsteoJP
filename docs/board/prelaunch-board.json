@@ -327,16 +327,20 @@
     {
       "id": "LE-ci-quarantine-reenable",
       "title": "Re-enable therapist-blocks.spec.ts:97 on CI when runners recover",
-      "lane": "loose_ends",
+      "lane": "shipped",
       "home_lane": "loose_ends",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
-      "blocked_on": "infra",
-      "last_checkpoint": "2026-07-27",
-      "notes": "Owner-approved quarantine 2026-07-27: skipped on CI only (test.skip(!!process.env.CI, ...)) because GitHub shared runners degraded 24h+ (7s local -> ~186s CI). Runs+passes locally. Delete the test.skip line when runners recover. Tracked in docs/QUESTIONS.md."
+      "evidence": {
+        "kind": "pr",
+        "ref": "#730",
+        "at": "2026-07-31"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-31",
+      "notes": "Owner-approved quarantine 2026-07-27: skipped on CI only (test.skip(!!process.env.CI, ...)) because GitHub shared runners degraded 24h+ (7s local -> ~186s CI). Runs+passes locally. Delete the test.skip line when runners recover. Tracked in docs/QUESTIONS.md. UN-QUARANTINED 2026-07-31, and the 2026-07-27 diagnosis was WRONG. Re-enabling it failed CI three times for three identical minutes, and the Playwright artifact named the real cause: \"element is not stable ... element was detached from the DOM, retrying\" for the full 180s. Not slowness - a RACE. Every write in that spec is a server action ending in redirect(\"/admin/staff?m=<code>\"), and the test waited with waitForURL(/admin\\/staff/), a pattern the CURRENT url already satisfies, so it waited for nothing and the next click landed in the outgoing DOM that the redirect was about to replace. Locally the race is won and the test passes in 7s, which is exactly why it looked like an infra problem: same symptom, opposite cause. Fixed by waiting on the app's own signals - the redirect's ?m= marker plus the rendered banner - instead of a regex that was already true. The 180s per-test budget stays; it was never the quarantine."
     },
     {
       "id": "PL-06a",

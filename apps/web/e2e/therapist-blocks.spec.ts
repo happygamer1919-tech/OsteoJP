@@ -35,6 +35,27 @@ function blocksModal(page: Page) {
   return page.getByRole("dialog", { name: new RegExp(`Bloqueios de ${THERAPIST_NAME}`) });
 }
 
+/**
+ * Wait for a WRITE to actually land before touching the page again.
+ *
+ * Every Bloquear-horário / Horários write is a server action that ends in
+ * `redirect("/admin/staff?m=<code>")`. The old wait here was
+ * `waitForURL(/admin\/staff/)`, which the CURRENT url already satisfies - so it
+ * waited for nothing, and the next click raced the redirect: Playwright found
+ * the button in the outgoing DOM and the incoming render detached it
+ * mid-click. Locally that race is won; on CI it was lost every time, which is
+ * what "element is not stable / element was detached from the DOM" meant in the
+ * 2026-07-27 failure that got this test quarantined as "runners degraded".
+ *
+ * The `?m=` param is the redirect's OWN marker, and the banner is the rendered
+ * proof the new page committed - so this waits on the app's real signal rather
+ * than on a timer or on networkidle.
+ */
+async function settleAfterWrite(page: Page) {
+  await page.waitForURL(/\/admin\/staff\?m=/);
+  await expect(page.getByTestId("equipa-banner")).toBeVisible({ timeout: 15_000 });
+}
+
 /** Open THERAPIST_NAME's Gerir modal, switched to the Horários section. */
 async function openManageHours(page: Page) {
   const modal = manageModal(page);
@@ -71,7 +92,7 @@ async function setWorkingHours(page: Page, weekday: number) {
   await fillTime(row.locator("label").filter({ hasText: "Fim" }), "13:00");
   await row.locator(`select[name="d${weekday}_location"]`).selectOption({ label: LOCATION_B.name });
   await modal.getByRole("button", { name: SAVE }).click();
-  await page.waitForURL(/admin\/staff/);
+  await settleAfterWrite(page);
   await expect(page.getByText("Horário guardado")).toBeVisible({ timeout: 8_000 });
 }
 
@@ -86,7 +107,7 @@ async function clearBlocks(page: Page) {
     const firstRemove = list.getByRole("button", { name: "Eliminar" }).first();
     if ((await firstRemove.count()) === 0) break;
     await firstRemove.click();
-    await page.waitForURL(/admin\/staff/);
+    await settleAfterWrite(page);
     // The save closes the dialog (page reload); wait for it to be gone before
     // re-opening so its ::backdrop can't intercept the next open-blocks click.
     await expect(modal).toBeHidden();
@@ -97,13 +118,22 @@ async function clearBlocks(page: Page) {
 test("W5-12: both modes create time_off blocks; pontual excluded from availability; overlap warns not cancels", async ({
   page,
 }) => {
-  // QUARANTINED ON CI (2026-07-27, owner-approved). GitHub's shared runners have
-  // been degraded 24h+, running this long multi-dialog flow ~26x slower than local
-  // (7s → 186s), exceeding any sane per-test timeout and timing out the 25-min e2e
-  // job — blocking every PR on pure infra. It PASSES deterministically locally, so
-  // this is not masking a bug. Skip on CI ONLY (still runs in local dev/verify);
-  // RE-ENABLE once the runners recover. Tracked in docs/QUESTIONS.md.
-  test.skip(!!process.env.CI, "CI runners degraded (infra); passes locally — see QUESTIONS.md");
+  // Was QUARANTINED ON CI 2026-07-27 (owner-approved): GitHub's shared runners
+  // were degraded 24h+, running this long multi-dialog flow ~26x slower than
+  // local (7s → 186s), timing out the 25-min e2e job and blocking every PR on
+  // pure infra.
+  //
+  // UN-QUARANTINED 2026-07-31. The recovery condition the quarantine named has
+  // been met and measured, not assumed: seven consecutive Playwright jobs on
+  // this repo the same day finished GREEN in 12.4-14.5 min (PRs #720-#727),
+  // tightly clustered and well inside the 25-min budget - the low variance is
+  // the actual health signal, since a degraded runner shows as a wide spread,
+  // not a uniform slowdown.
+  //
+  // The generous per-test budget STAYS. It was never the quarantine: this is a
+  // genuinely long multi-dialog flow, and 180s absorbs normal CI variance
+  // without masking a hang. If this test ever times out again, quarantine is
+  // the wrong first move - read which assertion failed first.
   test.setTimeout(180_000);
 
   const date = futureDate(RUN_DAY_BASE + 24);
@@ -141,7 +171,7 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await modal.getByLabel("De").fill(futureDate(RUN_DAY_BASE + 40));
   await modal.getByLabel("Até").fill(futureDate(RUN_DAY_BASE + 42));
   await modal.getByRole("button", { name: SAVE }).click();
-  await page.waitForURL(/admin\/staff/);
+  await settleAfterWrite(page);
   await expect(modal).toBeHidden();
 
   // --- Create a Bloqueio pontual (date + hour range) OVER the booked 09:00 slot. ---
@@ -154,7 +184,7 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await fillTime(modal.locator("label").filter({ hasText: "Início" }), "09:00");
   await fillTime(modal.locator("label").filter({ hasText: "Fim" }), "13:00");
   await modal.getByRole("button", { name: SAVE }).click();
-  await page.waitForURL(/admin\/staff/);
+  await settleAfterWrite(page);
   await expect(modal).toBeHidden();
 
   // WARNING shown (block overlaps the existing 09:00 appointment), NOT cancelled.
