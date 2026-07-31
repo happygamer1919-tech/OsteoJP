@@ -31,6 +31,12 @@ const LANES_IN_ORDER = [
   "shipped",
 ];
 const STATUS = ["todo", "in_flight", "halted", "blocked", "shipped"];
+// A card's KIND. `home_lane` is the only lane fact a human sets; `lane` is
+// DERIVED from it plus the card's state (see deriveLane below), so the board can
+// never show a card in a place its own status contradicts.
+const KIND_LANES = ["in_flight", "rodica_batch", "incidents", "loose_ends"];
+const PRIORITY = ["high", "medium", "low"];
+const PEOPLE = ["ivan", "jp", "rodica"];
 const GATE = [
   "green_self_merge",
   "cyan_clear",
@@ -46,6 +52,21 @@ const LAUNCH_GATE_DENOMINATOR = 9;
 // ISO 8601: date-only or full timestamp; must also parse to a real date.
 const ISO_RE =
   /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2}))?$/;
+
+/**
+ * THE DERIVATION (BOARD-SPEC.md "Lane is derived"). Marking a card done moves it
+ * to Shipped; naming a person on a blocked work item moves it to Blocked on
+ * people. Incidents and inbox items keep their kind while blocked - they are
+ * categories, not states.
+ */
+function deriveLane(card) {
+  if (card.status === "shipped") return "shipped";
+  const home = KIND_LANES.includes(card.home_lane) ? card.home_lane : "in_flight";
+  if (home === "in_flight" && card.status === "blocked" && PEOPLE.includes(card.blocked_on)) {
+    return "blocked_on_people";
+  }
+  return home;
+}
 
 const violations = [];
 const fail = (id, msg) => violations.push(`[${id}] ${msg}`);
@@ -170,8 +191,22 @@ for (const card of cards) {
     fail(id, `status=blocked but blocked_on is null - name who/what it is blocked on`);
 
   // The BLOCKED ON PEOPLE lane is split by person; every card there needs one.
-  if (card.lane === "blocked_on_people" && !["ivan", "jp", "rodica"].includes(card.blocked_on))
+  if (card.lane === "blocked_on_people" && !PEOPLE.includes(card.blocked_on))
     fail(id, `lane=blocked_on_people requires blocked_on in ivan|jp|rodica, got "${card.blocked_on}"`);
+
+  // ---- home_lane + priority (optional in older files, required from v2) ----
+  if (!KIND_LANES.includes(card.home_lane))
+    fail(id, `home_lane "${card.home_lane}" not in ${KIND_LANES.join("|")} - it is the card's KIND, never a state lane`);
+  if (!PRIORITY.includes(card.priority ?? "medium"))
+    fail(id, `priority "${card.priority}" not in ${PRIORITY.join("|")}`);
+
+  // ---- THE SECOND RULE: the stored lane must equal the derived lane. -------
+  // This is what keeps a card from sitting in the wrong place after its status
+  // changes: the board computes the lane, and a hand-edit that disagrees is a
+  // red gate, not a silent inconsistency.
+  const derived = deriveLane(card);
+  if (card.lane !== derived)
+    fail(id, `lane "${card.lane}" contradicts status/blocked_on - derived lane is "${derived}"`);
 }
 
 // ---- report ------------------------------------------------------------------

@@ -6,28 +6,157 @@
   "renders_to": "claude.ai artifact (a RENDER of this file; this JSON is the source of truth)",
   "doctrine": "A board claim is never truth on its own. The evidence field carries the proof. GREEN updates this JSON at every checkpoint and re-renders. A card may not enter status=shipped with evidence=null; a launch gate may not be state=pass with evidence=null. See docs/board/BOARD-SPEC.md; enforced by docs/board/validate-board.mjs.",
   "lanes": [
-    { "id": "launch_gate", "order": 1, "title": "LAUNCH GATE", "note": "Explicit go/no-go conditions, each pass or fail, nothing else. Readiness = passed / 9, counted never estimated." },
-    { "id": "blocked_on_people", "order": 2, "title": "BLOCKED ON PEOPLE", "columns": ["ivan", "jp", "rodica"], "note": "Split into Ivan / JP / Rodica columns; answer latency = now - last_checkpoint, made visible." },
-    { "id": "in_flight", "order": 3, "title": "IN FLIGHT" },
-    { "id": "rodica_batch", "order": 4, "title": "RODICA BATCH", "note": "Live inbox; cards move out of here into In Flight when dispatched." },
-    { "id": "incidents", "order": 5, "title": "INCIDENTS" },
-    { "id": "loose_ends", "order": 6, "title": "LOOSE ENDS" },
-    { "id": "shipped", "order": 7, "title": "SHIPPED", "collapsed": true, "note": "Collapsed by default, count only, expandable." }
+    {
+      "id": "launch_gate",
+      "order": 1,
+      "title": "LAUNCH GATE",
+      "note": "Explicit go/no-go conditions, each pass or fail, nothing else. Readiness = passed / 9, counted never estimated."
+    },
+    {
+      "id": "blocked_on_people",
+      "order": 2,
+      "title": "BLOCKED ON PEOPLE",
+      "columns": [
+        "ivan",
+        "jp",
+        "rodica"
+      ],
+      "note": "Split into Ivan / JP / Rodica columns; answer latency = now - last_checkpoint, made visible."
+    },
+    {
+      "id": "in_flight",
+      "order": 3,
+      "title": "IN FLIGHT"
+    },
+    {
+      "id": "rodica_batch",
+      "order": 4,
+      "title": "RODICA BATCH",
+      "note": "Live inbox; cards move out of here into In Flight when dispatched."
+    },
+    {
+      "id": "incidents",
+      "order": 5,
+      "title": "INCIDENTS"
+    },
+    {
+      "id": "loose_ends",
+      "order": 6,
+      "title": "LOOSE ENDS"
+    },
+    {
+      "id": "shipped",
+      "order": 7,
+      "title": "SHIPPED",
+      "collapsed": true,
+      "note": "Collapsed by default, count only, expandable."
+    }
   ],
   "launch_gate": {
     "denominator": 9,
     "readiness_passed": 7,
     "note": "The launch readiness figure is passed-over-nine. It is NOT a percentage of work done and it is NEVER estimated. No partial credit: each condition is pass or fail.",
     "conditions": [
-      { "id": "G1", "title": "Portal-readiness: Chris Macov seeded for client-portal testing", "state": "pass", "blocked_on": "ivan", "evidence": { "kind": "screenshot", "ref": "owner-attested 20260729: Chris Macov seeded (availability_templates) + staff login working, client-portal testable", "at": "2026-07-29" }, "notes": "RE-SCOPED by owner 20260729 from real-team-seeded to PORTAL-READINESS via Chris Macov: Chris Macov seeded with hours for client-portal testing (owner-attested); his staff login is confirmed working (PL-07). REAL-team working hours remain a RODICA post-launch task, tracked separately and NOT a launch blocker under this re-scope - real staff + portal booking generate slots only once Rodica seeds their hours." },
-      { "id": "G2", "title": "REMINDERS_LIVE_SEND resolved and canary sender confirmed", "state": "fail", "blocked_on": "ivan", "evidence": null, "notes": "Canary RE-STAGED (old one died in the purge). Lead windows 24h + 48h (offsets.ts:20-22,43); fires via the appointment/scheduled Inngest event (functions.ts:66) so canary-create = UI booking at now+24h+15min. REMINDERS_LIVE_SEND checked at SEND time (clients.ts:45). Pending Ivan UI booking + the SMS fire (FROM sender) + Twilio/Inngest/Vercel console findings; GREEN staged canary-cleanup ONLY (sha256 8b75e89d2605e95c68883c3083d0a13779c12c9a77132988ce3b0a7a5e1a4cff; preview by default, destructive only under --confirm <patientId> AUTORIZO, 0/0 verify, patient-id as an arg so no phone enters AI). G2 CLOSES on: SMS sender screenshot + cleanup 0/0 + REMINDERS_LIVE_SEND=false on BOTH Vercel projects + redeploy, before the team session. Two-way capability read off the SMS feeds W12-11." },
-      { "id": "G3", "title": "NEW_DB_PASSWORD rotated with full propagation", "state": "pass", "blocked_on": "ivan", "evidence": { "kind": "screenshot", "ref": "owner-attested 20260729: NEW_DB_PASSWORD rotated + propagated to Vercel platform/api/portal + local .env", "at": "2026-07-29" }, "notes": "DONE (owner-terminal, owner-attested 20260729): rotated the NEW prod DB password and propagated to every consumer (Vercel platform/api/portal env + local .env). Owner-terminal only; GREEN never sources prod creds. Keep the Supabase/Vercel confirmation on file for CYAN spot-check." },
-      { "id": "G4", "title": "Prod free of synthetic data (CYAN PASS, post INC-02)", "state": "pass", "blocked_on": "ivan", "evidence": { "kind": "screenshot", "ref": "owner-attested 20260729: Teste CB/LV purged; Max kept as owner-consented permitted test patient (D6); per-person logins, no synthetic seed", "at": "2026-07-29" }, "notes": "DONE (owner-attested 20260729): Teste CB/LV purged; the only remaining synthetic rows are OWNER-RULED PERMITTED residue - Max (c198d781, owner-consented practice/Twilio patient, owner own phone, D6) + Teste LV (soft-deleted, record annulled). Owner provisions per-person logins individually (Ativar login), no bulk synthetic seed. BACKSTOP: CYAN final pre-launch sweep (Max + Teste LV allowlist) is the independent confirmation - if it finds UNPERMITTED residue this reopens. Recommend a test-patient marker so Max is excluded from real counts/reports/exports." },
-      { "id": "G5", "title": "Rodica batch cleared or explicitly deferred with her sign-off", "state": "pass", "blocked_on": "rodica", "evidence": { "kind": "screenshot", "ref": "owner-attested 20260729: Rodica cleared the batch (four re-test points PL-01..PL-04 + PL-05)", "at": "2026-07-29" }, "notes": "DONE (owner-attested 20260729): Rodica cleared the batch - all four re-test points (PL-01..PL-04) + PL-05 confirmed. Keep her confirmation on file for CYAN spot-check." },
-      { "id": "G6", "title": "Nine staff mailboxes created on webhs, invite tested to Chris Macov", "state": "pass", "blocked_on": "ivan", "evidence": { "kind": "screenshot", "ref": "owner-attested 20260729: per-person Ativar login onboarding; Chris Macov login proven end-to-end", "at": "2026-07-29" }, "notes": "DONE (owner-attested 20260729): the onboarding approach CHANGED - owner provisions each staff login INDIVIDUALLY via Ativar login (PL-07) rather than the nine-webhs-mailbox + bulk-invite path this gate originally described. The invite/login flow is proven end-to-end on Chris Macov (login working). Original webhs-mailbox scope superseded by per-person logins." },
-      { "id": "G7", "title": "estados flags ON", "state": "pass", "blocked_on": "ivan", "evidence": { "kind": "sha256", "ref": "bcf9b796 - CYAN G7 CLEAR (SAFE-BUT-INERT) + owner flipped REMINDERS_INBOUND + inbound-webhook ON (LIVE_SEND OFF), both Vercel projects, redeployed", "at": "2026-07-29" }, "notes": "PASS (CYAN CLEAR 20260729 + owner flip): REMINDERS_INBOUND + the inbound-webhook flag are ON on both Vercel projects (platform + api), redeployed; REMINDERS_LIVE_SEND stays OFF until the canary (G2). CYAN CORRECTION - the flags are SAFE but INERT: the live inbound path is a fail-closed STUB (webhook 404 off / 501 on, no signature check, classifier wired to nothing, sms_inbound_events table + handler are a DEFERRED migration), so inbound SMS replies do NOT actually work yet. DO NOT point the Twilio number inbound-webhook URL at this stub (replies would 501 + drop silently) - leave it unset until the live handler ships (own G7-class review). STOP opt-out must use Twilio native Advanced Opt-Out (app records nothing) - confirm ON before any outbound goes live. Ledger: outbox/CYAN-G7-inbound-classifier-review-SAFE-BUT-INERT-20260729T032144Z.md." },
-      { "id": "G8", "title": "Lawyer sign-off on the RGPD package incl. Twilio DPF/SCC line", "state": "fail", "blocked_on": "jp", "evidence": null, "notes": "External legal sign-off on the RGPD package including the Twilio Data Privacy Framework / Standard Contractual Clauses line. Routed through JP (legal/clinical decisions); not a GREEN-decidable item." },
-      { "id": "G9", "title": "Rodica green light + freeze lift", "state": "pass", "blocked_on": "rodica", "evidence": { "kind": "screenshot", "ref": "owner-attested 20260729: Rodica green light given, testing freeze lifted", "at": "2026-07-29" }, "notes": "DONE (owner-attested 20260729): Rodica gave her explicit green light and lifted the testing freeze. Distinct from G5 - this is the launch go/no-go itself. Keep her message on file for CYAN spot-check." }
+      {
+        "id": "G1",
+        "title": "Portal-readiness: Chris Macov seeded for client-portal testing",
+        "state": "pass",
+        "blocked_on": "ivan",
+        "evidence": {
+          "kind": "screenshot",
+          "ref": "owner-attested 20260729: Chris Macov seeded (availability_templates) + staff login working, client-portal testable",
+          "at": "2026-07-29"
+        },
+        "notes": "RE-SCOPED by owner 20260729 from real-team-seeded to PORTAL-READINESS via Chris Macov: Chris Macov seeded with hours for client-portal testing (owner-attested); his staff login is confirmed working (PL-07). REAL-team working hours remain a RODICA post-launch task, tracked separately and NOT a launch blocker under this re-scope - real staff + portal booking generate slots only once Rodica seeds their hours."
+      },
+      {
+        "id": "G2",
+        "title": "REMINDERS_LIVE_SEND resolved and canary sender confirmed",
+        "state": "fail",
+        "blocked_on": "ivan",
+        "evidence": null,
+        "notes": "Canary RE-STAGED (old one died in the purge). Lead windows 24h + 48h (offsets.ts:20-22,43); fires via the appointment/scheduled Inngest event (functions.ts:66) so canary-create = UI booking at now+24h+15min. REMINDERS_LIVE_SEND checked at SEND time (clients.ts:45). Pending Ivan UI booking + the SMS fire (FROM sender) + Twilio/Inngest/Vercel console findings; GREEN staged canary-cleanup ONLY (sha256 8b75e89d2605e95c68883c3083d0a13779c12c9a77132988ce3b0a7a5e1a4cff; preview by default, destructive only under --confirm <patientId> AUTORIZO, 0/0 verify, patient-id as an arg so no phone enters AI). G2 CLOSES on: SMS sender screenshot + cleanup 0/0 + REMINDERS_LIVE_SEND=false on BOTH Vercel projects + redeploy, before the team session. Two-way capability read off the SMS feeds W12-11."
+      },
+      {
+        "id": "G3",
+        "title": "NEW_DB_PASSWORD rotated with full propagation",
+        "state": "pass",
+        "blocked_on": "ivan",
+        "evidence": {
+          "kind": "screenshot",
+          "ref": "owner-attested 20260729: NEW_DB_PASSWORD rotated + propagated to Vercel platform/api/portal + local .env",
+          "at": "2026-07-29"
+        },
+        "notes": "DONE (owner-terminal, owner-attested 20260729): rotated the NEW prod DB password and propagated to every consumer (Vercel platform/api/portal env + local .env). Owner-terminal only; GREEN never sources prod creds. Keep the Supabase/Vercel confirmation on file for CYAN spot-check."
+      },
+      {
+        "id": "G4",
+        "title": "Prod free of synthetic data (CYAN PASS, post INC-02)",
+        "state": "pass",
+        "blocked_on": "ivan",
+        "evidence": {
+          "kind": "screenshot",
+          "ref": "owner-attested 20260729: Teste CB/LV purged; Max kept as owner-consented permitted test patient (D6); per-person logins, no synthetic seed",
+          "at": "2026-07-29"
+        },
+        "notes": "DONE (owner-attested 20260729): Teste CB/LV purged; the only remaining synthetic rows are OWNER-RULED PERMITTED residue - Max (c198d781, owner-consented practice/Twilio patient, owner own phone, D6) + Teste LV (soft-deleted, record annulled). Owner provisions per-person logins individually (Ativar login), no bulk synthetic seed. BACKSTOP: CYAN final pre-launch sweep (Max + Teste LV allowlist) is the independent confirmation - if it finds UNPERMITTED residue this reopens. Recommend a test-patient marker so Max is excluded from real counts/reports/exports."
+      },
+      {
+        "id": "G5",
+        "title": "Rodica batch cleared or explicitly deferred with her sign-off",
+        "state": "pass",
+        "blocked_on": "rodica",
+        "evidence": {
+          "kind": "screenshot",
+          "ref": "owner-attested 20260729: Rodica cleared the batch (four re-test points PL-01..PL-04 + PL-05)",
+          "at": "2026-07-29"
+        },
+        "notes": "DONE (owner-attested 20260729): Rodica cleared the batch - all four re-test points (PL-01..PL-04) + PL-05 confirmed. Keep her confirmation on file for CYAN spot-check."
+      },
+      {
+        "id": "G6",
+        "title": "Nine staff mailboxes created on webhs, invite tested to Chris Macov",
+        "state": "pass",
+        "blocked_on": "ivan",
+        "evidence": {
+          "kind": "screenshot",
+          "ref": "owner-attested 20260729: per-person Ativar login onboarding; Chris Macov login proven end-to-end",
+          "at": "2026-07-29"
+        },
+        "notes": "DONE (owner-attested 20260729): the onboarding approach CHANGED - owner provisions each staff login INDIVIDUALLY via Ativar login (PL-07) rather than the nine-webhs-mailbox + bulk-invite path this gate originally described. The invite/login flow is proven end-to-end on Chris Macov (login working). Original webhs-mailbox scope superseded by per-person logins."
+      },
+      {
+        "id": "G7",
+        "title": "estados flags ON",
+        "state": "pass",
+        "blocked_on": "ivan",
+        "evidence": {
+          "kind": "sha256",
+          "ref": "bcf9b796 - CYAN G7 CLEAR (SAFE-BUT-INERT) + owner flipped REMINDERS_INBOUND + inbound-webhook ON (LIVE_SEND OFF), both Vercel projects, redeployed",
+          "at": "2026-07-29"
+        },
+        "notes": "PASS (CYAN CLEAR 20260729 + owner flip): REMINDERS_INBOUND + the inbound-webhook flag are ON on both Vercel projects (platform + api), redeployed; REMINDERS_LIVE_SEND stays OFF until the canary (G2). CYAN CORRECTION - the flags are SAFE but INERT: the live inbound path is a fail-closed STUB (webhook 404 off / 501 on, no signature check, classifier wired to nothing, sms_inbound_events table + handler are a DEFERRED migration), so inbound SMS replies do NOT actually work yet. DO NOT point the Twilio number inbound-webhook URL at this stub (replies would 501 + drop silently) - leave it unset until the live handler ships (own G7-class review). STOP opt-out must use Twilio native Advanced Opt-Out (app records nothing) - confirm ON before any outbound goes live. Ledger: outbox/CYAN-G7-inbound-classifier-review-SAFE-BUT-INERT-20260729T032144Z.md."
+      },
+      {
+        "id": "G8",
+        "title": "Lawyer sign-off on the RGPD package incl. Twilio DPF/SCC line",
+        "state": "fail",
+        "blocked_on": "jp",
+        "evidence": null,
+        "notes": "External legal sign-off on the RGPD package including the Twilio Data Privacy Framework / Standard Contractual Clauses line. Routed through JP (legal/clinical decisions); not a GREEN-decidable item."
+      },
+      {
+        "id": "G9",
+        "title": "Rodica green light + freeze lift",
+        "state": "pass",
+        "blocked_on": "rodica",
+        "evidence": {
+          "kind": "screenshot",
+          "ref": "owner-attested 20260729: Rodica green light given, testing freeze lifted",
+          "at": "2026-07-29"
+        },
+        "notes": "DONE (owner-attested 20260729): Rodica gave her explicit green light and lifted the testing freeze. Distinct from G5 - this is the launch go/no-go itself. Keep her message on file for CYAN spot-check."
+      }
     ]
   },
   "cards": [
@@ -35,10 +164,16 @@
       "id": "GOV-prelaunch-authoring",
       "title": "Pre-Launch loop set + board governance + handoff correction (#667)",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "yellow",
       "gate": "owner_merge",
-      "evidence": { "kind": "pr", "ref": "#667", "at": "2026-07-27" },
+      "evidence": {
+        "kind": "pr",
+        "ref": "#667",
+        "at": "2026-07-27"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
       "notes": "YELLOW authoring PR MERGED as #667 (squash, origin/main @025c20c): docs/loops/prelaunch/ (PL-01, PL-02, PL-03a, PL-03b, PL-04, PL-05, INC-02), docs/board/ (spec + JSON + validator), and the WAVE-12-CLOSE handoff correction. Owner-merged; YELLOW never merged its own PR."
@@ -47,10 +182,16 @@
       "id": "PL-01",
       "title": "Agenda same-hour render: concurrent appointments read as the next hour",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": { "kind": "pr", "ref": "#675", "at": "2026-07-28" },
+      "evidence": {
+        "kind": "pr",
+        "ref": "#675",
+        "at": "2026-07-28"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-28",
       "notes": "SHIPPED - owner merged #675 (2026-07-28) after the visual gate. Keeps the intentional vertical stack but BOUNDS each same-start group to the nearer of its next hour line and its next group (new pure groupBandPx); overflow scrolls WITHIN the band - a cluster no longer descends into the next hour, names never truncated, nothing hidden. Placement math + inert 0041 UNTOUCHED. Red-then-green SSR test + groupBandPx unit test; vertical-stack tests stayed green. Bound mechanism = scroll-within-band (Q-PL-01-1 default owner-accepted at the gate). ALL FOUR Rodica-batch code loops now shipped."
@@ -59,10 +200,16 @@
       "id": "PL-02",
       "title": "Patient Marcacoes tab: cannot edit + no authorship line",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": { "kind": "pr", "ref": "#673", "at": "2026-07-28" },
+      "evidence": {
+        "kind": "pr",
+        "ref": "#673",
+        "at": "2026-07-28"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-28",
       "notes": "GREEN 2026-07-28: PR #673 OPEN, OWNER VISUAL GATE. (b) SHIPPED here: the row now shows 'Criado por {staff} · Criado em {DD/MM/AAAA HH:mm}' from already-fetched fields, reusing the agenda hover-card i18n + shared formatCreatedAt (moved to lib/scheduling/time). (a) edit ALREADY works: Gerir marcacao reaches Reagendar/Estado/Cancelar on editable rows (existing spec + new save+reread e2e prove it); terminal rows intentionally have none. FULL edit (service/therapist) = scope expansion -> Q-PL-02-1 (owner/Rodica), not guessed. Gates GREEN: lint 0, typecheck 9/9, test (web 157), build 4/4, e2e marcacoes-tab-edit 9/9. Migration-free. AWAITING OWNER: see the authorship line + reschedule on the Preview, then merge."
@@ -71,10 +218,16 @@
       "id": "PL-03a",
       "title": "Declaracao de Presenca: editable free-text observacoes (UI, non-migration)",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": { "kind": "pr", "ref": "#671", "at": "2026-07-27" },
+      "evidence": {
+        "kind": "pr",
+        "ref": "#671",
+        "at": "2026-07-27"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
       "notes": "SHIPPED - owner merged #671 (2026-07-27) after the visual gate. Optional free-text observacoes typed in the dialog, rendered in the PDF between the treatment sentence and 'Por ser verdade'. TRANSIENT (no table/column, no PL-03b). Threaded via pure declaracaoBodyParagraphs (empty renders byte-identical); maxLength 500 protects the single-page layout. Full gates + e2e green."
@@ -83,7 +236,9 @@
       "id": "PL-03b",
       "title": "Declaracao observacoes persistence - NOT required now (future owner decision)",
       "lane": "loose_ends",
+      "home_lane": "loose_ends",
       "status": "todo",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": null,
@@ -95,7 +250,9 @@
       "id": "PL-04",
       "title": "NESA: servico to add vs specialty tag on David Batista (AMBIGUOUS)",
       "lane": "blocked_on_people",
+      "home_lane": "in_flight",
       "status": "blocked",
+      "priority": "medium",
       "owner_terminal": "yellow",
       "gate": "stakeholder",
       "evidence": null,
@@ -107,10 +264,16 @@
       "id": "PL-05",
       "title": "Terapeuta dropdown lists all staff (owner + admin), not bookable therapists",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": { "kind": "pr", "ref": "#669", "at": "2026-07-27" },
+      "evidence": {
+        "kind": "pr",
+        "ref": "#669",
+        "at": "2026-07-27"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
       "notes": "SHIPPED (merged #669) BUT carries a LIVE PROD DEFECT found 2026-07-28: the predicate role='therapist' OR >=1 mapping DROPS JP, because on prod JP is role!=therapist with ZERO service mappings (both arms false) -> JP is OUT of the Terapeuta dropdown. The PL-05 loop file's premise that JP carries mappings was false vs prod; the inclusion unit test used a fabricated mapped-owner fixture, so it passed without matching JP's real row. CYAN's hold was correct. Fix tracked under PL-06 (owner must choose the corrected bookability signal - explicit role vs is_bookable flag). Migration-free fix originally, drops Ivan M + Lurdes + reception correctly. Loop: PL-05-terapeuta-dropdown-scope.md."
@@ -119,7 +282,9 @@
       "id": "INC-02a",
       "title": "Root cause: Rodica has no safe test target (env fix)",
       "lane": "incidents",
+      "home_lane": "incidents",
       "status": "blocked",
+      "priority": "medium",
       "owner_terminal": "ivan",
       "gate": "owner_merge",
       "evidence": null,
@@ -131,7 +296,9 @@
       "id": "INC-02b",
       "title": "Purge synthetic 'Teste CB' from prod (CYAN inventory -> owner AUTORIZO)",
       "lane": "incidents",
+      "home_lane": "incidents",
       "status": "blocked",
+      "priority": "medium",
       "owner_terminal": "cyan",
       "gate": "owner_authorizo",
       "evidence": null,
@@ -143,10 +310,16 @@
       "id": "LE-handoff-correction",
       "title": "WAVE-12-CLOSE handoff stale: Tiago Grilo + David Batista shown DEFER/no-rows",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "yellow",
       "gate": "owner_merge",
-      "evidence": { "kind": "sha256", "ref": "52781a27 attested read-only 2026-07-28", "at": "2026-07-28" },
+      "evidence": {
+        "kind": "sha256",
+        "ref": "52781a27 attested read-only 2026-07-28",
+        "at": "2026-07-28"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-28",
       "notes": "CLOSED - attested by an owner-run read-only prod query 2026-07-28 (sha256 52781a27, GREEN-verified before the run). BOTH have real rows: Tiago Grilo 92fc1fb3 (therapist, active, CB, colour blue, maps Fisioterapia) + David Batista f67541b0 (therapist, active, LV, colour chartreuse, maps NESA). Handoff 'deferred/no-rows' was STALE for both. PL-05 correct (both role=therapist -> kept). Ledger: GREEN-LEDGER-tiago-david-nesa-attested-20260728."
@@ -155,7 +328,9 @@
       "id": "LE-ci-quarantine-reenable",
       "title": "Re-enable therapist-blocks.spec.ts:97 on CI when runners recover",
       "lane": "loose_ends",
+      "home_lane": "loose_ends",
       "status": "blocked",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
       "evidence": null,
@@ -167,10 +342,16 @@
       "id": "PL-06a",
       "title": "Service mapping = preselection not restriction - booking UI/logic (non-migration)",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": { "kind": "pr", "ref": "#682", "at": "2026-07-28" },
+      "evidence": {
+        "kind": "pr",
+        "ref": "#682",
+        "at": "2026-07-28"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-28",
       "notes": "Owner ruling 2026-07-28: the Equipa service mapping is a PRESELECTION, never a restriction - all active services stay bookable for every therapist. PL-06a (non-migration): the booking service Select stops filtering by the therapist's mapping (getTherapistServices) and lists ALL active services, preselecting the primary; NO location clause (BLOCKER 1 RESOLVED - booking already ignores services.location_id, data.ts:271-278); remove any therapist+service reject (none found). DoD: NESA-primary therapist -> change service -> save -> re-read + a negative no-reject assertion, red-then-green. Owner visual gate. BUILT + gates green (typecheck/lint/test 1376/build); Playwright e2e (unmapped service offered + booked + re-read) in CI. PR #682 - OWNER VISUAL GATE, no self-merge. Loop: PL-06-service-preselection-not-restriction.md."
@@ -179,10 +360,16 @@
       "id": "PL-06b",
       "title": "is_bookable flag (RULED Option 2) - migration + Equipa checkbox + predicate replace",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": { "kind": "sha256", "ref": "afe04a46 - CYAN independent read 20260729: 0046 applied, is_bookable present, id-map 21/21 match, count 16, JP bookable", "at": "2026-07-29" },
+      "evidence": {
+        "kind": "sha256",
+        "ref": "afe04a46 - CYAN independent read 20260729: 0046 applied, is_bookable present, id-map 21/21 match, count 16, JP bookable",
+        "at": "2026-07-29"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-28",
       "notes": "RULED 2026-07-28: Option 2 - an is_bookable boolean on the staff row (governs Terapeuta-dropdown presence, independent of role AND mappings; three concerns three signals). Replaces therapist-bookable.ts:36-38 (BOTH arms removed). Equipa checkbox in the Gerir modal. FIXES the PL-05 JP-out defect (JP -> is_bookable=true). ATTESTED id-map DERIVED (read c6540cc6, verbatim ids, no fuzzy match): TRUE for 16 (15 therapists + JP), FALSE for 5 (Lurdes, Ivan M, Carlos/Raquel/Tamara reception) - full list in GREEN-LEDGER-pl06-attested-idmap-and-jp-role-20260728. id-map SIGNED OFF by owner (16 true / 5 false). BUILT: migration 0046 (is_bookable + tenant-scoped backfill by id), predicate replaced (both arms), data.ts selects the flag, Equipa Contacto checkbox (users:manage, audited), RLS isolation test; JP-inclusion red-then-green at unit level. Gates green; migration validated locally (rolled back). PR #683. APPLIED + CLOSED 20260729: the earlier apply-before-merge DRIFT (#683 merged + deployed with neither CYAN CLEAR nor apply; column briefly absent -> data.ts:252 erroring 42703) is REMEDIATED by fix-forward. Ivan ran pnpm db:migrate in the prod-apply worktree (ref-guard dfotoodqvmjhbdcxyaxf); CYAN's independent read-only verify (sha256 afe04a46) confirms is_bookable present, id-map 21/21 match (0 mismatch, 0 missing), tenant is_bookable=true count 16, JP bookable, no over-backfill. PL-05 JP-drop chain RETIRED end-to-end (JP now appears via BOTH serviceCount=1 and is_bookable=true). Prod agenda/booking reference restored. Standing rule reaffirmed: UI render is NEVER apply evidence - journal + independent read only."
@@ -191,10 +378,16 @@
       "id": "CB-NESA",
       "title": "NESA at Castelo Branco - RESOLVED: dissolves (NESA tenant-wide), no write",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "stakeholder",
-      "evidence": { "kind": "sha256", "ref": "c6540cc6 - NESA.location_id=NULL", "at": "2026-07-28" },
+      "evidence": {
+        "kind": "sha256",
+        "ref": "c6540cc6 - NESA.location_id=NULL",
+        "at": "2026-07-28"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-28",
       "notes": "CLOSED 2026-07-28 - dissolves, no write. Attested read c6540cc6: NESA.location_id=NULL (tenant-wide). Web staff booking ignores location_id (data.ts:271-278); portal getCatalog honours it (store.ts:274-288, CYAN's surface that GREEN missed) BUT maps null -> all locations - so NESA is offered at CB on BOTH surfaces once PL-06a removes the therapist filter. No therapist write, no service write. 'Falta NESA' was purely the therapist-mapping artifact. Latent finding (separate future loop): services.location_id is unenforced in the WEB staff query. Ledger: GREEN-LEDGER-pl06-attested-idmap-and-jp-role-20260728."
@@ -203,7 +396,9 @@
       "id": "JP-mapping-frozen",
       "title": "JP therapist_services map script (sha256 d5acddca) - FROZEN, wrong shape",
       "lane": "blocked_on_people",
+      "home_lane": "in_flight",
       "status": "blocked",
+      "priority": "medium",
       "owner_terminal": "cyan",
       "gate": "owner_merge",
       "evidence": null,
@@ -215,7 +410,9 @@
       "id": "JP-role-defect",
       "title": "JP prod role = admin (confirmed) - role-change to owner STAGED for AUTORIZO",
       "lane": "blocked_on_people",
+      "home_lane": "in_flight",
       "status": "blocked",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_authorizo",
       "evidence": null,
@@ -227,7 +424,9 @@
       "id": "INC-03-0045-jp-write",
       "title": "0045 access defect: JP (admin) is DENIED clinical-record write - ABOVE PL-06",
       "lane": "incidents",
+      "home_lane": "incidents",
       "status": "blocked",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_authorizo",
       "evidence": null,
@@ -239,10 +438,16 @@
       "id": "SHIPPED-wave-12-closeout",
       "title": "Wave 12 (22 loops + follow-ups) closed & deployed",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": { "kind": "pr", "ref": "#666", "at": "2026-07-27" },
+      "evidence": {
+        "kind": "pr",
+        "ref": "#666",
+        "at": "2026-07-27"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
       "notes": "Wave 12 CLOSED 2026-07-27. Per-loop PRs #633-#665; close-out state #666. Not re-listed here (count only) - see docs/handoff/WAVE-12-CLOSE-20260727.md."
@@ -251,10 +456,16 @@
       "id": "PL-07",
       "title": "Ativar login - attach a Supabase login to an existing staff row (team onboarding)",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
-      "evidence": { "kind": "pr", "ref": "#685", "at": "2026-07-28" },
+      "evidence": {
+        "kind": "pr",
+        "ref": "#685",
+        "at": "2026-07-28"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-28",
       "notes": "DISCOVERED (T4): the intended 'edit email then invite' order was broken - editing email on an auth-less row 404s + rolls back, and invite only mints NEW rows (active therapists' rows cannot be deleted to re-invite), so existing staff had NO login path. FIX (owner-chosen): idempotent 'Ativar login' in Gerir creates a Supabase auth user keyed to the SAME row id (GoTrue honours explicit id - verified locally), preserving the row + appointments; issues a set-password link (Resend) or on-screen link/temp-password. Also makes editing email on an auth-less row a clean row-only change. Gates green, rebased on main after 682/683/684. CONFIG BLOCKERS (owner/infra, NOT code): (1) Supabase Customize-Access-Token-Hook toggle MUST be ON in prod or first login has no role/tenant claims; (2) email delivery needs INVITES_LIVE_SEND + RESEND_API_KEY + verified sender + STAFF_INVITE_REDIRECT_URL. Code SHIPPED (#685). ACCEPTANCE PENDING from Ivan: (a) flip the Supabase Customize-Access-Token-Hook toggle ON in prod (REQUIRED - else first login carries no claims), (b) run the Chris Macov prod test (activate -> set password -> first login lands with role+locations) and return the acceptance evidence, before onboarding real staff. ACCEPTANCE MET 20260729: owner confirms (per CYAN) the Chris Macov staff login works end-to-end - a claim-bearing first login, which also confirms the Supabase access-token hook is ON in prod."
@@ -263,7 +474,9 @@
       "id": "CANARY-reminder",
       "title": "Reminder pipeline canary - prod SMS smoke test (Twilio) via a real booking",
       "lane": "blocked_on_people",
+      "home_lane": "in_flight",
       "status": "blocked",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_authorizo",
       "evidence": null,
@@ -275,7 +488,9 @@
       "id": "LE-resend-deferred",
       "title": "Resend live email for invite/login links - DEFERRED post-launch",
       "lane": "loose_ends",
+      "home_lane": "loose_ends",
       "status": "todo",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": null,
@@ -287,7 +502,9 @@
       "id": "PL-09",
       "title": "Role + location access model - therapist own-scope, reception/admin location-scoped, owner all (6-phase build, post acceptance-test)",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": {
@@ -303,7 +520,9 @@
       "id": "PL-10",
       "title": "Agenda name-line compacted - first + last name only, smaller, non-bold (owner feedback)",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
       "evidence": {
@@ -319,7 +538,9 @@
       "id": "PL-11",
       "title": "Appointment save unblocked - appointments RLS created_by author escape (migration 0049) + availability advisory",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": {
@@ -335,7 +556,9 @@
       "id": "PL-12",
       "title": "Therapist self-lock on the create form - logged-in therapist auto-selected, no therapist picker (self-booking)",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
       "evidence": {
@@ -351,7 +574,9 @@
       "id": "PL-13",
       "title": "Appointment notes editable in place + last-edited stamp (owner ruled: editable)",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": {
@@ -367,7 +592,9 @@
       "id": "PL-14",
       "title": "Implicit location - remove every location picker a single-location staffer should never see (Lurdes CR)",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
       "evidence": {
@@ -383,7 +610,9 @@
       "id": "PL-15a",
       "title": "Diagnose: 3 patients invisible to Lurdes (Alfredo, Joao Miguel, Maria Alice) - prod read-only evidence",
       "lane": "in_flight",
+      "home_lane": "in_flight",
       "status": "todo",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "cyan_clear",
       "evidence": null,
@@ -395,7 +624,9 @@
       "id": "PL-15b",
       "title": "Patient location: chosen at creation (auto for single-location staff), shown in the ficha, and backfilled",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
       "evidence": {
@@ -411,7 +642,9 @@
       "id": "PL-16",
       "title": "Appointment notes = a real thread in the booking panel ('Adicionar nota' + stamped board)",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
       "evidence": {
@@ -427,7 +660,9 @@
       "id": "PL-17",
       "title": "Notes reachable from every appointment surface - Marcacoes 'Notas' button, hover shows the latest, ficha note links back to its marcacao",
       "lane": "shipped",
+      "home_lane": "in_flight",
       "status": "shipped",
+      "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
       "evidence": {
