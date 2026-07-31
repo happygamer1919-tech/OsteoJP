@@ -92,6 +92,8 @@
   "agenda.block.confirm": "Bloquear",
   "agenda.block.start": "Início",
   "agenda.block.end": "Fim",
+  "agenda.block.repeat": "Repetir bloqueio",
+  "agenda.block.count": "Nº de bloqueios",
   "agenda.block.created": "Horário bloqueado.",
   "agenda.block.overlapWarn": "Horário bloqueado. Sobrepõe marcações existentes (avisadas, não canceladas).",
   "agenda.block.error": "Não foi possível bloquear o horário.",

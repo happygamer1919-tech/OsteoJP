@@ -64,9 +64,13 @@ export function AgendaView({
    *  with this patient preselected + locked. Null on a normal agenda visit. */
   lockedPatient: { value: string; label: string } | null;
   canHardDelete: boolean;
-  /** W12-28: gates the "Bloquear horário" affordance = can(role,"settings:manage"),
-   *  the SAME capability createTimeOffBlock server-enforces. Reception scoping is a
-   *  separate matrix decision (Q-W12-10); this never relaxes the guard. */
+  /** W12-28, regated by PL-27: gates the "Bloquear horário" affordance =
+   *  can(role,"schedule:manage") - the capability createTimeOffBlock ACTUALLY
+   *  server-enforces. It used to read settings:manage and claim the two were the
+   *  same; that stopped being true at PL-09 Phase 5, which created
+   *  schedule:manage and gave it to reception, and the mismatch hid the button
+   *  from the role that owns scheduling. This still never relaxes the guard - the
+   *  server re-asserts the same capability and the same location scope. */
   canBlockTime: boolean;
 }) {
   const router = useRouter();

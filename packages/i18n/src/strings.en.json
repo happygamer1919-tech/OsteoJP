@@ -92,6 +92,8 @@
   "agenda.block.confirm": "Block",
   "agenda.block.start": "Start",
   "agenda.block.end": "End",
+  "agenda.block.repeat": "Repeat block",
+  "agenda.block.count": "Number of blocks",
   "agenda.block.created": "Time blocked.",
   "agenda.block.overlapWarn": "Time blocked. It overlaps existing appointments (warned, not cancelled).",
   "agenda.block.error": "Could not block the time.",
