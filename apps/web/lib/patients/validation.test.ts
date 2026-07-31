@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_HEALTH_INSURANCE_ENTRIES,
   ValidationError,
   escapeLike,
   parseCreatePatient,
@@ -219,5 +220,80 @@ describe("sex is male or female or not recorded (PL-24)", () => {
 
   it("leaves sex untouched when the update omits it", () => {
     expect("sex" in parseUpdatePatient({ fullName: "A" })).toBe(false);
+  });
+});
+
+describe("health insurance numbers (PL-23)", () => {
+  it("keeps a list of plans, each with its insurer", () => {
+    const v = parseCreatePatient({
+      fullName: "A",
+      healthInsuranceNumbers: [
+        { insurer: "ADSE", number: "123456" },
+        { insurer: "Medis", number: "999" },
+      ],
+    });
+    expect(v.healthInsuranceNumbers).toEqual([
+      { insurer: "ADSE", number: "123456" },
+      { insurer: "Medis", number: "999" },
+    ]);
+  });
+
+  it("defaults to an empty list when the field is absent", () => {
+    expect(parseCreatePatient({ fullName: "A" }).healthInsuranceNumbers).toEqual([]);
+  });
+
+  it("drops a row with no NUMBER - an abandoned half-filled row is not a plan", () => {
+    const v = parseCreatePatient({
+      fullName: "A",
+      healthInsuranceNumbers: [
+        { insurer: "ADSE", number: "" },
+        { insurer: "", number: "" },
+        { insurer: "Medis", number: "42" },
+      ],
+    });
+    expect(v.healthInsuranceNumbers).toEqual([{ insurer: "Medis", number: "42" }]);
+  });
+
+  it("keeps a number with no insurer, since the number is the useful half", () => {
+    const v = parseCreatePatient({
+      fullName: "A",
+      healthInsuranceNumbers: [{ insurer: "", number: "42" }],
+    });
+    expect(v.healthInsuranceNumbers).toEqual([{ insurer: null, number: "42" }]);
+  });
+
+  it("trims whitespace on both fields", () => {
+    const v = parseCreatePatient({
+      fullName: "A",
+      healthInsuranceNumbers: [{ insurer: "  ADSE ", number: "  42  " }],
+    });
+    expect(v.healthInsuranceNumbers).toEqual([{ insurer: "ADSE", number: "42" }]);
+  });
+
+  it("rejects a non-list and a non-object entry rather than coercing", () => {
+    expect(() =>
+      parseCreatePatient({ fullName: "A", healthInsuranceNumbers: "ADSE 123" as never }),
+    ).toThrow(ValidationError);
+    expect(() =>
+      parseCreatePatient({ fullName: "A", healthInsuranceNumbers: ["ADSE 123"] as never }),
+    ).toThrow(ValidationError);
+  });
+
+  it("caps the number of plans so a scripted caller cannot bloat the column", () => {
+    const many = Array.from({ length: MAX_HEALTH_INSURANCE_ENTRIES + 1 }, (_, i) => ({
+      insurer: "X",
+      number: String(i),
+    }));
+    expect(() => parseCreatePatient({ fullName: "A", healthInsuranceNumbers: many })).toThrow(
+      ValidationError,
+    );
+  });
+
+  it("leaves the column untouched when an update omits the key", () => {
+    expect("healthInsuranceNumbers" in parseUpdatePatient({ fullName: "A" })).toBe(false);
+  });
+
+  it("clears the plans when an update sends an explicitly empty list", () => {
+    expect(parseUpdatePatient({ healthInsuranceNumbers: [] }).healthInsuranceNumbers).toEqual([]);
   });
 });
