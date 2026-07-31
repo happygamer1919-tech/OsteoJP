@@ -36,9 +36,15 @@ test.describe("Declaração de Presença (therapist)", () => {
     await expect(dialog).not.toContainText(/\bAM\b|\bPM\b/);
     await expect(start.getByLabel("Horas").locator('option[value="23"]')).toHaveCount(1);
 
-    // W12-24: the NIF field prefills from the patient (editable).
-    const nif = page.getByTestId("declaracao-nif");
-    await expect(nif).toHaveValue(PATIENTS.maria.nif);
+    // PL-20 (owner CR 2026-07-31): a NIF the patient record ALREADY holds is
+    // SHOWN, not asked. This supersedes the W12-24 contract, where the same
+    // value arrived prefilled into an editable box - which is what read as
+    // "the declaracao asks for the NIF again".
+    const nifKnown = page.getByTestId("declaracao-nif-known");
+    await expect(nifKnown).toHaveText(PATIENTS.maria.nif);
+    await expect(page.getByTestId("declaracao-nif")).toHaveCount(0);
+    // Maria HAS a NIF, so the "already on file" hint must not appear either.
+    await expect(page.getByTestId("declaracao-nif-savehint")).toHaveCount(0);
 
     // Select the seeded marcação → date + hora início + hora fim prefill from it.
     await page.getByTestId("declaracao-marcacao").selectOption(SEEDED_APPT_ID);
@@ -58,7 +64,7 @@ test.describe("Declaração de Presença (therapist)", () => {
     await expectTimeEmpty(start);
     await expectTimeEmpty(end);
     // NIF is the patient's, not the marcação's - it survives the switch.
-    await expect(nif).toHaveValue(PATIENTS.maria.nif);
+    await expect(nifKnown).toHaveText(PATIENTS.maria.nif);
 
     // Manual-entry path. W12-31: setting Início auto-defaults Fim to one hour
     // later (same day), so Fim can never sit before Início.
@@ -70,6 +76,27 @@ test.describe("Declaração de Presença (therapist)", () => {
     await expect(date).toHaveValue("2026-07-12");
     await expectTime(start, "14:00");
     await expectTime(end, "15:30");
+  });
+
+  test("PL-20: a known NIF is shown, and Editar reveals a one-off override", async ({ page }) => {
+    await page.goto(`/patients/${PATIENTS.maria.id}?tab=documentos`);
+    await page.getByRole("button", { name: "Imprimir Declaração de Presença" }).click();
+
+    // Shown, not asked.
+    await expect(page.getByTestId("declaracao-nif-known")).toHaveText(PATIENTS.maria.nif);
+    await expect(page.getByTestId("declaracao-nif")).toHaveCount(0);
+
+    // "Editar" turns it into an input, seeded with the stored value, for a
+    // value that applies to THIS document only. Because the record already
+    // holds a NIF, nothing typed here is written back to the patient
+    // (shouldPersistCapturedValue fills an EMPTY field only).
+    await page.getByTestId("declaracao-nif-override").click();
+    const nifInput = page.getByTestId("declaracao-nif");
+    await expect(nifInput).toHaveValue(PATIENTS.maria.nif);
+    await nifInput.fill("987654321");
+    await expect(nifInput).toHaveValue("987654321");
+    // Still no "will be saved" hint: this patient's NIF is already on file.
+    await expect(page.getByTestId("declaracao-nif-savehint")).toHaveCount(0);
   });
 
   test("PL-03a: the dialog has an editable, length-capped observações field", async ({ page }) => {
