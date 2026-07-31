@@ -174,7 +174,6 @@ export function PatientForm({
             <option value="">{s["patients.sexNotSpecified"]}</option>
             <option value="male">{s["patients.sexMale"]}</option>
             <option value="female">{s["patients.sexFemale"]}</option>
-            <option value="other">{s["patients.sexOther"]}</option>
           </select>
         </Field>
         <Field label={s["patients.fieldNif"]}>

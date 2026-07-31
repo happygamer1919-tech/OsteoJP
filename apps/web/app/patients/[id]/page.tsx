@@ -502,8 +502,9 @@ export default async function PatientProfilePage({
 function formatSex(sex: string): string {
   if (sex === "male") return s["patients.sexMale"];
   if (sex === "female") return s["patients.sexFemale"];
-  if (sex === "other") return s["patients.sexOther"];
-  return s["patients.sexOther"];
+  // PL-24: see PatientHeaderStrip.formatSex - no third sex, so a legacy
+  // "other" and an unrecorded value read the same, and honestly.
+  return s["patients.sexNotSpecified"];
 }
 
 function Rows({ rows }: { rows: [string, string][] }) {
