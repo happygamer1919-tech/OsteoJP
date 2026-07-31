@@ -853,3 +853,52 @@ owner assign each one in the new patient-edit location field - the list is expec
 about three rows on prod today. Guessing (e.g. "everything to LV") would misfile a CB
 patient into LV permanently and is a data write no evidence supports. Confirm at PL-15b
 apply, together with the PL-15a output.
+
+## Q-PL-18-1 (2026-07-31, OPEN) - reception/admin with NO location assignment: see everything, or see nothing?
+viewerLocationScope returns `null` for a reception/admin holding zero `staff_locations` rows,
+and `null` means "not location-restricted" - all clinics, all staff. That fallback was a
+deliberate onboarding safety valve (nobody is locked out before Equipa assigns them) and it is
+almost certainly what produced the 2026-07-31 reception report: the account has no assignment,
+so every location control offers both clinics and every roster lists both teams. The code was
+never missing the rule.
+RECOMMENDED DEFAULT (what GREEN builds unless overruled): KEEP the fallback, and make it
+visible - Equipa flags any reception/admin with no location assignment so the state is legible
+instead of silent. Inverting it (no assignment = see nothing) turns a data-entry gap into a
+staffer who cannot work at all, and would have to be paired with a hard guarantee that every
+account is assigned at creation time.
+The ALTERNATIVE worth considering separately: make the location assignment REQUIRED for the
+reception and admin roles at user-creation time, which removes the fallback's reason to exist.
+That is a bigger change (it touches invite + role-change paths) and is not a PL-18 blocker.
+
+## Q-PL-23-1 (2026-07-31, OPEN) - health-insurance numbers: one field or a repeatable list?
+The CR says "one or more tabs where we can enter health insurance plan numbers" and then
+"a new input field called 'numeros dos seguros de saude'". The plural is the only shape signal.
+RECOMMENDED DEFAULT (what GREEN builds): a REPEATABLE list - a patient may hold more than one
+plan (ADSE + a private insurer is common in PT), so the column stores a list and the form lets
+staff add rows. Optional insurer label beside each number, since a bare number with no insurer
+is not usable at the desk.
+The ALTERNATIVE: a single free-text field holding whatever the desk types. Cheaper, but it
+cannot be searched or validated later and converting it to a list afterwards is a data
+migration over free text.
+Confirm at the PL-23 apply, since the shape IS the migration.
+
+## Q-PL-24-1 (2026-07-31, OPEN) - existing patients stored as sex='other'
+patients.sex is a free varchar(16) with no DB enum, so dropping the "Outro" option from the
+form is a UI change with no migration. Any row that ALREADY stores 'other' keeps its value and
+renders as "Nao especificado" once the option is gone.
+RECOMMENDED DEFAULT: do NOT rewrite those rows in SQL. The PL-18 staged prod read counts them;
+if the count is zero this question closes itself, and if it is not, the owner reclassifies each
+one by hand in the patient form. Guessing a patient's sex in a bulk UPDATE is a data write no
+evidence supports.
+
+## Q-PL-25-1 (2026-07-31, OPEN) - hourly portal slots: every location, and what about staff?
+Two sub-questions the CR does not settle:
+(a) SCOPE. locations.slot_granularity_min is PER LOCATION (migration 0041, default 30), so
+hourly can be set for Linda-a-Velha and Castelo Branco independently. RECOMMENDED DEFAULT: set
+it for BOTH - the rule as stated is about how patients book, not about one clinic.
+(b) STAFF SIDE. RECOMMENDED DEFAULT: staff booking stays free-form. The CR names the client
+portal explicitly; forcing the agenda onto the hour would break the 30-minute and 45-minute
+services the desk books today, and reception must always be able to fit a patient in.
+Note the mechanics: the granularity is DATA (a hard-gated write), while aligning the slot grid
+to the top of the hour is CODE. Without the alignment half, a therapist whose template starts
+at 09:30 still yields 09:30 and 10:30 at a 60-minute step.
