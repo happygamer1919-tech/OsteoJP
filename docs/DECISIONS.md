@@ -2288,3 +2288,34 @@ therapist-blocks.spec.ts:97. Do not "fix" code on one red E2E run without a reru
 REAL reason (the shared fillPatientForm helper did not fill it). Red E2E is only
 informative when you read which assertion failed - infra flake times out, a real
 regression fails an assertion the same way every retry.
+
+## 2026-07-31 - Reception change-request intake: PL-18 through PL-25 (GREEN)
+
+Owner handed over seven items raised first by reception and then broadened by him. Written as
+eight board cards BEFORE any building (PL-21 and PL-22 are one ask split in two, because one
+is an improvement to a shipped form and the other is a new feature that consumes it). Every
+card carries what a READ of origin/main established, not what the report assumed - three of
+the seven turned out to have a different cause than the report implies:
+
+- **PL-18 (reception location-pinning)** is very likely NOT a missing rule. viewer-locations.ts
+  already returns the staff_locations set for reception and admin identically, and getAgendaOptions
+  already narrows both the location list and the therapist roster on that scope (PL-14). What
+  produces "sees both clinics, sees all staff" is the deliberate FALLBACK: no assignment ->
+  scope `null` -> unrestricted. A staged read-only prod script confirms this before any code
+  is written, and the audit + the Equipa warning ship regardless. Q-PL-18-1 logged.
+- **PL-20 (NIF)** - the declaracao dialog ALREADY prefills from patients.nif (W12-24). It
+  renders an editable input seeded with the stored value, which is what reads as "asking
+  again". The fix is the PL-14 shape applied to patient data: known -> static line, unknown ->
+  asked once and written BACK, never asked a third time.
+- **PL-21 (agendar lote)** - the batch ENGINE is not the limit. batch.ts has accepted an
+  explicit per-slot list since W2-09, built for exactly this Rodica case. The limit is the
+  form, which exposes only "every N weeks" + a count. So a generator + UI change, not a
+  scheduling-engine change, and PL-22 (bloquear lote) reuses the same generator over time_off.
+
+Migration count for the batch: exactly ONE (PL-23, the insurance numbers column), sequenced
+after the already-carried 0051 backfill since only one migration is ever in flight. PL-24
+needs none (sex is a free varchar, no DB enum). PL-25 is half code (aligning the slot grid to
+the hour) and half data (the per-location granularity), and only the data half is gated.
+
+Owner authorised self-merge on green required checks for this batch. Migrations and prod
+writes stay hard-gated as always.
