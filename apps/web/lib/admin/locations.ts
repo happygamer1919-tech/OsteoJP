@@ -23,13 +23,28 @@ export type LocationView = {
   // W3-07: a location is hard-deletable ONLY when no appointment references it;
   // otherwise the admin table offers Archive only (delete disabled + tooltip).
   hasAppointments: boolean;
+  // PL-25: the portal's booking step for THIS clinic, in minutes (0041).
+  slotGranularityMin: number;
 };
 
 export type LocationInput = {
   name: string;
   address: string;
   phone: string;
+  /** PL-25: minutes. Omitted on paths that do not edit it (creation keeps 30). */
+  slotGranularityMin?: string | number | null;
 };
+
+/**
+ * PL-25 (owner CR 2026-07-31): the offsets a PATIENT may pick on the portal.
+ * Deliberately two values, not a free number:
+ *   60 - hourly only (09:00, 10:00, 11:00), what the owner asked for;
+ *   30 - the historical default, kept so the change is reversible from the UI.
+ * 15 is absent on purpose: ":15" is precisely what the CR removes, and an admin
+ * control that can re-create the reported problem is not a control worth having.
+ * Staff booking ignores this entirely - the agenda still books any time.
+ */
+export const SLOT_GRANULARITY_CHOICES = [30, 60] as const;
 
 export async function listLocations(actor: RequestContext): Promise<LocationView[]> {
   assertCan(actor.role, "locations:read");
@@ -41,6 +56,7 @@ export async function listLocations(actor: RequestContext): Promise<LocationView
         address: locations.address,
         phone: locations.phone,
         isActive: locations.isActive,
+        slotGranularityMin: locations.slotGranularityMin,
       })
       .from(locations)
       .orderBy(asc(locations.name));
@@ -57,6 +73,7 @@ function validate(input: LocationInput): {
   name: string;
   address: string | null;
   phone: string | null;
+  slotGranularityMin: number | null;
 } {
   const name = input.name.trim();
   if (!name) throw new AdminError("invalid", "location name is required");
@@ -64,7 +81,22 @@ function validate(input: LocationInput): {
     name,
     address: input.address.trim() || null,
     phone: input.phone.trim() || null,
+    slotGranularityMin: parseSlotGranularity(input.slotGranularityMin),
   };
+}
+
+/**
+ * `null` means "the caller is not editing this", so the column keeps its value.
+ * Anything present must be one of the offered choices - a hand-posted 5 would
+ * hand patients a five-minute grid, so this rejects rather than clamps.
+ */
+function parseSlotGranularity(v: string | number | null | undefined): number | null {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || !SLOT_GRANULARITY_CHOICES.includes(n as 30 | 60)) {
+    throw new AdminError("invalid", "invalid slot granularity");
+  }
+  return n;
 }
 
 export async function createLocation(actor: RequestContext, input: LocationInput): Promise<void> {
@@ -95,7 +127,14 @@ export async function updateLocation(
   await runScoped(actor, async (tx) => {
     const rows = await tx
       .update(locations)
-      .set({ name: v.name, address: v.address, phone: v.phone })
+      .set({
+        name: v.name,
+        address: v.address,
+        phone: v.phone,
+        // Absent -> untouched, so a caller that does not render the control
+        // cannot silently reset a clinic's booking step.
+        ...(v.slotGranularityMin === null ? {} : { slotGranularityMin: v.slotGranularityMin }),
+      })
       .where(eq(locations.id, id))
       .returning({ id: locations.id });
     if (!rows[0]) throw new AdminError("not_found");

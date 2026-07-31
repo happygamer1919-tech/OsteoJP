@@ -1,7 +1,7 @@
 import { Button, GlassPanel } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
-import { listLocations } from "@/lib/admin/locations";
+import { listLocations, SLOT_GRANULARITY_CHOICES } from "@/lib/admin/locations";
 import {
   createLocationAction,
   deleteLocationAction,
@@ -68,6 +68,7 @@ export default async function LocationsPage({
                 <th className={adminTh}>{s["admin.locations.name"]}</th>
                 <th className={adminTh}>{s["admin.locations.address"]}</th>
                 <th className={adminTh}>{s["admin.locations.phone"]}</th>
+                <th className={adminTh}>{s["admin.locations.slotGranularity"]}</th>
                 <th className={adminTh}>{s["admin.locations.status"]}</th>
                 <th className={adminTh}>{s["admin.staff.colActions"]}</th>
               </tr>
@@ -75,12 +76,29 @@ export default async function LocationsPage({
             <tbody>
               {locations.map((loc) => (
                 <tr key={loc.id} className={adminTrBorder}>
-                  <td colSpan={4} className={adminTd}>
+                  <td colSpan={5} className={adminTd}>
                     <form action={updateLocationAction} className="flex flex-wrap items-center gap-2">
                       <input type="hidden" name="id" value={loc.id} />
                       <input name="name" defaultValue={loc.name} required aria-label={s["admin.locations.name"]} className={adminInputInline} />
                       <input name="address" defaultValue={loc.address ?? ""} aria-label={s["admin.locations.address"]} className={`w-56 ${adminInputInline}`} />
                       <input name="phone" defaultValue={loc.phone ?? ""} aria-label={s["admin.locations.phone"]} className={`w-36 ${adminInputInline}`} />
+                      {/* PL-25: the booking step a PATIENT sees on the portal.
+                          60 = hourly only, which is what the owner asked for;
+                          30 is the historical default, kept so the choice is
+                          reversible without a database write. Staff booking is
+                          unaffected - the agenda still books any time. */}
+                      <select
+                        name="slotGranularityMin"
+                        defaultValue={String(loc.slotGranularityMin)}
+                        aria-label={s["admin.locations.slotGranularity"]}
+                        className={`w-32 ${adminInputInline}`}
+                      >
+                        {SLOT_GRANULARITY_CHOICES.map((n) => (
+                          <option key={n} value={n}>
+                            {n === 60 ? s["admin.locations.slotHourly"] : s["admin.locations.slotHalfHour"]}
+                          </option>
+                        ))}
+                      </select>
                       <span className={adminHelp}>
                         {loc.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
                       </span>
