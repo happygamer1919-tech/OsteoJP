@@ -677,27 +677,35 @@
     {
       "id": "PL-18",
       "title": "Reception is location-pinned everywhere - no location choice, no other clinic's staff, every location input auto-applied",
-      "lane": "in_flight",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "todo",
+      "status": "shipped",
       "priority": "high",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
+      "evidence": {
+        "kind": "pr",
+        "ref": "#723",
+        "at": "2026-07-31"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-31",
-      "notes": "Owner CR 2026-07-31, raised first by reception: \"the reception from LV cannot choose to search or input the location rather the system needs to already establish all location related actions to the one setted into the reception profile, they only see staff from their location and all inputs are automatically filled for them based on their location, everywhere on the platform across all sections and tabs\". Reported symptom: \"currently reception, in team schedule, agenda and other can choose from locations and are seeing all staff from both locations\". FINDING (read of origin/main, not assumed): the PL-09/PL-14 machinery ALREADY treats reception exactly like admin - viewer-locations.ts:48 returns the staff_locations set for BOTH roles, getAgendaOptions narrows the location list AND the therapist roster on that scope, and every location control routes through resolveLocationControl / scopedLocationId. So this is most likely NOT a missing rule but the rule's deliberate FALLBACK: viewerLocationScope returns null (= all locations, all staff) when the staffer has ZERO staff_locations rows, so onboarding never locks anyone out. A reception account with no assignment produces exactly the reported screen. Work: (1) staged READ-ONLY prod script listing every active staff member, role and staff_locations assignment, so the cause is confirmed by pasted output rather than inferred; (2) surface-by-surface audit of every location-bearing page (agenda, horarios team schedule, marcacoes, patients, patients/new, patients/[id]/edit, invoicing, estatisticas, admin/staff Equipa, appointment-drawer, availability-panel) with a regression test per surface, closing any that still reads the tenant-wide list; (3) make the silent fallback VISIBLE - Equipa flags a reception/admin holding no location assignment, so this class of report can never again look like a code defect. Q-PL-18-1 logged for the fallback policy itself."
+      "notes": "Owner CR 2026-07-31, raised first by reception: \"the reception from LV cannot choose to search or input the location rather the system needs to already establish all location related actions to the one setted into the reception profile, they only see staff from their location and all inputs are automatically filled for them based on their location, everywhere on the platform across all sections and tabs\". Reported symptom: \"currently reception, in team schedule, agenda and other can choose from locations and are seeing all staff from both locations\". FINDING (read of origin/main, not assumed): the PL-09/PL-14 machinery ALREADY treats reception exactly like admin - viewer-locations.ts:48 returns the staff_locations set for BOTH roles, getAgendaOptions narrows the location list AND the therapist roster on that scope, and every location control routes through resolveLocationControl / scopedLocationId. So this is most likely NOT a missing rule but the rule's deliberate FALLBACK: viewerLocationScope returns null (= all locations, all staff) when the staffer has ZERO staff_locations rows, so onboarding never locks anyone out. A reception account with no assignment produces exactly the reported screen. Work: (1) staged READ-ONLY prod script listing every active staff member, role and staff_locations assignment, so the cause is confirmed by pasted output rather than inferred; (2) surface-by-surface audit of every location-bearing page (agenda, horarios team schedule, marcacoes, patients, patients/new, patients/[id]/edit, invoicing, estatisticas, admin/staff Equipa, appointment-drawer, availability-panel) with a regression test per surface, closing any that still reads the tenant-wide list; (3) make the silent fallback VISIBLE - Equipa flags a reception/admin holding no location assignment, so this class of report can never again look like a code defect. Q-PL-18-1 logged for the fallback policy itself. OUTCOME 2026-07-31: the audit found NO reachable code hole for reception - viewer-locations.ts has always covered reception and admin identically, getAgendaOptions narrows the location list AND the therapist roster (PL-14), the team-schedule editor already drops its per-day select at one clinic, and /admin is unreachable by reception. The reported screen is the deliberate no-assignment FALLBACK (scope null = every clinic, every colleague). Shipped: Equipa now flags any active reception/admin holding no staff_locations row, read from staff_locations and NOT from the location chips (those are hours UNION staff_locations, so an admin with working hours shows a clinic chip while the scope still falls back to all). STILL OPEN: the staged read cyan-pl18-reception-scope-READONLY-20260731.mjs (sha256 61316869cdf56cb14120eee01007286814334273dea1f0e69a8c498ccbfc2480) proves which accounts are unassigned and answers PL-24/PL-20/PL-25 data questions in the same paste. If it shows every reception/admin already assigned, the fallback is NOT the cause and this card reopens."
     },
     {
       "id": "PL-19",
       "title": "Notes on the patient ficha 'Marcacoes' tab - the same Notas button and thread popup the Marcacoes section already has",
-      "lane": "in_flight",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "todo",
+      "status": "shipped",
       "priority": "high",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
+      "evidence": {
+        "kind": "pr",
+        "ref": "#720",
+        "at": "2026-07-31"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-31",
       "notes": "Owner CR 2026-07-31: \"I need to extend the notes connection till the 'marcacoes' tab in the patient section, same as you have in marcacoes section add a button 'notes' where if you press a pop up with all previous notes are listed + option to add new and everything is stamped on date and time + name of creator/editor\". FINDING: PL-17 (#716) put that button on every row of the MARCACOES SECTION (marcacoes-view.tsx:284) and PL-16 (#715) built the thread board, but the patient ficha's own Marcacoes tab (patients/[id]/appointments-list.tsx) has no Notas control - confirmed by read, the file has no notes import at all. Work: reuse the shipped components verbatim (packages/ui Dialog + AppointmentNotesBoard), one button per appointment row, same thread and same appointment id, so a note written on the ficha appears in the drawer, the agenda hover and the Marcacoes list. The date/time + author stamping the owner asks for is already carried by appointment_notes and rendered by the board; PL-13 (migration 0050) added the edited-by stamp. No migration, no new data path."
@@ -705,27 +713,35 @@
     {
       "id": "PL-20",
       "title": "Never ask for what the patient record already holds - NIF applied automatically, then a sweep of every re-asking form",
-      "lane": "in_flight",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "todo",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
+      "evidence": {
+        "kind": "pr",
+        "ref": "#724",
+        "at": "2026-07-31"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-31",
-      "notes": "Owner CR 2026-07-31: \"there are still input forms on the platform where it is directly client related or started to be done from the patient profile, for example the declaracao document asks for NIF again although it was filled at the time of adding the patient, need to automate all these cases and don't even ask to input but auto fill and reflect at the result, bring more automation and logic, cannot be limited to NIF only\". FINDING: the declaracao dialog DOES prefill from patients.nif (W12-24, DeclaracaoDialog.tsx:71) - it renders an EDITABLE input seeded with the stored value, which is what reads as being asked again, and it renders visibly empty for a patient whose NIF was never captured. Work: apply the PL-14 shape to patient data - a KNOWN value is a static line, not an input; an UNKNOWN value is asked once and what is entered is written BACK to the patient record so it is never asked a third time; an explicit 'alterar' affordance keeps the one-off override. Then sweep every form that re-asks something the patient row already carries (nome, NIF, data de nascimento, morada, telefone across documents and invoicing) and report what was found rather than guessing the list up front. The write-back is a patients:write path reception already holds."
+      "notes": "Owner CR 2026-07-31: \"there are still input forms on the platform where it is directly client related or started to be done from the patient profile, for example the declaracao document asks for NIF again although it was filled at the time of adding the patient, need to automate all these cases and don't even ask to input but auto fill and reflect at the result, bring more automation and logic, cannot be limited to NIF only\". FINDING: the declaracao dialog DOES prefill from patients.nif (W12-24, DeclaracaoDialog.tsx:71) - it renders an EDITABLE input seeded with the stored value, which is what reads as being asked again, and it renders visibly empty for a patient whose NIF was never captured. Work: apply the PL-14 shape to patient data - a KNOWN value is a static line, not an input; an UNKNOWN value is asked once and what is entered is written BACK to the patient record so it is never asked a third time; an explicit 'alterar' affordance keeps the one-off override. Then sweep every form that re-asks something the patient row already carries (nome, NIF, data de nascimento, morada, telefone across documents and invoicing) and report what was found rather than guessing the list up front. The write-back is a patients:write path reception already holds. SWEEP RESULT: the declaracao NIF is the ONLY surface in the staff platform that re-asks a field the patient record already holds. Faturacao reads name/NIF/address from the patient through the InvoiceXpress mapper, the RGPD form and ficha medica are generated from the record, and Reagendar / Marcar novamente already reuse the marcacao's own therapist and location. Reported rather than padded with invented cases."
     },
     {
       "id": "PL-21",
       "title": "Agendar lote - real recurrence: weekday selection, interval, end by count or by date (Rodica: the current form is too limited)",
-      "lane": "in_flight",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "todo",
+      "status": "shipped",
       "priority": "high",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
+      "evidence": {
+        "kind": "pr",
+        "ref": "#725",
+        "at": "2026-07-31"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-31",
       "notes": "Owner CR 2026-07-31 via Rodica: \"the current option on how you can select the frequency is very limited, you can only select if 1 per week or twice a week, they need a more complex and flexible selection form, think on how you can deliver this to them, more filters on the repetitiveness\". FINDING: the drawer's lote block offers exactly two numbers - 'a cada N semanas' plus a total count - then generates same-weekday rows the user hand-edits one at a time (appointment-drawer.tsx, generateLoteDates). There is no way to express 'segundas e quintas'. The ENGINE is not the constraint: batch.ts already accepts an explicit per-slot list (V2/W2-09, built for exactly this Rodica case) beside the recurrence rule, books each slot against the SAME availability query the panel uses, and returns a structured failure with the nearest free alternative per busy slot. So this is a generator + UI change, not a scheduling-engine change. Work: weekday multi-select (seg..dom), interval in weeks, end condition = after N occurrences OR on a date, optional per-weekday time, live preview of generated rows still individually editable, MAX_OCCURRENCES 52 cap unchanged. Pure generator in lib/scheduling with unit tests, submitting through the existing explicit-slots path."
@@ -733,20 +749,78 @@
     {
       "id": "PL-22",
       "title": "Bloquear lote - bulk and recurring therapist schedule blocking, driven by the PL-21 recurrence form",
-      "lane": "in_flight",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "todo",
+      "status": "shipped",
       "priority": "high",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
+      "evidence": {
+        "kind": "pr",
+        "ref": "#727",
+        "at": "2026-07-31"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-31",
-      "notes": "Owner CR 2026-07-31: \"Repetitive schedule block on therapists - need to add an option similar to what we already have in the appointment scheduling panel, 'agendar lote' bulk booking, one needs created the other improved ... then create the same thing for blocking the schedule for therapists by the reception or admins, bloquear lote or whatever\". FINDING: the data model already exists - time_off (therapist-wide across locations, timestamptz so partial and multi-day both work, reason enum vacation|sick|holiday|other plus a free note) with a per-therapist editor on horarios, and blocks already suppress BOTH staff booking (conflict check) and portal slots (timeOffOverlapExists inside listOpenSlots). Reception ALREADY holds schedule:manage (permissions.ts, PL-09 Phase 5) so no capability change is needed. What is missing is creating MANY blocks in one action. Work: reuse PL-21's recurrence generator to produce N time_off rows in one submit with the same preview and per-row edit, a shared batch marker so a mistaken batch is undoable as a unit, a therapist list scoped by PL-18, and a conflict report - a block laid over an EXISTING appointment must be reported to the user, never applied silently. Depends on PL-21 for the shared generator."
+      "notes": "Owner CR 2026-07-31: \"Repetitive schedule block on therapists - need to add an option similar to what we already have in the appointment scheduling panel, 'agendar lote' bulk booking, one needs created the other improved ... then create the same thing for blocking the schedule for therapists by the reception or admins, bloquear lote or whatever\". FINDING: the data model already exists - time_off (therapist-wide across locations, timestamptz so partial and multi-day both work, reason enum vacation|sick|holiday|other plus a free note) with a per-therapist editor on horarios, and blocks already suppress BOTH staff booking (conflict check) and portal slots (timeOffOverlapExists inside listOpenSlots). Reception ALREADY holds schedule:manage (permissions.ts, PL-09 Phase 5) so no capability change is needed. What is missing is creating MANY blocks in one action. Work: reuse PL-21's recurrence generator to produce N time_off rows in one submit with the same preview and per-row edit, a shared batch marker so a mistaken batch is undoable as a unit, a therapist list scoped by PL-18, and a conflict report - a block laid over an EXISTING appointment must be reported to the user, never applied silently. Depends on PL-21 for the shared generator. NOT DELIVERED, deliberately: undoing a batch as a UNIT needs a batch_id column on time_off, i.e. a second migration, and 0051 (PL-23) is already in flight - one migration at a time. Blocks stay individually removable meanwhile. Needs its own card once 0051 is applied."
     },
     {
       "id": "PL-23",
       "title": "Patient health-insurance numbers - 'Numeros dos seguros de saude' on the patient form (MIGRATION, apply-before-merge)",
+      "lane": "shipped",
+      "home_lane": "in_flight",
+      "status": "shipped",
+      "priority": "medium",
+      "owner_terminal": "green",
+      "gate": "owner_merge",
+      "evidence": {
+        "kind": "pr",
+        "ref": "#726",
+        "at": "2026-07-31"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-31",
+      "notes": "Owner CR 2026-07-31: \"The user data section needs to have one or more tabs where we can enter health insurance plan numbers - when adding a new patient add a new input field called 'numeros dos seguros de saude'\". FINDING: patients has NO insurance column today (schema.ts) so this needs a migration - the only card in this batch that does. Shape assumption, stated rather than guessed: the owner's own plural ('numeros', plural) implies a patient may hold more than one plan, so the default built is a REPEATABLE list (one number per entry, insurer label optional) rather than a single varchar; logged as Q-PL-23-1 so it can be overruled before apply. Doctrine: apply-BEFORE-merge - build, CI green, owner applies from the osteojp-prod-apply worktree, independent read of the schema object plus the __drizzle_migrations count delta, THEN merge. Sequenced AFTER migration 0051 (the PL-15b primary_location_id backfill already carried forward) because only one migration is ever in flight at a time. 0051 APPLIED and VERIFIED on prod 2026-07-31 by the owner from the osteojp-prod-apply worktree (detached at origin/feat/PL-23-patient-insurance-numbers), THEN #726 merged - apply-before-merge satisfied. Independent read, pasted not inferred: column jsonb, nullable=NO, default=[]::jsonb; array CHECK present; 10 patient rows, 0 with a NULL; drizzle.__drizzle_migrations count 51 as expected; last hash 9adc86ad8eab1e96503aafefe4d4121247f6e93663cfcbd6b163a5517fd311b0. Q-PL-23-1 is answered BY RATIFICATION: applying the migration fixes the list shape, so changing to a single free-text field would now be a second migration over real data."
+    },
+    {
+      "id": "PL-24",
+      "title": "Sexo offers Masculino and Feminino only - the 'Outro' option is removed",
+      "lane": "shipped",
+      "home_lane": "in_flight",
+      "status": "shipped",
+      "priority": "low",
+      "owner_terminal": "green",
+      "gate": "green_self_merge",
+      "evidence": {
+        "kind": "pr",
+        "ref": "#721",
+        "at": "2026-07-31"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-31",
+      "notes": "Owner CR 2026-07-31: \"the sex should have only option of either man either woman, it is biological and the option 'other' is not appropriate\". FINDING: patient-form.tsx offers four values - blank, male, female, other; patients.sex is a plain varchar(16) with NO database enum, so removing an option is a UI plus i18n change and needs NO migration. Work: drop the 'other' option and its pt/en string in lockstep. 'Nao especificado' (blank) STAYS - it is a data-entry state (unknown), not a third sex, and removing it would force a guess on every patient whose sex was never recorded. Any EXISTING prod row storing 'other' would render as 'Nao especificado' once the option is gone; the PL-18 staged read also counts those rows so the owner can reclassify them by hand - never guessed in SQL."
+    },
+    {
+      "id": "PL-25",
+      "title": "Portal booking is on the hour - a patient can only pick 09:00, 10:00, 11:00",
+      "lane": "shipped",
+      "home_lane": "in_flight",
+      "status": "shipped",
+      "priority": "medium",
+      "owner_terminal": "green",
+      "gate": "green_self_merge",
+      "evidence": {
+        "kind": "pr",
+        "ref": "#722",
+        "at": "2026-07-31"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-07-31",
+      "notes": "Owner CR 2026-07-31: \"users should only be able to clock in/out on the hour, for example at 9:00, 10:00 - here we need to make sure on our client portal that for them the only option to book appointments is fixed hourly, they can't book at :15th minute or half of hour\". FINDING: the portal never fabricates slots - they come from GET /api/v1/booking/slots -> listOpenSlots (apps/api/lib/appointments/store.ts:325), which expands each active availability template into a grid stepped by locations.slot_granularity_min (migration 0041, default 30). TWO things are needed, not one: (a) the step becomes 60, and (b) the grid must be ALIGNED to the top of the hour - the series starts at the template's own start_time, so a therapist whose hours begin 09:30 would still produce 09:30 / 10:30 at a 60-minute step. The alignment half is code and self-merges; changing the stored granularity per location is data and is hard-gated. Staff-side booking is deliberately UNCHANGED - the agenda keeps free-form times, this constrains only what a patient may self-serve. Nothing in the product edits slot_granularity_min from the UI today. Q-PL-25-1 logged for whether hourly applies to every location."
+    },
+    {
+      "id": "PL-26",
+      "title": "Undo a bloquear lote batch as ONE action - time_off.batch_id + 'remover lote' (MIGRATION, apply-before-merge)",
       "lane": "in_flight",
       "home_lane": "in_flight",
       "status": "todo",
@@ -756,35 +830,7 @@
       "evidence": null,
       "blocked_on": null,
       "last_checkpoint": "2026-07-31",
-      "notes": "Owner CR 2026-07-31: \"The user data section needs to have one or more tabs where we can enter health insurance plan numbers - when adding a new patient add a new input field called 'numeros dos seguros de saude'\". FINDING: patients has NO insurance column today (schema.ts) so this needs a migration - the only card in this batch that does. Shape assumption, stated rather than guessed: the owner's own plural ('numeros', plural) implies a patient may hold more than one plan, so the default built is a REPEATABLE list (one number per entry, insurer label optional) rather than a single varchar; logged as Q-PL-23-1 so it can be overruled before apply. Doctrine: apply-BEFORE-merge - build, CI green, owner applies from the osteojp-prod-apply worktree, independent read of the schema object plus the __drizzle_migrations count delta, THEN merge. Sequenced AFTER migration 0051 (the PL-15b primary_location_id backfill already carried forward) because only one migration is ever in flight at a time."
-    },
-    {
-      "id": "PL-24",
-      "title": "Sexo offers Masculino and Feminino only - the 'Outro' option is removed",
-      "lane": "in_flight",
-      "home_lane": "in_flight",
-      "status": "todo",
-      "priority": "low",
-      "owner_terminal": "green",
-      "gate": "green_self_merge",
-      "evidence": null,
-      "blocked_on": null,
-      "last_checkpoint": "2026-07-31",
-      "notes": "Owner CR 2026-07-31: \"the sex should have only option of either man either woman, it is biological and the option 'other' is not appropriate\". FINDING: patient-form.tsx offers four values - blank, male, female, other; patients.sex is a plain varchar(16) with NO database enum, so removing an option is a UI plus i18n change and needs NO migration. Work: drop the 'other' option and its pt/en string in lockstep. 'Nao especificado' (blank) STAYS - it is a data-entry state (unknown), not a third sex, and removing it would force a guess on every patient whose sex was never recorded. Any EXISTING prod row storing 'other' would render as 'Nao especificado' once the option is gone; the PL-18 staged read also counts those rows so the owner can reclassify them by hand - never guessed in SQL."
-    },
-    {
-      "id": "PL-25",
-      "title": "Portal booking is on the hour - a patient can only pick 09:00, 10:00, 11:00",
-      "lane": "in_flight",
-      "home_lane": "in_flight",
-      "status": "todo",
-      "priority": "medium",
-      "owner_terminal": "green",
-      "gate": "green_self_merge",
-      "evidence": null,
-      "blocked_on": null,
-      "last_checkpoint": "2026-07-31",
-      "notes": "Owner CR 2026-07-31: \"users should only be able to clock in/out on the hour, for example at 9:00, 10:00 - here we need to make sure on our client portal that for them the only option to book appointments is fixed hourly, they can't book at :15th minute or half of hour\". FINDING: the portal never fabricates slots - they come from GET /api/v1/booking/slots -> listOpenSlots (apps/api/lib/appointments/store.ts:325), which expands each active availability template into a grid stepped by locations.slot_granularity_min (migration 0041, default 30). TWO things are needed, not one: (a) the step becomes 60, and (b) the grid must be ALIGNED to the top of the hour - the series starts at the template's own start_time, so a therapist whose hours begin 09:30 would still produce 09:30 / 10:30 at a 60-minute step. The alignment half is code and self-merges; changing the stored granularity per location is data and is hard-gated. Staff-side booking is deliberately UNCHANGED - the agenda keeps free-form times, this constrains only what a patient may self-serve. Nothing in the product edits slot_granularity_min from the UI today. Q-PL-25-1 logged for whether hourly applies to every location."
+      "notes": "Owner ticketed 2026-07-31 from Q-PL-22-1, raised by GREEN when PL-22 shipped. PL-22 writes N time_off rows in ONE transaction, but nothing marks them as one batch, so undoing a mistaken recurrence means deleting every block by hand - the exact tedium bloquear lote was built to remove, reappearing on the way out. WHY IT WAS NOT IN PL-22: it needs a batch_id column, i.e. a migration, and 0051 (PL-23) was already in flight - one migration at a time. 0051 is now APPLIED and verified on prod (2026-07-31), so that constraint is gone and this is unblocked. SHAPE: a nullable `batch_id uuid` on time_off (existing blocks keep NULL - they were never a batch, and NULL is the honest value for them), stamped with one generated id per createTimeOffBlockBatch call; the blocks list groups rows sharing a batch_id and offers 'Remover lote' beside the per-row Eliminar. Deleting a batch is a normal delete of the rows in it - time_off has no append-only invariant, unlike clinical_records and record_annulments - so no new doctrine is needed, but the control must say HOW MANY blocks it will remove before it does it, and must never reach beyond the batch. Reception already holds schedule:manage, so no capability change. GATES: the usual, plus db:check-journal and db:sync-supabase:check; migration takes 0052 (the PL-15b primary_location_id backfill is still unbuilt and takes whatever number is free when it is written - numbers follow build order, not reservations). Apply-BEFORE-merge: build, CI green, owner applies from the osteojp-prod-apply worktree with git checkout origin/<branch> detached, independent read of the column plus the __drizzle_migrations count delta, THEN merge."
     }
   ]
 }
