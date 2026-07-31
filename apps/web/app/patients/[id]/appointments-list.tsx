@@ -4,6 +4,7 @@ import {
   Banner,
   Button,
   Card,
+  Dialog,
   Drawer,
   EmptyState,
   Field,
@@ -15,10 +16,11 @@ import {
   useToast,
   type StatusTone,
 } from "@osteojp/ui";
-import { Calendar } from "lucide-react";
+import { Calendar, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { AppointmentNotesBoard } from "@/app/agenda/appointment-notes-board";
 import { s } from "@/lib/i18n";
 import {
   cancelAppointment,
@@ -113,6 +115,11 @@ function AppointmentsListInner({
   canCancel: boolean;
 }) {
   const [action, setAction] = useState<RowAction | null>(null);
+  // PL-19: the note thread is NOT a RowAction — those three open a Drawer that
+  // mutates the appointment, and each closes on success. Notes are a popup over
+  // an unchanged row, kept in its own state so opening them can never be
+  // confused with an edit in progress.
+  const [notesFor, setNotesFor] = useState<AgendaAppointment | null>(null);
 
   if (appointments.length === 0) {
     return (
@@ -132,11 +139,30 @@ function AppointmentsListInner({
           appt={a}
           canEdit={canEdit}
           canCancel={canCancel}
+          onOpenNotes={() => setNotesFor(a)}
           onScheduleAgain={() => setAction({ kind: "scheduleAgain", appt: a })}
           onReschedule={() => setAction({ kind: "reschedule", appt: a })}
           onCancel={() => setAction({ kind: "cancel", appt: a })}
         />
       ))}
+
+      {/* PL-19 (owner CR 2026-07-31): the note thread of ONE marcação, in a
+          dialog over the ficha's Marcações tab. The SAME board the booking panel
+          and the /marcacoes list render, so a note written here is the note
+          reception reads there — one thread per marcação, never a per-screen
+          copy. Titled with the date and time because every row on this tab
+          belongs to the same patient, so the patient name would not
+          disambiguate. */}
+      {notesFor && (
+        <Dialog
+          open
+          onClose={() => setNotesFor(null)}
+          title={`${s["marcacoes.notes"]} · ${dateFmt.format(new Date(notesFor.startsAt))} ${formatTimeOfDay(new Date(notesFor.startsAt))}`}
+          cancelLabel={s["common.close"]}
+        >
+          <AppointmentNotesBoard appointmentId={notesFor.id} />
+        </Dialog>
+      )}
 
       {action?.kind === "scheduleAgain" && (
         <ScheduleAgainDrawer source={action.appt} onClose={() => setAction(null)} />
@@ -155,6 +181,7 @@ function AppointmentRow({
   appt: a,
   canEdit,
   canCancel,
+  onOpenNotes,
   onScheduleAgain,
   onReschedule,
   onCancel,
@@ -162,6 +189,7 @@ function AppointmentRow({
   appt: AgendaAppointment;
   canEdit: boolean;
   canCancel: boolean;
+  onOpenNotes: () => void;
   onScheduleAgain: () => void;
   onReschedule: () => void;
   onCancel: () => void;
@@ -205,6 +233,22 @@ function AppointmentRow({
           {a.status === "completed" && !a.hasNote && (
             <StatusChip tone="warning">{s["appointment.noNote"]}</StatusChip>
           )}
+          {/* PL-19: notes are ALWAYS reachable, whatever the lifecycle. A
+              cancelled or no-show visit is often the one carrying the reason,
+              so this deliberately sits outside the isEditable() gate that hides
+              the Gerir disclosure. Same label and thread as the /marcacoes
+              button (PL-17); the date disambiguates rows for screen readers,
+              since every row here is the same patient. */}
+          <button
+            type="button"
+            onClick={onOpenNotes}
+            aria-label={`${s["marcacoes.notes"]}: ${dateFmt.format(new Date(a.startsAt))} ${formatTimeOfDay(new Date(a.startsAt))}`}
+            data-testid="ficha-notes-button"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          >
+            <FileText size={16} strokeWidth={1.75} aria-hidden="true" />
+            {s["marcacoes.notes"]}
+          </button>
           {isEligibleForScheduleAgain(a) && (
             <button
               type="button"
