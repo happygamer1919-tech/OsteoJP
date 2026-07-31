@@ -157,6 +157,26 @@ export function StaffManageModal({
     edit: s["common.edit"],
     remove: s["admin.workingHours.blockRemove"],
     close: s["common.close"],
+    // PL-22 — bloquear lote. Reuses the Agendar lote vocabulary so the two
+    // recurrence forms read the same, and the existing weekday strings so the
+    // day names cannot drift between the schedule editor and this form.
+    lote: s["admin.workingHours.blockLote"],
+    weekdays: s["lote.weekdays"],
+    everyWeeks: s["lote.everyWeeks"],
+    endMode: s["lote.endMode"],
+    endAfterCount: s["lote.endAfterCount"],
+    endOnDate: s["lote.endOnDate"],
+    until: s["lote.until"],
+    count: s["admin.workingHours.blockCount"],
+    weekdayNames: [
+      s["admin.workingHours.mon"],
+      s["admin.workingHours.tue"],
+      s["admin.workingHours.wed"],
+      s["admin.workingHours.thu"],
+      s["admin.workingHours.fri"],
+      s["admin.workingHours.sat"],
+      s["admin.workingHours.sun"],
+    ],
   };
 
   return (

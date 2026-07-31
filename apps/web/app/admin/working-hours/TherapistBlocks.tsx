@@ -10,6 +10,16 @@ import {
   deleteTimeOffBlockAction,
 } from "./actions";
 
+/**
+ * PL-22: the create form's three shapes. `lote` exists only while CREATING -
+ * editing an existing block always edits one row, because a recurrence is how
+ * rows were made, not a property any single row carries.
+ */
+/** PL-22: weekday values in clinical order (Mon..Sun), matching getDay(). */
+const LOTE_WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0] as const;
+
+export type BlockFormMode = "pontual" | "prolongada" | "lote";
+
 export type BlockView = {
   id: string;
   mode: "pontual" | "prolongada";
@@ -40,6 +50,16 @@ export type BlockLabels = {
   edit: string; // "Editar"
   remove: string; // "Eliminar"
   close: string; // "Fechar"
+  // PL-22 — bloquear lote (the recurring third mode).
+  lote: string; // "Bloqueio repetido"
+  weekdays: string; // "Dias da semana"
+  everyWeeks: string; // "A cada (semanas)"
+  endMode: string; // "Termina"
+  endAfterCount: string; // "Após N bloqueios"
+  endOnDate: string; // "Numa data"
+  until: string; // "Até"
+  count: string; // "Nº de bloqueios"
+  weekdayNames: readonly string[]; // Mon..Sun, clinical order
 };
 
 /** Format a Lisbon "yyyy-mm-dd" as "dd/mm/yyyy" for display (no locale dep). */
@@ -93,10 +113,16 @@ export function TherapistBlocks({
   const [open, setOpen] = useState(false);
   const { ref, shown } = useAnimatedDialog(open);
   const [editing, setEditing] = useState<BlockView | null>(null);
-  const [mode, setMode] = useState<"pontual" | "prolongada">("pontual");
+  const [mode, setMode] = useState<BlockFormMode>("pontual");
+  // PL-22: the lote end condition. Local state because the two inputs it
+  // switches between must not both post - a stale "until" beside a count is
+  // exactly the kind of ambiguity the server would have to guess about.
+  const [endMode, setEndMode] = useState<"count" | "until">("count");
 
   const startEdit = (b: BlockView) => {
     setEditing(b);
+    // A stored block is one row: editing it is never a lote (the recurrence is
+    // a creation-time shape, not something a single row remembers).
     setMode(b.mode);
   };
   const startCreate = () => {
@@ -204,16 +230,109 @@ export function TherapistBlocks({
               <select
                 name="mode"
                 value={mode}
-                onChange={(e) => setMode(e.target.value as "pontual" | "prolongada")}
+                onChange={(e) => setMode(e.target.value as BlockFormMode)}
                 aria-label={labels.mode}
                 className={adminInputInline}
               >
                 <option value="pontual">{labels.pontual}</option>
                 <option value="prolongada">{labels.prolongada}</option>
+                {/* Creation-only: a stored block is a single row. */}
+                {!editing && <option value="lote">{labels.lote}</option>}
               </select>
             </label>
 
-            {mode === "pontual" ? (
+            {mode === "lote" ? (
+              /* PL-22 — bloquear lote. Same recurrence vocabulary as Agendar
+                 lote (weekdays / every N weeks / ends after N or on a date), so
+                 whoever learns one form already knows the other. Each generated
+                 day gets the SAME hour range: a recurring block is "Tuesday
+                 mornings", not a different window every week. */
+              <div className="flex flex-col gap-3">
+                <fieldset className="flex flex-col gap-1">
+                  <legend className={adminLabel}>{labels.weekdays}</legend>
+                  <div className="flex flex-wrap gap-2" data-testid="lote-weekdays">
+                    {LOTE_WEEKDAY_VALUES.map((value, i) => (
+                      <label key={value} className="flex items-center gap-1 text-sm">
+                        <input type="checkbox" name="weekdays" value={value} />
+                        <span>{labels.weekdayNames[i]?.slice(0, 3) ?? value}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1">
+                    <span className={adminLabel}>{labels.fromDate}</span>
+                    <input
+                      type="date"
+                      name="startDate"
+                      required
+                      aria-label={labels.fromDate}
+                      className={adminInputInline}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className={adminLabel}>{labels.start}</span>
+                    <TimeFieldInput name="startTime" defaultValue="09:00" className={adminInputInline} />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className={adminLabel}>{labels.end}</span>
+                    <TimeFieldInput name="endTime" defaultValue="10:00" className={adminInputInline} />
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1">
+                    <span className={adminLabel}>{labels.everyWeeks}</span>
+                    <input
+                      type="number"
+                      name="everyWeeks"
+                      min={1}
+                      max={12}
+                      defaultValue={1}
+                      aria-label={labels.everyWeeks}
+                      className={adminInputInline}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className={adminLabel}>{labels.endMode}</span>
+                    <select
+                      name="endMode"
+                      value={endMode}
+                      onChange={(e) => setEndMode(e.target.value as "count" | "until")}
+                      aria-label={labels.endMode}
+                      className={adminInputInline}
+                    >
+                      <option value="count">{labels.endAfterCount}</option>
+                      <option value="until">{labels.endOnDate}</option>
+                    </select>
+                  </label>
+                  {endMode === "count" ? (
+                    <label className="flex flex-col gap-1">
+                      <span className={adminLabel}>{labels.count}</span>
+                      <input
+                        type="number"
+                        name="count"
+                        min={1}
+                        max={52}
+                        defaultValue={4}
+                        aria-label={labels.count}
+                        className={adminInputInline}
+                      />
+                    </label>
+                  ) : (
+                    <label className="flex flex-col gap-1">
+                      <span className={adminLabel}>{labels.until}</span>
+                      <input
+                        type="date"
+                        name="until"
+                        required
+                        aria-label={labels.until}
+                        className={adminInputInline}
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
+            ) : mode === "pontual" ? (
               <div className="flex flex-wrap items-end gap-3">
                 <label className="flex flex-col gap-1">
                   <span className={adminLabel}>{labels.date}</span>

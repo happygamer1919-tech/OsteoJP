@@ -324,12 +324,31 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
 
   async listOpenSlots(principal, { locationId, durationMin, horizonDays, now }): Promise<string[]> {
     // Step-3 source of truth. Expands ACTIVE therapists' ACTIVE availability
-    // templates at the location into a 30-min grid of concrete starts over the
+    // templates at the location into a grid of concrete starts over the
     // horizon — all wall-clock math in Europe/Lisbon INSIDE Postgres — and keeps
     // only starts where at least one therapist passes the EXACT same three
     // predicates the createBooking guard runs (availabilityCoversExists /
     // apptOverlapExists / timeOffOverlapExists). A slot returned here can only
     // be rejected at confirm by a genuine race, never by disagreement.
+    //
+    // PL-25 (owner CR 2026-07-31): "on our client portal the only option to book
+    // appointments is fixed hourly, they can't book at :15th minute or half of
+    // hour". The per-location step (0041) was necessary but NOT sufficient: the
+    // series used to start at the template's own start_time, so a therapist
+    // whose hours begin 09:30 produced 09:30 / 10:30 / 11:30 at a 60-minute
+    // step — an hourly CADENCE that never lands on an hour. The grid is now
+    // ALIGNED to midnight, so the step alone decides the offsets a patient can
+    // see: 60 -> 09:00, 10:00, 11:00; 30 -> :00 and :30, exactly as before for
+    // every template that already starts on a :00 or :30 boundary.
+    //
+    // Alignment rounds UP (ceil), never down, so an aligned start can only ever
+    // be INSIDE the therapist's declared hours. Rounding down would offer a slot
+    // beginning before the therapist starts work, and availabilityCoversExists
+    // would then reject at confirm what step 3 had just advertised — the exact
+    // disagreement this query exists to prevent.
+    //
+    // Staff booking is deliberately untouched: the agenda still books any time.
+    // This constrains only what a patient may self-serve.
     const startExpr = sql`s.starts_at`;
     // Parens are load-bearing: AT TIME ZONE binds tighter than `+`. The ::int
     // cast is too: drizzle/postgres-js sends parameters untyped and
@@ -337,9 +356,20 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     const endExpr = sql`(s.starts_at + make_interval(mins => ${durationMin}::int))`;
     const nowIso = now.toISOString();
     const rows = (await getDbAdmin().execute(sql`
-      with slot as (
+      with step as (
+        -- W12-29: per-location slot granularity, default 30. Lifted out of the
+        -- lateral so PL-25's alignment and the series step read the SAME value —
+        -- two copies of this subquery could not drift, but they could disagree
+        -- at a glance, and the alignment only makes sense against the step it
+        -- steps by.
+        select coalesce(
+          (select l.slot_granularity_min from locations l
+            where l.id = ${locationId} and l.tenant_id = ${principal.tenantId}), 30)::int as min
+      ),
+      slot as (
         select distinct (t.local_start at time zone ${LISBON}) as starts_at
         from availability_templates av
+        cross join step
         join users u on u.id = av.user_id and u.tenant_id = av.tenant_id
         cross join lateral generate_series(
           (${nowIso}::timestamptz at time zone ${LISBON})::date,
@@ -347,12 +377,14 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           interval '1 day'
         ) as d(day)
         cross join lateral generate_series(
-          d.day::date + av.start_time,
+          -- PL-25: the first start_time on the midnight-aligned grid that is at
+          -- or after the template's own start. ceil, so it never precedes the
+          -- therapist's declared hours.
+          d.day::date + make_interval(mins => (
+            ceil((extract(epoch from av.start_time) / 60.0) / step.min) * step.min
+          )::int),
           d.day::date + av.end_time - make_interval(mins => ${durationMin}::int),
-          -- W12-29: per-location slot granularity (default 30 -> unchanged).
-          make_interval(mins => coalesce(
-            (select l.slot_granularity_min from locations l
-             where l.id = ${locationId} and l.tenant_id = ${principal.tenantId}), 30)::int)
+          make_interval(mins => step.min)
         ) as t(local_start)
         where av.tenant_id = ${principal.tenantId}
           and av.location_id = ${locationId}
