@@ -4,13 +4,18 @@
 // truth; this script is the ONLY way the artifact is produced, so the artifact
 // can never drift from the repo (BOARD-SPEC.md: "never hand-edited").
 //
-// The artifact is now INTERACTIVE: the page seeds its state from the JSON
-// (inlined as a <script type="application/json"> data island) and lets you edit,
-// add, delete, re-status, re-prioritise and mark-done cards, toggle launch-gate
-// conditions, and Export the resulting JSON to paste back into the repo. Edits
-// live in the browser's localStorage; this file never writes back to the JSON.
-// All CSS + JS are inlined from the sibling board.css / board-app.js, so the
-// page makes ZERO external requests (a strict artifact CSP blocks CDNs anyway).
+// The artifact is a PORTAL: the page seeds its state from the JSON (inlined as a
+// <script type="application/json"> data island) and gives five views over it
+// (Focus, Board, Launch gate, List, Timeline), drag-and-drop between lanes,
+// evidence-gated "mark done", undo, filters and an Export that diffs against
+// this seed. Edits live in the browser's localStorage; this file never writes
+// back to the JSON. All CSS + JS are inlined from the sibling board.css /
+// board-app.js, so the page makes ZERO external requests (the artifact CSP
+// blocks CDNs anyway, and a silently-failing font link is worse than none).
+//
+// Lane placement is DERIVED in both directions: validate-board.mjs computes the
+// same lane the page does, so a card can never sit in a lane its own status
+// contradicts - neither in the repo nor on screen.
 //
 // Usage:  node docs/board/render-board.mjs [board.json] [out.html]
 //         defaults: ./prelaunch-board.json  ->  ./prelaunch-board.rendered.html
@@ -54,7 +59,7 @@ const passed = (lg.conditions ?? []).filter((g) => g.state === "pass").length;
 const denom = lg.denominator ?? 9;
 
 const html = `<meta charset="utf-8" />
-<title>OsteoJP · Pre-Launch Board</title>
+<title>OsteoJP · Pre-Launch Portal</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light dark" />
 <style>
@@ -62,9 +67,9 @@ ${css}
 </style>
 
 <div class="wrap" id="app">
-  <noscript style="display:block;padding:24px;font-family:system-ui">
-    This board is interactive and needs JavaScript. The source of truth is
-    <code>docs/board/prelaunch-board.json</code>.
+  <noscript style="display:block;padding:24px;font-family:system-ui;line-height:1.6">
+    This portal is interactive and needs JavaScript. The source of truth is the
+    committed file <code>docs/board/prelaunch-board.json</code>.
   </noscript>
 </div>
 
@@ -75,6 +80,9 @@ ${appJs}
 `;
 
 writeFileSync(outPath, html);
+const lanes = {};
+for (const c of board.cards ?? []) lanes[c.lane] = (lanes[c.lane] ?? 0) + 1;
 console.log(
-  `rendered ${board.cards?.length ?? 0} cards + ${passed}/${denom} gates (interactive) -> ${outPath}`,
+  `rendered ${board.cards?.length ?? 0} cards + ${passed}/${denom} gates (portal) -> ${outPath}`,
 );
+console.log("  lanes: " + Object.entries(lanes).map(([k, v]) => `${k} ${v}`).join(", "));

@@ -46,7 +46,9 @@ Every entry in `cards[]` has exactly these fields:
 |---|---|---|
 | `id` | string | unique across the board |
 | `title` | string | non-empty, plain language |
-| `lane` | enum | one of the lanes below, except `launch_gate` |
+| `lane` | enum | **DERIVED, never hand-set** - see "Lane is derived" below |
+| `home_lane` | enum | the card's KIND: `in_flight` \| `rodica_batch` \| `incidents` \| `loose_ends` |
+| `priority` | enum | `high` \| `medium` \| `low` (default `medium`) |
 | `status` | enum | `todo` \| `in_flight` \| `halted` \| `blocked` \| `shipped` |
 | `owner_terminal` | string | which terminal owns the card (yellow / green / cyan / ivan / rodica ...) |
 | `gate` | enum | `green_self_merge` \| `cyan_clear` \| `owner_merge` \| `owner_authorizo` \| `stakeholder` |
@@ -61,6 +63,34 @@ Every entry in `cards[]` has exactly these fields:
 - `ref`: non-empty string (PR number, journal idx, hash, spec path, image path)
 - `at`: ISO 8601 date or timestamp
 
+## Lane is derived
+
+A card's lane is a FUNCTION of what is true about the card. It is not a field a
+human sets, and the validator rejects a file where the two disagree:
+
+```
+lane(card) =
+  status = shipped                                          -> shipped
+  home_lane = in_flight AND status = blocked
+                       AND blocked_on in ivan|jp|rodica     -> blocked_on_people
+  otherwise                                                 -> home_lane
+```
+
+`home_lane` is the card's KIND and the only lane fact anyone sets: is this a work
+item, an incident, something from Rodica's inbox, or a loose end? Incidents and
+inbox items keep their kind while blocked - they are categories, not states -
+which is why the derivation only routes `in_flight` work into the people lane.
+
+Consequences, and the reason the rule exists:
+
+- Marking a card done MOVES it to Shipped. It cannot sit in "In flight" wearing a
+  "Shipped" badge, which is exactly what the old board allowed.
+- Naming a person on a blocked work item moves it under that person.
+- Clearing the blocker moves it back.
+- The portal computes this on every change; `validate-board.mjs` computes the
+  same function and fails the build if the stored `lane` disagrees. One rule, two
+  independent implementations, no drift.
+
 ### Rules the validator enforces (beyond field types)
 
 - `status=shipped` requires non-null `evidence`. **No exceptions.**
@@ -71,6 +101,11 @@ Every entry in `cards[]` has exactly these fields:
 - Card `id`s are unique; gate `id`s are unique.
 - `lane` values are real lanes; cards never live in `launch_gate` (the gate has
   its own `conditions[]`).
+- `lane` equals `deriveLane(card)` - a stored lane that contradicts the card's own
+  status is a red gate, not a cosmetic issue.
+- `home_lane` is one of the four KIND lanes; `shipped` and `blocked_on_people` are
+  states, so they are never a home.
+- `priority` is `high` \| `medium` \| `low`.
 
 ## Lanes, in render order
 
@@ -108,6 +143,35 @@ NOT a percentage of work done: nine independent conditions, each proven pass wit
 evidence or it is fail. `launch_gate.readiness_passed` must equal the number of
 `state=pass` conditions or the validator fails. Fail-closed: a condition is `fail`
 until its evidence exists.
+
+## The portal (what the artifact is)
+
+The artifact is a working surface, not a picture of one. It renders from the JSON
+and gives five views over the same data:
+
+| view | what it answers |
+|---|---|
+| **Focus** | what needs YOU, then what waits on others, then what is moving |
+| **Board** | the lanes, with drag-and-drop between them |
+| **Launch gate** | the nine go/no-go conditions in full, with their notes |
+| **List** | every card, sortable, for scanning |
+| **Timeline** | every card by its last checkpoint, newest first |
+
+Interaction rules worth knowing before editing the app:
+
+- **Evidence is enforced in the UI.** Marking a card done, or a gate PASS, opens
+  a prompt for the evidence the validator will demand. The portal never records a
+  state the repo would reject.
+- **Drag-and-drop writes state, not position.** Dropping on Shipped ships the
+  card (with the evidence prompt); dropping on Blocked-on-people blocks it and
+  names a person; dropping on a kind lane sets its kind and reopens it if it was
+  shipped.
+- Edits live in the viewer's `localStorage`, keyed by board name + schema
+  version. **Export** shows a diff against the committed seed, mirrors the
+  validator, and offers the JSON plus a plain-language change brief to hand back.
+- Everything is undoable (`Ctrl/Cmd+Z`, or the Undo button), and "Discard local
+  changes" restores the committed board exactly.
+- Keys: `/` search, `n` new card, `e` export, `u` undo, `1`-`5` views, `Esc` closes.
 
 ## Rendering the artifact
 
