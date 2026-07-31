@@ -2436,3 +2436,44 @@ behave identically and none can drift.
 No migration, no capability change, no relaxed guard: the server still re-asserts
 `schedule:manage` AND the location scope, so reception can only ever block a therapist at their
 own clinic.
+
+## 2026-07-31 - Session close: final board pass, and two diagnoses corrected (GREEN)
+
+Session shipped ten PRs (#719-#730): the eight-card reception CR, PL-27, and the CI un-quarantine.
+Board closes at 42 cards, 30 shipped. **Launch readiness moved 7/9 -> 6/9, and that is not a
+regression in the product** - see G3 below.
+
+**Two wrong diagnoses corrected, both the same shape: a symptom read as infrastructure.**
+
+1. **The reception CR itself.** Three of seven reported items had a different cause than the report
+   implied (recorded in the earlier entry today). The pattern: a user describes a symptom
+   accurately and infers a cause the code does not support.
+2. **The e2e quarantine (2026-07-27).** `therapist-blocks.spec.ts` was quarantined as "GitHub
+   runners degraded, 7s -> 186s". Re-enabling it failed CI three times for three IDENTICAL minutes
+   and the Playwright artifact named the real cause: *"element is not stable ... element was
+   detached from the DOM, retrying"* for the full 180s. Every write in that spec is a server action
+   ending in `redirect("/admin/staff?m=<code>")`, and the test waited with
+   `waitForURL(/admin\/staff/)` - a pattern the CURRENT url already satisfies. It waited for
+   nothing, then clicked into the outgoing DOM. Locally the race is won (7s); on CI it was lost
+   every time. The 186s was never a 26x slow runner, it was one click burning its budget.
+   **Lesson: "passes locally, times out on CI" is a RACE until proven otherwise - read the artifact
+   before blaming the runners.** The quarantine cost four days of that test not running, during
+   which PL-14, PL-18 and PL-22 all changed the exact surface it covers.
+
+**G3 re-opened (readiness 7/9 -> 6/9).** Auditing the board for accurate status surfaced a
+credential exposure tracked nowhere in the repo: the prod DB password was pasted into a chat on
+2026-07-30, one day AFTER G3's rotation evidence. The gate certified a property that had since
+become false. GREEN flipped it to fail and opened `INC-04-prod-db-password-exposed` (Q-SEC-1). This
+is the owner's risk call to reverse, but the board should not make it silently - and the reason it
+survived two sessions is precisely that it lived in an assistant memory note instead of a card.
+
+**PL-27, and a scoping lesson.** PL-22 shipped bulk blocking into the per-therapist modal on
+Horários/Equipa the same day the owner reported bulk blocking as missing. Both were true: the
+capability existed, and it existed nowhere near where reception works. Shipping a capability into a
+surface nobody uses is not shipping it. The same report also exposed a capability gate that had
+outlived the capability it named (`settings:manage` on a control the server guards with
+`schedule:manage`), hiding an existing feature from the only role whose job it is.
+
+**Left for the owner, in priority order:** G2 (the reminder canary - the one launch gate he can
+close alone), INC-04 (rotate the exposed credential), G8 (JP's RGPD sign-off), then the staged
+read-only script that answers PL-15a and PL-18 in one paste.

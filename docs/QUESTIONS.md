@@ -929,3 +929,22 @@ plus a "remover lote" control on the blocks list; append-only semantics are unaf
 blocks simply carry NULL (they were never a batch).
 **ANSWERED (owner, 2026-07-31): ticket it.** Raised as card PL-26, unblocked now that 0051 is
 applied. Migration takes 0052 and is apply-before-merge like every other.
+
+## Q-SEC-1 (2026-07-31, OPEN) - G3 re-opened: the rotated prod DB password was later exposed
+G3 ("NEW_DB_PASSWORD rotated with full propagation") is attested 2026-07-29. The prod DB password
+was pasted into a chat on 2026-07-30 - so the exposure is NEWER than the gate's evidence, and the
+credential the gate certifies as safely rotated is the one that leaked. It was carried only in an
+assistant memory note and appeared nowhere in the board or in this file, which is how it survived
+two sessions unactioned.
+GREEN has flipped G3 to **fail** (readiness 7/9 -> 6/9) and opened
+`INC-04-prod-db-password-exposed`, rather than leave a launch gate asserting a safety property that
+is known to be false. This board's own doctrine is that a claim is never truth on its own.
+RECOMMENDED DEFAULT: rotate again in Supabase and propagate to the three Vercel projects
+(platform / api / portal) plus `~/osteojp-secrets/new-prod.env`, exactly as on 2026-07-29, then
+re-attest G3 with the new date. Owner terminal only; GREEN never sources prod credentials.
+IF THE OWNER DISAGREES: flipping G3 back to pass is a one-line change and readiness returns to 7/9.
+Say so and it will be done - this is his risk call, not GREEN's, but the board should not make it
+silently.
+NOTE the propagation half matters as much as the rotation: a rotated-but-unpropagated password
+breaks migrations (the 28P01 class of failure already recorded in this file) instead of securing
+anything.

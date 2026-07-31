@@ -54,7 +54,7 @@
   ],
   "launch_gate": {
     "denominator": 9,
-    "readiness_passed": 7,
+    "readiness_passed": 6,
     "note": "The launch readiness figure is passed-over-nine. It is NOT a percentage of work done and it is NEVER estimated. No partial credit: each condition is pass or fail.",
     "conditions": [
       {
@@ -80,14 +80,10 @@
       {
         "id": "G3",
         "title": "NEW_DB_PASSWORD rotated with full propagation",
-        "state": "pass",
+        "state": "fail",
         "blocked_on": "ivan",
-        "evidence": {
-          "kind": "screenshot",
-          "ref": "owner-attested 20260729: NEW_DB_PASSWORD rotated + propagated to Vercel platform/api/portal + local .env",
-          "at": "2026-07-29"
-        },
-        "notes": "DONE (owner-terminal, owner-attested 20260729): rotated the NEW prod DB password and propagated to every consumer (Vercel platform/api/portal env + local .env). Owner-terminal only; GREEN never sources prod creds. Keep the Supabase/Vercel confirmation on file for CYAN spot-check."
+        "evidence": null,
+        "notes": "DONE (owner-terminal, owner-attested 20260729): rotated the NEW prod DB password and propagated to every consumer (Vercel platform/api/portal env + local .env). Owner-terminal only; GREEN never sources prod creds. Keep the Supabase/Vercel confirmation on file for CYAN spot-check. RE-OPENED 2026-07-31 (GREEN): the rotation on 2026-07-29 did happen and was propagated - that part of the record stands. But the rotated password was then pasted into a chat on 2026-07-30, so the property this gate exists to certify (the prod DB credential is not compromised) is no longer true, and the exposure is NEWER than the evidence. Tracked as INC-04-prod-db-password-exposed. Re-attest with a fresh rotation + propagation date."
       },
       {
         "id": "G4",
@@ -243,8 +239,8 @@
       "gate": "owner_merge",
       "evidence": null,
       "blocked_on": null,
-      "last_checkpoint": "2026-07-27",
-      "notes": "Recon (2026-07-27) proved declaracoes are TRANSIENT (no DB table/column; generate.ts:20-23 'nothing persisted'), so PL-03a's UI+PDF change is the whole fix and needs NO migration. No PL-03b build loop authored. Persisting a declaracao would be a future owner design decision touching immutability rule 8. See PL-03a section 'Why there is no PL-03b'."
+      "last_checkpoint": "2026-07-31",
+      "notes": "Recon (2026-07-27) proved declaracoes are TRANSIENT (no DB table/column; generate.ts:20-23 'nothing persisted'), so PL-03a's UI+PDF change is the whole fix and needs NO migration. No PL-03b build loop authored. Persisting a declaracao would be a future owner design decision touching immutability rule 8. See PL-03a section 'Why there is no PL-03b'. Re-confirmed NOT REQUIRED 2026-07-31: a future owner decision, parked deliberately. PL-20 did NOT change this - it made the declaracao stop ASKING for a NIF it already has, which is a different surface from persisting observacoes."
     },
     {
       "id": "PL-04",
@@ -303,8 +299,8 @@
       "gate": "owner_authorizo",
       "evidence": null,
       "blocked_on": "ivan",
-      "last_checkpoint": "2026-07-27",
-      "notes": "Rodica created 'Teste CB' + appts + >=1 Declaracao on the live DB (repeat of July). PLUS (attested read 9815cd63) Ivan M (owner, 48a34faa) has 2 clinical_records as practitioner, 1 SIGNED - synthetic test residue (incl. the known 'Max' 2026-07-25), the only clinical records on prod. The purge inventory MUST include these; the SIGNED one is ANNULLED never deleted (rule 8, immutability). CYAN produces the read-only inventory; owner runs the purge under AUTORIZO. This is the G4 launch-gate blocker. Loop: INC-02 (half b)."
+      "last_checkpoint": "2026-07-31",
+      "notes": "Rodica created 'Teste CB' + appts + >=1 Declaracao on the live DB (repeat of July). PLUS (attested read 9815cd63) Ivan M (owner, 48a34faa) has 2 clinical_records as practitioner, 1 SIGNED - synthetic test residue (incl. the known 'Max' 2026-07-25), the only clinical records on prod. The purge inventory MUST include these; the SIGNED one is ANNULLED never deleted (rule 8, immutability). CYAN produces the read-only inventory; owner runs the purge under AUTORIZO. This is the G4 launch-gate blocker. Loop: INC-02 (half b). STILL WAITING 2026-07-31: destructive prod write, owner AUTORIZO only. Note the ordering hazard recorded with the staged cleanup script: if synthetic-data purging runs BEFORE any appointment-derived backfill, the backfill loses its source rows."
     },
     {
       "id": "LE-handoff-correction",
@@ -485,8 +481,8 @@
       "gate": "owner_authorizo",
       "evidence": null,
       "blocked_on": "ivan",
-      "last_checkpoint": "2026-07-28",
-      "notes": "Fresh canary (old one died in the purge). Reminder lead windows = 48h + 24h before start (offsets.ts:20-22); a reminder is scheduled only if sendAt = startsAt - offset > now (offsets.ts:43). To fire ~15min after booking: book the canary appointment at now + 24h + 15min -> the 24h reminder sends in ~15min. The reminder fires ONLY via the appointment/scheduled Inngest event, emitted by createAppointment (enqueueAppointmentReminders) - a raw DB insert does NOT trigger it, so canary-CREATE = book through the prod UI (canary patient with the owner's phone), NOT a DB script. due-reminder set computed at functions.ts:66 (computeDueReminders). REMINDERS_LIVE_SEND is checked at SEND time (clients.ts:45), NOT at schedule time - so flipping it false tomorrow AM ALSO suppresses reminders already queued tonight. Ivan books the canary in the UI himself (types the phone there; the number never enters AI context). GREEN stages canary-CLEANUP ONLY (delete patient + appt by id, 0/0 verify), parameterised by the patient id Ivan returns after creation. BLOCKED on Ivan's console findings + his UI booking."
+      "last_checkpoint": "2026-07-31",
+      "notes": "Fresh canary (old one died in the purge). Reminder lead windows = 48h + 24h before start (offsets.ts:20-22); a reminder is scheduled only if sendAt = startsAt - offset > now (offsets.ts:43). To fire ~15min after booking: book the canary appointment at now + 24h + 15min -> the 24h reminder sends in ~15min. The reminder fires ONLY via the appointment/scheduled Inngest event, emitted by createAppointment (enqueueAppointmentReminders) - a raw DB insert does NOT trigger it, so canary-CREATE = book through the prod UI (canary patient with the owner's phone), NOT a DB script. due-reminder set computed at functions.ts:66 (computeDueReminders). REMINDERS_LIVE_SEND is checked at SEND time (clients.ts:45), NOT at schedule time - so flipping it false tomorrow AM ALSO suppresses reminders already queued tonight. Ivan books the canary in the UI himself (types the phone there; the number never enters AI context). GREEN stages canary-CLEANUP ONLY (delete patient + appt by id, 0/0 verify), parameterised by the patient id Ivan returns after creation. BLOCKED on Ivan's console findings + his UI booking. STILL WAITING 2026-07-31: this is G2, one of the two gates between the platform and launch, and the only one the owner can close alone. Needs REMINDERS_LIVE_SEND + the Twilio credentials + INNGEST_EVENT_KEY set, then a real booking made through the prod UI at now+24h+15min so the scheduled Inngest event fires. Nothing in the reminder path is build-time, so a missing value never fails a deploy - it silently degrades to sandbox, which is exactly why this needs a live canary rather than a config review."
     },
     {
       "id": "LE-resend-deferred",
@@ -499,8 +495,8 @@
       "gate": "owner_merge",
       "evidence": null,
       "blocked_on": null,
-      "last_checkpoint": "2026-07-28",
-      "notes": "DEFERRED to post-launch (owner 2026-07-28). Ativar login shows the set-password link on screen; Ivan creates logins himself and passes links directly, so emailed delivery is a nice-to-have, not a launch blocker. Enable later: INVITES_LIVE_SEND=true + RESEND_API_KEY + a verified osteojp.pt sender + STAFF_INVITE_REDIRECT_URL -> /auth/update-password."
+      "last_checkpoint": "2026-07-31",
+      "notes": "DEFERRED to post-launch (owner 2026-07-28). Ativar login shows the set-password link on screen; Ivan creates logins himself and passes links directly, so emailed delivery is a nice-to-have, not a launch blocker. Enable later: INVITES_LIVE_SEND=true + RESEND_API_KEY + a verified osteojp.pt sender + STAFF_INVITE_REDIRECT_URL -> /auth/update-password. Re-confirmed DEFERRED 2026-07-31: post-launch by owner decision, not blocked on anything. Invite/login links work today by showing the link on screen; only the emailing of them is deferred."
     },
     {
       "id": "PL-09",
@@ -621,8 +617,8 @@
       "gate": "cyan_clear",
       "evidence": null,
       "blocked_on": null,
-      "last_checkpoint": "2026-07-30",
-      "notes": "STAGED, awaiting the owner's paste. READ-ONLY prod script at ~/osteojp-mailbox/staged/cyan-pl15a-patient-location-READONLY-20260730.mjs (SET TRANSACTION READ ONLY + rollback; prints no NIF/phone/email; run from the prod-apply worktree's packages/db with DATABASE_URL_DIRECT in the owner's own shell). It prints, per patient, primary_location_id + appointment count by location + created_by, and counts the NULL-and-zero-appointment remainder that 0051 cannot infer. THE CAUSE IS ALREADY IDENTIFIED AND FIXED FORWARD by PL-15b (#714): the create-patient form never sent primaryLocationId, so every patient registered since 0045 is location-less and, under 0047, visible only to its creator and the owner until a located appointment exists - exactly the Alfredo / Joao Miguel / Maria Alice shape. This card now exists to CONFIRM that on prod data and to size the 0051 backfill, not to decide the fix."
+      "last_checkpoint": "2026-07-31",
+      "notes": "STAGED, awaiting the owner's paste. READ-ONLY prod script at ~/osteojp-mailbox/staged/cyan-pl15a-patient-location-READONLY-20260730.mjs (SET TRANSACTION READ ONLY + rollback; prints no NIF/phone/email; run from the prod-apply worktree's packages/db with DATABASE_URL_DIRECT in the owner's own shell). It prints, per patient, primary_location_id + appointment count by location + created_by, and counts the NULL-and-zero-appointment remainder that 0051 cannot infer. THE CAUSE IS ALREADY IDENTIFIED AND FIXED FORWARD by PL-15b (#714): the create-patient form never sent primaryLocationId, so every patient registered since 0045 is location-less and, under 0047, visible only to its creator and the owner until a located appointment exists - exactly the Alfredo / Joao Miguel / Maria Alice shape. This card now exists to CONFIRM that on prod data and to size the 0051 backfill, not to decide the fix. STILL WAITING 2026-07-31: the read-only script has been staged since 2026-07-30 and has not been run. The PL-18 read (cyan-pl18-reception-scope-READONLY-20260731.mjs, sha256 61316869cdf5...) now covers the SAME staff-to-location question in one paste, so running that one answers this card too."
     },
     {
       "id": "PL-15b",
@@ -839,16 +835,34 @@
     {
       "id": "PL-27",
       "title": "Reception can block the schedule from the AGENDA, and repeat it - stale settings:manage gate hid an existing control",
-      "lane": "in_flight",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "todo",
+      "status": "shipped",
       "priority": "high",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
+      "evidence": {
+        "kind": "pr",
+        "ref": "#729",
+        "at": "2026-07-31"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-07-31",
-      "notes": "Owner report 2026-07-31, after PL-22 shipped: 'reception still doesn't have batch schedule block, same as you made in the new appointment panel, also reception doesn't have that button I have for example to press there in agenda bloquear horario and in agenda she can block something in the day, it's something existent but not visible on their interface for now'. TWO symptoms, ONE root cause, and the owner's reading of it is exactly right - the feature exists and the interface hides it. FINDING: agenda/page.tsx gated the Bloquear horario affordance on settings:manage, which owner and admin hold and reception does NOT. That gate was CORRECT when W12-28 shipped it, and went stale at PL-09 Phase 5, which created the explicit schedule:manage capability, granted it to reception ('reception OWNS scheduling for their location's therapists'), and moved every time_off write onto it. The server has asserted schedule:manage ever since; only the UI check was left behind, and its own comment still claimed the two were 'the SAME capability createTimeOffBlock server-enforces' - a claim that stopped being true and was never re-read. So reception could always have blocked time; nothing in the agenda ever offered it to them. SECOND HALF: PL-22 put bulk blocking only in the per-therapist Bloquear horario modal on Horarios/Equipa. The agenda is where the day is actually managed, so from where reception works, batch blocking did not exist - which is why the owner reports it missing even though PL-22 merged. The agenda dialog now offers Repetir bloqueio using the SAME generateLoteSchedule + createTimeOffBlockBatch, so all three recurrence forms (agendar lote, bloquear lote, agenda block) behave identically. No migration, no capability change, no relaxed guard: the server re-asserts schedule:manage AND the location scope (resolveScheduleScope + assertTargetInScheduleScope), so reception can only block a therapist at their own clinic."
+      "notes": "Owner report 2026-07-31, after PL-22 shipped: 'reception still doesn't have batch schedule block, same as you made in the new appointment panel, also reception doesn't have that button I have for example to press there in agenda bloquear horario and in agenda she can block something in the day, it's something existent but not visible on their interface for now'. TWO symptoms, ONE root cause, and the owner's reading of it is exactly right - the feature exists and the interface hides it. FINDING: agenda/page.tsx gated the Bloquear horario affordance on settings:manage, which owner and admin hold and reception does NOT. That gate was CORRECT when W12-28 shipped it, and went stale at PL-09 Phase 5, which created the explicit schedule:manage capability, granted it to reception ('reception OWNS scheduling for their location's therapists'), and moved every time_off write onto it. The server has asserted schedule:manage ever since; only the UI check was left behind, and its own comment still claimed the two were 'the SAME capability createTimeOffBlock server-enforces' - a claim that stopped being true and was never re-read. So reception could always have blocked time; nothing in the agenda ever offered it to them. SECOND HALF: PL-22 put bulk blocking only in the per-therapist Bloquear horario modal on Horarios/Equipa. The agenda is where the day is actually managed, so from where reception works, batch blocking did not exist - which is why the owner reports it missing even though PL-22 merged. The agenda dialog now offers Repetir bloqueio using the SAME generateLoteSchedule + createTimeOffBlockBatch, so all three recurrence forms (agendar lote, bloquear lote, agenda block) behave identically. No migration, no capability change, no relaxed guard: the server re-asserts schedule:manage AND the location scope (resolveScheduleScope + assertTargetInScheduleScope), so reception can only block a therapist at their own clinic. SHIPPED (#729, no migration). The gate now reads schedule:manage, matching what createTimeOffBlock actually asserts, and the agenda dialog gained 'Repetir bloqueio' driven by the same generateLoteSchedule + createTimeOffBlockBatch as Agendar lote and the Horarios modal - three recurrence forms, one generator, so they cannot drift. The test added is an INVARIANT (whoever may WRITE a block is who may SEE the control), so a future regate breaks a test instead of silently hiding a control again."
+    },
+    {
+      "id": "INC-04-prod-db-password-exposed",
+      "title": "Prod DB password was pasted into a chat on 2026-07-30 - rotate again",
+      "lane": "incidents",
+      "home_lane": "incidents",
+      "status": "blocked",
+      "priority": "high",
+      "owner_terminal": "ivan",
+      "gate": "owner_authorizo",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-07-31",
+      "notes": "Raised by GREEN 2026-07-31 while auditing the board for accurate status. The production database password was pasted into a chat on 2026-07-30. G3 ('NEW_DB_PASSWORD rotated with full propagation') is attested 2026-07-29 - so the exposure is NEWER than the evidence, and the credential G3 certifies as safely rotated is the one that was exposed. This was carried only in an assistant memory note and appears nowhere in the board or QUESTIONS, which is how it survived two sessions. WHY IT MATTERS beyond hygiene: this is the session-pooler credential used for migrations (DATABASE_URL_DIRECT), i.e. full write access to clinical data, under GDPR. FIX (owner terminal only, GREEN never touches prod creds): rotate in Supabase, then propagate to the three Vercel projects (platform / api / portal) and ~/osteojp-secrets/new-prod.env, exactly as on 2026-07-29. Then re-attest G3 with the new date - the gate is only true again once the propagation is done, because a half-propagated rotation breaks migrations instead of securing them. GREEN has flipped G3 to fail rather than leave the board asserting a safety property that is known false; flip it back in one line if the owner judges the exposure acceptable."
     }
   ]
 }
