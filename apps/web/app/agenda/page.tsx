@@ -143,7 +143,16 @@ export default async function AgendaPage({
       lockedPatient={lockedPatient}
       canHardDelete={can(actor.role, "settings:manage")}
       // W12-28: same capability createTimeOffBlock server-enforces (settings:manage).
-      canBlockTime={can(actor.role, "settings:manage")}
+      // PL-27 (owner report 2026-07-31: "reception doesn't have that button I
+      // have ... in agenda she can block something in the day, it's something
+      // existent but not visible on their interface"). This was settings:manage,
+      // which owner and admin hold and reception does not - so the control was
+      // hidden from the one role whose job it is. The gate went STALE when PL-09
+      // Phase 5 introduced schedule:manage and granted it to reception: the
+      // server-side writes moved to the new capability, this UI check did not.
+      // Now it matches what createTimeOffBlock actually enforces, so the button
+      // appears exactly for the roles whose blocks would be accepted.
+      canBlockTime={can(actor.role, "schedule:manage")}
     />
   );
 }
