@@ -15,6 +15,16 @@ vi.mock("@/lib/scheduling/actions", () => ({
   updateAppointment: vi.fn(),
   cancelAppointment: vi.fn(),
 }));
+// PL-19: the row now offers the note thread, whose board reaches the patient
+// note server actions. Stub the module (and the `server-only` guard it pulls
+// in) so this stays a pure render test — the thread's own behaviour is covered
+// by the notes-board tests, not here.
+vi.mock("server-only", () => ({}));
+vi.mock("@/lib/patients/actions", () => ({
+  getAppointmentNotesAction: vi.fn(async () => ({ notes: [] })),
+  appendAppointmentNoteAction: vi.fn(),
+  editAppointmentNoteAction: vi.fn(),
+}));
 
 import { AppointmentsList } from "./appointments-list";
 
@@ -117,6 +127,28 @@ describe("AppointmentsList — per-row edit actions (W5-09)", () => {
 
   it("hides every edit action when the viewer lacks appointments:write and :delete", () => {
     const html = render({ ...base, status: "scheduled" }, { canEdit: false, canCancel: false });
+    expect(count(html, "Gerir marcação")).toBe(0);
+  });
+});
+
+describe("AppointmentsList — note thread reachable from the ficha (PL-19)", () => {
+  it("offers a Notas button on every row", () => {
+    expect(count(render({ ...base, status: "scheduled" }), 'data-testid="ficha-notes-button"')).toBe(1);
+  });
+
+  // The whole point of the owner CR: the reason a visit was cancelled or missed
+  // usually lives in its notes, so the thread must NOT be hidden behind the
+  // lifecycle gate that removes the Gerir disclosure on terminal rows.
+  it.each(["scheduled", "confirmed", "completed", "cancelled", "no_show"] as const)(
+    "keeps the Notas button on a %s row",
+    (status) => {
+      expect(count(render({ ...base, status }), 'data-testid="ficha-notes-button"')).toBe(1);
+    },
+  );
+
+  it("still offers Notas to a viewer with no write or delete capability", () => {
+    const html = render({ ...base, status: "scheduled" }, { canEdit: false, canCancel: false });
+    expect(count(html, 'data-testid="ficha-notes-button"')).toBe(1);
     expect(count(html, "Gerir marcação")).toBe(0);
   });
 });
