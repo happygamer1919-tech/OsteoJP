@@ -4,6 +4,7 @@ import { assertCan } from "@osteojp/auth";
 import { appointments, patients, timeOff } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { addDays, lisbonDateTimeToUtc, lisbonMidnightUtc, lisbonParts } from "@/lib/scheduling/time";
+import { generateLoteSchedule, type LoteEnd } from "@/lib/scheduling/lote";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import { assertTargetInScheduleScope, resolveScheduleScope } from "./schedule-scope";
@@ -36,6 +37,39 @@ export type TimeOffBlockView = {
   /** Lisbon "HH:mm" (pontual only; "" for prolongada). */
   endTime: string;
   note: string;
+};
+
+/**
+ * PL-22 — "bloquear lote": one submit, many blocks.
+ *
+ * Owner CR 2026-07-31: "create the same thing for blocking the schedule for
+ * therapists by the reception or admins, bloquear lote or whatever". The same
+ * recurrence PL-21 gave Agendar lote, pointed at time_off instead of
+ * appointments, so "every Tuesday morning until September" is one action rather
+ * than eight identical forms.
+ *
+ * Reuses generateLoteSchedule verbatim - one definition of what a recurrence
+ * means across booking and blocking, so the two can never drift.
+ */
+export type TimeOffBatchInput = {
+  userId: string;
+  /** First candidate Lisbon date, "yyyy-mm-dd". */
+  startDate: string;
+  /** Weekdays to block, 0=Sunday..6=Saturday. Empty = startDate's own weekday. */
+  weekdays: number[];
+  everyWeeks: number;
+  end: LoteEnd;
+  /** The hour range blocked on EACH generated day, Lisbon "HH:mm". */
+  startTime: string;
+  endTime: string;
+  note?: string;
+};
+
+export type TimeOffBatchResult = {
+  /** The Lisbon dates actually blocked, ascending. */
+  dates: string[];
+  /** Appointments the whole batch runs over, deduped by appointment id. */
+  overlaps: OverlappingAppointment[];
 };
 
 export type TimeOffBlockInput = {
@@ -246,6 +280,77 @@ export async function createTimeOffBlock(
       metadata: { mode: input.mode, overlappingAppointments: overlaps.length },
     });
     return { id: row?.id ?? "", overlaps };
+  });
+}
+
+/**
+ * Create MANY blocks in one transaction from a recurrence.
+ *
+ * All-or-nothing on purpose: a half-applied batch would leave the therapist's
+ * week in a state nobody asked for, and the user cannot tell which half landed.
+ * One transaction, one audit row carrying the count.
+ *
+ * Overlapping appointments are REPORTED, never cancelled - the same rule the
+ * single-block path follows (Q-W5-4). Reported for the whole batch, deduped,
+ * because one appointment can sit under two generated days.
+ */
+export async function createTimeOffBlockBatch(
+  actor: RequestContext,
+  input: TimeOffBatchInput,
+): Promise<TimeOffBatchResult> {
+  assertCan(actor.role, "schedule:manage");
+  if (!DATE_RE.test(input.startDate)) {
+    throw new AdminError("invalid", "startDate must be yyyy-mm-dd");
+  }
+  if (!TIME_RE.test(input.startTime) || !TIME_RE.test(input.endTime)) {
+    throw new AdminError("invalid", "times must be HH:mm");
+  }
+  if (input.endTime <= input.startTime) {
+    throw new AdminError("invalid", "end must be after start");
+  }
+
+  const dates = generateLoteSchedule({
+    from: input.startDate,
+    weekdays: input.weekdays,
+    everyWeeks: input.everyWeeks,
+    end: input.end,
+  });
+  // An empty pattern is a user error worth surfacing, not a silent no-op that
+  // looks like it worked (e.g. an end date before the start date).
+  if (dates.length === 0) throw new AdminError("invalid", "recurrence produced no dates");
+
+  const note = input.note?.trim() || null;
+  const scope = await resolveScheduleScope(actor);
+
+  return runScoped(actor, async (tx) => {
+    await assertTargetInScheduleScope(tx, input.userId, scope);
+
+    const seen = new Map<string, OverlappingAppointment>();
+    for (const date of dates) {
+      const startsAt = lisbonDateTimeToUtc(date, input.startTime);
+      const endsAt = lisbonDateTimeToUtc(date, input.endTime);
+      for (const appt of await appointmentsOverlapping(tx, { userId: input.userId, startsAt, endsAt })) {
+        seen.set(appt.id, appt);
+      }
+      await tx.insert(timeOff).values({
+        tenantId: actor.tenantId, // NOT NULL + RLS WITH CHECK
+        userId: input.userId,
+        startsAt,
+        endsAt,
+        reason: reasonForMode("pontual"),
+        note,
+      });
+    }
+
+    const overlaps = [...seen.values()];
+    await writeAudit(tx, actor, {
+      action: "time_off.create_batch",
+      entityType: "time_off",
+      entityId: null,
+      // PII-free: counts only, never a patient value.
+      metadata: { blocks: dates.length, overlappingAppointments: overlaps.length },
+    });
+    return { dates, overlaps };
   });
 }
 

@@ -424,6 +424,8 @@
   "admin.workingHours.blocksFor": "Bloqueios de",
   "admin.workingHours.blocksNone": "Sem bloqueios",
   "admin.workingHours.addBlock": "Adicionar bloqueio",
+  "admin.workingHours.blockLote": "Bloqueio repetido",
+  "admin.workingHours.blockCount": "Nº de bloqueios",
   "admin.workingHours.blockMode": "Tipo",
   "admin.workingHours.blockPontual": "Bloqueio pontual",
   "admin.workingHours.blockProlongada": "Ausência prolongada",
