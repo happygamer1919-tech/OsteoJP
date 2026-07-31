@@ -10,10 +10,17 @@ vi.mock("@/lib/clinical/declaracao/generate", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: vi.fn(),
 }));
+// PL-20: the action now writes a captured NIF back to the patient when the
+// record had none. Both sides of that decision are stubbed so the test asserts
+// the DECISION, not the database.
+vi.mock("@/lib/patients/queries", () => ({ getPatient: vi.fn() }));
+vi.mock("@/lib/patients/actions", () => ({ updatePatient: vi.fn() }));
 
 import { requireRequestContext } from "@/lib/auth/context";
 import { generateDeclaracaoPdf } from "@/lib/clinical/declaracao/generate";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getPatient } from "@/lib/patients/queries";
+import { updatePatient } from "@/lib/patients/actions";
 import { generateDeclaracaoUrlAction } from "./declaracao-actions";
 import type { RequestContext } from "@osteojp/auth";
 
@@ -95,5 +102,47 @@ describe("generateDeclaracaoUrlAction - W9-03 download-vs-preview (CB QA item 2)
 
     expect(result).toEqual({ url: null });
     expect(createSignedUrl).not.toHaveBeenCalled();
+  });
+});
+
+describe("PL-20 — a captured NIF is written back only when the record had none", () => {
+  const mockGetPatient = vi.mocked(getPatient);
+  const mockUpdate = vi.mocked(updatePatient);
+
+  beforeEach(() => {
+    stubStorage();
+    mockCtx.mockResolvedValue(ctx);
+    mockPdf.mockResolvedValue({ bytes: new Uint8Array([1]), filename: "d.pdf" } as never);
+    mockGetPatient.mockReset();
+    mockUpdate.mockReset();
+  });
+
+  it("saves the NIF when the patient record is empty", async () => {
+    mockGetPatient.mockResolvedValue({ id: "p1", nif: null } as never);
+    await generateDeclaracaoUrlAction({ ...req, nif: "123456789" });
+    expect(mockUpdate).toHaveBeenCalledWith("p1", { nif: "123456789" });
+  });
+
+  it("does NOT overwrite a NIF the record already holds", async () => {
+    // A one-off value typed onto a single declaration (a patient billing through
+    // a company, a correction) must never rewrite the patient's fiscal number.
+    mockGetPatient.mockResolvedValue({ id: "p1", nif: "111111111" } as never);
+    await generateDeclaracaoUrlAction({ ...req, nif: "222222222" });
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not even read the patient when no NIF was supplied", async () => {
+    await generateDeclaracaoUrlAction({ ...req });
+    expect(mockGetPatient).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("still returns the document when the write-back fails", async () => {
+    // The declaration is what the user asked for; a failed convenience write
+    // must not cost them it.
+    mockGetPatient.mockResolvedValue({ id: "p1", nif: null } as never);
+    mockUpdate.mockRejectedValue(new Error("boom"));
+    const result = await generateDeclaracaoUrlAction({ ...req, nif: "123456789" });
+    expect(result.url).toContain("https://storage.example/signed");
   });
 });
