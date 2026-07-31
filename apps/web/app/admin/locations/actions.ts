@@ -35,6 +35,7 @@ export async function updateLocationAction(formData: FormData): Promise<void> {
       name: String(formData.get("name") ?? ""),
       address: String(formData.get("address") ?? ""),
       phone: String(formData.get("phone") ?? ""),
+      slotGranularityMin: formData.get("slotGranularityMin") as string | null,
     }),
   );
 }
