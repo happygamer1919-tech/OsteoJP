@@ -11,11 +11,13 @@ import {
 } from "@/lib/admin/availability";
 import {
   createTimeOffBlock,
+  createTimeOffBlockBatch,
   updateTimeOffBlock,
   deleteTimeOffBlock,
   type TimeOffBlockInput,
   type TimeOffMode,
 } from "@/lib/admin/time-off";
+import { parseTimeOffBatchForm } from "@/lib/admin/time-off-batch-form";
 import { isAdminError } from "@/lib/admin/errors";
 
 /**
@@ -67,6 +69,13 @@ function parseBlockInput(fd: FormData): TimeOffBlockInput {
 
 export async function createTimeOffBlockAction(fd: FormData): Promise<void> {
   const actor = await requireRequestContext();
+  // PL-22: the third mode posts to the SAME action, so the form keeps one
+  // submit button and one redirect. Only the write underneath differs.
+  if (String(fd.get("mode") ?? "") === "lote") {
+    // runBlock redirects (Promise<never>); returning it makes that explicit
+    // rather than relying on the reader to know the lines below are dead.
+    return runBlock(() => createTimeOffBlockBatch(actor, parseTimeOffBatchForm(fd)));
+  }
   await runBlock(() => createTimeOffBlock(actor, parseBlockInput(fd)));
 }
 
