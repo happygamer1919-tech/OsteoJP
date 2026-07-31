@@ -2404,3 +2404,35 @@ record was empty, NEVER when it already held one, no patient read at all when no
 and the document still returned when the write-back fails. Two other specs failed in the same run
 (`agenda-cards`, `marcacoes-tab-edit`); neither touches anything PL-20 changed and both passed on
 sibling PRs off the same base, so they were treated as flake and cleared on rerun.
+
+## 2026-07-31 - PL-27: a stale capability gate hid an existing control from reception (GREEN)
+
+Owner report immediately after the reception CR shipped: reception has neither the agenda's
+"Bloquear horário" button nor batch blocking. His own diagnosis was exactly right -
+*"it's something existent but not visible on their interface"*.
+
+**Root cause, and the lesson worth keeping: a capability gate outlived the capability it named.**
+`agenda/page.tsx` gated the control on `settings:manage`. That was CORRECT when W12-28 shipped it,
+because blocks were a settings-tier action then. PL-09 Phase 5 created the explicit
+`schedule:manage` capability, granted it to reception ("reception OWNS scheduling for their
+location's therapists"), and moved every `time_off` write onto it. The server followed; the UI
+check did not. Worse, the UI's own comment asserted the two were *"the SAME capability
+createTimeOffBlock server-enforces"* - a statement that was true when written, became false, and
+was never re-read. Reception has been able to block time server-side ever since PL-09; nothing in
+the agenda ever offered it to them.
+
+The fix is one line plus the comments that were lying. The test added is deliberately an
+INVARIANT, not a symptom check: whoever may WRITE a block is who may SEE the control. A future
+regate has to break a test rather than silently hide a control from the role that needs it.
+
+**Second half, and a scoping lesson about where a feature lives.** PL-22 shipped bulk blocking
+that day - into the per-therapist "Bloquear horário" modal on Horários/Equipa. That satisfied the
+card and still left the owner correctly reporting the feature as missing, because the agenda is
+where the day is actually managed and the agenda offered single blocks only. Shipping a capability
+into a surface nobody uses is not shipping it. The agenda dialog now offers "Repetir bloqueio"
+through the SAME `generateLoteSchedule` + `createTimeOffBlockBatch`, so all three recurrence forms
+behave identically and none can drift.
+
+No migration, no capability change, no relaxed guard: the server still re-asserts
+`schedule:manage` AND the location scope, so reception can only ever block a therapist at their
+own clinic.

@@ -5,7 +5,8 @@ import { Dialog, Field, Select, TimeField, useToast } from "@osteojp/ui";
 
 import { s } from "@/lib/i18n";
 import type { Option } from "@/lib/scheduling/types";
-import { createAgendaBlockAction } from "./block-actions";
+import { createAgendaBlockAction, createAgendaBlockBatchAction } from "./block-actions";
+import type { LoteEnd } from "@/lib/scheduling/lote";
 
 /**
  * W12-28 - "Bloquear horário" dialog opened from the agenda. Creates a pontual
@@ -14,6 +15,17 @@ import { createAgendaBlockAction } from "./block-actions";
  * BlockSpan and excludes booking through the existing paths - no new model. The
  * agenda refreshes on success; an overlap is warned, never cancelled.
  */
+/** PL-27: clinical week order (Monday first), values are JS getDay(). */
+const BLOCK_WEEKDAYS = [
+  { value: 1, key: "admin.workingHours.mon" },
+  { value: 2, key: "admin.workingHours.tue" },
+  { value: 3, key: "admin.workingHours.wed" },
+  { value: 4, key: "admin.workingHours.thu" },
+  { value: 5, key: "admin.workingHours.fri" },
+  { value: 6, key: "admin.workingHours.sat" },
+  { value: 0, key: "admin.workingHours.sun" },
+] as const;
+
 export function BlockTimeDialog({
   therapists,
   defaultTherapistId,
@@ -35,6 +47,14 @@ export function BlockTimeDialog({
   const [startTime, setStartTime] = useState(slot?.time ?? "");
   const [endTime, setEndTime] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // PL-27: the agenda blocks a slot; this repeats that same slot. Off by
+  // default, so the one-off block - still the common case - is unchanged.
+  const [repeat, setRepeat] = useState(false);
+  const [weekdays, setWeekdays] = useState<number[]>([]);
+  const [everyWeeks, setEveryWeeks] = useState(1);
+  const [endMode, setEndMode] = useState<LoteEnd["kind"]>("count");
+  const [count, setCount] = useState(4);
+  const [until, setUntil] = useState("");
   const [pending, startTransition] = useTransition();
 
   const field =
@@ -47,7 +67,15 @@ export function BlockTimeDialog({
     }
     setError(null);
     startTransition(async () => {
-      const r = await createAgendaBlockAction({ userId, date, startTime, endTime });
+      const base = { userId, date, startTime, endTime };
+      const r = repeat
+        ? await createAgendaBlockBatchAction({
+            ...base,
+            weekdays,
+            everyWeeks,
+            end: endMode === "until" ? { kind: "until", date: until } : { kind: "count", count },
+          })
+        : await createAgendaBlockAction(base);
       if (r.ok) {
         const overlapped = !!r.overlaps && r.overlaps > 0;
         toast({
@@ -100,6 +128,101 @@ export function BlockTimeDialog({
             </div>
           </label>
         </div>
+        {/* PL-27: repeat the block. Same vocabulary as Agendar lote and the
+            Bloquear horario modal, driven by the same generator, so all three
+            recurrence forms behave identically. Ticking no weekday repeats the
+            chosen date's own weekday. */}
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={repeat}
+            onChange={(e) => setRepeat(e.target.checked)}
+            data-testid="block-repeat"
+          />
+          <span className="font-medium">{s["agenda.block.repeat"]}</span>
+        </label>
+
+        {repeat && (
+          <div className="flex flex-col gap-3 rounded-lg border border-border-strong p-3">
+            <fieldset className="flex flex-col gap-1">
+              <legend className="text-xs font-medium text-text-primary">{s["lote.weekdays"]}</legend>
+              <div className="flex flex-wrap gap-1" data-testid="block-weekdays">
+                {BLOCK_WEEKDAYS.map(({ value, key }) => {
+                  const on = weekdays.includes(value);
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() =>
+                        setWeekdays((prev) =>
+                          prev.includes(value) ? prev.filter((w) => w !== value) : [...prev, value],
+                        )
+                      }
+                      className={`h-9 min-w-12 rounded border px-2 text-sm font-medium transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
+                        on
+                          ? "border-brand-teal bg-brand-teal/10 text-brand-teal"
+                          : "border-border-strong text-text-secondary hover:bg-surface-muted"
+                      }`}
+                    >
+                      {s[key].slice(0, 3)}
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">{s["lote.everyWeeks"]}</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={String(everyWeeks)}
+                  onChange={(e) => setEveryWeeks(Math.max(1, Number(e.target.value) || 1))}
+                  className={field}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">{s["lote.endMode"]}</span>
+                <Select
+                  value={endMode}
+                  aria-label={s["lote.endMode"]}
+                  onChange={(e) => setEndMode(e.target.value as LoteEnd["kind"])}
+                >
+                  <option value="count">{s["lote.endAfterCount"]}</option>
+                  <option value="until">{s["lote.endOnDate"]}</option>
+                </Select>
+              </label>
+              {endMode === "count" ? (
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium">{s["agenda.block.count"]}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={52}
+                    value={String(count)}
+                    onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
+                    className={field}
+                    data-testid="block-count"
+                  />
+                </label>
+              ) : (
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium">{s["lote.until"]}</span>
+                  <input
+                    type="date"
+                    value={until}
+                    onChange={(e) => setUntil(e.target.value)}
+                    className={field}
+                    data-testid="block-until"
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+        )}
+
         {error && <p role="alert" className="text-sm text-error">{error}</p>}
       </div>
     </Dialog>
