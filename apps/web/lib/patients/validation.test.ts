@@ -193,3 +193,31 @@ describe("escapeLike", () => {
     expect(escapeLike("50%_off\\")).toBe("50\\%\\_off\\\\");
   });
 });
+
+describe("sex is male or female or not recorded (PL-24)", () => {
+  it("accepts male and female", () => {
+    expect(parseCreatePatient({ fullName: "A", sex: "male" }).sex).toBe("male");
+    expect(parseCreatePatient({ fullName: "A", sex: "female" }).sex).toBe("female");
+  });
+
+  it("treats a blank as not recorded, not as a third value", () => {
+    expect(parseCreatePatient({ fullName: "A", sex: "" }).sex).toBeNull();
+    expect(parseCreatePatient({ fullName: "A" }).sex).toBeNull();
+  });
+
+  // The removed <option> is a UI fact; this is the server-side half of it.
+  // Without this, a hand-posted body could put "other" straight back into the
+  // column the option was removed from.
+  it("rejects 'other' on create and on update", () => {
+    expect(() => parseCreatePatient({ fullName: "A", sex: "other" })).toThrow(ValidationError);
+    expect(() => parseUpdatePatient({ sex: "other" })).toThrow(ValidationError);
+  });
+
+  it("rejects any other invented value", () => {
+    expect(() => parseCreatePatient({ fullName: "A", sex: "masculino" })).toThrow(ValidationError);
+  });
+
+  it("leaves sex untouched when the update omits it", () => {
+    expect("sex" in parseUpdatePatient({ fullName: "A" })).toBe(false);
+  });
+});
