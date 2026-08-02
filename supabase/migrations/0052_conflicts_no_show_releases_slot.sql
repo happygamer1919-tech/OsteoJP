@@ -15,7 +15,7 @@
 /*                                                                    */
 /* WHAT CHANGES. Exactly two predicates inside                        */
 /*   public.appointment_conflicts(), one per branch:                   */
-/*     a.status <> 'cancelled'   ->   a.status NOT IN ('cancelled','no_show')
+/*     the status test now excludes no_show as well as cancelled.      */
 /*   Everything else in the function body is reproduced VERBATIM from  */
 /*   0048 so the diff reads as a two-line change.                      */
 /*                                                                    */
