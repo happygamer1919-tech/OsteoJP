@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 // Rate limiting for the patient-facing surface (SEC-04).
 //
 // Before this module there was no rate limiting anywhere in the repo, on any
@@ -111,9 +113,34 @@ export function checkRateLimit(
  */
 export function clientKey(req: Request, scope: string, subject?: string): string {
   if (subject) return `${scope}:sub:${subject}`;
+
   const forwarded = req.headers.get("x-forwarded-for");
-  const ip = forwarded?.split(",")[0]?.trim() || "unknown";
-  return `${scope}:ip:${ip}`;
+  const ip = forwarded?.split(",")[0]?.trim();
+  if (ip) return `${scope}:ip:${ip}`;
+
+  // No proxy header: local dev, CI, or a direct connection. Vercel always sets
+  // it, so production does not reach here.
+  //
+  // Collapsing every such caller into ONE bucket (the original bug) is not a
+  // harmless default: a shared counter makes the limit fire EARLIER than
+  // configured, so unrelated callers throttle each other and a 429 test can
+  // pass for the wrong reason. Separate callers by their bearer token where
+  // there is one.
+  const auth = req.headers.get("authorization");
+  if (auth) return `${scope}:tok:${fingerprintToken(auth)}`;
+
+  // Genuinely unattributable: no subject, no IP, no credential. These DO share
+  // one bucket, deliberately - it is the strict direction, and an anonymous
+  // unattributable caller is exactly what we are willing to throttle hard.
+  return `${scope}:unattributed`;
+}
+
+/**
+ * Short, non-reversible fingerprint of a credential, used only as a bucket key.
+ * The token itself is never stored, compared, or logged - only this digest.
+ */
+function fingerprintToken(authHeader: string): string {
+  return createHash("sha256").update(authHeader).digest("hex").slice(0, 16);
 }
 
 /** 429 with the standard headers. Body is intentionally opaque. */
