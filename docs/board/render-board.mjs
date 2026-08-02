@@ -24,6 +24,7 @@
 // re-checks the one rule it depends on (shipped/pass need evidence) and refuses
 // to emit if violated. Zero runtime dependencies. Never writes anything but out.
 
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -52,7 +53,23 @@ const css = readFileSync(`${HERE}/board.css`, "utf8");
 const appJs = readFileSync(`${HERE}/board-app.js`, "utf8");
 
 // --- JSON data island: escape "<" so it can never break out of the script tag -
-const dataIsland = JSON.stringify(board).replace(/</g, "\\u003c");
+/**
+ * PL-28 — a content FINGERPRINT of this publish, so the portal can tell a
+ * browser holding an older snapshot that a newer board exists.
+ *
+ * The staleness check used to compare `as_of`, which is a DATE. Every publish on
+ * 2026-07-31 carried as_of "2026-07-31", so `SEED.as_of > board.as_of` was false
+ * for all four of them and the "newer board" notice never appeared: the owner
+ * sat on the intake snapshot (nothing shipped) while main said 30 shipped, with
+ * nothing on screen to tell him. A date cannot express "changed again today".
+ *
+ * Hashing the whole file means ANY change counts - a status, an evidence ref, a
+ * note - which is the property the notice needs. It is derived at render time,
+ * so nobody has to remember to bump a version by hand (and so it cannot be
+ * forgotten, which is how this bug happened in the first place).
+ */
+const fingerprint = createHash("sha256").update(JSON.stringify(board)).digest("hex").slice(0, 16);
+const dataIsland = JSON.stringify({ ...board, fingerprint }).replace(/</g, "\\u003c");
 
 const lg = board.launch_gate ?? { denominator: 9, conditions: [] };
 const passed = (lg.conditions ?? []).filter((g) => g.state === "pass").length;
@@ -85,4 +102,5 @@ for (const c of board.cards ?? []) lanes[c.lane] = (lanes[c.lane] ?? 0) + 1;
 console.log(
   `rendered ${board.cards?.length ?? 0} cards + ${passed}/${denom} gates (portal) -> ${outPath}`,
 );
+console.log(`  fingerprint: ${fingerprint}`);
 console.log("  lanes: " + Object.entries(lanes).map(([k, v]) => `${k} ${v}`).join(", "));

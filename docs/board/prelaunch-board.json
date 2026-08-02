@@ -2,7 +2,7 @@
   "board": "OsteoJP - Pre-Launch Board",
   "schema_version": 1,
   "phase": "pre-launch",
-  "as_of": "2026-07-31",
+  "as_of": "2026-08-02",
   "renders_to": "claude.ai artifact (a RENDER of this file; this JSON is the source of truth)",
   "doctrine": "A board claim is never truth on its own. The evidence field carries the proof. GREEN updates this JSON at every checkpoint and re-renders. A card may not enter status=shipped with evidence=null; a launch gate may not be state=pass with evidence=null. See docs/board/BOARD-SPEC.md; enforced by docs/board/validate-board.mjs.",
   "lanes": [
@@ -863,6 +863,20 @@
       "blocked_on": "ivan",
       "last_checkpoint": "2026-07-31",
       "notes": "Raised by GREEN 2026-07-31 while auditing the board for accurate status. The production database password was pasted into a chat on 2026-07-30. G3 ('NEW_DB_PASSWORD rotated with full propagation') is attested 2026-07-29 - so the exposure is NEWER than the evidence, and the credential G3 certifies as safely rotated is the one that was exposed. This was carried only in an assistant memory note and appears nowhere in the board or QUESTIONS, which is how it survived two sessions. WHY IT MATTERS beyond hygiene: this is the session-pooler credential used for migrations (DATABASE_URL_DIRECT), i.e. full write access to clinical data, under GDPR. FIX (owner terminal only, GREEN never touches prod creds): rotate in Supabase, then propagate to the three Vercel projects (platform / api / portal) and ~/osteojp-secrets/new-prod.env, exactly as on 2026-07-29. Then re-attest G3 with the new date - the gate is only true again once the propagation is done, because a half-propagated rotation breaks migrations instead of securing them. GREEN has flipped G3 to fail rather than leave the board asserting a safety property that is known false; flip it back in one line if the owner judges the exposure acceptable."
+    },
+    {
+      "id": "PL-28",
+      "title": "Board portal showed a stale board with no warning - staleness compared DATES, so same-day republishes were invisible",
+      "lane": "in_flight",
+      "home_lane": "in_flight",
+      "status": "todo",
+      "priority": "high",
+      "owner_terminal": "green",
+      "gate": "green_self_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-02",
+      "notes": "Owner report 2026-08-02 with a screenshot: the portal showed PL-18..PL-25 as TO DO with 'no evidence yet' and Shipped 22, while main had them shipped with PR evidence and Shipped 30. GREEN's bug, and a bad one, because the owner reviews ALL work through this artifact - he was reading a board that said nothing had shipped. ROOT CAUSE: seedIsNewer() compared as_of DATES (SEED.as_of > board.as_of). Every publish on 2026-07-31 carried as_of '2026-07-31', so the comparison was false for all FOUR publishes that day and the 'newer board' notice never rendered. Worse, the 'Load the new board' button lives INSIDE that notice, so the one control that would have fixed it was unreachable; only the footer's 'Discard local changes' remained, which also throws away the owner's own edits. A date cannot express 'changed again today'. FIX: render-board.mjs now stamps a sha256 content fingerprint of the published JSON into the seed island, and the portal records which publish a browser's snapshot was taken from (__basedOn in localStorage, kept beside the board so it never leaks into an Export or a diff). Staleness is now fingerprint inequality, which catches ANY change - status, evidence, a note - same day or not. A pre-fix snapshot has no recorded provenance and is treated as STALE, so every browser stranded by the old logic is offered the new board on first load. Adopting the seed (take-seed and Discard) also adopts its fingerprint, or the notice would return on the board the user just chose. VERIFIED IN A REAL BROWSER against a reproduction of the owner's exact state (a snapshot showing Shipped 22, same as_of, no provenance): notice appears where it previously did not; 'Load the new board' clears it and survives a reload showing Shipped 30; and a CURRENT snapshot carrying local edits is not falsely flagged (1 local change preserved, no notice). LESSON: a freshness check keyed on a human-scale date silently fails at human speed - version by content, not by calendar."
     }
   ]
 }

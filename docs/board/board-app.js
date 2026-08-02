@@ -151,11 +151,36 @@
   }
 
   /* ------------------------------------------------------------- storage -- */
+  // PL-28: the fingerprint of the publish THIS browser's snapshot was taken
+  // from. Kept beside the board rather than inside it, so it never leaks into an
+  // Export or a diff - it describes the snapshot's provenance, not its content.
+  var basedOnFingerprint = null;
+
   function load() {
     var raw = null;
     try { raw = localStorage.getItem(STORAGE_KEY); } catch (e) {}
-    if (raw) { try { return normalize(JSON.parse(raw)); } catch (e) {} }
+    if (raw) {
+      try {
+        var stored = JSON.parse(raw);
+        // A snapshot written before PL-28 has no provenance. Treat it as stale
+        // rather than current: it is the only safe default, and it is exactly
+        // the case that stranded the owner on the intake board.
+        basedOnFingerprint = stored.__basedOn || null;
+        delete stored.__basedOn;
+        return normalize(stored);
+      } catch (e) {}
+    }
+    basedOnFingerprint = SEED.fingerprint || null;
     return normalize(clone(SEED));
+  }
+
+  /** Persist the board plus the provenance of the publish it came from. */
+  function writeSnapshot() {
+    try {
+      var payload = clone(board);
+      payload.__basedOn = basedOnFingerprint;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (e) {}
   }
   function loadUi() {
     try {
@@ -173,7 +198,7 @@
   }
   function commit(label) {
     syncDerived();
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(board)); } catch (e) {}
+    writeSnapshot();
     render();
     if (label) toast(label, true);
   }
@@ -187,7 +212,7 @@
     var prev = undoStack.pop();
     if (!prev) { toast("Nothing to undo", false); return; }
     board = normalize(prev.snap);
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(board)); } catch (e) {}
+    writeSnapshot();
     render();
     toast("Undid: " + prev.label, false);
   }
@@ -534,18 +559,41 @@
       '<button class="btn btn-sm ghost" data-act="reset">Discard local changes</button></footer>';
   }
 
-  /** True when the published seed is newer than the copy in this browser. */
+  /**
+   * True when the published board differs from the publish this browser's
+   * snapshot was taken from.
+   *
+   * PL-28: this compared `as_of` DATES, so it could not see a same-day
+   * republish. Every publish on 2026-07-31 carried as_of "2026-07-31", making
+   * `SEED.as_of > board.as_of` false for all four - the owner kept looking at
+   * the intake snapshot (nothing shipped, "no evidence yet") while main said 30
+   * shipped, and the portal never offered him the newer board. Comparing a
+   * content fingerprint catches any change, same day or not.
+   *
+   * A pre-PL-28 snapshot has no recorded provenance; it is treated as stale, so
+   * anyone stranded by the old logic is offered the new board on first load.
+   */
   function seedIsNewer() {
     if (seedNoticeDismissed) return false;
-    var a = String(board.as_of || ""), b = String(SEED.as_of || "");
-    return !!b && !!a && b > a;
+    if (!SEED.fingerprint) {
+      // Rendered by an older renderer: fall back to the date comparison rather
+      // than claiming staleness we cannot actually establish.
+      var a = String(board.as_of || ""), b = String(SEED.as_of || "");
+      return !!b && !!a && b > a;
+    }
+    return basedOnFingerprint !== SEED.fingerprint;
   }
   function seedNoticeHTML() {
     if (!seedIsNewer()) return "";
     var d = diffVsSeed();
+    // PL-28: same-day republishes are the common case, so leading with two
+    // identical dates reads as a bug. Lead with what actually differs.
+    var when = SEED.as_of === (board.as_of || "")
+      ? "snapshot " + esc(SEED.as_of) + ", republished since you loaded it"
+      : "snapshot " + esc(SEED.as_of) + ", yours is " + esc(board.as_of || "?");
     return '<div class="notice"><span class="dot"></span>' +
-      "<span>A newer board was published — snapshot <b>" + esc(SEED.as_of) + "</b>, yours is <b>" + esc(board.as_of || "?") +
-      "</b>." + (d.total ? " Taking it discards " + d.total + " local change" + (d.total === 1 ? "" : "s") + "." : "") + "</span>" +
+      "<span>A newer board was published — <b>" + when + "</b>." +
+      (d.total ? " Taking it discards " + d.total + " local change" + (d.total === 1 ? "" : "s") + "." : "") + "</span>" +
       '<button class="btn btn-sm primary" data-act="take-seed">Load the new board</button>' +
       '<button class="btn btn-sm ghost" data-act="dismiss-notice">Keep mine</button></div>';
   }
@@ -1015,6 +1063,7 @@
     scrim.querySelector("#r-go").addEventListener("click", function () {
       try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
       board = normalize(clone(SEED));
+      basedOnFingerprint = SEED.fingerprint || null;
       undoStack = [];
       closeModal();
       render();
@@ -1146,6 +1195,9 @@
       case "take-seed":
         try { localStorage.removeItem(STORAGE_KEY); } catch (err) {}
         board = normalize(clone(SEED));
+        // PL-28: adopt the publish's provenance too, or the notice would come
+        // straight back on the board the user just chose to load.
+        basedOnFingerprint = SEED.fingerprint || null;
         undoStack = [];
         render();
         toast("Loaded the published board (" + SEED.as_of + ")", false);
