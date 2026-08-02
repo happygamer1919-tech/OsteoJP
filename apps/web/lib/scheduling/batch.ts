@@ -15,6 +15,7 @@ import {
   type BatchExplicitSlot,
   type BatchFailure,
 } from "./batch-core";
+import { acquireSlotLocksForMany } from "./slot-lock";
 
 /**
  * Batch scheduling engine (SPEC-appointments §4). Given a recurrence rule, it
@@ -107,6 +108,19 @@ export async function batchSchedule(
 
   if (toBook.length > 0) {
     booked = await runScoped(ctx, async (tx) => {
+      // 2.9 — one sorted acquisition covering every slot this batch books, so
+      // two concurrent batches touching overlapping slots serialize instead of
+      // interleaving, and cannot deadlock against each other.
+      const slotLocks = acquireSlotLocksForMany(
+        ctx.tenantId,
+        toBook.map((s) => ({
+          practitionerId: input.practitionerId,
+          startsAt: s.startsAt,
+          endsAt: s.endsAt,
+        })),
+      );
+      if (slotLocks) await tx.execute(slotLocks);
+
       const rows = await tx
         .insert(appointments)
         .values(
