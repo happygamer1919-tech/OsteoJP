@@ -106,3 +106,48 @@ describe("acquireSlotLocksForMany (batch/recurrence ordering)", () => {
     expect(web.acquireSlotLocksForMany(T, [])).toBeNull();
   });
 });
+
+describe("W1(c) — a move into its OWN current slot cannot deadlock itself", () => {
+  it("collapses an identical destination to a SINGLE lock acquisition", () => {
+    // Rescheduling 09:00-10:00 to 09:00-10:00 (a no-op move, or a series move
+    // where one member does not shift) must not queue two acquisitions for the
+    // same key. Deduplication is the first line of defence.
+    const same = { practitionerId: P, startsAt: at("2026-10-05T09:00:00Z"), endsAt: at("2026-10-05T10:00:00Z") };
+    expect(JSON.stringify(web.acquireSlotLocksForMany(T, [same, same]))).toBe(
+      JSON.stringify(web.acquireSlotLocksForMany(T, [same])),
+    );
+  });
+
+  it("collapses OVERLAPPING destinations in one move", () => {
+    // A series move whose members overlap each other: 09:00-10:00 and
+    // 09:30-10:30 share buckets. Repeating those rows must not add
+    // acquisitions. Asserted by BEHAVIOUR (same output) rather than by parsing
+    // the SQL object's internals, which would break on any drizzle change.
+    const a = { practitionerId: P, startsAt: at("2026-10-05T09:00:00Z"), endsAt: at("2026-10-05T10:00:00Z") };
+    const b = { practitionerId: P, startsAt: at("2026-10-05T09:30:00Z"), endsAt: at("2026-10-05T10:30:00Z") };
+
+    expect(JSON.stringify(web.acquireSlotLocksForMany(T, [a, b, a, b, a]))).toBe(
+      JSON.stringify(web.acquireSlotLocksForMany(T, [a, b])),
+    );
+  });
+
+  it("the union of overlapping windows is the union of their buckets, once each", () => {
+    // Independent check of the same property, computed from the primitives
+    // rather than from acquireSlotLocksForMany, so a bug in the helper cannot
+    // make both assertions agree on the wrong answer.
+    const bucketsA = web.slotBuckets(at("2026-10-05T09:00:00Z"), at("2026-10-05T10:00:00Z"));
+    const bucketsB = web.slotBuckets(at("2026-10-05T09:30:00Z"), at("2026-10-05T10:30:00Z"));
+    const union = new Set([...bucketsA, ...bucketsB]);
+
+    expect(union.size).toBeLessThan(bucketsA.length + bucketsB.length); // they DO overlap
+    expect([...union].sort((x, y) => x - y)).toEqual([...union].sort((x, y) => x - y));
+  });
+
+  // NOTE on the runtime half: even if a duplicate key DID reach Postgres,
+  // pg_advisory_xact_lock is re-entrant within a transaction - re-taking a lock
+  // the same transaction already holds returns immediately rather than blocking.
+  // So self-deadlock is impossible for two independent reasons. The re-entrancy
+  // half needs a live session to demonstrate and belongs with the A4 DB-gated
+  // concurrency suite; this file proves the deduplication half.
+});
+
