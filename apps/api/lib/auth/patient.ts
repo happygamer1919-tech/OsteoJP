@@ -7,34 +7,34 @@ import {
 } from "@osteojp/auth";
 import { withPatientContext, type DbTx } from "@osteojp/db";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { verifySupabaseJwt } from "@/lib/auth/jwt";
 
 // The patient-portal auth boundary for api.osteojp.pt.
 //
-// Trust rule: the patient_id is derived SERVER-SIDE from the signed JWT in the
-// session cookie (getSession → JWT payload decode), NEVER from request payload.
-// A handler that needs "the current patient" calls getPatientPrincipal /
-// requirePatient — there is no code path that accepts a patient id from the
-// client. RLS then re-enforces self-scope as defense in depth (runAsPatient).
+// Trust rule: the patient_id is derived SERVER-SIDE from a CRYPTOGRAPHICALLY
+// VERIFIED JWT, NEVER from request payload. A handler that needs "the current
+// patient" calls getPatientPrincipal / requirePatient — there is no code path
+// that accepts a patient id from the client.
+//
+// This boundary is load-bearing and alone. RLS does NOT back it up: the patient
+// self-scope policies key on jwt_patient_id(), which reads request.jwt.claims,
+// which runAsPatient sets from the principal produced here. A principal built
+// from an unverified token would be handed to the policy as its own input, and
+// the policy would compare the forged id to itself and pass. RLS defends
+// against a handler passing the WRONG id; only signature verification defends
+// against a caller CHOOSING one.
 
 export type { PatientPrincipal };
 
-// Decode a Supabase-issued JWT and parse the patient principal from its claims.
-// We decode rather than verify the signature because:
-//   1. The Supabase auth server's JWT secret is not available in apps/api.
-//   2. The token arrives from a trusted source (portal's server-side session or
-//      the patient's own httpOnly cookie), both of which originate at Supabase.
-// RLS (migration 0019) re-enforces self-scope as a second enforcement layer.
-function decodePatientJwt(token: string): PatientPrincipal | null {
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  try {
-    const payload = JSON.parse(
-      Buffer.from(parts[1], "base64url").toString("utf-8"),
-    );
-    return parsePatientPrincipal(payload as Record<string, unknown>);
-  } catch {
-    return null;
-  }
+// Verify a Supabase-issued JWT, then parse the patient principal from the
+// claims it actually carried. Verification covers signature, exp (required),
+// nbf, issuer, and audience — see lib/auth/jwt.ts. Fail-closed at every step.
+async function verifyPatientJwt(
+  token: string,
+): Promise<PatientPrincipal | null> {
+  const claims = await verifySupabaseJwt(token);
+  if (!claims) return null;
+  return parsePatientPrincipal(claims as Record<string, unknown>);
 }
 
 /**
@@ -48,8 +48,13 @@ function decodePatientJwt(token: string): PatientPrincipal | null {
  *   2. Session cookie — the original path; reads the Supabase session stored in
  *      an httpOnly cookie set by the browser Supabase client.
  *
- * In both cases the JWT payload is decoded and parsePatientPrincipal validates
- * that role='patient', patient_id, tenant_id, and sub are present.
+ * In both cases the JWT is verified against the project's signing key and
+ * parsePatientPrincipal then validates that role='patient', patient_id,
+ * tenant_id, and sub are present.
+ *
+ * Neither path is trusted on provenance. Path 1 in particular reads a header an
+ * arbitrary client can set, so "it came from the portal" is not an assumption
+ * this function is allowed to make — the signature is what establishes that.
  *
  * A staff token (role='authenticated') can never satisfy parsePatientPrincipal.
  * getClaims() / getUser() is intentionally NOT used because Supabase's auth
@@ -60,7 +65,7 @@ export async function getPatientPrincipal(): Promise<PatientPrincipal | null> {
   const headerStore = await headers();
   const authHeader = headerStore.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
-    return decodePatientJwt(authHeader.slice(7));
+    return verifyPatientJwt(authHeader.slice(7));
   }
 
   // Path 2 — httpOnly session cookie (browser → api server directly)
@@ -69,7 +74,7 @@ export async function getPatientPrincipal(): Promise<PatientPrincipal | null> {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session?.access_token) return null;
-  return decodePatientJwt(session.access_token);
+  return verifyPatientJwt(session.access_token);
 }
 
 /** Like getPatientPrincipal but throws UNAUTHENTICATED so route handlers can
@@ -81,10 +86,16 @@ export async function requirePatient(): Promise<PatientPrincipal> {
 }
 
 /**
- * Run a query inside the patient's self-scoped, RLS-enforced transaction. The
- * claims are derived from the verified principal only (toPatientClaims), so the
- * DB layer sets `set local role patient` + the patient_id claim the self-scope
- * policies key on. This is the ONLY sanctioned way the patient API touches the DB.
+ * Run a query inside the patient's self-scoped transaction. The claims are
+ * derived from the verified principal only (toPatientClaims), so the DB layer
+ * sets `set local role patient` + the patient_id claim the self-scope policies
+ * key on. This is the ONLY sanctioned way the patient API touches the DB.
+ *
+ * Note what this does and does not buy: because the policies key on the claim
+ * set here, RLS confines a query to WHICHEVER patient the principal names. It
+ * turns a handler bug into a no-op, and it is worth having for that. It is not
+ * a second opinion on WHO the caller is — that question is settled upstream, by
+ * signature verification, and nowhere else.
  */
 export async function runAsPatient<T>(
   principal: PatientPrincipal,

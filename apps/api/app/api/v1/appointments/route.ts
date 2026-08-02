@@ -7,6 +7,12 @@ import {
 } from "@/lib/appointments/booking";
 import { drizzleAppointmentsStore } from "@/lib/appointments/store";
 import { errorResponse, unauthorized } from "@/lib/appointments/http";
+import {
+  RULES,
+  checkRateLimit,
+  clientKey,
+  tooManyRequests,
+} from "@/lib/rate-limit/limiter";
 
 // /api/v1/appointments — the patient's OWN appointments.
 //   GET  → list (self-scoped; the patient sees only their own).
@@ -32,6 +38,15 @@ export async function GET(): Promise<Response> {
 export async function POST(req: Request): Promise<Response> {
   const principal = await getPatientPrincipal();
   if (!principal) return unauthorized();
+
+  // Keyed on the verified patient, not the IP: a booking flood from one account
+  // is the case that actually hurts the agenda, and it survives IP rotation.
+  const verdict = checkRateLimit(
+    clientKey(req, "booking", principal.patientId),
+    RULES.booking,
+  );
+  if (!verdict.ok) return tooManyRequests(verdict);
+
   try {
     const raw: unknown = await req.json().catch(() => null);
     const input = parseBookingInput(raw); // reads only serviceId/locationId/startsAt
