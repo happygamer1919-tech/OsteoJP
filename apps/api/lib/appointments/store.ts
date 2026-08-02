@@ -24,6 +24,7 @@ import type {
   ServiceForBooking,
 } from "./booking";
 import type { TherapistCandidate } from "./therapist";
+import { acquireSlotLocks } from "./slot-lock";
 
 // Drizzle / Postgres implementation of the patient appointments store.
 //
@@ -453,6 +454,19 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // check-then-write race; createdBy is null (patient is not a staff users row
     // — see WAVE B booking-provenance note in docs).
     return getDbAdmin().transaction(async (tx) => {
+      // Serialize concurrent writers for this therapist + slot BEFORE the guard
+      // reads. Without this the guard and the insert interleave: under READ
+      // COMMITTED two transactions both see "no conflict" and both insert.
+      // See slot-lock.ts for what this does NOT protect.
+      await tx.execute(
+        acquireSlotLocks(
+          principal.tenantId,
+          args.practitionerId,
+          args.startsAt,
+          args.endsAt,
+        ),
+      );
+
       const guard = (await tx.execute(sql`
         select (
           ${apptOverlapExists(principal.tenantId, args.practitionerId, args.startsAt, args.endsAt, [])}
@@ -522,17 +536,51 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
   },
 
   async rescheduleOwn(principal, id, { startsAt, endsAt }): Promise<void> {
-    await getDbAdmin()
-      .update(appointments)
-      .set({ startsAt, endsAt })
-      .where(
-        and(
-          eq(appointments.id, id),
-          eq(appointments.patientId, principal.patientId),
-          eq(appointments.tenantId, principal.tenantId),
-          inArray(appointments.status, ["scheduled", "confirmed"]),
+    // This used to be a BARE update: the caller's conflict check ran in a
+    // separate statement, outside any transaction, so the window between check
+    // and write was wider here than on create. Now the move happens inside one
+    // transaction that holds the slot lock for the DESTINATION window.
+    await getDbAdmin().transaction(async (tx) => {
+      // The therapist is on the stored row, not in the request - a patient
+      // reschedules a time, never a practitioner. Read it under the same tx.
+      const owned = await tx
+        .select({ practitionerId: appointments.practitionerId })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.id, id),
+            eq(appointments.patientId, principal.patientId),
+            eq(appointments.tenantId, principal.tenantId),
+            inArray(appointments.status, ["scheduled", "confirmed"]),
+          ),
+        )
+        .limit(1);
+
+      // No row means not theirs, or not in a reschedulable state. Same silent
+      // no-op the bare update produced, so callers see no behaviour change.
+      if (owned.length === 0) return;
+
+      await tx.execute(
+        acquireSlotLocks(
+          principal.tenantId,
+          owned[0].practitionerId,
+          startsAt,
+          endsAt,
         ),
       );
+
+      await tx
+        .update(appointments)
+        .set({ startsAt, endsAt })
+        .where(
+          and(
+            eq(appointments.id, id),
+            eq(appointments.patientId, principal.patientId),
+            eq(appointments.tenantId, principal.tenantId),
+            inArray(appointments.status, ["scheduled", "confirmed"]),
+          ),
+        );
+    });
   },
 
   async hasWindowConflict(principal, { practitionerId, locationId, startsAt, endsAt, excludeIds }): Promise<boolean> {
