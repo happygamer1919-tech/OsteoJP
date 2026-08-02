@@ -125,16 +125,21 @@ const ALLOWED: Record<string, { locked: boolean; reason: string }> = {
       "cancelOwn only releases a slot and needs none.",
   },
   "apps/web/lib/scheduling/actions.ts": {
-    locked: false,
+    locked: true,
     reason:
-      "STAFF create/reschedule/clone. Out of lane for the choke-point PR and " +
-      "routed in a separate, independently revertable PR (T4). Until then a " +
-      "patient-versus-staff race is NOT covered. Staff-versus-staff overlap is " +
-      "permitted product behaviour regardless (agenda-cards.spec.ts:104).",
+      "STAFF create, recurrence children, and clone now take the slot lock (T4), " +
+      "so a patient-versus-staff race on those paths is covered. " +
+      "KNOWN REMAINING GAP: the staff RESCHEDULE sites in this same file (the " +
+      "UPDATE paths) do NOT take it - they were outside T4's granted scope. A " +
+      "staff reschedule still moves an appointment without holding the lock. " +
+      "This entry is file-granular, so a NEW insert added to this file would " +
+      "not be flagged; that is the guard's known limit.",
   },
   "apps/web/lib/scheduling/batch.ts": {
-    locked: false,
-    reason: "STAFF batch create ('Agendar lote'). Same T4 follow-up as actions.ts.",
+    locked: true,
+    reason:
+      "STAFF batch create ('Agendar lote') takes one sorted, deduplicated " +
+      "acquisition covering every slot in the batch (T4).",
   },
   "packages/db/src/migration/upsert.ts": {
     locked: false,
@@ -192,13 +197,9 @@ describe("appointments write paths (PRIMARY guard for 2.9)", () => {
       .map(([f]) => f)
       .sort();
 
-    // This assertion exists to make a CHANGE in coverage visible. Routing the
-    // staff paths (T4) should shrink this list, and shrinking it must be a
-    // deliberate edit here, not a silent side effect.
-    expect(unlocked).toEqual([
-      "apps/web/lib/scheduling/actions.ts",
-      "apps/web/lib/scheduling/batch.ts",
-      "packages/db/src/migration/upsert.ts",
-    ]);
+    // This assertion exists to make a CHANGE in coverage visible. T4 routed the
+    // staff insert paths, so this list shrank - and shrinking it required this
+    // deliberate edit, which is exactly the behaviour intended.
+    expect(unlocked).toEqual(["packages/db/src/migration/upsert.ts"]);
   });
 });
