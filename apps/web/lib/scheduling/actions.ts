@@ -49,6 +49,7 @@ import type {
   SeriesScope,
   UpdateAppointmentPatch,
 } from "./types";
+import { acquireSlotLocks, acquireSlotLocksForMany } from "./slot-lock";
 
 const AGENDA_PATH = "/agenda";
 const CONFLICT_CAP = 10; // cap aggregated conflict lists across a series
@@ -391,6 +392,21 @@ export async function createAppointment(
           serviceIdForAppt = booked.baseServiceId;
         }
 
+        // 2.9 — order concurrent writers for these therapist/slot pairs before
+        // any row is inserted. Covers the parent AND every recurrence child in
+        // one acquisition, sorted, so two overlapping batches cannot deadlock.
+        // This ORDERS writes only: the conflict decision above, including the
+        // deliberate "Save anyway" override, is untouched.
+        const slotLocks = acquireSlotLocksForMany(
+          actor.tenantId,
+          occ.map((o) => ({
+            practitionerId: input.practitionerId,
+            startsAt: o.startsAt,
+            endsAt: o.endsAt,
+          })),
+        );
+        if (slotLocks) await tx.execute(slotLocks);
+
         const [parent] = await tx
           .insert(appointments)
           .values({
@@ -578,6 +594,17 @@ export async function cloneAppointment(
         if (!isValidInterval(values.startsAt, values.endsAt)) {
           return { ok: false, error: "validation" };
         }
+
+        // 2.9 — same slot lock as the create path. A clone lands a real
+        // appointment in a real slot and races exactly like a fresh booking.
+        await tx.execute(
+          acquireSlotLocks(
+            actor.tenantId,
+            values.practitionerId,
+            values.startsAt,
+            values.endsAt,
+          ),
+        );
 
         const [created] = await tx
           .insert(appointments)

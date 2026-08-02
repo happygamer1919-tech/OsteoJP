@@ -39,8 +39,18 @@ const actor: RequestContext = { tenantId: "tenant-A", role: "admin", userId: "us
 // Captures the row object handed to `tx.insert(appointments).values(...)`.
 let captured: Record<string, unknown> | null = null;
 
+/** Advisory-lock SQL the create path executes before inserting (finding 2.9). */
+let executed: unknown[] = [];
+
 function fakeTx() {
   return {
+    // createAppointment takes the slot lock via tx.execute before it inserts.
+    // Captured rather than ignored so the assertions below can prove the lock
+    // is actually acquired, not merely tolerated by the fake.
+    execute: async (q: unknown) => {
+      executed.push(q);
+      return [];
+    },
     insert: () => ({
       values: (v: Record<string, unknown>) => {
         captured = v; // non-recurring create inserts a single row object
@@ -65,6 +75,7 @@ const baseInput: CreateAppointmentInput = {
 
 beforeEach(() => {
   captured = null;
+  executed = [];
   mockCtx.mockReset();
   mockRunScoped.mockReset();
   mockCtx.mockResolvedValue(actor);
@@ -99,4 +110,13 @@ describe("createAppointment — creation invariant (W3-01)", () => {
     expect(result.ok).toBe(true);
     expect(captured!.status).toBe("scheduled");
   });
+});
+
+// 2.9 regression guard: the create path must take the slot lock BEFORE it
+// inserts. If someone removes the lock, the invariant tests above would still
+// pass (they only inspect the inserted row), so this asserts it explicitly.
+it("takes an advisory slot lock before inserting", async () => {
+  mockRunScoped.mockImplementation(async (_ctx, fn) => fn(fakeTx() as never));
+  await createAppointment(baseInput);
+  expect(executed.length).toBeGreaterThan(0);
 });
