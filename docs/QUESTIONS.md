@@ -847,7 +847,7 @@ build unless told otherwise): keep a picker for them, restricted to their own se
 The alternative (force a single active clinic, switchable in the profile) is a bigger change
 and nobody has that shape today. Not a blocker: today's data has no multi-location staffer.
 
-## Q-PL-15-1 (2026-07-30, OPEN) - patients with no location AND no appointment: assign how?
+## Q-PL-15-1 (2026-07-30, MOOT 2026-08-02) - patients with no location AND no appointment: assign how?
 Migration 0051 can safely backfill patients.primary_location_id from each patient's most
 recent appointment. Patients with ZERO appointments have no derivable location (this is the
 Alfredo case). RECOMMENDED DEFAULT: do NOT guess them in SQL. Leave them NULL, and let the
@@ -856,7 +856,7 @@ about three rows on prod today. Guessing (e.g. "everything to LV") would misfile
 patient into LV permanently and is a data write no evidence supports. Confirm at PL-15b
 apply, together with the PL-15a output.
 
-## Q-PL-18-1 (2026-07-31, OPEN) - reception/admin with NO location assignment: see everything, or see nothing?
+## Q-PL-18-1 (2026-07-31, MOOT for prod 2026-08-02) - reception/admin with NO location assignment: see everything, or see nothing?
 viewerLocationScope returns `null` for a reception/admin holding zero `staff_locations` rows,
 and `null` means "not location-restricted" - all clinics, all staff. That fallback was a
 deliberate onboarding safety valve (nobody is locked out before Equipa assigns them) and it is
@@ -872,7 +872,7 @@ The ALTERNATIVE worth considering separately: make the location assignment REQUI
 reception and admin roles at user-creation time, which removes the fallback's reason to exist.
 That is a bigger change (it touches invite + role-change paths) and is not a PL-18 blocker.
 
-## Q-PL-23-1 (2026-07-31, OPEN) - health-insurance numbers: one field or a repeatable list?
+## Q-PL-23-1 (2026-07-31, ANSWERED 2026-07-31) - health-insurance numbers: one field or a repeatable list?
 The CR says "one or more tabs where we can enter health insurance plan numbers" and then
 "a new input field called 'numeros dos seguros de saude'". The plural is the only shape signal.
 RECOMMENDED DEFAULT (what GREEN builds): a REPEATABLE list - a patient may hold more than one
@@ -893,7 +893,7 @@ if the count is zero this question closes itself, and if it is not, the owner re
 one by hand in the patient form. Guessing a patient's sex in a bulk UPDATE is a data write no
 evidence supports.
 
-## Q-PL-25-1 (2026-07-31, OPEN) - hourly portal slots: every location, and what about staff?
+## Q-PL-25-1 (2026-07-31, ANSWERED 2026-08-02) - hourly portal slots: every location, and what about staff?
 Two sub-questions the CR does not settle:
 (a) SCOPE. locations.slot_granularity_min is PER LOCATION (migration 0041, default 30), so
 hourly can be set for Linda-a-Velha and Castelo Branco independently. RECOMMENDED DEFAULT: set
@@ -932,7 +932,7 @@ blocks simply carry NULL (they were never a batch).
 **ANSWERED (owner, 2026-07-31): ticket it.** Raised as card PL-26, unblocked now that 0051 is
 applied. Migration takes 0052 and is apply-before-merge like every other.
 
-## Q-SEC-1 (2026-07-31, OPEN) - G3 re-opened: the rotated prod DB password was later exposed
+## Q-SEC-1 (2026-07-31, ANSWERED 2026-08-02) - G3 re-opened: the rotated prod DB password was later exposed
 G3 ("NEW_DB_PASSWORD rotated with full propagation") is attested 2026-07-29. The prod DB password
 was pasted into a chat on 2026-07-30 - so the exposure is NEWER than the gate's evidence, and the
 credential the gate certifies as safely rotated is the one that leaked. It was carried only in an
@@ -968,7 +968,7 @@ is about does not fire for anyone today. The POLICY question (should an unassign
 everything, or nothing?) still stands for future accounts, but it is no longer urgent and no longer
 explains anything. The related diagnosis in PL-18 is disproven - see PL-29.
 
-## Q-PL-29-1 (2026-08-02, OPEN) - reception scoping: one observation settles it
+## Q-PL-29-1 (2026-08-02, ANSWERED 2026-08-02) - reception scoping: one observation settles it
 GREEN has guessed the cause of the reception report twice and been wrong twice (the no-assignment
 fallback; then an RLS read denial). Both are disproven by evidence, and the code path reads correct
 for an assigned reception user. GREEN will not guess a third time.
@@ -982,3 +982,31 @@ appears at all.
    fact rather than a theory.
 NOTE: the owner's own account (Ivan M, owner) holds no assignment and is unrestricted BY DESIGN. An
 owner screen showing both clinics is correct and is not this bug.
+
+
+## Question-log housekeeping (2026-08-02)
+
+Six headings above still said OPEN while their own body, or a later entry, had answered them. That
+happened because answers were APPENDED as new entries instead of editing the heading, so the file
+disagreed with itself and an open-question count taken from the headings was wrong. Corrected in
+place. Below is the settled state, so the count is trustworthy again.
+
+**Answered 2026-08-02 by owner ruling:**
+- **Q-SEC-1** - the exposed prod DB password: exposure ACCEPTED for now, full credential rotation
+  deferred to after the work completes. G3 returns to pass, readiness 7/9. INC-04 stays open as the
+  reminder that the rotation is owed - accepting a risk is not removing it.
+- **Q-PL-29-1** - reception scoping: verified correct against a real reception account. Both GREEN
+  theories were wrong AND there was no defect; the 2026-07-31 report described the pre-PL-14 state.
+- **Q-PL-15-1** - MOOT. Of 10 prod patients only 2 lack a clinic: one stays visible through an
+  appointment, the other is a synthetic test row. The single unbackfillable patient is test data, so
+  the backfill migration is not worth writing.
+- **Q-PL-25-1** - both clinics were already at 60-minute (hourly) portal booking, and staff booking
+  stays free-form. Settled by prod read plus shipped code, not by a decision that was still pending.
+
+**Still genuinely open, and both are GREEN's own work, not owner decisions:**
+- **Q-PL-11-2** - the e2e seed assigns no staff_locations to any test role, so location scoping is a
+  no-op in Playwright and the located-role cases cannot be reproduced there. Directly relevant to the
+  two CI cards now in flight.
+- **Q-PL-14-1** - what a staffer assigned to TWO clinics should get. Still hypothetical: the prod read
+  shows only JP holds both, and he is owner, so he is unrestricted anyway. Decide if a non-owner ever
+  gets two clinics.

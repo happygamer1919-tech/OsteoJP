@@ -2671,3 +2671,51 @@ unrelated branches, with a "dialog does not close after save" signature that loo
 family as the therapist-blocks race. Deliberately NOT diagnosed yet - it gets reproduced at
 `--retries=0` first, per the lesson above.
  main
+
+## 2026-08-02 - Board clear-out: owner ruled on all 14 open items (GREEN)
+
+The owner answered every open question in one pass. Board goes from 15 open cards to 7; readiness
+returns to 7/9. Eight cards closed, and three of them closed on real evidence rather than
+attestation.
+
+**Closed on evidence, not assertion:**
+- **JP-role-defect + INC-03** - JP is `owner` on prod, printed by TWO independent read-only runs the
+  same day. The latent 0045 admin-write denial no longer applies to him. He remains bookable as a
+  therapist through `is_bookable`, which is exactly the decoupling PL-06b argued for: role governs
+  authorisation, `is_bookable` governs presence in the booking dropdown.
+- **PL-15a** - fully diagnosed from the owner's pasted output, and none of the three named patients
+  is an outstanding defect. Alfredo and Maria now carry LV (PL-15b fixed the cause on 2026-07-30 by
+  making the patient form write the clinic). Joao is a Castelo Branco patient and is invisible to an
+  LV admin BY DESIGN - the access model working, not a bug. Only 2 of 10 patients still lack a
+  clinic; one stays visible via an appointment, the other is a synthetic row. **Q-PL-15-1 is moot:
+  the only unbackfillable patient is test data.**
+- **PL-29** - reception scoping verified correct against a real reception account. Both GREEN
+  theories were wrong AND there was no defect to find. The 2026-07-31 report described the pre-PL-14
+  state; PL-14 merged one day earlier and had not been re-checked. Asking for one observation
+  instead of guessing a third time was the only thing that resolved it.
+
+**Closed by owner ruling, recorded as rulings and not dressed up as work:**
+- **INC-02b** - no purge; testing continues on prod under the owner's green light. FLAGGED: G4 reads
+  "prod free of synthetic data" and states pass, which cannot be literally true while sanctioned
+  testing continues. GREEN has not flipped G4 (the owner sanctioned it, and it is pre-launch) but
+  **G4 must be re-verified at cutover.**
+- **INC-02a** - not doing the safe-test-target work; platform changes are closed and focus has moved
+  to the client portal. The root cause of the repeat synthetic-data incidents is therefore unchanged
+  and now an accepted risk.
+- **PL-04** - NESA is now a service at both clinics, so the report cannot recur at CB.
+- **JP-mapping-frozen** - closed; `is_bookable` already delivers it.
+
+**G3 returns to PASS by risk acceptance, not by a new rotation.** The owner accepts the chat
+exposure and will rotate every password and token once the work completes. Recorded explicitly so a
+future reader does not mistake the pass for "never exposed". INC-04 deliberately stays OPEN:
+accepting a risk is not removing it, and the owner's scope is broader than this one credential.
+
+**Question-log housekeeping.** Six headings still said OPEN while their own body had answered them,
+because answers were appended as new entries rather than editing the heading. The file disagreed with
+itself and any open-count read from the headings was wrong. Corrected, with the settled state written
+out. Two questions remain genuinely open and both are GREEN's own work (Q-PL-11-2, Q-PL-14-1), not
+owner decisions.
+
+**Remaining 7 cards:** 2 owner-side (CANARY-reminder in flight = G2; INC-04 the owed rotation), 3
+deferred by decision (PL-03b held, LE-resend post-launch, PL-26 post-launch), and 2 CI defects that
+are GREEN's to fix (the therapist-blocks race, the marcacoes-tab-edit flake).
