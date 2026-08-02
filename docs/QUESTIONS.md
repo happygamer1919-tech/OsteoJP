@@ -882,7 +882,7 @@ cannot be searched or validated later and converting it to a list afterwards is 
 migration over free text.
 Confirm at the PL-23 apply, since the shape IS the migration.
 
-## Q-PL-24-1 (2026-07-31, OPEN) - existing patients stored as sex='other'
+## Q-PL-24-1 (2026-07-31, CLOSED 2026-08-02) - existing patients stored as sex='other'
 patients.sex is a free varchar(16) with no DB enum, so dropping the "Outro" option from the
 form is a UI change with no migration. Any row that ALREADY stores 'other' keeps its value and
 renders as "Nao especificado" once the option is gone.
@@ -948,3 +948,35 @@ silently.
 NOTE the propagation half matters as much as the rotation: a rotated-but-unpropagated password
 breaks migrations (the 28P01 class of failure already recorded in this file) instead of securing
 anything.
+
+**CLOSED 2026-08-02 by the prod read: ZERO rows store 'other'** (4 male, 3 female, 3 blank, of 10
+patients). Nothing to reclassify; the question answered itself exactly as the recommended default
+anticipated.
+
+## Q-PL-15-1 (2026-07-30, NARROWED 2026-08-02) - patients with no location AND no appointment
+The backfill population is now **2 of 10** patients with a NULL `primary_location_id`, down from the
+3 this question was written about: PL-15b shipped the clinic field on the patient form 2026-07-30,
+so anyone added since carries a clinic. The recommendation is unchanged and now cheaper to follow -
+do NOT guess them in SQL, assign two patients by hand in the patient form and the backfill migration
+may not be worth writing at all.
+
+## Q-PL-18-1 (2026-07-31, MOOT for prod 2026-08-02) - reception/admin with no location assignment
+The prod read shows every ACTIVE reception and admin already assigned, so the fallback this question
+is about does not fire for anyone today. The POLICY question (should an unassigned reception see
+everything, or nothing?) still stands for future accounts, but it is no longer urgent and no longer
+explains anything. The related diagnosis in PL-18 is disproven - see PL-29.
+
+## Q-PL-29-1 (2026-08-02, OPEN) - reception scoping: one observation settles it
+GREEN has guessed the cause of the reception report twice and been wrong twice (the no-assignment
+fallback; then an RLS read denial). Both are disproven by evidence, and the code path reads correct
+for an assigned reception user. GREEN will not guess a third time.
+NEEDED, one observation: sign in as **Carlos Barrelas** (reception, Linda-a-Velha), open the Agenda,
+and report (a) what the **Terapeuta** dropdown lists, and (b) whether a **Localização** control
+appears at all.
+ - Only LV therapists, no location control -> the behaviour is already correct and the original
+   report described the PRE-PL-14 state (PL-14 merged 2026-07-30; the report came 2026-07-31).
+   Close PL-29.
+ - Both clinics' staff -> that is the first real evidence of the defect, and the hunt starts from a
+   fact rather than a theory.
+NOTE: the owner's own account (Ivan M, owner) holds no assignment and is unrestricted BY DESIGN. An
+owner screen showing both clinics is correct and is not this bug.

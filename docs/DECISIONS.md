@@ -2512,3 +2512,40 @@ falsely flagged, with the edits preserved.
 Second self-inflicted bug in two days from the same family as the e2e quarantine: a check that was
 true when written, quietly stopped being true, and reported success while doing nothing. Version by
 content, not by calendar.
+
+## 2026-08-02 - The prod read disproved my own PL-18 diagnosis (GREEN)
+
+The staged read-only script finally ran. It corrected three things GREEN had asserted, which is
+exactly what it was staged to do - and the most important correction is against GREEN's own
+conclusion.
+
+**PL-18's diagnosis is wrong.** Every ACTIVE reception and admin already holds a `staff_locations`
+assignment (Carlos LV, Raquel CB, Tamara CB, Lurdes LV, Tiago CB). The no-assignment FALLBACK that
+PL-18 blamed never fires for any of them. The script said so in its own output, because it was
+written to be able to prove GREEN wrong, and GREEN committed in the PR that this outcome would
+reopen the audit. Reopened as PL-29. The shipped deliverable (Equipa flags an unassigned
+reception/admin) remains correct and useful; only the explanation was wrong.
+
+A second theory - that RLS denies reception the read of `staff_locations`, so the scope silently
+collapses to "all" - was checked BEFORE writing it down, and is also dead: 0038's
+`staff_locations_select` is tenant-wide `TO authenticated`. Two theories, both disproven by
+evidence rather than by argument. **GREEN will not guess a third time**; PL-29 asks for one
+observation (what one reception account actually sees) instead.
+
+**Both clinics were already hourly.** GREEN told the owner they sat at 30 minutes and needed
+switching. Prod says both were already at 60. That claim came from the 0041 migration DEFAULT, not
+from reading prod - inference presented as fact.
+
+**The PL-25 alignment fix was load-bearing, not theoretical.** Linda-a-Velha has 10 active
+availability templates starting at 08:30 and 13:30. At a 60-minute step without alignment those
+emitted 08:30 / 09:30 / 10:30 - hourly cadence never landing on an hour, the exact trap PL-25
+describes, live in production. Castelo Branco has zero off-hour starts.
+
+**Two staged scripts carried the same latent bug.** Both queried `users.role`; the permission role
+is `users.role_id -> roles.slug`. The PL-15a script was staged 2026-07-30 and never run, so the
+error sat undetected and GREEN copied the pattern into the PL-18 script on 2026-07-31 while
+treating the earlier script as proven. Both fixed. **A staged script that has never been executed
+is not evidence of anything, including its own correctness** - and reusing its patterns propagates
+whatever is wrong with it.
+
+**Q-PL-24-1 closed by data:** zero patients store sex = 'other'.
