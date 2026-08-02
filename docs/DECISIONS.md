@@ -2550,6 +2550,88 @@ whatever is wrong with it.
 
 **Q-PL-24-1 closed by data:** zero patients store sex = 'other'.
 
+ chore/twilio-smoke-no-vercel-pull
+## 2026-08-02 - Two handoff premises corrected: the Resend domain, and the osteojp.pt root MX (GREEN)
+
+Both corrections are to premises carried in the session handoff, not to shipped code. Every
+DNS claim below was re-derived from live read-only `dig` on 2026-08-02, not taken from the
+handoff or from repo docs.
+
+- **CORRECTION (a) - "Resend DNS lives on send.osteojp.pt, email test unblocked" was FALSE
+  when written.** No Resend domain existed at all until 2026-08-02. The repo agreed with
+  that the whole time and the handoff contradicted it: `docs/email-templates-reminders.md`
+  and `docs/email-templates-post-visit.md` both say "pending Resend domain verification";
+  Q-W6-02-1 and Q-W7-01-1 both carry "the osteojp.pt sending domain must be verified in
+  Resend" as an UNMET prerequisite; `docs/cutover-runbook.md` line 59 still has the unchecked
+  `[IVAN]` box for it. The domain was created on 2026-08-02 and is **now Verified, region
+  eu-west-1, in the `a-and-i-automation` Resend workspace**. Independently confirmed by live
+  DNS: `send.osteojp.pt` MX -> `feedback-smtp.eu-west-1.amazonses.com`; `send.osteojp.pt` TXT
+  -> `v=spf1 include:amazonses.com ~all`; `resend._domainkey.send.osteojp.pt` TXT -> DKIM
+  public key present. So the premise is now true, but it was not true when it was used as a
+  premise, and anything reasoned from it before today must be re-checked.
+- **(a) consequences the handoff did not carry.** (1) The verified sending identity is the
+  SUBDOMAIN `send.osteojp.pt`, not the root `osteojp.pt` that every doc names, so
+  `REMINDERS_EMAIL_FROM` must be an address at the verified identity - the docs' "a verified
+  osteojp.pt sender" is now imprecise and will fail if taken literally. (2) The runbook's
+  DKIM check `dig CNAME em._domainkey.osteojp.pt` is wrong on both host and record type; the
+  real record is a TXT at `resend._domainkey.send.osteojp.pt`. (3) "Email test unblocked"
+  overstates it: DNS is unblocked, the send path is not. `RESEND_API_KEY`,
+  `REMINDERS_EMAIL_FROM` and `INVITES_LIVE_SEND` (invites) / `REMINDERS_LIVE_SEND`
+  (reminders) are still unset, and the board records invite-email delivery as DEFERRED
+  post-launch by owner decision (2026-07-28, re-confirmed 2026-07-31). Domain verification
+  removes one precondition; it does not make the test runnable.
+- **CORRECTION (b) - the root MX is NOT Google Workspace. It is also not literally Outlook.**
+  The handoff's Google Workspace claim is disproved: there is no `aspmx.l.google.com` (or any
+  Google host) on `osteojp.pt` at any priority. But the correction as filed ("points at
+  Outlook") does not match the RRset either. Live read-only `dig`, 2026-08-02:
+  - `osteojp.pt` MX -> `10 a1.spambusters.email`, `20 n1.spambusters.email`, `30 a2.spambusters.email`
+  - `osteojp.pt` TXT -> `v=spf1 +a +mx +ip4:62.233.41.48 include:_spf.spambusters.email include:_spfnv7.serverhs.org ~all`
+  - `_dmarc.osteojp.pt` -> `v=DMARC1; p=none;`
+
+  All three MX priorities are **spambusters.email**, a filtering gateway. Outlook is
+  plausibly the mailbox BEHIND that gateway - the standing ruling in
+  `docs/design/DECISIONS.md` (2026-07-21, "MX / email migration POSTPONED INDEFINITELY")
+  records that staff stay on webhs + Outlook - but the gateway is what the MX record
+  resolves to, and no `*.mail.protection.outlook.com` host appears anywhere in the zone.
+  Correct statement of reality: **root MX = spambusters.email (filtering gateway), mailbox
+  behind it unchanged per the 2026-07-21 parked-migration ruling; Google Workspace is not
+  and has never been in this zone.**
+- **(b) consequence: "spambusters MX on the root" is CURRENT REALITY and must NOT be
+  reconciled away.** A repo-wide grep (`*.md`, `*.json`, `*.ts`, `*.mjs`) returns ZERO hits
+  for `spambusters`, `google workspace`, `gsuite` or `g suite`. There is nothing in the repo
+  asserting Google Workspace, so there is no in-repo Google Workspace claim to correct - that
+  claim exists only in the handoff. The docs that ARE stale against live DNS are different
+  ones, listed below.
+- **Stale DNS docs found while verifying - FIXED in the same PR (owner instruction).** The
+  runbook's DKIM check would have burned another session on its own, and a doc naming the
+  wrong DNS provider is actively misleading, so these were corrected rather than logged as
+  debt. (1) `docs/dns-records-pending.md` rewritten: it claimed the provider was Webhs on
+  `ns1.webhs.org` / `ns2.webhs.org` (live NS are `aster.dns-parking.com` /
+  `helios.dns-parking.com` - Hostinger, so there is no Webhs panel to make changes in), and
+  listed `app.osteojp.pt` as pending when it resolves live to `cname.vercel-dns.com`. It now
+  carries the live-vs-pending split, the root-vs-`send.` separation, and an explicit "do not
+  change the root MX". (2) `docs/cutover-runbook.md` §1.2: dropped the Webhs framing, replaced
+  the A-record table with the CNAMEs actually in use, corrected the DKIM row (TXT at
+  `resend._domainkey.send.osteojp.pt`, not CNAME at `em._domainkey.osteojp.pt`), and re-pointed
+  the Resend checkbox at `send.osteojp.pt`. `patient.osteojp.pt` is the only host still
+  unresolved; `app` and `api` are live. (3) `docs/architecture.md` (lines 488, 557),
+  `docs/SPEC.md` line 269, both `email-templates-*.md` sender lines, `docs/QUESTIONS.md`, and
+  Q-W6-02-1 / Q-W7-01-1 in `docs/design/QUESTIONS.md` all corrected from
+  "a verified osteojp.pt sender / pending verification" to the Verified `send.osteojp.pt`
+  identity, each stating that an `@osteojp.pt` From will be rejected.
+- **Deliberately NOT edited: the append-only logs and the historical records.** Earlier
+  entries in this file and in `docs/design/DECISIONS.md`, the wave-07 loop files, the
+  2026-07-23 status report and the handoff docs still contain the old "pending osteojp.pt
+  verification" wording. They are records of what was believed at the time and are corrected
+  by appending (this entry), never by rewriting. `docs/board/prelaunch-board.json` also
+  carries the old wording in a card note; the board was left untouched because editing it
+  requires the validator + portal republish, and the owner ruled no board card for this work.
+- **Method note, per the standing lesson.** The 2026-07-31 close recorded that reported
+  causes were wrong four times and that claims must be verified before building on them.
+  Both premises here were verified against live DNS before this entry was written, and one
+  of the two corrections supplied (b) was itself partly wrong. Handoff premises are
+  hypotheses until re-derived.
+
 ## 2026-08-02 - #735 merged green; my un-quarantine claim retracted (GREEN)
 
 **#735 (patient JWT verification + rate limiting) merged on fully green CI**, all eight checks
@@ -2588,3 +2670,4 @@ Also opened `LE-marcacoes-tab-edit-flake`: PL-02 (a) has now failed on three sep
 unrelated branches, with a "dialog does not close after save" signature that looks like the same
 family as the therapist-blocks race. Deliberately NOT diagnosed yet - it gets reproduced at
 `--retries=0` first, per the lesson above.
+ main

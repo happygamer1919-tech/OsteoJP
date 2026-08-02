@@ -731,7 +731,9 @@ W12-21 palette. This keeps the current PR within its UI/UX + wiring boundary.
      0002). If OFF, a staff member's first login carries no tenant_id/role claims
      and the app rejects the session. This is the single most likely silent blocker.
   2. For emailed set-password links: `INVITES_LIVE_SEND=true` + `RESEND_API_KEY` +
-     a verified osteojp.pt sender + `STAFF_INVITE_REDIRECT_URL` → the
+     a sender address at `send.osteojp.pt` (the Verified Resend identity as of
+     2026-08-02 — an `@osteojp.pt` From will be rejected) +
+     `STAFF_INVITE_REDIRECT_URL` → the
      `/auth/update-password` page. If unset, Ativar login still works but shows the
      link / temp password on screen (hand off out of band) instead of emailing.
   Recommended default: enable both before the team session; prove the full chain on
