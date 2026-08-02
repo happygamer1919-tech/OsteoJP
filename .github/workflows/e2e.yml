@@ -69,6 +69,17 @@ jobs:
       - name: Detect whether code files changed
         id: changes
         run: |
+          # A manual (workflow_dispatch) run has no pull_request context, so the
+          # base/head shas below are EMPTY and the docs-only heuristic would mark
+          # the run as docs-only and skip all 16 gated steps - i.e. the proving
+          # runs PL-30 added this trigger for would silently do nothing and
+          # report success. Force code=true for manual runs; they are only ever
+          # started deliberately.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual run - forcing code=true."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
           CHANGED=$(git diff --name-only "$BASE" "$HEAD")
