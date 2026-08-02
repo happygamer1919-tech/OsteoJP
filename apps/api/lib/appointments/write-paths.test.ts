@@ -110,43 +110,60 @@ function findWrites(): Hit[] {
 /**
  * Every known write path, with the decision attached.
  *
- * `locked: true`  — goes through the choke point and takes the slot lock.
- * `locked: false` — does NOT take the lock, with the reason it is acceptable.
+ * `needsLock` — is this a CONCURRENT writer that could race another booking?
+ * `locked`    — does it actually take the slot lock?
  *
- * A file appearing here with locked:false is a KNOWN GAP, deliberately visible
- * rather than hidden. Do not read the presence of a path here as approval that
- * it is safe; read the reason.
+ * The load-bearing count is `needsLock && !locked`, which must be ZERO. The two
+ * flags are separate on purpose: declaring a non-concurrent path as `locked`
+ * would inflate the protected count with something that takes no lock, which is
+ * the sort of comfortable inaccuracy this file exists to prevent.
+ *
+ * Do not read a path's presence here as approval that it is safe; read the
+ * reason.
  */
-const ALLOWED: Record<string, { locked: boolean; reason: string }> = {
+const ALLOWED: Record<
+  string,
+  { needsLock: boolean; locked: boolean; reason: string }
+> = {
   "apps/api/lib/appointments/store.ts": {
+    needsLock: true,
     locked: true,
     reason:
       "The choke point. createBooking + rescheduleOwn take the slot lock; " +
       "cancelOwn only releases a slot and needs none.",
   },
   "apps/web/lib/scheduling/actions.ts": {
+    needsLock: true,
     locked: true,
     reason:
-      "STAFF create, recurrence children, and clone now take the slot lock (T4), " +
-      "so a patient-versus-staff race on those paths is covered. " +
-      "KNOWN REMAINING GAP: the staff RESCHEDULE sites in this same file (the " +
-      "UPDATE paths) do NOT take it - they were outside T4's granted scope. A " +
-      "staff reschedule still moves an appointment without holding the lock. " +
-      "This entry is file-granular, so a NEW insert added to this file would " +
-      "not be flagged; that is the guard's known limit.",
+      "STAFF create, recurrence children, clone (T4) AND reschedule (W1) all " +
+      "take the slot lock. Reschedule locks the DESTINATION slots only: " +
+      "vacating a slot cannot double-book, occupying one can. The two other " +
+      "UPDATE sites in this file are outside the lock by design and were " +
+      "VERIFIED, not assumed: the generic patch builds `set` from serviceId/" +
+      "room/status only (actions.ts:661-663, UpdateAppointmentPatch in " +
+      "types.ts:145-150 has no time or therapist field), and the cancel path " +
+      "only frees a slot. This entry is file-granular, so a NEW insert or move " +
+      "added to this file would not be flagged; that is the guard's known limit.",
   },
   "apps/web/lib/scheduling/batch.ts": {
+    needsLock: true,
     locked: true,
     reason:
       "STAFF batch create ('Agendar lote') takes one sorted, deduplicated " +
       "acquisition covering every slot in the batch (T4).",
   },
   "packages/db/src/migration/upsert.ts": {
+    // NOT a concurrent writer, so the lock does not apply. Declared with
+    // needsLock:false rather than locked:false so it cannot be mistaken for an
+    // unprotected concurrent path in the count below.
+    needsLock: false,
     locked: false,
     reason:
-      "Bulk patient-book import. Runs offline as a one-shot, not concurrently " +
-      "with live booking, so the race it would need does not arise. If it is " +
-      "ever made concurrent, it must take the lock.",
+      "Bulk patient-book import. Runs offline as a one-shot, never alongside " +
+      "live booking, so the race it would need does not arise. Editing it is " +
+      "also outside the lane that routed the other paths. IF IT IS EVER MADE " +
+      "CONCURRENT it must take the lock and flip to needsLock:true.",
   },
 };
 
@@ -191,15 +208,30 @@ describe("appointments write paths (PRIMARY guard for 2.9)", () => {
     ).toEqual([]);
   });
 
-  it("records exactly which paths are unprotected, so the gap is never implicit", () => {
-    const unlocked = Object.entries(ALLOWED)
-      .filter(([, v]) => !v.locked)
+  it("no concurrent write path is left unprotected", () => {
+    // The load-bearing count: paths that NEED the lock and do not take it.
+    // W1 drove this to zero. It must stay zero.
+    const unprotected = Object.entries(ALLOWED)
+      .filter(([, v]) => v.needsLock && !v.locked)
       .map(([f]) => f)
       .sort();
 
-    // This assertion exists to make a CHANGE in coverage visible. T4 routed the
-    // staff insert paths, so this list shrank - and shrinking it required this
-    // deliberate edit, which is exactly the behaviour intended.
-    expect(unlocked).toEqual(["packages/db/src/migration/upsert.ts"]);
+    expect(
+      unprotected,
+      unprotected.length
+        ? `Concurrent write paths without the slot lock:\n  ${unprotected.join("\n  ")}`
+        : undefined,
+    ).toEqual([]);
+  });
+
+  it("records which paths are exempt, so an exemption is never implicit", () => {
+    // Exempt means "not a concurrent writer", NOT "safe to ignore". Changing
+    // this list must be a deliberate edit, never a silent side effect.
+    const exempt = Object.entries(ALLOWED)
+      .filter(([, v]) => !v.needsLock)
+      .map(([f]) => f)
+      .sort();
+
+    expect(exempt).toEqual(["packages/db/src/migration/upsert.ts"]);
   });
 });
