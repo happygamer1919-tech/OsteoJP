@@ -485,7 +485,7 @@ SMS notifications (appointment reminders, patient activation). PT SMS sender ID 
 
 ### 13.5 Resend — **sandbox-first**
 
-Transactional email (reminders, post-visit, patient activation, staff invite). EU region. Sender domain `@osteojp.pt` pending DNS verification.
+Transactional email (reminders, post-visit, patient activation, staff invite). EU region (`eu-west-1`, workspace `a-and-i-automation`). Sender domain `@send.osteojp.pt` — **Verified 2026-08-02**. Not the root `@osteojp.pt`, which is the spambusters staff-mail gateway and is not a Resend identity.
 
 - **Status:** SDK imported lazily; sandbox-first same gate as Twilio above.
 - **DNS pending:** SPF, DKIM, DMARC records documented in `docs/dns-records-pending.md`. Owner DNS access required.
@@ -554,7 +554,7 @@ Items needing decision from the lead, owner, or AI partner before they can be re
 1. **AI ingestion auth contract.** `CLAUDE.md` specifies API key + HMAC. The partner has recommended a service-account bearer token. Decision pending; affects `packages/ingestion` and the partner-side client.
 2. **Per-field `ai_extractable` flag values.** All form template fields currently set to `false` pending the AI partner contract. Narrative fields will likely flip to `true` once signed; structured fields and `private_notes` stay `false` permanently.
 3. **Email sender details.** Sender display name, reply-to address, and 48h vs 24h reminder timing. Owner decision.
-4. **Resend DNS verification.** SPF/DKIM/DMARC records pending DNS access from the owner (see `docs/dns-records-pending.md`).
+4. **Resend DNS verification — RESOLVED 2026-08-02.** The sending identity is the subdomain **`send.osteojp.pt`** (MX, SPF and DKIM live; status **Verified**, region `eu-west-1`, workspace `a-and-i-automation`). It is **not** the root `osteojp.pt`, whose MX is the spambusters staff-mail gateway and is not a Resend identity — a `REMINDERS_EMAIL_FROM` at `@osteojp.pt` will fail. DNS is no longer a blocker; live sending still needs `RESEND_API_KEY`, `REMINDERS_EMAIL_FROM` (at `send.osteojp.pt`) and the relevant live-send flag. See `docs/dns-records-pending.md`.
 5. **Twilio PT sender registration.** Sender ID "OsteoJP" needs PT carrier registration before any live SMS.
 6. **No-show charge policy.** Whether the no-show email mentions a late-cancellation fee. Owner decision.
 7. **Montemor-o-Novo opening date + contacts.** Pending owner confirmation.

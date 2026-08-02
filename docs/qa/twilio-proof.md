@@ -120,11 +120,16 @@ node scripts/twilio-smoke.mjs
 TWILIO_SMOKE_CONFIRM=yes SMOKE_TO_NUMBER=+3519XXXXXXXX node scripts/twilio-smoke.mjs
 ```
 
-- Creds: reads `TWILIO_*` from the environment / `.env.local` (repo root or
-  `apps/web/`). If absent it attempts `vercel env pull`, then prints manual
-  instructions and exits 1. **2026-07-06:** `vercel env pull` currently fails
-  with "Could not retrieve Project Settings" for `osteojp-platform` — paste the
-  SID + auth token from the Twilio Console into `.env.local` manually.
+- Creds: reads `TWILIO_*` from the shell environment (and, read-only, from an
+  already-present `.env.local` at the repo root or `apps/web/`; the real shell
+  env always wins). If absent it prints the required variable NAMES and exits 1.
+  **Export the values in your own shell — never write them into a file inside
+  this repository.** **2026-08-02:** the automatic `vercel env pull` fallback was
+  REMOVED. It wrote real credential values into the repo working tree (readable
+  by every process and agent session attached to it), mutated `apps/web/.gitignore`
+  during what is documented as a read-only proof, and pulled the *development*
+  scope rather than production, so it never yielded usable Twilio creds anyway.
+  The script now never writes a file and never invokes the vercel CLI.
 - Requires Node ≥ 22.18 (native type-stripping to import the real `.ts`
   template module). Repo standard is Node 22.x.
 - Never prints `TWILIO_AUTH_TOKEN`. Uses the REST API directly (Basic auth);

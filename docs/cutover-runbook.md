@@ -39,24 +39,31 @@ All items must be checked off, in order, before the cutover window opens. Items 
 - [ ] **[IVAN]** `app.osteojp.pt` loads the staff login page. `patient.osteojp.pt` loads the portal login page. `api.osteojp.pt/api/health` returns `{"status":"ok"}`.
 - [ ] **[IVAN]** All three CI required gates are green on the latest `main` commit: **Lint + typecheck + test**, **DB-gated tests (RLS isolation, seeded DB)**, **Playwright E2E (seeded DB)**.
 
-### 1.2 DNS (Webhs panel — `osteojp.pt`)
+### 1.2 DNS (`osteojp.pt`)
 
 DNS changes must be made and confirmed to have propagated **before** the cutover window. Propagation can take up to 48 hours; plan accordingly.
 
-| Type | Host | Value | Status |
-|---|---|---|---|
-| A | `app` | 76.76.21.21 | confirm via `dig app.osteojp.pt` |
-| A | `api` | 76.76.21.21 | confirm via `dig api.osteojp.pt` |
-| A | `patient` | 76.76.21.21 | confirm via `dig patient.osteojp.pt` |
-| TXT | `@` | SPF record for Resend | confirm via `dig TXT osteojp.pt` |
-| CNAME | `em._domainkey` | Resend DKIM | confirm via `dig CNAME em._domainkey.osteojp.pt` |
-| TXT | `_dmarc` | DMARC policy | confirm via `dig TXT _dmarc.osteojp.pt` |
+**Not Webhs.** The zone is on `aster.dns-parking.com` / `helios.dns-parking.com` (Hostinger), verified by live `dig` on 2026-08-02. Earlier versions of this runbook said Webhs; that is wrong and there is no Webhs panel to make these changes in.
 
-Full DNS record values: see [`docs/dns-records-pending.md`](./dns-records-pending.md).
+**App sends from the `send.osteojp.pt` subdomain, not the root.** The root domain carries staff mail (spambusters gateway) and must not be touched.
 
-- [ ] **[IVAN]** All six DNS records added at Webhs and confirmed propagated (`dig` returns expected values from two independent resolvers).
+| Type | Host | Value | Status | Confirm with |
+|---|---|---|---|---|
+| CNAME | `app` | `cname.vercel-dns.com` | **LIVE** | `dig +short CNAME app.osteojp.pt` |
+| CNAME | `api` | `cname.vercel-dns.com` | **LIVE** | `dig +short CNAME api.osteojp.pt` |
+| CNAME | `patient` | `cname.vercel-dns.com` | PENDING | `dig +short CNAME patient.osteojp.pt` |
+| MX | `send` | `feedback-smtp.eu-west-1.amazonses.com` | **LIVE** | `dig +short MX send.osteojp.pt` |
+| TXT | `send` | `v=spf1 include:amazonses.com ~all` | **LIVE** | `dig +short TXT send.osteojp.pt` |
+| TXT | `resend._domainkey.send` | Resend DKIM public key | **LIVE** | `dig +short TXT resend._domainkey.send.osteojp.pt` |
+| TXT | `_dmarc` | `v=DMARC1; p=none;` | **LIVE** | `dig +short TXT _dmarc.osteojp.pt` |
+
+**Do NOT add or change:** the root `MX` (spambusters gateway, staff mail) or the root `TXT`/SPF. The app has no sending identity on the root domain.
+
+Full DNS record values and the live-vs-pending breakdown: see [`docs/dns-records-pending.md`](./dns-records-pending.md).
+
+- [ ] **[IVAN]** `patient.osteojp.pt` CNAME added and confirmed propagated (`dig` returns the expected value from two independent resolvers). Every other record in the table above is already live as of 2026-08-02.
 - [ ] **[IVAN]** Vercel dashboard shows domains `app.osteojp.pt`, `api.osteojp.pt`, `patient.osteojp.pt` as **Valid Configuration** (not "Invalid Configuration" or "Pending").
-- [ ] **[IVAN]** Resend dashboard confirms the `osteojp.pt` sender domain status is **Verified**.
+- [x] **[IVAN]** Resend dashboard confirms the **`send.osteojp.pt`** sender domain status is **Verified** — done 2026-08-02, region `eu-west-1`, workspace `a-and-i-automation`. (This box previously named the root `osteojp.pt` domain, which is not and will not be a Resend identity.)
 
 ### 1.3 Data migration (Fisiozero → OsteoJP)
 
