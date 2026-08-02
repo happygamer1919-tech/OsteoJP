@@ -105,8 +105,48 @@ describe("clientKey", () => {
     );
   });
 
-  it("falls back to a constant when no IP is present, and still limits", () => {
-    expect(clientKey(req(), "auth")).toBe("auth:ip:unknown");
+  // Regression: clientKey used to return "ip:unknown" for EVERY header-less
+  // request, so all anonymous callers shared one counter. A shared counter
+  // makes the limit fire earlier than configured, which throttles unrelated
+  // callers and can make a 429 test pass for the wrong reason. Production is
+  // unaffected (Vercel always sets x-forwarded-for) but dev and CI are not.
+  const withAuth = (token: string) =>
+    new Request("https://api.example.test/x", {
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+  it("does NOT collapse header-less callers into one bucket", () => {
+    expect(clientKey(withAuth("token-a"), "auth")).not.toBe(
+      clientKey(withAuth("token-b"), "auth"),
+    );
+  });
+
+  it("gives the same header-less caller a stable bucket across requests", () => {
+    expect(clientKey(withAuth("token-a"), "auth")).toBe(
+      clientKey(withAuth("token-a"), "auth"),
+    );
+  });
+
+  it("never puts the raw credential in the key", () => {
+    const key = clientKey(withAuth("super-secret-token"), "auth");
+    expect(key).not.toContain("super-secret-token");
+    expect(key).toMatch(/^auth:tok:[0-9a-f]{16}$/);
+  });
+
+  it("one header-less caller's flood does not throttle another", () => {
+    const rule = { limit: 2, windowMs: 60_000 };
+    const a = clientKey(withAuth("token-a"), "auth");
+    const b = clientKey(withAuth("token-b"), "auth");
+    checkRateLimit(a, rule, store, 0);
+    checkRateLimit(a, rule, store, 0);
+    expect(checkRateLimit(a, rule, store, 0).ok).toBe(false);
+    expect(checkRateLimit(b, rule, store, 0).ok).toBe(true);
+  });
+
+  it("shares one bucket only when the caller is genuinely unattributable", () => {
+    // No subject, no IP, no credential. Sharing is the strict direction and is
+    // the intended behaviour for this case.
+    expect(clientKey(req(), "auth")).toBe("auth:unattributed");
   });
 
   it("namespaces by scope so booking and auth budgets do not share a counter", () => {
