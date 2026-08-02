@@ -867,16 +867,20 @@
     {
       "id": "PL-28",
       "title": "Board portal showed a stale board with no warning - staleness compared DATES, so same-day republishes were invisible",
-      "lane": "in_flight",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "todo",
+      "status": "shipped",
       "priority": "high",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
+      "evidence": {
+        "kind": "pr",
+        "ref": "#732",
+        "at": "2026-08-02"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-08-02",
-      "notes": "Owner report 2026-08-02 with a screenshot: the portal showed PL-18..PL-25 as TO DO with 'no evidence yet' and Shipped 22, while main had them shipped with PR evidence and Shipped 30. GREEN's bug, and a bad one, because the owner reviews ALL work through this artifact - he was reading a board that said nothing had shipped. ROOT CAUSE: seedIsNewer() compared as_of DATES (SEED.as_of > board.as_of). Every publish on 2026-07-31 carried as_of '2026-07-31', so the comparison was false for all FOUR publishes that day and the 'newer board' notice never rendered. Worse, the 'Load the new board' button lives INSIDE that notice, so the one control that would have fixed it was unreachable; only the footer's 'Discard local changes' remained, which also throws away the owner's own edits. A date cannot express 'changed again today'. FIX: render-board.mjs now stamps a sha256 content fingerprint of the published JSON into the seed island, and the portal records which publish a browser's snapshot was taken from (__basedOn in localStorage, kept beside the board so it never leaks into an Export or a diff). Staleness is now fingerprint inequality, which catches ANY change - status, evidence, a note - same day or not. A pre-fix snapshot has no recorded provenance and is treated as STALE, so every browser stranded by the old logic is offered the new board on first load. Adopting the seed (take-seed and Discard) also adopts its fingerprint, or the notice would return on the board the user just chose. VERIFIED IN A REAL BROWSER against a reproduction of the owner's exact state (a snapshot showing Shipped 22, same as_of, no provenance): notice appears where it previously did not; 'Load the new board' clears it and survives a reload showing Shipped 30; and a CURRENT snapshot carrying local edits is not falsely flagged (1 local change preserved, no notice). LESSON: a freshness check keyed on a human-scale date silently fails at human speed - version by content, not by calendar."
+      "notes": "Owner report 2026-08-02 with a screenshot: the portal showed PL-18..PL-25 as TO DO with 'no evidence yet' and Shipped 22, while main had them shipped with PR evidence and Shipped 30. GREEN's bug, and a bad one, because the owner reviews ALL work through this artifact - he was reading a board that said nothing had shipped. ROOT CAUSE: seedIsNewer() compared as_of DATES (SEED.as_of > board.as_of). Every publish on 2026-07-31 carried as_of '2026-07-31', so the comparison was false for all FOUR publishes that day and the 'newer board' notice never rendered. Worse, the 'Load the new board' button lives INSIDE that notice, so the one control that would have fixed it was unreachable; only the footer's 'Discard local changes' remained, which also throws away the owner's own edits. A date cannot express 'changed again today'. FIX: render-board.mjs now stamps a sha256 content fingerprint of the published JSON into the seed island, and the portal records which publish a browser's snapshot was taken from (__basedOn in localStorage, kept beside the board so it never leaks into an Export or a diff). Staleness is now fingerprint inequality, which catches ANY change - status, evidence, a note - same day or not. A pre-fix snapshot has no recorded provenance and is treated as STALE, so every browser stranded by the old logic is offered the new board on first load. Adopting the seed (take-seed and Discard) also adopts its fingerprint, or the notice would return on the board the user just chose. VERIFIED IN A REAL BROWSER against a reproduction of the owner's exact state (a snapshot showing Shipped 22, same as_of, no provenance): notice appears where it previously did not; 'Load the new board' clears it and survives a reload showing Shipped 30; and a CURRENT snapshot carrying local edits is not falsely flagged (1 local change preserved, no notice). LESSON: a freshness check keyed on a human-scale date silently fails at human speed - version by content, not by calendar. SHIPPED (#732). The very publish that carries this card is also the first one a stranded browser can detect, because a pre-fix snapshot has no recorded provenance and is therefore treated as stale."
     }
   ]
 }
