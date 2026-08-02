@@ -54,7 +54,7 @@
   ],
   "launch_gate": {
     "denominator": 9,
-    "readiness_passed": 6,
+    "readiness_passed": 7,
     "note": "The launch readiness figure is passed-over-nine. It is NOT a percentage of work done and it is NEVER estimated. No partial credit: each condition is pass or fail.",
     "conditions": [
       {
@@ -75,15 +75,19 @@
         "state": "fail",
         "blocked_on": "ivan",
         "evidence": null,
-        "notes": "Canary RE-STAGED (old one died in the purge). Lead windows 24h + 48h (offsets.ts:20-22,43); fires via the appointment/scheduled Inngest event (functions.ts:66) so canary-create = UI booking at now+24h+15min. REMINDERS_LIVE_SEND checked at SEND time (clients.ts:45). Pending Ivan UI booking + the SMS fire (FROM sender) + Twilio/Inngest/Vercel console findings; GREEN staged canary-cleanup ONLY (sha256 8b75e89d2605e95c68883c3083d0a13779c12c9a77132988ce3b0a7a5e1a4cff; preview by default, destructive only under --confirm <patientId> AUTORIZO, 0/0 verify, patient-id as an arg so no phone enters AI). G2 CLOSES on: SMS sender screenshot + cleanup 0/0 + REMINDERS_LIVE_SEND=false on BOTH Vercel projects + redeploy, before the team session. Two-way capability read off the SMS feeds W12-11."
+        "notes": "Canary RE-STAGED (old one died in the purge). Lead windows 24h + 48h (offsets.ts:20-22,43); fires via the appointment/scheduled Inngest event (functions.ts:66) so canary-create = UI booking at now+24h+15min. REMINDERS_LIVE_SEND checked at SEND time (clients.ts:45). Pending Ivan UI booking + the SMS fire (FROM sender) + Twilio/Inngest/Vercel console findings; GREEN staged canary-cleanup ONLY (sha256 8b75e89d2605e95c68883c3083d0a13779c12c9a77132988ce3b0a7a5e1a4cff; preview by default, destructive only under --confirm <patientId> AUTORIZO, 0/0 verify, patient-id as an arg so no phone enters AI). G2 CLOSES on: SMS sender screenshot + cleanup 0/0 + REMINDERS_LIVE_SEND=false on BOTH Vercel projects + redeploy, before the team session. Two-way capability read off the SMS feeds W12-11. IN FLIGHT 2026-08-02 (owner): actively being worked. The Twilio smoke script is the zero-cost first half; the canary booking through the prod UI is the half that closes this gate."
       },
       {
         "id": "G3",
         "title": "NEW_DB_PASSWORD rotated with full propagation",
-        "state": "fail",
+        "state": "pass",
         "blocked_on": "ivan",
-        "evidence": null,
-        "notes": "DONE (owner-terminal, owner-attested 20260729): rotated the NEW prod DB password and propagated to every consumer (Vercel platform/api/portal env + local .env). Owner-terminal only; GREEN never sources prod creds. Keep the Supabase/Vercel confirmation on file for CYAN spot-check. RE-OPENED 2026-07-31 (GREEN): the rotation on 2026-07-29 did happen and was propagated - that part of the record stands. But the rotated password was then pasted into a chat on 2026-07-30, so the property this gate exists to certify (the prod DB credential is not compromised) is no longer true, and the exposure is NEWER than the evidence. Tracked as INC-04-prod-db-password-exposed. Re-attest with a fresh rotation + propagation date."
+        "evidence": {
+          "kind": "screenshot",
+          "ref": "owner-attested 20260729 rotation + owner risk-acceptance 20260802 (full credential rotation deferred to post-launch)",
+          "at": "2026-08-02"
+        },
+        "notes": "DONE (owner-terminal, owner-attested 20260729): rotated the NEW prod DB password and propagated to every consumer (Vercel platform/api/portal env + local .env). Owner-terminal only; GREEN never sources prod creds. Keep the Supabase/Vercel confirmation on file for CYAN spot-check. RE-OPENED 2026-07-31 (GREEN): the rotation on 2026-07-29 did happen and was propagated - that part of the record stands. But the rotated password was then pasted into a chat on 2026-07-30, so the property this gate exists to certify (the prod DB credential is not compromised) is no longer true, and the exposure is NEWER than the evidence. Tracked as INC-04-prod-db-password-exposed. Re-attest with a fresh rotation + propagation date. RE-CLOSED 2026-08-02 BY OWNER RISK ACCEPTANCE, not by a new rotation. GREEN flipped this to fail on 2026-08-02 because the rotated password was later pasted into a chat; the owner has ruled the exposure acceptable until the work completes, and will then rotate every password and token. Recorded so the pass is not mistaken for \"the credential was never exposed\". Tracked by INC-04-prod-db-password-exposed."
       },
       {
         "id": "G4",
@@ -233,28 +237,32 @@
       "title": "Declaracao observacoes persistence - NOT required now (future owner decision)",
       "lane": "loose_ends",
       "home_lane": "loose_ends",
-      "status": "todo",
+      "status": "blocked",
       "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": null,
-      "blocked_on": null,
-      "last_checkpoint": "2026-07-31",
-      "notes": "Recon (2026-07-27) proved declaracoes are TRANSIENT (no DB table/column; generate.ts:20-23 'nothing persisted'), so PL-03a's UI+PDF change is the whole fix and needs NO migration. No PL-03b build loop authored. Persisting a declaracao would be a future owner design decision touching immutability rule 8. See PL-03a section 'Why there is no PL-03b'. Re-confirmed NOT REQUIRED 2026-07-31: a future owner decision, parked deliberately. PL-20 did NOT change this - it made the declaracao stop ASKING for a NIF it already has, which is a different surface from persisting observacoes."
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-08-02",
+      "notes": "Recon (2026-07-27) proved declaracoes are TRANSIENT (no DB table/column; generate.ts:20-23 'nothing persisted'), so PL-03a's UI+PDF change is the whole fix and needs NO migration. No PL-03b build loop authored. Persisting a declaracao would be a future owner design decision touching immutability rule 8. See PL-03a section 'Why there is no PL-03b'. Re-confirmed NOT REQUIRED 2026-07-31: a future owner decision, parked deliberately. PL-20 did NOT change this - it made the declaracao stop ASKING for a NIF it already has, which is a different surface from persisting observacoes. HELD 2026-08-02 at owner request (\"keep this one as blocked for now\"). Unchanged otherwise: not required, awaiting a future owner decision."
     },
     {
       "id": "PL-04",
       "title": "NESA: servico to add vs specialty tag on David Batista (AMBIGUOUS)",
-      "lane": "blocked_on_people",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "yellow",
       "gate": "stakeholder",
-      "evidence": null,
-      "blocked_on": "rodica",
-      "last_checkpoint": "2026-07-27",
-      "notes": "Rodica: 'Falta a opcao NESA'. FULLY DIAGNOSED 2026-07-28 (attested read-only prod, sha256 52781a27): NESA the service EXISTS (id 270fb115, active) AND David Batista - the NESA therapist - IS mapped to it, at Linda-a-Velha. So NESA is NOT missing and there is NO mapping gap. The only NESA therapist (David) is LV-ONLY, so NESA will not appear when booking at CASTELO BRANCO (Tiago Grilo is CB but does Fisioterapia) or via a non-NESA therapist - that is the likely 'Falta NESA'. NOT a code defect: if CB needs NESA it is a ROSTER decision (assign the NESA mapping to a CB therapist, or confirm NESA is LV-only) = owner/Rodica call. No build. Loop: PL-04-nesa-halted-question.md."
+      "evidence": {
+        "kind": "screenshot",
+        "ref": "owner-attested 2026-08-02: NESA is a service at BOTH clinics and selectable at CB and LV",
+        "at": "2026-08-02"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-02",
+      "notes": "Rodica: 'Falta a opcao NESA'. FULLY DIAGNOSED 2026-07-28 (attested read-only prod, sha256 52781a27): NESA the service EXISTS (id 270fb115, active) AND David Batista - the NESA therapist - IS mapped to it, at Linda-a-Velha. So NESA is NOT missing and there is NO mapping gap. The only NESA therapist (David) is LV-ONLY, so NESA will not appear when booking at CASTELO BRANCO (Tiago Grilo is CB but does Fisioterapia) or via a non-NESA therapist - that is the likely 'Falta NESA'. NOT a code defect: if CB needs NESA it is a ROSTER decision (assign the NESA mapping to a CB therapist, or confirm NESA is LV-only) = owner/Rodica call. No build. Loop: PL-04-nesa-halted-question.md. CLOSED 2026-08-02 by owner attestation: \"NESA is added as a service and is present on both locations, both CB and LV can select it as service\". This resolves the roster question the diagnosis left open - NESA is no longer LV-only, so the \"Falta a opcao NESA\" report cannot recur at Castelo Branco. Never a code defect at any point."
     },
     {
       "id": "PL-05",
@@ -277,30 +285,38 @@
     {
       "id": "INC-02a",
       "title": "Root cause: Rodica has no safe test target (env fix)",
-      "lane": "incidents",
+      "lane": "shipped",
       "home_lane": "incidents",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "ivan",
       "gate": "owner_merge",
-      "evidence": null,
-      "blocked_on": "ivan",
-      "last_checkpoint": "2026-07-27",
-      "notes": "Rodica keeps testing on prod because she has no usable target. Give her a named Vercel preview or local target with credentials she can actually use + a one-page pt-PT instruction sheet she can follow without Ivan. This is the root cause of the repeat synthetic-data incidents. Loop: INC-02-synthetic-data-env-and-purge.md (half a)."
+      "evidence": {
+        "kind": "screenshot",
+        "ref": "owner ruling 2026-08-02: platform work closed, focus moved to the client portal",
+        "at": "2026-08-02"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-02",
+      "notes": "Rodica keeps testing on prod because she has no usable target. Give her a named Vercel preview or local target with credentials she can actually use + a one-page pt-PT instruction sheet she can follow without Ivan. This is the root cause of the repeat synthetic-data incidents. Loop: INC-02-synthetic-data-env-and-purge.md (half a). CLOSED 2026-08-02 BY OWNER RULING: \"there are no more platform code changes, we are only working on the client portal as of now\". The safe-test-target work is not being done. NOTE FOR THE RECORD, since this card existed to name a root cause: the reason Rodica tests on prod is unchanged, so the synthetic-data incidents can recur. That is now an accepted, understood risk rather than an open action - paired with INC-02b, where the owner sanctions testing on prod directly."
     },
     {
       "id": "INC-02b",
       "title": "Purge synthetic 'Teste CB' from prod (CYAN inventory -> owner AUTORIZO)",
-      "lane": "incidents",
+      "lane": "shipped",
       "home_lane": "incidents",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "cyan",
       "gate": "owner_authorizo",
-      "evidence": null,
-      "blocked_on": "ivan",
-      "last_checkpoint": "2026-07-31",
-      "notes": "Rodica created 'Teste CB' + appts + >=1 Declaracao on the live DB (repeat of July). PLUS (attested read 9815cd63) Ivan M (owner, 48a34faa) has 2 clinical_records as practitioner, 1 SIGNED - synthetic test residue (incl. the known 'Max' 2026-07-25), the only clinical records on prod. The purge inventory MUST include these; the SIGNED one is ANNULLED never deleted (rule 8, immutability). CYAN produces the read-only inventory; owner runs the purge under AUTORIZO. This is the G4 launch-gate blocker. Loop: INC-02 (half b). STILL WAITING 2026-07-31: destructive prod write, owner AUTORIZO only. Note the ordering hazard recorded with the staged cleanup script: if synthetic-data purging runs BEFORE any appointment-derived backfill, the backfill loses its source rows."
+      "evidence": {
+        "kind": "screenshot",
+        "ref": "owner ruling 2026-08-02: no purge - testing continues on prod under his green light",
+        "at": "2026-08-02"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-02",
+      "notes": "Rodica created 'Teste CB' + appts + >=1 Declaracao on the live DB (repeat of July). PLUS (attested read 9815cd63) Ivan M (owner, 48a34faa) has 2 clinical_records as practitioner, 1 SIGNED - synthetic test residue (incl. the known 'Max' 2026-07-25), the only clinical records on prod. The purge inventory MUST include these; the SIGNED one is ANNULLED never deleted (rule 8, immutability). CYAN produces the read-only inventory; owner runs the purge under AUTORIZO. This is the G4 launch-gate blocker. Loop: INC-02 (half b). STILL WAITING 2026-07-31: destructive prod write, owner AUTORIZO only. Note the ordering hazard recorded with the staged cleanup script: if synthetic-data purging runs BEFORE any appointment-derived backfill, the backfill loses its source rows. CLOSED 2026-08-02 BY OWNER RULING, not by doing the work: \"we do not need to remove anything, testing is going on at my green light\". The purge is deliberately NOT run. The synthetic rows described above are therefore still on prod BY DECISION. FLAGGED for cutover: launch gate G4 reads \"Prod free of synthetic data\" and currently states PASS, which cannot be literally true while sanctioned testing continues. GREEN has not flipped G4 - the owner sanctioned this and it is pre-launch - but G4 MUST be re-verified at the actual cutover, and the signed clinical record noted here is ANNULLED never deleted (rule 8) if a purge ever happens."
     },
     {
       "id": "LE-handoff-correction",
@@ -391,44 +407,56 @@
     {
       "id": "JP-mapping-frozen",
       "title": "JP therapist_services map script (sha256 d5acddca) - FROZEN, wrong shape",
-      "lane": "blocked_on_people",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "cyan",
       "gate": "owner_merge",
-      "evidence": null,
-      "blocked_on": "ivan",
-      "last_checkpoint": "2026-07-28",
-      "notes": "FROZEN / SUPERSEDED. CYAN staged pl05-jp-therapist-services-map (sha256 d5acddca) mapping JP to EVERY active service - WRONG shape (mappings are preselection under PL-06, so all-services makes JP's default preselect ambiguous). RULING: the JP-out fix is is_bookable=true (PL-06b), NOT a mapping. If JP is ever mapped it is ONE PRIMARY (Osteopatia/Posturologia), not all. Do NOT run, do NOT stage a replacement. Told CYAN 20260728."
+      "evidence": {
+        "kind": "screenshot",
+        "ref": "owner ruling 2026-08-02: closed, JP is bookable via is_bookable (PL-06b)",
+        "at": "2026-08-02"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-02",
+      "notes": "FROZEN / SUPERSEDED. CYAN staged pl05-jp-therapist-services-map (sha256 d5acddca) mapping JP to EVERY active service - WRONG shape (mappings are preselection under PL-06, so all-services makes JP's default preselect ambiguous). RULING: the JP-out fix is is_bookable=true (PL-06b), NOT a mapping. If JP is ever mapped it is ONE PRIMARY (Osteopatia/Posturologia), not all. Do NOT run, do NOT stage a replacement. Told CYAN 20260728. CLOSED 2026-08-02 by owner ruling: JP is bookable, which is-bookable (PL-06b) already delivers. The frozen all-services mapping script is NOT run and NOT replaced, exactly as this card required."
     },
     {
       "id": "JP-role-defect",
       "title": "JP prod role = admin (confirmed) - role-change to owner STAGED for AUTORIZO",
-      "lane": "blocked_on_people",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_authorizo",
-      "evidence": null,
-      "blocked_on": "ivan",
-      "last_checkpoint": "2026-07-28",
-      "notes": "CONFIRMED (attested read c6540cc6): JP 54d486e0 = role ADMIN, 0 mappings. Owner ruled JP is owner tenant-wide. GREEN's earlier admin-vs-owner self-contradiction corrected (attested = admin). Role-change write STAGED: green-jp-role-admin-to-owner-AUTORIZO (sha256 3c625388), single guarded row (dry-run default; --confirm under AUTORIZO), audited, ref-guarded. Owner runs it. Fixes both the roster defect AND the 0045 access defect (admin write denied). AWAITING owner run."
+      "evidence": {
+        "kind": "journal",
+        "ref": "owner-pasted read-only output 2026-08-02 - users.role_id -> roles.slug shows JP = owner",
+        "at": "2026-08-02"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-02",
+      "notes": "CONFIRMED (attested read c6540cc6): JP 54d486e0 = role ADMIN, 0 mappings. Owner ruled JP is owner tenant-wide. GREEN's earlier admin-vs-owner self-contradiction corrected (attested = admin). Role-change write STAGED: green-jp-role-admin-to-owner-AUTORIZO (sha256 3c625388), single guarded row (dry-run default; --confirm under AUTORIZO), audited, ref-guarded. Owner runs it. Fixes both the roster defect AND the 0045 access defect (admin write denied). AWAITING owner run. SHIPPED 2026-08-02. The role change landed. Evidence is stronger than attestation: TWO independent read-only prod runs on 2026-08-02 (the PL-18 scope script and the PL-15a patient script) both print JP with role OWNER and both clinics assigned. Owner adds that JP is bookable as a therapist despite the owner title - handled by is_bookable (PL-06b), which is the decoupling that card argued for: role governs AUTHORISATION, is_bookable governs PRESENCE in the booking dropdown."
     },
     {
       "id": "INC-03-0045-jp-write",
       "title": "0045 access defect: JP (admin) is DENIED clinical-record write - ABOVE PL-06",
-      "lane": "incidents",
+      "lane": "shipped",
       "home_lane": "incidents",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_authorizo",
-      "evidence": null,
-      "blocked_on": "ivan",
-      "last_checkpoint": "2026-07-28",
-      "notes": "0045 clinical_records write permits ONLY role='owner' OR role='therapist'(own) - admin has NO write branch. JP is admin on prod, so he CANNOT write/sign his own patients' clinical records. SEVERITY = LATENT (attested read 9815cd63): JP has ZERO clinical records - the defect has NOT been triggered and there is NO bypass (no write the model denies happened). It would fail the FIRST time he tries to sign. FIX before that = the staged JP admin->owner role-change (sha256 3c625388, AUTORIZO); once JP is owner he can write all in-tenant. Closes when the role-change lands + JP writes a record. No deeper access-model defect found."
+      "evidence": {
+        "kind": "journal",
+        "ref": "owner-pasted read-only output 2026-08-02 - JP role = owner, so the admin-write branch no longer applies",
+        "at": "2026-08-02"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-02",
+      "notes": "0045 clinical_records write permits ONLY role='owner' OR role='therapist'(own) - admin has NO write branch. JP is admin on prod, so he CANNOT write/sign his own patients' clinical records. SEVERITY = LATENT (attested read 9815cd63): JP has ZERO clinical records - the defect has NOT been triggered and there is NO bypass (no write the model denies happened). It would fail the FIRST time he tries to sign. FIX before that = the staged JP admin->owner role-change (sha256 3c625388, AUTORIZO); once JP is owner he can write all in-tenant. Closes when the role-change lands + JP writes a record. No deeper access-model defect found. RESOLVED 2026-08-02 by the JP-role-defect fix, exactly as this card predicted. 0045 denies clinical-record WRITE to role=admin; JP is now role=OWNER (proven by two prod reads today), so the denial no longer applies to him and the owner branch permits write tenant-wide. The defect was LATENT throughout - JP held zero clinical records, so it was never triggered and nothing was written that the model should have denied. RESIDUAL, deliberately not treated as a blocker: this card once said it closes when JP also WRITES a record. That is a usage confirmation, not a defect check - the access defect itself is gone. If JP hits any write refusal, reopen."
     },
     {
       "id": "SHIPPED-wave-12-closeout",
@@ -477,8 +505,8 @@
       "gate": "owner_authorizo",
       "evidence": null,
       "blocked_on": "ivan",
-      "last_checkpoint": "2026-07-31",
-      "notes": "Fresh canary (old one died in the purge). Reminder lead windows = 48h + 24h before start (offsets.ts:20-22); a reminder is scheduled only if sendAt = startsAt - offset > now (offsets.ts:43). To fire ~15min after booking: book the canary appointment at now + 24h + 15min -> the 24h reminder sends in ~15min. The reminder fires ONLY via the appointment/scheduled Inngest event, emitted by createAppointment (enqueueAppointmentReminders) - a raw DB insert does NOT trigger it, so canary-CREATE = book through the prod UI (canary patient with the owner's phone), NOT a DB script. due-reminder set computed at functions.ts:66 (computeDueReminders). REMINDERS_LIVE_SEND is checked at SEND time (clients.ts:45), NOT at schedule time - so flipping it false tomorrow AM ALSO suppresses reminders already queued tonight. Ivan books the canary in the UI himself (types the phone there; the number never enters AI context). GREEN stages canary-CLEANUP ONLY (delete patient + appt by id, 0/0 verify), parameterised by the patient id Ivan returns after creation. BLOCKED on Ivan's console findings + his UI booking. STILL WAITING 2026-07-31: this is G2, one of the two gates between the platform and launch, and the only one the owner can close alone. Needs REMINDERS_LIVE_SEND + the Twilio credentials + INNGEST_EVENT_KEY set, then a real booking made through the prod UI at now+24h+15min so the scheduled Inngest event fires. Nothing in the reminder path is build-time, so a missing value never fails a deploy - it silently degrades to sandbox, which is exactly why this needs a live canary rather than a config review."
+      "last_checkpoint": "2026-08-02",
+      "notes": "Fresh canary (old one died in the purge). Reminder lead windows = 48h + 24h before start (offsets.ts:20-22); a reminder is scheduled only if sendAt = startsAt - offset > now (offsets.ts:43). To fire ~15min after booking: book the canary appointment at now + 24h + 15min -> the 24h reminder sends in ~15min. The reminder fires ONLY via the appointment/scheduled Inngest event, emitted by createAppointment (enqueueAppointmentReminders) - a raw DB insert does NOT trigger it, so canary-CREATE = book through the prod UI (canary patient with the owner's phone), NOT a DB script. due-reminder set computed at functions.ts:66 (computeDueReminders). REMINDERS_LIVE_SEND is checked at SEND time (clients.ts:45), NOT at schedule time - so flipping it false tomorrow AM ALSO suppresses reminders already queued tonight. Ivan books the canary in the UI himself (types the phone there; the number never enters AI context). GREEN stages canary-CLEANUP ONLY (delete patient + appt by id, 0/0 verify), parameterised by the patient id Ivan returns after creation. BLOCKED on Ivan's console findings + his UI booking. STILL WAITING 2026-07-31: this is G2, one of the two gates between the platform and launch, and the only one the owner can close alone. Needs REMINDERS_LIVE_SEND + the Twilio credentials + INNGEST_EVENT_KEY set, then a real booking made through the prod UI at now+24h+15min so the scheduled Inngest event fires. Nothing in the reminder path is build-time, so a missing value never fails a deploy - it silently degrades to sandbox, which is exactly why this needs a live canary rather than a config review. IN FLIGHT 2026-08-02 per the owner - actively being worked, no longer merely waiting."
     },
     {
       "id": "LE-resend-deferred",
@@ -491,8 +519,8 @@
       "gate": "owner_merge",
       "evidence": null,
       "blocked_on": null,
-      "last_checkpoint": "2026-07-31",
-      "notes": "DEFERRED to post-launch (owner 2026-07-28). Ativar login shows the set-password link on screen; Ivan creates logins himself and passes links directly, so emailed delivery is a nice-to-have, not a launch blocker. Enable later: INVITES_LIVE_SEND=true + RESEND_API_KEY + a verified osteojp.pt sender + STAFF_INVITE_REDIRECT_URL -> /auth/update-password. Re-confirmed DEFERRED 2026-07-31: post-launch by owner decision, not blocked on anything. Invite/login links work today by showing the link on screen; only the emailing of them is deferred."
+      "last_checkpoint": "2026-08-02",
+      "notes": "DEFERRED to post-launch (owner 2026-07-28). Ativar login shows the set-password link on screen; Ivan creates logins himself and passes links directly, so emailed delivery is a nice-to-have, not a launch blocker. Enable later: INVITES_LIVE_SEND=true + RESEND_API_KEY + a verified osteojp.pt sender + STAFF_INVITE_REDIRECT_URL -> /auth/update-password. Re-confirmed DEFERRED 2026-07-31: post-launch by owner decision, not blocked on anything. Invite/login links work today by showing the link on screen; only the emailing of them is deferred. DEFERRAL RE-CONFIRMED by the owner 2026-08-02. Invite and login links work today - the link is shown on screen instead of emailed - so this is convenience, not function."
     },
     {
       "id": "PL-09",
@@ -605,16 +633,20 @@
     {
       "id": "PL-15a",
       "title": "Diagnose: 3 patients invisible to Lurdes (Alfredo, Joao Miguel, Maria Alice) - prod read-only evidence",
-      "lane": "in_flight",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "todo",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "green",
       "gate": "cyan_clear",
-      "evidence": null,
+      "evidence": {
+        "kind": "journal",
+        "ref": "owner-pasted read-only output 2026-08-02 (cyan-pl15a-patient-location-READONLY, sha256 0ba5d753)",
+        "at": "2026-08-02"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-08-02",
-      "notes": "STAGED, awaiting the owner's paste. READ-ONLY prod script at ~/osteojp-mailbox/staged/cyan-pl15a-patient-location-READONLY-20260730.mjs (SET TRANSACTION READ ONLY + rollback; prints no NIF/phone/email; run from the prod-apply worktree's packages/db with DATABASE_URL_DIRECT in the owner's own shell). It prints, per patient, primary_location_id + appointment count by location + created_by, and counts the NULL-and-zero-appointment remainder that 0051 cannot infer. THE CAUSE IS ALREADY IDENTIFIED AND FIXED FORWARD by PL-15b (#714): the create-patient form never sent primaryLocationId, so every patient registered since 0045 is location-less and, under 0047, visible only to its creator and the owner until a located appointment exists - exactly the Alfredo / Joao Miguel / Maria Alice shape. This card now exists to CONFIRM that on prod data and to size the 0051 backfill, not to decide the fix. STILL WAITING 2026-07-31: the read-only script has been staged since 2026-07-30 and has not been run. The PL-18 read (cyan-pl18-reception-scope-READONLY-20260731.mjs, sha256 61316869cdf5...) now covers the SAME staff-to-location question in one paste, so running that one answers this card too. PARTIAL ANSWER 2026-08-02: 8 of 10 prod patients now carry primary_location_id, so 2 remain location-less (down from the 3 this card names - PL-15b shipped the form field on 2026-07-30, so patients created since then get a clinic). Also relevant: therapist Chris Macov holds NO staff_locations row, which by the PL-14 rule keeps him visible to every location-scoped viewer. The per-patient script was BLOCKED by the same users.role bug that broke the PL-18 read (it queried a column that does not exist and had never been run); fixed 2026-08-02, sha256 0ba5d753ebb613989992eb229670603268155f4a280c1291074a60a50a9dc880. Running it now closes this card."
+      "notes": "STAGED, awaiting the owner's paste. READ-ONLY prod script at ~/osteojp-mailbox/staged/cyan-pl15a-patient-location-READONLY-20260730.mjs (SET TRANSACTION READ ONLY + rollback; prints no NIF/phone/email; run from the prod-apply worktree's packages/db with DATABASE_URL_DIRECT in the owner's own shell). It prints, per patient, primary_location_id + appointment count by location + created_by, and counts the NULL-and-zero-appointment remainder that 0051 cannot infer. THE CAUSE IS ALREADY IDENTIFIED AND FIXED FORWARD by PL-15b (#714): the create-patient form never sent primaryLocationId, so every patient registered since 0045 is location-less and, under 0047, visible only to its creator and the owner until a located appointment exists - exactly the Alfredo / Joao Miguel / Maria Alice shape. This card now exists to CONFIRM that on prod data and to size the 0051 backfill, not to decide the fix. STILL WAITING 2026-07-31: the read-only script has been staged since 2026-07-30 and has not been run. The PL-18 read (cyan-pl18-reception-scope-READONLY-20260731.mjs, sha256 61316869cdf5...) now covers the SAME staff-to-location question in one paste, so running that one answers this card too. PARTIAL ANSWER 2026-08-02: 8 of 10 prod patients now carry primary_location_id, so 2 remain location-less (down from the 3 this card names - PL-15b shipped the form field on 2026-07-30, so patients created since then get a clinic). Also relevant: therapist Chris Macov holds NO staff_locations row, which by the PL-14 rule keeps him visible to every location-scoped viewer. The per-patient script was BLOCKED by the same users.role bug that broke the PL-18 read (it queried a column that does not exist and had never been run); fixed 2026-08-02, sha256 0ba5d753ebb613989992eb229670603268155f4a280c1291074a60a50a9dc880. Running it now closes this card. DIAGNOSED AND CLOSED 2026-08-02 from the owner-pasted prod read. The three patients this card names are each explained, and NONE is an outstanding defect. Lurdes is admin at Linda-a-Velha; 0047 makes a patient visible to her by created_by OR an appointment in scope OR primary_location_id in scope. ALFREDO now carries primary_location_id = LV and was created by Lurdes herself - visible on two independent grounds. MARIA now carries LV - visible. JOAO carries CASTELO BRANCO - invisible to an LV admin BY DESIGN, which is the access model working, not a bug. So the original symptom was patients created with NO clinic, and PL-15b (2026-07-30) fixed the cause by making the patient form write primary_location_id. Of the 10 prod patients only 2 still have a NULL clinic: Max, who stays visible anyway through an LV appointment, and a synthetic \"Teste\" row with zero appointments. Q-PL-15-1 is therefore MOOT: the single unbackfillable patient is test data, so the backfill migration is not worth writing and the owner ruled the same (\"no worries here\")."
     },
     {
       "id": "PL-15b",
@@ -825,8 +857,8 @@
       "gate": "owner_merge",
       "evidence": null,
       "blocked_on": null,
-      "last_checkpoint": "2026-07-31",
-      "notes": "Owner ticketed 2026-07-31 from Q-PL-22-1, raised by GREEN when PL-22 shipped. PL-22 writes N time_off rows in ONE transaction, but nothing marks them as one batch, so undoing a mistaken recurrence means deleting every block by hand - the exact tedium bloquear lote was built to remove, reappearing on the way out. WHY IT WAS NOT IN PL-22: it needs a batch_id column, i.e. a migration, and 0051 (PL-23) was already in flight - one migration at a time. 0051 is now APPLIED and verified on prod (2026-07-31), so that constraint is gone and this is unblocked. SHAPE: a nullable `batch_id uuid` on time_off (existing blocks keep NULL - they were never a batch, and NULL is the honest value for them), stamped with one generated id per createTimeOffBlockBatch call; the blocks list groups rows sharing a batch_id and offers 'Remover lote' beside the per-row Eliminar. Deleting a batch is a normal delete of the rows in it - time_off has no append-only invariant, unlike clinical_records and record_annulments - so no new doctrine is needed, but the control must say HOW MANY blocks it will remove before it does it, and must never reach beyond the batch. Reception already holds schedule:manage, so no capability change. GATES: the usual, plus db:check-journal and db:sync-supabase:check; migration takes 0052 (the PL-15b primary_location_id backfill is still unbuilt and takes whatever number is free when it is written - numbers follow build order, not reservations). Apply-BEFORE-merge: build, CI green, owner applies from the osteojp-prod-apply worktree with git checkout origin/<branch> detached, independent read of the column plus the __drizzle_migrations count delta, THEN merge."
+      "last_checkpoint": "2026-08-02",
+      "notes": "Owner ticketed 2026-07-31 from Q-PL-22-1, raised by GREEN when PL-22 shipped. PL-22 writes N time_off rows in ONE transaction, but nothing marks them as one batch, so undoing a mistaken recurrence means deleting every block by hand - the exact tedium bloquear lote was built to remove, reappearing on the way out. WHY IT WAS NOT IN PL-22: it needs a batch_id column, i.e. a migration, and 0051 (PL-23) was already in flight - one migration at a time. 0051 is now APPLIED and verified on prod (2026-07-31), so that constraint is gone and this is unblocked. SHAPE: a nullable `batch_id uuid` on time_off (existing blocks keep NULL - they were never a batch, and NULL is the honest value for them), stamped with one generated id per createTimeOffBlockBatch call; the blocks list groups rows sharing a batch_id and offers 'Remover lote' beside the per-row Eliminar. Deleting a batch is a normal delete of the rows in it - time_off has no append-only invariant, unlike clinical_records and record_annulments - so no new doctrine is needed, but the control must say HOW MANY blocks it will remove before it does it, and must never reach beyond the batch. Reception already holds schedule:manage, so no capability change. GATES: the usual, plus db:check-journal and db:sync-supabase:check; migration takes 0052 (the PL-15b primary_location_id backfill is still unbuilt and takes whatever number is free when it is written - numbers follow build order, not reservations). Apply-BEFORE-merge: build, CI green, owner applies from the osteojp-prod-apply worktree with git checkout origin/<branch> detached, independent read of the column plus the __drizzle_migrations count delta, THEN merge. DEFERRED POST-LAUNCH by owner decision 2026-08-02, matching GREEN recommendation: it is convenience, not correctness, and it costs a migration. Blocks stay individually removable meanwhile."
     },
     {
       "id": "PL-27",
@@ -852,13 +884,13 @@
       "lane": "incidents",
       "home_lane": "incidents",
       "status": "blocked",
-      "priority": "high",
+      "priority": "medium",
       "owner_terminal": "ivan",
       "gate": "owner_authorizo",
       "evidence": null,
       "blocked_on": "ivan",
-      "last_checkpoint": "2026-07-31",
-      "notes": "Raised by GREEN 2026-07-31 while auditing the board for accurate status. The production database password was pasted into a chat on 2026-07-30. G3 ('NEW_DB_PASSWORD rotated with full propagation') is attested 2026-07-29 - so the exposure is NEWER than the evidence, and the credential G3 certifies as safely rotated is the one that was exposed. This was carried only in an assistant memory note and appears nowhere in the board or QUESTIONS, which is how it survived two sessions. WHY IT MATTERS beyond hygiene: this is the session-pooler credential used for migrations (DATABASE_URL_DIRECT), i.e. full write access to clinical data, under GDPR. FIX (owner terminal only, GREEN never touches prod creds): rotate in Supabase, then propagate to the three Vercel projects (platform / api / portal) and ~/osteojp-secrets/new-prod.env, exactly as on 2026-07-29. Then re-attest G3 with the new date - the gate is only true again once the propagation is done, because a half-propagated rotation breaks migrations instead of securing them. GREEN has flipped G3 to fail rather than leave the board asserting a safety property that is known false; flip it back in one line if the owner judges the exposure acceptable."
+      "last_checkpoint": "2026-08-02",
+      "notes": "Raised by GREEN 2026-07-31 while auditing the board for accurate status. The production database password was pasted into a chat on 2026-07-30. G3 ('NEW_DB_PASSWORD rotated with full propagation') is attested 2026-07-29 - so the exposure is NEWER than the evidence, and the credential G3 certifies as safely rotated is the one that was exposed. This was carried only in an assistant memory note and appears nowhere in the board or QUESTIONS, which is how it survived two sessions. WHY IT MATTERS beyond hygiene: this is the session-pooler credential used for migrations (DATABASE_URL_DIRECT), i.e. full write access to clinical data, under GDPR. FIX (owner terminal only, GREEN never touches prod creds): rotate in Supabase, then propagate to the three Vercel projects (platform / api / portal) and ~/osteojp-secrets/new-prod.env, exactly as on 2026-07-29. Then re-attest G3 with the new date - the gate is only true again once the propagation is done, because a half-propagated rotation breaks migrations instead of securing them. GREEN has flipped G3 to fail rather than leave the board asserting a safety property that is known false; flip it back in one line if the owner judges the exposure acceptable. OWNER RULING 2026-08-02: the exposure is ACCEPTED for now - \"I will rotate all possible pass and tokens after we are fully done\". G3 is therefore returned to PASS and readiness to 7/9. This card stays OPEN as the reminder that the rotation is owed, and it is deliberately NOT marked shipped: accepting a risk is not the same as removing it. The scope the owner set is broader than this card - every password and token, not just the DB - so treat this as the anchor for that sweep."
     },
     {
       "id": "PL-28",
@@ -881,16 +913,20 @@
     {
       "id": "PL-29",
       "title": "Reception location scoping: BOTH GREEN theories are disproven - reproduce it or close it",
-      "lane": "blocked_on_people",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "high",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": null,
-      "blocked_on": "ivan",
+      "evidence": {
+        "kind": "screenshot",
+        "ref": "owner-verified 2026-08-02: reception sees only their own location",
+        "at": "2026-08-02"
+      },
+      "blocked_on": null,
       "last_checkpoint": "2026-08-02",
-      "notes": "Reopened from PL-18 on 2026-08-02, because the prod read killed the explanation PL-18 shipped with. THEORY 1 (PL-18): reception sees everything because it holds no staff_locations row and the scope falls back to all. DISPROVEN - every active reception and admin is assigned (Carlos LV, Raquel CB, Tamara CB, Lurdes LV, Tiago CB). THEORY 2 (checked 2026-08-02 before writing this card): RLS denies reception the read of staff_locations, so the scope silently comes back empty. DISPROVEN - 0038's staff_locations_select policy is tenant-wide TO authenticated, so reception can read it. With both dead, the code path reads CORRECT for an assigned reception user: viewerLocationScope returns one location, resolveLocationControl collapses to kind=fixed (no picker at all), and filterRosterByViewerScope keeps only that clinic's therapists plus the genuinely unassigned Chris Macov. GREEN cannot reproduce the reported screen by reading, and has already guessed wrong twice on this card - so it will not guess a third time. WHAT WOULD SETTLE IT, one observation: sign in as ONE reception account (Carlos Barrelas, Linda-a-Velha) and report what the Agenda's Terapeuta dropdown lists and whether a Localizacao control is present at all. If he sees only LV therapists and no location picker, the behaviour is already correct and the original report described the pre-PL-14 state (PL-14 merged 2026-07-30, the report came 2026-07-31) - close this card. If he sees both clinics' staff, that output is the first real evidence of the defect and the hunt starts from a fact instead of a theory. NOTE: the owner's own account (Ivan M, owner) holds no assignment and is unrestricted BY DESIGN, so an owner screen showing both clinics is correct and is not this bug."
+      "notes": "Reopened from PL-18 on 2026-08-02, because the prod read killed the explanation PL-18 shipped with. THEORY 1 (PL-18): reception sees everything because it holds no staff_locations row and the scope falls back to all. DISPROVEN - every active reception and admin is assigned (Carlos LV, Raquel CB, Tamara CB, Lurdes LV, Tiago CB). THEORY 2 (checked 2026-08-02 before writing this card): RLS denies reception the read of staff_locations, so the scope silently comes back empty. DISPROVEN - 0038's staff_locations_select policy is tenant-wide TO authenticated, so reception can read it. With both dead, the code path reads CORRECT for an assigned reception user: viewerLocationScope returns one location, resolveLocationControl collapses to kind=fixed (no picker at all), and filterRosterByViewerScope keeps only that clinic's therapists plus the genuinely unassigned Chris Macov. GREEN cannot reproduce the reported screen by reading, and has already guessed wrong twice on this card - so it will not guess a third time. WHAT WOULD SETTLE IT, one observation: sign in as ONE reception account (Carlos Barrelas, Linda-a-Velha) and report what the Agenda's Terapeuta dropdown lists and whether a Localizacao control is present at all. If he sees only LV therapists and no location picker, the behaviour is already correct and the original report described the pre-PL-14 state (PL-14 merged 2026-07-30, the report came 2026-07-31) - close this card. If he sees both clinics' staff, that output is the first real evidence of the defect and the hunt starts from a fact instead of a theory. NOTE: the owner's own account (Ivan M, owner) holds no assignment and is unrestricted BY DESIGN, so an owner screen showing both clinics is correct and is not this bug. CLOSED 2026-08-02 by direct observation, which is what this card asked for instead of a third GREEN guess. Owner verified against a real reception account: \"he only sees what he is supposed to, only related to his location\". So reception location scoping WORKS, and the original 2026-07-31 report described the PRE-PL-14 state - PL-14 merged 2026-07-30, one day before the report, and the owner had not yet re-checked. Both GREEN theories were wrong AND there was no defect to find; the honest outcome was to stop guessing and ask for one observation. ONE RESIDUAL, cosmetic and not blocking: the owner mentions a Localizacao control being present. Under PL-14 a viewer with exactly ONE reachable clinic should get no control at all, only a static label. If what he saw is a real dropdown rather than that label, it is a small PL-14 gap worth its own card - but nothing about SCOPE is affected, since the data he sees is correct either way."
     },
     {
       "id": "SEC-W1-patient-jwt-verify",
