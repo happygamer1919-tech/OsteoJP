@@ -134,6 +134,32 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   // genuinely long multi-dialog flow, and 180s absorbs normal CI variance
   // without masking a hang. If this test ever times out again, quarantine is
   // the wrong first move - read which assertion failed first.
+  //
+  // RE-QUARANTINED ON CI 2026-08-02 (owner-ruled), issue #738. The advice above
+  // was followed before reaching for the skip: the artifact was read, and it is
+  // NOT an assertion failure and NOT a slow runner.
+  //
+  //   locator resolved to <button data-testid="open-blocks">
+  //     - element is visible, enabled and stable
+  //     - element is not visible
+  //     - element was detached from the DOM, retrying   <- for the full 180s
+  //
+  // The button is always FOUND; the click never lands. That is the same race
+  // #730 shipped a fix for. Measured, not assumed: this spec was run twice on
+  // clean origin/main (ecbc40d1) and twice on an unrelated apps/api branch
+  // (aa4b4ab1), single-attempt, retries=0. All four failed, with identical
+  // durations because the fixed 180s timeout dominates. Failing on clean main
+  // is what makes this the spec's problem and not any branch's.
+  //
+  // The other four tests in this file are UNTOUCHED and still run.
+  //
+  // EXIT CONDITION: un-quarantine only when this test passes twice
+  // consecutively on CI at --retries=0 on an otherwise-main tree. The evidence
+  // is the run, not the reasoning. Do not re-enable on a hunch a second time.
+  test.skip(
+    !!process.env.CI,
+    "Quarantined on CI - open-blocks detaches mid-click, see issue #738",
+  );
   test.setTimeout(180_000);
 
   const date = futureDate(RUN_DAY_BASE + 24);
