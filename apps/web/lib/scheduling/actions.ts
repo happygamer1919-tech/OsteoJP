@@ -879,6 +879,26 @@ export async function rescheduleAppointment(
           }
         }
 
+        // 2.9 — lock the DESTINATION slots before any row moves. Only the
+        // destination matters: vacating a slot cannot create a double-booking,
+        // occupying one can. One sorted, deduplicated acquisition covers every
+        // target in a series move, so two concurrent reschedules touching
+        // overlapping destinations serialize instead of interleaving.
+        //
+        // Moving an appointment INTO its own current slot is safe: the buckets
+        // deduplicate to a single key, and pg_advisory_xact_lock is re-entrant
+        // within a transaction, so re-taking a lock this transaction already
+        // holds cannot deadlock against itself.
+        const slotLocks = acquireSlotLocksForMany(
+          actor.tenantId,
+          targets.map((t) => ({
+            practitionerId: input.practitionerId,
+            startsAt: t.startsAt,
+            endsAt: t.endsAt,
+          })),
+        );
+        if (slotLocks) await tx.execute(slotLocks);
+
         for (const t of targets) {
           await tx
             .update(appointments)
