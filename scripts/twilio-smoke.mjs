@@ -10,7 +10,9 @@
 //   template through the REAL production path with the longest prod clinic name
 //   ("Castelo Branco"), prints the multi-line body, and asserts pure GSM-7 /
 //   single segment. Always runs first so the copy can be reviewed with no
-//   Twilio account and nothing is ever sent.
+//   Twilio account and nothing is ever sent. (With no credentials exported the
+//   Proof 0 output still prints in full, then the run stops at exit code 1
+//   because Proof 1/2 could not be attempted.)
 // Proof 1 (zero cost): authenticates against the Twilio REST API (account
 //   fetch) and inspects the messaging/sender configuration to show the
 //   "OsteoJP" alphanumeric sender registration.
@@ -20,16 +22,16 @@
 //   message to SMOKE_TO_NUMBER, polls to a terminal status, and asserts a
 //   single GSM-7 segment.
 //
-// Credentials come from the local environment / .env.local only. The script
-// NEVER prints TWILIO_AUTH_TOKEN (it is used solely inside the Authorization
-// header). Do not paste credentials into chat or commit them.
+// Credentials come from the operator's shell environment and NOWHERE ELSE.
+// The repo working tree is not in the credential path at any level, read or
+// write: this script does not read .env.local (or any other file) for a
+// credential, never writes a file, never edits .gitignore, and never invokes
+// the vercel CLI. If credentials are absent it prints the required variable
+// NAMES and exits — it does not go looking for values.
+// It NEVER prints TWILIO_AUTH_TOKEN (used solely inside the Authorization
+// header). Do not paste credentials into chat, into a repo file, or commit them.
 //
 // Exit codes: 0 ok · 1 missing/unusable credentials · 2 proof failure.
-
-import { execSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 // Proof 2 imports apps/web/lib/reminders/templates.ts directly. Node has to
 // reparse it as ESM and warns (MODULE_TYPELESS_PACKAGE_JSON) because the
@@ -44,66 +46,48 @@ process.emitWarning = (warning, ...rest) => {
   return emitWarning(warning, ...rest);
 };
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
 /* ------------------------------------------------------------------ */
-/* Env loading                                                         */
+/* Credentials — process environment only                              */
 /* ------------------------------------------------------------------ */
 
-function loadEnvFile(file) {
-  if (!existsSync(file)) return 0;
-  let loaded = 0;
-  for (const line of readFileSync(file, "utf8").split("\n")) {
-    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (!m) continue;
-    const [, key, rawValue] = m;
-    if (process.env[key] !== undefined) continue; // real env wins
-    const value = rawValue.replace(/^["']|["']$/g, "");
-    if (value !== "") process.env[key] = value;
-    loaded++;
-  }
-  return loaded;
-}
-
-function loadLocalEnv() {
-  loadEnvFile(path.join(ROOT, ".env.local"));
-  loadEnvFile(path.join(ROOT, "apps", "web", ".env.local"));
-}
-
+// There is deliberately no env-FILE loader here. Reading .env.local was removed
+// on 2026-08-02 along with the `vercel env pull` fallback that wrote it: a
+// credential sitting in the working tree is readable by every process and every
+// agent session attached to the repo, and a script that reads one is what makes
+// putting it there look reasonable. process.env is the only source.
 function credsPresent() {
   return Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
 }
 
-function tryVercelEnvPull() {
-  // Pull into whichever directory is vercel-linked. `vercel env pull` writes
-  // the file; it does not echo secret values to stdout.
-  const linkedDir = existsSync(path.join(ROOT, "apps", "web", ".vercel"))
-    ? path.join(ROOT, "apps", "web")
-    : ROOT;
-  console.log(`\n[env] Twilio creds not found locally — trying \`vercel env pull\` in ${linkedDir} ...`);
-  try {
-    execSync("vercel env pull .env.local --yes", { cwd: linkedDir, stdio: "inherit" });
-  } catch {
-    console.log("[env] vercel env pull failed (not linked / not logged in). Continuing to manual check.");
-  }
-}
-
+// Hard exit. Names only — this function never reads, fetches, or writes a
+// credential value, and never shells out to another tool to find one.
 function failMissingCreds() {
   console.error(`
-[env] TWILIO_ACCOUNT_SID and/or TWILIO_AUTH_TOKEN are missing or empty.
+[env] Twilio credentials are not present in this shell. Proof 1 and Proof 2
+cannot run. Nothing was written and nothing was sent.
 
-Vercel marks sensitive env vars as non-pullable, so \`vercel env pull\` may
-return them redacted/empty. In that case:
+Required (NAMES only — values are never printed, stored, or fetched by this script):
 
-  1. Open the Twilio Console → Account → API keys & tokens.
-  2. Copy the Account SID and Auth Token.
-  3. Paste them into ${path.join(ROOT, ".env.local")} as:
-       TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-       TWILIO_AUTH_TOKEN=<auth token>
-       TWILIO_SMS_FROM=OsteoJP
-  4. Re-run this script.
+  TWILIO_ACCOUNT_SID              required
+  TWILIO_AUTH_TOKEN               required
+  TWILIO_SMS_FROM                 the production sender, e.g. the alphanumeric ID
+  TWILIO_MESSAGING_SERVICE_SID    optional; only if sending via a messaging service
 
-NEVER paste these values into chat, commits, or CI config.
+Export them in YOUR OWN shell, in this terminal session only:
+
+  export TWILIO_ACCOUNT_SID=...
+  export TWILIO_AUTH_TOKEN=...
+  export TWILIO_SMS_FROM=...
+  node scripts/twilio-smoke.mjs
+
+Values come from the Twilio Console → Account → API keys & tokens.
+
+DO NOT write these values into any file inside this repository (.env.local
+included): the working tree is readable by every process and every agent
+session attached to it. DO NOT paste them into chat, commits, or CI config.
+Exported shell variables die with the terminal session; a file does not.
+The export lines above land in your shell history — clear them afterwards, or
+read the values in without echo using whatever prompt form your shell provides.
 `);
   process.exit(1);
 }
@@ -371,20 +355,13 @@ async function proof2() {
 // restyled copy can be reviewed even with no Twilio account configured.
 await proof0();
 
-loadLocalEnv();
-if (!credsPresent()) {
-  tryVercelEnvPull();
-  loadLocalEnv();
-}
-if (!credsPresent()) {
-  // Only the live path (Proof 2) needs credentials. In render-only mode there is
-  // nothing left to do — exit clean rather than failing on absent creds.
-  if (process.env.TWILIO_SMOKE_CONFIRM === "yes") failMissingCreds();
-  console.log(
-    "\n[env] No Twilio credentials present — skipping live Proof 1/2 (render-only run). Nothing sent.",
-  );
-  process.exit(0);
-}
+// No env-file read, no fallback, by design. Absent credentials are an operator
+// action, not something this script resolves for them: the previous
+// `vercel env pull` fallback wrote real credential values into the repo working
+// tree, mutated .gitignore during what is documented as a read-only proof, and
+// pulled the development scope rather than production, so it never produced
+// usable Twilio creds anyway.
+if (!credsPresent()) failMissingCreds();
 
 await proof1();
 await proof2();

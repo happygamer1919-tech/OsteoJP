@@ -266,7 +266,7 @@ Phases 6 through 9 are explicitly out of scope for the current build cycle. No w
 2. Backup and restore drill.
 3. Fisiozero final extraction.
 4. Import to prod.
-5. DNS: `app.osteojp.pt`, `patient.osteojp.pt`, Resend MX/SPF/DKIM, resolve `api.osteojp.pt` host conflict.
+5. DNS: `patient.osteojp.pt` (the only host still unresolved). `app.osteojp.pt` and `api.osteojp.pt` are live on `cname.vercel-dns.com`, and the Resend MX/SPF/DKIM are live and Verified on the **`send.osteojp.pt`** subdomain (not the root — the root MX is the spambusters staff-mail gateway and must not be touched). Verified by live `dig` 2026-08-02; see `docs/dns-records-pending.md`.
 6. Go live.
 
 **Supabase Pro precedes the cutover extraction.**

@@ -2,7 +2,7 @@
 
 Status: Draft v1 — author: Max
 Spec: brand voice guide (PT-PT register, clinic-first-person, warm/concise)
-Sender: [from-address]@osteojp.pt (pending Resend domain verification)
+Sender: [from-address]@send.osteojp.pt (Resend domain Verified 2026-08-02, region eu-west-1. The verified identity is the `send.` subdomain — a From at `@osteojp.pt` will be rejected.)
 Locale: PT primary, EN secondary
 
 ## Constraints
