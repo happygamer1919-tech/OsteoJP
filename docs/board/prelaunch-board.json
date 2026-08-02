@@ -323,20 +323,16 @@
     {
       "id": "LE-ci-quarantine-reenable",
       "title": "Re-enable therapist-blocks.spec.ts:97 on CI when runners recover",
-      "lane": "shipped",
+      "lane": "loose_ends",
       "home_lane": "loose_ends",
-      "status": "shipped",
+      "status": "todo",
       "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
-      "evidence": {
-        "kind": "pr",
-        "ref": "#730",
-        "at": "2026-07-31"
-      },
+      "evidence": null,
       "blocked_on": null,
-      "last_checkpoint": "2026-07-31",
-      "notes": "Owner-approved quarantine 2026-07-27: skipped on CI only (test.skip(!!process.env.CI, ...)) because GitHub shared runners degraded 24h+ (7s local -> ~186s CI). Runs+passes locally. Delete the test.skip line when runners recover. Tracked in docs/QUESTIONS.md. UN-QUARANTINED 2026-07-31, and the 2026-07-27 diagnosis was WRONG. Re-enabling it failed CI three times for three identical minutes, and the Playwright artifact named the real cause: \"element is not stable ... element was detached from the DOM, retrying\" for the full 180s. Not slowness - a RACE. Every write in that spec is a server action ending in redirect(\"/admin/staff?m=<code>\"), and the test waited with waitForURL(/admin\\/staff/), a pattern the CURRENT url already satisfies, so it waited for nothing and the next click landed in the outgoing DOM that the redirect was about to replace. Locally the race is won and the test passes in 7s, which is exactly why it looked like an infra problem: same symptom, opposite cause. Fixed by waiting on the app's own signals - the redirect's ?m= marker plus the rendered banner - instead of a regex that was already true. The 180s per-test budget stays; it was never the quarantine."
+      "last_checkpoint": "2026-08-02",
+      "notes": "Owner-approved quarantine 2026-07-27: skipped on CI only (test.skip(!!process.env.CI, ...)) because GitHub shared runners degraded 24h+ (7s local -> ~186s CI). Runs+passes locally. Delete the test.skip line when runners recover. Tracked in docs/QUESTIONS.md. UN-QUARANTINED 2026-07-31, and the 2026-07-27 diagnosis was WRONG. Re-enabling it failed CI three times for three identical minutes, and the Playwright artifact named the real cause: \"element is not stable ... element was detached from the DOM, retrying\" for the full 180s. Not slowness - a RACE. Every write in that spec is a server action ending in redirect(\"/admin/staff?m=<code>\"), and the test waited with waitForURL(/admin\\/staff/), a pattern the CURRENT url already satisfies, so it waited for nothing and the next click landed in the outgoing DOM that the redirect was about to replace. Locally the race is won and the test passes in 7s, which is exactly why it looked like an infra problem: same symptom, opposite cause. Fixed by waiting on the app's own signals - the redirect's ?m= marker plus the rendered banner - instead of a regex that was already true. The 180s per-test budget stays; it was never the quarantine. CLAIM RETRACTED 2026-08-02. This card was marked SHIPPED on #730 and that was WRONG - the quarantine has been REINSTATED on main by #739. GREENs error was the standard of proof, not the diagnosis: #730 was shipped on ONE green CI run with retries enabled, which for a RACY test proves nothing (retries mask precisely the failure being tested, and a single sample cannot separate fixed from lucky). The PR even called that run the proof. A parallel session then measured it properly - the spec alone, twice each, at --retries=0, on clean origin/main AND on an unrelated apps/api branch - and all four runs failed with the same detach race #730 claimed to fix. Failing on CLEAN MAIN is the decisive part: the cause is in this spec or the surface it drives, not in any pending branch. The DIAGNOSIS still stands (a race; the open-blocks button is found, then detaches between resolve and click, burning the full 180s) and settleAfterWrite fixed the writes GREEN could see - something else on that surface still remounts. NEW EXIT CONDITION, from #739 and stricter than the one GREEN used: two CONSECUTIVE green runs at --retries=0, not a hunch and not one lucky pass. Only this one test is skipped; the other four in the file still run on CI."
     },
     {
       "id": "PL-06a",
@@ -895,6 +891,38 @@
       "blocked_on": "ivan",
       "last_checkpoint": "2026-08-02",
       "notes": "Reopened from PL-18 on 2026-08-02, because the prod read killed the explanation PL-18 shipped with. THEORY 1 (PL-18): reception sees everything because it holds no staff_locations row and the scope falls back to all. DISPROVEN - every active reception and admin is assigned (Carlos LV, Raquel CB, Tamara CB, Lurdes LV, Tiago CB). THEORY 2 (checked 2026-08-02 before writing this card): RLS denies reception the read of staff_locations, so the scope silently comes back empty. DISPROVEN - 0038's staff_locations_select policy is tenant-wide TO authenticated, so reception can read it. With both dead, the code path reads CORRECT for an assigned reception user: viewerLocationScope returns one location, resolveLocationControl collapses to kind=fixed (no picker at all), and filterRosterByViewerScope keeps only that clinic's therapists plus the genuinely unassigned Chris Macov. GREEN cannot reproduce the reported screen by reading, and has already guessed wrong twice on this card - so it will not guess a third time. WHAT WOULD SETTLE IT, one observation: sign in as ONE reception account (Carlos Barrelas, Linda-a-Velha) and report what the Agenda's Terapeuta dropdown lists and whether a Localizacao control is present at all. If he sees only LV therapists and no location picker, the behaviour is already correct and the original report described the pre-PL-14 state (PL-14 merged 2026-07-30, the report came 2026-07-31) - close this card. If he sees both clinics' staff, that output is the first real evidence of the defect and the hunt starts from a fact instead of a theory. NOTE: the owner's own account (Ivan M, owner) holds no assignment and is unrestricted BY DESIGN, so an owner screen showing both clinics is correct and is not this bug."
+    },
+    {
+      "id": "SEC-W1-patient-jwt-verify",
+      "title": "Patient portal accepted UNVERIFIED tokens - anyone could impersonate any patient (SHIPPED #735)",
+      "lane": "shipped",
+      "home_lane": "incidents",
+      "status": "shipped",
+      "priority": "high",
+      "owner_terminal": "ivan",
+      "gate": "green_self_merge",
+      "evidence": {
+        "kind": "pr",
+        "ref": "#735",
+        "at": "2026-08-02"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-02",
+      "notes": "SHIPPED 2026-08-02 (#735), merged on fully green CI - all eight checks SUCCESS including the Playwright re-run at 20:07 once the #739 quarantine landed. NOT GREENs work; recorded here because the board is the launch record and this is the most serious defect found in the run-up. WHAT IT WAS: the patient API read the identity token a caller presented and TRUSTED it without verifying the signature. Anyone on the internet could mint a token naming any patient and be admitted as that patient - full read of another persons clinical data, under GDPR. WHY THE STATED SAFETY NET WAS NOT ONE: the code claimed RLS would catch a forged token. It could not - RLS resolves the patient identity FROM THE SAME UNVERIFIED TOKEN, so it compared the forgery against itself and agreed. Those comments were deleted rather than left describing protection that never existed. FIX: real ES256 signature verification against the projects published public key (there was never a secret to be missing - only a public key to fetch), plus rate limiting on the patient surface, with tests including an explicit forged-token case. RELEVANCE NOW: the owner is about to work on the client portal and SMS/email. This closed a hole in exactly that surface, and the patient portal is the one surface reachable by people who are not staff."
+    },
+    {
+      "id": "LE-marcacoes-tab-edit-flake",
+      "title": "marcacoes-tab-edit.spec.ts:178 fails intermittently across unrelated branches - diagnose before it blocks a merge",
+      "lane": "loose_ends",
+      "home_lane": "loose_ends",
+      "status": "todo",
+      "priority": "medium",
+      "owner_terminal": "green",
+      "gate": "green_self_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-02",
+      "notes": "Raised 2026-08-02. PL-02 (a) reschedule from the Marcacoes tab has now failed on at least THREE separate CI runs on unrelated branches (#724 PL-20, #735 security W1, and the run before the therapist-blocks quarantine landed). GREEN called it flake the first time, on the reasoning that it passed on sibling PRs off the same base - which was true then and is no longer a sufficient argument at three strikes across unrelated work. Failure signature: expect(dialog).toBeHidden({timeout: 12000}) fails with unexpected value visible at line 55 of the helper - the appointment dialog does not close after a save. That is the SAME family as the therapist-blocks race (a dialog/redirect not settling before the next assertion), so the two may share one cause and one fix. NOT diagnosed yet and deliberately not guessed: the lesson from LE-ci-quarantine-reenable is that one green run proves nothing about a racy test. Reproduce it the way #739 did - the spec alone, repeatedly, at --retries=0 - before proposing anything."
     }
   ]
 }

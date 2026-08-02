@@ -2550,6 +2550,7 @@ whatever is wrong with it.
 
 **Q-PL-24-1 closed by data:** zero patients store sex = 'other'.
 
+ chore/twilio-smoke-no-vercel-pull
 ## 2026-08-02 - Two handoff premises corrected: the Resend domain, and the osteojp.pt root MX (GREEN)
 
 Both corrections are to premises carried in the session handoff, not to shipped code. Every
@@ -2630,3 +2631,43 @@ handoff or from repo docs.
   Both premises here were verified against live DNS before this entry was written, and one
   of the two corrections supplied (b) was itself partly wrong. Handoff premises are
   hypotheses until re-derived.
+
+## 2026-08-02 - #735 merged green; my un-quarantine claim retracted (GREEN)
+
+**#735 (patient JWT verification + rate limiting) merged on fully green CI**, all eight checks
+SUCCESS. The red run the owner saw predated the fix: the branch was auto-updated with main at
+19:24, main by then carried #739's re-quarantine, and the fresh Playwright run passed at 20:07.
+The security PR never broke anything - it was blocked by an unrelated test.
+
+Recorded as `SEC-W1-patient-jwt-verify`. Not GREEN's work, but it belongs on the launch record: the
+patient API trusted the identity token a caller presented WITHOUT verifying its signature, so anyone
+could mint a token naming any patient and read that patient's clinical data. The code claimed RLS
+would catch it; RLS resolves the patient identity from the same unverified token, so it compared the
+forgery against itself and agreed. That matters directly to the owner's next block of work, since
+the patient portal is the one surface reachable by non-staff.
+
+**`LE-ci-quarantine-reenable` is retracted from shipped.** I marked it shipped on #730 and that was
+wrong - the quarantine is back on main via #739.
+
+**The error was my standard of proof, not my diagnosis.** I shipped #730 on ONE green CI run with
+retries enabled, and wrote in the PR that the run was the proof. For a racy test that is worthless:
+retries mask exactly the failure under test, and one sample cannot distinguish "fixed" from "lucky".
+A parallel session measured it the right way - the spec alone, twice each, at `--retries=0`, on
+clean `origin/main` AND on an unrelated `apps/api` branch - and all four failed with the same detach
+race. Failing on CLEAN MAIN is the decisive fact: the cause is in the spec or the surface it drives,
+not in any pending branch. `settleAfterWrite` fixed the writes I could see; something else on that
+surface still remounts.
+
+The new exit condition (from #739, stricter than mine): **two consecutive green runs at
+`--retries=0`**.
+
+This is the third time in two days the same shape has bitten: a check that looked true, was believed
+without adversarial measurement, and reported success while the thing it described was false. The
+first two were the stale capability gate and the date-based board freshness check. **One green run
+is not evidence for anything that can race.**
+
+Also opened `LE-marcacoes-tab-edit-flake`: PL-02 (a) has now failed on three separate CI runs across
+unrelated branches, with a "dialog does not close after save" signature that looks like the same
+family as the therapist-blocks race. Deliberately NOT diagnosed yet - it gets reproduced at
+`--retries=0` first, per the lesson above.
+ main
