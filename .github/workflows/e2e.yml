@@ -16,6 +16,25 @@ name: E2E
 on:
   pull_request:
     branches: [main]
+  # PL-30: manual proving runs. A quarantined test can only be un-quarantined on
+  # evidence (#739: two consecutive green runs at --retries=0), and that evidence
+  # was impossible to gather while the skip was unconditional and the gate ran
+  # only on PRs with retries=2. These inputs make the exit condition executable
+  # without weakening the required gate, which is untouched.
+  workflow_dispatch:
+    inputs:
+      grep:
+        description: "Playwright --grep filter (blank = whole suite)"
+        required: false
+        default: ""
+      retries:
+        description: "Retry count. Use 0 for a proving run - retries MASK the race being tested."
+        required: false
+        default: "0"
+      unquarantine:
+        description: "Set 1 to run CI-quarantined tests (E2E_UNQUARANTINE)"
+        required: false
+        default: ""
 
 jobs:
   # -------------------------------------------------------------------------
@@ -160,7 +179,13 @@ jobs:
 
       - name: Run Playwright E2E (Chromium)
         if: steps.changes.outputs.code == 'true'
-        run: pnpm --filter web exec playwright test --project=setup --project=chromium
+        env:
+          E2E_UNQUARANTINE: ${{ github.event.inputs.unquarantine }}
+        run: |
+          ARGS="--project=setup --project=chromium"
+          if [ -n "${{ github.event.inputs.grep }}" ]; then ARGS="$ARGS --grep=${{ github.event.inputs.grep }}"; fi
+          if [ -n "${{ github.event.inputs.retries }}" ]; then ARGS="$ARGS --retries=${{ github.event.inputs.retries }}"; fi
+          pnpm --filter web exec playwright test $ARGS
 
       - name: Upload Playwright report (Chromium)
         if: steps.changes.outputs.code == 'true' && !cancelled()

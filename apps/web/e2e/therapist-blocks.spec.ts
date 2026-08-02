@@ -68,11 +68,27 @@ async function openManageHours(page: Page) {
 }
 
 /**
- * Open the Bloqueios modal: ensure the manage modal is open on the Horários
- * section, then click its "Bloquear horário" trigger. The blocks dialog stacks in
- * the top layer above the manage modal.
+ * Open the Bloqueios modal from a FRESHLY LOADED page.
+ *
+ * The explicit goto is the fix for the CI failure that quarantined this spec
+ * twice. Every write here is a server action ending in
+ * `redirect("/admin/staff?m=<code>")`, and /admin/staff is an expensive render
+ * (staff, services, primaries, availability, locations, memberships, plus one
+ * time-off query PER member). Re-opening the modal by CLICKING into that page
+ * while it is still committing its post-redirect render is a race: Playwright
+ * resolves the button in the outgoing tree and the incoming render detaches it
+ * mid-click — "element is not stable / element was detached from the DOM",
+ * retried for the full 180s. Locally the page settles in milliseconds and the
+ * race is always won (this spec passes in ~7s); on a CI dev server compiling
+ * routes on demand the window is wide enough to lose every time.
+ *
+ * #730 tried to fix this by waiting on the redirect's own signals. That helped
+ * but was not sufficient — the banner commits before the rest of the tree does,
+ * so "banner visible" is not "page settled". A full navigation has no such
+ * ambiguity: the page is loaded or it is not.
  */
 async function openBlocks(page: Page) {
+  await page.goto("/admin/staff");
   const manage = await openManageHours(page);
   await manage.getByTestId("open-blocks").click();
   await expect(blocksModal(page)).toBeVisible();
@@ -156,9 +172,15 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   // EXIT CONDITION: un-quarantine only when this test passes twice
   // consecutively on CI at --retries=0 on an otherwise-main tree. The evidence
   // is the run, not the reasoning. Do not re-enable on a hunch a second time.
+  // PL-30: the quarantine STAYS until #739's exit condition is met on evidence.
+  // It is now overridable by E2E_UNQUARANTINE so that condition is EXECUTABLE:
+  // the proving runs can exercise this test on CI at --retries=0 without
+  // un-skipping it for everyone first. Lifting the skip on a hunch is what went
+  // wrong in #730; leaving it un-runnable would have meant it could never be
+  // lifted on evidence either.
   test.skip(
-    !!process.env.CI,
-    "Quarantined on CI - open-blocks detaches mid-click, see issue #738",
+    !!process.env.CI && !process.env.E2E_UNQUARANTINE,
+    "Quarantined on CI - open-blocks detaches mid-click, see issue #738 (set E2E_UNQUARANTINE=1 for a proving run)",
   );
   test.setTimeout(180_000);
 
