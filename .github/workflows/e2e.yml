@@ -158,9 +158,19 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: echo "NEXT_PUBLIC_API_URL=http://localhost:3002" > apps/portal/.env.local
 
-      - name: Run Playwright E2E (Chromium)
+      - name: A1 discriminator - therapist-blocks twice, retries=0
         if: steps.changes.outputs.code == 'true'
-        run: pnpm --filter web exec playwright test --project=setup --project=chromium
+        run: |
+          set +e
+          for i in 1 2; do
+            echo "===== A1 ATTEMPT $i ====="
+            start=$(date +%s)
+            pnpm --filter web exec playwright test --project=setup --project=chromium e2e/therapist-blocks.spec.ts --retries=0
+            code=$?
+            end=$(date +%s)
+            echo "A1_RESULT arm=W1 attempt=$i exit=$code duration_s=$((end-start))"
+          done
+          echo "A1 discriminator complete"
 
       - name: Upload Playwright report (Chromium)
         if: steps.changes.outputs.code == 'true' && !cancelled()
