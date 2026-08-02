@@ -2477,3 +2477,38 @@ outlived the capability it named (`settings:manage` on a control the server guar
 **Left for the owner, in priority order:** G2 (the reminder canary - the one launch gate he can
 close alone), INC-04 (rotate the exposed credential), G8 (JP's RGPD sign-off), then the staged
 read-only script that answers PL-15a and PL-18 in one paste.
+
+## 2026-08-02 - PL-28: the board portal showed a stale board with no warning (GREEN)
+
+Owner screenshot: the portal listed PL-18..PL-25 as TO DO with "no evidence yet" and Shipped 22,
+while main had all eight shipped with PR evidence and Shipped 30. He reviews every piece of work
+through this artifact, so for two days he was reading a board that said nothing had shipped.
+
+**Root cause.** `seedIsNewer()` compared `as_of` DATES: `SEED.as_of > board.as_of`. All four
+publishes on 2026-07-31 carried `as_of: "2026-07-31"`, so the comparison was false every time and
+the "newer board" notice never rendered. Compounding it, the **"Load the new board" button lives
+inside that notice** - so the one control that would have fixed it was unreachable. The only
+remaining escape was the footer's "Discard local changes", which also throws away the owner's own
+edits (he had 23).
+
+**A date cannot express "changed again today."** That is the whole defect: a freshness check keyed
+on a human-scale date fails silently at human working speed, and fails in the direction that looks
+like nothing is wrong.
+
+**Fix.** `render-board.mjs` stamps a sha256 fingerprint of the published JSON into the seed island;
+the portal records which publish a browser's snapshot came from (`__basedOn`, kept beside the board
+so it never leaks into an Export or a diff); staleness is fingerprint inequality, which catches any
+change - a status, an evidence ref, a note - same day or not. Derived at render time so nobody has
+to remember to bump it, which is exactly how this bug happened. A pre-fix snapshot has no recorded
+provenance and is treated as STALE, so any stranded browser is offered the new board on first load.
+Adopting the seed adopts its fingerprint too, or the notice returns on the board the user just
+chose.
+
+**Verified in a real browser**, against a reproduction of the owner's exact state (Shipped 22, same
+`as_of`, no provenance): the notice appears where it previously did not; "Load the new board"
+clears it and survives a reload at Shipped 30; and a CURRENT snapshot carrying local edits is not
+falsely flagged, with the edits preserved.
+
+Second self-inflicted bug in two days from the same family as the e2e quarantine: a check that was
+true when written, quietly stopped being true, and reported success while doing nothing. Version by
+content, not by calendar.
