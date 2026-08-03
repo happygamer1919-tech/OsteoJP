@@ -15,6 +15,15 @@ export type AppointmentScheduledData = {
   appointmentId: string;
   tenantId: string;
   startsAt: string; // ISO-8601 UTC
+  /**
+   * True for exactly ONE occurrence per booking action. A recurring series is one
+   * booking from the patient's point of view, so it earns one confirmation, not
+   * one per session. Occurrences 2..n still emit this event (that is what keeps
+   * reminder scheduling and reschedule supersession per-occurrence) but carry
+   * false, and send-appointment-confirmation filters on it at the TRIGGER, so the
+   * suppressed occurrences never start a run at all.
+   */
+  confirmationEligible: boolean;
 };
 
 export type ReminderDueData = {

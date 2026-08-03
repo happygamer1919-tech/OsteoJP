@@ -1,4 +1,5 @@
 import { enqueueAppointmentReminders, enqueueFollowUp, enqueueNoShow } from "@/lib/reminders";
+import { MAX_OCCURRENCES } from "./recurrence";
 
 // Bridge from a committed appointment mutation (Stream B) to the reminder
 // pipeline (Stream E). Kept out of the server action's DB transaction on purpose:
@@ -15,6 +16,27 @@ export type ReminderEnqueueTarget = {
   /** The appointment's CURRENT start instant (post-create / post-reschedule). */
   startsAt: Date;
 };
+
+/**
+ * Hard ceiling on events emitted by ONE booking action. Derived from
+ * MAX_OCCURRENCES rather than restated, so the two cannot drift: a booking action
+ * can never legitimately touch more occurrences than a series can contain. Above
+ * this we throw rather than emit, because the plausible causes (an unbounded
+ * series, a scope resolving to the wrong set) are all bugs whose blast radius is
+ * measured in SMS to real patients.
+ */
+export const MAX_EVENTS_PER_BOOKING_ACTION = MAX_OCCURRENCES;
+
+export class ReminderBurstError extends Error {
+  constructor(readonly attempted: number) {
+    super(
+      `scheduling/reminders: ${attempted} appointment events in one booking action exceeds ` +
+        `the ${MAX_EVENTS_PER_BOOKING_ACTION} ceiling. Refusing to emit. This is a bug, not a ` +
+        `large booking: a single action cannot legitimately touch more occurrences than a series holds.`,
+    );
+    this.name = "ReminderBurstError";
+  }
+}
 
 /**
  * Enqueue reminders for each affected appointment occurrence, best-effort.
@@ -39,12 +61,25 @@ export async function enqueueRemindersAfterCommit(
   tenantId: string,
   targets: ReminderEnqueueTarget[],
 ): Promise<void> {
-  for (const t of targets) {
+  if (targets.length > MAX_EVENTS_PER_BOOKING_ACTION) {
+    // Loud, and BEFORE any send. Throwing here is deliberate: the callers wrap
+    // this in their own try/catch, but a burst is not a degraded reminder, it is
+    // a defect that would page real patients.
+    throw new ReminderBurstError(targets.length);
+  }
+
+  // Exactly one confirmation per booking action. The FIRST occurrence carries it;
+  // 2..n schedule reminders only. The invariant lives here, not at the three call
+  // sites, so a future call site inherits it instead of having to remember it.
+  const eligibleIndex = confirmationEligibleIndex(targets);
+
+  for (const [i, t] of targets.entries()) {
     try {
       await enqueueAppointmentReminders({
         appointmentId: t.appointmentId,
         tenantId,
         startsAt: t.startsAt,
+        confirmationEligible: i === eligibleIndex,
       });
     } catch (e) {
       console.error(
@@ -53,6 +88,25 @@ export async function enqueueRemindersAfterCommit(
       );
     }
   }
+}
+
+/**
+ * Which occurrence carries the confirmation: the EARLIEST by start instant, not
+ * merely index 0. Callers build their target arrays from different queries
+ * (create maps `created`, reschedule maps `targets`) and neither guarantees a
+ * sort, so keying on the array position alone would make the patient's
+ * confirmation depend on row order. Returns -1 for an empty list.
+ *
+ * Exported for direct testing.
+ */
+export function confirmationEligibleIndex(targets: readonly ReminderEnqueueTarget[]): number {
+  let best = -1;
+  for (let i = 0; i < targets.length; i++) {
+    if (best === -1 || targets[i]!.startsAt.getTime() < targets[best]!.startsAt.getTime()) {
+      best = i;
+    }
+  }
+  return best;
 }
 
 export type StatusNotificationTarget = {

@@ -126,10 +126,25 @@ export const sendAppointmentReminder = inngest.createFunction(
 export const CONFIRMATION_IDEMPOTENCY_KEY =
   'event.data.appointmentId + ":confirmation:" + event.data.startsAt';
 
+/**
+ * Series burst guard. A 10-session recurring booking emits 10
+ * appointment/scheduled events (one per occurrence, which is what keeps reminder
+ * scheduling and reschedule supersession per-occurrence), but the patient made
+ * ONE booking and gets ONE confirmation.
+ *
+ * The filter is on the TRIGGER, not inside the handler, so the nine suppressed
+ * occurrences never start a run at all — no wasted invocations, and the run
+ * history reads as one confirmation rather than one success plus nine no-ops.
+ *
+ * Which occurrence is eligible is decided upstream in
+ * lib/scheduling/reminders.ts (earliest start instant wins).
+ */
+export const CONFIRMATION_TRIGGER_FILTER = "event.data.confirmationEligible == true";
+
 export const sendAppointmentConfirmation = inngest.createFunction(
   {
     id: "send-appointment-confirmation",
-    triggers: [{ event: EVENT_APPOINTMENT_SCHEDULED }],
+    triggers: [{ event: EVENT_APPOINTMENT_SCHEDULED, if: CONFIRMATION_TRIGGER_FILTER }],
     idempotency: CONFIRMATION_IDEMPOTENCY_KEY,
   },
   async ({ event, step }) => {
