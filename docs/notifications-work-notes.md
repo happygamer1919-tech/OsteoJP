@@ -104,3 +104,52 @@ build shell; this needs a prod observer.
   contact for. Patient defaults are `reminder_sms_enabled` true and
   `reminder_email_enabled` false, so a patient with a phone and no email
   preference produces one SMS line and no email line.
+
+
+## JP approval packet (item 6)
+
+`docs/notifications-approval-packet.md`, 537 lines. Written in pt-PT for a
+clinical owner, not for engineers.
+
+- **10 template sections**, one per registry entry, each with id, trigger, the
+  authored template, a rendered example with real sample data, and for SMS the
+  encoding and measured segment count. Every number in that file is generated
+  from the shipping code with real fixtures, not written by hand.
+- **Patient activation is excluded** per owner ruling: it is dead code and a
+  candidate for deletion, and a dead template must not consume clinical review.
+- **Two 24h variants** of the clinic-supplied wording, both accent-free GSM-7.
+- `apps/web/lib/reminders/approval-packet.test.ts` fails if a registry template
+  has no packet section. Prevents an eleventh body being approved in a batch that
+  JP never saw.
+
+### Measured facts worth keeping
+
+| Fact | Value |
+|---|---|
+| Signed reschedule token | **183 chars** (link 208) |
+| Clinic wording as supplied, filled + link | 371 chars, **not GSM-7**, **6 UCS-2 segments** |
+| Variant A, short link | 122 chars, **1 segment** |
+| Variant B, short link | 160 chars, **1 segment, zero margin** |
+| Variant A/B with the CURRENT signed link | 303 / 341 chars, **2 / 3 segments** |
+| All 5 shipped PT SMS bodies | GSM-7, 84-103 chars, **1 segment each** |
+
+One segment for the clinic's wording is achievable **only with a short link**.
+The 208-char signed link cannot fit. A clinic-domain short-link service is the
+engineering prerequisite; until it exists the clinic wording costs 2-3 segments,
+which is why the shipped SMS points at the clinic phone instead.
+
+Variant B sits at exactly the 160 limit with **zero margin**: a longer phone
+number or one extra word silently pushes it to two segments. Flagged in the
+packet.
+
+### Open with JP / lawyer (G8 batch)
+
+The 50% no-show fee line. Announcing a fee by SMS does not make it enforceable;
+it is generally only chargeable if the patient agreed somewhere. Two questions in
+the packet: does a signed document already provide for it, and if not does JP want
+one or does the line come out.
+
+`REMINDERS_FEE_NOTICE_ENABLED` is the intended flag name, default OFF. It is
+**specified, not built**, and the packet says so explicitly — claiming a
+protection that does not exist yet is the exact pattern this lane has spent the
+session removing. It gets built with the chosen variant, after the decision.
