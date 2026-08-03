@@ -135,6 +135,30 @@ jobs:
           packages/db/rls-results.json
           packages/db/rls-run.log
 
+      # A4 NEGATIVE CONTROL. The slot lock is the ONLY defence against an
+      # unintended double-booking - the partial EXCLUDE constraint was cancelled
+      # once a DB-gated test proved created_by cannot identify portal rows. So
+      # the suite that proves the lock works must itself be proven capable of
+      # failing. Run with the lock disabled, it MUST go red; if it stays green it
+      # is not detecting the race and its normal green run means nothing.
+      - name: A4 negative control - concurrency suite MUST fail without the lock
+        if: steps.changes.outputs.code == 'true'
+        working-directory: packages/db
+        env:
+          A4_DISABLE_LOCK: '1'
+        run: |
+          set +e
+          pnpm exec vitest run tests/slot-lock-concurrency.test.ts --reporter=default
+          code=$?
+          set -e
+          echo "A4_DISABLE_LOCK=1 exit=$code (expected NON-ZERO)"
+          if [ "$code" -eq 0 ]; then
+            echo "The concurrency suite PASSED with the slot lock disabled."
+            echo "It is therefore not detecting the race, and its green run proves nothing."
+            exit 1
+          fi
+          echo "Negative control OK: the suite detects the race."
+
       - name: Upload RLS report + log
         if: steps.changes.outputs.code == 'true' && !cancelled()
         uses: actions/upload-artifact@v4
