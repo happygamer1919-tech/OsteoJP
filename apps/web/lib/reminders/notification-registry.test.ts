@@ -1,12 +1,26 @@
 /**
  * Item 2 DoD: every patient-facing body is registered and refused.
  *
- * Count is ELEVEN, not eight. The original "eight" was a miscount carried from
- * the five-function audit: templates.ts holds TEN slots (48h, 24h, confirmation,
- * follow-up, no-show, each in email and SMS), and apps/api adds patient
- * activation. Ten here plus one activation body = eleven patient-facing bodies,
- * all approved:false. The activation half is asserted in apps/api's own suite;
- * this file asserts the ten it owns and the total registry shape.
+ * COUNT RECONCILIATION (the arithmetic, so it cannot drift a third time):
+ *
+ *   10  patient-facing reminder BODIES in templates.ts
+ *       (48h, 24h, confirmation, follow-up, no-show; each in email and SMS)
+ *  + 1  patient activation BODY in apps/api (lib/auth/activation.ts)
+ *  ---
+ *   11  distinct patient-facing bodies
+ *
+ *   10  refusing registry ENTRIES here (one per body, since each reminder body
+ *       is already channel-specific)
+ *  + 2  refusing registry ENTRIES in apps/api — the ONE activation body is
+ *       delivered on TWO channels, and the registry is keyed per (id, channel)
+ *       so an SMS approval can never leak into an email approval
+ *  ---
+ *   12  refusing registry entries in total
+ *
+ * So: 11 bodies, 12 entries. Both numbers are correct; they count different
+ * things. Earlier reports said "eight" (a miscount from the five-function audit)
+ * and then "eleven entries" (conflating bodies with entries). This file asserts
+ * the 10 it owns; apps/api/lib/notify/registry.test.ts asserts the other 2.
  */
 import { describe, it, expect } from "vitest";
 import { createNotifier, createTestSink } from "@osteojp/notify";
@@ -33,6 +47,24 @@ describe("registry contents", () => {
   it("registers exactly 10 patient-facing reminder bodies", () => {
     expect(REMINDER_TEMPLATES).toHaveLength(10);
     expect(REMINDER_TEMPLATES.every((t) => t.audience === "patient")).toBe(true);
+  });
+
+  // The reconciliation above, asserted rather than asserted-in-a-comment.
+  it("totals 12 refusing entries across both apps: 10 here + 2 activation", async () => {
+    const { ACTIVATION_TEMPLATES } = await import(
+      "../../../../apps/api/lib/notify/registry"
+    );
+    const refusingHere = REMINDER_TEMPLATES.filter((t) => !t.approved);
+    const refusingApi = ACTIVATION_TEMPLATES.filter((t) => !t.approved);
+
+    expect(refusingHere).toHaveLength(10);
+    expect(refusingApi).toHaveLength(2);
+    expect(refusingHere.length + refusingApi.length).toBe(12);
+
+    // 11 BODIES, not 12: the two activation entries are one body on two channels.
+    const activationBodies = new Set(ACTIVATION_TEMPLATES.map((t) => t.body));
+    expect(activationBodies.size).toBe(1);
+    expect(refusingHere.length + activationBodies.size).toBe(11);
   });
 
   it("has every reminder body unapproved, with no approver invented", () => {
