@@ -28,11 +28,11 @@ vi.mock("./clients", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./clients")>();
   return {
     ...actual,
-    sendEmail: vi.fn(async (m: { to: string; subject: string; body: string }) => {
+    sendEmail: vi.fn(async (m: Parameters<typeof actual.sendEmail>[0]) => {
       h.email.push({ to: m.to });
       return actual.sendEmail(m);
     }),
-    sendSms: vi.fn(async (m: { to: string; body: string }) => {
+    sendSms: vi.fn(async (m: Parameters<typeof actual.sendSms>[0]) => {
       h.sms.push({ to: m.to });
       return actual.sendSms(m);
     }),

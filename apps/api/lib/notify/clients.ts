@@ -1,94 +1,152 @@
-// SMS (Twilio) + email (Resend) send wrappers — sandbox-first.
+// SMS (Twilio) + email (Resend) adapters for apps/api.
 //
-// Mirrors apps/web/lib/reminders/clients.ts and reuses the SAME channel config
-// (REMINDERS_LIVE_SEND + the provider env), so patient activation does NOT block
-// on Twilio being live: with REMINDERS_LIVE_SEND !== "true" (the default) or
-// missing provider keys, these render-and-return a sandbox result WITHOUT
-// importing or constructing any SDK — zero network calls. The mechanism is fully
-// built; only the live send is gated.
+// TRANSPORT ONLY. Every gating decision belongs to the choke point in
+// @osteojp/notify: registered + approved template, live-send flag exactly "true",
+// provider configured, valid recipient. This module supplies the provider calls
+// and the env reads, and makes no policy — the same shape as
+// apps/web/lib/reminders/clients.ts, so there is exactly one gate in the platform
+// and no second implementation to drift.
+//
+// The only body this app can send is patient activation, and it is registered
+// approved:false (registry.ts), so every call here is refused before an SDK is
+// constructed until JP approves it.
 //
 // No `server-only`: unit-testable under vitest's node env. SDKs are imported
-// lazily inside the live branch only.
+// lazily inside the live path only.
 //
-// PII rule (#7): nothing here logs recipient phone/email or message bodies — only
-// non-identifying metadata (channel, sandbox flag).
+// PII rule (#7): nothing here logs recipient phone/email or message bodies.
 
+import {
+  createNotifier,
+  liveSendEnabled as flagEnabled,
+  type Channel,
+  type SendOutcome,
+  type TemplateRegistry,
+  type Transport,
+} from "@osteojp/notify";
+import { apiRegistry } from "./registry";
 import { normalizePhonePT } from "./phone";
 
-export type SendChannel = "email" | "sms";
+export type SendChannel = Channel;
 
 export type SendResult = {
   channel: SendChannel;
-  /** true when no network call was made (sandbox / disabled). */
+  /** true when no network call was made (suppressed by any gate). */
   sandbox: boolean;
   id: string;
 };
 
-/**
- * Live sends are off unless REMINDERS_LIVE_SEND is exactly "true" — the same flag
- * the staff reminder + invite paths read, so the platform has ONE send switch.
- * Read at call time so tests/env flips take effect without re-import.
- */
-export function liveSendEnabled(): boolean {
-  return process.env.REMINDERS_LIVE_SEND === "true";
-}
-
-type DryRunReason = "live_send_disabled" | "missing_provider_config";
-
-function logDryRun(channel: SendChannel, reason: DryRunReason): void {
-  console.info(`[patient-activation] dry-run: ${channel} not sent (${reason})`);
-}
-
 export type SmsMessage = { to: string; body: string };
 export type EmailMessage = { to: string; subject: string; body: string };
 
-export async function sendSms(msg: SmsMessage): Promise<SendResult> {
-  // E.164 guard — mirrors the reminders wrapper: nothing may reach
-  // messages.create un-normalized (Twilio rejects non-E.164 with 21211).
-  // PII rule (#7): the rejected value is never logged.
-  const to = normalizePhonePT(msg.to);
-  if (!to) {
-    console.warn("[patient-activation] sms skipped (invalid_phone)");
-    return { channel: "sms", sandbox: true, id: "skipped:invalid_phone" };
-  }
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_SMS_FROM ?? process.env.TWILIO_MESSAGING_SERVICE_SID;
-  if (!liveSendEnabled()) {
-    logDryRun("sms", "live_send_disabled");
-    return { channel: "sms", sandbox: true, id: "sandbox:sms" };
-  }
-  if (!sid || !token || !from) {
-    logDryRun("sms", "missing_provider_config");
-    return { channel: "sms", sandbox: true, id: "sandbox:sms" };
-  }
-
-  const { default: twilio } = await import("twilio");
-  const client = twilio(sid, token);
-  const result = await client.messages.create({ to, from, body: msg.body });
-  return { channel: "sms", sandbox: false, id: result.sid };
+export function liveSendEnabled(): boolean {
+  return flagEnabled("REMINDERS_LIVE_SEND");
 }
 
-export async function sendEmail(msg: EmailMessage): Promise<SendResult> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!liveSendEnabled()) {
-    logDryRun("email", "live_send_disabled");
-    return { channel: "email", sandbox: true, id: "sandbox:email" };
+/**
+ * REQUIRED — no fallback. The previous default was `no-reply@osteojp.pt`, a
+ * root-domain address Resend rejects because the verified identity lives on
+ * send.osteojp.pt. Same class as the two fallbacks removed in apps/web.
+ */
+function requiredEmailFrom(): string {
+  const from = process.env.REMINDERS_EMAIL_FROM;
+  if (!from || from.trim() === "") {
+    throw new Error(
+      "patient-activation/email: REMINDERS_EMAIL_FROM is required and has no default. " +
+        "Set it to the verified Resend identity on send.osteojp.pt.",
+    );
   }
-  if (!apiKey) {
-    logDryRun("email", "missing_provider_config");
-    return { channel: "email", sandbox: true, id: "sandbox:email" };
-  }
+  return from;
+}
 
-  const { Resend } = await import("resend");
-  const resend = new Resend(apiKey);
-  const from = process.env.REMINDERS_EMAIL_FROM ?? "no-reply@osteojp.pt";
-  const { data, error } = await resend.emails.send({
-    from,
-    to: msg.to,
-    subject: msg.subject,
-    text: msg.body,
+function twilioSender(): string | undefined {
+  return process.env.TWILIO_SMS_FROM ?? process.env.TWILIO_MESSAGING_SERVICE_SID;
+}
+
+/** Credential presence only. Never constructs a client, never logs a value. */
+function transportConfigured(channel: Channel): boolean {
+  if (channel === "email") {
+    return !!process.env.RESEND_API_KEY && !!process.env.REMINDERS_EMAIL_FROM;
+  }
+  return (
+    !!process.env.TWILIO_ACCOUNT_SID &&
+    !!process.env.TWILIO_AUTH_TOKEN &&
+    !!twilioSender()
+  );
+}
+
+const providerTransport: Transport = {
+  async sendEmail(msg) {
+    const { Resend } = await import("resend");
+    const resend = new Resend(process.env.RESEND_API_KEY!);
+    const { data, error } = await resend.emails.send({
+      from: msg.from,
+      to: msg.to,
+      subject: msg.subject,
+      text: msg.body,
+    });
+    if (error) throw new Error(`patient-activation/email: Resend send failed (${error.name})`);
+    return { id: data?.id ?? "unknown" };
+  },
+  async sendSms(msg) {
+    const { default: twilio } = await import("twilio");
+    const client = twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!);
+    const result = await client.messages.create({
+      to: msg.to,
+      from: twilioSender()!,
+      body: msg.body,
+    });
+    return { id: result.sid };
+  },
+};
+
+function toSendResult(o: SendOutcome): SendResult {
+  return { channel: o.channel, sandbox: o.sandbox, id: o.id };
+}
+
+/**
+ * Bind the adapters to a registry. Production uses `apiRegistry`; tests inject a
+ * fixture so the TRANSPORT behaviour (sender resolution, E.164, error
+ * propagation) stays testable without approving a real body or weakening the
+ * gate. The gate itself is unchanged either way — an injected registry still has
+ * to mark a template approved for anything to send.
+ */
+export function createSender(registry: TemplateRegistry = apiRegistry) {
+  const notifier = createNotifier({
+    registry,
+    transport: providerTransport,
+    transportConfigured,
+    emailFrom: requiredEmailFrom,
   });
-  if (error) throw new Error(`patient-activation/email: Resend send failed (${error.name})`);
-  return { channel: "email", sandbox: false, id: data?.id ?? "unknown" };
+
+  return {
+    async sendSms(msg: SmsMessage & { templateId: string }): Promise<SendResult> {
+      // E.164 guard — nothing may reach messages.create un-normalized (Twilio
+      // rejects non-E.164 with 21211). PII rule (#7): the value is never logged.
+      const to = normalizePhonePT(msg.to);
+      if (!to) {
+        console.warn("[patient-activation] sms skipped (invalid_phone)");
+        return { channel: "sms", sandbox: true, id: "skipped:invalid_phone" };
+      }
+      return toSendResult(
+        await notifier.dispatch({ templateId: msg.templateId, channel: "sms", to, body: msg.body }),
+      );
+    },
+    async sendEmail(msg: EmailMessage & { templateId: string }): Promise<SendResult> {
+      return toSendResult(
+        await notifier.dispatch({
+          templateId: msg.templateId,
+          channel: "email",
+          to: msg.to,
+          subject: msg.subject,
+          body: msg.body,
+        }),
+      );
+    },
+  };
 }
+
+const defaultSender = createSender();
+
+export const sendSms = defaultSender.sendSms;
+export const sendEmail = defaultSender.sendEmail;

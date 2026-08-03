@@ -14,6 +14,7 @@
     "@osteojp/auth": "workspace:*",
     "@osteojp/db": "workspace:*",
     "@osteojp/i18n": "workspace:*",
+    "@osteojp/notify": "workspace:*",
     "@osteojp/ui": "workspace:*",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",

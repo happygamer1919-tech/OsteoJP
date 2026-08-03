@@ -146,11 +146,12 @@ const defaultDeps: ActivationDeps = {
   generateLink: generatePatientActivationLink,
   deliver: ({ channel, to, body }) =>
     channel === "sms"
-      ? sendSms({ to, body })
+      ? sendSms({ to, body, templateId: "patient.activation.sms" })
       : sendEmail({
           to,
           subject: getStrings(DEFAULT_LOCALE)["patientActivation.emailSubject"],
           body,
+          templateId: "patient.activation.email",
         }),
 };
 
