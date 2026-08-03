@@ -17,6 +17,7 @@ import {
   type NoShowContext,
 } from "./templates";
 import { sendEmail, sendSms, type SendResult } from "./clients";
+import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "./phone";
 import { signRescheduleToken, rescheduleTokenExpiry } from "./link-token";
 import { REMINDER_OFFSETS } from "./offsets";
@@ -218,6 +219,8 @@ export async function dispatchReminder(
   tenantId: string,
   appointmentId: string,
   offsetId: ReminderOffsetId,
+  /** The single channel this run is for. One run, one channel, one key. */
+  channel: Channel,
 ): Promise<DispatchOutcome> {
   const data = await loadReminderData(tenantId, appointmentId);
   if (!data) return { dispatched: false, reason: "not_found" };
@@ -234,11 +237,18 @@ export async function dispatchReminder(
   );
   if (!plan.send) return { dispatched: false, reason: plan.reason };
 
+  // One run sends ONE channel. The scheduler already fanned out per channel, so
+  // narrowing the plan here is what keeps the run and its idempotency key aligned:
+  // a run keyed on ...:email must never also send an SMS.
+  const wantEmail = channel === "email" && plan.email;
+  const wantSms = channel === "sms" && plan.sms;
+  if (!wantEmail && !wantSms) return { dispatched: false, reason: "channels_off" };
+
   const locale = resolveLocale(data.tenantSettings);
   const ctx = buildReminderContext({ ...data, tenantId }, locale);
 
   const channels: SendResult[] = [];
-  if (plan.email && data.patientEmail) {
+  if (wantEmail && data.patientEmail) {
     const email = renderEmail(offsetId, locale, ctx);
     channels.push(
       await sendEmail({
@@ -250,7 +260,7 @@ export async function dispatchReminder(
       }),
     );
   }
-  if (plan.sms && data.patientPhone) {
+  if (wantSms && data.patientPhone) {
     const sms = renderSms(offsetId, locale, ctx);
     const sent = await sendPatientSms({
       tenantId,

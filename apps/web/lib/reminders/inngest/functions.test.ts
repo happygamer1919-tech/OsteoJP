@@ -35,6 +35,24 @@ describe("reminder reschedule supersession config", () => {
     expect(REMINDER_IDEMPOTENCY_KEY).toContain("event.data.sendAt");
   });
 
+  // This assertion exists because its NEGATIVE ARM initially passed: reverting
+  // the expression to the old shape broke nothing, which meant the Inngest half
+  // of the channel-in-key rule was unenforced while the offsets.ts half was
+  // covered. Without channel here, two channels at one offset and send instant
+  // collapse into a single Inngest run and the second is silently dropped.
+  it("keys idempotency on CHANNEL as well, so two channels at one offset cannot collapse", () => {
+    expect(REMINDER_IDEMPOTENCY_KEY).toContain("event.data.channel");
+
+    // Order matters for readability of the resulting key in Inngest's run history:
+    // appointment : offset : channel : sendAt.
+    expect(REMINDER_IDEMPOTENCY_KEY.indexOf("event.data.channel")).toBeGreaterThan(
+      REMINDER_IDEMPOTENCY_KEY.indexOf("event.data.offsetId"),
+    );
+    expect(REMINDER_IDEMPOTENCY_KEY.indexOf("event.data.channel")).toBeLessThan(
+      REMINDER_IDEMPOTENCY_KEY.indexOf("event.data.sendAt"),
+    );
+  });
+
   it("registers all five notification functions (2 reminders + confirmation + follow-up + no-show)", () => {
     expect(functions).toHaveLength(5);
   });

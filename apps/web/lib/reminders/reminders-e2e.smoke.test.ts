@@ -60,6 +60,7 @@ vi.mock("./clients", async (importOriginal) => {
 
 import { dispatchReminder } from "./dispatch";
 import { verifyRescheduleToken } from "./link-token";
+import { REMINDER_OFFSETS } from "./offsets";
 import { formatDateShort, formatTime } from "./locale";
 import { isGsm7, SMS_SEGMENT_LIMIT, type ReminderOffsetId } from "./templates";
 
@@ -103,7 +104,11 @@ function makeData(locale: Locale) {
 // Per-locale/offset expectations for the rendered copy.
 const EXPECT: Record<
   Locale,
-  { greeting: string; smsVerb: string; subject: Record<ReminderOffsetId, string> }
+  {
+    greeting: string;
+    smsVerb: string;
+    subject: Record<ReminderOffsetId, string>;
+  }
 > = {
   pt: {
     greeting: "Olá Madalena,",
@@ -156,7 +161,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const RESCHEDULE_LINK_RE = /https:\/\/osteojp\.pt\/r\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/;
+const RESCHEDULE_LINK_RE =
+  /https:\/\/osteojp\.pt\/r\/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/;
 
 // ---------------------------------------------------------------------------
 // 1. Full dry-run path: trigger → template selection → render → send intent.
@@ -176,58 +182,74 @@ describe("reminder dry-run E2E — render + send intent (PT & EN, 48h & 24h)", (
       const info = vi.spyOn(console, "info").mockImplementation(() => {});
       const err = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, offset);
+      // ONE RUN, ONE CHANNEL. Each offset now carries a single channel (48h
+      // email, 24h SMS), and the channel is part of the idempotency key, so the
+      // run under test dispatches exactly that channel and nothing else.
+      const channel = REMINDER_OFFSETS.find((o) => o.id === offset)!.channel;
+      const outcome = await dispatchReminder(
+        TENANT_ID,
+        APPOINTMENT_ID,
+        offset,
+        channel,
+      );
 
-      // --- both channels dispatched, both sandbox (the ONE field that flips live) ---
       expect(outcome.dispatched).toBe(true);
       if (!outcome.dispatched) return; // type-narrow
-      expect(outcome.channels.map((c) => c.channel).sort()).toEqual(["email", "sms"]);
+      expect(outcome.channels.map((c) => c.channel)).toEqual([channel]);
       expect(outcome.channels.every((c) => c.sandbox === true)).toBe(true);
+      // The other channel is a SEPARATE run and must not be touched by this one.
+      expect(channel === "email" ? h.sms : h.email).toHaveLength(0);
 
       // --- EMAIL intent: recipient, channel, rendered body, reschedule link ---
-      expect(h.email).toHaveLength(1);
-      const email = h.email[0]!;
-      expect(email.to).toBe(data.patientEmail); // correct recipient
-      expect(email.subject).toContain(EXPECT[locale].subject[offset]);
-      expect(email.body).toContain(EXPECT[locale].greeting); // rendered body
-      expect(email.body).toContain(data.locationName);
-      expect(email.body).toContain(formatTime(STARTS_AT, locale)); // Lisbon wall-clock
-      expect(email.body).not.toMatch(/\{\{?[a-z_]+\}?\}/i); // no unfilled placeholders
+      if (channel === "email") {
+        expect(h.email).toHaveLength(1);
+        const email = h.email[0]!;
+        expect(email.to).toBe(data.patientEmail); // correct recipient
+        expect(email.subject).toContain(EXPECT[locale].subject[offset]);
+        expect(email.body).toContain(EXPECT[locale].greeting); // rendered body
+        expect(email.body).toContain(data.locationName);
+        expect(email.body).toContain(formatTime(STARTS_AT, locale)); // Lisbon wall-clock
+        expect(email.body).not.toMatch(/\{\{?[a-z_]+\}?\}/i); // no unfilled placeholders
 
-      // reschedule link present and RESOLVES via the same token logic /r/[token] uses
-      const match = email.body.match(RESCHEDULE_LINK_RE);
-      expect(match, "email body must contain an /r/<token> reschedule link").not.toBeNull();
-      const token = match![1]!;
-      const claims = verifyRescheduleToken(token);
-      expect(claims).not.toBeNull();
-      expect(claims!.tenantId).toBe(TENANT_ID);
-      expect(claims!.appointmentId).toBe(APPOINTMENT_ID);
+        // reschedule link present and RESOLVES via the same token logic /r/[token] uses
+        const match = email.body.match(RESCHEDULE_LINK_RE);
+        expect(
+          match,
+          "email body must contain an /r/<token> reschedule link",
+        ).not.toBeNull();
+        const token = match![1]!;
+        const claims = verifyRescheduleToken(token);
+        expect(claims).not.toBeNull();
+        expect(claims!.tenantId).toBe(TENANT_ID);
+        expect(claims!.appointmentId).toBe(APPOINTMENT_ID);
+      }
 
       // --- SMS intent: recipient, no link, clinic CTA, single GSM-7 segment ---
-      expect(h.sms).toHaveLength(1);
-      const sms = h.sms[0]!;
-      // Correct recipient, normalized to E.164 (phone.ts strips the display
-      // spacing of the stored "+351 210 000 000" before the send wrapper).
-      expect(sms.to).toBe("+351210000000");
-      expect(sms.body).not.toMatch(/https?:\/\//); // NO link
-      expect(sms.body).not.toContain("/r/");
-      expect(sms.body).toContain(EXPECT[locale].smsVerb); // call-the-clinic wording
-      expect(sms.body).toContain(LONGEST_PHONE);
-      expect(sms.body).toContain(formatDateShort(STARTS_AT)); // dd/mm date filled
-      expect(sms.body).toContain(formatTime(STARTS_AT, locale)); // time filled
-      expect(isGsm7(sms.body)).toBe(true); // single-byte GSM-7 family
-      expect(sms.body.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT); // ≤ 160, worst-case fill
+      if (channel === "sms") {
+        expect(h.sms).toHaveLength(1);
+        const sms = h.sms[0]!;
+        // Correct recipient, normalized to E.164 (phone.ts strips the display
+        // spacing of the stored "+351 210 000 000" before the send wrapper).
+        expect(sms.to).toBe("+351210000000");
+        expect(sms.body).not.toMatch(/https?:\/\//); // NO link
+        expect(sms.body).not.toContain("/r/");
+        expect(sms.body).toContain(EXPECT[locale].smsVerb); // call-the-clinic wording
+        expect(sms.body).toContain(LONGEST_PHONE);
+        expect(sms.body).toContain(formatDateShort(STARTS_AT)); // dd/mm date filled
+        expect(sms.body).toContain(formatTime(STARTS_AT, locale)); // time filled
+        expect(isGsm7(sms.body)).toBe(true); // single-byte GSM-7 family
+        expect(sms.body.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT); // ≤ 160, worst-case fill
+      }
 
       // --- suppression log is PII-SAFE: ids + channel + reason, never content ---
       // The bodies are registered approved:false (notification-registry.ts), so
       // the gate stops them at the APPROVAL check, ahead of the live-send check.
       // That is louder than a routine sandbox skip, so it lands on console.error.
-      const logged = [...info.mock.calls, ...err.mock.calls].map((c) => String(c[0])).join("\n");
+      const logged = [...info.mock.calls, ...err.mock.calls]
+        .map((c) => String(c[0]))
+        .join("\n");
       expect(logged).toContain(
-        `[notify] suppressed template=reminder.${offset}.email channel=email appointment=${APPOINTMENT_ID} reason=template_unapproved`,
-      );
-      expect(logged).toContain(
-        `[notify] suppressed template=reminder.${offset}.sms channel=sms appointment=${APPOINTMENT_ID} reason=template_unapproved`,
+        `[notify] suppressed template=reminder.${offset}.${channel} channel=${channel} appointment=${APPOINTMENT_ID} reason=template_unapproved`,
       );
       expect(logged).not.toContain(data.patientEmail);
       expect(logged).not.toContain(data.patientPhone);
@@ -245,9 +267,9 @@ describe("reschedule link secret (REMINDERS_LINK_SECRET)", () => {
     h.loadReminderData.mockResolvedValue(makeData("pt"));
     vi.spyOn(console, "info").mockImplementation(() => {});
 
-    await expect(dispatchReminder(TENANT_ID, APPOINTMENT_ID, "48h")).rejects.toThrow(
-      /REMINDERS_LINK_SECRET/,
-    );
+    await expect(
+      dispatchReminder(TENANT_ID, APPOINTMENT_ID, "48h", "email"),
+    ).rejects.toThrow(/REMINDERS_LINK_SECRET/);
     // Nothing was handed to the senders — it failed before send intent.
     expect(h.email).toHaveLength(0);
     expect(h.sms).toHaveLength(0);
@@ -257,7 +279,8 @@ describe("reschedule link secret (REMINDERS_LINK_SECRET)", () => {
     h.loadReminderData.mockResolvedValue(makeData("pt"));
     vi.spyOn(console, "info").mockImplementation(() => {});
 
-    await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h");
+    // The reschedule link lives in the EMAIL body, so verify it on the 48h email run.
+    await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "48h", "email");
 
     const token = h.email[0]!.body.match(RESCHEDULE_LINK_RE)![1]!;
     // Same secret → verifies. A token verified under a DIFFERENT secret must fail.
@@ -283,10 +306,13 @@ describe("Inngest scheduler wiring", () => {
   });
 
   it("enqueue entrypoint emits the appointment/scheduled trigger event (the caller is the missing wiring)", async () => {
-    const { inngest, EVENT_APPOINTMENT_SCHEDULED } = await import("./inngest/client");
+    const { inngest, EVENT_APPOINTMENT_SCHEDULED } =
+      await import("./inngest/client");
     const { enqueueAppointmentReminders } = await import("./index");
 
-    const send = vi.spyOn(inngest, "send").mockResolvedValue(undefined as never);
+    const send = vi
+      .spyOn(inngest, "send")
+      .mockResolvedValue(undefined as never);
     await enqueueAppointmentReminders({
       appointmentId: APPOINTMENT_ID,
       tenantId: TENANT_ID,
