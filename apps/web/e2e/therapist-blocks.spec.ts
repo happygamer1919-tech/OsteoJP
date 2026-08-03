@@ -18,7 +18,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { openNewAppointment, fillAppointment, fillTime } from "./helpers";
-import { LOCATION_B, THERAPIST_NAME, futureDate, RUN_DAY_BASE, PATIENTS } from "./fixtures";
+import { LOCATION, LOCATION_B, THERAPIST_NAME, futureDate, RUN_DAY_BASE, PATIENTS } from "./fixtures";
 
 const SAVE = "Guardar";
 
@@ -94,9 +94,11 @@ async function openBlocks(page: Page) {
   await expect(blocksModal(page)).toBeVisible();
 }
 
-/** Set the E2E therapist to 09:00-13:00 at LOCATION_B on `weekday`, via the Gerir
- *  modal's Horários section, so the availability panel has a window to block. */
-async function setWorkingHours(page: Page, weekday: number) {
+/** Set the E2E therapist to 09:00-13:00 at `locationName` on `weekday`, via the
+ *  Gerir modal's Horários section, so the availability panel has a window to
+ *  block. The location is a parameter so the test can RESTORE it afterwards —
+ *  see the cleanup at the end of the test and why it matters. */
+async function setWorkingHours(page: Page, weekday: number, locationName: string = LOCATION_B.name) {
   await page.goto("/admin/staff");
   const modal = await openManageHours(page);
   const row = modal.locator("fieldset").filter({
@@ -106,7 +108,7 @@ async function setWorkingHours(page: Page, weekday: number) {
   if (!(await worksToggle.isChecked())) await worksToggle.check();
   await fillTime(row.locator("label").filter({ hasText: "Início" }), "09:00");
   await fillTime(row.locator("label").filter({ hasText: "Fim" }), "13:00");
-  await row.locator(`select[name="d${weekday}_location"]`).selectOption({ label: LOCATION_B.name });
+  await row.locator(`select[name="d${weekday}_location"]`).selectOption({ label: locationName });
   await modal.getByRole("button", { name: SAVE }).click();
   await settleAfterWrite(page);
   await expect(page.getByText("Horário guardado")).toBeVisible({ timeout: 8_000 });
@@ -172,16 +174,28 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   // EXIT CONDITION: un-quarantine only when this test passes twice
   // consecutively on CI at --retries=0 on an otherwise-main tree. The evidence
   // is the run, not the reasoning. Do not re-enable on a hunch a second time.
-  // PL-30: the quarantine STAYS until #739's exit condition is met on evidence.
-  // It is now overridable by E2E_UNQUARANTINE so that condition is EXECUTABLE:
-  // the proving runs can exercise this test on CI at --retries=0 without
-  // un-skipping it for everyone first. Lifting the skip on a hunch is what went
-  // wrong in #730; leaving it un-runnable would have meant it could never be
-  // lifted on evidence either.
-  test.skip(
-    !!process.env.CI && !process.env.E2E_UNQUARANTINE,
-    "Quarantined on CI - open-blocks detaches mid-click, see issue #738 (set E2E_UNQUARANTINE=1 for a proving run)",
-  );
+  // UN-QUARANTINED 2026-08-02 (PL-30), on evidence and at the second attempt.
+  //
+  // History, because this test has been quarantined twice and lifted wrongly
+  // once, and the next person deserves the whole story:
+  //   2026-07-27  quarantined as "GitHub runners degraded, 7s -> 186s".
+  //   2026-07-31  lifted on ONE green CI run at retries=2. That was not proof:
+  //               retries MASK the exact failure being tested, and one sample
+  //               cannot separate "fixed" from "lucky". It failed again.
+  //   2026-08-02  re-quarantined (#739) after measuring properly - the spec
+  //               alone, twice, at --retries=0, on clean main AND an unrelated
+  //               branch. All four failed. Failing on CLEAN MAIN proved the
+  //               cause was here, not in any pending work.
+  //   2026-08-02  root-caused and fixed (see openBlocks), then lifted only
+  //               after TWO consecutive green CI runs at --retries=0 with the
+  //               test genuinely executing: 21.9s and 21.0s, against the 180s
+  //               timeout it used to burn. Runs 30771682260 and 30771875084.
+  //
+  // The lesson, if this ever goes red again: "passes locally, times out on CI"
+  // is a RACE until proven otherwise, and ONE green run is not evidence for
+  // anything that can race. Read the Playwright artifact - it names the cause
+  // outright ("element is not stable", "detached from the DOM") - before
+  // touching either the runners or the timeout.
   test.setTimeout(180_000);
 
   const date = futureDate(RUN_DAY_BASE + 24);
@@ -261,4 +275,19 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
 
   // Cleanup: remove the blocks this test created.
   await clearBlocks(page);
+
+  // CROSS-TEST CLEANUP (2026-08-03). This test MUTATES SHARED FIXTURE STATE: it
+  // repoints THERAPIST_NAME's working hours for this weekday to LOCATION_B. That
+  // is a persistent change to a therapist other specs also drive — notably
+  // therapist-self-lock, which books the SAME therapist at LOCATION and asserts
+  // the primary-service preselect.
+  //
+  // It went unnoticed for five days because this test was quarantined on CI, so
+  // the suite evolved without it. Un-quarantining it (PL-30) put the mutation
+  // back into the run order and self-lock failed three times in the full suite
+  // while passing in isolation on BOTH clean main and this branch — the exact
+  // signature of an ordering dependency rather than a broken test.
+  //
+  // The blocks above are already cleared; the hours were not. Restore them.
+  await setWorkingHours(page, weekday, LOCATION.name);
 });

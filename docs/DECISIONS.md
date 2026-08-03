@@ -2719,3 +2719,35 @@ owner decisions.
 **Remaining 7 cards:** 2 owner-side (CANARY-reminder in flight = G2; INC-04 the owed rotation), 3
 deferred by decision (PL-03b held, LE-resend post-launch, PL-26 post-launch), and 2 CI defects that
 are GREEN's to fix (the therapist-blocks race, the marcacoes-tab-edit flake).
+
+## 2026-08-02 - therapist-blocks un-quarantined, on evidence this time (GREEN)
+
+Two consecutive CI runs at `--retries=0`, with the test genuinely executing (verified in the job
+logs, not inferred from a green tick): **21.9s and 21.0s**, against the 180s timeout it used to burn.
+Runs 30771682260 and 30771875084. #739's exit condition is met exactly as written.
+
+**Root cause.** Every write in the spec is a server action ending in
+`redirect("/admin/staff?m=<code>")`, and /admin/staff is an expensive render - staff, services,
+primaries, availability, locations, memberships, plus one time-off query PER member. Re-opening the
+modal by CLICKING into that page while it was still committing the post-redirect render let
+Playwright resolve the button in the outgoing tree while the incoming render detached it mid-click.
+Locally the page settles in milliseconds and the race is always won (~7s); on a CI dev server
+compiling routes on demand it was lost every time. The fix is a full `page.goto` before opening: a
+navigation is unambiguous, the page is loaded or it is not.
+
+**Three corrections this closed, all of the same shape.**
+1. The 2026-07-27 diagnosis ("runners degraded") was wrong. It was always a race.
+2. My 2026-07-31 lift was wrong - not the diagnosis, the STANDARD OF PROOF. One green run at
+   retries=2 proves nothing about a race, because retries mask the exact failure under test.
+3. The proving mechanism itself was broken before first use: a manual run had no `pull_request`
+   context, so the docs-only heuristic classified it as docs-only, skipped all 16 gated steps, and
+   would have reported **SUCCESS having executed nothing** (#750). I would have read that green tick
+   as proof.
+
+That third one is the same failure mode as the stale capability gate (PL-27), the date-based board
+freshness check (PL-28), and the test that waited on a condition already true (PL-30 itself):
+**something reporting success while doing nothing.** Four instances in three days. The only thing
+that caught any of them was checking the mechanism rather than trusting its output.
+
+**Remaining GREEN work: one card** - `LE-marcacoes-tab-edit-flake`, deliberately not diagnosed yet,
+to be reproduced at `--retries=0` first.
