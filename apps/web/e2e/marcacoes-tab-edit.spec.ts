@@ -52,6 +52,24 @@ async function book(page: Page, patient: string, date: string, time: string) {
     time,
   });
   await dialog.getByRole("button", { name: SAVE }).click();
+  // The save is ADVISORY-gated, not unconditional. When the chosen day is not
+  // one the seeded therapist works, the drawer keeps itself open with "O
+  // terapeuta nao tem horario de trabalho definido neste dia." and a "Guardar
+  // mesmo assim" confirm (PL-11: availability warns, it never blocks). Clicking
+  // Guardar once is therefore NOT enough, and the drawer stays visible.
+  //
+  // That is the whole cause of this spec's intermittency, and it was never
+  // random: bandDay() derives a calendar DATE, so RUN_DAY_BASE + 45 lands on a
+  // different WEEKDAY depending on when the suite runs. On a weekday the
+  // therapist works, one click saves; on a weekday they do not, the advisory
+  // appears and toBeHidden fails. The +100-day retry offset shifts the weekday
+  // by two (100 mod 7), which is why attempt 2 usually "fixes" it - the retry
+  // changes the INPUT, it does not re-run the same test.
+  //
+  // Confirming when present mirrors what a user does and matches the pattern
+  // already used in agenda-cards.spec.ts.
+  const saveAnyway = dialog.getByRole("button", { name: /Guardar mesmo assim/i });
+  if (await saveAnyway.isVisible().catch(() => false)) await saveAnyway.click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 }
 

@@ -2751,3 +2751,35 @@ that caught any of them was checking the mechanism rather than trusting its outp
 
 **Remaining GREEN work: one card** - `LE-marcacoes-tab-edit-flake`, deliberately not diagnosed yet,
 to be reproduced at `--retries=0` first.
+
+## 2026-08-03 - marcacoes flake root-caused from the artifact; GREEN's column is empty (GREEN)
+
+The last GREEN card closed, and the answer was **none of the three theories** anyone (including me)
+had formed. The Playwright artifact named it in plain text:
+
+> `O terapeuta nao tem horario de trabalho definido neste dia.` + a `Guardar mesmo assim` button
+
+The save was never slow and never conflicted. It was **advisory-gated**. PL-11 deliberately made
+availability WARN rather than BLOCK, so booking a therapist on a day they do not work keeps the
+drawer open awaiting an explicit confirm. The `book()` helper clicked Guardar once and asserted the
+drawer had closed.
+
+**It was never random - it was date-dependent.** `bandDay()` derives a calendar DATE, so
+`RUN_DAY_BASE + 45` lands on a different WEEKDAY depending on when the suite runs. On a weekday the
+seeded therapist works, one click saves; otherwise the advisory appears. The +100-day retry offset
+shifts the weekday by two (100 mod 7), which is why attempt 2 passed. **The retry changed the INPUT
+rather than re-running the test** - which is why a week of green retries said nothing, and why it
+would have failed reliably on certain calendar dates and never on others.
+
+Fixed by confirming the advisory when present, mirroring the user and the pattern already in
+agenda-cards.spec.ts. Verified locally at `--retries=0`: 9 passed.
+
+**The lesson, now three-for-three this week.** therapist-blocks, therapist-self-lock and this one
+were each mis-diagnosed by reasoning and each solved in minutes by reading the artifact, which
+states the cause outright. Every theory formed before reading it was wrong - including "runners
+degraded", "752 cannot have caused it", "it leaves a Maria appointment behind", and "a day
+collision". **Read the artifact first.**
+
+**GREEN's column is now empty.** The five open cards are all owner-side or deferred by owner
+decision: CANARY-reminder (G2, in flight), INC-04 (the rotation deferred to post-launch), PL-03b
+(held), LE-resend and PL-26 (both deferred post-launch). Launch remains G2 + G8.
