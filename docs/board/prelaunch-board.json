@@ -54,7 +54,7 @@
   ],
   "launch_gate": {
     "denominator": 9,
-    "readiness_passed": 7,
+    "readiness_passed": 8,
     "note": "The launch readiness figure is passed-over-nine. It is NOT a percentage of work done and it is NEVER estimated. No partial credit: each condition is pass or fail.",
     "conditions": [
       {
@@ -72,10 +72,14 @@
       {
         "id": "G2",
         "title": "REMINDERS_LIVE_SEND resolved and canary sender confirmed",
-        "state": "fail",
-        "blocked_on": "ivan",
-        "evidence": null,
-        "notes": "Canary RE-STAGED (old one died in the purge). Lead windows 24h + 48h (offsets.ts:20-22,43); fires via the appointment/scheduled Inngest event (functions.ts:66) so canary-create = UI booking at now+24h+15min. REMINDERS_LIVE_SEND checked at SEND time (clients.ts:45). Pending Ivan UI booking + the SMS fire (FROM sender) + Twilio/Inngest/Vercel console findings; GREEN staged canary-cleanup ONLY (sha256 8b75e89d2605e95c68883c3083d0a13779c12c9a77132988ce3b0a7a5e1a4cff; preview by default, destructive only under --confirm <patientId> AUTORIZO, 0/0 verify, patient-id as an arg so no phone enters AI). G2 CLOSES on: SMS sender screenshot + cleanup 0/0 + REMINDERS_LIVE_SEND=false on BOTH Vercel projects + redeploy, before the team session. Two-way capability read off the SMS feeds W12-11. IN FLIGHT 2026-08-02 (owner): actively being worked. The Twilio smoke script is the zero-cost first half; the canary booking through the prod UI is the half that closes this gate."
+        "state": "pass",
+        "blocked_on": null,
+        "evidence": {
+          "kind": "screenshot",
+          "ref": "owner-attested 2026-08-03: reminder canary proved end to end - live SMS sent and confirmed",
+          "at": "2026-08-03"
+        },
+        "notes": "Canary RE-STAGED (old one died in the purge). Lead windows 24h + 48h (offsets.ts:20-22,43); fires via the appointment/scheduled Inngest event (functions.ts:66) so canary-create = UI booking at now+24h+15min. REMINDERS_LIVE_SEND checked at SEND time (clients.ts:45). Pending Ivan UI booking + the SMS fire (FROM sender) + Twilio/Inngest/Vercel console findings; GREEN staged canary-cleanup ONLY (sha256 8b75e89d2605e95c68883c3083d0a13779c12c9a77132988ce3b0a7a5e1a4cff; preview by default, destructive only under --confirm <patientId> AUTORIZO, 0/0 verify, patient-id as an arg so no phone enters AI). G2 CLOSES on: SMS sender screenshot + cleanup 0/0 + REMINDERS_LIVE_SEND=false on BOTH Vercel projects + redeploy, before the team session. Two-way capability read off the SMS feeds W12-11. IN FLIGHT 2026-08-02 (owner): actively being worked. The Twilio smoke script is the zero-cost first half; the canary booking through the prod UI is the half that closes this gate. CLOSED 2026-08-03 by the owner, who ran it: the reminder canary is proved end to end and confirmed. This gate existed because NOTHING in the reminder path is build-time - a missing REMINDERS_LIVE_SEND, Twilio credential or INNGEST_EVENT_KEY never fails a deploy, it silently degrades to sandbox, so only a real send through the prod UI could close it. That is what was done. If the Twilio message SID or the delivery timestamp is to hand, appending it here would turn an attestation into a receipt - not required to close, but it is the difference between a claim and a record."
       },
       {
         "id": "G3",
@@ -501,16 +505,20 @@
     {
       "id": "CANARY-reminder",
       "title": "Reminder pipeline canary - prod SMS smoke test (Twilio) via a real booking",
-      "lane": "blocked_on_people",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "green",
       "gate": "owner_authorizo",
-      "evidence": null,
-      "blocked_on": "ivan",
-      "last_checkpoint": "2026-08-02",
-      "notes": "Fresh canary (old one died in the purge). Reminder lead windows = 48h + 24h before start (offsets.ts:20-22); a reminder is scheduled only if sendAt = startsAt - offset > now (offsets.ts:43). To fire ~15min after booking: book the canary appointment at now + 24h + 15min -> the 24h reminder sends in ~15min. The reminder fires ONLY via the appointment/scheduled Inngest event, emitted by createAppointment (enqueueAppointmentReminders) - a raw DB insert does NOT trigger it, so canary-CREATE = book through the prod UI (canary patient with the owner's phone), NOT a DB script. due-reminder set computed at functions.ts:66 (computeDueReminders). REMINDERS_LIVE_SEND is checked at SEND time (clients.ts:45), NOT at schedule time - so flipping it false tomorrow AM ALSO suppresses reminders already queued tonight. Ivan books the canary in the UI himself (types the phone there; the number never enters AI context). GREEN stages canary-CLEANUP ONLY (delete patient + appt by id, 0/0 verify), parameterised by the patient id Ivan returns after creation. BLOCKED on Ivan's console findings + his UI booking. STILL WAITING 2026-07-31: this is G2, one of the two gates between the platform and launch, and the only one the owner can close alone. Needs REMINDERS_LIVE_SEND + the Twilio credentials + INNGEST_EVENT_KEY set, then a real booking made through the prod UI at now+24h+15min so the scheduled Inngest event fires. Nothing in the reminder path is build-time, so a missing value never fails a deploy - it silently degrades to sandbox, which is exactly why this needs a live canary rather than a config review. IN FLIGHT 2026-08-02 per the owner - actively being worked, no longer merely waiting."
+      "evidence": {
+        "kind": "screenshot",
+        "ref": "owner-attested 2026-08-03: reminder canary proved end to end - live SMS sent and confirmed",
+        "at": "2026-08-03"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-03",
+      "notes": "Fresh canary (old one died in the purge). Reminder lead windows = 48h + 24h before start (offsets.ts:20-22); a reminder is scheduled only if sendAt = startsAt - offset > now (offsets.ts:43). To fire ~15min after booking: book the canary appointment at now + 24h + 15min -> the 24h reminder sends in ~15min. The reminder fires ONLY via the appointment/scheduled Inngest event, emitted by createAppointment (enqueueAppointmentReminders) - a raw DB insert does NOT trigger it, so canary-CREATE = book through the prod UI (canary patient with the owner's phone), NOT a DB script. due-reminder set computed at functions.ts:66 (computeDueReminders). REMINDERS_LIVE_SEND is checked at SEND time (clients.ts:45), NOT at schedule time - so flipping it false tomorrow AM ALSO suppresses reminders already queued tonight. Ivan books the canary in the UI himself (types the phone there; the number never enters AI context). GREEN stages canary-CLEANUP ONLY (delete patient + appt by id, 0/0 verify), parameterised by the patient id Ivan returns after creation. BLOCKED on Ivan's console findings + his UI booking. STILL WAITING 2026-07-31: this is G2, one of the two gates between the platform and launch, and the only one the owner can close alone. Needs REMINDERS_LIVE_SEND + the Twilio credentials + INNGEST_EVENT_KEY set, then a real booking made through the prod UI at now+24h+15min so the scheduled Inngest event fires. Nothing in the reminder path is build-time, so a missing value never fails a deploy - it silently degrades to sandbox, which is exactly why this needs a live canary rather than a config review. IN FLIGHT 2026-08-02 per the owner - actively being worked, no longer merely waiting. SHIPPED 2026-08-03: owner proved and confirmed the canary, closing G2. The reminder pipeline is live-verified rather than config-reviewed, which was the whole point of this card."
     },
     {
       "id": "LE-resend-deferred",

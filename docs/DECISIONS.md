@@ -2783,3 +2783,28 @@ collision". **Read the artifact first.**
 **GREEN's column is now empty.** The five open cards are all owner-side or deferred by owner
 decision: CANARY-reminder (G2, in flight), INC-04 (the rotation deferred to post-launch), PL-03b
 (held), LE-resend and PL-26 (both deferred post-launch). Launch remains G2 + G8.
+
+## 2026-08-03 - G2 closed by the owner: readiness 8/9, only G8 left (GREEN)
+
+The owner ran and confirmed the reminder canary. **G2 passes; launch readiness is 8/9 and the only
+remaining gate is G8, JP's RGPD sign-off.**
+
+Worth recording why this gate could only ever be closed this way: nothing in the reminder path is
+build-time. A missing `REMINDERS_LIVE_SEND`, Twilio credential or `INNGEST_EVENT_KEY` never fails a
+deploy - it silently degrades to sandbox. A config review would have shown green while sending
+nothing, which is the same "reports success while doing nothing" failure this repo hit four times in
+three days. Only a real send through the prod UI could close it, and that is what was done.
+
+**Two caveats that survive G2 and should not be forgotten at cutover:**
+
+1. **G4 reads "prod free of synthetic data" and states PASS, which is knowingly not literally true.**
+   The owner sanctioned continued testing on prod (INC-02b closed by ruling), so synthetic rows are
+   there BY DECISION. G4 must be re-verified at the actual cutover, and the signed clinical record
+   noted in INC-02b is ANNULLED never deleted (rule 8) if a purge happens.
+2. **INC-04 is still open by design.** G3 passes by owner RISK ACCEPTANCE, not because the exposed
+   prod DB password was rotated. The owner will rotate every password and token after the work
+   completes. Accepting a risk is not removing it, which is why that card was deliberately left open
+   rather than shipped.
+
+Remaining 4 cards are all owner-side or deferred by owner decision: INC-04 (the owed rotation),
+PL-03b (held), LE-resend and PL-26 (both post-launch).
