@@ -24,7 +24,30 @@ threads that the code cannot state for itself.
 | 1 | `apps/web/lib/reminders/clients.ts:63` | `reminders@osteojp.pt` | REMOVED |
 | 2 | `apps/web/lib/invites/email.ts:44` | `reminders@osteojp.pt` | REMOVED |
 | 3 | `apps/api/lib/notify/clients.ts:85` | `no-reply@osteojp.pt` | REMOVED |
-| 4 | `apps/web/lib/reminders/dispatch.ts:136` | `https://osteojp.pt` | DEFERRED to item 4 |
+| 4 | `apps/web/lib/reminders/dispatch.ts:142` | `https://osteojp.pt` | REMOVED |
+| 5 | `apps/web/lib/reminders/link-token.ts:81` | silent `null` when `REMINDERS_LINK_SECRET` is unset | FIXED (loud log, still returns null) |
+| 6 | `apps/api/lib/auth/activation.ts:117` | `PATIENT_ACTIVATION_REDIRECT_URL` silently omitted | LEFT (dead code; see the AUTH thread below) |
+
+Fallback 4 was cited as `dispatch.ts:136` in the briefing; the #760 merge shifted it
+to `:142`. Same line, same defect.
+
+Found by the item 4 sweep, beyond the four known:
+
+- **5** was the sharpest. `signRescheduleToken` **throws** when the secret is
+  absent; `verifyRescheduleToken` returned **null**, the same value it returns for
+  a forged or expired token. A deployment missing the secret therefore presented to
+  every patient as "invalid link" with no signal anywhere. It still returns null
+  (the caller must not be able to distinguish a misconfiguration from a forgery)
+  but now logs loudly first.
+- **6** is dead code today and is left alone deliberately.
+
+Judged benign, recorded so the next sweep does not re-litigate them:
+
+- `TWILIO_SMS_FROM ?? TWILIO_MESSAGING_SERVICE_SID` (both apps) is a genuine
+  either-or, not a degradation. Validated as "one of" rather than as two names.
+- `PATIENT_ACTIVATION_CHANNEL` defaults to SMS by owner ruling. It does silently
+  coerce an unknown value to SMS, which is worth revisiting if that path ever
+  ships.
 
 The verified Resend identity is on `send.osteojp.pt`, not the root domain, so
 every removed fallback was a guaranteed send-time rejection wearing a
