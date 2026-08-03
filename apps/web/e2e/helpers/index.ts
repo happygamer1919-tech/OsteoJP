@@ -92,6 +92,18 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
       .pressSequentially(f.nifExemptReason ?? "Estrangeiro (E2E)");
   } else if (f.nif) {
     await page.getByLabel(/^NIF/i).pressSequentially(f.nif);
+  } else {
+    // PL-31 — a caller that says nothing about the NIF gets a generated valid
+    // one, but ONLY where the form actually demands it. Keyed off the input's
+    // own `required` property rather than a create/edit flag the helper would
+    // have to be told: the form marks NIF required on create and not on edit,
+    // so reading it keeps this correct for both without a second parameter, and
+    // keeps an edit spec from silently gaining a NIF it never asked for.
+    const nifBox = page.getByLabel(/^NIF/i);
+    const needsNif = await nifBox.evaluate(
+      (el) => (el as HTMLInputElement).required && (el as HTMLInputElement).value === "",
+    );
+    if (needsNif) await nifBox.pressSequentially(generateValidNif());
   }
   if (f.phone) await page.getByLabel(/Telem[oó]vel/i).pressSequentially(f.phone);
   if (f.email) await page.getByLabel(/^Email/i).pressSequentially(f.email);
@@ -122,18 +134,13 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
 /**
  * Creates a patient and returns the new patient id (from the redirect URL).
  *
- * PL-31 — a caller that says nothing about the NIF gets a generated valid one.
- * Without this default every existing spec that creates a patient (~12 call
- * sites) would fail on a rule that is working exactly as intended, which reads
- * as a broken suite instead of an enforced requirement. Specs that care about
- * the NIF still pass `nif` or `nifExempt` explicitly and are untouched.
+ * PL-31 — the NIF default lives in fillPatientForm, not here, because several
+ * specs (patients.spec.ts:70 and :297) call fillPatientForm directly and would
+ * otherwise still be refused. Filling the form is what needs the default.
  */
 export async function createPatient(page: Page, f: PatientFields): Promise<string> {
   await page.goto("/patients/new");
-  await fillPatientForm(page, {
-    ...f,
-    nif: f.nifExempt ? undefined : (f.nif ?? generateValidNif()),
-  });
+  await fillPatientForm(page, f);
   await page.getByRole("button", { name: "Criar Paciente" }).click();
   await expect(page).toHaveURL(/\/patients\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   return page.url().split("/").at(-1)!;

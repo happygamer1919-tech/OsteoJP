@@ -255,10 +255,24 @@ function optionalUuid(v: unknown, field: string): string | null {
   return t;
 }
 
-export function parseCreatePatient(raw: CreatePatientInput): CreatePatientValues {
+/**
+ * PL-31 — `requireNif` exists for exactly ONE caller: the consultation
+ * quick-create (createStubPatient), which the owner deliberately left at name +
+ * phone so a therapist is not blocked mid-walk-in by a tax number nobody has
+ * yet. That patient is marked ficha incompleta instead.
+ *
+ * It is an argument to the PARSER, not to the server action, on purpose. If it
+ * were a parameter of the exported `createPatient` action, any client could
+ * post `requireNif: false` and walk straight through the requirement. The two
+ * modes are reached through two separate actions instead, so the choice is made
+ * on the server and cannot be asked for from the browser.
+ */
+export function parseCreatePatient(
+  raw: CreatePatientInput,
+  opts: { requireNif?: boolean } = {},
+): CreatePatientValues {
   const r = raw as Record<string, unknown>;
-  // PL-31 — presence REQUIRED here. This is "cannot move forward without it".
-  const nif = resolveNif(r, true);
+  const nif = resolveNif(r, opts.requireNif !== false);
   return {
     fullName: requiredName(r.fullName),
     dateOfBirth: optionalDate(r.dateOfBirth),

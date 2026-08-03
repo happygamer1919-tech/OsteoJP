@@ -430,3 +430,40 @@ describe("PL-31 NIF rule on update", () => {
     expect("nifExempt" in v).toBe(false);
   });
 });
+
+/**
+ * PL-31 — the consultation quick-create bypass.
+ *
+ * This exists because the first cut of PL-31 enforced the NIF inside the shared
+ * parseCreatePatient and broke start-consultation outright: the therapist could
+ * no longer create a walk-in stub at all. CI caught it. These cases pin the
+ * bypass so it cannot regress silently in either direction.
+ */
+describe("PL-31 requireNif:false (consultation stub path)", () => {
+  it("allows a patient with no NIF at all", () => {
+    const v = parseCreatePatientStrict(
+      { fullName: "Walk-in", phone: "912345678" },
+      { requireNif: false },
+    );
+    expect(v.nif).toBeNull();
+    expect(v.nifExempt).toBe(false);
+    expect(v.nifExemptReason).toBeNull();
+  });
+
+  it("still enforces FORMAT on a NIF that IS supplied - the bypass is presence-only", () => {
+    expect(() =>
+      parseCreatePatientStrict({ fullName: "X", nif: "123" }, { requireNif: false }),
+    ).toThrow(ValidationError);
+    expect(() =>
+      parseCreatePatientStrict(
+        { fullName: "X", nif: CONSUMIDOR_FINAL_NIF },
+        { requireNif: false },
+      ),
+    ).toThrow(ValidationError);
+  });
+
+  it("defaults to REQUIRING the NIF when no option is passed", () => {
+    expect(() => parseCreatePatientStrict({ fullName: "X" })).toThrow(ValidationError);
+    expect(() => parseCreatePatientStrict({ fullName: "X" }, {})).toThrow(ValidationError);
+  });
+});

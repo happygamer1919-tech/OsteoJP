@@ -15,7 +15,7 @@ import { eq } from "drizzle-orm";
 import { can } from "@osteojp/auth";
 import { patients } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
-import { createPatient } from "@/lib/patients/actions";
+import { createStubPatient } from "@/lib/patients/actions";
 import { writeAudit } from "@/lib/patients/audit";
 import {
   AUDIO_FILENAME,
@@ -34,19 +34,24 @@ export type StubResult =
   | { ok: false; error: "validation" | "forbidden" };
 
 /**
- * Quick-create a stub patient at record time. Name required, phone optional —
- * enforced by the existing createPatient validation. Returns the new patient id
- * so the flow proceeds identically to the existing-patient path.
+ * Quick-create a stub patient at record time. Name required, phone optional.
+ *
+ * PL-31 — goes through `createStubPatient`, NOT `createPatient`. A NIF is now
+ * mandatory to create a ficha, and routing this through the normal path would
+ * have broken start-consultation entirely: the therapist would be blocked from
+ * recording a walk-in until someone produced a tax number. The owner ruled this
+ * path keeps name + phone; the patient is marked ficha incompleta instead and
+ * cannot have a declaração issued until the NIF is supplied.
  */
 export async function createStubPatientAction(input: {
   fullName: string;
   phone?: string | null;
 }): Promise<StubResult> {
   try {
-    const p = await createPatient({ fullName: input.fullName, phone: input.phone ?? null });
+    const p = await createStubPatient({ fullName: input.fullName, phone: input.phone ?? null });
     return { ok: true, patientId: p.id };
   } catch (e) {
-    // createPatient throws ValidationError on an empty name; forbidden on role.
+    // createStubPatient throws ValidationError on an empty name; forbidden on role.
     const name = (e as { name?: string })?.name ?? "";
     if (name === "ValidationError") return { ok: false, error: "validation" };
     return { ok: false, error: "forbidden" };

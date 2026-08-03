@@ -9,10 +9,26 @@
  * its reason input, and that a blocked submit leaves the user on the form
  * instead of silently creating half a patient.
  */
-import { test, expect } from "@playwright/test";
-import { createPatient, generateValidNif, goToPatients } from "./helpers";
+import { test, expect, type Page } from "@playwright/test";
+import { createPatient, fillPatientForm, generateValidNif, goToPatients } from "./helpers";
 
 const uniq = () => Math.random().toString(36).slice(2, 8);
+
+/**
+ * Fill the create form with a deliberately bad NIF and submit.
+ *
+ * Goes through fillPatientForm rather than typing the two fields by hand: the
+ * seeded admin has no staff_locations, so the clinic picker is a REQUIRED
+ * choice (PL-15b). Hand-filling only name + NIF leaves it empty, the browser
+ * blocks the submit on its own native validation, and the request never reaches
+ * the server — so the test would sit on /patients/new and "pass" the URL
+ * assertion while proving nothing about the NIF rule.
+ */
+async function submitWithNif(page: Page, nif: string) {
+  await page.goto("/patients/new");
+  await fillPatientForm(page, { fullName: `NIF ${uniq()}`, nif });
+  await page.getByRole("button", { name: "Criar Paciente" }).click();
+}
 
 test("cannot create a patient with no NIF - submit is refused and we stay on the form", async ({
   page,
@@ -35,29 +51,27 @@ test("a valid NIF creates the patient and shows it on the ficha", async ({ page 
   const id = await createPatient(page, { fullName: `Com NIF ${uniq()}`, nif });
 
   await page.goto(`/patients/${id}`);
-  await expect(page.getByText(nif)).toBeVisible();
+  // `exact` because the NIF also appears inside the identity line
+  // ("NIF 200000012 · Consultório B"), which an unanchored match resolves to
+  // as well and Playwright then fails as a strict-mode violation.
+  await expect(page.getByText(nif, { exact: true })).toBeVisible();
   // A complete ficha carries no incomplete banner.
   await expect(page.getByTestId("ficha-incompleta-nif")).toHaveCount(0);
 });
 
 test("a malformed NIF is rejected by the server, not silently stored", async ({ page }) => {
-  await page.goto("/patients/new");
-  await page.getByLabel(/Nome completo/i).pressSequentially(`NIF Mau ${uniq()}`);
   // Nine digits, so the browser's own required-check passes and the value
   // reaches the server: this asserts the CHECKSUM is enforced, which is the
-  // half that stops the field filling up with plausible junk.
-  await page.getByLabel(/^NIF/i).pressSequentially("123456780");
-  await page.getByRole("button", { name: "Criar Paciente" }).click();
+  // half that stops the field filling up with plausible junk. 123456789 is a
+  // real NIF; 123456780 is the same digits with the control digit broken.
+  await submitWithNif(page, "123456780");
 
   await expect(page).toHaveURL(/\/patients\/new/);
   await expect(page.getByText(/d[ií]gito de controlo/i)).toBeVisible({ timeout: 8_000 });
 });
 
 test("999999990 is refused and the message points at the exemption", async ({ page }) => {
-  await page.goto("/patients/new");
-  await page.getByLabel(/Nome completo/i).pressSequentially(`Consumidor ${uniq()}`);
-  await page.getByLabel(/^NIF/i).pressSequentially("999999990");
-  await page.getByRole("button", { name: "Criar Paciente" }).click();
+  await submitWithNif(page, "999999990");
 
   await expect(page).toHaveURL(/\/patients\/new/);
   await expect(page.getByText(/consumidor final/i)).toBeVisible({ timeout: 8_000 });

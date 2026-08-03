@@ -55,9 +55,36 @@ function revalidatePatient(id: string): void {
 }
 
 export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
+  return createPatientImpl(raw, true);
+}
+
+/**
+ * PL-31 — the consultation quick-create. Same insert, NIF presence NOT required.
+ *
+ * A separate ACTION rather than a flag on createPatient: this file is
+ * "use server", so every exported function is callable from the browser, and a
+ * `requireNif` parameter would have been a client-supplied way around the rule.
+ * Splitting it means the browser can only ever ask for one of two fixed
+ * behaviours, both decided here.
+ *
+ * This is not a hole. The owner ruled the stub path stays at name + phone so a
+ * therapist is not blocked mid-walk-in; the resulting patient is flagged ficha
+ * incompleta (derived: no NIF and no exemption) and cannot have a declaração
+ * issued until the NIF is filled in.
+ */
+export async function createStubPatient(raw: CreatePatientInput): Promise<Patient> {
+  return createPatientImpl(raw, false);
+}
+
+// Not exported: in a "use server" module an export IS a server action, and this
+// takes the trust-deciding flag.
+async function createPatientImpl(
+  raw: CreatePatientInput,
+  requireNif: boolean,
+): Promise<Patient> {
   const ctx = await requireRequestContext();
   assertCan(ctx.role, "patients:write");
-  const input = parseCreatePatient(raw);
+  const input = parseCreatePatient(raw, { requireNif });
 
   const patient = await runScoped(ctx, async (tx) => {
     // Per-tenant sequential patient number (JP ruling, DECISIONS 2026-07-02) is
