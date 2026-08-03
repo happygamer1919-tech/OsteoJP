@@ -107,6 +107,7 @@ async function sendPatientSms(args: {
   patientId: string;
   phone: string;
   body: string;
+  templateId: string;
 }): Promise<SendResult | null> {
   const to = normalizePhonePT(args.phone);
   if (!to) {
@@ -115,7 +116,12 @@ async function sendPatientSms(args: {
     );
     return null;
   }
-  return sendSms({ to, body: args.body });
+  return sendSms({
+    to,
+    body: args.body,
+    templateId: args.templateId,
+    appointmentId: args.appointmentId,
+  });
 }
 
 function tenantPhone(settings: unknown): string {
@@ -219,6 +225,8 @@ export async function dispatchReminder(
         to: data.patientEmail,
         subject: email.subject,
         body: email.body,
+        templateId: `reminder.${offsetId}.email`,
+        appointmentId,
       }),
     );
   }
@@ -230,6 +238,7 @@ export async function dispatchReminder(
       patientId: data.patientId,
       phone: data.patientPhone,
       body: sms,
+      templateId: `reminder.${offsetId}.sms`,
     });
     if (sent) channels.push(sent);
   }
@@ -275,7 +284,15 @@ export async function dispatchConfirmation(
   const channels: SendResult[] = [];
   if (email && data.patientEmail) {
     const rendered = renderConfirmationEmail(locale, ctx);
-    channels.push(await sendEmail({ to: data.patientEmail, subject: rendered.subject, body: rendered.body }));
+    channels.push(
+      await sendEmail({
+        to: data.patientEmail,
+        subject: rendered.subject,
+        body: rendered.body,
+        templateId: "confirmation.email",
+        appointmentId,
+      }),
+    );
   }
   if (sms && data.patientPhone) {
     const sent = await sendPatientSms({
@@ -284,6 +301,7 @@ export async function dispatchConfirmation(
       patientId: data.patientId,
       phone: data.patientPhone,
       body: renderConfirmationSms(locale, ctx),
+      templateId: "confirmation.sms",
     });
     if (sent) channels.push(sent);
   }
@@ -333,7 +351,15 @@ export async function dispatchFollowUp(
   const channels: SendResult[] = [];
   if (email && data.patientEmail) {
     const rendered = renderFollowUpEmail(locale, ctx);
-    channels.push(await sendEmail({ to: data.patientEmail, subject: rendered.subject, body: rendered.body }));
+    channels.push(
+      await sendEmail({
+        to: data.patientEmail,
+        subject: rendered.subject,
+        body: rendered.body,
+        templateId: "follow_up.email",
+        appointmentId,
+      }),
+    );
   }
   if (sms && data.patientPhone) {
     const sent = await sendPatientSms({
@@ -342,6 +368,7 @@ export async function dispatchFollowUp(
       patientId: data.patientId,
       phone: data.patientPhone,
       body: renderFollowUpSms(locale, ctx),
+      templateId: "follow_up.sms",
     });
     if (sent) channels.push(sent);
   }
@@ -398,7 +425,15 @@ export async function dispatchNoShow(
   const channels: SendResult[] = [];
   if (email && data.patientEmail) {
     const rendered = renderNoShowEmail(locale, ctx);
-    channels.push(await sendEmail({ to: data.patientEmail, subject: rendered.subject, body: rendered.body }));
+    channels.push(
+      await sendEmail({
+        to: data.patientEmail,
+        subject: rendered.subject,
+        body: rendered.body,
+        templateId: "no_show.email",
+        appointmentId,
+      }),
+    );
   }
   if (sms && data.patientPhone) {
     const sent = await sendPatientSms({
@@ -407,6 +442,7 @@ export async function dispatchNoShow(
       patientId: data.patientId,
       phone: data.patientPhone,
       body: renderNoShowSms(locale, ctx),
+      templateId: "no_show.sms",
     });
     if (sent) channels.push(sent);
   }
