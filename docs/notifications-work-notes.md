@@ -153,3 +153,105 @@ one or does the line come out.
 **specified, not built**, and the packet says so explicitly — claiming a
 protection that does not exist yet is the exact pattern this lane has spent the
 session removing. It gets built with the chosen variant, after the decision.
+
+---
+
+# Counsel and owner rulings, 2026-08-03
+
+Legal basis for reminders: art. 6(1)(b) plus 9(2)(h). Contact data tied to an
+appointment is art. 9 health data. **No consent needed for reminders**, which
+settles a question this lane had been treating as open.
+
+## Copy approvals — CLOSED
+
+All ten patient bodies are `approved: true`, `approvedBy: "JP"`,
+`approvedAt: "2026-08-03"`.
+
+**Source: JP's written reply of 2026-08-03, a blanket approval of all ten bodies
+as they appear in the packet.** Not a verbal relay, not inferred from silence.
+
+Consequences worth stating plainly:
+
+- The approval gate no longer stops anything. **`REMINDERS_LIVE_SEND` is now the
+  only thing between an approved body and a real patient's phone.** The test
+  `sends NOTHING with live send off, even though all 10 are approved` is the
+  load-bearing one from here on.
+- Patient activation stays **unapproved**: it was excluded from the packet as
+  dead code, so a blanket approval of the packet must not reach it. Asserted.
+- **Open:** JP has not chosen between the shipped 24h SMS body and variant A.
+  Follow-up sent. If he picks variant A, that body enters the registry
+  `approved: false` and goes through the gate like any other copy change.
+
+## SMS opt-out posture — CLOSED
+
+No email fallback when a patient disables SMS. Ratified by JP in writing
+2026-08-03. Recorded in the packet's defaults matrix.
+
+## Cancel cutoff — 24 hours (JP, 2026-08-03)
+
+Portal and token cancel paths refuse inside 24h of appointment start, pt-PT copy
+directing the patient to telephone.
+
+**Design consequence, resolved:** the 24h SMS arrives *at* the cutoff, so its
+link is **confirm-only**. The 48h email may offer cancel, but the cutoff is
+re-evaluated **at redemption**, not at issuance — a cancel link created at 48h
+can be clicked 30 hours later, inside the cutoff. Per-offset action matrix is in
+`docs/rgpd-token-flow.md` §5.
+
+## Reschedule minimum notice — PENDING JP
+
+Unanswered. **The new-slot constraint is deliberately not built.** Do not infer a
+value from the cancel cutoff; they are different decisions.
+
+## Reschedule notifications — binding scope for DoR item 4
+
+Every patient-initiated change (cancel and reschedule included) lands in the
+in-app notification centre for reception and the assigned therapist. Owner-
+mandated, no longer merely planned.
+
+## Payload minimisation — now a compliance property
+
+Counsel reviewed and requires it maintained. Enforced by
+`apps/web/lib/reminders/payload-minimization.test.ts`, verified to fail when a
+`patientPhone` field is added to an event type. The first version of that check
+used a word-boundary match and **missed `patientPhone`**; the negative arm caught
+it and it now matches substrings.
+
+## Fee acceptance — SPEC ONLY, DO NOT BUILD
+
+**Location changed by JP: the ficha clínica, not the portal booking flow.**
+A checkbox at the end of the ficha alongside the existing confirmations,
+**staff-side**, captured when staff complete or update the ficha. Not pre-checked.
+
+Acceptance record, per patient: `patient_id`, `accepted_at`, `terms_version`,
+`recorded_by`.
+
+**The fee line renders only for a patient with a recorded acceptance.** The gate
+is per-patient acceptance **AND** the global flag, never the flag alone. A global
+flag on its own would announce a fee to patients who never accepted it, which is
+the exact thing counsel warned about.
+
+JP confirmed **no existing signed document contains the rule**, so this flow is
+the sole legal path to the fee line ever shipping.
+
+Migration for the acceptance table is **not 0053**; it queues behind the audit
+log migration. Phone and walk-in bookings are handled on paper by the clinic and
+are out of scope here.
+
+## Lawyer follow-up list
+
+1. **Retention period** for the patient audit log.
+2. Does **ficha clínica acceptance satisfy the pre-contractual communication
+   duty for bookings concluded through the portal**, or does the portal also need
+   its own acceptance step? This matters: the ficha is staff-side, so a patient
+   who books entirely through the portal may never pass through it.
+3. Whether the Supabase and Vercel regions need verifying from the provider
+   consoles rather than from committed configuration (see
+   `docs/rgpd-token-flow.md` §10).
+
+## Documents produced
+
+`docs/rgpd-token-flow.md` — token issuance, signature, validity, single-use
+consumption, scope and per-offset action matrix, landing-page contents, audit log
+fields and integrity, payload minimisation, subprocessor table. Every section
+marked BUILT or SPECIFIED so counsel cannot mistake a plan for a control.

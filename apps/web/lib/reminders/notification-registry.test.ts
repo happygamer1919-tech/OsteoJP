@@ -49,29 +49,44 @@ describe("registry contents", () => {
     expect(REMINDER_TEMPLATES.every((t) => t.audience === "patient")).toBe(true);
   });
 
-  // The reconciliation above, asserted rather than asserted-in-a-comment.
-  it("totals 12 refusing entries across both apps: 10 here + 2 activation", async () => {
+  // The reconciliation, asserted rather than asserted-in-a-comment. The TOTALS
+  // are unchanged by JP's approval — 10 web entries + 2 activation = 12 entries
+  // over 11 distinct bodies. What changed is how many of them REFUSE.
+  it("still totals 12 entries over 11 bodies across both apps", async () => {
     const { ACTIVATION_TEMPLATES } = await import(
       "../../../../apps/api/lib/notify/registry"
     );
-    const refusingHere = REMINDER_TEMPLATES.filter((t) => !t.approved);
-    const refusingApi = ACTIVATION_TEMPLATES.filter((t) => !t.approved);
 
-    expect(refusingHere).toHaveLength(10);
-    expect(refusingApi).toHaveLength(2);
-    expect(refusingHere.length + refusingApi.length).toBe(12);
+    expect(REMINDER_TEMPLATES).toHaveLength(10);
+    expect(ACTIVATION_TEMPLATES).toHaveLength(2);
+    expect(REMINDER_TEMPLATES.length + ACTIVATION_TEMPLATES.length).toBe(12);
 
     // 11 BODIES, not 12: the two activation entries are one body on two channels.
     const activationBodies = new Set(ACTIVATION_TEMPLATES.map((t) => t.body));
     expect(activationBodies.size).toBe(1);
-    expect(refusingHere.length + activationBodies.size).toBe(11);
+    expect(REMINDER_TEMPLATES.length + activationBodies.size).toBe(11);
   });
 
-  it("has every reminder body unapproved, with no approver invented", () => {
-    for (const t of REMINDER_TEMPLATES) {
+  it("leaves patient activation UNAPPROVED after JP's packet approval", async () => {
+    // JP approved the packet. Activation was deliberately excluded from it as
+    // dead code, so a blanket approval of the packet must not reach it.
+    const { ACTIVATION_TEMPLATES } = await import(
+      "../../../../apps/api/lib/notify/registry"
+    );
+    for (const t of ACTIVATION_TEMPLATES) {
       expect(t.approved).toBe(false);
       expect(t.approvedBy).toBeNull();
-      expect(t.approvedAt).toBeNull();
+    }
+  });
+
+  it("records JP's 2026-08-03 blanket approval on every reminder body, with a real approver", () => {
+    for (const t of REMINDER_TEMPLATES) {
+      expect(t.approved).toBe(true);
+      // Provenance is not decoration: an approval with no named approver and no
+      // date is indistinguishable from a default, which is how unreviewed copy
+      // reaches patients.
+      expect(t.approvedBy).toBe("JP");
+      expect(t.approvedAt).toBe("2026-08-03");
     }
   });
 
@@ -103,8 +118,8 @@ describe("registry contents", () => {
   });
 });
 
-describe("approval gate refuses every patient body, live send armed", () => {
-  it("refuses all 10 web patient bodies and sends none", async () => {
+describe("the approval gate now passes, and the kill switch still holds", () => {
+  it("passes all 10 approved bodies through when live send is armed", async () => {
     const { notifier, sink } = harness(LIVE);
 
     const outcomes = await Promise.all(
@@ -120,10 +135,46 @@ describe("approval gate refuses every patient body, live send armed", () => {
       ),
     );
 
+    expect(outcomes.filter((o) => o.sent)).toHaveLength(10);
+    expect(sink.records).toHaveLength(10);
+  });
+
+  // THE LOAD-BEARING TEST NOW. Approval removed one of the two gates; this is the
+  // other, and it is the only thing standing between an approved body and a real
+  // patient's phone. It must fail loudly if the kill switch ever stops holding.
+  it("sends NOTHING with live send off, even though all 10 are approved", async () => {
+    const { notifier, sink } = harness({});
+
+    const outcomes = await Promise.all(
+      REMINDER_TEMPLATES.map((t) =>
+        notifier.dispatch({
+          templateId: t.id,
+          channel: t.channel,
+          to: t.channel === "sms" ? "+351910000000" : "doente@example.test",
+          subject: "assunto",
+          body: t.body,
+          appointmentId: "appt-1",
+        }),
+      ),
+    );
+
     const refused = outcomes.filter(
-      (o) => !o.sent && "reason" in o && o.reason === "template_unapproved",
+      (o) => !o.sent && "reason" in o && o.reason === "live_send_disabled",
     );
     expect(refused).toHaveLength(10);
+    expect(sink.records).toHaveLength(0);
+  });
+
+  it("still fails closed on an id that is not registered at all", async () => {
+    const { notifier, sink } = harness(LIVE);
+    const out = await notifier.dispatch({
+      templateId: "reminder.24h.whatsapp",
+      channel: "sms",
+      to: "+351910000000",
+      body: "corpo",
+    });
+
+    expect(out).toMatchObject({ sent: false, reason: "template_unapproved" });
     expect(sink.records).toHaveLength(0);
   });
 
@@ -141,10 +192,12 @@ describe("approval gate refuses every patient body, live send armed", () => {
     expect(sink.records).toHaveLength(1);
   });
 
-  it("dispatches a body the moment it is approved, and only that one", async () => {
+  it("refuses a body the moment its approval is withdrawn, and only that one", async () => {
+    // The inverse of the original assertion: now that all ten are approved, the
+    // property worth proving is that UN-approving one stops exactly one.
     const flipped = WEB_TEMPLATES.map((t) =>
       t.id === "confirmation.sms"
-        ? { ...t, approved: true, approvedBy: "JP (test)", approvedAt: "2026-08-03" }
+        ? { ...t, approved: false, approvedBy: null, approvedAt: null }
         : t,
     );
     const sink = createTestSink();
@@ -158,13 +211,13 @@ describe("approval gate refuses every patient body, live send armed", () => {
       emailFrom: () => "reminders@send.osteojp.pt",
     });
 
-    const approved = await notifier.dispatch({
+    const withdrawn = await notifier.dispatch({
       templateId: "confirmation.sms",
       channel: "sms",
       to: "+351910000000",
       body: "corpo",
     });
-    const stillRefused = await notifier.dispatch({
+    const stillApproved = await notifier.dispatch({
       templateId: "confirmation.email",
       channel: "email",
       to: "doente@example.test",
@@ -172,8 +225,8 @@ describe("approval gate refuses every patient body, live send armed", () => {
       body: "corpo",
     });
 
-    expect(approved.sent).toBe(true);
-    expect(stillRefused).toMatchObject({ sent: false, reason: "template_unapproved" });
+    expect(withdrawn).toMatchObject({ sent: false, reason: "template_unapproved" });
+    expect(stillApproved.sent).toBe(true);
     expect(sink.records).toHaveLength(1);
   });
 });
