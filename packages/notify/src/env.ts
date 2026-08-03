@@ -28,8 +28,13 @@ export function liveSendEnabled(flag: string, env: EnvSource = process.env): boo
 export const REQUIRED_WHEN_LIVE = {
   email: ["RESEND_API_KEY", "REMINDERS_EMAIL_FROM"],
   sms: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"],
-  /** Rendered into reminder + no-show email bodies; a wrong value 404s silently. */
-  links: ["REMINDERS_RESCHEDULE_BASE_URL"],
+  /**
+   * Link machinery. Both are needed to RENDER a reminder at all, not merely to
+   * send one: dispatch builds the reschedule link before the send gate, so a
+   * missing secret throws and a missing base URL used to silently point at the
+   * marketing site (a 404 for the patient, no signal for the clinic).
+   */
+  links: ["REMINDERS_RESCHEDULE_BASE_URL", "REMINDERS_LINK_SECRET"],
 } as const;
 
 /**
