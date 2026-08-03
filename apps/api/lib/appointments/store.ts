@@ -147,7 +147,7 @@ function apptOverlapExists(
     select 1 from appointments a
     where a.tenant_id = ${tenantId}
       and a.practitioner_id = ${pref(practitioner)}
-      and a.status <> 'cancelled'
+      and a.status not in ('cancelled', 'no_show')
       and a.starts_at < ${iref(endsAt)}
       and a.ends_at   > ${iref(startsAt)}
       ${exclude}
