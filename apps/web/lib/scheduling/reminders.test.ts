@@ -34,15 +34,19 @@ describe("enqueueRemindersAfterCommit", () => {
     ]);
 
     expect(enqueue).toHaveBeenCalledTimes(2);
+    // Series burst guard: both occurrences schedule reminders, but only the
+    // EARLIEST carries the confirmation. See reminders-burst.test.ts.
     expect(enqueue).toHaveBeenNthCalledWith(1, {
       appointmentId: "appt-1",
       tenantId: TENANT,
       startsAt: T1,
+      confirmationEligible: true,
     });
     expect(enqueue).toHaveBeenNthCalledWith(2, {
       appointmentId: "appt-2",
       tenantId: TENANT,
       startsAt: T2,
+      confirmationEligible: false,
     });
   });
 
@@ -56,6 +60,7 @@ describe("enqueueRemindersAfterCommit", () => {
       appointmentId: "appt-1",
       tenantId: TENANT,
       startsAt: T2,
+      confirmationEligible: true,
     });
   });
 
