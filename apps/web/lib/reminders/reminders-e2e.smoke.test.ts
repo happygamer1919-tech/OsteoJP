@@ -242,14 +242,15 @@ describe("reminder dry-run E2E — render + send intent (PT & EN, 48h & 24h)", (
       }
 
       // --- suppression log is PII-SAFE: ids + channel + reason, never content ---
-      // The bodies are registered approved:false (notification-registry.ts), so
-      // the gate stops them at the APPROVAL check, ahead of the live-send check.
-      // That is louder than a routine sandbox skip, so it lands on console.error.
+      // The bodies are APPROVED (JP, 2026-08-03), so the gate no longer stops
+      // them at the approval check. What stops them here is the kill switch:
+      // REMINDERS_LIVE_SEND is off in this suite, so the reason is
+      // live_send_disabled and it lands on console.info as a routine sandbox skip.
       const logged = [...info.mock.calls, ...err.mock.calls]
         .map((c) => String(c[0]))
         .join("\n");
       expect(logged).toContain(
-        `[notify] suppressed template=reminder.${offset}.${channel} channel=${channel} appointment=${APPOINTMENT_ID} reason=template_unapproved`,
+        `[notify] suppressed template=reminder.${offset}.${channel} channel=${channel} appointment=${APPOINTMENT_ID} reason=live_send_disabled`,
       );
       expect(logged).not.toContain(data.patientEmail);
       expect(logged).not.toContain(data.patientPhone);

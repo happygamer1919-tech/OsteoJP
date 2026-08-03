@@ -4,11 +4,24 @@
 // a body and its approval state are read together. Bodies are IMPORTED, never
 // re-authored here: the registry cannot drift from what actually sends.
 //
-// Ten patient-facing reminder bodies, all approved:false. JP has not seen this
-// copy. Until he approves it in the packet (docs/notifications-approval-packet.md)
-// the gate in @osteojp/notify refuses every one of them with
-// reason=template_unapproved, and it refuses them whether or not live send is
-// armed. Patient activation registers separately in apps/api (also unapproved).
+// Ten patient-facing reminder bodies, APPROVED BY JP 2026-08-03.
+//
+// Source: JP's written reply of 2026-08-03, a BLANKET approval of all ten bodies
+// exactly as they appear in docs/notifications-approval-packet.md. Recorded here
+// and in docs/notifications-work-notes.md. Not an inference from silence, not a
+// verbal relay: a written blanket approval of the packet as shipped.
+//
+// STILL OPEN, and it does not block these ten: JP has not chosen between the
+// SHIPPED 24h SMS body (approved here) and variant A from the packet. If he later
+// picks variant A, that new body enters this registry `approved: false` and goes
+// through the gate like any other copy change. Approving these ten does not
+// pre-approve a replacement for one of them.
+//
+// Nothing sends regardless while REMINDERS_LIVE_SEND is not exactly "true".
+// Approval removes ONE of the two gates; the kill switch is the other.
+//
+// Patient activation registers separately in apps/api and remains UNAPPROVED: it
+// was deliberately excluded from JP's packet as dead code.
 //
 // RULING (owner, 2026-08-03), recorded here so it is not relitigated: the staff
 // invite email is grandfathered approved. It is staff-facing, not patient-facing,
@@ -44,13 +57,16 @@ const EV_REMINDER_DUE = "appointment/reminder.due";
 const EV_COMPLETED = "appointment/completed";
 const EV_NOSHOW = "appointment/noshow";
 
+/** JP's blanket approval of the packet, 2026-08-03. One date, one approver. */
+const JP_APPROVAL = { approvedBy: "JP", approvedAt: "2026-08-03" } as const;
+
 /**
  * The registered body is the pt-PT one — pt-PT is DEFAULT_LOCALE and the only
  * locale the clinic operates in. The EN mirror of each template is covered by the
  * same approval decision; approving PT approves its EN counterpart, which the
- * packet states explicitly.
+ * packet states explicitly and JP approved on that basis.
  */
-function unapprovedPatient(
+function patientTemplate(
   id: string,
   channel: "email" | "sms",
   triggerEvent: string,
@@ -63,24 +79,23 @@ function unapprovedPatient(
     triggerEvent,
     body,
     liveSendFlag: "REMINDERS_LIVE_SEND",
-    approved: false,
-    approvedBy: null,
-    approvedAt: null,
+    approved: true,
+    ...JP_APPROVAL,
   };
 }
 
-/** The ten patient-facing reminder bodies. Every one unapproved. */
+/** The ten patient-facing reminder bodies, all approved by JP 2026-08-03. */
 export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
-  unapprovedPatient("reminder.48h.email", "email", EV_REMINDER_DUE, EMAIL["48h"].pt.body),
-  unapprovedPatient("reminder.48h.sms", "sms", EV_REMINDER_DUE, SMS["48h"].pt),
-  unapprovedPatient("reminder.24h.email", "email", EV_REMINDER_DUE, EMAIL["24h"].pt.body),
-  unapprovedPatient("reminder.24h.sms", "sms", EV_REMINDER_DUE, SMS["24h"].pt),
-  unapprovedPatient("confirmation.email", "email", EV_SCHEDULED, CONFIRMATION_EMAIL.pt.body),
-  unapprovedPatient("confirmation.sms", "sms", EV_SCHEDULED, CONFIRMATION_SMS.pt),
-  unapprovedPatient("follow_up.email", "email", EV_COMPLETED, FOLLOW_UP_EMAIL.pt.body),
-  unapprovedPatient("follow_up.sms", "sms", EV_COMPLETED, FOLLOW_UP_SMS.pt),
-  unapprovedPatient("no_show.email", "email", EV_NOSHOW, NO_SHOW_EMAIL.pt.body),
-  unapprovedPatient("no_show.sms", "sms", EV_NOSHOW, NO_SHOW_SMS.pt),
+  patientTemplate("reminder.48h.email", "email", EV_REMINDER_DUE, EMAIL["48h"].pt.body),
+  patientTemplate("reminder.48h.sms", "sms", EV_REMINDER_DUE, SMS["48h"].pt),
+  patientTemplate("reminder.24h.email", "email", EV_REMINDER_DUE, EMAIL["24h"].pt.body),
+  patientTemplate("reminder.24h.sms", "sms", EV_REMINDER_DUE, SMS["24h"].pt),
+  patientTemplate("confirmation.email", "email", EV_SCHEDULED, CONFIRMATION_EMAIL.pt.body),
+  patientTemplate("confirmation.sms", "sms", EV_SCHEDULED, CONFIRMATION_SMS.pt),
+  patientTemplate("follow_up.email", "email", EV_COMPLETED, FOLLOW_UP_EMAIL.pt.body),
+  patientTemplate("follow_up.sms", "sms", EV_COMPLETED, FOLLOW_UP_SMS.pt),
+  patientTemplate("no_show.email", "email", EV_NOSHOW, NO_SHOW_EMAIL.pt.body),
+  patientTemplate("no_show.sms", "sms", EV_NOSHOW, NO_SHOW_SMS.pt),
 ] as const;
 
 /**

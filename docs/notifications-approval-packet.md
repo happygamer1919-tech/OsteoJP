@@ -2,7 +2,12 @@
 
 **Para:** JP. **De:** lane de notificacoes. **Data:** 2026-08-03.
 
-> **Nada nesta lista foi enviado a um doente.** Todas as dez mensagens estao
+> **APROVADAS POR JP a 2026-08-03**, em resposta escrita, aprovacao em bloco das
+> dez mensagens tal como aqui aparecem. Continua a nao ter sido enviada nenhuma
+> mensagem: o interruptor de envio real (`REMINDERS_LIVE_SEND`) esta desligado.
+> Fica em aberto a escolha entre o SMS de 24h aqui aprovado e a variante A.
+>
+> Historico, mantido para referencia: **Nada nesta lista foi enviado a um doente.** Todas as dez mensagens estao
 > bloqueadas no codigo (`approved: false`) e o sistema recusa-se a envia-las ate
 > serem aprovadas aqui, mesmo que o envio real esteja ligado. Este documento
 > existe para que possa ler exactamente o que sairia, antes de sair.
@@ -40,6 +45,10 @@ Os lembretes continuam a ser por sessao.
 | Antecedencias | 48h e 24h | definicoes do tenant |
 | **SMS por doente** | **Ligado por omissao** | `reminder_sms_enabled` |
 | **Email por doente** | **Desligado por omissao** | `reminder_email_enabled` |
+
+**Sem recurso ao email quando o doente recusa SMS** — ratificado por JP a
+2026-08-03. Um doente que desactiva o SMS nao passa a receber email no seu lugar:
+seria entregar-lhe um canal que nao aceitou. Questao fechada.
 
 Consequencia pratica: com as omissoes actuais, **um doente novo recebe SMS mas
 nao email**. O lembrete de 48h (email) nao chega a ninguem ate alguem ligar o
@@ -463,6 +472,13 @@ Ou ligue +351 272 000 000
 GSM-7, 122 caracteres, **1 segmento**.
 
 ### Variante B — com a linha da taxa
+
+> **ESTADO 2026-08-03: PARADA.** A variante A e a redaccao operativa. A variante B
+> so volta a mesa quando (1) o fluxo de aceitacao na ficha clinica estiver a
+> funcionar e (2) JP e o advogado assinarem por baixo. A redaccao revista do
+> advogado substitui a original e remete para os termos aceites
+> ("nos termos aceites na marcacao"). `REMINDERS_FEE_NOTICE_ENABLED` mantem-se
+> desligado.
 
 ```
 OsteoJP
