@@ -51,24 +51,45 @@ async function book(page: Page, patient: string, date: string, time: string) {
     date,
     time,
   });
-  await dialog.getByRole("button", { name: SAVE }).click();
+  await dialog.getByRole("button", { name: SAVE, exact: true }).click();
   // The save is ADVISORY-gated, not unconditional. When the chosen day is not
   // one the seeded therapist works, the drawer keeps itself open with "O
   // terapeuta nao tem horario de trabalho definido neste dia." and a "Guardar
-  // mesmo assim" confirm (PL-11: availability warns, it never blocks). Clicking
-  // Guardar once is therefore NOT enough, and the drawer stays visible.
+  // mesmo assim" confirm (PL-11: availability warns, it never blocks), so one
+  // click is not always enough. That advisory is not a separate mechanism: it
+  // arrives as a `conflicts` entry of kind "availability", and ANY non-null
+  // conflicts flips the confirm button's label (appointment-drawer.tsx:727).
   //
-  // That is the whole cause of this spec's intermittency, and it was never
-  // random: bandDay() derives a calendar DATE, so RUN_DAY_BASE + 45 lands on a
-  // different WEEKDAY depending on when the suite runs. On a weekday the
-  // therapist works, one click saves; on a weekday they do not, the advisory
-  // appears and toBeHidden fails. The +100-day retry offset shifts the weekday
-  // by two (100 mod 7), which is why attempt 2 usually "fixes" it - the retry
-  // changes the INPUT, it does not re-run the same test.
+  // TWO PROVEN DEFECTS ARE FIXED HERE, both about WAITING rather than about
+  // which day the test picks:
   //
-  // Confirming when present mirrors what a user does and matches the pattern
-  // already used in agenda-cards.spec.ts.
+  // 1. `isVisible()` DOES NOT AUTO-WAIT. It is an immediate poll, so the old
+  //    code asked "is the override button there?" microseconds after clicking
+  //    Guardar - almost always BEFORE the server had answered. It read false,
+  //    skipped the confirm, and then sat in `toBeHidden` watching a drawer that
+  //    was waiting for exactly the click it had just decided not to make.
+  //    Fixed by waiting for the drawer to SETTLE into one of its two terminal
+  //    states (closed, or showing the override) before deciding.
+  //
+  // 2. `{ name: "Guardar" }` matches by SUBSTRING by default in Playwright, so
+  //    once the label flips it also matches "Guardar mesmo assim" - two buttons
+  //    for one locator. `exact: true` pins the first click to the real Guardar.
+  //
+  // NOT CLAIMED AS THE WHOLE ROOT CAUSE. The control run's artifact
+  // (run 30827445090) shows a failure where the appointment HAD been created
+  // and the drawer stayed open in the override state anyway, which neither of
+  // the above fully explains. Both defects above are real and worth removing on
+  // their own; if this test fails again, read that artifact before theorising -
+  // and do not mark it fixed on one green run.
   const saveAnyway = dialog.getByRole("button", { name: /Guardar mesmo assim/i });
+  await Promise.race([
+    dialog.waitFor({ state: "hidden", timeout: 12_000 }),
+    saveAnyway.waitFor({ state: "visible", timeout: 12_000 }),
+  ]).catch(() => {
+    // Neither settled in time. Fall through: the assertion below reports the
+    // real state, with a screenshot, instead of this helper throwing a timeout
+    // that says nothing about which of the two we were waiting for.
+  });
   if (await saveAnyway.isVisible().catch(() => false)) await saveAnyway.click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 }
