@@ -85,7 +85,10 @@ test("create patient with all fields persists and displays them", async ({ page 
     fullName: name,
     dateOfBirth: "1980-06-15",
     sex: "male",
-    nif: "900000001",
+    // PL-31 — was "900000001", which is not a real NIF: its control digit is
+    // wrong (it should be 7), so the new checksum rule correctly refuses it.
+    // The fixture was fake and nothing had ever checked.
+    nif: "900000007",
     phone,
     email: `c.${uniq()}@osteojp.test`,
     city: "Linda-a-Velha",

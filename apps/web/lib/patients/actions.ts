@@ -55,9 +55,36 @@ function revalidatePatient(id: string): void {
 }
 
 export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
+  return createPatientImpl(raw, true);
+}
+
+/**
+ * PL-31 — the consultation quick-create. Same insert, NIF presence NOT required.
+ *
+ * A separate ACTION rather than a flag on createPatient: this file is
+ * "use server", so every exported function is callable from the browser, and a
+ * `requireNif` parameter would have been a client-supplied way around the rule.
+ * Splitting it means the browser can only ever ask for one of two fixed
+ * behaviours, both decided here.
+ *
+ * This is not a hole. The owner ruled the stub path stays at name + phone so a
+ * therapist is not blocked mid-walk-in; the resulting patient is flagged ficha
+ * incompleta (derived: no NIF and no exemption) and cannot have a declaração
+ * issued until the NIF is filled in.
+ */
+export async function createStubPatient(raw: CreatePatientInput): Promise<Patient> {
+  return createPatientImpl(raw, false);
+}
+
+// Not exported: in a "use server" module an export IS a server action, and this
+// takes the trust-deciding flag.
+async function createPatientImpl(
+  raw: CreatePatientInput,
+  requireNif: boolean,
+): Promise<Patient> {
   const ctx = await requireRequestContext();
   assertCan(ctx.role, "patients:write");
-  const input = parseCreatePatient(raw);
+  const input = parseCreatePatient(raw, { requireNif });
 
   const patient = await runScoped(ctx, async (tx) => {
     // Per-tenant sequential patient number (JP ruling, DECISIONS 2026-07-02) is
@@ -102,6 +129,10 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
         dateOfBirth: input.dateOfBirth,
         sex: input.sex,
         nif: input.nif,
+        // PL-31 — written as a pair with nif; parseCreatePatient has already
+        // refused any state where both or neither is set.
+        nifExempt: input.nifExempt,
+        nifExemptReason: input.nifExemptReason,
         healthInsuranceNumbers: input.healthInsuranceNumbers,
         email: input.email,
         phone: input.phone,
@@ -166,6 +197,12 @@ export async function updatePatient(
     ...(input.contraindicationOtherNote !== undefined && {
       contraindicationOtherNote: input.contraindicationOtherNote,
     }),
+    // PL-31 — always written together with nif (parseUpdatePatient resolves the
+    // three as one unit, so they are either all present or all absent).
+    ...(input.nifExempt !== undefined && { nifExempt: input.nifExempt }),
+    ...(input.nifExemptReason !== undefined && {
+      nifExemptReason: input.nifExemptReason,
+    }),
   };
 
   const patient = await runScoped(ctx, async (tx) => {
@@ -186,6 +223,28 @@ export async function updatePatient(
           .limit(1);
         if (!loc) throw new ValidationError("Invalid primaryLocationId");
         patch.primaryLocationId = loc.id;
+      }
+    }
+
+    // PL-31 — a NIF that is already on record cannot be edited back to nothing.
+    // Without this the requirement is defeated in one click: create the ficha
+    // with a NIF as required, then open it and empty the field. Deliberately
+    // narrow — it fires ONLY when the patient currently HAS a NIF. A patient
+    // registered before this rule has none, and this must not turn their ficha
+    // into a record that can no longer be saved. Ticking the exemption is still
+    // a legitimate way out (the number was wrong and the patient is foreign),
+    // because that replaces the NIF with a stated reason rather than a blank.
+    if (input.nif !== undefined && input.nif === null && patch.nifExempt !== true) {
+      const [current] = await tx
+        .select({ nif: patients.nif })
+        .from(patients)
+        .where(and(eq(patients.id, id), isNull(patients.deletedAt)))
+        .limit(1);
+      if (!current) throw new PatientNotFoundError();
+      if (current.nif !== null && current.nif !== "") {
+        throw new ValidationError(
+          "Não é possível remover um NIF já registado. Corrija-o, ou marque \"Estrangeiro / sem NIF\" com o motivo.",
+        );
       }
     }
 

@@ -8,7 +8,11 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({ requireRequestContext: vi.fn(), runScoped: vi.fn() }));
 vi.mock("@osteojp/auth", () => ({ can: vi.fn() }));
-vi.mock("@/lib/patients/actions", () => ({ createPatient: vi.fn() }));
+// PL-31 — the stub path deliberately goes through createStubPatient, NOT
+// createPatient: a NIF is mandatory to create a ficha, and routing the
+// walk-in quick-create through the normal path blocked start-consultation
+// entirely (caught by CI on the first PL-31 run).
+vi.mock("@/lib/patients/actions", () => ({ createStubPatient: vi.fn() }));
 vi.mock("@/lib/patients/audit", () => ({ writeAudit: vi.fn() }));
 vi.mock("@osteojp/db", () => ({ patients: { id: "patients.id" } }));
 // actions.ts imports the W4-08 signer + W4-09 webhook; stub them so this test
@@ -27,7 +31,7 @@ vi.mock("@/lib/consultation/m1-webhook", () => ({
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { can } from "@osteojp/auth";
-import { createPatient } from "@/lib/patients/actions";
+import { createStubPatient } from "@/lib/patients/actions";
 import { writeAudit } from "@/lib/patients/audit";
 import { signAudioDownload } from "@/lib/consultation/audio-storage";
 import { fireM1Webhook } from "@/lib/consultation/m1-webhook";
@@ -40,7 +44,7 @@ import {
 const mockCtx = vi.mocked(requireRequestContext);
 const mockRunScoped = vi.mocked(runScoped);
 const mockCan = vi.mocked(can);
-const mockCreatePatient = vi.mocked(createPatient);
+const mockCreatePatient = vi.mocked(createStubPatient);
 const mockWriteAudit = vi.mocked(writeAudit);
 
 const ctx = { tenantId: "t1", role: "therapist" as const, userId: "u1" };
@@ -90,14 +94,14 @@ describe("startConsultationAction — server-enforced consent gate", () => {
 });
 
 describe("createStubPatientAction", () => {
-  it("creates a stub via createPatient (name required, phone optional) and returns the id", async () => {
+  it("creates a stub via createStubPatient (name required, phone optional) and returns the id", async () => {
     mockCreatePatient.mockResolvedValue({ id: "new-pat" } as never);
     const r = await createStubPatientAction({ fullName: "Ana", phone: null });
     expect(r).toEqual({ ok: true, patientId: "new-pat" });
     expect(mockCreatePatient).toHaveBeenCalledWith({ fullName: "Ana", phone: null });
   });
 
-  it("surfaces a validation error when the name is empty (createPatient throws)", async () => {
+  it("surfaces a validation error when the name is empty (createStubPatient throws)", async () => {
     const err = Object.assign(new Error("fullName is required"), { name: "ValidationError" });
     mockCreatePatient.mockRejectedValue(err);
     const r = await createStubPatientAction({ fullName: "  " });

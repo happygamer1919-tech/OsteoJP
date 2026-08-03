@@ -7,6 +7,24 @@
 
 import { type Page, type Locator, expect } from "@playwright/test";
 
+import { nifWithCheckDigit } from "../../lib/patients/nif";
+
+/**
+ * PL-31 — a NIF is now REQUIRED to create a patient, so every spec that creates
+ * one needs a well-formed value even when it does not care about the NIF.
+ *
+ * Generated rather than a single constant because nothing stops two patients
+ * sharing a NIF today, but assuming that stays true forever is how a suite
+ * starts failing on a rule nobody has written yet. The "2" prefix is a valid
+ * individual-taxpayer prefix; the control digit is computed, never guessed.
+ */
+let nifCounter = 0;
+export function generateValidNif(): string {
+  nifCounter += 1;
+  const stem = String(20000000 + (nifCounter % 9_000_000)).padStart(8, "0");
+  return nifWithCheckDigit(stem);
+}
+
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
@@ -30,6 +48,12 @@ export type PatientFields = {
   dateOfBirth?: string;
   sex?: "male" | "female";
   nif?: string;
+  /**
+   * PL-31 — tick "Estrangeiro / sem NIF" instead of supplying a NIF. When set,
+   * `nifExemptReason` is typed into the revealed (required) reason input.
+   */
+  nifExempt?: boolean;
+  nifExemptReason?: string;
   phone?: string;
   email?: string;
   city?: string;
@@ -57,7 +81,30 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
   await page.getByLabel(/Nome completo/i).pressSequentially(f.fullName);
   if (f.dateOfBirth) await page.getByLabel(/Data de nascimento/i).fill(f.dateOfBirth);
   if (f.sex) await page.getByLabel(/Sexo/i).selectOption(f.sex); // <select>, not text
-  if (f.nif) await page.getByLabel(/NIF/i).pressSequentially(f.nif);
+  // PL-31 — `/^NIF/i`, anchored, because the exemption checkbox is labelled
+  // "Estrangeiro / sem NIF" and an unanchored /NIF/i now matches BOTH controls
+  // (Playwright strict mode then fails the locator, not the assertion). Same
+  // reason /^Email/i is anchored below.
+  if (f.nifExempt) {
+    await page.getByLabel(/Estrangeiro \/ sem NIF/i).check();
+    await page
+      .getByLabel(/^Motivo/i)
+      .pressSequentially(f.nifExemptReason ?? "Estrangeiro (E2E)");
+  } else if (f.nif) {
+    await page.getByLabel(/^NIF/i).pressSequentially(f.nif);
+  } else {
+    // PL-31 — a caller that says nothing about the NIF gets a generated valid
+    // one, but ONLY where the form actually demands it. Keyed off the input's
+    // own `required` property rather than a create/edit flag the helper would
+    // have to be told: the form marks NIF required on create and not on edit,
+    // so reading it keeps this correct for both without a second parameter, and
+    // keeps an edit spec from silently gaining a NIF it never asked for.
+    const nifBox = page.getByLabel(/^NIF/i);
+    const needsNif = await nifBox.evaluate(
+      (el) => (el as HTMLInputElement).required && (el as HTMLInputElement).value === "",
+    );
+    if (needsNif) await nifBox.pressSequentially(generateValidNif());
+  }
   if (f.phone) await page.getByLabel(/Telem[oó]vel/i).pressSequentially(f.phone);
   if (f.email) await page.getByLabel(/^Email/i).pressSequentially(f.email);
   if (f.city) await page.getByLabel(/Localidade/i).pressSequentially(f.city);
@@ -84,7 +131,13 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
   }
 }
 
-/** Creates a patient and returns the new patient id (from the redirect URL). */
+/**
+ * Creates a patient and returns the new patient id (from the redirect URL).
+ *
+ * PL-31 — the NIF default lives in fillPatientForm, not here, because several
+ * specs (patients.spec.ts:70 and :297) call fillPatientForm directly and would
+ * otherwise still be refused. Filling the form is what needs the default.
+ */
 export async function createPatient(page: Page, f: PatientFields): Promise<string> {
   await page.goto("/patients/new");
   await fillPatientForm(page, f);

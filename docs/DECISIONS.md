@@ -2808,3 +2808,103 @@ three days. Only a real send through the prod UI could close it, and that is wha
 
 Remaining 4 cards are all owner-side or deferred by owner decision: INC-04 (the owed rotation),
 PL-03b (held), LE-resend and PL-26 (both post-launch).
+
+## 2026-08-03 - PL-31: NIF mandatory on ficha creation, with an audited exemption (GREEN)
+
+Owner CR, verbatim: *"when creating ficha clinica, the NIF field must be as mandatory to fill in,
+cannot move forward without it"*. Two things in the code turned that from a one-line change into a
+decision, and both were put to the owner **before** any code was written.
+
+**1. NIF was free text, so "mandatory" had to mean something.** `validation.ts` accepted any string
+up to 20 characters - `"abc"` saved fine. Mandatory-as-non-empty would have produced a required field
+full of `0` and `-`: worse than optional, because it *looks* authoritative on a fatura. But a real PT
+NIF check has a cost - foreign patients do not have one, and a hard block with no way through means
+reception cannot register a foreign walk-in, so they invent a number and nothing records that they
+did.
+
+**RULING (owner): a valid PT NIF - 9 digits plus the mod-11 control digit - with an explicit
+"Estrangeiro / sem NIF" exemption that requires a written reason.** The exemption is stored
+(`patients.nif_exempt` + `nif_exempt_reason`, migration 0053), so every exception is an auditable act
+rather than an indistinguishable empty field.
+
+Two specific values are rejected on purpose and both are worth recording:
+- `000000000` **passes the checksum** (weighted sum 0 means the expected control digit is 0, which it
+  carries) and is the single likeliest thing typed to escape a required field. The prefix rule is what
+  rejects it. A checksum-only validator would have accepted it.
+- `999999990`, the *consumidor final* number, is structurally valid and means "no NIF given" - i.e.
+  the same thing as the exemption, while looking like a real answer. Accepting it would have made it
+  the one-keystroke way to defeat the requirement with nothing recording that it had been defeated.
+  Its error message points at the exemption checkbox instead of implying a typo.
+
+**2. There is a second patient-creation path, and enforcing the rule in shared validation would have
+killed it silently.** `consultation/actions.ts` `createStubPatientAction` quick-creates a patient from
+name + optional phone so a therapist can start recording a walk-in immediately.
+
+**RULING (owner): the stub path keeps name + phone.** The patient is instead marked **ficha
+incompleta** - derived, never stored, as `nif IS NULL AND NOT nif_exempt` - which shows a banner on
+the ficha and blocks issuing a declaração until the NIF is supplied. The rule binds where it matters
+fiscally without blocking clinical work at the worst possible moment.
+
+**Scope, and the two rules that ride along.** Presence is enforced on CREATE only, because the owner
+said "when creating" and because patients registered before today legitimately have no NIF - requiring
+one on update would have made every legacy ficha unsavable, turning a data-quality rule into a wall
+across records that already exist. Without two smaller rules the requirement is defeated in one click,
+so: any NIF supplied during an edit must still be well-formed, and a patient who **has** a NIF cannot
+have it cleared back to empty (checked in the action, where the current row is available; a patient who
+never had one is untouched).
+
+**An exempted patient is COMPLETE, not incomplete.** They have no NIF and the ficha is finished,
+because the absence is recorded and explained. Conflating the two would have put a permanent warning
+on every foreign patient.
+
+**Migration 0053 is authored here and NOT applied.** GREEN never applies migrations. Column-only add
+on `patients`; existing rows land `nif_exempt = false` so the CHECK is satisfied by the DEFAULT rather
+than a backfill - nothing is rewritten and no table is rescanned. It deliberately does **not** make
+`nif` NOT NULL: legacy patients have none and the ALTER would have failed outright. The database
+cannot tell a new ficha from an old one, which is exactly why presence is enforced in the application.
+
+**Gates: lint, typecheck, unit tests (1588 web tests) and the web production build are green locally,
+as are `db:check`, `db:check-journal` and `db:sync-supabase:check`. The full `pnpm build` and
+`pnpm test:e2e` could NOT be run locally** - this machine has no Supabase env vars, so the portal
+prerender and the Playwright webServer both fail before reaching any of this work. Verified on a clean
+tree that both fail identically without these changes. **The new `nif-required.spec.ts` is therefore
+unverified locally and CI is its first real run.**
+
+## 2026-08-03 - PL-31 CI caught the bug the design named; marcacoes flake re-opened on a control run (GREEN)
+
+**CI caught a real bug of mine, and it was the exact one PL-31's own card said to avoid.**
+`createStubPatientAction` routes through `createPatient`, so enforcing the NIF inside the shared
+`parseCreatePatient` blocked every consultation walk-in stub. The card said in as many words that
+enforcing it there would kill that flow - and then it was enforced there anyway, in the same session.
+`consultation-start.spec.ts` went red immediately.
+
+**Fixed as two server actions, not a flag.** `createPatient` requires the NIF, `createStubPatient`
+does not, both call a private impl. A `requireNif` parameter on the exported action would have been a
+client-supplied bypass: `lib/patients/actions.ts` is `"use server"`, so every export is callable from
+the browser and anyone could have posted `requireNif: false`. Splitting it means the browser can only
+ask for one of two fixed behaviours, both decided server-side. The bypass is presence-only - a NIF
+supplied to the stub path is still format-checked. Four unit tests pin it.
+
+**One of the other four failures was not a test bug: `patients.spec.ts` used `nif: "900000001"`,
+which is not a valid NIF** - its control digit should be 7. A fake fixture that had sat there
+unchallenged because nothing had ever checked a NIF. The other three were mine: the e2e NIF default
+was in the wrong helper, one assertion matched the NIF twice, and two cases hand-filled the form
+without choosing a clinic - which is REQUIRED, so the browser blocked the submit on its own
+validation and the request never reached the server. Those two would have **passed their URL
+assertion while proving nothing**, which is the more dangerous shape.
+
+**LE-marcacoes-tab-edit-flake is RE-OPENED, hours after being marked shipped.** A fifth test failed
+that I could not attribute, so rather than call it a flake I triggered a control E2E run on `main`
+carrying none of my changes (run 30827445090). **It failed on that exact test.** The advisory-confirm
+fix shipped this morning is therefore incomplete: something else also keeps the drawer open on some
+calendar dates, and the nine local passes at `--retries=0` could not have shown it, because the input
+changes with the date. That is this repo's own rule, written on another card this week: one green run
+proves nothing about anything that can race.
+
+Its evidence field was **cleared**, not just its status. The receipt was real but insufficient, and
+leaving it attached would let the next reader think the question was settled.
+
+**Board-integrity note worth keeping:** the correct move when a test fails and you cannot attribute it
+is to run the control, not to reason about whether it "looks related". The control cost one workflow
+dispatch and converted a guess into a fact in both directions - it proved the marcacoes failure was
+not mine, AND that a card claiming a fix was wrong.

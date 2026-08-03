@@ -2,11 +2,34 @@
 // framework) so it is unit-testable in isolation. Manual validation to match
 // the codebase convention (no schema library).
 
+import { checkNif, type NifProblem } from "./nif";
+
 export class ValidationError extends Error {
   override readonly name = "ValidationError";
   constructor(message: string) {
     super(message);
   }
+}
+
+/**
+ * PL-31 — one message per way a NIF can be wrong, so the desk is told what to
+ * DO rather than that something is invalid. The consumidor-final case is the
+ * one that matters most in practice: it is a correct-looking number that means
+ * "no NIF given", so its message points at the exemption instead of implying
+ * the digits were mistyped.
+ */
+const NIF_MESSAGES: Record<NifProblem, string> = {
+  empty:
+    "NIF é obrigatório. Se o paciente não tem NIF português, marque \"Estrangeiro / sem NIF\" e indique o motivo.",
+  not_nine_digits: "NIF inválido: deve ter exatamente 9 dígitos.",
+  bad_prefix: "NIF inválido: não é um número de contribuinte português válido.",
+  bad_checksum: "NIF inválido: o dígito de controlo não confere. Verifique os 9 dígitos.",
+  consumidor_final:
+    "999999990 é o NIF de consumidor final, não identifica o paciente. Se o paciente não tem NIF português, marque \"Estrangeiro / sem NIF\" e indique o motivo.",
+};
+
+function nifError(problem: NifProblem): ValidationError {
+  return new ValidationError(NIF_MESSAGES[problem]);
 }
 
 /** Raw form input. Optional fields may arrive as "", which normalizes to null. */
@@ -15,6 +38,10 @@ export type CreatePatientInput = {
   dateOfBirth?: string | null;
   sex?: string | null;
   nif?: string | null;
+  // PL-31 — the exemption, not a second NIF. Ticked when the patient genuinely
+  // has no PT NIF (a foreigner); the reason is then mandatory.
+  nifExempt?: boolean;
+  nifExemptReason?: string | null;
   // PL-23 — health insurance plans, a list because a patient may hold more than
   // one. Entries arrive from the form and are normalized/capped below.
   healthInsuranceNumbers?: HealthInsuranceEntry[] | null;
@@ -49,6 +76,8 @@ export type CreatePatientValues = {
   dateOfBirth: string | null;
   sex: string | null;
   nif: string | null;
+  nifExempt: boolean;
+  nifExemptReason: string | null;
   healthInsuranceNumbers: HealthInsuranceEntry[];
   email: string | null;
   phone: string | null;
@@ -166,6 +195,57 @@ function optionalInsuranceList(v: unknown): HealthInsuranceEntry[] | null {
   return out;
 }
 
+/**
+ * PL-31 — the NIF rule, in one place because create and update must not drift.
+ *
+ * Two shapes are acceptable and nothing else:
+ *   - a well-formed PT NIF, and no exemption; or
+ *   - the exemption ticked, with a written reason, and the NIF left empty.
+ *
+ * `requirePresence` is the ONLY difference between creating and editing, and it
+ * is the whole reason this takes a flag rather than being two functions. On
+ * CREATE the owner's rule binds: no NIF and no exemption is refused. On UPDATE
+ * it must not, because patients registered before 2026-08-03 legitimately have
+ * neither, and demanding one would make every legacy ficha unsavable — turning
+ * a data-quality rule into a wall across records that already exist.
+ *
+ * What update does NOT relax is FORMAT: a NIF typed during an edit is checked
+ * exactly as hard as one typed at creation. Only presence is negotiable.
+ */
+function resolveNif(
+  r: Record<string, unknown>,
+  requirePresence: boolean,
+): { nif: string | null; nifExempt: boolean; nifExemptReason: string | null } {
+  const exempt = r.nifExempt === true;
+  const rawNif = optionalText(r.nif, "nif", 20);
+
+  if (exempt) {
+    const reason = optionalText(r.nifExemptReason, "nifExemptReason", 200);
+    if (reason === null) {
+      throw new ValidationError(
+        "Indique o motivo pelo qual o paciente não tem NIF (ex.: estrangeiro, passaporte).",
+      );
+    }
+    // An exemption AND a NIF is a contradiction, and silently keeping one of
+    // them would leave the record asserting both. The NIF wins nothing here:
+    // the user ticked the box deliberately, so the box is the answer and the
+    // stale digits are dropped.
+    return { nif: null, nifExempt: true, nifExemptReason: reason };
+  }
+
+  if (rawNif === null) {
+    if (requirePresence) throw nifError("empty");
+    return { nif: null, nifExempt: false, nifExemptReason: null };
+  }
+
+  const problem = checkNif(rawNif);
+  if (problem !== null) throw nifError(problem);
+  // Store the normalized 9 digits, not what was typed: "123 456 789" and
+  // "123456789" are the same NIF and must not become two different strings in
+  // a column that invoices are matched on.
+  return { nif: rawNif.replace(/[\s.\-]/g, ""), nifExempt: false, nifExemptReason: null };
+}
+
 function optionalUuid(v: unknown, field: string): string | null {
   if (v === undefined || v === null) return null;
   if (typeof v !== "string") throw new ValidationError(`${field} must be a UUID`);
@@ -175,13 +255,31 @@ function optionalUuid(v: unknown, field: string): string | null {
   return t;
 }
 
-export function parseCreatePatient(raw: CreatePatientInput): CreatePatientValues {
+/**
+ * PL-31 — `requireNif` exists for exactly ONE caller: the consultation
+ * quick-create (createStubPatient), which the owner deliberately left at name +
+ * phone so a therapist is not blocked mid-walk-in by a tax number nobody has
+ * yet. That patient is marked ficha incompleta instead.
+ *
+ * It is an argument to the PARSER, not to the server action, on purpose. If it
+ * were a parameter of the exported `createPatient` action, any client could
+ * post `requireNif: false` and walk straight through the requirement. The two
+ * modes are reached through two separate actions instead, so the choice is made
+ * on the server and cannot be asked for from the browser.
+ */
+export function parseCreatePatient(
+  raw: CreatePatientInput,
+  opts: { requireNif?: boolean } = {},
+): CreatePatientValues {
   const r = raw as Record<string, unknown>;
+  const nif = resolveNif(r, opts.requireNif !== false);
   return {
     fullName: requiredName(r.fullName),
     dateOfBirth: optionalDate(r.dateOfBirth),
     sex: optionalSex(r.sex),
-    nif: optionalText(r.nif, "nif", 20),
+    nif: nif.nif,
+    nifExempt: nif.nifExempt,
+    nifExemptReason: nif.nifExemptReason,
     healthInsuranceNumbers: optionalInsuranceList(r.healthInsuranceNumbers) ?? [],
     email: optionalEmail(r.email),
     phone: optionalText(r.phone, "phone", 32),
@@ -207,7 +305,18 @@ export function parseUpdatePatient(raw: UpdatePatientInput): UpdatePatientValues
   if ("fullName" in r) out.fullName = requiredName(r.fullName);
   if ("dateOfBirth" in r) out.dateOfBirth = optionalDate(r.dateOfBirth);
   if ("sex" in r) out.sex = optionalSex(r.sex);
-  if ("nif" in r) out.nif = optionalText(r.nif, "nif", 20);
+  // PL-31 — NIF and its exemption move TOGETHER: they are one rule expressed in
+  // two columns, so a payload touching either is re-resolved as a pair. Editing
+  // only the NIF while a stale exemption sat in the row would otherwise produce
+  // exactly the both-at-once state resolveNif exists to prevent.
+  // Presence is NOT required here: see resolveNif — legacy patients have no NIF
+  // and must stay editable.
+  if ("nif" in r || "nifExempt" in r || "nifExemptReason" in r) {
+    const nif = resolveNif(r, false);
+    out.nif = nif.nif;
+    out.nifExempt = nif.nifExempt;
+    out.nifExemptReason = nif.nifExemptReason;
+  }
   if ("healthInsuranceNumbers" in r) {
     out.healthInsuranceNumbers = optionalInsuranceList(r.healthInsuranceNumbers) ?? [];
   }

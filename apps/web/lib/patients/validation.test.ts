@@ -3,14 +3,32 @@ import {
   MAX_HEALTH_INSURANCE_ENTRIES,
   ValidationError,
   escapeLike,
-  parseCreatePatient,
+  parseCreatePatient as parseCreatePatientStrict,
   parseMergeInput,
   parseSearch,
   parseUpdatePatient,
 } from "./validation";
+import { CONSUMIDOR_FINAL_NIF, nifWithCheckDigit } from "./nif";
 
 const UUID_A = "11111111-1111-1111-1111-111111111111";
 const UUID_B = "22222222-2222-2222-2222-222222222222";
+
+const VALID_NIF = nifWithCheckDigit("21234567");
+
+/**
+ * PL-31 — creating a patient now requires a NIF. Every case in this file that
+ * predates the rule is about some OTHER field (sex, insurance, referral, ...),
+ * so a valid NIF is injected by default and those cases keep asserting exactly
+ * what they were written to assert.
+ *
+ * Injected via spread-then-override, so any case that passes its own `nif`
+ * (including a deliberately bad one) still wins. The NIF rule itself is tested
+ * against the unwrapped `parseCreatePatientStrict` in its own describe block,
+ * so this shim can never hide it.
+ */
+const parseCreatePatient = (
+  input: Parameters<typeof parseCreatePatientStrict>[0],
+) => parseCreatePatientStrict({ nif: VALID_NIF, ...input });
 
 describe("parseCreatePatient", () => {
   it("trims fullName and normalizes empty optionals to null", () => {
@@ -295,5 +313,157 @@ describe("health insurance numbers (PL-23)", () => {
 
   it("clears the plans when an update sends an explicitly empty list", () => {
     expect(parseUpdatePatient({ healthInsuranceNumbers: [] }).healthInsuranceNumbers).toEqual([]);
+  });
+});
+
+/**
+ * PL-31 — the NIF requirement. Tested against the UNWRAPPED parse function, so
+ * the default-injecting shim above cannot mask any of it.
+ *
+ * Owner CR 2026-08-03: "when creating ficha clinica, the NIF field must be as
+ * mandatory to fill in, cannot move forward without it".
+ */
+describe("PL-31 NIF requirement on create", () => {
+  it("refuses to create a patient with no NIF at all", () => {
+    expect(() => parseCreatePatientStrict({ fullName: "Sem NIF" })).toThrow(
+      ValidationError,
+    );
+  });
+
+  it("refuses an empty or whitespace-only NIF", () => {
+    expect(() => parseCreatePatientStrict({ fullName: "X", nif: "" })).toThrow(
+      ValidationError,
+    );
+    expect(() => parseCreatePatientStrict({ fullName: "X", nif: "   " })).toThrow(
+      ValidationError,
+    );
+  });
+
+  it("refuses the values typed to escape a required field", () => {
+    for (const junk of ["0", "-", "000000000", "n/a"]) {
+      expect(() => parseCreatePatientStrict({ fullName: "X", nif: junk })).toThrow(
+        ValidationError,
+      );
+    }
+  });
+
+  it("refuses the consumidor final number and says to use the exemption", () => {
+    expect(() =>
+      parseCreatePatientStrict({ fullName: "X", nif: CONSUMIDOR_FINAL_NIF }),
+    ).toThrow(/Estrangeiro \/ sem NIF/);
+  });
+
+  it("accepts a valid NIF and stores it normalized to nine digits", () => {
+    const spaced = `${VALID_NIF.slice(0, 3)} ${VALID_NIF.slice(3, 6)} ${VALID_NIF.slice(6)}`;
+    const v = parseCreatePatientStrict({ fullName: "X", nif: spaced });
+    expect(v.nif).toBe(VALID_NIF);
+    expect(v.nifExempt).toBe(false);
+    expect(v.nifExemptReason).toBeNull();
+  });
+
+  it("accepts the exemption with a reason, and stores no NIF", () => {
+    const v = parseCreatePatientStrict({
+      fullName: "Foreign Patient",
+      nifExempt: true,
+      nifExemptReason: "Passaporte do Reino Unido",
+    });
+    expect(v.nif).toBeNull();
+    expect(v.nifExempt).toBe(true);
+    expect(v.nifExemptReason).toBe("Passaporte do Reino Unido");
+  });
+
+  it("refuses an exemption with no reason - an unaudited exemption is the hole the flag exists to close", () => {
+    expect(() =>
+      parseCreatePatientStrict({ fullName: "X", nifExempt: true }),
+    ).toThrow(ValidationError);
+    expect(() =>
+      parseCreatePatientStrict({ fullName: "X", nifExempt: true, nifExemptReason: "  " }),
+    ).toThrow(ValidationError);
+  });
+
+  it("never stores a NIF and an exemption together - the box wins, the digits are dropped", () => {
+    const v = parseCreatePatientStrict({
+      fullName: "X",
+      nif: VALID_NIF,
+      nifExempt: true,
+      nifExemptReason: "Estrangeiro",
+    });
+    expect(v.nifExempt).toBe(true);
+    expect(v.nif).toBeNull();
+  });
+});
+
+describe("PL-31 NIF rule on update", () => {
+  /**
+   * The line that keeps this from bricking existing records: patients created
+   * before 2026-08-03 have no NIF, and their fichas must stay editable.
+   */
+  it("does NOT require a NIF on update, so legacy patients stay editable", () => {
+    expect(() => parseUpdatePatient({ phone: "912345678" })).not.toThrow();
+    expect(parseUpdatePatient({ phone: "912345678" }).nif).toBeUndefined();
+  });
+
+  it("still enforces FORMAT on any NIF supplied during an edit", () => {
+    expect(() => parseUpdatePatient({ nif: "123" })).toThrow(ValidationError);
+    expect(() => parseUpdatePatient({ nif: CONSUMIDOR_FINAL_NIF })).toThrow(
+      ValidationError,
+    );
+    expect(parseUpdatePatient({ nif: VALID_NIF }).nif).toBe(VALID_NIF);
+  });
+
+  it("resolves nif and its exemption as one unit when either key is present", () => {
+    const v = parseUpdatePatient({ nifExempt: true, nifExemptReason: "Estrangeiro" });
+    expect(v.nif).toBeNull();
+    expect(v.nifExempt).toBe(true);
+    expect(v.nifExemptReason).toBe("Estrangeiro");
+  });
+
+  it("clearing the exemption clears its reason with it", () => {
+    const v = parseUpdatePatient({ nif: VALID_NIF, nifExempt: false });
+    expect(v.nifExempt).toBe(false);
+    expect(v.nifExemptReason).toBeNull();
+  });
+
+  it("leaves nif untouched when no nif key is present at all", () => {
+    const v = parseUpdatePatient({ city: "Lisboa" });
+    expect("nif" in v).toBe(false);
+    expect("nifExempt" in v).toBe(false);
+  });
+});
+
+/**
+ * PL-31 — the consultation quick-create bypass.
+ *
+ * This exists because the first cut of PL-31 enforced the NIF inside the shared
+ * parseCreatePatient and broke start-consultation outright: the therapist could
+ * no longer create a walk-in stub at all. CI caught it. These cases pin the
+ * bypass so it cannot regress silently in either direction.
+ */
+describe("PL-31 requireNif:false (consultation stub path)", () => {
+  it("allows a patient with no NIF at all", () => {
+    const v = parseCreatePatientStrict(
+      { fullName: "Walk-in", phone: "912345678" },
+      { requireNif: false },
+    );
+    expect(v.nif).toBeNull();
+    expect(v.nifExempt).toBe(false);
+    expect(v.nifExemptReason).toBeNull();
+  });
+
+  it("still enforces FORMAT on a NIF that IS supplied - the bypass is presence-only", () => {
+    expect(() =>
+      parseCreatePatientStrict({ fullName: "X", nif: "123" }, { requireNif: false }),
+    ).toThrow(ValidationError);
+    expect(() =>
+      parseCreatePatientStrict(
+        { fullName: "X", nif: CONSUMIDOR_FINAL_NIF },
+        { requireNif: false },
+      ),
+    ).toThrow(ValidationError);
+  });
+
+  it("defaults to REQUIRING the NIF when no option is passed", () => {
+    expect(() => parseCreatePatientStrict({ fullName: "X" })).toThrow(ValidationError);
+    expect(() => parseCreatePatientStrict({ fullName: "X" }, {})).toThrow(ValidationError);
   });
 });
