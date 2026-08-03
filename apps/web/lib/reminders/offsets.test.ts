@@ -55,8 +55,8 @@ describe("offset config", () => {
 });
 
 describe("reminderIdempotencyKey", () => {
-  it("combines appointment id and offset into a stable key", () => {
-    expect(reminderIdempotencyKey("appt-1", "48h")).toBe("appt-1:48h");
-    expect(reminderIdempotencyKey("appt-1", "24h")).toBe("appt-1:24h");
+  it("combines appointment id, offset AND channel into a stable key", () => {
+    expect(reminderIdempotencyKey("appt-1", "48h", "email")).toBe("appt-1:48h:email");
+    expect(reminderIdempotencyKey("appt-1", "24h", "sms")).toBe("appt-1:24h:sms");
   });
 });

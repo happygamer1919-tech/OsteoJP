@@ -52,8 +52,11 @@ export const REMINDER_SUPERSEDE_CANCEL_ON = [
   },
 ];
 
+// CHANNEL IS PART OF THIS KEY. Without it, two channels at the same offset and
+// send instant collapse into one Inngest run and the second is silently dropped —
+// no error, no log, no run. See reminderIdempotencyKey in ../offsets.ts.
 export const REMINDER_IDEMPOTENCY_KEY =
-  'event.data.appointmentId + ":" + event.data.offsetId + ":" + event.data.sendAt';
+  'event.data.appointmentId + ":" + event.data.offsetId + ":" + event.data.channel + ":" + event.data.sendAt';
 
 export const scheduleAppointmentReminders = inngest.createFunction(
   {
@@ -77,6 +80,7 @@ export const scheduleAppointmentReminders = inngest.createFunction(
           appointmentId,
           tenantId,
           offsetId: d.offsetId,
+          channel: d.channel,
           sendAt: d.sendAt.toISOString(),
         } satisfies ReminderDueData,
       })),
@@ -99,18 +103,18 @@ export const sendAppointmentReminder = inngest.createFunction(
     idempotency: REMINDER_IDEMPOTENCY_KEY,
   },
   async ({ event, step }) => {
-    const { appointmentId, tenantId, offsetId, sendAt } =
+    const { appointmentId, tenantId, offsetId, channel, sendAt } =
       event.data as ReminderDueData;
 
     // Durable wait until the reminder is due. Survives restarts/redeploys.
     await step.sleepUntil("wait-until-due", new Date(sendAt));
 
     const outcome = await step.run("dispatch", () =>
-      dispatchReminder(tenantId, appointmentId, offsetId),
+      dispatchReminder(tenantId, appointmentId, offsetId, channel),
     );
 
     return {
-      key: reminderIdempotencyKey(appointmentId, offsetId),
+      key: reminderIdempotencyKey(appointmentId, offsetId, channel),
       ...outcome,
     };
   },

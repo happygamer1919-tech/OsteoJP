@@ -211,7 +211,7 @@ describe("dispatchReminder honors tenant reminder config", () => {
       fixture({ emailEnabled: false, smsEnabled: true, leadTimeHours: [48, 24] }),
     );
 
-    const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h");
+    const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms");
 
     expect(outcome).toMatchObject({ dispatched: true });
     if (!outcome.dispatched) throw new Error("expected dispatched");
@@ -227,13 +227,16 @@ describe("dispatchReminder honors tenant reminder config", () => {
     });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h");
+      const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms");
 
+      // One run, one channel: an unusable phone means this SMS run sends nothing.
+      // It is still `dispatched` (not an error) and the 48h EMAIL run is a
+      // separate run, entirely unaffected — which is the point of the split.
       expect(outcome).toMatchObject({ dispatched: true });
       if (!outcome.dispatched) throw new Error("expected dispatched");
-      // Email goes out; the SMS channel is skipped, not sent and not errored.
-      expect(outcome.channels.map((c) => c.channel)).toEqual(["email"]);
+      expect(outcome.channels).toHaveLength(0);
       expect(h.sms).toHaveLength(0);
+      expect(h.email).toHaveLength(0);
 
       // Structured skip log: ids only — NEVER the raw number (PII rule #7).
       const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
@@ -253,16 +256,16 @@ describe("dispatchReminder honors tenant reminder config", () => {
     );
 
     // 48h is not in the selected set → nothing sends.
-    const off = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "48h");
+    const off = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "48h", "email");
     expect(off).toEqual({ dispatched: false, reason: "lead_time_off" });
     expect(h.email).toHaveLength(0);
     expect(h.sms).toHaveLength(0);
 
-    // 24h is selected → both channels send.
-    const on = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h");
+    // 24h is selected → its one channel (SMS) sends.
+    const on = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms");
     expect(on).toMatchObject({ dispatched: true });
     if (!on.dispatched) throw new Error("expected dispatched");
-    expect(on.channels.map((c) => c.channel).sort()).toEqual(["email", "sms"]);
+    expect(on.channels.map((c) => c.channel)).toEqual(["sms"]);
   });
 
   it("preserves prior behavior when the tenant has no reminder config saved", async () => {
@@ -270,13 +273,14 @@ describe("dispatchReminder honors tenant reminder config", () => {
     // lead times). This is the "defaults preserve current behavior" guarantee.
     h.loadReminderData.mockResolvedValue(fixture(undefined));
 
-    const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "48h");
+    const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "48h", "email");
 
     expect(outcome).toMatchObject({ dispatched: true });
     if (!outcome.dispatched) throw new Error("expected dispatched");
-    expect(outcome.channels.map((c) => c.channel).sort()).toEqual(["email", "sms"]);
+    // 48h is the EMAIL offset: one run, one channel.
+    expect(outcome.channels.map((c) => c.channel)).toEqual(["email"]);
     expect(h.email).toHaveLength(1);
-    expect(h.sms).toHaveLength(1);
+    expect(h.sms).toHaveLength(0);
   });
 
   it("suppresses SMS when patient has opted out of SMS, even if tenant SMS is on", async () => {
@@ -284,12 +288,13 @@ describe("dispatchReminder honors tenant reminder config", () => {
       fixture({ emailEnabled: true, smsEnabled: true, leadTimeHours: [48, 24] }, { smsEnabled: false, emailEnabled: true }),
     );
 
-    const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h");
+    // The 24h run is the SMS run. The patient opted out of SMS, so it sends
+    // nothing — it does NOT fall back to email, which would deliver a channel the
+    // patient did not consent to on this offset.
+    const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms");
 
-    expect(outcome).toMatchObject({ dispatched: true });
-    if (!outcome.dispatched) throw new Error("expected dispatched");
-    expect(outcome.channels.map((c) => c.channel)).toEqual(["email"]);
-    expect(h.email).toHaveLength(1);
+    expect(outcome).toEqual({ dispatched: false, reason: "channels_off" });
+    expect(h.email).toHaveLength(0);
     expect(h.sms).toHaveLength(0);
   });
 
@@ -298,7 +303,7 @@ describe("dispatchReminder honors tenant reminder config", () => {
       fixture({ emailEnabled: true, smsEnabled: true, leadTimeHours: [48, 24] }, { smsEnabled: false, emailEnabled: false }),
     );
 
-    const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h");
+    const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, "24h", "sms");
 
     expect(outcome).toEqual({ dispatched: false, reason: "channels_off" });
     expect(h.email).toHaveLength(0);

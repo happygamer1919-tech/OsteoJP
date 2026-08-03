@@ -1,5 +1,6 @@
 import { Inngest } from "inngest";
 import type { ReminderOffsetId } from "../templates";
+import type { Channel } from "@osteojp/notify";
 
 // Inngest client for Stream E reminders.
 //
@@ -30,6 +31,8 @@ export type ReminderDueData = {
   appointmentId: string;
   tenantId: string;
   offsetId: ReminderOffsetId;
+  /** The single channel this reminder goes out on. Part of the idempotency key. */
+  channel: Channel;
   sendAt: string; // ISO-8601 UTC
 };
 
