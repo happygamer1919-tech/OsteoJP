@@ -22,11 +22,13 @@ beforeEach(() => {
   delete process.env.INVITES_LIVE_SEND;
   delete process.env.REMINDERS_LIVE_SEND;
   delete process.env.RESEND_API_KEY;
+  delete process.env.REMINDERS_EMAIL_FROM;
 });
 afterEach(() => {
   delete process.env.INVITES_LIVE_SEND;
   delete process.env.REMINDERS_LIVE_SEND;
   delete process.env.RESEND_API_KEY;
+  delete process.env.REMINDERS_EMAIL_FROM;
 });
 
 describe("flag independence", () => {
@@ -61,7 +63,7 @@ describe("flag independence", () => {
   it("reminders stay sandbox with REMINDERS_LIVE_SEND off even when INVITES_LIVE_SEND is on", async () => {
     process.env.INVITES_LIVE_SEND = "true";
     process.env.RESEND_API_KEY = "test-key";
-    const r = await sendEmail(msg);
+    const r = await sendEmail({ ...msg, templateId: "confirmation.email" });
     expect(r.sandbox).toBe(true);
     expect(send).not.toHaveBeenCalled();
   });
@@ -92,6 +94,7 @@ describe("sendInviteEmail", () => {
   it("gate on + key present -> real (mocked) send, sandbox false", async () => {
     process.env.INVITES_LIVE_SEND = "true";
     process.env.RESEND_API_KEY = "test-key";
+    process.env.REMINDERS_EMAIL_FROM = "reminders@send.osteojp.pt";
     send.mockResolvedValue({ data: { id: "re_live_1" }, error: null });
     const r = await sendInviteEmail(msg);
     expect(r).toEqual({ channel: "email", sandbox: false, id: "re_live_1" });
@@ -101,6 +104,7 @@ describe("sendInviteEmail", () => {
   it("gate on + Resend returns an error -> throws (caller degrades to temp password)", async () => {
     process.env.INVITES_LIVE_SEND = "true";
     process.env.RESEND_API_KEY = "test-key";
+    process.env.REMINDERS_EMAIL_FROM = "reminders@send.osteojp.pt";
     send.mockResolvedValue({ data: null, error: { name: "validation_error" } });
     await expect(sendInviteEmail(msg)).rejects.toThrow(/Resend send failed/);
   });

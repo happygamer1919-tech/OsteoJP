@@ -7,11 +7,12 @@
 // lib/reminders/clients.ts is deliberately NOT modified, so the two switches
 // share no state and reminder behaviour is unchanged.
 //
-// The ~12 lines of Resend call below are intentionally duplicated rather than
-// hoisted into a shared helper: sharing the send primitive is what coupled the
-// two flags in the first place, and the whole point of this loop is that
-// flipping one switch can never move the other. Resend stays the single email
-// vendor (no new vendor).
+// SUPERSEDED (2026-08-03): the Resend call is no longer duplicated here. The
+// original note argued that sharing a send primitive is what coupled the two
+// flags. That was true of a shared FLAG READ, not of shared code — the old
+// helper hardcoded REMINDERS_LIVE_SEND. @osteojp/notify resolves the flag PER
+// TEMPLATE, so this module now routes through the one choke point and the two
+// switches still share no state. The flag-independence tests below prove it.
 //
 // No `server-only` here so the sender is unit-testable under vitest's node env,
 // matching lib/reminders/clients.ts. The SDK is imported lazily inside the live
@@ -19,7 +20,8 @@
 //
 // PII rule (#7): nothing here logs recipient addresses, subjects, or bodies.
 
-import type { EmailMessage, SendResult } from "@/lib/reminders/clients";
+import { sendEmail, type EmailMessage, type SendResult } from "@/lib/reminders/clients";
+import { INVITE_TEMPLATE } from "@/lib/reminders/notification-registry";
 
 /**
  * Invite live sends are off unless INVITES_LIVE_SEND is exactly "true". Any
@@ -31,18 +33,10 @@ export function invitesLiveSendEnabled(): boolean {
   return process.env.INVITES_LIVE_SEND === "true";
 }
 
-/** Why an invite send was suppressed. Used only for the intent log. */
-type DryRunReason = "live_send_disabled" | "missing_provider_config";
-
-function logDryRun(reason: DryRunReason): void {
-  console.info(`[invites] dry-run: email not sent (${reason})`);
-}
-
-function fromEmail(): string {
-  // The verified osteojp.pt sender. Shared with reminders by design: it is the
-  // Resend from-address, not a switch. Never hardcode a verified sender.
-  return process.env.REMINDERS_EMAIL_FROM ?? "reminders@osteojp.pt";
-}
+// The from-address is resolved by the choke point (lib/reminders/clients.ts,
+// requiredEmailFrom). The former `?? "reminders@osteojp.pt"` fallback is REMOVED:
+// the verified Resend identity is on send.osteojp.pt, so the root-domain default
+// was a guaranteed send-time rejection wearing a healthy-looking default.
 
 /**
  * Send the staff-invite set-password email. Returns a sandbox result (no
@@ -51,27 +45,8 @@ function fromEmail(): string {
  * live-send failure, which the caller also degrades to the temp-password path.
  */
 export async function sendInviteEmail(msg: EmailMessage): Promise<SendResult> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!invitesLiveSendEnabled()) {
-    logDryRun("live_send_disabled");
-    return { channel: "email", sandbox: true, id: "sandbox:invite" };
-  }
-  if (!apiKey) {
-    logDryRun("missing_provider_config");
-    return { channel: "email", sandbox: true, id: "sandbox:invite" };
-  }
-
-  // Lazy import: only loaded on the live path, never in sandbox/tests.
-  const { Resend } = await import("resend");
-  const resend = new Resend(apiKey);
-  const { data, error } = await resend.emails.send({
-    from: fromEmail(),
-    to: msg.to,
-    subject: msg.subject,
-    text: msg.body,
-  });
-  if (error) {
-    throw new Error(`invites/email: Resend send failed (${error.name})`);
-  }
-  return { channel: "email", sandbox: false, id: data?.id ?? "unknown" };
+  const out = await sendEmail({ ...msg, templateId: INVITE_TEMPLATE.id });
+  // Preserve the invite-specific sandbox marker the caller (lib/admin/staff.ts)
+  // and its tests key on; the gate's generic marker is channel-shaped.
+  return out.sandbox ? { ...out, id: "sandbox:invite" } : out;
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sendSms } from "./clients";
+import { sendSms, createSender } from "./clients";
 import {
   isGsm7,
   renderConfirmationSms,
@@ -12,6 +12,19 @@ import {
   type ReminderContext,
 } from "./templates";
 import type { Locale } from "@osteojp/i18n";
+
+// Transport-behaviour tests need an APPROVED template to reach a provider at all
+// — the real bodies are approved:false by ruling and stay that way. This fixture
+// approves the same entries so payload/normalization/error assertions still
+// exercise the real adapter. Refusal of the REAL registry is asserted in
+// notification-registry.test.ts.
+import { buildRegistry } from "@osteojp/notify";
+import { WEB_TEMPLATES } from "./notification-registry";
+const approvedSender = createSender(
+  buildRegistry(
+    WEB_TEMPLATES.map((t) => ({ ...t, approved: true, approvedBy: "test fixture", approvedAt: "2026-08-03" })),
+  ),
+);
 
 // Twilio-integration proof suite (qa/twilio-proof). Three concerns, one file:
 //
@@ -156,7 +169,7 @@ describe("sender resolution — from is TWILIO_SMS_FROM, falling back to the mes
     process.env.TWILIO_SMS_FROM = "OsteoJP";
     twilioCreate.mockResolvedValue({ sid: "SM_alpha" });
 
-    const res = await sendSms({ to: "+351912345678", body: "b" });
+    const res = await approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "confirmation.sms" });
 
     expect(twilioFactory).toHaveBeenCalledWith("AC_test", "tok_test");
     expect(twilioCreate).toHaveBeenCalledWith({
@@ -172,7 +185,7 @@ describe("sender resolution — from is TWILIO_SMS_FROM, falling back to the mes
     process.env.TWILIO_MESSAGING_SERVICE_SID = "MG_test";
     twilioCreate.mockResolvedValue({ sid: "SM_mg" });
 
-    await sendSms({ to: "+351912345678", body: "b" });
+    await approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "confirmation.sms" });
 
     expect(twilioCreate).toHaveBeenCalledWith({
       to: "+351912345678",
@@ -187,7 +200,7 @@ describe("sender resolution — from is TWILIO_SMS_FROM, falling back to the mes
     process.env.TWILIO_MESSAGING_SERVICE_SID = "MG_test";
     twilioCreate.mockResolvedValue({ sid: "SM_x" });
 
-    await sendSms({ to: "+351912345678", body: "b" });
+    await approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "confirmation.sms" });
 
     expect(twilioCreate).toHaveBeenCalledWith(
       expect.objectContaining({ from: "OsteoJP" }),
@@ -201,7 +214,7 @@ describe("sender resolution — from is TWILIO_SMS_FROM, falling back to the mes
     armLiveCreds();
     process.env.TWILIO_SENDER_ID = "OsteoJP"; // not in ENV_KEYS; clean up below
     try {
-      const res = await sendSms({ to: "+351912345678", body: "b" });
+      const res = await approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "confirmation.sms" });
       expect(res.sandbox).toBe(true);
       expect(twilioFactory).not.toHaveBeenCalled();
     } finally {
@@ -218,7 +231,7 @@ describe("launch gate — REMINDERS_LIVE_SEND must be exactly 'true'", () => {
       process.env.TWILIO_SMS_FROM = "OsteoJP";
       if (value !== undefined) process.env.REMINDERS_LIVE_SEND = value;
 
-      const res = await sendSms({ to: "+351912345678", body: "b" });
+      const res = await approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "confirmation.sms" });
 
       expect(res).toEqual({ channel: "sms", sandbox: true, id: "sandbox:sms" });
       expect(twilioFactory).not.toHaveBeenCalled();
@@ -244,7 +257,7 @@ describe("Twilio API errors propagate (Inngest step retry semantics)", () => {
     twilioCreate.mockRejectedValue(
       restException(400, 21211, "The 'To' number is not a valid phone number."),
     );
-    await expect(sendSms({ to: "+351912345678", body: "b" })).rejects.toMatchObject({
+    await expect(approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "confirmation.sms" })).rejects.toMatchObject({
       status: 400,
       code: 21211,
     });
@@ -252,7 +265,7 @@ describe("Twilio API errors propagate (Inngest step retry semantics)", () => {
 
   it("rejects on 5xx (Twilio internal error)", async () => {
     twilioCreate.mockRejectedValue(restException(500, 20500, "Internal server error"));
-    await expect(sendSms({ to: "+351912345678", body: "b" })).rejects.toMatchObject({
+    await expect(approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "confirmation.sms" })).rejects.toMatchObject({
       status: 500,
     });
   });
@@ -284,7 +297,7 @@ describe("phone normalization — every stored format reaches Twilio as E.164 +3
 
   for (const [stored, e164] of STORED_FORMATS) {
     it(`normalizes ${JSON.stringify(stored)} → ${e164} before messages.create`, async () => {
-      const res = await sendSms({ to: stored, body: "b" });
+      const res = await approvedSender.sendSms({ to: stored, body: "b", templateId: "confirmation.sms" });
       expect(twilioCreate).toHaveBeenCalledWith(
         expect.objectContaining({ to: e164 }),
       );
@@ -296,7 +309,7 @@ describe("phone normalization — every stored format reaches Twilio as E.164 +3
     it(`rejects ${JSON.stringify(garbage)}: skip result, Twilio never called, number never logged`, async () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       try {
-        const res = await sendSms({ to: garbage, body: "b" });
+        const res = await approvedSender.sendSms({ to: garbage, body: "b", templateId: "confirmation.sms" });
         expect(res).toEqual({ channel: "sms", sandbox: true, id: "skipped:invalid_phone" });
         expect(twilioFactory).not.toHaveBeenCalled();
         expect(twilioCreate).not.toHaveBeenCalled();
@@ -314,7 +327,7 @@ describe("phone normalization — every stored format reaches Twilio as E.164 +3
     delete process.env.REMINDERS_LIVE_SEND;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const res = await sendSms({ to: "garbage", body: "b" });
+      const res = await approvedSender.sendSms({ to: "garbage", body: "b", templateId: "confirmation.sms" });
       expect(res.id).toBe("skipped:invalid_phone");
     } finally {
       warn.mockRestore();

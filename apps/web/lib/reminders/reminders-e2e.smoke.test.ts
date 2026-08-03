@@ -47,11 +47,11 @@ vi.mock("./clients", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./clients")>();
   return {
     ...actual,
-    sendEmail: vi.fn(async (m: { to: string; subject: string; body: string }) => {
+    sendEmail: vi.fn(async (m: Parameters<typeof actual.sendEmail>[0]) => {
       h.email.push(m);
       return actual.sendEmail(m);
     }),
-    sendSms: vi.fn(async (m: { to: string; body: string }) => {
+    sendSms: vi.fn(async (m: Parameters<typeof actual.sendSms>[0]) => {
       h.sms.push(m);
       return actual.sendSms(m);
     }),
@@ -174,6 +174,7 @@ describe("reminder dry-run E2E — render + send intent (PT & EN, 48h & 24h)", (
       const data: Fixture = makeData(locale);
       h.loadReminderData.mockResolvedValue(data);
       const info = vi.spyOn(console, "info").mockImplementation(() => {});
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const outcome = await dispatchReminder(TENANT_ID, APPOINTMENT_ID, offset);
 
@@ -217,10 +218,17 @@ describe("reminder dry-run E2E — render + send intent (PT & EN, 48h & 24h)", (
       expect(isGsm7(sms.body)).toBe(true); // single-byte GSM-7 family
       expect(sms.body.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT); // ≤ 160, worst-case fill
 
-      // --- dry-run intent log is PII-SAFE: channel + reason only, never content ---
-      const logged = info.mock.calls.map((c) => String(c[0])).join("\n");
-      expect(logged).toContain("[reminders] dry-run: email not sent (live_send_disabled)");
-      expect(logged).toContain("[reminders] dry-run: sms not sent (live_send_disabled)");
+      // --- suppression log is PII-SAFE: ids + channel + reason, never content ---
+      // The bodies are registered approved:false (notification-registry.ts), so
+      // the gate stops them at the APPROVAL check, ahead of the live-send check.
+      // That is louder than a routine sandbox skip, so it lands on console.error.
+      const logged = [...info.mock.calls, ...err.mock.calls].map((c) => String(c[0])).join("\n");
+      expect(logged).toContain(
+        `[notify] suppressed template=reminder.${offset}.email channel=email appointment=${APPOINTMENT_ID} reason=template_unapproved`,
+      );
+      expect(logged).toContain(
+        `[notify] suppressed template=reminder.${offset}.sms channel=sms appointment=${APPOINTMENT_ID} reason=template_unapproved`,
+      );
       expect(logged).not.toContain(data.patientEmail);
       expect(logged).not.toContain(data.patientPhone);
       expect(logged).not.toContain(EXPECT[locale].greeting);

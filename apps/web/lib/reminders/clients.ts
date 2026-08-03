@@ -1,130 +1,172 @@
-// Email (Resend) + SMS (Twilio) send wrappers — sandbox-first.
+// Email (Resend) + SMS (Twilio) adapters for apps/web.
 //
-// Hard rule for Stream E: NO LIVE SENDS. These wrappers default to sandbox mode
-// and only touch the network when REMINDERS_LIVE_SEND === "true" AND the
-// provider keys are present. In sandbox they render-and-return a simulated
-// result without importing or constructing the SDK at all — which is what lets
-// the unit tests assert that zero network calls fire.
+// These are TRANSPORT ONLY. Every gating decision — is the template approved, is
+// live send armed, is the provider configured — belongs to the choke point in
+// @osteojp/notify, and there is no way to reach `messages.create` or
+// `emails.send` except through it. This module supplies the provider calls and
+// the env reads; it makes no policy.
 //
-// No `server-only` here so the senders are unit-testable under vitest's node
-// env. The SDKs are imported lazily inside the live branch, so the sandbox path
-// never loads them.
+// Callers pass a `templateId`. An id that is absent from
+// notification-registry.ts, or present but approved:false, is refused before any
+// SDK is constructed. That is deliberate: adding a body without registering it
+// cannot ship it.
 //
-// PII rule (#7): nothing here logs recipient addresses, phone numbers, names,
-// or message bodies. Only non-identifying metadata (channel, sandbox flag).
+// No `server-only` here so the adapters stay unit-testable under vitest's node
+// env. The SDKs are imported lazily inside the live path, so the suppressed path
+// never loads them and fires zero network calls.
+//
+// PII rule (#7): nothing here logs recipients, subjects, or bodies.
 
+import {
+  createNotifier,
+  liveSendEnabled as flagEnabled,
+  type Channel,
+  type SendOutcome,
+  type TemplateRegistry,
+  type Transport,
+} from "@osteojp/notify";
+import { webRegistry } from "./notification-registry";
 import { normalizePhonePT } from "./phone";
 
-export type SendChannel = "email" | "sms";
+export type SendChannel = Channel;
 
+/**
+ * Kept structurally identical to the pre-registry shape so callers and the
+ * invite module (which imports these types) are unaffected.
+ */
 export type SendResult = {
   channel: SendChannel;
-  /** true when no network call was made (sandbox / disabled). */
+  /** true when no network call was made (suppressed by any gate). */
   sandbox: boolean;
-  /** Provider message id when live; a synthetic "sandbox" marker otherwise. */
+  /** Provider message id when live; a synthetic marker otherwise. */
   id: string;
 };
 
-export type EmailMessage = {
-  to: string;
-  subject: string;
-  body: string;
-};
+export type EmailMessage = { to: string; subject: string; body: string };
+export type SmsMessage = { to: string; body: string };
 
-export type SmsMessage = {
-  to: string;
-  body: string;
-};
-
-/**
- * Live sends are off unless REMINDERS_LIVE_SEND is exactly "true". Any other
- * value (unset, "false", "1", "sandbox") keeps us in sandbox mode. Read at call
- * time, not module load, so tests and env flips take effect without re-import.
- */
+/** Back-compat helper: the reminder stream's own flag. */
 export function liveSendEnabled(): boolean {
-  return process.env.REMINDERS_LIVE_SEND === "true";
+  return flagEnabled("REMINDERS_LIVE_SEND");
 }
-
-/** Why a send was suppressed in dry-run. Used only for the intent log. */
-type DryRunReason = "live_send_disabled" | "missing_provider_config";
 
 /**
- * Log the INTENT of a suppressed (dry-run) send. PII rule (#7): channel + reason
- * only — never the recipient, subject, or body. This is the "logs intent
- * instead of sending" behaviour that makes the default safe and observable.
+ * The verified Resend sender. REQUIRED — there is no fallback. The previous
+ * default was `reminders@osteojp.pt`, a root-domain address Resend would reject
+ * at send time because the verified identity is the `send.osteojp.pt` subdomain.
+ * A guaranteed send-time failure that looks healthy at boot is worse than a boot
+ * failure, so this throws.
  */
-function logDryRun(channel: SendChannel, reason: DryRunReason): void {
-  console.info(`[reminders] dry-run: ${channel} not sent (${reason})`);
+function requiredEmailFrom(): string {
+  const from = process.env.REMINDERS_EMAIL_FROM;
+  if (!from || from.trim() === "") {
+    throw new Error(
+      "reminders/email: REMINDERS_EMAIL_FROM is required and has no default. " +
+        "Set it to the verified Resend identity on send.osteojp.pt.",
+    );
+  }
+  return from;
 }
 
-function fromEmail(): string {
-  // Pending Resend domain verification — see docs/dns-records-pending.md. Never
-  // hardcode a verified sender; read from env so prod can flip without a deploy.
-  return process.env.REMINDERS_EMAIL_FROM ?? "reminders@osteojp.pt";
+function twilioSender(): string | undefined {
+  return process.env.TWILIO_SMS_FROM ?? process.env.TWILIO_MESSAGING_SERVICE_SID;
 }
 
-/* ================================================================== */
-/* Email — Resend (EU)                                                 */
-/* ================================================================== */
-
-export async function sendEmail(msg: EmailMessage): Promise<SendResult> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!liveSendEnabled()) {
-    logDryRun("email", "live_send_disabled");
-    return { channel: "email", sandbox: true, id: "sandbox:email" };
+/** Credential presence only. Never constructs a client, never logs a value. */
+function transportConfigured(channel: Channel): boolean {
+  if (channel === "email") {
+    return !!process.env.RESEND_API_KEY && !!process.env.REMINDERS_EMAIL_FROM;
   }
-  if (!apiKey) {
-    logDryRun("email", "missing_provider_config");
-    return { channel: "email", sandbox: true, id: "sandbox:email" };
-  }
+  return (
+    !!process.env.TWILIO_ACCOUNT_SID &&
+    !!process.env.TWILIO_AUTH_TOKEN &&
+    !!twilioSender()
+  );
+}
 
-  // Lazy import: only loaded on the live path, never in sandbox/tests.
-  const { Resend } = await import("resend");
-  const resend = new Resend(apiKey);
-  const { data, error } = await resend.emails.send({
-    from: fromEmail(),
-    to: msg.to,
-    subject: msg.subject,
-    text: msg.body,
+const providerTransport: Transport = {
+  async sendEmail(msg) {
+    // Lazy import: only on the live path, never in sandbox/tests.
+    const { Resend } = await import("resend");
+    const resend = new Resend(process.env.RESEND_API_KEY!);
+    const { data, error } = await resend.emails.send({
+      from: msg.from,
+      to: msg.to,
+      subject: msg.subject,
+      text: msg.body,
+    });
+    if (error) throw new Error(`reminders/email: Resend send failed (${error.name})`);
+    return { id: data?.id ?? "unknown" };
+  },
+  async sendSms(msg) {
+    const { default: twilio } = await import("twilio");
+    const client = twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!);
+    const result = await client.messages.create({
+      to: msg.to,
+      from: twilioSender()!,
+      body: msg.body,
+    });
+    return { id: result.sid };
+  },
+};
+
+function toSendResult(o: SendOutcome): SendResult {
+  return { channel: o.channel, sandbox: o.sandbox, id: o.id };
+}
+
+/**
+ * Bind the adapters to a registry. Production uses `webRegistry`; tests inject a
+ * fixture so TRANSPORT behaviour (sender resolution, E.164, error propagation)
+ * stays testable without approving a real body. The gate is unchanged either
+ * way — an injected registry still has to mark a template approved to send.
+ */
+export function createSender(registry: TemplateRegistry = webRegistry) {
+  const notifier = createNotifier({
+    registry,
+    transport: providerTransport,
+    transportConfigured,
+    emailFrom: requiredEmailFrom,
   });
-  if (error) {
-    throw new Error(`reminders/email: Resend send failed (${error.name})`);
-  }
-  return { channel: "email", sandbox: false, id: data?.id ?? "unknown" };
+
+  return {
+    async sendEmail(
+      msg: EmailMessage & { templateId: string; appointmentId?: string },
+    ): Promise<SendResult> {
+      return toSendResult(
+        await notifier.dispatch({
+          templateId: msg.templateId,
+          channel: "email",
+          to: msg.to,
+          subject: msg.subject,
+          body: msg.body,
+          appointmentId: msg.appointmentId,
+        }),
+      );
+    },
+    async sendSms(
+      msg: SmsMessage & { templateId: string; appointmentId?: string },
+    ): Promise<SendResult> {
+      // E.164 guard — nothing may reach messages.create un-normalized (Twilio
+      // rejects non-E.164 with 21211). PII rule (#7): the value is never logged.
+      const to = normalizePhonePT(msg.to);
+      if (!to) {
+        console.warn("[reminders] sms skipped (invalid_phone)");
+        return { channel: "sms", sandbox: true, id: "skipped:invalid_phone" };
+      }
+      return toSendResult(
+        await notifier.dispatch({
+          templateId: msg.templateId,
+          channel: "sms",
+          to,
+          body: msg.body,
+          appointmentId: msg.appointmentId,
+        }),
+      );
+    },
+  };
 }
 
-/* ================================================================== */
-/* SMS — Twilio                                                        */
-/* ================================================================== */
+const defaultSender = createSender();
 
-export async function sendSms(msg: SmsMessage): Promise<SendResult> {
-  // E.164 guard — nothing may reach messages.create un-normalized (Twilio
-  // rejects non-E.164 with 21211). The dispatch layer already skips-and-logs
-  // with ids; this is defense-in-depth for any other caller. PII rule (#7):
-  // the rejected value is never logged.
-  const to = normalizePhonePT(msg.to);
-  if (!to) {
-    console.warn("[reminders] sms skipped (invalid_phone)");
-    return { channel: "sms", sandbox: true, id: "skipped:invalid_phone" };
-  }
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_SMS_FROM ?? process.env.TWILIO_MESSAGING_SERVICE_SID;
-  if (!liveSendEnabled()) {
-    logDryRun("sms", "live_send_disabled");
-    return { channel: "sms", sandbox: true, id: "sandbox:sms" };
-  }
-  if (!sid || !token || !from) {
-    logDryRun("sms", "missing_provider_config");
-    return { channel: "sms", sandbox: true, id: "sandbox:sms" };
-  }
-
-  const { default: twilio } = await import("twilio");
-  const client = twilio(sid, token);
-  const result = await client.messages.create({
-    to,
-    from,
-    body: msg.body,
-  });
-  return { channel: "sms", sandbox: false, id: result.sid };
-}
+export const sendEmail = defaultSender.sendEmail;
+export const sendSms = defaultSender.sendSms;
