@@ -225,8 +225,13 @@ export async function bookAppointment(input: BookingInput): Promise<AppointmentV
 }
 
 export async function cancelAppointment(id: string): Promise<void> {
+  // POST, not PATCH. `/cancel` is an ACTION subresource - a non-idempotent state
+  // transition - not a partial update of the appointment. The route exports POST
+  // only, and its sibling `/reschedule` does too. Sending PATCH returned 405, so
+  // every patient who confirmed the cancel dialog got a failure.
+  // api-method-parity.test.ts pins this pair so it cannot drift again.
   const res = await fetch(`${apiBase()}/api/v1/appointments/${id}/cancel`, {
-    method: 'PATCH',
+    method: 'POST',
     headers: await apiHeaders(),
   })
   if (!res.ok) {
