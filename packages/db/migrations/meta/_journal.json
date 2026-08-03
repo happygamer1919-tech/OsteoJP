@@ -365,6 +365,13 @@
       "when": 1786000000000,
       "tag": "0052_conflicts_no_show_releases_slot",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1786100000000,
+      "tag": "0053_patients_nif_exemption",
+      "breakpoints": true
     }
   ]
 }

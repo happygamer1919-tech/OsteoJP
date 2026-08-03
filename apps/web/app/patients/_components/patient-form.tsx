@@ -29,6 +29,10 @@ type Fields = {
   dateOfBirth: string;
   sex: string;
   nif: string;
+  // PL-31 — the exemption for a patient with no PT NIF. Ticking it hides the
+  // NIF input (the two are mutually exclusive) and reveals a required reason.
+  nifExempt: boolean;
+  nifExemptReason: string;
   // PL-23 — health insurance plans. A LIST because a patient may hold more than
   // one (ADSE plus a private insurer is ordinary here); the insurer is optional
   // beside the number, because a bare number is not usable at the desk.
@@ -71,6 +75,8 @@ function toFields(p?: Patient | null): Fields {
     dateOfBirth: p?.dateOfBirth ?? "",
     sex: p?.sex ?? "",
     nif: p?.nif ?? "",
+    nifExempt: p?.nifExempt ?? false,
+    nifExemptReason: p?.nifExemptReason ?? "",
     healthInsuranceNumbers: p?.healthInsuranceNumbers ?? [],
     email: p?.email ?? "",
     phone: p?.phone ?? "",
@@ -185,13 +191,68 @@ export function PatientForm({
             <option value="female">{s["patients.sexFemale"]}</option>
           </select>
         </Field>
-        <Field label={s["patients.fieldNif"]}>
+        {/* PL-31 — NIF is required on CREATE. `required` is bound to !isEdit so
+            that editing a patient registered before this rule (who has no NIF)
+            is still possible; the server draws the same line. Ticking the
+            exemption drops the requirement and swaps in a mandatory reason,
+            because the two states are alternatives, never both.
+
+            The checkbox and its reason sit OUTSIDE <Field> on purpose: Field
+            renders a <label> around its children, and a second <label> nested
+            inside it is invalid HTML — the inner control would end up
+            associated with the outer NIF input, so clicking "Estrangeiro"
+            would focus the NIF box and getByLabel would match two controls. */}
+        <Field
+          label={s["patients.fieldNif"]}
+          required={!isEdit && !fields.nifExempt}
+        >
           <input
+            required={!isEdit && !fields.nifExempt}
+            disabled={fields.nifExempt}
+            inputMode="numeric"
+            autoComplete="off"
             value={fields.nif}
             onChange={(e) => set("nif", e.target.value)}
             className={inputCls}
           />
+          <span className="text-xs text-text-secondary">
+            {fields.nifExempt ? s["patients.nifExemptHint"] : s["patients.nifHint"]}
+          </span>
         </Field>
+        <div className="flex flex-col gap-1 self-end">
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={fields.nifExempt}
+              onChange={(e) => {
+                const on = e.target.checked;
+                // Clear the counterpart on every toggle. Leaving the old value
+                // behind is what produces a record claiming both a NIF and an
+                // exemption from having one; the server rejects that state, so
+                // the form must not be able to compose it in the first place.
+                setFields((f) => ({
+                  ...f,
+                  nifExempt: on,
+                  nif: on ? "" : f.nif,
+                  nifExemptReason: on ? f.nifExemptReason : "",
+                }));
+              }}
+            />
+            <span>{s["patients.nifExemptLabel"]}</span>
+          </label>
+          {fields.nifExempt && (
+            <Field label={s["patients.nifExemptReasonLabel"]} required>
+              <input
+                required
+                value={fields.nifExemptReason}
+                placeholder={s["patients.nifExemptReasonPlaceholder"]}
+                onChange={(e) => set("nifExemptReason", e.target.value)}
+                className={inputCls}
+              />
+            </Field>
+          )}
+        </div>
         <HealthInsuranceFields
           entries={fields.healthInsuranceNumbers}
           onChange={(next) => set("healthInsuranceNumbers", next)}

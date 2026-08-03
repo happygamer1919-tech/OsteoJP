@@ -1010,3 +1010,35 @@ place. Below is the settled state, so the count is trustworthy again.
 - **Q-PL-14-1** - what a staffer assigned to TWO clinics should get. Still hypothetical: the prod read
   shows only JP holds both, and he is owner, so he is unrestricted anyway. Decide if a non-owner ever
   gets two clinics.
+
+## Q-PL-31-1 - do EXISTING patients with no NIF need a backfill push? (opened 2026-08-03, GREEN)
+
+PL-31 makes a NIF mandatory when CREATING a ficha. It deliberately does not touch patients who
+already exist: they keep no NIF, stay editable, and now show a "ficha incompleta" banner plus a block
+on issuing a declaração until one is supplied.
+
+**What is not decided:** whether anything should actively chase those patients, and how many there
+are. GREEN cannot read prod (never sources prod credentials), so the count is unknown here.
+
+**Recommended default: do nothing beyond the banner, and let the count decide.** The banner already
+surfaces the gap at the moment it matters (the ficha, and the declaração button). If a prod read shows
+the number is small, reception fills them in as those patients next attend, which needs no build. If
+it is large, the honest options are a filter on the patient list ("fichas incompletas") so they can be
+worked through deliberately - a small, non-migration ticket - rather than a bulk prompt that nobody
+actions.
+
+**To settle it, one read the owner can run:** count patients where `nif IS NULL AND NOT nif_exempt`.
+
+## Q-PL-31-2 - should the invoicing path block on a missing NIF too? (opened 2026-08-03, GREEN)
+
+PL-31 blocks the **declaração** for a ficha with no NIF and no exemption, because that document
+carries the patient's fiscal identity. The invoicing tab (`canInvoice`) was left alone.
+
+**Why it was not decided here:** invoicing legal compliance is explicitly owner-confirmable in
+CLAUDE.md, and a fatura-recibo with no NIF may be legitimate in PT (it is issued to *consumidor
+final*). Guessing either way risks blocking a legal invoice or permitting a non-compliant one.
+
+**Recommended default: leave invoicing unblocked, and revisit with the accountant.** A missing NIF on
+an invoice is a known, legal shape in Portugal; a wrongly blocked invoice stops the clinic being paid,
+which is a worse failure than a fatura that has to be reissued. The "ficha incompleta" banner is
+already visible on the same patient's record, so whoever issues the invoice can see the gap.

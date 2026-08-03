@@ -506,6 +506,16 @@ export const patients = pgTable(
     dateOfBirth: date("date_of_birth"),
     sex: varchar("sex", { length: 16 }),
     nif: varchar("nif", { length: 20 }), // PT fiscal number (fatura-recibo)
+    // PL-31 (0053) — the NIF EXEMPTION, not a second NIF. From 2026-08-03 a new
+    // ficha requires a valid PT NIF; a patient who genuinely has none (a
+    // foreigner) is created by ticking this and stating why. Kept as a flag +
+    // reason rather than a sentinel in `nif` so no downstream reader (fatura,
+    // declaracao, export) has to know a magic value to avoid printing it.
+    // DB CHECK: exempt implies a reason. Legacy rows are all `false` — absence
+    // of a NIF on an old patient is not an exemption, it is just absence, and
+    // "ficha incompleta" is DERIVED from (nif IS NULL AND NOT nif_exempt).
+    nifExempt: boolean("nif_exempt").notNull().default(false),
+    nifExemptReason: text("nif_exempt_reason"),
     // PL-23 (0051) — health insurance plans, as a LIST: a patient may hold more
     // than one (ADSE plus a private insurer is ordinary in PT). Each entry is
     // { insurer: string | null, number: string }. NOT NULL DEFAULT '[]' so no

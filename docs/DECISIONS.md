@@ -2808,3 +2808,64 @@ three days. Only a real send through the prod UI could close it, and that is wha
 
 Remaining 4 cards are all owner-side or deferred by owner decision: INC-04 (the owed rotation),
 PL-03b (held), LE-resend and PL-26 (both post-launch).
+
+## 2026-08-03 - PL-31: NIF mandatory on ficha creation, with an audited exemption (GREEN)
+
+Owner CR, verbatim: *"when creating ficha clinica, the NIF field must be as mandatory to fill in,
+cannot move forward without it"*. Two things in the code turned that from a one-line change into a
+decision, and both were put to the owner **before** any code was written.
+
+**1. NIF was free text, so "mandatory" had to mean something.** `validation.ts` accepted any string
+up to 20 characters - `"abc"` saved fine. Mandatory-as-non-empty would have produced a required field
+full of `0` and `-`: worse than optional, because it *looks* authoritative on a fatura. But a real PT
+NIF check has a cost - foreign patients do not have one, and a hard block with no way through means
+reception cannot register a foreign walk-in, so they invent a number and nothing records that they
+did.
+
+**RULING (owner): a valid PT NIF - 9 digits plus the mod-11 control digit - with an explicit
+"Estrangeiro / sem NIF" exemption that requires a written reason.** The exemption is stored
+(`patients.nif_exempt` + `nif_exempt_reason`, migration 0053), so every exception is an auditable act
+rather than an indistinguishable empty field.
+
+Two specific values are rejected on purpose and both are worth recording:
+- `000000000` **passes the checksum** (weighted sum 0 means the expected control digit is 0, which it
+  carries) and is the single likeliest thing typed to escape a required field. The prefix rule is what
+  rejects it. A checksum-only validator would have accepted it.
+- `999999990`, the *consumidor final* number, is structurally valid and means "no NIF given" - i.e.
+  the same thing as the exemption, while looking like a real answer. Accepting it would have made it
+  the one-keystroke way to defeat the requirement with nothing recording that it had been defeated.
+  Its error message points at the exemption checkbox instead of implying a typo.
+
+**2. There is a second patient-creation path, and enforcing the rule in shared validation would have
+killed it silently.** `consultation/actions.ts` `createStubPatientAction` quick-creates a patient from
+name + optional phone so a therapist can start recording a walk-in immediately.
+
+**RULING (owner): the stub path keeps name + phone.** The patient is instead marked **ficha
+incompleta** - derived, never stored, as `nif IS NULL AND NOT nif_exempt` - which shows a banner on
+the ficha and blocks issuing a declaração until the NIF is supplied. The rule binds where it matters
+fiscally without blocking clinical work at the worst possible moment.
+
+**Scope, and the two rules that ride along.** Presence is enforced on CREATE only, because the owner
+said "when creating" and because patients registered before today legitimately have no NIF - requiring
+one on update would have made every legacy ficha unsavable, turning a data-quality rule into a wall
+across records that already exist. Without two smaller rules the requirement is defeated in one click,
+so: any NIF supplied during an edit must still be well-formed, and a patient who **has** a NIF cannot
+have it cleared back to empty (checked in the action, where the current row is available; a patient who
+never had one is untouched).
+
+**An exempted patient is COMPLETE, not incomplete.** They have no NIF and the ficha is finished,
+because the absence is recorded and explained. Conflating the two would have put a permanent warning
+on every foreign patient.
+
+**Migration 0053 is authored here and NOT applied.** GREEN never applies migrations. Column-only add
+on `patients`; existing rows land `nif_exempt = false` so the CHECK is satisfied by the DEFAULT rather
+than a backfill - nothing is rewritten and no table is rescanned. It deliberately does **not** make
+`nif` NOT NULL: legacy patients have none and the ALTER would have failed outright. The database
+cannot tell a new ficha from an old one, which is exactly why presence is enforced in the application.
+
+**Gates: lint, typecheck, unit tests (1588 web tests) and the web production build are green locally,
+as are `db:check`, `db:check-journal` and `db:sync-supabase:check`. The full `pnpm build` and
+`pnpm test:e2e` could NOT be run locally** - this machine has no Supabase env vars, so the portal
+prerender and the Playwright webServer both fail before reaching any of this work. Verified on a clean
+tree that both fail identically without these changes. **The new `nif-required.spec.ts` is therefore
+unverified locally and CI is its first real run.**

@@ -15,6 +15,7 @@ import { getRequestContext } from "../../../lib/auth/context";
 import { listRecords, type RecordStatus } from "../../../lib/clinical/records";
 import { listActiveLocations, listInvoices, type InvoiceStatus } from "../../../lib/invoices/queries";
 import { formatPatientNumber } from "../../../lib/patients/format";
+import { isFichaIncomplete } from "../../../lib/patients/nif";
 import { getPatient, getPatientHardDeleteBlockers } from "../../../lib/patients/queries";
 import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
@@ -143,10 +144,23 @@ export default async function PatientProfilePage({
   ];
   const tab = tabItems.some((t) => t.value === tabParam) ? tabParam! : "resumo";
 
+  // PL-31 — derived, never stored: no NIF and no exemption. Reachable via the
+  // consultation quick-create, and true of every patient registered before the
+  // rule existed.
+  const nifIncomplete = isFichaIncomplete(patient);
+
   const personalRows: [string, string][] = [
     [s["patients.fieldDateOfBirth"], patient.dateOfBirth ? dateFmt.format(new Date(patient.dateOfBirth)) : "—"],
     [s["patients.fieldSex"], patient.sex ? formatSex(patient.sex) : "—"],
-    [s["patients.fieldNif"], patient.nif ?? "—"],
+    // PL-31 — an exempted patient shows the exemption and its reason, never a
+    // bare "—". A dash reads as "nobody filled this in yet"; this patient has
+    // no NIF as a recorded, reasoned decision, and the row must say which.
+    [
+      s["patients.fieldNif"],
+      patient.nifExempt
+        ? `${s["patients.nifExemptBadge"]}${patient.nifExemptReason ? ` — ${patient.nifExemptReason}` : ""}`
+        : (patient.nif ?? "—"),
+    ],
     // patient_number is NOT NULL post-backfill (migration 0029); still rendered
     // defensively so the row is simply omitted rather than showing "—" if absent.
     ...(patient.patientNumber
@@ -272,6 +286,20 @@ export default async function PatientProfilePage({
           <p role="alert" className="mt-3 text-sm text-error">{s["patients.episodeError"]}</p>
         )}
       </Card>
+
+      {/* PL-31 — the ficha is short a NIF. Shown above the tabs, not inside the
+          Dados pessoais card, because it applies to the whole record and to
+          what can be issued from it, not just to one field's display. */}
+      {nifIncomplete && (
+        <div
+          role="status"
+          className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          data-testid="ficha-incompleta-nif"
+        >
+          <p className="font-medium">{s["patients.nifIncompleteWarning"]}</p>
+          <p className="mt-1">{s["patients.nifIncompleteHelp"]}</p>
+        </div>
+      )}
 
       <div className="mb-6">
         <ProfileTabs patientId={id} current={tab} items={tabItems} label={s["patients.tabSummary"]} />
@@ -439,10 +467,24 @@ export default async function PatientProfilePage({
 
       {tab === "documentos" && (
         <div role="tabpanel" id="tabpanel-documentos" aria-label={s["patients.tabDocuments"]}>
-          {/* W5-31: attendance-declaration (Declaração de Presença) generator. */}
-          <div className="mb-4 flex justify-end">
-            <DeclaracaoDialog patientId={patient.id} appointments={declaracaoAppointments} patientNif={patient.nif} />
-          </div>
+          {/* W5-31: attendance-declaration (Declaração de Presença) generator.
+              PL-31: a declaração carries the patient's fiscal identity, so it
+              cannot be issued for a ficha that has neither a NIF nor a recorded
+              exemption. The button is replaced by the reason rather than
+              rendered disabled with no explanation — a dead control teaches
+              nothing, and the fix (edit the ficha) is one sentence away. */}
+          {nifIncomplete ? (
+            <div
+              className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+              data-testid="declaracao-blocked-no-nif"
+            >
+              {s["patients.nifRequiredForDocument"]}
+            </div>
+          ) : (
+            <div className="mb-4 flex justify-end">
+              <DeclaracaoDialog patientId={patient.id} appointments={declaracaoAppointments} patientNif={patient.nif} />
+            </div>
+          )}
           <PatientDocuments
             patientId={patient.id}
             items={patientDocuments}
