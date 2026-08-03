@@ -291,6 +291,7 @@ describe("Inngest scheduler wiring", () => {
       appointmentId: APPOINTMENT_ID,
       tenantId: TENANT_ID,
       startsAt: STARTS_AT,
+      confirmationEligible: true,
     });
 
     expect(send).toHaveBeenCalledTimes(1);
@@ -300,6 +301,7 @@ describe("Inngest scheduler wiring", () => {
         appointmentId: APPOINTMENT_ID,
         tenantId: TENANT_ID,
         startsAt: STARTS_AT.toISOString(),
+        confirmationEligible: true,
       },
     });
     // NOTE: enqueueAppointmentReminders is correct and ready, but nothing in the

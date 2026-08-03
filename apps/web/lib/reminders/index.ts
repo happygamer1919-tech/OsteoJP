@@ -49,6 +49,9 @@ export async function enqueueAppointmentReminders(args: {
   appointmentId: string;
   tenantId: string;
   startsAt: Date;
+  /** No default: every caller must state which occurrence carries the
+   *  confirmation, so a new call site cannot silently reintroduce the burst. */
+  confirmationEligible: boolean;
 }): Promise<void> {
   await inngest.send({
     name: EVENT_APPOINTMENT_SCHEDULED,
@@ -56,6 +59,7 @@ export async function enqueueAppointmentReminders(args: {
       appointmentId: args.appointmentId,
       tenantId: args.tenantId,
       startsAt: args.startsAt.toISOString(),
+      confirmationEligible: args.confirmationEligible,
     } satisfies AppointmentScheduledData,
   });
 }
