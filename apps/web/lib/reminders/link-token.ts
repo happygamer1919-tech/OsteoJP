@@ -79,7 +79,21 @@ export function verifyRescheduleToken(
 ): ReschedulePayload | null {
   try {
     const secret = process.env[SECRET_ENV];
-    if (!secret) return null;
+    if (!secret) {
+      // ASYMMETRY FIXED: signing throws when the secret is absent, verification
+      // used to return null — the same value it returns for a forged or expired
+      // token. A deployment missing the secret therefore presented to every
+      // patient as "invalid link" with no operational signal anywhere.
+      //
+      // Still returns null (the caller must not distinguish, and must not leak
+      // configuration state to an attacker), but no longer silently: a
+      // misconfiguration is now greppable. No secret material is logged.
+      console.error(
+        `[reminders] link verification impossible: ${SECRET_ENV} is not configured. ` +
+          `Every reschedule link will read as invalid until it is set.`,
+      );
+      return null;
+    }
 
     const dot = token.indexOf(".");
     if (dot <= 0 || dot !== token.lastIndexOf(".")) return null;

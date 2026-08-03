@@ -17,6 +17,7 @@
 // PII rule (#7): nothing here logs recipient phone/email or message bodies.
 
 import {
+  assertNotificationEnv,
   createNotifier,
   liveSendEnabled as flagEnabled,
   type Channel,
@@ -26,6 +27,12 @@ import {
 } from "@osteojp/notify";
 import { apiRegistry } from "./registry";
 import { normalizePhonePT } from "./phone";
+
+// BOOT VALIDATION for apps/api's notification path. apps/api registers no Inngest
+// functions, so its earliest deterministic point is this module: nothing here can
+// send without loading it. A no-op while every live-send flag is off, so dev, CI
+// and preview builds are unaffected.
+assertNotificationEnv(["REMINDERS_LIVE_SEND"]);
 
 export type SendChannel = Channel;
 

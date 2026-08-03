@@ -130,6 +130,26 @@ function tenantPhone(settings: unknown): string {
   return typeof phone === "string" ? phone : "";
 }
 
+/**
+ * Base URL for the signed reschedule link. REQUIRED — no fallback.
+ *
+ * The previous default was `https://osteojp.pt`, the MARKETING site. Unset in
+ * prod meant every reminder and no-show email carried a `/r/<token>` link that
+ * 404s, with nothing failing anywhere: the send succeeded, the patient hit a dead
+ * page, and the clinic learned about it from a phone call. Failing at render is
+ * strictly better than shipping a broken link to a patient.
+ */
+function requiredRescheduleBase(): string {
+  const base = process.env.REMINDERS_RESCHEDULE_BASE_URL;
+  if (!base || base.trim() === "") {
+    throw new Error(
+      "reminders/link: REMINDERS_RESCHEDULE_BASE_URL is required and has no default. " +
+        "Set it to the deployed app origin (the host that serves /r/<token>), not the marketing site.",
+    );
+  }
+  return base;
+}
+
 function rescheduleLink(args: {
   tenantId: string;
   appointmentId: string;
@@ -139,7 +159,7 @@ function rescheduleLink(args: {
   // opaque token, never patient data or a raw id path. Resolves at /r/<token>.
   // EMAIL only: the token is too long for a single-segment SMS, so the SMS copy
   // points to the clinic phone instead.
-  const base = process.env.REMINDERS_RESCHEDULE_BASE_URL ?? "https://osteojp.pt";
+  const base = requiredRescheduleBase();
   const token = signRescheduleToken({
     tenantId: args.tenantId,
     appointmentId: args.appointmentId,
