@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   BLOCKING_STATUSES,
-  BLOCKING_STATUSES_S1_TARGET,
   NON_BLOCKING_STATUSES,
 } from "./blocking-status";
 
@@ -12,8 +11,12 @@ import {
 // "Which statuses occupy a slot" is expressed in THREE places:
 //
 //   1. apps/api/lib/appointments/store.ts        (patient booking guard)
-//   2. packages/db/migrations/0048_...sql        (appointment_conflicts, therapist)
-//   3. packages/db/migrations/0048_...sql        (appointment_conflicts, room)
+//   2. packages/db/migrations/0052_...sql        (appointment_conflicts, therapist)
+//   3. packages/db/migrations/0052_...sql        (appointment_conflicts, room)
+//
+// 0052 is the LATEST definition of appointment_conflicts and therefore the one
+// in force. Reading 0048 instead would assert against a superseded body and
+// pass while production disagreed.
 //
 // They drifted apart once before and nothing noticed, because the only thing
 // asserting they matched was a comment. This test reads the actual SQL text and
@@ -31,7 +34,16 @@ const readRepo = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf-8");
  *   a.status <> 'cancelled'
  *   a.status not in ('cancelled','no_show')
  */
-function excludedStatusSets(sqlText: string): string[][] {
+function excludedStatusSets(source: string): string[][] {
+  // Strip comments FIRST. A migration header legitimately quotes the old and
+  // the new predicate side by side to document what changed, and counting that
+  // prose as a live predicate makes the file look self-contradictory. Same
+  // lesson as the write-path scanner: a guard that fires on documentation
+  // teaches people to ignore it.
+  const sqlText = source
+    .replace(/\/\*[\s\S]*?\*\//g, " ") // block comments
+    .replace(/--[^\n]*/g, " "); // line comments
+
   const sets: string[][] = [];
 
   for (const m of sqlText.matchAll(/status\s*<>\s*'([a-z_]+)'/gi)) {
@@ -46,7 +58,7 @@ function excludedStatusSets(sqlText: string): string[][] {
 }
 
 const APP_STORE = "apps/api/lib/appointments/store.ts";
-const CONFLICT_FN = "packages/db/migrations/0048_appointments_location_rls.sql";
+const CONFLICT_FN = "packages/db/migrations/0052_conflicts_no_show_releases_slot.sql";
 
 describe("S1 — the blocking-status predicate agrees across all three sites", () => {
   const appSets = excludedStatusSets(readRepo(APP_STORE));
@@ -85,11 +97,9 @@ describe("S1 — the blocking-status predicate agrees across all three sites", (
     expect(BLOCKING_STATUSES).not.toContain("cancelled");
   });
 
-  it("documents the pending S1 target without asserting it is applied yet", () => {
-    // S1 rules that no_show stops blocking. Applying it to the app alone would
-    // break the drift assertion above, correctly, since the migration is
-    // GREEN's. This records the target so the flip is a one-line change here.
-    expect(BLOCKING_STATUSES_S1_TARGET).toEqual(["scheduled", "confirmed", "completed"]);
-    expect(BLOCKING_STATUSES_S1_TARGET).not.toContain("no_show");
+  it("S1 is APPLIED: no_show releases a slot on every site", () => {
+    expect(NON_BLOCKING_STATUSES).toContain("no_show");
+    expect(BLOCKING_STATUSES).not.toContain("no_show");
+    expect(BLOCKING_STATUSES).toEqual(["scheduled", "confirmed", "completed"]);
   });
 });

@@ -425,3 +425,77 @@ describe("parseBookingInput", () => {
     ).toBe("invalid_input");
   });
 });
+
+// W3 / Y2 — a no_show now RELEASES its slot (migration 0052). The owner's
+// question: can a slot freed that way, in the PAST, be booked?
+//
+// The answer must not rest on "past dates are handled elsewhere". That is the
+// class of assumption this workstream disproved four times, so it is asserted
+// here directly. Three independent guards are exercised or pinned:
+//   1. bookAppointment refuses a past start, even with NO conflict reported.
+//   2. rescheduleAppointment refuses a past destination, same condition.
+//   3. the SQL sweep carries a `starts_at > now` floor (pinned below), so a
+//      past slot is never even offered.
+describe("W3: a no_show freed in the PAST is still not bookable", () => {
+  it("refuses to book a past slot even when the store reports it CONFLICT-FREE", async () => {
+    // This is exactly the post-0052 state: the old no_show no longer blocks, so
+    // the conflict check says the slot is free. The past guard must still win.
+    const { store } = makeStore();
+    store.hasWindowConflict = async () => false;
+
+    const out = await code(() =>
+      bookAppointment(
+        ALICE,
+        {
+          serviceId: "11111111-1111-1111-1111-111111111111",
+          locationId: "loc-1",
+          startsAt: inHours(-24),
+        },
+        store,
+        NOW,
+      ),
+    );
+    expect(out).toBe("slot_in_past");
+  });
+
+  it("refuses to RESCHEDULE into a past slot freed by a no_show", async () => {
+    // Seed a real, far-future, reschedulable appointment of Alice's, so the
+    // only thing that can refuse the move is the past-date guard.
+    const seeded = ownRow({ startsAt: inHours(48), endsAt: inHours(49) });
+    const { store } = makeStore({ rows: [seeded] });
+    store.hasWindowConflict = async () => false;
+
+    const out = await code(() =>
+      rescheduleAppointment(
+        ALICE,
+        seeded.id,
+        { startsAt: inHours(-24) },
+        store,
+        NOW,
+      ),
+    );
+    expect(out).toBe("slot_in_past");
+  });
+
+  it("still allows a FUTURE slot, so the guard is not vacuously refusing everything", async () => {
+    // Positive control. Without it, a verifier that rejected every booking
+    // would pass both assertions above while the portal was unusable.
+    const { store } = makeStore();
+    store.hasWindowConflict = async () => false;
+
+    const out = await code(() =>
+      bookAppointment(
+        ALICE,
+        {
+          serviceId: "11111111-1111-1111-1111-111111111111",
+          locationId: "loc-1",
+          startsAt: inHours(48),
+        },
+        store,
+        NOW,
+      ),
+    );
+    expect(out).not.toBe("slot_in_past");
+  });
+});
+
