@@ -18,7 +18,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { openNewAppointment, fillAppointment, fillTime } from "./helpers";
-import { LOCATION_B, THERAPIST_NAME, futureDate, RUN_DAY_BASE, PATIENTS } from "./fixtures";
+import { LOCATION, LOCATION_B, THERAPIST_NAME, futureDate, RUN_DAY_BASE, PATIENTS } from "./fixtures";
 
 const SAVE = "Guardar";
 
@@ -94,9 +94,11 @@ async function openBlocks(page: Page) {
   await expect(blocksModal(page)).toBeVisible();
 }
 
-/** Set the E2E therapist to 09:00-13:00 at LOCATION_B on `weekday`, via the Gerir
- *  modal's Horários section, so the availability panel has a window to block. */
-async function setWorkingHours(page: Page, weekday: number) {
+/** Set the E2E therapist to 09:00-13:00 at `locationName` on `weekday`, via the
+ *  Gerir modal's Horários section, so the availability panel has a window to
+ *  block. The location is a parameter so the test can RESTORE it afterwards —
+ *  see the cleanup at the end of the test and why it matters. */
+async function setWorkingHours(page: Page, weekday: number, locationName: string = LOCATION_B.name) {
   await page.goto("/admin/staff");
   const modal = await openManageHours(page);
   const row = modal.locator("fieldset").filter({
@@ -106,7 +108,7 @@ async function setWorkingHours(page: Page, weekday: number) {
   if (!(await worksToggle.isChecked())) await worksToggle.check();
   await fillTime(row.locator("label").filter({ hasText: "Início" }), "09:00");
   await fillTime(row.locator("label").filter({ hasText: "Fim" }), "13:00");
-  await row.locator(`select[name="d${weekday}_location"]`).selectOption({ label: LOCATION_B.name });
+  await row.locator(`select[name="d${weekday}_location"]`).selectOption({ label: locationName });
   await modal.getByRole("button", { name: SAVE }).click();
   await settleAfterWrite(page);
   await expect(page.getByText("Horário guardado")).toBeVisible({ timeout: 8_000 });
@@ -273,4 +275,19 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
 
   // Cleanup: remove the blocks this test created.
   await clearBlocks(page);
+
+  // CROSS-TEST CLEANUP (2026-08-03). This test MUTATES SHARED FIXTURE STATE: it
+  // repoints THERAPIST_NAME's working hours for this weekday to LOCATION_B. That
+  // is a persistent change to a therapist other specs also drive — notably
+  // therapist-self-lock, which books the SAME therapist at LOCATION and asserts
+  // the primary-service preselect.
+  //
+  // It went unnoticed for five days because this test was quarantined on CI, so
+  // the suite evolved without it. Un-quarantining it (PL-30) put the mutation
+  // back into the run order and self-lock failed three times in the full suite
+  // while passing in isolation on BOTH clean main and this branch — the exact
+  // signature of an ordering dependency rather than a broken test.
+  //
+  // The blocks above are already cleared; the hours were not. Restore them.
+  await setWorkingHours(page, weekday, LOCATION.name);
 });
