@@ -209,13 +209,20 @@ differences are listed here; everything else in this file governs it unchanged.
 |---|---|---|
 | name | `OsteoJP - Pre-Launch Board` | `OsteoJP - Portal Board` |
 | source of truth | `docs/board/prelaunch-board.json` | `docs/board/portal-board.json` |
-| renderer | `render-board.mjs` (interactive portal) | `render-portal-board.mjs` (static page) |
-| render output | `prelaunch-board.rendered.html` | `portal-board-render.html` |
+| renderer | `render-board.mjs` | `render-board.mjs` (the same one) |
+| render output | `prelaunch-board.rendered.html` | `portal-board.rendered.html` |
 | executor terminal | GREEN | PURPLE |
 | people columns | Ivan / JP / Rodica | Ivan / JP / Lawyer |
 | lane 4 title | RODICA BATCH | STAKEHOLDER FEEDBACK |
 | launch gate | G1-G9, the pre-launch conditions | PG1-PG9, the portal Definition of Ready |
 | rehydrate prompt | - | `docs/board/PORTAL-REHYDRATE.md` |
+
+**One renderer, one app, one design system.** Both boards render through
+`render-board.mjs`, which inlines `board-app.js` and `board.css` and gives both
+boards the same five interactive views. The portal board originally shipped with
+a second, static renderer (`render-portal-board.mjs`); it is retired, because a
+second renderer that nothing runs is where drift starts. Everything that differs
+between the two boards lives in `docs/board/board-config.mjs` and nowhere else.
 
 Four rules make one validator serve both:
 

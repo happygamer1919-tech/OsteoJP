@@ -37,7 +37,7 @@ board JSON, DECISIONS/QUESTIONS), not from memory of what "should" be true.
 - **Source of truth = `docs/board/prelaunch-board.json`.** The claude.ai artifact is
   only a RENDER of it. Owner keeps ONE board artifact, maintained IN PLACE:
   **https://claude.ai/code/artifact/83e26fe7-034c-4fb8-b45b-b1165a843d6d**
-  (title "OsteoJP · Pre-Launch Board", favicon 📋). Re-publish with the Artifact
+  (title "OsteoJP · Pre-Launch Portal", favicon 📋). Re-publish with the Artifact
   tool passing `url=` that URL — NEVER re-mint a new one. Load the `artifact-design`
   skill before publishing; the render is already designed (board.css/board-app.js),
   so honor it, don't redesign.
