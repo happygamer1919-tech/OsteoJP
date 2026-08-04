@@ -1,4 +1,4 @@
-Artifact render link (human reference only): <IVAN PASTES LINK HERE>
+Artifact render link (human reference only): https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
 
 # PURPLE rehydrate - OsteoJP Portal Board
 

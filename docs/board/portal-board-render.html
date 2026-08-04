@@ -3,12 +3,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light dark" />
 <style>
-:root{color-scheme:light dark;--bg:#fbfcfd;--fg:#101a20;--mut:#5c6c77;--line:#dbe3e8;--card:#fff;--pass:#2f7e72;--fail:#8b1863;--accent:#45b9a7}
+/* Palette is the OsteoJP brand set from CLAUDE.md: teal #45B9A7, magenta
+   #8B1863, soft grey #98B2C2. Neutrals are biased cool toward the teal rather
+   than pure grey. Cyan text uses accent-2-700 #2F7E72 because base teal is only
+   2.40:1 on white and must never carry text - the same AA rule the platform UI
+   follows. Tokens only: components never read a raw hex, so the three theme
+   blocks below are the whole theming surface.
+   THREE blocks, not one: prefers-color-scheme carries the OS preference, and
+   the claude.ai artifact viewer's own toggle stamps data-theme on the root
+   element. The attribute selectors are specificity 0,2,0 against the media
+   query's 0,1,0, so the toggle wins in BOTH directions. */
+:root{color-scheme:light dark}
+:root,:root[data-theme="light"]{--bg:#fbfcfd;--fg:#101a20;--mut:#5c6c77;--line:#dbe3e8;--card:#fff;--pass:#2f7e72;--fail:#8b1863;--accent:#45b9a7}
 @media (prefers-color-scheme:dark){:root{--bg:#0e1417;--fg:#e8eef1;--mut:#96a7b1;--line:#25333a;--card:#141c21;--pass:#5fc9b6;--fail:#e07ab5}}
+:root[data-theme="dark"]{--bg:#0e1417;--fg:#e8eef1;--mut:#96a7b1;--line:#25333a;--card:#141c21;--pass:#5fc9b6;--fail:#e07ab5}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .wrap{max-width:1100px;margin:0 auto;padding:28px 20px 80px}
-.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-variant-numeric:tabular-nums}
+.readiness b,.count,.cp,.lat{font-variant-numeric:tabular-nums}
+summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
 header.top h1{margin:0 0 4px;font-size:22px;letter-spacing:-.01em}
 .truth{margin:10px 0 18px;padding:10px 12px;border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);font-size:13px}
 .readiness{display:flex;align-items:baseline;gap:12px;margin:18px 0 6px}
