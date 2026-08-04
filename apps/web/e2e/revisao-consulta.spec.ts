@@ -44,7 +44,12 @@ test.describe("Revisão Consulta — Assumir opens the Ficha Médica editor (the
     //
     // Addressing the record by id says what the test means and cannot be
     // reordered into a different answer.
-    const row = page.locator(`[data-record-id="${AI_REVIEW_DRAFT.id}"]`);
+    // `tr[...]`, not `[...]`. The queue renders BOTH layouts into the DOM at all
+    // times - a desktop <table> and a mobile <ul>, each hidden by CSS at the
+    // other breakpoint - so an unqualified attribute selector matches two
+    // elements and Playwright's strict mode refuses it. The tag qualifier picks
+    // the desktop row this test drives.
+    const row = page.locator(`tr[data-record-id="${AI_REVIEW_DRAFT.id}"]`);
     await expect(row).toBeVisible({ timeout: 10_000 });
     await row.getByRole("button", { name: "Assumir", exact: true }).click();
 
