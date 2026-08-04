@@ -25,6 +25,22 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 const SECRET_ENV = "REMINDERS_LINK_SECRET";
 
+/**
+ * The action set a token authorises, per counsel §5 and the owner's 24h cancel
+ * cutoff. It travels INSIDE the signature, so the offered actions cannot be
+ * widened by editing the URL.
+ *
+ *   "confirm_cancel" — the 48h email link. Sent outside the cutoff.
+ *   "confirm"        — the 24h SMS link. Arrives at or inside the cutoff, where
+ *                      cancelling is no longer permitted.
+ *
+ * The scope is a CEILING, never a permission: the server re-evaluates the cutoff
+ * against the clock at redemption regardless of what the scope allows, because a
+ * confirm_cancel link issued at 48h is legitimately outside the cutoff when
+ * created and may be clicked 30 hours later, inside it (§5).
+ */
+export type TokenScope = "confirm" | "confirm_cancel";
+
 export type ReschedulePayload = {
   /** tenant_id — the RLS scope for the appointment lookup. */
   tenantId: string;
@@ -32,16 +48,36 @@ export type ReschedulePayload = {
   appointmentId: string;
   /** absolute expiry, unix seconds. */
   exp: number;
+  /** which actions this token may perform. */
+  scope: TokenScope;
 };
 
-type WirePayload = { t: string; a: string; exp: number };
+type WirePayload = { t: string; a: string; exp: number; s?: string };
 
-/** Grace window after the appointment start during which the link still works. */
-export const RESCHEDULE_LINK_GRACE_MS = 24 * 60 * 60 * 1000;
+const SCOPES: readonly TokenScope[] = ["confirm", "confirm_cancel"];
 
-/** exp (unix seconds) for a link tied to an appointment starting at `startsAt`. */
+/**
+ * exp (unix seconds) for a link tied to an appointment starting at `startsAt`:
+ * the appointment START, and not one second later.
+ *
+ * WHY THERE IS NO GRACE WINDOW. Counsel requires 24 to 72 hours from issuance
+ * and NEVER past the appointment start (docs/rgpd-token-flow.md §4), and names
+ * this exact failure: a window that "would outlive the appointment and leave a
+ * live token for a visit that has already happened". Tying expiry to the start
+ * satisfies both constraints with one rule and kills the token the moment it
+ * could no longer be acted on meaningfully.
+ *
+ * This REPLACES a 24-hour grace window that ran PAST the start. That was
+ * survivable while the landing page was read-only, and is not survivable now
+ * that the same token confirms and cancels: it would have left a link able to
+ * act on an appointment that had already happened.
+ *
+ * Both offsets land inside counsel's 24-72h band by construction — the 48h email
+ * gets 48 hours, the 24h SMS gets 24 — so no offset can drift outside the band
+ * without also changing the reminder schedule.
+ */
 export function rescheduleTokenExpiry(startsAt: Date): number {
-  return Math.floor((startsAt.getTime() + RESCHEDULE_LINK_GRACE_MS) / 1000);
+  return Math.floor(startsAt.getTime() / 1000);
 }
 
 function requireSecret(): string {
@@ -62,6 +98,7 @@ export function signRescheduleToken(payload: ReschedulePayload): string {
     t: payload.tenantId,
     a: payload.appointmentId,
     exp: payload.exp,
+    s: payload.scope,
   };
   const payloadB64 = Buffer.from(JSON.stringify(wire), "utf8").toString(
     "base64url",
@@ -116,9 +153,20 @@ export function verifyRescheduleToken(
     ) {
       return null;
     }
+    // An unrecognised or absent scope is REFUSED rather than defaulted. The
+    // permissive value (confirm_cancel) must never be reachable by omitting a
+    // field, and the restrictive one must not be silently granted either: both
+    // would be a policy decision made by a missing byte. A token this code did
+    // not mint is not a token.
+    if (!SCOPES.includes(wire.s as TokenScope)) return null;
     if (wire.exp * 1000 <= now.getTime()) return null;
 
-    return { tenantId: wire.t, appointmentId: wire.a, exp: wire.exp };
+    return {
+      tenantId: wire.t,
+      appointmentId: wire.a,
+      exp: wire.exp,
+      scope: wire.s as TokenScope,
+    };
   } catch {
     return null;
   }
