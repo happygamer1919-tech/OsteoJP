@@ -1,6 +1,7 @@
 'use client'
 
 import { AlertTriangle } from 'lucide-react'
+import { RescheduleDialog } from './RescheduleDialog'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Dialog } from '@osteojp/ui'
@@ -11,11 +12,17 @@ import { s } from '@/lib/i18n'
 const CUTOFF_MS = 24 * 60 * 60 * 1000
 
 /**
- * Detail actions (SPEC-portal §6.4). Cancel is offered only for an upcoming
- * appointment and only outside the 24h cutoff (a destructive-confirm Dialog);
- * inside the cutoff the button is disabled with the 24h rule stated. Reschedule
- * is phone-only — call the clinic; never an in-portal action, never an SMS or
- * email promise (§0.6; no confirmation email is sent).
+ * Detail actions (SPEC-portal §6.4). Cancel and reschedule are both offered for
+ * an upcoming appointment and only outside the 24h cutoff; inside it, both are
+ * disabled with the 24h rule stated and the patient is pointed at the phone.
+ *
+ * Reschedule is no longer phone-only (PL-33). It is a TIME PICKER: the endpoint
+ * takes only a new start and preserves therapist, location and duration.
+ *
+ * The client-side cutoff check below is a COURTESY, not a control. The server
+ * re-enforces the cutoff on the stored start, and the 24h minimum notice on the
+ * new slot, at action time — a disabled button stops an honest patient, not a
+ * forged request.
  */
 export function AppointmentActions({
   id,
@@ -28,6 +35,7 @@ export function AppointmentActions({
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [rescheduling, setRescheduling] = useState(false)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   // Capture "now" once at mount: reading current time during render is impure
@@ -58,6 +66,20 @@ export function AppointmentActions({
       <p className="text-xs text-text-secondary">
         {s.appointments.action_reschedule_hint}
       </p>
+
+      <Button
+        variant="secondary"
+        className="min-h-11 w-full"
+        aria-disabled={!outsideCutoff}
+        aria-expanded={rescheduling}
+        onClick={() => { if (!outsideCutoff) return; setRescheduling((v) => !v) }}
+      >
+        {s.appointments.reschedule_open}
+      </Button>
+
+      {rescheduling && outsideCutoff && (
+        <RescheduleDialog id={id} open onClose={() => setRescheduling(false)} />
+      )}
 
       <Button
         variant="destructive"
