@@ -351,7 +351,9 @@
     "load_forms": "Não foi possível carregar as fichas",
     "load_forms_desc": "Ocorreu um erro ao carregar as suas fichas. Tente novamente.",
     "load_dashboard": "Não foi possível carregar o início",
-    "load_dashboard_desc": "Ocorreu um erro ao carregar a sua informação. Tente novamente."
+    "load_dashboard_desc": "Ocorreu um erro ao carregar a sua informação. Tente novamente.",
+    "load_account": "Não foi possível carregar a conta",
+    "load_account_desc": "Ocorreu um erro ao carregar os seus dados. Tente novamente."
   },
   "patientAppointments": {
     "error": {

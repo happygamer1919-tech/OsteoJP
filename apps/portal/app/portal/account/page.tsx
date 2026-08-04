@@ -9,12 +9,13 @@ export default async function AccountPage() {
     data: { user },
   } = await supabase.auth.getUser()
 
-  let profile: PatientProfile | null = null
-  try {
-    profile = await getMyProfile()
-  } catch {
-    // non-fatal — degrade to auth user data
-  }
+  // No try/catch. A failed profile fetch used to degrade silently to whatever
+  // the auth user object happened to carry, so the account screen rendered with
+  // a blank or stale name and email and looked like it had loaded. That is the
+  // same class of lie the dashboard told about appointments. It now propagates
+  // to error.tsx in this directory, which renders an explicit could-not-load
+  // with a retry.
+  const profile: PatientProfile = await getMyProfile()
 
   const fullName =
     profile?.fullName ?? (user?.user_metadata?.full_name as string | undefined) ?? ''
