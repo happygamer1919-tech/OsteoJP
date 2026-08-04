@@ -1,6 +1,7 @@
 import type { PatientPrincipal } from "@osteojp/auth";
 import { AppointmentError } from "./errors";
 import { isWithinCancellationCutoff, isBeforeMinimumNotice } from "./cutoff";
+import { emitPatientChange } from "@/lib/notifications/patient-change";
 import { chooseTherapist, type TherapistCandidate } from "./therapist";
 
 // Patient appointments orchestration — view / book / cancel / reschedule.
@@ -343,6 +344,22 @@ export async function cancelAppointment(
     throw new AppointmentError("cutoff");
   }
   await store.cancelOwn(principal, id);
+
+  // POST-COMMIT. Staff notification for a patient-initiated change (JP,
+  // 2026-08-03). Never inside the write, never able to fail the cancellation:
+  // the appointment is already cancelled, and a missing staff notification is a
+  // far better outcome than telling the patient their cancellation failed.
+  await emitPatientChange({
+    kind: "cancelled",
+    tenantId: principal.tenantId,
+    appointmentId: id,
+    patientId: principal.patientId,
+    audience: { reception: true, practitionerId: appt.practitionerId },
+    previousStartsAt: appt.startsAt.toISOString(),
+    // A cancellation does not move the appointment; the start is unchanged.
+    newStartsAt: appt.startsAt.toISOString(),
+    occurredAt: now.toISOString(),
+  });
 }
 
 /**
@@ -436,5 +453,19 @@ export async function rescheduleAppointment(
   if (conflict) throw new AppointmentError("no_slot");
 
   await store.rescheduleOwn(principal, id, { startsAt: input.startsAt, endsAt: newEndsAt });
+
+  // POST-COMMIT, same rule as cancel. Both instants are carried so the centre
+  // can render "moved from X to Y" without a second read.
+  await emitPatientChange({
+    kind: "rescheduled",
+    tenantId: principal.tenantId,
+    appointmentId: id,
+    patientId: principal.patientId,
+    audience: { reception: true, practitionerId: appt.practitionerId },
+    previousStartsAt: appt.startsAt.toISOString(),
+    newStartsAt: input.startsAt.toISOString(),
+    occurredAt: now.toISOString(),
+  });
+
   return getOwnAppointment(principal, id, store);
 }

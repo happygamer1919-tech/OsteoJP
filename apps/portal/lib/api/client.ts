@@ -224,6 +224,47 @@ export async function bookAppointment(input: BookingInput): Promise<AppointmentV
   return data.appointment
 }
 
+/**
+ * Slots this appointment may be moved to.
+ *
+ * Takes the appointment id ONLY. The service and location are resolved
+ * server-side, so the portal never holds either identifier and AppointmentView
+ * stays at 8 keys. Never build a slot list client-side: this list and the
+ * reschedule action share one server-side source of truth.
+ */
+export async function getRescheduleOptions(id: string): Promise<string[]> {
+  const res = await fetch(`${apiBase()}/api/v1/appointments/${id}/reschedule-options`, {
+    headers: await apiHeaders(),
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string; code?: string; message?: string }
+    throw new ApiError(res.status, err.error ?? err.code ?? 'UNKNOWN', err.message ?? 'Options fetch failed')
+  }
+  const data = await res.json() as { slots: string[] }
+  return data.slots
+}
+
+/**
+ * Move this appointment to a new start. POST, matching /cancel: an ACTION
+ * subresource, not a partial update. The body carries only the new start; the
+ * server preserves duration, practitioner and location, and re-enforces the 24h
+ * cutoff and the 24h minimum notice regardless of what the picker offered.
+ */
+export async function rescheduleAppointment(id: string, startsAt: string): Promise<AppointmentView> {
+  const res = await fetch(`${apiBase()}/api/v1/appointments/${id}/reschedule`, {
+    method: 'POST',
+    headers: await apiHeaders(),
+    body: JSON.stringify({ startsAt }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string; code?: string; message?: string }
+    throw new ApiError(res.status, err.error ?? err.code ?? 'UNKNOWN', err.message ?? 'Reschedule failed')
+  }
+  const data = await res.json() as { appointment: AppointmentView }
+  return data.appointment
+}
+
 export async function cancelAppointment(id: string): Promise<void> {
   // POST, not PATCH. `/cancel` is an ACTION subresource - a non-idempotent state
   // transition - not a partial update of the appointment. The route exports POST

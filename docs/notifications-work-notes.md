@@ -319,3 +319,41 @@ patient could have moved an appointment to two hours from now.
   consumer). Next PR, on top of this one once merged.
 - **B5 fee acceptance on the ficha clínica** — spec only, not built, migration
   queues behind the audit-log migration.
+
+## Reschedule UI + B4 staff notifications (PL-33)
+
+**UI is a time picker, not a rebooking flow.** The endpoint takes only
+`{ startsAt }` and preserves therapist, location and duration, so the picker
+offers exactly one decision and says so in the copy. Offering service or
+location choice would imply a control the API does not provide.
+
+Two taps to act (choose, then confirm), matching cancel and matching the
+one-tap-open / one-tap-confirm shape counsel required of the token landing page.
+Tapping a time in a list must never move an appointment by itself.
+
+**B4 contract, `apps/api/lib/notifications/patient-change.ts`.** Fixed event
+shape emitted post-commit from BOTH patient write paths. The centre UI and its
+persistence are a later loop; what landed is the half that must not be
+retrofitted, plus a consumer seam.
+
+The default consumer is a **stub that is loud about being a stub**: it returns
+`delivered: false` and logs `NOT DELIVERED ... centre not built yet`. A silent
+no-op that reads as a delivery is the exact pattern this session has been
+unpicking, and it would be worse here because nobody would notice.
+
+Identifiers only, same rule as the Inngest payloads: the therapist is addressed
+by `practitionerId`, never by name; reception by role. Asserted.
+
+**The emit cannot break the write.** It runs post-commit and never throws: a
+patient whose cancellation succeeded must not be told it failed because a staff
+notification could not be delivered. Failures log at ERROR **with the cause**,
+not a bare error name — a bare name is how the reminder pipeline hid its own
+failure for weeks.
+
+Negative arms, all three proven: removing the cancel emit fails 3 tests, moving
+the emit pre-commit fails the ordering test, removing the try/catch fails 2.
+
+**Note on `server-only`.** It was added to the module and then removed: `booking.ts`
+imports it, and three existing suites unit-test `booking.ts` under vitest's node
+env, so the marker forced them all to mock it. Matches the convention already in
+`lib/notify/clients.ts`. Nothing in the module touches a secret or the DB.
