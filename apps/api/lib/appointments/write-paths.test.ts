@@ -146,6 +146,31 @@ const ALLOWED: Record<
       "only frees a slot. This entry is file-granular, so a NEW insert or move " +
       "added to this file would not be flagged; that is the guard's known limit.",
   },
+  "apps/web/lib/reminders/redeem.ts": {
+    // NOT a concurrent writer in the sense the lock protects, and the reason is
+    // the same one that exempts cancelOwn above: this path never OCCUPIES a
+    // slot. It does exactly two things to an appointment, and neither moves it
+    // in time nor changes its therapist:
+    //   confirm - sets confirmation_state + confirmation_received_at, the axis
+    //             migration 0024 added ORTHOGONAL to status. No slot effect.
+    //   cancel  - sets status='cancelled', which only RELEASES a slot.
+    // Vacating a slot cannot double-book; occupying one can. Taking the lock
+    // here would be the "comfortable inaccuracy" this file warns about: it would
+    // add a locked path that protects nothing and inflate the protected count.
+    //
+    // The token path has its OWN concurrency guarantee, and it is stronger than
+    // the advisory lock for the thing it guards: the row is SELECT ... FOR
+    // UPDATE'd, and the consumption INSERT shares the transaction, so a second
+    // redemption of the same token loses on the primary key and rolls the
+    // appointment write back with it (docs/rgpd-token-flow.md s6).
+    needsLock: false,
+    locked: false,
+    reason:
+      "One-action reminder token redemption. Confirm writes the 0024 " +
+      "confirmation axis; cancel only releases a slot. Neither occupies one, " +
+      "so the slot lock does not apply. Single use is enforced by the " +
+      "action_token_consumptions primary key inside the same transaction.",
+  },
   "apps/web/lib/scheduling/batch.ts": {
     needsLock: true,
     locked: true,
@@ -232,6 +257,12 @@ describe("appointments write paths (PRIMARY guard for 2.9)", () => {
       .map(([f]) => f)
       .sort();
 
-    expect(exempt).toEqual(["packages/db/src/migration/upsert.ts"]);
+    expect(exempt).toEqual([
+      // Token redemption: confirm touches only the 0024 confirmation axis,
+      // cancel only releases a slot. Neither occupies one, so the slot lock has
+      // nothing to protect here. Added deliberately, W13-01.
+      "apps/web/lib/reminders/redeem.ts",
+      "packages/db/src/migration/upsert.ts",
+    ]);
   });
 });
