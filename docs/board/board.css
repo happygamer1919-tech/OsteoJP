@@ -55,6 +55,23 @@
   --lawyer: #5f7d18;
   --infra: #6f8079;
 
+  /* The ink that sits ON a filled accent surface — a brand/gate/state colour
+     used as a BACKGROUND. It is not --ink: --ink is for text on paper, and
+     these two move in OPPOSITE directions between themes. In light mode the
+     accents are dark and the ink on them is white; in dark mode the accents
+     are pastel and the ink on them must be near-black. A literal #fff here was
+     correct in light mode and 2.1:1 in dark mode. Same job --brand-ink already
+     does for brand-TINTED surfaces; this is its filled-surface counterpart. */
+  --on-accent: #ffffff;
+
+  /* The STAKEHOLDER accent, distinct from the person token --rodica even though
+     they carry the same value. The rodica_batch lane and the `stakeholder` gate
+     badge are about a ROLE, and on the portal board that lane is titled
+     STAKEHOLDER FEEDBACK for people who are not Rodica. Pointing them at a
+     person's colour made the name outlive its meaning. --rodica stays, for the
+     two places that really do mean the person. */
+  --stakeholder: #be443b;
+
   --shadow-1: 0 1px 2px rgba(13, 40, 34, 0.05);
   --shadow-2: 0 1px 2px rgba(13, 40, 34, 0.05), 0 10px 26px -18px rgba(13, 40, 34, 0.45);
   --shadow-3: 0 24px 60px -24px rgba(6, 25, 20, 0.45);
@@ -104,6 +121,11 @@
     --lawyer: #a9c95f;
     --infra: #7b8d87;
 
+    /* Near-black on the pastel dark-mode accents: 6.6:1 to 9.1:1 across all
+       seven, against 2.1:1 to 2.9:1 for the white it replaces. */
+    --on-accent: #0a1211;
+    --stakeholder: #e5796e;
+
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 28px -18px rgba(0, 0, 0, 0.8);
     --shadow-3: 0 24px 60px -20px rgba(0, 0, 0, 0.75);
@@ -113,6 +135,13 @@
 /* The viewer's theme toggle stamps data-theme on <html>; it must win over the
    media query in BOTH directions, so both themes are restated at token level. */
 :root[data-theme="dark"] {
+  /* Restated per theme, not only on :root. color-scheme drives the UA's OWN
+     surfaces — scrollbars, native select popups, date pickers, form controls —
+     and those are not reachable by any custom property. Declared once on :root
+     as `light dark`, they follow the OPERATING SYSTEM and ignore the viewer's
+     toggle, so a viewer on a light OS who chose dark got a dark page with light
+     scrollbars. */
+  color-scheme: dark;
   --paper: #0a1211; --paper-2: #0f1a18; --card: #121c1a; --card-2: #172321;
   --line: #202d2a; --line-2: #2c3b37;
   --ink: #e7eeeb; --ink-2: #97a8a2; --ink-3: #72847e;
@@ -122,11 +151,13 @@
   --stop: #e5796e; --stop-soft: #341e1c; --hold: #a58ff0; --hold-soft: #221d38;
   --todo: #e0ab52; --todo-soft: #2e2412;
   --ivan: #6aa6e8; --jp: #a58ff0; --rodica: #e5796e; --lawyer: #a9c95f; --infra: #7b8d87;
+  --on-accent: #0a1211; --stakeholder: #e5796e;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 28px -18px rgba(0, 0, 0, 0.8);
   --shadow-3: 0 24px 60px -20px rgba(0, 0, 0, 0.75);
 }
 :root[data-theme="light"] {
+  color-scheme: light;
   --paper: #f4f7f6; --paper-2: #eaf0ee; --card: #ffffff; --card-2: #f7faf9;
   --line: #e1eae7; --line-2: #cddcd7;
   --ink: #0d1917; --ink-2: #55665f; --ink-3: #7d8f89;
@@ -136,6 +167,7 @@
   --stop: #be443b; --stop-soft: #fbe9e6; --hold: #6f55c4; --hold-soft: #ece8fa;
   --todo: #a86f10; --todo-soft: #faf0dd;
   --ivan: #2c6db5; --jp: #6f55c4; --rodica: #be443b; --lawyer: #5f7d18; --infra: #6f8079;
+  --on-accent: #ffffff; --stakeholder: #be443b;
   --shadow-1: 0 1px 2px rgba(13, 40, 34, 0.05);
   --shadow-2: 0 1px 2px rgba(13, 40, 34, 0.05), 0 10px 26px -18px rgba(13, 40, 34, 0.45);
   --shadow-3: 0 24px 60px -24px rgba(6, 25, 20, 0.45);
@@ -213,7 +245,7 @@ body {
 }
 .btn:hover { border-color: var(--brand); background: var(--card-2); }
 .btn:active { transform: translateY(1px); }
-.btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn.primary { background: var(--brand); border-color: var(--brand); color: var(--on-accent); }
 .btn.primary:hover { filter: brightness(1.06); }
 .btn.ghost { background: none; border-color: transparent; color: var(--ink-2); }
 .btn.ghost:hover { background: var(--paper-2); color: var(--ink); }
@@ -284,8 +316,7 @@ body {
   font-weight: 700; color: var(--ink-3); padding: 0; transition: 0.12s;
 }
 .pips button:hover { border-color: var(--gate); color: var(--gate); }
-.pips button.pass { background: var(--gate); border-color: var(--gate); color: #fff; }
-:root[data-theme="dark"] .pips button.pass { color: #170a12; }
+.pips button.pass { background: var(--gate); border-color: var(--gate); color: var(--on-accent); }
 
 /* ----------------------------------------------------------- filter bar -- */
 .filters { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 16px 0 4px; }
@@ -322,7 +353,7 @@ body {
 .lane > .lh .rail { width: 3px; height: 14px; border-radius: 2px; background: var(--ink-3); }
 .lane[data-lane="blocked_on_people"] .rail { background: var(--stop); }
 .lane[data-lane="in_flight"] .rail { background: var(--go); }
-.lane[data-lane="rodica_batch"] .rail { background: var(--rodica); }
+.lane[data-lane="rodica_batch"] .rail { background: var(--stakeholder); }
 .lane[data-lane="incidents"] .rail { background: var(--stop); }
 .lane[data-lane="loose_ends"] .rail { background: var(--ink-3); }
 .lane[data-lane="shipped"] .rail { background: var(--ok); }
@@ -396,7 +427,7 @@ body {
 .tag.who.infra { color: var(--infra); }
 .tag.gate { border-style: dashed; border-color: var(--line-2); color: var(--ink-3); background: none; }
 .tag.gate.autorizo { border-style: solid; border-color: var(--hold); color: var(--hold); }
-.tag.gate.stakeholder { border-color: var(--rodica); color: var(--rodica); }
+.tag.gate.stakeholder { border-color: var(--stakeholder); color: var(--stakeholder); }
 .tag.gate.selfmerge { border-color: var(--ok); color: var(--ok); }
 .tag.gate.cyan { border-color: var(--go); color: var(--go); }
 .tag.prio-high { background: var(--stop-soft); color: var(--stop); }
@@ -458,11 +489,11 @@ body {
 }
 .segrow button:hover { border-color: var(--brand); color: var(--ink); }
 .segrow button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
-.segrow.status button[aria-pressed="true"][data-v="shipped"] { background: var(--ok); border-color: var(--ok); color: #fff; }
-.segrow.status button[aria-pressed="true"][data-v="blocked"] { background: var(--stop); border-color: var(--stop); color: #fff; }
-.segrow.status button[aria-pressed="true"][data-v="in_flight"] { background: var(--go); border-color: var(--go); color: #fff; }
-.segrow.status button[aria-pressed="true"][data-v="halted"] { background: var(--hold); border-color: var(--hold); color: #fff; }
-.segrow.status button[aria-pressed="true"][data-v="todo"] { background: var(--todo); border-color: var(--todo); color: #fff; }
+.segrow.status button[aria-pressed="true"][data-v="shipped"] { background: var(--ok); border-color: var(--ok); color: var(--on-accent); }
+.segrow.status button[aria-pressed="true"][data-v="blocked"] { background: var(--stop); border-color: var(--stop); color: var(--on-accent); }
+.segrow.status button[aria-pressed="true"][data-v="in_flight"] { background: var(--go); border-color: var(--go); color: var(--on-accent); }
+.segrow.status button[aria-pressed="true"][data-v="halted"] { background: var(--hold); border-color: var(--hold); color: var(--on-accent); }
+.segrow.status button[aria-pressed="true"][data-v="todo"] { background: var(--todo); border-color: var(--todo); color: var(--on-accent); }
 
 /* ---------------------------------------------------------------- modal -- */
 .scrim {
