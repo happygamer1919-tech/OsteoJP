@@ -157,12 +157,13 @@ and Ivan needs to know which.
    independent conditions, no partial credit. Partial work is a card, never
    gate credit. `readiness_passed` must equal the number of passing conditions
    or the validator fails you.
-6. **Regenerate the render and publish it.**
+6. **Regenerate the render, then PUBLISH it. Do not commit it.**
    `node docs/board/render-board.mjs docs/board/portal-board.json`
-   writes `docs/board/portal-board.rendered.html`. Never hand-edit it. Publish it
-   to the artifact URL at the top of this file with the `url=` parameter, so the
-   owner's link keeps working. Publishing without that parameter mints a NEW url
-   and orphans his link.
+   writes `docs/board/portal-board.rendered.html`, which is **gitignored**: it
+   is a build product, the same as the pre-launch board's render. Never
+   hand-edit it. Publish it to the artifact URL at the top of this file with the
+   `url=` parameter, so the owner's link keeps working. Publishing without that
+   parameter mints a NEW url and orphans his link.
 7. **Run the validator before every commit that touches the board**:
    `node docs/board/validate-board.mjs docs/board/portal-board.json`
    **Exit 0 is required.** A red validator is a red gate; do not commit through
