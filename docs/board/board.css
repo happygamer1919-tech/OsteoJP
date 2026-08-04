@@ -52,6 +52,7 @@
   --ivan: #2c6db5;
   --jp: #6f55c4;
   --rodica: #be443b;
+  --lawyer: #5f7d18;
   --infra: #6f8079;
 
   --shadow-1: 0 1px 2px rgba(13, 40, 34, 0.05);
@@ -100,6 +101,7 @@
     --ivan: #6aa6e8;
     --jp: #a58ff0;
     --rodica: #e5796e;
+    --lawyer: #a9c95f;
     --infra: #7b8d87;
 
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -119,7 +121,7 @@
   --ok: #3ec2a1; --ok-soft: #10302a; --go: #6aa6e8; --go-soft: #12263a;
   --stop: #e5796e; --stop-soft: #341e1c; --hold: #a58ff0; --hold-soft: #221d38;
   --todo: #e0ab52; --todo-soft: #2e2412;
-  --ivan: #6aa6e8; --jp: #a58ff0; --rodica: #e5796e; --infra: #7b8d87;
+  --ivan: #6aa6e8; --jp: #a58ff0; --rodica: #e5796e; --lawyer: #a9c95f; --infra: #7b8d87;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 28px -18px rgba(0, 0, 0, 0.8);
   --shadow-3: 0 24px 60px -20px rgba(0, 0, 0, 0.75);
@@ -133,7 +135,7 @@
   --ok: #12866a; --ok-soft: #e2f2ec; --go: #2c6db5; --go-soft: #e5eefa;
   --stop: #be443b; --stop-soft: #fbe9e6; --hold: #6f55c4; --hold-soft: #ece8fa;
   --todo: #a86f10; --todo-soft: #faf0dd;
-  --ivan: #2c6db5; --jp: #6f55c4; --rodica: #be443b; --infra: #6f8079;
+  --ivan: #2c6db5; --jp: #6f55c4; --rodica: #be443b; --lawyer: #5f7d18; --infra: #6f8079;
   --shadow-1: 0 1px 2px rgba(13, 40, 34, 0.05);
   --shadow-2: 0 1px 2px rgba(13, 40, 34, 0.05), 0 10px 26px -18px rgba(13, 40, 34, 0.45);
   --shadow-3: 0 24px 60px -24px rgba(6, 25, 20, 0.45);
@@ -339,6 +341,7 @@ body {
 .lane .subhead.ivan { color: var(--ivan); }
 .lane .subhead.jp { color: var(--jp); }
 .lane .subhead.rodica { color: var(--rodica); }
+.lane .subhead.lawyer { color: var(--lawyer); }
 .addcard {
   border: 1px dashed var(--line-2); background: none; border-radius: var(--r-md);
   padding: 9px; color: var(--ink-3); font: inherit; font-size: 12px; font-weight: 600;
@@ -389,6 +392,7 @@ body {
 .tag.who.ivan { color: var(--ivan); }
 .tag.who.jp { color: var(--jp); }
 .tag.who.rodica { color: var(--rodica); }
+.tag.who.lawyer { color: var(--lawyer); }
 .tag.who.infra { color: var(--infra); }
 .tag.gate { border-style: dashed; border-color: var(--line-2); color: var(--ink-3); background: none; }
 .tag.gate.autorizo { border-style: solid; border-color: var(--hold); color: var(--hold); }

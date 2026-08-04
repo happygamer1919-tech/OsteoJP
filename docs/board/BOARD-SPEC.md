@@ -209,13 +209,30 @@ differences are listed here; everything else in this file governs it unchanged.
 |---|---|---|
 | name | `OsteoJP - Pre-Launch Board` | `OsteoJP - Portal Board` |
 | source of truth | `docs/board/prelaunch-board.json` | `docs/board/portal-board.json` |
-| renderer | `render-board.mjs` (interactive portal) | `render-portal-board.mjs` (static page) |
-| render output | `prelaunch-board.rendered.html` | `portal-board-render.html` |
+| renderer | `render-board.mjs` | `render-board.mjs` (the same one) |
+| render output | `prelaunch-board.rendered.html` | `portal-board.rendered.html` |
+| render tracked? | no, gitignored | no, gitignored |
 | executor terminal | GREEN | PURPLE |
 | people columns | Ivan / JP / Rodica | Ivan / JP / Lawyer |
 | lane 4 title | RODICA BATCH | STAKEHOLDER FEEDBACK |
 | launch gate | G1-G9, the pre-launch conditions | PG1-PG9, the portal Definition of Ready |
 | rehydrate prompt | - | `docs/board/PORTAL-REHYDRATE.md` |
+
+**One renderer, one app, one design system.** Both boards render through
+`render-board.mjs`, which inlines `board-app.js` and `board.css` and gives both
+boards the same five interactive views. The portal board originally shipped with
+a second, static renderer (`render-portal-board.mjs`); it is retired, because a
+second renderer that nothing runs is where drift starts. Everything that differs
+between the two boards lives in `docs/board/board-config.mjs` and nowhere else.
+
+**A render is a build product.** Both `prelaunch-board.rendered.html` and
+`portal-board.rendered.html` are gitignored and regenerated on demand. The
+committed JSON is the source of truth, and the published artifact is a render of
+it. This settles a conflict between two committed documents: the pre-launch
+render was gitignored while the portal render was tracked, and
+`PORTAL-REHYDRATE.md` told PURPLE to regenerate it in the same commit, which only
+makes sense for a tracked file. The rule is now the same for both boards, and the
+rehydrate prompt says regenerate and publish, not regenerate and commit.
 
 Four rules make one validator serve both:
 

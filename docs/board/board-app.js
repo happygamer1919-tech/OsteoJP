@@ -1,9 +1,15 @@
-/* board-app.js - client runtime for the Pre-Launch Portal artifact.
+/* board-app.js - client runtime for the board portal artifacts.
    Inlined verbatim into the rendered HTML by render-board.mjs. Self-contained,
    zero external requests. Seeds from the #board-data island (the committed
    JSON), holds edits in localStorage, and mirrors docs/board/validate-board.mjs
    so Export tells you whether a paste-back would pass the repo validator.
    The repo JSON stays the source of truth; this never writes back to it.
+
+   ONE APP, TWO BOARDS. Everything that differs between the pre-launch board and
+   the portal board (people set, display labels, brandmark, paths, terminal
+   defaults) arrives in the #board-config island, derived in Node by
+   docs/board/board-config.mjs. This file holds no per-board literal except the
+   single documented fallback below.
 
    THE ONE STRUCTURAL IDEA (owner CR): a card's LANE IS DERIVED, never stored by
    hand. You change what is TRUE about a card - its status, who it waits on -
@@ -25,6 +31,66 @@
 
   /* ---------------------------------------------------------------- data -- */
   var SEED = JSON.parse(document.getElementById("board-data").textContent);
+
+  /* -------------------------------------------------------------- config -- */
+  /**
+   * THE ONLY per-board literal in this file, and the only place the strings
+   * "ivan", "rodica", "Pre-Launch" or "prelaunch-board.json" are allowed to
+   * appear. It is the fallback for a page rendered without a #board-config
+   * island (an older renderer, or a hand-saved copy), and it holds the
+   * pre-launch board's values because that is the board this app shipped for.
+   * Kept in lock-step with docs/board/board-config.mjs, which is where the real
+   * configuration lives and where a new board is added.
+   */
+  var FALLBACK_CONFIG = {
+    boardName: "OsteoJP - Pre-Launch Board",
+    owner: "ivan",
+    people: ["ivan", "jp", "rodica"],
+    whoOrder: [null, "ivan", "jp", "rodica", "infra"],
+    whoLabels: { ivan: "Ivan", jp: "JP", rodica: "Rodica", infra: "Infra" },
+    laneLabels: {
+      blocked_on_people: "Blocked on people", in_flight: "In flight",
+      rodica_batch: "Rodica inbox", incidents: "Incidents",
+      loose_ends: "Loose ends", shipped: "Shipped",
+    },
+    laneHints: {
+      blocked_on_people: "someone owes an answer", in_flight: "being executed now",
+      rodica_batch: "fresh reports land here", incidents: "live problems",
+      loose_ends: "tracked, not batched", shipped: "done, with proof",
+    },
+    kindLabels: {
+      in_flight: "Work item", rodica_batch: "Rodica inbox",
+      incidents: "Incident", loose_ends: "Loose end",
+    },
+    denominator: 9,
+    denominatorWord: "Nine",
+    brandmark: "OsteoJP · Pre-Launch",
+    footerLabel: "osteojp · pre-launch portal",
+    briefTitle: "Made in the Pre-Launch Portal",
+    sourcePath: "docs/board/prelaunch-board.json",
+    exportFilename: "prelaunch-board.json",
+    validateCommand: "node docs/board/validate-board.mjs",
+    ownerTerminalDefault: "green",
+    ownerTerminalPlaceholder: "green / cyan / ivan",
+    newIdPrefix: "NEW-",
+  };
+
+  /**
+   * Read once, at boot, and FREEZE.
+   *
+   * CFG is derived from the published seed and never from `board`. The board key
+   * in localStorage persists clone(board) including `lanes`, so a stale snapshot
+   * carries its own mutable copy of lanes[blocked_on_people].columns. Reading the
+   * people set off `board` would let that stale copy silently redefine PEOPLE,
+   * and therefore laneOf(), and therefore the in-browser validate() - which would
+   * start disagreeing with validate-board.mjs about the very same file. take-seed,
+   * undo, reset and every mutate() leave CFG untouched by construction.
+   */
+  var CFG = (function () {
+    var el = document.getElementById("board-config");
+    if (!el) return Object.freeze(FALLBACK_CONFIG);
+    try { return Object.freeze(JSON.parse(el.textContent)); } catch (e) { return Object.freeze(FALLBACK_CONFIG); }
+  })();
   // PORTAL_GEN is bumped whenever the app's own data handling changes shape. The
   // v1 board stored its snapshot under the un-generationed key, and a browser
   // that had used it would otherwise resurrect that stale copy (16 cards) over
@@ -35,28 +101,12 @@
 
   var KIND_LANES = ["in_flight", "rodica_batch", "incidents", "loose_ends"];
   var ALL_LANES = ["blocked_on_people", "in_flight", "rodica_batch", "incidents", "loose_ends", "shipped"];
-  var LANE_LABEL = {
-    blocked_on_people: "Blocked on people",
-    in_flight: "In flight",
-    rodica_batch: "Rodica inbox",
-    incidents: "Incidents",
-    loose_ends: "Loose ends",
-    shipped: "Shipped",
-  };
-  var LANE_HINT = {
-    blocked_on_people: "someone owes an answer",
-    in_flight: "being executed now",
-    rodica_batch: "fresh reports land here",
-    incidents: "live problems",
-    loose_ends: "tracked, not batched",
-    shipped: "done, with proof",
-  };
-  var KIND_LABEL = {
-    in_flight: "Work item",
-    rodica_batch: "Rodica inbox",
-    incidents: "Incident",
-    loose_ends: "Loose end",
-  };
+  // Display vocabulary is per board. The lane IDs above are NOT: `rodica_batch`
+  // is the id on both boards, and only its label differs ("Rodica inbox" on the
+  // pre-launch board, "Stakeholder feedback" on the portal board).
+  var LANE_LABEL = CFG.laneLabels;
+  var LANE_HINT = CFG.laneHints;
+  var KIND_LABEL = CFG.kindLabels;
   var STATUS_ORDER = ["todo", "in_flight", "blocked", "halted", "shipped"];
   var STATUS_LABEL = { todo: "To do", in_flight: "In flight", blocked: "Blocked", halted: "Halted", shipped: "Shipped" };
   var GATE_ORDER = ["green_self_merge", "cyan_clear", "owner_merge", "owner_authorizo", "stakeholder"];
@@ -67,9 +117,17 @@
     owner_authorizo: { label: "AUTORIZO", cls: "autorizo" },
     stakeholder: { label: "Stakeholder", cls: "stakeholder" },
   };
-  var WHO = { ivan: "Ivan", jp: "JP", rodica: "Rodica", infra: "Infra" };
-  var WHO_ORDER = [null, "ivan", "jp", "rodica", "infra"];
-  var PEOPLE = ["ivan", "jp", "rodica"];
+  // The people set is board-relative: ivan/jp/rodica on the pre-launch board,
+  // ivan/jp/lawyer on the portal board. WHO_ORDER is `blocked_on`'s full domain.
+  // OWNER is the "you" in "Your move" and the "On you" tile.
+  var WHO = CFG.whoLabels;
+  var WHO_ORDER = CFG.whoOrder;
+  var PEOPLE = CFG.people;
+  var OWNER = CFG.owner;
+  // Focus splits "Your move" from "Waiting on others": everyone who is not you,
+  // plus infra. Derived so a board with a different people set splits correctly.
+  var OTHERS = PEOPLE.filter(function (p) { return p !== OWNER; }).concat(["infra"]);
+  var DENOM = CFG.denominator;
   var EV_KIND = ["pr", "journal", "sha256", "e2e", "screenshot"];
   var PRIO = ["high", "medium", "low"];
   var PRIO_LABEL = { high: "High", medium: "Medium", low: "Low" };
@@ -355,18 +413,18 @@
     var shipped = all.filter(function (c) { return c.status === "shipped"; }).length;
     var flight = all.filter(function (c) { return c.status === "in_flight"; }).length;
     var blocked = all.filter(function (c) { return c.status === "blocked"; }).length;
-    var mine = all.filter(function (c) { return c.status === "blocked" && c.blocked_on === "ivan"; }).length;
-    var lg = board.launch_gate || { conditions: [], denominator: 9 };
+    var mine = all.filter(function (c) { return c.status === "blocked" && c.blocked_on === OWNER; }).length;
+    var lg = board.launch_gate || { conditions: [], denominator: DENOM };
     var conds = lg.conditions || [];
     var passed = conds.filter(function (g) { return g.state === "pass"; }).length;
-    var denom = lg.denominator || 9;
+    var denom = lg.denominator || DENOM;
     var open = conds.filter(function (g) { return g.state !== "pass"; });
 
     var stats = '<div class="stats">' +
       statHTML("shipped", "ok", shipped, "Shipped", shipped + " of " + all.length + " cards", ui.fStatus.length === 1 && ui.fStatus[0] === "shipped") +
       statHTML("in_flight", "go", flight, "In flight", "being executed", ui.fStatus.length === 1 && ui.fStatus[0] === "in_flight") +
       statHTML("blocked", "stop", blocked, "Blocked", "waiting on someone", ui.fStatus.length === 1 && ui.fStatus[0] === "blocked") +
-      statHTML("mine", "todo", mine, "On you", mine === 0 ? "nothing waiting" : "your move", ui.fWho.length === 1 && ui.fWho[0] === "ivan") +
+      statHTML("mine", "todo", mine, "On you", mine === 0 ? "nothing waiting" : "your move", ui.fWho.length === 1 && ui.fWho[0] === OWNER) +
     "</div>";
 
     var pips = conds.map(function (g) {
@@ -379,8 +437,8 @@
         '<div class="gh"><span class="lbl">Launch gate</span>' +
           '<span class="read"><b>' + passed + "</b> / " + denom + "</span></div>" +
         '<div class="pips">' + pips + "</div>" +
-        '<p class="note">Nine go/no-go conditions, counted never estimated. This is <b>not</b> a percentage of build work: it moves only when a person or a production action clears a condition. ' +
-          (open.length ? "Open: " + open.map(function (g) { return esc(g.id) + (g.blocked_on ? " (" + esc(WHO[g.blocked_on] || g.blocked_on) + ")" : ""); }).join(", ") + "." : "All nine cleared.") +
+        '<p class="note">' + esc(CFG.denominatorWord) + ' go/no-go conditions, counted never estimated. This is <b>not</b> a percentage of build work: it moves only when a person or a production action clears a condition. ' +
+          (open.length ? "Open: " + open.map(function (g) { return esc(g.id) + (g.blocked_on ? " (" + esc(WHO[g.blocked_on] || g.blocked_on) + ")" : ""); }).join(", ") + "." : "All " + CFG.denominatorWord.toLowerCase() + " cleared.") +
         "</p>" +
       "</div></div>";
   }
@@ -396,7 +454,7 @@
     var out = STATUS_ORDER.map(function (s) {
       return chip("f-status", s, STATUS_LABEL[s], n(function (c) { return c.status === s; }), ui.fStatus.indexOf(s) >= 0);
     }).join("") + '<span class="sep"></span>' +
-    ["ivan", "jp", "rodica", "infra"].map(function (w) {
+    PEOPLE.concat(["infra"]).map(function (w) {
       return chip("f-who", w, WHO[w], n(function (c) { return c.blocked_on === w; }), ui.fWho.indexOf(w) >= 0);
     }).join("") + '<span class="sep"></span>' +
     chip("f-prio", "high", "High priority", n(function (c) { return c.priority === "high"; }), ui.fPrio.indexOf("high") >= 0);
@@ -414,9 +472,9 @@
     var lg = board.launch_gate || { conditions: [] };
     var stale = function (a, b) { return daysSince(b.last_checkpoint) - daysSince(a.last_checkpoint); };
 
-    var onIvan = vis.filter(function (c) { return c.status === "blocked" && c.blocked_on === "ivan"; }).sort(stale);
-    var gatesIvan = (lg.conditions || []).filter(function (g) { return g.state !== "pass" && g.blocked_on === "ivan"; });
-    var onOthers = vis.filter(function (c) { return c.status === "blocked" && ["jp", "rodica", "infra"].indexOf(c.blocked_on) >= 0; }).sort(stale);
+    var onIvan = vis.filter(function (c) { return c.status === "blocked" && c.blocked_on === OWNER; }).sort(stale);
+    var gatesIvan = (lg.conditions || []).filter(function (g) { return g.state !== "pass" && g.blocked_on === OWNER; });
+    var onOthers = vis.filter(function (c) { return c.status === "blocked" && OTHERS.indexOf(c.blocked_on) >= 0; }).sort(stale);
     var moving = vis.filter(function (c) { return c.status === "in_flight"; }).sort(stale);
     var next = vis.filter(function (c) { return c.status === "todo"; }).sort(stale);
     var recent = vis.filter(function (c) { return c.status === "shipped"; })
@@ -450,7 +508,7 @@
 
   /* ----------------------------------------------------------- gate view -- */
   function gateViewHTML() {
-    var lg = board.launch_gate || { conditions: [], denominator: 9 };
+    var lg = board.launch_gate || { conditions: [], denominator: DENOM };
     var conds = lg.conditions || [];
     var rows = conds.map(function (g) {
       var open = !!ui.openGateNotes[g.id];
@@ -466,7 +524,7 @@
       "</article>";
     }).join("");
     var passed = conds.filter(function (g) { return g.state === "pass"; }).length;
-    return '<h2 class="section">Launch gate · ' + passed + " of " + (lg.denominator || 9) + " cleared</h2>" +
+    return '<h2 class="section">Launch gate · ' + passed + " of " + (lg.denominator || DENOM) + " cleared</h2>" +
       '<div class="gategrid">' + rows + "</div>";
   }
 
@@ -538,7 +596,7 @@
   function cmdbarHTML() {
     var d = diffVsSeed();
     return '<div class="cmdbar">' +
-      '<span class="brandmark"><i></i>OsteoJP · Pre-Launch</span>' +
+      '<span class="brandmark"><i></i>' + esc(CFG.brandmark) + '</span>' +
       '<div class="views">' + VIEWS.map(function (v) {
         return '<button data-act="view" data-v="' + v.id + '" aria-pressed="' + (ui.view === v.id ? "true" : "false") + '">' + esc(v.label) + "</button>";
       }).join("") + "</div>" +
@@ -552,9 +610,9 @@
   }
   function footerHTML() {
     var lg = board.launch_gate || {};
-    return '<footer class="pf"><span class="mono">osteojp · pre-launch portal · snapshot ' + esc(board.as_of || "") + "</span>" +
-      '<span class="mono">source docs/board/prelaunch-board.json · readiness ' +
-      ((lg.conditions || []).filter(function (g) { return g.state === "pass"; }).length) + "/" + (lg.denominator || 9) +
+    return '<footer class="pf"><span class="mono">' + esc(CFG.footerLabel) + ' · snapshot ' + esc(board.as_of || "") + "</span>" +
+      '<span class="mono">source ' + esc(CFG.sourcePath) + ' · readiness ' +
+      ((lg.conditions || []).filter(function (g) { return g.state === "pass"; }).length) + "/" + (lg.denominator || DENOM) +
       " · keys / n e u 1-5 · </span>" +
       '<button class="btn btn-sm ghost" data-act="reset">Discard local changes</button></footer>';
   }
@@ -703,15 +761,15 @@
   function suggestId() {
     var n = 1, seen = {};
     (board.cards || []).forEach(function (c) { seen[c.id] = 1; });
-    while (seen["NEW-" + n]) n++;
-    return "NEW-" + n;
+    while (seen[CFG.newIdPrefix + n]) n++;
+    return CFG.newIdPrefix + n;
   }
   function openCardModal(card, defaults) {
     defaults = defaults || {};
     var isNew = !card;
     var c = card ? clone(card) : {
       id: suggestId(), title: "", home_lane: defaults.home || "in_flight", status: "todo",
-      owner_terminal: "green", gate: "owner_merge", evidence: null, blocked_on: defaults.who || null,
+      owner_terminal: CFG.ownerTerminalDefault, gate: "owner_merge", evidence: null, blocked_on: defaults.who || null,
       last_checkpoint: today(), notes: "", priority: "medium",
     };
     var body = '<div class="modal-body">' +
@@ -722,7 +780,7 @@
       field("", "Waiting on", '<select id="f-who">' + options(WHO_ORDER, c.blocked_on, function (w) { return w === null ? "(nobody)" : WHO[w]; }) + "</select>") +
       field("", "Priority", '<select id="f-prio">' + options(PRIO, c.priority || "medium", function (p) { return PRIO_LABEL[p]; }) + "</select>") +
       field("", "Merge gate", '<select id="f-gate">' + options(GATE_ORDER, c.gate, function (g) { return GATE_BADGE[g].label; }) + "</select>") +
-      field("", "Owner terminal", '<input id="f-owner" type="text" value="' + esc(c.owner_terminal || "") + '" placeholder="green / cyan / ivan" />') +
+      field("", "Owner terminal", '<input id="f-owner" type="text" value="' + esc(c.owner_terminal || "") + '" placeholder="' + esc(CFG.ownerTerminalPlaceholder) + '" />') +
       field("", "Last checkpoint", '<input id="f-cp" type="date" value="' + esc(dateOnly(c.last_checkpoint) || today()) + '" />') +
       evidenceFields("f-", c.evidence) +
       field("full", "Notes", '<textarea id="f-notes">' + esc(c.notes || "") + "</textarea>", "Context, quotes, decisions. Shown in the detail panel, never on the card face.") +
@@ -901,8 +959,8 @@
   function validate(b) {
     var out = [], push = function (id, msg) { out.push({ id: id, msg: msg }); };
     var lg = b.launch_gate || {}, conds = lg.conditions || [];
-    if (lg.denominator !== 9) push("launch gate", "denominator must be 9, got " + lg.denominator);
-    if (conds.length !== 9) push("launch gate", "expected 9 conditions, got " + conds.length);
+    if (lg.denominator !== DENOM) push("launch gate", "denominator must be " + DENOM + ", got " + lg.denominator);
+    if (conds.length !== DENOM) push("launch gate", "expected " + DENOM + " conditions, got " + conds.length);
     var passed = 0, gseen = {};
     conds.forEach(function (g) {
       var id = g.id || "G?";
@@ -948,7 +1006,7 @@
       lines.push("No local changes: the board matches the committed JSON.");
       return lines.join("\n");
     }
-    lines.push("Made in the Pre-Launch Portal, against the snapshot of " + (SEED.as_of || "?") + ".", "");
+    lines.push(CFG.briefTitle + ", against the snapshot of " + (SEED.as_of || "?") + ".", "");
     if (d.changed.length) {
       lines.push("## Changed");
       d.changed.forEach(function (ch) {
@@ -978,7 +1036,7 @@
       d.gates.forEach(function (g) { lines.push("- **" + g.id + "**: " + g.from + " -> " + g.to); });
       lines.push("");
     }
-    lines.push("Apply to `docs/board/prelaunch-board.json`, run `node docs/board/validate-board.mjs`, re-render and re-publish the artifact.");
+    lines.push("Apply to `" + CFG.sourcePath + "`, run `" + CFG.validateCommand + "`, re-render and re-publish the artifact.");
     return lines.join("\n");
   }
   function copyText(text, btn) {
@@ -1038,7 +1096,7 @@
         '<div class="field full"><label>Validator · ' + problems.length + " issue" + (problems.length === 1 ? "" : "s") + "</label>" +
           '<ul class="checklist">' + vlist + "</ul></div>" +
         '<div class="field full"><label>board JSON</label><textarea class="codebox" id="x-json" readonly>' + esc(json) + "</textarea>" +
-          '<span class="hint">Paste into docs/board/prelaunch-board.json, run node docs/board/validate-board.mjs, then re-render and re-publish.</span></div>' +
+          '<span class="hint">Paste into ' + esc(CFG.sourcePath) + ', run ' + esc(CFG.validateCommand) + ', then re-render and re-publish.</span></div>' +
       "</div>",
       foot: '<button class="btn" data-act="modal-close">Close</button>' +
         '<button class="btn" id="x-brief">Copy change brief</button><span class="spacer"></span>' +
@@ -1050,7 +1108,7 @@
       var ta = scrim.querySelector("#x-json"); if (ta) ta.select();
       copyText(json, this);
     });
-    scrim.querySelector("#x-file").addEventListener("click", function () { saveFile("prelaunch-board.json", json, this); });
+    scrim.querySelector("#x-file").addEventListener("click", function () { saveFile(CFG.exportFilename, json, this); });
     scrim.querySelector("#x-brief").addEventListener("click", function () { copyText(handoffBrief(), this); });
   }
   function confirmReset() {
@@ -1080,7 +1138,7 @@
       if (lane === "blocked_on_people") {
         c.home_lane = "in_flight";
         c.status = "blocked";
-        if (PEOPLE.indexOf(c.blocked_on) < 0) c.blocked_on = "ivan";
+        if (PEOPLE.indexOf(c.blocked_on) < 0) c.blocked_on = OWNER;
       } else {
         c.home_lane = lane;
         if (c.status === "shipped") c.status = "in_flight";
@@ -1151,7 +1209,7 @@
         if (v === "shipped") { shipCard(id); break; }
         mutate(id + " → " + STATUS_LABEL[v], function () {
           c.status = v;
-          if (v === "blocked" && !c.blocked_on) c.blocked_on = "ivan";
+          if (v === "blocked" && !c.blocked_on) c.blocked_on = OWNER;
           c.last_checkpoint = today();
         });
         break;
@@ -1171,7 +1229,7 @@
       case "shipped-toggle": ui.shippedOpen = !ui.shippedOpen; render(); break;
       case "stat":
         if (el.getAttribute("data-key") === "mine") {
-          ui.fWho = ui.fWho.length === 1 && ui.fWho[0] === "ivan" ? [] : ["ivan"];
+          ui.fWho = ui.fWho.length === 1 && ui.fWho[0] === OWNER ? [] : [OWNER];
           ui.fStatus = [];
         } else {
           var k = el.getAttribute("data-key");

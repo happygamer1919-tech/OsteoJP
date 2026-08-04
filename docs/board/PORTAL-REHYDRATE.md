@@ -1,4 +1,5 @@
-Artifact render link (human reference only): <IVAN PASTES LINK HERE>
+Artifact render link (human reference only): https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
+Tab identity, keep it stable: title "OsteoJP · Portal Board", favicon 🌐.
 
 # PURPLE rehydrate - OsteoJP Portal Board
 
@@ -156,11 +157,13 @@ and Ivan needs to know which.
    independent conditions, no partial credit. Partial work is a card, never
    gate credit. `readiness_passed` must equal the number of passing conditions
    or the validator fails you.
-6. **Regenerate the render in the SAME commit**:
-   `node docs/board/render-portal-board.mjs`
-   (writes `docs/board/portal-board-render.html`). Never hand-edit that file.
-   It is deterministic: same JSON in, byte-identical HTML out, so a re-render
-   with no board change produces an empty diff.
+6. **Regenerate the render, then PUBLISH it. Do not commit it.**
+   `node docs/board/render-board.mjs docs/board/portal-board.json`
+   writes `docs/board/portal-board.rendered.html`, which is **gitignored**: it
+   is a build product, the same as the pre-launch board's render. Never
+   hand-edit it. Publish it to the artifact URL at the top of this file with the
+   `url=` parameter, so the owner's link keeps working. Publishing without that
+   parameter mints a NEW url and orphans his link.
 7. **Run the validator before every commit that touches the board**:
    `node docs/board/validate-board.mjs docs/board/portal-board.json`
    **Exit 0 is required.** A red validator is a red gate; do not commit through
@@ -226,10 +229,18 @@ Before your context is cleared, in this order:
   tracks the staff platform pre-launch. Do not duplicate its cards here and do
   not edit it from a portal session.
 - **The fingerprint is computed at render time**, not stored in the JSON:
-  `sha256(JSON.stringify(board))` truncated to 16 hex chars, exactly as
-  `docs/board/render-board.mjs:71` defines it. It exists so a browser holding an
-  old snapshot can tell that a newer board exists. Do not add a `fingerprint`
-  key to the JSON.
+  `sha256(JSON.stringify(board))` truncated to 16 hex chars, defined in
+  `docs/board/render-board.mjs`. It exists so a browser holding an old snapshot
+  can tell that a newer board exists. Do not add a `fingerprint` key to the JSON,
+  and do not fold the config island into the fingerprint: it answers "did the
+  board data change", and folding config in would fire the staleness notice on
+  every viewer the first time a label changed.
+- **The board portal is interactive.** Five views (Focus, Board, Launch gate,
+  List, Timeline), drag and drop that rewrites state rather than position, an
+  evidence-gated ship prompt, undo, and an Export that diffs against the
+  committed seed and runs the validator's rules in the browser before you paste
+  anything back. Edits live in the viewer's `localStorage`, never in the repo.
+  Export names this board's own path, filename and validate command.
 
 ---
 
@@ -237,10 +248,15 @@ Before your context is cleared, in this order:
 
 ```bash
 git fetch origin --prune
-git show origin/main:docs/board/portal-board.json | less     # the state
-node docs/board/validate-board.mjs docs/board/portal-board.json   # exit 0 required
-node docs/board/render-portal-board.mjs                      # regenerate the render
-node docs/board/validate-board.mjs                           # the platform board, unaffected
+git show origin/main:docs/board/portal-board.json | less           # the state
+node docs/board/validate-board.mjs docs/board/portal-board.json    # exit 0 required
+node docs/board/render-board.mjs docs/board/portal-board.json      # regenerate the render
+node docs/board/validate-board.mjs                                 # the platform board, unaffected
+node docs/board/render-board.mjs                                   # the platform render, unaffected
 ```
+
+Both boards run through the same renderer and the same client app. Everything
+that differs between them (people set, labels, brandmark, paths, terminal
+defaults) lives in `docs/board/board-config.mjs`, and nowhere else.
 
 Governing spec: `docs/board/BOARD-SPEC.md`.
