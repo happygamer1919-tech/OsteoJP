@@ -11,7 +11,8 @@ export type AppointmentErrorCode =
   | "no_slot" // the chosen slot was taken in the meantime (booking race) → 409
   | "no_therapist" // nobody works this window (schedule gap, not a race) → 409
   | "cutoff" // inside the 24h cancel/reschedule window → 409
-  | "not_reschedulable"; // appointment already cancelled/completed → 409
+  | "not_reschedulable" // appointment already cancelled/completed → 409
+  | "min_notice"; // new slot is inside the 24h minimum notice → 422
 
 export class AppointmentError extends Error {
   override readonly name = "AppointmentError";
@@ -38,6 +39,7 @@ export const HTTP_STATUS: Record<AppointmentErrorCode, number> = {
   no_therapist: 409,
   cutoff: 409,
   not_reschedulable: 409,
+  min_notice: 422,
 };
 
 /** i18n string key per code (PT/EN resolved by the route). */
@@ -51,4 +53,5 @@ export const MESSAGE_KEY: Record<AppointmentErrorCode, string> = {
   no_therapist: "patientAppointments.error.noTherapist",
   cutoff: "patientAppointments.error.cutoff",
   not_reschedulable: "patientAppointments.error.notReschedulable",
+  min_notice: "patientAppointments.error.minNotice",
 };

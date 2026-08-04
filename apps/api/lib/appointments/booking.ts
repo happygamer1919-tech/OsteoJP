@@ -1,6 +1,6 @@
 import type { PatientPrincipal } from "@osteojp/auth";
 import { AppointmentError } from "./errors";
-import { isWithinCancellationCutoff } from "./cutoff";
+import { isWithinCancellationCutoff, isBeforeMinimumNotice } from "./cutoff";
 import { chooseTherapist, type TherapistCandidate } from "./therapist";
 
 // Patient appointments orchestration — view / book / cancel / reschedule.
@@ -346,6 +346,51 @@ export async function cancelAppointment(
 }
 
 /**
+ * The slots a patient may move THIS appointment to.
+ *
+ * Deliberately takes only the appointment id. The portal never learns the
+ * service or location identifier: they are resolved server-side from the stored
+ * row. Data minimisation is a documented compliance property (see
+ * docs/rgpd-token-flow.md), and AppointmentView stays at 8 keys.
+ *
+ * Zero duplicated slot computation. The duration comes from the appointment
+ * itself rather than from the service, which is both simpler and MORE correct
+ * here: reschedule preserves the original window by design, so a service whose
+ * duration changed after booking must not silently resize an existing
+ * appointment. Generation and conflict filtering are the same store call that
+ * backs GET /booking/slots.
+ */
+export async function listRescheduleOptions(
+  principal: PatientPrincipal,
+  id: string,
+  store: AppointmentsStore,
+  now: Date,
+): Promise<string[]> {
+  const appt = await store.getOwnMutable(principal, id);
+  if (!appt) throw new AppointmentError("not_found");
+  if (!MUTABLE_STATUSES.has(appt.status)) {
+    throw new AppointmentError("not_reschedulable");
+  }
+  // Same gate as the action: if it is too late to reschedule at all, offer
+  // nothing rather than a list the patient cannot act on.
+  if (isWithinCancellationCutoff(appt.startsAt, now)) {
+    throw new AppointmentError("cutoff");
+  }
+
+  const durationMin = Math.round((appt.endsAt.getTime() - appt.startsAt.getTime()) / 60_000);
+
+  const slots = await store.listOpenSlots(principal, {
+    locationId: appt.locationId,
+    durationMin,
+    horizonDays: OPEN_SLOTS_HORIZON_DAYS,
+    now,
+  });
+
+  // Never offer a slot the action would refuse. Same predicate, one source.
+  return slots.filter((iso) => !isBeforeMinimumNotice(new Date(iso), now));
+}
+
+/**
  * Reschedule an own appointment to a new start. Server-enforced 24h cutoff is
  * checked against the CURRENT start; the new window preserves the original
  * duration, must be in the future, and re-runs conflict detection for the
@@ -369,6 +414,13 @@ export async function rescheduleAppointment(
   }
   if (input.startsAt.getTime() <= now.getTime()) {
     throw new AppointmentError("slot_in_past");
+  }
+  // Minimum notice on the NEW slot (JP, 2026-08-03). The options endpoint already
+  // filters these out, but the client is not trusted: enforcement lives here, at
+  // action time, so a forged request cannot move an appointment to two hours
+  // from now. Filtering the list is a courtesy; this is the control.
+  if (isBeforeMinimumNotice(input.startsAt, now)) {
+    throw new AppointmentError("min_notice");
   }
 
   const durationMs = appt.endsAt.getTime() - appt.startsAt.getTime();
