@@ -351,7 +351,9 @@
     "load_forms": "Could not load forms",
     "load_forms_desc": "An error occurred loading your forms. Please try again.",
     "load_dashboard": "Could not load home",
-    "load_dashboard_desc": "An error occurred loading your information. Please try again."
+    "load_dashboard_desc": "An error occurred loading your information. Please try again.",
+    "load_account": "Could not load account",
+    "load_account_desc": "An error occurred loading your details. Please try again."
   },
   "patientAppointments": {
     "error": {
