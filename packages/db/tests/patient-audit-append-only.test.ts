@@ -57,7 +57,11 @@ d("0054 patient_audit_log is append-only at the database level", () => {
     await sql`alter table patient_audit_log disable trigger patient_audit_log_append_only`;
     await sql`delete from patient_audit_log where tenant_id = ${tenantId}`;
     await sql`alter table patient_audit_log enable trigger patient_audit_log_append_only`;
-    await sql`delete from action_token_consumptions where tenant_id = ${tenantId}`;
+    // No cleanup of action_token_consumptions here: this block never inserts
+    // into it, and the DELETE would still be REFUSED. That is not an accident of
+    // this test - it is the FOR EACH STATEMENT property asserted above, which
+    // fires on a statement matching zero rows. The guard caught its own author's
+    // cleanup, which is the best evidence it is real.
     await sql`delete from tenants where id = ${tenantId}`;
     await sql.end();
   });
