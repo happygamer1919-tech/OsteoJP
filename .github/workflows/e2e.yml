@@ -1,17 +1,59 @@
 name: E2E
 
-# One job:
+# Two jobs, and the distinction between them is the whole design:
 #
-#   "Playwright E2E (seeded DB)" — REQUIRED gate. Chromium only. Fast (~12 min).
-#   This is the check wired to branch protection. It drives one next dev server
-#   talking to a local Supabase, serially (workers: 1). Must stay green on every
-#   PR. Skips when only docs/markdown/excalidraw changed.
+#   "E2E shard (1|2|3)"        — the work. Three runners, each with its OWN
+#                                Supabase stack, each running one third of the
+#                                Chromium suite via Playwright --shard.
+#                                NOT wired to branch protection.
 #
-# A second, non-Chromium informational lane was removed by owner ruling
-# 2026-07-12: the platform is not supported or tested on non-Chromium engines,
-# and the extra lane wasted CI minutes on every PR.
+#   "Playwright E2E (seeded DB)" — REQUIRED gate. Does no testing itself: it
+#                                depends on all three shards and fails unless
+#                                every one of them succeeded. This job exists so
+#                                the required check NAME is unchanged by
+#                                sharding, and branch protection needs no edit.
 #
-# The job detects docs-only PRs and skips the Supabase stack in that case.
+# WHY THE NAME MATTERS. Branch protection pins three contexts by exact string:
+# "Lint + typecheck + test", "DB-gated tests (RLS isolation, seeded DB)" and
+# "Playwright E2E (seeded DB)". A check context IS the job's `name`. Sharding the
+# old job directly would have renamed it to "Playwright E2E (seeded DB) (1)" and
+# friends, the required context would never report, and every PR would hang
+# forever waiting for a check that no longer exists. The aggregate job carries
+# the old name so that cannot happen.
+#
+# WHY SHARDING PAYS. The suite is deliberately serial — playwright.config.ts sets
+# fullyParallel:false and workers:1 because concurrent logins churn the dev
+# server's upstream Supabase Auth connections into intermittent ECONNRESET. That
+# is environment flakiness, not test flakiness, and it means the only safe way to
+# parallelise is MORE MACHINES, not more workers on one machine. Measured on
+# #770 (run 30897339154): 2m44s of fixed setup, then 10m33s inside Playwright,
+# 13m21s total. Three shards trade two extra runners for roughly half the
+# wall-clock on every code PR in the wave.
+#
+# SETUP RUNS IN EVERY SHARD, AND THAT IS NOT AN ASSUMPTION. Verified in the
+# pinned Playwright 1.60.0 source at runner/index.js:2443-2465: the shard filter
+# iterates rootSuite.suites, which by construction holds TOP-LEVEL projects only;
+# dependency projects are prepended afterwards from the unfiltered project suite.
+# So a `dependencies: ["setup"]` project re-runs its setup in full on every
+# shard, and each shard authenticates against its own Supabase.
+#
+# That is also why the Playwright invocation below passes `--project=chromium`
+# ALONE where it used to pass `--project=setup --project=chromium`. Naming setup
+# explicitly promotes it to a top-level project, which puts its tests INTO the
+# shard filter — the one arrangement in which a shard could legitimately receive
+# zero setup tests. Dropping the flag is behaviour-neutral today (chromium
+# already declares setup as a dependency) and removes that whole class of bug.
+#
+# Retries are untouched: no --retries flag is passed on pull_request, so the
+# config's `retries: CI ? 2 : 0` still governs the gate. The workflow_dispatch
+# proving-run inputs behave exactly as PL-30 built them.
+#
+# Each shard detects docs-only PRs and skips its own Supabase stack, exactly as
+# the single job did. Skip semantics are unchanged on purpose: shards always RUN
+# and always report success, so the aggregate can demand a strict `success` and
+# treat anything else — including `skipped` — as red. An aggregate that accepted
+# `skipped` would go green if a future edit ever skipped the shards for the wrong
+# reason, which is the failure mode this repo has already been bitten by.
 
 on:
   pull_request:
@@ -38,12 +80,20 @@ on:
 
 jobs:
   # -------------------------------------------------------------------------
-  # REQUIRED — Chromium only, fast, wired to branch protection.
+  # THE WORK — three shards, three Supabase stacks. Not a required check.
   # -------------------------------------------------------------------------
-  playwright:
-    name: Playwright E2E (seeded DB)
+  shard:
+    name: E2E shard
     runs-on: ubuntu-latest
     timeout-minutes: 25
+
+    strategy:
+      # One shard's failure must not cancel the other two: a green sibling is
+      # evidence that the failure is local to a shard rather than the stack, and
+      # that is the first thing worth knowing when reading the report.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     env:
       NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
@@ -124,6 +174,12 @@ jobs:
       # unaffected. Keyed per-commit with lockfile + os restore-key fallbacks so a
       # fresh branch still warms from the newest prior run (webpack's cache is
       # incremental, so partial reuse across source changes is expected).
+      #
+      # The key carries the SHARD because each shard visits a different subset of
+      # routes and therefore compiles a different subset of modules. One shared
+      # key would mean three concurrent jobs racing to save three different caches
+      # under one name: exactly one wins, and the next run warms the other two
+      # shards from a cache that never saw their routes.
       - name: Cache Next.js build cache (web + api + portal dev servers)
         if: steps.changes.outputs.code == 'true'
         uses: actions/cache@v4
@@ -132,9 +188,10 @@ jobs:
             apps/web/.next/cache
             apps/api/.next/cache
             apps/portal/.next/cache
-          key: nextcache-e2e-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          key: nextcache-e2e-${{ runner.os }}-s${{ matrix.shard }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
-            nextcache-e2e-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            nextcache-e2e-${{ runner.os }}-s${{ matrix.shard }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            nextcache-e2e-${{ runner.os }}-s${{ matrix.shard }}-
             nextcache-e2e-${{ runner.os }}-
 
       - name: Resolve pinned Playwright version
@@ -143,6 +200,10 @@ jobs:
         working-directory: apps/web
         run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
 
+      # Deliberately NOT sharded: the browser bundle is byte-identical in all
+      # three shards, so one shared entry is correct and three would triple the
+      # cache footprint for nothing. Concurrent shards racing to save the same key
+      # is a logged warning in actions/cache, never a failure.
       - name: Cache Playwright browsers
         if: steps.changes.outputs.code == 'true'
         uses: actions/cache@v4
@@ -188,20 +249,58 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: echo "NEXT_PUBLIC_API_URL=http://localhost:3002" > apps/portal/.env.local
 
-      - name: Run Playwright E2E (Chromium)
+      - name: Run Playwright E2E (Chromium, shard ${{ matrix.shard }}/3)
         if: steps.changes.outputs.code == 'true'
         env:
           E2E_UNQUARANTINE: ${{ github.event.inputs.unquarantine }}
         run: |
-          ARGS="--project=setup --project=chromium"
+          # --project=chromium only. setup arrives as its declared dependency and
+          # therefore runs UNSHARDED in every shard; see the header note and
+          # Playwright 1.60.0 runner/index.js:2443-2465.
+          ARGS="--project=chromium --shard=${{ matrix.shard }}/3"
           if [ -n "${{ github.event.inputs.grep }}" ]; then ARGS="$ARGS --grep=${{ github.event.inputs.grep }}"; fi
           if [ -n "${{ github.event.inputs.retries }}" ]; then ARGS="$ARGS --retries=${{ github.event.inputs.retries }}"; fi
           pnpm --filter web exec playwright test $ARGS
 
-      - name: Upload Playwright report (Chromium)
+      # upload-artifact@v4 rejects a duplicate name outright, so the shard is part
+      # of the name rather than a nicety. Three separate reports also mean the
+      # failing shard's report is the one you open, named after the job that went
+      # red.
+      - name: Upload Playwright report (Chromium, shard ${{ matrix.shard }})
         if: steps.changes.outputs.code == 'true' && !cancelled()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-chromium
+          name: playwright-report-chromium-shard-${{ matrix.shard }}
           path: apps/web/playwright-report
           retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # THE REQUIRED GATE — name pinned by branch protection. Runs no tests.
+  # -------------------------------------------------------------------------
+  playwright:
+    name: Playwright E2E (seeded DB)
+    needs: [shard]
+    # always() is load-bearing. Without it this job is SKIPPED the moment any
+    # shard fails, the required context never reports a conclusion, and the PR
+    # waits forever on a check that will never arrive. With it, a failed shard
+    # produces a RED required check, which is the point.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify every shard passed
+        run: |
+          # `needs.shard.result` is the matrix's AGGREGATE result: "success" only
+          # when all three legs succeeded. Anything else - failure, cancelled, or
+          # skipped - is red. Skipped is deliberately NOT treated as success: the
+          # shards have no job-level `if`, so a skip would mean something changed
+          # that nobody reasoned about, and a gate that goes green on an
+          # unexplained skip is not a gate.
+          RESULT="${{ needs.shard.result }}"
+          echo "Aggregate result of the three E2E shards: $RESULT"
+          if [ "$RESULT" != "success" ]; then
+            echo "::error::E2E gate RED - shard aggregate result is '$RESULT', expected 'success'. Open the red 'E2E shard (N)' job and read its playwright-report-chromium-shard-N artifact before anything else."
+            exit 1
+          fi
+          echo "All three E2E shards succeeded."
