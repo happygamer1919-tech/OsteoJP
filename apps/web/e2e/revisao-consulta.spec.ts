@@ -30,12 +30,21 @@ test.describe("Revisão Consulta — Assumir opens the Ficha Médica editor (the
     await page.goto("/clinical/review");
     await expect(page.getByRole("heading", { name: "Revisão Consulta" })).toBeVisible();
 
-    // Scope to the queue ROW for our seeded patient so the Assumir click is
-    // unambiguous even if other queue items exist.
-    const row = page
-      .getByRole("row")
-      .filter({ hasText: AI_REVIEW_DRAFT.patientName })
-      .first();
+    // Scope to the queue row for THIS RECORD, by id.
+    //
+    // It used to filter by patient NAME and take .first(), which was only ever
+    // correct by accident: fixtures.ts seeds TWO drafts for Joao Pereira -
+    // AI_REVIEW_DRAFT and AI_DELETE_DRAFT - and this test passed only because
+    // clinical.spec.ts runs earlier in file order (c before r) and hard-deletes
+    // the second one first. So this spec silently depended on another spec file
+    // having run, and any change to file order broke it: sharding the suite put
+    // clinical.spec.ts in a different shard, both rows survived, .first() took
+    // the wrong one, and its Assumir never became clickable - a 120s timeout,
+    // three times, with nothing in the failure naming the real cause.
+    //
+    // Addressing the record by id says what the test means and cannot be
+    // reordered into a different answer.
+    const row = page.locator(`[data-record-id="${AI_REVIEW_DRAFT.id}"]`);
     await expect(row).toBeVisible({ timeout: 10_000 });
     await row.getByRole("button", { name: "Assumir", exact: true }).click();
 
