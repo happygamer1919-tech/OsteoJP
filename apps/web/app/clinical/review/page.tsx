@@ -227,6 +227,12 @@ async function ReviewResults({ query }: { query: string }) {
             {items.map((i) => (
               <tr
                 key={`${i.source}:${i.id}`}
+                // Addressable by RECORD, not by patient name. The queue can hold
+                // more than one item for the same patient - the e2e fixtures
+                // seed exactly that - so a name-based locator picks whichever
+                // row happens to sort first. Mirrors the data-record-id already
+                // used on the patient Registos tab.
+                data-record-id={i.id}
                 className="border-b border-v2-border last:border-b-0"
               >
                 <td className="px-6 py-3 align-middle text-sm font-medium text-v2-text-primary">
@@ -256,7 +262,11 @@ async function ReviewResults({ query }: { query: string }) {
       {/* Mobile: stacked glass cards (<640px). */}
       <ul className="flex flex-col gap-3 sm:hidden">
         {items.map((i) => (
-          <li key={`${i.source}:${i.id}`} className="glass-card p-4">
+          <li
+            key={`${i.source}:${i.id}`}
+            data-record-id={i.id}
+            className="glass-card p-4"
+          >
             <dl className="flex flex-col gap-2">
               <div className="flex items-baseline justify-between gap-4">
                 <dt className="text-sm text-v2-text-secondary">
