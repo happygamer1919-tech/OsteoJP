@@ -18,6 +18,12 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["lib/**/*.test.ts", "app/**/*.test.tsx"],
+    // app/**/*.test.ts is included as well as .tsx, deliberately. Until W13-01
+    // only .tsx was collected under app/, so an app-level test that renders
+    // nothing - a source guard, a route-shape assertion - was silently NEVER
+    // RUN. A test that is not collected is worse than no test: it reads as
+    // protection. Widening this collects exactly the files it should and no
+    // others (verified: one file existed in that shape at the time).
+    include: ["lib/**/*.test.ts", "app/**/*.test.ts", "app/**/*.test.tsx"],
   },
 });
