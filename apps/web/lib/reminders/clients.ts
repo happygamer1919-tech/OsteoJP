@@ -18,6 +18,7 @@
 // PII rule (#7): nothing here logs recipients, subjects, or bodies.
 
 import {
+  assertNotificationEnv,
   createNotifier,
   liveSendEnabled as flagEnabled,
   type Channel,
@@ -27,6 +28,30 @@ import {
 } from "@osteojp/notify";
 import { webRegistry } from "./notification-registry";
 import { normalizePhonePT } from "./phone";
+
+// BOOT VALIDATION for every apps/web send path that is NOT an Inngest function.
+//
+// app/api/inngest/route.ts already asserts this pair, but that route is only
+// loaded for Inngest-driven work. Staff invites are not Inngest-driven: they run
+// in a server action (lib/admin/staff.ts -> lib/invites/email.ts -> sendEmail
+// here), a chain that never touches the route and therefore never reached a boot
+// check. Arming INVITES_LIVE_SEND with REMINDERS_EMAIL_FROM or RESEND_API_KEY
+// absent booted clean, then providerConfigured() below returned false and the
+// caller silently degraded every invite to the temporary-password hand-off - no
+// email, no error, no boot signal. That is the exact "fails at the user, not at
+// boot" class #763 removed from the reminder path, surviving on the invite path
+// because the sweep followed the reminder path only.
+//
+// This module is the right place, and for the same reason apps/api/lib/notify/
+// clients.ts carries the identical line: it is the ONE choke point every send in
+// this app goes through, reminders and invites alike, so nothing can send
+// without loading it.
+//
+// BOTH flags, because either one arms an email send that needs the same vars.
+// A no-op while every live-send flag is off, so dev, CI and preview builds are
+// unaffected - missingNotificationEnv() returns an empty list unless a stream is
+// actually live.
+assertNotificationEnv(["REMINDERS_LIVE_SEND", "INVITES_LIVE_SEND"]);
 
 export type SendChannel = Channel;
 
