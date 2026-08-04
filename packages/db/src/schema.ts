@@ -1403,3 +1403,86 @@ export const quickNotes = pgTable(
     uniqueIndex("quick_notes_tenant_user_uq").on(t.tenantId, t.staffUserId),
   ],
 );
+
+/* ================================================================== */
+/* Patient-triggered writes: audit trail + one-action token state      */
+/* (migration 0054, Wave 13 LOOP 1)                                    */
+/* ================================================================== */
+
+// Every write a PATIENT triggers, by either route: a signed one-action token
+// from a reminder link, or an authenticated portal action. Specified by the
+// clinic's data-protection counsel, docs/rgpd-token-flow.md section 8.
+//
+// Append-only, and unlike auditLog above that is not left to RLS alone: 0054
+// adds a BEFORE UPDATE/DELETE/TRUNCATE statement trigger, because RLS does not
+// apply to a BYPASSRLS role and does not gate TRUNCATE at all.
+//
+// REFUSALS ARE ROWS, not just successes — a cancellation refused inside the 24h
+// cutoff is the event a later dispute turns on. `outcome` is the two-value
+// predicate that makes refusals findable and `reason` carries counsel's text;
+// together they are counsel's single "Result" field, split so that a drifting
+// free-text phrasing cannot hide a refusal.
+//
+// patientId and appointmentId carry NO references() on purpose. An audit row
+// must outlive the record it describes — a dispute about a cancelled
+// appointment is exactly when that appointment is most likely to be gone — and
+// a cascade would erase the evidence at the worst moment. Both are nullable
+// because a forged or malformed token is refused BEFORE anything is identified,
+// and that refusal must still be logged.
+export const patientAuditLog = pgTable(
+  "patient_audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    /** The patient who acted. Null when a refusal preceded identification. */
+    patientId: uuid("patient_id"),
+    /** The appointment acted on. Null for the same reason. */
+    appointmentId: uuid("appointment_id"),
+    /** How the patient proved entitlement: signed_token | otp_session. */
+    authMeans: text("auth_means").notNull(),
+    /** confirm | cancel | reschedule … free text, so a new action needs no migration. */
+    action: text("action").notNull(),
+    /** success | refused. */
+    outcome: text("outcome").notNull(),
+    /** Counsel's refusal reason. Required when outcome is refused (DB CHECK). */
+    reason: text("reason"),
+    ip: varchar("ip", { length: 45 }),
+    /** UTC. Also the retention hook; the period is a counsel decision, not code. */
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("patient_audit_log_tenant_time_idx").on(t.tenantId, t.occurredAt),
+    index("patient_audit_log_appointment_idx").on(t.appointmentId),
+    index("patient_audit_log_retention_idx").on(t.occurredAt),
+  ],
+);
+
+// Server-side consumption state that makes a one-action token single-use
+// (docs/rgpd-token-flow.md section 6). A signature alone cannot express single
+// use: a correctly signed token verifies identically every time.
+//
+// THE PRIMARY KEY IS THE ENFORCEMENT. The row is inserted in the SAME
+// transaction as the action it authorises, so a second redemption loses on the
+// primary key and rolls its whole transaction back, action included. A
+// read-then-write check would let two simultaneous redemptions both proceed.
+//
+// tokenHash is a sha256 hex digest, never the token — enforced by a DB CHECK,
+// since a raw token contains a dot and could never match 64 lowercase hex
+// characters.
+export const actionTokenConsumptions = pgTable(
+  "action_token_consumptions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    /** No reference(): a consumption that vanished with its appointment would
+     * make a spent token redeemable again. */
+    appointmentId: uuid("appointment_id").notNull(),
+    action: text("action").notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("action_token_consumptions_tenant_time_idx").on(t.tenantId, t.consumedAt)],
+);

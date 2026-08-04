@@ -94,17 +94,32 @@ the patient to telephone the clinic. Enforcing only at issuance would leave a
 window in which a link that was valid when sent performs an action the clinic
 has ruled out.
 
-## 6. Single use — SPECIFIED, NOT YET BUILT
+## 6. Single use — STORAGE AUTHORED, BEHAVIOUR NOT YET BUILT
 
 Counsel requires that a consumed token be refused. A signature alone cannot
 express this: a correctly signed token verifies identically every time it is
 presented. Single use therefore requires **server-side consumption state**.
 
-Planned: a consumption record keyed by a hash of the token (never the token
-itself), written in the **same database transaction as the action it authorises**.
-The action and the record commit together or not at all, so a crash between them
+**Status, precisely.** The consumption table is defined in migration `0054`,
+authored and under review, not yet applied and not yet written to by any code.
+
+A consumption record keyed by a **hash of the token** (never the token itself),
+written in the **same database transaction as the action it authorises**. The
+action and the record commit together or not at all, so a crash between them
 cannot leave an action performed with the token still redeemable, nor a token
 burned with no action taken.
+
+**How single use is actually guaranteed.** The token hash is the table's primary
+key, and the insert happens inside the transaction that performs the action. A
+second redemption therefore loses on the primary key and its entire transaction
+rolls back, the action included. This matters because the obvious alternative —
+read whether the token is consumed, then act, then record it — is not safe: two
+redemptions arriving together would both read "not consumed" and both proceed.
+The guarantee is the constraint, not a check.
+
+The stored value is constrained to 64 lowercase hexadecimal characters, which a
+token itself can never be, so storing a live token by mistake is rejected by the
+database rather than silently accepted.
 
 Redemption of an already-consumed token yields the same generic rejection as an
 invalid one.
@@ -126,29 +141,60 @@ leaks by omission, no service name is shown for any appointment.
 
 No clinical notes, no diagnosis, no practitioner-authored content ever appears.
 
-## 8. Audit log for patient-triggered writes — SPECIFIED, NOT YET BUILT
+## 8. Audit log for patient-triggered writes — STORAGE AUTHORED, BEHAVIOUR NOT YET BUILT
 
 Covers both patient paths: token redemption and authenticated portal actions.
 
-| Field | Content |
-|---|---|
-| Author | The patient (identifier) |
-| Authentication means | `signed_token` or `otp_session` |
-| Timestamp | UTC, server clock |
-| IP address | Of the requesting client |
-| Appointment | Appointment identifier |
-| Action | e.g. `confirm`, `cancel`, `reschedule` |
-| Result | Success, or the reason for refusal |
+**Status, precisely.** The table is defined in migration `0054`. At the time of
+writing that migration is authored and under review; it has not been applied to
+production, and no code writes to the table yet. Nothing in this section is a
+claim that the behaviour exists.
 
-**Integrity.** Append-only: no `UPDATE` or `DELETE` grant on the table for the
-application role, enforced at the database level rather than by convention, plus
-a trigger refusing modification. Refusals are recorded as well as successes: a
-rejected cancellation attempt inside the cutoff is exactly the kind of event a
-later dispute turns on.
+| Field | Content | Stored as |
+|---|---|---|
+| Author | The patient (identifier) | `patient_id` |
+| Authentication means | `signed_token` or `otp_session` | `auth_means` |
+| Timestamp | UTC, server clock | `occurred_at` |
+| IP address | Of the requesting client | `ip` |
+| Appointment | Appointment identifier | `appointment_id` |
+| Action | e.g. `confirm`, `cancel`, `reschedule` | `action` |
+| Result | Success, or the reason for refusal | `outcome` + `reason` |
 
-**Retention.** A retention hook is provided (a timestamp column suitable for a
-scheduled purge). The retention period itself is a decision for the clinic and
-counsel and is not set in code.
+**Why Result is stored as two columns.** As a single free-text field, finding
+every refusal would require knowing every phrasing any writer had ever used, and
+a phrasing that drifted would hide refusals silently — the exact failure the
+field exists to prevent. `outcome` is therefore a two-value field (`success` or
+`refused`) that makes refusals findable by predicate, and `reason` carries the
+refusal text. The database refuses a refusal with no stated reason. The two
+columns together are this Result field; neither is an addition to it.
+
+**Author and Appointment may be empty, deliberately.** A forged or malformed
+token is refused *before* anything is identified, and that refusal must still be
+recorded. Requiring an identifier would force the code either to invent one or
+to skip the row.
+
+**Integrity.** Append-only, in three independent layers:
+
+1. **No `UPDATE` or `DELETE` privilege** is granted on either table to the
+   application roles.
+2. **No `UPDATE` or `DELETE` policy exists**, and the database denies any
+   command for which no policy exists.
+3. **A trigger refuses modification** — `UPDATE`, `DELETE` and `TRUNCATE` alike.
+
+The third layer is not redundant. Row-level security does not apply to a role
+holding the `BYPASSRLS` attribute, and it does not gate `TRUNCATE` at all, so
+layers 1 and 2 alone would leave the trail erasable by a single statement. The
+trigger closes both.
+
+Refusals are recorded as well as successes: a rejected cancellation attempt
+inside the cutoff is exactly the kind of event a later dispute turns on.
+
+**Retention.** The retention hook is the `occurred_at` timestamp, with a
+dedicated index sized for a scheduled purge. The retention period itself is a
+decision for the clinic and counsel and is **not set in code**; no default period
+is implied by the presence of the hook. A purge must run with sufficient
+privilege to pass the trigger above, so erasure is an explicit privileged act
+rather than something the application can perform.
 
 ## 9. Payload minimisation — BUILT
 

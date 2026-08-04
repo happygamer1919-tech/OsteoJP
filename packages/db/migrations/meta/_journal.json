@@ -372,6 +372,13 @@
       "when": 1786100000000,
       "tag": "0053_patients_nif_exemption",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1786200000000,
+      "tag": "0054_patient_audit_log_and_token_consumption",
+      "breakpoints": true
     }
   ]
 }
