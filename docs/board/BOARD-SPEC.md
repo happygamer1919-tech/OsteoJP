@@ -3,6 +3,10 @@
 Governs the OsteoJP Pre-Launch Board. Authored by YELLOW (docs and governance).
 Owner-merge; YELLOW never merges its own PR.
 
+A second board, the **Portal Board**, uses this same schema, the same lane ids
+and the same rules. Everything below applies to both unless a line says
+otherwise; the differences are collected in "The Portal Board" at the end.
+
 ## Why this file exists
 
 The board artifact was titled "OsteoJP - Wave 12 board" and lived ONLY as a
@@ -195,3 +199,44 @@ At every checkpoint: update the affected card(s) in the JSON (status, evidence,
 `last_checkpoint`), run the validator, then re-render the artifact. Never mark a
 card shipped before its evidence exists - the validator will reject the commit,
 which is the point.
+
+## The Portal Board
+
+The portal workstream has its own board with this exact structure. Only the
+differences are listed here; everything else in this file governs it unchanged.
+
+| | Pre-Launch Board | Portal Board |
+|---|---|---|
+| name | `OsteoJP - Pre-Launch Board` | `OsteoJP - Portal Board` |
+| source of truth | `docs/board/prelaunch-board.json` | `docs/board/portal-board.json` |
+| renderer | `render-board.mjs` (interactive portal) | `render-portal-board.mjs` (static page) |
+| render output | `prelaunch-board.rendered.html` | `portal-board-render.html` |
+| executor terminal | GREEN | PURPLE |
+| people columns | Ivan / JP / Rodica | Ivan / JP / Lawyer |
+| lane 4 title | RODICA BATCH | STAKEHOLDER FEEDBACK |
+| launch gate | G1-G9, the pre-launch conditions | PG1-PG9, the portal Definition of Ready |
+| rehydrate prompt | - | `docs/board/PORTAL-REHYDRATE.md` |
+
+Four rules make one validator serve both:
+
+- **`validate-board.mjs` accepts either board name** and takes a path argument.
+  `node docs/board/validate-board.mjs docs/board/portal-board.json`.
+- **The people set is read from the board's own `blocked_on_people.columns`.**
+  The BLOCKED ON PEOPLE lane is split by person, and which people differ per
+  board. `blocked_on` is therefore `null | <that board's columns> | infra`. A
+  board that omits `columns` keeps the historical Ivan/JP/Rodica set.
+- **Lane ids are identical on both boards, including `rodica_batch`.** The
+  validator and `board-app.js` both pin the exact lane-id set, so the portal
+  board keeps the id and changes only the title and the meaning. A lane's title
+  is display text; its id is structure.
+- **The `gate` enum is NOT extended.** There is no `purple_self_merge`.
+  `green_self_merge` denotes an **executor-terminal self-merge**, and the
+  executor is GREEN on the pre-launch board and PURPLE on the portal board. Each
+  board states this mapping in its own `doctrine` field.
+
+**The fingerprint.** Neither board stores one. It is derived at RENDER time as
+`sha256(JSON.stringify(board))` truncated to 16 hex characters - defined by
+`render-board.mjs:71` and mirrored byte-for-byte by `render-portal-board.mjs`.
+It exists so a browser holding an older snapshot can detect that a newer board
+was published, which a date-based check could not do (see PL-28). Storing it in
+the JSON would make it a hash of a file containing itself; do not add the key.

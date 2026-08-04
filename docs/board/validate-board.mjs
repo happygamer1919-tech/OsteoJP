@@ -1,15 +1,20 @@
 #!/usr/bin/env node
-// validate-board.mjs - the Pre-Launch Board's own definition of done.
+// validate-board.mjs - a board's own definition of done.
 //
-// The committed JSON (docs/board/prelaunch-board.json) is the source of truth;
-// the claude.ai artifact is only a RENDER of it. A board claim is never truth on
-// its own - the `evidence` field carries the proof. This script enforces that.
+// Governs BOTH boards, which share this schema exactly:
+//   docs/board/prelaunch-board.json  "OsteoJP - Pre-Launch Board"  (platform)
+//   docs/board/portal-board.json     "OsteoJP - Portal Board"      (portal)
+//
+// The committed JSON is the source of truth; the claude.ai artifact is only a
+// RENDER of it. A board claim is never truth on its own - the `evidence` field
+// carries the proof. This script enforces that.
 //
 // Exit 0 = board is well-formed and every shipped/passed claim carries evidence.
 // Exit non-zero = at least one violation; every violation is printed.
 //
 // Usage:  node docs/board/validate-board.mjs [path-to-board.json]
 //         (defaults to ./prelaunch-board.json next to this script)
+//         node docs/board/validate-board.mjs docs/board/portal-board.json
 //
 // Zero dependencies. Node ESM. Never writes; read-only.
 
@@ -36,7 +41,17 @@ const STATUS = ["todo", "in_flight", "halted", "blocked", "shipped"];
 // never show a card in a place its own status contradicts.
 const KIND_LANES = ["in_flight", "rodica_batch", "incidents", "loose_ends"];
 const PRIORITY = ["high", "medium", "low"];
-const PEOPLE = ["ivan", "jp", "rodica"];
+// The boards this script governs. Same schema, same lane ids, same rules; they
+// differ only in which workstream they track, so the name is a membership check
+// rather than a second copy of this file.
+const BOARD_NAMES = ["OsteoJP - Pre-Launch Board", "OsteoJP - Portal Board"];
+// The BLOCKED ON PEOPLE lane is split by person, and WHICH people differs per
+// board: the pre-launch board waits on Ivan/JP/Rodica, the portal board on
+// Ivan/JP/Lawyer. So the set is read from that lane's own `columns` (below,
+// after the board loads) and these are only the fallback for a board that omits
+// them - which keeps the pre-launch board's behaviour byte-for-byte unchanged.
+const DEFAULT_PEOPLE = ["ivan", "jp", "rodica"];
+let PEOPLE = DEFAULT_PEOPLE;
 const GATE = [
   "green_self_merge",
   "cyan_clear",
@@ -44,7 +59,7 @@ const GATE = [
   "owner_authorizo",
   "stakeholder",
 ];
-const BLOCKED_ON = [null, "ivan", "jp", "rodica", "infra"];
+let BLOCKED_ON = [null, ...PEOPLE, "infra"];
 const EVIDENCE_KIND = ["pr", "journal", "sha256", "e2e", "screenshot"];
 const GATE_STATE = ["pass", "fail"];
 const LAUNCH_GATE_DENOMINATOR = 9;
@@ -108,8 +123,19 @@ try {
 }
 
 // ---- top-level ---------------------------------------------------------------
-if (board.board !== "OsteoJP - Pre-Launch Board") {
-  fail("board", `board name must be "OsteoJP - Pre-Launch Board", got "${board.board}"`);
+if (!BOARD_NAMES.includes(board.board)) {
+  fail("board", `board name must be one of ${BOARD_NAMES.map((n) => `"${n}"`).join(" | ")}, got "${board.board}"`);
+}
+
+// The people columns are a property of THIS board's people lane. Read them
+// before any card is checked, since blocked_on and deriveLane both depend on
+// them. A board without columns keeps the historical set.
+const peopleLane = (Array.isArray(board.lanes) ? board.lanes : []).find(
+  (l) => l?.id === "blocked_on_people",
+);
+if (Array.isArray(peopleLane?.columns) && peopleLane.columns.length > 0) {
+  PEOPLE = peopleLane.columns;
+  BLOCKED_ON = [null, ...PEOPLE, "infra"];
 }
 
 // ---- lanes (exact set + order) ----------------------------------------------
@@ -192,7 +218,7 @@ for (const card of cards) {
 
   // The BLOCKED ON PEOPLE lane is split by person; every card there needs one.
   if (card.lane === "blocked_on_people" && !PEOPLE.includes(card.blocked_on))
-    fail(id, `lane=blocked_on_people requires blocked_on in ivan|jp|rodica, got "${card.blocked_on}"`);
+    fail(id, `lane=blocked_on_people requires blocked_on in ${PEOPLE.join("|")}, got "${card.blocked_on}"`);
 
   // ---- home_lane + priority (optional in older files, required from v2) ----
   if (!KIND_LANES.includes(card.home_lane))

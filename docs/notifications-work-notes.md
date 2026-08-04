@@ -255,3 +255,67 @@ are out of scope here.
 consumption, scope and per-offset action matrix, landing-page contents, audit log
 fields and integrity, payload minimisation, subprocessor table. Every section
 marked BUILT or SPECIFIED so counsel cannot mistake a plan for a control.
+
+---
+
+# Reschedule lane, 2026-08-04
+
+## CORRECTION: the AppointmentView change was never approved
+
+A handoff stated that `serviceId` and `locationId` "were approved and added to
+`AppointmentView` (8 keys to 10)". **Both halves were false.** At `ffe1e33`:
+
+- `apps/api/lib/appointments/booking.ts` — `AppointmentView` has **8 keys**
+- `apps/portal/lib/api/client.ts` — same 8 keys
+
+The claim exists in no committed file, so it was never an approval — only an
+assertion that one had happened. Owner ruling 2026-08-04: **option 2**, do not
+add the ids. `AppointmentView` stays at 8 keys.
+
+This is the eighth time this session a claimed protection or decision has turned
+out not to exist in committed code. The pattern is stable enough to plan around:
+**re-derive from committed files before building on any handoff claim**, and when
+one cannot be re-derived, halt rather than build on it.
+
+## Reschedule options endpoint
+
+`GET /api/v1/appointments/[id]/reschedule-options` takes the appointment id and
+nothing else. Service and location resolve server-side from the stored row, so
+the portal never receives either identifier. Data minimisation per counsel.
+
+Zero duplicated slot computation: it calls the same `store.listOpenSlots` that
+backs `GET /booking/slots`. Duration comes from the appointment itself, not the
+service — reschedule preserves the original window by design, so a service whose
+duration changed after booking must not silently resize an existing appointment.
+
+## Minimum notice, 24h on the new slot (JP, 2026-08-03)
+
+`RESCHEDULE_MIN_NOTICE_HOURS` is a **separate constant** from
+`CANCELLATION_CUTOFF_HOURS` even though both are 24. They answer different
+questions about different instants: "is it too late to touch the appointment you
+have" versus "is that new time far enough away to be useful". Collapsing them
+would mean changing one silently moves the other.
+
+**Enforced twice, deliberately.** The options list filters, and the reschedule
+action re-checks. The filter is a courtesy to an honest client; the action is the
+control. Both arms proven to fail independently.
+
+Before this, `rescheduleAppointment` rejected only a start in the *past*, so a
+patient could have moved an appointment to two hours from now.
+
+## Already done, verified not redone
+
+- **B1 registry approvals** — merged in #766 (`ffe1e33`). All ten already
+  `approved: true` / `JP` / `2026-08-03`.
+- **B2 cancel cutoff** — already server-enforced at `booking.ts` via
+  `isWithinCancellationCutoff`, with the client-side guard and pt-PT
+  `cancel_too_late` copy in `AppointmentActions.tsx`. No change needed.
+- **B6 SMS opt-out posture** — recorded closed in the packet and above.
+
+## Still open in this lane
+
+- Reschedule **UI** and the **B4 events** (patient-initiated change → in-app
+  notification to reception and assigned therapist, fixed contract + stub
+  consumer). Next PR, on top of this one once merged.
+- **B5 fee acceptance on the ficha clínica** — spec only, not built, migration
+  queues behind the audit-log migration.

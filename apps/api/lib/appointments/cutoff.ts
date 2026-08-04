@@ -37,3 +37,27 @@ export function canSelfModify(
 ): boolean {
   return !isWithinCancellationCutoff(startsAt, now, cutoffHours);
 }
+
+/**
+ * Minimum notice a patient must give when choosing a NEW slot (JP, 2026-08-03).
+ *
+ * Distinct from CANCELLATION_CUTOFF_HOURS even though both are currently 24.
+ * The cutoff asks "is it too late to touch the appointment you HAVE"; this asks
+ * "is that new time far enough away to be useful to the clinic". They answer
+ * different questions about different instants and are deliberately separate
+ * constants, so changing one cannot silently move the other.
+ */
+export const RESCHEDULE_MIN_NOTICE_HOURS = 24;
+
+/**
+ * True when a proposed new start is too soon to be offered or accepted.
+ * Also true for a start in the past. Half-open at the boundary, matching the
+ * cutoff: exactly 24h out is allowed.
+ */
+export function isBeforeMinimumNotice(
+  newStartsAt: Date,
+  now: Date,
+  minNoticeHours: number = RESCHEDULE_MIN_NOTICE_HOURS,
+): boolean {
+  return newStartsAt.getTime() - now.getTime() < minNoticeHours * MS_PER_HOUR;
+}
