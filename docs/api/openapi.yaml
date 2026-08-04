@@ -541,6 +541,55 @@ paths:
         "500":
           $ref: "#/components/responses/ServerErrorLocalized"
 
+  /api/v1/appointments/{id}/reschedule-options:
+    get:
+      operationId: listRescheduleOptions
+      tags: [appointments]
+      summary: Slots this appointment may be moved to
+      description: >
+        The slot starts the patient may move THIS appointment to. Takes the
+        appointment id and nothing else: the service and location are resolved
+        server-side from the stored row, so no service or location identifier is
+        ever sent to or required from the client (data minimisation; see
+        docs/rgpd-token-flow.md). Slots come from the same generator and conflict
+        filter as /api/v1/booking/slots, and the duration is the appointment's
+        own, since a reschedule preserves the original window. The list excludes
+        slots inside the 24h minimum notice; the reschedule action re-enforces
+        that independently, so this list is a courtesy and not the control.
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+      responses:
+        "200":
+          description: Slot starts the appointment may move to, ascending.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [slots]
+                properties:
+                  slots:
+                    type: array
+                    items:
+                      type: string
+                      format: date-time
+        "401":
+          $ref: "#/components/responses/UnauthorizedLocalized"
+        "404":
+          description: "`not_found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "409":
+          description: "`cutoff` or `not_reschedulable` \u2014 nothing can be offered."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "500":
+          $ref: "#/components/responses/ServerErrorLocalized"
+
   /api/v1/appointments/{id}/reschedule:
     post:
       operationId: rescheduleOwnAppointment
@@ -582,7 +631,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorLocalized"
         "422":
-          description: "`slot_in_past` — the new start is not in the future."
+          description: >
+            `slot_in_past` (the new start is not in the future) or `min_notice`
+            (the new start is inside the 24h minimum notice).
           content:
             application/json:
               schema:
