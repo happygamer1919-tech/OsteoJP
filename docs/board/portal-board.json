@@ -507,6 +507,80 @@
       "blocked_on": null,
       "last_checkpoint": "2026-08-04",
       "notes": "A LATENT DEFECT SHARDING EXPOSED, NOT ONE IT CREATED. fixtures.ts seeds TWO drafts for the same patient (AI_REVIEW_DRAFT and AI_DELETE_DRAFT, both Joao Pereira). revisao-consulta.spec.ts found its row by patient NAME and took .first(), which was only ever correct because clinical.spec.ts runs earlier in file order (c before r) and hard-deletes the second one at clinical.spec.ts:169-188. So the spec silently depended on ANOTHER SPEC FILE having run. Renaming a spec, or adding one that sorts between them, would have broken it with no sharding involved.\n\nWIDER THAN A TEST EDIT, and flagged as such at the time: the queue row carried only a React `key`, which never reaches the DOM, so there was nothing addressable. data-record-id was added to the markup, mirroring the attribute the patient Registos tab already uses - which is how clinical.spec.ts:173 targets that very record. Inert: no behaviour, no styling, no data beyond an id already in that row's own links.\n\nSELF-INFLICTED REGRESSION IN BETWEEN, recorded because the lesson is the useful part: putting the attribute on BOTH layouts and then writing an unqualified [data-record-id=...] locator matched two elements - the queue renders desktop table AND mobile list into the DOM at all times, hidden by CSS - and Playwright strict mode refused it. The hook was right; the selector was ambiguous. Qualifying it to tr[...] fixed it. It shipped because an e2e locator change was made without running e2e, the same shape of miss as running a filtered test suite instead of the root gates."
+    },
+    {
+      "id": "WF-02",
+      "title": "Owner ruling: patient confirm-from-SMS is deferred post-launch",
+      "lane": "in_flight",
+      "home_lane": "in_flight",
+      "status": "todo",
+      "priority": "medium",
+      "owner_terminal": "purple",
+      "gate": "owner_authorizo",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-04",
+      "notes": "RULING, VERBATIM, OWNER 2026-08-04:\n\n\"Patient confirm-from-SMS is deferred post-launch. No short-link scheme is built pre-launch. Counsel's confirm-only token row stays enforced server-side. For launch the confirm action is delivered by the 48h email channel only. Next session verifies whether the approved email body already carries the confirm link; if it does not, that gap returns to Ivan as a JP re-approval question, never as a silent wording change.\"\n\nWHY THIS RULING EXISTS. The token is too long for a single SMS segment, so apps/web/lib/reminders/dispatch.ts sends the 24h SMS with the clinic phone number and NO LINK. Counsel's per-offset matrix (docs/rgpd-token-flow.md section 5) gives that offset confirm-only, and W13-01 enforces it inside the signature - a confirm-scoped token refuses cancel before any database contact. So the RULE is built and unit-tested; only its DELIVERY channel is absent.\n\nNEXT SESSION'S CHECK, and it is a real one: read the approved 48h email body in apps/web/lib/reminders/notification-registry.ts and confirm it actually renders the rescheduleLink. All ten bodies are approved:true / approvedBy JP (#766). If the confirm link is NOT in the approved wording, adding it CHANGES AN APPROVED CLINICAL BODY, which re-opens JP's approval. That returns to Ivan as a question. It is never edited quietly."
+    },
+    {
+      "id": "WF-03",
+      "title": "Owner ruling: a patient-visible loop closes only on the deployed screen",
+      "lane": "in_flight",
+      "home_lane": "in_flight",
+      "status": "todo",
+      "priority": "high",
+      "owner_terminal": "purple",
+      "gate": "owner_authorizo",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-04",
+      "notes": "RULING, VERBATIM, OWNER 2026-08-04:\n\n\"Every patient-visible loop closes only after Ivan verifies the behaviour on the deployed portal production URL, evidence a screenshot reference on the card. Green gates alone never close a patient-visible card.\"\n\nWHAT PROVOKED IT. A full day of green gates - eleven merged PRs, every required check passing - produced ZERO patient-visible change, and the deployed portal was simultaneously broken in a way no gate could see: every call to apps/api failing, the dashboard rendering that failure as 'you have no appointments'. The owner found it by opening the portal. No CI signal existed for it, and none was going to.\n\nIN FORCE FROM NOW, not from execution. It changes what 'shipped' means on this board for any card a patient can see: merged and green is necessary and NOT sufficient. The evidence field on such a card carries a screenshot reference from the owner, kind 'screenshot', alongside the PR.\n\nIt does not apply to infrastructure, migrations, CI or board work, which no patient can observe and for which a passing gate IS the proof."
+    },
+    {
+      "id": "INC-05",
+      "title": "Portal deployment failure: every apps/api call from the portal is failing",
+      "lane": "blocked_on_people",
+      "home_lane": "in_flight",
+      "status": "blocked",
+      "priority": "high",
+      "owner_terminal": "purple",
+      "gate": "owner_merge",
+      "evidence": {
+        "kind": "screenshot",
+        "ref": "Owner screenshots 2026-08-04: portal Inicio renders 'Ola' with NO first name and an empty appointments card; portal Consultas renders 'Nao foi possivel carregar as marcacoes'. Both captured in the same session on the deployed portal.",
+        "at": "2026-08-04"
+      },
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-08-04",
+      "notes": "DIAGNOSIS BRIEF, so a fresh session starts warm if the owner's env fix does not resolve it.\n\nTWO FAILING CALLS, ONE CAUSE. getMyProfile() and getMyAppointments() both fail. Three different screens told three different stories about that single failure:\n- apps/portal/app/portal/dashboard/page.tsx:45 - Promise.allSettled read only the fulfilled branches, so a rejected appointments fetch rendered the EMPTY STATE and a rejected profile fetch rendered a nameless greeting.\n- apps/portal/app/portal/account/page.tsx:13-18 - try/catch degraded to auth user data.\n- apps/portal/app/portal/appointments/page.tsx - no swallow, threw honestly into error.tsx. The only screen telling the truth.\nThe swallow sites are FIXED by PL-34 (#787). That does not fix the deployment; it makes the failure legible.\n\nOWNER'S VERCEL EVIDENCE, recorded verbatim, read by the owner on his own screen (this terminal makes no cloud calls of any kind - see the protocol correction below):\n- osteojp-portal PRODUCTION carries NEXT_PUBLIC_API_URL, last updated Jun 17, value https://osteojp-api.vercel.app. OWNER-VERIFIED. The empty-at-build-time hypothesis is therefore WEAKENED and survives only as a stale-build variant, pending the no-cache redeploy.\n- A SECOND NEXT_PUBLIC_API_URL exists scoped to PREVIEW, marked Sensitive, added Jul 20, value unreadable. Preview-scoped, so it cannot affect Production. Cleanup carded separately as LE-preview-env-duplicate.\n- Portal NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY were updated Jul 22, all environments. If the osteojp-api project's Supabase configuration was NOT updated in the same window, bearer validation fails with 401 - which matches BOTH swallowed failures exactly, since both calls carry the same Authorization header built in apps/portal/lib/api/client.ts:100-108.\n\nCANDIDATE RANKING, current:\n1. apps/api rejects the bearer token (the Jul 22 Supabase split above).\n2. Stale production build - NEXT_PUBLIC_* are inlined by DefinePlugin at BUILD time, so a value present in the dashboard does nothing until a rebuild. The repo already documents this trap: .github/workflows/e2e.yml writes apps/portal/.env.local for exactly this reason.\n3. Vercel deployment protection on osteojp-api intercepting server-to-server calls.\n\nDISCRIMINATORS THE OWNER RUNS ON HIS OWN SCREEN if the redeploy does not resolve it:\n- Open https://osteojp-api.vercel.app in a browser. A login wall means deployment protection (candidate 3). A 404 or JSON means reachable, which points back at 1.\n- Read the SUPABASE variable NAMES and update DATES on the osteojp-api project and compare them with the portal's Jul 22. Names and dates only, never values.\n\nosteojp-api production domains: api.osteojp.pt and osteojp-api.vercel.app.\n\nUNBLOCK: the owner reports the redeploy outcome. If it resolves, close this card with his screenshot reference as the evidence, per WF-03.\n\nPROTOCOL CORRECTION ATTACHED TO THIS CARD, because this incident is where it happened. PURPLE made a Vercel plugin call from the executor terminal to check runtime errors, and then proposed a '!'-prefixed shell command for the owner to run inside the session. BOTH violate rule 1: no prod-connected execution from any Claude-attached shell, read-only included, plugins included. Cloud questions become dashboard navigation for the owner, or paste-ready blocks he runs in his own terminal with output pasted back, names only."
+    },
+    {
+      "id": "W13-01a",
+      "title": "apps/web DB-gated harness, so LOOP 1's remaining DoD lines can be proven",
+      "lane": "in_flight",
+      "home_lane": "in_flight",
+      "status": "todo",
+      "priority": "high",
+      "owner_terminal": "purple",
+      "gate": "green_self_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-04",
+      "notes": "NEXT SESSION'S FIRST ITEM. LOOP 1 (W13-01) cannot reach its Definition of Done without this, which is why W13-01 is still in flight and PG3 is still FAIL.\n\nTHE BLOCKER. The DB-gated job runs `pnpm exec vitest run` with working-directory packages/db (.github/workflows/db-tests.yml:122-128). redeemActionToken lives in apps/web. packages/db importing from apps/web is the wrong dependency direction, so the three outstanding DoD lines have nowhere to run today.\n\nTHE THREE PIECES:\n1. A test-file CONVENTION for apps/web tests needing a live database - they must SKIP cleanly when DATABASE_URL is unset, or ci.yml (which has no database) goes red. packages/db/tests/rls-harness.ts already models this with `const live = Boolean(url)` and `live ? describe : describe.skip`.\n2. A WORKFLOW STEP in db-tests.yml running that suite with working-directory apps/web, against the Supabase stack already stood up in that job.\n3. THE SKIP-GUARD. .github/scripts/assert-rls-executed.mjs is pointed at packages/db results (db-tests.yml:130-136) and asserts the suites actually EXECUTED rather than silently skipping. It must cover the new suite too, or an apps/web DB suite that skips reports green and proves nothing - which is the exact failure mode that guard exists to catch, and the same shape as the vitest include hole found in W13-01d where an app-level test was never collected at all.\n\nTHEN the three DoD lines land: action and consumption commit or roll back TOGETHER with a forced failure between them; a cancel token issued at 48h and redeemed at 30h before start refused with the pt-PT telephone copy; a refusal writes an audit row. Plus the partial line - that a consumed token's response is byte-identical to a forged token's."
+    },
+    {
+      "id": "LE-preview-env-duplicate",
+      "title": "Duplicate NEXT_PUBLIC_API_URL scoped to Preview, Sensitive, value unreadable",
+      "lane": "loose_ends",
+      "home_lane": "loose_ends",
+      "status": "blocked",
+      "priority": "low",
+      "owner_terminal": "purple",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-08-04",
+      "notes": "Owner-observed on the Vercel dashboard 2026-08-04 while diagnosing INC-05. The osteojp-portal project carries a SECOND NEXT_PUBLIC_API_URL scoped to PREVIEW, marked Sensitive, added Jul 20, with a value that cannot be read back.\n\nNOT the cause of INC-05: Preview scope cannot affect Production. Carded so it is not lost.\n\nWHY IT MATTERS LATER. A Sensitive variable whose value nobody can read is a variable nobody can verify. If previews are ever used for portal review, it silently decides which API every preview deployment talks to, and a wrong value there is indistinguishable from a correct one until a preview misbehaves.\n\nRECOMMENDED DEFAULT, post-fix: delete it and recreate with a known, non-sensitive value. NEXT_PUBLIC_* is compiled into client bundles by definition, so marking it Sensitive protects nothing while costing all verifiability. Owner action on his own screen; this terminal makes no cloud calls."
     }
   ]
 }
