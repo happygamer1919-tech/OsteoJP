@@ -1226,5 +1226,6 @@
   "remindersReview.markRead": "Marcar como lida",
   "remindersReview.receivedAt": "Recebida em",
   "remindersReview.noPatient": "Paciente não identificado",
-  "remindersReview.flag": "resposta por rever"
+  "remindersReview.flag": "resposta por rever",
+  "patientAppointments.error.minNotice": "Escolha um horario com pelo menos 24 horas de antecedencia."
 }

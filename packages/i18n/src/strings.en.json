@@ -1226,5 +1226,6 @@
   "remindersReview.markRead": "Mark as read",
   "remindersReview.receivedAt": "Received on",
   "remindersReview.noPatient": "Patient not identified",
-  "remindersReview.flag": "reply to review"
+  "remindersReview.flag": "reply to review",
+  "patientAppointments.error.minNotice": "Choose a time at least 24 hours from now."
 }
