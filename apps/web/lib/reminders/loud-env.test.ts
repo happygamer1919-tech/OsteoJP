@@ -80,7 +80,7 @@ describe("link verification no longer hides a missing secret", () => {
     const token = signRescheduleToken({
       tenantId: "t1",
       appointmentId: "a1",
-      exp: Math.floor(Date.now() / 1000) + 3600,
+      exp: Math.floor(Date.now() / 1000) + 3600, scope: "confirm_cancel" 
     });
 
     delete process.env[SECRET_ENV];

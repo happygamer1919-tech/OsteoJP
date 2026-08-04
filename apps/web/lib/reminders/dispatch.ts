@@ -19,7 +19,11 @@ import {
 import { sendEmail, sendSms, type SendResult } from "./clients";
 import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "./phone";
-import { signRescheduleToken, rescheduleTokenExpiry } from "./link-token";
+import {
+  signRescheduleToken,
+  rescheduleTokenExpiry,
+  type TokenScope,
+} from "./link-token";
 import { REMINDER_OFFSETS } from "./offsets";
 
 // Reminder dispatch: load (tenant-scoped) → resolve locale → render PT/EN →
@@ -155,16 +159,26 @@ function rescheduleLink(args: {
   tenantId: string;
   appointmentId: string;
   startsAt: Date;
+  scope: TokenScope;
 }): string {
   // Stateless, HMAC-signed token (see link-token.ts) — the URL carries only the
   // opaque token, never patient data or a raw id path. Resolves at /r/<token>.
   // EMAIL only: the token is too long for a single-segment SMS, so the SMS copy
   // points to the clinic phone instead.
+  //
+  // `scope` is REQUIRED rather than defaulted, and that is the point. Counsel's
+  // per-offset matrix (docs/rgpd-token-flow.md §5) gives the 48h email confirm
+  // AND cancel, and the 24h SMS confirm ONLY, because the SMS arrives at or
+  // inside the clinic's 24h cancel cutoff. A default here would let a future
+  // offset acquire the permissive scope by saying nothing, which is exactly how
+  // an action the clinic has ruled out would ship unnoticed. Every call site
+  // must state which matrix row it is.
   const base = requiredRescheduleBase();
   const token = signRescheduleToken({
     tenantId: args.tenantId,
     appointmentId: args.appointmentId,
     exp: rescheduleTokenExpiry(args.startsAt),
+    scope: args.scope,
   });
   return `${base.replace(/\/$/, "")}/r/${token}`;
 }
@@ -198,6 +212,11 @@ export function buildReminderContext(
       tenantId: data.tenantId,
       appointmentId: data.appointmentId,
       startsAt: data.startsAt,
+      // The link is carried by the 48h EMAIL only (see rescheduleLink), which is
+      // sent outside the 24h cancel cutoff: counsel's matrix row for that offset
+      // is confirm AND cancel. The server still re-checks the cutoff at
+      // redemption, because this link can be clicked well after it was sent.
+      scope: "confirm_cancel",
     }),
   };
 }
@@ -424,6 +443,7 @@ function buildNoShowContext(
       tenantId,
       appointmentId: data.appointmentId,
       startsAt: data.startsAt,
+      scope: "confirm_cancel",
     }),
   };
 }
