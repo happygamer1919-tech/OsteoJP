@@ -1,7 +1,6 @@
 import { Calendar, FileText, MapPin, Plus } from 'lucide-react'
 import { Card, EmptyState } from '@osteojp/ui'
 import type { LucideIcon } from 'lucide-react'
-import { createServerClient } from '@/lib/supabase/server'
 import { getMyAppointments, getMyProfile } from '@/lib/api/client'
 import type { AppointmentView } from '@/lib/api/client'
 import { NavButton } from './NavButton'
@@ -38,33 +37,29 @@ const QUICK_ACTIONS: QuickAction[] = [
 ]
 
 export default async function DashboardPage() {
-  const supabase = await createServerClient()
-
-  let firstName = ''
-  // Run profile and appointments fetches in parallel; neither must cause an error boundary.
-  const [profileResult, appointmentsResult] = await Promise.allSettled([
+  // A FAILED FETCH MUST REACH error.tsx. It previously did not.
+  //
+  // This used Promise.allSettled and then read only the `fulfilled` branches, so
+  // a rejected getMyAppointments() left the list EMPTY and the page rendered
+  // "Nao tem consultas agendadas" - telling a patient with a real appointment
+  // tomorrow that they have none. A rejected getMyProfile() rendered the
+  // greeting with no name. Neither ever reached the error boundary that already
+  // exists in this directory, fully written, with pt-PT copy and a retry.
+  //
+  // Promise.all rejects if either does, which is the behaviour the boundary was
+  // built for. LOADED-AND-EMPTY still renders the empty state - that is a real
+  // answer. FAILED-TO-LOAD now renders the error. The two are no longer the
+  // same screen.
+  //
+  // The old user_metadata.first_name fallback is deleted with the swallow it
+  // served: it existed only to paper over a failed profile fetch, and a
+  // half-populated page is the thing this change exists to stop.
+  const [profile, appointments] = await Promise.all([
     getMyProfile(),
     getMyAppointments(),
   ])
 
-  if (profileResult.status === 'fulfilled') {
-    firstName = profileResult.value.fullName.split(' ')[0] ?? ''
-  } else {
-    // Fallback: user_metadata.first_name (set at invite time, may be absent)
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      firstName = (session?.user?.user_metadata?.first_name as string | undefined) ?? ''
-    } catch {
-      // non-fatal — firstName stays empty
-    }
-  }
-
-  let appointments: AppointmentView[] = []
-  if (appointmentsResult.status === 'fulfilled') {
-    appointments = appointmentsResult.value
-  }
+  const firstName = profile.fullName.split(' ')[0] ?? ''
 
   const upcoming = appointments
     .filter(isUpcoming)
