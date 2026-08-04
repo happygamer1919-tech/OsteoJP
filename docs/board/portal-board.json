@@ -225,7 +225,7 @@
       "gate": "green_self_merge",
       "evidence": {
         "kind": "pr",
-        "ref": "#778 OPEN, branch notify/LE-env-sweep-invite-boot. Closes the REMINDERS_EMAIL_FROM residual, and not in the way the card predicted. Proven to FAIL against the real defect: with the assertion removed 3 of the 5 new tests in apps/web/lib/reminders/invite-boot-env.test.ts fail; with it, all 5 pass. Gates: pnpm lint 4/4, pnpm typecheck 10/10, 44 test files / 439 tests across lib/reminders, lib/invites and lib/admin.",
+        "ref": "#778 MERGED 2026-08-04T15:55:50Z, squashed to f70f6c6 on origin/main, branch notify/LE-env-sweep-invite-boot deleted. Its e2e ran for REAL (13m57s), not the docs-only skip, because it is a code change. Closes the REMINDERS_EMAIL_FROM residual, and not in the way the card predicted. Proven to FAIL against the real defect: with the assertion removed 3 of the 5 new tests in apps/web/lib/reminders/invite-boot-env.test.ts fail; with it, all 5 pass. Gates: pnpm lint 4/4, pnpm typecheck 10/10, 44 test files / 439 tests across lib/reminders, lib/invites and lib/admin.",
         "at": "2026-08-04"
       },
       "blocked_on": null,
