@@ -357,3 +357,55 @@ the emit pre-commit fails the ordering test, removing the try/catch fails 2.
 imports it, and three existing suites unit-test `booking.ts` under vitest's node
 env, so the marker forced them all to mock it. Matches the convention already in
 `lib/notify/clients.ts`. Nothing in the module touches a secret or the DB.
+
+## Migration 0054 applied to production (2026-08-04) — the pasted evidence
+
+Recorded here because it was recorded NOWHERE at first. The board card asserted
+"APPLIED", and the only comment on PR #775 was the apply block PURPLE wrote — the
+instructions, not the result. The owner's output existed solely in a chat
+transcript, and WAVE-13.md §1.5 point 3 is explicit: *"Applied counts only with
+pasted journal output. A claim of 'applied' with no pasted evidence is not an
+apply."* Chat is transport, never storage. This section is the storage.
+
+Owner ran the block from `osteojp-prod-apply`, output pasted back verbatim:
+
+```
+Note: switching to 'origin/portal/W13-01-token-audit-log'.
+You are in 'detached HEAD' state.
+HEAD is now at 37c524b Merge branch 'main' into portal/W13-01-token-audit-log
+packages/db/migrations/0054_patient_audit_log_and_token_consumption.sql
+Scope: all 11 workspace projects
+Lockfile is up to date, resolution step is skipped
+Already up to date
+$ pnpm --filter @osteojp/db exec drizzle-kit migrate
+Reading config file '/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply/packages/db/drizzle.config.ts'
+Using 'postgres' driver for database querying
+[⣟] applying migrations...
+  NOTICE 42P06: schema "drizzle" already exists, skipping
+  NOTICE 42P07: relation "__drizzle_migrations" already exists, skipping
+[✓] migrations applied successfully!
+
+$ pnpm db:migrate            # second run
+[✓] migrations applied successfully!
+```
+
+**What this proves, and what it does not.** It proves the worktree was
+**detached at `37c524b`** — a commit that demonstrably carries
+`0054_patient_audit_log_and_token_consumption.sql` and journal `idx 53` — and
+that `drizzle-kit migrate` ran there without error. That is what excludes the
+`0049` failure mode recorded at `docs/DECISIONS.md:2215`, where a plain
+`git checkout <branch>` left the worktree on `main`, `db:migrate` found nothing
+new, and success was reported for a migration that never ran.
+
+**It does NOT prove anything via the second run, and the apply block was wrong to
+ask for it.** `drizzle-kit` prints `[✓] migrations applied successfully!`
+whether or not it applied anything, so running it twice does not discriminate.
+The block was authored by PURPLE and the flaw is PURPLE's.
+
+**Future apply blocks must ask for a table-existence read instead** — a
+`select` naming the tables the migration creates — which distinguishes applied
+from no-op in one command. Nobody should repeat the double-run.
+
+Independently corroborating: CI's DB-gated job applied the identical SQL to a
+real Postgres on #775 (2m43s, green), so the migration is known to be valid
+against a live database as well as merged.
