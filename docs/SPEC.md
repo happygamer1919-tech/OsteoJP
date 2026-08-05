@@ -207,7 +207,7 @@ Full source-code audit of 38 files. 1 P1, 2 P2, 5 P3 findings. All P1 and P2 fin
 - `[MAX]` ~~Cross-browser QA portal (2026-06-18)~~ ✅ **Shipped** (`docs/qa-cross-browser-2026-06-18.md`, PR #279)
 - `[MAX]` ~~Phase 6 performance audit (2026-06-18)~~ ✅ **Shipped** (`docs/qa-performance-2026-06-18.md`, PR #281)
 - `[MAX]` ~~Staff platform FAQ + help text~~ ✅ **Shipped** (`docs/help-text-staff.md`, PR #298)
-- `[MAX]` Manual QA pass (authenticated flows) — ⏳ blocked on Ivan activating test patient **Maria João Silva**
+- `[MAX]` Manual QA pass (authenticated flows) — ⏳ blocked on Ivan activating the designated production test patient (**ZZ TESTE**, row created 2026-08-05). <!-- Until 2026-08-05 this line named "Maria João Silva", who does NOT exist in production: that name comes from apps/web/e2e/fixtures.ts, a LOCAL e2e seed fixture. The line had read that way since 2026-06-11 and it misled a session into drafting a production fix block against a fixture name; the owner caught it with "I do not have a Maria Joao Silva". Never transcribe a test fixture into a production instruction. -->
 - `[MAX]` ~~NESA form clinical fields~~ ✅ — structure + 4 NESA fields + 2 contraindications shipped (PR #163). One item remaining: epilepsy absolute/relative contraindication classification — pending JP ruling.
 - `[MAX]` Wave C full QA pass (45 scenarios) — ⏳ blocked on Ivan building Wave C UI screens
 
