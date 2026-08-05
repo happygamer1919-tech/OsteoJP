@@ -3,32 +3,75 @@ name: OpenAPI drift
 # Keeps docs/api/openapi.yaml honest: validates the spec and fails if any
 # /api/v1 (or /api/health) route handler lacks a documented path/method.
 # Separate from ci.yml by design (do not fold into it).
+#
+# THE PATH FILTER MOVED OFF THE TRIGGER AND INTO THE STEPS, and that is not a
+# style change. On 2026-08-05 the owner made "Validate spec + drift check" a
+# REQUIRED status check. A path-filtered workflow does not run on a PR that
+# touches none of its paths, so the required context never reports, and GitHub
+# holds the PR at "Expected — Waiting for status to be reported" forever. It is
+# not a slow check; it is a check that will never arrive. PR #818 (a UI-only
+# change) hit exactly that and could not be merged with every other gate green.
+#
+# So the job ALWAYS RUNS and always reports the context. When nothing relevant
+# changed it exits green in seconds without installing anything. Same shape, and
+# for the same reason, as db-tests.yml's skip: "The job still runs (so the
+# branch-protection check is always reported) but exits green immediately".
+#
+# A required check must be reportable on EVERY pull request. Any workflow wired
+# into branch protection has to run unconditionally and decide internally what
+# work to do — never decide at the trigger whether to exist.
 
 on:
   pull_request:
     branches: [main]
-    paths:
-      - "apps/api/app/api/**"
-      - "apps/web/app/api/v1/**"
-      - "docs/api/openapi.yaml"
-      - "scripts/check-openapi-drift.mjs"
-      - ".github/workflows/openapi-drift.yml"
+  # Also run on push to main so the context registers as selectable in branch
+  # protection and is proven green on the default branch.
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   openapi:
+    # Stable display name — branch protection is wired to this exact string.
     name: Validate spec + drift check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The paths that used to gate the trigger, evaluated here instead. On a
+      # push to main there is no base to diff against, so the work always runs.
+      - name: Detect whether API surface or spec changed
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          changed=$(git diff --name-only "$base" "$head" || true)
+          if echo "$changed" | grep -qE '^(apps/api/app/api/|apps/web/app/api/v1/|docs/api/openapi\.yaml$|scripts/check-openapi-drift\.mjs$|\.github/workflows/openapi-drift\.yml$)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No API route or spec changes in this PR — spec lint and drift check skipped, gate reported green."
+          fi
 
       - name: Set up Node.js
+        if: steps.changes.outputs.relevant == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Lint the OpenAPI spec (3.1)
+        if: steps.changes.outputs.relevant == 'true'
         run: npx --yes @redocly/cli@latest lint docs/api/openapi.yaml
 
       - name: Drift check (every route is documented)
+        if: steps.changes.outputs.relevant == 'true'
         run: node scripts/check-openapi-drift.mjs
