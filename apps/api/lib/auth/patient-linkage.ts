@@ -23,6 +23,8 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { getDbAdmin, patients } from "@osteojp/db";
 
+import type { OtpDb } from "./otp-store";
+
 /**
  * The whole result. `ok:false` carries NOTHING, deliberately — see the header.
  * If this ever grows a reason, the enumeration property is gone.
@@ -48,12 +50,18 @@ const REFUSED: LinkageResult = { ok: false };
  * returns the same single row in both cases, silently turning an ambiguous
  * match into a confident mis-link. Two rows is all it takes to know there is
  * more than one, so nothing larger is fetched.
+ *
+ * IT TAKES THE CALLER'S DB HANDLE so the claim path can run this read INSIDE the
+ * transaction that consumes the code. Read on one connection and consumed on
+ * another, "exactly one live row" would be a fact about a moment already past by
+ * the time anything acted on it.
  */
 export async function resolvePatientByProvenPhone(
   tenantId: string,
   phoneE164: string,
+  db: OtpDb = getDbAdmin(),
 ): Promise<LinkageResult> {
-  const rows = await getDbAdmin()
+  const rows = await db
     .select({ id: patients.id })
     .from(patients)
     .where(

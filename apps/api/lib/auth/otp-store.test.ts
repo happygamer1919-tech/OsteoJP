@@ -15,6 +15,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const H = vi.hoisted(() => ({
   calls: [] as Array<{ op: string; payload?: unknown; where?: unknown }>,
   rows: [] as unknown[],
+  /** What an UPDATE ... RETURNING yields. Empty = the row did not match. */
+  updated: [] as unknown[],
 }));
 
 vi.mock("@osteojp/db", () => {
@@ -40,7 +42,14 @@ vi.mock("@osteojp/db", () => {
       }),
       update: () => ({
         set: (p: unknown) => ({
-          where: async (w: unknown) => rec("update", { payload: p, where: w }),
+          // Awaitable on its own (incrementAttempts) AND chainable into
+          // .returning() (consume), because the real drizzle builder is both.
+          where: (w: unknown) => {
+            rec("update", { payload: p, where: w });
+            return Object.assign(Promise.resolve(H.updated), {
+              returning: async () => H.updated,
+            });
+          },
         }),
       }),
       select: () => selectChain(),
@@ -77,6 +86,7 @@ const flat = (w: unknown): string => JSON.stringify(w);
 beforeEach(() => {
   H.calls = [];
   H.rows = [];
+  H.updated = [{ id: "r1" }];
 });
 
 describe("OTP store query shapes", () => {
@@ -99,6 +109,39 @@ describe("OTP store query shapes", () => {
     const upd = H.calls.find((c) => c.op === "update");
     expect(flat(upd?.where)).toContain("isNull");
     expect(flat(upd?.where)).toContain("consumed_at");
+  });
+
+  it("consume REPORTS the race loser instead of returning void", async () => {
+    // The IS NULL guard stops the loser WRITING. Only this boolean stops the
+    // loser GRANTING, which is the half that matters at the call site.
+    H.updated = [{ id: "r1" }];
+    expect(await createDrizzleOtpStore().consume("r1", NOW)).toBe(true);
+
+    H.updated = [];
+    expect(await createDrizzleOtpStore().consume("r1", NOW)).toBe(false);
+  });
+
+  it("uses the handle it is GIVEN, so it can be enrolled in a transaction", async () => {
+    // The claim path consumes the code, links the patient and issues the device
+    // in ONE transaction. A store that always reached for getDbAdmin() would run
+    // outside it and commit on its own, which is the failure 0054 exists to
+    // prevent - so this asserts the injected handle is actually used.
+    const tx = {
+      update: () => ({
+        set: () => ({
+          where: () => Object.assign(Promise.resolve([]), {
+            returning: async () => { txUsed = true; return [{ id: "r1" }]; },
+          }),
+        }),
+      }),
+    };
+    let txUsed = false;
+
+    const store = createDrizzleOtpStore(tx as unknown as Parameters<typeof createDrizzleOtpStore>[0]);
+    expect(await store.consume("r1", NOW)).toBe(true);
+    expect(txUsed).toBe(true);
+    // And the ambient admin handle was never touched.
+    expect(H.calls).toEqual([]);
   });
 
   it("findLive excludes consumed AND expired rows in the query itself", async () => {

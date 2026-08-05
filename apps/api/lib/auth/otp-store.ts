@@ -16,14 +16,27 @@ import {
   getDbAdmin,
   patientOtpCodes,
   patientTrustedDevices,
+  type DbTx,
 } from "@osteojp/db";
 
 import { TRUSTED_DEVICE_TTL_MS, type OtpRecord, type OtpStore } from "./otp";
 
-export function createDrizzleOtpStore(): OtpStore {
+/**
+ * Either the admin handle or a transaction bound to it.
+ *
+ * BOTH STORES TAKE ONE, defaulting to `getDbAdmin()`, because the claim path
+ * needs the code's consumption, the patient linkage and the trusted-device issue
+ * to be ONE transaction. A store that always reached for its own connection
+ * could not be enrolled in the caller's, so each of the three would commit
+ * independently and a crash between them would leave the flow half-done. Passing
+ * the handle is the whole mechanism; there is no ambient transaction to inherit.
+ */
+export type OtpDb = ReturnType<typeof getDbAdmin> | DbTx;
+
+export function createDrizzleOtpStore(db: OtpDb = getDbAdmin()): OtpStore {
   return {
     async create({ tenantId, phoneHash, codeHash, expiresAt }) {
-      await getDbAdmin()
+      await db
         .insert(patientOtpCodes)
         .values({ tenantId, phoneHash, codeHash, expiresAt });
     },
@@ -45,7 +58,7 @@ export function createDrizzleOtpStore(): OtpStore {
      * who can trigger a request cancel someone else's in-flight login.
      */
     async findLive(tenantId, phoneHash, now): Promise<OtpRecord | null> {
-      const [row] = await getDbAdmin()
+      const [row] = await db
         .select({
           id: patientOtpCodes.id,
           phoneHash: patientOtpCodes.phoneHash,
@@ -79,14 +92,15 @@ export function createDrizzleOtpStore(): OtpStore {
      * offers.
      */
     async incrementAttempts(id) {
-      await getDbAdmin()
+      await db
         .update(patientOtpCodes)
         .set({ attempts: sql`${patientOtpCodes.attempts} + 1` })
         .where(eq(patientOtpCodes.id, id));
     },
 
     /**
-     * Mark consumed, and ONLY if it is not already.
+     * Mark consumed, and ONLY if it is not already. Returns whether THIS call is
+     * the one that consumed it.
      *
      * The `consumed_at IS NULL` predicate is what makes single use race-free: two
      * simultaneous redemptions of the same code both pass otp.ts's checks, but
@@ -94,16 +108,22 @@ export function createDrizzleOtpStore(): OtpStore {
      * would "succeed" and the second would silently overwrite the first's
      * timestamp, losing when the code was actually spent.
      *
-     * The caller must run this in the SAME transaction as the session mint, for
-     * the reason 0054 couples a token action to its consumption record: a crash
-     * between them leaves either a spent code with no session or a session with
-     * a still-live code.
+     * THE BOOLEAN IS THE OTHER HALF OF THAT GUARD, and without it the guard is
+     * decorative. The loser writing nothing does not stop the loser's request
+     * from going on to mint a session; only the caller checking that it lost
+     * does. `.returning()` rather than a driver rowcount because it is the same
+     * answer on every driver and it cannot be confused with "rows examined".
+     *
+     * Run inside the caller's transaction, alongside whatever it grants — see
+     * `OtpDb` above and 0054's coupling of a token action to its consumption.
      */
-    async consume(id, now) {
-      await getDbAdmin()
+    async consume(id, now): Promise<boolean> {
+      const won = await db
         .update(patientOtpCodes)
         .set({ consumedAt: now })
-        .where(and(eq(patientOtpCodes.id, id), isNull(patientOtpCodes.consumedAt)));
+        .where(and(eq(patientOtpCodes.id, id), isNull(patientOtpCodes.consumedAt)))
+        .returning({ id: patientOtpCodes.id });
+      return won.length === 1;
     },
   };
 }
@@ -124,13 +144,15 @@ export type TrustedDeviceStore = {
   revoke(deviceTokenHash: string, now: Date): Promise<void>;
 };
 
-export function createDrizzleTrustedDeviceStore(): TrustedDeviceStore {
+export function createDrizzleTrustedDeviceStore(
+  db: OtpDb = getDbAdmin(),
+): TrustedDeviceStore {
   return {
     async issue({ tenantId, patientId, deviceTokenHash, now }) {
       // expiresAt is computed HERE, once, at issue. Decision D's window is 30
       // days from first trust and LOOP 3 requires that it "does not extend
       // itself silently on use", so nothing downstream ever recomputes it.
-      await getDbAdmin()
+      await db
         .insert(patientTrustedDevices)
         .values({
           deviceTokenHash,
@@ -155,7 +177,7 @@ export function createDrizzleTrustedDeviceStore(): TrustedDeviceStore {
      * expiry.
      */
     async isTrusted(deviceTokenHash, now) {
-      const [row] = await getDbAdmin()
+      const [row] = await db
         .select({ patientId: patientTrustedDevices.patientId })
         .from(patientTrustedDevices)
         .where(
@@ -175,7 +197,7 @@ export function createDrizzleTrustedDeviceStore(): TrustedDeviceStore {
      * cannot answer. The IS NULL guard keeps the FIRST revocation instant.
      */
     async revoke(deviceTokenHash, now) {
-      await getDbAdmin()
+      await db
         .update(patientTrustedDevices)
         .set({ revokedAt: now })
         .where(

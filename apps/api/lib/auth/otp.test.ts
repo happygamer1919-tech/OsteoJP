@@ -15,8 +15,10 @@ import {
   OTP_MAX_ATTEMPTS,
   OTP_TTL_MS,
   constantTimeEqual,
+  generateDeviceToken,
   generateOtpCode,
   hashCode,
+  hashDeviceToken,
   hashPhone,
   requestCode,
   verifyCode,
@@ -51,7 +53,11 @@ function makeStore(seed: OtpRecord[] = []) {
     },
     async consume(id, now) {
       const r = rows.find((x) => x.id === id);
-      if (r) r.consumedAt = now;
+      // Mirrors the SQL guard: only an UNCONSUMED row is consumable, and the
+      // caller is told whether this call is the one that did it.
+      if (!r || r.consumedAt !== null) return false;
+      r.consumedAt = now;
+      return true;
     },
   };
   return store;
@@ -198,11 +204,15 @@ describe("the caps actually refuse", () => {
 });
 
 describe("SINGLE USE", () => {
-  it("accepts the code once and refuses the identical code after", async () => {
+  it("accepts the code once and refuses the identical code after it is spent", async () => {
     const store = makeStore([liveRecord()]);
 
     const first = await verifyCode(T, PHONE, "123456", { store, now: () => NOW });
-    expect(first).toEqual({ ok: true, phoneHash: hashPhone(PHONE) });
+    expect(first).toEqual({ ok: true, phoneHash: hashPhone(PHONE), codeId: "r1" });
+
+    // verifyCode PROVES; the caller SPENDS, inside its own transaction. See the
+    // function's header for why the two were split.
+    expect(await store.consume("r1", NOW)).toBe(true);
     expect(store.rows[0]!.consumedAt).toEqual(NOW);
 
     const second = await verifyCode(T, PHONE, "123456", { store, now: () => NOW });
@@ -210,10 +220,55 @@ describe("SINGLE USE", () => {
     expect(second).toEqual({ ok: false });
   });
 
-  it("returns the phone hash on success, never the number", async () => {
+  it("consume reports the RACE LOSER, which is what makes single use enforceable", async () => {
+    // Both callers proved the same live code before either spent it — the exact
+    // interleaving two simultaneous redemptions produce. Only one may claim.
+    const store = makeStore([liveRecord()]);
+    const a = await verifyCode(T, PHONE, "123456", { store, now: () => NOW });
+    const b = await verifyCode(T, PHONE, "123456", { store, now: () => NOW });
+    expect(a.ok && b.ok).toBe(true);
+
+    expect(await store.consume("r1", NOW)).toBe(true);
+    expect(await store.consume("r1", NOW)).toBe(false);
+    // The loser did not move the timestamp either: when it was spent survives.
+    expect(store.rows[0]!.consumedAt).toEqual(NOW);
+  });
+
+  it("does NOT spend the code itself - the claim path owns that", async () => {
+    // If this ever starts consuming again, the spend leaves the caller's
+    // transaction and a crash between the spend and the grant can leave a dead
+    // code with no session. 0054's coupling, restated as a test.
+    const store = makeStore([liveRecord()]);
+    await verifyCode(T, PHONE, "123456", { store, now: () => NOW });
+    expect(store.rows[0]!.consumedAt).toBeNull();
+  });
+
+  it("returns the phone hash and the row id on success, never the number", async () => {
     const store = makeStore([liveRecord()]);
     const r = await verifyCode(T, PHONE, "123456", { store, now: () => NOW });
-    expect(r).toEqual({ ok: true, phoneHash: hashPhone(PHONE) });
+    expect(r).toEqual({ ok: true, phoneHash: hashPhone(PHONE), codeId: "r1" });
     expect(JSON.stringify(r)).not.toContain(PHONE);
+  });
+});
+
+describe("the trusted-device token", () => {
+  it("is 256 bits of entropy, not six digits", async () => {
+    // Never typed by a human, checked with no attempt cap, and valid for thirty
+    // days: nothing bounds guessing it except its own size.
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      const t = generateDeviceToken();
+      expect(t).toMatch(/^[0-9a-f]{64}$/);
+      seen.add(t);
+    }
+    expect(seen.size).toBe(200);
+  });
+
+  it("is stored as a hash that matches 0056's CHECK, and never as the value", () => {
+    const t = generateDeviceToken();
+    const h = hashDeviceToken(t);
+    expect(h).toMatch(/^[0-9a-f]{64}$/); // patient_trusted_devices_hash_is_sha256_hex
+    expect(h).not.toBe(t);
+    expect(hashDeviceToken(t)).toBe(h); // deterministic, or no device is ever found
   });
 });

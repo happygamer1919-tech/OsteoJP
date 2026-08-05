@@ -145,12 +145,63 @@ jobs:
             --reporter=json --outputFile.json=web-db-results.json \
             2>&1 | tee web-db-run.log
 
+      # W13-03. The second DB-gated suite outside packages/db, and here for the
+      # same reason the apps/web one is: LOOP 3's remaining DoD lines assert
+      # properties of the DATABASE - that one code cannot be claimed twice by two
+      # REAL concurrent transactions, that the 30-day trusted-device boundary
+      # holds as a SQL predicate, and that the claim's four writes commit
+      # together. A mock racing itself proves the mock. The code under test is in
+      # apps/api, which packages/db must not import from, so the suite comes to
+      # the database.
+      - name: Run apps/api DB-gated suite (DATABASE_URL set)
+        if: steps.changes.outputs.code == 'true'
+        working-directory: apps/api
+        run: |
+          pnpm exec vitest run lib/auth/otp-claim.db.test.ts \
+            --reporter=default \
+            --reporter=json --outputFile.json=api-db-results.json \
+            2>&1 | tee api-db-run.log
+
+      # W13-03 NEGATIVE CONTROL, and it is here because the FIRST version of that
+      # suite failed this exact check. A route-level "two simultaneous claims"
+      # test passed with the consume guard hard-coded to true: on a fast local
+      # database the first request commits before the second opens its
+      # transaction, so the second is refused by findLive and the guard is never
+      # reached. The test was measuring nothing and looked green.
+      #
+      # THE FLAG IS APPLIED BY PATCH, NOT BY AN ENV VAR, unlike A4's
+      # A4_DISABLE_LOCK. A runtime switch that disables single-use enforcement on
+      # the OTP claim path is not something that should exist in shipped auth
+      # code at all, however carefully it defaults. The patch lives for the length
+      # of this step and the file is restored before the next one.
+      - name: W13-03 negative control - the race test MUST fail without the guard
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          perl -0pi -e 's/      return won\.length === 1;/      return true;/' apps/api/lib/auth/otp-store.ts
+          if ! git diff --quiet -- apps/api/lib/auth/otp-store.ts; then
+            echo "guard disabled for the control run"
+          else
+            echo "::error::the negative-control patch matched NOTHING - otp-store.ts changed shape and this control is no longer testing anything."
+            exit 1
+          fi
+          set +e
+          (cd apps/api && pnpm exec vitest run lib/auth/otp-claim.db.test.ts -t "THE RACE")
+          code=$?
+          set -e
+          git checkout -- apps/api/lib/auth/otp-store.ts
+          echo "guard disabled: exit=$code (expected NON-ZERO)"
+          if [ "$code" -eq 0 ]; then
+            echo "::error::The race test PASSED with the consume guard disabled. It is not detecting the race, so its normal green run proves nothing."
+            exit 1
+          fi
+
       - name: Assert RLS suites actually executed (skip-guard)
         if: steps.changes.outputs.code == 'true'
         run: >
           node .github/scripts/assert-rls-executed.mjs
           packages/db/rls-results.json
           apps/web/web-db-results.json
+          apps/api/api-db-results.json
           packages/db/rls-run.log
 
       # A4 NEGATIVE CONTROL. The slot lock is the ONLY defence against an
@@ -185,4 +236,7 @@ jobs:
           path: |
             packages/db/rls-results.json
             packages/db/rls-run.log
+            apps/web/web-db-results.json
+            apps/api/api-db-results.json
+            apps/api/api-db-run.log
           retention-days: 7

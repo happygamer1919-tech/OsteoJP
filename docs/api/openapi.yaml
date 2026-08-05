@@ -161,10 +161,30 @@ paths:
         medical record is the failure class that refusal exists to prevent.
 
 
-        DOES NOT YET MINT A SESSION. It returns the resolved `patientId` and
-        nothing else — no cookie, no token. The mint must land in the same
-        transaction as consuming the code, and shipping half of that is what
-        Decision D forbids.
+        THE CLAIM IS ONE TRANSACTION. Proving the code, resolving the patient,
+        spending the code and remembering the device commit together or not at
+        all. The spend carries a `consumed_at IS NULL` guard AND reports whether
+        it won, so two simultaneous redemptions of one code produce exactly one
+        `200` — the loser gets the same `401` as a wrong code. A sixth failure
+        mode, indistinguishable from the other five.
+
+
+        The spend happens AFTER linkage, deliberately: a linkage refusal leaves
+        the code live for the rest of its five minutes, because burning it would
+        cost the patient a second SMS to reach the identical refusal.
+
+
+        ON SUCCESS IT PLANTS A TRUSTED-DEVICE COOKIE — `__Host-ojp_device`,
+        httpOnly, Secure, SameSite=Lax, 30 days per Decision D. The value is
+        returned in that `Set-Cookie` header and NOWHERE else; only its SHA-256
+        is stored, so this response is the one moment it exists outside the
+        browser that receives it. The response body still carries no session
+        material.
+
+
+        IT DOES NOT MINT A PORTAL SESSION. Which artefact carries the session
+        after a verified OTP is an open owner decision (board card
+        `W13-03a-session-artefact`), not something this endpoint decides.
       requestBody:
         required: true
         content:
@@ -173,7 +193,18 @@ paths:
               $ref: "#/components/schemas/OtpVerifyInput"
       responses:
         "200":
-          description: The code verified and the phone resolved to exactly one patient.
+          description: >
+            The code verified, the phone resolved to exactly one patient, and
+            this request won the spend. Sets the trusted-device cookie.
+          headers:
+            Set-Cookie:
+              description: >
+                `__Host-ojp_device` — the 30-day trusted-device token. httpOnly,
+                Secure, SameSite=Lax, Path=/. The `__Host-` prefix is enforced by
+                the browser, so a later edit that relaxes any of those attributes
+                stops the cookie working rather than silently weakening it.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -182,6 +213,56 @@ paths:
           $ref: "#/components/responses/InvalidInput"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/auth/otp/trusted:
+    post:
+      operationId: checkTrustedDevice
+      tags: [auth]
+      summary: Is this device already trusted?
+      description: >
+        The "before demanding a code" half of Decision D's 30-day trusted device.
+        The portal asks here first and falls through to the phone-and-code
+        screens only when the answer is `401`.
+
+
+        IT TAKES NO REQUEST BODY AND NO PHONE NUMBER. The answer is derived from
+        the `__Host-ojp_device` cookie and nothing else. Folding this into
+        `/otp/request` would have meant either querying the patient table on the
+        enumeration surface — exactly what that endpoint is built never to do —
+        or accepting a `phone` parameter and ignoring it.
+
+
+        It leaks nothing to a caller without the cookie: the branch is keyed on a
+        256-bit secret, not on whether a phone is known, so a missing, malformed,
+        expired, revoked or invented token all return the same `401`.
+
+
+        A CHECK IS A READ. `expires_at` is never recomputed and `last_seen_at` is
+        never written — LOOP 3 step 6 requires that the device "does not extend
+        itself silently on use", and a sliding window would mean an active device
+        never expires at all.
+      responses:
+        "200":
+          description: The device is live, unrevoked and unexpired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpVerifyResult"
+        "401":
+          description: >
+            No usable device credential. The cookie is CLEARED on this response
+            (`Max-Age=0`) so a dead token stops being presented on every visit.
+          headers:
+            Set-Cookie:
+              description: "`__Host-ojp_device` cleared with `Max-Age=0`."
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           $ref: "#/components/responses/RateLimited"
 
