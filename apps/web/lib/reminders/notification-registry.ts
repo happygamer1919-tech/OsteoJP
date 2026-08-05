@@ -84,9 +84,33 @@ function patientTemplate(
   };
 }
 
-/** The ten patient-facing reminder bodies, all approved by JP 2026-08-03. */
+/**
+ * WF-02 (2026-08-05): the 48h email body was amended, and it carries its OWN
+ * approval date rather than moving the shared one.
+ *
+ * WHAT CHANGED AND WHY. The body read "Para remarcar ou cancelar"; the link it
+ * offers is signed `confirm_cancel` (dispatch.ts) and the landing page renders a
+ * confirm CTA, so confirming was built, tested and enforced server-side — and
+ * never mentioned to the patient. WF-02 makes the 48h email the ONLY channel
+ * that can deliver confirm before launch (the token does not fit one SMS segment
+ * and no short-link scheme is being built pre-launch), so a channel that never
+ * said so meant confirm effectively did not ship. JP approved amending this one
+ * line, relayed by the owner on 2026-08-05.
+ *
+ * WHY A SEPARATE CONSTANT INSTEAD OF BUMPING JP_APPROVAL. That const is shared
+ * by all ten bodies. Moving it to 2026-08-05 would re-date nine bodies JP
+ * approved on 2026-08-03 and did not look at again, which would quietly destroy
+ * the audit trail this field exists to keep. One body changed; one date moves.
+ */
+const JP_APPROVAL_48H_EMAIL = { approvedBy: "JP", approvedAt: "2026-08-05" } as const;
+
+/** The ten patient-facing reminder bodies. Nine approved by JP 2026-08-03; the
+ *  48h email re-approved 2026-08-05 for the WF-02 amendment above. */
 export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
-  patientTemplate("reminder.48h.email", "email", EV_REMINDER_DUE, EMAIL["48h"].pt.body),
+  {
+    ...patientTemplate("reminder.48h.email", "email", EV_REMINDER_DUE, EMAIL["48h"].pt.body),
+    ...JP_APPROVAL_48H_EMAIL,
+  },
   patientTemplate("reminder.48h.sms", "sms", EV_REMINDER_DUE, SMS["48h"].pt),
   patientTemplate("reminder.24h.email", "email", EV_REMINDER_DUE, EMAIL["24h"].pt.body),
   patientTemplate("reminder.24h.sms", "sms", EV_REMINDER_DUE, SMS["24h"].pt),

@@ -26,7 +26,7 @@ export function liveSendEnabled(flag: string, env: EnvSource = process.env): boo
  * Names only — values never appear in logs, errors, or this file.
  */
 export const REQUIRED_WHEN_LIVE = {
-  email: ["RESEND_API_KEY", "REMINDERS_EMAIL_FROM"],
+  email: ["RESEND_API_KEY"],
   sms: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"],
   /**
    * Link machinery. Both are needed to RENDER a reminder at all, not merely to
@@ -45,6 +45,30 @@ export const TWILIO_SENDER_ONE_OF = [
   "TWILIO_SMS_FROM",
   "TWILIO_MESSAGING_SERVICE_SID",
 ] as const;
+
+/**
+ * From-addresses, required PER STREAM rather than globally.
+ * LE-reminders-email-from-naming, owner ruling 2026-08-05: SPLIT, not rename.
+ *
+ * WHY PER-FLAG AND NOT IN `REQUIRED_WHEN_LIVE.email`. That list is demanded
+ * whenever ANY flag is armed, and the two apps do not have the same streams:
+ * `apps/api` asserts on `REMINDERS_LIVE_SEND` alone and has no invite path at
+ * all ("the only body this app can send is patient activation"), so a global
+ * `INVITES_EMAIL_FROM` would fail its boot over a variable it can never use.
+ * Keying the requirement to the flag that arms the stream keeps each app
+ * demanding exactly what it can actually send with.
+ *
+ * The property #778 established is preserved exactly: arming a stream with no
+ * sender configured still fails at BOOT, not at the user. It just fails on that
+ * stream's own variable now.
+ *
+ * A flag with no entry here contributes no from-address requirement, so adding a
+ * third stream is a deliberate line in this map rather than a silent inheritance.
+ */
+export const EMAIL_FROM_BY_FLAG: Record<string, string> = {
+  REMINDERS_LIVE_SEND: "REMINDERS_EMAIL_FROM",
+  INVITES_LIVE_SEND: "INVITES_EMAIL_FROM",
+};
 
 export class NotificationEnvError extends Error {
   constructor(readonly missing: readonly string[]) {
@@ -81,6 +105,14 @@ export function missingNotificationEnv(
     ...REQUIRED_WHEN_LIVE.links,
   ]) {
     if (!present(name)) missing.push(name);
+  }
+  // Each ARMED stream must carry its own from-address. A stream that is off
+  // demands nothing, which is what lets apps/api boot without an invites sender
+  // it has no path to use.
+  for (const flag of flags) {
+    if (!liveSendEnabled(flag, env)) continue;
+    const name = EMAIL_FROM_BY_FLAG[flag];
+    if (name && !present(name) && !missing.includes(name)) missing.push(name);
   }
   if (!TWILIO_SENDER_ONE_OF.some(present)) {
     missing.push(`one of [${TWILIO_SENDER_ONE_OF.join(" | ")}]`);

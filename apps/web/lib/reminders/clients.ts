@@ -26,7 +26,7 @@ import {
   type TemplateRegistry,
   type Transport,
 } from "@osteojp/notify";
-import { webRegistry } from "./notification-registry";
+import { INVITE_TEMPLATE, webRegistry } from "./notification-registry";
 import { normalizePhonePT } from "./phone";
 
 // BOOT VALIDATION for every apps/web send path that is NOT an Inngest function.
@@ -82,15 +82,37 @@ export function liveSendEnabled(): boolean {
  * A guaranteed send-time failure that looks healthy at boot is worse than a boot
  * failure, so this throws.
  */
-function requiredEmailFrom(): string {
-  const from = process.env.REMINDERS_EMAIL_FROM;
+function requiredEmailFrom(templateId?: string): string {
+  const name = emailFromVarFor(templateId);
+  const from = process.env[name];
   if (!from || from.trim() === "") {
     throw new Error(
-      "reminders/email: REMINDERS_EMAIL_FROM is required and has no default. " +
-        "Set it to the verified Resend identity on send.osteojp.pt.",
+      `reminders/email: ${name} is required and has no default. ` +
+        "Set it to a verified Resend identity on send.osteojp.pt.",
     );
   }
   return from;
+}
+
+/**
+ * Which from-address variable this template sends under.
+ * LE-reminders-email-from-naming, owner ruling 2026-08-05: SPLIT, not rename.
+ *
+ * The name `REMINDERS_EMAIL_FROM` had come to power staff invites as well as
+ * patient reminders, so the name lied about its scope and the two streams could
+ * not have different senders without a second migration of everyone's
+ * environment. They are separate variables now.
+ *
+ * DEFAULTS TO THE REMINDERS SENDER, not to the invites one. Every template in
+ * this app except the staff invite is a patient reminder, so an unrecognised id
+ * is far more likely to be a new reminder than a new invite — and if the guess
+ * is ever wrong the failure is a loud boot/send error naming the missing
+ * variable, never a silent send from the wrong identity.
+ */
+function emailFromVarFor(templateId?: string): string {
+  return templateId === INVITE_TEMPLATE.id
+    ? "INVITES_EMAIL_FROM"
+    : "REMINDERS_EMAIL_FROM";
 }
 
 function twilioSender(): string | undefined {
@@ -98,9 +120,14 @@ function twilioSender(): string | undefined {
 }
 
 /** Credential presence only. Never constructs a client, never logs a value. */
-function transportConfigured(channel: Channel): boolean {
+function transportConfigured(channel: Channel, templateId?: string): boolean {
   if (channel === "email") {
-    return !!process.env.RESEND_API_KEY && !!process.env.REMINDERS_EMAIL_FROM;
+    // The sender is checked PER STREAM: an invite is configured when the invites
+    // sender is set, a reminder when the reminders sender is. Checking a single
+    // shared name here would report a stream as configured on the strength of the
+    // other stream's variable, and the send would then fail at Resend instead of
+    // being suppressed with `missing_provider_config`.
+    return !!process.env.RESEND_API_KEY && !!process.env[emailFromVarFor(templateId)];
   }
   return (
     !!process.env.TWILIO_ACCOUNT_SID &&

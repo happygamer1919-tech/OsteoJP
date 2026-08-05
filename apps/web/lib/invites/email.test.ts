@@ -23,12 +23,14 @@ beforeEach(() => {
   delete process.env.REMINDERS_LIVE_SEND;
   delete process.env.RESEND_API_KEY;
   delete process.env.REMINDERS_EMAIL_FROM;
+  delete process.env.INVITES_EMAIL_FROM;
 });
 afterEach(() => {
   delete process.env.INVITES_LIVE_SEND;
   delete process.env.REMINDERS_LIVE_SEND;
   delete process.env.RESEND_API_KEY;
   delete process.env.REMINDERS_EMAIL_FROM;
+  delete process.env.INVITES_EMAIL_FROM;
 });
 
 describe("flag independence", () => {
@@ -94,17 +96,42 @@ describe("sendInviteEmail", () => {
   it("gate on + key present -> real (mocked) send, sandbox false", async () => {
     process.env.INVITES_LIVE_SEND = "true";
     process.env.RESEND_API_KEY = "test-key";
-    process.env.REMINDERS_EMAIL_FROM = "reminders@send.osteojp.pt";
+    // LE-reminders-email-from-naming (owner ruling 2026-08-05: SPLIT, not
+    // rename): the invite stream sends under its OWN from-address now.
+    process.env.INVITES_EMAIL_FROM = "convites@send.osteojp.pt";
     send.mockResolvedValue({ data: { id: "re_live_1" }, error: null });
     const r = await sendInviteEmail(msg);
     expect(r).toEqual({ channel: "email", sandbox: false, id: "re_live_1" });
     expect(send).toHaveBeenCalledOnce();
+    // THE LOAD-BEARING ASSERTION OF THE SPLIT: the invite goes out under the
+    // INVITES sender. Without it the two names could diverge in the environment
+    // while every invite still shipped from the reminders identity, and nothing
+    // would notice until someone read a raw header.
+    expect(send.mock.calls[0]![0]).toMatchObject({ from: "convites@send.osteojp.pt" });
+  });
+
+  it("uses the invites sender even when the reminders sender is also set", async () => {
+    // The failure this pins: with both variables present, a from-resolver that
+    // ignored the template id would silently pick the reminders identity and the
+    // split would be cosmetic.
+    process.env.INVITES_LIVE_SEND = "true";
+    process.env.RESEND_API_KEY = "test-key";
+    process.env.REMINDERS_EMAIL_FROM = "lembretes@send.osteojp.pt";
+    process.env.INVITES_EMAIL_FROM = "convites@send.osteojp.pt";
+    send.mockResolvedValue({ data: { id: "re_live_2" }, error: null });
+
+    await sendInviteEmail(msg);
+
+    expect(send.mock.calls[0]![0]).toMatchObject({ from: "convites@send.osteojp.pt" });
+    expect(send.mock.calls[0]![0]).not.toMatchObject({ from: "lembretes@send.osteojp.pt" });
   });
 
   it("gate on + Resend returns an error -> throws (caller degrades to temp password)", async () => {
     process.env.INVITES_LIVE_SEND = "true";
     process.env.RESEND_API_KEY = "test-key";
-    process.env.REMINDERS_EMAIL_FROM = "reminders@send.osteojp.pt";
+    // LE-reminders-email-from-naming (owner ruling 2026-08-05: SPLIT, not
+    // rename): the invite stream sends under its OWN from-address now.
+    process.env.INVITES_EMAIL_FROM = "convites@send.osteojp.pt";
     send.mockResolvedValue({ data: null, error: { name: "validation_error" } });
     await expect(sendInviteEmail(msg)).rejects.toThrow(/Resend send failed/);
   });
