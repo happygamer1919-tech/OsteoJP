@@ -383,13 +383,39 @@ describe("W12-02 - strong hour rule on the on-the-hour slot TOP, coincident with
     expect(html).toMatch(/<div[^>]*style="[^"]*top:96px[^"]*"[^>]*>[\s\S]*?Maria Silva/);
   });
 
-  it("keeps the :30 gridline faint (surface-muted), never strong", () => {
+  // W13-B (owner request, 2026-08-05): the faint :30 rule is GONE. Hour lines
+  // only. This test used to assert it was faint-but-present; it now asserts it
+  // is absent, because the property that matters flipped rather than vanished.
+  it("draws NO gridline at :30 — hour rules only", () => {
     const half = emptySlotsAt(render([]), "09:30");
     expect(half.length).toBeGreaterThan(0);
     for (const b of half) {
-      expect(b).toContain("border-t border-surface-muted");
+      expect(b).not.toContain("border-t border-surface-muted");
+      // And it must not have been "fixed" by promoting it to the strong rule.
       expect(b).not.toContain("border-v2-border");
     }
+  });
+
+  // THE GUARD ON THE REMOVAL. Deleting a visual is one character from deleting
+  // the thing under it, and the thing under it is a 30-minute booking target.
+  // Collapsing to an hour-granularity grid would look like a tidy follow-up and
+  // would silently halve the bookable start times.
+  it("keeps the :30 slot itself clickable, focusable and labelled", () => {
+    const half = emptySlotsAt(render([]), "09:30");
+    expect(half.length).toBeGreaterThan(0);
+    for (const b of half) {
+      expect(b).toContain("<button");
+      expect(b).toContain("09:30");
+      // Not disabled: an unblocked :30 slot is a real booking start time.
+      expect(b).not.toContain("disabled");
+    }
+  });
+
+  it("still renders the strong rule on the hour", () => {
+    // The removal must not have taken the hour rule with it.
+    const hour = emptySlotsAt(render([]), "10:00");
+    expect(hour.length).toBeGreaterThan(0);
+    for (const b of hour) expect(b).toContain("border-t border-v2-border");
   });
 });
 

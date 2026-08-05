@@ -192,12 +192,26 @@ export function AgendaGrid({
                 // Faint rule for the :30 slots; i===0 (08:00) omits it (the
                 // header/body divider is the first hour rule). Placement math
                 // (minToPx/daySlots/SLOT_HEIGHT) is UNCHANGED - only the edge.
+                // W13-B: hour rules ONLY. The faint :30 rule was removed on the
+                // owner's request; the grid reads as clean one-hour rows.
+                //
+                // THE 30-MINUTE SLOT UNDERNEATH IS UNCHANGED AND MUST STAY THAT
+                // WAY. `slots` is still a 30-minute grid, each slot is still a
+                // focusable <button> with its own onClick and aria-label, and a
+                // slot inside a blocked span is still DISABLED rather than
+                // merely covered — an overlay alone would let a keyboard user
+                // tab in and press Enter, which was the real "bookable over
+                // blocked time" hole (CB QA item 3). Only the border class went.
+                //
+                // Collapsing this to an hour-granularity grid would look like a
+                // tidy follow-up and would silently halve the bookable start
+                // times. agenda-grid.test.tsx pins the :30 slot as clickable.
                 const rule =
                   m % 60 === 0
                     ? i === 0
                       ? ""
                       : "border-t border-v2-border"
-                    : "border-t border-surface-muted";
+                    : "";
                 return (
                   <button
                     key={m}
