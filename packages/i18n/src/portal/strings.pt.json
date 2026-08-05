@@ -72,7 +72,18 @@
     "logout": "Terminar sessão",
     "session_expired": "A sua sessão expirou. Por favor entre novamente.",
     "activate_req_done": "Concluído: ",
-    "activate_req_pending": "Pendente: "
+    "activate_req_pending": "Pendente: ",
+    "otp_title": "Entrar com o seu telemóvel",
+    "otp_phone_label": "Número de telemóvel",
+    "otp_send": "Enviar código",
+    "otp_code_label": "Código de 6 dígitos",
+    "otp_verify": "Entrar",
+    "otp_sent": "Se o número estiver registado, enviámos um código por SMS.",
+    "otp_refused": "Não foi possível entrar. Confirme o código e tente novamente, ou contacte a clínica.",
+    "otp_rate_limited": "Demasiadas tentativas. Aguarde alguns minutos e tente novamente.",
+    "otp_no_phone": "Não temos um número de telemóvel associado à sua ficha. Contacte a clínica para o registar.",
+    "otp_landline": "O número associado à sua ficha não recebe SMS. Contacte a clínica para registar um telemóvel.",
+    "otp_shared_number": "Não foi possível confirmar a sua identidade a partir deste número. Contacte a clínica."
   },
   "dashboard": {
     "greeting": "Olá, {{name}}",
