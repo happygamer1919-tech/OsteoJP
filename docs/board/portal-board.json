@@ -519,16 +519,16 @@
     {
       "id": "WF-02",
       "title": "Owner ruling: patient confirm-from-SMS is deferred post-launch",
-      "lane": "in_flight",
+      "lane": "blocked_on_people",
       "home_lane": "in_flight",
-      "status": "todo",
+      "status": "blocked",
       "priority": "medium",
       "owner_terminal": "purple",
       "gate": "owner_authorizo",
       "evidence": null,
-      "blocked_on": null,
-      "last_checkpoint": "2026-08-04",
-      "notes": "RULING, VERBATIM, OWNER 2026-08-04:\n\n\"Patient confirm-from-SMS is deferred post-launch. No short-link scheme is built pre-launch. Counsel's confirm-only token row stays enforced server-side. For launch the confirm action is delivered by the 48h email channel only. Next session verifies whether the approved email body already carries the confirm link; if it does not, that gap returns to Ivan as a JP re-approval question, never as a silent wording change.\"\n\nWHY THIS RULING EXISTS. The token is too long for a single SMS segment, so apps/web/lib/reminders/dispatch.ts sends the 24h SMS with the clinic phone number and NO LINK. Counsel's per-offset matrix (docs/rgpd-token-flow.md section 5) gives that offset confirm-only, and W13-01 enforces it inside the signature - a confirm-scoped token refuses cancel before any database contact. So the RULE is built and unit-tested; only its DELIVERY channel is absent.\n\nNEXT SESSION'S CHECK, and it is a real one: read the approved 48h email body in apps/web/lib/reminders/notification-registry.ts and confirm it actually renders the rescheduleLink. All ten bodies are approved:true / approvedBy JP (#766). If the confirm link is NOT in the approved wording, adding it CHANGES AN APPROVED CLINICAL BODY, which re-opens JP's approval. That returns to Ivan as a question. It is never edited quietly."
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-08-05",
+      "notes": "RULING, VERBATIM, OWNER 2026-08-04:\n\n\"Patient confirm-from-SMS is deferred post-launch. No short-link scheme is built pre-launch. Counsel's confirm-only token row stays enforced server-side. For launch the confirm action is delivered by the 48h email channel only. Next session verifies whether the approved email body already carries the confirm link; if it does not, that gap returns to Ivan as a JP re-approval question, never as a silent wording change.\"\n\nWHY THIS RULING EXISTS. The token is too long for a single SMS segment, so apps/web/lib/reminders/dispatch.ts sends the 24h SMS with the clinic phone number and NO LINK. Counsel's per-offset matrix (docs/rgpd-token-flow.md section 5) gives that offset confirm-only, and W13-01 enforces it inside the signature - a confirm-scoped token refuses cancel before any database contact. So the RULE is built and unit-tested; only its DELIVERY channel is absent.\n\nNEXT SESSION'S CHECK, and it is a real one: read the approved 48h email body in apps/web/lib/reminders/notification-registry.ts and confirm it actually renders the rescheduleLink. All ten bodies are approved:true / approvedBy JP (#766). If the confirm link is NOT in the approved wording, adding it CHANGES AN APPROVED CLINICAL BODY, which re-opens JP's approval. That returns to Ivan as a question. It is never edited quietly.\n\nVERIFICATION DONE 2026-08-05, AND THE GAP IS REAL. This ruling instructed: 'Next session verifies whether the approved email body already carries the confirm link; if it does not, that gap returns to Ivan as a JP re-approval question, never as a silent wording change.' It has been verified against committed code, and the answer is nuanced enough that both halves matter.\n\nTHE MECHANISM CARRIES CONFIRM. apps/web/lib/reminders/dispatch.ts:219 signs the 48h email link with scope 'confirm_cancel' (and :446 likewise), the scope travels INSIDE the signature (link-token.ts:29-42), and the landing page derives its offered actions from that scope, rendering both a confirm and a cancel CTA (apps/web/app/r/[token]/page.tsx:54-61). So a patient who opens the 48h email link IS offered confirm. Counsel's per-offset matrix is satisfied by the code.\n\nTHE WORDING DOES NOT. The approved pt-PT 48h body (apps/web/lib/reminders/templates.ts:56-65) reads 'Para remarcar ou cancelar: {{reschedule_link}}' - reschedule or cancel. It never mentions confirming. The EN body says the same ('To reschedule or cancel'). So the confirm action is available but UNDISCOVERABLE: a patient reading that line has no reason to click in order to confirm.\n\nWHY THIS MATTERS AT LAUNCH RATHER THAN LATER. This ruling makes the 48h email the ONLY delivery channel for confirm pre-launch, because the token is too long for a single SMS segment and no short-link scheme is being built. If the only channel that can deliver confirm never tells the patient it can, then confirm effectively does not ship, even though every line of it is built and tested.\n\nNOT FIXED HERE, DELIBERATELY. Changing the body is a copy change to one of the ten bodies JP approved blanket on 2026-08-03, and any change re-opens the clinical review and enters the registry approved:false. The ruling itself forbids the silent edit in as many words. So it goes back as a question, and the card is blocked on Ivan to carry it to JP. RECOMMENDED DEFAULT if JP wants the smallest possible change: amend the 48h line only, to name confirming alongside remarcar/cancelar, leaving the 24h bodies untouched - the 24h SMS is confirm-only by counsel's matrix and carries no link at all."
     },
     {
       "id": "WF-03",
@@ -629,16 +629,20 @@
     {
       "id": "LE-spec-stale-test-patient",
       "title": "docs/SPEC.md:210 names a test patient that does not exist in production",
-      "lane": "loose_ends",
+      "lane": "shipped",
       "home_lane": "loose_ends",
-      "status": "todo",
+      "status": "shipped",
       "priority": "low",
       "owner_terminal": "purple",
       "gate": "green_self_merge",
-      "evidence": null,
+      "evidence": {
+        "kind": "pr",
+        "ref": "#800, branch docs/LE-spec-stale-test-patient. docs/SPEC.md:210 now names the designated production identity (ZZ TESTE, row created 2026-08-05) instead of Maria Joao Silva, who does not exist in production - that name came from apps/web/e2e/fixtures.ts, a LOCAL e2e seed fixture, and had been in the line since 2026-06-11. The corrected line carries an inline HTML comment recording what it used to say and why that was wrong, so the fix cannot be quietly reverted by someone who remembers the old name. Docs-only.",
+        "at": "2026-08-05"
+      },
       "blocked_on": null,
       "last_checkpoint": "2026-08-05",
-      "notes": "docs/SPEC.md:210 still reads \"blocked on Ivan activating test patient Maria Joao Silva\", open since 2026-06-11. That patient does NOT exist in production - the name comes from apps/web/e2e/fixtures.ts, a LOCAL e2e seed fixture.\n\nThis misled PURPLE during INC-05 into drafting a production fix block against a fixture name. Ivan caught it: \"I do not have a Maria Joao Silva\". Transcribing a doc line and a test fixture into a prod instruction is exactly the failure the re-derive rule exists to prevent, and the doc will mislead the next reader the same way.\n\nFIX: correct the line to name the real designated identity (the ZZ TESTE row created 2026-08-05) or strike it."
+      "notes": "docs/SPEC.md:210 still reads \"blocked on Ivan activating test patient Maria Joao Silva\", open since 2026-06-11. That patient does NOT exist in production - the name comes from apps/web/e2e/fixtures.ts, a LOCAL e2e seed fixture.\n\nThis misled PURPLE during INC-05 into drafting a production fix block against a fixture name. Ivan caught it: \"I do not have a Maria Joao Silva\". Transcribing a doc line and a test fixture into a prod instruction is exactly the failure the re-derive rule exists to prevent, and the doc will mislead the next reader the same way.\n\nFIX: correct the line to name the real designated identity (the ZZ TESTE row created 2026-08-05) or strike it.\n\nSHIPPED 2026-08-05 (#800). Fixed by naming the real identity AND by recording the failure inline, because the value here is not the corrected string, it is that the next reader cannot repeat the mistake. Transcribing a test fixture into a production instruction is the exact class WAVE-13.md section 1.6's re-derive rule exists to end."
     },
     {
       "id": "WF-04",
