@@ -548,3 +548,59 @@ each is now in the repository rather than in a habit.**
 terms-acceptance): the block ends with `check-migration-tables.mjs` naming that
 migration's tables, and it begins with `git fetch` plus an explicit
 `git checkout origin/<branch>`. Both halves, every time.
+
+## Supabase Auth SMTP: the sender was a gmail.com address (2026-08-05)
+
+**Class: fail-closed-invisible.** The system refused correctly and told nobody.
+Same shape as the INC-05 hook miss, and the reason it survived from setup is that
+nothing anywhere reported it.
+
+**Found state**, from the owner's dashboard on 2026-08-05: Supabase custom SMTP
+enabled, host `smtp.resend.com`, port 465, username `resend` — and the **Sender
+email address set to `clinic.osteojp@gmail.com`**. Resend refuses unverified
+sender domains, and `gmail.com` is a domain this clinic can never verify. So
+**every Supabase auth email failed from the moment SMTP was configured**:
+password recovery, sign-in links, email-change confirmations. No error in the
+app, no bounce to the clinic, no dashboard signal.
+
+**Fix**, dashboard-side, minimal: Sender email address → `no-reply@send.osteojp.pt`.
+Sender name `OsteoJP` kept, no other field touched, stored credential intact.
+
+**Live verification**, owner's screen, 2026-08-05 11:36: an auth email requested
+from the **deployed** login page arrived within one minute. Sender
+`OsteoJP <no-reply@send.osteojp.pt>`, subject "Your sign-in link". The link was
+deliberately not clicked and left to expire — correct, since clicking mints a
+session.
+
+**Why the code sweeps could never have found it.** #763 hardened the notification
+path and #778 the invite path, both by reading env vars and boot assertions. This
+sender is not an env var and not in the repository: it is dashboard state in a
+third-party console. `apps/api/lib/notify/clients.ts:53-56` already recorded the
+underlying rule — the verified Resend identity is `send.osteojp.pt` and a
+root-domain sender is rejected — and the same rule was being broken one
+configuration surface away, where no test could reach.
+
+### The three senders, config ground truth
+
+| Stream | Sender | Where it is configured |
+|---|---|---|
+| Auth mail | `no-reply@send.osteojp.pt` | Supabase Auth SMTP, **dashboard only** |
+| Staff invites | `convites@send.osteojp.pt` | `INVITES_EMAIL_FROM`, osteojp-platform, all scopes, non-Sensitive |
+| Patient reminders | — | `REMINDERS_EMAIL_FROM`, unchanged |
+
+Three streams, three configuration surfaces, one verified domain. **The auth one
+is the only sender not held in an env var**, which is exactly why it was
+invisible, and is worth re-checking by hand whenever the Resend identity changes.
+
+### Two things the fix surfaced
+
+1. **The auth email body is Supabase's stock English** ("Your sign-in link",
+   "Follow the link below to sign in") in a pt-PT product. Carded as
+   `LE-supabase-auth-templates-ptpt`. Scope shrinks sharply once LOOP 3 replaces
+   patient auth with our own pt-PT SMS transport, so the recommendation is to
+   translate the residual staff templates afterwards rather than duplicate work.
+2. **The portal offers magic-link login, which Decision D forbids**, and this fix
+   is what made it functional — the verification email IS that path working.
+   Until 2026-08-05 it failed silently on the gmail sender and the violation was
+   inert. Carded as `SEC-portal-magic-link`. The fix was still right: staff
+   recovery needed it, and an inert violation is not a fixed one.
