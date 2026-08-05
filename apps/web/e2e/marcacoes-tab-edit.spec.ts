@@ -23,6 +23,26 @@
  * every retry onto a distinct, far-away future day. Strict-mode safety: rows
  * share accessible names ("Gerir marcação", "Reagendar", "Estado"), so every
  * locator is scoped to a single row Card via its unique date·time text.
+ *
+ * DAY BAND 51-55, AND WHY IT IS PRIVATE. Offsets are hand-assigned per spec and
+ * nothing enforces uniqueness, so two specs can silently pick the same day. That
+ * is exactly what happened: this file used 45 and so did
+ * marcacao-patient-link.spec.ts:31, and BOTH book PATIENTS.maria with
+ * THERAPIST_NAME at 09:00. Specs run alphabetically with workers: 1, so
+ * marcacao-patient-link always took the slot first and PL-02 (a) always hit a
+ * genuine therapist double-booking. The product was correct to refuse it; the
+ * test was wrong to ask.
+ *
+ * That failure hid for weeks because `retries: CI ? 2 : 0` masked it: attempt 1
+ * collided, retry 1 moved to base+145, found an empty day and went green, so the
+ * suite reported success. It only surfaced on a workflow_dispatch proving run,
+ * where the retries input defaults to 0. Retries do not re-run this test, they
+ * run a DIFFERENT one.
+ *
+ * 51-69 is unused by every other spec (the next occupied offsets are 70, 80, 90),
+ * so this file now owns 51-55 outright. Before adding an offset anywhere in the
+ * suite, grep for it: a shared DAY is only safe when the time or the therapist
+ * differs, and nothing checks that for you.
  */
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { openNewAppointment, fillAppointment, fillTime } from "./helpers";
@@ -75,11 +95,22 @@ async function book(page: Page, patient: string, date: string, time: string) {
   //    once the label flips it also matches "Guardar mesmo assim" - two buttons
   //    for one locator. `exact: true` pins the first click to the real Guardar.
   //
-  // NOT CLAIMED AS THE WHOLE ROOT CAUSE. The control run's artifact
-  // (run 30827445090) shows a failure where the appointment HAD been created
-  // and the drawer stayed open in the override state anyway, which neither of
-  // the above fully explains. Both defects above are real and worth removing on
-  // their own; if this test fails again, read that artifact before theorising -
+  // THE ROOT CAUSE IS NOW KNOWN, AND IT WAS NEITHER OF THOSE. It was the day
+  // collision documented in this file's header: another spec had already booked
+  // this exact slot, so the single Guardar click got a real therapist-conflict
+  // refusal. Settled by extracting the failure VIDEO from run 30827445090 and
+  // reading it frame by frame: at t≈1.5s, BEFORE any submit, the agenda already
+  // showed that appointment. The row was never created by this drawer, which is
+  // the assumption every earlier theory had been built on, including the two
+  // above. Corroborated three ways: the failing window emits none of the
+  // `scheduling: reminder enqueue failed` lines that every committed booking in
+  // the run produces; `createAppointment` returns on conflict BEFORE its INSERT;
+  // and the spec that books first passed with a single click, proving the slot
+  // was empty when it ran.
+  //
+  // The two fixes below are kept because both defects are real on their own
+  // terms, and either could bite once the availability advisory genuinely fires.
+  // Neither was the cause. If this test fails again, read the artifact -
   // and do not mark it fixed on one green run.
   const saveAnyway = dialog.getByRole("button", { name: /Guardar mesmo assim/i });
   await Promise.race([
@@ -126,7 +157,7 @@ async function openConsultas(page: Page) {
 test("reschedule from Consultas is blocked by a therapist conflict, then overridable (W5-09)", async ({
   page,
 }, testInfo) => {
-  const date = bandDay(40, testInfo.retry);
+  const date = bandDay(51, testInfo.retry);
   // Two of Maria's appointments same day/therapist: 09:00 and 11:00.
   await book(page, PATIENTS.maria.name, date, "09:00");
   await book(page, PATIENTS.maria.name, date, "11:00");
@@ -155,7 +186,7 @@ test("reschedule from Consultas is blocked by a therapist conflict, then overrid
 test("Estado control offers only lifecycle-legal transitions and applies one (W5-09)", async ({
   page,
 }, testInfo) => {
-  const date = bandDay(41, testInfo.retry);
+  const date = bandDay(52, testInfo.retry);
   await book(page, PATIENTS.maria.name, date, "13:00");
 
   await openConsultas(page);
@@ -180,7 +211,7 @@ test("Estado control offers only lifecycle-legal transitions and applies one (W5
 });
 
 test("cancel a row from Consultas (W5-09)", async ({ page }, testInfo) => {
-  const date = bandDay(42, testInfo.retry);
+  const date = bandDay(53, testInfo.retry);
   await book(page, PATIENTS.maria.name, date, "15:00");
 
   await openConsultas(page);
@@ -201,7 +232,7 @@ test("cancel a row from Consultas (W5-09)", async ({ page }, testInfo) => {
 test("PL-02 (b): the Marcações row shows who created the appointment and when", async ({
   page,
 }, testInfo) => {
-  const date = bandDay(44, testInfo.retry);
+  const date = bandDay(54, testInfo.retry);
   await book(page, PATIENTS.maria.name, date, "16:00");
 
   await openConsultas(page);
@@ -217,7 +248,7 @@ test("PL-02 (b): the Marcações row shows who created the appointment and when"
 test("PL-02 (a): reschedule from the Marcações tab saves and the row reflects the new time", async ({
   page,
 }, testInfo) => {
-  const date = bandDay(45, testInfo.retry);
+  const date = bandDay(55, testInfo.retry);
   await book(page, PATIENTS.maria.name, date, "09:00");
 
   await openConsultas(page);
