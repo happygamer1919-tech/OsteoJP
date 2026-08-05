@@ -2,7 +2,7 @@
 
 > Engineering overview of the OsteoJP unified clinic platform. Single source of truth for system shape, stack, data model summary, permission model, key flows, CI gates, integration map, and deployment topology.
 >
-> Companion documents: [`mega-plan.md`](./mega-plan.md) (task plan), [`claude-md-reference.md`](./claude-md-reference.md) (architectural rules), [`tech-stack.md`](./tech-stack.md), [`handoff-brief.md`](./handoff-brief.md).
+> Companion documents: [`mega-plan.md`](./mega-plan.md) (task plan), [`claude-md-reference.md`](./claude-md-reference.md) (architectural rules), [`handoff-brief.md`](./handoff-brief.md).
 >
 > Schema is the authoritative source for table shape — not this doc. See `packages/db/src/schema.ts`.
 
@@ -568,7 +568,6 @@ Items needing decision from the lead, owner, or AI partner before they can be re
 
 - [`mega-plan.md`](./mega-plan.md) — phased task plan
 - [`CLAUDE.md`](../CLAUDE.md) — architectural rules (the source this doc transcribes)
-- [`tech-stack.md`](./tech-stack.md) — stack rationale
 - [`handoff-brief.md`](./handoff-brief.md) — team context
 - [`brand-tokens.md`](./brand-tokens.md) — visual identity
 - [`brand-voice.md`](./brand-voice.md) — copy and tone reference

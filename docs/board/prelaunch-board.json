@@ -2,7 +2,7 @@
   "board": "OsteoJP - Pre-Launch Board",
   "schema_version": 1,
   "phase": "pre-launch",
-  "as_of": "2026-08-03",
+  "as_of": "2026-08-05",
   "renders_to": "claude.ai artifact (a RENDER of this file; this JSON is the source of truth)",
   "doctrine": "A board claim is never truth on its own. The evidence field carries the proof. GREEN updates this JSON at every checkpoint and re-renders. A card may not enter status=shipped with evidence=null; a launch gate may not be state=pass with evidence=null. See docs/board/BOARD-SPEC.md; enforced by docs/board/validate-board.mjs.",
   "lanes": [
@@ -55,7 +55,7 @@
   "launch_gate": {
     "denominator": 9,
     "readiness_passed": 8,
-    "note": "The launch readiness figure is passed-over-nine. It is NOT a percentage of work done and it is NEVER estimated. No partial credit: each condition is pass or fail.",
+    "note": "The launch readiness figure is passed-over-nine. It is NOT a percentage of work done and it is NEVER estimated. No partial credit: each condition is pass or fail. POST-LAUNCH BACKLOG, removed from this board 2026-08-05 by owner decision and recorded here so it is not lost: (1) LE-resend-deferred, emailed staff invite and login links. The code is finished and shipped; it needs four env vars on Vercel (INVITES_LIVE_SEND=true, RESEND_API_KEY, STAFF_INVITE_REDIRECT_URL pointing at /auth/update-password, and REMINDERS_EMAIL_FROM set explicitly to an address at send.osteojp.pt, which is the VERIFIED Resend identity; the root domain is not, and the code default falls back to it). Links work today by showing on screen. (2) PL-26, undo a bloquear lote batch as one action, needing a nullable batch_id on time_off and therefore a migration plus an owner apply cycle. Convenience, not correctness; blocks stay individually removable. Both were deferred repeatedly and neither blocks launch, so they leave a PRE-LAUNCH board.",
     "conditions": [
       {
         "id": "G1",
@@ -88,10 +88,10 @@
         "blocked_on": "ivan",
         "evidence": {
           "kind": "screenshot",
-          "ref": "owner-attested 20260729 rotation + owner risk-acceptance 20260802 (full credential rotation deferred to post-launch)",
+          "ref": "owner-attested 20260729 rotation + owner risk-acceptance 20260802. NOT a clean pass: the rotated password was pasted into a chat on 2026-07-30 and has NOT been rotated again. The owner accepted that exposure and deferred the rotation to post-launch.",
           "at": "2026-08-02"
         },
-        "notes": "DONE (owner-terminal, owner-attested 20260729): rotated the NEW prod DB password and propagated to every consumer (Vercel platform/api/portal env + local .env). Owner-terminal only; GREEN never sources prod creds. Keep the Supabase/Vercel confirmation on file for CYAN spot-check. RE-OPENED 2026-07-31 (GREEN): the rotation on 2026-07-29 did happen and was propagated - that part of the record stands. But the rotated password was then pasted into a chat on 2026-07-30, so the property this gate exists to certify (the prod DB credential is not compromised) is no longer true, and the exposure is NEWER than the evidence. Tracked as INC-04-prod-db-password-exposed. Re-attest with a fresh rotation + propagation date. RE-CLOSED 2026-08-02 BY OWNER RISK ACCEPTANCE, not by a new rotation. GREEN flipped this to fail on 2026-08-02 because the rotated password was later pasted into a chat; the owner has ruled the exposure acceptable until the work completes, and will then rotate every password and token. Recorded so the pass is not mistaken for \"the credential was never exposed\". Tracked by INC-04-prod-db-password-exposed."
+        "notes": "DONE (owner-terminal, owner-attested 20260729): rotated the NEW prod DB password and propagated to every consumer (Vercel platform/api/portal env + local .env). Owner-terminal only; GREEN never sources prod creds. Keep the Supabase/Vercel confirmation on file for CYAN spot-check. RE-OPENED 2026-07-31 (GREEN): the rotation on 2026-07-29 did happen and was propagated - that part of the record stands. But the rotated password was then pasted into a chat on 2026-07-30, so the property this gate exists to certify (the prod DB credential is not compromised) is no longer true, and the exposure is NEWER than the evidence. Tracked as INC-04-prod-db-password-exposed. Re-attest with a fresh rotation + propagation date. RE-CLOSED 2026-08-02 BY OWNER RISK ACCEPTANCE, not by a new rotation. GREEN flipped this to fail on 2026-08-02 because the rotated password was later pasted into a chat; the owner has ruled the exposure acceptable until the work completes, and will then rotate every password and token. Recorded so the pass is not mistaken for \"the credential was never exposed\". Tracked by INC-04-prod-db-password-exposed. INC-04 FOLDED IN AND ITS CARD REMOVED 2026-08-05 at owner request. Recording the substance here so the board does not assert a safety property that is known false: the production database password was pasted into a chat on 2026-07-30, which is NEWER than the 2026-07-29 rotation this gate attests, and it has not been rotated since. The owner ruled the exposure ACCEPTABLE and said he will rotate every password and token once the work is done. So this gate passes by RISK ACCEPTANCE, not because the credential is known safe, and that distinction is the whole reason this paragraph exists. THE ROTATION IS STILL OWED. It is the session-pooler credential used for migrations (DATABASE_URL_DIRECT), i.e. full write access to clinical data under GDPR. Owner terminal only; GREEN never touches prod credentials. Scope the owner set is broader than the DB password alone: every password and token."
       },
       {
         "id": "G4",
@@ -235,20 +235,6 @@
       "blocked_on": null,
       "last_checkpoint": "2026-07-27",
       "notes": "SHIPPED - owner merged #671 (2026-07-27) after the visual gate. Optional free-text observacoes typed in the dialog, rendered in the PDF between the treatment sentence and 'Por ser verdade'. TRANSIENT (no table/column, no PL-03b). Threaded via pure declaracaoBodyParagraphs (empty renders byte-identical); maxLength 500 protects the single-page layout. Full gates + e2e green."
-    },
-    {
-      "id": "PL-03b",
-      "title": "Declaracao observacoes persistence - NOT required now (future owner decision)",
-      "lane": "loose_ends",
-      "home_lane": "loose_ends",
-      "status": "blocked",
-      "priority": "medium",
-      "owner_terminal": "green",
-      "gate": "owner_merge",
-      "evidence": null,
-      "blocked_on": "ivan",
-      "last_checkpoint": "2026-08-02",
-      "notes": "Recon (2026-07-27) proved declaracoes are TRANSIENT (no DB table/column; generate.ts:20-23 'nothing persisted'), so PL-03a's UI+PDF change is the whole fix and needs NO migration. No PL-03b build loop authored. Persisting a declaracao would be a future owner design decision touching immutability rule 8. See PL-03a section 'Why there is no PL-03b'. Re-confirmed NOT REQUIRED 2026-07-31: a future owner decision, parked deliberately. PL-20 did NOT change this - it made the declaracao stop ASKING for a NIF it already has, which is a different surface from persisting observacoes. HELD 2026-08-02 at owner request (\"keep this one as blocked for now\"). Unchanged otherwise: not required, awaiting a future owner decision."
     },
     {
       "id": "PL-04",
@@ -519,20 +505,6 @@
       "blocked_on": null,
       "last_checkpoint": "2026-08-03",
       "notes": "Fresh canary (old one died in the purge). Reminder lead windows = 48h + 24h before start (offsets.ts:20-22); a reminder is scheduled only if sendAt = startsAt - offset > now (offsets.ts:43). To fire ~15min after booking: book the canary appointment at now + 24h + 15min -> the 24h reminder sends in ~15min. The reminder fires ONLY via the appointment/scheduled Inngest event, emitted by createAppointment (enqueueAppointmentReminders) - a raw DB insert does NOT trigger it, so canary-CREATE = book through the prod UI (canary patient with the owner's phone), NOT a DB script. due-reminder set computed at functions.ts:66 (computeDueReminders). REMINDERS_LIVE_SEND is checked at SEND time (clients.ts:45), NOT at schedule time - so flipping it false tomorrow AM ALSO suppresses reminders already queued tonight. Ivan books the canary in the UI himself (types the phone there; the number never enters AI context). GREEN stages canary-CLEANUP ONLY (delete patient + appt by id, 0/0 verify), parameterised by the patient id Ivan returns after creation. BLOCKED on Ivan's console findings + his UI booking. STILL WAITING 2026-07-31: this is G2, one of the two gates between the platform and launch, and the only one the owner can close alone. Needs REMINDERS_LIVE_SEND + the Twilio credentials + INNGEST_EVENT_KEY set, then a real booking made through the prod UI at now+24h+15min so the scheduled Inngest event fires. Nothing in the reminder path is build-time, so a missing value never fails a deploy - it silently degrades to sandbox, which is exactly why this needs a live canary rather than a config review. IN FLIGHT 2026-08-02 per the owner - actively being worked, no longer merely waiting. SHIPPED 2026-08-03: owner proved and confirmed the canary, closing G2. The reminder pipeline is live-verified rather than config-reviewed, which was the whole point of this card."
-    },
-    {
-      "id": "LE-resend-deferred",
-      "title": "Resend live email for invite/login links - DEFERRED post-launch",
-      "lane": "loose_ends",
-      "home_lane": "loose_ends",
-      "status": "todo",
-      "priority": "medium",
-      "owner_terminal": "green",
-      "gate": "owner_merge",
-      "evidence": null,
-      "blocked_on": null,
-      "last_checkpoint": "2026-08-02",
-      "notes": "DEFERRED to post-launch (owner 2026-07-28). Ativar login shows the set-password link on screen; Ivan creates logins himself and passes links directly, so emailed delivery is a nice-to-have, not a launch blocker. Enable later: INVITES_LIVE_SEND=true + RESEND_API_KEY + a verified osteojp.pt sender + STAFF_INVITE_REDIRECT_URL -> /auth/update-password. Re-confirmed DEFERRED 2026-07-31: post-launch by owner decision, not blocked on anything. Invite/login links work today by showing the link on screen; only the emailing of them is deferred. DEFERRAL RE-CONFIRMED by the owner 2026-08-02. Invite and login links work today - the link is shown on screen instead of emailed - so this is convenience, not function."
     },
     {
       "id": "PL-09",
@@ -859,20 +831,6 @@
       "notes": "Owner CR 2026-07-31: \"users should only be able to clock in/out on the hour, for example at 9:00, 10:00 - here we need to make sure on our client portal that for them the only option to book appointments is fixed hourly, they can't book at :15th minute or half of hour\". FINDING: the portal never fabricates slots - they come from GET /api/v1/booking/slots -> listOpenSlots (apps/api/lib/appointments/store.ts:325), which expands each active availability template into a grid stepped by locations.slot_granularity_min (migration 0041, default 30). TWO things are needed, not one: (a) the step becomes 60, and (b) the grid must be ALIGNED to the top of the hour - the series starts at the template's own start_time, so a therapist whose hours begin 09:30 would still produce 09:30 / 10:30 at a 60-minute step. The alignment half is code and self-merges; changing the stored granularity per location is data and is hard-gated. Staff-side booking is deliberately UNCHANGED - the agenda keeps free-form times, this constrains only what a patient may self-serve. Nothing in the product edits slot_granularity_min from the UI today. Q-PL-25-1 logged for whether hourly applies to every location. PROD READ 2026-08-02 corrects two things GREEN asserted. (1) BOTH clinics were ALREADY at slot_granularity_min = 60 before this session - GREEN said they sat at 30 and would need switching, inferring that from the 0041 default instead of reading prod. Patient booking was already hourly; no toggle is pending. (2) The alignment half was LOAD-BEARING, not theoretical: Linda-a-Velha has 10 ACTIVE availability templates starting off the hour (08:30 and 13:30). At a 60-minute step without alignment those emitted 08:30 / 09:30 / 10:30 - an hourly cadence never landing on an hour, exactly the trap PL-25 describes. Castelo Branco has 0 off-hour starts, so CB was unaffected either way. CONSEQUENCE worth knowing: with alignment, an 08:30 LV template now offers 09:00 first, so LV patients lose the 08:30 self-serve start. That is inherent to hourly booking and staff can still book 08:30 from the agenda."
     },
     {
-      "id": "PL-26",
-      "title": "Undo a bloquear lote batch as ONE action - time_off.batch_id + 'remover lote' (MIGRATION, apply-before-merge)",
-      "lane": "in_flight",
-      "home_lane": "in_flight",
-      "status": "todo",
-      "priority": "medium",
-      "owner_terminal": "green",
-      "gate": "owner_merge",
-      "evidence": null,
-      "blocked_on": null,
-      "last_checkpoint": "2026-08-03",
-      "notes": "Owner ticketed 2026-07-31 from Q-PL-22-1, raised by GREEN when PL-22 shipped. PL-22 writes N time_off rows in ONE transaction, but nothing marks them as one batch, so undoing a mistaken recurrence means deleting every block by hand - the exact tedium bloquear lote was built to remove, reappearing on the way out. WHY IT WAS NOT IN PL-22: it needs a batch_id column, i.e. a migration, and 0051 (PL-23) was already in flight - one migration at a time. 0051 is now APPLIED and verified on prod (2026-07-31), so that constraint is gone and this is unblocked. SHAPE: a nullable `batch_id uuid` on time_off (existing blocks keep NULL - they were never a batch, and NULL is the honest value for them), stamped with one generated id per createTimeOffBlockBatch call; the blocks list groups rows sharing a batch_id and offers 'Remover lote' beside the per-row Eliminar. Deleting a batch is a normal delete of the rows in it - time_off has no append-only invariant, unlike clinical_records and record_annulments - so no new doctrine is needed, but the control must say HOW MANY blocks it will remove before it does it, and must never reach beyond the batch. Reception already holds schedule:manage, so no capability change. GATES: the usual, plus db:check-journal and db:sync-supabase:check; this card's migration takes WHATEVER NUMBER IS FREE when it is finally built, and this note deliberately no longer names one (CORRECTED TWICE on 2026-08-03: it said 0052, which SCHED-W3-no-show-releases-slot had already taken and applied; it was then corrected to 0053, which PL-31 took the same day by being built first. Numbers follow build order, not reservations - naming one in a deferred card's notes is how the collision happened twice. The PL-15b primary_location_id backfill is still unbuilt and takes its number the same way.). Apply-BEFORE-merge: build, CI green, owner applies from the osteojp-prod-apply worktree with git checkout origin/<branch> detached, independent read of the column plus the __drizzle_migrations count delta, THEN merge. DEFERRED POST-LAUNCH by owner decision 2026-08-02, matching GREEN recommendation: it is convenience, not correctness, and it costs a migration. Blocks stay individually removable meanwhile."
-    },
-    {
       "id": "PL-27",
       "title": "Reception can block the schedule from the AGENDA, and repeat it - stale settings:manage gate hid an existing control",
       "lane": "shipped",
@@ -889,20 +847,6 @@
       "blocked_on": null,
       "last_checkpoint": "2026-07-31",
       "notes": "Owner report 2026-07-31, after PL-22 shipped: 'reception still doesn't have batch schedule block, same as you made in the new appointment panel, also reception doesn't have that button I have for example to press there in agenda bloquear horario and in agenda she can block something in the day, it's something existent but not visible on their interface for now'. TWO symptoms, ONE root cause, and the owner's reading of it is exactly right - the feature exists and the interface hides it. FINDING: agenda/page.tsx gated the Bloquear horario affordance on settings:manage, which owner and admin hold and reception does NOT. That gate was CORRECT when W12-28 shipped it, and went stale at PL-09 Phase 5, which created the explicit schedule:manage capability, granted it to reception ('reception OWNS scheduling for their location's therapists'), and moved every time_off write onto it. The server has asserted schedule:manage ever since; only the UI check was left behind, and its own comment still claimed the two were 'the SAME capability createTimeOffBlock server-enforces' - a claim that stopped being true and was never re-read. So reception could always have blocked time; nothing in the agenda ever offered it to them. SECOND HALF: PL-22 put bulk blocking only in the per-therapist Bloquear horario modal on Horarios/Equipa. The agenda is where the day is actually managed, so from where reception works, batch blocking did not exist - which is why the owner reports it missing even though PL-22 merged. The agenda dialog now offers Repetir bloqueio using the SAME generateLoteSchedule + createTimeOffBlockBatch, so all three recurrence forms (agendar lote, bloquear lote, agenda block) behave identically. No migration, no capability change, no relaxed guard: the server re-asserts schedule:manage AND the location scope (resolveScheduleScope + assertTargetInScheduleScope), so reception can only block a therapist at their own clinic. SHIPPED (#729, no migration). The gate now reads schedule:manage, matching what createTimeOffBlock actually asserts, and the agenda dialog gained 'Repetir bloqueio' driven by the same generateLoteSchedule + createTimeOffBlockBatch as Agendar lote and the Horarios modal - three recurrence forms, one generator, so they cannot drift. The test added is an INVARIANT (whoever may WRITE a block is who may SEE the control), so a future regate breaks a test instead of silently hiding a control again."
-    },
-    {
-      "id": "INC-04-prod-db-password-exposed",
-      "title": "Prod DB password was pasted into a chat on 2026-07-30 - rotate again",
-      "lane": "incidents",
-      "home_lane": "incidents",
-      "status": "blocked",
-      "priority": "medium",
-      "owner_terminal": "ivan",
-      "gate": "owner_authorizo",
-      "evidence": null,
-      "blocked_on": "ivan",
-      "last_checkpoint": "2026-08-02",
-      "notes": "Raised by GREEN 2026-07-31 while auditing the board for accurate status. The production database password was pasted into a chat on 2026-07-30. G3 ('NEW_DB_PASSWORD rotated with full propagation') is attested 2026-07-29 - so the exposure is NEWER than the evidence, and the credential G3 certifies as safely rotated is the one that was exposed. This was carried only in an assistant memory note and appears nowhere in the board or QUESTIONS, which is how it survived two sessions. WHY IT MATTERS beyond hygiene: this is the session-pooler credential used for migrations (DATABASE_URL_DIRECT), i.e. full write access to clinical data, under GDPR. FIX (owner terminal only, GREEN never touches prod creds): rotate in Supabase, then propagate to the three Vercel projects (platform / api / portal) and ~/osteojp-secrets/new-prod.env, exactly as on 2026-07-29. Then re-attest G3 with the new date - the gate is only true again once the propagation is done, because a half-propagated rotation breaks migrations instead of securing them. GREEN has flipped G3 to fail rather than leave the board asserting a safety property that is known false; flip it back in one line if the owner judges the exposure acceptable. OWNER RULING 2026-08-02: the exposure is ACCEPTED for now - \"I will rotate all possible pass and tokens after we are fully done\". G3 is therefore returned to PASS and readiness to 7/9. This card stays OPEN as the reminder that the rotation is owed, and it is deliberately NOT marked shipped: accepting a risk is not the same as removing it. The scope the owner set is broader than this card - every password and token, not just the DB - so treat this as the anchor for that sweep."
     },
     {
       "id": "PL-28",
@@ -1033,7 +977,7 @@
     {
       "lane": "in_flight",
       "home_lane": "in_flight",
-      "status": "todo",
+      "status": "in_flight",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": null,
@@ -1042,12 +986,12 @@
       "id": "SCHED-edit-half-applied-on-conflict",
       "title": "Editing an appointment saves the non-time fields BEFORE checking the new time is free, so a conflict leaves a half-applied edit",
       "priority": "high",
-      "notes": "FOUND 2026-08-05 while root-causing LE-marcacoes-tab-edit-flake. Real product bug, verified in code, NOT a test issue.\n\nWHERE: apps/web/app/agenda/appointment-drawer.tsx submit(). Two sequential server calls with no shared transaction:\n  1. updateAppointment(editing.id, patch, ...) writes and COMMITS the non-temporal patch: serviceId, room, notes, status.\n  2. THEN, if the date/time/therapist/location changed, rescheduleAppointment(...) runs and CAN return a conflict. handleResult returns false and submit() returns early, WITHOUT succeed().\n\nWHAT THE USER SEES: they open a booking, change the service AND move it onto a slot that turns out to be occupied. The drawer stays open showing a conflict and a 'Guardar mesmo assim' override. Everything about that screen says nothing was saved. The service change is ALREADY LIVE. If they press Cancelar, believing they backed out, the change stays.\n\nWHY IT MATTERS HERE SPECIFICALLY: reception is the heaviest user of this drawer, and 'I cancelled out of it' is the normal reaction to a conflict warning. The record then disagrees with what the person believes they did, which is the same class of problem as a booking that silently does not save.\n\nRECOMMENDED FIX (owner decision, hence owner_merge): do the conflict check BEFORE committing the patch, so one refusal means nothing was written. Either move the availability/conflict check ahead of updateAppointment, or put both writes behind one server action in a single transaction. The second is cleaner and matches how createAppointment already behaves: it returns on conflict BEFORE its INSERT.\n\nNOT FIXED in PR #789, which is deliberately test-only."
+      "notes": "FOUND 2026-08-05 while root-causing LE-marcacoes-tab-edit-flake. Real product bug, verified in code, NOT a test issue.\n\nWHERE: apps/web/app/agenda/appointment-drawer.tsx submit(). Two sequential server calls with no shared transaction:\n  1. updateAppointment(editing.id, patch, ...) writes and COMMITS the non-temporal patch: serviceId, room, notes, status.\n  2. THEN, if the date/time/therapist/location changed, rescheduleAppointment(...) runs and CAN return a conflict. handleResult returns false and submit() returns early, WITHOUT succeed().\n\nWHAT THE USER SEES: they open a booking, change the service AND move it onto a slot that turns out to be occupied. The drawer stays open showing a conflict and a 'Guardar mesmo assim' override. Everything about that screen says nothing was saved. The service change is ALREADY LIVE. If they press Cancelar, believing they backed out, the change stays.\n\nWHY IT MATTERS HERE SPECIFICALLY: reception is the heaviest user of this drawer, and 'I cancelled out of it' is the normal reaction to a conflict warning. The record then disagrees with what the person believes they did, which is the same class of problem as a booking that silently does not save.\n\nRECOMMENDED FIX (owner decision, hence owner_merge): do the conflict check BEFORE committing the patch, so one refusal means nothing was written. Either move the availability/conflict check ahead of updateAppointment, or put both writes behind one server action in a single transaction. The second is cleaner and matches how createAppointment already behaves: it returns on conflict BEFORE its INSERT.\n\nNOT FIXED in PR #789, which is deliberately test-only.\n\nFIXED IN PR #792, awaiting merge. The reschedule now runs BEFORE the patch, because the reschedule is where conflicts come from, so a refusal leaves nothing written. That is what the conflict banner already implied and now it is true. The residual case (a room double-booking at the new time, after the move committed) is no longer silent: a new string tells the user the appointment WAS moved and which changes did not save. NOT marked shipped until #792 merges: an open PR is not evidence that anything landed. NOTE ON SCOPE: the complete fix is one server action in one transaction. That is a larger change to the busiest write path in the app and was deliberately not attempted here."
     },
     {
       "lane": "in_flight",
       "home_lane": "in_flight",
-      "status": "todo",
+      "status": "in_flight",
       "owner_terminal": "green",
       "gate": "owner_merge",
       "evidence": null,
@@ -1056,21 +1000,35 @@
       "id": "SCHED-commit-then-report-failure",
       "title": "Post-commit work sits inside the try that returns failure, so a SAVED booking can be reported to the user as an error",
       "priority": "medium",
-      "notes": "FOUND 2026-08-05 while root-causing LE-marcacoes-tab-edit-flake. Latent, not currently firing, but the shape is wrong.\n\nWHERE: apps/web/lib/scheduling/actions.ts createAppointment. After the transaction commits and result.ok is true, revalidatePath(AGENDA_PATH) and `await enqueueRemindersAfterCommit(...)` both run INSIDE the same try whose catch returns fail(\"create\", e). If either throws, the caller receives a failure for an appointment that IS saved. The same shape repeats in cloneAppointment, updateAppointment and rescheduleAppointment.\n\nWHAT THE USER WOULD SEE: 'erro' on a booking that actually exists. The natural response at the desk is to book it again, which produces a real double-booking. That is strictly worse than the error it is reporting.\n\nWHY IT IS ONLY LATENT TODAY: enqueueRemindersAfterCommit try/catches each individual send internally, so only a ReminderBurstError escapes, and a single create has one target. revalidatePath rarely throws. So the path is reachable but not currently exercised, which is exactly the kind of bug that waits for a bad day.\n\nRECOMMENDED FIX: move the post-commit work out of the try, or wrap it in its own try/catch that logs and still returns ok. A committed write must never be reported as a failure. Cheap, low risk, and it removes a double-booking route.\n\nNOT FIXED in PR #789, which is deliberately test-only."
+      "notes": "FOUND 2026-08-05 while root-causing LE-marcacoes-tab-edit-flake. Latent, not currently firing, but the shape is wrong.\n\nWHERE: apps/web/lib/scheduling/actions.ts createAppointment. After the transaction commits and result.ok is true, revalidatePath(AGENDA_PATH) and `await enqueueRemindersAfterCommit(...)` both run INSIDE the same try whose catch returns fail(\"create\", e). If either throws, the caller receives a failure for an appointment that IS saved. The same shape repeats in cloneAppointment, updateAppointment and rescheduleAppointment.\n\nWHAT THE USER WOULD SEE: 'erro' on a booking that actually exists. The natural response at the desk is to book it again, which produces a real double-booking. That is strictly worse than the error it is reporting.\n\nWHY IT IS ONLY LATENT TODAY: enqueueRemindersAfterCommit try/catches each individual send internally, so only a ReminderBurstError escapes, and a single create has one target. revalidatePath rarely throws. So the path is reachable but not currently exercised, which is exactly the kind of bug that waits for a bad day.\n\nRECOMMENDED FIX: move the post-commit work out of the try, or wrap it in its own try/catch that logs and still returns ok. A committed write must never be reported as a failure. Cheap, low risk, and it removes a double-booking route.\n\nNOT FIXED in PR #789, which is deliberately test-only.\n\nFIXED IN PR #792, awaiting merge. New afterCommit() helper wraps all four post-commit sites (create, clone, update, reschedule), so a committed write can never be reported as a failure. Errors are swallowed because the write is durable and every caller is best-effort, and logged with the step name and the error NAME only, never the message or a payload (rule 7). Four unit tests pin it, including one asserting a genuine TRANSACTION failure still returns not-ok, so the guard cannot paper over a real one. NOT marked shipped until #792 merges."
     },
     {
       "id": "LE-agenda-cards-stack-flake",
       "title": "agenda-cards.spec.ts:104 (three same-slot appointments stack vertically) fails at --retries=0",
-      "lane": "loose_ends",
-      "home_lane": "loose_ends",
-      "status": "todo",
+      "lane": "in_flight",
+      "home_lane": "in_flight",
+      "status": "in_flight",
       "priority": "medium",
       "owner_terminal": "green",
       "gate": "green_self_merge",
       "evidence": null,
       "blocked_on": null,
       "last_checkpoint": "2026-08-05",
-      "notes": "FOUND 2026-08-05 in the full-suite proving run 30986393217 (--retries=0) for PR #789. NOT caused by that PR, which is a test-only day-band change in a different spec, and NOT related to the marcacoes collision.\\n\\nSYMPTOM: getByRole(\"button\", { name: /Joao Pereira/ }) not found, 8s timeout, test takes 18.9s. So one of the three same-slot appointments it books never appeared on the agenda.\\n\\nWHY IT HAS BEEN INVISIBLE: the suite runs retries: CI ? 2 : 0, so this is normally retried and goes green. It is the SECOND test found hiding behind retries in two days. That is the pattern worth acting on, not just this one test.\\n\\nDO NOT THEORISE. Read the Playwright artifact from run 30986393217 first: the video and error-context named the cause outright for the marcacoes flake after three wrong theories, two of them mine."
+      "notes": "FOUND 2026-08-05 in the full-suite proving run 30986393217 (--retries=0) for PR #789. NOT caused by that PR, which is a test-only day-band change in a different spec, and NOT related to the marcacoes collision.\\n\\nSYMPTOM: getByRole(\"button\", { name: /Joao Pereira/ }) not found, 8s timeout, test takes 18.9s. So one of the three same-slot appointments it books never appeared on the agenda.\\n\\nWHY IT HAS BEEN INVISIBLE: the suite runs retries: CI ? 2 : 0, so this is normally retried and goes green. It is the SECOND test found hiding behind retries in two days. That is the pattern worth acting on, not just this one test.\\n\\nDO NOT THEORISE. Read the Playwright artifact from run 30986393217 first: the video and error-context named the cause outright for the marcacoes flake after three wrong theories, two of them mine.\n\nROOT-CAUSED AND FIXED IN PR #793, awaiting merge. Read the artifact first, as the doctrine says, and it named the cause outright: the page snapshot shows the chosen date 17/01/2027 against a week grid rendering '11 a 16 de janeiro'. 17/01/2027 is a SUNDAY, and the agenda week view is Mon-Sat (W3-08), so a Sunday date renders the PRECEDING week and the three appointments just booked were genuinely not in view. The locator was right and the page was right; the test picked a day the view cannot show. RUN_DAY_BASE is randomised per run, so it landed on a Sunday roughly one run in seven, and retries hid it because a retry re-derives the same calendar date. New futureWeekdayDate() in e2e/fixtures.ts steps a Sunday to the Monday. NOT marked shipped until #793 merges."
+    },
+    {
+      "id": "INC-06",
+      "title": "Live credentials sat in two committed docs since June - a dev DB password, its connection URLs, an IfThenPay key and a QA account password",
+      "lane": "incidents",
+      "home_lane": "incidents",
+      "status": "blocked",
+      "priority": "high",
+      "owner_terminal": "green",
+      "gate": "owner_authorizo",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-08-05",
+      "notes": "FOUND 2026-08-05 by a docs audit, not by a security review. Two committed files carried working credentials in cleartext. Verified by pattern match and line count only; GREEN did not read the values and they are not reproduced here or anywhere in this board.\\n\\nWHAT WAS EXPOSED:\\n1. docs/handoff-2026-06-12-session10.md - a Supabase database password, TWO full postgresql:// connection URLs for the dev project ufbkzbyghvxtosyrkgjq, and an IfThenPay backoffice key and password. That dev project is STILL LIVE and still referenced by scripts/perf-seed-loadtest.mjs.\\n2. docs/handoff-2026-06-17-session11.md - the password for a QA portal account that still exists.\\n\\nBOTH FILES ARE DELETED in this PR. THAT IS NOT THE FIX. They have been in git history since June, so anyone with repo access, now or in any past clone, still has them. ROTATION IS THE ONLY FIX.\\n\\nWHY IT SURVIVED TWO MONTHS: commit 2c8eeb9 scrubbed the SAME password out of HANDOFF-2026-06-18.md and missed the 06-12 file. A partial scrub reads like a completed one, which is how this stayed invisible while the team believed it had been handled.\\n\\nRELATION TO THE INC-04 RULING: the owner accepted the prod DB password exposure on 2026-08-02 and said he would rotate every password and token once the work was done. This is a SECOND, INDEPENDENT exposure, it is older, and it covers different credentials including a third-party payment key. It should join that sweep rather than start a separate argument, but it widens the sweep: dev Supabase, IfThenPay, and the QA portal account, not only prod Postgres.\\n\\nOWNER ACTIONS, all owner-terminal, GREEN never touches credentials:\\n1. Rotate the dev Supabase database password for ufbkzbyghvxtosyrkgjq and propagate it wherever that project is used.\\n2. Rotate the IfThenPay backoffice key and password.\\n3. Reset or deactivate the QA portal account.\\n4. Decide whether git history needs rewriting or whether rotation alone closes it. Rotation alone is normally sufficient and rewriting shared history is disruptive; that is a judgement call and it is yours.\\n\\nThis card stays OPEN until rotation is confirmed. Deleting the files closed the front door, not the record."
     }
   ]
 }

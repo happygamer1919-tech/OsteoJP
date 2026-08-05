@@ -5,7 +5,7 @@ Replaces Fisiozero + Stylus.pt with one multi-tenant system.
 
 ## Documentation
 - `CLAUDE.md` — project context and rules for Claude Code
-- `docs/tech-stack.md` — locked tech stack
+- `docs/architecture.md` — architecture and the locked tech stack
 - `docs/` — additional project documentation
 
 ## Reference
