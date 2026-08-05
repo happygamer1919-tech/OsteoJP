@@ -26,18 +26,52 @@
 // matters more here, not less: an in-app notification is rendered to staff who
 // may not be entitled to the underlying record.
 
-/** What the patient did. Both are patient-initiated writes, never staff ones. */
-export type PatientChangeKind = "cancelled" | "rescheduled";
+/**
+ * What the patient did. All four are patient-initiated writes, never staff ones.
+ *
+ * GREW FROM 2 KINDS TO 4 under owner ruling WF-04 (R1, 2026-08-05), which
+ * ratifies the extension as GROWTH of this contract rather than the redesign
+ * LOOP 2 is forbidden to perform. `appointment_request` is "pedido de marcacao";
+ * the pt-PT wording lives in packages/i18n, never in a type.
+ *
+ * `appointment_request` HAS NO PRODUCTION EMIT SITE YET, and that is a scope
+ * boundary rather than a gap. Request-mode — the multi-resource services that
+ * submit a pedido instead of confirming against one therapist's calendar — is
+ * built by LOOP 4 (Decision C, WAVE-13.md section 1.4). A repo-wide search for
+ * "pedido de marca" finds it only in documentation. The kind is defined and the
+ * centre handles it now so LOOP 4 adds one emit call rather than reopening this
+ * contract; until then it is exercised by tests only.
+ */
+export type PatientChangeKind =
+  | "booked"
+  | "cancelled"
+  | "rescheduled"
+  | "appointment_request";
 
 /**
  * Who must see it. Reception is a ROLE (all reception users of the tenant); the
- * therapist is the one assigned to the appointment, by id.
+ * therapists are those assigned to the appointment, by id.
+ *
+ * PLURAL SINCE WF-05 (R2, 2026-08-05). JP's standing ruling of 2026-08-03 is
+ * that every patient-initiated change reaches reception AND the assigned
+ * therapist. Dual-participant services exist — Massagem 4 Maos, Sessao Familia —
+ * and notifying only one of two assigned therapists would leave someone who is
+ * on the appointment unaware the patient moved it, which is the failure that
+ * ruling forbids. So BOTH are notified, derived from the standing ruling rather
+ * than guessed. Notifying the primary only would have been a NEW restriction JP
+ * never stated.
  */
 export type NotificationAudience = {
   /** Every reception user in the tenant. */
   reception: true;
-  /** The assigned practitioner, by id. Never by name. */
-  practitionerId: string;
+  /**
+   * The assigned practitioners, by id. Never by name. One entry for an ordinary
+   * appointment, more for a dual-participant service. Must be non-empty: an
+   * appointment with no practitioner cannot be booked (booking.ts throws
+   * `no_therapist` before it gets here), so an empty array means a caller built
+   * the event wrongly and the fan-out would silently reach reception only.
+   */
+  practitionerIds: string[];
 };
 
 /**
@@ -74,7 +108,8 @@ export const stubConsumer: PatientChangeConsumer = async (e) => {
   console.info(
     `[notifications] patient-change NOT DELIVERED (stub consumer, centre not built yet) ` +
       `kind=${e.kind} tenant=${e.tenantId} appointment=${e.appointmentId} ` +
-      `practitioner=${e.audience.practitionerId} reception=true occurredAt=${e.occurredAt}`,
+      `practitioners=${e.audience.practitionerIds.join(",")} reception=true ` +
+      `occurredAt=${e.occurredAt}`,
   );
   return { delivered: false };
 };

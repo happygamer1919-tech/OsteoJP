@@ -68,7 +68,7 @@ describe("both patient write paths emit", () => {
       tenantId: "t1",
       appointmentId: "a1",
       patientId: "p1",
-      audience: { reception: true, practitionerId: "prac-9" },
+      audience: { reception: true, practitionerIds: ["prac-9"] },
       occurredAt: NOW.toISOString(),
     });
   });
@@ -86,7 +86,10 @@ describe("both patient write paths emit", () => {
     await rescheduleAppointment(PRINCIPAL, "a1", { startsAt: newStart }, makeStore(), NOW);
 
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toMatchObject({ kind: "rescheduled", audience: { practitionerId: "prac-9" } });
+    expect(seen[0]).toMatchObject({
+      kind: "rescheduled",
+      audience: { practitionerIds: ["prac-9"] },
+    });
     expect(seen[0]!.previousStartsAt).toBe(APPT.startsAt.toISOString());
     expect(seen[0]!.newStartsAt).toBe(newStart.toISOString());
   });
@@ -137,7 +140,7 @@ describe("the emit cannot break the write it follows", () => {
         tenantId: "t1",
         appointmentId: "a1",
         patientId: "p1",
-        audience: { reception: true, practitionerId: "prac-9" },
+        audience: { reception: true, practitionerIds: ["prac-9"] },
         previousStartsAt: NOW.toISOString(),
         newStartsAt: NOW.toISOString(),
         occurredAt: NOW.toISOString(),
@@ -163,7 +166,7 @@ describe("the stub is honest about being a stub", () => {
         tenantId: "t1",
         appointmentId: "a1",
         patientId: "p1",
-        audience: { reception: true, practitionerId: "prac-9" },
+        audience: { reception: true, practitionerIds: ["prac-9"] },
         previousStartsAt: NOW.toISOString(),
         newStartsAt: NOW.toISOString(),
         occurredAt: NOW.toISOString(),
@@ -194,6 +197,6 @@ describe("payload minimisation holds for staff notifications too", () => {
       expect(keys.some((k) => k.toLowerCase().includes(bad.toLowerCase()))).toBe(false);
     }
     // The therapist is addressed by ID, never by name.
-    expect(seen[0]!.audience.practitionerId).toBe("prac-9");
+    expect(seen[0]!.audience.practitionerIds).toEqual(["prac-9"]);
   });
 });
