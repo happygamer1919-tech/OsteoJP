@@ -40,7 +40,18 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 
-const RESULTS_PATH = process.argv[2] ?? "packages/db/rls-results.json";
+// MULTIPLE REPORTS, one guard. W13-01a added the first DB-gated suite OUTSIDE
+// packages/db (apps/web/lib/reminders/redeem.db.test.ts, which needs a real
+// Postgres to prove LOOP 1's transactional DoD lines and cannot live in
+// packages/db without inverting the dependency direction). It runs as its own
+// vitest invocation and emits its own JSON report, so this guard now accepts
+// SEVERAL report paths and merges their testResults before checking SUITES.
+//
+// Every .json argument is a report. Non-json arguments are ignored, which keeps
+// the historical `argv[3] = run log` invocation working untouched.
+const RESULTS_PATHS = process.argv.slice(2).filter((a) => a.endsWith(".json"));
+if (RESULTS_PATHS.length === 0) RESULTS_PATHS.push("packages/db/rls-results.json");
+const RESULTS_PATH = RESULTS_PATHS.join(", ");
 // argv[3] (the run log) is accepted for backward compatibility with the
 // workflow invocation but no longer read: with every suite hard-required there
 // is no documented-skip reason to match against the log.
@@ -59,6 +70,12 @@ const SUITES = [
   { file: "review-finalize-rls.test.ts", hard: true },
   { file: "migration-staging-rls.test.ts", hard: true },
   { file: "migration-upsert-idempotency.test.ts", hard: true },
+  // W13-01a. Lives in apps/web, runs against the same Supabase stack from its
+  // own vitest invocation. Hard-required for the same reason as every suite
+  // above: it gates on `!live`, so without this entry a silent skip in the
+  // DB-gated job would report green and LOOP 1's transactional DoD lines would
+  // be proven by nothing at all.
+  { file: "redeem.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.
@@ -85,10 +102,13 @@ function fail(msg) {
   process.exit(1);
 }
 
-const report = loadJson(RESULTS_PATH);
-
-if (!Array.isArray(report.testResults)) {
-  fail(`vitest JSON report at "${RESULTS_PATH}" has no testResults array`);
+const report = { testResults: [] };
+for (const path of RESULTS_PATHS) {
+  const one = loadJson(path);
+  if (!Array.isArray(one.testResults)) {
+    fail(`vitest JSON report at "${path}" has no testResults array`);
+  }
+  report.testResults.push(...one.testResults);
 }
 
 // basename -> { passed, failed, notRun, total }
