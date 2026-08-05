@@ -62,7 +62,7 @@ email por doente. Vale a pena decidir se a omissao do email deve mudar.
 
 - **Identificador:** `confirmation.sms`
 - **Quando:** Imediatamente apos a marcacao ser criada ou remarcada.
-- **Estado:** bloqueado (`approved: false`)
+- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 - **Codificacao:** GSM-7 (sim) — **103 caracteres, 1 segmento**
 
 **Texto tal como esta programado:**
@@ -91,7 +91,7 @@ Remarcar: +351 272 000 000
 
 - **Identificador:** `confirmation.email`
 - **Quando:** Imediatamente apos a marcacao ser criada ou remarcada.
-- **Estado:** bloqueado (`approved: false`)
+- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 
 **Texto tal como esta programado:**
 
@@ -137,7 +137,7 @@ Ou contacte: +351 272 000 000
 
 - **Identificador:** `reminder.48h.email`
 - **Quando:** 48 horas antes da consulta.
-- **Estado:** bloqueado (`approved: false`)
+- **Estado:** aprovado (`approved: true`) — JP, **2026-08-05** (redaccao alterada nesta data: a linha de accao passou a incluir *confirmar*). **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 - **Nota:** a clinica forneceu redaccao propria para o lembrete de 24h. Ver a seccao das variantes.
 
 **Texto tal como esta programado:**
@@ -176,7 +176,7 @@ Ou contacte: +351 272 000 000
 
 - **Identificador:** `reminder.48h.sms`
 - **Quando:** 48 horas antes da consulta.
-- **Estado:** bloqueado (`approved: false`)
+- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 - **Nota:** a clinica forneceu redaccao propria para o lembrete de 24h. Ver a seccao das variantes.
 - **Codificacao:** GSM-7 (sim) — **92 caracteres, 1 segmento**
 
@@ -206,7 +206,7 @@ Remarcar: +351 272 000 000
 
 - **Identificador:** `reminder.24h.email`
 - **Quando:** 24 horas antes da consulta.
-- **Estado:** bloqueado (`approved: false`)
+- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 - **Nota:** a clinica forneceu redaccao propria para o lembrete de 24h. Ver a seccao das variantes.
 
 **Texto tal como esta programado:**
@@ -249,7 +249,7 @@ Ou contacte: +351 272 000 000
 
 - **Identificador:** `reminder.24h.sms`
 - **Quando:** 24 horas antes da consulta.
-- **Estado:** bloqueado (`approved: false`)
+- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 - **Nota:** a clinica forneceu redaccao propria para o lembrete de 24h. Ver a seccao das variantes.
 - **Codificacao:** GSM-7 (sim) — **99 caracteres, 1 segmento**
 
@@ -279,7 +279,7 @@ Remarcar: +351 272 000 000
 
 - **Identificador:** `follow_up.email`
 - **Quando:** 24 horas depois de a consulta terminar, se marcada como realizada.
-- **Estado:** bloqueado (`approved: false`)
+- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 
 **Texto tal como esta programado:**
 
@@ -315,7 +315,7 @@ Para marcar a próxima consulta contacte: +351 272 000 000
 
 - **Identificador:** `follow_up.sms`
 - **Quando:** 24 horas depois de a consulta terminar, se marcada como realizada.
-- **Estado:** bloqueado (`approved: false`)
+- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 - **Codificacao:** GSM-7 (sim) — **90 caracteres, 1 segmento**
 
 **Texto tal como esta programado:**
@@ -342,7 +342,7 @@ Marcar proxima consulta: +351 272 000 000
 
 - **Identificador:** `no_show.email`
 - **Quando:** Quando a rececao marca a consulta como falta.
-- **Estado:** bloqueado (`approved: false`)
+- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 
 **Texto tal como esta programado:**
 
@@ -380,7 +380,7 @@ Ou contacte: +351 272 000 000
 
 - **Identificador:** `no_show.sms`
 - **Quando:** Quando a rececao marca a consulta como falta.
-- **Estado:** bloqueado (`approved: false`)
+- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 - **Codificacao:** GSM-7 (sim) — **84 caracteres, 1 segmento**
 
 **Texto tal como esta programado:**
