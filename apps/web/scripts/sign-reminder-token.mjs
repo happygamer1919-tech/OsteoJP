@@ -21,8 +21,37 @@
 // changes, that test goes red rather than the owner discovering it against a
 // deployed URL.
 //
-// USAGE, from the repo root with the prod env sourced:
-//   node apps/web/scripts/sign-reminder-token.mjs <tenantId> <appointmentId> [scope]
+// USAGE. Both corrections below cost a real round trip each on 2026-08-05 and
+// are recorded so the next run block is right the first time.
+//
+//   1. ABSOLUTE PATH. A relative path only works from the repo root, and the
+//      shell is left wherever the previous step put it. This script reads
+//      nothing from disk, so an absolute path works from anywhere:
+//
+//        node ~/Documents/Projects/GitHub/osteojp-prod-apply/apps/web/scripts/sign-reminder-token.mjs <tenantId> <appointmentId> [scope]
+//
+//   2. ZSH NEEDS THE LONG-FORM EXPORT OPTION. `set -a` fails there with
+//      'no such option'. Use:
+//
+//        set -o allexport
+//        source ~/osteojp-secrets/new-prod.env
+//        set +o allexport
+//
+//      Plain `source` without allexport sets shell variables that are NOT
+//      exported, so node never sees them and this script reports the secret
+//      missing while it is arguably present - a confusing failure worth
+//      avoiding.
+//
+//   3. THE SECRET MAY NOT BE IN THAT FILE AT ALL. new-prod.env was created for
+//      migration applies and carries DATABASE_URL; REMINDERS_LINK_SECRET lives
+//      in Vercel on osteojp-platform. Check which names a file holds WITHOUT
+//      printing any value:
+//
+//        sed -E 's/^export +//; s/=.*//' <file> | grep -E '^[A-Za-z_]' | sort -u
+//
+//      If it is absent, copying a live signing key onto a laptop for a
+//      confirmatory check is a worse trade than deferring the check. That is
+//      what was decided (LE-token-roundtrip-observation, deferred by decision).
 //
 // scope is `confirm_cancel` (the 48h email link) or `confirm` (the 24h SMS
 // link). Default confirm_cancel, because that is the one with both actions to
