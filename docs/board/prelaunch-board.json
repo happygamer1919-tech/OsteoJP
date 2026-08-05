@@ -55,7 +55,7 @@
   "launch_gate": {
     "denominator": 9,
     "readiness_passed": 8,
-    "note": "The launch readiness figure is passed-over-nine. It is NOT a percentage of work done and it is NEVER estimated. No partial credit: each condition is pass or fail.",
+    "note": "The launch readiness figure is passed-over-nine. It is NOT a percentage of work done and it is NEVER estimated. No partial credit: each condition is pass or fail. POST-LAUNCH BACKLOG, removed from this board 2026-08-05 by owner decision and recorded here so it is not lost: (1) LE-resend-deferred, emailed staff invite and login links. The code is finished and shipped; it needs four env vars on Vercel (INVITES_LIVE_SEND=true, RESEND_API_KEY, STAFF_INVITE_REDIRECT_URL pointing at /auth/update-password, and REMINDERS_EMAIL_FROM set explicitly to an address at send.osteojp.pt, which is the VERIFIED Resend identity; the root domain is not, and the code default falls back to it). Links work today by showing on screen. (2) PL-26, undo a bloquear lote batch as one action, needing a nullable batch_id on time_off and therefore a migration plus an owner apply cycle. Convenience, not correctness; blocks stay individually removable. Both were deferred repeatedly and neither blocks launch, so they leave a PRE-LAUNCH board.",
     "conditions": [
       {
         "id": "G1",
@@ -507,20 +507,6 @@
       "notes": "Fresh canary (old one died in the purge). Reminder lead windows = 48h + 24h before start (offsets.ts:20-22); a reminder is scheduled only if sendAt = startsAt - offset > now (offsets.ts:43). To fire ~15min after booking: book the canary appointment at now + 24h + 15min -> the 24h reminder sends in ~15min. The reminder fires ONLY via the appointment/scheduled Inngest event, emitted by createAppointment (enqueueAppointmentReminders) - a raw DB insert does NOT trigger it, so canary-CREATE = book through the prod UI (canary patient with the owner's phone), NOT a DB script. due-reminder set computed at functions.ts:66 (computeDueReminders). REMINDERS_LIVE_SEND is checked at SEND time (clients.ts:45), NOT at schedule time - so flipping it false tomorrow AM ALSO suppresses reminders already queued tonight. Ivan books the canary in the UI himself (types the phone there; the number never enters AI context). GREEN stages canary-CLEANUP ONLY (delete patient + appt by id, 0/0 verify), parameterised by the patient id Ivan returns after creation. BLOCKED on Ivan's console findings + his UI booking. STILL WAITING 2026-07-31: this is G2, one of the two gates between the platform and launch, and the only one the owner can close alone. Needs REMINDERS_LIVE_SEND + the Twilio credentials + INNGEST_EVENT_KEY set, then a real booking made through the prod UI at now+24h+15min so the scheduled Inngest event fires. Nothing in the reminder path is build-time, so a missing value never fails a deploy - it silently degrades to sandbox, which is exactly why this needs a live canary rather than a config review. IN FLIGHT 2026-08-02 per the owner - actively being worked, no longer merely waiting. SHIPPED 2026-08-03: owner proved and confirmed the canary, closing G2. The reminder pipeline is live-verified rather than config-reviewed, which was the whole point of this card."
     },
     {
-      "id": "LE-resend-deferred",
-      "title": "Resend live email for invite/login links - DEFERRED post-launch",
-      "lane": "loose_ends",
-      "home_lane": "loose_ends",
-      "status": "todo",
-      "priority": "medium",
-      "owner_terminal": "green",
-      "gate": "owner_merge",
-      "evidence": null,
-      "blocked_on": null,
-      "last_checkpoint": "2026-08-02",
-      "notes": "DEFERRED to post-launch (owner 2026-07-28). Ativar login shows the set-password link on screen; Ivan creates logins himself and passes links directly, so emailed delivery is a nice-to-have, not a launch blocker. Enable later: INVITES_LIVE_SEND=true + RESEND_API_KEY + a verified osteojp.pt sender + STAFF_INVITE_REDIRECT_URL -> /auth/update-password. Re-confirmed DEFERRED 2026-07-31: post-launch by owner decision, not blocked on anything. Invite/login links work today by showing the link on screen; only the emailing of them is deferred. DEFERRAL RE-CONFIRMED by the owner 2026-08-02. Invite and login links work today - the link is shown on screen instead of emailed - so this is convenience, not function."
-    },
-    {
       "id": "PL-09",
       "title": "Role + location access model - therapist own-scope, reception/admin location-scoped, owner all (6-phase build, post acceptance-test)",
       "lane": "shipped",
@@ -843,20 +829,6 @@
       "blocked_on": null,
       "last_checkpoint": "2026-08-02",
       "notes": "Owner CR 2026-07-31: \"users should only be able to clock in/out on the hour, for example at 9:00, 10:00 - here we need to make sure on our client portal that for them the only option to book appointments is fixed hourly, they can't book at :15th minute or half of hour\". FINDING: the portal never fabricates slots - they come from GET /api/v1/booking/slots -> listOpenSlots (apps/api/lib/appointments/store.ts:325), which expands each active availability template into a grid stepped by locations.slot_granularity_min (migration 0041, default 30). TWO things are needed, not one: (a) the step becomes 60, and (b) the grid must be ALIGNED to the top of the hour - the series starts at the template's own start_time, so a therapist whose hours begin 09:30 would still produce 09:30 / 10:30 at a 60-minute step. The alignment half is code and self-merges; changing the stored granularity per location is data and is hard-gated. Staff-side booking is deliberately UNCHANGED - the agenda keeps free-form times, this constrains only what a patient may self-serve. Nothing in the product edits slot_granularity_min from the UI today. Q-PL-25-1 logged for whether hourly applies to every location. PROD READ 2026-08-02 corrects two things GREEN asserted. (1) BOTH clinics were ALREADY at slot_granularity_min = 60 before this session - GREEN said they sat at 30 and would need switching, inferring that from the 0041 default instead of reading prod. Patient booking was already hourly; no toggle is pending. (2) The alignment half was LOAD-BEARING, not theoretical: Linda-a-Velha has 10 ACTIVE availability templates starting off the hour (08:30 and 13:30). At a 60-minute step without alignment those emitted 08:30 / 09:30 / 10:30 - an hourly cadence never landing on an hour, exactly the trap PL-25 describes. Castelo Branco has 0 off-hour starts, so CB was unaffected either way. CONSEQUENCE worth knowing: with alignment, an 08:30 LV template now offers 09:00 first, so LV patients lose the 08:30 self-serve start. That is inherent to hourly booking and staff can still book 08:30 from the agenda."
-    },
-    {
-      "id": "PL-26",
-      "title": "Undo a bloquear lote batch as ONE action - time_off.batch_id + 'remover lote' (MIGRATION, apply-before-merge)",
-      "lane": "in_flight",
-      "home_lane": "in_flight",
-      "status": "todo",
-      "priority": "medium",
-      "owner_terminal": "green",
-      "gate": "owner_merge",
-      "evidence": null,
-      "blocked_on": null,
-      "last_checkpoint": "2026-08-03",
-      "notes": "Owner ticketed 2026-07-31 from Q-PL-22-1, raised by GREEN when PL-22 shipped. PL-22 writes N time_off rows in ONE transaction, but nothing marks them as one batch, so undoing a mistaken recurrence means deleting every block by hand - the exact tedium bloquear lote was built to remove, reappearing on the way out. WHY IT WAS NOT IN PL-22: it needs a batch_id column, i.e. a migration, and 0051 (PL-23) was already in flight - one migration at a time. 0051 is now APPLIED and verified on prod (2026-07-31), so that constraint is gone and this is unblocked. SHAPE: a nullable `batch_id uuid` on time_off (existing blocks keep NULL - they were never a batch, and NULL is the honest value for them), stamped with one generated id per createTimeOffBlockBatch call; the blocks list groups rows sharing a batch_id and offers 'Remover lote' beside the per-row Eliminar. Deleting a batch is a normal delete of the rows in it - time_off has no append-only invariant, unlike clinical_records and record_annulments - so no new doctrine is needed, but the control must say HOW MANY blocks it will remove before it does it, and must never reach beyond the batch. Reception already holds schedule:manage, so no capability change. GATES: the usual, plus db:check-journal and db:sync-supabase:check; this card's migration takes WHATEVER NUMBER IS FREE when it is finally built, and this note deliberately no longer names one (CORRECTED TWICE on 2026-08-03: it said 0052, which SCHED-W3-no-show-releases-slot had already taken and applied; it was then corrected to 0053, which PL-31 took the same day by being built first. Numbers follow build order, not reservations - naming one in a deferred card's notes is how the collision happened twice. The PL-15b primary_location_id backfill is still unbuilt and takes its number the same way.). Apply-BEFORE-merge: build, CI green, owner applies from the osteojp-prod-apply worktree with git checkout origin/<branch> detached, independent read of the column plus the __drizzle_migrations count delta, THEN merge. DEFERRED POST-LAUNCH by owner decision 2026-08-02, matching GREEN recommendation: it is convenience, not correctness, and it costs a migration. Blocks stay individually removable meanwhile."
     },
     {
       "id": "PL-27",
