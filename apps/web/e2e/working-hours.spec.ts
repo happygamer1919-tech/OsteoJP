@@ -7,7 +7,7 @@
  * booking availability panel must reflect the reconciled hours.
  */
 import { test, expect, type Page } from "@playwright/test";
-import { openNewAppointment, fillTime } from "./helpers";
+import { openNewAppointment, fillTime, expectTime } from "./helpers";
 import { LOCATION_B, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
 
 /** The member card for THERAPIST_NAME. */
@@ -100,4 +100,73 @@ test("Horários route redirects into Equipa; ?t=<id> deep link auto-opens the me
     "aria-checked",
     "true",
   );
+});
+
+test("Equipa/Horários: a SPLIT SHIFT saves, survives a reload, and can be removed (W13-A)", async ({
+  page,
+}) => {
+  // THE ONE TEST THIS FEATURE ACTUALLY NEEDED. The card's halt condition was
+  // "the second row not persisting", and every layer between the form and the
+  // table has its own unit test - but only a round trip proves the loader, the
+  // reconcile and the write path agree with each other. Save-then-vanish is the
+  // failure this feature can produce that looks like success once.
+  const date = futureDate(RUN_DAY_BASE + 24);
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+
+  const dayRow = (scope: Awaited<ReturnType<typeof openHours>>) =>
+    scope.locator("fieldset").filter({
+      has: page.locator(`select[name="d${weekday}_location"]`),
+    });
+
+  await page.goto("/admin/staff");
+  let modal = await openHours(page);
+  let row = dayRow(modal);
+
+  const worksToggle = row.locator(`input[name="d${weekday}_on"]`);
+  if (!(await worksToggle.isChecked())) await worksToggle.check();
+  await fillTime(row.locator("label").filter({ hasText: "Início" }), "08:00");
+  await fillTime(row.locator("label").filter({ hasText: "Fim" }), "13:00");
+  await row.locator(`select[name="d${weekday}_location"]`).selectOption({ label: LOCATION_B.name });
+
+  // Add the afternoon. The fields are ABSENT until asked for, so this is the
+  // affordance appearing rather than an empty row already on screen.
+  await expect(row.locator(`input[name="d${weekday}p2_on"]`)).toHaveCount(0);
+  await row.getByRole("button", { name: /2\.º período/ }).click();
+  await expect(row.locator(`input[name="d${weekday}p2_on"]`)).toHaveCount(1);
+
+  // The second period's own labels are inside the period-2 block.
+  const p2 = row.locator("div").filter({ hasText: /^2\.º período/ }).last();
+  await fillTime(p2.locator("label").filter({ hasText: "Início" }), "14:00");
+  await fillTime(p2.locator("label").filter({ hasText: "Fim" }), "19:00");
+
+  await modal.getByRole("button", { name: "Guardar" }).click();
+  await page.waitForURL(/admin\/staff/);
+  await expect(page.getByText("Horário guardado")).toBeVisible({ timeout: 8_000 });
+
+  // RE-OPEN. This is the assertion the whole card rests on: the second row was
+  // written AND the loader gives it back, instead of collapsing the day to its
+  // first template and archiving the afternoon on the next save.
+  await page.goto("/admin/staff");
+  modal = await openHours(page);
+  row = dayRow(modal);
+  await expect(row.locator(`input[name="d${weekday}p2_on"]`)).toHaveCount(1);
+  await expect(row.locator(`input[name="d${weekday}p2_id"]`)).not.toHaveValue("");
+  await expectTime(row.locator("label").filter({ hasText: "Início" }).first(), "08:00");
+  await expectTime(row.locator("label").filter({ hasText: "Fim" }).first(), "13:00");
+  await expectTime(row.locator("label").filter({ hasText: "Início" }).last(), "14:00");
+  await expectTime(row.locator("label").filter({ hasText: "Fim" }).last(), "19:00");
+
+  // REMOVE it, and confirm it is gone rather than merely hidden. The id keeps
+  // posting after removal precisely so the reconcile can archive the row.
+  await row.getByRole("button", { name: /Remover 2\.º período/ }).click();
+  await expect(row.locator(`input[name="d${weekday}p2_on"]`)).toHaveCount(0);
+  await modal.getByRole("button", { name: "Guardar" }).click();
+  await page.waitForURL(/admin\/staff/);
+  await expect(page.getByText("Horário guardado")).toBeVisible({ timeout: 8_000 });
+
+  await page.goto("/admin/staff");
+  modal = await openHours(page);
+  row = dayRow(modal);
+  await expect(row.locator(`input[name="d${weekday}p2_on"]`)).toHaveCount(0);
+  await expect(row.locator(`input[name="d${weekday}p2_id"]`)).toHaveValue("");
 });

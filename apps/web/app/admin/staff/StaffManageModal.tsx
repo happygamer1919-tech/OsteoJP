@@ -3,7 +3,8 @@
 import { type MouseEvent, useState } from "react";
 import { Button, SegmentedControl, useAnimatedDialog } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
-import { TimeFieldInput } from "@/components/time-field-input";
+import { ScheduleWeekFields } from "./ScheduleWeekFields";
+import type { ScheduleDayRow } from "@/lib/admin/schedule-days";
 import { THERAPIST_PALETTE } from "@/lib/scheduling/therapist-color";
 import { adminInputInline, adminLabel } from "../admin-ui";
 import { saveTherapistScheduleAction } from "../working-hours/actions";
@@ -42,18 +43,16 @@ import { ActivateLoginForm } from "./ActivateLoginForm";
  * each surface stays uncluttered (progressive disclosure).
  */
 
-/** One weekday's row in the schedule editor (mirrors the W4-14 reconcile shape). */
-export type ScheduleDay = {
-  weekday: number;
-  label: string;
-  /** True when the member works this day (an active template exists). */
-  on: boolean;
-  /** The active template id this day manages, or "" for a new day. */
-  id: string;
-  start: string; // "HH:mm"
-  end: string; // "HH:mm"
-  locationId: string;
-};
+/**
+ * One weekday's row in the schedule editor.
+ *
+ * W13-A moved the definition to lib/admin/schedule-days.ts, where the loader that
+ * builds it lives, and widened it with an optional SECOND period (p2On/p2Id/
+ * p2Start/p2End). The alias stays because both surfaces and their pages import
+ * the name from this module, and one shape is the point: the reception editor and
+ * this one share a loader, a reconcile and now a type.
+ */
+export type ScheduleDay = ScheduleDayRow;
 
 type Section = "contact" | "role" | "locations" | "service" | "hours";
 
@@ -134,7 +133,6 @@ export function StaffManageModal({
     if (e.target === e.currentTarget) close();
   };
 
-  const fallbackLocation = locations[0]?.id ?? "";
   const locationName = new Map(locations.map((l) => [l.id, l.name]));
   const membershipIds = new Set(memberships.map((m) => m.locationId));
 
@@ -526,67 +524,17 @@ export function StaffManageModal({
 
                 {/* Weekly schedule reconcile — a single Guardar through the W4-14
                     write paths (saveTherapistScheduleAction). Toggling a day off +
-                    Guardar archives it (no password: admin-gated surface). */}
+                    Guardar archives it (no password: admin-gated surface).
+
+                    W13-A: the day rows live in ScheduleWeekFields, shared with the
+                    reception /horarios editor, and each day now carries an optional
+                    SECOND period. */}
                 <form
                   action={saveTherapistScheduleAction}
                   className="flex flex-col gap-3"
                 >
                   <input type="hidden" name="userId" value={userId} />
-                  {days.map((d) => (
-                    <fieldset
-                      key={d.weekday}
-                      className="flex flex-wrap items-end gap-3 rounded-v2 border border-v2-border p-3"
-                    >
-                      <label className="flex min-w-32 items-center gap-2 self-center">
-                        <input
-                          type="checkbox"
-                          name={`d${d.weekday}_on`}
-                          defaultChecked={d.on}
-                          aria-label={`${s["admin.workingHours.worksLabel"]} — ${d.label}`}
-                        />
-                        <span className="font-medium text-v2-text-primary">{d.label}</span>
-                      </label>
-                      <input type="hidden" name={`d${d.weekday}_id`} value={d.id} />
-                      <label className="flex flex-col gap-1">
-                        <span className={adminLabel}>{s["admin.workingHours.start"]}</span>
-                        <TimeFieldInput name={`d${d.weekday}_start`} defaultValue={d.start} />
-                      </label>
-                      <label className="flex flex-col gap-1">
-                        <span className={adminLabel}>{s["admin.workingHours.end"]}</span>
-                        <TimeFieldInput name={`d${d.weekday}_end`} defaultValue={d.end} />
-                      </label>
-                      {/* PL-14: one clinic = no per-day choice; the value still
-                          posts, the select disappears. */}
-                      {locations.length === 1 ? (
-                        <input
-                          type="hidden"
-                          name={`d${d.weekday}_location`}
-                          value={d.locationId || fallbackLocation}
-                        />
-                      ) : (
-                        <label className="flex flex-col gap-1">
-                          <span className={adminLabel}>{s["admin.workingHours.location"]}</span>
-                          <select
-                            name={`d${d.weekday}_location`}
-                            defaultValue={d.locationId || fallbackLocation}
-                            aria-label={`${s["admin.workingHours.location"]} — ${d.label}`}
-                            className={adminInputInline}
-                          >
-                            {locations.map((l) => (
-                              <option key={l.id} value={l.id}>
-                                {l.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                    </fieldset>
-                  ))}
-                  <div className="flex justify-end">
-                    <Button type="submit" variant="primary">
-                      {s["common.save"]}
-                    </Button>
-                  </div>
+                  <ScheduleWeekFields days={days} locations={locations} />
                 </form>
               </div>
             )}
