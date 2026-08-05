@@ -25,12 +25,14 @@ import {
   LOCATION,
   SERVICE,
   THERAPIST_NAME,
-  futureDate,
+  futureWeekdayDate,
   RUN_DAY_BASE,
 } from "./fixtures";
 
 const SAVE = "Guardar";
-const DAY = futureDate(RUN_DAY_BASE + 28); // no other spec books this day
+// Sunday-safe on purpose: this file asserts against the agenda GRID, and the
+// week view is Mon-Sat, so a Sunday day is not rendered there at all.
+const DAY = futureWeekdayDate(RUN_DAY_BASE + 28); // no other spec books this day
 const BOOK_TIME = "14:00";
 // The 7 therapist -700 hues (therapist-color.ts). The name line must carry one.
 const THERAPIST_TEXT_COLOR = /text-(accent-[12]|v2-(blue|burgundy|green|gold|lavender))-700/;
@@ -105,7 +107,10 @@ test("W11-00 v3: three same-slot appointments stack VERTICALLY (equal x, differe
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const date = futureDate(RUN_DAY_BASE + 33); // dedicated day, no other spec books it
+  // Sunday-safe: this test asserts the three cards in BOTH Dia and Semana, and
+  // the week grid is Mon-Sat. A Sunday date rendered the PRECEDING week, so the
+  // cards were genuinely absent and this failed about one run in seven.
+  const date = futureWeekdayDate(RUN_DAY_BASE + 33); // dedicated day, no other spec books it
   const names = [PATIENTS.maria.name, PATIENTS.joao.name, PATIENTS.ana.name];
 
   // Book three appointments at the SAME 14:00 slot (same therapist). In v3 they
