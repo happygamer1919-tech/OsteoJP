@@ -54,6 +54,35 @@ import { acquireSlotLocks, acquireSlotLocksForMany } from "./slot-lock";
 const AGENDA_PATH = "/agenda";
 const CONFLICT_CAP = 10; // cap aggregated conflict lists across a series
 
+/**
+ * Run post-commit side effects so they can NEVER turn a committed write into a
+ * reported failure.
+ *
+ * WHY THIS EXISTS. `revalidatePath` and the reminder/notification enqueues used
+ * to sit inside the same try whose catch returns `fail(...)`. By the time they
+ * run the transaction has already committed, so a throw there reported an error
+ * for an appointment that exists. At the desk that reads as "it did not save",
+ * the natural response is to book again, and that is a route to a real double
+ * booking. Reporting a failure for a successful write is worse than the failure
+ * it is reporting.
+ *
+ * Errors are swallowed deliberately: every caller is best-effort, and the write
+ * is already durable. Only the step label and the error NAME are logged, never
+ * the error message or any payload, because those can carry patient data
+ * (CLAUDE.md rule 7).
+ */
+async function afterCommit(step: string, run: () => void | Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (e) {
+    console.error(
+      `scheduling: post-commit step failed (${step}); the write is committed and stands`,
+      e instanceof Error ? e.name : "unknown",
+    );
+  }
+}
+
+
 type Authorized = { actor: RequestContext };
 type Denied = Extract<ActionResult<never>, { ok: false }>;
 
@@ -486,10 +515,12 @@ export async function createAppointment(
       },
     );
     if (result.ok) {
-      revalidatePath(AGENDA_PATH);
       // Stream E: schedule reminders for the new appointment(s). Best-effort,
       // post-commit; safe with REMINDERS_LIVE_SEND off (sandbox downstream).
-      await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
+      await afterCommit("create", async () => {
+        revalidatePath(AGENDA_PATH);
+        await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
+      });
     }
     return result;
   } catch (e) {
@@ -633,10 +664,12 @@ export async function cloneAppointment(
       },
     );
     if (result.ok) {
-      revalidatePath(AGENDA_PATH);
       // A clone is a real new appointment: schedule its reminders like any other
       // creation. Best-effort, post-commit; safe with REMINDERS_LIVE_SEND off.
-      await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
+      await afterCommit("clone", async () => {
+        revalidatePath(AGENDA_PATH);
+        await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
+      });
     }
     return result;
   } catch (e) {
@@ -789,13 +822,15 @@ export async function updateAppointment(
       },
     );
     if (result.ok) {
-      revalidatePath(AGENDA_PATH);
-      if (
-        (patch.status === "completed" || patch.status === "no_show") &&
-        statusTargets.length > 0
-      ) {
-        await enqueueStatusNotificationsAfterCommit(actor.tenantId, statusTargets, patch.status);
-      }
+      await afterCommit("update", async () => {
+        revalidatePath(AGENDA_PATH);
+        if (
+          (patch.status === "completed" || patch.status === "no_show") &&
+          statusTargets.length > 0
+        ) {
+          await enqueueStatusNotificationsAfterCommit(actor.tenantId, statusTargets, patch.status);
+        }
+      });
     }
     return result;
   } catch (e) {
@@ -932,11 +967,13 @@ export async function rescheduleAppointment(
       },
     );
     if (result.ok) {
-      revalidatePath(AGENDA_PATH);
       // Stream E: re-enqueue at the NEW time. The new appointment/scheduled event
       // supersedes the prior sleeping run (cancelOn on appointment id), so the old
       // time never fires. Best-effort, post-commit.
-      await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
+      await afterCommit("reschedule", async () => {
+        revalidatePath(AGENDA_PATH);
+        await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
+      });
     }
     return result;
   } catch (e) {

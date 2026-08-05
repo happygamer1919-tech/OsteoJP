@@ -619,15 +619,32 @@ export function AppointmentDrawer({
       if (form.room !== (editing.room ?? "")) patch.room = form.room || null;
       if (form.notes !== (editing.notes ?? "")) patch.notes = form.notes || null;
       if (form.status !== editing.status && form.status !== "cancelled") patch.status = form.status;
-      if (Object.keys(patch).length > 0) {
-        const r = await updateAppointment(editing.id, patch, { scope, allowConflict });
-        if (!handleResult(r)) return;
-      }
 
       const timeOfDayChanged = form.time !== init.time || form.durationMin !== init.durationMin;
       const practOrLocChanged = form.practitionerId !== editing.practitionerId || form.locationId !== editing.locationId;
       const dateChanged = form.date !== init.date;
       const temporalChanged = scope === "one" ? dateChanged || timeOfDayChanged || practOrLocChanged : timeOfDayChanged || practOrLocChanged;
+
+      // An edit can need TWO server actions, and each commits on its own: there
+      // is no shared transaction across them. So whichever runs first is already
+      // written by the time the second can refuse, and a refusal shows a
+      // conflict banner that reads as "nothing was saved".
+      //
+      // ORDER MATTERS, and it used to be wrong. `updateAppointment` ran first,
+      // so moving an appointment onto an occupied slot committed the service,
+      // room, notes and status change and THEN refused the move. Cancelar out of
+      // that dialog and the record disagreed with what the user believed they
+      // had done.
+      //
+      // The reschedule now goes FIRST because it is where conflicts actually
+      // come from: a therapist or room overlap at the new time. When it refuses,
+      // nothing at all has been written, which is what the banner already
+      // implies. The residual case is narrow and is no longer silent: if the
+      // reschedule succeeds and the patch then refuses (only reachable via a
+      // room double-booking at the new time), `movedFirst` makes the drawer say
+      // so, instead of showing a bare conflict over an appointment that has
+      // already moved.
+      let movedFirst = false;
 
       if (temporalChanged) {
         const r = await rescheduleAppointment(editing.id, {
@@ -639,6 +656,17 @@ export function AppointmentDrawer({
           allowConflict,
         });
         if (!handleResult(r)) return;
+        movedFirst = true;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        const r = await updateAppointment(editing.id, patch, { scope, allowConflict });
+        if (!handleResult(r)) {
+          // The move already committed. Say that plainly rather than leaving the
+          // user to infer it from a dialog that looks like a clean refusal.
+          if (movedFirst) setError(s["appointment.movedButDetailsNotSaved"]);
+          return;
+        }
       }
       succeed();
     } finally {

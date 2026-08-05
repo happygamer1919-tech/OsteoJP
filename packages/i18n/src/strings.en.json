@@ -1136,6 +1136,7 @@
   "admin.packs.notOfferedHere": "Not offered here",
   "agenda.pickDate": "Choose date",
   "appointment.recurringCheckbox": "Recurring appointment",
+  "appointment.movedButDetailsNotSaved": "The appointment WAS moved to the new time. The remaining changes (service, room, notes, status) were not saved because of the conflict above. Fix it and save again.",
   "appointment.saved": "Appointment saved",
   "appointment.patientRecordLink": "Patient record",
   "appointment.patientTwoRecordLink": "Patient 2 record",

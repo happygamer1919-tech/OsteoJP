@@ -1136,6 +1136,7 @@
   "admin.packs.notOfferedHere": "Não oferecido aqui",
   "agenda.pickDate": "Escolher data",
   "appointment.recurringCheckbox": "Marcação recorrente",
+  "appointment.movedButDetailsNotSaved": "A marcação FOI movida para o novo horário. As restantes alterações (serviço, sala, notas, estado) não foram guardadas por causa do conflito acima. Corrija-o e guarde de novo.",
   "appointment.saved": "Marcação guardada",
   "appointment.patientRecordLink": "Ficha do paciente",
   "appointment.patientTwoRecordLink": "Ficha do paciente 2",
