@@ -481,3 +481,126 @@ terms-acceptance): the apply block ends with a table-existence `select` naming
 the tables or columns that migration creates, not with a journal read of any
 kind. Twice now the block has asked for something that looks like proof and
 is not. Third time it is a `select`.
+
+## Migration 0056 applied to production (2026-08-05) — the pasted evidence
+
+`0056_patient_auth_storage` — the three tables Decision D's OTP login needs
+(W13-03, PG1): `patient_otp_codes`, `patient_trusted_devices`,
+`rate_limit_counters`.
+
+**This is the first apply on this project verified against the DATABASE rather
+than against a file.** The two before it were not, and the section above this one
+says why that mattered.
+
+Owner ran the apply from `osteojp-prod-apply`, detached at `1cae754`.
+`drizzle-kit` reported:
+
+```
+[⣟] applying migrations...
+  NOTICE 42P06: schema "drizzle" already exists, skipping
+  NOTICE 42P07: relation "__drizzle_migrations" already exists, skipping
+[✓] migrations applied successfully!
+```
+
+That output alone still proves nothing — it is printed whether or not anything
+was applied. The verification is the table-existence read, run separately from
+the branch head `5cdbd64` with the prod env sourced:
+
+```
+pnpm --filter @osteojp/db exec node scripts/check-migration-tables.mjs \
+  patient_otp_codes patient_trusted_devices rate_limit_counters
+
+patient_otp_codes        EXISTS
+patient_trusted_devices  EXISTS
+rate_limit_counters      EXISTS
+
+OK: all 3 table(s) present.
+```
+
+**The applied SQL is the shipped SQL, verified by hash rather than assumed.** The
+owner applied at `1cae754` and verified from `5cdbd64`, two different commits, so
+the question "did he check the same file he ran?" is a real one and it is
+answered by content:
+
+| | `packages/db` | `supabase` mirror |
+|---|---|---|
+| `1cae754` — applied | `4d3a8150bb29ebc3…1106d4` | `0ea4cc38888a08ae…8bf4f1` |
+| `5cdbd64` — verified | `4d3a8150bb29ebc3…1106d4` | `0ea4cc38888a08ae…8bf4f1` |
+
+Journal at `5cdbd64`: 56 entries, tail `idx 55, 0056_patient_auth_storage`.
+
+**TWO PROCESS FAILURES ON THE WAY, both PURPLE's, recorded because the fix for
+each is now in the repository rather than in a habit.**
+
+1. The apply block ended with a `psql` command. `psql` is not installed on the
+   owner's machine, so the check did not run and the apply sat unverified. The
+   fix is `packages/db/scripts/check-migration-tables.mjs`, which uses the
+   `postgres` driver `packages/db` already depends on and needs no external
+   tooling.
+2. The follow-up instruction gave the bare `pnpm` command with no checkout step,
+   and the owner ran it while still detached at `1cae754` — a commit that
+   predates the script. `MODULE_NOT_FOUND`, correctly. **An apply block must
+   carry its own checkout line every time**, because the worktree is left
+   wherever the last step put it and the next instruction cannot assume
+   otherwise.
+
+**BINDING ON THE TWO REMAINING MIGRATIONS** (LOOP 4 booking-modes, LOOP 5
+terms-acceptance): the block ends with `check-migration-tables.mjs` naming that
+migration's tables, and it begins with `git fetch` plus an explicit
+`git checkout origin/<branch>`. Both halves, every time.
+
+## Supabase Auth SMTP: the sender was a gmail.com address (2026-08-05)
+
+**Class: fail-closed-invisible.** The system refused correctly and told nobody.
+Same shape as the INC-05 hook miss, and the reason it survived from setup is that
+nothing anywhere reported it.
+
+**Found state**, from the owner's dashboard on 2026-08-05: Supabase custom SMTP
+enabled, host `smtp.resend.com`, port 465, username `resend` — and the **Sender
+email address set to `clinic.osteojp@gmail.com`**. Resend refuses unverified
+sender domains, and `gmail.com` is a domain this clinic can never verify. So
+**every Supabase auth email failed from the moment SMTP was configured**:
+password recovery, sign-in links, email-change confirmations. No error in the
+app, no bounce to the clinic, no dashboard signal.
+
+**Fix**, dashboard-side, minimal: Sender email address → `no-reply@send.osteojp.pt`.
+Sender name `OsteoJP` kept, no other field touched, stored credential intact.
+
+**Live verification**, owner's screen, 2026-08-05 11:36: an auth email requested
+from the **deployed** login page arrived within one minute. Sender
+`OsteoJP <no-reply@send.osteojp.pt>`, subject "Your sign-in link". The link was
+deliberately not clicked and left to expire — correct, since clicking mints a
+session.
+
+**Why the code sweeps could never have found it.** #763 hardened the notification
+path and #778 the invite path, both by reading env vars and boot assertions. This
+sender is not an env var and not in the repository: it is dashboard state in a
+third-party console. `apps/api/lib/notify/clients.ts:53-56` already recorded the
+underlying rule — the verified Resend identity is `send.osteojp.pt` and a
+root-domain sender is rejected — and the same rule was being broken one
+configuration surface away, where no test could reach.
+
+### The three senders, config ground truth
+
+| Stream | Sender | Where it is configured |
+|---|---|---|
+| Auth mail | `no-reply@send.osteojp.pt` | Supabase Auth SMTP, **dashboard only** |
+| Staff invites | `convites@send.osteojp.pt` | `INVITES_EMAIL_FROM`, osteojp-platform, all scopes, non-Sensitive |
+| Patient reminders | — | `REMINDERS_EMAIL_FROM`, unchanged |
+
+Three streams, three configuration surfaces, one verified domain. **The auth one
+is the only sender not held in an env var**, which is exactly why it was
+invisible, and is worth re-checking by hand whenever the Resend identity changes.
+
+### Two things the fix surfaced
+
+1. **The auth email body is Supabase's stock English** ("Your sign-in link",
+   "Follow the link below to sign in") in a pt-PT product. Carded as
+   `LE-supabase-auth-templates-ptpt`. Scope shrinks sharply once LOOP 3 replaces
+   patient auth with our own pt-PT SMS transport, so the recommendation is to
+   translate the residual staff templates afterwards rather than duplicate work.
+2. **The portal offers magic-link login, which Decision D forbids**, and this fix
+   is what made it functional — the verification email IS that path working.
+   Until 2026-08-05 it failed silently on the gmail sender and the violation was
+   inert. Carded as `SEC-portal-magic-link`. The fix was still right: staff
+   recovery needed it, and an inert violation is not a fixed one.

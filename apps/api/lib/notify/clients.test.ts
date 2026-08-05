@@ -1,25 +1,49 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSender, liveSendEnabled, sendSms } from "./clients";
-import { buildRegistry } from "@osteojp/notify";
-import { ACTIVATION_TEMPLATES } from "./registry";
+import { buildRegistry, type TemplateEntry } from "@osteojp/notify";
 
-// Transport-behaviour tests need an APPROVED template to reach Twilio at all —
-// the real activation bodies are approved:false by ruling and stay that way.
-// This fixture approves the same entries so the payload/normalization/error
-// assertions still exercise the real adapter. The refusal of the real registry
-// is asserted in registry.test.ts.
-const approvedSender = createSender(
-  buildRegistry(
-    ACTIVATION_TEMPLATES.map((t) => ({
-      ...t,
-      approved: true,
-      approvedBy: "test fixture",
-      approvedAt: "2026-08-03",
-    })),
-  ),
-);
+// Transport-behaviour tests need an APPROVED template to reach Twilio at all,
+// and the real registry has none — it is empty by ruling (WF-08 deleted the two
+// activation bodies along with the code that sent them), and an empty registry
+// refuses everything, which is asserted in registry.test.ts.
+//
+// So the fixture is defined HERE rather than derived from a real body. It used
+// to be built by re-approving ACTIVATION_TEMPLATES, which coupled these adapter
+// tests to the existence of a particular patient-facing body; they are about
+// payload shape, phone normalization and error mapping, and should not have
+// depended on which bodies the clinic happens to have approved. A local fixture
+// is also unmistakably a fixture: nobody can read it as a real template that
+// somehow got approved in a test file.
+const FIXTURE: readonly TemplateEntry[] = [
+  {
+    id: "test.fixture.sms",
+    channel: "sms",
+    audience: "patient",
+    triggerEvent: "test/fixture",
+    body: "corpo de teste",
+    liveSendFlag: "REMINDERS_LIVE_SEND",
+    approved: true,
+    approvedBy: "test fixture",
+    approvedAt: "2026-08-03",
+  },
+  {
+    id: "test.fixture.email",
+    channel: "email",
+    audience: "patient",
+    triggerEvent: "test/fixture",
+    body: "corpo de teste",
+    liveSendFlag: "REMINDERS_LIVE_SEND",
+    approved: true,
+    approvedBy: "test fixture",
+    approvedAt: "2026-08-03",
+  },
+];
 
-// Twilio wiring proof for the patient-activation notify path (qa/twilio-proof).
+const approvedSender = createSender(buildRegistry(FIXTURE));
+
+// Twilio wiring proof for the apps/api notify path (qa/twilio-proof). The
+// template id is a local fixture: this file tests the ADAPTER, not any
+// particular clinical body, and the body it used to borrow no longer exists.
 // This module mirrors apps/web/lib/reminders/clients.ts and previously had NO
 // tests. Same concerns, same mock pattern: the launch gate, the exact payload
 // handed to the Twilio SDK (sender resolution), and 4xx/5xx propagation.
@@ -80,7 +104,7 @@ describe("launch gate (shared REMINDERS_LIVE_SEND switch)", () => {
     process.env.TWILIO_AUTH_TOKEN = "tok_test";
     process.env.TWILIO_SMS_FROM = "OsteoJP";
 
-    const res = await sendSms({ to: "+351912345678", body: "b", templateId: "patient.activation.sms" });
+    const res = await sendSms({ to: "+351912345678", body: "b", templateId: "test.fixture.sms" });
 
     expect(res).toEqual({ channel: "sms", sandbox: true, id: "sandbox:sms" });
     expect(twilioFactory).not.toHaveBeenCalled();
@@ -88,7 +112,7 @@ describe("launch gate (shared REMINDERS_LIVE_SEND switch)", () => {
 
   it("gate on + missing creds: sandbox result, Twilio never constructed", async () => {
     process.env.REMINDERS_LIVE_SEND = "true";
-    const res = await sendSms({ to: "+351912345678", body: "b", templateId: "patient.activation.sms" });
+    const res = await sendSms({ to: "+351912345678", body: "b", templateId: "test.fixture.sms" });
     expect(res.sandbox).toBe(true);
     expect(twilioFactory).not.toHaveBeenCalled();
   });
@@ -100,7 +124,7 @@ describe("live payload — sender resolution matches the reminders path", () => 
     process.env.TWILIO_SMS_FROM = "OsteoJP";
     twilioCreate.mockResolvedValue({ sid: "SM_act" });
 
-    const res = await approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "patient.activation.sms" });
+    const res = await approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "test.fixture.sms" });
 
     expect(twilioFactory).toHaveBeenCalledWith("AC_test", "tok_test");
     expect(twilioCreate).toHaveBeenCalledWith({
@@ -116,7 +140,7 @@ describe("live payload — sender resolution matches the reminders path", () => 
     process.env.TWILIO_MESSAGING_SERVICE_SID = "MG_test";
     twilioCreate.mockResolvedValue({ sid: "SM_mg" });
 
-    await approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "patient.activation.sms" });
+    await approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "test.fixture.sms" });
 
     expect(twilioCreate).toHaveBeenCalledWith(
       expect.objectContaining({ from: "MG_test" }),
@@ -134,8 +158,8 @@ describe("E.164 normalization (phone.ts mirror) runs inside sendSms", () => {
   });
 
   it("normalizes stored formats to E.164 before messages.create", async () => {
-    await approvedSender.sendSms({ to: "912 345 678", body: "b", templateId: "patient.activation.sms" });
-    await approvedSender.sendSms({ to: "00351912345678", body: "b", templateId: "patient.activation.sms" });
+    await approvedSender.sendSms({ to: "912 345 678", body: "b", templateId: "test.fixture.sms" });
+    await approvedSender.sendSms({ to: "00351912345678", body: "b", templateId: "test.fixture.sms" });
     expect(twilioCreate).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ to: "+351912345678" }),
@@ -149,7 +173,7 @@ describe("E.164 normalization (phone.ts mirror) runs inside sendSms", () => {
   it("skips invalid numbers: skip result, Twilio never called, number never logged", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const res = await approvedSender.sendSms({ to: "not-a-phone", body: "b", templateId: "patient.activation.sms" });
+      const res = await approvedSender.sendSms({ to: "not-a-phone", body: "b", templateId: "test.fixture.sms" });
       expect(res).toEqual({ channel: "sms", sandbox: true, id: "skipped:invalid_phone" });
       expect(twilioFactory).not.toHaveBeenCalled();
       const logged = warn.mock.calls.map((c) => String(c[0])).join("\n");
@@ -169,7 +193,7 @@ describe("Twilio API errors propagate", () => {
     twilioCreate.mockRejectedValueOnce(
       Object.assign(new Error("invalid To"), { status: 400, code: 21211 }),
     );
-    await expect(approvedSender.sendSms({ to: "912345678", body: "b", templateId: "patient.activation.sms" })).rejects.toMatchObject({
+    await expect(approvedSender.sendSms({ to: "912345678", body: "b", templateId: "test.fixture.sms" })).rejects.toMatchObject({
       status: 400,
       code: 21211,
     });
@@ -177,7 +201,7 @@ describe("Twilio API errors propagate", () => {
     twilioCreate.mockRejectedValueOnce(
       Object.assign(new Error("server error"), { status: 500 }),
     );
-    await expect(approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "patient.activation.sms" })).rejects.toMatchObject({
+    await expect(approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "test.fixture.sms" })).rejects.toMatchObject({
       status: 500,
     });
   });

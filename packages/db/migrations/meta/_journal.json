@@ -386,6 +386,13 @@
       "when": 1786300000000,
       "tag": "0055_staff_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1786400000000,
+      "tag": "0056_patient_auth_storage",
+      "breakpoints": true
     }
   ]
 }

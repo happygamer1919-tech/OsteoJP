@@ -1548,3 +1548,108 @@ export const staffNotifications = pgTable(
     ),
   ],
 );
+
+/* ================================================================== */
+/* W13-03 (migration 0056) — patient auth storage. PG1, Decision D.   */
+/*                                                                    */
+/* SECRETS ARE HASHES, NEVER VALUES, in all three tables: the OTP     */
+/* code, the trusted-device token, and the phone number that keys     */
+/* them. Same doctrine 0054 applied to action tokens. A database read */
+/* must not yield anything presentable as a credential.               */
+/*                                                                    */
+/* ALL THREE ARE SERVICE-ROLE ONLY. Every path that touches them runs */
+/* BEFORE a session exists, so there is no principal to scope by;     */
+/* 0056 grants nothing to `patient` or `authenticated` and enables    */
+/* RLS with no policies, which denies both by table gate AND row gate.*/
+/* ================================================================== */
+
+/**
+ * The 6-digit login code. Reachable before authentication, so it stores a
+ * hash of the phone rather than the phone itself — otherwise it would become
+ * a second, unauthenticated-write copy of every patient's number that no
+ * clinical path ever reads. Linkage to a patient (WF-07) happens at claim
+ * time against `patients.phone`, using the number the caller just proved.
+ */
+export const patientOtpCodes = pgTable(
+  "patient_otp_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    /** sha256 of the normalized E.164 number. Pinned to 64 hex by CHECK. */
+    phoneHash: text("phone_hash").notNull(),
+    /** sha256 of the code, domain-separated by the phone hash so the same
+     *  code issued to two phones does not collide. Never the code. */
+    codeHash: text("code_hash").notNull(),
+    /** The attempt cap. Without it, single-use still permits 10^6 guesses. */
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** Single use. Set in the SAME transaction as the session mint. */
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("patient_otp_codes_phone_live_idx").on(t.phoneHash, t.expiresAt),
+    index("patient_otp_codes_expiry_idx").on(t.expiresAt),
+  ],
+);
+
+/**
+ * Trusted device, 30 days (Decision D).
+ *
+ * `expiresAt` is FIXED AT CREATION and never moved: LOOP 3 requires that the
+ * device "does not extend itself silently on use beyond the ruled window", so
+ * `lastSeenAt` is for support and revocation triage and is deliberately NOT an
+ * input to expiry. A sliding window would mean an active device never expires,
+ * which is a different control from the one that was ruled.
+ */
+export const patientTrustedDevices = pgTable(
+  "patient_trusted_devices",
+  {
+    /** The hash IS the key: a bearer credential must not be readable back. */
+    deviceTokenHash: text("device_token_hash").primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    /** Cascades, unlike an audit row: a live credential must not outlive the
+     *  person it belongs to. */
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** Explicit revocation, not a row deletion — "revoked on the 4th" stays
+     *  an answerable question. */
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("patient_trusted_devices_patient_idx").on(t.patientId),
+    index("patient_trusted_devices_expiry_idx").on(t.expiresAt),
+  ],
+);
+
+/**
+ * The durable rate-limit store WF-06 (R3) authorised on the existing Postgres
+ * — no new vendor, because a new subprocessor reopens counsel's annex.
+ *
+ * NO tenantId, and that is not an omission: rate limiting runs BEFORE the auth
+ * check, so there is no verified tenant to scope by and a tenant column would
+ * be unverified caller input. The key carries whatever scope the caller chose.
+ *
+ * The counter is incremented by a single atomic UPSERT that folds the window
+ * reset into the CASE, so there is no read-then-write race. That is the
+ * property the in-memory store cannot have across serverless instances, and
+ * the reason its own header says an OTP lockout built on it is not a control.
+ */
+export const rateLimitCounters = pgTable(
+  "rate_limit_counters",
+  {
+    /** Opaque and already hashed by the caller — no IP or phone in the clear. */
+    key: text("key").primaryKey(),
+    count: integer("count").notNull().default(0),
+    resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("rate_limit_counters_reset_idx").on(t.resetAt)],
+);
