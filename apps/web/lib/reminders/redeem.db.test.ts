@@ -115,8 +115,12 @@ d("redeemActionToken against a real database", () => {
   /** An appointment starting `hoursFromNow` out. Returns its id. */
   async function seedAppointment(hoursFromNow: number): Promise<string> {
     const id = randomUUID();
-    const starts = new Date(Date.now() + hoursFromNow * H);
-    const ends = new Date(starts.getTime() + 60 * 60 * 1000);
+    // ISO strings, not Date objects. The raw-template path binds parameters
+    // through the driver's serializer, which rejects a Date for a timestamptz
+    // (ERR_INVALID_ARG_TYPE, "Received an instance of Date"). Drizzle's typed
+    // insert builder would convert it; a raw template does not.
+    const starts = new Date(Date.now() + hoursFromNow * H).toISOString();
+    const ends = new Date(Date.now() + (hoursFromNow + 1) * H).toISOString();
     await sql.execute(raw`insert into appointments
                 (id, tenant_id, patient_id, practitioner_id, location_id,
                  service_id, starts_at, ends_at, status)
