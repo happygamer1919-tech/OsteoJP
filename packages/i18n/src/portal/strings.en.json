@@ -72,7 +72,18 @@
     "logout": "Sign out",
     "session_expired": "Your session has expired. Please sign in again.",
     "activate_req_done": "Completed: ",
-    "activate_req_pending": "Pending: "
+    "activate_req_pending": "Pending: ",
+    "otp_title": "Sign in with your mobile",
+    "otp_phone_label": "Mobile number",
+    "otp_send": "Send code",
+    "otp_code_label": "6-digit code",
+    "otp_verify": "Sign in",
+    "otp_sent": "If the number is registered, we have sent a code by SMS.",
+    "otp_refused": "Could not sign in. Check the code and try again, or contact the clinic.",
+    "otp_rate_limited": "Too many attempts. Wait a few minutes and try again.",
+    "otp_no_phone": "We have no mobile number on your record. Contact the clinic to register one.",
+    "otp_landline": "The number on your record cannot receive SMS. Contact the clinic to register a mobile.",
+    "otp_shared_number": "We could not confirm your identity from this number. Contact the clinic."
   },
   "dashboard": {
     "greeting": "Hello, {{name}}",

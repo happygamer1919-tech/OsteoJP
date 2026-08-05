@@ -166,4 +166,31 @@ export const RULES = {
   authSession: { limit: 30, windowMs: 60_000 },
   /** Booking writes. Deliberately tight: each one mutates the agenda. */
   booking: { limit: 10, windowMs: 60_000 },
+
+  /**
+   * OTP request. Per phone AND per client, both keyed separately by the caller.
+   *
+   * THREE PER HOUR is deliberately mean, and the reason is money as much as
+   * security: every request that gets past this sends a real SMS at the
+   * clinic's expense. A patient who genuinely did not receive one retries once
+   * or twice; an attacker cycling codes needs volume, and volume is what this
+   * refuses.
+   *
+   * These rules MUST be used with checkDurableRateLimit (the Postgres store),
+   * never the in-memory one. This module's own header explains why: a lockout
+   * an attacker can reset by waiting for a cold serverless instance is not a
+   * lockout. The memory store stays correct for coarse throttling elsewhere.
+   */
+  otpRequest: { limit: 3, windowMs: 60 * 60_000 },
+
+  /**
+   * OTP verify. Ten per hour per client, on top of the five-attempt cap that
+   * lives on the code row itself.
+   *
+   * The two together are what make brute force impractical, and neither is
+   * sufficient alone: the per-code cap without this lets an attacker re-request
+   * codes and spend five guesses against each, while this without the per-code
+   * cap lets ten guesses land against one long-lived code.
+   */
+  otpVerify: { limit: 10, windowMs: 60 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
