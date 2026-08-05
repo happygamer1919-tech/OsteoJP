@@ -128,11 +128,29 @@ jobs:
             --reporter=json --outputFile.json=rls-results.json \
             2>&1 | tee rls-run.log
 
+      # W13-01a. The first DB-gated suite OUTSIDE packages/db. LOOP 1's DoD lines
+      # assert properties of a TRANSACTION - that the appointment write and the
+      # consumption record commit or roll back together, that a refusal still
+      # writes an audit row, that the cutoff is re-evaluated at redemption - and
+      # the code under test (redeemActionToken) lives in apps/web. It cannot move
+      # into packages/db without inverting the dependency direction, so the suite
+      # comes to the database instead: same Supabase stack, same DATABASE_URL,
+      # its own vitest invocation and its own JSON report.
+      - name: Run apps/web DB-gated suite (DATABASE_URL set)
+        if: steps.changes.outputs.code == 'true'
+        working-directory: apps/web
+        run: |
+          pnpm exec vitest run lib/reminders/redeem.db.test.ts \
+            --reporter=default \
+            --reporter=json --outputFile.json=web-db-results.json \
+            2>&1 | tee web-db-run.log
+
       - name: Assert RLS suites actually executed (skip-guard)
         if: steps.changes.outputs.code == 'true'
         run: >
           node .github/scripts/assert-rls-executed.mjs
           packages/db/rls-results.json
+          apps/web/web-db-results.json
           packages/db/rls-run.log
 
       # A4 NEGATIVE CONTROL. The slot lock is the ONLY defence against an
