@@ -155,6 +155,35 @@ export function futureDate(offsetDays: number): string {
 }
 
 /**
+ * Like `futureDate`, but never a SUNDAY: if the derived day is a Sunday it moves
+ * to the Monday after.
+ *
+ * WHY THIS EXISTS. The agenda week view is Monday to Saturday, six days (W3-08).
+ * A Sunday booking is therefore invisible in the week grid, and the view for a
+ * Sunday date renders the PRECEDING Mon-Sat. Any spec that books on a derived
+ * day and then asserts against the WEEK view silently depends on that day not
+ * being a Sunday.
+ *
+ * That is a real failure, not a hypothetical: agenda-cards.spec.ts:104 booked on
+ * `RUN_DAY_BASE + 33` and asserted its three cards in both Dia and Semana.
+ * `RUN_DAY_BASE` is randomised per run, so roughly one run in seven landed on a
+ * Sunday, the week grid showed the wrong six days, and the cards were not there.
+ * Retries hid it: the suite runs `retries: CI ? 2 : 0` and a retry re-derives the
+ * same date, so it stayed red only on a proving run at `--retries=0`.
+ *
+ * Use this instead of `futureDate` in any spec that asserts against the week
+ * view. Specs that only assert Dia, or that read the Marcações/Consultas lists,
+ * do not care and can keep `futureDate`.
+ */
+export function futureWeekdayDate(offsetDays: number): string {
+  const d = new Date();
+  d.setUTCHours(12, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  if (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
  * A per-run-unique base offset (days) so re-runs never collide with appointments
  * a previous run left in the dev DB. Spread out enough to never touch seed data
  * (the seed creates no appointments).
