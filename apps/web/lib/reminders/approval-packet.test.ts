@@ -53,3 +53,57 @@ describe("approval packet covers the registry", () => {
     expect(packet).toMatch(/ainda nao construido/i);
   });
 });
+
+/**
+ * DRIFT GUARD, added 2026-08-05 after the packet was found ten-for-ten wrong.
+ *
+ * WHAT HAPPENED. Every one of the ten sections read "Estado: bloqueado
+ * (approved: false)" while the registry had carried approved:true since #766 on
+ * 2026-08-03. The packet is the artefact a clinical owner SIGNS, so it was
+ * telling JP that every body was blocked by approval when in fact approval had
+ * already been given and the only remaining lock was REMINDERS_LIVE_SEND.
+ *
+ * That direction of error is the dangerous one: it understates the exposure. A
+ * reader of the packet would count TWO locks between an approved body and a
+ * patient's phone when there was one.
+ *
+ * WHY THE EXISTING TESTS MISSED IT. They assert STRUCTURE - that every template
+ * has a numbered section, that both 24h variants exist, that the dead activation
+ * template is absent. Structure was never wrong. State was, and nothing looked
+ * at state, which is how a ten-fold divergence sat unnoticed through two waves.
+ */
+describe("the packet's stated approval state matches the registry", () => {
+  // `packet` above is scoped to its own describe; read it again here.
+  const packet = readFileSync(
+    join(__dirname, "..", "..", "..", "..", "docs", "notifications-approval-packet.md"),
+    "utf8",
+  );
+
+  it("claims approved:true exactly as often as the registry does", () => {
+    // Scoped to the per-template "Estado:" lines. The intro carries a
+    // deliberately-preserved historical paragraph, marked "Historico, mantido
+    // para referencia", which describes the pre-#766 state on purpose - counting
+    // raw occurrences would fail on honest history.
+    const estado = packet.match(/^- \*\*Estado:\*\*.*$/gm) ?? [];
+    expect(estado).toHaveLength(REMINDER_TEMPLATES.length);
+
+    const approvedInRegistry = REMINDER_TEMPLATES.filter((t) => t.approved).length;
+    expect(estado.filter((l) => l.includes("`approved: true`"))).toHaveLength(approvedInRegistry);
+    expect(estado.filter((l) => l.includes("`approved: false`"))).toHaveLength(
+      REMINDER_TEMPLATES.length - approvedInRegistry,
+    );
+  });
+
+  it("still tells the reader that live send is the remaining lock", () => {
+    // Correcting "blocked" to "approved" must not read as "these will now send".
+    // The packet has to keep naming the thing that actually stops them.
+    expect(packet).toContain("REMINDERS_LIVE_SEND");
+  });
+
+  it("dates the 48h email to its own later approval, not the blanket one", () => {
+    // WF-02: JP approved that one line on 2026-08-05. The other nine keep
+    // 2026-08-03, and collapsing them would erase the amendment's provenance.
+    const s48 = packet.slice(packet.indexOf("### 3. Lembrete 48 horas antes"));
+    expect(s48.slice(0, 600)).toContain("2026-08-05");
+  });
+});
