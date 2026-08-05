@@ -2908,3 +2908,43 @@ leaving it attached would let the next reader think the question was settled.
 is to run the control, not to reason about whether it "looks related". The control cost one workflow
 dispatch and converted a guess into a fact in both directions - it proved the marcacoes failure was
 not mine, AND that a card claiming a fix was wrong.
+
+## 2026-08-05 - INC-06: live credentials sat in two committed docs since June (GREEN)
+
+A routine docs audit, looking for stale files, found working credentials in cleartext in two
+committed handoff documents. This was not turned up by a security review, which is the part worth
+sitting with.
+
+**Exposed:** a Supabase database password and two full `postgresql://` connection URLs for the dev
+project `ufbkzbyghvxtosyrkgjq` (still live, still referenced by `scripts/perf-seed-loadtest.mjs`),
+an IfThenPay backoffice key and password, and the password for a QA portal account that still
+exists. Verified by pattern match and line count only. GREEN did not read the values and they appear
+nowhere in this log, the board, or any commit message.
+
+**Both files are deleted. That is not the fix.** They have been in git history since 2026-06-12 and
+2026-06-17, so anyone with repo access, now or in any past clone, still has them. Rotation is the
+only fix and it is owner-terminal work.
+
+**Why it survived two months.** Commit `2c8eeb9` scrubbed the SAME database password out of
+`HANDOFF-2026-06-18.md` and missed the 06-12 file. A partial scrub reads exactly like a completed
+one. Everyone downstream believed the exposure had been handled, and nothing re-checked. That is the
+generalisable lesson: **a scrub is not done until you grep the whole tree for the value, not just the
+file you remembered.**
+
+**Relation to INC-04.** The owner accepted the prod DB password exposure on 2026-08-02 and said he
+would rotate every password and token once the work completed. INC-06 is a second, independent, and
+older exposure covering different credentials, including a third-party payment key. It belongs in
+that same sweep, but it widens it: dev Supabase, IfThenPay and a QA account, not only prod Postgres.
+
+**Also in this pass:** 17 dead documents removed from `docs/` after a reference-graph audit proved
+nothing points at them. Notably `docs/tech-stack.md`, which was never a document at all: it was
+committed on 2026-05-18 containing the literal shell command `cat > docs/tech-stack.md << 'EOF'`
+and the closing `EOF`. Someone pasted the command instead of running it and nobody opened the file
+for eleven weeks, while three other documents linked to it as the authoritative stack reference. Its
+real content lives in `docs/architecture.md` section 3; the three referrers now point there.
+
+**What was deliberately KEPT despite looking dead:** the six `docs/design/SPEC-v2-*.md` files, which
+no document references but `.claude/agents/design-reviewer.md` and `a11y-reviewer.md` read by
+wildcard on every UI diff; and `docs/pr-assets/**`, which is linked from merged GitHub PR bodies by
+SHA-pinned raw URLs rather than from the repo. Both would have looked like obvious orphans to a less
+careful sweep.
