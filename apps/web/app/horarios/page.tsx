@@ -6,6 +6,7 @@ import { requireRequestContext } from "@/lib/auth/context";
 import { getAgendaOptions } from "@/lib/scheduling/data";
 import { listAvailabilityTemplates } from "@/lib/admin/availability";
 import { listTimeOffBlocks } from "@/lib/admin/time-off";
+import { buildScheduleDays, indexScheduleTemplates } from "@/lib/admin/schedule-days";
 import {
   TherapistBlocks,
   type BlockLabels,
@@ -56,26 +57,14 @@ export default async function HorariosPage({
   const therapists = options.therapists; // { id, label }, location-scoped
   const locations = options.locations.map((l) => ({ id: l.id, name: l.label }));
 
-  // First ACTIVE template per (therapist, weekday) — the schedule editor tracks
-  // exactly one id per weekday (the W4-14 reconcile invariant).
-  const firstByKey = new Map<string, (typeof availability)[number]>();
-  for (const tpl of availability) {
-    const key = `${tpl.userId}:${tpl.weekday}`;
-    if (!firstByKey.has(key)) firstByKey.set(key, tpl);
-  }
+  // Up to TWO active templates per (therapist, weekday) since W13-A, so a split
+  // shift survives a reload. SHARED with the Equipa surface deliberately: these
+  // two loaders were byte-identical, they feed editors that share one
+  // ScheduleDay type, and one learning to load a second period without the other
+  // would mean reception saves a split shift and admin archives it.
+  const templateIndex = indexScheduleTemplates(availability);
   const buildDays = (userId: string): ScheduleDay[] =>
-    WEEKDAY_ORDER.map((wd) => {
-      const tpl = firstByKey.get(`${userId}:${wd}`);
-      return {
-        weekday: wd,
-        label: s[WEEKDAY_KEYS[wd]],
-        on: tpl != null,
-        id: tpl?.id ?? "",
-        start: tpl?.startTime ?? "09:00",
-        end: tpl?.endTime ?? "17:00",
-        locationId: tpl?.locationId ?? "",
-      };
-    });
+    buildScheduleDays(templateIndex, userId, WEEKDAY_ORDER, (wd) => s[WEEKDAY_KEYS[wd]]);
 
   // Time-off blocks per therapist (listTimeOffBlocks re-asserts own-location).
   const blocksByTherapist = new Map<string, BlockView[]>(
