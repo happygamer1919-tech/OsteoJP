@@ -481,3 +481,70 @@ terms-acceptance): the apply block ends with a table-existence `select` naming
 the tables or columns that migration creates, not with a journal read of any
 kind. Twice now the block has asked for something that looks like proof and
 is not. Third time it is a `select`.
+
+## Migration 0056 applied to production (2026-08-05) — the pasted evidence
+
+`0056_patient_auth_storage` — the three tables Decision D's OTP login needs
+(W13-03, PG1): `patient_otp_codes`, `patient_trusted_devices`,
+`rate_limit_counters`.
+
+**This is the first apply on this project verified against the DATABASE rather
+than against a file.** The two before it were not, and the section above this one
+says why that mattered.
+
+Owner ran the apply from `osteojp-prod-apply`, detached at `1cae754`.
+`drizzle-kit` reported:
+
+```
+[⣟] applying migrations...
+  NOTICE 42P06: schema "drizzle" already exists, skipping
+  NOTICE 42P07: relation "__drizzle_migrations" already exists, skipping
+[✓] migrations applied successfully!
+```
+
+That output alone still proves nothing — it is printed whether or not anything
+was applied. The verification is the table-existence read, run separately from
+the branch head `5cdbd64` with the prod env sourced:
+
+```
+pnpm --filter @osteojp/db exec node scripts/check-migration-tables.mjs \
+  patient_otp_codes patient_trusted_devices rate_limit_counters
+
+patient_otp_codes        EXISTS
+patient_trusted_devices  EXISTS
+rate_limit_counters      EXISTS
+
+OK: all 3 table(s) present.
+```
+
+**The applied SQL is the shipped SQL, verified by hash rather than assumed.** The
+owner applied at `1cae754` and verified from `5cdbd64`, two different commits, so
+the question "did he check the same file he ran?" is a real one and it is
+answered by content:
+
+| | `packages/db` | `supabase` mirror |
+|---|---|---|
+| `1cae754` — applied | `4d3a8150bb29ebc3…1106d4` | `0ea4cc38888a08ae…8bf4f1` |
+| `5cdbd64` — verified | `4d3a8150bb29ebc3…1106d4` | `0ea4cc38888a08ae…8bf4f1` |
+
+Journal at `5cdbd64`: 56 entries, tail `idx 55, 0056_patient_auth_storage`.
+
+**TWO PROCESS FAILURES ON THE WAY, both PURPLE's, recorded because the fix for
+each is now in the repository rather than in a habit.**
+
+1. The apply block ended with a `psql` command. `psql` is not installed on the
+   owner's machine, so the check did not run and the apply sat unverified. The
+   fix is `packages/db/scripts/check-migration-tables.mjs`, which uses the
+   `postgres` driver `packages/db` already depends on and needs no external
+   tooling.
+2. The follow-up instruction gave the bare `pnpm` command with no checkout step,
+   and the owner ran it while still detached at `1cae754` — a commit that
+   predates the script. `MODULE_NOT_FOUND`, correctly. **An apply block must
+   carry its own checkout line every time**, because the worktree is left
+   wherever the last step put it and the next instruction cannot assume
+   otherwise.
+
+**BINDING ON THE TWO REMAINING MIGRATIONS** (LOOP 4 booking-modes, LOOP 5
+terms-acceptance): the block ends with `check-migration-tables.mjs` naming that
+migration's tables, and it begins with `git fetch` plus an explicit
+`git checkout origin/<branch>`. Both halves, every time.
