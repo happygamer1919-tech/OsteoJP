@@ -99,6 +99,92 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v1/auth/otp/request:
+    post:
+      operationId: requestOtp
+      tags: [auth]
+      summary: Send a 6-digit login code by SMS
+      description: >
+        Decision D: patient login is a 6-digit SMS OTP, phone only.
+
+
+        ALWAYS ANSWERS 204 for a well-formed number, known or not. This endpoint
+        is the enumeration surface: a response that differed for a known and an
+        unknown number would be a patient-list oracle for anyone with a phone
+        book. It also never queries the patient table at all, so membership
+        cannot leak through the timing of a lookup that is never performed — the
+        patient is resolved at CLAIM time, on verify (WF-07).
+
+
+        The only distinguishable outcomes are `400` (malformed input, which
+        reveals the caller's own typing and nothing about our records) and `429`,
+        which an unknown number hits identically.
+
+
+        Rate limited BEFORE any parsing, on TWO independent keys — per client and
+        per phone hash — because either alone is bypassable: one by rotating the
+        number, the other by rotating the source. The phone key is a hash, so no
+        number is used as a rate-limit key in the clear.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpRequestInput"
+      responses:
+        "204":
+          description: >
+            Accepted. Returned whether or not the number is known — see the
+            description. No body.
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/auth/otp/verify:
+    post:
+      operationId: verifyOtp
+      tags: [auth]
+      summary: Verify a login code and resolve the patient
+      description: >
+        Returns ONE `401` with ONE body for every failure mode: no code was
+        requested, the code is wrong, it expired, its attempt cap is spent, or
+        the proven phone resolves to zero / several / an already-claimed patient
+        row. A caller can distinguish none of them, which is deliberate —
+        "several records match your number" confirms to anyone that a given
+        number is in this clinic's files, and how many times.
+
+
+        Linkage (WF-07) runs only AFTER the code verifies, and links only when
+        EXACTLY ONE live row (deleted_at, merged_into_id and auth_user_id all
+        null) carries the proven phone. Anything else refuses. Mis-linking a
+        medical record is the failure class that refusal exists to prevent.
+
+
+        DOES NOT YET MINT A SESSION. It returns the resolved `patientId` and
+        nothing else — no cookie, no token. The mint must land in the same
+        transaction as consuming the code, and shipping half of that is what
+        Decision D forbids.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpVerifyInput"
+      responses:
+        "200":
+          description: The code verified and the phone resolved to exactly one patient.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpVerifyResult"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
   /api/v1/booking/catalog:
     get:
       operationId: getBookingCatalog
@@ -829,8 +915,68 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorLocalized"
+    RateLimited:
+      description: >
+        `rate_limited` — too many requests. Carries `Retry-After`. On the OTP
+        paths the limiter is durable (Postgres) and FAILS CLOSED: if the store
+        is unreachable this refuses rather than allowing, because failing open
+        would turn a database blip into an unlimited guessing window against a
+        6-digit code.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until the window resets.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
 
   schemas:
+    OtpRequestInput:
+      type: object
+      additionalProperties: false
+      required: [tenantId, phone]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        phone:
+          type: string
+          description: >
+            Portuguese number in any stored format; normalized to E.164 server
+            side before it is used, so one handset cannot be spent as two
+            rate-limit budgets.
+          examples: ["+351912345678"]
+
+    OtpVerifyInput:
+      type: object
+      additionalProperties: false
+      required: [tenantId, phone, code]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        phone:
+          type: string
+          examples: ["+351912345678"]
+        code:
+          type: string
+          description: The 6-digit code, digits only, leading zeros significant.
+          examples: ["012345"]
+
+    OtpVerifyResult:
+      type: object
+      additionalProperties: false
+      required: [patientId]
+      description: >
+        The resolved patient. Deliberately carries NO session material — see the
+        endpoint description.
+      properties:
+        patientId:
+          type: string
+          format: uuid
+
     Error:
       type: object
       additionalProperties: false
