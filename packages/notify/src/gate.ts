@@ -49,12 +49,21 @@ export type NotifierOptions = {
    * `transport` so the gate can report `missing_provider_config` WITHOUT
    * constructing a provider client.
    */
-  transportConfigured: (channel: Channel) => boolean;
+  transportConfigured: (channel: Channel, templateId?: string) => boolean;
   env?: Record<string, string | undefined>;
   /** Injectable for tests; defaults to console. */
   logger?: Pick<Console, "info" | "error">;
-  /** Resolved from-address for email. Called only on the live path. */
-  emailFrom?: () => string;
+  /**
+   * Resolved from-address for email. Called only on the live path.
+   *
+   * TAKES THE TEMPLATE ID because one app can have more than one sender. The
+   * staff-invite stream and the patient-reminder stream now use different
+   * from-addresses (LE-reminders-email-from-naming, owner ruling 2026-08-05:
+   * split, not rename), and they share this choke point deliberately — a second
+   * send path would be a second place for a live send to escape the gate. The
+   * argument is optional to callers that only ever have one sender.
+   */
+  emailFrom?: (templateId: string) => string;
 };
 
 function suppressed(
@@ -94,7 +103,7 @@ export function createNotifier(opts: NotifierOptions): Notifier {
         return suppressed(req, "live_send_disabled", logger);
       }
 
-      if (!opts.transportConfigured(req.channel)) {
+      if (!opts.transportConfigured(req.channel, req.templateId)) {
         return suppressed(req, "missing_provider_config", logger);
       }
 
@@ -107,7 +116,7 @@ export function createNotifier(opts: NotifierOptions): Notifier {
           ? await opts.transport.sendSms({ to: req.to, body: req.body })
           : await opts.transport.sendEmail({
               to: req.to,
-              from: opts.emailFrom?.() ?? "",
+              from: opts.emailFrom?.(req.templateId) ?? "",
               subject: req.subject ?? "",
               body: req.body,
             });

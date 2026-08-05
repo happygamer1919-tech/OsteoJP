@@ -79,15 +79,34 @@ describe("registry contents", () => {
     }
   });
 
-  it("records JP's 2026-08-03 blanket approval on every reminder body, with a real approver", () => {
+  it("records a named approver and a real date on every reminder body", () => {
     for (const t of REMINDER_TEMPLATES) {
       expect(t.approved).toBe(true);
       // Provenance is not decoration: an approval with no named approver and no
       // date is indistinguishable from a default, which is how unreviewed copy
       // reaches patients.
       expect(t.approvedBy).toBe("JP");
-      expect(t.approvedAt).toBe("2026-08-03");
     }
+  });
+
+  it("dates each body to the approval that actually covers it, not to a blanket", () => {
+    // WF-02 (2026-08-05): JP approved amending the 48h EMAIL body - one line, to
+    // name confirming alongside remarcar and cancelar. Only that body's date
+    // moves. Bumping the shared constant instead would have re-dated nine bodies
+    // JP approved on 2026-08-03 and never looked at again, quietly destroying
+    // the audit trail this field exists to keep.
+    const amended = new Set(["reminder.48h.email"]);
+    for (const t of REMINDER_TEMPLATES) {
+      expect(t.approvedAt).toBe(amended.has(t.id) ? "2026-08-05" : "2026-08-03");
+    }
+    // The amendment is real and reached the registered body, not just the date.
+    const t48 = REMINDER_TEMPLATES.find((t) => t.id === "reminder.48h.email");
+    expect(t48?.body).toContain("Para confirmar, remarcar ou cancelar");
+    // And it did NOT bleed into the 24h bodies, which stay confirm-free: the
+    // 24h SMS is confirm-only by counsel's matrix and carries no link at all.
+    const t24 = REMINDER_TEMPLATES.find((t) => t.id === "reminder.24h.email");
+    expect(t24?.body).toContain("Para remarcar ou cancelar");
+    expect(t24?.body).not.toContain("Para confirmar");
   });
 
   it("covers both channels for all five notification kinds", () => {

@@ -409,3 +409,75 @@ from no-op in one command. Nobody should repeat the double-run.
 Independently corroborating: CI's DB-gated job applied the identical SQL to a
 real Postgres on #775 (2m43s, green), so the migration is known to be valid
 against a live database as well as merged.
+
+## Migration 0055 applied to production (2026-08-05) — the pasted evidence
+
+`0055_staff_notifications` — the in-app notification centre's storage (W13-02,
+PG4). Recorded here in the same place and the same shape as 0054 above, per
+WAVE-13.md §1.5 point 3: *"Applied counts only with pasted journal output."*
+
+Owner ran the apply block from `osteojp-prod-apply`, detached at
+`b02d535` (`Merge branch 'main' into portal/W13-02-notification-centre`).
+`drizzle-kit` reported **migrations applied successfully**. Journal tail pasted
+back verbatim:
+
+```
+      "tag": "0054_patient_audit_log_and_token_consumption",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1786300000000,
+      "tag": "0055_staff_notifications",
+      "breakpoints": true
+    }
+  ]
+}
+```
+
+**The applied SQL is byte-for-byte the SQL that shipped, and this was verified
+rather than assumed.** `b02d535` is NOT an ancestor of `main` — #798 was
+squash-merged, so the branch commits are absent from `main`'s history and
+ancestry cannot answer the question. Content can, and does:
+
+| | `sha256` of `packages/db/migrations/0055_staff_notifications.sql` |
+|---|---|
+| `b02d535` — what the owner applied | `3425e6f728a20f9f4f4fac97f7fb02287c1c05cf2ff81b9e2cd07e0218653d28` |
+| `origin/main` — what merged as `f92a182` | `3425e6f728a20f9f4f4fac97f7fb02287c1c05cf2ff81b9e2cd07e0218653d28` |
+
+The `supabase/` mirror matches too (`67330be8d19f8188430e675f7340a18fd7a3b7bf4214222ee791f42698be2672`
+on both). `b02d535` carries journal `idx 54` exactly as pasted, so the `0049`
+failure mode — a plain `git checkout <branch>` leaving the worktree on `main`
+where `db:migrate` finds nothing and reports success anyway
+(`docs/DECISIONS.md:2215`) — is excluded.
+
+**WHAT IT STILL DOES NOT PROVE, and the flaw is PURPLE's again.** The section
+above this one ends with an instruction PURPLE then failed to follow: *"Future
+apply blocks must ask for a table-existence read instead."* The 0055 block asked
+for `git show HEAD:packages/db/migrations/meta/_journal.json`, which reads the
+**committed journal out of git** — a file in the working tree — and says nothing
+about the database. It is a better proof than 0054's double-run, because it
+pins the commit the worktree was detached at, but it is still not a read of
+production. `drizzle-kit` prints `[✓] migrations applied successfully!` whether
+or not it applied anything, so on this evidence alone a no-op is
+indistinguishable from an apply.
+
+Not treated as a blocker: #798 is merged, CI's DB-gated job applied the
+identical SQL to a real Postgres on that PR, and the failure mode this leaves
+open (0055 recorded but the table absent) would surface immediately as a 500 on
+any staff page, because the shell reads the unread count on every render.
+Confirmatory one-command read for the owner, read-only, no PII, run from the
+prod-apply worktree with the prod env sourced:
+
+```
+psql "$DATABASE_URL" -c "select to_regclass('public.staff_notifications') as table_exists, (select count(*) from drizzle.__drizzle_migrations) as migrations_recorded;"
+```
+
+`table_exists` must be `staff_notifications` and not null.
+
+**BINDING ON THE TWO REMAINING MIGRATIONS** (LOOP 4 booking-modes, LOOP 5
+terms-acceptance): the apply block ends with a table-existence `select` naming
+the tables or columns that migration creates, not with a journal read of any
+kind. Twice now the block has asked for something that looks like proof and
+is not. Third time it is a `select`.

@@ -147,7 +147,7 @@ Olá {{patient_first_name}},
 
 Lembrete da sua consulta em {{appointment_date}} às {{appointment_time}}, em {{clinic_location}}, com {{practitioner_name}}.
 
-Para remarcar ou cancelar: {{reschedule_link}}
+Para confirmar, remarcar ou cancelar: {{reschedule_link}}
 Ou contacte: {{clinic_phone}}
 
 — OsteoJP
@@ -162,7 +162,7 @@ Olá Madalena,
 
 Lembrete da sua consulta em 10 de setembro de 2026 às 14:30, em Castelo Branco, com Dr. Joao Pereira.
 
-Para remarcar ou cancelar: https://app.osteojp.pt/r/eyJ0IjoiM2EyZDA3MTEtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwIiwiYSI6IjExMTExMTExLTExMTEtMTExMS0xMTExLTExMTExMTExMTExMSIsImV4cCI6MTc4OTAwMDAwMH0.N-5B6LOtRZUQt2eazNOmzTfvU7DQEE_lLu8FN_6GMiw
+Para confirmar, remarcar ou cancelar: https://app.osteojp.pt/r/eyJ0IjoiM2EyZDA3MTEtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwIiwiYSI6IjExMTExMTExLTExMTEtMTExMS0xMTExLTExMTExMTExMTExMSIsImV4cCI6MTc4OTAwMDAwMH0.N-5B6LOtRZUQt2eazNOmzTfvU7DQEE_lLu8FN_6GMiw
 Ou contacte: +351 272 000 000
 
 — OsteoJP

@@ -56,7 +56,7 @@ Olá {{patient_first_name}},
 
 Lembrete da sua consulta em {{appointment_date}} às {{appointment_time}}, em {{clinic_location}}, com {{practitioner_name}}.
 
-Para remarcar ou cancelar: {{reschedule_link}}
+Para confirmar, remarcar ou cancelar: {{reschedule_link}}
 Ou contacte: {{clinic_phone}}
 
 — OsteoJP
@@ -68,7 +68,7 @@ Dear {{patient_first_name}},
 
 Reminder of your appointment on {{appointment_date}} at {{appointment_time}}, at our {{clinic_location}} clinic, with {{practitioner_name}}.
 
-To reschedule or cancel: {{reschedule_link}}
+To confirm, reschedule or cancel: {{reschedule_link}}
 Or contact us: {{clinic_phone}}
 
 — OsteoJP

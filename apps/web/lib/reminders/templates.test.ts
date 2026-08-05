@@ -39,7 +39,12 @@ describe("email rendering", () => {
     expect(body).toContain(
       "Lembrete da sua consulta em 23 de maio de 2026 às 14:30, em Linda-a-Velha, com Dr. Joao Pereira.",
     );
-    expect(body).toContain("Para remarcar ou cancelar: https://osteojp.pt/r/abc123");
+    // WF-02 (2026-08-05): "confirmar" was added to THIS line and only this line.
+    // The link is signed confirm_cancel and the landing page renders a confirm
+    // CTA, so confirming was built and never mentioned. The 24h bodies keep
+    // "Para remarcar ou cancelar" - the 24h SMS is confirm-only by counsel's
+    // matrix and carries no link at all.
+    expect(body).toContain("Para confirmar, remarcar ou cancelar: https://osteojp.pt/r/abc123");
     expect(body).toContain("Ou contacte: +351 210 000 000");
     expect(body.trimEnd().endsWith("— OsteoJP")).toBe(true);
   });
@@ -53,7 +58,10 @@ describe("email rendering", () => {
     expect(body).toContain(
       "Reminder of your appointment on 23 de maio de 2026 at 14:30, at our Linda-a-Velha clinic, with Dr. Joao Pereira.",
     );
-    expect(body).toContain("To reschedule or cancel: https://osteojp.pt/r/abc123");
+    // WF-02: the EN mirror moves with the PT body. The registry states the rule
+    // explicitly - approving PT approves its EN counterpart, and JP approved on
+    // that basis - so this is the same amendment, not a second one.
+    expect(body).toContain("To confirm, reschedule or cancel: https://osteojp.pt/r/abc123");
   });
 
   it("renders the PT 24h reminder with the arrive-early line", () => {
