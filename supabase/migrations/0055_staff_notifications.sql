@@ -1,3 +1,7 @@
+-- AUTO-GENERATED — DO NOT EDIT.
+-- Mirror of packages/db/migrations/0055_staff_notifications.sql for Supabase branching.
+-- Edit the drizzle source, then run: node scripts/sync-supabase-migrations.mjs
+
 /* ================================================================== */
 /* 0055 — staff_notifications (W13-02, Wave 13 LOOP 2)                */
 /*                                                                    */
