@@ -1,52 +1,79 @@
 /**
- * Item 2 DoD, apps/api half: the eleventh patient-facing body.
+ * The apps/api approval ledger is EMPTY, and empty means refuses-everything.
  *
- * Patient activation is registered unapproved and refused even with live send
- * armed. It is dead code today (no caller), but registering it means it cannot
- * become live by someone merely wiring a route to it.
+ * WHAT THIS FILE USED TO ASSERT, and why the change is a strengthening rather
+ * than a loss of coverage. It proved that the two patient-activation templates
+ * were registered `approved:false` and were refused even with live send armed —
+ * a gate around a body that existed. W13-03 deleted the code behind them under
+ * owner ruling WF-08 (R5, 2026-08-05): `sendPatientActivation` minted a Supabase
+ * recovery link, which is a session grant, and Decision D permits no session
+ * from anything but a verified OTP.
+ *
+ * So the property worth pinning is no longer "this body is refused" but "NO body
+ * can be sent from this app at all", which is a wider claim and the one that
+ * actually holds now. A registry with one unapproved entry could be made live by
+ * flipping a boolean; an empty one has nothing to flip.
+ *
+ * THE FAIL-CLOSED DIRECTION IS THE POINT. `resolveApproved` treats an unknown
+ * template id as unapproved, so an empty ledger refuses everything rather than
+ * permitting everything. If that ever inverted, this suite goes red — which is
+ * exactly the failure mode an empty-registry design has to be defended against.
  */
 import { describe, it, expect } from "vitest";
-import { createNotifier, createTestSink } from "@osteojp/notify";
-import { ACTIVATION_TEMPLATES, apiRegistry } from "./registry";
+import { createNotifier, createTestSink, resolveApproved } from "@osteojp/notify";
+import { API_TEMPLATES, apiRegistry } from "./registry";
 
 const silent = { info: () => {}, error: () => {} } as unknown as Console;
 
-describe("patient activation registry", () => {
-  it("registers both channels, both unapproved, both patient-facing", () => {
-    expect(ACTIVATION_TEMPLATES).toHaveLength(2);
-    for (const t of ACTIVATION_TEMPLATES) {
-      expect(t.approved).toBe(false);
-      expect(t.approvedBy).toBeNull();
-      expect(t.audience).toBe("patient");
+describe("apps/api approval ledger", () => {
+  it("registers nothing", () => {
+    expect(API_TEMPLATES).toEqual([]);
+  });
+
+  it("treats every id as unapproved, including ones that once existed", () => {
+    for (const id of [
+      "patient.activation.sms",
+      "patient.activation.email",
+      "reminder.48h.email",
+      "anything.at.all",
+    ]) {
+      expect(resolveApproved(apiRegistry, id, "sms")).toBeFalsy();
+      expect(resolveApproved(apiRegistry, id, "email")).toBeFalsy();
     }
   });
 
-  it("refuses both with live send armed and sends nothing", async () => {
+  it("sends NOTHING through the notifier with live send armed", async () => {
+    // Live send deliberately ON: the refusal must come from the registry, not
+    // from a flag. A test with the flag off would pass on either mechanism and
+    // so would prove neither.
     const sink = createTestSink();
     const notifier = createNotifier({
       registry: apiRegistry,
       transport: sink,
       transportConfigured: () => true,
-      env: { REMINDERS_LIVE_SEND: "true" },
+      env: { REMINDERS_LIVE_SEND: "true", INVITES_LIVE_SEND: "true" },
       logger: silent,
       emailFrom: () => "reminders@send.osteojp.pt",
     });
 
+    const requests = [
+      { templateId: "patient.activation.sms", channel: "sms" as const, to: "+351910000000" },
+      {
+        templateId: "patient.activation.email",
+        channel: "email" as const,
+        to: "doente@example.test",
+      },
+      { templateId: "reminder.48h.email", channel: "email" as const, to: "doente@example.test" },
+    ];
+
     const outcomes = await Promise.all(
-      ACTIVATION_TEMPLATES.map((t) =>
-        notifier.dispatch({
-          templateId: t.id,
-          channel: t.channel,
-          to: t.channel === "sms" ? "+351910000000" : "doente@example.test",
-          subject: "assunto",
-          body: t.body,
-        }),
-      ),
+      requests.map((r) => notifier.dispatch({ ...r, subject: "assunto", body: "corpo" })),
     );
 
     expect(
       outcomes.filter((o) => !o.sent && "reason" in o && o.reason === "template_unapproved"),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
+    // The transport is the assertion that matters: nothing reached it.
     expect(sink.records).toHaveLength(0);
   });
 });

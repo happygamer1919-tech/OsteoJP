@@ -1,39 +1,36 @@
-// Approval ledger for apps/api. One body, two channels, both unapproved.
+// Approval ledger for apps/api. DELIBERATELY EMPTY.
 //
-// Patient activation (lib/auth/activation.ts) delivers a Supabase recovery link
-// that sets the patient's first password. It is patient-facing copy JP has never
-// seen, so it registers approved:false and the gate refuses it regardless of
-// REMINDERS_LIVE_SEND.
+// It held two entries — patient activation by SMS and by email, both
+// approved:false — and they went with the code that sent them. W13-03 deleted
+// `lib/auth/activation.ts` under owner ruling WF-08 (R5, 2026-08-05): it minted
+// a Supabase RECOVERY link and delivered it by SMS, which is a session grant,
+// and Decision D permits no session from anything but a verified OTP. It had no
+// production caller, verified by searching every export across apps/ and
+// packages/ before the deletion.
 //
-// It is also currently DEAD CODE: `sendPatientActivation` has no caller (grep,
-// and docs/handoff/WAVE-12-CLOSE-20260727.md:78). It is deliberately NOT in the
-// JP approval packet — a dead template must not consume a clinical owner's
-// review. See docs/notifications-work-notes.md: it grants a session by design,
-// which conflicts with Decision D and the one-action-token ruling, and it is a
-// candidate for outright deletion during the AUTH work. Not this lane's call.
+// AN EMPTY REGISTRY IS THE CORRECT STATE, NOT A GAP. The approval gate is
+// fail-closed: `resolveApproved` treats an unknown template id as unapproved, so
+// an empty ledger means apps/api can send NOTHING, through any channel, under
+// any flag. That is exactly right — this app has no remaining outbound body.
+// Patient reminders live in apps/web and are gated by REMINDERS_LIVE_SEND;
+// staff invites live in apps/web and are gated by INVITES_LIVE_SEND.
+//
+// The registry and the sender in `clients.ts` are kept rather than deleted with
+// their last entry, and that is a deliberate choice: they are the CHOKE POINT.
+// Removing them would mean the next outbound body added to this app has nowhere
+// to register itself and no gate to pass, which is how an unapproved body
+// reaches a patient. An empty gate that refuses everything is a smaller thing to
+// maintain than the discipline of remembering to rebuild one.
+//
+// ADDING A BODY HERE IS A CLINICAL EVENT, not a code change. It registers
+// approved:false, JP reviews the copy, and only then does the flag matter.
 
 import { buildRegistry, type TemplateEntry } from "@osteojp/notify";
-import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 
-const ACTIVATION_BODY = getStrings(DEFAULT_LOCALE)["patientActivation.smsBody"];
+/**
+ * No approved bodies. See the header: this is a fail-closed default, and the
+ * empty array is load-bearing rather than a placeholder awaiting content.
+ */
+export const API_TEMPLATES: readonly TemplateEntry[] = [] as const;
 
-function unapprovedActivation(id: string, channel: "email" | "sms"): TemplateEntry {
-  return {
-    id,
-    channel,
-    audience: "patient",
-    triggerEvent: "patient/activation.requested",
-    body: `${ACTIVATION_BODY}\n\n<set-password link>`,
-    liveSendFlag: "REMINDERS_LIVE_SEND",
-    approved: false,
-    approvedBy: null,
-    approvedAt: null,
-  };
-}
-
-export const ACTIVATION_TEMPLATES: readonly TemplateEntry[] = [
-  unapprovedActivation("patient.activation.sms", "sms"),
-  unapprovedActivation("patient.activation.email", "email"),
-] as const;
-
-export const apiRegistry = buildRegistry(ACTIVATION_TEMPLATES);
+export const apiRegistry = buildRegistry(API_TEMPLATES);

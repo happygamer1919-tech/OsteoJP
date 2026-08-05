@@ -49,33 +49,43 @@ describe("registry contents", () => {
     expect(REMINDER_TEMPLATES.every((t) => t.audience === "patient")).toBe(true);
   });
 
-  // The reconciliation, asserted rather than asserted-in-a-comment. The TOTALS
-  // are unchanged by JP's approval — 10 web entries + 2 activation = 12 entries
-  // over 11 distinct bodies. What changed is how many of them REFUSE.
-  it("still totals 12 entries over 11 bodies across both apps", async () => {
-    const { ACTIVATION_TEMPLATES } = await import(
-      "../../../../apps/api/lib/notify/registry"
-    );
+  // The platform-wide reconciliation, asserted rather than asserted-in-a-comment.
+  //
+  // IT USED TO READ 12 entries over 11 bodies: 10 here plus 2 patient-activation
+  // entries in apps/api, which were one body on two channels and were registered
+  // approved:false so a blanket packet approval could not reach them.
+  //
+  // W13-03 deleted activation entirely under owner ruling WF-08 (R5,
+  // 2026-08-05) — it minted a Supabase recovery link, which is a session grant,
+  // and Decision D permits no session from anything but a verified OTP. So the
+  // totals are now 10 and 10, and apps/api registers NOTHING.
+  //
+  // The reconciliation is kept rather than deleted with the entries it counted:
+  // its value was never the number, it is that a body cannot appear in either
+  // app without this count changing and someone noticing.
+  it("totals 10 entries over 10 bodies across both apps", async () => {
+    const { API_TEMPLATES } = await import("../../../../apps/api/lib/notify/registry");
 
     expect(REMINDER_TEMPLATES).toHaveLength(10);
-    expect(ACTIVATION_TEMPLATES).toHaveLength(2);
-    expect(REMINDER_TEMPLATES.length + ACTIVATION_TEMPLATES.length).toBe(12);
+    expect(API_TEMPLATES).toHaveLength(0);
+    expect(REMINDER_TEMPLATES.length + API_TEMPLATES.length).toBe(10);
 
-    // 11 BODIES, not 12: the two activation entries are one body on two channels.
-    const activationBodies = new Set(ACTIVATION_TEMPLATES.map((t) => t.body));
-    expect(activationBodies.size).toBe(1);
-    expect(REMINDER_TEMPLATES.length + activationBodies.size).toBe(11);
+    // One body per entry now: the two-channel body that made 12 entries into 11
+    // bodies was the activation one, and it is gone.
+    const bodies = new Set(REMINDER_TEMPLATES.map((t) => t.body));
+    expect(bodies.size).toBe(10);
   });
 
-  it("leaves patient activation UNAPPROVED after JP's packet approval", async () => {
-    // JP approved the packet. Activation was deliberately excluded from it as
-    // dead code, so a blanket approval of the packet must not reach it.
-    const { ACTIVATION_TEMPLATES } = await import(
-      "../../../../apps/api/lib/notify/registry"
-    );
-    for (const t of ACTIVATION_TEMPLATES) {
-      expect(t.approved).toBe(false);
-      expect(t.approvedBy).toBeNull();
+  it("apps/api can send nothing at all, which is the fail-closed state", async () => {
+    // An empty registry is not a gap awaiting content. `resolveApproved` treats
+    // an unknown id as unapproved, so nothing is sendable from that app through
+    // any channel under any flag — including the ids that used to exist.
+    const { apiRegistry } = await import("../../../../apps/api/lib/notify/registry");
+    const { resolveApproved } = await import("@osteojp/notify");
+
+    for (const id of ["patient.activation.sms", "patient.activation.email"]) {
+      expect(resolveApproved(apiRegistry, id, "sms")).toBeFalsy();
+      expect(resolveApproved(apiRegistry, id, "email")).toBeFalsy();
     }
   });
 
