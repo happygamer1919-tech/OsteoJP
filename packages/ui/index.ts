@@ -151,3 +151,10 @@ export {
   UserAreaCluster,
   type UserAreaClusterProps,
 } from "./src/components/UserAreaCluster";
+/** W13-02 (PG4). The real bell. Deliberately NOT part of UserAreaCluster: a
+ * caller that wraps the cluster in a link would make the bell inherit that
+ * link's destination, which is exactly the defect this component fixed. */
+export {
+  NotificationBell,
+  type NotificationBellProps,
+} from "./src/components/NotificationBell";

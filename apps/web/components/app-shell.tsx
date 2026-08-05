@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { UserAreaCluster } from "@osteojp/ui";
+import { NotificationBell, UserAreaCluster } from "@osteojp/ui";
 import { type Role } from "@osteojp/auth";
 
 import { getRequestContext } from "@/lib/auth/context";
+import { unreadCount } from "@/lib/notifications/centre";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { logout } from "@/app/logout/actions";
 import { s } from "@/lib/i18n";
@@ -65,6 +66,21 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     typeof data?.claims?.email === "string" ? data.claims.email : undefined;
   const { name, initials } = displayFromEmail(email);
 
+  // W13-02: the bell's badge. Read here rather than in a client component so it
+  // is derived from data on every render and cannot drift from the list it
+  // describes. Failure is non-fatal — a shell that will not render because the
+  // notification count could not be read would take down every staff page for a
+  // cosmetic badge, so it degrades to zero and says so in the log.
+  let unread = 0;
+  try {
+    unread = await unreadCount(ctx);
+  } catch (err) {
+    console.error(
+      "[notifications] unread count failed; rendering the bell without a badge",
+      err instanceof Error ? `${err.name}: ${err.message}` : "unknown",
+    );
+  }
+
   // W7-02: the profile was already routed and already linked — but ONLY as the
   // avatar/name chip, whose sole affordance was an aria-label. Sighted users had
   // no way to know it was clickable, so the page was effectively unreachable and
@@ -73,6 +89,25 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   // primitive and the same styling as the sign-out control — no new shell pattern.
   const userArea = (
     <div className="flex items-center gap-4">
+      {/* W13-02 (PG4): the bell is a REAL control with its own destination, and
+          it sits OUTSIDE the profile link below. That placement is the whole
+          fix. It was previously a decorative aria-hidden span INSIDE
+          UserAreaCluster, and the cluster is wrapped in <Link href="/perfil">,
+          so every click on the bell navigated to the profile — the symptom the
+          owner reported. A guard test pins it outside the link so this cannot
+          silently return.
+
+          The count is read server-side from staff_notifications (read_at IS
+          NULL), never held in client state that a reload would reset. */}
+      <NotificationBell
+        href="/notificacoes"
+        label={s["notifications.title"]}
+        linkComponent={Link}
+        unreadCount={unread}
+        unreadLabel={(n) =>
+          n === 1 ? s["notifications.unreadOne"] : s["notifications.unreadMany"].replace("{n}", String(n))
+        }
+      />
       {/* W6-02: the user cluster links to the self-service profile (all roles). */}
       <Link
         href="/perfil"

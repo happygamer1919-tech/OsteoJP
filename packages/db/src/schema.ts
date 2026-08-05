@@ -1486,3 +1486,65 @@ export const actionTokenConsumptions = pgTable(
   },
   (t) => [index("action_token_consumptions_tenant_time_idx").on(t.tenantId, t.consumedAt)],
 );
+
+/**
+ * W13-02 (migration 0055) — the in-app notification centre's storage. PG4.
+ *
+ * ONE ROW PER RECIPIENT. A patient-initiated change fans out to every reception
+ * user of the tenant plus the assigned practitioner(s), so one event becomes N
+ * rows and per-user read state is a column rather than a second table.
+ *
+ * IDENTIFIERS AND INSTANTS ONLY — the same rule the emitting contract states in
+ * apps/api/lib/notifications/patient-change.ts. No patient name, no phone, no
+ * email, NO SERVICE NAME, no clinical content. The name is joined at render time
+ * by a staff session already entitled to it; a service name is forbidden outright
+ * because several of them identify a treatment type.
+ *
+ * IN-APP ONLY. Nothing in this table may grow an email or SMS leg: those live
+ * under PG5 and are gated by REMINDERS_LIVE_SEND.
+ */
+export const staffNotifications = pgTable(
+  "staff_notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    /** Cascades, unlike an audit row: a notification is a message TO someone, and
+     * a removed staff user's unread list is unreachable by any policy anyway. */
+    recipientUserId: uuid("recipient_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Pinned by CHECK in 0055 to the four PG4 kinds. `appointment_request` is
+     * "pedido de marcacao"; the pt-PT wording lives in packages/i18n with all
+     * other user-facing copy, never in an enum value. */
+    kind: text("kind").notNull(),
+    /** No reference(): recorded as data, so a cascade cannot erase a trail and
+     * SET NULL cannot silently rewrite what a user already read. */
+    appointmentId: uuid("appointment_id").notNull(),
+    patientId: uuid("patient_id").notNull(),
+    /** Equal to newStartsAt for a booking and for a cancellation — the
+     * convention the emitting contract already established. */
+    previousStartsAt: timestamp("previous_starts_at", { withTimezone: true }).notNull(),
+    newStartsAt: timestamp("new_starts_at", { withTimezone: true }).notNull(),
+    /** When the PATIENT acted, not when the row was written. */
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    /** Null is unread. The unread count is derived from this column, never from
+     * a client-side counter a reload would reset (LOOP 2 DoD). */
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("staff_notifications_recipient_time_idx").on(t.recipientUserId, t.occurredAt),
+    index("staff_notifications_tenant_time_idx").on(t.tenantId, t.occurredAt),
+    /** Idempotency guard, not a lookup: emitPatientChange is post-commit and
+     * best-effort, so the same patient action must not double-post on a retry.
+     * A genuine second action carries a different occurredAt. */
+    uniqueIndex("staff_notifications_dedupe_uq").on(
+      t.recipientUserId,
+      t.appointmentId,
+      t.kind,
+      t.occurredAt,
+    ),
+  ],
+);

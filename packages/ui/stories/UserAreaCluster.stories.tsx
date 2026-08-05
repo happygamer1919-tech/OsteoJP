@@ -4,9 +4,14 @@ import { UserAreaCluster } from "../src/components/UserAreaCluster";
 
 /**
  * UserAreaCluster (SPEC-v2-foundation §7.3): signed-in-staff identity strip
- * shown at the top-right of the content area. Bell + avatar + name / role
- * label. Presentational only — renders session data passed from the server
- * shell; no interactivity.
+ * shown at the top-right of the content area. Avatar + name / role label.
+ * Presentational only — renders session data passed from the server shell; no
+ * interactivity.
+ *
+ * THE BELL LEFT THIS COMPONENT in W13-02 and is now `NotificationBell`, with its
+ * own story. It was decorative here, and its only consumer wrapped this cluster
+ * in a profile link, so clicking it navigated to the profile — the defect PG4
+ * fixed. The `NoBell` story went with it: there is no bell left to switch off.
  */
 const meta = {
   title: "Components/UserAreaCluster",
@@ -23,13 +28,8 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Default: bell + avatar + name + role label (admin). */
+/** Default: avatar + name + role label (admin). */
 export const Default: Story = {};
-
-/** Without the notification bell (showBell=false). */
-export const NoBell: Story = {
-  args: { showBell: false },
-};
 
 /** Terapeuta role. */
 export const Terapeuta: Story = {

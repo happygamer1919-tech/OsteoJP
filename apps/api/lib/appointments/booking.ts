@@ -322,6 +322,23 @@ export async function bookAppointment(
     endsAt,
   });
 
+  // POST-COMMIT, same rule as cancel and reschedule: the booking already exists,
+  // so a failed notification must never surface to the patient as a failed
+  // booking. W13-02 adds this site; cancel and reschedule were already emitting
+  // and `booked` is the third of PG4's four kinds. Both instants are equal
+  // because a booking does not move an appointment — the same convention a
+  // cancellation already uses.
+  await emitPatientChange({
+    kind: "booked",
+    tenantId: principal.tenantId,
+    appointmentId: id,
+    patientId: principal.patientId,
+    audience: { reception: true, practitionerIds: [practitionerId] },
+    previousStartsAt: input.startsAt.toISOString(),
+    newStartsAt: input.startsAt.toISOString(),
+    occurredAt: now.toISOString(),
+  });
+
   return getOwnAppointment(principal, id, store);
 }
 
@@ -354,7 +371,7 @@ export async function cancelAppointment(
     tenantId: principal.tenantId,
     appointmentId: id,
     patientId: principal.patientId,
-    audience: { reception: true, practitionerId: appt.practitionerId },
+    audience: { reception: true, practitionerIds: [appt.practitionerId] },
     previousStartsAt: appt.startsAt.toISOString(),
     // A cancellation does not move the appointment; the start is unchanged.
     newStartsAt: appt.startsAt.toISOString(),
@@ -461,7 +478,7 @@ export async function rescheduleAppointment(
     tenantId: principal.tenantId,
     appointmentId: id,
     patientId: principal.patientId,
-    audience: { reception: true, practitionerId: appt.practitionerId },
+    audience: { reception: true, practitionerIds: [appt.practitionerId] },
     previousStartsAt: appt.startsAt.toISOString(),
     newStartsAt: input.startsAt.toISOString(),
     occurredAt: now.toISOString(),

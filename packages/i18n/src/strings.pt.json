@@ -1242,5 +1242,21 @@
   "remindersReview.receivedAt": "Recebida em",
   "remindersReview.noPatient": "Paciente não identificado",
   "remindersReview.flag": "resposta por rever",
-  "patientAppointments.error.minNotice": "Escolha um horario com pelo menos 24 horas de antecedencia."
+  "patientAppointments.error.minNotice": "Escolha um horario com pelo menos 24 horas de antecedencia.",
+  "notifications.title": "Notificações",
+  "notifications.unreadOne": "1 por ler",
+  "notifications.unreadMany": "{n} por ler",
+  "notifications.empty": "Sem notificações.",
+  "notifications.emptyHint": "As alterações feitas pelos pacientes aparecem aqui.",
+  "notifications.error": "Não foi possível carregar as notificações. Atualize a página.",
+  "notifications.markAllRead": "Marcar todas como lidas",
+  "notifications.unreadBadge": "Por ler",
+  "notifications.openAppointment": "Ver marcação",
+  "notifications.kind.booked": "Nova marcação",
+  "notifications.kind.cancelled": "Marcação cancelada",
+  "notifications.kind.rescheduled": "Marcação remarcada",
+  "notifications.kind.appointment_request": "Pedido de marcação",
+  "notifications.movedFrom": "De",
+  "notifications.movedTo": "Para",
+  "notifications.noPatient": "Paciente não identificado"
 }
