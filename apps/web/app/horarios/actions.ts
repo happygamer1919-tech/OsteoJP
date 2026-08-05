@@ -7,8 +7,8 @@ import {
   archiveAvailabilityTemplate,
   createAvailabilityTemplate,
   updateAvailabilityTemplate,
-  type AvailabilityTemplateInput,
 } from "@/lib/admin/availability";
+import { reconcileWeek } from "@/lib/admin/schedule-reconcile";
 import {
   createTimeOffBlock,
   createTimeOffBlockBatch,
@@ -92,30 +92,26 @@ export async function deleteTimeOffBlockAction(fd: FormData): Promise<void> {
 }
 
 /**
- * Reconcile one therapist's whole week (the W4-14 shape): per weekday 0..6 the
- * form submits d{wd}_on / d{wd}_id / d{wd}_start / d{wd}_end / d{wd}_location.
- * enabled+id → update; enabled+no id → create; disabled+id → archive.
+ * Reconcile one therapist's whole week (the W4-14 shape), now with W13-A's
+ * optional SECOND PERIOD per weekday: per weekday 0..6 the form submits
+ * d{wd}_on / d{wd}_id / d{wd}_start / d{wd}_end / d{wd}_location, plus
+ * d{wd}p2_on / d{wd}p2_id / d{wd}p2_start / d{wd}p2_end when a split shift is
+ * set. enabled+id → update; enabled+no id → create; disabled+id → archive, per
+ * period.
+ *
+ * THE LOOP ITSELF IS SHARED with app/admin/working-hours/actions.ts
+ * (lib/admin/schedule-reconcile.ts). These two actions held identical copies
+ * that differed only in where they redirect, and a split shift saved on one
+ * surface would have been archived by the other the moment they disagreed.
  */
 export async function saveScheduleAction(fd: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const userId = String(fd.get("userId") ?? "");
-  await run(async () => {
-    for (let wd = 0; wd < 7; wd++) {
-      const on = fd.get(`d${wd}_on`) != null;
-      const id = String(fd.get(`d${wd}_id`) ?? "");
-      if (on) {
-        const input: AvailabilityTemplateInput = {
-          userId,
-          locationId: String(fd.get(`d${wd}_location`) ?? ""),
-          weekday: wd,
-          startTime: String(fd.get(`d${wd}_start`) ?? ""),
-          endTime: String(fd.get(`d${wd}_end`) ?? ""),
-        };
-        if (id) await updateAvailabilityTemplate(actor, id, input);
-        else await createAvailabilityTemplate(actor, input);
-      } else if (id) {
-        await archiveAvailabilityTemplate(actor, id);
-      }
-    }
-  });
+  await run(() =>
+    reconcileWeek(fd, userId, {
+      create: (input) => createAvailabilityTemplate(actor, input),
+      update: (id, input) => updateAvailabilityTemplate(actor, id, input),
+      archive: (id) => archiveAvailabilityTemplate(actor, id),
+    }),
+  );
 }

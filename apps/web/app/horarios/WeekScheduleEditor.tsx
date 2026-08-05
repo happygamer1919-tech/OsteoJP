@@ -1,10 +1,7 @@
 "use client";
 
-import { Button } from "@osteojp/ui";
-import { s } from "@/lib/i18n";
-import { TimeFieldInput } from "@/components/time-field-input";
-import { adminInputInline, adminLabel } from "@/app/admin/admin-ui";
-import type { ScheduleDay } from "@/app/admin/staff/StaffManageModal";
+import type { ScheduleDayRow } from "@/lib/admin/schedule-days";
+import { ScheduleWeekFields } from "@/app/admin/staff/ScheduleWeekFields";
 import { saveScheduleAction } from "./actions";
 
 /**
@@ -13,6 +10,12 @@ import { saveScheduleAction } from "./actions";
  * weekday: on/off + start + end + location, one Guardar), but posts to
  * saveScheduleAction, which redirects back to /horarios. Toggling a day off +
  * Guardar archives it (no password — schedule:manage-gated surface).
+ *
+ * W13-A: the seven day rows moved into ScheduleWeekFields, shared with the
+ * Equipa modal. They were two copies of the same markup, and split shifts made
+ * the duplication dangerous rather than merely repetitive: a second period the
+ * Equipa editor could save and this one could not would be archived the next
+ * time reception pressed Guardar.
  */
 export function WeekScheduleEditor({
   userId,
@@ -20,69 +23,13 @@ export function WeekScheduleEditor({
   locations,
 }: {
   userId: string;
-  days: ScheduleDay[];
+  days: ScheduleDayRow[];
   locations: { id: string; name: string }[];
 }) {
-  const fallbackLocation = locations[0]?.id ?? "";
   return (
     <form action={saveScheduleAction} className="flex flex-col gap-3">
       <input type="hidden" name="userId" value={userId} />
-      {days.map((d) => (
-        <fieldset
-          key={d.weekday}
-          className="flex flex-wrap items-end gap-3 rounded-v2 border border-v2-border p-3"
-        >
-          <label className="flex min-w-32 items-center gap-2 self-center">
-            <input
-              type="checkbox"
-              name={`d${d.weekday}_on`}
-              defaultChecked={d.on}
-              aria-label={`${s["admin.workingHours.worksLabel"]} — ${d.label}`}
-            />
-            <span className="font-medium text-v2-text-primary">{d.label}</span>
-          </label>
-          <input type="hidden" name={`d${d.weekday}_id`} value={d.id} />
-          <label className="flex flex-col gap-1">
-            <span className={adminLabel}>{s["admin.workingHours.start"]}</span>
-            <TimeFieldInput name={`d${d.weekday}_start`} defaultValue={d.start} />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className={adminLabel}>{s["admin.workingHours.end"]}</span>
-            <TimeFieldInput name={`d${d.weekday}_end`} defaultValue={d.end} />
-          </label>
-          {/* PL-14: with one reachable clinic the per-day location select offers
-              no choice - the value still posts (hidden input), the clinic name is
-              printed once instead of seven identical selects. */}
-          {locations.length === 1 ? (
-            <input
-              type="hidden"
-              name={`d${d.weekday}_location`}
-              value={d.locationId || fallbackLocation}
-            />
-          ) : (
-            <label className="flex flex-col gap-1">
-              <span className={adminLabel}>{s["admin.workingHours.location"]}</span>
-              <select
-                name={`d${d.weekday}_location`}
-                defaultValue={d.locationId || fallbackLocation}
-                aria-label={`${s["admin.workingHours.location"]} — ${d.label}`}
-                className={adminInputInline}
-              >
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </fieldset>
-      ))}
-      <div className="flex justify-end">
-        <Button type="submit" variant="primary">
-          {s["common.save"]}
-        </Button>
-      </div>
+      <ScheduleWeekFields days={days} locations={locations} />
     </form>
   );
 }

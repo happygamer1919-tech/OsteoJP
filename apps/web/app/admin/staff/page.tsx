@@ -14,6 +14,7 @@ import { listLocations } from "@/lib/admin/locations";
 import { listStaffLocations } from "@/lib/admin/staff-locations";
 import { seesEveryLocation } from "@/lib/admin/location-scope-warning";
 import { listTimeOffBlocks } from "@/lib/admin/time-off";
+import { buildScheduleDays, indexScheduleTemplates } from "@/lib/admin/schedule-days";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import { EquipaLocationFilter } from "./EquipaLocationFilter";
 import { StaffInviteForm } from "./StaffInviteForm";
@@ -96,26 +97,15 @@ export default async function StaffPage({
     for (const membership of memberships) addAssignment(userId, membership.locationId);
   }
 
-  // W12-40: first ACTIVE template per (member, weekday). The schedule editor
-  // tracks exactly one id per weekday, matching the W4-14 reconcile invariant.
-  const firstByKey = new Map<string, (typeof availability)[number]>();
-  for (const tpl of availability) {
-    const key = `${tpl.userId}:${tpl.weekday}`;
-    if (!firstByKey.has(key)) firstByKey.set(key, tpl);
-  }
+  // W12-40, widened by W13-A: up to TWO active templates per (member, weekday),
+  // so a split shift (08:00-13:00 + 14:00-19:00) survives a reload. It was one,
+  // and a loader that kept one while the editor saved two would archive the
+  // second period on the next save. Both surfaces share this loader for that
+  // reason — see lib/admin/schedule-days.ts, which also explains why a second
+  // template at a DIFFERENT location is still never surfaced.
+  const templateIndex = indexScheduleTemplates(availability);
   const buildDays = (memberId: string): ScheduleDay[] =>
-    WEEKDAY_ORDER.map((wd) => {
-      const tpl = firstByKey.get(`${memberId}:${wd}`);
-      return {
-        weekday: wd,
-        label: s[WEEKDAY_KEYS[wd]],
-        on: tpl != null,
-        id: tpl?.id ?? "",
-        start: tpl?.startTime ?? "09:00",
-        end: tpl?.endTime ?? "17:00",
-        locationId: tpl?.locationId ?? "",
-      };
-    });
+    buildScheduleDays(templateIndex, memberId, WEEKDAY_ORDER, (wd) => s[WEEKDAY_KEYS[wd]]);
 
   // W12-40: time-off blocks per NON-reception member (they alone hold a schedule
   // + blocks). One query each, scoped to the shown set; reception is skipped.

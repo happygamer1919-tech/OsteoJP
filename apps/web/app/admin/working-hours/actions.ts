@@ -17,6 +17,7 @@ import {
   type TimeOffBlockInput,
   type TimeOffMode,
 } from "@/lib/admin/time-off";
+import { reconcileWeek } from "@/lib/admin/schedule-reconcile";
 import { parseTimeOffBatchForm } from "@/lib/admin/time-off-batch-form";
 import { isAdminError } from "@/lib/admin/errors";
 
@@ -136,6 +137,11 @@ export async function archiveAvailabilityTemplateAction(fd: FormData): Promise<v
  * = works that day), `d{wd}_id` (the existing active template id it manages, or
  * ""), `d{wd}_start`, `d{wd}_end`, `d{wd}_location`.
  *
+ * W13-A ADDS AN OPTIONAL SECOND PERIOD per weekday — `d{wd}p2_on`, `d{wd}p2_id`,
+ * `d{wd}p2_start`, `d{wd}p2_end` — so a therapist can work 08:00-13:00 and
+ * 14:00-19:00 with the gap between them outside working hours. Period 2 posts no
+ * location of its own and reuses period 1's.
+ *
  * Reconcile through the EXISTING W2-12 write paths (no new write path, no
  * schema): enabled+id → update; enabled+no id → create; disabled+id → archive
  * (soft, is_active=false — the in-modal "delete", NO password: the page is
@@ -143,31 +149,23 @@ export async function archiveAvailabilityTemplateAction(fd: FormData): Promise<v
  * (validate, overlap-reject, end>start, active-locations-only) run unchanged
  * inside those calls.
  *
- * SAFETY (multi-shift): the modal tracks exactly ONE template id per weekday, so
- * a reconcile only ever archives/updates the id it manages. A therapist's second
- * active template on the same weekday (different location) is never surfaced and
- * never touched — it can never be silently archived.
+ * SAFETY (multi-shift), RESTATED FOR W13-A BECAUSE THE OLD WORDING NO LONGER
+ * HOLDS. It used to read "the modal tracks exactly ONE template id per weekday".
+ * It now tracks up to TWO, so the guarantee is stated where it actually lives:
+ * the loader (lib/admin/schedule-days.ts) pairs a second template ONLY when it
+ * shares period 1's LOCATION. A therapist's second active template on the same
+ * weekday at a DIFFERENT location is still never surfaced and never touched, so
+ * it still can never be silently archived — which is what that safety note was
+ * always about. The reconcile only ever writes ids the form gave it.
  */
 export async function saveTherapistScheduleAction(fd: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const userId = String(fd.get("userId") ?? "");
-  await run(async () => {
-    for (let wd = 0; wd < 7; wd++) {
-      const on = fd.get(`d${wd}_on`) != null;
-      const id = String(fd.get(`d${wd}_id`) ?? "");
-      if (on) {
-        const input: AvailabilityTemplateInput = {
-          userId,
-          locationId: String(fd.get(`d${wd}_location`) ?? ""),
-          weekday: wd,
-          startTime: String(fd.get(`d${wd}_start`) ?? ""),
-          endTime: String(fd.get(`d${wd}_end`) ?? ""),
-        };
-        if (id) await updateAvailabilityTemplate(actor, id, input);
-        else await createAvailabilityTemplate(actor, input);
-      } else if (id) {
-        await archiveAvailabilityTemplate(actor, id);
-      }
-    }
-  });
+  await run(() =>
+    reconcileWeek(fd, userId, {
+      create: (input) => createAvailabilityTemplate(actor, input),
+      update: (id, input) => updateAvailabilityTemplate(actor, id, input),
+      archive: (id) => archiveAvailabilityTemplate(actor, id),
+    }),
+  );
 }

@@ -17,6 +17,8 @@ export function TimeFieldInput({
   hourLabel,
   minuteLabel,
   className,
+  value: controlled,
+  onChange,
 }: {
   name: string;
   defaultValue?: string;
@@ -24,10 +26,19 @@ export function TimeFieldInput({
   hourLabel?: string;
   minuteLabel?: string;
   className?: string;
+  /** W13-A: pass value+onChange to CONTROL the field. Omit both and it keeps its
+   * own state exactly as before — every pre-W13-A call site is unchanged.
+   * The split-shift editor needs the values in its parent so it can refuse a
+   * second period that starts before the first one ends BEFORE the round trip. */
+  value?: string;
+  onChange?: (next: string) => void;
 }) {
   // Normalise to "HH:mm" so an unchanged submit matches the native input's old
   // value (a DB `time` reads back as "HH:mm:ss").
-  const [value, setValue] = useState(defaultValue ? defaultValue.slice(0, 5) : "");
+  const [own, setOwn] = useState(defaultValue ? defaultValue.slice(0, 5) : "");
+  const isControlled = controlled != null && onChange != null;
+  const value = isControlled ? controlled : own;
+  const setValue = isControlled ? onChange : setOwn;
   return (
     <>
       <TimeField
