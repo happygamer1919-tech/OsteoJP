@@ -76,6 +76,14 @@ const SUITES = [
   // DB-gated job would report green and LOOP 1's transactional DoD lines would
   // be proven by nothing at all.
   { file: "redeem.db.test.ts", hard: true },
+  // W13-03. The second DB-gated suite outside packages/db, in apps/api, for the
+  // same structural reason: the OTP claim lives in an app. It proves the three
+  // LOOP 3 DoD lines that are claims about the DATABASE rather than about the
+  // application - single use under two REAL concurrent transactions, the 30-day
+  // trusted-device boundary as a SQL predicate, and the claim committing as one
+  // transaction. Hard-required: a silent skip here would leave Decision D's
+  // login proven by mocks agreeing with themselves.
+  { file: "otp-claim.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.

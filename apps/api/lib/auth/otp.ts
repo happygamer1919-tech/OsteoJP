@@ -22,7 +22,7 @@
 // phone is hashed before it is stored or used as a key, so even the rate-limit
 // key carries no number.
 
-import { createHash, randomInt, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
 import type { OtpTransport } from "./otp-transport";
 
@@ -80,6 +80,34 @@ export function hashCode(code: string, phoneHash: string): string {
   return createHash("sha256").update(`${phoneHash}:${code}`).digest("hex");
 }
 
+/* ------------------------------ device token ----------------------------- */
+
+/**
+ * A trusted-device token. 32 random bytes, hex.
+ *
+ * NOT six digits, and the difference matters: an OTP is short because a human
+ * types it and an attempt cap plus a five-minute expiry make the small space
+ * survivable. This token is never typed, lives for thirty days, and is checked
+ * without any attempt cap — nothing about a device token bounds guessing except
+ * its own entropy, so it gets 256 bits of it.
+ */
+export function generateDeviceToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+/**
+ * The device token's storage form. Plain sha256, no domain separator, because
+ * unlike a 6-digit code a 256-bit random value is not brute-forceable from its
+ * hash and there is no second value to separate it from.
+ *
+ * IT IS HASHED FOR THE SAME REASON THE CODE IS: 0056 makes this hash the PRIMARY
+ * KEY of patient_trusted_devices precisely so a database read yields nothing
+ * that can be presented as a bearer credential.
+ */
+export function hashDeviceToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 /**
  * Constant-time comparison of two hex digests.
  *
@@ -134,11 +162,21 @@ export type OtpStore = {
   /** Record a failed guess. */
   incrementAttempts(id: string): Promise<void>;
   /**
-   * Mark consumed. MUST be atomic with whatever the caller does next: the
-   * session mint and the consumption belong in one transaction, for the same
-   * reason 0054 couples a token action to its consumption record.
+   * Mark consumed, and REPORT WHETHER THIS CALL IS THE ONE THAT DID IT.
+   *
+   * The boolean is the single-use enforcement point, not a convenience. The
+   * store's UPDATE carries a `consumed_at IS NULL` guard, so under two
+   * simultaneous redemptions of one code the loser matches zero rows and writes
+   * nothing — but a void return would leave the loser indistinguishable from the
+   * winner at the call site, and it would go on to grant whatever the winner
+   * granted. Both requests would then "succeed" against one code, which is
+   * exactly the property single-use exists to deny.
+   *
+   * MUST be atomic with whatever the caller grants: the consumption and the
+   * grant belong in one transaction, for the same reason 0054 couples a token
+   * action to its consumption record.
    */
-  consume(id: string, now: Date): Promise<void>;
+  consume(id: string, now: Date): Promise<boolean>;
 };
 
 /* --------------------------------- results ------------------------------- */
@@ -157,7 +195,7 @@ export type OtpStore = {
  * the phone exists — an unknown number hits the same limiter.
  */
 export type OtpVerifyResult =
-  | { ok: true; phoneHash: string }
+  | { ok: true; phoneHash: string; codeId: string }
   | { ok: false; rateLimited?: true; retryAfterSeconds?: number };
 
 /** The single refusal. Every failure path returns exactly this. */
@@ -215,7 +253,7 @@ export type VerifyCodeDeps = {
 };
 
 /**
- * Check a code.
+ * Check a code. PROVES it; does NOT spend it.
  *
  * EVERY FAILURE RETURNS `REFUSED`, and the ways to fail are: no live code for
  * this phone (which covers both "never requested" and "unknown number"), the
@@ -223,9 +261,23 @@ export type VerifyCodeDeps = {
  * cannot tell them apart, which is the enumeration property stated as code
  * rather than as a comment.
  *
- * SINGLE USE is enforced by `findLive` returning only unconsumed rows plus the
- * `consume` call on success; the attempt cap is enforced before the comparison,
- * so a spent code costs an attacker nothing to keep guessing against.
+ * WHY CONSUMPTION IS NOT DONE HERE, having previously been. Success returns
+ * `codeId` and the caller must call `store.consume(codeId, now)` INSIDE the same
+ * transaction as whatever it grants. Consuming here would put the spend in its
+ * own statement, outside the caller's transaction, which is the failure 0054
+ * exists to prevent: a crash between the spend and the grant leaves either a
+ * dead code with no session or a session with a still-live code. The claim is
+ * one atomic act, so the two halves cannot live in two places.
+ *
+ * WHAT THAT MOVES, honestly stated: single use is now enforced by the caller's
+ * `consume` and its boolean, not by this function. `findLive` still refuses an
+ * already-consumed row, so a code cannot be proven twice once it is spent, but
+ * a code proven and NOT spent stays live — which is precisely what the claim
+ * path wants when linkage refuses, and precisely why `consume` reports whether
+ * it won.
+ *
+ * The attempt cap is still enforced before the comparison, so a spent code costs
+ * an attacker nothing to keep guessing against.
  */
 export async function verifyCode(
   tenantId: string,
@@ -250,6 +302,5 @@ export async function verifyCode(
     return REFUSED;
   }
 
-  await deps.store.consume(record.id, now);
-  return { ok: true, phoneHash };
+  return { ok: true, phoneHash, codeId: record.id };
 }
