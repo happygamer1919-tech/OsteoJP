@@ -279,6 +279,16 @@ export async function listOpenSlots(
  * patient soft preference, and writes the booking under the principal's tenant +
  * patient id. No fiscal document, no payment.
  */
+/**
+ * The launch posture, per JP's ruling of 2026-08-06, relayed and confirmed.
+ *
+ * TRUE means every patient booking is a pedido that reception confirms. It is a
+ * named constant rather than an inline literal so the ruling it encodes is
+ * greppable, and so the day it stops being uniform the compiler points at every
+ * place that assumed it was.
+ */
+const PORTAL_BOOKINGS_ARE_REQUESTS = true;
+
 export async function bookAppointment(
   principal: PatientPrincipal,
   input: BookingInput,
@@ -324,12 +334,31 @@ export async function bookAppointment(
 
   // POST-COMMIT, same rule as cancel and reschedule: the booking already exists,
   // so a failed notification must never surface to the patient as a failed
-  // booking. W13-02 adds this site; cancel and reschedule were already emitting
-  // and `booked` is the third of PG4's four kinds. Both instants are equal
-  // because a booking does not move an appointment — the same convention a
-  // cancellation already uses.
+  // booking. W13-02 adds this site; cancel and reschedule were already emitting.
+  // Both instants are equal because a booking does not move an appointment — the
+  // same convention a cancellation already uses.
+  //
+  // W13-04: THE KIND IS `appointment_request`, NOT `booked`, AND THAT IS JP'S
+  // RULING RATHER THAN A RENAME. Confirmed 2026-08-06 ("certo"): request-mode
+  // for all 12 patient-bookable services, ZERO auto-confirmed. Every booking a
+  // patient makes through the portal is a PEDIDO DE MARCACAO that reception
+  // confirms — which is already what the patient is told
+  // (portal booking/pending: "a aguardar confirmacao pela recepcao") and what
+  // the row records (confirmation_state defaults to pending). The notification
+  // was the one place still calling it a completed booking, so reception read
+  // "marcou" where the truth was "pediu", and the thing needing their action
+  // looked like a thing already done.
+  //
+  // `booked` KEEPS ITS MEANING AND LOSES ITS CALLER, deliberately. It is the
+  // kind for a booking that IS confirmed on arrival, which is what JP's
+  // post-launch graduation produces when a service moves to direct booking. The
+  // constant below is the launch posture, not a permanent truth: graduation is
+  // per service, so it becomes a column and a migration when JP rules the first
+  // one across. It is a constant today because the ruling is currently uniform,
+  // and inventing a column ahead of the ruling would take the one in-flight
+  // migration slot that belongs to LOOP 5.
   await emitPatientChange({
-    kind: "booked",
+    kind: PORTAL_BOOKINGS_ARE_REQUESTS ? "appointment_request" : "booked",
     tenantId: principal.tenantId,
     appointmentId: id,
     patientId: principal.patientId,
