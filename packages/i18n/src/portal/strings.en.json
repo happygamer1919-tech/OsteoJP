@@ -83,7 +83,11 @@
     "otp_rate_limited": "Too many attempts. Wait a few minutes and try again.",
     "otp_no_phone": "We have no mobile number on your record. Contact the clinic to register one.",
     "otp_landline": "The number on your record cannot receive SMS. Contact the clinic to register a mobile.",
-    "otp_shared_number": "We could not confirm your identity from this number. Contact the clinic."
+    "otp_shared_number": "We could not confirm your identity from this number. Contact the clinic.",
+    "otp_invalid_phone": "Invalid mobile number. Use the format +351 912 345 678.",
+    "otp_unavailable": "Sign-in is unavailable right now. Try again later or contact the clinic.",
+    "otp_help_title": "Did not receive the code?",
+    "otp_trusted_checking": "Checking this device…"
   },
   "dashboard": {
     "greeting": "Hello, {{name}}",

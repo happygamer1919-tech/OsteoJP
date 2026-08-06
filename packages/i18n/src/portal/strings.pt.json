@@ -83,7 +83,11 @@
     "otp_rate_limited": "Demasiadas tentativas. Aguarde alguns minutos e tente novamente.",
     "otp_no_phone": "Não temos um número de telemóvel associado à sua ficha. Contacte a clínica para o registar.",
     "otp_landline": "O número associado à sua ficha não recebe SMS. Contacte a clínica para registar um telemóvel.",
-    "otp_shared_number": "Não foi possível confirmar a sua identidade a partir deste número. Contacte a clínica."
+    "otp_shared_number": "Não foi possível confirmar a sua identidade a partir deste número. Contacte a clínica.",
+    "otp_invalid_phone": "Número de telemóvel inválido. Use o formato +351 912 345 678.",
+    "otp_unavailable": "Não é possível entrar neste momento. Tente novamente mais tarde ou contacte a clínica.",
+    "otp_help_title": "Não recebeu o código?",
+    "otp_trusted_checking": "A verificar este dispositivo…"
   },
   "dashboard": {
     "greeting": "Olá, {{name}}",
