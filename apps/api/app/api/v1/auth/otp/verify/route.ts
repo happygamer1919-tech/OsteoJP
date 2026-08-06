@@ -182,7 +182,20 @@ export async function POST(req: Request): Promise<Response> {
     issuedAt: now,
   });
 
-  const res = NextResponse.json({ patientId: claim.patientId });
+  // THE TOKEN ALSO TRAVELS IN THE BODY, for the portal SERVER (W13-03b, ruled
+  // 2026-08-06). The cookie below is host-scoped to this API by its __Host-
+  // prefix, so the portal - a different host, calling server-to-server - can
+  // never read it. It takes the token from this body, wraps it in its OWN
+  // __Host- cookie on the portal host, and forwards it as Bearer afterwards.
+  //
+  // BODY ONLY. Never a redirect URL, never a query string: both are written to
+  // proxy logs and browser history and leak through Referer.
+  //
+  // The exposure is bounded and worth stating: the only caller is the portal
+  // server, so an XSS on the portal origin cannot see this response at all. A
+  // patient calling this route directly with their own code receives their own
+  // credential, which is not a leak.
+  const res = NextResponse.json({ patientId: claim.patientId, sessionToken: session });
   // Both tokens leave in Set-Cookie headers and NEITHER in the body: httpOnly
   // cookies are unreadable to script, so an XSS in the portal cannot lift a
   // session or a thirty-day credential out of a JSON response it can already

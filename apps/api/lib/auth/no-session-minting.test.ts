@@ -136,17 +136,22 @@ describe("W13-03a: OUR session mint is reachable from the OTP paths and nowhere 
     }
   });
 
-  it("no route hands the session token to the response BODY", () => {
-    // It leaves in a Set-Cookie header or not at all. A token in JSON is
-    // readable by any script that can read the response, which is the whole
-    // reason the cookie is httpOnly.
+  it("the token NEVER travels in a redirect URL or a query string", () => {
+    // W13-03b ruled the token into the response BODY, for the portal server,
+    // because a __Host- cookie set by this host can never be read by the portal.
+    // The body is bounded: only the portal server sees that response.
+    //
+    // A URL is NOT bounded, and that is the property this test keeps. Query
+    // strings and redirect targets are written to proxy logs, kept in browser
+    // history, and leak through Referer to whatever the next page loads.
     for (const route of [
       "app/api/v1/auth/otp/verify/route.ts",
       "app/api/v1/auth/otp/trusted/route.ts",
     ]) {
       const src = code(join(API_ROOT, route));
       expect(src).toContain("sessionCookie(");
-      expect(src).not.toMatch(/NextResponse\.json\(\{[^}]*session/i);
+      expect(src).not.toMatch(/redirect\s*\(/);
+      expect(src).not.toMatch(/searchParams\.set|URLSearchParams|\?token=|&token=/i);
     }
   });
 });

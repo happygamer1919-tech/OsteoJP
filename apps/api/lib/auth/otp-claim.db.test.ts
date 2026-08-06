@@ -113,7 +113,10 @@ d("the OTP claim against a real database", () => {
     const res = await verify(verifyReq("111111", "10.0.0.1"));
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ patientId });
+    const body = await res.json();
+    // W13-03b: the token also travels in the body, for the portal server.
+    expect(body.patientId).toBe(patientId);
+    expect(typeof body.sessionToken).toBe("string");
 
     const spent = await db.execute(raw`
       select consumed_at from patient_otp_codes where id = ${id}`);
@@ -335,7 +338,9 @@ d("the OTP claim against a real database", () => {
     }));
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ patientId });
+    const body = await res.json();
+    expect(body.patientId).toBe(patientId);
+    expect(typeof body.sessionToken).toBe("string");
   });
 
   it("the trusted route refuses an EXPIRED device and clears the cookie", async () => {
