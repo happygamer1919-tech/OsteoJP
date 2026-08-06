@@ -549,6 +549,125 @@ terms-acceptance): the block ends with `check-migration-tables.mjs` naming that
 migration's tables, and it begins with `git fetch` plus an explicit
 `git checkout origin/<branch>`. Both halves, every time.
 
+## Migration 0057 applied to production (2026-08-06) — the pasted evidence
+
+`0057_services_patient_bookable` — the column Decision B moves the patient
+self-booking rule onto (W13-04, PG2). **The first column-only migration on this
+project: it creates no table.**
+
+Owner ran the apply from `osteojp-prod-apply`, detached at `e0a2aba`.
+`drizzle-kit` reported:
+
+```
+$ pnpm --filter @osteojp/db exec drizzle-kit migrate
+No config path provided, using default 'drizzle.config.ts'
+Reading config file '/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply/packages/db/drizzle.config.ts'
+Using 'postgres' driver for database querying
+[⣟] applying migrations...
+  NOTICE 42P06: schema "drizzle" already exists, skipping
+  NOTICE 42P07: relation "__drizzle_migrations" already exists, skipping
+[✓] migrations applied successfully!
+```
+
+That output alone still proves nothing — it is printed whether or not anything
+was applied, which is the whole reason the 0056 section exists.
+
+**THE VERIFICATION IS THE CATALOG READ, and for this migration it had to prove
+two different things.** A column-only migration cannot be verified by a
+table-existence read: `services` existed before it ran, so that check would have
+passed on an un-applied database. The read therefore covered the column AND its
+backfill, since a column that exists but is empty is a failed apply wearing a
+success message. Owner's output, verbatim:
+
+```
+BOOK ACTIVO INTERNO MIN  PRECO   LOCAL             NOME
+--------------------------------------------------------------------------------
+ -   sim     -      55    75.00 TODAS   1.ª consulta / Avaliação (Osteopatia ou …)
+ -   sim     -      55    60.00 TODAS   Drenagem Linfática Manual (Método Wodere)
+ -   sim     -      55    70.00 TODAS   Fisioenergética/Kinesiologia/Posturologia
+sim  sim     -      55    55.00 TODAS   Fisioterapia
+ -   sim     -      55    70.00 TODAS   Massagem 4 Mãos (2 terapeutas)
+ -   sim     -      55    55.00 TODAS   Medicina Chinesa/Acupuntura
+ -   sim     -      60    50.00 TODAS   NESA
+ -   sim     -      55    70.00 TODAS   Osteopatia/Posturologia
+ -   sim     -      60    45.00 TODAS   Pilates — Aula Experimental (1.ª vez)
+ -   sim     -      60    35.00 TODAS   Pilates — Aula Individual
+ -   sim     -      60   125.00 TODAS   Pilates mensal 1x/semana — grupo (3 a 4)
+ -   sim     -      60   125.00 TODAS   Pilates mensal 2x/semana — grupo (3 a 4)
+ -   sim     -      50    35.00 TODAS   Pressoterapia
+ -   sim     -      60    60.00 TODAS   R.P.G. — Reeducação Postural Global
+ -   sim     -      60    60.00 TODAS   Sessão Família/Amigos (2 pessoas)
+ -   sim     -      55    55.00 TODAS   Tratamento Terapêutico
+ -   sim    sim     60     0.00 TODAS   Diversos
+ -    -      -      60        - TODAS   -
+ -    -      -      60        - TODAS   -
+ -    -      -      60        - TODAS   -
+--------------------------------------------------------------------------------
+20 servicos no total. O PORTAL OFERECE HOJE: 1 (Fisioterapia)
+```
+
+The column exists on 20 rows and carries `true` on exactly one. **The migration
+did what it promised. The rule it copied is what is wrong** — see the board card
+`W13-04a-catalog-mismatch`, which is the reason LOOP 4 is held.
+
+**The applied SQL is the shipped SQL, verified by hash rather than assumed.** The
+owner applied at `e0a2aba` (a merge of `main` into the feature branch) and the
+file merged to `main` at `9694f3a`, two different commits, so "did the thing that
+ran match the thing that shipped?" is a real question and it is answered by
+content:
+
+| | `packages/db` | `supabase` mirror |
+|---|---|---|
+| `e0a2aba` — applied | `971a4e356ce85e3d…aa183f` | `3b63a54cf3183975…6f4a284c` |
+| `9694f3a` — merged to `main` | `971a4e356ce85e3d…aa183f` | `3b63a54cf3183975…6f4a284c` |
+
+Journal at `9694f3a`: 57 entries, tail `idx 56, 0057_services_patient_bookable`.
+
+**MERGED AFTER THE APPLY, NOT BEFORE**, per the choreography. It was merged
+promptly rather than held, because an applied-but-unmerged migration is precisely
+how 0053 got double-booked: the next author re-derives the next free number from
+a journal that disagrees with production.
+
+**THREE PROCESS FAILURES, all PURPLE's, recorded because the fix for each is now
+in the repository rather than in a habit.**
+
+1. **The apply block named a worktree that does not exist.** It said
+   `~/osteojp-prod-apply`; the worktree is at
+   `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply`. The owner pasted
+   it and got `cd: no such file or directory`, then four more errors from
+   commands that ran in his home directory. The path was taken from prose in
+   `docs/board/PORTAL-REHYDRATE.md` instead of from the filesystem — the exact
+   transcribe-instead-of-verify failure standing rule 4 exists to prevent, made
+   worse by the fact that the rehydrate file itself says a handoff is a
+   hypothesis and the repo is the evidence. **An apply block's paths are
+   verified against the filesystem before it is issued, every time.**
+
+2. **The block ended with a bespoke inline script, which was then deleted.** The
+   0056 section made this BINDING on exactly this migration: "the block ends with
+   `check-migration-tables.mjs` naming that migration's tables". A column-only
+   migration has no tables to name, and instead of writing the sibling script,
+   PURPLE improvised a one-off, had the owner run it, and told him to delete it
+   afterwards. The verification therefore could not be re-run by anyone, which is
+   the definition of evidence a stranger cannot check. The fix is
+   `packages/db/scripts/check-migration-columns.mjs`, committed with this record:
+   same READ ONLY transaction, same argv validation, same never-print-a-value
+   posture as its table sibling, and it reports type, nullability and default so
+   a wrong-shaped column is visible rather than merely present.
+
+3. **This record was written only when the owner asked for it.** The apply
+   happened, the PR merged, the board card got a prose summary, and no evidence
+   section existed until "0057 apply report is missing" came back. A summary in a
+   card is not the pasted-output record the protocol requires. **The evidence
+   section is written at apply time, in the same turn the output arrives.**
+
+**BINDING ON THE ONE REMAINING MIGRATION** (LOOP 5 terms-acceptance), extending
+the 0056 rule rather than replacing it: the apply block begins with `git fetch`
+plus an explicit detached `git checkout origin/<branch>` **whose path is verified
+against the filesystem first**, and ends with a COMMITTED checker naming what
+that migration created — `check-migration-tables.mjs` for tables,
+`check-migration-columns.mjs` for columns. Never a one-off. The evidence section
+is written in the same turn the output arrives.
+
 ## Supabase Auth SMTP: the sender was a gmail.com address (2026-08-05)
 
 **Class: fail-closed-invisible.** The system refused correctly and told nobody.
