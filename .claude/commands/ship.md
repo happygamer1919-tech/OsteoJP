@@ -77,11 +77,24 @@ Capture the PR number from the output. If a PR already exists, use that number.
 Run:
 
 ```bash
-GH_TOKEN="$GH_TOKEN" scripts/merge-on-green.sh <PR_NUMBER>
+scripts/merge-on-green.sh <PR_NUMBER>
 ```
 
-`GH_TOKEN` must be set in the environment. If it is not set, stop and tell
-the user: "Set GH_TOKEN and re-run /ship."
+No `GH_TOKEN` needed: the script uses whatever `gh` is already authenticated
+with, and `gh` picks up `GH_TOKEN` by itself when one is set. If `gh` is not
+authenticated it exits 3 and says so.
 
-The script polls every 20 seconds. It exits 0 on a successful squash-merge
-and exits 1 if any required check fails. Report the outcome to the user.
+It reads the required contexts from BRANCH PROTECTION on each run, so it cannot
+drift from what actually gates a merge. A context that has not reported yet
+counts as pending, never as green.
+
+Polls every 20 seconds. Exit codes:
+
+| code | meaning |
+|---|---|
+| 0 | merged, confirmed by re-reading the PR state |
+| 1 | a required check failed, or the merge was refused - NOT merged |
+| 2 | timed out with checks still pending - NOT merged (default 30m, override with a second argument) |
+| 3 | bad usage, `gh` missing or unauthenticated, PR not OPEN, or branch protection unreadable |
+
+Report the outcome to the user.
