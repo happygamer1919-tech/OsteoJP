@@ -111,6 +111,17 @@ describe("every Supabase Auth template that can send mail has a pt-PT body", () 
     const body = read(f);
     expect(body).toContain("#45B9A7");
     expect(body).toContain("Linda-a-Velha");
+    expect(body).toContain("Castelo Branco");
+  });
+
+  it.each(files)("%s names TWO clinics, and never a third", (f) => {
+    // OWNER CORRECTION 2026-08-06: the clinic has exactly two locations.
+    // Montemor-o-Novo does NOT exist. It is named in CLAUDE.md:4, README.md:3
+    // and 45 other committed files as a third location, which is how it reached
+    // these footers; the owner is authoritative and those files are wrong.
+    // Pinned here so a future edit that copies the stale three-location line out
+    // of CLAUDE.md fails instead of mailing a nonexistent clinic to a patient.
+    expect(read(f)).not.toContain("Montemor");
   });
 
   it.each(files)("%s uses no emoji — product tone is serious, not warm", (f) => {

@@ -1,7 +1,7 @@
 # Caderno de encargos — exportação de dados da plataforma atual
 
 **Destinatário:** fornecedor da plataforma atual (a/c Eduardo)
-**Emitente:** OsteoJP — Linda-a-Velha, Castelo Branco, Montemor-o-Novo
+**Emitente:** OsteoJP — Linda-a-Velha, Castelo Branco
 **Data:** 2026-08-06
 **Versão:** 1.0
 
