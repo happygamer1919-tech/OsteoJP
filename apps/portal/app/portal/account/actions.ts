@@ -3,6 +3,9 @@
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 
+import { clearDeviceToken } from '@/lib/auth/device'
+import { clearPortalSession, readPortalSession } from '@/lib/auth/session'
+
 type Patch = {
   phone?: string
   address?: string
@@ -54,9 +57,35 @@ async function getAccessToken(): Promise<string | null> {
 }
 
 async function apiAuthHeader(): Promise<Record<string, string>> {
+  // W13-03: THE PATIENT SESSION FIRST, matching lib/api/client.ts. An
+  // OTP-authenticated patient has no Supabase cookie at all — Decision D mints
+  // no Supabase session for a patient — so without this line every profile edit
+  // went out with NO Authorization header and came back 401, and the account
+  // screen's "editar dados" was broken for everyone who logged in the new way.
+  const portalSession = await readPortalSession()
+  if (portalSession) return { Authorization: `Bearer ${portalSession}` }
+
   const token = await getAccessToken()
   if (!token) return {}
   return { Authorization: `Bearer ${token}` }
+}
+
+/**
+ * W13-03 — end the session, on this device.
+ *
+ * IT DROPS THE TRUSTED DEVICE TOO, and that is the whole point of the action
+ * existing. "Terminar sessão" that left a 30-day credential in the browser would
+ * hand the next person at a shared handset a login with no code, which is
+ * precisely the case a patient signs out to prevent.
+ *
+ * WHAT IT CANNOT DO, stated so nobody reads more into it: revoke the device ROW.
+ * The token is gone from this browser and unrecoverable, so this device can
+ * never present it again — but the row lives out its 30 days server-side. A
+ * revoke endpoint is API work and is carded, not silently assumed here.
+ */
+export async function signOutAction(): Promise<void> {
+  await clearPortalSession()
+  await clearDeviceToken()
 }
 
 export async function updateProfileAction(

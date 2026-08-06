@@ -26,6 +26,7 @@
  * Usage:
  *   node apps/web/e2e/seed/seed-e2e.mjs
  */
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -613,6 +614,45 @@ async function ensurePortalPatient() {
   must(error, `link portal patient auth_user_id for ${MARIA_SILVA_ID}`);
 }
 
+// ---------------------------------------------------------------------------
+// W13-03 — the portal patient's TRUSTED DEVICE.
+//
+// Since Decision D there is no password to log the portal patient in with, and
+// the OTP code is unreadable to a test by construction: the transport is off
+// outside production and the sink holds the code in the API process's memory.
+// So the suite signs in through the OTHER real door — the 30-day trusted device
+// a returning patient uses every day — and this is the row behind it.
+//
+// The token itself lives in e2e/fixtures.ts as PORTAL_DEVICE_TOKEN; only its
+// sha256 is stored, exactly as `hashDeviceToken` computes it in apps/api, which
+// is also why the two must stay in step: a change to that hash function without
+// a change here would leave every portal spec unable to log in.
+// ---------------------------------------------------------------------------
+
+/** Mirrors apps/api/lib/auth/otp.ts → hashDeviceToken. Plain sha256, no salt. */
+const PORTAL_DEVICE_TOKEN = "e2efacade".padEnd(64, "0");
+const PORTAL_DEVICE_HASH = createHash("sha256").update(PORTAL_DEVICE_TOKEN).digest("hex");
+
+async function ensurePortalTrustedDevice() {
+  // Expiry is recomputed on every run rather than fixed, so a seed from last
+  // month cannot leave the suite with a device the API correctly refuses.
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { error } = await db.from("patient_trusted_devices").upsert(
+    {
+      device_token_hash: PORTAL_DEVICE_HASH,
+      tenant_id: TENANT_A,
+      patient_id: MARIA_SILVA_ID,
+      expires_at: expiresAt,
+      // Explicitly cleared: a previous run may have revoked it, and a revoked
+      // row is refused for the rest of time.
+      revoked_at: null,
+    },
+    { onConflict: "device_token_hash" },
+  );
+  must(error, `seed portal trusted device for ${MARIA_SILVA_ID}`);
+}
+
 async function main() {
   await ensureTenant(TENANT_A, "OsteoJP (E2E)", "osteojp-preview");
   await ensureTenant(TENANT_B, "OsteoJP Other (E2E)", "osteojp-e2e-other");
@@ -624,6 +664,7 @@ async function main() {
   await ensureDeclaracaoAppointment(userIds.therapist);
   await ensureLocationFixtures(userIds);
   await ensurePortalPatient();
+  await ensurePortalTrustedDevice();
   const templates = await ensureFormTemplates();
   // AI review draft depends on templates existing (the editor resolves the Ficha
   // Médica template by key when the record's form_template_id is null).
@@ -636,6 +677,7 @@ async function main() {
   console.log("[seed-e2e] users:", USERS.map((u) => `${u.email} (${u.slug})`).join(", "));
   console.log("[seed-e2e] patients A:", PATIENTS_A.length + 1, "(1 soft-deleted, +1 other-therapist)");
   console.log("[seed-e2e] portal patient:", E2E_PORTAL_PATIENT_EMAIL, "→", MARIA_SILVA_ID);
+  console.log("[seed-e2e] portal trusted device:", `${PORTAL_DEVICE_HASH.slice(0, 12)}… (30d)`);
   console.log("[seed-e2e] ai review draft:", AI_REVIEW_DRAFT_ID, "→", AI_REVIEW_DRAFT_PATIENT);
   console.log("[seed-e2e] ai delete draft:", AI_DELETE_DRAFT_ID, "(+ ingestion back-pointer)");
   console.log("[seed-e2e] templates:", templates.join(", "));

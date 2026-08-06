@@ -210,6 +210,31 @@ export const PORTAL_STORAGE = {
 } as const;
 
 /**
+ * W13-03 — how the suite signs a patient in now that Decision D governs the
+ * portal: a pre-trusted device, seeded as a row and presented as a cookie.
+ *
+ * WHY NOT THE OTP ITSELF. The code is delivered by a transport that is OFF in
+ * every environment but production-with-a-flag, and the sink that replaces it
+ * holds the code in the API process's memory. A test cannot read it without a
+ * back door in the login path, and a back door in the login path is precisely
+ * the thing this loop exists to remove.
+ *
+ * SO THE SUITE USES THE OTHER REAL DOOR. The 30-day trusted device is a genuine
+ * production path — the one a returning patient takes every day after their
+ * first login — so this exercises shipped code rather than a test-only shortcut.
+ * The seed writes the sha256 of this value into patient_trusted_devices; the
+ * setup presents the value as the portal's device cookie and lets the ordinary
+ * on-load check mint the session.
+ *
+ * 64 hex characters, the shape `generateDeviceToken` produces, because both the
+ * API and the portal shape-check the value before it reaches a database lookup.
+ * Every character is a valid hex digit — "e2efacade" reads as a word and is one.
+ * It is a FIXTURE, not a credential: it is only ever valid against a row the
+ * e2e seed writes into a local test database.
+ */
+export const PORTAL_DEVICE_TOKEN = "e2efacade".padEnd(64, "0");
+
+/**
  * Maria Silva's patient row doubles as the portal test patient.
  * The seed sets her auth_user_id to the e2e-patient auth user ID.
  */

@@ -2,6 +2,8 @@ import 'server-only'
 
 import { cookies } from 'next/headers'
 
+import { PORTAL_SESSION_COOKIE } from './cookie-names'
+
 /**
  * W13-03b — the portal's half of the patient session. Owner ruling 2026-08-06,
  * Option B: the PORTAL owns the cookie, the API only signs and verifies.
@@ -31,12 +33,12 @@ import { cookies } from 'next/headers'
  */
 
 /**
- * `__Host-` prefixed for the same reason the API's is: the BROWSER enforces the
- * prefix, refusing the cookie unless it is Secure, Path=/ and carries no Domain.
- * A later edit that relaxes any of those stops the cookie working rather than
- * silently weakening it.
+ * The name now lives in `cookie-names.ts` and is re-exported here so existing
+ * imports keep working. It moved because `proxy.ts` needs it too and middleware
+ * cannot import a `server-only` module — see that file's header. The `__Host-`
+ * reasoning travels with the constant.
  */
-export const PORTAL_SESSION_COOKIE = '__Host-ojp_session'
+export { PORTAL_SESSION_COOKIE } from './cookie-names'
 
 /** Mirrors the ruled artefact: 12 hours. Not an independent decision. */
 export const PORTAL_SESSION_MAX_AGE_S = 12 * 60 * 60

@@ -3,12 +3,11 @@
 import { ChevronRight, LogOut } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { Button, Dialog, Drawer, Field, Input } from '@osteojp/ui'
 import type { PatientProfile } from '@/lib/api/client'
 import { createBrowserClient } from '@/lib/supabase/client'
 import ReminderToggles from '@/components/account/ReminderToggles'
-import { updateProfileAction } from './actions'
+import { signOutAction, updateProfileAction } from './actions'
 import { s } from '@/lib/i18n'
 
 const APP_VERSION = '0.1.0'
@@ -108,6 +107,12 @@ export function AccountView({
 
   function logout() {
     startLogout(async () => {
+      // W13-03: the PORTAL session is what a patient now holds, and only a
+      // server action can clear an httpOnly cookie — `supabase.auth.signOut()`
+      // alone left the patient signed in, because it cleared a Supabase session
+      // an OTP patient never had. The Supabase call is kept after it so a
+      // browser still carrying a stale pre-Decision-D cookie is cleaned up too.
+      await signOutAction()
       await supabase.auth.signOut()
       router.push('/auth/login')
       router.refresh()
@@ -140,13 +145,11 @@ export function AccountView({
             value={[profile?.postalCode, profile?.city].filter(Boolean).join(' ') || '—'}
             onClick={openEdit}
           />
-          <Link
-            href="/auth/reset-password"
-            className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-          >
-            <span className="text-sm text-text-primary">{s.account.change_password}</span>
-            <ChevronRight size={20} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-secondary" />
-          </Link>
+          {/* W13-03: the "change password" row is GONE, with the screen it
+              pointed at. Decision D leaves a patient with no password to change
+              — login is a code sent to their phone — so the row would have led
+              to a 404 at best and, if the screen had been kept, to a second way
+              of minting a session that Decision D excludes. */}
         </div>
       </section>
 
