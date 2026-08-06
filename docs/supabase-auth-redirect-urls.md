@@ -124,9 +124,26 @@ Supabase refusing it.
    address.
 2. Open the email and click the button.
 
-**Expected result:** the browser lands on
-`https://app.osteojp.pt/auth/update-password`, which shows the set-password
-screen. Not the portal. Not a `vercel.app` host.
+**Expected result, corrected 2026-08-06 after the first verification:** the
+browser lands on **`https://app.osteojp.pt`** — the Site URL root — carrying the
+result in the URL hash (`#access_token=...&type=recovery`). It does **not** land
+on `/auth/update-password`.
+
+This document originally promised the set-password screen here. **That was
+wrong**, and the correction matters more than the wording: a
+**dashboard-triggered** recovery does not use `STAFF_INVITE_REDIRECT_URL` at all.
+That variable is read only by `provision.ts:222`, which serves the in-product
+staff-invite path. The dashboard trigger has no `redirect_to` of its own, so it
+falls back to the Site URL — which is exactly the fallback this whole document
+was written to make correct.
+
+**What you should see is therefore the LOGIN page, and that is a defect, not a
+pass.** The root route is a server component (`apps/web/app/page.tsx`) that
+redirects to `/login`; neither route reads the hash. See section 7.
+
+**What is genuinely fixed and can be asserted:** the link's `redirect_to` is
+`https://app.osteojp.pt`. No portal, no `vercel.app` host. That was the original
+defect and it is closed.
 
 ---
 
@@ -158,3 +175,93 @@ Stop and report rather than working around any of these.
 before Decision D. No Supabase flow currently links to it, so it needs no
 allowlist entry, but it is dead surface on an auth path. Tracked separately as
 `LE-portal-supabase-residue`.
+
+---
+
+## 7. OPEN DEFECT — dashboard recovery dead-ends (found by the verification)
+
+**Symptom, reproduced twice on fresh tokens:** the recovery link lands on
+`https://app.osteojp.pt` with the recovery hash, the login page renders, and no
+set-password screen is ever offered. The link cannot be reused.
+
+**Mechanism, from the code — and the usual description of it is wrong.** The
+token is not consumed by our app. Supabase's `/auth/v1/verify` endpoint consumes
+the single-use token **server-side, before redirecting**, and hands the resulting
+session material to the browser in the URL **fragment**. A fragment is never sent
+to a server. So:
+
+1. `apps/web/app/page.tsx` is a server component: it calls `getRequestContext()`,
+   finds no session cookie, and redirects to `/login`. The fragment survives the
+   redirect (RFC 7231) but the server never saw it.
+2. `apps/web/app/login/page.tsx` is a client component but creates **no** Supabase
+   browser client — it posts to a server action. Nothing reads the fragment.
+3. The fragment is discarded on the next navigation. The link is already spent, so
+   retrying it returns `otp_expired`.
+
+`apps/web/app/auth/update-password/UpdatePasswordClient.tsx` is the one route that
+handles this correctly, and its header documents the exact fragment shape it
+expects. The flow never reaches it.
+
+### Immediate stopgap — one dashboard field, zero code
+
+Staff recovery is the **only live recovery path** and it is currently dead, so
+this is worth doing before the code fix ships.
+
+1. Supabase dashboard, Authentication, URL Configuration.
+2. Change **Site URL** to exactly:
+
+   `https://app.osteojp.pt/auth/update-password`
+
+3. Save. **No allowlist change is needed** — that exact URL is already in the
+   Redirect URLs list.
+
+The dashboard trigger then falls back to the route that already reads the hash.
+
+**Why this is a stopgap and not the fix:** the Site URL is the fallback for
+*every* flow that passes no `redirect_to`. Today that is only staff recovery, so
+pointing it at the set-password screen is correct. The moment a second such flow
+exists (an email-change confirmation, say), it would land on a set-password
+screen and be wrong. The durable fix is below.
+
+### The durable fix — on a branch, after #830 merges
+
+Mount a hash guard in `apps/web/app/login/page.tsx`, which is already
+`"use client"`. On mount, if `location.hash` carries `type=recovery` or
+`error_code=`, `router.replace("/auth/update-password" + location.hash)`.
+
+Small, contained, and it makes **any** future misrouting self-correcting rather
+than depending on one dashboard field staying set. Once it ships, the Site URL
+can go back to `https://app.osteojp.pt` — or stay as-is harmlessly.
+
+Do **not** attempt to read the fragment on the server. It is never transmitted.
+
+---
+
+## 8. RULING — remove `https://patient.osteojp.pt/**` from the allowlist
+
+That entry predates this work and Ivan correctly left it in place, because
+section 5 says unrecognised entries are reported rather than deleted.
+
+**Its provenance is now known**, so that rule no longer applies: it dates from
+when the portal used Supabase magic links, which LOOP 3 removed. **Remove it.**
+
+Three reasons, and the third is why it is not merely tidy-up:
+
+1. **Nothing links to it.** `signInWithOtp` and `resetPasswordForEmail` both have
+   zero callers; patient auth is SMS OTP through our own transport.
+2. **The host does not resolve.** `patient.osteojp.pt` is the one unwired domain
+   (`docs/SPEC.md:269`), so the entry protects no working flow.
+3. **It is a wildcard on an auth boundary.** `/**` authorises every path under a
+   host that does not exist today. If that name is ever pointed anywhere — a
+   future deploy, a misconfiguration, a lapsed record picked up by someone else —
+   every path under it silently becomes a valid destination for a recovery token.
+   An allowlist entry for a host you do not control is the worst shape an auth
+   redirect entry can take.
+
+**Cost of removing: none today.** If the portal ever needs Supabase auth mail
+again, add the one specific path it needs at that point, never a wildcard.
+
+**Instruction for Ivan, one line:** in the Supabase dashboard under
+Authentication, URL Configuration, Redirect URLs, delete the entry
+`https://patient.osteojp.pt/**` and save.
+
