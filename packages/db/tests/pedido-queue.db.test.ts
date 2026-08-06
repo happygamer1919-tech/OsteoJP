@@ -150,6 +150,14 @@ describe.skipIf(!live)("W13-04 — the reception confirm queue", () => {
 
   afterAll(async () => {
     if (!sql) return;
+    // staff_notifications.tenant_id has NO ON DELETE CASCADE. Migration 0055
+    // cascades `recipient_user_id` and says so explicitly ("recipient_user_id
+    // DOES cascade, and that is the one place"), because a notification is a
+    // message TO someone. The tenant reference is a plain FK, so the seeded
+    // rows have to go first or the tenant delete is REFUSED — which is what
+    // failed this suite's teardown on its first CI run, after all seven
+    // assertions had already passed.
+    await sql`delete from staff_notifications where tenant_id = ${T.tenant}`;
     await sql`delete from tenants where id = ${T.tenant}`;
     await sql.end();
   });
