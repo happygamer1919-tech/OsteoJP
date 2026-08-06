@@ -549,6 +549,63 @@ terms-acceptance): the block ends with `check-migration-tables.mjs` naming that
 migration's tables, and it begins with `git fetch` plus an explicit
 `git checkout origin/<branch>`. Both halves, every time.
 
+## Catalog write applied to production (2026-08-06) — the pasted evidence
+
+`w13-04-set-patient-bookable.mjs --execute`, JP's ruling made real. **Not a
+migration**: a DATA write, recorded to the same standard because the evidence
+rule is about what changed in production, not about which file changed it.
+
+Owner ran it from `osteojp-prod-apply`, detached at `2c0c708`. Preview first,
+as the block required.
+
+**PREVIEW** — `20 services read. WOULD CHANGE: 11`, and `LEFT ALONE: 4`
+(Diversos plus the three inactive rows named `-`). The 11:
+
+```
+ -  -> sim   Drenagem Linfática Manual (Método Wodere)
+ -  -> sim   Fisioenergética/Kinesiologia/Posturologia
+ -  -> sim   Massagem 4 Mãos (2 terapeutas)
+ -  -> sim   Medicina Chinesa/Acupuntura
+ -  -> sim   Osteopatia/Posturologia
+ -  -> sim   Pilates — Aula Individual
+ -  -> sim   Pilates mensal 1x/semana — grupo (3 a 4 pessoas)
+ -  -> sim   Pilates mensal 2x/semana — grupo (3 a 4 pessoas)
+ -  -> sim   Pressoterapia
+ -  -> sim   Sessão Família/Amigos (2 pessoas ao mesmo tempo)
+ -  -> sim   Tratamento Terapêutico
+```
+
+Eleven and not twelve because **Fisioterapia was already true** — the one name
+0057's backfill matched, which is the whole finding behind `W13-04a`.
+
+**EXECUTE** — `APPLIED: 11 row(s) changed.` followed by the verification read in
+the same invocation: twelve BOOKABLE, and off: the three `-` rows, `1.ª consulta
+/ Avaliação`, `Diversos`, `NESA`, `Pilates — Aula Experimental (1.ª vez)`,
+`R.P.G. — Reeducação Postural Global`. Final line `12 bookable of 20. Expected
+12.`
+
+**THE VERIFICATION IS IN THE SCRIPT, NOT IN A SECOND COMMAND**, and that is the
+0057 lesson applied: `APPLIED: 11` alone proves only that eleven UPDATEs
+returned rows. The read that follows is what establishes the end state, and the
+script exits non-zero if the count is not 12 — so a partial write cannot report
+success.
+
+**THE PREVIEW WAS THE CONTROL AND IT HAD ALREADY EARNED ITS KEEP.** Run locally
+against a database seeded with these same twenty names, an earlier version of
+this script hit its own STOP condition: six of the sixteen ruled names matched
+no row, because the list carried hand-normalized spellings and production writes
+an EM DASH in "Pilates — Aula Individual" and "R.P.G. — Reeducação Postural
+Global" and a feminine ordinal in "1.ª consulta". Neither is a combining
+diacritic, so NFD-stripping leaves both alone. The lists now hold verbatim
+production names with one normalizer applied to both sides.
+
+**WHAT THIS DOES AND DOES NOT CHANGE.** The column is now correct. **No patient
+sees any of it yet**: `store.ts` still filters the portal catalog through
+`isBookableServiceName`, the four-name allowlist. Deleting that allowlist and
+switching both call sites to `patient_bookable` — together with the missing
+`internalOnly` check at `getBookableService` — is LOOP 4 step 4, one PR, never
+staged. Until it lands the portal still offers exactly one service.
+
 ## Migration 0057 applied to production (2026-08-06) — the pasted evidence
 
 `0057_services_patient_bookable` — the column Decision B moves the patient
