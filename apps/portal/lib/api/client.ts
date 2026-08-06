@@ -3,6 +3,7 @@
  */
 
 import { createServerClient } from '@/lib/supabase/server'
+import { readPortalSession } from '@/lib/auth/session'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,11 +99,23 @@ function apiBase(): string {
 // own session from the incoming browser request via createServerClient, so
 // extracting the access_token here is safe even without network round-trips.
 async function apiHeaders(): Promise<HeadersInit> {
+  const headers: HeadersInit = { 'Content-Type': 'application/json' }
+
+  // W13-03b: the PATIENT SESSION FIRST. An OTP-authenticated patient has no
+  // Supabase session at all - by design, since WF-07 refuses any patient row
+  // already linked to an auth user - so this is the only credential they can
+  // ever have. It is forwarded verbatim and never inspected: the API is the
+  // single verifier (lib/auth/session.ts).
+  const portalSession = await readPortalSession()
+  if (portalSession) {
+    headers['Authorization'] = `Bearer ${portalSession}`
+    return headers
+  }
+
   const supabase = await createServerClient()
   const {
     data: { session },
   } = await supabase.auth.getSession()
-  const headers: HeadersInit = { 'Content-Type': 'application/json' }
   if (session?.access_token) {
     headers['Authorization'] = `Bearer ${session.access_token}`
   }

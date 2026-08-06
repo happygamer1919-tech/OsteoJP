@@ -185,7 +185,10 @@ describe("verify: every failure is byte-identical", () => {
     claimSucceeds();
     const res = await verify(post({ tenantId: T, phone: "+351912345678", code: "123456" }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ patientId: "p1" });
+    const body = await res.json();
+    expect(body.patientId).toBe("p1");
+    expect(typeof body.sessionToken).toBe("string");
+    expect(body.sessionToken.length).toBeGreaterThan(0);
   });
 
   it("never reaches the patient table when the code fails", async () => {
@@ -254,7 +257,7 @@ describe("verify: the claim is ONE transaction", () => {
 });
 
 describe("verify: the trusted-device token", () => {
-  it("leaves in an httpOnly Secure SameSite cookie, never in the body", async () => {
+  it("leaves in an httpOnly Secure SameSite cookie", async () => {
     claimSucceeds();
     const res = await verify(post({ tenantId: T, phone: "+351912345678", code: "123456" }));
 
@@ -264,8 +267,30 @@ describe("verify: the trusted-device token", () => {
     expect(cookie).toContain("Secure");
     expect(cookie).toContain("SameSite=Lax");
     expect(cookie).toContain("Path=/");
-    // An XSS that can read the JSON must not be able to read the credential.
-    expect(JSON.stringify(await res.json())).not.toMatch(/token|session|access/i);
+  });
+
+  it("the body token and the cookie token are the SAME credential", async () => {
+    // One session, carried two ways for two different consumers: the cookie for
+    // a browser that ever talks to this host directly, the body for the portal
+    // server. Two different tokens would mean two live sessions per login, and
+    // revoking one would not revoke the other.
+    claimSucceeds();
+    const res = await verify(post({ tenantId: T, phone: "+351912345678", code: "123456" }));
+    const body = await res.json();
+    const cookies = res.headers.get("set-cookie")!;
+    expect(cookies).toContain(`__Host-ojp_session=${body.sessionToken}`);
+  });
+
+  it("the DEVICE token is never in the body - only the session is", async () => {
+    // The device token is a 30-day credential and the portal has no use for it:
+    // it belongs to the browser, which holds it as a cookie on the API host.
+    claimSucceeds();
+    const res = await verify(post({ tenantId: T, phone: "+351912345678", code: "123456" }));
+    const body = await res.json();
+    const deviceToken = /__Host-ojp_device=([0-9a-f]{64})/.exec(
+      res.headers.get("set-cookie") ?? "",
+    )![1]!;
+    expect(JSON.stringify(body)).not.toContain(deviceToken);
   });
 
   it("stores only the HASH, and the value only ever exists in that one response", async () => {
@@ -324,7 +349,9 @@ describe("trusted: the check that happens BEFORE a code is demanded", () => {
     H.isTrusted.mockResolvedValue(TRUSTED_OK);
     const res = await trusted(withCookie(TOKEN));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ patientId: "p1" });
+    const body = await res.json();
+    expect(body.patientId).toBe("p1");
+    expect(typeof body.sessionToken).toBe("string");
   });
 
   it("takes NO phone number - the answer comes from the credential alone", async () => {

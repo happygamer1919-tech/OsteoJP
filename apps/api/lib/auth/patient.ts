@@ -91,10 +91,21 @@ export async function getPatientPrincipal(): Promise<PatientPrincipal | null> {
     }
   }
 
-  // Path 1 — Bearer token (portal server → api server, no cookie forwarding)
+  // Path 1 — Bearer token (portal server → api server, no cookie forwarding).
+  //
+  // TWO KINDS OF BEARER ARRIVE HERE, and ours is tried first (W13-03b). The
+  // portal wraps our session token in its own cookie and forwards it as a
+  // Bearer, because a __Host- cookie set by THIS host can never be read by the
+  // portal. A Supabase access token arrives the same way for anyone who has one.
+  // Neither can be mistaken for the other: ours is rejected by the Supabase
+  // verifier for its signature, and a Supabase token is rejected by ours for its
+  // issuer. Trying both is not weaker than trying one - each still has to verify.
   const authHeader = headerStore.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
-    return verifyPatientJwt(authHeader.slice(7));
+    const bearer = authHeader.slice(7);
+    const ours = await verifyPatientSession(bearer);
+    if (ours) return ours;
+    return verifyPatientJwt(bearer);
   }
 
   // Path 2 — httpOnly session cookie (browser → api server directly)

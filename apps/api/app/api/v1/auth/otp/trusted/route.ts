@@ -124,7 +124,9 @@ export async function POST(req: Request): Promise<Response> {
     issuedAt: now,
   });
 
-  const res = NextResponse.json({ patientId: trusted.patientId });
+  // Body as well as cookie - see the verify route for why. Same rule: body
+  // only, never a redirect URL or a query string.
+  const res = NextResponse.json({ patientId: trusted.patientId, sessionToken: session });
   res.headers.set("Set-Cookie", sessionCookie(session));
   return res;
 }
