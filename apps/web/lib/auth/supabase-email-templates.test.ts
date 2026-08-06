@@ -114,6 +114,32 @@ describe("every Supabase Auth template that can send mail has a pt-PT body", () 
     expect(body).toContain("Castelo Branco");
   });
 
+  it.each(files)("%s has NO malformed entity fragment", (f) => {
+    // DEFECT FOUND IN A REAL SENT EMAIL, 2026-08-06: the footer rendered as the
+    // literal text "OsteoJP &middot" and then stopped. The committed source was
+    // byte-correct - semicolons present, nothing truncated - so the break
+    // happened downstream, between the dashboard paste and the mail client.
+    //
+    // The signal was specific and is what the fix is built on: &atilde;,
+    // &ccedil; and &eacute; in the BODY all rendered correctly in the same
+    // email. Only &middot; failed. So the fix is not "stop using entities", it
+    // is "stop using THAT one" - replaced by plain ASCII in the footer, which
+    // has no entity to mangle and no non-ASCII byte to re-encode.
+    //
+    // This assertion is the general form of the bug rather than the specific
+    // one: every & must open a well-formed entity. A missing semicolon anywhere
+    // - the most likely way this recurs - fails here instead of in an inbox.
+    const body = read(f);
+    const malformed = [...body.matchAll(/&(?!(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#[xX][0-9A-Fa-f]+);)/g)].map(
+      (m) => body.slice(m.index ?? 0, (m.index ?? 0) + 14),
+    );
+    expect(malformed, `${f} has malformed entity fragment(s)`).toEqual([]);
+  });
+
+  it.each(files)("%s does not use the separator that broke in production", (f) => {
+    expect(read(f)).not.toContain("&middot");
+  });
+
   it.each(files)("%s names TWO clinics, and never a third", (f) => {
     // OWNER CORRECTION 2026-08-06: the clinic has exactly two locations.
     // Montemor-o-Novo does NOT exist. It is named in CLAUDE.md:4, README.md:3

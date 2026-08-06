@@ -113,7 +113,6 @@ Osteopathy sub-types follow the same rule: **Osteopatia Estrutural**, **Osteopat
 
 - **Linda-a-Velha** (hyphenated, lowercase "a")
 - **Castelo Branco**
-- **Montemor-o-Novo** (opening soon, per project context)
 
 When both primary locations are mentioned together, the established order across osteojp.pt is **Linda-a-Velha e Castelo Branco**. Maintain that order in all institutional copy.
 

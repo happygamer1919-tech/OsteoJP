@@ -80,5 +80,5 @@ João Pedro
 
 - Substituir `[data]` pelo dia real de go-live antes de enviar
 - Confirmar com Ivan que todos os utilizadores têm credenciais criadas antes de enviar
-- Imprimir `docs/staff-cheat-sheet.md` para a receção de cada consultório (Castelo Branco + Montemor-o-Novo)
+- Imprimir `docs/staff-cheat-sheet.md` para a receção de cada consultório (Linda-a-Velha + Castelo Branco)
 - Manter acesso de leitura ao Fisiozero ativo durante pelo menos 4 semanas pós go-live

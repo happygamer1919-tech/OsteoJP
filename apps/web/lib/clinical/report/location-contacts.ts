@@ -64,7 +64,9 @@ export function normalizeLocationKey(name: string): string {
 
 /**
  * Canonical OsteoJP location contacts (osteojp.pt). Keyed by normalizeLocationKey.
- * Montemor-o-Novo is intentionally absent — opening, no confirmed contacts yet.
+ * There are exactly TWO locations. A third, Montemor-o-Novo, was named across
+ * this repo for months and was ruled a pure error by the owner on 2026-08-06 —
+ * never a real or planned clinic. See board card LE-montemor-ground-truth.
  */
 export const OSTEOJP_LOCATION_CONTACTS: Readonly<Record<string, LocationContact>> = {
   "linda-a-velha": {

@@ -150,7 +150,7 @@ The following features are reserved for future owner decision. HTML comments mar
 
 Each document carries location-specific contact data via `{{location_name}}`, `{{location_address}}`, `{{location_postal}}`, `{{location_city}}`, `{{location_phone}}`, and `{{location_email}}`.
 
-The caller must inject the correct row from the `locations` table based on the appointment or session being documented. Do not hardcode location data in the templates — the HTML fiscal footer contains static fallback text for the two confirmed locations only (see Montemor-o-Novo TODO below).
+The caller must inject the correct row from the `locations` table based on the appointment or session being documented. Do not hardcode location data in the templates — the HTML fiscal footer contains static fallback text for the two locations only.
 
 Current confirmed locations:
 
@@ -158,22 +158,9 @@ Current confirmed locations:
 |---|---|---|---|---|---|
 | OsteoJP Linda-a-Velha | Praça Central Plaza, n.º 1 – A | 2795-246 | Linda-a-Velha | 969 472 111 / 214 191 988 | clinica.osteojp@gmail.com |
 | OsteoJP Castelo Branco | R. Fernando Namora, n.º 6 | 6000-140 | Castelo Branco | 969 877 553 / 272 328 221 | geral.castelobranco@osteojp.pt |
-| OsteoJP Montemor-o-Novo | pending (BUG-13) | pending | Montemor-o-Novo | pending | pending |
 
 ---
 
-## Montemor-o-Novo TODO
-
-The fiscal footer in all four templates contains an HTML comment placeholder for Montemor-o-Novo:
-
-```html
-<!-- TODO (BUG-13): Montemor-o-Novo address, phone and email pending owner confirmation — update once confirmed -->
-<!-- <p><strong>Montemor-o-Novo:</strong> [endereço pendente] · Tel: [pendente] · [email pendente]</p> -->
-```
-
-Once the owner confirms the address, phone, and email (tracked in BUG-13 / `docs/architecture.md` open item 7), uncomment and populate the `<p>` tag in all four templates.
-
----
 
 ## Logo placeholder
 

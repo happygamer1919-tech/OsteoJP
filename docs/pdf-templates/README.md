@@ -16,5 +16,4 @@ All placeholders use `{{double_brace}}` convention, matching the email/SMS templ
 
 - VAT: invoices use 0% IVA, exempt under art. 9.º n.º 1 CIVA (health services exemption)
 - Clinic email placeholder left blank — pending confirmation from João Pedro (BUG-13)
-- Second clinic location (Montemor-o-Novo) not yet in footer — add once opening date confirmed
 - These are layout/content templates. Ivan to wire into InvoiceXpress (invoices) and the locked-record print flow (clinical report + declarations)

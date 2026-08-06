@@ -48,6 +48,14 @@ made accessible.
 
 **5. Montemor-o-Novo — visible or hidden in booking**
 
+> **RECORDED IN ERROR — owner ruling 2026-08-06.** Montemor-o-Novo was never a
+> real or planned OsteoJP location. The clinic has exactly two: Linda-a-Velha
+> and Castelo Branco. This entry is preserved verbatim below because it is a
+> record of what was asked at the time, not a statement of fact; it is annotated
+> rather than deleted so the history stays honest. The question it poses is
+> void — there is no third clinic to show or hide. See board card
+> `LE-montemor-ground-truth`.
+
 Montemor-o-Novo is configured in the system as a third clinic but is not yet open
 for appointments. The booking flow cannot be finalised until JP confirms whether
 Montemor-o-Novo should appear in the clinic list with a "Coming soon" notice, or
