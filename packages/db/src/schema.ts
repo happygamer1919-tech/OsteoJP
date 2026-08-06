@@ -285,6 +285,16 @@ export const services = pgTable(
     // is bookable at all; internal_only controls portal visibility only. Ships
     // false for every existing row, so nothing changes until a service is flagged.
     internalOnly: boolean("internal_only").notNull().default(false),
+    // W13-04 (migration 0057), Decision B: may a PATIENT self-book this service
+    // online. The THIRD of three independent signals, and the reason they are
+    // three: is_active says the service exists at all, internal_only says staff
+    // may book it while the portal never shows it, and this says a patient may
+    // book it themselves. Collapsing any two means a clinic cannot express a
+    // service that is real, staff-bookable and simply not offered for
+    // self-booking - which is most of the catalog. Replaces the four hard-coded
+    // names in apps/api/lib/appointments/services.ts; ships false by default so a
+    // new service is never silently self-bookable.
+    patientBookable: boolean("patient_bookable").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -294,6 +304,10 @@ export const services = pgTable(
   (t) => [
     index("services_tenant_idx").on(t.tenantId),
     index("services_tenant_location_idx").on(t.tenantId, t.locationId),
+    // 0057: the portal catalog filters tenant + is_active + internal_only and
+    // will filter on patient_bookable too. Paired with tenant_id because it is
+    // never the only predicate.
+    index("services_tenant_patient_bookable_idx").on(t.tenantId, t.patientBookable),
   ],
 );
 

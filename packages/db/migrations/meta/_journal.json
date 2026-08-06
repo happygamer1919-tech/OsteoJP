@@ -393,6 +393,13 @@
       "when": 1786400000000,
       "tag": "0056_patient_auth_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1786500000000,
+      "tag": "0057_services_patient_bookable",
+      "breakpoints": true
     }
   ]
 }

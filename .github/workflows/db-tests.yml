@@ -153,11 +153,11 @@ jobs:
       # together. A mock racing itself proves the mock. The code under test is in
       # apps/api, which packages/db must not import from, so the suite comes to
       # the database.
-      - name: Run apps/api DB-gated suite (DATABASE_URL set)
+      - name: Run apps/api DB-gated suites (DATABASE_URL set)
         if: steps.changes.outputs.code == 'true'
         working-directory: apps/api
         run: |
-          pnpm exec vitest run lib/auth/otp-claim.db.test.ts \
+          pnpm exec vitest run .db.test.ts \
             --reporter=default \
             --reporter=json --outputFile.json=api-db-results.json \
             2>&1 | tee api-db-run.log

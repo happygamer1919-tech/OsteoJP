@@ -84,6 +84,12 @@ const SUITES = [
   // transaction. Hard-required: a silent skip here would leave Decision D's
   // login proven by mocks agreeing with themselves.
   { file: "otp-claim.db.test.ts", hard: true },
+  // W13-04. Proves migration 0057's backfill reproduces the name allowlist
+  // EXACTLY - the "must not change what any patient can book on the day it
+  // applies" line. It compares a SQL expression against a TypeScript function,
+  // which is the shape that drifts, so a silent skip here would let the two
+  // diverge unnoticed.
+  { file: "patient-bookable.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.
