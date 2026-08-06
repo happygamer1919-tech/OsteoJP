@@ -52,6 +52,14 @@ jobs:
       # through this (owner/postgres role over TCP); they do not use the Supabase
       # JS client, ANON_KEY, or SERVICE_ROLE_KEY, so those are not captured here.
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      # W13-03a. A THROWAWAY FIXTURE, not a secret, and deliberately written in
+      # the open so nobody mistakes it for one: it signs nothing that leaves this
+      # runner and the database is destroyed with the job. It is here because the
+      # apps/api DB-gated suite imports the OTP verify route, and that route
+      # asserts the signing secret at BOOT rather than at the patient - so
+      # without a value the suite cannot even be collected. The real value lives
+      # in the osteojp-api Vercel project and never in this file.
+      PATIENT_SESSION_SECRET: ci-fixture-not-a-secret-at-least-32-chars
 
     steps:
       - name: Checkout

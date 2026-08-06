@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { getDbAdmin } from "@osteojp/db";
 
 import { deviceCookie } from "@/lib/auth/device-cookie";
+import {
+  assertPatientSessionEnv,
+  mintPatientSession,
+  sessionCookie,
+} from "@/lib/auth/patient-session";
 import { generateDeviceToken, hashDeviceToken, verifyCode } from "@/lib/auth/otp";
 import {
   createDrizzleOtpStore,
@@ -37,15 +42,21 @@ import { RULES, clientKey, tooManyRequests } from "@/lib/rate-limit/limiter";
 // committing without the third leaves a login that half happened. The ORDER
 // inside it is load-bearing and is explained at each step below.
 //
-// WHAT THIS ROUTE STILL DOES NOT DO: mint a PORTAL SESSION. It returns the
-// resolved patient id and plants a trusted-device cookie, and that is the whole
-// of what Decision D rules. Which artefact carries the portal session afterwards
-// — and how a patient row acquires `auth_user_id` when WF-07's linkage refuses
-// any row that already has one — is an owner decision that is not made anywhere
-// in this repository. It is on the board rather than invented here.
+// IT NOW MINTS THE PORTAL SESSION, per the owner ruling of 2026-08-06 (Option
+// B): our own signed cookie, not a Supabase one. Two cookies leave here and they
+// do different jobs — a 12-hour session that proves who is calling, and a 30-day
+// trusted device that lets this browser get a new session without another SMS.
+// See lib/auth/patient-session.ts for why the split, and why nothing slides.
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// BOOT, NOT AT THE PATIENT. A missing signing secret makes every login here
+// impossible, so this route refuses to load rather than answering 401 to people
+// who typed the right code. Same posture as the notification path's
+// assertNotificationEnv, and the same reason: a silent degradation on an auth
+// path looks exactly like a user error.
+assertPatientSessionEnv();
 
 /** The single refusal. Byte-identical for every failure mode. */
 function refused(): Response {
@@ -136,10 +147,25 @@ export async function POST(req: Request): Promise<Response> {
 
   if (!claim) return refused();
 
+  // 5. Mint the session, AFTER the transaction committed. Deliberately outside
+  //    it: a session is not a database row, so there is nothing for it to be
+  //    atomic with, and holding a transaction open across a signing call would
+  //    lengthen the lock window on the code row for no gain. If this throws the
+  //    code is already spent and the patient simply requests another — annoying,
+  //    and strictly better than a spent code that granted a session nobody
+  //    recorded.
+  const session = await mintPatientSession({
+    tenantId,
+    patientId: claim.patientId,
+    issuedAt: now,
+  });
+
   const res = NextResponse.json({ patientId: claim.patientId });
-  // The token leaves in a Set-Cookie header and NOT in the body: an httpOnly
-  // cookie is unreadable to script, so an XSS in the portal cannot lift a
-  // thirty-day credential out of a JSON response it can already see.
-  res.headers.set("Set-Cookie", deviceCookie(claim.deviceToken));
+  // Both tokens leave in Set-Cookie headers and NEITHER in the body: httpOnly
+  // cookies are unreadable to script, so an XSS in the portal cannot lift a
+  // session or a thirty-day credential out of a JSON response it can already
+  // see. `append`, not `set`, or the second would overwrite the first.
+  res.headers.append("Set-Cookie", sessionCookie(session));
+  res.headers.append("Set-Cookie", deviceCookie(claim.deviceToken));
   return res;
 }

@@ -138,8 +138,17 @@ export type TrustedDeviceStore = {
     deviceTokenHash: string;
     now: Date;
   }): Promise<void>;
-  /** True only for a live, unrevoked, unexpired device belonging to a patient. */
-  isTrusted(deviceTokenHash: string, now: Date): Promise<string | null>;
+  /**
+   * The patient AND tenant a live, unrevoked, unexpired device belongs to, or
+   * null. Returns both for the same reason it returns the patient id rather than
+   * a boolean: the caller must not have to look either one up separately, which
+   * is a second chance to attribute a device to the wrong patient - or, once a
+   * session carries a tenant claim, to the wrong TENANT.
+   */
+  isTrusted(
+    deviceTokenHash: string,
+    now: Date,
+  ): Promise<{ patientId: string; tenantId: string } | null>;
   /** Revoke one device explicitly. */
   revoke(deviceTokenHash: string, now: Date): Promise<void>;
 };
@@ -164,12 +173,12 @@ export function createDrizzleTrustedDeviceStore(
     },
 
     /**
-     * Returns the patient id when the device is trusted, else null.
+     * Returns the patient and tenant when the device is trusted, else null.
      *
      * THREE CONDITIONS, ALL IN SQL: the row exists, it is not revoked, and it
-     * has not expired. Returning the patient id rather than a boolean means the
-     * caller cannot accidentally trust a device while attributing it to the
-     * wrong patient — there is no second lookup to get wrong.
+     * has not expired. Returning the ids rather than a boolean means the caller
+     * cannot accidentally trust a device while attributing it to the wrong
+     * patient or the wrong tenant — there is no second lookup to get wrong.
      *
      * `last_seen_at` is deliberately NOT written here. It exists for support and
      * revocation triage; writing it on every check would turn a read path into a
@@ -178,7 +187,10 @@ export function createDrizzleTrustedDeviceStore(
      */
     async isTrusted(deviceTokenHash, now) {
       const [row] = await db
-        .select({ patientId: patientTrustedDevices.patientId })
+        .select({
+          patientId: patientTrustedDevices.patientId,
+          tenantId: patientTrustedDevices.tenantId,
+        })
         .from(patientTrustedDevices)
         .where(
           and(
@@ -188,7 +200,7 @@ export function createDrizzleTrustedDeviceStore(
           ),
         )
         .limit(1);
-      return row?.patientId ?? null;
+      return row ?? null;
     },
 
     /**

@@ -8,6 +8,7 @@ import {
 import { withPatientContext, type DbTx } from "@osteojp/db";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { verifySupabaseJwt } from "@/lib/auth/jwt";
+import { readSessionToken, verifyPatientSession } from "@/lib/auth/patient-session";
 
 // The patient-portal auth boundary for api.osteojp.pt.
 //
@@ -40,7 +41,11 @@ async function verifyPatientJwt(
 /**
  * The verified patient principal for the current session, or null (fail-closed).
  *
- * Two auth paths (checked in order):
+ * THREE auth paths (checked in order):
+ *   0. Our own signed session cookie (W13-03a). The only credential an
+ *      OTP-authenticated patient can hold, because they have no Supabase auth
+ *      user by design. Signed and verified by this app with a secret only this
+ *      app has; see lib/auth/patient-session.ts.
  *   1. Authorization: Bearer <token> — used by portal server actions to avoid
  *      cross-app cookie forwarding. The token is extracted from the portal's OWN
  *      Supabase session (server-side, not from the browser), so it originates at
@@ -61,8 +66,32 @@ async function verifyPatientJwt(
  * server rejects patient JWTs with 403 (expects role:'authenticated').
  */
 export async function getPatientPrincipal(): Promise<PatientPrincipal | null> {
-  // Path 1 — Bearer token (portal server → api server, no cookie forwarding)
   const headerStore = await headers();
+
+  // Path 0 (W13-03a, owner ruling Option B) — OUR OWN signed session cookie.
+  //
+  // Tried FIRST because it is the portal's own credential and the only one an
+  // OTP-authenticated patient can ever have: they have no Supabase auth user, by
+  // design, since WF-07 refuses any patient row that is already linked to one.
+  //
+  // AN INVALID COOKIE FALLS THROUGH, it does not short-circuit. A forged or
+  // expired session must not authenticate anything, and it must equally not lock
+  // out a caller holding a legitimate Supabase token — so a bad cookie is simply
+  // not a credential, and the remaining paths get their turn. It can never
+  // UPGRADE a request: verifyPatientSession returns a principal or null, never a
+  // partially-trusted anything.
+  const cookieHeader = headerStore.get("cookie");
+  if (cookieHeader) {
+    const token = readSessionToken(
+      new Request("https://api.invalid/", { headers: { cookie: cookieHeader } }),
+    );
+    if (token) {
+      const principal = await verifyPatientSession(token);
+      if (principal) return principal;
+    }
+  }
+
+  // Path 1 — Bearer token (portal server → api server, no cookie forwarding)
   const authHeader = headerStore.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
     return verifyPatientJwt(authHeader.slice(7));

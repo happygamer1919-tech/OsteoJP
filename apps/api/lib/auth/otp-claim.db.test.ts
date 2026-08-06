@@ -275,7 +275,9 @@ d("the OTP claim against a real database", () => {
 
     it("is ACCEPTED at 30 days", async () => {
       const justInside = new Date(issuedAt.getTime() + 30 * DAY - 1000);
-      expect(await makeTrustedStore().isTrusted(hash, justInside)).toBe(patientId);
+      expect(await makeTrustedStore().isTrusted(hash, justInside)).toEqual({
+        patientId, tenantId,
+      });
     });
 
     it("is REFUSED at 31 days", async () => {
@@ -285,7 +287,9 @@ d("the OTP claim against a real database", () => {
 
     it("expires exactly at the ruled instant, not a day either side", async () => {
       const store = makeTrustedStore();
-      expect(await store.isTrusted(hash, new Date(issuedAt.getTime() + 30 * DAY - 1))).toBe(patientId);
+      expect(await store.isTrusted(hash, new Date(issuedAt.getTime() + 30 * DAY - 1))).toEqual({
+        patientId, tenantId,
+      });
       expect(await store.isTrusted(hash, new Date(issuedAt.getTime() + 30 * DAY))).toBeNull();
     });
 
