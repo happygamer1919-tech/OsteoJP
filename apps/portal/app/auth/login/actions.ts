@@ -108,12 +108,16 @@ async function verifyCodeAction(
 /**
  * Decision D's trusted device, spent.
  *
- * Returns false when the browser is not trusted; redirects when it is. It never
- * reports WHY it failed, because there is nothing the patient could do with the
- * answer: the screen behind it is the ordinary phone form.
+ * Returns whether a session was minted, and NAVIGATES NOTHING. The caller is a
+ * mount effect rather than a form submission, and `redirect()` from an action
+ * invoked that way depends on the action dispatcher processing the redirect
+ * response — which is a behaviour to rely on only when there is a reason to.
+ * Here there is none: the client knows what to do with `true`, and a boolean
+ * makes the "checking" state end deterministically in both directions.
+ *
+ * It never reports WHY it failed, because there is nothing the patient could do
+ * with the answer: the screen behind it is the ordinary phone form.
  */
 export async function trustedDeviceAction(): Promise<boolean> {
-  const ok = await loginWithTrustedDevice()
-  if (ok) redirect('/portal/dashboard')
-  return false
+  return loginWithTrustedDevice()
 }

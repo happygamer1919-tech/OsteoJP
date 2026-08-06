@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useActionState, useEffect, useState } from 'react'
 import { Banner, Button, Field, Input } from '@osteojp/ui'
 
@@ -34,21 +35,33 @@ export function LoginOtp({ deviceKnown }: { deviceKnown: boolean }) {
    * round trip to be told what this app already knows, and sees the phone form
    * immediately rather than a spinner.
    *
-   * The action REDIRECTS on success, so the ordinary success path never resolves
-   * here; `finally` exists for the refusal and for a network fault, either of
-   * which drops through to the phone form.
+   * THE NAVIGATION HAPPENS HERE, not in the action. An action invoked from an
+   * effect rather than a form submission would have to rely on the dispatcher
+   * processing a `redirect()` response, and there is no reason to depend on that
+   * when the client already knows what `true` means. Anything else — a refused
+   * device, an expired one, a network fault — falls through to the phone form,
+   * which is the correct screen for all three.
    */
+  const router = useRouter()
   const [checkingDevice, setCheckingDevice] = useState(deviceKnown)
   useEffect(() => {
     if (!deviceKnown) return
     let cancelled = false
-    void trustedDeviceAction().finally(() => {
-      if (!cancelled) setCheckingDevice(false)
-    })
+    void trustedDeviceAction()
+      .then((ok) => {
+        if (cancelled) return
+        // `replace`, not `push`: the login screen must not sit in the back
+        // stack of a patient who never had to interact with it.
+        if (ok) router.replace('/portal/dashboard')
+        else setCheckingDevice(false)
+      })
+      .catch(() => {
+        if (!cancelled) setCheckingDevice(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [deviceKnown])
+  }, [deviceKnown, router])
 
   if (checkingDevice) {
     return (

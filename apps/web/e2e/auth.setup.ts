@@ -97,13 +97,29 @@ setup("authenticate as portal patient", async ({ page }) => {
     {
       name: "__Host-ojp_device",
       value: PORTAL_DEVICE_TOKEN,
-      url: PORTAL_BASE_URL,
+      // A SECURE SCHEME, deliberately, even though the portal is served over
+      // http here. Two different rules are in play and only one of them is the
+      // browser's:
+      //
+      //   * CHROME DEVTOOLS PROTOCOL, which is what addCookies drives, validates
+      //     the URL's SCHEME before it will store a Secure cookie. With
+      //     `http://localhost:3001` it refuses the whole call —
+      //     "Protocol error (Storage.setCookies): Invalid cookie fields" — and
+      //     the setup dies before it can plant anything.
+      //   * THE BROWSER ITSELF treats localhost as a trustworthy origin and
+      //     sends Secure cookies to it over plain http. That is exactly why the
+      //     portal's own `secure: true` cookies work in local dev.
+      //
+      // So the cookie is STORED against the https origin and SENT to the http
+      // one, because cookies are scoped by host and not by scheme. Verified
+      // against a real Chromium rather than reasoned about: http rejected,
+      // https accepted, and the cookie then arrived on a plain
+      // http://localhost request.
+      url: PORTAL_BASE_URL.replace(/^http:/, "https:"),
       httpOnly: true,
-      // The `__Host-` prefix REQUIRES Secure, Path=/ and no Domain. Browsers
-      // treat http://localhost as a trustworthy origin, so a Secure cookie is
-      // accepted there — which is also what lets the portal work in dev at all.
-      // `url` alone and no domain/path pair: it yields a host-only cookie at
-      // path "/", which is exactly the three attributes the prefix demands.
+      // The `__Host-` prefix REQUIRES Secure, Path=/ and no Domain. `url` alone,
+      // with no domain/path pair, yields a host-only cookie at path "/", which
+      // is exactly the three attributes the prefix demands.
       secure: true,
       sameSite: "Lax",
     },
