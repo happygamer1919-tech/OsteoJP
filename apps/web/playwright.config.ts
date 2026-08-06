@@ -167,6 +167,16 @@ export default defineConfig({
           stderr: "pipe",
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,
+          // W13-03: the patient-session signing secret. A HARNESS FIXTURE, named
+          // so it cannot be mistaken for anything else, exactly like the
+          // AUDIO_S3_* values above and matching the literal db-tests.yml
+          // already uses. Without it /api/v1/auth/otp/trusted answers 503 and
+          // the portal patient can never be signed in — which is the honest
+          // behaviour, and is why the value has to be supplied here rather than
+          // defaulted inside the app.
+          env: {
+            PATIENT_SESSION_SECRET: "ci-fixture-not-a-secret-at-least-32-chars",
+          },
         },
         // apps/portal — patient-facing app; portal-reminders.spec.ts targets this.
         // Explicitly set NEXT_PUBLIC_API_URL so Next.js's DefinePlugin inlines it
@@ -180,6 +190,13 @@ export default defineConfig({
           stderr: "pipe",
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,
+          // W13-03: the tenant the OTP screens name when they call the API. Both
+          // OTP routes take it in the body because they run BEFORE any
+          // authentication, so there is no token to derive it from. TENANT_A,
+          // the tenant the seed builds.
+          env: {
+            PORTAL_TENANT_ID: "00000000-0000-0000-0000-0000000000a1",
+          },
         },
       ],
 });

@@ -9,12 +9,14 @@
  *   E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD
  *   E2E_THERAPIST_EMAIL, E2E_THERAPIST_PASSWORD
  *   E2E_RECEPTION_EMAIL, E2E_RECEPTION_PASSWORD
- *   E2E_PORTAL_PATIENT_EMAIL, E2E_PORTAL_PATIENT_PASSWORD (portal patient)
+ *
+ * The portal patient is NOT in that list: since W13-03 it signs in with a
+ * seeded trusted device, not a password. See that step at the bottom.
  */
 
 import { test as setup } from "@playwright/test";
 import path from "path";
-import { E2E_PORTAL_PATIENT_EMAIL, E2E_PASSWORD, PORTAL_BASE_URL, PORTAL_STORAGE } from "./fixtures";
+import { PORTAL_BASE_URL, PORTAL_DEVICE_TOKEN, PORTAL_STORAGE } from "./fixtures";
 
 const AUTH_DIR = path.join(__dirname, ".auth");
 
@@ -75,20 +77,41 @@ for (const role of ROLES) {
 // ---------------------------------------------------------------------------
 
 setup("authenticate as portal patient", async ({ page }) => {
-  const email =
-    process.env.E2E_PORTAL_PATIENT_EMAIL ?? E2E_PORTAL_PATIENT_EMAIL;
-  const password = process.env.E2E_PORTAL_PATIENT_PASSWORD ?? E2E_PASSWORD;
+  // W13-03 — THE EMAIL AND PASSWORD ARE GONE, with the screen that took them.
+  // Decision D: "patient login is a 6-digit SMS OTP, phone only... No password,
+  // no magic link, no session minted from any other artefact." The portal's
+  // password form, its recovery screen and its activation screen were deleted
+  // with LOOP 3, so this step can no longer type a password anywhere.
+  //
+  // IT USES THE OTHER REAL DOOR: the 30-day trusted device. The seed writes the
+  // sha256 of PORTAL_DEVICE_TOKEN into patient_trusted_devices for the portal
+  // test patient; this presents the token as the portal's device cookie and then
+  // simply LOADS THE LOGIN SCREEN, whose on-load check calls
+  // /api/v1/auth/otp/trusted, gets a session back and redirects. Nothing here is
+  // test-only code in the app — it is the path a returning patient takes daily.
+  //
+  // WHY NOT THE CODE ITSELF: the transport is off outside production and the
+  // sink holds the code in the API process's memory. Reading it would need a
+  // back door in the login path, which is what this loop removed.
+  await page.context().addCookies([
+    {
+      name: "__Host-ojp_device",
+      value: PORTAL_DEVICE_TOKEN,
+      url: PORTAL_BASE_URL,
+      httpOnly: true,
+      // The `__Host-` prefix REQUIRES Secure, Path=/ and no Domain. Browsers
+      // treat http://localhost as a trustworthy origin, so a Secure cookie is
+      // accepted there — which is also what lets the portal work in dev at all.
+      // `url` alone and no domain/path pair: it yields a host-only cookie at
+      // path "/", which is exactly the three attributes the prefix demands.
+      secure: true,
+      sameSite: "Lax",
+    },
+  ]);
 
-  // Use the full portal URL so this setup step isn't bound by the staff
-  // platform's baseURL (http://localhost:3000).
   await page.goto(`${PORTAL_BASE_URL}/auth/login`);
-  await page.getByLabel(/Email/i).fill(email);
-  // Use exact:true to avoid matching the "Mostrar palavra-passe" show/hide button
-  // that also has "Palavra-passe" in its aria-label.
-  await page.getByLabel("Palavra-passe", { exact: true }).fill(password);
-  await page.getByRole("button", { name: /Entrar/i }).click();
 
-  // Portal redirects to /portal/dashboard after a successful login.
+  // The trusted-device check runs on load and redirects into the portal.
   await page.waitForURL(/\/portal\/dashboard/, { timeout: 20_000 });
 
   await page.context().storageState({ path: PORTAL_STORAGE.patient });
