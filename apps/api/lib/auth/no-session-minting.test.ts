@@ -95,6 +95,62 @@ describe("Decision D: no patient session is minted outside a verified OTP", () =
   });
 });
 
+describe("W13-03a: OUR session mint is reachable from the OTP paths and nowhere else", () => {
+  // Option B introduced a session this app mints itself. That does not weaken
+  // the property above - it is a signed cookie of ours, not a Supabase session,
+  // so every symbol in SESSION_MINTING is still absent. But it DOES create a new
+  // way to hand out a session, and a property nobody guards is a property that
+  // decays. So the mint gets the same treatment the deleted module got: a scan.
+  const files = sourceFiles(API_ROOT);
+
+  it("only the OTP verify and trusted routes call mintPatientSession", () => {
+    const callers = files
+      .filter((f) => code(f).includes("mintPatientSession"))
+      .map((f) => f.replace(`${API_ROOT}/`, ""))
+      .sort();
+    expect(callers).toEqual([
+      "app/api/v1/auth/otp/trusted/route.ts",
+      "app/api/v1/auth/otp/verify/route.ts",
+      "lib/auth/patient-session.ts",
+    ]);
+  });
+
+  it("both mint routes refuse with 503 when the secret is missing, never 401", () => {
+    // A 401 would be indistinguishable from a wrong code, so a misconfigured
+    // deployment would look to every patient like their own mistake. A 503 plus
+    // a server log naming the variable is loud and correctly attributed.
+    //
+    // The check is IN THE HANDLER, not at module scope: Next.js imports route
+    // modules to collect page data during `next build`, so a module-scope throw
+    // failed the build on every PR before the secret existed. A build is not a
+    // boot.
+    for (const route of [
+      "app/api/v1/auth/otp/verify/route.ts",
+      "app/api/v1/auth/otp/trusted/route.ts",
+    ]) {
+      const src = code(join(API_ROOT, route));
+      expect(src).toContain("assertPatientSessionEnv()");
+      expect(src).toContain("status: 503");
+      // Not at module scope, where it would run during the build.
+      expect(src).not.toMatch(/^assertPatientSessionEnv\(\);$/m);
+    }
+  });
+
+  it("no route hands the session token to the response BODY", () => {
+    // It leaves in a Set-Cookie header or not at all. A token in JSON is
+    // readable by any script that can read the response, which is the whole
+    // reason the cookie is httpOnly.
+    for (const route of [
+      "app/api/v1/auth/otp/verify/route.ts",
+      "app/api/v1/auth/otp/trusted/route.ts",
+    ]) {
+      const src = code(join(API_ROOT, route));
+      expect(src).toContain("sessionCookie(");
+      expect(src).not.toMatch(/NextResponse\.json\(\{[^}]*session/i);
+    }
+  });
+});
+
 describe("the api approval ledger is empty, and that is fail-closed", () => {
   it("registers no template, so no body can be sent through any channel", async () => {
     const { API_TEMPLATES, apiRegistry } = await import("../notify/registry");

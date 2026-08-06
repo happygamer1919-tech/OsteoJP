@@ -15,7 +15,18 @@
  * suite (otp-claim.db.test.ts), against a real Postgres, because a mocked race
  * only proves the mock races.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+// HOISTED, because the mint routes assert this at IMPORT time and a plain
+// assignment would run after their module bodies. That the assertion fires
+// during collection rather than during a request is the control working: a
+// missing secret takes the route out at boot, not at the patient.
+// NAME only; the value here is a test fixture and never a real secret.
+vi.hoisted(() => {
+  process.env.PATIENT_SESSION_SECRET ??= "routes-test-secret-at-least-32-chars!!";
+});
 
 const H = vi.hoisted(() => ({
   limitOk: true,
@@ -78,6 +89,7 @@ import { DEVICE_COOKIE } from "@/lib/auth/device-cookie";
 
 const T = "11111111-1111-1111-1111-111111111111";
 const TOKEN = "a".repeat(64);
+const TRUSTED_OK = { patientId: "p1", tenantId: T };
 const post = (body: unknown, init: RequestInit = {}) =>
   new Request("https://api.test/x", { method: "POST", body: JSON.stringify(body), ...init });
 const withCookie = (value: string) =>
@@ -274,16 +286,49 @@ describe("verify: the trusted-device token", () => {
   });
 });
 
+describe("a missing signing secret is a 503, not a 401", () => {
+  // The distinction the whole guard exists for: a misconfigured deployment must
+  // not look to a patient like they typed the code wrong.
+  const SAVED = process.env.PATIENT_SESSION_SECRET;
+  afterEach(() => { process.env.PATIENT_SESSION_SECRET = SAVED; });
+
+  it("verify answers 503 and never reaches the code check", async () => {
+    delete process.env.PATIENT_SESSION_SECRET;
+    const res = await verify(post({ tenantId: T, phone: "+351912345678", code: "123456" }));
+    expect(res.status).toBe(503);
+    expect(H.verify).not.toHaveBeenCalled();
+  });
+
+  it("trusted answers 503 and never reaches the device check", async () => {
+    delete process.env.PATIENT_SESSION_SECRET;
+    const res = await trusted(withCookie(TOKEN));
+    expect(res.status).toBe(503);
+    expect(H.isTrusted).not.toHaveBeenCalled();
+  });
+
+  it("503 is distinguishable from the 401 refusal, which is the point", async () => {
+    delete process.env.PATIENT_SESSION_SECRET;
+    const broken = await verify(post({ tenantId: T, phone: "+351912345678", code: "123456" }));
+
+    process.env.PATIENT_SESSION_SECRET = SAVED;
+    H.verify.mockResolvedValue({ ok: false });
+    const refused = await verify(post({ tenantId: T, phone: "+351912345678", code: "000000" }));
+
+    expect(broken.status).toBe(503);
+    expect(refused.status).toBe(401);
+  });
+});
+
 describe("trusted: the check that happens BEFORE a code is demanded", () => {
   it("answers with the patient when the device is live", async () => {
-    H.isTrusted.mockResolvedValue("p1");
+    H.isTrusted.mockResolvedValue(TRUSTED_OK);
     const res = await trusted(withCookie(TOKEN));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ patientId: "p1" });
   });
 
   it("takes NO phone number - the answer comes from the credential alone", async () => {
-    H.isTrusted.mockResolvedValue("p1");
+    H.isTrusted.mockResolvedValue(TRUSTED_OK);
     await trusted(withCookie(TOKEN));
     // Nothing was linked, so no patient lookup by phone happened on this path.
     expect(H.link).not.toHaveBeenCalled();
@@ -311,14 +356,14 @@ describe("trusted: the check that happens BEFORE a code is demanded", () => {
   });
 
   it("checks the HASH, never the raw token", async () => {
-    H.isTrusted.mockResolvedValue("p1");
+    H.isTrusted.mockResolvedValue(TRUSTED_OK);
     await trusted(withCookie(TOKEN));
     expect(H.isTrusted.mock.calls[0]![0]).not.toBe(TOKEN);
     expect(H.isTrusted.mock.calls[0]![0]).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("WRITES NOTHING - a check must not extend the window", async () => {
-    H.isTrusted.mockResolvedValue("p1");
+    H.isTrusted.mockResolvedValue(TRUSTED_OK);
     await trusted(withCookie(TOKEN));
     expect(H.issue).not.toHaveBeenCalled();
   });

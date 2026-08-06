@@ -169,12 +169,13 @@ describe("trusted device store", () => {
     expect(TRUSTED_DEVICE_TTL_MS).toBe(30 * 24 * 60 * 60 * 1000);
   });
 
-  it("requires unrevoked AND unexpired, and returns the patient id not a boolean", async () => {
+  it("requires unrevoked AND unexpired, and returns the IDS not a boolean", async () => {
     // A boolean would need a second lookup to learn WHO, which is a second
-    // chance to attribute a trusted device to the wrong patient.
-    H.rows = [{ patientId: "p1" }];
+    // chance to attribute a trusted device to the wrong patient - and, since
+    // W13-03a puts a tenant claim in the session, to the wrong TENANT.
+    H.rows = [{ patientId: "p1", tenantId: "t1" }];
     const store = createDrizzleTrustedDeviceStore();
-    expect(await store.isTrusted("h", NOW)).toBe("p1");
+    expect(await store.isTrusted("h", NOW)).toEqual({ patientId: "p1", tenantId: "t1" });
 
     const w = flat(H.calls.find((c) => c.op === "select.where")?.where);
     expect(w).toContain("isNull");
@@ -186,7 +187,7 @@ describe("trusted device store", () => {
   it("checking a device WRITES NOTHING", async () => {
     // last_seen_at is deliberately not written on check: it would turn a read
     // path into a write on every page load, and it must never feed expiry.
-    H.rows = [{ patientId: "p1" }];
+    H.rows = [{ patientId: "p1", tenantId: "t1" }];
     await createDrizzleTrustedDeviceStore().isTrusted("h", NOW);
     expect(H.calls.some((c) => c.op === "update" || c.op === "insert")).toBe(false);
   });

@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { getDbAdmin } from "@osteojp/db";
 
 import { deviceCookie } from "@/lib/auth/device-cookie";
+import {
+  assertPatientSessionEnv,
+  mintPatientSession,
+  sessionCookie,
+} from "@/lib/auth/patient-session";
 import { generateDeviceToken, hashDeviceToken, verifyCode } from "@/lib/auth/otp";
 import {
   createDrizzleOtpStore,
@@ -37,22 +42,50 @@ import { RULES, clientKey, tooManyRequests } from "@/lib/rate-limit/limiter";
 // committing without the third leaves a login that half happened. The ORDER
 // inside it is load-bearing and is explained at each step below.
 //
-// WHAT THIS ROUTE STILL DOES NOT DO: mint a PORTAL SESSION. It returns the
-// resolved patient id and plants a trusted-device cookie, and that is the whole
-// of what Decision D rules. Which artefact carries the portal session afterwards
-// — and how a patient row acquires `auth_user_id` when WF-07's linkage refuses
-// any row that already has one — is an owner decision that is not made anywhere
-// in this repository. It is on the board rather than invented here.
+// IT NOW MINTS THE PORTAL SESSION, per the owner ruling of 2026-08-06 (Option
+// B): our own signed cookie, not a Supabase one. Two cookies leave here and they
+// do different jobs — a 12-hour session that proves who is calling, and a 30-day
+// trusted device that lets this browser get a new session without another SMS.
+// See lib/auth/patient-session.ts for why the split, and why nothing slides.
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
 
 /** The single refusal. Byte-identical for every failure mode. */
 function refused(): Response {
   return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 }
 
+/**
+ * Misconfiguration is a 503, never a 401, and never a build failure.
+ *
+ * THIS WAS AT MODULE SCOPE AND THAT WAS WRONG. Next.js imports route modules to
+ * collect page data during `next build`, so a module-scope throw failed the
+ * BUILD - "Failed to collect page data for /api/v1/auth/otp/trusted" - on every
+ * PR, before the secret had ever been set, including PRs touching nothing near
+ * auth. A build is not a boot: it runs without runtime secrets by design.
+ *
+ * The thing worth preventing was never "an error late", it was SILENT
+ * DEGRADATION - a login path that returns a success-shaped nothing, or a 401
+ * that a patient reads as "I typed it wrong". A 503 with a server log naming the
+ * variable is neither silent nor confusable with user error, and it is the
+ * honest status: the server is misconfigured, the request was fine.
+ */
+function sessionSecretMissing(): Response | null {
+  try {
+    assertPatientSessionEnv();
+    return null;
+  } catch (e) {
+    // The message names the VARIABLE and never a value - see patient-session.ts.
+    console.error(`[auth] ${e instanceof Error ? e.message : "session secret unavailable"}`);
+    return NextResponse.json({ error: "service_unavailable" }, { status: 503 });
+  }
+}
+
 export async function POST(req: Request): Promise<Response> {
+  const misconfigured = sessionSecretMissing();
+  if (misconfigured) return misconfigured;
   const limitStore = createDurableRateLimitStore();
 
   // Before anything else, and fail-closed: if the durable store is unreachable
@@ -136,10 +169,25 @@ export async function POST(req: Request): Promise<Response> {
 
   if (!claim) return refused();
 
+  // 5. Mint the session, AFTER the transaction committed. Deliberately outside
+  //    it: a session is not a database row, so there is nothing for it to be
+  //    atomic with, and holding a transaction open across a signing call would
+  //    lengthen the lock window on the code row for no gain. If this throws the
+  //    code is already spent and the patient simply requests another — annoying,
+  //    and strictly better than a spent code that granted a session nobody
+  //    recorded.
+  const session = await mintPatientSession({
+    tenantId,
+    patientId: claim.patientId,
+    issuedAt: now,
+  });
+
   const res = NextResponse.json({ patientId: claim.patientId });
-  // The token leaves in a Set-Cookie header and NOT in the body: an httpOnly
-  // cookie is unreadable to script, so an XSS in the portal cannot lift a
-  // thirty-day credential out of a JSON response it can already see.
-  res.headers.set("Set-Cookie", deviceCookie(claim.deviceToken));
+  // Both tokens leave in Set-Cookie headers and NEITHER in the body: httpOnly
+  // cookies are unreadable to script, so an XSS in the portal cannot lift a
+  // session or a thirty-day credential out of a JSON response it can already
+  // see. `append`, not `set`, or the second would overwrite the first.
+  res.headers.append("Set-Cookie", sessionCookie(session));
+  res.headers.append("Set-Cookie", deviceCookie(claim.deviceToken));
   return res;
 }
