@@ -115,15 +115,24 @@ describe("W13-03a: OUR session mint is reachable from the OTP paths and nowhere 
     ]);
   });
 
-  it("both mint routes assert the signing secret at boot", () => {
-    // A route that could mint but boots without a secret fails at the patient
-    // instead of at deploy - the exact class #763 removed from the notification
-    // path, and the reason the assertion is at the route rather than global.
+  it("both mint routes refuse with 503 when the secret is missing, never 401", () => {
+    // A 401 would be indistinguishable from a wrong code, so a misconfigured
+    // deployment would look to every patient like their own mistake. A 503 plus
+    // a server log naming the variable is loud and correctly attributed.
+    //
+    // The check is IN THE HANDLER, not at module scope: Next.js imports route
+    // modules to collect page data during `next build`, so a module-scope throw
+    // failed the build on every PR before the secret existed. A build is not a
+    // boot.
     for (const route of [
       "app/api/v1/auth/otp/verify/route.ts",
       "app/api/v1/auth/otp/trusted/route.ts",
     ]) {
-      expect(code(join(API_ROOT, route))).toContain("assertPatientSessionEnv()");
+      const src = code(join(API_ROOT, route));
+      expect(src).toContain("assertPatientSessionEnv()");
+      expect(src).toContain("status: 503");
+      // Not at module scope, where it would run during the build.
+      expect(src).not.toMatch(/^assertPatientSessionEnv\(\);$/m);
     }
   });
 

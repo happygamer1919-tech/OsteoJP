@@ -51,19 +51,41 @@ import { RULES, clientKey, tooManyRequests } from "@/lib/rate-limit/limiter";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// BOOT, NOT AT THE PATIENT. A missing signing secret makes every login here
-// impossible, so this route refuses to load rather than answering 401 to people
-// who typed the right code. Same posture as the notification path's
-// assertNotificationEnv, and the same reason: a silent degradation on an auth
-// path looks exactly like a user error.
-assertPatientSessionEnv();
 
 /** The single refusal. Byte-identical for every failure mode. */
 function refused(): Response {
   return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 }
 
+/**
+ * Misconfiguration is a 503, never a 401, and never a build failure.
+ *
+ * THIS WAS AT MODULE SCOPE AND THAT WAS WRONG. Next.js imports route modules to
+ * collect page data during `next build`, so a module-scope throw failed the
+ * BUILD - "Failed to collect page data for /api/v1/auth/otp/trusted" - on every
+ * PR, before the secret had ever been set, including PRs touching nothing near
+ * auth. A build is not a boot: it runs without runtime secrets by design.
+ *
+ * The thing worth preventing was never "an error late", it was SILENT
+ * DEGRADATION - a login path that returns a success-shaped nothing, or a 401
+ * that a patient reads as "I typed it wrong". A 503 with a server log naming the
+ * variable is neither silent nor confusable with user error, and it is the
+ * honest status: the server is misconfigured, the request was fine.
+ */
+function sessionSecretMissing(): Response | null {
+  try {
+    assertPatientSessionEnv();
+    return null;
+  } catch (e) {
+    // The message names the VARIABLE and never a value - see patient-session.ts.
+    console.error(`[auth] ${e instanceof Error ? e.message : "session secret unavailable"}`);
+    return NextResponse.json({ error: "service_unavailable" }, { status: 503 });
+  }
+}
+
 export async function POST(req: Request): Promise<Response> {
+  const misconfigured = sessionSecretMissing();
+  if (misconfigured) return misconfigured;
   const limitStore = createDurableRateLimitStore();
 
   // Before anything else, and fail-closed: if the durable store is unreachable

@@ -15,7 +15,7 @@
  * suite (otp-claim.db.test.ts), against a real Postgres, because a mocked race
  * only proves the mock races.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -283,6 +283,39 @@ describe("verify: the trusted-device token", () => {
     claimSucceeds();
     await verify(post({ tenantId: T, phone: "+351912345678", code: "123456" }));
     expect(H.issue.mock.calls[0]![0]).toMatchObject({ tenantId: T, patientId: "p1" });
+  });
+});
+
+describe("a missing signing secret is a 503, not a 401", () => {
+  // The distinction the whole guard exists for: a misconfigured deployment must
+  // not look to a patient like they typed the code wrong.
+  const SAVED = process.env.PATIENT_SESSION_SECRET;
+  afterEach(() => { process.env.PATIENT_SESSION_SECRET = SAVED; });
+
+  it("verify answers 503 and never reaches the code check", async () => {
+    delete process.env.PATIENT_SESSION_SECRET;
+    const res = await verify(post({ tenantId: T, phone: "+351912345678", code: "123456" }));
+    expect(res.status).toBe(503);
+    expect(H.verify).not.toHaveBeenCalled();
+  });
+
+  it("trusted answers 503 and never reaches the device check", async () => {
+    delete process.env.PATIENT_SESSION_SECRET;
+    const res = await trusted(withCookie(TOKEN));
+    expect(res.status).toBe(503);
+    expect(H.isTrusted).not.toHaveBeenCalled();
+  });
+
+  it("503 is distinguishable from the 401 refusal, which is the point", async () => {
+    delete process.env.PATIENT_SESSION_SECRET;
+    const broken = await verify(post({ tenantId: T, phone: "+351912345678", code: "123456" }));
+
+    process.env.PATIENT_SESSION_SECRET = SAVED;
+    H.verify.mockResolvedValue({ ok: false });
+    const refused = await verify(post({ tenantId: T, phone: "+351912345678", code: "000000" }));
+
+    expect(broken.status).toBe(503);
+    expect(refused.status).toBe(401);
   });
 });
 
