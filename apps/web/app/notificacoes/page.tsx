@@ -2,10 +2,15 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 
 import { getRequestContext } from "@/lib/auth/context";
-import { listNotifications, type CentreEntry } from "@/lib/notifications/centre";
+import {
+  listNotifications,
+  listPendingRequests,
+  type CentreEntry,
+} from "@/lib/notifications/centre";
 import { s } from "@/lib/i18n";
 
 import { MarkAllReadButton } from "./mark-all-read";
+import { PendingRequests, type PendingRequestView } from "./pending-requests";
 
 export const metadata = { title: s["notifications.title"] };
 
@@ -65,11 +70,41 @@ export default async function NotificacoesPage() {
   const ctx = await getRequestContext();
   if (!ctx) redirect("/login");
 
-  const entries = await listNotifications(ctx);
+  const [entries, requests] = await Promise.all([
+    listNotifications(ctx),
+    listPendingRequests(ctx),
+  ]);
   const unread = entries.filter((e) => e.readAt === null).length;
+
+  // Preformatted server-side, in Europe/Lisbon, so the queue and the log below
+  // it read the same instant the same way. A client-side format would use the
+  // browser's zone and quietly disagree with the agenda.
+  const requestViews: PendingRequestView[] = requests.map((r) => ({
+    notificationId: r.notificationId,
+    appointmentId: r.appointmentId,
+    patientName: r.patientName,
+    when: stamp(r.startsAt),
+    requestedAt: stamp(r.requestedAt),
+  }));
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6">
+      {/* THE QUEUE COMES FIRST because it is the only part of this page that
+          carries WORK. Everything below it is a log of what already happened;
+          a pedido is a decision nobody else will make. */}
+      <section className="mb-10" aria-labelledby="pedidos-heading">
+        <h2
+          id="pedidos-heading"
+          className="text-xl font-semibold text-v2-text-primary"
+        >
+          {s["requests.title"]}
+        </h2>
+        <p className="mt-1 mb-4 text-sm text-v2-text-secondary">
+          {s["requests.subtitle"]} {s["requests.slotNotHeld"]}
+        </p>
+        <PendingRequests items={requestViews} />
+      </section>
+
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-v2-text-primary">
           {s["notifications.title"]}

@@ -1,0 +1,211 @@
+/**
+ * pedido-queue.db.test.ts
+ *
+ * W13-04 — the SQL semantics of the reception confirm queue, against a real
+ * Postgres. The queue itself lives in apps/web/lib/notifications/centre.ts
+ * (`listPendingRequests`); what is asserted here is the pair of guarantees that
+ * a mocked test cannot reach, because both are enforced by the DATABASE:
+ *
+ *   1. THE PREDICATE. The queue is `staff_notifications` of kind
+ *      `appointment_request`, inner-joined to `appointments`, kept where the
+ *      appointment is still `scheduled`. A confirmed pedido and a cancelled
+ *      (that is, declined) pedido both leave the queue by that one predicate.
+ *   2. RLS CONFINES IT PER RECIPIENT. Migration 0055 pins the SELECT policy to
+ *      `recipient_user_id = auth.uid()`, so the fan-out that gives reception and
+ *      both therapists a row does NOT give any of them each other's. This is the
+ *      half a query-shape test would pass while production leaked.
+ *
+ * The query text below is the same shape the Drizzle builder emits. It is
+ * deliberately re-stated rather than imported: packages/db cannot import from
+ * apps/web, and the point of this suite is the DATABASE's answer, not the
+ * builder's.
+ *
+ * CORRECTNESS. RLS is ENABLE-not-FORCE, so every assertion runs on the
+ * role-switched `authenticated` connection via asRole, never on the owner (which
+ * BYPASSes RLS by ownership and would pass for the wrong reason). asRole always
+ * rolls back. A negative control makes a vacuous pass impossible.
+ *
+ * GATING: requires a live privileged DATABASE_URL with migrations applied.
+ * Skipped without one, identical to every other packages/db suite.
+ */
+import { randomUUID } from "node:crypto";
+import type { Sql } from "postgres";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { asRole, claimsFor, connect, live } from "./rls-harness";
+
+type Ids = {
+  tenant: string;
+  therapistRole: string;
+  receptionRole: string;
+  therapist: string;
+  reception: string;
+  location: string;
+  service: string;
+  patient: string;
+};
+
+const newIds = (): Ids => ({
+  tenant: randomUUID(),
+  therapistRole: randomUUID(),
+  receptionRole: randomUUID(),
+  therapist: randomUUID(),
+  reception: randomUUID(),
+  location: randomUUID(),
+  service: randomUUID(),
+  patient: randomUUID(),
+});
+
+const T = newIds();
+
+const START = "2026-11-09T09:00:00Z";
+const END = "2026-11-09T10:00:00Z";
+
+async function seed(sql: Sql, x: Ids): Promise<void> {
+  await sql`insert into tenants (id, name, slug)
+            values (${x.tenant}, 'Pedido Queue', ${`pedido-q-${x.tenant}`})`;
+  await sql`insert into roles (id, tenant_id, slug, name)
+            values (${x.therapistRole}, ${x.tenant}, 'therapist', 'Therapist')`;
+  await sql`insert into roles (id, tenant_id, slug, name)
+            values (${x.receptionRole}, ${x.tenant}, 'reception', 'Reception')`;
+  await sql`insert into users (id, tenant_id, role_id, email, full_name)
+            values (${x.therapist}, ${x.tenant}, ${x.therapistRole},
+                    ${`t-${x.therapist}@example.pt`}, 'Seed Therapist')`;
+  await sql`insert into users (id, tenant_id, role_id, email, full_name)
+            values (${x.reception}, ${x.tenant}, ${x.receptionRole},
+                    ${`r-${x.reception}@example.pt`}, 'Seed Reception')`;
+  await sql`insert into locations (id, tenant_id, name)
+            values (${x.location}, ${x.tenant}, 'Linda-a-Velha')`;
+  await sql`insert into services (id, tenant_id, location_id, name)
+            values (${x.service}, ${x.tenant}, ${x.location}, 'Consulta')`;
+  await sql`insert into patients (id, tenant_id, full_name)
+            values (${x.patient}, ${x.tenant}, 'Seed Patient')`;
+}
+
+type Tx = Parameters<Parameters<typeof asRole>[3]>[0];
+
+/** One appointment in a given lifecycle status. Owner-seeded (setup, never an
+ *  assertion), so it survives the rolled-back assertion transactions. */
+async function seedAppointment(sql: Sql, x: Ids, status: string): Promise<string> {
+  const rows = await sql`
+    insert into appointments
+      (tenant_id, patient_id, practitioner_id, location_id, service_id,
+       starts_at, ends_at, status)
+    values
+      (${x.tenant}, ${x.patient}, ${x.therapist}, ${x.location}, ${x.service},
+       ${START}, ${END}, ${status})
+    returning id`;
+  const id = rows[0]?.id as string | undefined;
+  if (!id) throw new Error("seed: appointment insert returned no id");
+  return id;
+}
+
+/** The appointment_request fan-out for one appointment: reception + therapist,
+ *  which is exactly what apps/api resolveRecipients writes (R2). */
+async function seedRequestFanout(sql: Sql, x: Ids, appointmentId: string): Promise<void> {
+  for (const recipient of [x.reception, x.therapist]) {
+    await sql`
+      insert into staff_notifications
+        (tenant_id, recipient_user_id, kind, appointment_id, patient_id,
+         previous_starts_at, new_starts_at, occurred_at)
+      values
+        (${x.tenant}, ${recipient}, 'appointment_request', ${appointmentId},
+         ${x.patient}, ${START}, ${START}, now())`;
+  }
+}
+
+/** The queue, as the database answers it for whoever the claims name. */
+async function queue(tx: Tx): Promise<string[]> {
+  const rows = await tx`
+    select a.id
+    from staff_notifications n
+    join appointments a on a.id = n.appointment_id
+    left join patients p on p.id = n.patient_id
+    where n.kind = 'appointment_request'
+      and a.status = 'scheduled'
+    order by a.starts_at asc`;
+  return rows.map((r) => r.id as string);
+}
+
+describe.skipIf(!live)("W13-04 — the reception confirm queue", () => {
+  let sql: Sql;
+  let pending = "";
+  let confirmed = "";
+  let cancelled = "";
+  let staffRow = "";
+
+  beforeAll(async () => {
+    sql = connect();
+    await seed(sql, T);
+
+    pending = await seedAppointment(sql, T, "scheduled");
+    confirmed = await seedAppointment(sql, T, "confirmed");
+    cancelled = await seedAppointment(sql, T, "cancelled");
+    // A staff-created appointment with NO appointment_request notification.
+    staffRow = await seedAppointment(sql, T, "scheduled");
+
+    await seedRequestFanout(sql, T, pending);
+    await seedRequestFanout(sql, T, confirmed);
+    await seedRequestFanout(sql, T, cancelled);
+  });
+
+  afterAll(async () => {
+    if (!sql) return;
+    await sql`delete from tenants where id = ${T.tenant}`;
+    await sql.end();
+  });
+
+  it("NEGATIVE CONTROL: RLS is in force — a foreign recipient sees nothing", async () => {
+    // A well-formed staff principal of this tenant whose auth.uid() matches no
+    // notification recipient. If this returns rows, RLS is off and every
+    // assertion below is meaningless.
+    const stranger = randomUUID();
+    const rows = await asRole(sql, "authenticated", claimsFor(T.tenant, "admin", stranger), queue);
+    expect(rows).toEqual([]);
+  });
+
+  it("lists the pedido that is still awaiting a decision", async () => {
+    const rows = await asRole(sql, "authenticated", claimsFor(T.tenant, "reception", T.reception), queue);
+    expect(rows).toContain(pending);
+  });
+
+  it("EXCLUDES a confirmed pedido — reception already decided", async () => {
+    const rows = await asRole(sql, "authenticated", claimsFor(T.tenant, "reception", T.reception), queue);
+    expect(rows).not.toContain(confirmed);
+  });
+
+  it("EXCLUDES a cancelled (declined) pedido by the same predicate", async () => {
+    const rows = await asRole(sql, "authenticated", claimsFor(T.tenant, "reception", T.reception), queue);
+    expect(rows).not.toContain(cancelled);
+  });
+
+  it("EXCLUDES a staff appointment that has no appointment_request row", async () => {
+    // The inner join is what makes the queue a list of PEDIDOS rather than a
+    // list of every unconfirmed appointment in the clinic.
+    const rows = await asRole(sql, "authenticated", claimsFor(T.tenant, "reception", T.reception), queue);
+    expect(rows).not.toContain(staffRow);
+  });
+
+  it("RLS confines the queue per recipient: the therapist gets their own row", async () => {
+    // Both are recipients of the same fan-out, so both see the pedido — through
+    // their OWN notification row, never each other's.
+    const rows = await asRole(sql, "authenticated", claimsFor(T.tenant, "therapist", T.therapist), queue);
+    expect(rows).toContain(pending);
+  });
+
+  it("one recipient reads exactly ONE notification row per pedido", async () => {
+    // Proves the per-recipient confinement quantitatively: the fan-out wrote two
+    // rows for `pending`, and a single caller must see one of them. Without the
+    // RLS predicate this count would be 2 and the queue would render the same
+    // pedido twice.
+    const rows = await asRole(
+      sql,
+      "authenticated",
+      claimsFor(T.tenant, "reception", T.reception),
+      (tx) => tx`
+        select count(*)::int as n
+        from staff_notifications n
+        where n.kind = 'appointment_request' and n.appointment_id = ${pending}`,
+    );
+    expect(rows[0]?.n).toBe(1);
+  });
+});

@@ -15,6 +15,7 @@ import {
   clinicalRecords,
   invoices,
   patients,
+  staffNotifications,
   users,
   type DbTx,
 } from "@osteojp/db";
@@ -978,6 +979,157 @@ export async function rescheduleAppointment(
     return result;
   } catch (e) {
     return fail("reschedule", e);
+  }
+}
+
+/**
+ * Reception accepts a portal pedido: lifecycle `scheduled` -> `confirmed`.
+ *
+ * OWNER RULING 2026-08-06 (W13-04a, option B): "o horario fica livre ate a
+ * rececao confirmar". An unconfirmed pedido does NOT hold the slot, and JP
+ * accepted the stated trade-off: this confirm CAN fail because another booking
+ * took the slot first. That is what makes the re-check below mandatory rather
+ * than defensive, and it is why this is a distinct action instead of
+ * `updateAppointment(id, { status: "confirmed" })`. The Estado selector in the
+ * drawer performs the same transition with no availability check, which is
+ * correct there — a staff row already occupies its slot, so re-checking it
+ * against itself proves nothing. A pedido is the one case where the slot may
+ * have been taken since the row was written.
+ *
+ * THE RE-CHECK IS IN THE SAME TRANSACTION AS THE WRITE, and behind the same slot
+ * lock every other write path takes. Check-then-write across two statements is
+ * how two confirms both pass and both write; the lock serialises writers for
+ * this therapist and window, and the check runs inside it.
+ *
+ * NO PARTIAL STATES. On conflict nothing is written and the pedido stays
+ * `scheduled`, so it is still in reception's queue and they can call the patient
+ * and offer another time. There is no "confirmed but conflicting" outcome and no
+ * "cancelled by the system" outcome — declining is a decision a person makes.
+ *
+ * IT NEVER TOUCHES `appointment_confirmation_state`. That axis answers "did the
+ * PATIENT reply to the reminder" and is written by the Twilio inbound webhook
+ * (apps/web/lib/scheduling/estado.ts:8-20). Writing it here would record a
+ * patient reply that never happened and would corrupt the reminder-reply data
+ * the clinic reads. `pedido-confirm-axis.test.ts` asserts that on the source.
+ *
+ * AUTHORITY COMES FROM THE SAME ROW THE QUEUE COMES FROM. The caller must hold
+ * an `appointment_request` notification for this appointment, and RLS (0055)
+ * pins that read to `recipient_user_id = auth.uid()`. So this action can only
+ * ever confirm a pedido the caller was actually notified about — it is not a
+ * general "set status to confirmed" back door reachable with any id.
+ */
+export async function confirmAppointmentRequest(
+  id: string,
+): Promise<ActionResult<{ id: string }>> {
+  const auth = await authorize("appointments:write");
+  if (isDenied(auth)) return auth;
+  const { actor } = auth;
+
+  if (!id) return { ok: false, error: "validation" };
+
+  const ip = await clientIp();
+  try {
+    const result = await runScoped<ActionResult<{ id: string }>>(
+      actor,
+      async (tx) => {
+        // The pedido, joined to its provenance. Both halves are RLS-scoped: the
+        // appointment by the caller's own policy (0048 location scope), the
+        // notification to the caller personally (0055). A missing either half is
+        // the same not_found — the caller may not act on this pedido, and which
+        // half was missing is not information they are owed.
+        const [pedido] = await tx
+          .select({
+            id: appointments.id,
+            startsAt: appointments.startsAt,
+            endsAt: appointments.endsAt,
+            practitionerId: appointments.practitionerId,
+            locationId: appointments.locationId,
+            room: appointments.room,
+            status: appointments.status,
+          })
+          .from(appointments)
+          .innerJoin(
+            staffNotifications,
+            and(
+              eq(staffNotifications.appointmentId, appointments.id),
+              eq(staffNotifications.kind, "appointment_request"),
+            ),
+          )
+          .where(and(eq(appointments.id, id), eq(appointments.status, "scheduled")))
+          .limit(1);
+
+        if (!pedido) return { ok: false, error: "not_found" };
+
+        // Serialise concurrent writers for this therapist + window BEFORE the
+        // check reads, exactly as createAppointment and rescheduleAppointment do.
+        await tx.execute(
+          acquireSlotLocks(actor.tenantId, pedido.practitionerId, pedido.startsAt, pedido.endsAt),
+        );
+
+        // excludeIds is the pedido itself: its own row occupies this window and
+        // would otherwise be reported as the conflict that blocks its own
+        // confirmation. Every OTHER occupant still counts.
+        const found = await findConflictsForWindow(tx, {
+          practitionerId: pedido.practitionerId,
+          locationId: pedido.locationId,
+          room: pedido.room,
+          startsAt: pedido.startsAt,
+          endsAt: pedido.endsAt,
+          excludeIds: [pedido.id],
+        });
+        // PL-11: availability stays advisory here too. Reception confirming a
+        // pedido that falls outside the therapist's declared hours is a decision
+        // they are allowed to make; a real double booking is not.
+        const blocking = blockingConflicts(found);
+        if (blocking.length > 0) {
+          return {
+            ok: false,
+            error: "conflict",
+            conflicts: blocking.slice(0, CONFLICT_CAP),
+          };
+        }
+
+        // The status predicate is repeated on the UPDATE, not assumed from the
+        // SELECT: it is the last guard against a writer that slipped in ahead of
+        // the lock acquisition. Zero rows means someone else already decided.
+        const updated = await tx
+          .update(appointments)
+          .set({ status: "confirmed" })
+          .where(and(eq(appointments.id, pedido.id), eq(appointments.status, "scheduled")))
+          .returning({ id: appointments.id });
+
+        if (updated.length === 0) return { ok: false, error: "not_found" };
+
+        await writeAppointmentAudit(tx, {
+          tenantId: actor.tenantId,
+          actorUserId: actor.userId,
+          action: "appointment.update",
+          appointmentId: pedido.id,
+          metadata: {
+            changed: ["status"],
+            scope: "one",
+            from_status: "scheduled",
+            to_status: "confirmed",
+            // Distinguishes a reception acceptance of a portal pedido from an
+            // ordinary Estado change, in a trail that otherwise records both as
+            // "status changed".
+            via: "portal_request_confirm",
+          },
+          ip,
+        });
+
+        return { ok: true, data: { id: pedido.id } };
+      },
+    );
+    if (result.ok) {
+      await afterCommit("confirmRequest", () => {
+        revalidatePath(AGENDA_PATH);
+        revalidatePath("/notificacoes");
+      });
+    }
+    return result;
+  } catch (e) {
+    return fail("confirmRequest", e);
   }
 }
 

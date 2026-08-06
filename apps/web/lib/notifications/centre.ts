@@ -1,6 +1,6 @@
 import "server-only";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { patients, staffNotifications } from "@osteojp/db";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { appointments, patients, staffNotifications } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 
 // W13-02 (Wave 13 LOOP 2) — the notification centre's READ half. PG4.
@@ -66,6 +66,113 @@ export async function listNotifications(
       .limit(limit);
     return rows;
   });
+}
+
+/**
+ * One pedido waiting for reception to act on it.
+ *
+ * The window fields come from `appointments`, NOT from the notification's own
+ * `new_starts_at`. Those two agree at emit time and can disagree later — a
+ * patient may reschedule a pedido before reception ever opens the queue, and the
+ * notification row is an immutable record of what happened THEN. Reception must
+ * confirm the appointment as it stands NOW, so the queue reads the appointment.
+ */
+export type PendingRequestEntry = {
+  /** The notification row that proves this appointment is a portal pedido. */
+  notificationId: string;
+  appointmentId: string;
+  patientId: string;
+  /** Joined at read time, exactly as in listNotifications. */
+  patientName: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  practitionerId: string;
+  locationId: string;
+  /** When the PATIENT submitted the pedido. */
+  requestedAt: Date;
+};
+
+/** Lifecycle status a pedido sits in until reception acts. */
+const PENDING_STATUS = "scheduled";
+
+/**
+ * The reception confirm queue: portal pedidos still awaiting a decision.
+ *
+ * WHY THE NOTIFICATION IS THE SOURCE, and not a column on `appointments`. There
+ * is no provenance column, and `created_by IS NULL` is NOT a reliable portal
+ * marker — packages/db/tests/appointments-created-by-provenance.test.ts proves
+ * (7/7 against live Postgres) that migration 0049's WITH CHECK is a disjunction,
+ * so a staff principal satisfying a different branch may insert a row with a
+ * null `created_by` and the database accepts it. The `appointment_request`
+ * notification row is the ONLY record that a given appointment arrived as a
+ * portal pedido, which is why it is joined rather than a status being read.
+ *
+ * WHY status = 'scheduled' AND NOT appointment_confirmation_state. The two axes
+ * are orthogonal by design (apps/web/lib/scheduling/estado.ts:8-20): the
+ * confirmation axis answers "did the PATIENT reply to the reminder" and is
+ * written by the Twilio inbound webhook. Reception accepting a pedido is the
+ * LIFECYCLE axis, scheduled -> confirmed. Filtering on the confirmation axis
+ * here would put every reminder-unanswered appointment in reception's queue and
+ * would conflate two questions the drawer deliberately keeps apart.
+ *
+ * THIS COVERS THE DECLINE CASE WITHOUT NAMING IT. Reception declining a pedido
+ * cancels the appointment, so `status` leaves 'scheduled' and the row leaves
+ * this queue by the same predicate that removes a confirmed one. There is no
+ * 'declined' lifecycle status and none is invented here.
+ *
+ * RLS IS THE GATE, TWICE OVER. staff_notifications SELECT is pinned to
+ * `recipient_user_id = auth.uid()` (0055), so this is the CALLER'S queue: a
+ * therapist sees pedidos for their own appointments, reception sees the tenant's
+ * because the fan-out addresses every active reception user. The inner join to
+ * `appointments` is then filtered by the caller's own appointment policy (0048
+ * location scope), so a pedido a caller may not act on cannot appear here even
+ * though they hold the notification.
+ */
+export async function listPendingRequests(
+  ctx: RequestContext,
+  limit: number = CENTRE_PAGE_SIZE,
+): Promise<PendingRequestEntry[]> {
+  const rows = await runScoped(ctx, async (tx) => {
+    return tx
+      .select({
+        notificationId: staffNotifications.id,
+        appointmentId: appointments.id,
+        patientId: staffNotifications.patientId,
+        patientName: patients.fullName,
+        startsAt: appointments.startsAt,
+        endsAt: appointments.endsAt,
+        practitionerId: appointments.practitionerId,
+        locationId: appointments.locationId,
+        requestedAt: staffNotifications.occurredAt,
+      })
+      .from(staffNotifications)
+      .innerJoin(appointments, eq(appointments.id, staffNotifications.appointmentId))
+      .leftJoin(patients, eq(patients.id, staffNotifications.patientId))
+      .where(
+        and(
+          eq(staffNotifications.kind, "appointment_request"),
+          eq(appointments.status, PENDING_STATUS),
+        ),
+      )
+      // Soonest first: the queue is worked against the calendar, so the pedido
+      // that is about to happen is the one reception must decide on. The centre
+      // list is newest-first because it is a log; this is a worklist.
+      .orderBy(asc(appointments.startsAt))
+      .limit(limit);
+  });
+
+  // ONE ENTRY PER APPOINTMENT. The unique index in 0055 is over (recipient,
+  // appointment, kind, occurred_at), so a re-emit carrying a different instant
+  // would give one caller two rows for one pedido — and two identical Confirmar
+  // buttons, the second of which fails on an appointment that is no longer
+  // 'scheduled'. Collapsing here keeps the queue a list of DECISIONS rather than
+  // a list of messages. The earliest survives: it is when the patient asked.
+  const first = new Map<string, PendingRequestEntry>();
+  for (const r of rows) {
+    const seen = first.get(r.appointmentId);
+    if (!seen || r.requestedAt < seen.requestedAt) first.set(r.appointmentId, r);
+  }
+  return [...first.values()].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 }
 
 /**
