@@ -78,8 +78,11 @@ function makeStore(opts: FakeOpts = {}) {
       const r = rows.find((x) => x.id === id && x.patientId === p.patientId);
       return r ? view(r) : null; // self-scope: not yours → null
     },
+    async priorCompletedServiceId() {
+      return null;
+    },
     async getCatalog() {
-      return { locations: [], services: [] };
+      return { locations: [], services: [], preselectedServiceId: null };
     },
     async getBookableService(_p, serviceId) {
       if (opts.service === null) return null;

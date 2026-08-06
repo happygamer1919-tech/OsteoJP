@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray, desc, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 import {
   appointments,
   locations,
@@ -296,7 +296,14 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         locationIds: s.locationId === null ? allLocationIds : [s.locationId],
       }));
 
-    return { locations: bookableLocations, services: bookableServices };
+    // preselectedServiceId is decided by getBookableCatalog (booking.ts), which
+    // is the only place that can check membership against the list it is about
+    // to return. Null here is the honest value, not a placeholder.
+    return {
+      locations: bookableLocations,
+      services: bookableServices,
+      preselectedServiceId: null,
+    };
   },
 
   async getBookableService(principal, serviceId): Promise<ServiceForBooking | null> {
@@ -454,6 +461,32 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     `)) as unknown as ReadonlyArray<{ practitioner_id: string; full_name: string }>;
 
     return rows.map((r) => ({ practitionerId: r.practitioner_id, sortKey: r.full_name ?? "" }));
+  },
+
+  async priorCompletedServiceId(principal): Promise<string | null> {
+    // Decision C. `completed` and NOT `scheduled`, deliberately: a booking the
+    // patient made and did not attend is not what they usually come for, and a
+    // future booking has not happened yet. Ordered by the appointment START,
+    // not by created_at — "most recent" means the last visit, and a late
+    // back-office entry must not outrank a more recent session.
+    //
+    // service_role with an EXPLICIT tenant + patient predicate from the verified
+    // principal, matching priorTherapistId directly below. Returns an id the
+    // caller must still find in the catalog before it is used.
+    const rows = await getDbAdmin()
+      .select({ serviceId: appointments.serviceId })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.tenantId, principal.tenantId),
+          eq(appointments.patientId, principal.patientId),
+          eq(appointments.status, "completed"),
+          isNotNull(appointments.serviceId),
+        ),
+      )
+      .orderBy(desc(appointments.startsAt))
+      .limit(1);
+    return rows[0]?.serviceId ?? null;
   },
 
   async priorTherapistId(principal): Promise<string | null> {

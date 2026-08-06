@@ -108,6 +108,7 @@
     "title": "Book appointment",
     "step_location": "Choose clinic",
     "step_service": "Choose service",
+    "usual_service": "Your usual service",
     "step_datetime": "Choose date and time",
     "step_confirm": "Confirm booking",
     "step_label": "Step {{current}} of {{total}}",

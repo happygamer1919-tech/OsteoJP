@@ -108,6 +108,7 @@
     "title": "Marcar consulta",
     "step_location": "Escolha a clínica",
     "step_service": "Escolha o serviço",
+    "usual_service": "O seu serviço habitual",
     "step_datetime": "Escolha a data e hora",
     "step_confirm": "Confirmar marcação",
     "step_label": "Passo {{current}} de {{total}}",
