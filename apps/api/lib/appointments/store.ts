@@ -10,8 +10,8 @@ import {
 import type { PatientPrincipal } from "@osteojp/auth";
 import { runAsPatient } from "@/lib/auth/patient";
 import {
-  isBookableServiceName,
   effectivePriceCents,
+  isServiceBookableByPatient,
 } from "./services";
 import { AppointmentError } from "./errors";
 import type {
@@ -259,11 +259,20 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         // W12-26: internal_only services (e.g. "Diversos") are staff-bookable but
         // NEVER offered in the patient-portal wizard. Staff booking (web) does not
         // apply this filter.
+        //
+        // W13-04 (Decision B): patient_bookable joins it, and it is a SQL
+        // predicate rather than the JS filter that used to run over the result.
+        // The old shape read every active service out of the database and then
+        // discarded most of them in application code; asking the database the
+        // question it can answer is both the smaller result set and the version
+        // that cannot drift from the index built for it
+        // (services_tenant_patient_bookable_idx, 0057).
         .where(
           and(
             eq(services.tenantId, principal.tenantId),
             eq(services.isActive, true),
             eq(services.internalOnly, false),
+            eq(services.patientBookable, true),
           ),
         )
         .orderBy(services.name),
@@ -273,7 +282,6 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     const bookableLocations = locationRows.map((l) => ({ id: l.id, name: l.name }));
 
     const bookableServices: BookableService[] = serviceRows
-      .filter((s) => isBookableServiceName(s.name))
       // A location-bound service only lists if its location is active/bookable.
       .filter((s) => s.locationId === null || allLocationIds.includes(s.locationId))
       .map((s) => ({
@@ -299,12 +307,27 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         durationMin: services.durationMin,
         locationId: services.locationId,
         isActive: services.isActive,
+        // W13-04: BOTH columns are now selected, and internalOnly was not
+        // selected here AT ALL before. That omission is the exposure Decision B
+        // refuses to ship without closing: the catalog list filtered internal
+        // services out of the WIZARD, but this function is what the WRITE paths
+        // resolve a service id through, and it never asked. A patient who knew
+        // an internal service's id could book it directly, because the only
+        // thing standing in the way was a list they never had to read.
+        internalOnly: services.internalOnly,
+        patientBookable: services.patientBookable,
       })
       .from(services)
       .where(and(eq(services.id, serviceId), eq(services.tenantId, principal.tenantId)))
       .limit(1);
     const row = rows[0];
-    if (!row || !row.isActive || !isBookableServiceName(row.name)) return null;
+    // Four independent refusals, and each is a whole reason on its own: no such
+    // service in this tenant, not active, not offered to patients, or
+    // internal-only. `getBookableService` answers ONE question — "may THIS
+    // patient book THIS service" — so every no is the same null. The last three
+    // live in `isServiceBookableByPatient`, where each clause has a test that
+    // proves it is load-bearing.
+    if (!row || !isServiceBookableByPatient(row)) return null;
     return { id: row.id, name: row.name, durationMin: row.durationMin, locationId: row.locationId };
   },
 

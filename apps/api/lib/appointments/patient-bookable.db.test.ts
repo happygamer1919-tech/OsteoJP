@@ -5,6 +5,12 @@
  * "The backfill must not change what any patient can book on the day it
  * applies. Prove that in the DoD."
  *
+ * W13-04 UPDATE: the allowlist this compares against is DELETED from the
+ * application and is now frozen in this file as ALLOWLIST_AT_0057. The test is
+ * therefore about the MIGRATION, which still runs on every fresh database, and
+ * no longer about live behaviour — live behaviour is the column's value, which
+ * JP's ruling deliberately widened beyond these four names.
+ *
  * That is not provable against a mock. It is a claim that a SQL expression —
  * translate/lower/btrim/regexp_replace — agrees with a TypeScript function,
  * `normalizeServiceName`, on real rows. Two implementations of one rule in two
@@ -26,7 +32,32 @@ import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { isBookableServiceName } from "./services";
+import { normalizeServiceName } from "./services";
+
+/**
+ * THE ALLOWLIST AS IT WAS, frozen here on purpose.
+ *
+ * W13-04 deleted `isBookableServiceName` and the four names behind it, which is
+ * what this test used to compare the backfill against. The comparison still has
+ * a subject: migration 0057 is a committed file that runs on every fresh
+ * database, so "its SQL reproduces the rule that was live the day it was
+ * authored" stays a checkable claim about a migration.
+ *
+ * It is a HISTORICAL CONSTANT, not a rule. Nothing in the application reads it,
+ * and nothing should: what a patient may book today is the column's value, set
+ * from JP's ruling, and it deliberately no longer matches these four names.
+ */
+const ALLOWLIST_AT_0057 = [
+  "osteopatia",
+  "fisioterapia",
+  "massagem terapeutica",
+  "pilates terapeutico",
+];
+
+/** What `isBookableServiceName` did, reconstructed from the constant above. */
+function wasBookableAt0057(name: string): boolean {
+  return ALLOWLIST_AT_0057.includes(normalizeServiceName(name));
+}
 
 vi.mock("server-only", () => ({}));
 
@@ -98,10 +129,10 @@ d("0057 backfill: patient_bookable reproduces the name allowlist exactly", () =>
     return new Map(rows.map((r) => [r.name as string, r.matched as boolean]));
   }
 
-  it("agrees with isBookableServiceName on EVERY fixture name", async () => {
+  it("agrees with the allowlist it was written from, on EVERY fixture name", async () => {
     const matched = await backfillWouldMatch();
     const disagreements = NAMES.filter(
-      (name) => matched.get(name) !== isBookableServiceName(name),
+      (name) => matched.get(name) !== wasBookableAt0057(name),
     );
     // Named, not counted: a failure should say WHICH service changed hands.
     expect(disagreements).toEqual([]);
@@ -119,7 +150,7 @@ d("0057 backfill: patient_bookable reproduces the name allowlist exactly", () =>
     const matched = await backfillWouldMatch();
     expect(matched.get("Osteopatia Desportiva")).toBe(false);
     expect(matched.get("Massagem de Relaxamento")).toBe(false);
-    expect(isBookableServiceName("Osteopatia Desportiva")).toBe(false);
+    expect(wasBookableAt0057("Osteopatia Desportiva")).toBe(false);
   });
 
   it("normalizes accents, case and whitespace the same way the application does", async () => {
@@ -154,5 +185,94 @@ d("0057 backfill: patient_bookable reproduces the name allowlist exactly", () =>
     const rows = await db.execute(raw`select patient_bookable from services where id = ${id}`);
     expect(rows[0]!.patient_bookable).toBe(false);
     await db.execute(raw`delete from services where id = ${id}`);
+  });
+});
+
+/**
+ * W13-04 — THE REFUSAL, AGAINST REAL ROWS.
+ *
+ * The unit layer in `internal-only-refusal.test.ts` proves the predicate refuses
+ * and that both write paths call it. What only a database can prove is that the
+ * VALUES reaching the predicate are the ones the row actually holds: Drizzle
+ * maps `internal_only` to `internalOnly`, and a mis-mapped or unselected column
+ * arrives as `undefined`, which is falsy, which passes the check for every row.
+ * That failure is invisible to a mock and green in CI.
+ */
+d("W13-04: getBookableService refuses what a patient may not book", () => {
+  let db: Awaited<ReturnType<typeof import("@osteojp/db").getDbAdmin>>;
+  let tenantId: string;
+  const ids = {
+    ok: randomUUID(),
+    internal: randomUUID(),
+    notBookable: randomUUID(),
+    inactive: randomUUID(),
+  };
+
+  beforeAll(async () => {
+    const { getDbAdmin } = await import("@osteojp/db");
+    db = getDbAdmin();
+    tenantId = randomUUID();
+    await db.execute(raw`insert into tenants (id, name, slug)
+      values (${tenantId}, 'Refusal Co', ${"rf-" + tenantId.slice(0, 8)})`);
+
+    // The four rows the production catalog actually contains, in miniature.
+    await db.execute(raw`insert into services
+      (id, tenant_id, name, duration_min, price_cents, is_active, internal_only, patient_bookable)
+      values
+        (${ids.ok},          ${tenantId}, 'Osteopatia/Posturologia', 55, 7000, true,  false, true),
+        (${ids.internal},    ${tenantId}, 'Diversos',                55,    0, true,  true,  true),
+        (${ids.notBookable}, ${tenantId}, 'NESA',                    60, 5000, true,  false, false),
+        (${ids.inactive},    ${tenantId}, '-',                       60,    0, false, false, true)`);
+  });
+
+  afterAll(async () => {
+    if (!db) return;
+    await db.execute(raw`delete from services where tenant_id = ${tenantId}`);
+    await db.execute(raw`delete from tenants where id = ${tenantId}`);
+  });
+
+  async function resolve(serviceId: string) {
+    const { drizzleAppointmentsStore } = await import("./store");
+    return drizzleAppointmentsStore.getBookableService(
+      { tenantId, patientId: randomUUID(), role: "patient" } as never,
+      serviceId,
+    );
+  }
+
+  it("resolves a service JP opened to patients", async () => {
+    // The positive control. Without it every assertion below could pass because
+    // the function returns null for everything.
+    expect(await resolve(ids.ok)).not.toBeNull();
+  });
+
+  it("REFUSES internal_only, even though the row says patient_bookable", async () => {
+    // The exposure the allowlist was masking by accident: a patient who supplies
+    // this id never had to see it in the catalog.
+    expect(await resolve(ids.internal)).toBeNull();
+  });
+
+  it("REFUSES a service that is not patient_bookable", async () => {
+    expect(await resolve(ids.notBookable)).toBeNull();
+  });
+
+  it("REFUSES an inactive service", async () => {
+    expect(await resolve(ids.inactive)).toBeNull();
+  });
+
+  it("REFUSES a service belonging to another tenant", async () => {
+    // Not new in W13-04, and asserted here because this is the query that would
+    // leak it: the id is real, the tenant is not the caller's.
+    const otherTenant = randomUUID();
+    await db.execute(raw`insert into tenants (id, name, slug)
+      values (${otherTenant}, 'Other Co', ${"ot-" + otherTenant.slice(0, 8)})`);
+    const foreign = randomUUID();
+    await db.execute(raw`insert into services
+      (id, tenant_id, name, duration_min, price_cents, is_active, internal_only, patient_bookable)
+      values (${foreign}, ${otherTenant}, 'Osteopatia/Posturologia', 55, 7000, true, false, true)`);
+
+    expect(await resolve(foreign)).toBeNull();
+
+    await db.execute(raw`delete from services where tenant_id = ${otherTenant}`);
+    await db.execute(raw`delete from tenants where id = ${otherTenant}`);
   });
 });
