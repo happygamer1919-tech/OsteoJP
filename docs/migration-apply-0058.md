@@ -1,7 +1,8 @@
 # Apply block - migration 0058, patient_terms_acceptances
 
-**Status: CORRECTED after the first attempt applied NOTHING. For strategy validation.**
-**PR #833 is green. The first attempt failed and the checker caught it.**
+**Status: APPLIED AND PROVEN, 2026-08-07. Evidence in section 8.**
+**Second attempt. The first applied nothing and the checker caught it (section 7).**
+**PR #833 merged 2026-08-07 after the apply, squashed to `45d0bcf` on `main`.**
 
 Migration: `0058_patient_terms_acceptances` (journal idx 57).
 Branch: `portal/W13-05-terms-acceptance`.
@@ -172,4 +173,54 @@ Corrected to `1786600000000`.
 2. **`packages/db/scripts/check-pending-migrations.mjs`**, the new pre-check in
    the block above. It refuses a no-op BEFORE `migrate` runs rather than
    diagnosing it afterwards.
+
+---
+
+## 8. APPLIED, 2026-08-07. The evidence.
+
+Second attempt, run by Ivan from the prod-apply worktree. Written into the repo
+in the same turn the output arrived, per section 6. His pasted output:
+
+```
+Checkout:  HEAD is now at 67e10dc fix(db): the 0058 journal entry went BACKWARDS in time, so drizzle applied nothing
+Pre-check: last applied when in DB 1786500000000, journal entries on disk 58, pending 1,
+           PENDING 0058_patient_terms_acceptances when=1786600000000
+           OK: the pending set is exactly what was expected.
+Migrate:   migrations applied successfully.
+Checker:   patient_terms_acceptances EXISTS
+           OK: all 1 table(s) present.
+```
+
+### What each line proves, because three of the four also printed on the failed run
+
+| Line | What it proves | Would it have printed on the FIRST attempt? |
+|---|---|---|
+| `HEAD is now at 67e10dc` | Detached at the corrected commit, not on `main`. `67e10dc` is the timestamp fix; the failed run was `630f1ea`, one commit earlier | It printed `630f1ea`. **Different commit, and that is the whole difference** |
+| Pre-check `pending 1` | Drizzle's OWN pending predicate, run read-only before any write, agreed exactly one migration was pending and named it | **No. This is the new line.** On the first attempt it would have printed pending 0 and exited non-zero, and `migrate` would never have run |
+| `migrations applied successfully` | Nothing on its own | **Yes, identically.** It printed on the run that applied nothing. It is not evidence |
+| `patient_terms_acceptances EXISTS` | The table is in `pg_catalog` on the production database | **No.** It printed `MISSING` and exit 1 |
+
+The arithmetic reconciles in both directions. Last applied `when` in the
+database was `1786500000000`, which is 0057. The journal's 0058 entry is
+`1786600000000`, which is `+100000000` and back on the synthetic series. 58
+entries on disk, 57 applied, 1 pending. The pre-check computed that from the
+database rather than being told it.
+
+**Two independent confirmations, and neither is drizzle's own success message.**
+The pre-check proved the work existed BEFORE the write; the table checker proved
+the object existed AFTER it, by reading `pg_catalog` through `to_regclass`. That
+pair is what section 4 asked for, and it is the pair the first attempt failed.
+
+### State after the apply
+
+- Production (`dfotoodqvmjhbdcxyaxf`) holds `public.patient_terms_acceptances`.
+- `drizzle.__drizzle_migrations` has a tracking row at `created_at = 1786600000000`.
+- Journal on disk: 58 entries, last `idx` 57, tag `0058_patient_terms_acceptances`.
+- **The migration slot is FREE.** Next free number is `0059`. Nothing anywhere in
+  the repo holds an unapplied migration, so the one-in-flight rule is satisfied
+  and the next migration author may take `0059`.
+- PR #833 merged after the apply, in the ruled order. Merge commit `45d0bcf`.
+  `git diff --stat 67e10dc origin/main` is EMPTY: the merged tree is identical to
+  the tree that was applied from, so the applied commit and the shipped commit
+  are the same code.
 

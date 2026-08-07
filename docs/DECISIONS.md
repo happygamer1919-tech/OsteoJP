@@ -2948,3 +2948,62 @@ no document references but `.claude/agents/design-reviewer.md` and `a11y-reviewe
 wildcard on every UI diff; and `docs/pr-assets/**`, which is linked from merged GitHub PR bodies by
 SHA-pinned raw URLs rather than from the repo. Both would have looked like obvious orphans to a less
 careful sweep.
+
+## 2026-08-07 - Migration 0058 applied, and the apply-block doctrine gains a mandatory pre-check (PURPLE)
+
+Migration `0058_patient_terms_acceptances` is **applied to production and proven**, on the second
+attempt. Evidence, verbatim owner paste, is at `docs/migration-apply-0058.md` section 8. PR #833
+merged after the apply, in the ruled order, squashed to `45d0bcf`.
+
+**The proof is deliberately not drizzle's success message.** Two independent confirmations bracket
+the write: the new pre-check said one migration was pending and named it, computed from the database
+before anything ran; the table checker said `patient_terms_acceptances EXISTS`, read from
+`pg_catalog`, after. `drizzle-kit migrate` printed `migrations applied successfully` on BOTH the
+failed attempt and this one, identically, which is precisely why it is not the evidence.
+
+### The doctrine amendment, binding from now
+
+`docs/runbook-prod-migrations.md` gains a section, **"The pre-check is mandatory"**, plus a banner at
+the top of the file and three rows in the quick reference. Every future apply block runs
+`check-pending-migrations.mjs <N>` with the expected count immediately before `migrate`, and says in
+words that a failure means `migrate` is not run at all. **A block without it is not a valid block and
+must not be handed to the owner.**
+
+### The root-cause pattern, carded as INC-07 rather than left in a doc
+
+`0049` and `0058` are **the same class of failure**, and naming that is the point of the card. In both,
+the checkout, the connection and the SQL file were fine or fine-looking; drizzle printed success; the
+schema was unchanged; and the truth surfaced only through independent verification. The surface
+causes differ and that is what disguised the shared shape:
+
+- **0049** (2026-07-30): the prod-apply worktree sat on `main` because `git checkout <branch>` was
+  rejected and the fallback went unnoticed. The migration was not in the tree.
+- **0058** (2026-08-07): the journal `when` for 0058 was **lower** than 0057's. Drizzle's pending test
+  is `lastDbMigration.created_at < folderMillis` (`drizzle-orm/pg-core/dialect.js:62`), so a
+  backwards timestamp reads as already-applied and the entry is skipped.
+
+The 0058 mechanism deserves its own line because it is repo-specific and non-obvious: **this repo's
+journal `when` values are a synthetic series stepping `+100000000`, already years in the future.** A
+hand-appended entry using a real `Date.now()` produces a value BELOW its predecessor. That is not a
+typo a reviewer would catch by eye - `1786093200000` looks like a perfectly ordinary millisecond
+timestamp, and it is; it is just smaller than the one above it.
+
+**The check that was green while the migration was unappliable.** `check-journal.mjs` asserted file
+count, `idx` contiguity and filename order. All three reconciled. None of them looked at `when`. A
+passing check covers what it asserts and nothing more, and a green check on an adjacent property
+reads exactly like a green check on the property you cared about. It now asserts `when` is strictly
+increasing and prints the correct next value when it is not - proven load-bearing by restoring the
+bad timestamp and watching it fail.
+
+### The generalisable rule
+
+**A command's own success message is never evidence that its side effect occurred.** Verify the side
+effect from a different source, and where possible in both directions - before, that the work exists;
+after, that the object exists. The 0049 lesson was recorded as "check the schema afterwards", and
+that half alone still cost a full owner round-trip on 0058, because an after-check reports the
+failure once the owner's terminal session is already over.
+
+### State after
+
+Next free migration number is **0059**. Nothing in the repo holds an unapplied migration, so the
+one-in-flight rule is satisfied and `W13-04a-availability-exclusion` may take the slot.
