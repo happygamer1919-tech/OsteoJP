@@ -9,19 +9,37 @@ instead of interrupting you; this is where it all resolves at once.
 
 **Budget: about 50 minutes.**
 
-> **Revised four times**, each after a review found something that would have cost
-> the sitting: **[2a]**–**[2d]**, **[4a]**–**[4e]**, **[R2a]**–**[R2d]**, and now
-> **[3a]**–**[3d]**. The last round found that **the session consumed a pedido
+> **Revised six times**, each after a review found something that would have cost
+> the sitting: **[2a]**–**[2d]**, **[4a]**–**[4e]**, **[R2a]**–**[R2d]**,
+> **[3a]**–**[3d]**, then **[1]**–**[1e]** with **[2]**–**[5]**, and now
+> **[6a]**–**[6h]**. The fourth round found that **the session consumed a pedido
 > nothing in it created**, which would have lost PG2 and half of PG4 to ordering
-> alone. **The whole checklist is renumbered.** Each change is marked where it
-> applies.
+> alone, and renumbered the whole checklist.
+>
+> **The sixth round is the first driven by the setup that actually exists rather
+> than by another re-read of the plan.** Two things did not match: **one patient
+> record serves both the canary and the terms roles** (0d and 0f assumed two, and
+> the text sent a reader toward the duplicate-phone trap this same file documents),
+> and **the test therapist is unconfigured to the point where items 9, 11 and 14
+> would each have failed for setup reasons and read as product defects.** Pre-flight
+> gains **0h**; the checklist itself is unchanged except for three corrections of
+> fact. Each change is marked where it applies.
 
 ---
 
 # PRE-FLIGHT
 
-Everything here happens **before item 1**. Two of these start clocks that run in
-the background across the middle of the session.
+Everything here happens **before item 1**, except **0e**, which is performed at
+**item 4** for the reason 0e gives. Two of these start clocks that run in the
+background across the middle of the session.
+
+> **[6c] 0h IS THE ONE THAT TAKES REAL TIME, so do it while the 0c recovery clock
+> runs.** It configures the test therapist, and without it **items 9, 11 and 14
+> all misbehave for setup reasons that look like product defects**. **0i** is a
+> single read: it records that the "Ficha incompleta" banner blocks nothing, so
+> you do not stop on it mid-session.
+>
+> **Suggested order: 0c (start the clock) → 0h → 0d → 0f → 0i → 0g → item 1.**
 
 ## 0a–0b. Already done — no action **[4e]**
 
@@ -54,9 +72,29 @@ alone and carry on.**
 > **same generic message** as a wrong code — by design, so nobody can enumerate
 > patients by phone number. **You would see "Não foi possível entrar" and have no
 > way to tell it apart from a broken canary.**
+
+> **[6a] ONE PATIENT RECORD SERVES BOTH 0d AND 0f. THAT IS THE EXPECTED
+> CONFIGURATION, NOT A SHORTCUT.** An earlier draft said the 0f test patient "is
+> NOT the one — it is created with no phone, deliberately", which read as an
+> instruction to hold two records. **It is withdrawn.**
 >
-> **The 0f test patient is NOT the one** — it is created with no phone,
-> deliberately.
+> **Why the split was never needed.** 0f exists for exactly two reasons: keep a
+> permanent, unremovable acceptance off a **real** patient, and keep session
+> messages away from a **stranger's** handset. A single record named for what it
+> is, carrying **your own** mobile, satisfies both — it is not a real patient and
+> the only phone it can reach is yours.
+>
+> **Why holding two would have been actively dangerous.** The obvious way to give
+> the 0f patient a phone is to put **your** number on it, and then two records
+> share one number. **`resolvePatientByProvenPhone` selects `LIMIT 2` and refuses
+> on anything but exactly one row** (`patient-linkage.ts:59-79`). There is no
+> unique constraint on `patients.phone` to stop you, so the duplicate is accepted
+> and **neither** patient can ever log in — silently, with the same generic
+> refusal as a wrong code. The warning further down this section describes that
+> trap; the withdrawn sentence walked you into it.
+>
+> **So: one record. It is the canary at items 12–14 and the terms subject at
+> items 5–8.** Nothing in the terms path can tell the difference — see 0f.
 
 **THE NUMBER MUST BE STORED IN EXACTLY THIS FORMAT.** From the code, not from
 memory: the submitted number is normalised by `normalizePhonePT`
@@ -82,10 +120,37 @@ punctuation**, and the lookup is an **exact string equality** against
 
 **Two more conditions the lookup requires, both invisible on screen:**
 
-- The record must be in the **portal tenant** (`PORTAL_TENANT_ID`). If you have
-  records in more than one tenant, it must be that one.
+- The record must be in the **portal tenant** (`PORTAL_TENANT_ID`).
+  **[6f] THERE IS NOTHING TO CHECK HERE AND NO BLANK TO FILL. Read the note below
+  before looking for one.**
 - The record must carry **exactly one** row with that number in that tenant —
   see the warning below, which matters more than it looks.
+
+> **[6f] THE TENANT QUESTION, ANSWERED SO IT STOPS BEING A STEP.**
+>
+> **First, the screen does not say what it looks like it says.** The
+> `OsteoJP (LV)` on a patient record is the **primary LOCATION name**, resolved
+> from `patient.primaryLocationId` (`app/patients/[id]/page.tsx:104-105`, rendered
+> by `identityLine` at `:569-576`). **It is not the tenant**, and no patient screen
+> anywhere renders a tenant. Reading it as one would be a false confirmation, which
+> is worse than no confirmation.
+>
+> **Second, production has one tenant.** Committed statement:
+> `docs/cutover-runbook.md:162` — "there is only one production tenant". Corroborated
+> by the only tenant id that appears in any migration backfill
+> (`0046_users_is_bookable.sql`, the attested, owner-signed-off prod id-map).
+> **This is repo-derived, not a live read** — rule 1 forbids a prod-connected query,
+> and no live count was taken.
+>
+> **Third, and this is what makes the check unnecessary rather than merely
+> awkward: items 12 and 13 ARE the tenant check.** The lookup filters
+> `patients.tenant_id = <tenantId>` in the query itself (`patient-linkage.ts:69`),
+> where `tenantId` is `PORTAL_TENANT_ID` (`apps/portal/lib/auth/otp.ts:53-59`). A
+> patient in the wrong tenant is refused — same generic message, no exception. So
+> **a successful login at item 13 proves this record sits in the tenant the portal
+> resolves to**, and nothing you could do beforehand proves it earlier or better.
+>
+> **Do not look for a surface. There is no blank on this line.**
 
 > **[4b] CORRECTION — an earlier draft of this section was WRONG, and following
 > it would have broken the canary.** It said a record "already linked to an auth
@@ -150,7 +215,7 @@ read by `apps/api` (`lib/auth/otp-transport.ts:62`), which serves
 
 - **Armed at:** `__________`  **Redeploy Ready at:** `__________`
 
-## 0f. The designated test patient **[4a]**
+## 0f. The designated test patient — THE SAME ONE AS 0d **[4a] [6a]**
 
 **Items 5–8 write a PERMANENT, UNREMOVABLE legal record.**
 `patient_terms_acceptances` is append-only by ruling: no UPDATE policy, no DELETE
@@ -158,15 +223,61 @@ policy, grants revoked, `recorded_by` pinned to `auth.uid()`. A test acceptance
 on a real patient would be a legal record attributed to **you**, on a person who
 never accepted anything, and **nothing in the product can remove it**.
 
-- **Name:** `ZZ Teste Aceitação` — the `ZZ` sorts it to the end of every list.
+**[6a] This is the record from 0d.** One patient, named for what it is, carrying
+your own mobile. It is the canary at items 12–14 and the terms subject at items
+5–8. **Do not create a second one** — 0d explains why a second record on the same
+number locks both out of the portal permanently.
+
+- **Name:** something that reads as a test record and sorts out of the way —
+  `ZZ Teste Aceitação`, or whatever you already named it. **The name is
+  cosmetic; nothing in the code reads it.**
 - **How chosen:** the repo has no designated test patient (checked: no seed row,
-  no fixture). This creates one, named for what it is.
-- **Create it if absent:** Pacientes → Novo Paciente, `ZZ Teste Aceitação`, a NIF
-  from the test range, **no phone and no email**.
+  no fixture). This names one.
+- **Create it only if you have none:** Pacientes → Novo Paciente, the name, and
+  **your own mobile in the 0d format**. Email optional.
 - **Its id:** `_______________________`
+
+> **[6b] THE NIF: NOT REQUIRED, AND "Ficha incompleta" IS NOT A DEFECT.**
+>
+> An earlier draft said to create it with "a NIF from the test range". **The
+> record you have has no NIF and that is fine** — see 0i, which walks all four
+> write paths this session touches and finds no NIF gate on any of them. The
+> amber **"Ficha incompleta: falta o NIF."** banner is a `role="status"` notice on
+> the patient profile (`app/patients/[id]/page.tsx:293-302`) and blocks nothing.
+>
+> **Two ways to clear it, both optional, neither before the session:**
+>
+> - **Set a NIF.** Editar → NIF → **`212345672`**. That is not an arbitrary
+>   number: it is the repo's own canonical synthetic individual NIF
+>   (`lib/patients/nif.test.ts:14`, `nifWithCheckDigit("21234567")`, asserted
+>   valid at `:19-21`). A made-up nine digits will be **rejected** — `checkNif`
+>   enforces a prefix rule and a mod-11 control digit (`lib/patients/nif.ts:69-97`),
+>   and `999999990` is refused by name.
+> - **Tick "Estrangeiro / sem NIF"**, which records the absence as a reasoned
+>   decision. `isFichaIncomplete` is `(nif empty) && !nifExempt`
+>   (`lib/patients/nif.ts:112-117`), so either clears the banner.
+>
+> **Recommended: leave it.** It costs nothing, and 0i is the record that it costs
+> nothing.
 
 > Creating a patient is reversible. **Recording an acceptance against one is
 > not.**
+
+> **[6a] THE TERMS FLOW CANNOT TELL THE DIFFERENCE — stated plainly, because the
+> withdrawn 0d sentence implied it could.**
+>
+> **Nothing in items 5–8 reads phone, email or NIF.** Walked, not assumed:
+> `recordTermsAcceptance` inserts `tenantId, patientId, acceptedAt, termsVersion,
+> recordedBy` and nothing else (`lib/clinical/terms-acceptance.ts:125-138`);
+> `getLatestTermsAcceptance` and `hasAcceptedTerms` filter on `patientId` alone
+> (`:56-78`, `:90-108`); the checkbox takes `readOnly / checked / onChange /
+> existing` and no patient fields at all
+> (`app/clinical/[id]/SignatureConsent.tsx:379-389`); and the item-8 fee gate is
+> `flagEnabled && patientHasAcceptedTerms`, a two-boolean function with no third
+> input (`lib/reminders/fee-notice.ts:127-134`).
+>
+> **A patient with a phone and an email behaves identically to one with neither.**
+> Items 5–8 are unaffected by the merge.
 
 ## 0g. The cleanup ledger **[4b]**
 
@@ -175,8 +286,12 @@ never accepted anything, and **nothing in the product can remove it**.
 | From item | Mutation | Revert |
 |---|---|---|
 | 0d | Your patient record's phone reformatted | Harmless — the correct format is the one the product expects |
-| 5–8 | A terms acceptance on `ZZ Teste Aceitação` | **NOT REVERTIBLE.** Append-only by design |
-| 9–11 | A test therapist's working hours | **Deactivate the test therapist** |
+| 0f | A NIF or the sem-NIF tick, **if you chose to set one [6b]** | Harmless — leave it |
+| **0h [6c]** | **Test therapist marked "Disponível para marcações"** | **Deactivate the therapist — item 24 covers it** |
+| **0h [6c]** | **Test therapist added to a clinic (Localizações)** | **Same — deactivation supersedes it** |
+| **0h [6c]** | **Test therapist's SATURDAY single-period day** | **Same — deactivation supersedes it** |
+| 5–8 | A terms acceptance on the test patient | **NOT REVERTIBLE.** Append-only by design |
+| 9–11 | The test therapist's Saturday **split shift** (0h's day, edited) | **Deactivate the test therapist** |
 | 14 | **TWO portal booking requests (pedidos)** | Confirmed one becomes an appointment — **cancel it**; decline the other |
 | 17 | An appointment created by confirming a pedido | **Cancel it** |
 | 18 | A staff appointment booked over a pedido | **Cancel it** |
@@ -186,7 +301,175 @@ never accepted anything, and **nothing in the product can remove it**.
 **Item 9 uses a TEST THERAPIST, not a real one.** Rewriting a real therapist's
 hours changes what reception can book for them.
 
+> **[6c] ONE DEACTIVATION UNDOES ALL THREE 0h ROWS, and no separate revert is
+> needed for any of them.** `setStaffActive` has no location, schedule or
+> appointment guard — only owner-tier and last-owner checks, neither of which
+> applies to a therapist (`lib/admin/staff.ts:278-308`). The `is_bookable` flag,
+> the membership and the Saturday hours all stay on the row, and every surface
+> that would show them filters on `is_active` first: the agenda's therapist source
+> reads active users only (`lib/scheduling/data.ts:277`), and the portal's
+> auto-assignment requires `u.is_active = true`
+> (`apps/api/lib/appointments/store.ts:471`). **Deactivating is still the clean
+> revert, exactly as item 24 already says.** Full reasoning in 0h.
+
 - **Test therapist name/id:** `_______________________`
+
+## 0h. CONFIGURE THE TEST THERAPIST — items 9, 11 and 14 all depend on it **[6c]**
+
+> **WHY THIS EXISTS.** A staff row that is *Ativo* with the role *Terapeuta* is
+> **not yet a bookable therapist**. As it stands — no clinic, no service, no
+> schedule — **item 9 has no one-period day to use as its baseline, item 11 has
+> nothing to evaluate, and item 14 may quietly assign the pedidos to the very
+> therapist item 24 deactivates.** Each would fail for a setup reason and read on
+> screen as a product defect.
+
+### The minimum configuration, from the code
+
+| Requirement | Needed for | Where it is enforced |
+|---|---|---|
+| **`is_bookable` = true** | **Appearing in the Terapeuta dropdown at all** | `lib/scheduling/data.ts:311` applies `filterBookableTherapists`, which is the flag and nothing else (`therapist-bookable.ts:34-36`). **It ships `DEFAULT false`** (`0046_users_is_bookable.sql`), and the backfill flipped only the 16 attested practitioners — a row created after that migration is **false** |
+| **`is_active` = true** | Same | `data.ts:277` |
+| **≥1 working-hours row** | **Item 11**, and the location derivation | `evaluateAvailability` returns `{configured:false, covered:true}` when there is no active template, so **an unconfigured therapist is never flagged** (`lib/scheduling/availability.ts:110-116`) |
+| **A location on that row** | Appearing under a *specific* clinic; item 11's evaluation | Assignment is **derived** from `availability_templates` ∪ `staff_locations` (`therapist-locations.ts:57-97`). The item-11 read is keyed on the **pair** `(practitionerId, locationId)` (`conflict.ts:112-117`) |
+| **A main service** | **NOTHING in this session** | See **[6c-service]** below |
+
+> **THE AGENDA HAS NO THERAPIST COLUMN, so "will he render a column" is the wrong
+> question.** The grid's axis is DAYS (`app/agenda/agenda-grid.tsx:96`); a
+> therapist is chosen in the **toolbar dropdown**, and that dropdown is where an
+> unconfigured therapist is absent. Under **"Todas as localizações"** an
+> unassigned therapist *does* appear and is the only view in which they do
+> (`therapist-location-filter.ts:41-55`) — but they will still be missing if the
+> flag is false, because the flag is applied first.
+
+> **[6c-service] NO SERVICE ASSIGNMENT IS REQUIRED, for item 9, 11 or anything
+> else here.** Owner ruling PL-06a: the therapist→service mapping is a
+> **PRESELECTION, never a RESTRICTION** — the Serviço select lists **all** active
+> services for every therapist (`app/agenda/appointment-drawer.tsx:439-447` and
+> `:492-498`). The mapping only supplies a default. **Leave "Serviço principal"
+> empty.** It changes nothing you are checking, and setting it is one more thing
+> to undo. This also settles the Fisioterapia question in item 14: the twelve
+> patient-bookable services are a property of the **service** (`patient_bookable`),
+> not of the therapist, so no mapping is needed there either.
+
+### Click path
+
+**Staff platform → `/admin/staff` → find the test therapist → Gerir.**
+
+*(0h has no checklist numbers of its own — these are lettered so they can never be
+confused with items 1, 2 and 3 of the checklist.)*
+
+**a. Contacto tab → tick "Disponível para marcações" → Guardar.**
+> **[6g] EVERY LABEL IN THIS STEP IS THE LITERAL ON-SCREEN pt-PT STRING, checked
+> against the component rather than paraphrased.** **`Gerir`**
+> (`admin.staff.manage`, `packages/i18n/src/strings.pt.json:570`) opens the modal;
+> the tab is **`Contacto`** (`admin.staff.sectionContact`, `:572`, rendered at
+> `StaffManageModal.tsx:118`); the checkbox sits at the bottom of that tab's form
+> (`StaffManageModal.tsx:231` for the section, `:285-299` for the control) and its
+> label is exactly **`Disponível para marcações`**
+> (`admin.staff.isBookableLabel`, `strings.pt.json:551`, rendered at
+> `StaffManageModal.tsx:294`); the button is **`Guardar`**
+> (`admin.staff.save`, `strings.pt.json:542`).
+>
+> **The grey line under the checkbox reads:** *"Aparece na lista Terapeuta ao
+> marcar. Independente da função e dos serviços atribuídos."* (`:552`). If you can
+> see that sentence you are on the right control.
+>
+> **Expected:** the modal saves and the checkbox stays ticked when you reopen it.
+> **This is the one step that cannot be skipped.** Without it the therapist is
+> absent from every Terapeuta dropdown and items 9–11 have no subject.
+
+**b. "Locais e cor" tab → under **Localizações**, tick ONE clinic → Guardar.**
+> **[6g] THE TAB IS LABELLED "Locais e cor", NOT "Localizações".** An earlier
+> draft of this step said "Localizações tab" and would have sent you looking for a
+> tab that does not exist. `admin.staff.sectionLocations` is **"Locais e cor"**
+> (`packages/i18n/src/strings.pt.json:579`, rendered at
+> `StaffManageModal.tsx:120`). **"Localizações"** is the label of the checkbox
+> group *inside* that tab (`admin.staff.cardLocations`, `strings.pt.json:576`,
+> rendered at `StaffManageModal.tsx:398`). The tab also holds the agenda colour
+> picker, which is what the "e cor" is.
+>
+> **Expected:** the clinic appears as a chip on the member's card.
+> **Do this BEFORE step c, not after.** If your account is a *located* admin
+> rather than the owner, saving hours for a therapist who is not at one of your
+> clinics is refused with a **not-found** error
+> (`lib/admin/schedule-scope.ts:40-57`) — and `not_found` is deliberately
+> indistinguishable from a missing therapist, so the failure would tell you
+> nothing. Membership first makes the order irrelevant.
+
+**c. Horários tab → SATURDAY only → on, `10:00`–`13:00`, location = the clinic
+from step b → Guardar → reopen.**
+> **Expected:** Saturday comes back with **one** period, `10:00`–`13:00`. Every
+> other day off.
+> **This is item 9's baseline** — the "one-period day" it says should look exactly
+> as it always has, plus the "+ Adicionar 2.º período" text button.
+
+- **Bookable ticked at:** `__________`
+- **Clinic assigned:** `_______________________`
+- **Saturday hours saved at:** `__________`
+
+### Why Saturday, specifically
+
+**Because it keeps the test therapist out of item 14's way, and nothing else
+does.**
+
+> **THE PORTAL DOES NOT LET THE PATIENT CHOOSE A THERAPIST — see [6e] at item 14.**
+> The API picks one automatically from whoever has **covering working hours at
+> that location** for the window (`apps/api/lib/appointments/store.ts:462-479`),
+> and the tie-break is **lowest full name** (`therapist.ts:39-46`). **The
+> `is_bookable` flag is not part of that query.** So a test therapist with hours
+> is a genuine candidate for a real patient booking, and a short name makes them a
+> likely one.
+>
+> **THE ISOLATION COMES FROM THE DAY, AND IT HOLDS WHATEVER YOUR ROSTER LOOKS
+> LIKE.** The candidate query requires covering hours **on that weekday**. Put the
+> test therapist on Saturday and they are simply not in the candidate set for any
+> Monday-to-Friday window — no matter who else works, no matter what their names
+> sort like, and no matter what the flag says. **Item 14 books Monday to Friday and
+> the problem does not arise.** Nothing here rests on a guess about the real
+> schedule; it rests on the weekday predicate.
+>
+> **Any unused weekday would work. Saturday is chosen because it is the one you
+> are least likely to book by accident** while doing everything else in this
+> session, and because if the portal offers you a Saturday slot at item 14 that is
+> a legible signal — it means the test therapist is the only one covering it, so
+> skip it.
+>
+> Saturday is a real weekday in the schedule editor (`WEEKDAY_ORDER = [1,2,3,4,5,6,0]`,
+> `app/admin/staff/page.tsx:45`), and nothing in the staff booking path treats it
+> differently — `createAppointment` validates the interval and the ids, never the
+> day of week (`lib/scheduling/actions.ts:304-333`).
+>
+> **If Saturday is a working day at your clinic**, use **Sunday** instead and read
+> "Saturday" as "Sunday" everywhere below. Items 9–11 are unaffected either way:
+> the availability panel is scoped to the therapist you selected, so a colleague
+> working the same day cannot contaminate the reading.
+
+> **⏱ THE DROPDOWN CAN LAG UP TO 60 SECONDS. Do not report this as a defect.**
+> The agenda's therapist/location/service reference data is cached for 60s
+> (`lib/scheduling/data.ts:317-318` and `:334-336`), and **no staff action
+> invalidates that tag** — the only `updateTag("agenda-reference-data")` call in
+> the repo is in `app/admin/services/actions.ts:76`. So after steps a–c the
+> therapist may not appear in the agenda dropdown immediately. **Wait a minute and
+> reload.** The availability panel itself is not cached and is always current.
+
+## 0i. THE INCOMPLETE FICHA BLOCKS NOTHING — read this once, then ignore the banner **[6b]**
+
+**The "Ficha incompleta: falta o NIF." banner will be on screen for the whole
+session. It is not a defect and it stops nothing.** All four write paths this
+session exercises were walked, not inferred:
+
+| Step | Path | Does a missing NIF block it? |
+|---|---|---|
+| **Item 14** — portal booking | `bookAppointment`, `apps/api/lib/appointments/booking.ts:335-376` | **No.** It validates the slot is future, resolves the service and location, picks a therapist and writes. **It never reads the patient row** — the patient is a verified `PatientPrincipal` carrying ids only |
+| **Item 17** — reception confirms | `confirmAppointmentRequest`, `apps/web/lib/scheduling/actions.ts:1021-1101` | **No.** The query joins `appointments` to `staff_notifications` and **touches the patients table not at all** |
+| **Item 18** — staff booking | `createAppointment`, `apps/web/lib/scheduling/actions.ts:304-333` | **No.** Validation is presence of `patientId`, `practitionerId`, `locationId`, plus a valid interval. The only patients read in the whole function is an existence check on an **optional second** patient (`:396-403`) |
+| Anywhere else in items 1–25 | — | **No.** `isFichaIncomplete` has exactly two consumers, both on the patient profile: the banner (`app/patients/[id]/page.tsx:293`) and the document-issue notice (`:476`). **Neither is on this checklist** |
+
+**The one thing a missing NIF does block is issuing a fiscal document**
+(`patients.nifRequiredForDocument`). **No item in this session issues one.**
+
+> **So: do not stop, do not fix it mid-session, and do not report it.** If you
+> want it gone, 0f names the two ways and recommends neither.
 
 ---
 
@@ -284,10 +567,14 @@ while the redeploy runs.
 > **[3a] This block fills the redeploy window: it needs neither a pedido nor the
 > portal.** **Admin or therapist** (reception has no clinical read).
 >
-> **[4a] Use `ZZ Teste Aceitação` from 0f.** **[2b]** Closes the W13-05 **card**,
-> not a gate. PG5 passed 2026-08-03.
+> **[4a] Use the test patient from 0f.** **[6a] That is the SAME record as 0d** —
+> the one carrying your mobile. It having a phone and an email changes nothing
+> here; 0f walks the code that proves it. **[2b]** Closes the W13-05 **card**, not
+> a gate. PG5 passed 2026-08-03.
+>
+> **[6b] Ignore the "Ficha incompleta" banner.** 0i.
 
-**5.** Open **`ZZ Teste Aceitação`**'s ficha clínica, scroll to the bottom.
+**5.** Open the test patient's ficha clínica, scroll to the bottom.
 **Expected:** below "Consinto", an **"Aceitação das condições"** block reading
 **"Sem aceitação registada para este paciente."**, checkbox **unticked**.
 > **Failure signal:** block missing, or checkbox already ticked.
@@ -309,20 +596,89 @@ registada em `<date>` (2026-08)", **checkbox unticked again**.
 ## 3. Split-shift — TEST THERAPIST **[4b]**, closes NO gate
 
 > **[3a] Also fills the redeploy window.**
+>
+> **[6c] 0h MUST BE DONE FIRST.** These three items operate on the **Saturday
+> `10:00`–`13:00`** day 0h created. Without it there is no one-period day to
+> compare against at item 9 and nothing configured to evaluate at item 11.
 
 **9.** **`/admin/staff`** → **Gerir** on the **test therapist** → **Horários**.
-**Expected:** a one-period day looks exactly as before, plus a small **"+
-Adicionar 2.º período"** text button.
+**Expected:** **Saturday** shows the single `10:00`–`13:00` period from 0h,
+looking exactly as a one-period day always has, plus a small **"+ Adicionar 2.º
+período"** text button. Every other day off.
 > **Failure signal:** existing single-period days render differently.
+> **Not a failure:** an empty week — that means 0h step c did not save. Go back
+> and do it; this item has no baseline without it.
 
-**10.** Add it, set **08:00–13:00** and **14:00–19:00**, **Guardar**, **reopen**.
+**10.** On **Saturday**, add the second period. Set the first to **08:00–13:00**
+and the second to **14:00–19:00**, **Guardar**, **reopen**.
 **Expected:** both periods came back.
 > **Failure signal:** only one survives.
 
-**11.** Open the **agenda** for that therapist on that weekday. **Expected:** the
-**13:00–14:00 gap behaves as outside working hours**.
-> **Failure signal:** the gap is bookable, or the whole span reads available.
-> This tests the recon, not the screen — it can fail while 9 and 10 pass.
+**11. Open the NEW-APPOINTMENT DRAWER, not the agenda grid. [6d]** On the agenda,
+pick the test therapist, then **Nova marcação** with **date = the next Saturday**
+and **Localização = the clinic from 0h**. Read the **"Disponibilidade"** panel.
+
+**Expected, exactly two things on screen:**
+
+1. Under **`Horário:`** — **`08:00-13:00, 14:00-19:00`**. **Two windows, comma
+   separated.** That string is built by `joinIntervals`, which renders one range
+   per working window and joins them with a comma
+   (`app/agenda/availability-panel.tsx:144-149`). **Two ranges means the split
+   shift survived the round trip.**
+2. Under **`Horários livres`** — the chips of free start times. **No chip reads
+   `13:00`, and none reads `13:30`.** The gap is not free time, so no start inside
+   it is offered (`:156-169`).
+
+### THE FAILURE SIGNALS FOR ITEM 11 **[6d]**
+
+**A bookable gap is NOT one of them. Here is the full list, and what each means:**
+
+| What you see | Verdict | Why |
+|---|---|---|
+| `Horário: 08:00-19:00`, one continuous range | **FAIL** | The two periods were merged or the second was archived. Item 10 saved, item 11 proves it did not survive as two |
+| `Horário: 08:00-13:00` only, second window absent | **FAIL** | The second period was dropped on save or on load. This is the W13-A defect the split-shift work exists to prevent |
+| A free-slot chip reading **`13:00`** or **`13:30`** | **FAIL** | The gap is being offered as working time. `day.free` is derived from `day.working`, so a chip inside the gap means the gap is inside a working window |
+| Two correct windows, **no chip in the gap** | **PASS** | Both halves of the check |
+| *"O terapeuta não tem horário de trabalho definido neste dia."* | **NOT A FAIL. SETUP.** | `day.working.length === 0` (`:105-110`). The **Localização in the drawer does not match the one the hours were saved under** — the read is keyed on the `(therapist, location)` pair (`conflict.ts:112-117`). Fix the location and re-read |
+| **You can book into 13:00–14:00 and it saves** | **NOT A FAIL. RULED.** | See below |
+
+> **[6d] WHY "THE GAP IS BOOKABLE" IS NOT A FAILURE, and why the earlier draft
+> naming it as one would have cost you a false defect report.**
+>
+> Owner ruling **PL-11, 2026-07-30**: *"availability warning is advisory, never a
+> hard block."* `ADVISORY_CONFLICT_KINDS` contains `availability`, and
+> `blockingConflicts` strips it before anything can refuse a save
+> (`lib/scheduling/conflict-core.ts:5-19`). **Reception is deliberately allowed to
+> book a patient outside a therapist's declared hours** — the clinic must be able
+> to fit someone in, and a schedule is a statement of intent, not a lock.
+>
+> **So item 11 checks what the panel SHOWS, never what the form REFUSES.** The
+> thing under test is whether the recon reads two windows out of one weekday and
+> withholds the gap from the free list. **If you want to try booking 13:15 to see
+> what happens: it will save, that is correct, and it is not part of this item.**
+>
+> **This tests the recon, not the screen. It can fail while 9 and 10 both pass** —
+> the editor can round-trip two periods correctly while the availability read
+> still collapses them.
+
+> **[6d] TWO CORRECTIONS TO THIS ITEM, because as written it named the wrong
+> surface and then called a correct behaviour a failure.**
+>
+> **The surface.** The agenda **grid has no therapist axis** — its columns are
+> days (`app/agenda/agenda-grid.tsx:96`). Working hours are rendered by the
+> **Disponibilidade panel inside the appointment drawer**
+> (`app/agenda/appointment-drawer.tsx:999-1006`), and nowhere else. "Open the
+> agenda for that therapist" had no screen to land on.
+>
+> **"The gap is bookable" is NOT a failure. It is the owner's own ruling.**
+> PL-11, 2026-07-30: *"availability warning is advisory, never a hard block."*
+> `ADVISORY_CONFLICT_KINDS` contains `availability`, and `blockingConflicts` drops
+> it before anything can refuse a save
+> (`lib/scheduling/conflict-core.ts:5-19`). **Booking into 13:00–14:00 will
+> succeed, deliberately, and reception is allowed to do it.** Had the old wording
+> stood, the correct behaviour would have been reported as a defect. **What is
+> being checked is whether the panel SHOWS two windows and withholds the gap from
+> the free-slot list** — that is the whole of item 11.
 
 ## 4. OTP login AND the pedidos — PG1 second half, and the producer for §5 **[3a]**
 
@@ -343,22 +699,88 @@ you confirmed in **0d**. **Expected:** one SMS, one code.
 [3a]**
 
 Still logged in as the patient, book **twice**, at **two different times on the
-same day**, with the **same therapist** for both if the portal lets you choose.
+same day**, and **that day must be a MONDAY-to-FRIDAY date. [6e]**
 
-> **[4] USE A REAL THERAPIST, NOT THE TEST THERAPIST FROM 0g.** These bookings
-> become **real appointments** that you cancel at item 24; the test therapist is
-> **deactivated** at the same step. An appointment pointing at a deactivated
-> therapist is the awkward combination: deactivation does not cascade to
-> appointments, the row keeps its `practitioner_id`, but the agenda's therapist
-> views are built from ACTIVE availability (`day-availability.ts:189`,
-> `therapist-locations.ts:32`) — so the appointment can still exist while its
-> column is no longer offered, which makes it fiddly to find and cancel.
+> **[6e] YOU DO NOT CHOOSE THE THERAPIST. THE PORTAL DOES, AND IT NEVER ASKS.**
+> An earlier draft said to use "a real therapist, not the test therapist", and
+> "the same therapist for both if the portal lets you choose". **Neither is
+> actionable: there is no therapist step in the patient booking flow.** The API
+> assigns one server-side after the slot is picked — it lists whoever has covering
+> working hours at that location and is free
+> (`apps/api/lib/appointments/store.ts:462-479`), then takes the patient's prior
+> therapist if available and otherwise **the lowest full name**
+> (`apps/api/lib/appointments/therapist.ts:27-47`).
 >
-> **Using a real therapist avoids the ordering question entirely.** The test
-> therapist then has only working hours to undo, and nothing referencing it.
+> **The old instruction's GOAL was right and its method was impossible.** The goal
+> is to keep these two appointments off the test therapist, because item 24
+> deactivates them: deactivation does not cascade, the row keeps its
+> `practitioner_id`, and the agenda's therapist views are built from ACTIVE
+> availability — so the appointment survives while the column stops being offered,
+> which makes it fiddly to find and cancel.
 >
-> **Either way, item 24 cancels appointments BEFORE it deactivates anything** —
-> the checklist is in that order deliberately.
+> **The method that actually works is the DAY, not a dropdown.** The candidate
+> query requires covering hours **on that weekday at that location**. 0h puts the
+> test therapist on **Saturday and nothing else**, so on any Monday-to-Friday date
+> they are **not in the candidate set at all** and cannot be assigned. Note the
+> flag does not help you here: **`is_bookable` is absent from that query**, so an
+> unticked box would not have kept them out either.
+>
+> **Concretely: book Monday to Friday and skip any Saturday slot the portal
+> offers.** A Saturday slot appearing at all is a sign the test therapist is the
+> only one covering it.
+>
+> **Item 24 still cancels appointments BEFORE it deactivates anything** — the
+> checklist is in that order deliberately, and remains the backstop if a booking
+> lands somewhere unexpected.
+
+> **BOTH TIMES MUST BE ON THE SAME MONDAY-TO-FRIDAY DAY. [6e]** A and B are two
+> different times on **one** date, and that date is **not a Saturday** (nor a
+> Sunday if 0h used Sunday). The test therapist covers only that one weekday, so
+> any other day puts them out of the candidate set entirely and a real therapist
+> takes both pedidos. **Two times on one weekday is also what item 18 needs** —
+> the double-booking check compares one therapist's day.
+
+> **[6e] IF THE PORTAL OFFERS NO MONDAY-TO-FRIDAY SLOTS AT ALL — the branch,
+> written before you hit it.**
+>
+> **What you will see:** step 3 of the booking flow, under the date picker,
+> *"Sem horários disponíveis neste dia."*
+> (`booking.no_slots_day`, `packages/i18n/src/portal/strings.pt.json:140`, rendered
+> at `apps/portal/app/portal/booking/BookingFlow.tsx:268`). **That is not an
+> error and not a defect** — the open-slot list is generated from availability
+> templates (`apps/api/lib/appointments/booking.ts:288-317`), so an empty day means
+> nobody has covering hours at that location that day.
+>
+> **FIRST, try the other four weekdays and the second week.** The horizon is
+> **14 days** (`OPEN_SLOTS_HORIZON_DAYS = 14`, `booking.ts:286`), so you have ten
+> working days to find one with slots. Also try **the other location** if the
+> clinic has two. This is the likeliest fix and it costs nothing.
+>
+> **IF EVERY WEEKDAY IN THE HORIZON IS EMPTY, take the Saturday slot. Do not fix
+> the data.**
+>
+> - **Do NOT give a real therapist working hours to make slots appear.** That
+>   rewrites a live schedule and changes what reception can book for that person
+>   for the rest of the week. It is the one mutation this session has no ledger
+>   entry for and no clean revert.
+> - **Do NOT add a second weekday to the test therapist.** That is the collision
+>   this whole arrangement exists to avoid, reintroduced by hand.
+> - **Book the Saturday slot and write down that the test therapist got it.**
+>   **Nothing downstream breaks.** Items 16, 17 and 18 do not care who the
+>   therapist is: the notification centre lists the pedido either way, the confirm
+>   path reads `practitionerId` off the pedido row itself
+>   (`lib/scheduling/actions.ts:1073`), and item 18's conflict is the same
+>   therapist-overlap check whoever it names. **Item 24 already cancels both
+>   appointments BEFORE deactivating the therapist**, which is exactly the order
+>   this case needs.
+>
+> **What an empty weekday actually tells you, and it is worth recording:** the
+> portal cannot offer a patient anything on a day no one has declared hours for.
+> If that is most weekdays on production, **the roster's working hours are
+> incomplete** and the portal will look empty to real patients at launch. **Report
+> it as an observation on item 14 even when you found a slot elsewhere.** It is
+> not a session failure; it is a data-entry finding, and PL-14's own note already
+> records that only 5 of 11 members held hours.
 
 - **Which service:** **Fisioterapia**. Any of the twelve patient-bookable
   services works; **only those twelve appear**, out of twenty in the catalog
@@ -397,8 +819,51 @@ the appointment appears on the agenda at time A.
 > **Failure signal:** confirms but the agenda does not show it.
 
 **18. The most important behavioural check in the session.** Take **pedido B**.
-*First* book a staff appointment over the same therapist at **time B** from the
-agenda.
+*First* book a staff appointment over **the therapist the server assigned to
+pedido B** at **time B**, from the agenda.
+
+> **[6h] FIND OUT WHO THAT THERAPIST IS FIRST. THE PEDIDO ROW DOES NOT SAY.**
+> This is a real gap in the surface, not a step you missed. The queue row carries
+> **the patient name, the appointment time and when the request was made, and
+> nothing else** — `PendingRequestView` is
+> `{notificationId, appointmentId, patientName, when, requestedAt}`
+> (`app/notificacoes/pending-requests.tsx:26-33`, rendered at `:120-131`). **No
+> therapist name anywhere on it.**
+>
+> **WHY IT MATTERS AND WHY GUESSING BREAKS THE ITEM.** The conflict is a
+> **therapist-overlap** check: `confirmAppointmentRequest` reads
+> `pedido.practitionerId` off the pedido row and asks whether anything else
+> occupies **that therapist's** window (`lib/scheduling/actions.ts:1072-1079`,
+> into `findConflictsForWindow` at `conflict.ts:187-207`). **Book a DIFFERENT
+> therapist at time B and there is no conflict at all** — the confirm will
+> succeed, and you would record a stop-the-session double-booking finding for an
+> appointment that never overlapped anything. **Half two would report a defect that
+> does not exist.**
+>
+> **WHERE TO READ IT — two surfaces, use the first:**
+>
+> 1. **`/marcacoes`.** Set the date filter to **pedido B's day**, find the row for
+>    your test patient at time B. The row prints the **therapist name**
+>    (`app/marcacoes/marcacoes-view.tsx:236`) and, next to it, **`Criado por:
+>    Reserva online (portal)`** (`:240-242`, `appointment.createdByPortal`,
+>    `strings.pt.json:294`) — which is how you tell a portal pedido from a staff
+>    booking at a glance.
+>    > **The "Abrir na agenda" link on the pedido row does NOT jump to it.** It
+>    > points at `/marcacoes?appointment=<id>` (`pending-requests.tsx:152`), and
+>    > **that page never reads an `appointment` param** — it reads `from`, `to`,
+>    > `therapist`, `location`, `status`, `service` (`app/marcacoes/page.tsx:81-108`)
+>    > and defaults to the **current Monday-to-Friday week** (`:78-83`). So the link
+>    > opens the list but does not filter to your row, and if pedido B is next week
+>    > it will not be on screen at all. **Set the dates by hand.**
+> 2. **The agenda**, on pedido B's date. A pedido renders before confirmation —
+>    nothing filters it out — carrying the **`Confirmação pendente`** clock marker
+>    (`app/agenda/confirmation-indicator.tsx:19-29`,
+>    `appointment.confirmationPending`, `strings.pt.json:289`). Open it and the
+>    drawer names the Terapeuta.
+>
+> - **Therapist assigned to pedido B:** `_______________________`
+>
+> **Then book the staff appointment against THAT name.**
 
 - **Half one: the staff booking SAVES with no conflict warning.** That is
   migration 0059 — an unconfirmed pedido no longer holds the slot.
@@ -408,6 +873,11 @@ agenda.
 > **Failure signal:** *either* half alone. Blocked booking = 0059 did not take
 > effect. Successful confirm = **you just created a double booking**, a
 > **stop-the-session finding**.
+>
+> **Before reporting half two as a failure, check the therapist matched.** A
+> successful confirm against the **wrong** therapist is not a double booking and
+> not a defect; it is this item run on two different people. Re-read the name
+> above and repeat.
 
 *Closes: **PG2 (BOOKING)**, and the behavioural evidence for W13-04a.*
 
@@ -593,8 +1063,20 @@ set-password form renders.** Set a password and sign in.
 - [ ] **Cancel the appointment** created by confirming pedido A (item 17).
 - [ ] **Cancel the staff appointment** booked over pedido B (item 18).
 - [ ] **Decline pedido B**, or leave it pending.
-- [ ] **Deactivate the test therapist** (items 9–11): `/admin/staff` → Gerir →
-      inactive. Deactivating is clean; editing hours back is not.
+- [ ] **Deactivate the test therapist** (0h and items 9–11): `/admin/staff` →
+      Gerir → **Função** → inactive. Deactivating is clean; editing hours back is
+      not.
+      > **[6c] THIS ONE ACTION UNDOES ALL OF 0h**, and it still works exactly as
+      > written now that the therapist has a clinic and a schedule.
+      > `setStaffActive` carries no location, schedule or appointment guard — only
+      > owner-tier and last-owner checks, and neither applies
+      > (`lib/admin/staff.ts:278-308`). **Leave the flag, the membership and the
+      > Saturday hours in place:** every surface that would surface them filters on
+      > `is_active` first (`lib/scheduling/data.ts:277`;
+      > `apps/api/lib/appointments/store.ts:471`), so an inactive therapist is out
+      > of the agenda dropdown and out of the portal's auto-assignment regardless.
+      > Undoing them individually is three more chances to leave the system in a
+      > half-state.
 - [ ] **[R2b] DELETE THE INVITED AUTH USER** (created at item 23). supabase.com →
       `dfotoodqvmjhbdcxyaxf` → **Authentication** → **Users** → the address you
       invited → **⋯** → **Delete user**.
@@ -603,8 +1085,11 @@ set-password form renders.** Set a password and sign in.
       > touch Supabase's `auth.users`. The invite created only the Supabase side.
       > Leaving it means a live auth account nobody manages.
 - [ ] **[R2c] Your own** password changed at item 22 — no colleague touched.
-- [ ] **NOT REVERTIBLE, and correctly so:** the terms acceptance on
-      `ZZ Teste Aceitação`. Append-only by ruling.
+- [ ] **NOT REVERTIBLE, and correctly so:** the terms acceptance on the test
+      patient. Append-only by ruling.
+- [ ] **[6a] LEAVE THE TEST PATIENT ALONE.** Do not delete it and do not split it
+      into two records. It carries the only acceptance row, and a second record on
+      the same mobile would lock both out of the portal permanently (0d).
 
 ## 11. Disarm — a named step, and not optional **[2a]**
 
@@ -705,3 +1190,50 @@ attempted** — say so and stop that branch rather than recording them as failed
 
 **When every item has an answer, the wave is complete.** That is this document's
 whole purpose: it is the stop condition, not a status update.
+
+---
+
+## Cross-reference verification **[6c]**
+
+**Checked mechanically after the sixth round, not by reading.** Re-run it after
+any further edit.
+
+> **CROSS-REFERENCE VERIFICATION, 2026-08-07, round six: pre-flight `0a`–`0i`,
+> nine blocks, all defined and all referenced; checklist items `1`–`25`,
+> contiguous, no gaps and no duplicates; every `item N` reference in the prose
+> resolves to a defined item; every `0x` reference resolves to a defined block;
+> gate map totals 10 gate items and 4 card blocks, matching the screenshot table
+> exactly.**
+
+**Method: the assertions above are produced by a script, not by a reader.** It
+extracts the item numbers, the pre-flight headings and every in-prose reference
+from this file and compares the sets. A reader re-checking 25 items and nine
+blocks by eye is exactly the process that let the pedido-ordering defect survive
+three rounds.
+
+**What round six changed, and nothing else:**
+
+| Where | Change | Marker |
+|---|---|---|
+| Header | Revision count `four` → `six`; the new round's premise | — |
+| PRE-FLIGHT intro | Names 0h/0i and gives the suggested order | **[6c]** |
+| 0d | One patient serves both roles; the two-record sentence withdrawn | **[6a]** |
+| 0d | The tenant question answered and its blank removed | **[6f]** |
+| 0f | Retitled to the 0d record; NIF made optional with a valid value named | **[6a] [6b]** |
+| 0f | The terms path proven contact-blind | **[6a]** |
+| 0g | Three 0h rows added; the 9–11 row now says *edited*, not *created* | **[6c]** |
+| **0h (NEW)** | Test-therapist configuration, with the minimum from the code | **[6c]** |
+| **0i (NEW)** | The four write paths walked; the NIF banner blocks nothing | **[6b]** |
+| §2 header | Points at the 0f/0d record; banner note | **[6a] [6b]** |
+| §3 header | 0h is a precondition | **[6c]** |
+| Item 9 | Names the Saturday baseline; empty week is a setup miss, not a fail | **[6c]** |
+| Item 10 | Names Saturday | **[6c]** |
+| Item 11 | Surface corrected to the drawer panel; advisory-not-blocking corrected; **a six-row failure-signal table replacing the withdrawn one** | **[6d]** |
+| Item 14 | The portal assigns the therapist; the day is the control; **both times on one weekday; the no-slots dead end and its branch** | **[6e]** |
+| Item 18 | **How to identify the server-assigned therapist, and why guessing inverts half two** | **[6h]** |
+| Item 24 | One deactivation undoes 0h; leave the test patient | **[6a] [6c]** |
+| 0h steps a, b | **Every label replaced with the literal pt-PT string from the component.** The tab is **"Locais e cor"**, not "Localizações" | **[6g]** |
+
+**NOT touched, because they are already ruled:** the gate map (PG1 = 1, 2, 3, 12,
+13, 15, with 14 as producer), the suppression observation hanging off item 18
+rather than 17, the ten screenshot items, and the 6/9 ceiling.
