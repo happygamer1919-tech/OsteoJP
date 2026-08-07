@@ -24,6 +24,10 @@ export type BookableService = {
 export type BookableCatalog = {
   locations: BookableLocation[]
   services: BookableService[]
+  /** Decision C: the patient's usual service, always a member of `services`
+   *  above, never a filter over it. Null when there is no completed history or
+   *  the service is no longer offered. */
+  preselectedServiceId: string | null
 }
 
 export type AppointmentStatus =

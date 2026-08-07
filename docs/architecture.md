@@ -10,7 +10,7 @@
 
 ## 1. Overview
 
-OsteoJP is a Portuguese osteopathy and physiotherapy clinic with locations in Linda-a-Velha, Castelo Branco, and Montemor-o-Novo (opening). The platform replaces two legacy systems — Fisiozero (clinical) and Stylus.pt (scheduling) — with a single multi-tenant application covering scheduling, patient records, clinical forms, invoicing, and payments. Multi-tenant from day 1 to support a future licensing path beyond OsteoJP.
+OsteoJP is a Portuguese osteopathy and physiotherapy clinic with locations in Linda-a-Velha and Castelo Branco. The platform replaces two legacy systems — Fisiozero (clinical) and Stylus.pt (scheduling) — with a single multi-tenant application covering scheduling, patient records, clinical forms, invoicing, and payments. Multi-tenant from day 1 to support a future licensing path beyond OsteoJP.
 
 The platform is API-first for clinical record ingestion: an external AI partner runs ambient recording → Whisper → LLM and pushes completed clinical reports into a signed endpoint. The platform owns the AI-ingestion review queue (`ai_review_state`, placeholder pending the partner contract), the clinical record lifecycle (`record_status`: `draft` → `locked` → `signed`), and the immutability of locked/signed records via a BEFORE trigger that fires even for `service_role`.
 
@@ -199,7 +199,7 @@ The full schema with column definitions, constraints, and indexes lives in `pack
 | `tenants` | Top-level isolation unit. Every domain row belongs to one tenant. Carries `status` (active/suspended — managed by superadmin only). |
 | `roles` | Role definitions per tenant. Slug must match `packages/auth/permissions.ts`: `owner`, `admin`, `therapist`, `reception`. |
 | `users` | Staff accounts. `id` mirrors `auth.users.id` (Supabase Auth). JWT carries `tenant_id` + `user_role` derived from this table via the custom_access_token hook. |
-| `locations` | Per-tenant clinic locations (Linda-a-Velha, Castelo Branco, Montemor-o-Novo). |
+| `locations` | Per-tenant clinic locations (Linda-a-Velha, Castelo Branco). |
 | `services` | Per-tenant service catalogue: treatment type, duration, base price (integer cents). |
 | `service_location_prices` | Per-(service, location) price override. When a row exists for a pair it wins over `services.price_cents`; otherwise the location inherits the base. |
 | `patients` | Patient records. Soft-deleted via `deleted_at`. Carries `auth_user_id` (nullable) linking to the patient portal principal once activated. |
@@ -557,7 +557,6 @@ Items needing decision from the lead, owner, or AI partner before they can be re
 4. **Resend DNS verification — RESOLVED 2026-08-02.** The sending identity is the subdomain **`send.osteojp.pt`** (MX, SPF and DKIM live; status **Verified**, region `eu-west-1`, workspace `a-and-i-automation`). It is **not** the root `osteojp.pt`, whose MX is the spambusters staff-mail gateway and is not a Resend identity — a `REMINDERS_EMAIL_FROM` at `@osteojp.pt` will fail. DNS is no longer a blocker; live sending still needs `RESEND_API_KEY`, `REMINDERS_EMAIL_FROM` (at `send.osteojp.pt`) and the relevant live-send flag. See `docs/dns-records-pending.md`.
 5. **Twilio PT sender registration.** Sender ID "OsteoJP" needs PT carrier registration before any live SMS.
 6. **No-show charge policy.** Whether the no-show email mentions a late-cancellation fee. Owner decision.
-7. **Montemor-o-Novo opening date + contacts.** Pending owner confirmation.
 8. **VAT-23% sign-off (#107).** Required before InvoiceXpress or Stripe can issue real documents. Owner-confirmable per CLAUDE.md.
 9. **`invoicing.total*` string deduplication.** `invoicing.totalPaid/Pending/Overdue` duplicate status labels. Flagged in i18n copy review.
 10. **`patients.fieldSex` EN label.** Current: `"Biological sex"`. Confirm clinically acceptable (vs `"Sex"`). Flagged in i18n copy review.

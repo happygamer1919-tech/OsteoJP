@@ -78,7 +78,7 @@ Full DNS record values and the live-vs-pending breakdown: see [`docs/dns-records
 - [ ] **[IVAN]** All staff members have `users` rows in the production tenant (`3a2d0711-fbdb-4ce9-b940-b6a87e3d3560` or the production tenant ID). Each user has an active Supabase Auth account and the correct role (`owner`, `admin`, `therapist`, or `reception`).
 - [ ] **[IVAN]** Each staff member has received their credential email (initial password or invite link). Confirm with João Pedro before sending the go-live comms.
 - [ ] **[JP]** At least João Pedro and one therapist have done a test login on `app.osteojp.pt` and can reach their dashboard.
-- [ ] **[IVAN]** Staff cheat-sheet printed and placed at reception in each clinic (Linda-a-Velha, Castelo Branco, Montemor-o-Novo). Source: [`docs/staff-cheat-sheet.md`](./staff-cheat-sheet.md).
+- [ ] **[IVAN]** Staff cheat-sheet printed and placed at reception in each clinic (Linda-a-Velha, Castelo Branco). Source: [`docs/staff-cheat-sheet.md`](./staff-cheat-sheet.md).
 
 ### 1.5 Integrations and env vars
 

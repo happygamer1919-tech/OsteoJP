@@ -7,6 +7,7 @@ import {
   deleteService,
   setServiceActive,
   setServiceLocationPrices,
+  setServicePatientBookable,
   updateService,
 } from "@/lib/admin/services";
 import {
@@ -106,6 +107,22 @@ export async function setServiceActiveAction(formData: FormData): Promise<void> 
   const id = String(formData.get("id") ?? "");
   const active = String(formData.get("active") ?? "") === "true";
   await run(() => setServiceActive(actor, id, active));
+}
+
+/**
+ * W13-04 step 7 — toggle whether PATIENTS may book a service in the portal.
+ *
+ * A separate action from setServiceActiveAction because the two answer
+ * different questions: `active` is "does the clinic still offer this at all",
+ * `patient_bookable` is "may a patient book it themselves". Folding them into
+ * one control would make archiving a service the only way to take it off the
+ * portal, which would also take it off the staff agenda.
+ */
+export async function setServicePatientBookableAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  const id = String(formData.get("id") ?? "");
+  const bookable = String(formData.get("bookable") ?? "") === "true";
+  await run(() => setServicePatientBookable(actor, id, bookable));
 }
 
 export async function deleteServiceAction(formData: FormData): Promise<void> {

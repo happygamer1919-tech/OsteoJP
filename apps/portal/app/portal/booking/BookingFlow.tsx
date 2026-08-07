@@ -18,9 +18,13 @@ const ROW =
 export function BookingFlow({
   locations,
   services,
+  preselectedServiceId,
 }: {
   locations: BookableLocation[]
   services: BookableService[]
+  /** Decision C: the patient's usual service. Marks and lifts one row; never
+   *  hides another and never skips the step. */
+  preselectedServiceId?: string | null
 }) {
   const router = useRouter()
   const singleClinic = locations.length === 1
@@ -49,6 +53,32 @@ export function BookingFlow({
   const availableServices = services.filter(
     (s) => s.locationIds.length === 0 || (locationId != null && s.locationIds.includes(locationId)),
   )
+
+  // DECISION C — PRESELECTION, NEVER RESTRICTION (WAVE-13.md:230-232, :809).
+  //
+  // The usual service is MARKED and LIFTED TO THE TOP. It is not auto-selected
+  // and the step is not skipped, and that is the reading of "preselect" this UI
+  // can honour honestly: in a list-of-buttons wizard every row IS the choice, so
+  // advancing on the patient's behalf would remove the step rather than
+  // preselect within it - a restriction wearing a preselection's name.
+  //
+  // A SORT, NEVER A FILTER. The array below has the same members as
+  // availableServices, in a different order. Nothing is hidden, so a patient
+  // whose history preselects X can still book every other bookable service, and
+  // the only way to break that is to change this to a filter - which is what
+  // preselection.test.ts asserts against.
+  const orderedServices = useMemo(() => {
+    if (!preselectedServiceId) return availableServices
+    const idx = availableServices.findIndex((svc) => svc.id === preselectedServiceId)
+    if (idx <= 0) return availableServices
+    const copy = [...availableServices]
+    const [usual] = copy.splice(idx, 1)
+    return [usual!, ...copy]
+    // availableServices is derived from props + locationId; both are in the deps
+    // of everything that produces it, and it is rebuilt on every render, so it
+    // is keyed on the two inputs rather than on the array identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [services, locationId, preselectedServiceId])
 
   const slotsKey =
     serviceId && locationId ? `${serviceId}|${locationId}|${slotsVersion}` : null
@@ -180,10 +210,15 @@ export function BookingFlow({
       {step === 2 && (
         <div className="flex flex-col gap-3">
           <h2 className="text-lg font-medium text-text-primary">{s.booking.step_service}</h2>
-          {availableServices.map((svc) => (
+          {orderedServices.map((svc) => (
             <button key={svc.id} type="button" onClick={() => selectService(svc.id)} className={ROW}>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-medium text-text-primary">{svc.name}</span>
+                {svc.id === preselectedServiceId && (
+                  <span className="mt-1 inline-block rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-text-secondary">
+                    {s.booking.usual_service}
+                  </span>
+                )}
                 <span className="block text-xs text-text-secondary">
                   {svc.durationMin} min
                   {svc.priceCents !== null ? ` · ${formatPrice(svc.priceCents, svc.currency)}` : ''}

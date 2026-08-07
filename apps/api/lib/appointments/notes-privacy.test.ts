@@ -106,8 +106,11 @@ function makeNotesLeakStore(): AppointmentsStore {
     async getOwn(p, id) {
       return p.patientId === row.patientId && id === row.id ? view(row) : null;
     },
+    async priorCompletedServiceId() {
+      return null;
+    },
     async getCatalog() {
-      return { locations: [], services: [] };
+      return { locations: [], services: [], preselectedServiceId: null };
     },
     async getBookableService() {
       return null;

@@ -39,6 +39,9 @@ export type ServiceView = {
   currency: string;
   isActive: boolean;
   contraindicationSensitive: boolean;
+  /** W13-04 (Decision B): may a PATIENT book this in the portal. Orthogonal to
+   *  isActive (staff-bookable) and to internalOnly. */
+  patientBookable: boolean;
 };
 
 export type ServiceInput = {
@@ -65,6 +68,7 @@ export async function listServices(actor: RequestContext): Promise<ServiceView[]
         currency: services.currency,
         isActive: services.isActive,
         contraindicationSensitive: services.contraindicationSensitive,
+        patientBookable: services.patientBookable,
       })
       .from(services)
       .orderBy(asc(services.name)),
@@ -130,6 +134,50 @@ export async function updateService(
     if (!rows[0]) throw new AdminError("not_found");
     await writeAudit(tx, actor, {
       action: "service.update",
+      entityType: "service",
+      entityId: id,
+    });
+  });
+}
+
+/**
+ * W13-04 step 7 — make `patient_bookable` staff-maintainable, the way
+ * `is_bookable` is maintainable for therapists (0046, the Equipa checkbox).
+ *
+ * WHY IT NEEDS A SURFACE AT ALL. Migration 0057 added the column and backfilled
+ * it to reproduce the old hard-coded allowlist; JP then ruled the real set (12
+ * of 20 services) and that ruling was applied to production by hand. Without a
+ * screen, every future change to what a patient may book is another hand-run
+ * SQL statement against production — which is the shape of change this repo
+ * spends its time removing.
+ *
+ * IT IS ONE OF THREE INDEPENDENT GATES, and turning it on grants nothing on its
+ * own. `isServiceBookableByPatient` (apps/api/lib/appointments/services.ts)
+ * requires active AND patient_bookable AND NOT internal_only, and each clause
+ * has a test proving it is load-bearing. So an admin mis-click here cannot
+ * expose an internal service: the row that is both internal_only and
+ * patient_bookable is refused, and that exact combination is tested because it
+ * is what a mis-click produces.
+ *
+ * Same capability, same audit shape and the same not_found as setServiceActive.
+ */
+export async function setServicePatientBookable(
+  actor: RequestContext,
+  id: string,
+  bookable: boolean,
+): Promise<void> {
+  assertCan(actor.role, "services:write");
+  await runScoped(actor, async (tx) => {
+    const rows = await tx
+      .update(services)
+      .set({ patientBookable: bookable })
+      .where(eq(services.id, id))
+      .returning({ id: services.id });
+    if (!rows[0]) throw new AdminError("not_found");
+    await writeAudit(tx, actor, {
+      // Distinguished from service.update so "who opened this to patients, and
+      // when" is answerable from the trail without diffing rows.
+      action: bookable ? "service.patient_bookable_on" : "service.patient_bookable_off",
       entityType: "service",
       entityId: id,
     });

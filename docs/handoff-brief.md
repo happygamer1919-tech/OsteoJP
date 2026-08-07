@@ -8,7 +8,7 @@
 
 ## The project
 
-**OsteoJP** is a Portuguese osteopathy + physiotherapy clinic with locations in Linda-a-Velha and Castelo Branco, and a Montemor-o-Novo location opening. Reference site: https://osteojp.pt. Brand pillars: **Osteopatia, Fisioterapia, Formação**.
+**OsteoJP** is a Portuguese osteopathy + physiotherapy clinic with locations in Linda-a-Velha and Castelo Branco. Reference site: https://osteojp.pt. Brand pillars: **Osteopatia, Fisioterapia, Formação**.
 
 The team is building a **unified clinic platform** to replace the current Fisiozero + Stylus.pt setup. The platform must:
 

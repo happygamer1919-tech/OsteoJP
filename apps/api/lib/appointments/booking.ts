@@ -59,6 +59,25 @@ export type BookableService = {
 export type BookableCatalog = {
   locations: BookableLocation[];
   services: BookableService[];
+  /**
+   * DECISION C — the patient's usual service, PRESELECTED, NEVER A RESTRICTION.
+   *
+   * The id of the service on the patient's most recent COMPLETED appointment,
+   * and null when they have no completed history or when that service is no
+   * longer offered to patients.
+   *
+   * IT IS ALWAYS A MEMBER OF `services` ABOVE, and that is the structural
+   * guarantee rather than a promise: getBookableCatalog only sets it after
+   * finding it in the very array it is returning. A service that has since been
+   * turned off drops the PRESELECTION, never a row from the list — which is the
+   * whole of Decision C ("the patient's history preselects; it never removes an
+   * option they are entitled to book", WAVE-13.md:230-232).
+   *
+   * The catalog is UNFILTERED by it. A caller that used this to narrow the list
+   * would turn preselection into restriction, which the loop forbids in the UI
+   * AND in the query (WAVE-13.md:809).
+   */
+  preselectedServiceId: string | null;
 };
 
 /** The subset of an appointment the cancel/reschedule flow needs. */
@@ -88,6 +107,14 @@ export interface AppointmentsStore {
   getOwn(principal: PatientPrincipal, id: string): Promise<AppointmentView | null>;
   /** Bookable services + locations for the patient's tenant. */
   getCatalog(principal: PatientPrincipal): Promise<BookableCatalog>;
+
+  /**
+   * Decision C: the service id on the patient's most recent COMPLETED
+   * appointment, or null. `completed` and not `scheduled` deliberately - a
+   * booking the patient made and then did not attend is not what they usually
+   * come for, and a future booking has not happened yet.
+   */
+  priorCompletedServiceId(principal: PatientPrincipal): Promise<string | null>;
 
   /** Resolve a patient-bookable, active service by id, or null. */
   getBookableService(
@@ -236,7 +263,23 @@ export async function getBookableCatalog(
   principal: PatientPrincipal,
   store: AppointmentsStore,
 ): Promise<BookableCatalog> {
-  return store.getCatalog(principal);
+  const [catalog, priorServiceId] = await Promise.all([
+    store.getCatalog(principal),
+    store.priorCompletedServiceId(principal),
+  ]);
+
+  // THE MEMBERSHIP CHECK IS THE DECISION-C GUARANTEE, and it is why this is a
+  // find over the catalog rather than a value passed straight through. The
+  // prior service may have been turned off for patients, made internal-only, or
+  // bound to a location that is no longer active since the patient last came.
+  // In every one of those cases the PRESELECTION disappears and the LIST is
+  // untouched. The list is never narrowed by this, in either direction.
+  const preselectedServiceId =
+    priorServiceId && catalog.services.some((s) => s.id === priorServiceId)
+      ? priorServiceId
+      : null;
+
+  return { ...catalog, preselectedServiceId };
 }
 
 /** Booking horizon offered to patients (calendar days from `now`). */

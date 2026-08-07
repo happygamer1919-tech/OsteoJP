@@ -33,7 +33,8 @@ const STAMP_BASE64_BY_LOCATION: Readonly<Record<string, string | null>> = {
   "linda-a-velha": SIGNATURE_STAMP_LINDA_A_VELHA_PNG_BASE64,
   // W12-32: CB slot filled with the owner's official Castelo Branco carimbo.
   "castelo-branco": SIGNATURE_STAMP_CASTELO_BRANCO_PNG_BASE64,
-  // Montemor-o-Novo is deliberately absent, mirroring location-contacts.ts
+  // Two locations, and that is the whole set. The third this repo used to name
+  // was ruled a pure error on 2026-08-06; see location-contacts.ts.
   // ("intentionally absent - opening, no confirmed contacts yet"). An unknown
   // key resolves to null below, so it also renders a blank stamp area.
 };

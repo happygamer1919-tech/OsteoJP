@@ -34,6 +34,7 @@ import {
   setPackActiveAction,
   setPackLocationPricesAction,
   setServiceActiveAction,
+  setServicePatientBookableAction,
   setServiceLocationPricesAction,
   updatePackAction,
   updateServiceAction,
@@ -196,6 +197,15 @@ export default async function ServicesPage({
                         <StatusBadge tone={svc.isActive ? "confirmed" : "cancelled"}>
                           {svc.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
                         </StatusBadge>
+                        {/* Shown beside the lifecycle badge rather than in its own
+                            column: the two are read together ("offered, and offered
+                            to patients") and a separate column would imply they are
+                            independent facts rather than two gates on one row. */}
+                        {svc.patientBookable && (
+                          <span className="ml-2 inline-block rounded-full bg-v2-surface-hover px-2 py-0.5 text-[11px] font-medium text-v2-text-secondary">
+                            {s["admin.services.patientBookableBadge"]}
+                          </span>
+                        )}
                       </td>
                       <td className={adminTd}>
                         {/* Row-actions disclosure (UI-STYLE.md): edit, archive/restore,
@@ -219,6 +229,21 @@ export default async function ServicesPage({
                               </Button>
                             </form>
                             <div className="flex flex-wrap items-center gap-2">
+                              {/* W13-04 step 7: patient_bookable is its OWN control,
+                                  never folded into archive. `active` answers "does
+                                  the clinic offer this at all"; this answers "may a
+                                  patient book it themselves". One control for both
+                                  would make archiving the only way off the portal,
+                                  and that also removes it from the staff agenda. */}
+                              <form action={setServicePatientBookableAction}>
+                                <input type="hidden" name="id" value={svc.id} />
+                                <input type="hidden" name="bookable" value={svc.patientBookable ? "false" : "true"} />
+                                <Button type="submit" variant="ghost" size="sm">
+                                  {svc.patientBookable
+                                    ? s["admin.services.patientBookableOff"]
+                                    : s["admin.services.patientBookableOn"]}
+                                </Button>
+                              </form>
                               <form action={setServiceActiveAction}>
                                 <input type="hidden" name="id" value={svc.id} />
                                 <input type="hidden" name="active" value={svc.isActive ? "false" : "true"} />
