@@ -33,7 +33,7 @@ the background across the middle of the session.
 **Trigger a password recovery to a real Gmail address. Then leave it completely
 alone and carry on.**
 
-> **[R2a] Its ONLY job is to start the clock.** You read the link at **item 21**,
+> **[R2a] Its ONLY job is to start the clock.** You read the link at **item 20**,
 > in sequence. **The wait IS the test** — a mail-provider scanner has to have
 > followed the link before you click it. Clicking immediately proves nothing, and
 > five previous verification rounds failed for want of this step.
@@ -84,10 +84,36 @@ punctuation**, and the lookup is an **exact string equality** against
 
 - The record must be in the **portal tenant** (`PORTAL_TENANT_ID`). If you have
   records in more than one tenant, it must be that one.
-- The record must **not already be linked to an auth user** (`auth_user_id IS
-  NULL`). If you have logged into the portal as this patient before, it is
-  linked and **will refuse**. Use a different patient record, or say so and item
-  12 is recorded as not-runnable rather than failed.
+- The record must carry **exactly one** row with that number in that tenant —
+  see the warning below, which matters more than it looks.
+
+> **[4b] CORRECTION — an earlier draft of this section was WRONG, and following
+> it would have broken the canary.** It said a record "already linked to an auth
+> user will refuse", and implied that logging in once would lock you out of
+> logging in again.
+>
+> **That is not how it works.** Verified in the code: the OTP claim path
+> (`verify/route.ts:125-167`) proves the code, resolves the patient, spends the
+> code and issues a trusted-device row — **it never writes `patients.auth_user_id`**.
+> Nothing in `apps/api` does; the column is only ever READ, by the linkage filter
+> (`patient-linkage.ts:71`). It exists from migration 0010, the pre-Decision-D
+> model where a patient had a Supabase auth user, and Decision D retired that.
+> **So an OTP patient's `auth_user_id` stays NULL permanently and you can log in
+> as often as you like.**
+>
+> **DO NOT "SOLVE" THIS BY CREATING A SECOND PATIENT WITH THE SAME MOBILE.** That
+> is the move the wrong text invited, and it is worse than the problem it was
+> meant to avoid. There is **no unique constraint on `patients.phone`** (checked:
+> 0015 adds a non-unique `phone_digits` index and nothing else), so the duplicate
+> would be accepted — and then `resolvePatientByProvenPhone` selects with
+> `LIMIT 2` and **refuses on anything but exactly one row**
+> (`patient-linkage.ts:77`). Two records sharing a number means **neither patient
+> can ever log in**, silently, with the same generic refusal. It is not
+> first-row-wins and it is not a constraint error; it is an ambiguous match that
+> fails closed, and it would be genuinely hard to diagnose afterwards.
+>
+> **If your number appears on more than one patient record, fix the data — do not
+> add another.**
 
 - **Patient record used:** `_______________________`
 - **Number as stored:** `_______________________`
@@ -144,18 +170,18 @@ never accepted anything, and **nothing in the product can remove it**.
 
 ## 0g. The cleanup ledger **[4b]**
 
-**Write each mutation down as you make it.** Reverted at item 24.
+**Write each mutation down as you make it.** Reverted at item 23.
 
 | From item | Mutation | Revert |
 |---|---|---|
 | 0d | Your patient record's phone reformatted | Harmless — the correct format is the one the product expects |
 | 5–8 | A terms acceptance on `ZZ Teste Aceitação` | **NOT REVERTIBLE.** Append-only by design |
 | 9–11 | A test therapist's working hours | **Deactivate the test therapist** |
-| 15 | **TWO portal booking requests (pedidos)** | Confirmed one becomes an appointment — **cancel it**; decline the other |
-| 18 | An appointment created by confirming a pedido | **Cancel it** |
-| 19 | A staff appointment booked over a pedido | **Cancel it** |
-| 21–22 | **Your own** staff password changed | Keep the new one |
-| 23 | **A live staff AUTH USER from the dashboard invite** **[R2b]** | **Supabase dashboard delete — item 24** |
+| 14 | **TWO portal booking requests (pedidos)** | Confirmed one becomes an appointment — **cancel it**; decline the other |
+| 17 | An appointment created by confirming a pedido | **Cancel it** |
+| 18 | A staff appointment booked over a pedido | **Cancel it** |
+| 20–21 | **Your own** staff password changed | Keep the new one |
+| 22 | **A live staff AUTH USER from the dashboard invite** **[R2b]** | **Supabase dashboard delete — item 23** |
 
 **Item 9 uses a TEST THERAPIST, not a real one.** Rewriting a real therapist's
 hours changes what reception can book for them.
@@ -187,10 +213,61 @@ phone field**.
 the portal's not-found page for both.
 > **Failure signal:** either renders a form — a live session-minting entry point.
 
-**3.** Enter a phone number, reach the code screen, enter **six wrong digits**.
+### THE RATE LIMITS, BEFORE YOU TOUCH ANYTHING **[1a]**
+
+**Read this first. It constrains what you can safely do, and it is keyed on BOTH
+your IP and the phone number.** From the code, not from memory:
+
+| Limit | Key | Threshold | Where |
+|---|---|---|---|
+| OTP **request** | your **IP** | **3 per hour** | `limiter.ts:184`, applied `request/route.ts:36` |
+| OTP **request** | the **phone** (hashed) | **3 per hour** | `limiter.ts:184`, applied `request/route.ts:64` |
+| OTP **verify** | your **IP** | **10 per hour** | `limiter.ts:194` |
+| Wrong codes | the **code row** | **5 attempts** | per-code cap, on the row itself |
+
+**BOTH keys apply to a request — it must pass the IP check AND the phone check.**
+
+**The binding one is your IP: three OTP requests per hour, total, whatever number
+you use.** This session needs **two** of them — item 3 and item 12 — leaving
+exactly **one** spare for a retry. Plan on that. If you burn all three, item 12
+becomes not-runnable for up to an hour.
+
+**It clears on its own.** The store is a fixed window on the database clock
+(`durable-store.ts:59-65`): the counter resets the first time it is touched after
+`reset_at`, which is at most **60 minutes** after the first request in that
+window. **There is nothing to clear manually and no lockout to lift** — the only
+manual option would be deleting a row from `rate_limit_counters` in production,
+which is not worth doing and is not offered here. **Wait it out.**
+
+**3.** Request a code — **using a phone number that is NOT your canary number and
+has NO patient record** — reach the code screen, and enter **six wrong digits**.
+
+> **[1b] WHY A DIFFERENT NUMBER.** The request limit is keyed on the phone as
+> well as the IP. Using your own number here would spend one of the canary
+> number's three, on top of the IP budget you are already spending. A number with
+> no patient record is ideal: the request still succeeds and still shows you the
+> code screen (that endpoint **never** queries the patient table — that is what
+> makes it non-enumerable), so this costs you nothing you need later. Any
+> well-formed Portuguese mobile will do.
+>
+> **This is one verify attempt, not six.** "Six wrong digits" means one wrong
+> six-digit code — 1 of your 10 verify attempts.
+
 **Expected:** one red banner, "Não foi possível entrar…".
 > **Failure signal:** the message names *which* failure occurred. That is an
 > enumeration oracle.
+
+**Then, while you are on this screen [2]:** check the help text below the card.
+**Expected:** "Não recebeu o código?" and three lines — no mobile on record, a
+landline, a shared number — **each ending in "Contacte a clínica"**.
+> **Failure signal:** any line offering a self-service route. Fail-closed linkage
+> means the clinic is the only path.
+>
+> **[Job 2] THIS OBSERVATION MOVED HERE, from what used to be item 14.** It sat
+> after the successful login, which had already taken you to the dashboard — so
+> seeing it again would have meant signing out and requesting **another** code,
+> burning an SMS and one of only three hourly requests. Here it is free: the
+> screen is already open and the flag is still off.
 
 **4. NOW perform the arming click path in 0e.** Then carry straight on to item 5
 while the redeploy runs.
@@ -255,12 +332,7 @@ you confirmed in **0d**. **Expected:** one SMS, one code.
 **13.** Enter it. **Expected:** you reach the portal dashboard.
 > **Failure signal:** a valid code is rejected, or the screen loops.
 
-**14.** On the code screen, check the help text below the card. **Expected:** "Não
-recebeu o código?" and three lines — no mobile on record, a landline, a shared
-number — **each ending in "Contacte a clínica"**.
-> **Failure signal:** any line offering a self-service route.
-
-**15. CREATE TWO BOOKING REQUESTS. This is the step everything in §5 consumes.
+**14. CREATE TWO BOOKING REQUESTS. This is the step everything in §5 consumes.
 [3a]**
 
 Still logged in as the patient, book **twice**, at **two different times on the
@@ -281,7 +353,7 @@ same day**, with the **same therapist** if the portal lets you choose one.
 > ruling is **zero auto-confirmed** — a portal booking is a request until
 > reception acts. A confirmed-sounding screen here is a stop-the-session finding.
 
-**16.** Sign out from the account screen, then reopen the portal. **Expected:** the
+**15.** Sign out from the account screen, then reopen the portal. **Expected:** the
 phone screen.
 > **Failure signal:** automatic re-entry — sign-out did not clear the session
 > cookie.
@@ -291,18 +363,18 @@ phone screen.
 ## 5. Reception confirm surface — PG2
 
 Back on the **staff platform**, as reception or admin. **Both pedidos from item
-15 are waiting.**
+14 are waiting.**
 
-**17.** Open the **notification centre** (the bell, top right). **Expected:** it
-opens `/notificações`, **and both requests from item 15 are listed**.
+**16.** Open the **notification centre** (the bell, top right). **Expected:** it
+opens `/notificações`, **and both requests from item 14 are listed**.
 > **Failure signal:** it lands on `/perfil` (the original defect), or the requests
 > are absent (the emit failed — note it, that is `LE-pedido-emit-best-effort`).
 
-**18.** Open **pedido A** and press **Confirmar**. **Expected:** it confirms, and
+**17.** Open **pedido A** and press **Confirmar**. **Expected:** it confirms, and
 the appointment appears on the agenda at time A.
 > **Failure signal:** confirms but the agenda does not show it.
 
-**19. The most important behavioural check in the session.** Take **pedido B**.
+**18. The most important behavioural check in the session.** Take **pedido B**.
 *First* book a staff appointment over the same therapist at **time B** from the
 agenda.
 
@@ -319,7 +391,7 @@ agenda.
 
 ## 6. Notification centre, populated — PG4's second half
 
-**20.** Reopen **`/notificações`**. **Expected:** entries for the item-15 requests
+**19.** Reopen **`/notificações`**. **Expected:** entries for the item-14 requests
 and the item-18 confirmation, visible to **reception and the assigned
 therapist**, carrying **no service name and no clinical content**.
 > **Failure signal:** any entry carrying a service name or clinical detail — a
@@ -331,7 +403,7 @@ therapist**, carrying **no service name and no clinical content**.
 
 The clock started at **0c** and has had the whole session.
 
-**21. CHECK THE LINK BEFORE YOU CLICK IT.** Hover the "Definir nova
+**20. CHECK THE LINK BEFORE YOU CLICK IT.** Hover the "Definir nova
 palavra-passe" button, or copy the visible fallback address. It must read:
 
 ```
@@ -345,7 +417,7 @@ https://app.osteojp.pt/auth/update-password?token_hash=<long-string>&type=recove
 >
 > Also failing: an empty `?token_hash=`, or a host other than `app.osteojp.pt`.
 
-**22.** Only once 21 reads correctly, **open the link**. **Expected: the
+**21.** Only once 20 reads correctly, **open the link**. **Expected: the
 set-password form renders.** Set a password and sign in.
 > **Failure signal:** "Ligação inválida" or "Ligação expirada". Open **"Detalhes
 > técnicos"** and paste that block.
@@ -354,7 +426,7 @@ set-password form renders.** Set a password and sign in.
 > Setting the password establishes a **new session in whichever browser opened
 > the link** (`verifyOtp` then `updateUser`). Use the browser you have been
 > working in and you are signed in as yourself, with the new password, and can
-> continue straight to item 23.
+> continue straight to item 22.
 >
 > Whether your session in *another* browser survives is a Supabase project
 > setting **that is not in this repo** — `supabase/config.toml` is the local dev
@@ -362,7 +434,7 @@ set-password form renders.** Set a password and sign in.
 > revocation), and production is dashboard-configured. **So it is not asserted
 > here.** The instruction is correct either way: **same browser**, and if any
 > staff tab shows you signed out, sign in again with the new password before item
-> 24.
+> 23.
 
 *Closes: the **LE-auth-recovery-deadend** card. No gate.*
 
@@ -377,17 +449,37 @@ set-password form renders.** Set a password and sign in.
 > `lib/invites/email.ts:33` on `INVITES_LIVE_SEND`, which **R9 keeps off until
 > launch day**. It would be **suppressed, not sent**.
 
-**23.** **Click path [R2d]:**
+**22.** **Click path [R2d]:**
 
 1. **supabase.com** → the **`dfotoodqvmjhbdcxyaxf`** project.
    > **STOP if the ref differs** — `jaxmkwoxjcgzkwxgbayx` is the retired old prod.
-2. **Authentication** → **Users** → **Invite user** → **a real inbox you
-   control**, not a colleague's → **Send invite**.
-   > **Expected:** a new row, state **Waiting for verification**.
-   > **[R2b] THIS CREATES A LIVE AUTH USER. Add it to the 0g ledger now.**
-3. **Wait a few minutes**, then apply the **same link check as item 21** — it must
+2. **Authentication** → **Users**. **Before inviting, search the list for the
+   address you intend to use.**
+   > **[3] THE ADDRESS MUST HAVE NO EXISTING SUPABASE AUTH USER.** "A real inbox
+   > you control" is not enough: **if it is the address your own staff account
+   > uses, Supabase refuses the invite as already registered** and this item is
+   > lost for the sitting. Your staff account IS a Supabase auth user.
+   >
+   > **Use a plus-address of your own inbox** — `yourname+invite1@gmail.com`.
+   > Gmail delivers it to your normal inbox, and Supabase stores an email as
+   > given with uniqueness on the **full address**, so it is a distinct user from
+   > `yourname@gmail.com`.
+   >
+   > **This is not asserted blind — step 3 VERIFIES it**, so you do not have to
+   > take the plus-addressing behaviour on trust. If Supabase had collapsed the
+   > address onto your existing account, **no new row appears** and you see the
+   > refusal immediately, before spending any time on the link. If that happens,
+   > use a genuinely different mailbox instead.
+3. **Invite user** → the address → **Send invite**.
+   > **Expected:** a **NEW row** in Users, showing **exactly the address you
+   > typed**, state **Waiting for verification**.
+   > **Failure signal:** "already registered", or no new row — the address is
+   > taken. Pick another and repeat; nothing has been consumed.
+   > **[R2b] A NEW ROW MEANS A LIVE AUTH USER EXISTS. Add it to the 0g ledger
+   > now.**
+4. **Wait a few minutes**, then apply the **same link check as item 20** — it must
    read `…/auth/update-password?token_hash=<long-string>&type=invite`.
-4. Open it, set a password, **sign in**.
+5. Open it, set a password, **sign in**.
 
 > **[3c] WHAT YOU WILL SEE AFTER SIGNING IN, AND IT IS NOT A DEFECT.** You will be
 > **returned to the login page**. That is the **designed, correct** outcome, and
@@ -408,21 +500,21 @@ set-password form renders.** Set a password and sign in.
 
 ## 9. Clean up **[4b]**
 
-**24. Work the 0g ledger, top to bottom.**
+**23. Work the 0g ledger, top to bottom.**
 
-- [ ] **Cancel the appointment** created by confirming pedido A (item 18).
-- [ ] **Cancel the staff appointment** booked over pedido B (item 19).
+- [ ] **Cancel the appointment** created by confirming pedido A (item 17).
+- [ ] **Cancel the staff appointment** booked over pedido B (item 18).
 - [ ] **Decline pedido B**, or leave it pending.
 - [ ] **Deactivate the test therapist** (items 9–11): `/admin/staff` → Gerir →
       inactive. Deactivating is clean; editing hours back is not.
-- [ ] **[R2b] DELETE THE INVITED AUTH USER** (item 23). supabase.com →
+- [ ] **[R2b] DELETE THE INVITED AUTH USER** (created at item 22). supabase.com →
       `dfotoodqvmjhbdcxyaxf` → **Authentication** → **Users** → the address you
       invited → **⋯** → **Delete user**.
       > **A DASHBOARD DELETE, not a deactivation in our admin — different
       > objects.** `/admin/staff` flags a row in *our* `users` table and does not
       > touch Supabase's `auth.users`. The invite created only the Supabase side.
       > Leaving it means a live auth account nobody manages.
-- [ ] **[R2c] Your own** password changed at item 22 — no colleague touched.
+- [ ] **[R2c] Your own** password changed at item 21 — no colleague touched.
 - [ ] **NOT REVERTIBLE, and correctly so:** the terms acceptance on
       `ZZ Teste Aceitação`. Append-only by ruling.
 
@@ -432,7 +524,7 @@ set-password form renders.** Set a password and sign in.
 > *supervised canaries*, not a standing arm. "Left armed" is **not** permitted
 > merely because it was written down — writing it down is a note, not a decision.
 
-**25. Click path [R2d]** — 0e reversed:
+**24. Click path [R2d]** — 0e reversed:
 
 1. **vercel.com** → the **`api.osteojp.pt`** project → **Settings** →
    **Environment Variables**.
@@ -460,25 +552,25 @@ said, verbatim. WF-03 counts your reported observation as the evidence.
 
 **Three items are stop-the-session findings** if they fail in the direction
 named: **item 8** (fee text on a screen = two independent gates failed), **item
-15** (the portal reporting a booking as *confirmed* = zero-auto-confirmed
-violated), and **item 19** (a confirm succeeding over a staff booking = a live
+14** (the portal reporting a booking as *confirmed* = zero-auto-confirmed
+violated), and **item 18** (a confirm succeeding over a staff booking = a live
 double booking).
 
 ## Gate map **[2b]**
 
 | Items | Closes | Kind |
 |---|---|---|
-| 1–3, 12–14, 16 | **PG1 (AUTH)** | gate |
-| 17–19 | **PG2 (BOOKING)** | gate |
-| 20 | **PG4 (NOTIFICATIONS)**, populated half | gate |
+| 1–3, 12–15 | **PG1 (AUTH)** | gate |
+| 16–18 | **PG2 (BOOKING)** | gate |
+| 19 | **PG4 (NOTIFICATIONS)**, populated half | gate |
 | 5–8 | W13-05 terms flow | card |
 | 9–11 | W13-A split-shift | card |
-| 21–23 | LE-auth-recovery-deadend | card |
+| 20–22 | LE-auth-recovery-deadend | card |
 
 **Three gates can move: PG1, PG2, PG4.** Readiness can reach **6/9** if every
 gate item passes, and **no higher**.
 
-**Item 15 feeds items 17–20.** If item 15 fails, **PG2 and PG4 cannot be
+**Item 14 feeds items 16–19.** If item 14 fails, **PG2 and PG4 cannot be
 attempted** — say so and stop that branch rather than recording them as failed.
 
 ## What this session does NOT close, and why
