@@ -126,6 +126,24 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: supabase db reset
 
+      # SEC-function-owner-unpinned. Runs BEFORE the suites, because if the
+      # ownership set is wrong every RLS assertion below is measuring something
+      # other than what it claims to.
+      #
+      # WHAT IT CAN AND CANNOT CATCH HERE, stated so nobody mistakes a green run
+      # for proof. `supabase db reset` builds this database with ONE principal
+      # creating everything, so an owner SPLIT - the production failure - cannot
+      # exist on a CI database and this step cannot detect it. What it DOES catch
+      # is the COUNT: a fourteenth SECURITY DEFINER function landing without
+      # being added to 0060 and to EXPECTED_COUNT. That is the reachable half,
+      # and it is the half a PR can introduce.
+      #
+      # The owner half is enforced where it is enforceable: against production,
+      # by the same script, in the apply block.
+      - name: SECURITY DEFINER ownership + count (DATABASE_URL set)
+        if: steps.changes.outputs.code == 'true'
+        run: pnpm --filter @osteojp/db exec node scripts/check-security-definer-owner.mjs
+
       # fail-closed by owner ruling, never soft-pass
       - name: Run RLS isolation suite (DATABASE_URL set)
         if: steps.changes.outputs.code == 'true'

@@ -74,21 +74,37 @@ check stays green while the property that matters has changed.
 The rotation that `WF-13` records and that the end-of-project cybersecurity
 engagement owns **must treat this as a dependency, not a footnote**:
 
+**The one sentence, and it is the whole rule:** *rotating the `postgres`
+password is safe — same role, new secret, ownership is untouched; introducing a
+separate migration role is what splits ownership, and that failure is silent.*
+
 1. **Rotating a password does not change ownership.** Same role, new secret — no
    effect. That case is safe and is the expected one.
-2. **Changing the ROLE does.** If rotation moves the apply to a different
-   principal — a new service account, a personal login replaced by a shared one,
-   a Supabase project migration — then every function applied afterwards is owned
-   by that role, and the split above begins with no signal.
+2. **Introducing a separate migration role does.** A new service account, a
+   personal login replaced by a shared one, or a Supabase project migration all
+   mean every function applied afterwards is owned by that role, while the
+   earlier ones keep `postgres` — and the split begins with no signal anywhere.
 3. **So the rotation plan must record which principal applies migrations, before
    and after.** If it changes, ownership must be pinned explicitly for all twelve
    functions in the same change, and the pin verified by reading
    `pg_proc.proowner` — not inferred.
 
-**Do not author that pin yet.** The current owner has not been read from
-production. Board card `SEC-function-owner-unpinned` holds the read-only query and
-gates any migration on its result. Nothing may occupy migration number `0060`
-until it resolves.
+**PINNED AS OF MIGRATION 0060.** The read came back on 2026-08-07: all
+**thirteen** public SECURITY DEFINER functions are owned by **`postgres`**, and
+all 37 policy-bearing tables are `relrowsecurity` true / `relforcerowsecurity`
+**FALSE** — ENABLE not FORCE, confirmed against production rather than inferred.
+
+`0060_pin_security_definer_owner.sql` makes that a repo fact with one explicit
+`ALTER FUNCTION … OWNER TO postgres` per function. It is a **no-op today**; its
+value is that ownership stops being an accident of who ran migrate.
+
+`packages/db/scripts/check-security-definer-owner.mjs` enforces both halves —
+every owner is `postgres`, **and** there are exactly thirteen. The count matters
+independently: an owner-only check passes happily on a fourteenth function that
+arrived correctly owned, which is exactly how an unreviewed SECURITY DEFINER
+function enters the schema. It runs in CI (where only the count is reachable, since
+`supabase db reset` cannot produce a split) and against production in every apply
+block (where both are).
 
 ---
 
