@@ -9,6 +9,15 @@
 //   2. Every journal entry has a matching .sql file.
 //   3. The journal `idx` order matches the on-disk numeric filename order
 //      (files are zero-padded `NNNN_slug.sql`, so lexical sort == numeric).
+//   4. `when` strictly increases (INC-07: a backwards timestamp makes drizzle
+//      skip the migration silently and still print success).
+//   5. THE SUPABASE MIRROR MATCHES BY CONTENT, not merely by count. Added
+//      2026-08-07 after this script reported "59 .sql files match 59 journal
+//      entries" while supabase/migrations/0059 held a SUPERSEDED body: the
+//      migration had been rewritten and the mirror never re-synced. CI's
+//      db-tests job applies the MIRROR (`supabase db reset`), so the tests ran
+//      against a schema that did not exist in the drizzle source. Counting was
+//      green the whole time — the same shape as INC-07, one file over.
 //
 // Exits non-zero with a clear diff on any mismatch. Deliberately dependency-
 // free (only node:fs / node:path) so it runs in CI before any tooling install.
@@ -96,6 +105,37 @@ function main() {
     }
   }
 
+  // 5. The supabase mirror must match BY CONTENT.
+  //
+  //    The mirror is what `supabase db reset` applies in CI, so a stale mirror
+  //    means every DB-gated test runs against different SQL from the one being
+  //    reviewed and applied to production. Counting files cannot see that: a
+  //    rewritten migration keeps its name, its number and its journal entry, and
+  //    only its BODY changes.
+  //
+  //    scripts/sync-supabase-migrations.mjs prepends a fixed AUTO-GENERATED
+  //    header, so the mirror is the header plus the source verbatim. Comparing
+  //    the SUFFIX is exact and needs no knowledge of the header's text.
+  const MIRROR_DIR = path.join(ROOT, "supabase/migrations");
+  if (statSync(MIRROR_DIR, { throwIfNoEntry: false })) {
+    for (const tag of fileTags) {
+      const file = `${tag}.sql`;
+      const mirrorPath = path.join(MIRROR_DIR, file);
+      if (!statSync(mirrorPath, { throwIfNoEntry: false })) {
+        problems.push(`supabase mirror MISSING: supabase/migrations/${file}`);
+        continue;
+      }
+      const source = readFileSync(path.join(MIGRATIONS_DIR, file), "utf8");
+      const mirror = readFileSync(mirrorPath, "utf8");
+      if (!mirror.endsWith(source)) {
+        problems.push(
+          `supabase mirror STALE: supabase/migrations/${file} does not contain the ` +
+            `current packages/db/migrations/${file}. Run: node scripts/sync-supabase-migrations.mjs`,
+        );
+      }
+    }
+  }
+
   // 4. Order match: journal idx order must equal on-disk numeric order.
   //    (Only meaningful once sets match, but reported independently for clarity.)
   if (problems.length === 0) {
@@ -111,7 +151,8 @@ function main() {
   if (problems.length > 0) fail(problems);
 
   console.log(
-    `✓ Migration journal reconciled: ${fileTags.length} .sql files match ${journalTags.length} journal entries in order.`,
+    `✓ Migration journal reconciled: ${fileTags.length} .sql files match ${journalTags.length} journal entries in order, ` +
+      `\`when\` strictly increasing, and the supabase mirror matches by CONTENT.`,
   );
 }
 
