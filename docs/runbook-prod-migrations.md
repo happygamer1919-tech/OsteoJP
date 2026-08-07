@@ -18,6 +18,80 @@ This document covers the full lifecycle of a Drizzle migration from authoring to
 
 ---
 
+## SECURITY DEFINER ownership is UNPINNED, and it is a rotation dependency
+
+**Read this before changing who applies migrations, and before any credential
+rotation.**
+
+### The mechanism
+
+Postgres gives a `SECURITY DEFINER` function the privileges of its **OWNER**, and
+the owner is **whoever ran the `CREATE`** unless an explicit `ALTER FUNCTION …
+OWNER TO` says otherwise.
+
+**No migration in this repo contains such a statement.** Verified by grep across
+all 59: zero hits for `OWNER TO`. So every `SECURITY DEFINER` function in
+production is owned by the principal in the env file used at apply time —
+currently the connection in `~/osteojp-secrets/new-prod.env` (name only; the
+value is never read here).
+
+**That ownership is not incidental. It IS the mechanism the platform depends on.**
+RLS on these tables is `ENABLE`, not `FORCE`, so a table's owner **bypasses RLS by
+ownership**. Three load-bearing behaviours rest on it:
+
+| Function | What ownership buys |
+|---|---|
+| `public.jwt_tenant_id()`, `jwt_patient_id()` | readable by the `patient` role, which has no grant on `auth` |
+| `public.appointment_conflicts()` | reports a conflict a caller could not otherwise see past location RLS — a conflict must block even when the row is invisible to you |
+| `public.is_unconfirmed_pedido()` | answers for the `patient` role, which has **no grant at all** on `staff_notifications` |
+
+Twelve distinct functions across nine migrations rely on this.
+
+### The failure mode, and why it is silent
+
+**If the applying principal changes, every `SECURITY DEFINER` function created
+after that point inherits a different owner.** Functions created earlier keep the
+old owner, so the set silently splits in two.
+
+Nothing detects it:
+
+- `drizzle-kit migrate` succeeds — ownership is not its concern.
+- `check-migration-functions.mjs` reports EXISTS and a live body — both true.
+- `check-journal.mjs` reconciles — counts and timestamps are unaffected.
+- CI passes — `supabase db reset` builds a fresh database where one principal
+  creates everything, so **CI structurally cannot reproduce the split**.
+
+The symptom in production is a function that returns the wrong answer rather than
+an error: fewer rows, or `false` where `true` is correct, because the new owner
+does not bypass the RLS the old one did. **For `appointment_conflicts` that means
+a conflict is not reported, which is a double booking.**
+
+This is the same shape as INC-07 and as the stale-mirror incident: every green
+check stays green while the property that matters has changed.
+
+### HARD DEPENDENCY: pre-launch credential rotation
+
+The rotation that `WF-13` records and that the end-of-project cybersecurity
+engagement owns **must treat this as a dependency, not a footnote**:
+
+1. **Rotating a password does not change ownership.** Same role, new secret — no
+   effect. That case is safe and is the expected one.
+2. **Changing the ROLE does.** If rotation moves the apply to a different
+   principal — a new service account, a personal login replaced by a shared one,
+   a Supabase project migration — then every function applied afterwards is owned
+   by that role, and the split above begins with no signal.
+3. **So the rotation plan must record which principal applies migrations, before
+   and after.** If it changes, ownership must be pinned explicitly for all twelve
+   functions in the same change, and the pin verified by reading
+   `pg_proc.proowner` — not inferred.
+
+**Do not author that pin yet.** The current owner has not been read from
+production. Board card `SEC-function-owner-unpinned` holds the read-only query and
+gates any migration on its result. Nothing may occupy migration number `0060`
+until it resolves.
+
+---
+
 ## The pre-check is mandatory — `drizzle-kit migrate` cannot report a no-op
 
 **Rule.** Every apply block runs `check-pending-migrations.mjs` with the
