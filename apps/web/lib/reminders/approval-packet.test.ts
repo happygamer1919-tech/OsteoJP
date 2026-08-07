@@ -46,11 +46,44 @@ describe("approval packet covers the registry", () => {
     expect(packet).not.toContain("patient.activation.email");
   });
 
-  it("states that the fee-notice flag is specified but not yet built", () => {
-    // A packet that implies a protection already exists would be the same class
-    // of false claim this lane has been unpicking all session.
+  /**
+   * W13-05 INVERTED THIS ASSERTION, and the inversion is the point.
+   *
+   * It used to require the packet to say the flag was "especificado, ainda nao
+   * construido" — because claiming a protection that did not exist is the class
+   * of false claim this lane spent a session unpicking. LOOP 5 BUILT it, so that
+   * sentence became false, and leaving it would have been the same error in the
+   * opposite direction: understating what exists rather than overstating it.
+   *
+   * The packet must now say the flag is built AND still off, and must keep the
+   * built/approved distinction explicit — approving a mechanism is not approving
+   * a body, and section 11 is the body nobody has approved.
+   */
+  it("states that the fee-notice flag is BUILT and still off, not that it is unbuilt", () => {
     expect(packet).toContain("REMINDERS_FEE_NOTICE_ENABLED");
-    expect(packet).toMatch(/ainda nao construido/i);
+    expect(packet).toMatch(/CONSTRUIDO, e desligado/i);
+    expect(packet).not.toMatch(/ainda nao construido/i);
+    // The distinction that stops "the mechanism shipped" reading as "the copy is
+    // approved". Without this line the packet could truthfully say "built" and
+    // still mislead.
+    expect(packet).toMatch(/Construido nao quer dizer aprovado/i);
+  });
+
+  it("puts the ONE unapproved body in front of JP as its own numbered section", () => {
+    expect(packet).toContain("`reminder.24h.sms.fee_notice`");
+    expect(packet).toMatch(/^### 11\. /m);
+    // Named as unapproved in the packet, matching the registry. The drift guard
+    // below counts these; this asserts the reader is told which one it is.
+    expect(packet).toMatch(/UNICA MENSAGEM DESTE DOCUMENTO QUE AINDA NAO ESTA APROVADA/i);
+  });
+
+  it("states the measured segment cost of the fee line, including what did NOT fit", () => {
+    // LOOP 5 section 6: report the measured count rather than trim approved copy.
+    // The packet has to carry the number JP is choosing against, and the fact
+    // that the natural full phrasing costs a second segment.
+    expect(packet).toContain("153 caracteres, 1 segmento");
+    expect(packet).toContain("169 caracteres");
+    expect(packet).toMatch(/Nenhum texto ja aprovado foi encurtado/i);
   });
 });
 

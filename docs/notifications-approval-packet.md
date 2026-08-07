@@ -402,6 +402,67 @@ Remarcar: +351 272 000 000
 **Aprovado? [ ] sim  [ ] com alteracoes  [ ] nao** — alteracoes:
 
 ---
+
+### 11. Lembrete 24 horas antes, COM a linha da taxa — SMS
+
+> **ESTA E A UNICA MENSAGEM DESTE DOCUMENTO QUE AINDA NAO ESTA APROVADA.**
+> As outras dez ja o estao. Esta e nova e precisa da sua decisao e da do advogado.
+
+- **Identificador:** `reminder.24h.sms.fee_notice`
+- **Quando:** 24 horas antes da consulta, **e apenas** para um doente que tenha
+  aceitacao das condicoes registada na ficha clinica.
+- **Estado:** bloqueado (`approved: false`) — **ninguem aprovou esta redaccao**. Sem
+  aprovador e sem data, porque nao existe nenhum dos dois. Enquanto assim for,
+  qualquer envio com esta linha e recusado com o motivo `template_unapproved`.
+- **Codificacao:** GSM-7 (sim) — **153 caracteres, 1 segmento** (margem: 7 caracteres)
+
+**Texto tal como esta programado:**
+
+```
+OsteoJP - Lembrete
+Consulta: amanha {date} as {time}
+Local: {clinic}
+Remarcar: {phone}
+Falta sem aviso: 50%, nos termos aceites na marcacao.
+```
+
+**Exemplo real, preenchido** (Madalena, 10/09 as 14:30, Castelo Branco, Dr. Joao Pereira):
+
+```
+OsteoJP - Lembrete
+Consulta: amanha 10/09 as 14:30
+Local: Castelo Branco
+Remarcar: +351 272 000 000
+Falta sem aviso: 50%, nos termos aceites na marcacao.
+```
+
+**Tres travoes, todos activos ao mesmo tempo. A mensagem so sai se os tres cederem:**
+
+1. **O doente aceitou as condicoes**, registado na ficha clinica por um membro da
+   equipa. Sem esse registo a linha nao aparece, mesmo com o interruptor ligado.
+2. **`REMINDERS_FEE_NOTICE_ENABLED` esta ligado.** Por omissao esta desligado e nao
+   esta ligado em lado nenhum.
+3. **Esta redaccao foi aprovada por si** (`approved: true`). Hoje esta a `false`.
+
+O primeiro travao e o que faltava e e a razao de ser deste lote: um interruptor
+global sozinho anunciaria a taxa a doentes que nunca a aceitaram, que e
+exactamente o que o advogado assinalou.
+
+> **Porque tem identificador proprio e nao e o mesmo `reminder.24h.sms`.** A
+> aprovacao e resolvida pelo identificador. Se esta linha fosse enviada com o
+> identificador da mensagem ja aprovada, passaria por uma aprovacao que se referia
+> a outro texto. Com identificador proprio, a aprovacao que falta e a desta.
+
+**Nota tecnica sobre o tamanho.** A redaccao completa e natural —
+`Falta sem aviso 24h: cobranca de 50%, nos termos aceites na marcacao.` — tem 69
+caracteres e levaria a mensagem a **169 caracteres, ou seja 2 segmentos** (custo a
+dobrar). A redaccao acima e a versao curta, que cabe em 1 segmento com 7
+caracteres de margem. **Nenhum texto ja aprovado foi encurtado**: as dez mensagens
+estao intactas e esta linha e conteudo adicional novo.
+
+**Aprovado? [ ] sim  [ ] com alteracoes  [ ] nao** — alteracoes:
+
+---
 ## A redaccao de 24h fornecida pela clinica
 
 Recebemos esta redaccao para o lembrete de 24 horas. Fica aqui registada
@@ -479,6 +540,12 @@ GSM-7, 122 caracteres, **1 segmento**.
 > advogado substitui a original e remete para os termos aceites
 > ("nos termos aceites na marcacao"). `REMINDERS_FEE_NOTICE_ENABLED` mantem-se
 > desligado.
+>
+> **ACTUALIZACAO 2026-08-07: a condicao (1) esta cumprida, a (2) nao.** O fluxo de
+> aceitacao na ficha clinica esta construido e a funcionar. A variante B volta
+> portanto a mesa, e esta na seccao 11 acima com a redaccao revista e a
+> `approved: false`. Falta apenas a condicao (2): a sua assinatura e a do advogado.
+> A variante A continua a ser a redaccao operativa ate la.
 
 ```
 OsteoJP
@@ -524,11 +591,17 @@ Um SMS enviado depois da marcacao nao e um acordo.
 Ate haver resposta, a linha fica **atras de um interruptor desligado**. O nome
 previsto e `REMINDERS_FEE_NOTICE_ENABLED`, por omissao **desligado**.
 
-> **Estado deste interruptor: especificado, ainda nao construido.** Nao esta no
-> codigo. Nao precisa de estar: as dez mensagens ja estao todas bloqueadas pela
-> aprovacao, por isso nada sai entretanto. Sera construido em conjunto com a
-> variante escolhida, depois de decidir, e nao antes. Dizemo-lo explicitamente
-> para que ninguem assuma que ja existe uma proteccao que ainda nao existe.
+> **Estado deste interruptor, actualizado a 2026-08-07: CONSTRUIDO, e desligado.**
+> Antes desta data estava apenas especificado, e este documento dizia-o. Agora
+> existe em codigo (`REMINDERS_FEE_NOTICE_ENABLED`, `lib/reminders/fee-notice.ts`),
+> por omissao desligado, e nao esta ligado em nenhum ambiente.
+>
+> **Construido nao quer dizer aprovado, e a diferenca importa.** O que ficou
+> construido foi o MECANISMO: o registo da aceitacao na ficha clinica, o travao por
+> doente, e o interruptor. A REDACCAO continua por aprovar — e a seccao 11 acima, a
+> `approved: false`. Dizemo-lo assim para que ninguem assuma que aprovar o
+> mecanismo aprovou o texto, tal como antes o dizíamos para que ninguem assumisse
+> uma proteccao que ainda nao existia.
 
 **A sua escolha: [ ] variante A  [ ] variante B  [ ] outra redaccao:**
 

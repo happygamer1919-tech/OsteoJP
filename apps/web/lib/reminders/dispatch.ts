@@ -16,6 +16,11 @@ import {
   type FollowUpContext,
   type NoShowContext,
 } from "./templates";
+import {
+  feeNoticeFlagEnabled,
+  shouldRenderFeeNotice,
+  smsTemplateIdFor,
+} from "./fee-notice";
 import { sendEmail, sendSms, type SendResult } from "./clients";
 import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "./phone";
@@ -280,14 +285,26 @@ export async function dispatchReminder(
     );
   }
   if (wantSms && data.patientPhone) {
-    const sms = renderSms(offsetId, locale, ctx);
+    // W13-05 DOUBLE GATE, evaluated ONCE, here. `shouldRenderFeeNotice` is the
+    // only place the condition exists; everything below consumes its answer.
+    //
+    // THE ID IS DERIVED FROM THE SAME BOOLEAN AS THE BODY, so a fee-bearing
+    // message cannot be sent under the approved plain id. packages/notify's gate
+    // resolves approval BY ID, so that pairing is what makes the registry a real
+    // third lock rather than a label: while the fee entry is `approved: false`
+    // the send is refused as `template_unapproved` and the patient gets nothing.
+    const feeNotice = shouldRenderFeeNotice({
+      flagEnabled: feeNoticeFlagEnabled(),
+      patientHasAcceptedTerms: data.patientHasAcceptedTerms,
+    });
+    const sms = renderSms(offsetId, locale, ctx, feeNotice);
     const sent = await sendPatientSms({
       tenantId,
       appointmentId,
       patientId: data.patientId,
       phone: data.patientPhone,
       body: sms,
-      templateId: `reminder.${offsetId}.sms`,
+      templateId: smsTemplateIdFor(offsetId, feeNotice),
     });
     if (sent) channels.push(sent);
   }

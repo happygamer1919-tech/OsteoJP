@@ -1,13 +1,17 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   appointments,
   locations,
+  patientTermsAcceptances,
   patients,
   tenants,
   users,
 } from "@osteojp/db";
 import { withReminderTenantContext } from "./context";
+// The version constant, shared with the ficha that writes the row, so the gate
+// and the capture can never disagree about which document was accepted.
+import { TERMS_VERSION } from "@/lib/clinical/terms-acceptance";
 
 // Tenant-scoped read layer for reminder dispatch. Mirrors lib/scheduling/data:
 // every query runs through the tenant-context seam, never filters tenant_id by
@@ -29,6 +33,15 @@ export type ReminderAppointmentData = {
   locationName: string;
   locationPhone: string | null;
   tenantSettings: unknown;
+  /**
+   * W13-05: has THIS patient a recorded acceptance of the CURRENT terms version?
+   * One of the two inputs to `shouldRenderFeeNotice`; never consumed alone.
+   *
+   * Loaded here rather than at the render site so the dispatch path makes exactly
+   * one scoped read per send, and so a caller cannot render the fee line without
+   * having asked the question.
+   */
+  patientHasAcceptedTerms: boolean;
 };
 
 /**
@@ -65,6 +78,24 @@ export async function loadReminderData(
       .where(eq(appointments.id, appointmentId))
       .limit(1);
 
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row) return null;
+
+    // W13-05. A SECOND STATEMENT IN THE SAME TRANSACTION, not a join, and that
+    // is deliberate: `patient_terms_acceptances` is append-only with NO unique
+    // index, so a patient who re-accepted has several rows and a left join would
+    // silently multiply the appointment row. An existence check cannot.
+    const accepted = await tx
+      .select({ id: patientTermsAcceptances.id })
+      .from(patientTermsAcceptances)
+      .where(
+        and(
+          eq(patientTermsAcceptances.patientId, row.patientId),
+          eq(patientTermsAcceptances.termsVersion, TERMS_VERSION),
+        ),
+      )
+      .limit(1);
+
+    return { ...row, patientHasAcceptedTerms: accepted.length > 0 };
   });
 }

@@ -6,7 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@osteojp/ui";
+import { Button, Checkbox } from "@osteojp/ui";
 import { Check, X } from "lucide-react";
 import { s, locale } from "@/lib/i18n";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -63,6 +63,9 @@ export function SignatureConsent({
   recordId,
   consent,
   onSetDecision,
+  termsAccept,
+  onSetTermsAccept,
+  existingTermsAcceptance,
 }: {
   patientId: string;
   readOnly: boolean;
@@ -72,6 +75,12 @@ export function SignatureConsent({
    *  inside its functional updater, so concurrent toggles never clobber a
    *  sibling (stale-snapshot safe). */
   onSetDecision: (key: ConsentItemKey, decision: ConsentDecision) => void;
+  /** W13-05. Whether the staff member has ticked "record acceptance" on THIS
+   *  save. NEVER seeded from `existingTermsAcceptance` — see TermsAcceptance. */
+  termsAccept: boolean;
+  onSetTermsAccept: (checked: boolean) => void;
+  /** The patient's most recent acceptance, for display only. */
+  existingTermsAcceptance: { acceptedAt: string; termsVersion: string } | null;
 }) {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -332,7 +341,77 @@ export function SignatureConsent({
           })}
         </ul>
       </div>
+
+      {/* 4. Terms acceptance (W13-05). ALONGSIDE the Consinto block, not inside
+          it: those two items are per CLINICAL RECORD and live in `_consent`;
+          this is per PATIENT and lives in `patient_terms_acceptances`. */}
+      <TermsAcceptance
+        readOnly={readOnly}
+        checked={termsAccept}
+        onChange={onSetTermsAccept}
+        existing={existingTermsAcceptance}
+      />
     </section>
+  );
+}
+
+/**
+ * Terms acceptance, staff-side (W13-05, LOOP 5).
+ *
+ * THE CHECKBOX IS NEVER PRE-CHECKED. Not on create, not on update, and not when
+ * the patient already has an acceptance on file. That is a DoR line, and the
+ * reason is that this control is an ACTION ("record that the patient accepted,
+ * now"), not a mirror of stored state. A pre-checked box would be a staff member
+ * attesting to something by not noticing a checkbox, which is worth nothing in
+ * the dispute this record exists to answer.
+ *
+ * The existing acceptance is still SHOWN, as read-only context, because hiding
+ * it would push staff to re-capture an acceptance they already have. Showing and
+ * pre-checking are different things and only the second one is forbidden.
+ *
+ * NOT PART OF THE `_consent` BLOCK. `_consent` is per clinical record; this is
+ * per patient. Adding a third key there would compile, render correctly, and
+ * answer the wrong question — see lib/clinical/consent.ts, which rebuilds its
+ * block from CONSENT_ITEM_KEYS so it cannot drift in.
+ *
+ * Read-only records show the state and no control, like every other input here.
+ */
+function TermsAcceptance({
+  readOnly,
+  checked,
+  onChange,
+  existing,
+}: {
+  readOnly: boolean;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  existing: { acceptedAt: string; termsVersion: string } | null;
+}) {
+  const recorded = existing ? (
+    <p data-testid="terms-acceptance-existing" className="text-xs text-text-secondary">
+      {s["clinical.termsAcceptedOn"]}{" "}
+      {new Date(existing.acceptedAt).toLocaleDateString("pt-PT")} ({existing.termsVersion})
+    </p>
+  ) : (
+    <p data-testid="terms-acceptance-none" className="text-xs text-text-secondary">
+      {s["clinical.termsNotAccepted"]}
+    </p>
+  );
+
+  return (
+    <div className="flex flex-col gap-2" data-testid="terms-acceptance">
+      <h3 className="text-sm font-semibold text-text-primary">{s["clinical.termsHeading"]}</h3>
+      <p className="text-xs text-text-secondary">{s["clinical.termsHelp"]}</p>
+      {recorded}
+      {!readOnly && (
+        <Checkbox
+          label={s["clinical.termsCheckboxLabel"]}
+          checked={checked}
+          data-testid="terms-acceptance-checkbox"
+          onChange={(e) => onChange(e.target.checked)}
+        />
+      )}
+    </div>
   );
 }
 

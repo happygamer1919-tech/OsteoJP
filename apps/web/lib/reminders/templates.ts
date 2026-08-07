@@ -16,6 +16,11 @@
 
 import type { Locale } from "@osteojp/i18n";
 
+// The fee line lives in its own module with its gate, not here, so that the ten
+// approved bodies and the one unapproved line are never editable in the same
+// breath. This file only knows how to APPEND it (W13-05).
+import { FEE_NOTICE_SMS } from "./fee-notice";
+
 export type ReminderOffsetId = "48h" | "24h";
 
 /** All notification kinds the pipeline can render and send. */
@@ -186,18 +191,35 @@ export function renderEmail(
   return { subject, body };
 }
 
+/**
+ * `feeNotice` is THE ANSWER from `fee-notice.ts` `shouldRenderFeeNotice`, never
+ * its inputs. This function does not know what the flag is called and cannot see
+ * whether the patient accepted, which is what keeps the double gate at exactly
+ * one site (W13-05).
+ *
+ * The line is APPENDED. `SMS[offset][locale]` is not read differently, not
+ * re-authored and not branched on: the ten approved bodies are byte-identical
+ * whether the fee notice renders or not, which `templates.test.ts` asserts. The
+ * fee line is conditional ADDITIONAL content, per LOOP 5 section 5.
+ *
+ * `assertSmsCompliant` runs AFTER the append, so an overlong fee line fails the
+ * render loudly instead of costing a silent second segment. See the segment
+ * budget in fee-notice.ts - the margin is 7 characters and a test measures it.
+ */
 export function renderSms(
   offset: ReminderOffsetId,
   locale: Locale,
   ctx: ReminderContext,
+  feeNotice = false,
 ): string {
   const tpl = SMS[offset][locale];
-  const message = fill(tpl, {
+  const base = fill(tpl, {
     date: ctx.appointmentDateShort,
     time: ctx.appointmentTime,
     clinic: ctx.clinicLocation,
     phone: ctx.clinicPhone,
   });
+  const message = feeNotice ? `${base}\n${FEE_NOTICE_SMS[locale]}` : base;
   assertNoUnfilledPlaceholders("sms", message);
   assertSmsCompliant(message);
   return message;

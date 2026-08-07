@@ -1667,3 +1667,65 @@ export const rateLimitCounters = pgTable(
   },
   (t) => [index("rate_limit_counters_reset_idx").on(t.resetAt)],
 );
+
+/**
+ * W13-05 (migration 0058) — per-patient acceptance of the clinic's terms, the
+ * sole legal basis for the 50% no-show fee line ever rendering.
+ *
+ * APPEND-ONLY, ENFORCED BY THE DATABASE. There is no UPDATE policy, no DELETE
+ * policy, and 0058 REVOKEs UPDATE/DELETE/TRUNCATE at the table so a policy added
+ * by mistake later still cannot write. Nothing in this file can relax that:
+ * Drizzle describes the shape, the database owns the rule. Do not add an update
+ * or delete helper against this table — it will be refused at runtime, which is
+ * the intended outcome.
+ *
+ * PER PATIENT, NOT PER RECORD, and that distinction is the whole point. The
+ * ficha's two consent items (treatment, RGPD) live migration-free inside
+ * `clinical_records.data._consent` and are per CLINICAL RECORD. Putting terms
+ * acceptance there would compile, render correctly and answer the wrong
+ * question — see the header of `apps/web/lib/clinical/consent.ts`, which
+ * rebuilds its block from CONSENT_ITEM_KEYS precisely so this cannot drift in.
+ *
+ * NO UNIQUE CONSTRAINT, deliberately. A patient re-accepting the same version on
+ * a later visit is a real event and the second row is the truthful record of it.
+ *
+ * IDENTIFIERS, AN INSTANT AND A VERSION STRING. No clinical content, no PII.
+ * `termsVersion` is the document's identity, never its text.
+ */
+export const patientTermsAcceptances = pgTable(
+  "patient_terms_acceptances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    /** No cascade, and it is the opposite choice from a notification row: this
+     *  records THAT someone accepted, and it must outlive a patient-row cleanup
+     *  for exactly the dispute it exists to answer. */
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    /** Supplied by the caller, never defaulted, so a paper acceptance recorded
+     *  later carries the date it happened and not the date it was typed in. */
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull(),
+    /** Free text on purpose: the versioning scheme belongs to the document. A
+     *  blank value is refused by a CHECK in 0058, not left to the caller. */
+    termsVersion: text("terms_version").notNull(),
+    /** The staff member who captured it. RLS pins this to auth.uid() on INSERT —
+     *  it is the one field a caller could lie about and the field the row's whole
+     *  evidential value rests on. */
+    recordedBy: uuid("recorded_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** Serves both reads: the gate is a LIMIT 1 over the leading columns, the
+     *  history is the full scan of them newest-first. */
+    index("patient_terms_acceptances_patient_idx").on(
+      t.tenantId,
+      t.patientId,
+      t.acceptedAt.desc(),
+    ),
+  ],
+);

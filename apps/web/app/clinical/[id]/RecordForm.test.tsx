@@ -395,3 +395,33 @@ describe("W10-02b Defect 2 — a red flag surfaces the required consultation_rea
     expect(withoutPrompt).toBeGreaterThan(0);
   });
 });
+
+/**
+ * W13-05: the acceptance travels as its OWN form field and defaults to false.
+ *
+ * SignatureConsent is stubbed in this file, so these assert the FORM contract
+ * rather than the control: what the server action receives when nobody touched
+ * anything. The checkbox itself is covered in SignatureConsent.test.tsx.
+ */
+describe("terms acceptance form contract (W13-05)", () => {
+  it("submits termsAccept=false on a fresh render, so a save records nothing", () => {
+    expect(render()).toContain('name="termsAccept" value="false"');
+  });
+
+  it("keeps the acceptance OUT of the record `data` field", () => {
+    // `data` is per clinical record; the acceptance is per patient. If it ever
+    // leaked into `data` it would persist into `clinical_records.data` and
+    // answer the wrong question — the exact trap migration 0058's header names.
+    const html = render({ consultation_reason: "x" });
+    const dataField = /name="data" value="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(dataField).not.toContain("termsAccept");
+    expect(dataField).not.toContain("terms");
+  });
+
+  it("carries termsAccept on a record being UPDATED too, still false", () => {
+    // The "on update" half of the DoR line. Existing record data must not flip it.
+    expect(render({ consultation_reason: "existing", red_flags: "" })).toContain(
+      'name="termsAccept" value="false"',
+    );
+  });
+});

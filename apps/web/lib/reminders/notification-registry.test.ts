@@ -43,10 +43,33 @@ function harness(env: Record<string, string | undefined>) {
 
 const LIVE = { REMINDERS_LIVE_SEND: "true", INVITES_LIVE_SEND: "true" };
 
+/**
+ * W13-05 ADDED AN ELEVENTH ENTRY, `reminder.24h.sms.fee_notice`, and it is the
+ * first `approved: false` this registry has ever carried.
+ *
+ * The counts below moved from 10 to 11 and the approval assertions were SPLIT
+ * rather than relaxed. Relaxing "every body is approved" to "most are" would
+ * have thrown away the property these tests exist to hold. What is asserted now
+ * is stricter: every APPROVED body still needs a named approver and a real date,
+ * AND the set of unapproved bodies is pinned to exactly this one id, so a
+ * twelfth unapproved body cannot appear without failing here.
+ */
+const FEE_NOTICE_ID = "reminder.24h.sms.fee_notice";
+const APPROVED_TEMPLATES = REMINDER_TEMPLATES.filter((t) => t.id !== FEE_NOTICE_ID);
+
 describe("registry contents", () => {
-  it("registers exactly 10 patient-facing reminder bodies", () => {
-    expect(REMINDER_TEMPLATES).toHaveLength(10);
+  it("registers 11 patient-facing bodies: the 10 approved, plus the fee notice", () => {
+    expect(REMINDER_TEMPLATES).toHaveLength(11);
+    expect(APPROVED_TEMPLATES).toHaveLength(10);
     expect(REMINDER_TEMPLATES.every((t) => t.audience === "patient")).toBe(true);
+  });
+
+  it("pins the unapproved set to exactly the fee notice", () => {
+    // The load-bearing half. If a future body registers unapproved without a
+    // decision, this fails - which is the whole reason the gate is worth having.
+    expect(REMINDER_TEMPLATES.filter((t) => !t.approved).map((t) => t.id)).toEqual([
+      FEE_NOTICE_ID,
+    ]);
   });
 
   // The platform-wide reconciliation, asserted rather than asserted-in-a-comment.
@@ -63,17 +86,21 @@ describe("registry contents", () => {
   // The reconciliation is kept rather than deleted with the entries it counted:
   // its value was never the number, it is that a body cannot appear in either
   // app without this count changing and someone noticing.
-  it("totals 10 entries over 10 bodies across both apps", async () => {
+  it("totals 11 entries over 11 bodies across both apps", async () => {
     const { API_TEMPLATES } = await import("../../../../apps/api/lib/notify/registry");
 
-    expect(REMINDER_TEMPLATES).toHaveLength(10);
+    // W13-05 moved this from 10 to 11. The reconciliation's value was never the
+    // number - it is that a body cannot appear in either app without this count
+    // changing and someone noticing. It just noticed.
+    expect(REMINDER_TEMPLATES).toHaveLength(11);
     expect(API_TEMPLATES).toHaveLength(0);
-    expect(REMINDER_TEMPLATES.length + API_TEMPLATES.length).toBe(10);
+    expect(REMINDER_TEMPLATES.length + API_TEMPLATES.length).toBe(11);
 
-    // One body per entry now: the two-channel body that made 12 entries into 11
-    // bodies was the activation one, and it is gone.
+    // One body per entry. The fee-notice entry is a DISTINCT body (the 24h body
+    // plus the fee line), not a duplicate of the approved one - which is exactly
+    // why it needs its own id and its own approval.
     const bodies = new Set(REMINDER_TEMPLATES.map((t) => t.body));
-    expect(bodies.size).toBe(10);
+    expect(bodies.size).toBe(11);
   });
 
   it("apps/api can send nothing at all, which is the fail-closed state", async () => {
@@ -89,14 +116,23 @@ describe("registry contents", () => {
     }
   });
 
-  it("records a named approver and a real date on every reminder body", () => {
-    for (const t of REMINDER_TEMPLATES) {
+  it("records a named approver and a real date on every APPROVED body", () => {
+    for (const t of APPROVED_TEMPLATES) {
       expect(t.approved).toBe(true);
       // Provenance is not decoration: an approval with no named approver and no
       // date is indistinguishable from a default, which is how unreviewed copy
       // reaches patients.
       expect(t.approvedBy).toBe("JP");
     }
+  });
+
+  it("and the UNAPPROVED body names no approver, because nobody approved it", () => {
+    // The mirror of the rule above. An unapproved entry carrying an approver
+    // would read, to anyone scanning, as approved-with-a-typo.
+    const fee = REMINDER_TEMPLATES.find((t) => t.id === FEE_NOTICE_ID)!;
+    expect(fee.approved).toBe(false);
+    expect(fee.approvedBy).toBeNull();
+    expect(fee.approvedAt).toBeNull();
   });
 
   it("dates each body to the approval that actually covers it, not to a blanket", () => {
@@ -106,7 +142,7 @@ describe("registry contents", () => {
     // JP approved on 2026-08-03 and never looked at again, quietly destroying
     // the audit trail this field exists to keep.
     const amended = new Set(["reminder.48h.email"]);
-    for (const t of REMINDER_TEMPLATES) {
+    for (const t of APPROVED_TEMPLATES) {
       expect(t.approvedAt).toBe(amended.has(t.id) ? "2026-08-05" : "2026-08-03");
     }
     // The amendment is real and reached the registered body, not just the date.
@@ -129,6 +165,7 @@ describe("registry contents", () => {
       "no_show.sms",
       "reminder.24h.email",
       "reminder.24h.sms",
+      "reminder.24h.sms.fee_notice",
       "reminder.48h.email",
       "reminder.48h.sms",
     ]);
