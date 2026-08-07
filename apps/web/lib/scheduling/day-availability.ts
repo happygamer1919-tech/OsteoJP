@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gt, lt, notInArray, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, lt, notInArray, sql, type SQL } from "drizzle-orm";
 import type { RequestContext } from "@osteojp/auth";
 import { appointments, availabilityTemplates, timeOff, type DbTx } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
@@ -98,6 +98,19 @@ function readBookedRows(
   const conds: SQL[] = [
     eq(appointments.practitionerId, args.therapistId),
     notInArray(appointments.status, NON_BLOCKING),
+    // W13-04a (JP option B): an UNCONFIRMED PEDIDO does not occupy the slot, so
+    // the staff agenda shows a requested time as FREE until reception confirms.
+    //
+    // THE FUNCTION CALL IS LOAD-BEARING AND AN INLINE `NOT EXISTS` WOULD BE A
+    // BUG HERE. This query runs as `authenticated`, which CAN read
+    // staff_notifications - but 0055 pins that policy to
+    // `recipient_user_id = auth.uid()`. A caller who is not a recipient (an
+    // admin, a therapist not on the appointment) would see no row, conclude
+    // "not a pedido", and the slot would read as BUSY for them and FREE for
+    // reception. Each screen self-consistent, the two disagreeing: the worst
+    // shape a scheduling bug can take. `is_unconfirmed_pedido` is SECURITY
+    // DEFINER so the answer is the same for everyone.
+    sql`not public.is_unconfirmed_pedido(${appointments.id})`,
     // Half-open overlap with the whole query range: catches appointments that
     // straddle a day boundary at either edge.
     lt(appointments.startsAt, args.rangeEnd),

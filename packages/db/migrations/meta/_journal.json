@@ -407,6 +407,13 @@
       "when": 1786600000000,
       "tag": "0058_patient_terms_acceptances",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1786700000000,
+      "tag": "0059_pedido_does_not_block_slot",
+      "breakpoints": true
     }
   ]
 }
