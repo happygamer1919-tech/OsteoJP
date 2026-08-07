@@ -265,3 +265,70 @@ again, add the one specific path it needs at that point, never a wildcard.
 Authentication, URL Configuration, Redirect URLs, delete the entry
 `https://patient.osteojp.pt/**` and save.
 
+
+---
+
+## 9. FIXED 2026-08-07 — the link itself changed shape, and what Ivan must re-paste
+
+The dead end in section 7 is closed at the source. **The emailed link no longer
+goes to Supabase's `/auth/v1/verify`.**
+
+### What changed
+
+| Before | After |
+|---|---|
+| `{{ .ConfirmationURL }}` → Supabase `/auth/v1/verify` → redirect here with the result in the URL **fragment** | `https://app.osteojp.pt/auth/update-password?token_hash={{ .TokenHash }}&type=recovery` |
+| **Fetching the link spends the token.** A mail-provider scanner does exactly that | **Fetching the link spends nothing.** The page renders and verifies nothing |
+| The page read only `window.location.hash` | The page reads the **query**, which auth-js does not touch |
+| `verifyOtp` never ran | `verifyOtp` runs **only from the explicit submit** |
+
+The shape is copied from `apps/web/app/r/[token]/page.tsx`, which has been
+prefetch-safe since the reminder lane shipped. The auth lane never adopted it,
+and that is the whole of this incident.
+
+**It is stricter than Supabase's own recommended pattern, deliberately.** Their
+sample verifies on the GET and redirects; a scanner following the link to *our*
+domain would then spend the token here instead. Same failure, one hop later.
+
+### THE LANDING URL IS HARDCODED IN THE TEMPLATES, and that is the point
+
+Not `{{ .RedirectTo }}`. That variable is populated only when the caller passed a
+`redirect_to`, and **a dashboard-triggered recovery passes none** — it would
+render empty and break the link. One variable that is set on one trigger path and
+empty on another is the exact conflation section 3 corrects. Hardcoding removes
+the variable.
+
+**If the app domain ever changes, both templates change with it and must be
+re-pasted.**
+
+### What Ivan re-pastes, and it is only these two
+
+Supabase dashboard → **Authentication → Emails**. Paste the file contents over
+the existing template:
+
+- [ ] **Reset Password** ← `supabase/templates/reset-password.html`
+- [ ] **Invite user** ← `supabase/templates/invite.html`
+
+**No other template changed.** `change-email.html`, `confirm-signup.html`,
+`magic-link.html` and `reauthentication.html` are untouched — do not re-paste
+them.
+
+**No Site URL change and no allowlist change is needed.** The Site URL may stay
+at `https://app.osteojp.pt/auth/update-password` (the section 7 stopgap) or
+return to the root; neither matters now, because the link carries its own
+absolute destination and no longer depends on a fallback.
+
+### Verification — one email, in a real inbox
+
+The scanner is the thing under test, so no local harness reproduces it.
+
+1. Trigger a password recovery to a **real Gmail address**.
+2. **Leave it sitting for a few minutes** so the provider has scanned it. This
+   step is the test; clicking immediately proves nothing.
+3. Open the link. The **set-password form** must render — not "Ligação inválida".
+4. Set a password and sign in with it.
+
+If it fails, the error screen now carries a **"Detalhes técnicos"** disclosure
+naming exactly what arrived on the URL, with token and session values redacted to
+a length. The old screen erased that evidence before a human could read it, which
+is why five verification rounds produced no diagnosis.

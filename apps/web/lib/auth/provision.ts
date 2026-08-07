@@ -210,23 +210,55 @@ export async function updateStaffAuthEmail(userId: string, email: string): Promi
  * Returns null (never throws) on any failure, so the invite path can fall back
  * to the temporary-password hand-off rather than failing the whole invite.
  *
- * The link verifies at Supabase, then redirects to STAFF_INVITE_REDIRECT_URL,
- * where the staff member sets their password. NOTE: that landing page is not
- * part of this change's files; without it the redirect has nowhere to land —
- * see the PR notes. When the env var is unset, Supabase uses the project's
- * configured Site URL.
+ * ================================================================== //
+ * IT NO LONGER RETURNS `action_link`, AND THAT IS THE FIX.
+ * ================================================================== //
+ *
+ * `properties.action_link` is Supabase's own `/auth/v1/verify` URL, and merely
+ * FETCHING it consumes the single-use token. A mail-provider link scanner does
+ * exactly that, so the staff member's link was routinely spent before they
+ * clicked it — the same defect that made staff password recovery unusable
+ * (LE-auth-recovery-deadend).
+ *
+ * We now build our own URL from `properties.hashed_token`, which is the same
+ * token in the inert form: nothing is spent by fetching the page it points at.
+ * The landing page verifies it only from an explicit submit.
+ *
+ * STAFF_INVITE_REDIRECT_URL BECOMES REQUIRED, and a missing value now fails
+ * LOUDLY rather than degrading quietly. Before, an unset var meant Supabase fell
+ * back to the project's Site URL and the link still worked; now we build the URL
+ * ourselves, so there is no fallback to be had. Returning null routes the invite
+ * to its existing temporary-password hand-off — a visible, working outcome — and
+ * the log line says which variable is missing (name only, never a value), per
+ * the PG7 no-silent-degradation rule.
  */
 export async function generateSetPasswordLink(email: string): Promise<string | null> {
+  const base = process.env.STAFF_INVITE_REDIRECT_URL;
+  if (!base) {
+    console.error(
+      "[auth] STAFF_INVITE_REDIRECT_URL is not set; cannot build a set-password link. " +
+        "The invite falls back to the temporary-password hand-off.",
+    );
+    return null;
+  }
   try {
     const admin = createSupabaseAdminClient();
-    const redirectTo = process.env.STAFF_INVITE_REDIRECT_URL;
     const { data, error } = await admin.auth.admin.generateLink({
       type: "recovery",
       email,
-      ...(redirectTo ? { options: { redirectTo } } : {}),
+      options: { redirectTo: base },
     });
-    if (error || !data?.properties?.action_link) return null;
-    return data.properties.action_link;
+    // `hashed_token` is the inert form of the same one-time token. Fetching a URL
+    // that carries it spends nothing; only verifyOtp redeems it.
+    const hashed = data?.properties?.hashed_token;
+    if (error || !hashed) return null;
+
+    const url = new URL(base);
+    url.searchParams.set("token_hash", hashed);
+    // The landing page narrows this to recovery|invite and refuses anything else,
+    // so it cannot be talked into performing a different verification.
+    url.searchParams.set("type", "recovery");
+    return url.toString();
   } catch {
     return null;
   }
