@@ -127,10 +127,23 @@ ALTER TABLE public.patient_terms_acceptances ENABLE ROW LEVEL SECURITY;--> state
 /*   made the two append-only assertions pass FOR THE WRONG REASON.     */
 /*   The positive control in the isolation suite is what caught it.     */
 /*                                                                    */
-/* SELECT AND INSERT ONLY, matching 0054's two append-only tables. The  */
-/*   REVOKE is not undoing a present grant; it exists to survive a      */
-/*   FUTURE blanket grant, so append-only stays true even if someone    */
-/*   later re-runs a GRANT ALL across the schema.                       */
+/* SELECT AND INSERT ONLY, matching 0054's two append-only tables.      */
+/*                                                                    */
+/* THE REVOKE IS LOAD-BEARING TODAY, not just insurance against a       */
+/*   future blanket grant — a first draft of this comment claimed the   */
+/*   latter and CI disproved it. Supabase applies schema-wide DEFAULT   */
+/*   PRIVILEGES, so `authenticated` picks up privileges on this table   */
+/*   at CREATE time without any statement here granting them. Reading   */
+/*   the live grants after this migration shows INSERT, REFERENCES,     */
+/*   SELECT and TRIGGER: UPDATE, DELETE and TRUNCATE are absent ONLY    */
+/*   because the REVOKE below removes them. Delete that line and the    */
+/*   table stops being append-only.                                     */
+/*                                                                    */
+/* REFERENCES AND TRIGGER ARE LEFT ALONE deliberately. Neither reads    */
+/*   nor writes a row — one creates a foreign key, the other creates a  */
+/*   trigger — so neither weakens append-only, and revoking schema-wide */
+/*   defaults this migration did not grant would be scope it does not   */
+/*   own.                                                               */
 /*                                                                    */
 /* THE PATIENT ROLE GETS NOTHING. A patient never reads or writes this  */
 /*   record: acceptance is captured by staff in the ficha, and the      */

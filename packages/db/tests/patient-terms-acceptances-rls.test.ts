@@ -116,12 +116,21 @@ describe.skipIf(!live)("0058 — patient_terms_acceptances is isolated and appen
     // Everything was therefore refused, and the two append-only assertions below
     // PASSED FOR THE WRONG REASON. The positive control caught it; this
     // assertion names the cause instead of leaving it to be inferred.
+    // Scoped to the privileges that touch ROWS. `authenticated` also holds
+    // REFERENCES and TRIGGER on this table, from Supabase's schema-wide default
+    // privileges — neither reads nor writes a row (REFERENCES creates a foreign
+    // key, TRIGGER creates a trigger), which is why the first CI run still got
+    // "permission denied" for SELECT while holding both. Asserting the full set
+    // would couple this test to Supabase's bootstrap; asserting the DML subset
+    // tests what append-only actually means.
+    const DML = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"];
     const rows = await sql`
       select privilege_type
         from information_schema.role_table_grants
        where table_schema = 'public'
          and table_name = 'patient_terms_acceptances'
          and grantee = 'authenticated'
+         and privilege_type = any(${DML})
        order by privilege_type`;
     expect(rows.map((r) => r.privilege_type)).toEqual(["INSERT", "SELECT"]);
   });
