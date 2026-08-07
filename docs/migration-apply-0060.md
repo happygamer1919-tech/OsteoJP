@@ -3,7 +3,7 @@
 **Status: DRAFTED, FOR STRATEGY VALIDATION. NOT sent to Ivan.**
 
 Migration: `0060_pin_security_definer_owner` (journal idx 59).
-Branch: `sec/0060-pin-function-owner`.
+Branch: `sec/0060-pin-function-owner`. PR: #844. Head sha: `1ea8697`.
 Card: `SEC-function-owner-unpinned`.
 
 Written under the amended doctrine (`docs/runbook-prod-migrations.md`, "The
@@ -26,12 +26,51 @@ row; nothing is locked beyond a catalog entry. Re-running it is harmless.
 
 ---
 
-## 2. Pre-flight facts, verified against the machine rather than remembered
+## 2. HOW THIS BLOCK PROVES `migrate` ACTUALLY RAN
+
+**This is the one thing a no-op migration makes hard, and it is why the block has
+four checks rather than two.**
+
+Everything else in this repo's apply history proved execution by proving a NEW
+OBJECT EXISTS — a table for 0058, a function body for 0059. **0060 creates
+nothing.** Its correct end state is byte-identical to its correct start state, so:
+
+- **`drizzle-kit migrate` printing success proves nothing.** It prints that on a
+  no-op. It printed exactly that on the 0058 run that applied nothing.
+- **The ownership checker passing afterwards proves nothing either.** It passed
+  *before* the migration too. An after-only ownership check on a no-op migration
+  is a receipt, not evidence.
+
+**The ONLY thing that proves execution is drizzle's own pending count going from
+exactly 1 to exactly 0.** That transition can happen for one reason: `migrate`
+ran and wrote a tracking row into `drizzle.__drizzle_migrations`. Nothing else in
+the block can move it.
+
+So the block runs **`check-pending-migrations.mjs 1` before** and
+**`check-pending-migrations.mjs 0` after**. The pair is the execution proof, and
+it is the only part of the output that is.
+
+The two ownership runs answer a different question — *is the state still what the
+migration asserts* — and they bracket the write so that any difference between
+them is itself a finding.
+
+| Check | Answers | Proves execution? |
+|---|---|---|
+| ownership, before | is the premise true right now | no |
+| **pending == 1** | there is exactly one migration to run | **sets up the proof** |
+| `migrate` output | the command ran | **no** — prints success on a no-op |
+| **pending == 0** | **it was applied** | **YES — this is the proof** |
+| ownership, after | the state still holds | no |
+
+---
+
+## 3. Pre-flight facts, verified against the machine rather than remembered
 
 | Fact | How it was checked | Value |
 |---|---|---|
-| Apply worktree | `git worktree list` | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` |
+| Apply worktree | `git worktree list` on this machine | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` |
 | Env file | directory listing, **name only, never read** | `/Users/ivan/osteojp-secrets/new-prod.env` |
+| PR head sha | `gh pr view 844 --json headRefOid` | `1ea8697` |
 | Migration number | file count + journal tail | `0060`, idx `59` |
 | Journal `when` | previous `+100000000` | `1786800000000` |
 | Journal + mirror | `node scripts/check-journal.mjs` | 60 `.sql` files, 60 entries, in order, `when` strictly increasing, **mirror matches by CONTENT** |
@@ -51,12 +90,12 @@ exist`.
 
 ---
 
-## 3. The block
+## 4. The block
 
 ```
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 git fetch origin --prune
-git checkout origin/sec/0060-pin-function-owner
+git checkout --detach 1ea8697
 git log -1 --oneline
 set -o allexport
 source /Users/ivan/osteojp-secrets/new-prod.env
@@ -65,33 +104,53 @@ pnpm install --frozen-lockfile
 pnpm --filter @osteojp/db exec node scripts/check-security-definer-owner.mjs
 pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs 1
 pnpm --filter @osteojp/db exec drizzle-kit migrate
+pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs 0
 pnpm --filter @osteojp/db exec node scripts/check-security-definer-owner.mjs
 unset DATABASE_URL DATABASE_URL_DIRECT
 ```
 
-**The ownership checker runs TWICE, before and after, and that is deliberate.**
-Because the migration is a no-op, an after-only check would pass identically
-whether `migrate` ran or not — it would be a receipt, not evidence. The BEFORE
-run records the state the migration is asserting; the AFTER run proves it still
-holds. Any difference between the two is itself the finding.
+**`git checkout --detach <sha>`, on the explicit sha, is load-bearing.** A plain
+`git checkout <branch>` is rejected in that worktree, and the fallback leaves it
+on `main`, where `migrate` finds nothing pending and prints success anyway — the
+0049 incident. Pinning the sha rather than the branch name also means a push to
+the branch between validation and apply cannot silently change what runs.
+`git log -1 --oneline` must echo `1ea8697`.
 
-**STOP IF THE PRE-CHECK FAILS.** `check-pending-migrations.mjs 1` reads drizzle's
-own bookkeeping READ ONLY and exits non-zero unless exactly one migration is
-pending. If it fails, do not run `migrate` at all.
+**STOP IF `check-pending-migrations.mjs 1` FAILS.** It reads drizzle's own
+bookkeeping READ ONLY and exits non-zero unless exactly one migration is pending.
+If it fails, **do not run `migrate` at all**.
 
-**`git checkout origin/<branch>`, detached, is load-bearing** — a plain
-`git checkout <branch>` is rejected in that worktree and the fallback leaves it
-on `main`, where `migrate` finds nothing and prints success anyway (the 0049
-incident).
+**`set -o allexport`, never `set -a`.** Standing rule.
 
 ---
 
-## 4. What to paste back
+## 5. What to paste back
 
-All five: the `git log -1 --oneline` line, the **first** ownership check, the
-pre-check, the migrate output, and the **second** ownership check.
+All six, verbatim and in order:
 
-## 5. What success looks like
+1. `git log -1 --oneline` — proves which commit was applied from.
+2. The **first** ownership check.
+3. The **pre-check** (`pending 1`).
+4. The full `drizzle-kit migrate` output.
+5. The **post-check** (`pending 0`) — **this is the execution proof**.
+6. The **second** ownership check.
+
+## 6. What success looks like
+
+Pre-check:
+
+```
+last applied when in DB 1786700000000, journal entries on disk 60, pending 1
+PENDING 0060_pin_security_definer_owner when=1786800000000
+OK: the pending set is exactly what was expected.
+```
+
+Post-check, **the line that matters**:
+
+```
+last applied when in DB 1786800000000, journal entries on disk 60, pending 0
+OK: the pending set is exactly what was expected.
+```
 
 Both ownership runs identical, thirteen rows, every owner `postgres`:
 
@@ -115,24 +174,26 @@ viewer_has_location_assignment   postgres     OK
 OK: all 13 owned by postgres.
 ```
 
-Pre-check: `pending 1`, naming `0060_pin_security_definer_owner`.
+## 7. STOP conditions
 
-## 6. STOP conditions
-
+- **`pending 1` fails.** Do not run `migrate`.
+- **`pending 0` fails after migrate** — it still reports 1. **The migration did
+  NOT run**, whatever `drizzle-kit` printed. This is the condition the whole
+  block is built to detect.
 - **The FIRST ownership check fails.** Something already diverged and this
-  migration is no longer a no-op — stop and paste it, because pinning to
-  `postgres` would then be a real ownership MOVE that nobody has authorised.
-- **The count is not 13.** A function was added or dropped outside this list.
-- **The pre-check fails.** Do not run `migrate`.
-- **`git checkout` leaves you on `main`.** Paste `git log -1` and stop.
+  migration is no longer a no-op — stop, because pinning to `postgres` would then
+  be a real ownership MOVE that nobody has authorised.
+- **The count is not 13** on either run. A function was added or dropped outside
+  this list.
+- **`git log -1` shows anything but `1ea8697`.** Do not force it; paste and stop.
 
-## 7. Rollback
+## 8. Rollback
 
 Re-issue the same thirteen statements with the previous owner, recorded above as
 `postgres`. Since the migration is a no-op against today's state, a rollback is
 also a no-op.
 
-## 8. After the paste
+## 9. After the paste
 
 The evidence section is written into this file **in the same turn the output
-arrives**. Then, and only then, the PR merges.
+arrives**. Then, and only then, #844 merges.
