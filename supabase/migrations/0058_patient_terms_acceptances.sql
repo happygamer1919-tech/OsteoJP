@@ -115,7 +115,31 @@ CREATE INDEX IF NOT EXISTS "patient_terms_acceptances_patient_idx"
 
 ALTER TABLE public.patient_terms_acceptances ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 
+/* ------------------------------------------------------------------ */
+/* Table gates. RLS is the ROW gate, GRANT is the TABLE gate, and both  */
+/* are required (0003_grants.sql).                                     */
+/*                                                                    */
+/* THIS TABLE DOES NOT INHERIT 0003's BLANKET GRANT. `GRANT ... ON ALL */
+/*   TABLES IN SCHEMA public` applied to the tables that existed when   */
+/*   it ran, never to tables created afterwards. The first draft of     */
+/*   this migration had the REVOKE below and NO GRANT, so `authenticated`*/
+/*   held no privilege at all and every statement was refused - which   */
+/*   made the two append-only assertions pass FOR THE WRONG REASON.     */
+/*   The positive control in the isolation suite is what caught it.     */
+/*                                                                    */
+/* SELECT AND INSERT ONLY, matching 0054's two append-only tables. The  */
+/*   REVOKE is not undoing a present grant; it exists to survive a      */
+/*   FUTURE blanket grant, so append-only stays true even if someone    */
+/*   later re-runs a GRANT ALL across the schema.                       */
+/*                                                                    */
+/* THE PATIENT ROLE GETS NOTHING. A patient never reads or writes this  */
+/*   record: acceptance is captured by staff in the ficha, and the      */
+/*   patient's own copy is the signed document, not this row.           */
+/* ------------------------------------------------------------------ */
+
+GRANT SELECT, INSERT ON public.patient_terms_acceptances TO authenticated;--> statement-breakpoint
 REVOKE UPDATE, DELETE, TRUNCATE ON public.patient_terms_acceptances FROM authenticated;--> statement-breakpoint
+REVOKE ALL ON public.patient_terms_acceptances FROM patient;--> statement-breakpoint
 
 CREATE POLICY "patient_terms_acceptances_tenant_select" ON public.patient_terms_acceptances
   FOR SELECT TO authenticated

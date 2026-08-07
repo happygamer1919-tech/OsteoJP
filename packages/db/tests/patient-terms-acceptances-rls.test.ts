@@ -106,6 +106,38 @@ describe.skipIf(!live)("0058 — patient_terms_acceptances is isolated and appen
     await sql.end();
   });
 
+  it("THE TABLE GATE is exactly SELECT + INSERT for `authenticated`", async () => {
+    // RLS is the ROW gate; GRANT is the TABLE gate. Asserted DIRECTLY rather
+    // than inferred from behaviour, because the first version of 0058 granted
+    // NOTHING — it carried only the REVOKE, on the false assumption that a new
+    // table inherits 0003's blanket grant. It does not: `GRANT ... ON ALL
+    // TABLES IN SCHEMA public` applied to the tables that existed when it ran.
+    //
+    // Everything was therefore refused, and the two append-only assertions below
+    // PASSED FOR THE WRONG REASON. The positive control caught it; this
+    // assertion names the cause instead of leaving it to be inferred.
+    const rows = await sql`
+      select privilege_type
+        from information_schema.role_table_grants
+       where table_schema = 'public'
+         and table_name = 'patient_terms_acceptances'
+         and grantee = 'authenticated'
+       order by privilege_type`;
+    expect(rows.map((r) => r.privilege_type)).toEqual(["INSERT", "SELECT"]);
+  });
+
+  it("the `patient` role holds NO privilege on this table at all", async () => {
+    // A patient never reads or writes this record: acceptance is captured by
+    // staff in the ficha, and the patient's copy is the signed document.
+    const rows = await sql`
+      select privilege_type
+        from information_schema.role_table_grants
+       where table_schema = 'public'
+         and table_name = 'patient_terms_acceptances'
+         and grantee = 'patient'`;
+    expect(rows).toHaveLength(0);
+  });
+
   it("NEGATIVE CONTROL: RLS is in force — a cross-tenant insert is REFUSED", async () => {
     // Claims say tenant B; the row says tenant A. If this succeeds, RLS is off
     // and every assertion below is worthless.
