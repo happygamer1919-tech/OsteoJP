@@ -81,6 +81,7 @@ export function RecordForm({
   patientSex,
   patientId,
   recordId,
+  existingTermsAcceptance = null,
 }: {
   schema: TemplateSchema;
   initialData: Record<string, unknown>;
@@ -91,6 +92,9 @@ export function RecordForm({
   patientSex?: string | null;
   patientId: string;
   recordId: string;
+  /** W13-05: the patient's latest terms acceptance, for DISPLAY only. It never
+   *  seeds the checkbox — see the state initialiser below. */
+  existingTermsAcceptance?: { acceptedAt: string; termsVersion: string } | null;
 }) {
   const [state, formAction, pending] = useActionState(saveAction, initialState);
   // Ruling B: no episode_date prefill/seed here — the field has no input and is
@@ -112,10 +116,39 @@ export function RecordForm({
   const setDecision = (key: ConsentItemKey, decision: ConsentDecision) =>
     setData((d) => writeConsentState(d, { ...readConsentState(d), [key]: decision }));
 
+  // W13-05 terms acceptance. THREE properties of this state are load-bearing and
+  // each is asserted by a test:
+  //
+  //  1. It initialises to `false`, unconditionally. `existingTermsAcceptance` is
+  //     NOT consulted here — the DoR forbids a pre-checked box on create AND on
+  //     update, and "the patient already accepted" is exactly the case where a
+  //     seeded value would look most reasonable and be most wrong.
+  //  2. It is NOT part of `data`. `data` is the clinical record's jsonb, which is
+  //     per record; the acceptance is per patient and goes to its own table. It
+  //     travels as its own form field so the two can never merge by accident.
+  //  3. It resets to `false` after EACH successful save, so a second Gravar does
+  //     not silently re-record an acceptance the staff member ticked once. The
+  //     table is append-only with no unique index, so a repeat WOULD be written
+  //     as a second row — truthful for a real re-acceptance, misleading for an
+  //     accidental one.
+  //
+  // The reset keys on the STATE OBJECT'S IDENTITY, not on `state.ok`. useActionState
+  // returns a fresh object per invocation, so this fires once per save. Keying on
+  // `state.ok` alone would be a bug that only shows up in use: `ok` stays true
+  // after the save, so re-ticking the box would un-tick it on the next render and
+  // the acceptance could never be recorded twice at all.
+  const [termsAccept, setTermsAccept] = useState(false);
+  const [handledSave, setHandledSave] = useState<SaveState | null>(null);
+  if (state.ok && state !== handledSave) {
+    setHandledSave(state);
+    setTermsAccept(false);
+  }
+
   return (
     <>
     <form id="record-form" action={formAction} className="flex min-w-0 flex-col gap-6 pb-24">
       <input type="hidden" name="data" value={JSON.stringify(data)} />
+      <input type="hidden" name="termsAccept" value={termsAccept ? "true" : "false"} />
 
       {state.code && !state.ok && (
         <p role="alert" className="text-sm text-error">
@@ -239,6 +272,9 @@ export function RecordForm({
         readOnly={readOnly}
         consent={consent}
         onSetDecision={setDecision}
+        termsAccept={termsAccept}
+        onSetTermsAccept={setTermsAccept}
+        existingTermsAcceptance={existingTermsAcceptance}
       />
 
     </form>

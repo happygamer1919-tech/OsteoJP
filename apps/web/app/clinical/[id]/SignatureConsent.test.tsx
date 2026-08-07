@@ -29,6 +29,22 @@ vi.mock("./actions", () => ({
 vi.mock("@osteojp/ui", () => ({
   Button: ({ children, "data-consent-action": dca }: { children?: ReactNode; "data-consent-action"?: string }) =>
     createElement("button", { "data-consent-action": dca }, children as ReactNode),
+  // W13-05. `checked` is surfaced as an attribute so the never-pre-checked
+  // assertions read the RENDERED state rather than the prop they passed in.
+  Checkbox: ({
+    label,
+    checked,
+    "data-testid": testId,
+  }: {
+    label?: ReactNode;
+    checked?: boolean;
+    "data-testid"?: string;
+  }) =>
+    createElement(
+      "label",
+      { "data-role": "checkbox", "data-checked": checked ? "true" : "false", "data-testid": testId },
+      label as ReactNode,
+    ),
 }));
 vi.mock("lucide-react", () => ({
   Check: () => createElement("span", { "data-icon": "check" }),
@@ -37,7 +53,12 @@ vi.mock("lucide-react", () => ({
 
 import { SignatureConsent } from "./SignatureConsent";
 
-function render(consent: ConsentState, readOnly = false): string {
+type TermsOpts = {
+  termsAccept?: boolean;
+  existingTermsAcceptance?: { acceptedAt: string; termsVersion: string } | null;
+};
+
+function render(consent: ConsentState, readOnly = false, terms: TermsOpts = {}): string {
   return renderToStaticMarkup(
     createElement(SignatureConsent, {
       patientId: "00000000-0000-0000-0000-000000000001",
@@ -45,6 +66,9 @@ function render(consent: ConsentState, readOnly = false): string {
       readOnly,
       consent,
       onSetDecision: () => {},
+      termsAccept: terms.termsAccept ?? false,
+      onSetTermsAccept: () => {},
+      existingTermsAcceptance: terms.existingTermsAcceptance ?? null,
     }),
   );
 }
@@ -103,5 +127,70 @@ describe("final consent wording (W5-33)", () => {
     expect(html).not.toContain("PENDENTE");
     // TEXT 1 lead-in (treatment consent).
     expect(html).toContain("Declaro que fui informado/a");
+  });
+});
+
+/**
+ * W13-05 terms acceptance. LOOP 5 DoR: staff-side, at the end of the ficha,
+ * ALONGSIDE the existing confirmations, and NEVER pre-checked.
+ */
+describe("terms acceptance (W13-05) - staff-side, alongside the confirmations", () => {
+  it("renders after the Consinto block, in the same section", () => {
+    const html = render(emptyConsentState());
+    expect(html).toContain('data-testid="terms-acceptance"');
+    // "Alongside", not "inside": it must come AFTER the last consent item, and
+    // it must not be one of them — the consent block stays at exactly two.
+    expect(html.indexOf('data-testid="terms-acceptance"')).toBeGreaterThan(
+      html.lastIndexOf('data-consent-item="'),
+    );
+    expect((html.match(/data-consent-item="/g) ?? []).length).toBe(2);
+  });
+
+  /**
+   * THE DoR LINE, in the state where a seeded value would look most reasonable.
+   * A patient who already accepted is exactly the case where "helpfully"
+   * pre-checking would mean a staff member attests to a fresh acceptance by not
+   * noticing a checkbox.
+   */
+  it("is NEVER pre-checked - not on a fresh ficha, not on one being updated", () => {
+    const fresh = render(emptyConsentState());
+    expect(fresh).toContain('data-testid="terms-acceptance-checkbox"');
+    expect(fresh).not.toContain('data-checked="true"');
+
+    const updating = render(emptyConsentState(), false, {
+      existingTermsAcceptance: { acceptedAt: "2026-05-01T10:00:00.000Z", termsVersion: "2026-08" },
+    });
+    expect(updating).not.toContain('data-checked="true"');
+  });
+
+  it("SHOWS an existing acceptance as context, which is not the same as pre-checking", () => {
+    const html = render(emptyConsentState(), false, {
+      existingTermsAcceptance: { acceptedAt: "2026-05-01T10:00:00.000Z", termsVersion: "2026-08" },
+    });
+    expect(html).toContain('data-testid="terms-acceptance-existing"');
+    expect(html).toContain("2026-08");
+    expect(html).not.toContain('data-checked="true"');
+  });
+
+  it("says so plainly when there is no acceptance on file", () => {
+    const html = render(emptyConsentState());
+    expect(html).toContain('data-testid="terms-acceptance-none"');
+    expect(html).not.toContain('data-testid="terms-acceptance-existing"');
+  });
+
+  it("offers NO control on a finalized record, like every other input here", () => {
+    const html = render(emptyConsentState(), /* readOnly */ true, {
+      existingTermsAcceptance: { acceptedAt: "2026-05-01T10:00:00.000Z", termsVersion: "2026-08" },
+    });
+    expect(html).not.toContain('data-testid="terms-acceptance-checkbox"');
+    // The recorded fact still shows: read-only means no control, not no state.
+    expect(html).toContain('data-testid="terms-acceptance-existing"');
+  });
+
+  it("renders checked ONLY when the parent says the staff member ticked it", () => {
+    // Positive control for the assertions above: they would pass vacuously if
+    // `checked` never reached the rendered attribute at all.
+    const html = render(emptyConsentState(), false, { termsAccept: true });
+    expect(html).toContain('data-checked="true"');
   });
 });

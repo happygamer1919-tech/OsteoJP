@@ -47,6 +47,7 @@ import {
   NO_SHOW_EMAIL,
   NO_SHOW_SMS,
 } from "./templates";
+import { FEE_NOTICE_SMS, FEE_NOTICE_TEMPLATE_ID } from "./fee-notice";
 
 // Trigger events, mirrored from lib/reminders/inngest/client.ts. Duplicated as
 // literals rather than imported so this module stays free of the Inngest client
@@ -120,6 +121,41 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
   patientTemplate("follow_up.sms", "sms", EV_COMPLETED, FOLLOW_UP_SMS.pt),
   patientTemplate("no_show.email", "email", EV_NOSHOW, NO_SHOW_EMAIL.pt.body),
   patientTemplate("no_show.sms", "sms", EV_NOSHOW, NO_SHOW_SMS.pt),
+
+  /**
+   * ELEVENTH BODY — the 24h SMS carrying the 50% fee line. W13-05.
+   *
+   * `approved: false`, and it is the first entry in this registry that has ever
+   * been false. That is the gate doing the job it was built for: LOOP 5 built the
+   * MECHANISM (the ficha acceptance capture, the per-patient gate, the flag), and
+   * the mechanism is what the packet said variant B was waiting on. The COPY is
+   * still unapproved, and approving a mechanism is not approving a body.
+   *
+   * WHY A SEPARATE ID RATHER THAN A FLAG ON `reminder.24h.sms`. The notify gate
+   * resolves approval by template id. A fee-bearing body sent under the approved
+   * plain id would pass an approval check that was answering about different
+   * copy. `smsTemplateIdFor` derives this id from the SAME boolean that puts the
+   * line in the body, so the two cannot diverge.
+   *
+   * WHAT UNBLOCKS IT, both required and neither ours to grant (packet, "Variante
+   * B"): JP approves the wording, and counsel signs off on the fee rule itself.
+   * Until then every send under this id is refused `template_unapproved`, which
+   * is the truthful reason and the one the suppression log records.
+   */
+  {
+    id: FEE_NOTICE_TEMPLATE_ID,
+    channel: "sms",
+    audience: "patient",
+    triggerEvent: EV_REMINDER_DUE,
+    body: `${SMS["24h"].pt}\n${FEE_NOTICE_SMS.pt}`,
+    liveSendFlag: "REMINDERS_LIVE_SEND",
+    approved: false,
+    // Explicitly null, not omitted. TemplateEntry requires both fields, which is
+    // the stricter shape: an unapproved entry has to SAY that nobody approved it
+    // rather than leave the question unanswered.
+    approvedBy: null,
+    approvedAt: null,
+  },
 ] as const;
 
 /**

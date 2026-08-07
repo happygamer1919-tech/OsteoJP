@@ -7,9 +7,11 @@ import { locale } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import {
   createAddendum,
+  getRecordDetail,
   signAndLockRecord,
   updateRecordData,
 } from "@/lib/clinical/records";
+import { recordTermsAcceptance } from "@/lib/clinical/terms-acceptance";
 import {
   confirmAttachment,
   createAttachmentDownloadUrl,
@@ -26,6 +28,22 @@ import {
 import { isClinicalError } from "@/lib/clinical/errors";
 import type { SaveState } from "./RecordForm";
 
+/**
+ * Save the ficha, and — when staff ticked the box — record the patient's terms
+ * acceptance in the same submit (W13-05: "captured when staff complete or update
+ * the ficha").
+ *
+ * THE ACCEPTANCE IS WRITTEN AFTER THE RECORD SAVE, NOT BEFORE, and the order is
+ * deliberate. `updateRecordData` refuses a finalized record and can fail
+ * validation; writing an append-only acceptance first would leave a row that
+ * cannot be withdrawn attached to a save that never happened. This way a failed
+ * ficha save records nothing, and the checkbox survives in client state for the
+ * retry.
+ *
+ * `patientId` is NOT taken from the form. It is read server-side from the record
+ * being saved, so a tampered form field cannot attach one patient's acceptance
+ * to another patient. The client sends one boolean and nothing else.
+ */
 export async function saveRecordAction(
   id: string,
   _prev: SaveState,
@@ -46,6 +64,26 @@ export async function saveRecordAction(
     }
     return { ok: false, code: "error" };
   }
+
+  if (formData.get("termsAccept") === "true") {
+    try {
+      const record = await getRecordDetail(ctx, id);
+      if (record) {
+        await recordTermsAcceptance(ctx, {
+          patientId: record.patientId,
+          acceptedAt: new Date(),
+        });
+      }
+    } catch {
+      // The ficha IS saved at this point. Reporting a generic error here would
+      // tell the staff member their clinical edit was lost when it was not, so
+      // the save reports success and the acceptance simply is not recorded —
+      // which the unchanged "sem aceitacao registada" line on the next render
+      // shows them truthfully.
+      return { ok: true, code: "terms_not_recorded" };
+    }
+  }
+
   revalidatePath(`/clinical/${id}`);
   return { ok: true };
 }

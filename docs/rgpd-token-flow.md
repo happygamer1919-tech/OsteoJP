@@ -253,3 +253,28 @@ Names only.
 3. Whether **ficha clínica acceptance** satisfies the pre-contractual
    communication duty for bookings concluded through the portal, or whether the
    portal needs its own acceptance step. See the work notes.
+
+   **SHARPER AS OF 2026-08-07 (W13-05), AND STILL NOT ANSWERED HERE.** The ficha
+   acceptance flow is now BUILT and live in the staff platform:
+   `patient_terms_acceptances` (migration 0058, applied), the staff-side checkbox
+   on the ficha clínica, and a per-patient gate on the fee line. LOOP 5 was
+   explicitly instructed to flag this question and not to answer it, and it did
+   not.
+
+   What building it changed is that the question is no longer hypothetical, and
+   the gap is now measurable rather than theoretical:
+
+   - Acceptance is captured **only** by a staff member, in the room, on the ficha.
+   - A patient who books entirely through the portal and has not yet been seen
+     therefore has **no acceptance row**, and cannot obtain one without a visit.
+   - The fee line consequently never reaches that patient, because the per-patient
+     gate fails closed. **That is the safe direction**, and it is why building the
+     mechanism does not create an exposure while this question is open.
+   - The open risk is the opposite one and is counsel's to weigh: whether a
+     portal-concluded booking needs the terms communicated **at booking time**,
+     in which case a staff-side-only capture is insufficient regardless of what
+     the fee line does.
+
+   **Nothing in the portal booking flow was touched**, per LOOP 5 section 5.
+   Deciding this is external counsel's under WF-15; engineering owns no part of
+   the answer, only the flag.

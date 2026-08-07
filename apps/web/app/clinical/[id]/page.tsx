@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
 import { parseTemplateSchema, topLevelFields } from "@/lib/clinical/form-template";
 import { getRecordDetail, type RecordStatus } from "@/lib/clinical/records";
+import { getLatestTermsAcceptance } from "@/lib/clinical/terms-acceptance";
 import { s, locale } from "@/lib/i18n";
 
 import { Attachments } from "./Attachments";
@@ -41,6 +42,11 @@ export default async function RecordDetailPage({
 
   const record = await getRecordDetail(ctx, id);
   if (!record) notFound();
+
+  // W13-05: DISPLAY ONLY. Shown as context so staff are not pushed to re-capture
+  // an acceptance already on file. It never seeds the checkbox — RecordForm
+  // initialises that to false unconditionally, on create and on update alike.
+  const existingTermsAcceptance = await getLatestTermsAcceptance(ctx, record.patientId);
 
   const schema = record.template ? parseTemplateSchema(record.template.schema) : null;
   const readOnly = record.status !== "draft" || !can(ctx.role, "clinical_records:author");
@@ -146,6 +152,7 @@ export default async function RecordDetailPage({
               patientSex={record.patientSex}
               patientId={record.patientId}
               recordId={id}
+              existingTermsAcceptance={existingTermsAcceptance}
             />
           ) : (
             <p className="text-sm text-text-secondary">—</p>

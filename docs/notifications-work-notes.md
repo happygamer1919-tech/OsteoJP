@@ -217,7 +217,22 @@ Counsel reviewed and requires it maintained. Enforced by
 used a word-boundary match and **missed `patientPhone`**; the negative arm caught
 it and it now matches substrings.
 
-## Fee acceptance — SPEC ONLY, DO NOT BUILD
+## Fee acceptance — BUILT 2026-08-07 (W13-05). Was "SPEC ONLY, DO NOT BUILD".
+
+> **The prohibition in this heading was lifted by LOOP 5, and only for this
+> scope.** WAVE-13.md LOOP 5 section 1 lifts it by name. The spec below is now
+> DESCRIPTION of shipped behaviour, not a plan, and the heading is corrected
+> rather than left to be read as a live prohibition by the next session.
+>
+> **What shipped:** migration `0058_patient_terms_acceptances` (applied to
+> production 2026-08-07, evidence `docs/migration-apply-0058.md` section 8), the
+> staff-side checkbox on the ficha clínica, the per-patient acceptance record,
+> and the double gate in `apps/web/lib/reminders/fee-notice.ts`.
+>
+> **What did NOT ship, deliberately:** the copy is UNAPPROVED. The fee-bearing
+> body registers as `reminder.24h.sms.fee_notice` with `approved: false`, and
+> `REMINDERS_FEE_NOTICE_ENABLED` is off and armed nowhere. Approving a mechanism
+> is not approving a body. Nothing below reaches a patient today.
 
 **Location changed by JP: the ficha clínica, not the portal booking flow.**
 A checkbox at the end of the ficha alongside the existing confirmations,
@@ -237,6 +252,22 @@ the sole legal path to the fee line ever shipping.
 Migration for the acceptance table is **not 0053**; it queues behind the audit
 log migration. Phone and walk-in bookings are handled on paper by the clinic and
 are out of scope here.
+
+**RESOLVED: the migration was `0058`**, taken at build time from what was free,
+never reserved in advance. Applied to production 2026-08-07 on the second attempt
+— the first applied nothing and printed success (see `INC-07` and
+`docs/runbook-prod-migrations.md`, "The pre-check is mandatory").
+
+**MEASURED SEGMENT COST, which the ruled wording made a real constraint.** The
+shipped 24h PT SMS filled with the packet's own sample data is 99 chars, leaving
+61 to the 160-char single-segment limit, so the fee line has 60 characters. The
+natural full phrasing of counsel's revision —
+`Falta sem aviso 24h: cobranca de 50%, nos termos aceites na marcacao.` — is 69
+chars and takes the message to 169, **two segments**. The shipped line is the
+terse revision at 153 total, one segment, 7 chars of margin, and it carries the
+ruled clause verbatim. **No approved copy was shortened**: the ten bodies are
+byte-identical and the fee line is new, unapproved, additional content.
+`apps/web/lib/reminders/fee-notice.test.ts` pins every number above.
 
 ## Lawyer follow-up list
 
@@ -317,8 +348,10 @@ patient could have moved an appointment to two hours from now.
 - Reschedule **UI** and the **B4 events** (patient-initiated change → in-app
   notification to reception and assigned therapist, fixed contract + stub
   consumer). Next PR, on top of this one once merged.
-- **B5 fee acceptance on the ficha clínica** — spec only, not built, migration
-  queues behind the audit-log migration.
+- **B5 fee acceptance on the ficha clínica** — ~~spec only, not built, migration
+  queues behind the audit-log migration~~. **BUILT 2026-08-07 (W13-05), migration
+  `0058`, applied.** The mechanism ships; the copy stays unapproved. See the
+  corrected "Fee acceptance" heading above.
 
 ## Reschedule UI + B4 staff notifications (PL-33)
 

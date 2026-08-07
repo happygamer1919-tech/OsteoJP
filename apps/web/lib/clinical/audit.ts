@@ -13,7 +13,12 @@ export type ClinicalAuditAction =
   | "clinical_record.annul" // W5-30: append-only Anular of a signed record (record row untouched)
   | "clinical_episode.create"
   | "attachment.create"
-  | "patient_document.create"; // staff uploaded an administrative doc to a patient
+  | "patient_document.create" // staff uploaded an administrative doc to a patient
+  // W13-05: staff recorded the patient's acceptance of the clinic's terms on the
+  // ficha. Audited because it is the sole legal basis for the fee line, so "who
+  // recorded this, and when" has to be answerable independently of the
+  // acceptance row itself.
+  | "patient_terms.accept";
 
 /**
  * Append an audit row for a clinical mutation. MUST be called inside the same
@@ -30,9 +35,11 @@ export async function writeClinicalAudit(
     tenantId: string;
     actorUserId: string;
     action: ClinicalAuditAction;
-    entityType: "clinical_record" | "clinical_episode" | "attachment";
+    entityType: "clinical_record" | "clinical_episode" | "attachment" | "patient";
     // "attachment" is also the entity type for a patient administrative document
     // (both are rows in the `attachments` table; the audit action distinguishes them).
+    // "patient" is the terms acceptance, which is per PATIENT and not per record —
+    // the same distinction migration 0058 exists to hold.
     entityId: string;
     metadata: Record<string, unknown>;
     ip: string | null;
