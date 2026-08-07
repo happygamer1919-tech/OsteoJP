@@ -4,6 +4,7 @@
 
 import { createServerClient } from '@/lib/supabase/server'
 import { readPortalSession } from '@/lib/auth/session'
+import { apiBase } from '@/lib/api/base'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -92,9 +93,6 @@ export type PatientFormSubmission = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function apiBase(): string {
-  return process.env.NEXT_PUBLIC_API_URL ?? ''
-}
 
 // Use the portal's own Supabase session to build an Authorization: Bearer
 // header for server-to-server calls to apps/api. This avoids the fragility of

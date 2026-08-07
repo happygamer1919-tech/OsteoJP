@@ -5,7 +5,7 @@
  * actual component markup), not guessed.
  */
 
-import { type Page, type Locator, expect } from "@playwright/test";
+import { type Page, type Locator, expect, test } from "@playwright/test";
 
 import { nifWithCheckDigit } from "../../lib/patients/nif";
 
@@ -224,4 +224,73 @@ export async function expectTime(scope: Locator, hhmm: string) {
 export async function expectTimeEmpty(scope: Locator) {
   await expect(scope.getByLabel("Horas")).toHaveValue("");
   await expect(scope.getByLabel("Minutos")).toHaveValue("");
+}
+
+/**
+ * Navigate to a patient's EDIT route, and if it 404s, CAPTURE WHICH KIND of 404
+ * it is before failing.
+ *
+ * LE-e2e-nif-edit-404. `nif-required.spec.ts` has twice hit Next's own "This page
+ * could not be found" on this route, on a uuid that `createPatient` had just
+ * proved existed - it asserts `/patients/{uuid}` within 15s BEFORE returning, and
+ * that assertion passed both times.
+ *
+ * THE CARD FORBIDS RE-RUNNING AND ASKS FOR A DIAGNOSTIC INSTEAD, verbatim:
+ * "capture whether the patient row exists in the database at the moment of the
+ * 404, which separates 'the row is not there' from 'the route did not compile'.
+ * Those have different fixes and guessing between them is how the last four CI
+ * causes were called wrong."
+ *
+ * THE HARNESS CANNOT QUERY POSTGRES, but it does not need to. The DETAIL route
+ * `/patients/{id}` reads the same row from the same database. So at the instant
+ * of the 404:
+ *
+ *   detail 200  ->  THE ROW EXISTS. The edit ROUTE is the problem - a dev-server
+ *                   compile or chunk-serving failure, which is what the Dev Tools
+ *                   button in the first artefact suggested.
+ *   detail 404  ->  THE ROW IS NOT VISIBLE. The create committed the URL but not
+ *                   the row, or it was rolled back - a data/transaction problem,
+ *                   and a completely different fix.
+ *
+ * It CAPTURES, it does not FIX and it does not RETRY. A pass here is silent; a
+ * failure carries the discriminator into the Playwright report as an attachment,
+ * so the next occurrence arrives already diagnosed instead of costing another
+ * round of forensics.
+ */
+export async function gotoPatientEdit(page: Page, id: string): Promise<void> {
+  const res = await page.goto(`/patients/${id}/edit`);
+  const status = res?.status() ?? 0;
+  const notFound = status === 404 || (await page.getByText(/could not be found/i).count()) > 0;
+  if (!notFound) return;
+
+  // Same origin, same session, same database - only the route differs.
+  const detail = await page.request.get(`/patients/${id}`);
+  const detailStatus = detail.status();
+
+  const verdict =
+    detailStatus >= 200 && detailStatus < 400
+      ? "THE ROW EXISTS. The DETAIL route serves it while the EDIT route 404s, so " +
+        "this is a ROUTE problem (dev-server compile / chunk serving), NOT a data problem."
+      : "THE ROW IS NOT VISIBLE. The detail route 404s too, so the patient was not " +
+        "committed or is not readable - a DATA problem, NOT a route problem.";
+
+  const report = [
+    "LE-e2e-nif-edit-404 — third occurrence, captured rather than re-run.",
+    `patient id:            ${id}`,
+    `GET /patients/${id}/edit   -> ${status}`,
+    `GET /patients/${id}        -> ${detailStatus}`,
+    "",
+    verdict,
+    "",
+    "Do NOT re-run to see if it passes. Record this block on the card.",
+  ].join("\n");
+
+  // Into the Playwright report, so it survives the runner and is readable from
+  // the artefact without re-deriving anything.
+  await test.info().attach("nif-edit-404-diagnostic", {
+    body: report,
+    contentType: "text/plain",
+  });
+
+  throw new Error(report);
 }

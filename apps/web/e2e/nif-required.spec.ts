@@ -10,7 +10,13 @@
  * instead of silently creating half a patient.
  */
 import { test, expect, type Page } from "@playwright/test";
-import { createPatient, fillPatientForm, generateValidNif, goToPatients } from "./helpers";
+import {
+  createPatient,
+  fillPatientForm,
+  generateValidNif,
+  goToPatients,
+  gotoPatientEdit,
+} from "./helpers";
 
 const uniq = () => Math.random().toString(36).slice(2, 8);
 
@@ -121,7 +127,8 @@ test("an existing NIF cannot be edited back to empty", async ({ page }) => {
     nif: generateValidNif(),
   });
 
-  await page.goto(`/patients/${id}/edit`);
+  // LE-e2e-nif-edit-404: captures WHICH kind of 404 this is, if it 404s.
+  await gotoPatientEdit(page, id);
   // Cleared with real key events, not fill(""): WebKit's automation layer does
   // not propagate fill() to React's onChange, so the controlled input would
   // keep its old value and this test would pass without testing anything.
