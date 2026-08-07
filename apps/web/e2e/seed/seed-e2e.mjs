@@ -396,7 +396,13 @@ async function ensureBaseData(userIds) {
   );
   must(
     (await db.from("services").upsert(
-      { id: SERVICE_A, tenant_id: TENANT_A, location_id: LOCATION_A, name: "Osteopatia", duration_min: 60, is_active: true },
+      // W13-04: patient_bookable is what the PORTAL catalog filters on. It is set
+      // here EXPLICITLY and cannot be inherited from migration 0057's backfill:
+      // that backfill runs before the seed, so it sees an empty services table
+      // and flips nothing. Without this the portal catalog is structurally empty
+      // and the booking flow cannot be exercised at all - which is exactly what
+      // portal-booking-request-mode.spec.ts reported the first time it ran.
+      { id: SERVICE_A, tenant_id: TENANT_A, location_id: LOCATION_A, name: "Osteopatia", duration_min: 60, is_active: true, patient_bookable: true },
       { onConflict: "id" },
     )).error,
     "service",
@@ -413,7 +419,10 @@ async function ensureBaseData(userIds) {
   // asserts it is still offered in the booking Serviço Select and books cleanly.
   must(
     (await db.from("services").upsert(
-      { id: SERVICE_UNMAPPED, tenant_id: TENANT_A, location_id: LOCATION_A, name: SERVICE_UNMAPPED_NAME, duration_min: 60, is_active: true },
+      // Also patient_bookable, deliberately: a ONE-service catalog would let a
+      // "preselection never narrows the list" assertion pass while narrowing was
+      // impossible to observe. Two bookable services make that test mean something.
+      { id: SERVICE_UNMAPPED, tenant_id: TENANT_A, location_id: LOCATION_A, name: SERVICE_UNMAPPED_NAME, duration_min: 60, is_active: true, patient_bookable: true },
       { onConflict: "id" },
     )).error,
     "service-unmapped",
