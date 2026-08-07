@@ -71,12 +71,29 @@ export function readConsentState(data: unknown): ConsentState {
 /**
  * Return a new `data` object with the consent block merged under the reserved
  * key, leaving every template field untouched. Pure (no mutation of the input).
+ *
+ * THE BLOCK IS REBUILT FROM CONSENT_ITEM_KEYS, never spread from the argument,
+ * and that is a guard rather than a style choice (W13-05).
+ *
+ * `_consent` is PER CLINICAL RECORD. The LOOP 5 terms acceptance is PER PATIENT
+ * and lives in `patient_terms_acceptances` (migration 0058). Those two are one
+ * plausible typo apart: an upstream state object carrying an extra `terms` key
+ * used to be spread straight into the persisted block, where it would have
+ * looked entirely correct and answered the wrong question — an acceptance
+ * recorded against one visit instead of against the patient.
+ *
+ * Rebuilding means only the two known items can ever be written, whatever the
+ * caller hands over. `consent-terms-axis.test.ts` asserts it from both ends.
  */
 export function writeConsentState(
   data: Record<string, unknown>,
   consent: ConsentState,
 ): Record<string, unknown> {
-  return { ...data, [CONSENT_DATA_KEY]: consent };
+  const block = {} as ConsentState;
+  for (const key of CONSENT_ITEM_KEYS) {
+    block[key] = isDecision(consent?.[key]) ? consent[key] : "unset";
+  }
+  return { ...data, [CONSENT_DATA_KEY]: block };
 }
 
 /** i18n label + final body keys for one consent item. */
