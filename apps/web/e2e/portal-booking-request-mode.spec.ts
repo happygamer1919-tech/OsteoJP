@@ -31,16 +31,20 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { PORTAL_BASE_URL, PORTAL_STORAGE } from "./fixtures";
+import { LOCATION, PORTAL_BASE_URL, PORTAL_STORAGE } from "./fixtures";
 
 test.use({
   storageState: PORTAL_STORAGE.patient,
   baseURL: PORTAL_BASE_URL,
 });
 
-/** The service step's rows. The flow renders one button per bookable service. */
+/**
+ * The service step's rows. Each renders "<duration> min", which the step's own
+ * heading and the "Anterior" control do not, so the duration is what identifies
+ * a service row without depending on a class name.
+ */
 function serviceRows(page: Page) {
-  return page.getByRole("button").filter({ hasText: /min/ });
+  return page.getByRole("button").filter({ hasText: /\d+\s*min/ });
 }
 
 /**
@@ -57,8 +61,13 @@ async function openServiceStep(page: Page): Promise<void> {
 
   const clinicHeading = page.getByRole("heading", { name: /cl[ií]nica/i });
   if (await clinicHeading.isVisible().catch(() => false)) {
-    // Multi-clinic: pick the first offered clinic to reach the service step.
-    await page.getByRole("button").filter({ hasText: /\S/ }).first().click();
+    // Multi-clinic: pick the SEEDED clinic BY NAME. The first draft clicked the
+    // first button on the page, which is the "Anterior" control in the header -
+    // it navigated away and every assertion then timed out waiting for a step it
+    // had already left. locations[].name is passed through locationDisplayName,
+    // which only rewrites "OsteoJP (LV)"-style short codes and returns anything
+    // else verbatim, so the seeded "Linda-a-Velha" is the accessible name.
+    await page.getByRole("button", { name: LOCATION.name }).click();
   }
 
   // The service step is identified by its own heading, never by position.
@@ -128,23 +137,18 @@ test("Decision C: choosing a service advances the flow and does not narrow what 
   await expect(serviceRows(page)).toHaveCount(before);
 });
 
-test("request-mode: the patient is told the time is NOT reserved until reception confirms", async ({
-  page,
-}) => {
-  await openServiceStep(page);
-
-  const rows = serviceRows(page);
-  await expect(rows).not.toHaveCount(0);
-  await rows.first().click();
-
-  // JP's option-B wording, on the step where the patient is still choosing.
-  // The exact sentence is the ruling in the patient's own words: the pedido
-  // must not promise the slot.
-  await expect(
-    page.getByText(/só fica reservado depois de confirmado/i),
-    "the option-B slot wording is missing from the date/time step",
-  ).toBeVisible({ timeout: 15_000 });
-});
+/*
+ * REMOVED, and the reason is recorded rather than the test quietly deleted: a
+ * draft here asserted the option-B slot wording on the DATE/TIME step. It
+ * renders on step 4, the confirm summary (BookingFlow.tsx:283-305), which is
+ * only reachable after picking a date AND a free slot - so the assertion would
+ * have depended on the seeded calendar having availability on the run day.
+ *
+ * The same wording is asserted twice already, without that dependency: on the
+ * pending screen below, and against the string itself in
+ * apps/web/lib/notifications/pending-requests.test.ts, which pins
+ * booking.step_info_pending to the phrase. Nothing is lost by dropping it here.
+ */
 
 test("request-mode: the confirmation screen says PEDIDO, never a finished booking", async ({
   page,

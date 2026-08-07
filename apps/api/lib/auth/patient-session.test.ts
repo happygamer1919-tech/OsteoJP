@@ -39,6 +39,21 @@ let saved: string | undefined;
 beforeEach(() => {
   saved = process.env[SESSION_SECRET_ENV];
   process.env[SESSION_SECRET_ENV] = SECRET;
+  // PIN THE CLOCK TO `NOW` FOR EVERY TEST, not just the expiry ones.
+  //
+  // This suite mints every token at the fixed instant `NOW` and several tests
+  // then VERIFY it. Verification checks `exp` against the real clock, so those
+  // tests silently depended on real time still being within
+  // PATIENT_SESSION_TTL_MS (12h) of a hardcoded 2026-08-06T10:00Z. They passed
+  // for as long as that happened to be true and went red on 2026-08-07T00:12Z,
+  // two hours after the token expired — on this branch AND on main, with no
+  // code change on either.
+  //
+  // The expiry tests below already pinned the clock themselves and were never
+  // affected; this makes the whole file use that same idiom, so "does a token
+  // round-trip" is a question about the code and never about the calendar.
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
 });
 afterEach(() => {
   if (saved === undefined) delete process.env[SESSION_SECRET_ENV];
