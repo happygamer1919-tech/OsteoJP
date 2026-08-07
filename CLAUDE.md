@@ -1,7 +1,7 @@
 # OsteoJP Platform — Project Context for Claude Code
 
 ## What this is
-Unified clinic platform for OsteoJP (Linda-a-Velha, Castelo Branco, Montemor-o-Novo).
+Unified clinic platform for OsteoJP (Linda-a-Velha, Castelo Branco).
 Replaces Fisiozero + Stylus.pt. Multi-tenant from day 1 (licensing path).
 API-first: an external AI partner ingests clinical records via a signed endpoint.
 Reference site: https://osteojp.pt — brand and tone source of truth.
