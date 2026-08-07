@@ -33,7 +33,7 @@ import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { availabilityTemplates } from "../src/schema";
-import { LOC_LAV, LOC_CB, LOC_MTN } from "./dev-ids";
+import { LOC_LAV, LOC_CB } from "./dev-ids";
 import { resolveDevUsers } from "./dev-users";
 import { loadSeedEnv } from "./load-env";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
@@ -72,13 +72,16 @@ export const SCHEDULES: readonly Rule[] = [
   // USR_3 Dr. Bernardo Figueira — Castelo Branco, Mon–Fri, two shifts (off-the-hour)
   { userSeq: 3, locationId: LOC_CB, weekdays: [1, 2, 3, 4, 5], shifts: [["08:30", "12:30"], ["13:30", "17:30"]] },
 
-  // USR_4 Dra. Inês Carmo — Montemor-o-Novo, part-time Mon/Wed/Fri, single shift
-  { userSeq: 4, locationId: LOC_MTN, weekdays: [1, 3, 5], shifts: [["09:00", "14:00"]] },
+  // USR_4 Dra. Inês Carmo — Castelo Branco, part-time Mon/Wed/Fri, single shift.
+  // Was Montemor-o-Novo until 2026-08-07: that clinic never existed (owner
+  // ruling, LE-montemor-ground-truth). Moved rather than deleted so the seed
+  // keeps a part-time single-shift therapist, which several tests rely on.
+  { userSeq: 4, locationId: LOC_CB, weekdays: [1, 3, 5], shifts: [["09:00", "14:00"]] },
 
   // USR_5 Dr. Rui Correia (admin, practices all locations) — light multi-location cover
   { userSeq: 5, locationId: LOC_LAV, weekdays: [1], shifts: [["15:00", "18:00"]] },
   { userSeq: 5, locationId: LOC_CB,  weekdays: [3], shifts: [["09:00", "12:00"]] },
-  { userSeq: 5, locationId: LOC_MTN, weekdays: [5], shifts: [["14:00", "17:00"]] },
+  { userSeq: 5, locationId: LOC_CB, weekdays: [5], shifts: [["14:00", "17:00"]] },
 ];
 
 // Stable per-therapist UUID: de000008-<userSeq>-<rowSeq>-0000-000000000000. The

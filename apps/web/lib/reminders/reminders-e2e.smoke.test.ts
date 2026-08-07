@@ -77,7 +77,9 @@ const BASE_URL = "https://osteojp.pt";
 // suite runs. Time/date assertions use the real formatters, not literals.
 const STARTS_AT = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
 // Worst-case SMS fill (longest location + longest phone), as #84 validated.
-const LONGEST_LOCATION = "Montemor-o-Novo";
+// "Montemor-o-Novo" until 2026-08-07: not a clinic, and a character longer than
+// any real name. The real longest is "Castelo Branco". See twilio-proof.test.ts.
+const LONGEST_LOCATION = "Castelo Branco";
 const LONGEST_PHONE = "+351 210 000 000";
 
 type Fixture = ReturnType<typeof makeData>;

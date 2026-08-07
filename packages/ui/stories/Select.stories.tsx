@@ -28,7 +28,7 @@ const options = (
     </option>
     <option value="lav">Linda-a-Velha</option>
     <option value="cb">Castelo Branco</option>
-    <option value="mn">Montemor-o-Novo</option>
+    <option value="cb">Castelo Branco</option>
   </>
 );
 

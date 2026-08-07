@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildRows, SCHEDULES, TENANT_ID } from "../seed/availability-dev";
-import { LOC_LAV, LOC_CB, LOC_MTN } from "../seed/dev-ids";
+import { LOC_LAV, LOC_CB } from "../seed/dev-ids";
 
 // Pure, DB-free checks on the availability_templates dev seed. These run in the
 // normal `pnpm test` (no DATABASE_URL needed) and lock the seed's shape so a
@@ -18,7 +18,7 @@ const rows = buildRows(TEST_ID);
 
 // Role therapist = seq 1..4 (seq 5 is admin but also practices — see dev-reference).
 const THERAPISTS = [1, 2, 3, 4].map(TEST_ID);
-const LOCATIONS = new Set([LOC_LAV, LOC_CB, LOC_MTN]);
+const LOCATIONS = new Set([LOC_LAV, LOC_CB]);
 
 const countFor = (userId: string) => rows.filter((r) => r.userId === userId).length;
 const countForSeq = (seq: number) => countFor(TEST_ID(seq));
@@ -80,8 +80,9 @@ describe("availability-dev seed", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("covers all three clinics across the schedule set", () => {
+  it("covers BOTH clinics across the schedule set", () => {
+    // Two, not three. See working-hours-real.test.ts for the ruling.
     const locs = new Set(SCHEDULES.map((s) => s.locationId));
-    expect(locs).toEqual(new Set([LOC_LAV, LOC_CB, LOC_MTN]));
+    expect(locs).toEqual(new Set([LOC_LAV, LOC_CB]));
   });
 });

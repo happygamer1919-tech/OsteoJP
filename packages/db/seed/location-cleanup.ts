@@ -113,6 +113,14 @@ async function main(): Promise<void> {
         returning id`) as unknown as { id: string }[];
 
       // 4) Archive the Montemor fixture + both manual rows (only the still-active).
+      //
+      // MONTEMOR-O-NOVO WAS NEVER A REAL OR PLANNED CLINIC (owner ruling
+      // 2026-08-06, LE-montemor-ground-truth). This is the ONE place in the
+      // repo that still names it, and deliberately so: it is the script that
+      // REMOVES it. Every source that CREATED it is gone as of 2026-08-07 -
+      // dev-reference.ts no longer seeds the row and no schedule targets it -
+      // but a dev database seeded before then still holds one, so this line
+      // stays until those databases are gone.
       const archived = (await tx`
         update locations set is_active = false
         where id in (${LOC_MTN}, ${MANUAL_CB}, ${MANUAL_LV}) and is_active = true

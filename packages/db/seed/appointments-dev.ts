@@ -18,7 +18,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { appointments } from "../src/schema";
 import {
-  LOC_LAV, LOC_CB, LOC_MTN,
+  LOC_LAV, LOC_CB,
   SVC_OST, SVC_FIS, SVC_MAS, SVC_PIL, SVC_NES,
 } from "./dev-ids";
 import { resolveDevUsers } from "./dev-users";
@@ -165,7 +165,7 @@ function buildAppointments(therapists: TherapistPools) {
           practitionerId = pick(CB_THERAPISTS, pi + ai);
         } else if (ai % 11 === 10) {
           // rare visit to MTN
-          locationId = LOC_MTN;
+          locationId = LOC_CB;
           practitionerId = pick(MTN_THERAPISTS, pi + ai);
         } else {
           locationId = LOC_LAV;
@@ -175,7 +175,7 @@ function buildAppointments(therapists: TherapistPools) {
         const p = pi - 25;
         if ((p + ai) % 6 === 5) {
           // occasional visit to MTN
-          locationId = LOC_MTN;
+          locationId = LOC_CB;
           practitionerId = pick(MTN_THERAPISTS, pi + ai);
         } else if ((p + ai) % 9 === 8) {
           // occasional visit to LAV
