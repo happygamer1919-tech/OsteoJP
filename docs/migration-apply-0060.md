@@ -3,7 +3,8 @@
 **Status: DRAFTED, FOR STRATEGY VALIDATION. NOT sent to Ivan.**
 
 Migration: `0060_pin_security_definer_owner` (journal idx 59).
-Branch: `sec/0060-pin-function-owner`. PR: #844. Head sha: `1ea8697`.
+Branch: `sec/0060-pin-function-owner`. PR: #844.
+**Apply from sha `1ea8697`**, which is NOT the branch head — see below.
 Card: `SEC-function-owner-unpinned`.
 
 Written under the amended doctrine (`docs/runbook-prod-migrations.md`, "The
@@ -108,6 +109,14 @@ pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs 0
 pnpm --filter @osteojp/db exec node scripts/check-security-definer-owner.mjs
 unset DATABASE_URL DATABASE_URL_DIRECT
 ```
+
+**WHY `1ea8697` AND NOT THE BRANCH HEAD.** Commits after it on this branch are
+**documentation and board only** — verified: nothing under `packages/db/` or
+`supabase/` changed after it, so the SQL, the journal, the mirror and all three
+checkers are byte-identical at both. `1ea8697` is the last commit that touched
+anything this block executes, and pinning it means the block stays valid while
+the PR body and the plan keep being revised. If a future commit does change
+`packages/db/` or `supabase/`, this sha must be updated with it.
 
 **`git checkout --detach <sha>`, on the explicit sha, is load-bearing.** A plain
 `git checkout <branch>` is rejected in that worktree, and the fallback leaves it
