@@ -8,7 +8,86 @@
 > W11-02 used to stand up the NEW schema. Ignore the `prod-migrate.yml` / `MIGRATE-PROD` steps
 > below (kept for history only); use the manual path.
 
+> **BINDING AMENDMENT, 2026-08-07: every apply block runs the pre-check before
+> `migrate`.** Not "should", not "when convenient". A block without it is not a
+> valid block and must not be handed to the owner. The rule, the command and the
+> two incidents that produced it are in **"The pre-check is mandatory"** below.
+> Read that section before writing any apply block.
+
 This document covers the full lifecycle of a Drizzle migration from authoring to production, including the two application paths, the hard lesson from the June 2026 tracking reconstruction, and how the daily drift check surfaces missed migrations.
+
+---
+
+## The pre-check is mandatory — `drizzle-kit migrate` cannot report a no-op
+
+**Rule.** Every apply block runs `check-pending-migrations.mjs` with the
+**expected count** immediately before `drizzle-kit migrate`, and the block says
+in words that a failure means do not run `migrate` at all.
+
+```
+pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs <N>
+```
+
+`<N>` is how many migrations the author expects to apply — almost always `1`,
+because only one migration is ever in flight repo-wide. The script reads
+drizzle's own bookkeeping **read only**, applies drizzle's own pending
+predicate, prints what it found, and exits non-zero unless the pending set is
+exactly what was expected. It writes nothing.
+
+### Why this is a rule and not a suggestion
+
+**`drizzle-kit migrate` prints `migrations applied successfully` when it applies
+nothing.** That is not a bug in our usage; it is what the command does when its
+pending set is empty. So the success message answers "did the command run", never
+"did the schema change". Treating it as proof has now failed twice:
+
+| | Incident | How the no-op happened | Caught by |
+|---|---|---|---|
+| **0049** | 2026-07-30 | The apply worktree was left on `main` because `git checkout <branch>` was rejected and the fallback was not noticed. The branch's migration was not in the tree | The owner asking for schema evidence, afterwards |
+| **0058** | 2026-08-07 | The journal `when` for 0058 was **lower** than 0057's, so drizzle's `lastDbMigration.created_at < folderMillis` test was false and it skipped the entry | `check-migration-tables.mjs`, afterwards |
+
+**Same class, different surface cause.** In both, the checkout, the connection
+and the SQL file were all fine or fine-looking, drizzle printed success, and the
+schema was unchanged. Neither was caught by reading the migrate output, because
+the migrate output was identical to a real apply. Both were caught only by
+**independent verification** — asking the database what it actually contains.
+
+The generalisable rule, and it is the reason for this section: **a command's own
+success message is never evidence that its side effect occurred.** Verify the
+side effect, from a different source, in both directions.
+
+### Both directions, and the pre-check is the half that was missing
+
+- **Before:** the pre-check proves the work is pending. Refuses a no-op rather
+  than diagnosing one afterwards. **This is the new half.**
+- **After:** `check-migration-tables.mjs` (tables) or `check-migration-columns.mjs`
+  (columns) proves the object exists, via `to_regclass` / `information_schema`.
+
+An after-check alone tells you the apply failed once the window has closed and
+the owner's terminal session is over. The 0058 first attempt cost a full
+round-trip for exactly that reason.
+
+### The specific trap: journal `when` must strictly increase
+
+This repo's journal `when` values are a **synthetic series stepping
+`+100000000`**, already years ahead of wall-clock time. Writing a real
+`Date.now()` timestamp into a new entry produces a value **lower** than its
+predecessor, and drizzle then treats the migration as already in the past and
+skips it — silently, with a success message.
+
+`scripts/check-journal.mjs` now asserts `when` is **strictly increasing** and
+prints the correct next value when it is not. It previously checked counts, `idx`
+contiguity and filename order, **all of which reconciled green while 0058 was
+unappliable** — a reminder that a passing check only covers what it asserts.
+
+If you hand-append a journal entry, take the previous `when` and add
+`100000000`. Do not call `Date.now()`.
+
+### Worked example — the 0058 block
+
+`docs/migration-apply-0058.md` is the reference implementation: section 2 for the
+block shape, section 7 for the failed attempt, section 8 for the pasted evidence
+and what each line does and does not prove.
 
 ---
 
@@ -154,7 +233,10 @@ This check is **not a required CI gate** — it is informational and never block
 | Task | Command / Workflow |
 |---|---|
 | Author a migration | `pnpm db:generate` in `packages/db/`, then copy to `supabase/migrations/` |
-| Verify journal integrity | `pnpm test` (runs `journal-sync.test.ts`) |
+| Verify journal integrity | `pnpm test` (runs `journal-sync.test.ts`) + `node scripts/check-journal.mjs` |
+| **Pre-check before every apply (MANDATORY)** | `pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs <N>` |
+| Prove a table landed | `pnpm --filter @osteojp/db exec node scripts/check-migration-tables.mjs <table>` |
+| Prove a column landed | `pnpm --filter @osteojp/db exec node scripts/check-migration-columns.mjs <table> <column>` |
 | Apply to prod (standard) | Actions → Prod Migrate (manual) → type `MIGRATE-PROD` |
 | Check drift manually | Actions → Prod Schema Drift Check → Run workflow |
 | Verify schema object | Supabase SQL Editor → query `information_schema` or `pg_indexes` |
