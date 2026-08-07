@@ -18,6 +18,59 @@ This document covers the full lifecycle of a Drizzle migration from authoring to
 
 ---
 
+## EVERY APPLY BLOCK IS UNVALIDATED UNTIL STRATEGY SAYS OTHERWISE
+
+**BINDING, 2026-08-07. This governs the DOCUMENT, not the migration.**
+
+### The rule
+
+Every apply block an executor drafts carries, as its **first line**:
+
+```
+NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN
+```
+
+**Strategy replaces that line with `VALIDATED` before it reaches Ivan.** Nobody
+else edits it, and an executor never removes its own.
+
+**An executor NEVER sends an apply block to Ivan directly, in any form, in any
+turn — including as a quoted excerpt, a shortened version, or "an example of what
+it will look like".** The path is always: draft → strategy → Ivan. A block that
+reaches him without passing through strategy has skipped its only review.
+
+### Why the line, and why it is the FIRST line
+
+An apply block is the one artefact in this repo that is **copied into a terminal
+pointed at production and run without further reading**. Its danger is precisely
+that it is designed to be executed rather than studied.
+
+Three things have already gone wrong at exactly this seam, and none of them were
+caught by the migration being wrong:
+
+- **0049** — the block named a worktree path taken from prose. The path was
+  wrong, the fallback left the worktree on `main`, and `migrate` reported success
+  for a migration that never ran.
+- **0058** — the block was correct but had no pre-check, so a journal timestamp
+  going backwards produced a success message over a no-op.
+- **0060** — the block, as first drafted, **could not prove the migration ran at
+  all**. It is a no-op migration, so every state check would pass whether
+  `migrate` executed or not. Strategy caught it in review; the fix was
+  `check-pending-migrations.mjs 0` after `migrate`.
+
+**In every case the SQL was fine and the BLOCK was the defect.** The review that
+catches that is a different review from the one that reads the migration, and
+the marker is what makes it impossible to skip: a block reaching production still
+saying `NOT VALIDATED` is self-evidently unreviewed, without anyone needing to
+remember whose turn it was.
+
+### It survives a rehydrate
+
+Written here and in `docs/board/PORTAL-REHYDRATE.md` §4, so a stateless session
+picks it up from the boot documents rather than from a handoff. A handoff is a
+hypothesis; these two files are the evidence.
+
+---
+
 ## SECURITY DEFINER ownership is UNPINNED, and it is a rotation dependency
 
 **Read this before changing who applies migrations, and before any credential
@@ -74,21 +127,37 @@ check stays green while the property that matters has changed.
 The rotation that `WF-13` records and that the end-of-project cybersecurity
 engagement owns **must treat this as a dependency, not a footnote**:
 
+**The one sentence, and it is the whole rule:** *rotating the `postgres`
+password is safe — same role, new secret, ownership is untouched; introducing a
+separate migration role is what splits ownership, and that failure is silent.*
+
 1. **Rotating a password does not change ownership.** Same role, new secret — no
    effect. That case is safe and is the expected one.
-2. **Changing the ROLE does.** If rotation moves the apply to a different
-   principal — a new service account, a personal login replaced by a shared one,
-   a Supabase project migration — then every function applied afterwards is owned
-   by that role, and the split above begins with no signal.
+2. **Introducing a separate migration role does.** A new service account, a
+   personal login replaced by a shared one, or a Supabase project migration all
+   mean every function applied afterwards is owned by that role, while the
+   earlier ones keep `postgres` — and the split begins with no signal anywhere.
 3. **So the rotation plan must record which principal applies migrations, before
    and after.** If it changes, ownership must be pinned explicitly for all twelve
    functions in the same change, and the pin verified by reading
    `pg_proc.proowner` — not inferred.
 
-**Do not author that pin yet.** The current owner has not been read from
-production. Board card `SEC-function-owner-unpinned` holds the read-only query and
-gates any migration on its result. Nothing may occupy migration number `0060`
-until it resolves.
+**PINNED AS OF MIGRATION 0060.** The read came back on 2026-08-07: all
+**thirteen** public SECURITY DEFINER functions are owned by **`postgres`**, and
+all 37 policy-bearing tables are `relrowsecurity` true / `relforcerowsecurity`
+**FALSE** — ENABLE not FORCE, confirmed against production rather than inferred.
+
+`0060_pin_security_definer_owner.sql` makes that a repo fact with one explicit
+`ALTER FUNCTION … OWNER TO postgres` per function. It is a **no-op today**; its
+value is that ownership stops being an accident of who ran migrate.
+
+`packages/db/scripts/check-security-definer-owner.mjs` enforces both halves —
+every owner is `postgres`, **and** there are exactly thirteen. The count matters
+independently: an owner-only check passes happily on a fourteenth function that
+arrived correctly owned, which is exactly how an unreviewed SECURITY DEFINER
+function enters the schema. It runs in CI (where only the count is reachable, since
+`supabase db reset` cannot produce a split) and against production in every apply
+block (where both are).
 
 ---
 

@@ -171,7 +171,24 @@ and Ivan needs to know which.
    render's answer-latency figures measure against it.
 8. **Publish the board before the PR, not after.** The render is Ivan's only
    status surface; he should never be reading a board that is behind the work.
-9. **Gate vocabulary**, so the values do not read as a defect: the enum comes
+9. **EVERY APPLY BLOCK YOU DRAFT STARTS `NOT VALIDATED`.** Binding,
+   2026-08-07. The first line of any apply block you write is, verbatim:
+   `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN`.
+   **Strategy replaces it with `VALIDATED`. You never remove your own.**
+   **You never send an apply block to Ivan directly, in any form, in any turn** -
+   not as a quoted excerpt, not shortened, not as "an example of what it will
+   look like". The path is draft -> strategy -> Ivan, always.
+   WHY, because the reason is not obvious and the rule looks like ceremony: an
+   apply block is the one artefact here that is copied into a terminal pointed at
+   PRODUCTION and run without further reading. Three blocks have already been
+   defective while their migrations were fine - 0049 (a worktree path taken from
+   prose), 0058 (no pre-check, so a backwards timestamp produced success over a
+   no-op) and 0060 (as first drafted it could not prove a no-op migration had run
+   at all). The review that catches a bad BLOCK is not the review that reads the
+   migration. Full reasoning: docs/runbook-prod-migrations.md, "EVERY APPLY BLOCK
+   IS UNVALIDATED UNTIL STRATEGY SAYS OTHERWISE".
+
+10. **Gate vocabulary**, so the values do not read as a defect: the enum comes
    from the platform board and is deliberately not extended.
    `green_self_merge` means **executor-terminal self-merge**, and PURPLE is the
    executor on this board - read it as `purple_self_merge`. `owner_merge` means

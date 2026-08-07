@@ -414,6 +414,13 @@
       "when": 1786700000000,
       "tag": "0059_pedido_does_not_block_slot",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1786800000000,
+      "tag": "0060_pin_security_definer_owner",
+      "breakpoints": true
     }
   ]
 }
