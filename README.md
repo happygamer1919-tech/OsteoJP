@@ -1,6 +1,6 @@
 # OsteoJP Platform
 
-Unified clinic management platform for OsteoJP (Linda-a-Velha, Castelo Branco, Montemor-o-Novo).
+Unified clinic management platform for OsteoJP (Linda-a-Velha, Castelo Branco).
 Replaces Fisiozero + Stylus.pt with one multi-tenant system.
 
 ## Documentation
