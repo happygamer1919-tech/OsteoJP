@@ -33,7 +33,7 @@ the background across the middle of the session.
 **Trigger a password recovery to a real Gmail address. Then leave it completely
 alone and carry on.**
 
-> **[R2a] Its ONLY job is to start the clock.** You read the link at **item 20**,
+> **[R2a] Its ONLY job is to start the clock.** You read the link at **item 21**,
 > in sequence. **The wait IS the test** — a mail-provider scanner has to have
 > followed the link before you click it. Clicking immediately proves nothing, and
 > five previous verification rounds failed for want of this step.
@@ -170,7 +170,7 @@ never accepted anything, and **nothing in the product can remove it**.
 
 ## 0g. The cleanup ledger **[4b]**
 
-**Write each mutation down as you make it.** Reverted at item 23.
+**Write each mutation down as you make it.** Reverted at item 24.
 
 | From item | Mutation | Revert |
 |---|---|---|
@@ -180,8 +180,8 @@ never accepted anything, and **nothing in the product can remove it**.
 | 14 | **TWO portal booking requests (pedidos)** | Confirmed one becomes an appointment — **cancel it**; decline the other |
 | 17 | An appointment created by confirming a pedido | **Cancel it** |
 | 18 | A staff appointment booked over a pedido | **Cancel it** |
-| 20–21 | **Your own** staff password changed | Keep the new one |
-| 22 | **A live staff AUTH USER from the dashboard invite** **[R2b]** | **Supabase dashboard delete — item 23** |
+| 21–22 | **Your own** staff password changed | Keep the new one |
+| 23 | **A live staff AUTH USER from the dashboard invite** **[R2b]** | **Supabase dashboard delete — item 24** |
 
 **Item 9 uses a TEST THERAPIST, not a real one.** Rewriting a real therapist's
 hours changes what reception can book for them.
@@ -247,8 +247,15 @@ has NO patient record** — reach the code screen, and enter **six wrong digits*
 > number's three, on top of the IP budget you are already spending. A number with
 > no patient record is ideal: the request still succeeds and still shows you the
 > code screen (that endpoint **never** queries the patient table — that is what
-> makes it non-enumerable), so this costs you nothing you need later. Any
-> well-formed Portuguese mobile will do.
+> makes it non-enumerable), so this costs you nothing you need later.
+>
+> **[5] USE A NUMBER THAT CANNOT BELONG TO A REAL SUBSCRIBER: `+351900000000`.**
+> Our validator is `/^[29]\d{8}$/` (`phone.ts:19`) and deliberately does NOT
+> enforce prefix assignment — its own comment says that is the carrier's call. So
+> `900000000` passes and you reach the code screen, while **`90` is not an
+> assigned Portuguese mobile block** (mobiles are 91/92/93/96), so no handset can
+> receive it. The flag is off at item 3 so nothing sends today, but this document
+> should stay safe if anyone ever runs it out of order.
 >
 > **This is one verify attempt, not six.** "Six wrong digits" means one wrong
 > six-digit code — 1 of your 10 verify attempts.
@@ -336,7 +343,22 @@ you confirmed in **0d**. **Expected:** one SMS, one code.
 [3a]**
 
 Still logged in as the patient, book **twice**, at **two different times on the
-same day**, with the **same therapist** if the portal lets you choose one.
+same day**, with the **same therapist** for both if the portal lets you choose.
+
+> **[4] USE A REAL THERAPIST, NOT THE TEST THERAPIST FROM 0g.** These bookings
+> become **real appointments** that you cancel at item 24; the test therapist is
+> **deactivated** at the same step. An appointment pointing at a deactivated
+> therapist is the awkward combination: deactivation does not cascade to
+> appointments, the row keeps its `practitioner_id`, but the agenda's therapist
+> views are built from ACTIVE availability (`day-availability.ts:189`,
+> `therapist-locations.ts:32`) — so the appointment can still exist while its
+> column is no longer offered, which makes it fiddly to find and cancel.
+>
+> **Using a real therapist avoids the ordering question entirely.** The test
+> therapist then has only working hours to undo, and nothing referencing it.
+>
+> **Either way, item 24 cancels appointments BEFORE it deactivates anything** —
+> the checklist is in that order deliberately.
 
 - **Which service:** **Fisioterapia**. Any of the twelve patient-bookable
   services works; **only those twelve appear**, out of twenty in the catalog
@@ -389,9 +411,75 @@ agenda.
 
 *Closes: **PG2 (BOOKING)**, and the behavioural evidence for W13-04a.*
 
-## 6. Notification centre, populated — PG4's second half
+## 6. The suppression log — LE-suppression-observation **[1]**, closes NO gate
 
-**19.** Reopen **`/notificações`**. **Expected:** entries for the item-14 requests
+> **This card has been open for the life of the project with nothing observed,
+> and item 18 has just created the conditions for free.** The suppression path is
+> what stands between an unarmed deployment and a message reaching a patient, and
+> it has never been seen running.
+>
+> **[1] A CORRECTION TO THE PREMISE, because it changes which item you watch.**
+> Confirming pedido A at item 17 does **not** schedule anything —
+> `confirmAppointmentRequest` updates the status, writes an audit row and
+> revalidates, and never calls `enqueueRemindersAfterCommit`. **Only item 18's
+> staff booking enqueues** (`actions.ts:523` → `scheduling/reminders.ts:78`). So
+> this observation hangs off **item 18**, not item 17.
+
+**19.** Open the **staff platform's** function logs and find the suppression
+entry for the appointment you created at item 18.
+
+**What you are looking for** — `packages/notify/src/gate.ts:76-78`, emitted via
+`logger.info`:
+
+```
+[notify] suppressed template=confirmation.email channel=email appointment=<uuid> reason=live_send_disabled
+```
+
+**Which project, and why that one [1b].** The **staff platform** project
+(`apps/web`, **`app.osteojp.pt`**). The dispatcher runs inside Inngest functions
+defined in `apps/web/lib/reminders/inngest/functions.ts` and served from
+`apps/web/app/api/inngest/route.ts`, through the notifier in
+`apps/web/lib/reminders/clients.ts`. **Not the API project** — `apps/api`'s
+booking path sends nothing at all (zero notify calls under
+`apps/api/lib/appointments/`), which is why item 14's portal bookings produce no
+entry.
+
+**Click path [1c]:**
+
+1. **vercel.com** → the project serving **`app.osteojp.pt`**.
+   > **STOP if you are in the `api.osteojp.pt` project** — that is where the flag
+   > lives, but not where this logs.
+2. **Logs** (or **Observability → Logs**).
+3. Search / filter for: **`[notify] suppressed`**
+4. Time window: **last 30 minutes**, or since you did item 18.
+
+**Expected:** at least one line, `reason=live_send_disabled`, carrying the
+appointment id from item 18. **Template ids and channels only — no recipient, no
+subject, no body.** That absence is itself the check: rule 7.
+
+**Timing [1e].** The confirmation fires **immediately** on `appointment/scheduled`
+(`functions.ts:124`), but Inngest delivery is asynchronous — allow **a couple of
+minutes**. **If nothing is there yet, carry straight on to item 20 and re-check
+when you reach item 21.** The log entry does not expire, and the wait is already
+spent by then.
+
+**Failure signal [1d] — and NO ENTRY means one of three different defects.
+Discriminate before reporting, because they have different fixes:**
+
+| What you also see | What it means |
+|---|---|
+| A line reading **`scheduling: reminder enqueue failed`** | **NEVER SCHEDULED.** The Inngest send threw and was swallowed deliberately (`reminders.ts:85-88`) so a network blip cannot fail a booking. The appointment is fine; the reminder was never queued |
+| No such line, and **no email arrived** | **SCHEDULED, RUN NOT OBSERVED.** The event was sent but the confirmation run has not executed or has not logged. Check the Inngest dashboard for the run before concluding anything |
+| **An email actually arrived** at the patient address | **SENT. STOP THE SESSION.** `REMINDERS_LIVE_SEND` is armed when it must not be. This is the one outcome the suppression path exists to prevent |
+
+> **A missing entry is NOT automatically a failure of this item** — it is a
+> question about which of the three above you are in. Report which, not "no log".
+
+*Closes: **LE-suppression-observation**. No gate.*
+
+## 7. Notification centre, populated — PG4's second half
+
+**20.** Reopen **`/notificações`**. **Expected:** entries for the item-14 requests
 and the item-18 confirmation, visible to **reception and the assigned
 therapist**, carrying **no service name and no clinical content**.
 > **Failure signal:** any entry carrying a service name or clinical detail — a
@@ -399,11 +487,11 @@ therapist**, carrying **no service name and no clinical content**.
 
 *Closes: **PG4 (NOTIFICATIONS)** fully. The empty state passed 2026-08-05.*
 
-## 7. The recovery link — READ it now **[2d]**
+## 8. The recovery link — READ it now **[2d]**
 
 The clock started at **0c** and has had the whole session.
 
-**20. CHECK THE LINK BEFORE YOU CLICK IT.** Hover the "Definir nova
+**21. CHECK THE LINK BEFORE YOU CLICK IT.** Hover the "Definir nova
 palavra-passe" button, or copy the visible fallback address. It must read:
 
 ```
@@ -417,7 +505,7 @@ https://app.osteojp.pt/auth/update-password?token_hash=<long-string>&type=recove
 >
 > Also failing: an empty `?token_hash=`, or a host other than `app.osteojp.pt`.
 
-**21.** Only once 20 reads correctly, **open the link**. **Expected: the
+**22.** Only once 21 reads correctly, **open the link**. **Expected: the
 set-password form renders.** Set a password and sign in.
 > **Failure signal:** "Ligação inválida" or "Ligação expirada". Open **"Detalhes
 > técnicos"** and paste that block.
@@ -426,7 +514,7 @@ set-password form renders.** Set a password and sign in.
 > Setting the password establishes a **new session in whichever browser opened
 > the link** (`verifyOtp` then `updateUser`). Use the browser you have been
 > working in and you are signed in as yourself, with the new password, and can
-> continue straight to item 22.
+> continue straight to item 23.
 >
 > Whether your session in *another* browser survives is a Supabase project
 > setting **that is not in this repo** — `supabase/config.toml` is the local dev
@@ -434,11 +522,11 @@ set-password form renders.** Set a password and sign in.
 > revocation), and production is dashboard-configured. **So it is not asserted
 > here.** The instruction is correct either way: **same browser**, and if any
 > staff tab shows you signed out, sign in again with the new password before item
-> 23.
+> 24.
 
 *Closes: the **LE-auth-recovery-deadend** card. No gate.*
 
-## 8. Staff invite — ONE half runs, ONE is deferred **[4d]**
+## 9. Staff invite — ONE half runs, ONE is deferred **[4d]**
 
 > **[4d] Dashboard "Invite user" → RUNNABLE. It BYPASSES the flag.** Supabase
 > sends it over its own SMTP using the `invite.html` you pasted; our transport is
@@ -449,7 +537,7 @@ set-password form renders.** Set a password and sign in.
 > `lib/invites/email.ts:33` on `INVITES_LIVE_SEND`, which **R9 keeps off until
 > launch day**. It would be **suppressed, not sent**.
 
-**22.** **Click path [R2d]:**
+**23.** **Click path [R2d]:**
 
 1. **supabase.com** → the **`dfotoodqvmjhbdcxyaxf`** project.
    > **STOP if the ref differs** — `jaxmkwoxjcgzkwxgbayx` is the retired old prod.
@@ -477,7 +565,7 @@ set-password form renders.** Set a password and sign in.
    > taken. Pick another and repeat; nothing has been consumed.
    > **[R2b] A NEW ROW MEANS A LIVE AUTH USER EXISTS. Add it to the 0g ledger
    > now.**
-4. **Wait a few minutes**, then apply the **same link check as item 20** — it must
+4. **Wait a few minutes**, then apply the **same link check as item 21** — it must
    read `…/auth/update-password?token_hash=<long-string>&type=invite`.
 5. Open it, set a password, **sign in**.
 
@@ -498,33 +586,33 @@ set-password form renders.** Set a password and sign in.
 > that path creates both rows. This item tests the **email and the link**, not
 > onboarding.
 
-## 9. Clean up **[4b]**
+## 10. Clean up **[4b]**
 
-**23. Work the 0g ledger, top to bottom.**
+**24. Work the 0g ledger, top to bottom.**
 
 - [ ] **Cancel the appointment** created by confirming pedido A (item 17).
 - [ ] **Cancel the staff appointment** booked over pedido B (item 18).
 - [ ] **Decline pedido B**, or leave it pending.
 - [ ] **Deactivate the test therapist** (items 9–11): `/admin/staff` → Gerir →
       inactive. Deactivating is clean; editing hours back is not.
-- [ ] **[R2b] DELETE THE INVITED AUTH USER** (created at item 22). supabase.com →
+- [ ] **[R2b] DELETE THE INVITED AUTH USER** (created at item 23). supabase.com →
       `dfotoodqvmjhbdcxyaxf` → **Authentication** → **Users** → the address you
       invited → **⋯** → **Delete user**.
       > **A DASHBOARD DELETE, not a deactivation in our admin — different
       > objects.** `/admin/staff` flags a row in *our* `users` table and does not
       > touch Supabase's `auth.users`. The invite created only the Supabase side.
       > Leaving it means a live auth account nobody manages.
-- [ ] **[R2c] Your own** password changed at item 21 — no colleague touched.
+- [ ] **[R2c] Your own** password changed at item 22 — no colleague touched.
 - [ ] **NOT REVERTIBLE, and correctly so:** the terms acceptance on
       `ZZ Teste Aceitação`. Append-only by ruling.
 
-## 10. Disarm — a named step, and not optional **[2a]**
+## 11. Disarm — a named step, and not optional **[2a]**
 
 > **`OTP_LIVE_SEND` IS DISARMED AT THE END OF THIS SESSION.** R9 authorises
 > *supervised canaries*, not a standing arm. "Left armed" is **not** permitted
 > merely because it was written down — writing it down is a note, not a decision.
 
-**24. Click path [R2d]** — 0e reversed:
+**25. Click path [R2d]** — 0e reversed:
 
 1. **vercel.com** → the **`api.osteojp.pt`** project → **Settings** →
    **Environment Variables**.
@@ -548,7 +636,30 @@ stay **off**.
 ## What to report back
 
 Per item: **the number, and pass or fail.** For a failure, whatever the screen
-said, verbatim. WF-03 counts your reported observation as the evidence.
+said, verbatim.
+
+## SCREENSHOTS — REQUIRED on the ten gate items **[2]**
+
+> **[2] Rule 12 closes staff- and patient-visible work on your deployed-screen
+> evidence, and for a GATE that is too important to rest on recollection.**
+> Capture as you go; reconstructing afterwards means re-running items that cost
+> SMS budget and create more production rows.
+
+**Screenshot REQUIRED — these ten, and no others:**
+
+| Gate | Items needing a screenshot |
+|---|---|
+| **PG1 (AUTH)** | **1, 2, 3, 12, 13, 15** |
+| **PG2 (BOOKING)** | **16, 17, 18** |
+| **PG4 (NOTIFICATIONS)** | **20** |
+
+**Item 18 needs TWO** — one showing the staff booking **saved with no conflict
+warning**, one showing the confirm **refused**. It is the double-booking check,
+and a single image cannot show both halves.
+
+**Everything else stays on your reported observation**, which WF-03 counts as
+evidence: items 5–11 (card work), 19 (the log line — paste the text rather than a
+screenshot), and 21–25.
 
 **Three items are stop-the-session findings** if they fail in the direction
 named: **item 8** (fee text on a screen = two independent gates failed), **item
@@ -560,18 +671,27 @@ double booking).
 
 | Items | Closes | Kind |
 |---|---|---|
-| 1–3, 12–15 | **PG1 (AUTH)** | gate |
-| 16–18 | **PG2 (BOOKING)** | gate |
-| 19 | **PG4 (NOTIFICATIONS)**, populated half | gate |
+| 1, 2, 3, 12, 13, 15 | **PG1 (AUTH)** | gate |
+| 16, 17, 18 | **PG2 (BOOKING)** | gate |
+| 20 | **PG4 (NOTIFICATIONS)**, populated half | gate |
 | 5–8 | W13-05 terms flow | card |
 | 9–11 | W13-A split-shift | card |
-| 20–22 | LE-auth-recovery-deadend | card |
+| 19 | LE-suppression-observation | card |
+| 21–23 | LE-auth-recovery-deadend | card |
+| **14** | **PRODUCER — closes nothing itself** | see below |
+
+> **[3] ITEM 14 IS NOT AN AUTH ITEM AND IS NOT LISTED UNDER PG1.** An earlier
+> version gave PG1 as "12–15", which swept it in and left a reader concluding
+> that item 14 must pass for PG1 to close. It must not: PG1 is the login screens
+> (1–3) and the OTP round trip (12, 13, 15). Item 14 is the **producer** —
+> it creates the two pedidos, and its failure blocks **PG2 and PG4**, never PG1.
 
 **Three gates can move: PG1, PG2, PG4.** Readiness can reach **6/9** if every
 gate item passes, and **no higher**.
 
-**Item 14 feeds items 16–19.** If item 14 fails, **PG2 and PG4 cannot be
+**Item 14 feeds items 16–20.** If item 14 fails, **PG2 and PG4 cannot be
 attempted** — say so and stop that branch rather than recording them as failed.
+**PG1 is unaffected**: items 12, 13 and 15 stand on their own.
 
 ## What this session does NOT close, and why
 
