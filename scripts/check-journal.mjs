@@ -66,6 +66,36 @@ function main() {
     if (e.idx !== i) problems.push(`journal idx out of sequence: entry "${e.tag}" has idx ${e.idx}, expected ${i}`);
   });
 
+  // 3b. `when` MUST STRICTLY INCREASE, and this is the check whose absence let
+  //     migration 0058 be applied as a silent no-op against production.
+  //
+  //     drizzle-orm/pg-core/dialect.js:62 decides what is pending with
+  //         Number(lastDbMigration.created_at) < migration.folderMillis
+  //     where folderMillis IS the journal's `when` (migrator.js:22), and
+  //     created_at is the `when` of the last row in __drizzle_migrations. So a
+  //     new entry whose `when` is LOWER than the previously applied one is
+  //     considered already in the past: drizzle skips it, applies nothing, and
+  //     still prints "migrations applied successfully".
+  //
+  //     That is the 0049 failure mode, and it recurred on 0058 because a
+  //     journal entry was hand-appended with a real-world timestamp
+  //     (2026-08-07) while the file's own convention is a synthetic series
+  //     stepping +100000000 per entry, already far in the future. Counts, idx
+  //     contiguity and filename order all reconciled; only the ordering of
+  //     `when` was wrong, and nothing checked it.
+  for (let i = 1; i < entries.length; i++) {
+    const prev = entries[i - 1];
+    const cur = entries[i];
+    if (!(cur.when > prev.when)) {
+      problems.push(
+        `journal "when" is not strictly increasing: "${cur.tag}" has when=${cur.when}, ` +
+          `which is not greater than "${prev.tag}" when=${prev.when}. ` +
+          `drizzle-kit would treat "${cur.tag}" as already applied and skip it silently. ` +
+          `Use ${prev.when + 100000000} to follow this file's convention.`,
+      );
+    }
+  }
+
   // 4. Order match: journal idx order must equal on-disk numeric order.
   //    (Only meaningful once sets match, but reported independently for clarity.)
   if (problems.length === 0) {
