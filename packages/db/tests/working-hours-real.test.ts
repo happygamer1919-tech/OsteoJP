@@ -4,7 +4,7 @@ import {
   PRIMARY_LOCATION,
   TENANT_ID,
 } from "../seed/working-hours-real";
-import { LOC_CB, LOC_LAV, LOC_MTN } from "../seed/dev-ids";
+import { LOC_CB, LOC_LAV } from "../seed/dev-ids";
 
 // W3-09 — the real clinic schedule target rows are pure and shape-checked here
 // (no DB): Mon–Fri 08:00–20:00 + Sat 09:00–13:00 per dev therapist, respecting
@@ -50,7 +50,10 @@ describe("buildTargetRows (W3-09 real clinic schedule)", () => {
     expect(ids.every((id) => id.startsWith("de000009-"))).toBe(true);
   });
 
-  it("maps primary locations to the three real clinics", () => {
-    expect(new Set(Object.values(PRIMARY_LOCATION))).toEqual(new Set([LOC_LAV, LOC_CB, LOC_MTN]));
+  it("maps primary locations to the TWO real clinics", () => {
+    // Was three until 2026-08-07. Montemor-o-Novo was never a real or planned
+    // OsteoJP location (owner ruling, LE-montemor-ground-truth), so the seed
+    // that materialised it is gone and therapist 4 moved to Castelo Branco.
+    expect(new Set(Object.values(PRIMARY_LOCATION))).toEqual(new Set([LOC_LAV, LOC_CB]));
   });
 });

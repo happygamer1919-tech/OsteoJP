@@ -25,7 +25,7 @@ import { resolveSeedDatabaseUrl } from "./seed-guard";
 import { DEV_USERS } from "./dev-users";
 import {
   ROLE_OWNER, ROLE_ADMIN, ROLE_THERAPIST, ROLE_RECEPTION,
-  LOC_LAV, LOC_CB, LOC_MTN,
+  LOC_LAV, LOC_CB,
   SVC_OST, SVC_FIS, SVC_MAS, SVC_PIL, SVC_NES,
   USR_1, USR_2, USR_3, USR_4, USR_5,
 } from "./dev-ids";
@@ -33,7 +33,7 @@ import {
 // Re-export so consumers that previously imported from here still work.
 export {
   ROLE_OWNER, ROLE_ADMIN, ROLE_THERAPIST, ROLE_RECEPTION,
-  LOC_LAV, LOC_CB, LOC_MTN,
+  LOC_LAV, LOC_CB,
   SVC_OST, SVC_FIS, SVC_MAS, SVC_PIL, SVC_NES,
   USR_1, USR_2, USR_3, USR_4, USR_5,
 };
@@ -82,7 +82,6 @@ async function seed() {
     .values([
       { id: LOC_LAV, tenantId: TENANT_ID, name: "Linda-a-Velha", address: "Rua da Liberdade, 1, Linda-a-Velha", phone: "+351214190000" },
       { id: LOC_CB,  tenantId: TENANT_ID, name: "Castelo Branco", address: "Rua Fernando Namora, 1, Castelo Branco", phone: "+351272300000" },
-      { id: LOC_MTN, tenantId: TENANT_ID, name: "Montemor-o-Novo", address: "Praça Central, 1, Montemor-o-Novo", phone: "+351266890000" },
     ])
     .onConflictDoNothing();
 

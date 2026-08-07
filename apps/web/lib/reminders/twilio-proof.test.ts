@@ -80,11 +80,21 @@ afterEach(() => {
 /* 1. Worst-case SMS rendering                                         */
 /* ================================================================== */
 
-// Longest realistic fills. Location: Montemor-o-Novo is the longest of the
-// three real clinics. Phone: full spaced PT landline. Patient name: SMS copy
-// deliberately carries NO name (docs/sms-templates.md), so a long name is
+// Longest realistic fills. Phone: full spaced PT landline. Patient name: SMS
+// copy deliberately carries NO name (docs/sms-templates.md), so a long name is
 // asserted to be absent rather than length-budgeted.
-const LONGEST_LOCATION = "Montemor-o-Novo";
+//
+// LOCATION, CORRECTED 2026-08-07. This read "Montemor-o-Novo is the longest of
+// the three real clinics", and BOTH halves were wrong: there are TWO clinics,
+// and Montemor-o-Novo was never one of them (owner ruling,
+// LE-montemor-ground-truth). At 15 characters it is also one longer than any
+// real name, so the worst case was being measured against a fill that cannot
+// occur - conservative, and therefore harmless to the assertions, but the
+// label was a claim about production that was false.
+//
+// The real longest is "Castelo Branco", 14 characters, which is what
+// templates.ts:125 already says the SMS budget was verified against.
+const LONGEST_LOCATION = "Castelo Branco";
 const LONGEST_PHONE = "+351 210 000 000";
 const LONGEST_FIRST_NAME = "Maximiliano-Alexandre";
 

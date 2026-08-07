@@ -10,7 +10,18 @@ export const ROLE_RECEPTION = "de000001-0000-0000-0000-000000000004";
 
 export const LOC_LAV = "de000002-0000-0000-0000-000000000001"; // Linda-a-Velha
 export const LOC_CB  = "de000002-0000-0000-0000-000000000002"; // Castelo Branco
-export const LOC_MTN = "de000002-0000-0000-0000-000000000003"; // Montemor-o-Novo
+/**
+ * Montemor-o-Novo. NOT A REAL OR PLANNED LOCATION - owner ruling 2026-08-06,
+ * board card LE-montemor-ground-truth. The clinic has exactly two: Linda-a-Velha
+ * and Castelo Branco.
+ *
+ * THE CONSTANT IS KEPT ON PURPOSE AND HAS EXACTLY ONE REMAINING CALLER.
+ * location-cleanup.ts ARCHIVES this row, and any dev database seeded before
+ * 2026-08-07 still has it. Deleting the id would remove the only thing that can
+ * clean up the mistake. Nothing may CREATE it: dev-reference.ts no longer seeds
+ * the row, and no schedule targets it.
+ */
+export const LOC_MTN = "de000002-0000-0000-0000-000000000003";
 
 export const SVC_OST = "de000003-0000-0000-0000-000000000001"; // Osteopatia
 export const SVC_FIS = "de000003-0000-0000-0000-000000000002"; // Fisioterapia

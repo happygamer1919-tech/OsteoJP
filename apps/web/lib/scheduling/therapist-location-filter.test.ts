@@ -13,7 +13,7 @@ import {
 
 const CB = "loc-castelo-branco";
 const LV = "loc-linda-a-velha";
-const MTM = "loc-montemor";
+const EMPTY_LOC = "loc-sem-terapeutas";
 
 const BERNARDO = { id: "u-bernardo", label: "Bernardo Calmeiro" }; // CB only
 const TIAGO = { id: "u-tiago", label: "Tiago Reis" }; // LV only
@@ -54,7 +54,7 @@ describe("filterTherapistsByLocation - owner ruling 2026-07-17 (unassigned thera
   it("an unassigned therapist NEVER appears inside a specific location view", () => {
     expect(idsAt(CB)).not.toContain(NOVO.id);
     expect(idsAt(LV)).not.toContain(NOVO.id);
-    expect(idsAt(MTM)).not.toContain(NOVO.id);
+    expect(idsAt(EMPTY_LOC)).not.toContain(NOVO.id);
   });
 
   it("an unassigned therapist appears ONLY under Todas as localizacoes", () => {
@@ -99,10 +99,11 @@ describe("filterTherapistsByLocation - multi-location and composition", () => {
   });
 
   it("a location with no assigned therapists yields an empty list, never a fallback to all", () => {
-    // Montemor-o-Novo is opening and has no roster yet. It must render empty
-    // rather than silently falling back to every therapist - that fallback is
-    // exactly the CB bug this loop fixes.
-    expect(idsAt(MTM)).toEqual([]);
+    // A location with no roster must render empty rather than silently falling
+    // back to every therapist - that fallback is exactly the CB bug this loop
+    // fixes. The fixture id is deliberately generic: it used to name
+    // Montemor-o-Novo "which is opening", and that clinic never existed.
+    expect(idsAt(EMPTY_LOC)).toEqual([]);
   });
 
   it("preserves the caller's name ordering", () => {
@@ -140,8 +141,8 @@ describe("therapistOptionsForBooking - W12-23 booking dropdown scoping", () => {
   });
 
   it("a location with no team yields empty (drives the empty state) unless a current therapist is kept", () => {
-    expect(optsAt(MTM)).toEqual([]);
-    expect(optsAt(MTM, ANA.id)).toEqual([ANA.id]);
+    expect(optsAt(EMPTY_LOC)).toEqual([]);
+    expect(optsAt(EMPTY_LOC, ANA.id)).toEqual([ANA.id]);
   });
 
   it("keepId is ignored under Todas (full list already includes it)", () => {

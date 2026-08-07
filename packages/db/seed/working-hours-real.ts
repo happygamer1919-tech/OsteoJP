@@ -33,7 +33,7 @@ import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { availabilityTemplates } from "../src/schema";
-import { LOC_CB, LOC_LAV, LOC_MTN } from "./dev-ids";
+import { LOC_CB, LOC_LAV } from "./dev-ids";
 import { resolveDevUsers } from "./dev-users";
 import { loadSeedEnv } from "./load-env";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
@@ -53,7 +53,7 @@ export const PRIMARY_LOCATION: Readonly<Record<number, string>> = {
   1: LOC_LAV, // Dr. André Costa
   2: LOC_LAV, // Dra. Sofia Mendes
   3: LOC_CB, //  Dr. Bernardo Figueira
-  4: LOC_MTN, // Dra. Inês Carmo
+  4: LOC_CB, //  Dra. Ines Carmo (was LOC_MTN; that clinic never existed)
   5: LOC_LAV, // Dr. Rui Correia (admin who also practices)
 };
 
