@@ -128,7 +128,21 @@ const iref = (t: Instant): SQL =>
   t instanceof Date ? sql`${t.toISOString()}::timestamptz` : t;
 
 /** Half-open appointment overlap for a therapist, excluding cancelled + given
- *  ids. Mirrors Stream B findConflicts (therapist dimension). */
+ *  ids. Mirrors Stream B findConflicts (therapist dimension).
+ *
+ *  W13-04a (JP option B): an UNCONFIRMED PEDIDO does not occupy the slot, so a
+ *  second patient may book a time another patient has only requested.
+ *
+ *  THE EXCLUSION IS A FUNCTION CALL, NOT AN INLINE `NOT EXISTS`, and it has to
+ *  be. This module runs under `set local role patient`, and that role has NO
+ *  GRANT on `staff_notifications` — an inline read would ERROR here, not return
+ *  false. `public.is_unconfirmed_pedido` is SECURITY DEFINER precisely so this
+ *  path can answer the question at all, and so every caller gets the SAME
+ *  answer: "is this slot free" must not depend on who is asking.
+ *
+ *  It is also the ONE definition, shared with the SQL conflict function and the
+ *  staff availability read. Three hand-kept copies of a predicate is the exact
+ *  shape that drifted in the S1 incident. */
 function apptOverlapExists(
   tenantId: string,
   practitioner: Practitioner,
@@ -148,6 +162,7 @@ function apptOverlapExists(
     where a.tenant_id = ${tenantId}
       and a.practitioner_id = ${pref(practitioner)}
       and a.status not in ('cancelled', 'no_show')
+      and not public.is_unconfirmed_pedido(a.id)
       and a.starts_at < ${iref(endsAt)}
       and a.ends_at   > ${iref(startsAt)}
       ${exclude}
