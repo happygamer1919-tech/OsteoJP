@@ -332,3 +332,24 @@ If it fails, the error screen now carries a **"Detalhes técnicos"** disclosure
 naming exactly what arrived on the URL, with token and session values redacted to
 a length. The old screen erased that evidence before a human could read it, which
 is why five verification rounds produced no diagnosis.
+
+### The SUBJECT lines are not in this repo, and that is a gap
+
+`supabase/templates/*.html` carry **bodies only**. Supabase keeps each template's
+**Subject** in a separate dashboard field that nothing here version-controls, so a
+subject can be changed in the console and no review, test or diff would show it.
+
+**Re-pasting a body does not touch the subject.** Nothing about this fix requires
+a subject change, and none is being asked for.
+
+Recorded here so the current values are at least written down. The `<title>` of
+each file is the intended subject:
+
+| Template | Subject |
+|---|---|
+| Reset Password | `Redefinir a palavra-passe` |
+| Invite user | `Convite para a plataforma OsteoJP` |
+
+If a subject in the dashboard differs from the value above, the dashboard is the
+one that sends and this table is stale — correct the table, not the dashboard,
+unless the subject is actually wrong.
