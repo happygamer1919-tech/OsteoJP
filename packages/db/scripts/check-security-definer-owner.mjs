@@ -97,8 +97,20 @@ if (IS_CLI) {
     process.exit(2);
   }
 
+  // TLS is REQUIRED for a remote host and OFF for a local one.
+  //
+  // This script runs in two places its siblings never do. Against production it
+  // must not connect in the clear. In CI it points at the Supabase stack on
+  // 127.0.0.1:54322, which serves no TLS at all — a hardcoded `ssl: "require"`
+  // there fails with "socket disconnected before secure TLS connection was
+  // established", which reads exactly like a checker failure and is not one.
+  //
+  // Decided from the HOST, never from an env flag: a flag could be set wrong and
+  // would silently permit a cleartext connection to production, which is the one
+  // outcome that must be impossible.
+  const isLocal = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(DB_URL);
   const sql = postgres(DB_URL, {
-    ssl: "require",
+    ssl: isLocal ? false : "require",
     max: 1,
     idle_timeout: 10,
     connect_timeout: 15,
