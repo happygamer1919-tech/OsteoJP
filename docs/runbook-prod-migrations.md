@@ -18,6 +18,59 @@ This document covers the full lifecycle of a Drizzle migration from authoring to
 
 ---
 
+## EVERY APPLY BLOCK IS UNVALIDATED UNTIL STRATEGY SAYS OTHERWISE
+
+**BINDING, 2026-08-07. This governs the DOCUMENT, not the migration.**
+
+### The rule
+
+Every apply block an executor drafts carries, as its **first line**:
+
+```
+NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN
+```
+
+**Strategy replaces that line with `VALIDATED` before it reaches Ivan.** Nobody
+else edits it, and an executor never removes its own.
+
+**An executor NEVER sends an apply block to Ivan directly, in any form, in any
+turn — including as a quoted excerpt, a shortened version, or "an example of what
+it will look like".** The path is always: draft → strategy → Ivan. A block that
+reaches him without passing through strategy has skipped its only review.
+
+### Why the line, and why it is the FIRST line
+
+An apply block is the one artefact in this repo that is **copied into a terminal
+pointed at production and run without further reading**. Its danger is precisely
+that it is designed to be executed rather than studied.
+
+Three things have already gone wrong at exactly this seam, and none of them were
+caught by the migration being wrong:
+
+- **0049** — the block named a worktree path taken from prose. The path was
+  wrong, the fallback left the worktree on `main`, and `migrate` reported success
+  for a migration that never ran.
+- **0058** — the block was correct but had no pre-check, so a journal timestamp
+  going backwards produced a success message over a no-op.
+- **0060** — the block, as first drafted, **could not prove the migration ran at
+  all**. It is a no-op migration, so every state check would pass whether
+  `migrate` executed or not. Strategy caught it in review; the fix was
+  `check-pending-migrations.mjs 0` after `migrate`.
+
+**In every case the SQL was fine and the BLOCK was the defect.** The review that
+catches that is a different review from the one that reads the migration, and
+the marker is what makes it impossible to skip: a block reaching production still
+saying `NOT VALIDATED` is self-evidently unreviewed, without anyone needing to
+remember whose turn it was.
+
+### It survives a rehydrate
+
+Written here and in `docs/board/PORTAL-REHYDRATE.md` §4, so a stateless session
+picks it up from the boot documents rather than from a handoff. A handoff is a
+hypothesis; these two files are the evidence.
+
+---
+
 ## SECURITY DEFINER ownership is UNPINNED, and it is a rotation dependency
 
 **Read this before changing who applies migrations, and before any credential

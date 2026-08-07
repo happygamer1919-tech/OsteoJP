@@ -1,6 +1,7 @@
 # Apply block - migration 0060, pin the SECURITY DEFINER owner
 
-**Status: DRAFTED, FOR STRATEGY VALIDATION. NOT sent to Ivan.**
+**Status: VALIDATED, APPLIED AND PROVEN, 2026-08-07. Evidence in section 10.**
+**Applied from `1ea8697` detached in the prod-apply worktree, first attempt.**
 
 Migration: `0060_pin_security_definer_owner` (journal idx 59).
 Branch: `sec/0060-pin-function-owner`. PR: #844.
@@ -206,3 +207,75 @@ also a no-op.
 
 The evidence section is written into this file **in the same turn the output
 arrives**. Then, and only then, #844 merges.
+
+
+---
+
+## 10. APPLIED, 2026-08-07. The evidence.
+
+Run by Ivan from the prod-apply worktree, **first attempt, no retry**. Written
+into the repo in the same turn the output arrived, per section 9, and committed
+BEFORE #844 merged.
+
+```
+Checkout:    1ea8697 (detached) fix(db): the ownership checker required TLS against a local CI database
+
+Ownership 1: 13 of 13 SECURITY DEFINER functions in public, every owner postgres.
+             OK: all 13 owned by postgres.
+
+Pre-check:   pending 1
+             PENDING 0060_pin_security_definer_owner when=1786800000000
+             OK: the pending set is exactly what was expected.
+
+Migrate:     migrations applied successfully.
+
+Post-check:  pending 0
+             last applied when in DB 1786800000000
+             OK: the pending set is exactly what was expected.
+
+Ownership 2: 13 of 13, identical to the first run.
+             OK: all 13 owned by postgres.
+```
+
+### The proof is the 1 → 0 transition, and nothing else in this output
+
+Section 2 predicted exactly this shape and the run bore it out. **0060 creates
+nothing**, so its correct end state is byte-identical to its correct start state:
+
+| Output | Would it look the same on a NO-OP where `migrate` never ran? |
+|---|---|
+| `1ea8697` detached | Yes, if the checkout succeeded either way |
+| Ownership check 1 — 13/13 | **Yes.** It passed *before* the migration |
+| Pre-check `pending 1` | No — it is what establishes there was work |
+| `migrations applied successfully` | **Yes, identically.** It printed on the 0058 run that applied nothing |
+| **Post-check `pending 0`** | **NO. This is the proof** |
+| Ownership check 2 — 13/13 | **Yes.** Identical to run 1, by design |
+
+**Four of the six lines would have printed on a run that did nothing.** The
+pending count moving from exactly 1 to exactly 0 can happen for one reason:
+`migrate` wrote a tracking row into `drizzle.__drizzle_migrations`. Nothing else
+in the block can move it.
+
+**The two ownership runs being IDENTICAL is the second finding, and the intended
+one.** A difference between them would have meant the migration was not a no-op
+after all — that ownership had already diverged and pinning to `postgres` was a
+real, unauthorised move. They matched, so the premise held throughout.
+
+### The arithmetic
+
+Last applied `when` before: `1786700000000` (0059). After: `1786800000000`
+(0060), which is `+100000000` and forward on the synthetic series. 60 entries on
+disk, 59 applied before, 60 after, pending 1 → 0.
+
+### State after the apply
+
+- Production (`dfotoodqvmjhbdcxyaxf`) has all **13** public SECURITY DEFINER
+  functions owned by `postgres`, now **declared in the repo** rather than
+  inherited from whoever ran migrate.
+- `drizzle.__drizzle_migrations` has a tracking row at `created_at = 1786800000000`.
+- Journal on disk: 60 entries, last `idx` 59, tag `0060_pin_security_definer_owner`.
+- **The migration slot is FREE.** Next free number is `0061`. Nothing in the repo
+  holds an unapplied migration.
+- `check-security-definer-owner.mjs` now runs in CI on every PR (count only —
+  `supabase db reset` cannot reproduce an owner split) and against production in
+  every future apply block (both halves).
