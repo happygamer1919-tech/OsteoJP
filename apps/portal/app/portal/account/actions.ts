@@ -117,27 +117,15 @@ export async function updateProfileAction(
       return { error: 'Não foi possível actualizar os dados. Tente novamente.' }
     }
 
-    // Sync fullName to auth user_metadata. Best-effort: a sync failure must
-    // not surface as an error to the patient.
-    try {
-      const data = await res.json() as { profile?: { fullName?: string } }
-      const fullName = data.profile?.fullName ?? ''
-      if (fullName) {
-        const spaceIdx = fullName.indexOf(' ')
-        const first_name = spaceIdx === -1 ? fullName : fullName.slice(0, spaceIdx)
-        const last_name = spaceIdx === -1 ? '' : fullName.slice(spaceIdx + 1)
-        const { createServerClient } = await import('@/lib/supabase/server')
-        const supabase = await createServerClient()
-        const { error: metaError } = await supabase.auth.updateUser({
-          data: { first_name, last_name },
-        })
-        if (metaError) {
-          console.error('[updateProfileAction] metadata sync failed:', metaError.message)
-        }
-      }
-    } catch (metaErr) {
-      console.error('[updateProfileAction] metadata sync error:', metaErr)
-    }
+    // LE-portal-supabase-residue, 2026-08-07: the auth user_metadata sync is
+    // GONE. It split the name into first_name/last_name and wrote them to a
+    // Supabase auth user that an OTP patient does not have, so updateUser had no
+    // subject and the whole block was a no-op wrapped in a best-effort try that
+    // guaranteed nobody would ever notice.
+    //
+    // Nothing read those fields either: the account screen renders
+    // profile.fullName from the API, which is what the PATCH above already
+    // updated. Removing it deletes a write with no writer and no reader.
 
     revalidatePath('/portal/account')
   } catch {
