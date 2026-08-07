@@ -8,6 +8,7 @@ import {
   writeDeviceToken,
 } from './device'
 import { writePortalSession } from './session'
+import { apiBase } from '@/lib/api/base'
 
 /**
  * W13-03 — the portal's server-side half of Decision D's login.
@@ -57,9 +58,6 @@ function tenantId(): string {
   return value
 }
 
-function apiBase(): string {
-  return process.env.NEXT_PUBLIC_API_URL ?? ''
-}
 
 /** Names only, never values, and never the phone or the code (PII rule #7). */
 function logUnavailable(where: string, e: unknown): void {

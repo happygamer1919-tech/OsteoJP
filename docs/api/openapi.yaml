@@ -266,6 +266,62 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
+  /api/v1/auth/otp/revoke:
+    post:
+      operationId: revokeTrustedDevice
+      tags: [auth]
+      summary: Revoke THIS device, server-side
+      description: >
+        The server half of sign-out. Clearing the `__Host-ojp_device` cookie
+        already made the token unpresentable from that browser, which is
+        sufficient for every practical case since the token exists in exactly
+        one. What it could not do was write `revoked_at`, so a token captured
+        before sign-out stayed live for the remainder of its 30 days and "we
+        cannot revoke" was the answer available when a patient reports a lost
+        phone.
+
+
+        IT TAKES NO REQUEST BODY AND NO PATIENT ID. The `__Host-ojp_device`
+        cookie IS the authentication: holding it is the only thing that could
+        authorise revoking it. A patient id would be a caller-supplied value
+        needing reconciliation against the device row, and the two can disagree
+        — the same argument that keeps the phone number out of `/otp/trusted`.
+
+
+        IT ALWAYS ANSWERS `204`, for a live, expired, already-revoked, unknown,
+        invented or entirely absent token. The honest outcome is identical in
+        every case — after this call that token is not usable — and
+        distinguishing them would turn the endpoint into an ORACLE for whether a
+        given device token is live, which is precisely the enumeration surface
+        `/otp/trusted` is built not to be. A `401` for a missing cookie would
+        also make sign-out noisy for a patient who never trusted the browser.
+
+
+        REVOKING IS IDEMPOTENT AND THE FIRST INSTANT SURVIVES. The underlying
+        UPDATE is conditional, so an unknown hash touches zero rows and a
+        re-revoke leaves the original `revoked_at` in place — otherwise "when was
+        it revoked" would stop being an answerable question.
+
+
+        IT DOES NOT TOUCH THE SESSION. A session is 12 hours and its own
+        artefact; revoking the DEVICE stops the silent 30-day refresh, which is
+        the thing being revoked. It also revokes ONLY the presented device, never
+        the patient's others.
+      responses:
+        "204":
+          description: >
+            The device is revoked, or there was nothing to revoke. The cookie is
+            CLEARED on every path (`Max-Age=0`), unconditionally, so a revoked
+            row plus a browser still presenting the token cannot make every
+            visit pay a lookup for a credential that can never succeed again.
+          headers:
+            Set-Cookie:
+              description: "`__Host-ojp_device` cleared with `Max-Age=0`."
+              schema:
+                type: string
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
   /api/v1/booking/catalog:
     get:
       operationId: getBookingCatalog

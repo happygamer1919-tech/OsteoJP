@@ -3,8 +3,10 @@
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 
-import { clearDeviceToken } from '@/lib/auth/device'
+import { clearDeviceToken, readDeviceToken } from '@/lib/auth/device'
+import { PORTAL_DEVICE_COOKIE } from '@/lib/auth/cookie-names'
 import { clearPortalSession, readPortalSession } from '@/lib/auth/session'
+import { apiBase } from '@/lib/api/base'
 
 type Patch = {
   phone?: string
@@ -13,9 +15,6 @@ type Patch = {
   city?: string
 }
 
-function apiBase(): string {
-  return process.env.NEXT_PUBLIC_API_URL ?? ''
-}
 
 // Read the Supabase access_token directly from the session cookie.
 // The browser client (@supabase/ssr createBrowserClient) stores the session
@@ -83,7 +82,42 @@ async function apiAuthHeader(): Promise<Record<string, string>> {
  * never present it again — but the row lives out its 30 days server-side. A
  * revoke endpoint is API work and is carded, not silently assumed here.
  */
+/**
+ * Sign out: drop both cookies AND revoke the device row server-side.
+ *
+ * LE-trusted-device-revoke. Clearing the cookies was already correct and already
+ * sufficient for every practical case - the token exists in exactly one browser,
+ * so dropping it there makes it unpresentable. What was missing is the SERVER
+ * side: `patient_trusted_devices.revoked_at` stayed null for the full 30 days,
+ * so a token captured before sign-out remained live, and "we cannot revoke" was
+ * the answer available when a patient reported a lost phone.
+ *
+ * ORDER MATTERS AND IS DELIBERATE. The revoke call needs the device token, so it
+ * runs BEFORE clearDeviceToken. Reversing them would silently turn this back
+ * into a cookie-only sign-out - the exact bug being fixed, reintroduced by a
+ * tidy-looking reorder.
+ *
+ * BEST-EFFORT, AND THAT IS A CHOICE RATHER THAN AN OVERSIGHT. If the API is
+ * unreachable the cookies are still cleared and the patient IS signed out of
+ * this browser. Failing the sign-out because a revocation could not be recorded
+ * would leave them signed IN, which is strictly worse than a row that keeps a
+ * null `revoked_at` for a token nobody holds any more.
+ */
 export async function signOutAction(): Promise<void> {
+  const deviceToken = await readDeviceToken()
+  if (deviceToken) {
+    try {
+      await fetch(`${apiBase()}/api/v1/auth/otp/revoke`, {
+        method: 'POST',
+        // The route authenticates on the device cookie and takes no body, so the
+        // cookie is all that is forwarded. Same shape as /otp/trusted.
+        headers: { Cookie: `${PORTAL_DEVICE_COOKIE}=${deviceToken}` },
+        cache: 'no-store',
+      })
+    } catch {
+      // See the header: a failed revoke must not block the sign-out.
+    }
+  }
   await clearPortalSession()
   await clearDeviceToken()
 }
