@@ -10,20 +10,23 @@
  *      appointment, and the patient is told the time is only reserved once
  *      reception confirms (JP's option-B ruling, 2026-08-06).
  *
- * WHAT THIS FILE DELIBERATELY DOES NOT COVER, so the gap is visible rather than
- * assumed away: the POSITIVE preselection case, where a patient WITH a completed
- * appointment sees that service marked and lifted. seed-e2e.mjs creates no
- * appointments at all, so the seeded portal patient has no history and
- * `preselectedServiceId` resolves to null by design. Seeding a completed
- * appointment would change a fixture 55 specs share. That case is proven instead
- * by apps/api/lib/appointments/preselection.test.ts (14/14), which asserts the
- * wave doc's own DoD line on the SET of offered services. The remaining e2e gap
- * is carded on W13-04.
+ * A CORRECTION THIS FILE CARRIES ON PURPOSE. An earlier draft asserted that the
+ * seeded portal patient had NO history, and carded the positive preselection
+ * case as impossible to cover. That was wrong, and it was wrong for an
+ * embarrassing reason: the grep behind it searched `apps/web/e2e/seed-e2e.mjs`,
+ * a path that does not exist (the file is `apps/web/e2e/seed/seed-e2e.mjs`), and
+ * the empty result was read as evidence of absence.
  *
- * THE NEGATIVE HALF IS THE HALF THAT CAN BREAK. "No history, so nothing is
- * preselected and everything is still offered" is exactly what fails if someone
- * turns the preselection into a filter — which is the mistake Decision C exists
- * to forbid. That is what this file asserts.
+ * THE SEED DOES CREATE ONE. `ensureDeclaracaoAppointment` gives Maria Silva a
+ * COMPLETED Osteopatia appointment (2022-03-15), and fixtures.ts:238 records that
+ * "Maria Silva's patient row doubles as the portal test patient". So the portal
+ * patient has exactly the history Decision C preselects from, and the positive
+ * case is not only coverable, it is the DEFAULT state of the fixture.
+ *
+ * So this file now asserts the WHOLE rule rather than half of it: the usual
+ * service is marked, AND every other bookable service is still offered. The
+ * second half is the one that fails if someone turns preselection into a
+ * filter — the mistake Decision C exists to forbid.
  *
  * Runs against the portal on http://localhost:3001 with apps/api on 3002, both
  * declared as webServers in playwright.config.ts. Chromium only, as with the
@@ -31,7 +34,13 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { LOCATION, PORTAL_BASE_URL, PORTAL_STORAGE } from "./fixtures";
+import {
+  LOCATION,
+  PORTAL_BASE_URL,
+  PORTAL_STORAGE,
+  SERVICE,
+  SERVICE_UNMAPPED,
+} from "./fixtures";
 
 test.use({
   storageState: PORTAL_STORAGE.patient,
@@ -76,7 +85,7 @@ async function openServiceStep(page: Page): Promise<void> {
   });
 }
 
-test("Decision C: the service step offers every bookable service and preselects nothing for a patient with no history", async ({
+test("Decision C: the usual service is MARKED, and every other bookable service is still offered", async ({
   page,
 }) => {
   await openServiceStep(page);
@@ -84,28 +93,38 @@ test("Decision C: the service step offers every bookable service and preselects 
   const rows = serviceRows(page);
 
   // PRECONDITION, ASSERTED RATHER THAN ASSUMED. An empty catalog would make
-  // every assertion below pass vacuously, so the emptiness itself fails here
-  // and names why. patient_bookable is set by migration 0057's backfill, which
-  // the E2E database runs; zero rows means that backfill did not reach the
-  // seeded services, which is a real finding and not a flake.
+  // every assertion below pass vacuously, so the emptiness itself fails here and
+  // names why. This exact assertion caught the seed never setting
+  // patient_bookable — migrations run BEFORE the seed, so 0057's backfill saw an
+  // empty services table and flipped nothing.
   await expect(
     rows,
     "the portal catalog is EMPTY - no service has patient_bookable set in the E2E database",
   ).not.toHaveCount(0);
 
-  const offered = await rows.count();
+  // PRESELECTION HAPPENED. The seeded portal patient (Maria Silva) has one
+  // COMPLETED appointment, for Osteopatia, so that is her usual service.
+  const badge = page.getByText("O seu serviço habitual");
+  await expect(badge).toHaveCount(1); // exactly one, never several
 
-  // NOTHING IS MARKED. The seeded patient has no completed appointment, so
-  // there is no usual service and the badge must not appear. If this ever fails,
-  // preselection is being derived from something other than completed history.
-  await expect(page.getByText("O seu serviço habitual")).toHaveCount(0);
+  // AND IT IS ON THE RIGHT ROW. A badge on the wrong service would still satisfy
+  // a bare count, so the row that carries it is named.
+  await expect(
+    rows.filter({ hasText: SERVICE.name }).filter({ hasText: "O seu serviço habitual" }),
+  ).toHaveCount(1);
+
+  // *** THE DECISION C INVARIANT, AND THE REASON THIS TEST EXISTS. *** The other
+  // bookable service is STILL OFFERED. History preselects; it never removes an
+  // option the patient is entitled to book. This is the assertion that fails the
+  // moment someone turns the preselection into a filter.
+  await expect(rows.filter({ hasText: SERVICE_UNMAPPED.name })).toHaveCount(1);
 
   // THE STEP IS NOT SKIPPED. Advancing on the patient's behalf would remove the
-  // choice rather than preselect within it. The service heading is still the one
-  // on screen after the page settles.
+  // choice rather than preselect within it.
   await expect(page.getByRole("heading", { name: /servi[çc]o/i })).toBeVisible();
 
-  // EVERY ROW IS SELECTABLE. Not one is disabled or filtered out by history.
+  // EVERY ROW IS SELECTABLE — the preselected one and the others alike.
+  const offered = await rows.count();
   for (let i = 0; i < offered; i += 1) {
     await expect(rows.nth(i)).toBeEnabled();
   }
