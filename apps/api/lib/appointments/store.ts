@@ -436,6 +436,11 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           and av.location_id = ${locationId}
           and av.is_active = true
           and u.is_active = true
+          -- D2: the grid is expanded from BOOKABLE therapists' hours only. Both
+          -- predicates in this query carry it, because a slot advertised from a
+          -- non-bookable user's hours and then refused at confirm is exactly the
+          -- step-3-vs-guard disagreement the header above says cannot happen.
+          and u.is_bookable = true
           and av.weekday = extract(dow from d.day)::int
           and (av.valid_from  is null or av.valid_from  <= d.day::date)
           and (av.valid_until is null or av.valid_until >= d.day::date)
@@ -447,6 +452,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           select 1 from users u
           where u.tenant_id = ${principal.tenantId}
             and u.is_active = true
+            and u.is_bookable = true -- D2: same predicate as the assignment query
             and ${availabilityCoversExists(principal.tenantId, sql`u.id`, locationId, startExpr, endExpr)}
             and not ${apptOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr, [])}
             and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr)}
@@ -460,15 +466,49 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
   },
 
   async listAvailableTherapists(principal, { locationId, startsAt, endsAt }): Promise<TherapistCandidate[]> {
-    // Candidates = active therapists who (a) have a covering availability template
-    // at the location for the window, (b) have no overlapping appointment, and
-    // (c) are not on time_off. service_role: must see ALL appointments to detect
-    // conflict; returns only therapist id + name.
+    // Candidates = BOOKABLE, active therapists who (a) have a covering
+    // availability template at the location for the window, (b) have no
+    // overlapping appointment, and (c) are not on time_off. service_role: must
+    // see ALL appointments to detect conflict; returns only therapist id + name.
+    //
+    // D2, 2026-08-11. `is_bookable` WAS ABSENT HERE AND THE TWO SURFACES
+    // DISAGREED ABOUT WHO IS A THERAPIST. A production portal booking for
+    // Fisioterapia was auto-assigned to Lurdes Cruz, an ADMINISTRATOR, who does
+    // not appear in the staff Nova marcacao dropdown at all - because that
+    // dropdown filters on `is_bookable` (apps/web/lib/scheduling/data.ts:311 ->
+    // therapist-bookable.ts:34-36) and this query did not. Reception was handed a
+    // pedido they could not act on: the confirm is a therapist-overlap check
+    // against a practitioner their own booking form will not offer, so item 18 of
+    // the acceptance session could not run at all.
+    //
+    // ONE DEFINITION, THE WAY 0059 MADE is_unconfirmed_pedido ONE DEFINITION.
+    // `is_bookable` (migration 0046) is ALREADY the single answer to "does this
+    // person belong in a Terapeuta list"; PL-06b made it explicit precisely
+    // because role sets rot at every hire. This query simply stops being the one
+    // place that asks a different question.
+    //
+    // WHY NOT A ROLE FILTER, which is the obvious-looking fix and is wrong. The
+    // practising owner JP is role=owner with zero service mappings. PL-05 derived
+    // "bookable" from role OR mappings and DROPPED HIM from the staff dropdown -
+    // a live defect, and the reason 0046 exists. A role filter here would
+    // reintroduce it on the portal side, where it would read as "JP cannot be
+    // booked online" rather than as a bug. Lurdes is excluded because her flag is
+    // false, not because of her title.
+    //
+    // WHY NOT A SERVICE-MAPPING FILTER, and this one is a RULING, not a
+    // preference. PL-06a (owner, 2026-07-28): the therapist-to-service mapping is
+    // a PRESELECTION, NEVER A RESTRICTION - the staff Servico select lists every
+    // active service for every therapist. Filtering portal candidates by mapping
+    // would make the portal STRICTER than the staff surface and would silently
+    // narrow who can be booked for a service, which is the opposite of what that
+    // ruling says the mapping means. If JP ever wants the portal to respect
+    // mappings, that is a change to PL-06a and belongs to him, not here.
     const rows = (await getDbAdmin().execute(sql`
       select distinct u.id as practitioner_id, u.full_name as full_name
       from users u
       where u.tenant_id = ${principal.tenantId}
         and u.is_active = true
+        and u.is_bookable = true
         and ${availabilityCoversExists(principal.tenantId, sql`u.id`, locationId, startsAt, endsAt)}
         and not ${apptOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt, [])}
         and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt)}
