@@ -1,5 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PatientPrincipal } from "@osteojp/auth";
+import {
+  resetPatientChangeConsumer,
+  setPatientChangeConsumer,
+  stubConsumer,
+} from "@/lib/notifications/patient-change";
 import {
   bookAppointment,
   cancelAppointment,
@@ -245,7 +250,16 @@ describe("24h cutoff is server-enforced", () => {
 
 /* --------------------------- booking ------------------------------------- */
 
+// INC-06: this suite books, and booking emits. It used to rely on the emit
+// falling through to an inert DEFAULT, which is the exact reliance that let a
+// production emit reach nothing for the life of the project. The default is now
+// the real consumer, so a suite that wants nothing delivered has to SAY SO.
+// Without this the emit would reach ./centre and try to open a database from a
+// unit test.
 describe("book", () => {
+  beforeEach(() => setPatientChangeConsumer(stubConsumer));
+  afterEach(() => resetPatientChangeConsumer());
+
   it("takes patient_id from the principal, never the request body", async () => {
     const { store, createCalls, rows } = makeStore();
     // Hostile body smuggling another patient id, a chosen therapist and a price.

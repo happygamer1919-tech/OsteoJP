@@ -51,6 +51,24 @@ background across the middle of the session.
 **Trigger a password recovery to a real Gmail address. Then leave it completely
 alone and carry on.**
 
+### The click path **[7b]**
+
+> **[7b] ADDED 2026-08-09. This step named an outcome and no surface** — the only
+> pre-flight block without a click path, and item 21's failure branch then said
+> "trigger a new recovery" with the same gap. **There is nowhere in the product to
+> do it from:** the staff login screen carries no "forgot password" link (carded
+> as `LE-staff-no-forgot-password`), so the Supabase dashboard is currently the
+> ONLY way to start this clock.
+
+1. **supabase.com** → the **`dfotoodqvmjhbdcxyaxf`** project.
+   > **STOP if the ref differs** — `jaxmkwoxjcgzkwxgbayx` is the retired old prod.
+2. **Authentication** → **Users**.
+3. Find **your own** account row. **Read the email address before you act on it.**
+4. The row's **⋯** menu → **Send password recovery**.
+   > **Expected:** a success toast. The mail arrives at that address.
+   > **Failure signal:** an error, or no mail within a few minutes — check the
+   > project's SMTP settings before assuming the template is at fault.
+
 > **[R2a] Its ONLY job is to start the clock.** You read the link at **item 21**,
 > in sequence. **The wait IS the test** — a mail-provider scanner has to have
 > followed the link before you click it. Clicking immediately proves nothing, and
@@ -493,8 +511,25 @@ phone field**.
 > **Failure signal:** any email field, password field, or "Recuperar acesso" link.
 
 **2.** Visit **`/auth/reset-password`**, then **`/auth/activate`**. **Expected:**
-the portal's not-found page for both.
+**both REDIRECT you to `/auth/login`.** You land back on the phone screen.
 > **Failure signal:** either renders a form — a live session-minting entry point.
+>
+> **[7a] CORRECTED 2026-08-09, from the owner's observation and confirmed in the
+> code.** This said "the portal's not-found page for both". It is a **redirect**,
+> and the mechanism is worth knowing because it is the stronger outcome, not a
+> weaker one: **the pages were deleted**, and `PUBLIC_PATHS` in
+> `apps/portal/proxy.ts:35` is `['/auth/login', '/portal/clinics']` — nothing
+> else. A visitor with no session on any other path hits
+> `NextResponse.redirect(new URL('/auth/login', ...))` at `proxy.ts:45`, **before
+> Next ever gets to render a 404**.
+>
+> **Same security outcome, reached earlier.** There is no route, no form and no
+> session-minting entry point either way; the proxy simply turns you around at the
+> edge instead of serving a not-found page. Both readings pass this item.
+>
+> *(With a session already established the proxy falls through and Next 404s,
+> since no page file exists. Items 1–3 run before any login, so expect the
+> redirect.)*
 
 ### THE RATE LIMITS, BEFORE YOU TOUCH ANYTHING **[1a]**
 
@@ -898,12 +933,32 @@ pedido B** at **time B**, from the agenda.
 **19.** Open the **staff platform's** function logs and find the suppression
 entry for the appointment you created at item 18.
 
-**What you are looking for** — `packages/notify/src/gate.ts:76-78`, emitted via
-`logger.info`:
+**What you are looking for — TWO lines, not one [7d]** —
+`packages/notify/src/gate.ts:76-78`, emitted via `logger.info`:
 
 ```
 [notify] suppressed template=confirmation.email channel=email appointment=<uuid> reason=live_send_disabled
+[notify] suppressed template=confirmation.sms   channel=sms   appointment=<uuid> reason=live_send_disabled
 ```
+
+> **[7d] CORRECTED 2026-08-09. The expected string named the email template
+> only.** `appointment/scheduled` triggers **two** registered confirmation
+> templates, not one: `confirmation.email` (email) and `confirmation.sms` (sms),
+> `apps/web/lib/reminders/notification-registry.ts:118-119`. Both hit the same
+> gate, so both suppress. **Seeing the SMS line is a PASS, not an anomaly** — and
+> under the old text a reader could have reported it as one.
+>
+> **ONE line is enough to close the item.** The check is that the gate ran and
+> named a reason, not that both channels appeared; a single
+> `reason=live_send_disabled` line proves the suppression path executed.
+>
+> **THE 48h/24h REMINDER LINES WILL NOT APPEAR TODAY, and waiting for them is the
+> trap this note removes.** The two reminder offsets are `48h email` and
+> `24h sms` (`apps/web/lib/reminders/offsets.ts:31-34`), and their function
+> **sleeps until the send instant** before dispatching
+> (`step.sleepUntil`, `inngest/functions.ts:110`). For a booking more than 48
+> hours out that is days away. **Only the two confirmation lines are in scope for
+> item 19.**
 
 **Which project, and why that one [1b].** The **staff platform** project
 (`apps/web`, **`app.osteojp.pt`**). The dispatcher runs inside Inngest functions
@@ -939,8 +994,8 @@ Discriminate before reporting, because they have different fixes:**
 | What you also see | What it means |
 |---|---|
 | A line reading **`scheduling: reminder enqueue failed`** | **NEVER SCHEDULED.** The Inngest send threw and was swallowed deliberately (`reminders.ts:85-88`) so a network blip cannot fail a booking. The appointment is fine; the reminder was never queued |
-| No such line, and **no email arrived** | **SCHEDULED, RUN NOT OBSERVED.** The event was sent but the confirmation run has not executed or has not logged. Check the Inngest dashboard for the run before concluding anything |
-| **An email actually arrived** at the patient address | **SENT. STOP THE SESSION.** `REMINDERS_LIVE_SEND` is armed when it must not be. This is the one outcome the suppression path exists to prevent |
+| No such line, and **no message arrived on EITHER channel [7d]** | **SCHEDULED, RUN NOT OBSERVED.** The event was sent but the confirmation run has not executed or has not logged. Check the Inngest dashboard for the run before concluding anything |
+| **A message actually arrived — an email at the patient address, OR an SMS on the handset [7d]** | **SENT. STOP THE SESSION.** `REMINDERS_LIVE_SEND` is armed when it must not be. This is the one outcome the suppression path exists to prevent. **Check the phone as well as the inbox:** two templates fire and the old wording asked about only one, so an SMS could have arrived while the inbox looked clean |
 
 > **A missing entry is NOT automatically a failure of this item** — it is a
 > question about which of the three above you are in. Report which, not "no log".
@@ -1035,8 +1090,20 @@ set-password form renders.** Set a password and sign in.
    > taken. Pick another and repeat; nothing has been consumed.
    > **[R2b] A NEW ROW MEANS A LIVE AUTH USER EXISTS. Add it to the 0g ledger
    > now.**
-4. **Wait a few minutes**, then apply the **same link check as item 21** — it must
-   read `…/auth/update-password?token_hash=<long-string>&type=invite`.
+4. **Wait a few minutes**, then check the link. It must read, in full:
+   ```
+   https://app.osteojp.pt/auth/update-password?token_hash=<long-string>&type=invite
+   ```
+   > **[7c] `type=invite`, NOT `type=recovery`. CORRECTED 2026-08-09.** This step
+   > said "apply the same link check as item 21", and item 21 is written against
+   > **`&type=recovery`** — so following it literally would have failed a
+   > correct invite link on the one component that is *supposed* to differ.
+   >
+   > **What IS shared with item 21, and is the part that matters:** the host must
+   > be **`app.osteojp.pt`**, the parameter must be **`token_hash=`** and not a
+   > bare `token=`, the value must be non-empty, and the address must **not**
+   > contain `supabase.co/auth/v1/verify`. Any of those four is the old template
+   > and the paste did not take.
 5. Open it, set a password, **sign in**.
 
 > **[3c] WHAT YOU WILL SEE AFTER SIGNING IN, AND IT IS NOT A DEFECT.** You will be
