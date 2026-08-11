@@ -19,18 +19,47 @@ export function BookingFlow({
   locations,
   services,
   preselectedServiceId,
+  preselectedLocationId,
 }: {
   locations: BookableLocation[]
   services: BookableService[]
   /** Decision C: the patient's usual service. Marks and lifts one row; never
    *  hides another and never skips the step. */
   preselectedServiceId?: string | null
+  /** A1, Decision C: the patient's home clinic. Skips the step FORWARD; never
+   *  removes it and never hides the other clinic. See `homeClinic` below. */
+  preselectedLocationId?: string | null
 }) {
   const router = useRouter()
   const singleClinic = locations.length === 1
 
-  const [step, setStep] = useState<Step>(singleClinic ? 2 : 1)
-  const [locationId, setLocationId] = useState<string | null>(singleClinic ? locations[0]!.id : null)
+  // A1 — WHY A HOME CLINIC MAY SKIP THE STEP WHEN A USUAL SERVICE MAY NOT, since
+  // both are Decision C preselections and they are treated differently one screen
+  // apart.
+  //
+  // The service step is a list of DISTINCT things: every row is a different
+  // appointment, so advancing on the patient's behalf would remove the choice
+  // rather than preselect within it. The clinic step is a list of the SAME thing
+  // in two places, the patient goes to one of them, and the value is already on
+  // their record. Advancing there removes a tap, not a decision.
+  //
+  // AND IT IS ONLY DEFENSIBLE BECAUSE THE STEP STAYS REACHABLE. The switch
+  // control below is rendered on EVERY step, so the other clinic is one tap away
+  // from anywhere in the flow. Preselection that could not be undone in one
+  // interaction would be restriction, which Decision C forbids.
+  //
+  // NULL IS THE ONLY VALUE IN PRODUCTION TODAY (LE-primary-location-backfill), so
+  // the branch that matters right now is the one that does NOT skip.
+  const homeClinic =
+    preselectedLocationId && locations.some((l) => l.id === preselectedLocationId)
+      ? preselectedLocationId
+      : null
+  const startsPreselected = singleClinic || homeClinic !== null
+
+  const [step, setStep] = useState<Step>(startsPreselected ? 2 : 1)
+  const [locationId, setLocationId] = useState<string | null>(
+    singleClinic ? locations[0]!.id : homeClinic,
+  )
   const [serviceId, setServiceId] = useState<string | null>(null)
   const [date, setDate] = useState<string | null>(null)
   const [slotIso, setSlotIso] = useState<string | null>(null)
@@ -119,9 +148,31 @@ export function BookingFlow({
   function back() {
     setError(null)
     if (step === 1) return router.push('/portal/dashboard')
-    if (step === 2) return singleClinic ? router.push('/portal/dashboard') : setStep(1)
+    // A preselected start has no step 1 behind it, so Back from step 2 leaves the
+    // flow rather than landing on a step the patient never saw. The clinic is
+    // still changeable from the switch control, which is always on screen.
+    if (step === 2) return startsPreselected ? router.push('/portal/dashboard') : setStep(1)
     if (step === 3) return setStep(2)
     return setStep(3)
+  }
+
+  /**
+   * A1 — the always-visible escape hatch, and the reason preselection here is
+   * not restriction.
+   *
+   * Returns the patient to the clinic list from ANY step in ONE interaction.
+   * Everything downstream of the clinic is cleared, because a service, a date and
+   * a slot chosen at one location do not carry to the other: the service may not
+   * be offered there and the slot certainly is not.
+   */
+  function switchClinic() {
+    setError(null)
+    setSlotTaken(false)
+    setLocationId(null)
+    setServiceId(null)
+    setDate(null)
+    setSlotIso(null)
+    setStep(1)
   }
 
   function selectLocation(id: string) {
@@ -192,6 +243,43 @@ export function BookingFlow({
             />
           </div>
         </div>
+
+        {/*
+          A1 — DECISION C's "preselection is never restriction", rendered.
+
+          Shown on every step from 2 onward whenever a clinic is chosen AND there
+          is more than one to choose from. It is the single interaction that takes
+          the patient to the other location from anywhere in the flow, which is
+          what makes skipping step 1 legitimate rather than a removed choice.
+
+          NOT hidden once the patient is deep in the flow, deliberately: a patient
+          who realises at the confirm screen that they picked the wrong city must
+          not have to abandon the booking to fix it.
+
+          It names the CURRENT clinic rather than saying only "change", so the
+          preselection is visible instead of silent - a patient who was advanced
+          past step 1 can see which clinic they were advanced onto.
+        */}
+        {step > 1 && location && !singleClinic && (
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-surface-muted px-3 py-2">
+            <span className="flex min-w-0 items-center gap-2 text-xs text-text-secondary">
+              <MapPin size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />
+              <span className="truncate">
+                {s.booking.clinic_current.replace(
+                  '{{name}}',
+                  locationDisplayName(location.name) ?? '',
+                )}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={switchClinic}
+              className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded text-sm font-semibold text-accent-2-700 transition-transform motion-safe:active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            >
+              {s.booking.clinic_switch}
+            </button>
+          </div>
+        )}
       </div>
 
       {step === 1 && (

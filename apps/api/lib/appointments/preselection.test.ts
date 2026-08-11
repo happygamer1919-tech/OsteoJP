@@ -33,7 +33,7 @@ const svc = (id: string, locationIds: string[] = []) => ({
   locationIds,
 });
 
-const CATALOG: Omit<BookableCatalog, "preselectedServiceId"> = {
+const CATALOG: Omit<BookableCatalog, "preselectedServiceId" | "preselectedLocationId"> = {
   locations: [{ id: "loc-1", name: "Linda-a-Velha" }],
   services: [svc("s-osteo"), svc("s-fisio"), svc("s-rpg"), svc("s-massagem")],
 };
@@ -45,10 +45,15 @@ function storeWith(priorServiceId: string | null): AppointmentsStore {
       // The catalog the store returns has no preselection of its own: the
       // decision is made by getBookableCatalog, which is the only place that can
       // check membership against the list it is about to return.
-      return { ...CATALOG, preselectedServiceId: null };
+      return { ...CATALOG, preselectedServiceId: null, preselectedLocationId: null };
     },
     async priorCompletedServiceId() {
       return priorServiceId;
+    },
+    // A1: getBookableCatalog now asks for the home clinic too. Null here keeps
+    // these cases about the SERVICE preselection, which is what they test.
+    async primaryLocationId() {
+      return null;
     },
   } as unknown as AppointmentsStore;
 }

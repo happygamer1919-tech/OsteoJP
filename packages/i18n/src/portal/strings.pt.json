@@ -107,6 +107,8 @@
   "booking": {
     "title": "Marcar consulta",
     "step_location": "Escolha a clínica",
+    "clinic_switch": "Mudar de clínica",
+    "clinic_current": "Clínica: {{name}}",
     "step_service": "Escolha o serviço",
     "usual_service": "O seu serviço habitual",
     "step_datetime": "Escolha a data e hora",

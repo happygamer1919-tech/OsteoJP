@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 import {
   appointments,
   locations,
+  patients,
   services,
   users,
   getDbAdmin,
@@ -311,10 +312,11 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         locationIds: s.locationId === null ? allLocationIds : [s.locationId],
       }));
 
-    // preselectedServiceId is decided by getBookableCatalog (booking.ts), which
-    // is the only place that can check membership against the list it is about
+    // BOTH preselections are decided by getBookableCatalog (booking.ts), which
+    // is the only place that can check membership against the lists it is about
     // to return. Null here is the honest value, not a placeholder.
     return {
+      preselectedLocationId: null,
       locations: bookableLocations,
       services: bookableServices,
       preselectedServiceId: null,
@@ -542,6 +544,38 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
       .orderBy(desc(appointments.startsAt))
       .limit(1);
     return rows[0]?.serviceId ?? null;
+  },
+
+  async primaryLocationId(principal): Promise<string | null> {
+    // A1, Decision C. The patient's HOME CLINIC, read straight off the patient
+    // row rather than derived from history.
+    //
+    // WHY A STORED COLUMN AND NOT A DERIVATION, which is the opposite of how the
+    // SERVICE preselection works two methods up. `priorCompletedServiceId`
+    // derives "most recent completed" because a service is a repeated choice and
+    // recency is a good signal for it. A PLACE is not: a single visit to the
+    // other clinic while travelling would relocate the patient's home, and the
+    // patient would then find the booking flow opening on a city they do not
+    // live in. So the home clinic is a stored, staff-editable fact
+    // (patients.primary_location_id, migration-free - schema.ts:588).
+    //
+    // IT IS NULL FOR EVERY PATIENT TODAY and will stay null until after
+    // LAUNCH-03 brings the real book across with its visit history
+    // (LE-primary-location-backfill). The null path is therefore not the edge
+    // case, it is the ONLY case that currently exists, and it must render the
+    // clinic choice unpreselected - which is exactly Decision C.
+    //
+    // service_role with an EXPLICIT tenant + patient predicate from the verified
+    // principal, matching the two methods above. Returns an id the caller must
+    // still find in the catalog before it is used.
+    const rows = await getDbAdmin()
+      .select({ primaryLocationId: patients.primaryLocationId })
+      .from(patients)
+      .where(
+        and(eq(patients.tenantId, principal.tenantId), eq(patients.id, principal.patientId)),
+      )
+      .limit(1);
+    return rows[0]?.primaryLocationId ?? null;
   },
 
   async priorTherapistId(principal): Promise<string | null> {

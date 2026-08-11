@@ -29,6 +29,11 @@ export type BookableCatalog = {
    *  above, never a filter over it. Null when there is no completed history or
    *  the service is no longer offered. */
   preselectedServiceId: string | null
+  /** A1, Decision C: the patient's home clinic, always a member of `locations`
+   *  above, never a filter over it. Null when no home clinic is on file or the
+   *  one on file is no longer bookable - which is EVERY patient until
+   *  LAUNCH-03, so the null path is the one that must be right. */
+  preselectedLocationId: string | null
 }
 
 export type AppointmentStatus =

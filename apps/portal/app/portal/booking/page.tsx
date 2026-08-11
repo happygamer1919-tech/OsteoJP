@@ -9,6 +9,7 @@ export default async function BookingPage() {
       locations={catalog.locations}
       services={catalog.services}
       preselectedServiceId={catalog.preselectedServiceId}
+      preselectedLocationId={catalog.preselectedLocationId}
     />
   )
 }

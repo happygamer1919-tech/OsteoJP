@@ -107,6 +107,8 @@
   "booking": {
     "title": "Book appointment",
     "step_location": "Choose clinic",
+    "clinic_switch": "Change clinic",
+    "clinic_current": "Clinic: {{name}}",
     "step_service": "Choose service",
     "usual_service": "Your usual service",
     "step_datetime": "Choose date and time",

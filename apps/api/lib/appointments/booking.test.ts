@@ -87,7 +87,11 @@ function makeStore(opts: FakeOpts = {}) {
       return null;
     },
     async getCatalog() {
-      return { locations: [], services: [], preselectedServiceId: null };
+      return { locations: [], services: [], preselectedServiceId: null, preselectedLocationId: null };
+    },
+    // A1: the home clinic read. Null keeps these suites about what they test.
+    async primaryLocationId() {
+      return null;
     },
     async getBookableService(_p, serviceId) {
       if (opts.service === null) return null;
