@@ -30,6 +30,74 @@ Card: `ACC-13-results-uncommitted`.
 
 ---
 
+## OWNER CLOSED WAVE 13 — 2026-08-11
+
+**The ruling, as dispatched:** *"portal and platform are correctly linked,
+appointment booking works end to end, no further verification needed on the
+booking flows."*
+
+Under **WF-03** the owner's observation on a deployed screen **is** the evidence.
+This ruling is therefore a real observation and is recorded as
+`OWNER RULING 2026-08-11` in the **Observed** column of every row it covers.
+
+### Which rows it covers, and why — entailment only
+
+A row is marked from this ruling **only when the row's own text follows from the
+ruling's own words.** Marking a row because it sits next to one that does is the
+same error as inferring a result from a plan, which is what this file exists to
+prevent.
+
+| # | Entailment |
+|---|---|
+| 12 | A patient cannot reach the portal without completing an OTP login (Decision D routes every patient through OTP). "Booking works end to end" therefore entails a code was requested on a handset. |
+| 13 | Same chain: the code was entered and the dashboard reached. |
+| 14 | "Booking works end to end" is the booking request being created. |
+| 16 | "Portal and platform are correctly linked" **is** the pedido reaching the platform's notification centre. |
+| 17 | "End to end" terminates at the confirm; reception confirmed a pedido. |
+
+### Which rows it does NOT cover
+
+Items **1, 2, 3, 15** (auth surface shape, removed routes, the non-canary
+refusal, trusted-device persistence), **5–11**, **19**, **21–24**, **25**, **26**.
+None of these follow from "booking works end to end". They stay `UNRECORDED`.
+
+**Item 25 is still the most urgent unfilled row in this file.** It records whether
+`OTP_LIVE_SEND` was disarmed. Until it is filled,
+`SEC-otp-unauthenticated-sms-pump` treats the flag as armed.
+
+### THREE EXPLICIT EXCEPTIONS
+
+1. **Item 20 is NOT closed by this ruling.** It is a code defect observable only
+   in source — which is precisely why the flows looked correct on a screen. The
+   staff app emits zero patient-change events, so a therapist confirming a pedido
+   makes it vanish from reception's live queue with nothing written anywhere.
+   Card `ACC-13-item20-staff-fanout`, **HALTED** on an owner contract ruling.
+2. **Item 26b is NOT closed and is NOT inferred.** Item 17 is *reception*
+   confirming. Whether the **assigned therapist** can confirm their own pedido has
+   never been observed. Card `ACC-therapist-queue-unobserved`.
+3. **The double booking is NOT closed.** It is a confirmed real defect. Card
+   `INC-08-double-booking-state-not-path`.
+
+### Gate effect: readiness stays 3/9. No gate moves.
+
+| Gate | Needs | Ruling supplies | Verdict |
+|---|---|---|---|
+| PG1 | 1, 2, 3, 12, 13, 15 | 12, 13 | **fail** — 2 of 6 |
+| PG2 | 16, 17, 18 | 16, 17 | **fail** — 2 of 3, and 18 is excepted |
+| PG4 | 20 | nothing | **fail** — 0 of 1 |
+
+Rehydrate §4.5 forbids partial credit. The ruling moves five acceptance rows and
+zero gates. Recording otherwise would launder the owner's satisfaction into a
+gate count.
+
+**One fact got worse rather than better.** Item 18's half two ("the confirm
+REFUSED") is still `UNRECORDED` — the production incident's confirm ran 68 seconds
+*before* the staff row existed, so that path was never exercised. But the
+invariant item 18 exists to protect has now been **violated in production** by a
+route item 18 does not test. PG2 is further from passing than it was this morning.
+
+---
+
 ## Sitting metadata
 
 | Field | Value |
@@ -76,12 +144,12 @@ creates state the later items consume and closes nothing itself.
 | 9 | `/admin/staff` -> test therapist -> Horários | card | W13-A | `UNRECORDED` | |
 | 10 | Saturday second period, 08:00-13:00 | card | W13-A | `UNRECORDED` | |
 | 11 | New-appointment DRAWER, not the agenda grid | card | W13-A | `UNRECORDED` | |
-| 12 | Request a code on a real handset | gate | PG1 | `UNRECORDED` | |
-| 13 | Enter it, reach the portal dashboard | gate | PG1 | `UNRECORDED` | |
-| 14 | **CREATE TWO BOOKING REQUESTS** | **producer** | **nothing** | `UNRECORDED` | |
+| 12 | Request a code on a real handset | gate | PG1 | `OWNER RULING 2026-08-11` | |
+| 13 | Enter it, reach the portal dashboard | gate | PG1 | `OWNER RULING 2026-08-11` | |
+| 14 | **CREATE TWO BOOKING REQUESTS** | **producer** | **nothing** | `OWNER RULING 2026-08-11` | |
 | 15 | Sign out, reopen: trusted device holds | gate | PG1 | `UNRECORDED` | |
-| 16 | Notification centre (bell) shows the pedidos | gate | PG2 | `UNRECORDED` | |
-| 17 | Open pedido A, press Confirmar, it confirms | gate | PG2 | `UNRECORDED` | |
+| 16 | Notification centre (bell) shows the pedidos | gate | PG2 | `OWNER RULING 2026-08-11` | |
+| 17 | Open pedido A, press Confirmar, it confirms | gate | PG2 | `OWNER RULING 2026-08-11` | |
 | 18 | **The double-booking check** | gate | PG2 | `UNRECORDED` | |
 | 19 | Suppression log line in the platform function logs | card | LE-suppression-observation | `UNRECORDED` | |
 | 20 | `/notificações` populated, no clinical content | gate | PG4 | `UNRECORDED` | |
