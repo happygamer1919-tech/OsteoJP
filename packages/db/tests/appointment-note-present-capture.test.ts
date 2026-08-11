@@ -69,6 +69,15 @@ const B = newIds();
 
 const START = "2026-03-04T09:00:00Z";
 const END = "2026-03-04T10:00:00Z";
+// A SECOND, NON-OVERLAPPING window. The two fixture appointments used to share
+// START/END, which put two `confirmed` rows on one therapist at one time - a
+// literal double booking, sitting in a fixture. 0061's
+// appointments_no_double_confirmed refuses it, and correctly: nothing in this
+// suite is about overlap, it just needed two appointments. They now sit an hour
+// apart. Half-open ranges mean 10:00-11:00 would also have been legal, but a
+// clear gap says "these are unrelated" rather than "these are adjacent".
+const START_2 = "2026-03-04T11:00:00Z";
+const END_2 = "2026-03-04T12:00:00Z";
 
 async function seedTenant(sql: Sql, x: Ids, full: boolean): Promise<void> {
   await sql`insert into tenants (id, name, slug)
@@ -91,7 +100,7 @@ async function seedTenant(sql: Sql, x: Ids, full: boolean): Promise<void> {
       (id, tenant_id, patient_id, practitioner_id, location_id, service_id, starts_at, ends_at, status)
     values
       (${x.apptWithNote}, ${x.tenant}, ${x.patient}, ${x.user}, ${x.location}, ${x.service}, ${START}, ${END}, 'confirmed'),
-      (${x.apptNoNote}, ${x.tenant}, ${x.patient}, ${x.user}, ${x.location}, ${x.service}, ${START}, ${END}, 'confirmed')`;
+      (${x.apptNoNote}, ${x.tenant}, ${x.patient}, ${x.user}, ${x.location}, ${x.service}, ${START_2}, ${END_2}, 'confirmed')`;
   // A per-visit note (0026) on apptWithNote only.
   await sql`insert into appointment_notes
       (tenant_id, appointment_id, patient_id, episode_id, author_user_id, body)
