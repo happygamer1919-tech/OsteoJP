@@ -79,6 +79,49 @@ test.describe("unauthenticated", () => {
     await page.getByRole("button", { name: /Iniciar sessão/i }).click();
     await expect(page).toHaveURL(/\/login/);
   });
+
+  // -------------------------------------------------------------------------
+  // LE-staff-no-forgot-password - the recovery route is reachable from /login.
+  //
+  // WHAT THIS DELIBERATELY DOES NOT DO: submit the form. Submitting asks
+  // Supabase to SEND MAIL, and a test that mails on every CI run is a test that
+  // gets muted. The send path is proven without a browser instead:
+  // app/auth/forgot-password/request.test.ts holds it to one outcome for
+  // success and every failure, and inert-mount.test.ts proves in source that it
+  // fires only from the explicit submit. What only a browser can prove is that
+  // a locked-out person can actually GET to the form, which is the whole of
+  // this card.
+  // -------------------------------------------------------------------------
+  test("the login screen reaches the password-recovery form", async ({ page }) => {
+    await page.goto("/login");
+
+    const link = page.getByRole("link", { name: /Esqueceu-se da palavra-passe\?/i });
+    await expect(link).toBeVisible();
+    await link.click();
+
+    await expect(page).toHaveURL(/\/auth\/forgot-password/, { timeout: 8_000 });
+    await expect(
+      page.getByRole("heading", { name: /Recuperar a palavra-passe/i }),
+    ).toBeVisible();
+    await expect(page.locator('input[name="email"]')).toBeVisible();
+
+    // And back, so a staff member who clicked by mistake is not stranded on a
+    // screen with no way out, the dead end this card exists to remove.
+    await page.getByRole("link", { name: /Voltar ao início de sessão/i }).click();
+    await expect(page).toHaveURL(/\/login/, { timeout: 8_000 });
+  });
+
+  test("the recovery form renders on a direct visit, and sends nothing to get there", async ({
+    page,
+  }) => {
+    // A staff member is as likely to be handed this URL as to click through to
+    // it. The GET must render the form and must not have mailed anybody: the
+    // screen still shows the request form, never the "check your email"
+    // confirmation, which is what a mount-time send would produce.
+    await page.goto("/auth/forgot-password");
+    await expect(page.getByRole("heading", { name: /Recuperar a palavra-passe/i })).toBeVisible();
+    await expect(page.getByText(/Verifique o seu email/i)).toHaveCount(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

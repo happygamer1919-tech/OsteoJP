@@ -135,18 +135,28 @@ export default function LoginPage() {
           </div>
 
           {/*
-            §11.5 item 3 (secondary paths) and item 4 (pt-PT/en-GB language
-            switcher) are intentionally omitted, consistent with the shipped
-            portal login pattern:
-            - The staff app exposes no magic-link or password-reset entry from
-              /login today (only the post-reset /auth/update-password landing),
-              and §11.5 scopes secondary paths to "as the app already supports
-              them" — so none are rendered.
-            - There is no i18n runtime in apps/web yet, so a language switcher
-              would be a dead control. The portal login omits it for the same
-              reason; this stays omitted until the i18n runtime lands (W4-09 is
-              the strings sweep, not the runtime).
+            §11.5 item 3, SECONDARY PATHS. Password recovery is now one of the
+            paths "the app already supports", so it is rendered
+            (LE-staff-no-forgot-password). Before this, the only way to start a
+            recovery was the Supabase dashboard, which is reachable by the
+            people who least need it and by none of the clinic staff.
+
+            A plain anchor, not a router push: the person clicking this is
+            locked out, and a control that needs a healthy client bundle is the
+            wrong control to put in their way. Magic-link is still not offered:
+            the staff app does not support it.
+
+            §11.5 item 4 (pt-PT/en-GB language switcher) stays omitted: there is
+            no i18n runtime in apps/web yet, so it would be a dead control. The
+            portal login omits it for the same reason, until the runtime lands
+            (W4-09 is the strings sweep, not the runtime).
           */}
+          <a
+            href="/auth/forgot-password"
+            className="mt-4 block text-center text-sm text-v2-text-secondary underline hover:text-v2-text-primary"
+          >
+            {s["login.forgotPassword"]}
+          </a>
         </form>
       </section>
     </main>
