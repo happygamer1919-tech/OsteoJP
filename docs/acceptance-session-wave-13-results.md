@@ -90,6 +90,31 @@ creates state the later items consume and closes nothing itself.
 | 23 | Staff invite, the half that runs | card | LAUNCH-01 | `UNRECORDED` | |
 | 24 | Work the 0g cleanup ledger top to bottom | cleanup | - | `UNRECORDED` | |
 | 25 | **DISARM `OTP_LIVE_SEND`** | **required** | see below | `UNRECORDED` | |
+| 26 | **Therapist queue and therapist confirm** (added 2026-08-11) | card | ACC-therapist-queue-unobserved | `UNRECORDED` | |
+
+---
+
+## Item 26 - therapist queue and confirm, added 2026-08-11
+
+**Not part of the original plan.** Added after the Task 2 code read established
+that therapist notification and therapist confirm are **both already
+code-complete** and that what is missing is observation, not construction.
+
+Run all three on a **practitioner-role** account. **(c) is the negative arm and
+must not be skipped** - without it, (a) and (b) prove only that something
+rendered, not that it was scoped to the right person.
+
+| Sub | What must be shown | Observed | Screenshot |
+|---|---|---|---|
+| a | An **assigned** therapist opens `/notificações` and **sees a pedido addressed to them** | `UNRECORDED` | |
+| b | That same therapist **confirms it successfully** | `UNRECORDED` | |
+| c | A **non-assigned** therapist attempting the same pedido gets **`not_found`** | `UNRECORDED` | |
+
+Code evidence, all on `origin/main`: recipient at `booking.ts:408` and
+`centre.ts:85`; no role gate on the surface at `notificacoes/page.tsx:20-25`;
+capability gate at `actions.ts:1024` with `therapist` holding
+`appointments:write` at `permissions.ts:148`; RLS scoping the confirm join at
+`actions.ts:1050-1059`. **No code change and no RLS change is needed.**
 
 ---
 
