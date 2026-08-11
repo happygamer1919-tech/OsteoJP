@@ -302,6 +302,7 @@
   "appointment.conflictWarning": "Conflict: room occupied",
   "appointment.statusCompleted": "Completed",
   "appointment.statusNoShow": "No-show",
+  "appointment.illegalTransition": "Status change not allowed. A confirmed appointment cannot return to pending, and completed, cancelled and no-show are final.",
   "appointment.selectPatient": "Select patient",
   "appointment.patientTypeToSearch": "Type to search…",
   "appointment.selectService": "Select service",

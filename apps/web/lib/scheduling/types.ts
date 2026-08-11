@@ -198,6 +198,12 @@ export type ActionErrorCode =
   // W3-06 hard-delete: wrong delete password, or linked clinical/invoice records.
   | "password"
   | "linked_records"
+  // INC-08: a lifecycle move the Estado map forbids, refused SERVER-SIDE. It is
+  // its own code and not `validation` because the two need different copy: this
+  // one is "that move is not allowed", not "you left a field blank". The agenda
+  // drawer offers all five statuses with no client guard, so reception can and
+  // did reach `confirmed -> scheduled` in one click.
+  | "illegal_transition"
   | "error";
 
 export type ActionResult<T> =

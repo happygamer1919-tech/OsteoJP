@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, count, eq, inArray, or } from "drizzle-orm";
+import { and, count, eq, inArray, or, sql } from "drizzle-orm";
 import {
   assertCan,
   ForbiddenError,
@@ -27,6 +27,7 @@ import { writeAppointmentStatusChangedEvent } from "./analytics";
 import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
 import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conflict";
+import { isLegalEstadoTransition } from "./estado-transitions";
 import { getTherapistAvailability, type DayAvailability } from "./day-availability";
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
@@ -724,6 +725,38 @@ export async function updateAppointment(
         }
         const ids = affected.map((a) => a.id);
 
+        // ==============================================================
+        // INC-08 (a) — THE ESTADO MAP IS ENFORCED HERE, ON THE SERVER.
+        //
+        // `isLegalEstadoTransition` has existed since W5-09 and forbids
+        // `confirmed -> scheduled`, but it was imported by exactly ONE caller,
+        // app/patients/[id]/appointments-list.tsx:312. estado-transitions.ts
+        // said so in its own header: "the server itself is unchanged (no new
+        // lifecycle rule authored there)". The agenda drawer offers all five
+        // statuses from an unguarded <Select> (appointment-drawer.tsx:112-118)
+        // and never imported the map, so the illegal move was one click.
+        //
+        // THAT IS NOT A THEORETICAL HOLE. It is the first step of the confirmed
+        // production double booking: the owner flipped a CONFIRMED pedido back
+        // to `scheduled` while testing whether a conflict would show. A pedido
+        // at `scheduled` with an appointment_request row is exactly what
+        // `is_unconfirmed_pedido` (0059:139-148) calls non-blocking, so the row
+        // vanished from every conflict check and a staff appointment was
+        // rescheduled onto its window sixteen seconds later.
+        //
+        // CLIENT-SIDE ALONE IS NOT ENFORCEMENT. One caller guarding and one not
+        // is indistinguishable, from the database's point of view, from nobody
+        // guarding.
+        // ==============================================================
+        if (patch.status) {
+          const illegal = affected.filter(
+            (a) => a.status !== patch.status && !isLegalEstadoTransition(a.status, patch.status!),
+          );
+          if (illegal.length > 0) {
+            return { ok: false, error: "illegal_transition" };
+          }
+        }
+
         // A room change can create a room double-booking at each occurrence's
         // existing time. Therapist/time are untouched here, so only room
         // conflicts are relevant.
@@ -747,6 +780,111 @@ export async function updateAppointment(
               error: "conflict",
               conflicts: conflicts.slice(0, CONFLICT_CAP),
             };
+          }
+        }
+
+        // ==============================================================
+        // INC-08 (b) — A STATUS PATCH THAT MAKES A ROW START BLOCKING IS
+        // CHECKED FOR CONFLICTS. Until now this path ran NONE: the only
+        // conflict branch above is gated on `"room" in set`, so a status-only
+        // patch reached the UPDATE unchecked, which is how both rows in the
+        // production incident were flipped to `confirmed` on an already
+        // double-booked window at 17:00:01 and 17:00:14.
+        //
+        // WHICH TRANSITIONS NEED IT, derived rather than guessed. A row is
+        // visible to `appointment_conflicts` when its status is not
+        // cancelled/no_show AND it is not an unconfirmed pedido (0059). So the
+        // only way a status patch ADDS a row to that set is by moving an
+        // unconfirmed pedido out of `scheduled`. Everything else either was
+        // already blocking (confirmed -> completed), or is leaving the set
+        // (-> no_show), or is now refused as illegal by (a) above.
+        //
+        // THE PEDIDO READ GOES THROUGH is_unconfirmed_pedido AND NOT THROUGH A
+        // JOIN, for the reason 0059:26-40 gives: `staff_notifications` SELECT
+        // is pinned by 0055 to `recipient_user_id = auth.uid()`, so a caller
+        // who is not the notified recipient would see no row, conclude "not a
+        // pedido", and skip the very check they need. The function is SECURITY
+        // DEFINER precisely so the answer does not depend on who is asking.
+        // It is evaluated BEFORE the UPDATE, while the status is still
+        // `scheduled` — afterwards it would answer false for every row.
+        //
+        // allowConflict IS STILL HONOURED HERE, deliberately. This mirrors
+        // create and reschedule: staff may override a warning and "Guardar
+        // mesmo assim". What is NOT overridable is two CONFIRMED appointments
+        // on one therapist — that is refused by the database itself (0061), so
+        // it cannot be reached by any path, overridden, or forgotten.
+        // ==============================================================
+        if (patch.status && !opts?.allowConflict) {
+          const NON_BLOCKING_STATUS = new Set(["cancelled", "no_show"]);
+          const willBlock = !NON_BLOCKING_STATUS.has(patch.status);
+          // Only a row at `scheduled` can be an unconfirmed pedido — 0059:145
+          // requires it — so a series with none cannot contain one, and the
+          // probe below would be a guaranteed-empty round trip. Skipping it
+          // matters: `confirmed -> completed` is what reception does to every
+          // appointment of every day, and it can never enter the blocking set.
+          const anyScheduled = affected.some((a) => a.status === "scheduled");
+          if (willBlock && anyScheduled) {
+            const pedidoRows = (await tx.execute(sql`
+              SELECT a.id::text AS id
+                FROM public.appointments a
+               WHERE a.id IN (${sql.join(
+                 ids.map((i) => sql`${i}::uuid`),
+                 sql`, `,
+               )})
+                 AND public.is_unconfirmed_pedido(a.id)
+            `)) as unknown;
+            const pedidoIds = new Set(
+              (Array.isArray(pedidoRows)
+                ? pedidoRows
+                : ((pedidoRows as { rows?: unknown[] }).rows ?? [])
+              ).map((r) => (r as { id: string }).id),
+            );
+
+            // Rows already blocking are skipped: this patch changes nothing
+            // about their occupancy, and re-checking a row against itself
+            // proves nothing — the same reasoning confirmAppointmentRequest
+            // gives for not re-checking an ordinary staff row.
+            const entering = affected.filter(
+              (a) => NON_BLOCKING_STATUS.has(a.status) || pedidoIds.has(a.id),
+            );
+
+            // SERIALISE BEFORE READING, exactly as create, reschedule and
+            // confirmAppointmentRequest do. Check-then-write across two
+            // statements is how two writers both pass and both write; the
+            // advisory lock orders them for this therapist and window, and the
+            // check below runs inside it.
+            if (entering.length > 0) {
+              const locks = acquireSlotLocksForMany(
+                actor.tenantId,
+                entering.map((a) => ({
+                  practitionerId: a.practitionerId,
+                  startsAt: a.startsAt,
+                  endsAt: a.endsAt,
+                })),
+              );
+              if (locks) await tx.execute(locks);
+            }
+
+            const conflicts: ConflictInfo[] = [];
+            for (const a of entering) {
+              const c = await findConflictsForWindow(tx, {
+                practitionerId: a.practitionerId,
+                locationId: a.locationId,
+                room: a.room,
+                startsAt: a.startsAt,
+                endsAt: a.endsAt,
+                excludeIds: ids,
+              });
+              conflicts.push(...blockingConflicts(c));
+              if (conflicts.length >= CONFLICT_CAP) break;
+            }
+            if (conflicts.length > 0) {
+              return {
+                ok: false,
+                error: "conflict",
+                conflicts: conflicts.slice(0, CONFLICT_CAP),
+              };
+            }
           }
         }
 

@@ -535,6 +535,11 @@ export function AppointmentDrawer({
     if (r.ok) return true;
     if (r.error === "conflict") setConflicts(r.conflicts ?? []);
     else if (r.error === "forbidden") setError(s["errors.forbidden"]);
+    // INC-08: its own message, not the generic one. This Estado <Select> offers
+    // all five statuses with no client-side guard, so an illegal move is one
+    // click away and reception needs to be told WHICH move is refused - not
+    // "ocorreu um erro", and certainly not "preencha os campos obrigatórios".
+    else if (r.error === "illegal_transition") setError(s["appointment.illegalTransition"]);
     else if (r.error === "validation") setError(s["appointment.requiredFields"]);
     else if (r.error === "unauthenticated") setError(s["errors.unauthenticated"]);
     else setError(s["errors.generic"]);
