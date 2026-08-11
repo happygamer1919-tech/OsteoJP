@@ -5,7 +5,7 @@ before this reaches the owner.**
 
 Migration: `0061_no_double_confirmed_and_confirm_notification` (journal idx 60).
 Branch: `db/0061-no-double-confirmed`. PR: #870.
-**Apply from sha `6fd75f5`.**
+**Apply from sha `a8b2b1b`.**
 Cards: `INC-08-double-booking-state-not-path`, `ACC-13-item20-staff-fanout`.
 
 Written under `docs/runbook-prod-migrations.md`, "The pre-check is mandatory".
@@ -86,7 +86,7 @@ double booking in the clinic's diary and a person decides which one moves.
 |---|---|---|
 | Apply worktree | `git worktree list` | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` |
 | Env file | directory listing, **name only, never read** | `/Users/ivan/osteojp-secrets/new-prod.env` |
-| PR head sha | `git rev-parse HEAD` on the branch | `6fd75f5` |
+| Apply sha | `git log -n1 -- packages/db supabase` **after the rebase** | `a8b2b1b` |
 | Migration number | file count + journal tail | `0061`, idx `60` |
 | Journal `when` | previous `+100000000` | `1786900000000` (prev `1786800000000`) |
 | Journal + mirror | `node scripts/check-journal.mjs` | 61 `.sql`, 61 entries, in order, `when` strictly increasing, **mirror matches by CONTENT** |
@@ -101,7 +101,7 @@ NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN
 ```
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 git fetch origin --prune
-git checkout --detach 6fd75f5
+git checkout --detach a8b2b1b
 git log -1 --oneline
 set -o allexport
 source /Users/ivan/osteojp-secrets/new-prod.env
@@ -123,6 +123,20 @@ pending calculation. If it does not say exactly one is pending, the tree is not
 what this block assumes and nothing below it means anything.
 
 **`set -o allexport`, never `set -a`.** Standing rule.
+
+**WHY `a8b2b1b` AND NOT THE BRANCH HEAD.** It is the last commit that touches
+anything this block executes — verified with
+`git log -n1 -- packages/db supabase`. Everything after it on this branch is
+this document. Pinning it means the block stays valid while the PR body and this
+file keep being revised.
+
+**THIS SHA WAS REPINNED ONCE, and the reason is worth keeping.** The block first
+pinned `6fd75f5`, the pre-rebase commit. Rebasing onto `main` to pick up #869
+rewrote it to `a8b2b1b`, and a block pointing at a commit that is no longer on
+the branch would have sent the apply worktree to a detached sha with the right
+content but no relationship to the PR being merged — or, if the old object had
+been garbage-collected, to a hard failure at the checkout. **If this branch is
+rebased again, this sha must be updated again.**
 
 ---
 
