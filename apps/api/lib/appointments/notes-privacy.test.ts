@@ -110,7 +110,11 @@ function makeNotesLeakStore(): AppointmentsStore {
       return null;
     },
     async getCatalog() {
-      return { locations: [], services: [], preselectedServiceId: null };
+      return { locations: [], services: [], preselectedServiceId: null, preselectedLocationId: null };
+    },
+    // A1: the home clinic read. Null keeps these suites about what they test.
+    async primaryLocationId() {
+      return null;
     },
     async getBookableService() {
       return null;

@@ -86,22 +86,24 @@ unoccupied.**
 
 ---
 
-## Open question for JP, logged rather than guessed
+## Answered by JP, 2026-08-11
 
-**Should a patient whose pedido is still pending 24 hours before the slot be told
-anything at all?**
+**A patient whose booking request is still unconfirmed receives NO 24h reminder.**
 
-The options, with the trade in one line each:
+**The shipped default is the intended behaviour, not a placeholder.** This was
+logged as an open question when the gate shipped in #854, with option 1 (silence)
+as the recommended default on the grounds that it is the only option that cannot
+mislead. JP has ruled it, and the ruling matches what #854 already ships, so
+**there is no code change**.
 
-1. **Nothing** (today's behaviour after this ruling). Safest. A patient who
-   requested a slot hears silence and may arrive anyway.
-2. **A distinct pending-reminder body.** Honest, but it is an eleventh patient
-   template needing JP approval and a registry entry, and it tells several
-   patients about the same contested slot.
-3. **Force reception to resolve pedidos before the 24h mark.** An operational
-   rule, not a code change, and the only option that removes the situation rather
-   than describing it.
+The two alternatives are refused rather than deferred:
 
-**Recommended default: option 1**, which is what shipped, on the grounds that
-silence is the only option that cannot mislead. Revisit when reception has run
-the queue for a week and there is real data on how long a pedido actually sits.
+- **A distinct pending-reminder body** would be an eleventh patient template
+  needing JP approval and a registry entry, and it would tell several patients
+  about the same contested slot.
+- **Forcing reception to resolve pedidos before the 24h mark** is an operational
+  rule, not a code change, and remains available to the clinic without any
+  engineering.
+
+Revisit only if reception's queue data later shows patients arriving for
+unconfirmed requests.

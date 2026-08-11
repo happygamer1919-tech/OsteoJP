@@ -78,6 +78,30 @@ export type BookableCatalog = {
    * AND in the query (WAVE-13.md:809).
    */
   preselectedServiceId: string | null;
+
+  /**
+   * A1, DECISION C — the patient's HOME CLINIC, PRESELECTED, NEVER A RESTRICTION.
+   *
+   * Null when the patient has no home clinic on file, or when the one they have
+   * is no longer an active bookable location.
+   *
+   * IT IS ALWAYS A MEMBER OF `locations` ABOVE, by the same structural guarantee
+   * as `preselectedServiceId`: getBookableCatalog only sets it after finding it
+   * in the very array it returns. A clinic that has since been deactivated drops
+   * the PRESELECTION, never a row from the list.
+   *
+   * The catalog is UNFILTERED by it. A caller that used this to narrow
+   * `locations` would turn preselection into restriction, which Decision C
+   * forbids in the UI and in the query alike. The portal's contract is that the
+   * other clinic stays reachable in at most one interaction from anywhere in the
+   * flow.
+   *
+   * NULL IS THE ONLY VALUE THIS FIELD TAKES TODAY, and that is expected rather
+   * than broken: `primary_location_id` is unpopulated until LAUNCH-03 brings the
+   * real book across (LE-primary-location-backfill). The unpreselected path is
+   * the one that must be correct now.
+   */
+  preselectedLocationId: string | null;
 };
 
 /** The subset of an appointment the cancel/reschedule flow needs. */
@@ -115,6 +139,17 @@ export interface AppointmentsStore {
    * come for, and a future booking has not happened yet.
    */
   priorCompletedServiceId(principal: PatientPrincipal): Promise<string | null>;
+
+  /**
+   * A1, Decision C: the patient's HOME CLINIC, read off the patient row
+   * (`patients.primary_location_id`), or null.
+   *
+   * A STORED FACT, NOT A DERIVATION, unlike the service above. Recency is a good
+   * signal for a repeated service and a bad one for a place: one visit to the
+   * other clinic while travelling would move the patient's home. Null for every
+   * patient until LAUNCH-03 (LE-primary-location-backfill).
+   */
+  primaryLocationId(principal: PatientPrincipal): Promise<string | null>;
 
   /** Resolve a patient-bookable, active service by id, or null. */
   getBookableService(
@@ -263,9 +298,10 @@ export async function getBookableCatalog(
   principal: PatientPrincipal,
   store: AppointmentsStore,
 ): Promise<BookableCatalog> {
-  const [catalog, priorServiceId] = await Promise.all([
+  const [catalog, priorServiceId, homeLocationId] = await Promise.all([
     store.getCatalog(principal),
     store.priorCompletedServiceId(principal),
+    store.primaryLocationId(principal),
   ]);
 
   // THE MEMBERSHIP CHECK IS THE DECISION-C GUARANTEE, and it is why this is a
@@ -279,7 +315,16 @@ export async function getBookableCatalog(
       ? priorServiceId
       : null;
 
-  return { ...catalog, preselectedServiceId };
+  // A1: the SAME membership check, for the same reason. A home clinic that has
+  // been deactivated since the patient's last visit drops the PRESELECTION and
+  // leaves `locations` untouched, so the patient is shown the choice rather than
+  // being advanced past a step onto a clinic that is no longer bookable.
+  const preselectedLocationId =
+    homeLocationId && catalog.locations.some((l) => l.id === homeLocationId)
+      ? homeLocationId
+      : null;
+
+  return { ...catalog, preselectedServiceId, preselectedLocationId };
 }
 
 /** Booking horizon offered to patients (calendar days from `now`). */
