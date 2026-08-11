@@ -22,6 +22,17 @@ export type ReminderAppointmentData = {
   appointmentId: string;
   startsAt: Date;
   status: string;
+  /**
+   * W13-C: the pedido gate. `pending` means reception has not confirmed the
+   * request yet, and an unconfirmed pedido must never produce a reminder.
+   *
+   * SEPARATE FROM `status` AND NOT DERIVABLE FROM IT. A pedido is `scheduled`
+   * with `confirmation_state = 'pending'`, so the status check alone reads it as
+   * a live appointment. The two columns answer different questions: `status` is
+   * "does this appointment still exist", `confirmation_state` is "has the clinic
+   * agreed to it".
+   */
+  confirmationState: string | null;
   /** For structured skip logs only (ids are not PII) — never rendered. */
   patientId: string;
   patientName: string;
@@ -59,6 +70,7 @@ export async function loadReminderData(
         appointmentId: appointments.id,
         startsAt: appointments.startsAt,
         status: appointments.status,
+        confirmationState: appointments.confirmationState,
         patientId: patients.id,
         patientName: patients.fullName,
         patientEmail: patients.email,
