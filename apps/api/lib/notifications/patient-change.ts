@@ -46,7 +46,25 @@ export type PatientChangeKind =
   | "booked"
   | "cancelled"
   | "rescheduled"
-  | "appointment_request";
+  | "appointment_request"
+  /**
+   * A pedido was ACCEPTED. Added by owner ruling 2026-08-11, and it is the one
+   * kind here that is NOT patient-initiated — the rest of this file's header
+   * says "never staff ones", and this is the stated exception rather than a
+   * quiet contradiction of it.
+   *
+   * WHY IT HAD TO EXIST. Reception's queue is a live query on state
+   * (apps/web/lib/notifications/centre.ts:151-155 filters
+   * `status = 'scheduled'`), so when a therapist confirms a pedido the row
+   * simply VANISHES from that queue. Reception could not distinguish "a
+   * therapist just accepted this" from "cancelled" or from "never there". This
+   * kind is the record that the acceptance happened.
+   *
+   * SCOPE, and it is narrow on purpose: the CONFIRM path only. Staff cancel,
+   * reschedule and no-show still emit nothing. That is a known gap, carded, not
+   * forgotten.
+   */
+  | "confirmed";
 
 /**
  * Who must see it. Reception is a ROLE (all reception users of the tenant); the
@@ -84,6 +102,17 @@ export type PatientChangeEvent = {
   appointmentId: string;
   patientId: string;
   audience: NotificationAudience;
+  /**
+   * WHO acted, when that is a staff member. 0061's `actor_user_id`.
+   *
+   * OMITTED for every patient-initiated kind, where the actor is the patient
+   * already named by `patientId` and repeating them would be noise. Present for
+   * `confirmed`, because reception receives this fan-out too and would
+   * otherwise get their OWN confirmations back indistinguishable from a
+   * therapist's — which is the noise that would have made the queue worse
+   * rather than better.
+   */
+  actorUserId?: string | null;
   /** The appointment's start BEFORE the change, ISO-8601 UTC. */
   previousStartsAt: string;
   /** The start AFTER the change. Equal to previousStartsAt for a cancellation. */

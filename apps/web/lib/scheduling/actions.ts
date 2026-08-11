@@ -28,6 +28,7 @@ import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
 import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conflict";
 import { isLegalEstadoTransition } from "./estado-transitions";
+import { emitConfirmedNotification } from "@/lib/notifications/centre";
 import { getTherapistAvailability, type DayAvailability } from "./day-availability";
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
@@ -111,8 +112,59 @@ function isDenied(a: Authorized | Denied): a is Denied {
   return "ok" in a;
 }
 
-/** Log a sanitized failure (no PII / payload) and return a generic error. */
+/**
+ * Postgres `exclusion_violation`. Raised by 0061's
+ * `appointments_no_double_confirmed` when a write would leave two CONFIRMED
+ * appointments overlapping for one practitioner.
+ */
+const EXCLUSION_VIOLATION = "23P01";
+
+/**
+ * Was this thrown by the double-confirmed constraint?
+ *
+ * MATCHES ON THE SQLSTATE AND ON THE CONSTRAINT NAME, not on the message text.
+ * The message is locale- and version-dependent; the code and the name are
+ * neither. Both are checked because 23P01 belongs to any exclusion constraint,
+ * and mapping an unrelated one to "this slot is taken" would be a confident lie.
+ *
+ * The driver shape is not assumed: postgres.js puts `code`/`constraint_name` on
+ * the error, node-postgres uses `code`/`constraint`, and a wrapper may nest the
+ * original under `cause`. All are read defensively rather than cast.
+ */
+function isDoubleConfirmedViolation(e: unknown): boolean {
+  const seen = new Set<unknown>();
+  let cur: unknown = e;
+  for (let depth = 0; cur && typeof cur === "object" && depth < 4; depth++) {
+    if (seen.has(cur)) break;
+    seen.add(cur);
+    const o = cur as Record<string, unknown>;
+    if (o.code === EXCLUSION_VIOLATION) {
+      const name = String(o.constraint_name ?? o.constraint ?? "");
+      if (name === "appointments_no_double_confirmed") return true;
+    }
+    cur = o.cause;
+  }
+  return false;
+}
+
+/**
+ * Log a sanitized failure (no PII / payload) and return a generic error.
+ *
+ * EXCEPT for the double-confirmed constraint, which gets its OWN code so the
+ * agenda can say what happened in pt-PT. THE DEMO IS THE REASON THIS IS NOT
+ * DEFERRED: the owner is showing this build to the clinic team, and a raw
+ * database error on screen during that is worse than the bug it replaced.
+ *
+ * It is deliberately NOT mapped to `conflict`. That code carries a list of
+ * conflicting appointments and the drawer answers it with "Guardar mesmo
+ * assim" — an override that this constraint exists to refuse, so offering it
+ * would invite the user to retry something that cannot succeed.
+ */
 function fail(action: string, e: unknown): Denied {
+  if (isDoubleConfirmedViolation(e)) {
+    console.error(`scheduling: ${action} refused by appointments_no_double_confirmed`);
+    return { ok: false, error: "double_booked" };
+  }
   console.error(`scheduling: ${action} failed`, e instanceof Error ? e.name : "unknown");
   return { ok: false, error: "error" };
 }
@@ -1166,6 +1218,13 @@ export async function confirmAppointmentRequest(
   if (!id) return { ok: false, error: "validation" };
 
   const ip = await clientIp();
+  // Captured inside the tx, emitted AFTER commit (the fan-out is a separate
+  // admin-scoped write and must not hold the confirm's transaction open).
+  let confirmFanOut: {
+    patientId: string;
+    practitionerIds: string[];
+    startsAt: Date;
+  } | null = null;
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -1181,6 +1240,12 @@ export async function confirmAppointmentRequest(
             startsAt: appointments.startsAt,
             endsAt: appointments.endsAt,
             practitionerId: appointments.practitionerId,
+            // WF-05: a dual-participant service (Massagem 4 Maos, Sessao
+            // Familia) has two assigned therapists and JP's standing ruling is
+            // that BOTH are notified. Read here so the post-commit fan-out does
+            // not need a second query.
+            practitionerTwoId: appointments.practitionerTwoId,
+            patientId: appointments.patientId,
             locationId: appointments.locationId,
             room: appointments.room,
             status: appointments.status,
@@ -1256,13 +1321,38 @@ export async function confirmAppointmentRequest(
           ip,
         });
 
+        confirmFanOut = {
+          patientId: pedido.patientId,
+          practitionerIds: [pedido.practitionerId, pedido.practitionerTwoId].filter(
+            (p): p is string => Boolean(p),
+          ),
+          startsAt: pedido.startsAt,
+        };
         return { ok: true, data: { id: pedido.id } };
       },
     );
     if (result.ok) {
-      await afterCommit("confirmRequest", () => {
+      await afterCommit("confirmRequest", async () => {
         revalidatePath(AGENDA_PATH);
         revalidatePath("/notificacoes");
+        // ITEM 20 / PG4. Until 0061 the staff app emitted NOTHING, so a
+        // therapist accepting a pedido made it vanish from reception's queue
+        // (listPendingRequests filters `status = 'scheduled'`) with no record
+        // written anywhere — indistinguishable from cancelled, or from never
+        // there. POST-COMMIT and best-effort: the appointment really is
+        // confirmed, so a failed notification must never be reported as a
+        // failed confirmation.
+        if (confirmFanOut) {
+          await emitConfirmedNotification({
+            tenantId: actor.tenantId,
+            actorUserId: actor.userId,
+            appointmentId: result.data.id,
+            patientId: confirmFanOut.patientId,
+            practitionerIds: confirmFanOut.practitionerIds,
+            startsAt: confirmFanOut.startsAt,
+            occurredAt: new Date(),
+          });
+        }
       });
     }
     return result;

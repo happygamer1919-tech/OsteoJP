@@ -303,6 +303,7 @@
   "appointment.statusCompleted": "Completed",
   "appointment.statusNoShow": "No-show",
   "appointment.illegalTransition": "Status change not allowed. A confirmed appointment cannot return to pending, and completed, cancelled and no-show are final.",
+  "appointment.doubleBooked": "This therapist already has a confirmed appointment at this time. Two confirmed appointments cannot overlap.",
   "appointment.selectPatient": "Select patient",
   "appointment.patientTypeToSearch": "Type to search…",
   "appointment.selectService": "Select service",
@@ -1301,5 +1302,6 @@
   "requests.error.conflictWith": "Conflicts with:",
   "requests.error.notFound": "This request is no longer pending. It may already have been confirmed or cancelled.",
   "requests.error.forbidden": "You do not have permission to confirm requests.",
+  "requests.error.doubleBooked": "This therapist already has a confirmed appointment at this time. Call the patient and offer another time.",
   "requests.error.generic": "The request could not be confirmed. Try again."
 }
