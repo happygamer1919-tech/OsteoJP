@@ -5,7 +5,8 @@ import { drizzleAppointmentsStore } from "@/lib/appointments/store";
 import { AppointmentError } from "@/lib/appointments/errors";
 import { errorResponse, unauthorized } from "@/lib/appointments/http";
 
-// GET /api/v1/booking/slots?serviceId=&locationId= — the bookable slot starts
+// GET /api/v1/booking/slots?serviceId=&locationId=[&practitionerId=] — the
+// bookable slot starts
 // (UTC ISO, ascending, 14-day horizon) for a service at a location.
 //
 // This is the portal step-3 SOURCE OF TRUTH: slots are expanded from active
@@ -30,9 +31,18 @@ export async function GET(req: Request): Promise<Response> {
     if (!UUID_RE.test(serviceId) || !UUID_RE.test(locationId)) {
       throw new AppointmentError("invalid_input");
     }
+    // A2: OPTIONAL therapist filter. Absent means every bookable therapist, which
+    // is the pre-A2 behaviour. Present must be a UUID; whether it names a
+    // BOOKABLE therapist is decided by the query's own is_bookable predicates,
+    // so a well-formed id for a non-bookable user simply yields no slots - it
+    // cannot widen the result.
+    const practitionerRaw = url.searchParams.get("practitionerId");
+    if (practitionerRaw !== null && !UUID_RE.test(practitionerRaw)) {
+      throw new AppointmentError("invalid_input");
+    }
     const slots = await listOpenSlots(
       principal,
-      { serviceId, locationId },
+      { serviceId, locationId, practitionerId: practitionerRaw },
       drizzleAppointmentsStore,
       new Date(),
     );

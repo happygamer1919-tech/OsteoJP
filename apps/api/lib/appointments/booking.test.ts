@@ -93,6 +93,11 @@ function makeStore(opts: FakeOpts = {}) {
     async primaryLocationId() {
       return null;
     },
+    // A2: the therapist-step roster. Empty keeps these suites about what they
+    // test - the choose-for-me path never consults it.
+    async listBookableTherapists() {
+      return [];
+    },
     async getBookableService(_p, serviceId) {
       if (opts.service === null) return null;
       const svc = opts.service ?? { id: serviceId, name: "Osteopatia", durationMin: 60, locationId: null };
@@ -266,14 +271,27 @@ describe("book", () => {
 
   it("takes patient_id from the principal, never the request body", async () => {
     const { store, createCalls, rows } = makeStore();
-    // Hostile body smuggling another patient id, a chosen therapist and a price.
+    // Hostile body smuggling another patient id and a price.
+    //
+    // A2 CHANGED WHAT HAPPENS TO A SMUGGLED practitionerId, and the change is a
+    // STRENGTHENING rather than a loosening. It used to be read and dropped on
+    // the floor; the patient may now choose a therapist, so it is read and
+    // VALIDATED against the bookable candidate set. A malformed id is refused by
+    // parseBookingInput and a well-formed but non-bookable one is refused by
+    // bookAppointment - both louder than the old silent ignore. That refusal has
+    // its own arms in therapist-choice.test.ts, including the one that matters
+    // most: it must not fall back to auto-assignment.
+    //
+    // THIS TEST KEEPS ITS OWN SUBJECT, which is patient_id. The therapist named
+    // below is a legitimate candidate so the booking proceeds and the patient_id
+    // assertions can actually run; smuggling an evil one here would make this
+    // test pass for the wrong reason (a throw), and it is not this test's job.
     const raw = {
       serviceId: "11111111-1111-1111-1111-111111111111",
       locationId: "22222222-2222-2222-2222-222222222222",
       startsAt: inHours(72).toISOString(),
       patient_id: "bob",
       patientId: "bob",
-      practitionerId: "ther-evil",
       priceCents: 0,
     };
     const input = parseBookingInput(raw);
@@ -281,9 +299,31 @@ describe("book", () => {
 
     expect(createCalls).toHaveLength(1);
     expect(createCalls[0].principal.patientId).toBe("alice");
-    // The new row belongs to Alice; the smuggled bob / evil therapist are ignored.
+    // The new row belongs to Alice; the smuggled bob and price are ignored.
     expect(rows.at(-1)!.patientId).toBe("alice");
-    expect(rows.at(-1)!.practitionerId).not.toBe("ther-evil");
+  });
+
+  it("REFUSES a smuggled therapist id rather than ignoring it (A2)", async () => {
+    // The clause the test above used to carry, now asserted at its real
+    // strength. `ther-evil` is not in the candidate set, so the booking is
+    // refused outright - it is neither honoured nor quietly swapped for an
+    // auto-assignment.
+    const { store, rows } = makeStore();
+    const before = rows.length;
+    await expect(
+      bookAppointment(
+        ALICE,
+        {
+          serviceId: "11111111-1111-1111-1111-111111111111",
+          locationId: "22222222-2222-2222-2222-222222222222",
+          startsAt: inHours(72),
+          practitionerId: "99999999-9999-4999-8999-999999999999",
+        },
+        store,
+        NOW,
+      ),
+    ).rejects.toThrow();
+    expect(rows).toHaveLength(before);
   });
 
   it("applies the returning-patient soft preference", async () => {

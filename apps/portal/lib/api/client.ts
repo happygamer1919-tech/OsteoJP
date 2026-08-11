@@ -54,10 +54,18 @@ export type AppointmentView = {
   room: string | null
 }
 
+export type BookableTherapist = {
+  id: string
+  name: string
+}
+
 export type BookingInput = {
   serviceId: string
   locationId: string
   startsAt: string
+  /** A2: the therapist the patient chose, or omitted for "choose for me".
+   *  Validated server-side against is_bookable; never trusted. */
+  practitionerId?: string | null
 }
 
 export type PatientProfile = {
@@ -164,11 +172,30 @@ export async function getBookableCatalog(): Promise<BookableCatalog> {
  * the API's availability list, generated and conflict-filtered by the same
  * predicates the booking confirm re-runs. 14-day horizon, server-decided.
  */
+export async function getBookableTherapists(
+  serviceId: string,
+  locationId: string,
+): Promise<BookableTherapist[]> {
+  const params = new URLSearchParams({ serviceId, locationId })
+  const res = await fetch(`${apiBase()}/api/v1/booking/therapists?${params}`, {
+    headers: await apiHeaders(),
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string; message?: string }
+    throw new ApiError(res.status, err.error ?? 'UNKNOWN', err.message ?? 'Therapists fetch failed')
+  }
+  const data = await res.json() as { therapists: BookableTherapist[] }
+  return data.therapists
+}
+
 export async function getOpenSlots(
   serviceId: string,
   locationId: string,
+  practitionerId?: string | null,
 ): Promise<string[]> {
   const params = new URLSearchParams({ serviceId, locationId })
+  if (practitionerId) params.set('practitionerId', practitionerId)
   const res = await fetch(`${apiBase()}/api/v1/booking/slots?${params}`, {
     headers: await apiHeaders(),
     cache: 'no-store',

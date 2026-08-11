@@ -1,12 +1,20 @@
 'use server'
 
-import { bookAppointment, getOpenSlots, ApiError } from '@/lib/api/client'
+import {
+  bookAppointment,
+  getBookableTherapists,
+  getOpenSlots,
+  ApiError,
+  type BookableTherapist,
+} from '@/lib/api/client'
 import { redirect } from 'next/navigation'
 
 type BookingInput = {
   serviceId: string
   locationId: string
   startsAt: string
+  /** A2: null means "choose for me", which is the pre-A2 behaviour. */
+  practitionerId?: string | null
 }
 
 export type BookingRejection = {
@@ -60,9 +68,10 @@ export type SlotsResult = { slots: string[] } | { error: string }
 export async function loadSlots(
   serviceId: string,
   locationId: string,
+  practitionerId?: string | null,
 ): Promise<SlotsResult> {
   try {
-    const slots = await getOpenSlots(serviceId, locationId)
+    const slots = await getOpenSlots(serviceId, locationId, practitionerId)
     return { slots }
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
@@ -70,6 +79,31 @@ export async function loadSlots(
     }
     return {
       error: 'Não foi possível carregar os horários. Tente novamente ou ligue para a clínica.',
+    }
+  }
+}
+
+export type TherapistsResult = { therapists: BookableTherapist[] } | { error: string }
+
+/**
+ * A2 step-3 roster: who could see this patient at this clinic.
+ *
+ * NOT an availability call. It runs before a date is chosen, so it answers
+ * roster membership only; free/busy is decided by loadSlots afterwards.
+ */
+export async function loadTherapists(
+  serviceId: string,
+  locationId: string,
+): Promise<TherapistsResult> {
+  try {
+    const therapists = await getBookableTherapists(serviceId, locationId)
+    return { therapists }
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      redirect('/auth/login')
+    }
+    return {
+      error: 'Não foi possível carregar os terapeutas. Tente novamente ou ligue para a clínica.',
     }
   }
 }
