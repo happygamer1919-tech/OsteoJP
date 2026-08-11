@@ -165,8 +165,14 @@ jobs:
       - name: Run apps/web DB-gated suite (DATABASE_URL set)
         if: steps.changes.outputs.code == 'true'
         working-directory: apps/web
+        # A GLOB, NOT A PATH LIST, and that is a fix rather than a tidy-up. This
+        # step named redeem.db.test.ts explicitly, so pedido-confirm.db.test.ts
+        # would have been added to the repo, passed review, and NEVER RUN - a
+        # suite that reads as protection and executes nothing, which is the exact
+        # defect class ACC-vacuous-guard-sweep was opened for. The apps/api step
+        # below already globs; this one now matches it.
         run: |
-          pnpm exec vitest run lib/reminders/redeem.db.test.ts \
+          pnpm exec vitest run .db.test.ts \
             --reporter=default \
             --reporter=json --outputFile.json=web-db-results.json \
             2>&1 | tee web-db-run.log
