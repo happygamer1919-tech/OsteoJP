@@ -44,6 +44,11 @@ export type AppointmentView = {
 
 export type BookableLocation = { id: string; name: string };
 
+/** A2: one row of the therapist step's roster. Name only - no title, no role,
+ *  because neither is a filter here (PL-06b) and neither is the patient's
+ *  business. */
+export type BookableTherapist = { id: string; name: string };
+
 export type BookableService = {
   id: string;
   name: string;
@@ -163,8 +168,33 @@ export interface AppointmentsStore {
    *  predicates the booking guard runs. The step-3 source of truth. */
   listOpenSlots(
     principal: PatientPrincipal,
-    args: { locationId: string; durationMin: number; horizonDays: number; now: Date },
+    args: {
+      locationId: string;
+      durationMin: number;
+      horizonDays: number;
+      now: Date;
+      /** A2: narrow the sweep to ONE therapist. Undefined/null keeps the
+       *  any-therapist behaviour byte for byte. */
+      practitionerId?: string | null;
+    },
   ): Promise<string[]>;
+
+  /**
+   * A2 — the ROSTER for the therapist step: who could see this patient at this
+   * clinic at all.
+   *
+   * NOT an availability query, and the distinction matters. `listAvailableTherapists`
+   * below is window-scoped and answers "who is free for THIS slot"; the therapist
+   * step runs BEFORE a date is chosen, so there is no window. Free/busy is decided
+   * afterwards by `listOpenSlots`.
+   *
+   * Filtered on `is_bookable` ONLY (PL-06b) and NEVER on the service mapping
+   * (PL-06a): the mapping is a preselection, never a restriction.
+   */
+  listBookableTherapists(
+    principal: PatientPrincipal,
+    args: { locationId: string; serviceId: string },
+  ): Promise<BookableTherapist[]>;
   /** Therapists who work at the location AND have no conflict for the window. */
   listAvailableTherapists(
     principal: PatientPrincipal,
@@ -218,16 +248,28 @@ export type BookingInput = {
   serviceId: string;
   locationId: string;
   startsAt: Date;
+  /** A2: the therapist the patient chose, or null for "let us choose for you".
+   *  NEVER trusted - validated against is_bookable server-side in
+   *  bookAppointment before it can reach a row. */
+  practitionerId?: string | null;
 };
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Parse the booking body. Reads ONLY serviceId, locationId, startsAt. Any
- * patient_id, practitioner_id, price, or status in the body is deliberately
- * ignored — the patient is the principal, the therapist is server-assigned, and
- * pricing is server-derived. Throws AppointmentError('invalid_input') on bad shape.
+ * Parse the booking body. Reads ONLY serviceId, locationId, startsAt and the
+ * OPTIONAL practitionerId. Any patient_id, price, or status in the body is
+ * deliberately ignored — the patient is the principal and pricing is
+ * server-derived. Throws AppointmentError('invalid_input') on bad shape.
+ *
+ * A2 CHANGED WHAT practitioner_id MEANS HERE, and the change is narrow. It used
+ * to be ignored outright because the therapist was always server-assigned. It is
+ * now READ, because the patient may choose one — but reading it is not trusting
+ * it. This function only checks SHAPE. `bookAppointment` is what checks the id
+ * against `is_bookable`, and it refuses rather than falling back. Omitted, null,
+ * or absent all mean "let us choose for you" and preserve the old behaviour
+ * exactly.
  */
 export function parseBookingInput(body: unknown): BookingInput {
   if (typeof body !== "object" || body === null) {
@@ -251,7 +293,20 @@ export function parseBookingInput(body: unknown): BookingInput {
   if (Number.isNaN(startsAt.getTime())) {
     throw new AppointmentError("invalid_input");
   }
-  return { serviceId, locationId, startsAt };
+
+  // A2. Absent and explicit null both mean "no preference". Anything present
+  // must at least be a UUID; whether it is a BOOKABLE one is bookAppointment's
+  // question, not this function's.
+  const rawPractitioner = b.practitionerId;
+  let practitionerId: string | null = null;
+  if (rawPractitioner !== undefined && rawPractitioner !== null) {
+    if (typeof rawPractitioner !== "string" || !UUID_RE.test(rawPractitioner)) {
+      throw new AppointmentError("invalid_input");
+    }
+    practitionerId = rawPractitioner;
+  }
+
+  return { serviceId, locationId, startsAt, practitionerId };
 }
 
 /** Parse a reschedule body (new start only; duration is preserved). */
@@ -339,7 +394,7 @@ export const OPEN_SLOTS_HORIZON_DAYS = 14;
  */
 export async function listOpenSlots(
   principal: PatientPrincipal,
-  input: { serviceId: string; locationId: string },
+  input: { serviceId: string; locationId: string; practitionerId?: string | null },
   store: AppointmentsStore,
   now: Date,
 ): Promise<string[]> {
@@ -358,6 +413,44 @@ export async function listOpenSlots(
     durationMin: service.durationMin,
     horizonDays: OPEN_SLOTS_HORIZON_DAYS,
     now,
+    // A2: null/undefined sweeps every bookable therapist, exactly as before.
+    practitionerId: input.practitionerId ?? null,
+  });
+}
+
+/**
+ * A2 — the therapist step's roster: who could see this patient at this clinic.
+ *
+ * RESOLVES THE SERVICE AND LOCATION WITH THE SAME CHECKS listOpenSlots AND
+ * bookAppointment APPLY, deliberately. A patient who cannot book this service at
+ * this location must not be able to enumerate the clinic's staff through this
+ * endpoint - the roster is only meaningful for a booking they could actually
+ * make, so the gate is the booking's own gate rather than a weaker one.
+ *
+ * IT DOES NOT FILTER BY THE SERVICE. PL-06a: the therapist-to-service mapping is
+ * a PRESELECTION, NEVER A RESTRICTION, and the staff Servico select lists every
+ * active service for every therapist. Filtering here would make the portal
+ * STRICTER than the staff surface. `serviceId` exists to validate the request,
+ * not to narrow the answer.
+ */
+export async function listBookableTherapists(
+  principal: PatientPrincipal,
+  input: { serviceId: string; locationId: string },
+  store: AppointmentsStore,
+): Promise<BookableTherapist[]> {
+  const service = await store.getBookableService(principal, input.serviceId);
+  if (!service) throw new AppointmentError("service_unavailable");
+
+  if (!(await store.isBookableLocation(principal, input.locationId))) {
+    throw new AppointmentError("location_unavailable");
+  }
+  if (service.locationId !== null && service.locationId !== input.locationId) {
+    throw new AppointmentError("service_unavailable");
+  }
+
+  return store.listBookableTherapists(principal, {
+    locationId: input.locationId,
+    serviceId: input.serviceId,
   });
 }
 
@@ -405,8 +498,43 @@ export async function bookAppointment(
     startsAt: input.startsAt,
     endsAt,
   });
-  const prior = await store.priorTherapistId(principal);
-  const practitionerId = chooseTherapist(available, prior);
+
+  // A2 — THE PATIENT'S CHOSEN THERAPIST IS VALIDATED, NEVER TRUSTED.
+  //
+  // WHY THIS IS A HARD REFUSAL AND NOT A FALLBACK, which is the whole point of
+  // the check. `listAvailableTherapists` already filters on `is_bookable`
+  // (store.ts, D2 at f821eac), so an id that is NOT in `available` is one of:
+  //   * a therapist who is not bookable — the exact class D2 fixed, where a
+  //     portal booking was auto-assigned to an ADMINISTRATOR the staff dropdown
+  //     refuses. Accepting it here would reintroduce D2 from the other
+  //     direction: instead of the SERVER picking someone the staff surface
+  //     rejects, the CLIENT would name them;
+  //   * a therapist from another tenant, or an id that is not a therapist at
+  //     all — the request body is attacker-controlled and this is the only place
+  //     that says no;
+  //   * a bookable therapist who is genuinely busy for this window.
+  //
+  // SILENTLY FALLING BACK TO AUTO-ASSIGNMENT WOULD BE WORSE THAN REFUSING. The
+  // patient asked for a named person; giving them a different one without
+  // saying so is a booking they did not make, and they would only discover it on
+  // arrival. `no_therapist` is already the portal's honest "that is not
+  // available, pick again" and it words it for the patient.
+  //
+  // ONE PREDICATE, NOT A FOURTH. The membership test below reuses `available`,
+  // which is produced by the query D2 fixed. There is no new `is_bookable` check
+  // written here and there must never be: PL-06b's defect was two surfaces
+  // disagreeing about who counts as a therapist.
+  let practitionerId: string | null;
+  if (input.practitionerId) {
+    const chosen = available.find((c) => c.practitionerId === input.practitionerId);
+    if (!chosen) throw new AppointmentError("no_therapist");
+    practitionerId = chosen.practitionerId;
+  } else {
+    // "Let us choose for you" — byte-for-byte the pre-A2 path.
+    const prior = await store.priorTherapistId(principal);
+    practitionerId = chooseTherapist(available, prior);
+  }
+
   // HONEST ERROR: nobody works this window (schedule gap) is `no_therapist`,
   // distinct from `no_slot` (a real race on a slot that WAS free — thrown by
   // the in-tx guard in store.createBooking). The portal words them differently.

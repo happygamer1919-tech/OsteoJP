@@ -21,6 +21,7 @@ import type {
   AppointmentStatus,
   BookableCatalog,
   BookableService,
+  BookableTherapist,
   MutableAppointment,
   ServiceForBooking,
 } from "./booking";
@@ -370,7 +371,10 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     return rows.length > 0;
   },
 
-  async listOpenSlots(principal, { locationId, durationMin, horizonDays, now }): Promise<string[]> {
+  async listOpenSlots(
+    principal,
+    { locationId, durationMin, horizonDays, now, practitionerId },
+  ): Promise<string[]> {
     // Step-3 source of truth. Expands ACTIVE therapists' ACTIVE availability
     // templates at the location into a grid of concrete starts over the
     // horizon — all wall-clock math in Europe/Lisbon INSIDE Postgres — and keeps
@@ -443,6 +447,11 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           -- non-bookable user's hours and then refused at confirm is exactly the
           -- step-3-vs-guard disagreement the header above says cannot happen.
           and u.is_bookable = true
+          -- A2: when the patient chose a specific therapist, the GRID itself is
+          -- built from that therapist's hours only. Filtering just the EXISTS
+          -- below would still expand everyone's templates into the series and
+          -- could offer a start that only somebody else works.
+          and (${practitionerId ?? null}::uuid is null or u.id = ${practitionerId ?? null}::uuid)
           and av.weekday = extract(dow from d.day)::int
           and (av.valid_from  is null or av.valid_from  <= d.day::date)
           and (av.valid_until is null or av.valid_until >= d.day::date)
@@ -455,6 +464,11 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           where u.tenant_id = ${principal.tenantId}
             and u.is_active = true
             and u.is_bookable = true -- D2: same predicate as the assignment query
+            -- A2: and the SAME therapist restriction as the grid above. Both
+            -- halves carry it for the reason the header gives - a slot this
+            -- query advertises must be one the confirm guard will accept, and
+            -- the confirm will be run against THIS therapist.
+            and (${practitionerId ?? null}::uuid is null or u.id = ${practitionerId ?? null}::uuid)
             and ${availabilityCoversExists(principal.tenantId, sql`u.id`, locationId, startExpr, endExpr)}
             and not ${apptOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr, [])}
             and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr)}
@@ -518,6 +532,62 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     `)) as unknown as ReadonlyArray<{ practitioner_id: string; full_name: string }>;
 
     return rows.map((r) => ({ practitionerId: r.practitioner_id, sortKey: r.full_name ?? "" }));
+  },
+
+  async listBookableTherapists(principal, { locationId }): Promise<BookableTherapist[]> {
+    // A2 — THE ROSTER FOR THE THERAPIST STEP. Deliberately NOT an availability
+    // query, and that distinction is the whole reason this method exists rather
+    // than reusing `listAvailableTherapists` above.
+    //
+    // WHY A SEPARATE METHOD. `listAvailableTherapists` is WINDOW-SCOPED: it takes
+    // startsAt/endsAt and answers "who is free for THIS slot". The therapist step
+    // sits BEFORE the patient has picked a date, so there is no window to pass
+    // it. Calling it with an invented window would be new availability logic
+    // wearing a reuse's name, and would also be wrong - a therapist busy at the
+    // one instant we guessed would vanish from the list entirely.
+    //
+    // SO THIS ANSWERS THE ONLY QUESTION THAT IS ANSWERABLE HERE: who could a
+    // patient be seen by at this clinic at all. Whether they are free at a
+    // particular time is decided AFTER the date is chosen, by listOpenSlots,
+    // which is the existing availability source and is unchanged.
+    //
+    // `is_bookable` AND NOTHING ELSE. PL-06b, and it is a ruling with a live
+    // defect behind it: a role predicate once dropped JP from the staff dropdown.
+    // The staff surface filters on this same flag (data.ts:311 ->
+    // therapist-bookable.ts:34-36) and D2 (f821eac) brought the two other portal
+    // predicates onto it after a portal booking was auto-assigned to an
+    // ADMINISTRATOR the staff dropdown refuses. This is the FOURTH surface and it
+    // uses the SAME flag - never a title, never a role slug.
+    //
+    // NO SERVICE-MAPPING FILTER EITHER, per PL-06a: the mapping is a
+    // PRESELECTION, NEVER A RESTRICTION. `serviceId` is accepted by the caller's
+    // signature for symmetry with the rest of the booking path and is
+    // deliberately UNUSED in the predicate - filtering by it would make the
+    // portal stricter than the staff Servico select, which lists every active
+    // service for every therapist. If JP ever wants mappings respected online,
+    // that is a change to PL-06a and belongs to him.
+    //
+    // LOCATION IS A REAL CONSTRAINT, not a preference: it is where the patient is
+    // going. A therapist with no active availability template at this clinic
+    // cannot see them there, so they are excluded by the EXISTS below - which is
+    // roster membership at the location, not free/busy.
+    const rows = (await getDbAdmin().execute(sql`
+      select distinct u.id as practitioner_id, u.full_name as full_name
+      from users u
+      where u.tenant_id = ${principal.tenantId}
+        and u.is_active = true
+        and u.is_bookable = true
+        and exists (
+          select 1 from availability_templates av
+          where av.tenant_id = ${principal.tenantId}
+            and av.user_id = u.id
+            and av.location_id = ${locationId}
+            and av.is_active = true
+        )
+      order by u.full_name
+    `)) as unknown as ReadonlyArray<{ practitioner_id: string; full_name: string }>;
+
+    return rows.map((r) => ({ id: r.practitioner_id, name: r.full_name ?? "" }));
   },
 
   async priorCompletedServiceId(principal): Promise<string | null> {

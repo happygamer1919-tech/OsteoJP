@@ -369,6 +369,18 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: practitionerId
+          in: query
+          required: false
+          description: >
+            A2. Narrow the sweep to ONE therapist, the one the patient chose in
+            the therapist step. Omitted means every bookable therapist, which is
+            the pre-A2 behaviour. A well-formed id for a therapist who is not
+            bookable simply yields no slots: the query's own is_bookable
+            predicates decide, so this parameter can never WIDEN the result.
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: Bookable slot starts, ascending.
@@ -384,6 +396,74 @@ paths:
                     items:
                       type: string
                       format: date-time
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/UnauthorizedLocalized"
+        "422":
+          description: "`service_unavailable` or `location_unavailable`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorLocalized"
+        "500":
+          $ref: "#/components/responses/ServerErrorLocalized"
+
+  /api/v1/booking/therapists:
+    get:
+      operationId: listBookableTherapists
+      tags: [booking]
+      summary: The therapist roster for a service at a location
+      description: >
+        A2. The ROSTER for the portal's therapist step: who could see this
+        patient at this clinic at all. It is NOT an availability query - the step
+        runs BEFORE the patient picks a date, so there is no window to check
+        against, and free/busy is decided afterwards by /booking/slots.
+
+
+        Filtered on `is_bookable` ONLY (PL-06b): never on a title and never on a
+        role slug, because a role predicate once dropped a practitioner from the
+        staff dropdown as a live defect. NOT filtered by the service mapping
+        (PL-06a): the mapping is a preselection, never a restriction, so
+        `serviceId` validates the request rather than narrowing the answer.
+
+
+        The payload is id and name only. No title, no role, no schedule.
+      parameters:
+        - name: serviceId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: locationId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Bookable therapists at the location, ordered by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [therapists]
+                properties:
+                  therapists:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, name]
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
         "400":
           $ref: "#/components/responses/InvalidInput"
         "401":
@@ -1255,8 +1335,20 @@ components:
       additionalProperties: true
       required: [serviceId, locationId, startsAt]
       description: >
-        Only `serviceId`, `locationId`, `startsAt` are read; any other key
-        (patient_id, practitioner_id, price, status) is ignored server-side.
+        Only `serviceId`, `locationId`, `startsAt` and the optional
+        `practitionerId` are read; any other key (patient_id, price, status) is
+        ignored server-side.
+
+
+        A2 CHANGED WHAT `practitionerId` MEANS, and the change is a strengthening
+        rather than a loosening. It used to be ignored outright because the
+        therapist was always server-assigned. It is now READ, because the patient
+        may choose one in the therapist step - but reading it is not trusting it.
+        A malformed id is rejected as `invalid_input`, and a well-formed id that
+        is not in the bookable candidate set is rejected as `no_therapist`. It is
+        NEVER silently swapped for an auto-assignment: the patient asked for a
+        named person, and giving them a different one without saying so is a
+        booking they did not make.
       properties:
         serviceId:
           type: string
@@ -1268,6 +1360,15 @@ components:
           type: string
           format: date-time
           description: Requested start (ISO 8601). Must be in the future.
+        practitionerId:
+          type: [string, "null"]
+          format: uuid
+          description: >
+            A2. The therapist the patient chose. Omitted or null means "let us
+            choose for you" and preserves the server-side auto-assignment
+            (including the returning-patient soft preference) byte for byte.
+            Validated against `is_bookable` server-side; refused, never
+            downgraded.
 
     RescheduleInput:
       type: object

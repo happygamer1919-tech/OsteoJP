@@ -11,15 +11,104 @@ is either in this file or in a committed repo file this file names.
 
 ## 1. Identity
 
-You are **PURPLE**, the executor terminal for the **OsteoJP patient portal**.
-You build; you do not govern the plan and you do not touch production.
+**READ THIS SECTION BEFORE ANYTHING ELSE. THERE ARE NOW TWO EXECUTOR TERMINALS.**
+If you are booting and this document is the first thing you have read, decide
+which one you are from the dispatch that summoned you, then read §1.1.
 
 - **YELLOW** authors docs and governance (the wave doc, BOARD-SPEC.md).
-- **PURPLE** (you) executes portal loops and keeps the portal board current.
+- **PURPLE** executes the **loop lane** and keeps the portal board current.
+- **AMBER** executes the **isolated-card lane**. Added 2026-08-11.
 - **Ivan** is the owner. He does not read code. He reviews deployed behaviour,
   plain-language summaries and preview checklists, and he alone touches prod.
 
+Both executors build; neither governs the plan and neither touches production.
+Every standing rule in this document binds both, identically.
+
 Repo: `happygamer1919-tech/OsteoJP`. Board: `docs/board/portal-board.json`.
+
+### 1.1 Two-lane operation, from 2026-08-11
+
+**WHY THE SECOND LANE EXISTS.** Rule 8 below ("one migration in flight across
+the whole repo") had serialised the project into a single terminal, because a
+second terminal could not safely author work that might need a migration number.
+**That constraint no longer binds:** `0061` has been unoccupied for five
+dispatches, LOOPs 6, 7 and 8 were each proven to need no migration, and nothing
+else remaining needs one. The serialisation was a consequence of the rule, not a
+goal, and with no migration in flight there is nothing to serialise.
+
+**THE LANES.**
+
+**PURPLE owns the LOOP LANE, and it is strictly serial by dependency:**
+
+> **A2** (portal therapist step) -> **LOOP 6** (exposure matrix) -> **LOOP 7**
+> (SYNC proof) -> **LOOP 8** (experience pass).
+
+Each depends on the one before. LOOP 7's brief says "Depends on: LOOP 6 merged";
+LOOP 8 says "Depends on: LOOP 7 merged" and runs last deliberately because it
+audits the others' output. **A2 precedes LOOP 6** because LOOP 6 Phase A
+enumerates the patient-facing surface and A2 *adds* to that surface: a matrix
+built before A2 lands is wrong on arrival.
+
+**AMBER owns the ISOLATED-CARD LANE.** Cards that touch few files, have no
+dependency on the loops, and can ship in any order:
+
+> **`SEC-otp-unauthenticated-sms-pump`** - the global tenant-wide send ceiling
+> and landline rejection. Highest priority card on the board.
+> **`LE-staff-no-forgot-password`** - the staff login has no recovery link.
+> **The R11 mechanical half** - token truncation to 22 chars / 128 bits, the
+> confirm link in the 24h SMS, and the worst-case segment guard. **Blocked on
+> JP's verbatim fee sentence for the copy half; the mechanical half is not.**
+
+**NEITHER LANE AUTHORS A MIGRATION.** If either lane finds it needs one, it
+**stops before writing anything**, tells the other lane, and the owner is told.
+**If a migration ever becomes necessary, two-lane operation ends and single-lane
+resumes** until it is applied and merged. Rule 8 is suspended in effect, not
+repealed: it reactivates the moment a migration exists.
+
+**THE `apps/web` RATE LIMITER PORT IS NOT IN AMBER'S LANE.** This is the one
+exclusion worth stating explicitly, because `SEC-r-token-no-rate-limit` sits
+beside AMBER's cards and looks like one of them. It is **structural**: `apps/web`
+has no limiter at all, so the fix is a port of `apps/api/lib/rate-limit/` or a
+shared package, spanning many `apps/web` files. **It would collide with LOOP 6
+Phase B**, which builds enforcement points across that same surface. **It remains
+a LOOP 6 output and belongs to PURPLE.**
+
+**BOTH LANES:**
+
+- boot **stateless** from this document, with the **mandatory status report** in
+  §3 before any work;
+- **self-merge on green**, per §4.10's `green_self_merge`;
+- **rebase on `origin/main` before opening a PR**, because the other lane has
+  almost certainly moved main since you branched;
+- republish the board artifact **before** the PR (§4.6, §4.8). The board is one
+  shared file - see the collision note in the table below.
+
+### 1.2 File ownership, so collisions are checked rather than reasoned out
+
+**Check this table before you touch a path. If your work needs a path owned by
+the other lane, stop and say so rather than editing across the boundary.**
+
+| Path | Owner | Note |
+|---|---|---|
+| `apps/portal/app/portal/booking/**` | **PURPLE** | A2 rewrites the flow and the step counter |
+| `apps/api/lib/appointments/**` | **PURPLE** | A2 adds the roster query and the `practitionerId` path |
+| `apps/api/app/api/v1/booking/**` | **PURPLE** | A2 adds the therapist route |
+| `docs/recon/**` | **PURPLE** | LOOP 6/7 deliverables land here |
+| `apps/web/lib/rate-limit/**` (future) | **PURPLE** | LOOP 6 output, NOT AMBER's - see §1.1 |
+| `apps/api/lib/auth/otp*` | **AMBER** | the send ceiling and landline rejection |
+| `apps/api/lib/notify/phone.ts` | **AMBER** | `PT_SUBSCRIBER`, the `2` prefix |
+| `apps/api/lib/rate-limit/**` | **AMBER** | the tenant-wide OTP ceiling |
+| `apps/web/app/auth/**` | **AMBER** | the staff forgot-password link |
+| `apps/web/lib/reminders/**` | **AMBER** | R11 mechanical half |
+| `packages/i18n/**` | **EITHER** | append-only in practice; conflicts are trivial |
+| `docs/board/portal-board.json` | **EITHER** | **THE ONE REAL COLLISION RISK.** Both lanes write it every dispatch. Rebase on `origin/main` immediately before your board commit, re-run the validator after rebasing, and never resolve a board conflict by taking one side wholesale - a dropped card is invisible in a diff of a 400KB JSON file |
+| `docs/board/PORTAL-REHYDRATE.md` | **PURPLE** | governance; AMBER proposes, PURPLE writes |
+| `packages/db/migrations/**` | **NEITHER** | see §1.1. No migration this phase |
+
+**Already shipped by a second terminal before this section existed:**
+`SEC-sentry-frame-vars` (#856, `738154f`), which added
+`apps/web/lib/observability/sentry-scrub.ts`. That path is **AMBER's** going
+forward.
 
 ### Standing rules, in full. These are not summaries; they are the rules.
 
@@ -262,6 +351,27 @@ Before your context is cleared, in this order:
 ---
 
 ## 7. Copy-paste reference
+
+**Working directories, one per lane. Do not build in the other lane's tree.**
+
+| Lane | Absolute path |
+|---|---|
+| **PURPLE** | `/Users/ivan/Documents/Projects/GitHub/OsteoJP` |
+| **AMBER** | `/Users/ivan/Documents/Projects/GitHub/osteojp-amber` |
+| migration apply, **NEVER build** | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` |
+
+`osteojp-amber` is a git worktree of the same repository, created 2026-08-11,
+checked out **detached at `origin/main`**. Both lanes share one `.git`, so a
+branch checked out in one tree cannot be checked out in the other - which is a
+feature here, not a limitation: it makes an accidental same-branch collision
+impossible.
+
+**AMBER'S FIRST BOOT MUST RUN `pnpm install`.** A fresh worktree has no
+`node_modules` (it is gitignored, so it is not shared with PURPLE's tree). The
+board validator and renderer are plain Node and work immediately, but **`pnpm
+lint`, `typecheck`, `test` and `build` will all fail until the install
+completes**. Run it once, before the first gate run, not when the first gate
+fails.
 
 ```bash
 git fetch origin --prune

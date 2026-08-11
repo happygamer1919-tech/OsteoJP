@@ -116,6 +116,11 @@ function makeNotesLeakStore(): AppointmentsStore {
     async primaryLocationId() {
       return null;
     },
+    // A2: the therapist-step roster. Empty keeps these suites about what they
+    // test - the choose-for-me path never consults it.
+    async listBookableTherapists() {
+      return [];
+    },
     async getBookableService() {
       return null;
     },

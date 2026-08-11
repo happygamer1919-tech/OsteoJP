@@ -141,15 +141,35 @@ test("Decision C: choosing a service advances the flow and does not narrow what 
 
   await rows.first().click();
 
-  // Forward: the date/time step.
+  // Forward: A2 INSERTED THE THERAPIST STEP HERE. This assertion used to expect
+  // date/time directly and was correctly invalidated by A2 rather than being
+  // wrong before - the flow genuinely gained a step, and the counter went 4 to 5.
+  await expect(page.getByRole("heading", { name: /terapeuta/i })).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // "Escolham por mim" is FIRST and is a real button, not an absence. Taking it
+  // preserves the pre-A2 auto-assignment exactly, which is what keeps this test
+  // about SERVICE narrowing rather than about therapist availability - a
+  // specific therapist would make the next step depend on that person's seeded
+  // calendar.
+  await page.getByRole("button", { name: /escolham por mim/i }).click();
+
+  // Forward again: NOW the date/time step.
   await expect(page.getByRole("heading", { name: /data|hora/i })).toBeVisible({
     timeout: 15_000,
   });
 
-  // Back: the SAME set of services is still offered. A flow that narrowed the
-  // list after a first choice would be a restriction introduced by the act of
-  // choosing, which is the same defect Decision C forbids at the start.
-  await page.getByRole("button", { name: /voltar|anterior/i }).first().click();
+  // Back TWICE, through the therapist step, to the service list. The SAME set of
+  // services is still offered. A flow that narrowed the list after a first
+  // choice would be a restriction introduced by the act of choosing, which is
+  // the same defect Decision C forbids at the start.
+  const backButton = page.getByRole("button", { name: /voltar|anterior/i }).first();
+  await backButton.click();
+  await expect(page.getByRole("heading", { name: /terapeuta/i })).toBeVisible({
+    timeout: 15_000,
+  });
+  await backButton.click();
   await expect(page.getByRole("heading", { name: /servi[çc]o/i })).toBeVisible({
     timeout: 15_000,
   });
