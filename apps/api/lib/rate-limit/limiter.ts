@@ -193,4 +193,61 @@ export const RULES = {
    * cap lets ten guesses land against one long-lived code.
    */
   otpVerify: { limit: 10, windowMs: 60 * 60_000 },
+
+  /**
+   * THE GLOBAL SEND CEILING (SEC-otp-unauthenticated-sms-pump, direction a).
+   *
+   * NEITHER EXISTING OTP LIMIT BOUNDS SPEND, and that is the gap these close.
+   * `otpRequest` caps 3/hour per phone and 3/hour per client key. An attacker
+   * rotating numbers never approaches the first; a proxy pool defeats the
+   * second, yielding 3 sends per IP per hour with NO ceiling on the total. The
+   * accepted input space is ~10^8 numbers after landline rejection, so "3 per
+   * key" multiplied by an unbounded number of keys is unbounded spend.
+   *
+   * These two are absolute. They are not per phone, not per client, and not per
+   * tenant: they are checked against a CONSTANT key, so nothing the caller
+   * controls can move them to a fresh bucket. See OTP_GLOBAL_HOUR_KEY.
+   *
+   * THE NUMBERS, and they are a clinic-scale judgement rather than a standard.
+   * One clinic across two locations. The hour cap bounds a burst at roughly one
+   * send a minute sustained, which is far above any real login demand and far
+   * below a pump. The day cap is the one that bounds MONEY: at PT SMS pricing it
+   * puts a hard floor under the worst day, and it binds before the hour cap
+   * could (60 x 24 = 1440 is never reachable).
+   *
+   * IF A REAL CLINIC EVER TRIPS THESE, THAT IS THE SIGNAL WORKING, not a
+   * misconfiguration to raise reflexively. The route logs the trip loudly. Raise
+   * them deliberately, with the traffic in front of you.
+   *
+   * FIXED WINDOW, NOT ROLLING, because that is what the store implements
+   * (see the header of this file and durable-store.ts). Calling it rolling in a
+   * comment would be a promise the code does not keep: a burst spanning a window
+   * boundary can spend up to two windows' budget. That is a known and accepted
+   * property of a fixed window, and it still bounds spend absolutely, which
+   * neither existing limit does at all.
+   */
+  otpGlobalHour: { limit: 60, windowMs: 60 * 60_000 },
+  otpGlobalDay: { limit: 300, windowMs: 24 * 60 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
+
+/**
+ * The ceiling's keys. CONSTANTS, and that is the entire security property.
+ *
+ * A ceiling keyed on anything the caller supplies is not a ceiling. The obvious
+ * shape - key it on `tenantId` - looks tenant-correct and is bypassable by
+ * construction: `tenantId` arrives in the request body of an unauthenticated
+ * endpoint and is not validated before the limit is checked, so an attacker
+ * rotating it gets a fresh budget for free.
+ *
+ * (A `tenantId` that is not a real tenant cannot actually produce an SMS - the
+ * FK on `patient_otp_codes.tenant_id` throws first - so the bypass would not
+ * have spent money. It would, however, have let an attacker keep the REAL
+ * tenant's counter at zero while probing, which is worse than useless: a
+ * ceiling that reads healthy during an attack.)
+ *
+ * A constant needs no trust in the body at all. It is also correct under
+ * multi-tenancy in the direction that matters: the bill is the platform's, so
+ * the ceiling that protects the bill belongs to the platform.
+ */
+export const OTP_GLOBAL_HOUR_KEY = "otp-request:global:hour";
+export const OTP_GLOBAL_DAY_KEY = "otp-request:global:day";
