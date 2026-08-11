@@ -34,7 +34,7 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | Card | Pri | Status | Note |
 |---|---|---|---|
 | `W13-06` | high | todo | Umbrella for 06a/06b. Carries no work of its own. |
-| `W13-06a` | high | todo | LOOP 6 Phase A - rebuild the exposure matrix from the code. **This is PURPLE's next card.** |
+| `W13-06a` | high | todo | LOOP 6 Phase A - rebuild the exposure matrix from the code. Blocked by dependency on A2, not by anything external. |
 | `W13-06b` | high | todo | LOOP 6 Phase B - close every deficient row Phase A names. Depends on 06a. |
 | `W13-07` | high | todo | LOOP 7 SYNC proof. Depends on LOOP 6 merged. |
 | `SEC-r-token-no-rate-limit` | high | todo | apps/web has no rate limiter at all. Structural port; a LOOP 6 Phase B output, NOT AMBER's (rehydrate 1.1). |
@@ -57,7 +57,7 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `AI-01-projection-null-safety` | medium | in_flight | In flight, NO EVIDENCE on the board. The only in-flight card with none. |
 | `LE-pedido-emit-best-effort` | medium | todo | A failed appointment_request emit loses the pedido AND makes it block. Known weakness recorded in 0059:82-90. |
 | `LE-vacuous-template-guard` | medium | todo | The email-template guard passes on a comment. |
-| `LE-portal-booking-therapist-step` | medium | todo | A2. Precedes LOOP 6 by dependency (rehydrate 1.1) - a matrix built before A2 is wrong on arrival. |
+| `LE-portal-booking-therapist-step` | medium | todo | **A2 — THIS IS PURPLE'S NEXT CARD.** It precedes LOOP 6 by dependency (rehydrate 1.1): Phase A enumerates the patient-facing surface and A2 *adds* to it, so a matrix built before A2 is wrong on arrival. Its `medium` priority reflects its size, not its order. |
 | `LE-portal-booking-home-clinic-preselect` | medium | todo | Portal booking preselects the home clinic. |
 | `LE-portal-multi-appointment-booking` | medium | todo | Portal exposure of Agendar lote. |
 | `LE-reminders-landline-dispatch` | medium | todo | **AMBER, 2026-08-11.** The OTP route now refuses landlines; the shared reminder path does not. Consequence of the fork-2 ruling. |
