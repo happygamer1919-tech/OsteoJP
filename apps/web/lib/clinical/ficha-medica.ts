@@ -107,14 +107,29 @@ function writeFichaKeyPath(
  * raw payload (W5-13 key-identity, proved by ficha-medica-compat.test.ts), so
  * each value is copied to the same path.
  *
- * A value is projected only when it is PRESENT in the raw payload (reachable and
- * not undefined). A value already present at the field path in `data` is NOT
- * overwritten — a reviewer's saved edit always wins over the raw AI value. The
- * `_aiIngestionRaw` key is preserved untouched as the source of truth.
+ * TWO RULES GOVERN WHAT GETS WRITTEN, AND THEY ARE DELIBERATELY NOT SYMMETRIC.
  *
- * @returns the projected data AND the list of the twelve keys that could NOT be
- *   reached in the raw payload as `missing` — never silently dropped. The caller
- *   (W5-17) treats a `missing` value that was EXPECTED (present in the raw
+ * 1. WHAT COUNTS AS A VALUE WORTH PROJECTING (the incoming side). A raw value is
+ *    projected only when it is reachable AND is not `undefined`, not `null`, and
+ *    not a string that is empty or whitespace-only. Anything else is treated as
+ *    "the AI did not fill this" and recorded in `absent`, exactly as an omitted
+ *    key always has been.
+ *
+ * 2. WHAT COUNTS AS AN ALREADY-SET FIELD (the existing side). A field path is
+ *    treated as unset — and therefore writable — only when what sits there is
+ *    `undefined` or `null`. AN EMPTY STRING AT A FIELD PATH IS A SET VALUE and is
+ *    never overwritten.
+ *
+ * Rule 2 is narrower than rule 1 on purpose. An empty string arriving FROM the AI
+ * is noise, but an empty string sitting AT a field path is a reviewer who
+ * deliberately cleared that field, and refilling it from the raw payload would
+ * silently undo a clinical decision. See the comment at the clobber guard.
+ *
+ * The `_aiIngestionRaw` key is preserved untouched as the source of truth.
+ *
+ * @returns the projected data AND, as `absent`, the list of the twelve keys that
+ *   carried no usable value in the raw payload — never silently dropped. The
+ *   caller (W5-17) treats an absent value that was EXPECTED (present in the raw
  *   payload but unreachable at its field path) as the SPEC sec 2 PRODUCT halt.
  */
 export function projectAiPayloadOntoFichaFields(
@@ -131,15 +146,31 @@ export function projectAiPayloadOntoFichaFields(
   const absent: string[] = [];
   for (const path of FICHA_MEDICA_AI_KEYS) {
     const value = readFichaKeyPath(rawObj, path);
-    if (value === undefined) {
-      // Key not present in the raw payload — nothing to project (the AI simply
-      // did not fill it). This is NOT a mapping gap: the field renders empty and
-      // editable. Recorded in `absent` for observability.
+    if (
+      value === undefined ||
+      value === null ||
+      (typeof value === "string" && value.trim() === "")
+    ) {
+      // Nothing usable in the raw payload — the AI did not fill this. Covers an
+      // omitted key (undefined), an explicit null, and a string that is empty or
+      // whitespace-only. The null case is not hypothetical: a strict JSON schema
+      // declares every property required and expresses unfilled ones as null, so
+      // "omit it" and "send null" are the same statement from the partner's side.
+      // This is NOT a mapping gap: the field renders empty and editable.
+      // Recorded in `absent` for observability, exactly as before.
       absent.push(path);
       continue;
     }
     // Do not clobber a value already set at the field path (a reviewer edit).
-    if (readFichaKeyPath(out, path) === undefined) {
+    //
+    // ONLY undefined AND null COUNT AS UNSET HERE. An empty string does NOT, and
+    // that asymmetry with the guard above is intentional — do not unify them. A
+    // reviewer who deliberately CLEARED a field left an empty string behind, and
+    // treating that as unset would refill it from the AI payload and silently
+    // undo their decision. Blank-in means "no value"; blank-out means "no value,
+    // and a human meant it".
+    const existing = readFichaKeyPath(out, path);
+    if (existing === undefined || existing === null) {
       out = writeFichaKeyPath(out, path, value);
     }
     projected.push(path);

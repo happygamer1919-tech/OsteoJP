@@ -212,3 +212,180 @@ describe("projectAiPayloadOntoFichaFields — W5-17 Assumir → Ficha Médica ed
     expect(projected).toEqual([]);
   });
 });
+
+/**
+ * The partner is moving extraction to a strict JSON schema, which declares every
+ * property required and expresses an unfilled one as null. Our standing contract
+ * says omit unfilled fields and never send nulls. Those collide, so the
+ * projection absorbs the difference on our side: a null, an empty string and an
+ * omitted key are all "the AI did not fill this".
+ *
+ * The two guards are NOT symmetric, and that is the point of the last two tests
+ * here. Blank arriving FROM the AI is noise. Blank sitting AT a field path is a
+ * reviewer who cleared it on purpose.
+ */
+describe("projectAiPayloadOntoFichaFields — null and empty-value hardening", () => {
+  const rawWith = (overrides: Record<string, unknown>) => ({
+    template: "osteopathy",
+    consultation_reason: "VAL_consultation_reason",
+    ...overrides,
+  });
+
+  it("a null value is recorded absent and never reaches the field path", () => {
+    const { data, projected, absent } = projectAiPayloadOntoFichaFields({
+      _aiIngestionRaw: rawWith({ observations: null }),
+    });
+
+    expect(readFichaKeyPath(data, "observations")).toBeUndefined();
+    expect(absent).toContain("observations");
+    expect(projected).not.toContain("observations");
+  });
+
+  it("a null on a nested systems_review leaf is recorded absent", () => {
+    const { data, projected, absent } = projectAiPayloadOntoFichaFields({
+      _aiIngestionRaw: rawWith({
+        systems_review: { neurological: null, cardiovascular: "VAL_cardiovascular" },
+      }),
+    });
+
+    expect(readFichaKeyPath(data, "systems_review.neurological")).toBeUndefined();
+    expect(absent).toContain("systems_review.neurological");
+    // The sibling that DID carry a value is unaffected.
+    expect(readFichaKeyPath(data, "systems_review.cardiovascular")).toBe(
+      "VAL_cardiovascular",
+    );
+    expect(projected).toContain("systems_review.cardiovascular");
+  });
+
+  it("an empty string and a whitespace-only string are both recorded absent", () => {
+    const { data, projected, absent } = projectAiPayloadOntoFichaFields({
+      _aiIngestionRaw: rawWith({
+        observations: "",
+        treatment_plan: "   ",
+        // Tabs and newlines count as whitespace too — a "\n" is what a cleared
+        // textarea round-trips as, and it must not render as a filled field.
+        treatment_objectives: "\n\t \r\n",
+      }),
+    });
+
+    for (const path of ["observations", "treatment_plan", "treatment_objectives"]) {
+      expect(readFichaKeyPath(data, path), `key "${path}"`).toBeUndefined();
+      expect(absent, `key "${path}"`).toContain(path);
+      expect(projected, `key "${path}"`).not.toContain(path);
+    }
+  });
+
+  it("an existing NULL at a field path is treated as unset and IS filled by the AI value", () => {
+    const { data } = projectAiPayloadOntoFichaFields({
+      _aiIngestionRaw: rawWith({ observations: "VAL_observations" }),
+      // A null already sitting at the field path — no reviewer intent, just an
+      // empty slot. The AI value fills it.
+      observations: null,
+    });
+
+    expect(readFichaKeyPath(data, "observations")).toBe("VAL_observations");
+  });
+
+  it("an existing EMPTY STRING at a field path is a reviewer's deliberate clear and is NOT overwritten", () => {
+    const { data, projected } = projectAiPayloadOntoFichaFields({
+      _aiIngestionRaw: rawWith({ observations: "VAL_observations" }),
+      observations: "",
+    });
+
+    // THE ASYMMETRY, asserted. "" from the AI would have been skipped; "" already
+    // at the field path is a value and survives.
+    expect(readFichaKeyPath(data, "observations")).toBe("");
+    // Still counted as projected — the key WAS present in the payload; the write
+    // was declined by the clobber guard, which is the pre-existing contract for a
+    // reviewer edit.
+    expect(projected).toContain("observations");
+  });
+
+  it("a whitespace-only string already at a field path is likewise not overwritten", () => {
+    const { data } = projectAiPayloadOntoFichaFields({
+      _aiIngestionRaw: rawWith({ observations: "VAL_observations" }),
+      observations: "   ",
+    });
+
+    expect(readFichaKeyPath(data, "observations")).toBe("   ");
+  });
+
+  it("leaves non-string falsy values alone — 0 and false are real answers, not blanks", () => {
+    const { data, projected, absent } = projectAiPayloadOntoFichaFields({
+      _aiIngestionRaw: rawWith({ observations: 0, treatment_plan: false }),
+    });
+
+    // Only null, undefined and blank STRINGS are skipped. A 0 or a false is a
+    // filled answer; dropping it would lose clinical content.
+    expect(readFichaKeyPath(data, "observations")).toBe(0);
+    expect(readFichaKeyPath(data, "treatment_plan")).toBe(false);
+    expect(projected).toEqual(
+      expect.arrayContaining(["observations", "treatment_plan"]),
+    );
+    expect(absent).not.toContain("observations");
+    expect(absent).not.toContain("treatment_plan");
+  });
+
+  it("existing behaviour for present non-empty values is unchanged", () => {
+    const full = {
+      template: "osteopathy",
+      consultation_reason: "VAL_consultation_reason",
+      relief_aggravation: "VAL_relief_aggravation",
+      clinical_history: "VAL_clinical_history",
+      systems_review: {
+        neurological: "VAL_neurological",
+        cardiovascular: "VAL_cardiovascular",
+        respiratory: "VAL_respiratory",
+        gastrointestinal: "VAL_gastrointestinal",
+        urological_gynecological: "VAL_urological_gynecological",
+        endocrine: "VAL_endocrine",
+      },
+      treatment_objectives: "VAL_treatment_objectives",
+      treatment_plan: "VAL_treatment_plan",
+      observations: "VAL_observations",
+    };
+    const { data, projected, absent } = projectAiPayloadOntoFichaFields({
+      _aiIngestionRaw: full,
+    });
+
+    for (const path of FICHA_MEDICA_AI_KEYS) {
+      expect(readFichaKeyPath(data, path), `key "${path}"`).toBe(
+        `VAL_${path.split(".").at(-1)!}`,
+      );
+    }
+    expect(projected).toEqual([...FICHA_MEDICA_AI_KEYS]);
+    expect(absent).toEqual([]);
+    expect(data._aiIngestionRaw).toEqual(full);
+  });
+
+  it("an all-null payload projects nothing and marks all twelve absent", () => {
+    const { data, projected, absent } = projectAiPayloadOntoFichaFields({
+      _aiIngestionRaw: {
+        template: "osteopathy",
+        consultation_reason: null,
+        relief_aggravation: null,
+        clinical_history: null,
+        systems_review: {
+          neurological: null,
+          cardiovascular: null,
+          respiratory: null,
+          gastrointestinal: null,
+          urological_gynecological: null,
+          endocrine: null,
+        },
+        treatment_objectives: null,
+        treatment_plan: null,
+        observations: null,
+      },
+    });
+
+    // This is the shape the strict-schema partner will send for a sparse
+    // extraction: every key present, every unfilled one null. It must behave
+    // exactly like the omitted-key payload, not fill twelve fields with null.
+    expect(projected).toEqual([]);
+    expect(absent).toEqual([...FICHA_MEDICA_AI_KEYS]);
+    for (const path of FICHA_MEDICA_AI_KEYS) {
+      expect(readFichaKeyPath(data, path), `key "${path}"`).toBeUndefined();
+    }
+  });
+});
