@@ -1,5 +1,19 @@
 # Wave 13 acceptance session — the plan
 
+> **THIS FILE IS A PLAN, NOT A RECORD. RESULTS LIVE IN
+> `docs/acceptance-session-wave-13-results.md`.**
+>
+> Added 2026-08-11. This file was read as a status update and it is not one — it
+> says so itself at line 1259: *"it is the stop condition, not a status update."*
+> Nothing here records what was observed. Line 1241's "Readiness **can** reach
+> 6/9 **if** every gate item passes" is a projection, not a result, and reading
+> it as one produced a gate ledger that disagreed with the board in two
+> directions at once.
+>
+> **A gate moves when a row in the results file carries an observation.** Never
+> because this file describes what an observation would look like.
+> Card: `ACC-13-results-uncommitted`.
+
 **One sitting. Numbered. Every item is a URL, an expected screen, a failure
 signal, and the gate it closes.**
 
