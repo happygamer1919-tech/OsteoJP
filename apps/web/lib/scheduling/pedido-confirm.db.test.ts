@@ -67,6 +67,8 @@ d("confirmAppointmentRequest against a real database", () => {
   let tenantId: string;
   let receptionId: string;
   let practitionerId: string;
+  /** A SECOND bookable therapist, for the different-practitioner arm. */
+  let otherPractitionerId: string;
   let locationId: string;
   let patientA: string;
   let patientB: string;
@@ -90,6 +92,10 @@ d("confirmAppointmentRequest against a real database", () => {
       values (${receptionId}, ${tenantId}, ${"r-" + receptionId.slice(0, 8) + "@t.test"}, 'Rececao', true)`);
     await sql.execute(raw`insert into users (id, tenant_id, email, full_name, is_active, is_bookable)
       values (${practitionerId}, ${tenantId}, ${"p-" + practitionerId.slice(0, 8) + "@t.test"}, 'Dra Teste', true, true)`);
+
+    otherPractitionerId = randomUUID();
+    await sql.execute(raw`insert into users (id, tenant_id, email, full_name, is_active, is_bookable)
+      values (${otherPractitionerId}, ${tenantId}, ${"o-" + otherPractitionerId.slice(0, 8) + "@t.test"}, 'Dr Outro', true, true)`);
 
     locationId = randomUUID();
     await sql.execute(raw`insert into locations (id, tenant_id, name)
@@ -142,13 +148,18 @@ d("confirmAppointmentRequest against a real database", () => {
     return (Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? [])) as Row[];
   }
 
-  /** An appointment in the shared window. */
-  async function seedAppointment(patientId: string, status: string): Promise<string> {
+  /** An appointment in the shared window. `who` defaults to the main therapist. */
+  async function seedAppointment(
+    patientId: string,
+    status: string,
+    who?: string,
+  ): Promise<string> {
     const id = randomUUID();
+    const practitioner = who ?? practitionerId;
     await sql.execute(raw`insert into appointments
         (id, tenant_id, patient_id, practitioner_id, location_id,
          starts_at, ends_at, status)
-      values (${id}, ${tenantId}, ${patientId}, ${practitionerId}, ${locationId},
+      values (${id}, ${tenantId}, ${patientId}, ${practitioner}, ${locationId},
               ${START.toISOString()}, ${END.toISOString()}, ${status})`);
     return id;
   }
@@ -262,6 +273,51 @@ d("confirmAppointmentRequest against a real database", () => {
 
     const result = await confirmAppointmentRequest(pedido);
     expect(result.ok).toBe(true);
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* HYPOTHESIS 1 — a DIFFERENT practitioner is not a conflict.          */
+  /* ------------------------------------------------------------------ */
+
+  it("CONFIRMS when the overlapping confirmed appointment is a DIFFERENT practitioner", async () => {
+    // WHY THIS TEST EXISTS, and it is a diagnostic rather than a regression
+    // guard. The production "double booking" of 2026-08-11 could not be
+    // reproduced: every refusal arm above passes against the sha it was observed
+    // on. The leading remaining explanation is that the two appointments had
+    // DIFFERENT practitioner_ids and were never a double booking at all - two
+    // therapists working the same hour, which the agenda renders side by side
+    // and which reads on screen exactly like one therapist booked twice.
+    //
+    // 2026-08-15 IS A SATURDAY, and the portal assigns from whoever covers that
+    // weekday. Any bookable user with Saturday hours is a candidate assignee, so
+    // the portal choosing someone other than the therapist staff booked is not a
+    // remote possibility - it is the ordinary behaviour of chooseTherapist.
+    //
+    // THIS MUST PASS, and its passing is the POINT. appointment_conflicts'
+    // therapist branch is per-practitioner (0059:193); a version that refused
+    // here would be blocking two legitimate concurrent appointments and would
+    // break the clinic's normal two-therapist Saturday.
+    const otherTherapistAppt = await seedAppointment(
+      patientB,
+      "confirmed",
+      otherPractitionerId,
+    );
+    const pedido = await seedAppointment(patientA, "scheduled");
+    await makePedido(pedido, patientA);
+
+    const result = await confirmAppointmentRequest(pedido);
+
+    expect(result.ok).toBe(true);
+    expect(await statusOf(pedido)).toBe("confirmed");
+    expect(await statusOf(otherTherapistAppt)).toBe("confirmed");
+
+    // Two confirmed rows, same window, same location, DIFFERENT therapists.
+    // This is the shape the owner saw, and it is correct.
+    const both = await rows(
+      raw`select practitioner_id from appointments
+           where tenant_id = ${tenantId} and status = 'confirmed'`,
+    );
+    expect(both).toHaveLength(2);
   });
 
   /* ------------------------------------------------------------------ */
