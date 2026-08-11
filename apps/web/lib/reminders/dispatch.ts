@@ -39,10 +39,48 @@ import { REMINDER_OFFSETS } from "./offsets";
 // no-show appointment is dropped silently — the run is a no-op, not an error.
 const REMINDABLE_STATUSES = new Set(["scheduled", "confirmed"]);
 
+/**
+ * The pedido gate. An appointment whose `confirmation_state` is `pending` is a
+ * PEDIDO DE MARCACAO that reception has not confirmed, and it must not produce a
+ * reminder.
+ *
+ * WHY THIS IS NOT COVERED BY THE STATUS CHECK ABOVE, which is the whole reason
+ * this constant exists separately. A pedido is `status = 'scheduled'` with
+ * `confirmation_state = 'pending'`, so `REMINDABLE_STATUSES` admits it. The two
+ * columns answer different questions: status is "does this appointment still
+ * exist", confirmation_state is "has the clinic agreed to it". Reminding on the
+ * first without the second tells a patient their appointment is tomorrow when
+ * the clinic has not accepted it.
+ *
+ * WHAT MADE IT NECESSARY, and it was a ruling rather than a bug report. JP ruled
+ * on D1 that unconfirmed pedidos stack on one slot with NO CAP, confirming
+ * migration 0059's header. With no cap, N patients can hold a pending pedido on
+ * the same therapist and the same slot, and without this gate every one of them
+ * receives a 24h reminder for an appointment only ONE of them can hold. The
+ * no-cap ruling is defensible precisely because a pedido is a request; a
+ * reminder would restate it as a commitment. Full reasoning:
+ * docs/rulings/R10-reminders-skip-unconfirmed-pedidos.md.
+ *
+ * A SET RATHER THAN A `!== "pending"` COMPARISON, deliberately: the enum can
+ * grow, and a future state that also means "not agreed yet" must be added HERE
+ * rather than discovered as a second reminder defect. Null is remindable because
+ * rows predating the column carry no pedido semantics.
+ */
+const UNREMINDABLE_CONFIRMATION_STATES = new Set(["pending"]);
+
 export type DispatchOutcome =
   | {
       dispatched: false;
-      reason: "not_found" | "status" | "no_contact" | "lead_time_off" | "channels_off";
+      reason:
+        | "not_found"
+        | "status"
+        /** W13-C: an unconfirmed pedido. Distinct from `status` on purpose - a
+         *  pedido IS `scheduled`, so collapsing the two would hide which gate
+         *  fired and make the skip unreadable in the logs. */
+        | "unconfirmed"
+        | "no_contact"
+        | "lead_time_off"
+        | "channels_off";
     }
   | { dispatched: true; channels: SendResult[] };
 
@@ -250,6 +288,12 @@ export async function dispatchReminder(
   if (!data) return { dispatched: false, reason: "not_found" };
   if (!REMINDABLE_STATUSES.has(data.status)) {
     return { dispatched: false, reason: "status" };
+  }
+  // The pedido gate. Checked AFTER status so an unconfirmed pedido that was also
+  // cancelled reports the more specific reason it already reported, keeping the
+  // existing outcome stable for callers that count skip reasons.
+  if (UNREMINDABLE_CONFIRMATION_STATES.has(data.confirmationState ?? "")) {
+    return { dispatched: false, reason: "unconfirmed" };
   }
 
   const config = parseTenantConfig(data.tenantSettings).reminders;
