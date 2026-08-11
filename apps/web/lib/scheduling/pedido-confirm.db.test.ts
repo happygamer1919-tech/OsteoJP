@@ -115,6 +115,11 @@ d("confirmAppointmentRequest against a real database", () => {
     await sql.execute(raw`alter table patient_audit_log disable trigger patient_audit_log_append_only`);
     await sql.execute(raw`delete from patient_audit_log where tenant_id = ${tenantId}`);
     await sql.execute(raw`alter table patient_audit_log enable trigger patient_audit_log_append_only`);
+    // A SUCCESSFUL confirm writes an audit row keyed to the acting user, and
+    // audit_log.actor_user_id has an FK to users - so the users delete below
+    // fails with 23503 unless this runs first. Discovered by the teardown
+    // failing on the first CI run while all seven assertions passed.
+    await sql.execute(raw`delete from audit_log where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from patients where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from locations where tenant_id = ${tenantId}`);
@@ -123,6 +128,7 @@ d("confirmAppointmentRequest against a real database", () => {
   });
 
   afterEach(async () => {
+    await sql.execute(raw`delete from audit_log where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from staff_notifications where tenant_id = ${tenantId}`);
     await sql.execute(raw`alter table patient_audit_log disable trigger patient_audit_log_append_only`);
     await sql.execute(raw`delete from patient_audit_log where tenant_id = ${tenantId}`);
