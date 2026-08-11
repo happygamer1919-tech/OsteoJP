@@ -115,12 +115,32 @@ d("confirmAppointmentRequest against a real database", () => {
     });
   });
 
+  // ==================================================================
+  // TEARDOWN NEVER TOUCHES A TRIGGER. INC-db-gated-trigger-race.
+  //
+  // The patient_audit_log toggle removed here was CARGO: this suite exercises
+  // the STAFF confirm path (confirmAppointmentRequest), which writes audit_log,
+  // never patient_audit_log - that table is the PATIENT-side trail written by
+  // the portal token routes. Nothing in this file SELECTs from it. So the
+  // teardown was disabling a production integrity guard to delete rows this
+  // suite does not create and does not read.
+  //
+  // It was also the second half of a real CI defect. ALTER TABLE ... DISABLE
+  // TRIGGER is GLOBAL, not session-scoped; once this file and
+  // reminders/redeem.db.test.ts both toggled the same trigger under vitest's
+  // default parallel file execution, either suite's ENABLE could land inside
+  // the other's disabled window and refuse its DELETE. The DB-gated REQUIRED
+  // check then went red on a sha whose diff could not touch it.
+  //
+  // WHAT STAYS. The appointments delete in afterEach is load-bearing: two
+  // assertions below count confirmed rows across the whole tenant
+  // (`where tenant_id = ... and status = 'confirmed'`), so rows from an
+  // earlier test WOULD be visible to a later one. audit_log and
+  // staff_notifications carry no append-only trigger and delete normally.
+  // ==================================================================
   afterAll(async () => {
     if (!sql) return;
     await sql.execute(raw`delete from staff_notifications where tenant_id = ${tenantId}`);
-    await sql.execute(raw`alter table patient_audit_log disable trigger patient_audit_log_append_only`);
-    await sql.execute(raw`delete from patient_audit_log where tenant_id = ${tenantId}`);
-    await sql.execute(raw`alter table patient_audit_log enable trigger patient_audit_log_append_only`);
     // A SUCCESSFUL confirm writes an audit row keyed to the acting user, and
     // audit_log.actor_user_id has an FK to users - so the users delete below
     // fails with 23503 unless this runs first. Discovered by the teardown
@@ -136,9 +156,6 @@ d("confirmAppointmentRequest against a real database", () => {
   afterEach(async () => {
     await sql.execute(raw`delete from audit_log where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from staff_notifications where tenant_id = ${tenantId}`);
-    await sql.execute(raw`alter table patient_audit_log disable trigger patient_audit_log_append_only`);
-    await sql.execute(raw`delete from patient_audit_log where tenant_id = ${tenantId}`);
-    await sql.execute(raw`alter table patient_audit_log enable trigger patient_audit_log_append_only`);
     await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
   });
 

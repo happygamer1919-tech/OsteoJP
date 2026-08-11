@@ -33,7 +33,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -77,27 +77,44 @@ d("redeemActionToken against a real database", () => {
               values (${patientId}, ${tenantId}, 'Paciente Teste')`);
   });
 
+  // ==================================================================
+  // TEARDOWN NEVER TOUCHES A TRIGGER. INC-db-gated-trigger-race.
+  //
+  // WHAT THIS USED TO DO AND WHY IT WAS WRONG. It ran
+  // `ALTER TABLE ... DISABLE TRIGGER` so it could DELETE from the two
+  // append-only tables, with a comment claiming that was "the guarantee
+  // working, not a workaround for a flaw". It was a workaround, and it was
+  // GLOBAL: ALTER TABLE changes the table for EVERY connection, not for the
+  // session that ran it. Once a second apps/web suite
+  // (scheduling/pedido-confirm.db.test.ts) started toggling the same trigger
+  // and the db-tests workflow moved to a glob that actually ran it, vitest's
+  // default parallel file execution let one suite's ENABLE land inside the
+  // other's disabled window. The loser's DELETE was refused and the DB-gated
+  // REQUIRED check went red on a sha whose diff could not touch it.
+  //
+  // WHY DELETING THESE ROWS WAS NEVER NEEDED. Every assertion in this file
+  // reads patient_audit_log through auditRows(), which filters by
+  // `appointment_id`, and each test seeds its own appointment with a fresh
+  // randomUUID. The consumption reads are keyed by token hash. Nothing here
+  // is scoped only by tenant, so leftover rows from a previous test in this
+  // file cannot be seen by a later one.
+  //
+  // WHY THE TENANT ROW IS LEFT BEHIND. patient_audit_log.tenant_id and
+  // action_token_consumptions.tenant_id both carry an FK to tenants with NO
+  // cascade, and migration 0054 says that is deliberate: "Deleting a tenant
+  // that still holds a patient audit trail is refused, which is the correct
+  // answer for an audit trail." So the old teardown was not merely disabling
+  // a guard to tidy up - it was breaking the exact production rule 0054
+  // exists to state. This suite now obeys that rule. The tenant is a fresh
+  // uuid per run; CI reset the database anyway, and a local run accumulates a
+  // handful of tiny rows, which is the honest price of an append-only table.
+  // ==================================================================
   afterAll(async () => {
     if (!sql) return;
-    // The append-only trigger refuses DELETE even to the owner. Disabling it for
-    // teardown is the guarantee working, not a workaround for a flaw.
-    await sql.execute(raw`alter table patient_audit_log disable trigger patient_audit_log_append_only`);
-    await sql.execute(raw`delete from patient_audit_log where tenant_id = ${tenantId}`);
-    await sql.execute(raw`alter table patient_audit_log enable trigger patient_audit_log_append_only`);
-    await sql.execute(raw`alter table action_token_consumptions disable trigger action_token_consumptions_append_only`);
-    await sql.execute(raw`delete from action_token_consumptions where tenant_id = ${tenantId}`);
-    await sql.execute(raw`alter table action_token_consumptions enable trigger action_token_consumptions_append_only`);
     await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from patients where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from locations where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from users where tenant_id = ${tenantId}`);
-    await sql.execute(raw`delete from tenants where id = ${tenantId}`);
-  });
-
-  afterEach(async () => {
-    await sql.execute(raw`alter table patient_audit_log disable trigger patient_audit_log_append_only`);
-    await sql.execute(raw`delete from patient_audit_log where tenant_id = ${tenantId}`);
-    await sql.execute(raw`alter table patient_audit_log enable trigger patient_audit_log_append_only`);
   });
 
   /** Rows from a raw query, normalised across driver shapes. */
