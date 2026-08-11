@@ -90,6 +90,15 @@ const SUITES = [
   // which is the shape that drifts, so a silent skip here would let the two
   // diverge unnoticed.
   { file: "patient-bookable.db.test.ts", hard: true },
+  // THE DOUBLE BOOKING, 2026-08-11. Hard-required, and this one has a live
+  // production defect behind it rather than a hypothetical: a portal pedido and
+  // a staff appointment both reached `confirmed` on the same practitioner and
+  // window. The confirm path DOES re-check (actions.ts:1072) - what did not
+  // exist was any test that ran the real predicate, because pedido-confirm.test.ts
+  // mocks ./conflict wholesale and drives the mock's return value. A silent skip
+  // here would restore exactly the state that let the defect ship: four green
+  // tests asserting the orchestration around a check nothing ever executed.
+  { file: "pedido-confirm.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.
