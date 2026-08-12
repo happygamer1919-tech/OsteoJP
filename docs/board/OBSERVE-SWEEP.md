@@ -466,24 +466,73 @@ Observed: `________________________________`
 | **Open** | `/notificações` |
 | **Find** | the pending pedido for **T-B** |
 | **Click** | **"Confirmar"** |
-| **Expect** | it is **REFUSED**, with exactly: **"Este terapeuta já tem uma marcação confirmada neste horário. Ligue ao paciente e proponha outro horário."** |
-| **Worked if** | the pedido stays pending and that sentence appears |
+| **Expect** | it is **REFUSED**, with: **"Este horário já não está livre. O pedido continua pendente: contacte o paciente e proponha outro horário."** |
+| **Expect** | a second line below it: **"Conflito com:"** followed by the time and the patient name of the booking you made in B2.1 |
+| **Worked if** | the pedido stays **pending** and both lines appear |
 | **STOP if** | **it confirms.** That is a live double booking and it stops the whole sweep — say so immediately and cancel one of the two rows. |
 
 Observed: `________________________________`
 
 > **SCREENSHOT THIS. It is item 18 half two, and it has never been observed by
 > anyone.** The production incident's confirm ran 68 seconds before the staff row
-> existed, so this path was never exercised. Tonight is the first time it can be.
+> existed, so this path was never exercised.
+>
+> #### THE EXPECTED SENTENCE WAS CORRECTED ON 2026-08-12. READ THIS.
+> An earlier draft of this row expected **"Este terapeuta já tem uma marcação
+> confirmada neste horário. Ligue ao paciente…"**, the `requests.error.doubleBooked`
+> string. **That is the wrong string for this row and would have produced a false
+> finding.** `confirmAppointmentRequest` runs its OWN conflict check inside the
+> slot lock before it writes (`actions.ts:1295-1315`) and returns `conflict`, so
+> `requests.error.conflict` is what renders. `doubleBooked` is the DATABASE
+> backstop and is only reachable when the application check is bypassed — which
+> is exactly what **B2.3** does deliberately.
+>
+> **AND SO THIS ROW DOES NOT DEPEND ON `0061`.** The refusal you see here is the
+> application check that shipped with **#830 on 2026-08-07**. Item 18 half two
+> has been observable for five days and simply was never run. The board and an
+> earlier PURPLE report both claimed it "becomes observable once 0061 applies";
+> **that claim was wrong** and is withdrawn here. **B2.3 is the row that needs
+> 0061.**
 >
 > **A confirm succeeding here is a stop-the-session finding**, in the acceptance
 > plan's own words.
+
+### B2.3 · The database overrules the override — **this is the row that needs `0061`**
+
+**This is the only row on the whole sweep that could not have been run before
+today.** It deliberately bypasses the application check to prove the constraint
+underneath it is real. The owner's ruling was that *"Guardar mesmo assim" is
+OVERRULED AT THE DATABASE*; this is that ruling, observed.
+
+| | |
+|---|---|
+| **Open** | `/agenda` at **T-B** and click the **pending** pedido (not the B2.1 booking) |
+| **In** | **"Estado"**, choose **"Confirmada"** |
+| **Click** | **"Guardar"** |
+| **Expect** | a conflict warning, and the button changes to **"Guardar mesmo assim"** |
+| **Now click** | **"Guardar mesmo assim"** — deliberately forcing it |
+| **Expect** | it is **STILL REFUSED**, with: **"Este terapeuta já tem uma marcação confirmada neste horário. Duas marcações confirmadas não podem sobrepor-se."** |
+| **Worked if** | the pedido stays **Pendente** after you forced the save |
+| **STOP if** | **it saves.** Two confirmed appointments now overlap on one therapist, `0061` is not doing what its journal says it did, and the sweep stops. |
+
+Observed: `________________________________`
+
+> **SCREENSHOT THIS TOO.** It is the deployed-screen proof of migration `0061`,
+> and it is a different sentence from B2.2 on purpose: B2.2 is the application
+> refusing politely, B2.3 is the database refusing an operator who insisted.
+>
+> **Why forcing it is safe:** the constraint is what stops the write. If it were
+> absent, B2.2 would already have told you — the application check would still
+> have refused, and you would never reach this row's stop condition without a
+> second, independent failure.
 
 ## Bookkeeping — four rows, none of them move a gate
 
 ### B3 · An illegal Estado change is refused — `INC-08` app half (#869)
 
 **Use the appointment you created in B2.1. Do not use a real patient's row.**
+This is a THIRD refusal and a third distinct sentence: B2.2 is a conflict, B2.3
+is the constraint, and this one is the lifecycle map. Three different guards.
 
 | | |
 |---|---|
