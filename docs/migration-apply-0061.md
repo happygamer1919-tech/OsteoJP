@@ -118,7 +118,6 @@ git log -1 --oneline
 set -o allexport
 source /Users/ivan/osteojp-secrets/new-prod.env
 set +o allexport
-pnpm install --frozen-lockfile
 pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs 1
 pnpm --filter @osteojp/db exec drizzle-kit migrate
 pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs 0
@@ -134,7 +133,31 @@ INC-07, twice.
 pending calculation. If it does not say exactly one is pending, the tree is not
 what this block assumes and nothing below it means anything.
 
-**`set -o allexport`, never `set -a`.** Standing rule.
+**`set -o allexport`, never `set -a`.** Standing rule; `set -a` errors in zsh.
+
+**NO INSTALL, AND THAT IS DELIBERATE.** An earlier draft ran
+`pnpm install --frozen-lockfile` here. It is removed: **the prod-apply worktree
+is for applying, not for building.** It is also provably unnecessary rather than
+merely unwanted, checked on 2026-08-12 before removal:
+
+- `osteojp-prod-apply/packages/db/node_modules/.bin/drizzle-kit` exists, so the
+  migrate command resolves;
+- `pnpm-lock.yaml` at `65d9611` is **byte-identical** to the one in that
+  worktree, so there is nothing an install would change.
+
+**If `drizzle-kit` is ever not found, STOP and say so.** Do not add an install to
+this block to get past it; that is a separate, deliberate act outside the apply.
+
+**WHAT TO PASTE BACK, and it is four things:**
+
+1. the `git log -1 --oneline` line, proving which sha was applied;
+2. the **first** `check-pending-migrations` output, showing `pending: 1`;
+3. the `drizzle-kit migrate` output;
+4. the **second** `check-pending-migrations` output, showing `pending: 0`.
+
+**Items 2 and 4 together are the journal proof.** Neither alone is: a success
+message from `migrate` is not evidence that anything ran, which is INC-07 twice
+over.
 
 **WHY `65d9611` AND NOT THE BRANCH HEAD.** It is the last commit that touches
 anything **this block executes** — `packages/db/migrations/` (the SQL and the
