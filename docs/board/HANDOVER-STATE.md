@@ -19,7 +19,7 @@ this build to the clinic team and to legal, and for anyone who reads it after.
 | **PG5 REMINDERS** | **PASS** | 48h email and 24h SMS as separate per-channel offsets with the channel inside the idempotency key, and all ten bodies approved. **Reminders are not live** — `REMINDERS_LIVE_SEND` is false. |
 | **PG6 EXPOSURE** | **PASS** | 51-row exposure matrix committed; 23 MUST-NEVER rows, every one with a verified enforcement point. |
 | **PG7 ENVIRONMENT** | **PASS** | Every environment variable has a safe default or fails loudly at boot; the full four-app estate was walked. |
-| **PG8 SYNC** | **OPEN** | Structure and behaviour proven; the cross-surface e2e is written and its crossing observed in CI. **It once passed for the wrong reason** — matching an unrelated appointment's time — and was held. The assertion is now scoped to the patient's identity. |
+| **PG8 SYNC** | **OPEN** | **The property is demonstrated at the DATABASE layer and NOT at the browser layer.** DB-gated and hard-required: a booked window leaves the offered list, contention refuses the loser, a second confirmed overlap is refused. **What is not demonstrated is the browser-level crossing to a SPECIFIC row** — the e2e booked 17 August and its assertion matched an unrelated row on 20 August, so it has never once matched the appointment it created, and it passed twice on that. The product is not at fault: `listAppointments` has no status predicate, so a portal booking is on the agenda immediately. The assertion needs a run-scoped patient. |
 | **PG9 EXPERIENCE** | **OPEN** | Not started. Ten portal screens against seven criteria, tool ruled (`@axe-core/playwright`, `wcag22aa`). The largest remaining item; it audits the other seven loops. |
 
 ---
@@ -34,6 +34,14 @@ this build to the clinic team and to legal, and for anyone who reads it after.
 | **PG2** | Owner observation. The pedido confirm was refused and stayed pending; then, with the conflict override **deliberately forced**, the database refused it anyway. That second one is the deployed proof of migration `0061`. |
 | **PG4** | Owner observation. A third notification appeared at 14:55, newer than the two 14:47 pedido rows, for the right appointment, with no service name. **A row cannot be produced by an absence** — which matters, because the queue emptying alone would have looked identical with a completely broken fan-out. |
 | **PG6** | `docs/recon/W13-06-exposure-matrix.md`, plus `apps/api/lib/exposure/patient-surface.test.ts` (51 assertions, 7 negative arms). Every cited enforcement point was then **read line by line**; four citations were wrong and were corrected. |
+
+**PG8, stated without softening.** Two CI runs on 2026-08-12 reported direction A
+as passing. Neither demonstrated the property. The assertion matched a seeded
+fixture patient's name and a time — both of which any other spec can produce on a
+shared database — so it found somebody else's row and called it the crossing. It
+is held open at 7/9 deliberately. **The crossing itself works**: the staff agenda
+query carries no status filter, so a portal booking appears on it the moment it is
+written. What is missing is a test that can tell its own row from a neighbour's.
 
 **Migration `0061` was applied to production** and its journal is recorded verbatim
 at `docs/migration-apply-0061.md` §10. The next free migration number is **0062**,
