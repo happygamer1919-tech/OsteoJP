@@ -37,9 +37,36 @@ getting lost.
 
 | What | Value |
 |---|---|
-| Portal URL | `________________________________` |
-| Staff platform URL | `________________________________` |
+| Portal URL | **`https://osteojp-portal.vercel.app`** — see the warning below |
+| Staff platform URL | **`https://app.osteojp.pt`** |
 | Supabase project (prod) | `dfotoodqvmjhbdcxyaxf` |
+
+> ### THE PORTAL IS NOT ON ITS CUSTOM DOMAIN. DO NOT TYPE `patient.osteojp.pt`.
+>
+> **`patient.osteojp.pt` DOES NOT RESOLVE.** `docs/dns-records-pending.md:27`
+> lists it as **PENDING**, and `:89` still has it in "Still pending", against a
+> live `dig` on 2026-08-02. The CNAME was added on the Vercel side, so the
+> project shows *"Invalid Configuration"* until the DNS record exists.
+>
+> **The live portal is the Vercel default host.** `docs/SPEC.md:55`:
+> *"project `osteojp-portal`, Node 22.x, analytics off, env vars set, **live at
+> `osteojp-portal.vercel.app`**. Custom domain `patient.osteojp.pt` deferred to
+> go-live."*
+>
+> **`apps/portal/.env.example` says `NEXT_PUBLIC_APP_URL=https://patient.osteojp.pt`
+> and that is the GO-LIVE TARGET, not the current deployment.** Taking that file
+> at face value sends you to a dead hostname. It is the single most likely way to
+> lose the first ten minutes of a sitting.
+>
+> **Confirm the exact host once against the Vercel dashboard** (project
+> `osteojp-portal`) before a sitting. A Vercel default host is stable, but the
+> repo's newest statement about it is dated 2026-06-10 and only the dashboard is
+> authoritative today.
+>
+> **The staff platform is different and IS on its custom domain.**
+> `app.osteojp.pt` is **LIVE** on `cname.vercel-dns.com`
+> (`docs/dns-records-pending.md:25`, `docs/supabase-auth-redirect-urls.md:49`).
+> So do not assume the two hosts follow the same pattern; they do not.
 
 ---
 

@@ -37,6 +37,13 @@ this project's own rules forbid.
 `ZZ`-prefixed record carrying the owner's own mobile) and **`+351900000000`**,
 the number with no patient record and no assigned carrier block.
 
+> **THE PORTAL IS AT `https://osteojp-portal.vercel.app`, NOT
+> `patient.osteojp.pt`.** That custom domain **does not resolve**
+> (`docs/dns-records-pending.md:27`, still pending against a live dig on
+> 2026-08-02). `apps/portal/.env.example` names it, but that is the go-live
+> target rather than the deployment. The **staff platform IS** on its custom
+> domain, `https://app.osteojp.pt`. The two hosts do not follow the same pattern.
+
 **Never a real staff account, never a real patient.** The reasons are on that
 file and they are not stylistic.
 
