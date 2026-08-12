@@ -125,10 +125,34 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
     return { ok: false, why: "flow-broken", detail: "never reached the date/time step" };
   }
 
+  // A DATE MUST BE CHOSEN BEFORE ANY SLOT EXISTS, AND THE FIRST VERSION OF THIS
+  // HELPER DID NOT KNOW THAT. Step 4 renders `choose_date_prompt` until the
+  // patient picks a day — no date is preselected — so looking for slot buttons
+  // straight away finds none, always. CI duly skipped direction A twice and
+  // reported "date/time step offered no slot", which was TRUE and which I read
+  // as an empty seeded calendar. It was not: the seed gives 09:00-13:00
+  // availability on WEEKDAY 1 (Monday) at Linda-a-Velha (seed-e2e.mjs:365-368),
+  // exactly the Monday-only shape portal-booking-slot-parity.test.ts documents.
+  // The slots were there and nothing had asked for them.
+  //
+  // The picker's enabled range is [availableDates[0], availableDates[last]] —
+  // BookingFlow.tsx:457-458 — and `availableDates` is `Object.keys(byDate)`, the
+  // days that actually carry slots. So the FIRST ENABLED DAY is by construction a
+  // day with availability. Enabled days are gridcells without `aria-disabled`.
+  await page.getByRole("button", { name: /escolh|data/i }).first().click().catch(() => {});
+  const day = page.getByRole("gridcell").and(page.locator(":not([aria-disabled])"));
+  await day.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
+  if ((await day.count()) === 0) {
+    return { ok: false, why: "empty-calendar", detail: "date picker offered no selectable day" };
+  }
+  await day.first().click();
+
   const slot = page.getByRole("button", { name: /^\d{2}:\d{2}$/ });
   await slot.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
   if ((await slot.count()) === 0) {
-    return { ok: false, why: "empty-calendar", detail: "date/time step offered no slot" };
+    // Reaching here now means a day the picker declared selectable carried no
+    // slot, which is a genuine disagreement between the two and worth seeing.
+    return { ok: false, why: "empty-calendar", detail: "a selectable day carried no slot" };
   }
 
   const label = (await slot.first().textContent())?.trim() ?? "";

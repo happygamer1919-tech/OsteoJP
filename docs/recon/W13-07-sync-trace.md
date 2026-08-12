@@ -274,3 +274,60 @@ It now returns a discriminated result and the two meanings are separated:
 skipped.** That is now a *named, observable* condition instead of a quiet one —
 which is the only reason this document can honestly describe the state at all.
 PG8 stays open.
+
+
+---
+
+## 8. THE SECOND CI RUN WAS GREEN AND DIRECTION A STILL SKIPPED
+
+**Run `31614238872`, all three shards green, PR #879 merged as `1cdb36f`.**
+Direction B **passed and was measured**. Direction A **skipped**, and the
+instrumentation added in §7 is the only reason that is visible at all:
+
+```
+[W13-07] A: portal booking submitted: 15806ms
+[W13-07] DIRECTION A SKIPPED — date/time step offered no slot. Direction A is UNPROVEN in this run.
+[W13-07] B: portal slot list first paint: 521ms
+```
+
+**A GREEN REQUIRED CHECK, A MERGED PR, AND THE GATE'S CENTRAL DIRECTION UNTESTED.**
+That is the entire argument for not flipping PG8 on a green run, made by the run
+itself.
+
+### 8.1 I read my own skip reason wrong, and the seed was never at fault
+
+The message said "date/time step offered no slot", and §7 recorded that as the
+legitimate `empty-calendar` case — the seeded calendar being thin on the run day.
+**That reading was wrong.**
+
+**Step 4 preselects no date.** `BookingFlow.tsx:486` renders
+`choose_date_prompt` until the patient picks a day, so slot buttons cannot exist
+before a date is chosen. **The helper never opened the date picker.** It looked
+for slots on a screen that had not been asked for any, found none, and reported
+an empty calendar — every run, forever.
+
+**The seed was fine all along.** `seed-e2e.mjs:365-368` gives 09:00–13:00
+availability on **weekday 1 (Monday)** at Linda-a-Velha — the same Monday-only
+shape `portal-booking-slot-parity.test.ts` documents in its own header, and the
+same *class* of constraint as the production `ZZ TESTE THERAPIST` covering
+Saturday only. The slots existed and nothing had asked for them.
+
+### 8.2 The fix, and why the first enabled day is the right one
+
+The picker's enabled range is `[availableDates[0], availableDates[last]]`
+(`BookingFlow.tsx:457-458`), and `availableDates` is `Object.keys(byDate)` — the
+days that actually carry slots. **So the first enabled day is by construction a
+day with availability**, whatever weekday the run lands on. The helper now opens
+the picker and takes it, and enabled days are gridcells without `aria-disabled`.
+
+A day the picker declares selectable that then carries no slot is now reported
+with its own distinct message, because that would be a real disagreement between
+the two and is worth seeing rather than absorbing.
+
+### 8.3 The lesson, which is the same one for the third time
+
+**A skip reason I wrote, I then trusted.** `empty-calendar` was my own label,
+attached to a condition I had not verified, and it read as a fact about the seed
+on the next pass. Criterion A on `ACC-vacuous-guard-sweep` — *proximity is not
+evidence* — applies to a test's own diagnostics as much as to a citation: the
+message was next to the failure, not derived from it.
