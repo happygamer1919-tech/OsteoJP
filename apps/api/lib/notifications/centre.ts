@@ -133,6 +133,11 @@ export const persistingConsumer: PatientChangeConsumer = async (
         tenantId: e.tenantId,
         recipientUserId,
         kind: e.kind,
+        // 0061. Null for every patient-initiated kind, where the actor is the
+        // patient already named below. `?? null` and not `e.actorUserId`: the
+        // field is optional on the event, and writing `undefined` would make
+        // Drizzle omit the column rather than write NULL.
+        actorUserId: e.actorUserId ?? null,
         appointmentId: e.appointmentId,
         patientId: e.patientId,
         previousStartsAt: new Date(e.previousStartsAt),

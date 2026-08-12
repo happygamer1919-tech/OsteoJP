@@ -540,6 +540,11 @@ export function AppointmentDrawer({
     // click away and reception needs to be told WHICH move is refused - not
     // "ocorreu um erro", and certainly not "preencha os campos obrigatórios".
     else if (r.error === "illegal_transition") setError(s["appointment.illegalTransition"]);
+    // INC-08 / 0061. Rendered as a plain message, NOT through setConflicts:
+    // that path offers "Guardar mesmo assim", and this is the one refusal the
+    // override may not reach. The owner is demonstrating this build to the
+    // clinic team; a raw database error here would be worse than the bug.
+    else if (r.error === "double_booked") setError(s["appointment.doubleBooked"]);
     else if (r.error === "validation") setError(s["appointment.requiredFields"]);
     else if (r.error === "unauthenticated") setError(s["errors.unauthenticated"]);
     else setError(s["errors.generic"]);

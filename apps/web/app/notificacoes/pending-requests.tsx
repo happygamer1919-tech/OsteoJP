@@ -36,6 +36,10 @@ type RowError =
   | { code: "conflict"; conflicts: ConflictInfo[] }
   | { code: "notFound" }
   | { code: "forbidden" }
+  // INC-08 / 0061: the database refused two overlapping CONFIRMED appointments.
+  // Its own code and not "conflict": the conflict branch renders a list and
+  // implies a retry is possible, and this refusal is absolute.
+  | { code: "doubleBooked" }
   | { code: "generic" };
 
 const TIME_FMT: Intl.DateTimeFormatOptions = {
@@ -63,6 +67,8 @@ function messageFor(err: RowError): string {
       return s["requests.error.notFound"];
     case "forbidden":
       return s["requests.error.forbidden"];
+    case "doubleBooked":
+      return s["requests.error.doubleBooked"];
     default:
       return s["requests.error.generic"];
   }
@@ -94,9 +100,11 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
       const code: RowError["code"] =
         result.error === "not_found"
           ? "notFound"
-          : result.error === "forbidden" || result.error === "unauthenticated"
-            ? "forbidden"
-            : "generic";
+          : result.error === "double_booked"
+            ? "doubleBooked"
+            : result.error === "forbidden" || result.error === "unauthenticated"
+              ? "forbidden"
+              : "generic";
       setErrors((prev) => ({ ...prev, [appointmentId]: { code } as RowError }));
     });
   }
