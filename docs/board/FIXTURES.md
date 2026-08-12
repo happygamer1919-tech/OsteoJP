@@ -48,9 +48,42 @@ getting lost.
 | Role | Identifier | Id | Notes |
 |---|---|---|---|
 | **Test patient** | `ZZ Teste …` | `____________________` | Carries **the owner's own mobile**. It is the canary for every OTP step and the subject of the terms items. |
-| **Test therapist** | `ZZ TESTE THERAPIST` | `8ac3b349…` | The practitioner on both rows of the INC-08 double booking. Already exists. |
-| **Reception / admin** | `____________________` | `____________________` | The account used for staff-side observation. |
+| **Test therapist** | `ZZ TESTE THERAPIST` | `8ac3b349…` | The practitioner on both rows of the INC-08 double booking. Already exists. **COVERS SATURDAY ONLY, 08:00-13:00 — see the box below. Every test booking goes on a Saturday morning.** |
+| **Reception** | `ZZ TESTE RECEPCAO` | `alo@gmail.com` | **The account for ALL staff-side observation. NOT the owner account — see the box below.** Carries the RECEPTION role slug, which is what puts it in `resolveRecipients`. |
 | **Second therapist** | `____________________` | `____________________` | Needed **only** for the negative arm of the therapist queue check, where a **non-assigned** therapist must be refused. |
+
+> ### THE TEST THERAPIST COVERS SATURDAY ONLY, 08:00-13:00
+>
+> **Owner-supplied, 2026-08-12. Not re-derivable from this repo** — availability
+> templates are production data and no terminal may read production.
+>
+> **It is the isolation mechanism, not an accident.** A test therapist whose
+> availability touches no weekday cannot collide with a real clinic day, so every
+> slot a sweep books is provably a slot no patient wanted.
+>
+> **Outside that window the portal offers NO SLOTS for this therapist**, and the
+> screen says **"Não há horários disponíveis para esta data. Tente outro dia ou
+> contacte a clínica."** A runner who does not know this reads a working booking
+> flow as broken. It cost the first run of `OBSERVE-SWEEP.md`, whose Block B said
+> "any date at least two days out".
+>
+> **Every test appointment goes on one Saturday morning.** The 2026-08-12 run
+> used Saturday 22 August 2026, 09:00 and 11:00.
+
+> ### NEVER RUN A STAFF OBSERVATION AS THE OWNER ACCOUNT
+>
+> **THE OWNER RECEIVES NO PEDIDO NOTIFICATIONS, BY RULING.** JP, 2026-08-11, card
+> `D4-owner-cannot-see-pedido-queue`. `resolveRecipients`
+> (`apps/api/lib/notifications/centre.ts:56-88`) selects exactly two sets: users
+> whose role slug is **RECEPTION**, and the explicitly named assigned
+> practitioners. The owner is neither. 0055's SELECT policy then pins every read
+> to `recipient_user_id = auth.uid()`, so `staff_notifications` is a
+> per-recipient inbox at the database and there is no supervisor view.
+>
+> **So the owner's `/notificações` is CORRECTLY EMPTY.** Observing it as the
+> owner produces a false failure against a correct product — and on PG4 that is
+> the single most expensive mistake available, because PG4 closes on exactly that
+> screen. Use `ZZ TESTE RECEPCAO`.
 
 ---
 

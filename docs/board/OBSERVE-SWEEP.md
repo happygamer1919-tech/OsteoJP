@@ -9,14 +9,16 @@ They were unrunnable until the migration landed and they are the only two gates
 your eyes can move tonight. Blocks B and C were rewritten for it; **read the
 header at "BLOCKS B AND C" before starting either.**
 
-**Block A stays at the top of the file** because it is already part-run — A1, A2
-and A3 passed on 2026-08-12 and **A4 is outstanding**. PG1 needs A4 plus items
-12 and 13 plus a committed record, so Block A alone no longer closes it.
+**BLOCK A IS DONE AND `PG1` PASSED ON 2026-08-12.** All four rows observed by the
+owner on a deployed build: A1, A2 (both routes), A3 (pass on the security
+property, with the divergence recorded in that row) and **A4**. Block A is kept
+below as the record and as the re-run procedure; **do not re-run it** unless
+something regresses.
 
 **Grouped by account, not by card**, so you log in once per account.
-**Four accounts, four sessions, in this order:** Block A logged out; then the
-test patient on the portal; then the test therapist; then reception. Block D is
-your email and can happen any time.
+**Three sessions now that Block A is closed, in this order:** the test patient on
+the portal; `ZZ TESTE THERAPIST`; `ZZ TESTE RECEPCAO`. Block D is your email and
+can happen any time.
 
 **Write the answer in the box on each line.** Anything you do not run, mark
 `NOT RUN` — a blank is not a pass. When you are done, hand the file back and the
@@ -210,9 +212,9 @@ rather than the chain to the accounts.
 
 | Session | Account | What it does |
 |---|---|---|
-| **1** | the **test patient**, on the **PORTAL** | creates the two pedidos everything downstream needs. **Spends 1 OTP.** |
-| **2** | the **test therapist**, on the **STAFF platform** | confirms one pedido. This is the write that PG4 observes and it can only be done by a therapist. |
-| **3** | **reception / admin**, on the **STAFF platform** | sees PG4's notification, runs PG2's refusal, then the four bookkeeping rows |
+| **1** | the **test patient**, on the **PORTAL** | creates the two pedidos everything downstream needs. **Spends 1 OTP.** B0.1 doubles as the A3 discriminator. |
+| **2** | **`ZZ TESTE THERAPIST`**, on the **STAFF platform** | confirms one pedido. This is the write that PG4 observes and it can only be done by a therapist. |
+| **3** | **`ZZ TESTE RECEPCAO`** (`alo@gmail.com`), on the **STAFF platform** | sees PG4's notification, runs PG2's refusals, then the four bookkeeping rows. **NOT the owner account — see the box in session 3.** |
 
 **THREE LOGINS TOTAL. One per account, in that order, and no going back.**
 Session 3 must come after session 2, because reception is looking for a
@@ -225,9 +227,13 @@ cancelled** at the end of session 3:
 
 | # | What | Created at | Cancelled at |
 |---|---|---|---|
-| **P-A** | pedido A, portal booking | B0.3 | B0.3-CANCEL, run in session 3 |
-| **P-B** | pedido B, portal booking | B0.4 | B0.4-CANCEL, run in session 3 |
-| **S** | staff booking, confirmed | B2.1 | B2.1-CANCEL, run in session 3 |
+| **P-A** | pedido A, portal booking, **Saturday 09:00** | B0.3 | B0.3-CANCEL, run in session 3 |
+| **P-B** | pedido B, portal booking, **same Saturday 11:00** | B0.4 | B0.4-CANCEL, run in session 3 |
+| **S** | staff booking, confirmed, **on T-B** | B2.1 | B2.1-CANCEL, run in session 3 |
+
+**ALL THREE LAND ON ONE SATURDAY MORNING, 08:00-13:00.** `ZZ TESTE THERAPIST`
+covers Saturday only; that is the isolation mechanism and it is a hard
+requirement, not a preference. Full reasoning in the box under SESSION 1.
 
 **CANCEL, NEVER DELETE. This is not tidiness.** A test appointment was DELETED on
 2026-08-11 and it destroyed the audit trail of the double booking; the incident
@@ -248,6 +254,33 @@ Portal URL, not the staff platform.**
 **This session spends ONE OTP request.** Check your hourly budget before you
 start — see the note at the end of this session.
 
+> ## T-A AND T-B MUST BOTH BE A SATURDAY, BETWEEN 08:00 AND 13:00.
+>
+> **HARD REQUIREMENT. Added 2026-08-12 after the first run.** An earlier draft of
+> this sheet said "any date at least two days out". **That is wrong and it makes
+> the whole sweep unrunnable.**
+>
+> **`ZZ TESTE THERAPIST` covers SATURDAY ONLY, and that is deliberate.** It is
+> the isolation mechanism: a test therapist whose availability template touches
+> no weekday cannot collide with a real clinic day, so every slot this sweep
+> books is provably a slot no patient wanted. **Outside Saturday 08:00–13:00 the
+> portal offers no slots for this therapist at all** — you will reach
+> **"Não há horários disponíveis para esta data. Tente outro dia ou contacte a
+> clínica."** and conclude the booking flow is broken when it is working exactly
+> as configured.
+>
+> **Owner-supplied fact, 2026-08-12.** It is not re-derivable from this repo:
+> availability templates are production data and PURPLE may not read production.
+> Recorded on the owner's statement, attributed, and it is the kind of fact that
+> belongs in `FIXTURES.md` rather than in a dispatch.
+>
+> **The run in progress uses Saturday 22 August 2026** (confirmed a Saturday):
+> **T-A = 09:00**, **T-B = 11:00**. Both inside the window, two hours apart so
+> they cannot overlap. Any later Saturday works the same way.
+>
+> **This constraint binds B0.3, B0.4 and B2.1**, because B2.1 puts a staff
+> booking on **T-B** and the same availability applies.
+
 ### B0.1 · Log in
 
 | | |
@@ -258,9 +291,28 @@ start — see the note at the end of this session.
 | **Type** | the 6 digits that arrive by SMS |
 | **Click** | **"Entrar"** |
 | **Worked if** | you land on the portal dashboard |
-| **STOP if** | you get **"Não é possível entrar neste momento…"** — that is the A3 banner, and on YOUR number it means an environment fault, not the A3 finding. Stop and say so. |
+| **STOP if** | you get **"Não é possível entrar neste momento…"** — see the box below before doing anything else |
 
 Observed: `________________________________`
+
+> ### THIS ROW IS ALSO THE A3 DISCRIMINATOR, AND IT COSTS NOTHING EXTRA
+>
+> A3 produced **"Não é possível entrar neste momento…"** for `900000000`. Three
+> code paths can produce that one string, and **this login separates them at zero
+> cost**, because you were logging in anyway:
+>
+> | What happens here | What A3 was |
+> |---|---|
+> | **You log in normally** | A3 was the **unroutable-prefix 500**: `+351900000000` reached the live Twilio adapter, which cannot route an unassigned block, and the uncaught rejection became a 500. **This is the expected outcome** and it confirms `SEC-otp-unassigned-prefix-500`. |
+> | **You get the SAME banner on your OWN number** | It is **NOT** the A3 finding. It is `PORTAL_TENANT_ID` unset or the portal unable to reach the API — an environment fault that breaks login for **every patient**. |
+>
+> **IF YOUR OWN NUMBER FAILS, HALT THE WHOLE SWEEP.** Do not continue to B0.2.
+> Nothing downstream is meaningful, the finding is far more serious than A3, and
+> `SEC-otp-unassigned-prefix-500` is then wrong and must be withdrawn.
+>
+> The portal function log carries the same answer if you would rather read it
+> than infer it: `[auth] otp/request: api answered 500` is the 500 path;
+> a line naming `PORTAL_TENANT_ID`, or a fetch error, is the environment fault.
 
 ### B0.2 · Confirm the therapist step exists — **A2, and read the box below**
 
@@ -286,8 +338,9 @@ Observed: `________________________________`
 |---|---|
 | **On** | **"Escolha o terapeuta"** |
 | **Click** | the **test therapist** by name — **not "Escolham por mim"** |
-| **Then** | pick any date and time **at least two days out**, on the hour |
+| **Then** | pick a **SATURDAY**, between **08:00 and 13:00**, on the hour. **The run in progress uses Saturday 22 August 2026 at 09:00.** |
 | **Write down** | the **date and time** you chose. Call it **T-A**. You need it twice more. |
+| **STOP if** | the day shows **"Não há horários disponíveis para esta data…"** — you have picked a non-Saturday, or outside 08:00–13:00. That is the availability template, not a defect. Pick a Saturday morning. |
 | **Click** | through to **"Confirmar marcação"** and submit |
 | **Worked if** | you land on the pending-request screen and the summary shows the therapist you picked under **"Terapeuta"** |
 | **STOP if** | the summary names a different therapist |
@@ -306,7 +359,7 @@ Observed: `________________________________`
 |---|---|
 | **Click** | **"Marcar consulta"** again |
 | **Repeat** | the same steps, same **test therapist** |
-| **Pick** | a **different** date/time, also at least two days out, on the hour, **and not overlapping T-A** |
+| **Pick** | **the SAME Saturday**, a different hour inside **08:00–13:00**, **not overlapping T-A**. **The run in progress uses 11:00**, two hours after T-A. |
 | **Write down** | that date and time. Call it **T-B**. |
 | **Worked if** | a second pending request exists |
 | **STOP if** | the portal refuses a second request — note the exact wording and carry on to session 2 with pedido A only; PG2 then cannot run tonight |
@@ -395,10 +448,36 @@ Observed: `________________________________`
 
 ---
 
-# SESSION 3 — STAFF PLATFORM, as RECEPTION or ADMIN
+# SESSION 3 — STAFF PLATFORM, as `ZZ TESTE RECEPCAO`
 
-**Account: the reception / admin test account. Email and password.**
+**Account: `ZZ TESTE RECEPCAO`, `alo@gmail.com`. Email and password.**
 **This session runs PG4 first, PG2 second, and the bookkeeping last.**
+
+> ## DO NOT RUN THIS SESSION AS THE OWNER ACCOUNT. IT WILL PRODUCE A FALSE FAIL.
+>
+> **Corrected 2026-08-12. An earlier draft said "the reception / admin test
+> account", which reads as if the owner's own admin account would do. It will
+> not, and the failure is silent.**
+>
+> **THE OWNER RECEIVES NO PEDIDO NOTIFICATIONS. THAT IS A RULING, NOT A BUG.**
+> JP ruled it on 2026-08-11 (card `D4-owner-cannot-see-pedido-queue`, shipped):
+> reception and the assigned therapists handle the queue; the owner is neither.
+> `resolveRecipients` (`apps/api/lib/notifications/centre.ts:56-88`) selects
+> exactly two sets — users whose role slug is **RECEPTION**, and the explicitly
+> named assigned practitioners. And 0055's SELECT policy pins every read to
+> `recipient_user_id = auth.uid()`, so `staff_notifications` is a per-recipient
+> inbox **at the database**. There is no supervisor view and none is being built.
+>
+> **SO THE OWNER'S `/notificações` IS CORRECTLY EMPTY.** Run B1 as the owner and
+> you will see **"Sem notificações."**, conclude the fan-out is broken, and
+> record **PG4 as failed on behaviour that is working exactly as ruled.** That is
+> the worst outcome available on this sweep: a false finding against a correct
+> product, on the one gate this session exists to move.
+>
+> **`ZZ TESTE RECEPCAO` carries the RECEPTION role slug**, which is what puts it
+> in `resolveRecipients`' first set. Nothing else on this platform will do.
+>
+> If you are already signed in as the owner, **sign out completely first.**
 
 ## PG4 — the observation. One row.
 
@@ -441,7 +520,7 @@ show both.** Half one is B2.1, half two is B2.2.
 |---|---|
 | **Open** | `/agenda` and go to the date **T-B** |
 | **Click** | **"Nova marcação"** |
-| **Set** | therapist = the **test therapist**; the time = **T-B**, the same window as pedido B |
+| **Set** | therapist = **`ZZ TESTE THERAPIST`**; the time = **T-B**, the same Saturday window as pedido B |
 | **Set** | patient = the **test patient**; any service |
 | **Set** | **"Estado"** = **"Confirmada"** |
 | **Click** | **"Guardar"** |
