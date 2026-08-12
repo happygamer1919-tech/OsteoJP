@@ -85,9 +85,29 @@ test.describe("PG9 — WCAG 2.2 AA, every patient screen, mobile viewport", () =
       await page.screenshot({ path: `test-results/pg9-${screen.path.replace(/\//g, "_")}.png`, fullPage: true });
 
       const results = await scan(page);
-      const summary = results.violations.map(
-        (v) => `${v.id} (${v.impact ?? "?"}) x${v.nodes.length}: ${v.help}`,
-      );
+
+      // ================================================================= //
+      // THE MESSAGE NAMES THE ELEMENT. IT DID NOT, AND THAT COST A SESSION.
+      // ================================================================= //
+      // The first version printed `${v.id} (${v.impact}) x${v.nodes.length}` and
+      // nothing else. Its one real red said "color-contrast (serious) x1" on
+      // /portal/booking and named neither the element nor the colours, so the
+      // element had to be recovered by downloading the artifact, reading the
+      // screenshot, and re-deriving every candidate's ratio from theme.css.
+      //
+      // Axe already carries the answer on every node: `target` is the selector
+      // and `failureSummary` is axe's own prose, which for contrast contains the
+      // measured ratio and both hexes. Printing them costs nothing and turns the
+      // next red into a one-line read. `?? ""` is safe HERE and nowhere near a
+      // verdict: this string is the diagnostic, not the assertion — the
+      // assertion below is on the violation COUNT and cannot be softened by a
+      // missing summary.
+      const summary = results.violations.map((v) => {
+        const nodes = v.nodes
+          .map((n) => `      - ${n.target.join(" ")}\n        ${(n.failureSummary ?? "").replace(/\n/g, " ")}`)
+          .join("\n");
+        return `${v.id} (${v.impact ?? "?"}) x${v.nodes.length}: ${v.help}\n${nodes}`;
+      });
       expect(summary, `${screen.path} WCAG violations:\n  ${summary.join("\n  ")}`).toEqual([]);
     });
   }

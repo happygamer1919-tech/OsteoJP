@@ -52,6 +52,52 @@ async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
   return out;
 }
 
+/**
+ * ================================================================= //
+ * WAIT, THEN ANSWER. `isVisible({ timeout })` DOES NEITHER.
+ * ================================================================= //
+ *
+ * THIS FUNCTION EXISTS BECAUSE OF A MEASURED FALSE NEGATIVE, and it is the
+ * fifth instance of section 1.3's pattern found in this project's own
+ * instruments.
+ *
+ * Every probe in this file used `locator.isVisible({ timeout: N })`. In
+ * playwright-core 1.60.0 that option is, verbatim from types.d.ts:14491:
+ *
+ *   @deprecated This option is ignored. locator.isVisible() does not wait for
+ *   the element to become visible and returns immediately.
+ *
+ * So a probe written to wait 15 seconds answered in zero, from whatever the DOM
+ * happened to hold at that instant — and `.catch(() => false)` then made the
+ * race indistinguishable from a genuine absence.
+ *
+ * WHAT IT COST. Run 31649767622 shard 3, direction A, same commit, same seed:
+ *   attempt 1  agenda checked 443ms after goto   ->  false
+ *   attempt 2  agenda checked 1683ms after goto  ->  true
+ * The row was always there. The check was early. That false negative was read as
+ * "the booking produced no row", raised INC-10 as a possible patient-facing
+ * defect, was reported on three surfaces as independent corroboration — all
+ * three being the same non-waiting probe — and held PG8 open.
+ *
+ * `waitFor` genuinely waits, and its timeout rejection IS the negative answer.
+ * The rejection is narrowed rather than swallowed: a TimeoutError means "not
+ * visible within the budget", and ANY OTHER error (a closed page, a crashed
+ * context, a bad selector) is re-thrown, because those are not negative answers
+ * and must never be reported as one.
+ */
+async function becameVisible(
+  locator: ReturnType<Page["getByText"]>,
+  timeout: number,
+): Promise<boolean> {
+  try {
+    await locator.waitFor({ state: "visible", timeout });
+    return true;
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") return false;
+    throw err;
+  }
+}
+
 /** A reception-authenticated page on the STAFF app, whatever the file-level baseURL is. */
 async function receptionPage(browser: Browser): Promise<Page> {
   const ctx = await browser.newContext({
@@ -117,8 +163,17 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
 
   // Clinic step, if it is shown. A1 preselects the home clinic and SKIPS this
   // step forward, so its absence is correct behaviour rather than a failure.
+  // A BOUNDED WAIT, NOT AN IMMEDIATE PROBE, AND NOT THE FULL BUDGET. This
+  // element is legitimately OPTIONAL, so a long wait would cost that budget on
+  // every run where preselection correctly skipped the step. But an immediate
+  // check straight after `goto` races the first paint exactly as the agenda
+  // probe did, and here the false negative surfaces later and less honestly:
+  // the clinic is never clicked, the service step never renders, and the helper
+  // reports "service step offered no service" — a flow-broken failure blaming
+  // the wrong step. 5s beats a render, and costs 5s once when the step is
+  // genuinely absent.
   const clinic = page.getByRole("button", { name: new RegExp(LOCATION.name, "i") });
-  if (await clinic.first().isVisible().catch(() => false)) await clinic.first().click();
+  if (await becameVisible(clinic.first(), 5_000)) await clinic.first().click();
 
   // Service step: take the first offered service, whatever it is. Naming one
   // would couple this sync proof to the service catalog, which is LOOP 4's
@@ -137,16 +192,16 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   // A2's therapist step. "Escolham por mim" keeps the pre-A2 auto-assignment,
   // which keeps this test about the CROSSING rather than about one therapist's
   // seeded calendar.
+  // Same bounded wait, same reason: this step renders after a click, so an
+  // immediate probe can miss it and the failure then arrives one step later as
+  // "never reached the date/time step".
   const anyTherapist = page.getByRole("button", { name: /escolham por mim/i });
-  if (await anyTherapist.isVisible().catch(() => false)) await anyTherapist.click();
+  if (await becameVisible(anyTherapist, 5_000)) await anyTherapist.click();
 
   // The date/time step must be REACHED. Reaching it and finding it empty is the
   // legitimate skip; never reaching it is a broken flow.
   const step = page.getByRole("heading", { name: /data|hora/i });
-  const reached = await step
-    .first()
-    .isVisible({ timeout: 20_000 })
-    .catch(() => false);
+  const reached = await becameVisible(step.first(), 20_000);
   if (!reached) {
     return { ok: false, why: "flow-broken", detail: "never reached the date/time step" };
   }
@@ -180,11 +235,7 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
 
   // The popover is `role="dialog"` (DatePicker.tsx). If it did not open, the
   // trigger is not what we think it is — a flow defect, never an empty calendar.
-  const opened = await page
-    .getByRole("dialog")
-    .first()
-    .isVisible({ timeout: 10_000 })
-    .catch(() => false);
+  const opened = await becameVisible(page.getByRole("dialog").first(), 10_000);
   if (!opened) {
     return { ok: false, why: "flow-broken", detail: "date picker did not open when clicked" };
   }
@@ -392,19 +443,15 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     const timeRe = new RegExp(String(taken).replace(":", "[:h]"), "i");
     const nameRe = new RegExp(PORTAL_PATIENT.name.split(" ")[0], "i");
 
+    // BOTH PROBES NOW WAIT. They did not, and that produced the false negative
+    // this whole card was built on — see `becameVisible`. The time probe carries
+    // the full budget because it is the one that races the agenda's first paint;
+    // the name probe follows on an already-painted page, so 5s is generous.
     const seen = await timed("A: agenda shows the row on the booked day", async () => {
       await staff.goto(`/agenda?date=${bookedOn}`);
-      const hasTime = await staff
-        .getByText(timeRe)
-        .first()
-        .isVisible({ timeout: 15_000 })
-        .catch(() => false);
+      const hasTime = await becameVisible(staff.getByText(timeRe).first(), 15_000);
       if (!hasTime) return false;
-      return staff
-        .getByText(nameRe)
-        .first()
-        .isVisible({ timeout: 5_000 })
-        .catch(() => false);
+      return becameVisible(staff.getByText(nameRe).first(), 5_000);
     });
 
     console.log(`[W13-07] A: visible to RECEPTION on ${bookedOn}? ${seen}`);

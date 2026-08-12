@@ -345,7 +345,16 @@
   --color-v2-green-400: #90C5AD;
   --color-v2-green-500: #7AB79F; /* base */
   --color-v2-green-600: #629C86;
-  --color-v2-green-700: #4E7D6B; /* AA label text on light surfaces (§3.4) */
+  /* CORRECTED 2026-08-13. This line read "AA label text on light surfaces
+     (§3.4)" and that claim is TRUE ON WHITE ONLY: 4.70:1 on surface, and 4.45 on
+     bg, 4.22 on surface-muted, 4.42 on v2-bg, 4.31 on green-50, 3.87 on
+     green-100 — five surfaces below the 4.5 floor, including this scale's own
+     hover and active tints. Found by PG9's axe scan, which reddened on the one
+     portal control rendered directly on `bg` rather than inside a white Card.
+     IT REMAINS CORRECT AS A FILL (white text on it is 4.70:1), which is what
+     Button's primary variant uses it for. LABEL TEXT USES 800. Enforced by
+     packages/ui/src/contrast-aa.test.ts. */
+  --color-v2-green-700: #4E7D6B; /* AA fill only. Label text: use 800. */
   --color-v2-green-800: #3C6052;
   --color-v2-green-900: #2C463C;
 
@@ -369,7 +378,16 @@
   --color-v2-gold-400: #DEAF6E;
   --color-v2-gold-500: #D5A25A; /* base */
   --color-v2-gold-600: #BA8742;
-  --color-v2-gold-700: #946A34; /* AA label text on light surfaces (§3.4) */
+  /* CORRECTED 2026-08-13, alongside green-700 and by the same measurement. The
+     "AA label text on light surfaces" claim held on white (4.81:1) and failed on
+     bg (4.55 — passes), surface-muted (4.31) and v2-bg (4.52 — passes), and
+     fails hardest where it is ACTUALLY USED: text-v2-gold-700 on bg-v2-gold-100
+     is 3.94:1 (apps/web/app/admin/page.tsx:26, and v2-accent.ts:25 for the icon
+     circle). THAT USAGE IS NOT FIXED HERE — it is staff-facing, outside PG9's
+     patient surface, and carded as ACC-gold-700-label-fails-aa so it is not
+     silently bundled into a portal PR. This comment states what is true today.
+     Enforced by packages/ui/src/contrast-aa.test.ts. */
+  --color-v2-gold-700: #946A34; /* NOT AA on every light surface. See above. */
   --color-v2-gold-800: #6F5028;
   --color-v2-gold-900: #4F391D;
 
