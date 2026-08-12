@@ -227,20 +227,41 @@ rather than the chain to the accounts.
 Session 3 must come after session 2, because reception is looking for a
 notification the therapist has not written yet.
 
-### APPOINTMENTS: 3 CREATED, 3 CANCELLED. NEVER DELETED.
+### APPOINTMENTS: 3 CREATED, **4 CANCELLED**. NEVER DELETED.
 
-Blocks B and C create **exactly three** appointments, and **all three must be
-cancelled** at the end of session 3:
+Blocks B and C create **exactly three** appointments. **FOUR must be cancelled**
+at the end of session 3 — these three, plus the INC-08 survivor in the box below.
 
 | # | What | Created at | Cancelled at |
 |---|---|---|---|
-| **P-A** | pedido A, portal booking, **Saturday 09:00** | B0.3 | B0.3-CANCEL, run in session 3 |
-| **P-B** | pedido B, portal booking, **same Saturday 11:00** | B0.4 | B0.4-CANCEL, run in session 3 |
-| **S** | staff booking, confirmed, **on T-B** | B2.1 | B2.1-CANCEL, run in session 3 |
+| **P-A** | pedido A, portal booking, **Saturday 22/08 09:00** | B0.3 | step 8, session 3 |
+| **P-B** | pedido B, portal booking, **Saturday 22/08 11:00** | B0.4 | step 9, session 3 |
+| **S** | staff booking, confirmed, **on T-B** | B2.1 | step 7, session 3 |
+| **X** | **Confirmada, test patient + `ZZ TESTE THERAPIST`, 15/08/2026 11:00, Linda-a-Velha** | **not by this sweep** | **step 10, session 3** |
 
-**ALL THREE LAND ON ONE SATURDAY MORNING, 08:00-13:00.** `ZZ TESTE THERAPIST`
+**THE FIRST THREE LAND ON ONE SATURDAY MORNING, 08:00-13:00.** `ZZ TESTE THERAPIST`
 covers Saturday only; that is the isolation mechanism and it is a hard
 requirement, not a preference. Full reasoning in the box under SESSION 1.
+
+> ### X — THE INC-08 SURVIVOR. STILL LIVE IN THE PRODUCTION DIARY.
+> **Added 2026-08-12. It is not one of this sweep's appointments and it must be
+> cancelled with them.**
+>
+> **A Confirmada appointment for the test patient with `ZZ TESTE THERAPIST` sits
+> at 15/08/2026 11:00, Linda-a-Velha.** It is the staff side of the INC-08 double
+> booking — the row created as `scheduled` at 16:59:45, rescheduled onto the
+> pedido's window ten seconds later, and flipped to `confirmed` at 17:00:01. The
+> pedido half was cancelled on the night. **This half never was, and it has been
+> sitting confirmed on a therapist's diary ever since.**
+>
+> **CANCEL IT. DO NOT DELETE IT.** Deleting the other test row on 2026-08-11 is
+> what destroyed the audit trail and cost two sessions of reconstruction. **The
+> `audit_log` history on this row is the primary surviving record of the
+> incident**, and it survives a cancel intact.
+>
+> **It is a DIFFERENT Saturday from the sweep's** — 15 August, not 22 August — so
+> it will not appear on the T-A / T-B day. Navigate to it deliberately, at
+> step 10.
 
 **CANCEL, NEVER DELETE. This is not tidiness.** A test appointment was DELETED on
 2026-08-11 and it destroyed the audit trail of the double booking; the incident
@@ -668,21 +689,30 @@ Observed: `________________________________`
 
 Observed: `________________________________`
 
-## THE CANCELS. Run all three now, before you close the session.
+## THE CANCELS. Run all FOUR now, before you close the session.
 
-**Three appointments were created. Three get cancelled. None get deleted.**
+**Three appointments were created by this sweep. FOUR get cancelled. None get
+deleted.**
 
 | Step | Which | Where | Done |
 |---|---|---|---|
 | **7** | **S**, the B2.1 staff booking | `/agenda` → **T-B** → the **Confirmada** row → **"Estado"** → **"Cancelada"** → **"Guardar"** | `______` |
 | **8** | **P-A**, the confirmed pedido | `/agenda` → **T-A** → the appointment → **"Estado"** → **"Cancelada"** → **"Guardar"** | `______` |
 | **9** | **P-B**, the pending pedido | `/agenda` → **T-B** → the **pending** row → **"Estado"** → **"Cancelada"** → **"Guardar"** | `______` |
+| **10** | **X**, the **INC-08 survivor** | `/agenda` → **15/08/2026** → the **11:00 Confirmada** row, test patient with `ZZ TESTE THERAPIST`, Linda-a-Velha → **"Estado"** → **"Cancelada"** → **"Guardar"** | `______` |
 
 **Cancel S (step 7) before P-B (step 9).** Both sit on **T-B** and cancelling the
 confirmed one first makes the remaining row unambiguous in the drawer.
 
-**Count check before you close: three cancelled, zero deleted.** If you cancelled
-fewer than three, one is still live on the therapist's diary.
+**STEP 10 IS ON A DIFFERENT DAY — 15 August, not the sweep's 22 August — and it is
+not one of this sweep's appointments.** It is the staff side of the INC-08 double
+booking, confirmed and still live in the production diary since 2026-08-11.
+**Cancel, never delete:** its `audit_log` history is the primary surviving record
+of the incident, and deleting the other half of that pair is what cost this
+project two sessions.
+
+**Count check before you close: FOUR cancelled, zero deleted.** If you cancelled
+fewer than four, one is still live on a therapist's diary.
 
 ---
 ---
