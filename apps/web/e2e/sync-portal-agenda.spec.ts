@@ -61,16 +61,34 @@ async function receptionPage(browser: Browser): Promise<Page> {
 }
 
 /**
- * Drive the portal booking flow to a submitted pedido, and return the slot label
- * that was taken.
+ * The outcome of driving the portal booking flow, as a DISCRIMINATED RESULT
+ * rather than `string | null`.
  *
- * RETURNS null WHEN THE SEEDED CALENDAR OFFERS NOTHING. That is a real
- * condition — availability comes from seeded templates and the run day moves —
- * and the callers below SKIP rather than fail on it. A spec that reddened on an
- * empty calendar would be testing the seed, and it would be the first thing
- * anyone disabled.
+ * WHY THIS SHAPE, AND IT IS THE MOST IMPORTANT DECISION IN THIS FILE. The first
+ * version returned `null` for FOUR different conditions — no service rows, no
+ * slot buttons, no submit control, and the slot step never appearing — and the
+ * caller skipped on all of them alike. CI then SKIPPED direction A, and a
+ * skipped test in a green run reads as coverage. **The spec would have gone
+ * green having proven nothing about the one direction PG8 needs.**
+ *
+ * That is the same defect this project keeps finding in its own guards: an
+ * unknown case collapsing silently into a benign-looking one, exactly like the
+ * `?? e.kind` fallback that let INC-09 ship a raw enum to reception.
+ *
+ * So the conditions are now separated by what they MEAN:
+ *   `empty-calendar` — the flow worked and the seeded calendar offered no slot
+ *                      on the run day. A real, narrow, legitimate skip.
+ *   `flow-broken`    — the flow did not reach the step it should have. That is a
+ *                      DEFECT and it FAILS. It must never be mistaken for an
+ *                      empty calendar.
  */
-async function bookFromPortal(page: Page): Promise<string | null> {
+type BookOutcome =
+  | { ok: true; slot: string }
+  | { ok: false; why: "empty-calendar"; detail: string }
+  | { ok: false; why: "flow-broken"; detail: string };
+
+/** Drive the portal booking flow to a submitted pedido. */
+async function bookFromPortal(page: Page): Promise<BookOutcome> {
   await page.goto("/portal/booking");
 
   // Clinic step, if it is shown. A1 preselects the home clinic and SKIPS this
@@ -82,7 +100,12 @@ async function bookFromPortal(page: Page): Promise<string | null> {
   // would couple this sync proof to the service catalog, which is LOOP 4's
   // subject and not this file's.
   const service = page.getByRole("button").filter({ hasText: /\d+\s*min/i });
-  if ((await service.count()) === 0) return null;
+  await service.first().waitFor({ state: "visible", timeout: 20_000 }).catch(() => {});
+  if ((await service.count()) === 0) {
+    // NOT an empty calendar. The catalog is seeded and independent of the run
+    // day, so no service rows means the flow itself is broken.
+    return { ok: false, why: "flow-broken", detail: "service step offered no service" };
+  }
   await service.first().click();
 
   // A2's therapist step. "Escolham por mim" keeps the pre-A2 auto-assignment,
@@ -91,22 +114,36 @@ async function bookFromPortal(page: Page): Promise<string | null> {
   const anyTherapist = page.getByRole("button", { name: /escolham por mim/i });
   if (await anyTherapist.isVisible().catch(() => false)) await anyTherapist.click();
 
-  // Date/time step. The first offered slot is the one we take.
+  // The date/time step must be REACHED. Reaching it and finding it empty is the
+  // legitimate skip; never reaching it is a broken flow.
+  const step = page.getByRole("heading", { name: /data|hora/i });
+  const reached = await step
+    .first()
+    .isVisible({ timeout: 20_000 })
+    .catch(() => false);
+  if (!reached) {
+    return { ok: false, why: "flow-broken", detail: "never reached the date/time step" };
+  }
+
   const slot = page.getByRole("button", { name: /^\d{2}:\d{2}$/ });
-  await slot.first().waitFor({ state: "visible", timeout: 20_000 }).catch(() => {});
-  if ((await slot.count()) === 0) return null;
-  const label = (await slot.first().textContent())?.trim() ?? null;
+  await slot.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
+  if ((await slot.count()) === 0) {
+    return { ok: false, why: "empty-calendar", detail: "date/time step offered no slot" };
+  }
+
+  const label = (await slot.first().textContent())?.trim() ?? "";
   await slot.first().click();
 
-  // Confirm step.
   const submit = page.getByRole("button", { name: /confirmar|marcar|pedir/i });
-  if ((await submit.count()) === 0) return null;
+  if ((await submit.count()) === 0) {
+    return { ok: false, why: "flow-broken", detail: "confirm step offered no submit control" };
+  }
   await submit.last().click();
 
   // The pedido landed when the pending screen says so, in the product's own
   // words. Waiting on a URL alone would pass on a redirect that carried an error.
   await expect(page.getByText(/pedido recebido/i)).toBeVisible({ timeout: 30_000 });
-  return label;
+  return { ok: true, slot: label };
 }
 
 test.describe("W13-07 — the two surfaces stay in step across the app boundary", () => {
@@ -126,8 +163,20 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
       timeout: 30_000,
     });
 
-    const taken = await timed("A: portal booking submitted", () => bookFromPortal(page));
-    test.skip(taken === null, "seeded calendar offered no slot on the run day");
+    const booked = await timed("A: portal booking submitted", () => bookFromPortal(page));
+
+    // A BROKEN FLOW IS A FAILURE, NEVER A SKIP. Collapsing the two is how this
+    // test would have gone green while testing nothing.
+    if (!booked.ok && booked.why === "flow-broken") {
+      throw new Error(`portal booking flow is broken, not merely empty: ${booked.detail}`);
+    }
+    // And the legitimate skip announces itself, so a permanently-skipping test is
+    // visible in the log rather than silent in a green run.
+    if (!booked.ok) {
+      console.log(`[W13-07] DIRECTION A SKIPPED — ${booked.detail}. Direction A is UNPROVEN in this run.`);
+    }
+    test.skip(!booked.ok, "seeded calendar offered no slot on the run day");
+    const taken = booked.ok ? booked.slot : "";
 
     // THE CROSSING. A9 is UNBOUNDED BY CONSTRUCTION — apps/api cannot
     // revalidatePath into apps/web — so the agenda is RELOADED here rather than
@@ -152,9 +201,21 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     // The staff-side read must WORK for direction B to mean anything. A spec
     // that silently failed to authenticate would otherwise pass by observing an
     // empty screen — the vacuous shape this file was rewritten to avoid.
+    //
+    // ASSERTED ON A VISIBLE CONTROL, NOT ON THE LOCATION NAME, AND THAT IS A
+    // CORRECTION. The first version asserted `getByText(/Linda-a-Velha/i)`, which
+    // CI resolved 62 times to `<option value="…">Linda-a-Velha</option>` inside
+    // the location `<select>` — and an `<option>` is never "visible" to
+    // Playwright. It failed against a perfectly healthy agenda. The location IS
+    // on the page; it is in a control whose options are not rendered until the
+    // select is opened. `Hoje` is a real button on the agenda toolbar and is the
+    // honest "this page loaded for an authenticated user" signal.
     const staff = await receptionPage(browser);
     await staff.goto("/agenda");
-    await expect(staff.getByText(new RegExp(LOCATION.name, "i")).first()).toBeVisible({
+    await expect(staff.getByRole("heading", { name: /agenda/i }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(staff.getByRole("button", { name: /^hoje$/i }).first()).toBeVisible({
       timeout: 30_000,
     });
 

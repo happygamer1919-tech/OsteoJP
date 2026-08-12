@@ -218,3 +218,59 @@ write**, so a row that was always there cannot be mistaken for a row that arrive
 slot on the run day, the test SKIPS rather than fails: availability comes from
 seeded templates and the run day moves, so a red there would be testing the seed
 and would be the first thing anyone disabled.
+
+
+---
+
+## 7. THE FIRST CI RUN WENT RED, AND BOTH CAUSES WERE MINE
+
+**Run `31613104285`, shard 3/3. 43 passed, 1 failed, 1 skipped.** The artifact was
+read before anything was changed, per this project's e2e doctrine. Neither cause
+was a product defect.
+
+### 7.1 The failure: a locator that could never be visible
+
+```
+waiting for getByText(/Linda-a-Velha/i).first()
+62 × locator resolved to <option value="…">Linda-a-Velha</option>
+     - unexpected value "hidden"
+```
+
+Direction B asserted the location name was visible on the agenda. It resolved to
+an `<option>` inside the location `<select>` — and an `<option>` is **never**
+visible to Playwright until the select is opened. **The agenda was healthy; the
+assertion was impossible.** It now asserts the `Hoje` toolbar button, a real
+visible control, which is the honest "this page loaded for an authenticated user"
+signal.
+
+### 7.2 The skip, which was the worse of the two
+
+**Direction A SKIPPED.** It would have skipped in a green run too, and a skipped
+test inside a passing shard reads as coverage. **The spec would have gone green
+having proven nothing about the one direction PG8 needs.**
+
+The cause was in the helper's return type. `bookFromPortal` returned
+`string | null`, and `null` meant **four different things**: no service rows, the
+date/time step never appearing, no slot offered, or no submit control. The caller
+skipped on all of them alike.
+
+**That is the same defect this project keeps finding in its own guards** — an
+unknown case collapsing silently into a benign-looking one, structurally
+identical to the `?? e.kind` fallback that let INC-09 ship a raw enum to
+reception.
+
+It now returns a discriminated result and the two meanings are separated:
+
+| Outcome | Meaning | Behaviour |
+|---|---|---|
+| `flow-broken` | the flow did not reach a step it should have | **FAILS**, with the step named |
+| `empty-calendar` | the flow worked; no slot on the run day | skips, and **announces itself in the log** |
+
+**A permanently-skipping test is now visible rather than silent.**
+
+### 7.3 What this means for PG8
+
+**Direction A remains UNPROVEN until a CI run reports it as passed rather than
+skipped.** That is now a *named, observable* condition instead of a quiet one —
+which is the only reason this document can honestly describe the state at all.
+PG8 stays open.
