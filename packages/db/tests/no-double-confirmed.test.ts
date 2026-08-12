@@ -98,7 +98,7 @@ d("0061 — appointments_no_double_confirmed", () => {
 
   it("EXISTS as an exclusion constraint on appointments", async () => {
     // A vacuous-pass guard for the whole file. If the constraint were absent,
-    // every refusal case below would fail loudly - but the three PERMIT cases
+    // every refusal case below would fail loudly - but the four PERMIT cases
     // would pass, and a reader skimming green could conclude the opposite of
     // the truth. So its existence is asserted first, by name and by type.
     const rows = await sql<{ contype: string }[]>`
@@ -106,6 +106,36 @@ d("0061 — appointments_no_double_confirmed", () => {
        where conname = 'appointments_no_double_confirmed'`;
     expect(rows).toHaveLength(1);
     expect(rows[0]!.contype).toBe("x"); // 'x' = exclusion
+  });
+
+  it("resolved a gist opclass for uuid, WHEREVER btree_gist happens to live", async () => {
+    // THE POINT OF THIS CASE. 0061 does not write the opclass literally - it
+    // discovers the schema holding a gist opclass for uuid and schema-qualifies
+    // it, because on Supabase extensions conventionally sit in `extensions`
+    // rather than `public` and an unqualified opclass then fails to resolve
+    // with "data type uuid has no default operator class for access method
+    // gist". The name check above would pass on a constraint built any number
+    // of wrong ways; this asserts the RESOLUTION actually happened.
+    //
+    // The schema is deliberately NOT asserted. Pinning it to `extensions` or to
+    // `public` would re-introduce exactly the assumption the DO block exists to
+    // remove, and would make this suite fail on a database that is merely laid
+    // out differently rather than wrong.
+    const rows = await sql<{ amname: string; opcname: string; opc_schema: string }[]>`
+      select am.amname, oc.opcname, n.nspname as opc_schema
+        from pg_constraint c
+        join pg_class     i  on i.oid  = c.conindid
+        join pg_am        am on am.oid = i.relam
+        join pg_index     ix on ix.indexrelid = i.oid
+        join pg_opclass   oc on oc.oid = ix.indclass[0]
+        join pg_namespace n  on n.oid  = oc.opcnamespace
+       where c.conname = 'appointments_no_double_confirmed'`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.amname).toBe("gist");
+    // btree_gist's opclass for uuid. If the DO block had fallen through to some
+    // other type's opclass, the constraint would not mean what it claims.
+    expect(rows[0]!.opcname).toBe("gist_uuid_ops");
+    expect(rows[0]!.opc_schema).toBeTruthy();
   });
 
   it("REFUSES a second CONFIRMED appointment overlapping the same therapist", async () => {

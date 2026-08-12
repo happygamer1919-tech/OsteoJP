@@ -100,14 +100,98 @@
 /*   a person, never by this file.                                     */
 /* ================================================================== */
 
-CREATE EXTENSION IF NOT EXISTS btree_gist;--> statement-breakpoint
+/* ------------------------------------------------------------------ */
+/* IT DOES NOT TRUST search_path, AND THAT IS THE WHOLE REASON THIS IS  */
+/* A DO BLOCK RATHER THAN TWO PLAIN STATEMENTS.                         */
+/*                                                                    */
+/* THE FAILURE IT AVOIDS, stated precisely because it is invisible in   */
+/*   CI. `practitioner_id WITH =` needs the `gist_uuid_ops` operator    */
+/*   class, which is NOT built in - btree_gist supplies it. Postgres    */
+/*   resolves an unqualified opclass through search_path. On Supabase   */
+/*   extensions conventionally live in the `extensions` schema, NOT in  */
+/*   public, and if search_path does not include it the ALTER fails     */
+/*   with:                                                             */
+/*     ERROR: data type uuid has no default operator class for access  */
+/*            method "gist"                                            */
+/*   which reads like a missing extension when the extension is present */
+/*   and merely out of scope.                                          */
+/*                                                                    */
+/* CI CANNOT CATCH THIS. A `supabase db reset` database has its own     */
+/* extension layout and its own search_path, so a green CI run proves   */
+/* the DDL works THERE and says nothing about production. This is the   */
+/* same class as INC-07: a check that is green on an adjacent property. */
+/*                                                                    */
+/* SO THE SCHEMA IS DISCOVERED AND THE OPCLASS IS SCHEMA-QUALIFIED.     */
+/*   The block asks the catalog which schema holds a gist opclass for   */
+/*   uuid, then builds the DDL with that schema baked in. It is         */
+/*   correct whether the extension sits in public, in extensions, or    */
+/*   anywhere else, and it does not depend on the ambient search_path   */
+/*   being favourable at apply time.                                    */
+/*                                                                    */
+/* ONLY THE UUID SIDE NEEDS THIS. tstzrange uses `range_ops`, which is  */
+/*   built into pg_catalog and therefore always resolvable - pg_catalog */
+/*   is implicitly in search_path and cannot be excluded. Qualifying it */
+/*   too would be noise pretending to be caution.                       */
+/*                                                                    */
+/* IDEMPOTENT. Re-applying is a no-op: the constraint check short-      */
+/*   circuits, and CREATE EXTENSION carries IF NOT EXISTS.              */
+/* ------------------------------------------------------------------ */
 
-ALTER TABLE "appointments"
-  ADD CONSTRAINT "appointments_no_double_confirmed"
-  EXCLUDE USING gist (
-    "practitioner_id" WITH =,
-    tstzrange("starts_at", "ends_at") WITH &&
-  ) WHERE ("status" = 'confirmed');--> statement-breakpoint
+DO $do$
+DECLARE
+  v_schema text;
+  v_opclass text;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'appointments_no_double_confirmed'
+       AND conrelid = 'public.appointments'::regclass
+  ) THEN
+    RAISE NOTICE 'appointments_no_double_confirmed already present, skipping';
+    RETURN;
+  END IF;
+
+  /* Create it only if absent. WHERE it lands does not matter - the
+     lookup below finds it either way - so no SCHEMA clause is forced,
+     and an existing installation is left exactly where it is. */
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'btree_gist') THEN
+    CREATE EXTENSION btree_gist;
+  END IF;
+
+  SELECT n.nspname, oc.opcname
+    INTO v_schema, v_opclass
+    FROM pg_opclass oc
+    JOIN pg_am        am ON am.oid = oc.opcmethod
+    JOIN pg_namespace n  ON n.oid  = oc.opcnamespace
+    JOIN pg_type      t  ON t.oid  = oc.opcintype
+   WHERE am.amname = 'gist'
+     AND t.typname = 'uuid'
+   ORDER BY oc.opcdefault DESC
+   LIMIT 1;
+
+  /* FAIL LOUDLY RATHER THAN FALL BACK. An unqualified DDL would work
+     here by luck when search_path happened to be favourable, and that
+     is exactly the silent-degradation shape PG7 forbids. */
+  IF v_schema IS NULL THEN
+    RAISE EXCEPTION
+      'btree_gist is installed but no gist operator class for uuid was found; '
+      'the EXCLUDE constraint cannot be created'
+      USING ERRCODE = 'undefined_object';
+  END IF;
+
+  RAISE NOTICE 'using gist uuid opclass %.%', v_schema, v_opclass;
+
+  EXECUTE format(
+    'ALTER TABLE public.appointments '
+    'ADD CONSTRAINT appointments_no_double_confirmed '
+    'EXCLUDE USING gist ('
+    '  practitioner_id %I.%I WITH =, '
+    '  tstzrange(starts_at, ends_at) WITH &&'
+    ') WHERE (status = ''confirmed'')',
+    v_schema, v_opclass
+  );
+END
+$do$;--> statement-breakpoint
 
 
 /* ================================================================== */
