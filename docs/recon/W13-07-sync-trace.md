@@ -463,3 +463,47 @@ now names how many were tried.
 read, and none survived contact with the thing it described. The reason the third
 one surfaced within minutes rather than sitting green for weeks is that the guard
 built in §10 removed the option of failing quietly.
+
+
+---
+
+## 12. `inRange` IS A CLOSED INTERVAL, AND THE SLOT LOCATOR WAS THE FOURTH WRONG ROLE
+
+**Recorded permanently. Nobody rediscovers either of these.**
+
+### 12.1 `DatePicker.tsx:119` — enabled means *in range*, not *has slots*
+
+```ts
+const inRange = (iso) => (!min || iso >= min) && (!max || iso <= max);
+```
+
+`min` and `max` are the first and last **available** dates, so **every day
+between them is enabled** — and against a **Monday-only seed**, six days in seven
+are enabled and carry nothing. §8.2's claim that "the first enabled day is by
+construction a day with availability" was **false**. The helper walks the enabled
+days until one yields slots, **bounded at 14**, reopening the popover each time
+because selecting closes it.
+
+### 12.2 `SlotPicker` renders slots as `role="radio"`, not buttons
+
+`SlotPicker.tsx:76-85` renders each slot as
+`<button type="button" role="radio">` inside a `role="radiogroup"`. **An explicit
+`role` overrides the implicit one**, so `getByRole("button", …)` never matched a
+slot — the walk could not have succeeded on any day, on any run, however many
+days it tried. CI reported *"no slot on any of the first 8 selectable day(s)"*,
+which was true and told the truth about a locator rather than about the calendar.
+
+**This is the FOURTH wrong locator or wrong reading in this loop**, and the third
+of the same kind: an assertion written against a role the DOM does not expose.
+The first was `getByText(/Linda-a-Velha/i)` resolving to a hidden `<option>`.
+
+| # | The claim | Caught by |
+|---|---|---|
+| 1 | a `strip()`-based anti-SQL assertion is meaningful | running the negative arm |
+| 2 | "empty calendar" means the seed is thin | reading the seed |
+| 3 | "first enabled day has availability" | CI, because guard 1 made it red |
+| 4 | slots are `role="button"` | CI, because guard 1 made it red |
+
+**Three and four exist as findings only because the guard removed the option of
+failing quietly.** Before it, both would have been a green shard with a skipped
+test inside.

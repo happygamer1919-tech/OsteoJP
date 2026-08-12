@@ -185,7 +185,14 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   // So the days are TRIED, in order, until one yields slots. Bounded, because an
   // unbounded walk over a wide range would be a slow way to fail.
   const MAX_DAYS_TRIED = 14;
-  const slot = page.getByRole("button", { name: /^\d{2}:\d{2}$/ });
+  // ROLE `radio`, NOT `button`, AND THIS IS THE FOURTH WRONG LOCATOR IN THIS FILE.
+  // SlotPicker renders each slot as `<button type="button" role="radio">`
+  // (SlotPicker.tsx:76-85) inside a `role="radiogroup"`. An explicit `role`
+  // OVERRIDES the implicit one, so `getByRole("button")` never matched a slot and
+  // the walk below could not have succeeded on any day, on any run. Identical in
+  // kind to the `<option>` locator that failed direction B: an assertion written
+  // against a role the DOM does not expose.
+  const slot = page.getByRole("radio", { name: /^\d{2}:\d{2}$/ });
   let tried = 0;
   for (let i = 0; i < Math.min(dayCount, MAX_DAYS_TRIED); i++) {
     // The popover closes on select, so it is reopened for each attempt.

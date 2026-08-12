@@ -84,6 +84,43 @@ const SUITES = [
   // transaction. Hard-required: a silent skip here would leave Decision D's
   // login proven by mocks agreeing with themselves.
   { file: "otp-claim.db.test.ts", hard: true },
+  // ===================================================================== //
+  // W13-06 / W13-07, added 2026-08-12. THE THREE SUITES A GATE DOCUMENT CITES.
+  // ===================================================================== //
+  //
+  // THE RULE THEY ESTABLISH, and it now binds this file: ANY SUITE CITED AS A
+  // GATE ENFORCEMENT POINT IS HARD-REQUIRED AT THE MOMENT IT IS CITED.
+  //
+  // WHY. On 2026-08-12 a sweep found 39 vitest suites that could skip inside a
+  // passing required check with nothing reddening, and THREE of them were named
+  // as enforcement points in this project's own gate documents. A citation
+  // naming a suite that SKIPPED is worth exactly what a citation naming the
+  // WRONG suite is worth - which is the defect the LOOP 6 citation audit spent a
+  // session on, one layer down.
+  //
+  // ALL THREE WERE VERIFIED TO HAVE EXECUTED before being added, by reading CI
+  // run 31615439501 on main @ 1cdb36f rather than by inferring from the code:
+  //   portal-booking-slot-parity  6 tests,  501ms   PASSED
+  //   slot-lock-concurrency       6 tests, 1595ms   PASSED
+  //   otp-revoke.db               8 tests,  754ms   PASSED
+  // So no gate was walked back. These entries stop the NEXT run from being the
+  // one nobody checked.
+  //
+  // PG8. Cited in docs/recon/W13-07-sync-trace.md section 4 as "a booked window
+  // drops out of the offered list" and "offered implies bookable". It is the
+  // only proof that the list a patient is OFFERED and the check their booking is
+  // VALIDATED against agree - the 2026-07-08 LV/Osteopatia incident.
+  { file: "portal-booking-slot-parity.test.ts", hard: true },
+  // PG8. Cited as the contention negative control: two writers on one window,
+  // one survives, the loser REFUSED rather than silently overwritten. It also
+  // carries its own A4_DISABLE_LOCK negative control in db-tests.yml, which is a
+  // stronger guarantee than execution alone - but that step proves the suite
+  // DETECTS the race, not that the ordinary run executed it. Both are needed.
+  { file: "slot-lock-concurrency.test.ts", hard: true },
+  // PG6. Cited in docs/recon/W13-06-exposure-matrix.md as the enforcement point
+  // for MH-04, the trusted-device revoke - the endpoint LE-trusted-device-revoke
+  // built so that signing out drops the device ROW and not merely the cookie.
+  { file: "otp-revoke.db.test.ts", hard: true },
   // W13-04. Proves migration 0057's backfill reproduces the name allowlist
   // EXACTLY - the "must not change what any patient can book on the day it
   // applies" line. It compares a SQL expression against a TypeScript function,
