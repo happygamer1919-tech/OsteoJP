@@ -84,9 +84,32 @@ async function receptionPage(browser: Browser): Promise<Page> {
  *                      empty calendar.
  */
 type BookOutcome =
-  | { ok: true; slot: string }
+  | { ok: true; slot: string; isoDate: string }
   | { ok: false; why: "empty-calendar"; detail: string }
   | { ok: false; why: "flow-broken"; detail: string };
+
+
+/**
+ * The DatePicker's day cells carry `aria-label` as a pt-PT long date —
+ * "segunda-feira, 17 de agosto de 2026". Converted to ISO here so the test can
+ * assert against THE DAY IT BOOKED rather than searching a window.
+ *
+ * THE LOCALE IS FIXED, so this is deterministic rather than a guess: the portal
+ * renders pt-PT only, and `DatePicker` formats with that locale unconditionally.
+ * A month name it does not recognise returns null and the caller treats that as
+ * a flow defect, never as an empty calendar.
+ */
+const PT_MONTHS = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+];
+function isoFromPtLabel(label: string): string | null {
+  const m = /(\d{1,2})\s+de\s+([a-zçã]+)\s+de\s+(\d{4})/i.exec(label.toLowerCase());
+  if (!m) return null;
+  const month = PT_MONTHS.indexOf(m[2]);
+  if (month < 0) return null;
+  return `${m[3]}-${String(month + 1).padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+}
 
 /** Drive the portal booking flow to a submitted pedido. */
 async function bookFromPortal(page: Page): Promise<BookOutcome> {
@@ -188,6 +211,7 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   // So the days are TRIED, in order, until one yields slots. Bounded, because an
   // unbounded walk over a wide range would be a slow way to fail.
   const MAX_DAYS_TRIED = 14;
+  let bookedIso: string | null = null;
   // ROLE `radio`, NOT `button`, AND THIS IS THE FOURTH WRONG LOCATOR IN THIS FILE.
   // SlotPicker renders each slot as `<button type="button" role="radio">`
   // (SlotPicker.tsx:76-85) inside a `role="radiogroup"`. An explicit `role`
@@ -215,7 +239,10 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
       // LOGGED SO THE NEXT RED IS DIAGNOSABLE WITHOUT GUESSING. Run 31624728972
       // failed on attempt 1 and passed on retry with no way to tell what differed
       // between them; this line and the service line above are that answer.
-      console.log(`[W13-07] A: booking day = ${label} (day ${i + 1} of ${dayCount} enabled)`);
+      bookedIso = isoFromPtLabel(label);
+      console.log(
+        `[W13-07] A: booking day = ${label} -> ${bookedIso} (day ${i + 1} of ${dayCount} enabled)`,
+      );
       break;
     }
   }
@@ -253,7 +280,16 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   // The pedido landed when the pending screen says so, in the product's own
   // words. Waiting on a URL alone would pass on a redirect that carried an error.
   await expect(page.getByText(/pedido recebido/i)).toBeVisible({ timeout: 30_000 });
-  return { ok: true, slot: label };
+  if (!bookedIso) {
+    // A day was selected and slots appeared, so the flow WORKED — this is a
+    // parsing failure, not an empty calendar, and it must not skip.
+    return {
+      ok: false,
+      why: "flow-broken",
+      detail: "could not derive an ISO date from the picker's aria-label",
+    };
+  }
+  return { ok: true, slot: label, isoDate: bookedIso };
 }
 
 test.describe("W13-07 — the two surfaces stay in step across the app boundary", () => {
@@ -331,61 +367,53 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     // REPORTS WHICH DAY IT FOUND, so a future failure distinguishes "not on any
     // day" from "on a day outside the window".
     // ================================================================= //
-    // MATCH THE PATIENT, NOT JUST THE TIME. THIS ASSERTION ONCE PASSED
-    // BY FINDING SOMEBODY ELSE'S APPOINTMENT.
+    // ASSERT ON THE DAY IT BOOKED. NO SCAN. THIS IS THE WHOLE FIX.
     // ================================================================= //
-    // The previous version scanned for the slot LABEL alone — "09:00". Run
-    // 31623855711 duly reported `the crossing landed on 2026-08-12`, which is a
-    // WEDNESDAY, against a seed whose availability is MONDAY ONLY. A portal
-    // booking cannot have landed there. It matched an unrelated 09:00 row that
-    // another spec in the same shard had created on the shared seeded database.
+    // The previous version SCANNED a window for the patient's name and the slot
+    // time. Both are SHARED VOCABULARY on a shared seeded database: Maria Silva
+    // is a name every spec can produce, and 09:00 is a time every spec can
+    // produce. Run 31628095909 booked `segunda-feira 17 de agosto` and reported
+    // "the crossing landed on 2026-08-20" — a Thursday. IT MATCHED SOMEBODY
+    // ELSE'S ROW, AND IT PASSED, twice.
     //
-    // IT PASSED. That makes it the most dangerous defect in this file's history:
-    // every earlier wrong reading produced a RED, which is self-correcting. This
-    // one produced a GREEN for a property that had not been demonstrated, and it
-    // did so on a retry, which the suite counts as success.
+    // The scan is gone. The helper now returns the ISO date it actually booked,
+    // parsed from the picker's own aria-label, and the assertion navigates to
+    // EXACTLY THAT DATE. A row on any other day can no longer satisfy it — which
+    // is precisely the check that was missing, since the booked day (17th) and
+    // the matched day (20th) were both known and never compared.
     //
-    // The scan now requires the PATIENT'S NAME and the TIME on the same day. The
-    // portal test patient is Maria Silva (fixtures.ts:241-244), so a row bearing
-    // her name at the booked time on a future date is the booking, not a
-    // neighbour.
-    // The availability horizon is wider than three weeks, and attempt 1 of run
-    // 31624728972 found nothing in 21 days while the retry landed on 2026-08-24.
-    // Widened so a miss means "not on the agenda" rather than "outside my window".
-    const SCAN_DAYS = 45;
+    // WHY NOT A RUN-UNIQUE PATIENT, which is the stronger form of criterion F:
+    // the portal patient is fixed by the trusted-device storage state, so this
+    // spec cannot mint one without a second auth path. Pinning the DATE achieves
+    // the same end for this assertion — a neighbour would have to book the same
+    // patient at the same time on the same specific day — and it costs nothing.
+    // The residual risk is recorded on LE-pg8-e2e-needs-run-scoped-patient.
+    const bookedOn = booked.isoDate;
     const timeRe = new RegExp(String(taken).replace(":", "[:h]"), "i");
     const nameRe = new RegExp(PORTAL_PATIENT.name.split(" ")[0], "i");
-    let foundOn: string | null = null;
 
-    await timed("A: agenda scan for the new row", async () => {
-      for (let i = 0; i <= SCAN_DAYS && foundOn === null; i++) {
-        const d = new Date();
-        d.setUTCHours(12, 0, 0, 0);
-        d.setUTCDate(d.getUTCDate() + i);
-        const iso = d.toISOString().slice(0, 10);
-        await staff.goto(`/agenda?date=${iso}`);
-        // BOTH, on the same day. Either alone is satisfied by unrelated data on
-        // a shared seeded database.
-        const hasTime = await staff
-          .getByText(timeRe)
-          .first()
-          .isVisible({ timeout: 1_200 })
-          .catch(() => false);
-        if (!hasTime) continue;
-        const hasPatient = await staff
-          .getByText(nameRe)
-          .first()
-          .isVisible({ timeout: 1_200 })
-          .catch(() => false);
-        if (hasPatient) foundOn = iso;
-      }
+    const seen = await timed("A: agenda shows the row on the booked day", async () => {
+      await staff.goto(`/agenda?date=${bookedOn}`);
+      const hasTime = await staff
+        .getByText(timeRe)
+        .first()
+        .isVisible({ timeout: 15_000 })
+        .catch(() => false);
+      if (!hasTime) return false;
+      return staff
+        .getByText(nameRe)
+        .first()
+        .isVisible({ timeout: 5_000 })
+        .catch(() => false);
     });
 
     expect(
-      foundOn,
-      `a portal pedido for ${PORTAL_PATIENT.name} at ${taken} should appear on the staff agenda within ${SCAN_DAYS} days`,
-    ).not.toBeNull();
-    console.log(`[W13-07] A: the crossing landed on ${foundOn}`);
+      seen,
+      `the pedido booked for ${PORTAL_PATIENT.name} at ${taken} on ${bookedOn} should be on ` +
+        `the staff agenda for THAT DAY. listAppointments has no status predicate ` +
+        `(data.ts:193-221), so a pending pedido is on the agenda the moment it is written.`,
+    ).toBe(true);
+    console.log(`[W13-07] A: the crossing landed on ${bookedOn}, the day it booked`);
 
     await staff.context().close();
   });

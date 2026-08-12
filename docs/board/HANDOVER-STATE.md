@@ -201,6 +201,49 @@ check rather than trust.
 
 ---
 
+## 5b. One engineering principle, learned the expensive way
+
+**Every instrument this project built to check itself failed in the same way, and
+the way is worth more than any of the fixes.**
+
+> **A one-line convenience that maps an unknown or failed case onto a known,
+> harmless-looking one will be read as the harmless one. It does not announce
+> itself, because the system carries on reporting something reasonable.**
+
+Four instances, all found on **2026-08-12**, all in this project's own
+**instruments** rather than in the product it ships:
+
+| The convenience | What it hid |
+|---|---|
+| `string \| null` | Four distinct failures — a missing service list, a step never reached, an empty calendar, a missing button — returned the same `null`, and the caller skipped on all of them alike. |
+| `test.skip()` | A gate-bearing test never ran, inside a **green** shard, on two consecutive runs. A pull request merged on four green required checks with the property untested. |
+| `.catch(() => {})` | A broken flow — a date picker that never opened — degraded into "the calendar is empty", which skips instead of failing. |
+| `?? e.kind` | A notification kind with no label rendered the **raw database enum** to reception, in English, on a Portuguese screen, instead of failing to compile. |
+
+**Each was one line. Each cost a day.** None was written carelessly; every one
+was written to make a program keep going in an unexpected case, which is normally
+good engineering. What makes them expensive here is *where* they sat: on the path
+that decides whether something is **true**.
+
+**The rule that follows.** On any path that produces a verdict — a test, a guard,
+a check, a rendered claim about a clinical event — an unhandled case must
+**fail**, not fall back. A fallback is appropriate where the cost of stopping
+exceeds the cost of being wrong. On a verdict path, being wrong *is* the cost.
+
+**The practical test**, and it is cheap enough to apply every time: find every
+`??`, every bare `catch`, every `| null` return and every default branch, and ask
+**what else reaches this**. If the answer is more than one thing, the cases are
+being conflated — and the conflation will be read as the benign one, because the
+benign one is what the screen or the check reports.
+
+**Why this is in a handover document.** The clinic team will not read it. A
+lawyer, a security reviewer or the next engineer will, and it is the most
+transferable thing this project has produced: it explains why the gate numbers in
+§1 are stated with their evidence, and why several of them were **taken back
+down** before being trusted.
+
+---
+
 ## 6. Where to look
 
 | What | Where |
