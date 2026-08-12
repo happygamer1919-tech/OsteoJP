@@ -1529,10 +1529,21 @@ export const staffNotifications = pgTable(
     recipientUserId: uuid("recipient_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    /** Pinned by CHECK in 0055 to the four PG4 kinds. `appointment_request` is
-     * "pedido de marcacao"; the pt-PT wording lives in packages/i18n with all
-     * other user-facing copy, never in an enum value. */
+    /** Pinned by CHECK to the PG4 kinds — four in 0055, FIVE since 0061, which
+     * added `confirmed` so a therapist accepting a pedido stops being invisible
+     * to reception. `appointment_request` is "pedido de marcacao"; the pt-PT
+     * wording lives in packages/i18n with all other user-facing copy, never in
+     * an enum value. */
     kind: text("kind").notNull(),
+    /** 0061 — WHO acted, for kinds where that is not implied. Null for every
+     * row written before 0061 and for every patient-initiated change, where the
+     * actor is the patient named by patientId. Never back-filled: inventing an
+     * actor is worse than admitting there is none.
+     *
+     * SET NULL and not CASCADE, unlike recipientUserId above. A notification
+     * belongs to its RECIPIENT, so removing the person who ACTED must not
+     * delete a message somebody else has already read. */
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
     /** No reference(): recorded as data, so a cascade cannot erase a trail and
      * SET NULL cannot silently rewrite what a user already read. */
     appointmentId: uuid("appointment_id").notNull(),

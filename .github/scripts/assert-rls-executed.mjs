@@ -99,6 +99,14 @@ const SUITES = [
   // here would restore exactly the state that let the defect ship: four green
   // tests asserting the orchestration around a check nothing ever executed.
   { file: "pedido-confirm.db.test.ts", hard: true },
+  // 0061, INC-08. The EXCLUDE constraint that makes two overlapping CONFIRMED
+  // appointments unreachable by ANY path. Hard-required because this suite is
+  // the ONLY evidence for that claim: the application tests prove that specific
+  // code paths refuse, which is precisely the kind of proof the incident showed
+  // to be insufficient - three paths produced the state and two left no trace.
+  // Only Postgres can demonstrate the state is unreachable, and only if the
+  // suite actually ran.
+  { file: "no-double-confirmed.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.

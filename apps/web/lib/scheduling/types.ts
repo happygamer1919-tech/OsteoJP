@@ -204,6 +204,12 @@ export type ActionErrorCode =
   // drawer offers all five statuses with no client guard, so reception can and
   // did reach `confirmed -> scheduled` in one click.
   | "illegal_transition"
+  // INC-08 / 0061: the database refused the write because it would leave two
+  // CONFIRMED appointments overlapping for one practitioner. Distinct from
+  // `conflict` on purpose - `conflict` is advisory and the drawer answers it
+  // with "Guardar mesmo assim", and this is the one refusal that override may
+  // not reach.
+  | "double_booked"
   | "error";
 
 export type ActionResult<T> =

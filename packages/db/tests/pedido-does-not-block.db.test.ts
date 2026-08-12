@@ -242,9 +242,41 @@ describe.skipIf(!live)("W13-04a — an unconfirmed pedido does not occupy its sl
 
   /**
    * TWO CONFIRMS STILL CANNOT BOTH SUCCEED, which is what makes option B safe.
-   * The pedido no longer blocks, but the moment one is confirmed it does - so
-   * the second confirm's transactional re-check finds it. Asserted here at the
-   * SQL level; the locking and the re-check are in confirmAppointmentRequest.
+   *
+   * REWRITTEN FOR 0061, AND THE CLAIM GOT STRONGER RATHER THAN WEAKER. This
+   * test used to confirm `pedido` while `confirmedPedido` already held the same
+   * therapist and window, then assert that appointment_conflicts reported it.
+   * That constructed exactly the state INC-08 produced in production — two
+   * CONFIRMED appointments on one therapist at one time — and 0061's
+   * appointments_no_double_confirmed now makes that state UNREACHABLE. The old
+   * body therefore fails with 23P01 at the UPDATE, before its assertion runs.
+   *
+   * Which is the point. The original comment said "two confirms still cannot
+   * both succeed" and proved it by showing the SECOND ONE WOULD SEE the first
+   * in a conflict query — a proof that depended on the application choosing to
+   * look. The database now refuses it outright, so the test asserts the refusal
+   * instead. Same claim, one layer down, and no longer contingent on a caller
+   * remembering to check.
+   */
+  it("a second confirm on the same therapist and window is REFUSED by the database", async () => {
+    await expect(
+      asRole(sql, "authenticated", claimsFor(T.tenant, "reception", T.reception), (tx) =>
+        tx`update appointments set status = 'confirmed' where id = ${pedido}`,
+      ),
+    ).rejects.toMatchObject({ code: "23P01" });
+  });
+
+  /**
+   * The original claim, kept and made legal: a confirmed pedido DOES occupy its
+   * slot. It is asserted on a window with no other confirmed occupant, which is
+   * the only way the state can now exist.
+   *
+   * WHY IT IS STILL WORTH ASSERTING SEPARATELY from the refusal above. The
+   * constraint proves two confirmed rows cannot COEXIST. It says nothing about
+   * whether appointment_conflicts REPORTS a confirmed pedido — that is 0059's
+   * job, and a regression there would silently stop the application warning
+   * anyone before the database refused them, turning a clean pt-PT message back
+   * into a raw error.
    */
   it("the freed slot re-closes the instant a pedido is confirmed", async () => {
     const rows = await asRole(
@@ -253,6 +285,10 @@ describe.skipIf(!live)("W13-04a — an unconfirmed pedido does not occupy its sl
       claimsFor(T.tenant, "reception", T.reception),
       async (tx) => {
         // Inside the rolled-back assertion transaction, so nothing persists.
+        // Cancel the existing confirmed occupant FIRST: with 0061 in place the
+        // window may hold at most one confirmed row, and this test is about the
+        // pedido, not about coexistence.
+        await tx`update appointments set status = 'cancelled' where id = ${confirmedPedido}`;
         await tx`update appointments set status = 'confirmed' where id = ${pedido}`;
         return tx`
           select id from public.appointment_conflicts(

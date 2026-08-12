@@ -1,6 +1,6 @@
 import "server-only";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
-import { appointments, patients, staffNotifications } from "@osteojp/db";
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { appointments, getDbAdmin, patients, roles, staffNotifications, users } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 
 // W13-02 (Wave 13 LOOP 2) — the notification centre's READ half. PG4.
@@ -219,4 +219,144 @@ export async function markAllRead(ctx: RequestContext): Promise<void> {
       .set({ readAt: new Date() })
       .where(isNull(staffNotifications.readAt));
   });
+}
+
+// ====================================================================
+// THE WRITE HALF, staff side. 0061, acceptance item 20 / PG4.
+//
+// WHY THIS EXISTS AT ALL. Everything above is a READ. The only writer of
+// staff_notifications was apps/api's persistingConsumer, reached from the three
+// PATIENT paths in booking.ts. The staff app emitted NOTHING, so when a
+// therapist accepted a pedido the row left `status = 'scheduled'`, dropped out
+// of listPendingRequests above, and reception was left unable to distinguish
+// "a therapist just accepted this" from "cancelled" or from "never there".
+//
+// WHY A MIRROR AND NOT AN IMPORT. apps/web and apps/api are separate Next
+// builds and neither may import the other's source at runtime — the same
+// constraint that produced lib/scheduling/slot-lock.ts, which documents the
+// pattern.
+//
+// IT IS NOT A PARITY MIRROR, and the difference is deliberate rather than
+// drift: apps/api's resolveRecipients notifies EVERY active reception user,
+// because a patient-initiated change concerns all of them. This one EXCLUDES
+// THE ACTOR, because a staff confirm is somebody's own click. Asserting the two
+// agree would therefore be asserting something false. What is asserted instead,
+// in confirm-fanout.test.ts, is this function's own recipient rule: reception
+// in, assigned practitioners in, the actor out, other tenants out.
+//
+// WHY getDbAdmin AND NOT runScoped, unlike every read above. This writes rows
+// addressed to OTHER users, and 0055 pins SELECT/UPDATE to
+// `recipient_user_id = auth.uid()`. A scoped write could only ever address the
+// caller to themselves, which is the one recipient that must NOT get this. The
+// recipients are resolved server-side from the tenant's roles, never taken from
+// a caller-supplied list. apps/api/lib/notifications/centre.ts:92-99 takes the
+// same decision for the same reason.
+// ====================================================================
+
+/** The role slug whose holders all receive pedido decisions. */
+const RECEPTION_ROLE_SLUG = "reception";
+
+/**
+ * Fan a staff CONFIRM out to reception and to the assigned practitioners.
+ *
+ * THE ACTOR IS EXCLUDED, and that is the point rather than a nicety. Reception
+ * receives this fan-out, so without the exclusion a receptionist confirming a
+ * pedido would immediately be notified of their own click — noise that would
+ * have made the queue worse than the silence it replaces. `actorUserId` is
+ * still RECORDED on every row, so the people who DO get it can see who acted.
+ *
+ * BEST-EFFORT, NEVER THROWS. Called after the confirm has committed. A failed
+ * notification must not surface to reception as a failed confirmation: the
+ * appointment really is confirmed, and reporting otherwise would invite them to
+ * confirm it twice. Logged at ERROR with ids only — no name, no contact, no
+ * service (CLAUDE.md rule 7).
+ */
+export async function emitConfirmedNotification(args: {
+  tenantId: string;
+  actorUserId: string;
+  appointmentId: string;
+  patientId: string;
+  practitionerIds: string[];
+  startsAt: Date;
+  occurredAt: Date;
+}): Promise<{ delivered: boolean }> {
+  try {
+    const db = getDbAdmin();
+
+    const receptionRows = await db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(roles, eq(users.roleId, roles.id))
+      .where(
+        and(
+          eq(users.tenantId, args.tenantId),
+          eq(users.isActive, true),
+          eq(roles.slug, RECEPTION_ROLE_SLUG),
+          // Never notify the person who just acted.
+          ne(users.id, args.actorUserId),
+        ),
+      );
+
+    // Practitioner ids are VALIDATED against the tenant rather than trusted: a
+    // row addressed to a user from another tenant is one no policy can select,
+    // so it would be a notification nobody can ever read.
+    const practitionerRows = args.practitionerIds.length
+      ? await db
+          .select({ id: users.id })
+          .from(users)
+          .where(
+            and(
+              eq(users.tenantId, args.tenantId),
+              inArray(users.id, args.practitionerIds),
+              ne(users.id, args.actorUserId),
+            ),
+          )
+      : [];
+
+    const recipients = new Set<string>();
+    for (const r of receptionRows) recipients.add(r.id);
+    for (const r of practitionerRows) recipients.add(r.id);
+
+    if (recipients.size === 0) {
+      // Reaching nobody is a real condition worth seeing, not a silent no-op:
+      // it means a therapist confirmed their own pedido in a tenant with no
+      // other active reception user.
+      console.warn(
+        `[notifications] confirm fan-out resolved ZERO recipients ` +
+          `tenant=${args.tenantId} appointment=${args.appointmentId}`,
+      );
+      return { delivered: false };
+    }
+
+    await db
+      .insert(staffNotifications)
+      .values(
+        [...recipients].map((recipientUserId) => ({
+          tenantId: args.tenantId,
+          recipientUserId,
+          kind: "confirmed",
+          actorUserId: args.actorUserId,
+          appointmentId: args.appointmentId,
+          patientId: args.patientId,
+          // A confirmation moves nothing, so both instants are the appointment's
+          // own start — the convention the emitting contract already set for
+          // bookings and cancellations.
+          previousStartsAt: args.startsAt,
+          newStartsAt: args.startsAt,
+          occurredAt: args.occurredAt,
+        })),
+      )
+      // 0055's unique index over (recipient, appointment, kind, occurred_at) is
+      // the idempotency guard. A retry must not double-post one acceptance.
+      .onConflictDoNothing();
+
+    return { delivered: true };
+  } catch (err) {
+    console.error(
+      `[notifications] confirm fan-out FAILED tenant=${args.tenantId} ` +
+        `appointment=${args.appointmentId}`,
+      err instanceof Error ? `${err.name}: ${err.message}` : "unknown",
+    );
+    return { delivered: false };
+  }
 }
