@@ -1,7 +1,19 @@
 # Apply block - migration 0061, no double-confirmed + the confirm notification
 
-**Status: NOT VALIDATED. Drafted 2026-08-11 by PURPLE. Strategy review required
-before this reaches the owner.**
+**Status: VALIDATED by strategy 2026-08-12. Cleared to run.**
+
+The `NOT VALIDATED` banner that stood in section 5 was cleared by strategy on the
+basis of a **nine-point review**: the working directory, the detached checkout of
+the pinned sha, the env source and `set -o allexport`, the pre-check with a
+literal expected count, the post-check proving pending drops to zero, one command
+per line with no backticks, no credential echoed or interpolated, nothing that
+builds or installs or tests, and explicit paste-back instructions.
+
+**PURPLE did not clear its own banner.** Two of the nine failed on the first pass
+and were fixed before clearance: an apply-only worktree was running
+`pnpm install --frozen-lockfile`, and the paste-back instructions were
+incomplete. The install was proven unnecessary by comparing the lockfile hash at
+the pinned sha with the worktree's, rather than by assuming.
 
 Migration: `0061_no_double_confirmed_and_confirm_notification` (journal idx 60).
 Branch: `db/0061-no-double-confirmed`. PR: #870.
@@ -108,7 +120,7 @@ double booking in the clinic's diary and a person decides which one moves.
 
 ## 5. The block
 
-NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN
+VALIDATED BY STRATEGY 2026-08-12 - CLEARED TO RUN
 
 ```
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -147,6 +159,21 @@ merely unwanted, checked on 2026-08-12 before removal:
 
 **If `drizzle-kit` is ever not found, STOP and say so.** Do not add an install to
 this block to get past it; that is a separate, deliberate act outside the apply.
+
+**CLOSE THE TERMINAL WINDOW WHEN THE APPLY IS DONE. Owner instruction,
+2026-08-12, and it generalises to every apply doc after this one.**
+The final `unset` names only `DATABASE_URL` and `DATABASE_URL_DIRECT`, but
+`set -o allexport` exported **every** variable in the env file. Unsetting two of
+them leaves the rest live in that shell. Closing the window is the only complete
+answer, and it is cheaper than maintaining a list that will drift.
+
+**SCAN THE OUTPUT FOR `postgres://` BEFORE PASTING IT BACK. Owner instruction,
+2026-08-12.** `drizzle-kit migrate` can print the connection string on some
+failures. Our own `check-pending-migrations.mjs` never does - it reads
+`DATABASE_URL_DIRECT` at line 61 and prints only counts, tags and `when` values -
+but the migrate tool is not ours and its failure paths are not ours to promise.
+A leaked connection string in a pasted block has already cost this project one
+password rotation.
 
 **WHAT TO PASTE BACK, and it is four things:**
 
