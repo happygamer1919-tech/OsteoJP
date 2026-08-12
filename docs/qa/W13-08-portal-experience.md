@@ -6,9 +6,10 @@ action on landing, patient-readable empty and error states, minimum field
 count."*
 
 > ## STATUS: IN PROGRESS. PG9 IS NOT CLOSED BY THIS DOCUMENT.
-> The automated half is built and its first CI run has not yet reported. The
-> per-screen human half — the six criteria axe cannot judge — is the table in §3
-> and it is **not yet filled**. §5 states exactly what remains.
+> The automated half is built. The human half is **partially filled** (§3), and
+> reading the copy has already produced **one real gap**: no portal error state
+> carries the clinic's telephone, which the DoD names explicitly. §5 states what
+> remains.
 
 ---
 
@@ -69,21 +70,61 @@ this gate's coverage.
 
 ## 3. Per-screen audit — the half axe cannot judge
 
-**NOT YET FILLED. This is the outstanding work on PG9.**
+**PARTIALLY FILLED, 2026-08-12, by reading the screens and their copy.** `CI`
+means the criterion is machine-checked on every commit by
+`portal-a11y-experience.spec.ts`. The columns below carry a **verdict** where one
+can be reached from the source, and a blank where it genuinely needs a rendered
+screen at 390×844.
 
-Seven criteria per screen. `A` = decided by axe in CI and recorded automatically;
-the rest are a human reading the screen at 390×844.
-
-| # | Screen | A: axe 2.2 AA | Mobile-first | pt-PT | 24h | One primary action | Empty/error readable | Min. field count |
+| # | Screen | A: axe | Mobile-first | pt-PT | 24h | One primary | Empty/error readable | Min. fields |
 |---|---|---|---|---|---|---|---|---|
-| 1 | Dashboard | `CI` | `____` | `CI` | `CI` | `CI` | `____` | n/a |
-| 2 | Consultas | `CI` | `____` | `CI` | `CI` | n/a | `____` | n/a |
-| 3 | Marcar consulta | `CI` | `____` | `CI` | `CI` | n/a | `____` | `____` |
-| 4 | Pedido recebido | `CI` | `____` | `CI` | `CI` | n/a | `____` | n/a |
-| 5 | Clínicas | `CI` | `____` | `CI` | `CI` | n/a | `____` | n/a |
-| 6 | Documentos | `CI` | `____` | `CI` | `CI` | n/a | `____` | n/a |
-| 7 | Fichas | `CI` | `____` | `CI` | `CI` | n/a | `____` | `____` |
-| 8 | Conta | `CI` | `____` | `CI` | `CI` | n/a | `____` | `____` |
+| 1 | Dashboard | `CI` | `____` | `CI` | `CI` | `CI` | **GAP** | n/a |
+| 2 | Consultas | `CI` | `____` | `CI` | `CI` | n/a | **GAP** | n/a |
+| 3 | Marcar consulta | `CI` | `____` | `CI` | `CI` | n/a | **GAP** | `____` |
+| 4 | Pedido recebido | `CI` | `____` | `CI` | `CI` | n/a | **SEE SEC card** | n/a |
+| 5 | Clínicas | `CI` | `____` | `CI` | `CI` | n/a | n/a — no error route | n/a |
+| 6 | Documentos | `CI` | `____` | `CI` | `CI` | n/a | **GAP** | n/a |
+| 7 | Fichas | `CI` | `____` | `CI` | `CI` | n/a | **GAP** | `____` |
+| 8 | Conta | `CI` | `____` | `CI` | `CI` | n/a | **GAP** | `____` |
+
+### 3.1 The error-state finding, and it is a real PG9 gap
+
+**The DoD line reads:** *"Empty and error states that a patient can read and act
+on: what happened, what to do, and **the clinic's telephone where the answer is
+'call us'**."*
+
+**Every portal error state satisfies the first two and none satisfies the third.**
+Read from `packages/i18n/src/portal/strings.pt.json`, `errors.*`, all six route
+boundaries (`account`, `appointments`, `booking`, `dashboard`, `documents`,
+`forms`) rendering `ErrorState` with a title, a description and a retry:
+
+| String | What happened | What to do | Telephone |
+|---|---|---|---|
+| `load_appointments` / `_desc` | yes | "Tente novamente" | **no** |
+| `load_documents` / `_desc` | yes | "Tente novamente" | **no** |
+| `load_forms` / `_desc` | yes | "Tente novamente" | **no** |
+| `load_dashboard` / `_desc` | yes | "Tente novamente" | **no** |
+| `load_account` / `_desc` | yes | "Tente novamente" | **no** |
+| `403_title` / `403_body` | yes | **nothing at all** | **no** |
+| `500_body` | yes | "tente mais tarde" | **no** |
+
+**And five strings elsewhere say "contacte a clínica" without giving a number.**
+Telling a patient to call and not saying what to call is the shape of the defect,
+not a nicety: the portal already knows the numbers — they are in
+`apps/portal/app/portal/clinics/page.tsx:12,26` — so the information exists and
+does not reach the screen where it is needed.
+
+**`403` is the worst of them.** "Não tem permissão para ver esta página" offers
+**no action of any kind**: no retry, no navigation, no telephone. A patient who
+reaches it has nothing to do next.
+
+**THE FIX, when this line is built:** lift the clinic contact details out of
+`clinics/page.tsx` into a shared source both that page and `ErrorState` copy can
+read, and give every error state a telephone where retry cannot help. It is a
+plumbing change, not a copy change, which is why it is a build item and not a
+five-minute edit.
+
+**Not built in this dispatch**, and PG9 does not close without it.
 
 **`CI` means the criterion is machine-checked on every commit**, not that it has
 passed. The run that fills those cells is the one that closes them.
@@ -118,14 +159,14 @@ visible as a regression:
 | A test proves no untranslated string reaches a patient, including error paths | **BUILT** for the eight screens. **The error paths are not yet covered** — they need a forced failure per route. |
 | A test proves 24h formatting on every time render | **BUILT** |
 | A test proves exactly one primary action on the landing screen | **BUILT** |
-| Every empty and error state asserted to contain actionable pt-PT text | **NOT BUILT** |
+| Every empty and error state asserted to contain actionable pt-PT text | **NOT BUILT, AND A GAP FOUND** — no error state carries the clinic's telephone; `403` offers no action at all. See §3.1. |
 | The per-screen audit table committed | **COMMITTED, NOT FILLED** — §3 |
 | Mobile-viewport screenshots of every screen | **NOT TAKEN** |
 | Lint, typecheck, unit, e2e, build pass | lint/typecheck/build green; **e2e not yet run** |
 
 **Six of nine DoD lines are built. Three are not**, and PG9 does not close on
-six. The honest position is that the machine-checkable half of this gate exists
-and the human half has not been done.
+six. The machine-checkable half of this gate exists; the human half is started
+and has already paid for itself by finding §3.1.
 
 ### 5.1 The slot-lock template, and where it fits here
 
