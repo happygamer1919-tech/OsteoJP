@@ -72,12 +72,30 @@ getting lost.
 
 ## Accounts
 
-| Role | Identifier | Id | Notes |
-|---|---|---|---|
-| **Test patient** | `ZZ Teste …` | `____________________` | Carries **the owner's own mobile**. It is the canary for every OTP step and the subject of the terms items. |
-| **Test therapist** | `ZZ TESTE THERAPIST` | `8ac3b349…` | The practitioner on both rows of the INC-08 double booking. Already exists. **COVERS SATURDAY ONLY, 08:00-13:00 — see the box below. Every test booking goes on a Saturday morning.** |
-| **Reception** | `ZZ TESTE RECEPCAO` | `alo@gmail.com` | **The account for ALL staff-side observation. NOT the owner account — see the box below.** Carries the RECEPTION role slug, which is what puts it in `resolveRecipients`. |
-| **Second therapist** | `____________________` | `____________________` | Needed **only** for the negative arm of the therapist queue check, where a **non-assigned** therapist must be refused. |
+> ### DISPLAY NAME IS A REQUIRED FIELD. Added 2026-08-12, and it is not cosmetic.
+>
+> **A sweep runner cannot verify an account from an email they never see on
+> screen.** The staff header shows a DISPLAY NAME and a role; it does not show
+> the login address. So an email in this table is unverifiable at the moment it
+> matters, and a runner who is signed into the wrong account has no way to know.
+>
+> **It has already happened.** On 2026-08-12 the reception session was run on an
+> account displaying **"Happygamer1919", role Receção**, while this table named
+> `ZZ TESTE RECEPCAO` at `alo@gmail.com`. Whether those are the same account is
+> still being confirmed. Until it is, **no gate may be recorded against that
+> session**, because a gate recorded against an unidentified account is a gate
+> recorded against nothing.
+>
+> **Fill DISPLAY NAME by reading the staff header, not by inferring it from the
+> email.** If the display name does not match this table, stop and reconcile
+> before observing anything.
+
+| Role | Identifier (login) | **DISPLAY NAME as it renders in the staff header** | Id | Notes |
+|---|---|---|---|---|
+| **Test patient** | `ZZ Teste …` | `____________________` **REQUIRED** | `____________________` | Carries **the owner's own mobile**. It is the canary for every OTP step and the subject of the terms items. Portal, not staff header: read it from the portal account page. |
+| **Test therapist** | `ZZ TESTE THERAPIST` | `____________________` **REQUIRED** | `8ac3b349…` | The practitioner on both rows of the INC-08 double booking. Already exists. **COVERS SATURDAY ONLY, 08:00-13:00 — see the box below. Every test booking goes on a Saturday morning.** |
+| **Reception** | `ZZ TESTE RECEPCAO` / `alo@gmail.com` | **UNCONFIRMED — the 2026-08-12 session showed "Happygamer1919", role Receção.** Owner is confirming whether that IS this account. `____________________` | `____________________` | **The account for ALL staff-side observation. NOT the owner account — see the box below.** Must carry the RECEPTION role slug, which is what puts it in `resolveRecipients`. **No gate may be recorded against a session whose display name is unconfirmed.** |
+| **Second therapist** | `____________________` | `____________________` **REQUIRED** | `____________________` | Needed **only** for the negative arm of the therapist queue check, where a **non-assigned** therapist must be refused. **Still blank, which is why OBSERVE-SWEEP row C3 is BLOCKED.** |
 
 > ### THE TEST THERAPIST COVERS SATURDAY ONLY, 08:00-13:00
 >

@@ -119,26 +119,30 @@ divergence from the claimed figure and is reported in §5.
 | MN-03 | hold a session minted from anything but OTP or the trusted device | `no-session-minting.test.ts` | PRESENT |
 | MN-04 | have a forged or unsigned token accepted | `jwt.test.ts`, `forged-token.test.ts`, `patient-session.test.ts` | PRESENT |
 | MN-05 | read another patient's appointment | `booking.ts` scopes every read to `principal.patientId` (:580, :618, :725) + RLS; `booking.test.ts` | PRESENT |
-| MN-06 | read another patient's ficha | `fichas/read.test.ts` + RLS | PRESENT |
+| MN-06 | read another patient's ficha | `packages/db/tests/patient-rls-selfscope.test.ts:173,196,205` — DB-gated, `clinical_records` is one of its probe tables, with a negative control proving the owner CAN see the rows **CITATION CORRECTED 2026-08-12, see §9** | PRESENT |
 | MN-07 | read or download another patient's document | `patient/documents/route.test.ts`, `download/route.test.ts` | PRESENT |
 | MN-08 | read another patient's profile | `patient/profile/route.test.ts` | PRESENT |
 | MN-09 | see staff notes, comments or histórico on an appointment | `notes-privacy.test.ts` (sentinel through the real DTO) | PRESENT |
 | MN-10 | see therapist-private clinical fields (`private_notes`, `red_flags`, …) | `fichas/redaction.test.ts` (adversarial sentinel + allow-list) | PRESENT |
 | **MN-11** | **book an `internal_only` service by knowing its id** | `services.ts:52-58` `isServiceBookableByPatient`; `internal-only-refusal.test.ts` (14 tests) | **PRESENT — was the claimed gap, see §4** |
 | MN-12 | book a service not marked `patient_bookable` | same guard; `patient-bookable.db.test.ts` (DB-gated) | PRESENT |
-| MN-13 | book an inactive service | same guard, `isActive` clause; `services.test.ts` | PRESENT |
+| MN-13 | book an inactive service | `internal-only-refusal.test.ts:67` ("REFUSES an inactive service") + `patient-bookable.db.test.ts:258` (same, DB-gated) **CITATION CORRECTED 2026-08-12, see §9** | PRESENT |
 | MN-14 | reach any row of another tenant | every store query filters `tenantId`; RLS isolation tests in CI | PRESENT |
-| MN-15 | book a slot in the past | `past-slot-floor.test.ts` (floor applied three times) | PRESENT |
+| MN-15 | book a slot in the past | `booking.test.ts:500-530` — refuses with `slot_in_past` **even when the store is forced to report the slot conflict-free**, on both the book and reschedule arms. `past-slot-floor.test.ts` is a source-level companion, not the proof. **CITATION CORRECTED 2026-08-12, see §9** | PRESENT |
 | MN-16 | book inside the cut-off window | `cutoff.test.ts` | PRESENT |
-| MN-17 | create a double booking on a confirmed slot | `slot-lock.ts` + **migration 0061** `appointments_no_double_confirmed`; `packages/db/tests/no-double-confirmed.test.ts` | PRESENT |
+| MN-17 | create a double booking on a confirmed slot | `packages/db/tests/no-double-confirmed.test.ts:141,155` — DB-gated REFUSES on both the insert and the update path, with four PERMITS negative controls. `slot-lock.test.ts` proves bucket scoping only and would **not** have carried this row alone. | PRESENT |
 | MN-18 | enumerate the patient list through the login screen | `auth/otp/request` answers 204 for known and unknown alike and never queries the patient table; `routes.test.ts` | PRESENT |
 | MN-19 | make the clinic pay to send unbounded SMS | per-IP, per-phone and two global ceilings; `sms-pump.test.ts`, `limiter.test.ts` | PRESENT |
 | MN-20 | make the clinic text a number that cannot receive SMS | `isSmsCapablePT`; `otp-sms-capability.test.ts` | PRESENT |
 | MN-21 | distinguish a wrong code from an unknown number | one 401, one body, six failure modes; `otp.test.ts`, `degradation-copy.test.ts` | PRESENT |
 | MN-22 | receive contact data in a notification payload | `payload-minimization.test.ts` (counsel requires this maintained) | PRESENT |
-| MN-23 | run an unauthenticated write against `appointments` | `write-paths.test.ts` — every writer enumerated, allowlist is a decision per path | PRESENT |
+| MN-23 | **have a new `appointments` writer added without a decision about the slot lock** — RESCOPED 2026-08-12, see §9 | `write-paths.test.ts` — repo-wide enumeration of every INSERT and time/therapist UPDATE, pinned to an allowlist that records a decision per path, comment-stripped | PRESENT |
 
 **23 MUST-NEVER rows. 23 enforcement points. ZERO rows without one.**
+
+**EVERY CITATION ABOVE WAS READ LINE BY LINE ON 2026-08-12 and graded REFUSAL or
+EXISTENCE. Four were wrong and are corrected in place. The audit is §9 and it is
+part of this deliverable, not an appendix to it.**
 
 ---
 
@@ -308,3 +312,67 @@ suite cannot do.
 **Re-run the matrix:** `cd apps/api && npx vitest run lib/exposure/patient-surface.test.ts`.
 Zero MUST-NEVER rows without an enforcement point is asserted by §3 of this
 document plus the suite above.
+
+---
+
+## 9. THE CITATION AUDIT — every cited enforcement point read line by line
+
+**Ordered by strategy on 2026-08-12, and it was the right order.** LOOP 6 shipped
+with **one** enforcement point built and proven (MN-01, seven negative arms) and
+**22 cited from existing tests, checked only for the PRESENCE of refusal
+assertions rather than read.** That is the same shape as the 123 assertions this
+project has counted that cannot fail, and PG6 was held pending this audit.
+
+**The test applied to each row:** does the cited test prove the row's stated
+property is **REFUSED**, or does it merely prove the mechanism **EXISTS**?
+
+**Result: 18 of 22 citations were correct. FOUR WERE WRONG.** Every one of the
+four has a correct citation available, now verified and substituted in §3 — so
+**no row lost its enforcement point**, but four rows were being carried by a
+citation that would not have survived an audit by anyone else. Recorded in full
+because a matrix is worth exactly what its citations are worth.
+
+### 9.1 The 22 rows
+
+| MN | Cited (as shipped) | Verdict | Reasoning |
+|---|---|---|---|
+| MN-02 | `principal.test.ts:33-69`, `forged-token.test.ts:136` | **REFUSAL** | Six explicit `toBeNull()` rejections: staff token, wrong role, non-uuid ids, missing `sub`, null/empty claims. `forged-token.test.ts:136` is literally "does not let an attacker choose which patient they are". |
+| MN-03 | `no-session-minting.test.ts:75-118` | **REFUSAL** | Source scan asserting no file calls the forbidden mint symbols and the activation module is deleted, **with an explicit anti-vacuous guard** at :75 ("finds source files to scan"). Refusal by proven absence. |
+| MN-04 | `jwt.test.ts:87-146`, `patient-session.test.ts:99-178` | **REFUSAL** | Eight `rejects` in jwt (wrong key, tampered payload, HS256/ES256 key confusion, expired) and six `refuses` in patient-session (different secret, `alg:none`, wrong issuer, garbage, non-uuid ids, expiry, and does-not-slide). |
+| MN-05 | `booking.test.ts:193-222` | **REFUSAL** | `describe("self-scope")`: Alice reading, cancelling and rescheduling Bob's row each returns `not_found`, and the cancel arm additionally asserts Bob's row is **left untouched**. Mock-level, not DB-level — noted, but the orchestration is the cited boundary. |
+| **MN-06** | ~~`fichas/read.test.ts`~~ | **EXISTENCE — WRONG** | `expect(runAsPatient).toHaveBeenCalledTimes(1)` proves the self-scope wrapper was **invoked**. The store is mocked with `fakeTxReturning(rows)`, so the mock decides what comes back: **`listOwnFichas` with no scoping at all would still pass.** Self-mocking. Corrected to `patient-rls-selfscope.test.ts:173,196,205`, which is DB-gated, names `clinical_records` as a probe table, refuses a same-tenant other patient's row *by id*, refuses the cross-tenant row, and carries a negative control proving the owner CAN see both. |
+| MN-07 | `documents/route.test.ts:19`, `download/route.test.ts:36`, `patient/documents.test.ts:63-90`, `patient/download.test.ts:44-58` | **REFUSAL** | Strongest set in the matrix. 401 fail-closed, "ADVERSARIAL: 404s when the document is not the caller's own", null for a cross-patient row, null for a cross-tenant row, and **refuses to sign a path outside the caller's tenant prefix**. |
+| MN-08 | `profile/route.test.ts:31,60`, `patient/profile.test.ts:74` | **REFUSAL** | 401 on both GET and PATCH, plus "ADVERSARIAL: drops a foreign row that slips past RLS (explicit id guard)" — a refusal that assumes RLS has already failed. |
+| MN-09 | `notes-privacy.test.ts:154,164` | **REFUSAL** | A note sentinel placed on the underlying store row is asserted absent from the serialized envelope on both `listOwn` and `getOwn`, through the real DTO. Leak-refusal, not existence. |
+| MN-10 | `redaction.test.ts:35-72` | **REFUSAL** | Adversarial record stuffed with `private_notes`, `red_flags`, `signedBy`, `secret`; default-deny allow-list; "drops the entire freeform data blob by default". |
+| MN-11 | `internal-only-refusal.test.ts:56-91` | **REFUSAL** | Five REFUSES arms including "internal_only combined with patient_bookable — the dangerous row", **plus :81 "every clause is load-bearing (the negative arms)"**, plus source-level guards that the deleted allowlist cannot return. |
+| MN-12 | `patient-bookable.db.test.ts:254` | **REFUSAL** | DB-gated against real Postgres, and :141 is an explicit "is not vacuous - the fixture contains both answers" guard. |
+| **MN-13** | ~~`services.test.ts`~~ | **EXISTENCE — WRONG** | `services.test.ts` tests `normalizeServiceName` and `effectivePriceCents`. **It contains nothing about `isActive` and nothing about refusal.** An auditor opening it would have found pricing tests. Corrected to `internal-only-refusal.test.ts:67` and `patient-bookable.db.test.ts:258`, both of which are literally "REFUSES an inactive service". |
+| MN-14 | `patient-rls-selfscope.test.ts`, `cross-tenant-rls-isolation.test.ts` | **REFUSAL** | DB-gated, per-table probes, SELECT/INSERT/UPDATE/DELETE arms, WITH CHECK rejections, and negative controls at :145 and :206 proving the data is visible to someone. |
+| **MN-15** | ~~`past-slot-floor.test.ts`~~ | **EXISTENCE — WRONG** | That file asserts the **SQL source text** carries a floor and generates its grid forward. It has an anti-vacuous guard and is a legitimate structural test, but it proves the code is *shaped* right, not that a past slot is *refused*. Corrected to `booking.test.ts:500-530`, which returns `slot_in_past` on both book and reschedule **while forcing `hasWindowConflict` to report the slot free**, so only the past guard can be doing the work. |
+| MN-16 | `cutoff.test.ts:19,33` | **REFUSAL** | "rejects (within cutoff)", "rejects an appointment that already started or passed", with the half-open boundary pinned at exactly 24h. |
+| MN-17 | `no-double-confirmed.test.ts:141,155` | **REFUSAL** | DB-gated REFUSES on the insert path and on the UPDATE path (the 17:00:01 move from the incident), with four PERMITS negative controls. **`slot-lock.test.ts`, which the shipped row also cited, is bucket arithmetic and would NOT have carried this row alone** — dropped from the citation. |
+| MN-18 | `routes.test.ts:118,163,194` | **REFUSAL** | 204 for known and unknown alike, byte-identical status *and* body across every verify failure, and "never reaches the patient table when the code fails". |
+| MN-19 | `sms-pump.test.ts:97-198` | **REFUSAL** | REFUSES on both ceilings, cannot be reset by rotating tenantId or phone, keys on a constant, checked last so garbage cannot spend budget — **and :80 "a permitted request really does reach the send"** as the anti-vacuous control. |
+| MN-20 | `otp-sms-capability.test.ts:13` | **REFUSAL** | "refuses PT geographic numbers", with :20 accepting mobiles as the positive control so the refusal is not "everything fails". |
+| MN-21 | `degradation-copy.test.ts:52,60`, `routes.test.ts:163` | **REFUSAL** | "names no predicate, so it cannot become an enumeration oracle", and the byte-identical-failure assertion. |
+| MN-22 | `payload-minimization.test.ts:43,58` | **REFUSAL** *(structural)* | Allow-list denial over the declared payload types, with an anti-vacuous guard at :43. **Limitation stated honestly:** it reads type definitions, so it binds typed code paths and would not catch a field smuggled through an `any`. |
+| **MN-23** | ~~`write-paths.test.ts`~~ for "unauthenticated write" | **EXISTENCE — WRONG, AND THE ROW WAS A DUPLICATE** | `write-paths.test.ts` enumerates appointment writers and pins them to an allowlist. **It never asserts that any writer authenticates**, so it did not prove the row as stated — and the row as stated was already carried by MN-01. **RESCOPED** to the property the test actually proves, which is a real and separate MUST-NEVER: a new `appointments` writer must never be added without a decision about the slot lock. |
+
+### 9.2 What this audit says about the loop that produced it
+
+**Four wrong citations out of 23 is a 17% error rate on the deliverable's core
+claim**, and it was found by an outside instruction to go and read, not by the
+loop that wrote it. Two lessons, both recorded rather than absorbed:
+
+1. **"Contains refusal assertions" is not "proves this row".** MN-13 is the
+   clearest case: `services.test.ts` was cited because it is the tests file next
+   to `services.ts`, which is proximity, not evidence.
+2. **A self-mocking test reads as a strong test.** MN-06's
+   `toHaveBeenCalledTimes(1)` looks like rigour and proves nothing about the
+   property, because the mock supplies the answer. That is exactly the shape
+   `ACC-vacuous-guard-sweep` exists to find, and it was sitting inside a matrix
+   written to close an exposure gate.
+
+**`ACC-vacuous-guard-sweep` stays OPEN.** This audit covered the 22 rows this
+matrix cites. It did not audit the rest of the suite.
