@@ -2076,17 +2076,17 @@
     },
     {
       "id": "CI-supabase-cli-setup-flaky",
-      "title": "The E2E job's 'Set up Supabase CLI' step fails intermittently, reddening a shard for reasons unrelated to any change under test",
+      "title": "The E2E job's Supabase steps fail intermittently - THREE occurrences on 2026-08-12, and the third destroyed a diagnostic measurement that had already cost two runs to set up",
       "lane": "loose_ends",
       "home_lane": "loose_ends",
       "status": "todo",
-      "priority": "medium",
+      "priority": "high",
       "owner_terminal": "purple",
       "gate": "green_self_merge",
       "evidence": null,
       "blocked_on": null,
       "last_checkpoint": "2026-08-12",
-      "notes": "OBSERVED TWICE ON 2026-08-12, on two different branches and two different shards:\nrun 31622714249 (shard 3) and run 31635017752 (shard 1). Step 12, \"Set up\nSupabase CLI\", fails; every downstream step skips; the shard is red for a reason\nthat has nothing to do with the change under test.\n\nWHY IT IS CARDED RATHER THAN IGNORED: a red that is not about your change trains\npeople to re-run rather than read, and this project's whole e2e doctrine is READ\nTHE ARTIFACT FIRST. An intermittently-red infrastructure step is the fastest way\nto erode that habit.\n\nIT ALSO CAUSED A SECOND, SEPARATE DEFECT ALREADY. The E2E skip-guard was\noriginally `if: always()`, so on run 31622714249 it ran after this step failed,\nfound no Playwright report, and announced \"E2E SKIP-GUARD RED\" for a Supabase\nfailure - reporting the wrong cause. Fixed by gating the guard on the Playwright\nstep's conclusion, but the trigger was this flake.\n\nLIKELY FIX: pin the CLI version and add a retry to that step\n(supabase/setup-cli@v1 in .github/workflows/e2e.yml). Verify the failure mode\nfrom a red run's log before choosing - it may be a rate limit or a transient\ndownload, and those want different fixes."
+      "notes": "RAISED TO HIGH 2026-08-12 AFTER A THIRD OCCURRENCE, AND THE THIRD ONE COST\nSOMETHING REAL.\n\nTHREE OCCURRENCES, THREE DIFFERENT RUNS, TWO DIFFERENT STEPS, TWO DIFFERENT\nBRANCHES AND SHARDS:\n  run 31622714249  shard 3  step 12  \"Set up Supabase CLI\"      failed\n  run 31635017752  shard 1  step 12  \"Set up Supabase CLI\"      failed\n  run 31647425292  shard 3  step 13  \"Start Supabase (lean stack)\"  failed\nEvery downstream step skips, and the shard is red for a reason that has nothing\nto do with the change under test.\n\nWHY IT IS NOW HIGH RATHER THAN MEDIUM. The third occurrence killed the\nINC-10 diagnostic BEFORE PLAYWRIGHT RAN. That measurement had already taken two\nruns to set up - one to add the log lines, one to remove a diagnostic that had\nmade the suite slow enough to be cancelled - and it is still unanswered because\nthe infrastructure never got as far as the test. AN UNRELIABLE STEP DOES NOT JUST\nCOST A RE-RUN; IT COSTS THE ANSWER YOU WERE MEASURING FOR.\n\nIT ALSO CAUSED A SECOND DEFECT ALREADY. The E2E skip-guard was originally\n`if: always()`, so on run 31622714249 it ran after Supabase failed, found no\nPlaywright report, and announced \"E2E SKIP-GUARD RED\" for a Supabase failure -\nreporting the wrong cause. Fixed by gating it on the Playwright step's\nconclusion, but the trigger was this flake.\n\nAND THE REAL COST IS THE HABIT. This project's e2e doctrine is READ THE ARTIFACT\nFIRST. A step that reddens at random trains people to re-run instead, which is\nexactly the reflex that lets a genuine red be dismissed.\n\nTHE FIX, and it wants a log read before a change is chosen: pin the CLI version\nand add a retry to both steps (supabase/setup-cli@v1 and the start step in\n.github/workflows/e2e.yml). Check a red run's log first - a rate limit, a\ntransient download and a port collision want different fixes, and guessing here\nwould be the same error this board keeps recording."
     },
     {
       "id": "SEC-pending-screen-asserts-nothing",
