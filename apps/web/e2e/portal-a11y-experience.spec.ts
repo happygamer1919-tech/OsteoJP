@@ -138,3 +138,38 @@ test.describe("PG9 — one primary action on the landing screen", () => {
     );
   });
 });
+
+test.describe("PG9 — the axe scan is proven to be capable of failing", () => {
+  test("a deliberately broken page DOES produce violations", async ({ page }) => {
+    // ================================================================= //
+    // THE SLOT-LOCK TEMPLATE, IN THE ONE PLACE IT FITS ON THIS GATE.
+    // ================================================================= //
+    // BOARD-SPEC's preferred standard: a gate row whose property can be disabled
+    // should carry a CI arm that disables it and requires the check to FAIL.
+    //
+    // IT DOES NOT FIT MOST OF PG9 and that is recorded rather than worked
+    // around: contrast, landmarks and target size have no disable flag, and
+    // manufacturing one would add a production path existing only for a test —
+    // the same reasoning that rejected a `data-iso` hook on the DatePicker.
+    //
+    // IT FITS HERE. Without this arm, "axe found no violations" is
+    // indistinguishable from "axe was misconfigured, scanned nothing, and
+    // returned an empty array" — the same class as a skipped test inside a green
+    // shard, and the reason every screen assertion above first proves the page
+    // rendered.
+    //
+    // The markup below is served from a data: URL, so NO PRODUCTION FILE carries
+    // it. It violates three separate rules at once — an image with no alt text,
+    // an input with no label, and a page with no lang — so this arm cannot be
+    // satisfied by one rule being disabled somewhere.
+    await page.setContent(
+      '<html><body><img src="x.png"><input type="text"><button></button></body></html>',
+    );
+    const results = await scan(page);
+    expect(
+      results.violations.length,
+      "the axe scan returned NO violations on markup that is definitely inaccessible — " +
+        "the scanner or its ruleset is misconfigured, and every green above is meaningless",
+    ).toBeGreaterThan(0);
+  });
+});
