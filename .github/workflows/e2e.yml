@@ -250,6 +250,7 @@ jobs:
         run: echo "NEXT_PUBLIC_API_URL=http://localhost:3002" > apps/portal/.env.local
 
       - name: Run Playwright E2E (Chromium, shard ${{ matrix.shard }}/3)
+        id: playwright
         if: steps.changes.outputs.code == 'true'
         env:
           E2E_UNQUARANTINE: ${{ github.event.inputs.unquarantine }}
@@ -271,8 +272,22 @@ jobs:
       # `if: always()` on purpose: when the suite fails the report still exists,
       # and a hard-required test that SKIPPED during a failing run is a second,
       # separate finding that must not be hidden by the first.
+      # GATED ON PLAYWRIGHT HAVING ACTUALLY RUN, AND THAT IS A CORRECTION.
+      # The first version used `if: always() && steps.changes.outputs.code ==
+      # 'true'`. On run 31622714249 the "Set up Supabase CLI" step FAILED, so
+      # every downstream step skipped - including Playwright - and this guard,
+      # being `always()`, ran anyway, found no report, and announced
+      # "E2E SKIP-GUARD RED" for what was a Supabase CLI infrastructure failure.
+      # IT REPORTED THE WRONG CAUSE, which is the exact class of defect it was
+      # built to catch, in itself.
+      #
+      # `conclusion` is 'success' or 'failure' only if the step RAN. It is
+      # 'skipped' otherwise. So the guard now runs after a Playwright PASS or a
+      # Playwright FAIL - a test that skipped inside a FAILING run is still a
+      # separate finding and must not be hidden - and stays silent when
+      # Playwright never executed at all, where it has nothing to say.
       - name: Assert hard-required E2E tests actually ran
-        if: always() && steps.changes.outputs.code == 'true'
+        if: always() && (steps.playwright.conclusion == 'success' || steps.playwright.conclusion == 'failure')
         run: node .github/scripts/assert-e2e-executed.mjs apps/web/e2e-results.json .
 
       # upload-artifact@v4 rejects a duplicate name outright, so the shard is part
