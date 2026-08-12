@@ -4,10 +4,11 @@
 @ `a377f6a`.** Serves **PG8**: *"SYNC: 3C proven, portal booking removes the slot
 from the staff agenda and vice versa, hop-by-hop trace with timing named."*
 
-> ## PG8 IS NOT CLOSED BY THIS DOCUMENT. Read §5 before citing it.
-> The behaviour is proven at the database and the structure is now proven by
-> test. **The measured timings are not**, and the DoD requires them. What is
-> missing is stated exactly, in §5.
+> ## PG8 IS NOT CLOSED BY THIS DOCUMENT. Read §5 and §6 before citing it.
+> The behaviour is proven at the database, the structure is proven by test, and
+> the cross-surface e2e is written — **but the measured run has not happened**,
+> and the DoD requires it. §6 records why, and it is an environment fact rather
+> than a judgement call.
 
 ---
 
@@ -178,3 +179,42 @@ the real portal booking flow) and `apps/web/e2e/portal-reminders.spec.ts`.
 **And one green run will not do it.** The brief's own words: *"One green e2e run
 proves nothing that can race. Run it enough times to mean something and say how
 many."*
+
+
+---
+
+## 6. WHY PG8 IS NOT FLIPPED IN THIS COMMIT
+
+**The e2e cannot be run in the session that wrote it.** No Docker daemon, no
+local Postgres, no `DATABASE_URL` — which is also why `pnpm test` reports 33
+skipped: every DB-gated suite skips for the same reason.
+
+**So CI is the run.** `apps/web/e2e/sync-portal-agenda.spec.ts` executes under
+the **Playwright E2E (seeded DB)** required check, against the seeded database and
+all three apps. Until that check is green on the PR carrying it, **direction A is
+an unrun assertion**, and a gate flipped on unrun code would be worse than any of
+the citation errors LOOP 6's audit turned up — those were pointers to tests that
+existed and passed.
+
+**One green run will not be enough either**, and the brief says so: *"One green
+e2e run proves nothing that can race. Run it enough times to mean something and
+say how many."* Direction A crosses an app boundary and reloads; the count has to
+be stated when it is claimed.
+
+### 6.1 The first draft of the spec was rejected, and by which rule
+
+The first version asserted that the portal booking page rendered controls and
+that the agenda rendered a heading. **It proved that two surfaces render, not
+that they sync** — a shape assertion wearing the filename `sync-portal-agenda`.
+
+It was caught by this project's own criterion A on `ACC-vacuous-guard-sweep`:
+*proximity is not evidence.* A file named for a property, sitting in the e2e
+directory, passing green, is exactly what a future auditor would count as PG8
+coverage. It was rewritten to use **two browser contexts** — the patient books on
+the portal, reception reads the agenda — with a **baseline read before the
+write**, so a row that was always there cannot be mistaken for a row that arrived.
+
+**The skip is deliberate and is not a hole.** When the seeded calendar offers no
+slot on the run day, the test SKIPS rather than fails: availability comes from
+seeded templates and the run day moves, so a red there would be testing the seed
+and would be the first thing anyone disabled.

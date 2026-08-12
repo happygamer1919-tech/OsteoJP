@@ -79,12 +79,17 @@ getting lost.
 > the login address. So an email in this table is unverifiable at the moment it
 > matters, and a runner who is signed into the wrong account has no way to know.
 >
-> **It has already happened.** On 2026-08-12 the reception session was run on an
-> account displaying **"Happygamer1919", role Receção**, while this table named
-> `ZZ TESTE RECEPCAO` at `alo@gmail.com`. Whether those are the same account is
-> still being confirmed. Until it is, **no gate may be recorded against that
-> session**, because a gate recorded against an unidentified account is a gate
-> recorded against nothing.
+> **It has already happened, and it cost a gate a day.** On 2026-08-12 a reception
+> session was reported against an account displaying **"Happygamer1919"** while
+> this table named only an email. PG4 closes on that exact screen, and under D4 an
+> account WITHOUT the RECEPTION role slug correctly sees an empty queue — so the
+> same screen meant either "the fan-out is broken" or "working as ruled", and
+> nothing on the screen could tell you which. **PG4 was held until the owner named
+> the account.** It resolved to `Alo` / Receção / `alo@gmail.com`, the row below,
+> and the gate then closed on a positive reading.
+>
+> **A gate recorded against an unidentified account is a gate recorded against
+> nothing.** That is why this column exists.
 >
 > **Fill DISPLAY NAME by reading the staff header, not by inferring it from the
 > email.** If the display name does not match this table, stop and reconcile
@@ -94,7 +99,7 @@ getting lost.
 |---|---|---|---|---|
 | **Test patient** | `ZZ Teste …` | `____________________` **REQUIRED** | `____________________` | Carries **the owner's own mobile**. It is the canary for every OTP step and the subject of the terms items. Portal, not staff header: read it from the portal account page. |
 | **Test therapist** | `ZZ TESTE THERAPIST` | `____________________` **REQUIRED** | `8ac3b349…` | The practitioner on both rows of the INC-08 double booking. Already exists. **COVERS SATURDAY ONLY, 08:00-13:00 — see the box below. Every test booking goes on a Saturday morning.** |
-| **Reception** | `ZZ TESTE RECEPCAO` / `alo@gmail.com` | **UNCONFIRMED — the 2026-08-12 session showed "Happygamer1919", role Receção.** Owner is confirming whether that IS this account. `____________________` | `____________________` | **The account for ALL staff-side observation. NOT the owner account — see the box below.** Must carry the RECEPTION role slug, which is what puts it in `resolveRecipients`. **No gate may be recorded against a session whose display name is unconfirmed.** |
+| **Reception** | `ZZ TESTE RECEPCAO` / `alo@gmail.com` | **`Alo`** — role shows as **Receção**. CONFIRMED by the owner 2026-08-12. | `____________________` | **The account for ALL staff-side observation. NOT the owner account — see the box below.** Carries the RECEPTION role slug, which is what puts it in `resolveRecipients`. PG4 was closed on a session run as this account. |
 | **Second therapist** | `____________________` | `____________________` **REQUIRED** | `____________________` | Needed **only** for the negative arm of the therapist queue check, where a **non-assigned** therapist must be refused. **Still blank, which is why OBSERVE-SWEEP row C3 is BLOCKED.** |
 
 > ### THE TEST THERAPIST COVERS SATURDAY ONLY, 08:00-13:00
