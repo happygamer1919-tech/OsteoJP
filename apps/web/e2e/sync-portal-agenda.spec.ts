@@ -216,7 +216,21 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   const label = (await slot.first().textContent())?.trim() ?? "";
   await slot.first().click();
 
-  const submit = page.getByRole("button", { name: /confirmar|marcar|pedir/i });
+  // TWO CONTROLS, TWO STEPS, AND THE PREVIOUS VERSION CONFLATED THEM. Step 4
+  // advances with `common.continue` = "Continuar" (BookingFlow.tsx:488-495);
+  // step 5 submits with `booking.confirm_submit` = "Confirmar marcação"
+  // (:552-554). Clicking a slot does NOT advance the flow. Looking for the
+  // submit control straight after the slot therefore searched step 4 for a
+  // button that only exists on step 5, and reported "confirm step offered no
+  // submit control" - true, and about the wrong step.
+  const advance = page.getByRole("button", { name: /^continuar$/i });
+  if ((await advance.count()) === 0) {
+    return { ok: false, why: "flow-broken", detail: "date/time step offered no Continuar control" };
+  }
+  await advance.first().click();
+
+  const submit = page.getByRole("button", { name: /confirmar marca/i });
+  await submit.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
   if ((await submit.count()) === 0) {
     return { ok: false, why: "flow-broken", detail: "confirm step offered no submit control" };
   }

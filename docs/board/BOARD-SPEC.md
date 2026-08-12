@@ -257,3 +257,55 @@ Four rules make one validator serve both:
 It exists so a browser holding an older snapshot can detect that a newer board
 was published, which a date-based check could not do (see PL-28). Storing it in
 the JSON would make it a hash of a file containing itself; do not add the key.
+
+---
+
+## Evidence standard: the disable-the-property arm (PREFERRED, not required)
+
+**Adopted 2026-08-12 from `slot-lock-concurrency.test.ts`, which is the strongest
+evidence artifact on this project.**
+
+`db-tests.yml` does not merely run that suite. It runs it a **second time** with
+`A4_DISABLE_LOCK=1` — the flag that turns off the very property the suite exists
+to prove — and **requires that run to FAIL**:
+
+```yaml
+pnpm exec vitest run tests/slot-lock-concurrency.test.ts --reporter=default
+code=$?
+if [ "$code" -eq 0 ]; then
+  echo "The concurrency suite PASSED with the slot lock disabled."
+  echo "It is therefore not detecting the race, and its green run proves nothing."
+```
+
+### Why this is the template
+
+A passing test proves the system behaves. **It does not prove the test would
+notice if the system stopped.** Every vacuous guard this project has catalogued —
+the 123 counted assertions, the self-mocking citation in the LOOP 6 audit, the
+`strip()`-blanked anti-SQL assertion, the `getByRole("button")` that could never
+match a `role="radio"` — passed happily while proving nothing. **A negative arm is
+the only thing that distinguishes an assertion from a sentence.**
+
+What makes this one exceptional is that **the arm runs in CI on every commit**,
+not once at authoring time. A negative arm proven by hand during a build is
+evidence about the day it was run. This one is evidence about *today*.
+
+### The standard
+
+> **Any gate row whose property can be disabled by a flag, an env var or a
+> one-line edit SHOULD carry a CI arm that disables it and requires the check to
+> fail.**
+
+**Preferred, not required**, and deliberately so: not every property has a clean
+disable switch, and manufacturing one purely to satisfy a standard adds a
+production code path that exists only for a test. Where the switch already exists
+— or falls out naturally — use it.
+
+### Where it applies today
+
+- `A4_DISABLE_LOCK` → the slot lock. **Live.**
+- `OTP_LIVE_SEND` → the OTP transport, already a real flag.
+- Any future feature flag guarding a gate-bearing property.
+
+Where it does not fit, the fallback is unchanged and still binding: **negative
+arms proven by deletion at authoring time, each recorded with what reddened.**
