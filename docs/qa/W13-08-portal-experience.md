@@ -118,13 +118,42 @@ does not reach the screen where it is needed.
 **no action of any kind**: no retry, no navigation, no telephone. A patient who
 reaches it has nothing to do next.
 
-**THE FIX, when this line is built:** lift the clinic contact details out of
-`clinics/page.tsx` into a shared source both that page and `ErrorState` copy can
-read, and give every error state a telephone where retry cannot help. It is a
-plumbing change, not a copy change, which is why it is a build item and not a
-five-minute edit.
+### 3.2 HALF BUILT, 2026-08-12, and the other half is a HALT
 
-**Not built in this dispatch**, and PG9 does not close without it.
+**BUILT — the case that actually locks a patient out.** `apps/portal/lib/clinics.ts`
+now holds the contact details, `clinics/page.tsx` imports them instead of holding
+them, and **the login screen's degradation block renders every clinic telephone
+as a `tel:` link**.
+
+That is where the dead end really was. `otp_no_phone`, `otp_landline` and
+`otp_shared_number` all end in *"Contacte a clínica"*, they are shown on the
+**login** screen, and Decision D leaves **no other door** — a patient with no
+mobile on record cannot get in by any other route. The numbers were in the app
+the whole time and that screen could not see them.
+
+**No new sentence was written.** The heading is `clinics.phone_label`
+("Telefone"), which already existed; the numbers are data. Every clinic's number
+is shown deliberately: the login screen runs **before** authentication, so it
+does not know which clinic the patient belongs to and must not appear to —
+narrowing the list would leak the membership the OTP endpoint refuses to
+disclose. Guarded by `apps/portal/lib/clinics.test.ts`, 8 assertions, 4 negative
+arms.
+
+**HALTED — the route error boundaries.** Giving `errors.*` a telephone requires
+**new patient-facing copy**, and the dispatch forbids drafting it.
+
+| String | Says today | To add a phone would need |
+|---|---|---|
+| `load_appointments_desc` and the four siblings | *"Tente novamente."* | a new sentence telling the patient to call |
+| `500_body` | *"Tente novamente mais tarde."* | a new sentence |
+| `403_body` | *"Não tem permissão para ver esta página."* | a new sentence, **and an action where there is none at all** |
+
+**None of the `errors.*` strings mentions the clinic**, so there is no existing
+sentence to wire a number into — unlike the five that already say *"contacte a
+clínica"*. Writing one is authoring patient copy, which a person must approve.
+
+**`403` is the one to approve first.** It offers no retry, no navigation and no
+telephone. A patient who reaches it has nothing to do next.
 
 **`CI` means the criterion is machine-checked on every commit**, not that it has
 passed. The run that fills those cells is the one that closes them.

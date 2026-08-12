@@ -270,51 +270,12 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   }
   await advance.first().click();
 
-  // LOG THE CLINIC THE FLOW ACTUALLY CHOSE. Step 5's summary renders it under
-  // `booking.confirm_location` (BookingFlow.tsx:505-506). This is the FIRST of
-  // the two lines that settle whether the row's absence from the agenda is a
-  // LOCATION-SCOPE effect: listAppointments filters by viewerLocationScope for
-  // reception and admin (data.ts:202,213 + viewer-locations.ts:47-51), so a
-  // booking at a clinic outside the viewer's assigned set is CORRECTLY absent.
-  const summary = (await page.locator("dl").first().innerText().catch(() => "")).replace(/\n+/g, " | ");
-  console.log(`[W13-07] A: confirm summary = ${summary.slice(0, 200)}`);
-
   const submit = page.getByRole("button", { name: /confirmar marca/i });
   await submit.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
   if ((await submit.count()) === 0) {
     return { ok: false, why: "flow-broken", detail: "confirm step offered no submit control" };
   }
   await submit.last().click();
-
-  // ================================================================= //
-  // THE ONE DISCRIMINATING MEASUREMENT. Authorised as a single check.
-  // ================================================================= //
-  // submitBooking (portal booking/actions.ts:29-30) redirects to
-  // /portal/booking/pending?id=<appointment.id> ONLY after the API returns an
-  // appointment, and :32-58 RETURNS A REJECTION on ApiError WITHOUT redirecting.
-  // So the URL after the click separates the two worlds that cannot both be
-  // true:
-  //   ?id= PRESENT -> a row was created; the three probes are wrong in the same
-  //                   way and this is a TEST problem.
-  //   ?id= ABSENT  -> the redirect never happened, the submit failed, and the
-  //                   rejection copy names WHY - which is why the error banner is
-  //                   captured here rather than inferred later.
-  //
-  // TENANT IS ALREADY RULED OUT FOR THE WRITE, by code read rather than by this
-  // run: PORTAL_TENANT_ID is read ONLY by the OTP login path (otp.ts:54), and
-  // bookAppointment (client.ts:260-272) sends no tenantId at all - the API
-  // derives it from the patient's authenticated session, which is the SAME
-  // session the patient's own appointment list reads under.
-  await page.waitForTimeout(1500);
-  const afterUrl = page.url();
-  const banner = await page
-    .getByRole("alert")
-    .first()
-    .innerText()
-    .catch(() => "");
-  console.log(`[W13-07] SUBMIT: url = ${afterUrl}`);
-  console.log(`[W13-07] SUBMIT: has ?id= = ${afterUrl.includes("id=")}`);
-  console.log(`[W13-07] SUBMIT: error banner = ${banner.replace(/\n+/g, " | ").slice(0, 200) || "(none)"}`);
 
   // The pedido landed when the pending screen says so, in the product's own
   // words. Waiting on a URL alone would pass on a redirect that carried an error.
@@ -445,36 +406,6 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
         .isVisible({ timeout: 5_000 })
         .catch(() => false);
     });
-
-    // ================================================================= //
-    // CANDIDATE A: DID A ROW COMMIT AT ALL? ASKED VIA THE PATIENT'S OWN LIST.
-    // ================================================================= //
-    // THIS IS NOT A PG8 QUESTION AND IT OUTRANKS PG8. "Pedido recebido" proves
-    // the flow NAVIGATED, not that a row COMMITTED — /portal/booking/pending is
-    // reachable by navigation alone (portal-booking-request-mode.spec.ts:195-199
-    // says so outright, and books nothing to assert on it). If no row exists,
-    // then A PATIENT SEES A BOOKING CONFIRMATION FOR A BOOKING THAT DOES NOT
-    // EXIST, and the clinic never learns of it because nothing was written.
-    //
-    // WHY THE PORTAL'S OWN LIST IS THE RIGHT PROBE, and why there is no SQL here:
-    // `store.listOwn` (store.ts:217-235) selects the patient's appointments with
-    // NO STATUS FILTER — RLS scopes it to their own rows and every status comes
-    // back, pending pedidos included. So the patient's list answers "does a row
-    // exist" through the real API and the real database, on the exact surface
-    // where the defect would bite. No database credential is needed and none is
-    // used.
-    const patientSeesIt = await timed("A: patient's own appointment list", async () => {
-      await page.goto("/portal/appointments");
-      await expect(page.locator("body")).toBeVisible({ timeout: 30_000 });
-      const body = await page.locator("body").innerText();
-      // The booked time on the patient's own list. Their list contains only
-      // their rows, so a time match here is about THIS patient by construction —
-      // criterion F is satisfied by RLS rather than by the locator.
-      return timeRe.test(body);
-    });
-    console.log(
-      `[W13-07] CANDIDATE A: does the row exist, per the patient's own list? ${patientSeesIt}`,
-    );
 
     console.log(`[W13-07] A: visible to RECEPTION on ${bookedOn}? ${seen}`);
 

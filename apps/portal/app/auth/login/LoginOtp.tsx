@@ -5,6 +5,7 @@ import { useActionState, useEffect, useState } from 'react'
 import { Banner, Button, Field, Input } from '@osteojp/ui'
 
 import { s } from '@/lib/i18n'
+import { ALL_CLINIC_PHONES } from '@/lib/clinics'
 
 import { loginAction, trustedDeviceAction } from './actions'
 import { INITIAL_LOGIN_STATE } from './state'
@@ -168,6 +169,37 @@ export function LoginOtp({ deviceKnown }: { deviceKnown: boolean }) {
             <li>{s.auth.otp_no_phone}</li>
             <li>{s.auth.otp_landline}</li>
             <li>{s.auth.otp_shared_number}</li>
+          </ul>
+
+          {/* PG9. ALL THREE LINES ABOVE END IN "Contacte a clínica" AND NONE OF
+              THEM COULD BE ACTED ON. A patient with no mobile on record, a
+              landline, or a number shared with a relative is locked out of the
+              portal by design - Decision D has no other door - and the copy told
+              them to call without saying what to call. The numbers were in the
+              app the whole time, hardcoded inside the Clínicas screen.
+
+              NO NEW SENTENCE IS WRITTEN HERE. The heading is the existing
+              `clinics.phone_label` and the numbers are data. `tel:` makes them
+              one tap on the device this screen is designed for.
+
+              EVERY CLINIC'S NUMBER, DELIBERATELY. This screen runs BEFORE
+              authentication, so it does not know which clinic the patient
+              belongs to and must not appear to - narrowing the list would leak
+              exactly the membership the OTP endpoint refuses to disclose. The
+              numbers are published on osteojp.pt, so showing all of them
+              discloses nothing. */}
+          <p className="mt-3 text-sm font-medium text-text-primary">{s.clinics.phone_label}</p>
+          <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+            {ALL_CLINIC_PHONES.map((p) => (
+              <li key={p.number}>
+                <a
+                  href={`tel:${p.number}`}
+                  className="inline-flex min-h-11 items-center text-sm font-medium text-accent-2-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                >
+                  {p.display}
+                </a>
+              </li>
+            ))}
           </ul>
         </section>
       )}
