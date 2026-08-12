@@ -1,6 +1,6 @@
 # Remaining work, triaged
 
-**Board:** `docs/board/portal-board.json` @ `as_of 2026-08-12T05:00:00Z`.
+**Board:** `docs/board/portal-board.json` @ `as_of 2026-08-12T07:00:00Z`.
 **Scope:** every card not `status: shipped`. **59 cards.**
 **Shipped and out of scope here:** 47. **Board total: 106.**
 

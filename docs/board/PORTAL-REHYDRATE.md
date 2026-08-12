@@ -360,6 +360,35 @@ Before your context is cleared, in this order:
 | **AMBER** | `/Users/ivan/Documents/Projects/GitHub/osteojp-amber` |
 | migration apply, **NEVER build** | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` |
 
+### 7.1 STANDING RULE, beside the table because it is about these trees
+
+**Authored by AMBER, accepted verbatim by the owner 2026-08-12.** Reproduced
+exactly as accepted; one substitution was already applied to AMBER's original,
+an em dash became a semicolon, because the owner's formatting rule is absolute
+and binds all terminal output. Do not reintroduce it and do not paraphrase.
+
+> gh pr merge --delete-branch PARKS YOUR TREE ON main. It deletes the local
+> branch and then checks out the default branch. No command you typed names
+> main, so it is invisible unless you look. In this repo that blocks every other
+> lane from checking out main, because one branch cannot be checked out in two
+> worktrees. It has cost two sessions: AMBER after #863, PURPLE after #866.
+>
+> Re-detach in the same command block as the merge, every merge, without
+> exception:
+>
+> ```
+> gh pr merge <n> --squash --delete-branch && git fetch origin --prune && git checkout --detach origin/main
+> ```
+>
+> Verify with git worktree list: every tree but the one that owns main must read
+> (detached HEAD).
+>
+> Never check out main. When main moves under you mid-task, merge it by ref
+> while detached (git merge origin/main). Do not try to clear another
+> worktree's main with git branch -D main; git refuses, correctly, and that lane
+> re-detaches its own tree.
+
+
 `osteojp-amber` is a git worktree of the same repository, created 2026-08-11,
 checked out **detached at `origin/main`**. Both lanes share one `.git`, so a
 branch checked out in one tree cannot be checked out in the other - which is a
