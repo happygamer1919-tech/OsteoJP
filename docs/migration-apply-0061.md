@@ -20,7 +20,19 @@ neither depends on the other; if one had to be reverted the other would stand.
 
 **Part 1 — `appointments_no_double_confirmed`.** A partial `EXCLUDE` over
 `(practitioner_id WITH =, tstzrange(starts_at, ends_at) WITH &&)`
-`WHERE (status = 'confirmed')`, plus `CREATE EXTENSION IF NOT EXISTS btree_gist`.
+`WHERE (status = 'confirmed')`, plus `btree_gist`.
+
+**It does not trust `search_path`.** `practitioner_id WITH =` needs the
+`gist_uuid_ops` operator class, which Postgres resolves through `search_path`.
+On Supabase extensions conventionally live in the **`extensions`** schema rather
+than `public`, and if `search_path` excludes it the `ALTER` fails with *"data
+type uuid has no default operator class for access method gist"* — which reads
+like a missing extension when the extension is present and merely out of scope.
+**CI cannot catch this**: a `supabase db reset` database has its own extension
+layout, so a green CI run proves the DDL works *there* and says nothing about
+production. Part 1 is therefore a `DO` block that asks the catalog which schema
+holds the opclass and schema-qualifies it, correct under either layout. It also
+short-circuits if the constraint already exists, so re-applying is a no-op.
 
 **Part 2 — the `confirmed` notification kind.** Rewrites
 `staff_notifications_kind_check` from four values to five, and adds a nullable
@@ -168,6 +180,9 @@ independent confirmation available. Paste back:
   Supabase and the migration role owns the schema, but if it fails, **stop**:
   the constraint cannot be created without it and the rest of the file must not
   be half-applied.
+- The migration raises `btree_gist is installed but no gist operator class for
+  uuid was found`. That means the extension exists but is broken or partial;
+  **stop** rather than reinstalling it under a running clinic.
 
 ---
 
