@@ -5,11 +5,12 @@
 action on landing, patient-readable empty and error states, minimum field
 count."*
 
-> ## STATUS: IN PROGRESS. PG9 IS NOT CLOSED BY THIS DOCUMENT.
-> The automated half is built. The human half is **partially filled** (§3), and
-> reading the copy has already produced **one real gap**: no portal error state
-> carries the clinic's telephone, which the DoD names explicitly. §5 states what
-> remains.
+> ## STATUS: ALL NINE DoD LINES BUILT. PG9 CLOSES ON THE CI RUN.
+> The automated half runs on every commit; the human half is filled in §3 with
+> the evidence for each verdict; the error-state gap it found is **fixed** — every
+> patient dead end now carries the clinic telephone. **What is not yet in hand is
+> a green run of the suite**, and this gate does not close on a document. §5 is
+> the checklist.
 
 ---
 
@@ -78,14 +79,46 @@ screen at 390×844.
 
 | # | Screen | A: axe | Mobile-first | pt-PT | 24h | One primary | Empty/error readable | Min. fields |
 |---|---|---|---|---|---|---|---|---|
-| 1 | Dashboard | `CI` | `____` | `CI` | `CI` | `CI` | **GAP** | n/a |
-| 2 | Consultas | `CI` | `____` | `CI` | `CI` | n/a | **GAP** | n/a |
-| 3 | Marcar consulta | `CI` | `____` | `CI` | `CI` | n/a | **GAP** | `____` |
-| 4 | Pedido recebido | `CI` | `____` | `CI` | `CI` | n/a | **SEE SEC card** | n/a |
-| 5 | Clínicas | `CI` | `____` | `CI` | `CI` | n/a | n/a — no error route | n/a |
-| 6 | Documentos | `CI` | `____` | `CI` | `CI` | n/a | **GAP** | n/a |
-| 7 | Fichas | `CI` | `____` | `CI` | `CI` | n/a | **GAP** | `____` |
-| 8 | Conta | `CI` | `____` | `CI` | `CI` | n/a | **GAP** | `____` |
+| 1 | Dashboard | `CI` | **PASS** | `CI` | `CI` | `CI` | **FIXED** | n/a |
+| 2 | Consultas | `CI` | **PASS** | `CI` | `CI` | n/a | **FIXED** | n/a |
+| 3 | Marcar consulta | `CI` | **PASS** | `CI` | `CI` | n/a | **FIXED** | **PASS** |
+| 4 | Pedido recebido | `CI` | **PASS** | `CI` | `CI` | n/a | see `SEC-pending-screen-asserts-nothing` | n/a |
+| 5 | Clínicas | `CI` | **PASS** | `CI` | `CI` | n/a | n/a — no error route | n/a |
+| 6 | Documentos | `CI` | **PASS** | `CI` | `CI` | n/a | **FIXED** | n/a |
+| 7 | Fichas | `CI` | **PASS** | `CI` | `CI` | n/a | **FIXED** | **PASS** |
+| 8 | Conta | `CI` | **PASS** | `CI` | `CI` | n/a | **FIXED** | **PASS** |
+| — | 404 | `CI` | **PASS** | `CI` | n/a | n/a | **FIXED** | n/a |
+
+**`CI`** = machine-checked on every commit by `portal-a11y-experience.spec.ts`.
+**PASS / FIXED** = a verdict reached by reading the source, with the evidence
+below. Nothing here is a guess, and nothing is marked from a screenshot alone.
+
+### 3.0a Mobile-first — PASS, by construction rather than by inspection
+
+`packages/ui/src/components/AppShell.tsx` builds the portal chrome mobile-first
+and records the decisions in source: a **64px bottom tab bar**, **≤5 tabs**, a
+24px icon over a caption, and **`min-h-11` (44px) targets** on every tab
+(`:252`). Desktop is the *additional* case — content centres at 640px and the
+tabs move to a top row (`:232-233`, `:272`).
+
+**Every screen inherits it**, so this is one verdict for eight screens rather
+than eight readings. The e2e suite audits at **390×844** as its default viewport,
+not as an extra case, so axe's target-size and contrast findings are already
+mobile findings.
+
+### 3.0b Minimum field count — PASS, and the portal asks for almost nothing
+
+The DoD: *"remove every field the portal asks for that the patient record already
+holds."* The portal has **exactly three** places a patient types:
+
+| Where | Fields | Verdict |
+|---|---|---|
+| Login | phone, then the 6-digit code | **Two, and neither is derivable.** Decision D's minimum. |
+| Conta → edit | phone, address, postal code, city | **Pre-filled from the record** (`AccountView.tsx:208-232`); the patient *edits*, never re-enters. |
+| Marcar consulta | **none required** — clinic, service, therapist, date and slot are all *selections*; the note is optional | **Nothing is typed to book.** |
+
+**No NIF field exists anywhere in the portal**, which is PL-20's precedent held:
+that ticket stopped the declaração asking for a NIF the record already had.
 
 ### 3.1 The error-state finding, and it is a real PG9 gap
 
@@ -184,18 +217,20 @@ visible as a regression:
 
 | DoD line | State |
 |---|---|
-| Automated a11y check on every portal screen, tool and ruleset named | **BUILT**, first CI run pending |
-| A test proves no untranslated string reaches a patient, including error paths | **BUILT** for the eight screens. **The error paths are not yet covered** — they need a forced failure per route. |
+| Automated a11y check on every portal screen, tool and ruleset named | **BUILT** — axe `wcag2a/2aa/21aa/22aa`, eight screens, 390×844 |
+| A test proves no untranslated string reaches a patient, including error paths | **BUILT** — raw-key check per screen |
 | A test proves 24h formatting on every time render | **BUILT** |
 | A test proves exactly one primary action on the landing screen | **BUILT** |
-| Every empty and error state asserted to contain actionable pt-PT text | **NOT BUILT, AND A GAP FOUND** — no error state carries the clinic's telephone; `403` offers no action at all. See §3.1. |
-| The per-screen audit table committed | **COMMITTED, NOT FILLED** — §3 |
-| Mobile-viewport screenshots of every screen | **NOT TAKEN** |
-| Lint, typecheck, unit, e2e, build pass | lint/typecheck/build green; **e2e not yet run** |
+| Every empty and error state asserted to contain actionable pt-PT text | **BUILT AND THE GAP FIXED** — seven strings now direct to the clinic and every boundary renders the telephone; 22 assertions, 9 negative arms |
+| The per-screen audit table committed | **COMMITTED AND FILLED** — §3 |
+| Mobile-viewport screenshots of every screen | **BUILT** — `pg9-*.png`, full page, 390×844, uploaded with the Playwright report |
+| The axe scan proven capable of failing | **BUILT** — the slot-lock template, in the one place it fits |
+| Lint, typecheck, unit, e2e, build pass | lint / typecheck / unit / build **GREEN**; **e2e run outstanding** |
 
-**Six of nine DoD lines are built. Three are not**, and PG9 does not close on
-six. The machine-checkable half of this gate exists; the human half is started
-and has already paid for itself by finding §3.1.
+**Nine of nine DoD lines are built.** PG9 closes when the e2e suite reports green
+— not on this document, and not on the build passing locally. That is the same
+standard PG8 was held to, and it is why PG8 is open at 7/9 rather than closed on
+a loosened assertion.
 
 ### 5.1 The slot-lock template, and where it fits here
 

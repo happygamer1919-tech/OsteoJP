@@ -77,6 +77,13 @@ test.describe("PG9 — WCAG 2.2 AA, every patient screen, mobile viewport", () =
       await expect(page.locator("body")).toBeVisible({ timeout: 30_000 });
       await page.waitForLoadState("networkidle").catch(() => {});
 
+      // MOBILE SCREENSHOT, PG9's own DoD line. Attached to the Playwright report
+      // rather than committed: a binary in git goes stale the day after it is
+      // taken and nobody notices, whereas an artifact is always OF THE RUN that
+      // produced the verdict beside it. Full page, so a reviewer sees what a
+      // patient scrolls through and not just the fold.
+      await page.screenshot({ path: `test-results/pg9-${screen.path.replace(/\//g, "_")}.png`, fullPage: true });
+
       const results = await scan(page);
       const summary = results.violations.map(
         (v) => `${v.id} (${v.impact ?? "?"}) x${v.nodes.length}: ${v.help}`,
