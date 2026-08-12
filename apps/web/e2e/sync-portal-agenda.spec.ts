@@ -166,17 +166,44 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   // ONLY NOW is an absence of selectable days a statement about the calendar.
   const day = page.getByRole("gridcell").and(page.locator(":not([aria-disabled])"));
   await day.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
-  if ((await day.count()) === 0) {
+  const dayCount = await day.count();
+  if (dayCount === 0) {
     return { ok: false, why: "empty-calendar", detail: "date picker offered no selectable day" };
   }
-  await day.first().click();
 
+  // ============================================================= //
+  // "ENABLED" IS AN INTERVAL, NOT THE SET OF DAYS WITH SLOTS.
+  // ============================================================= //
+  // The previous version clicked the FIRST enabled day and asserted, in the trace
+  // doc, that "the first enabled day is by construction a day with availability".
+  // THAT WAS WRONG, and CI said so: `inRange` is a CLOSED INTERVAL,
+  // `(!min || iso >= min) && (!max || iso <= max)` (DatePicker.tsx:119). So every
+  // day between the first and last available date is enabled — including the six
+  // weekdays that carry nothing, because the seed's availability is MONDAY ONLY.
+  // The first enabled day was simply the first day of the range.
+  //
+  // So the days are TRIED, in order, until one yields slots. Bounded, because an
+  // unbounded walk over a wide range would be a slow way to fail.
+  const MAX_DAYS_TRIED = 14;
   const slot = page.getByRole("button", { name: /^\d{2}:\d{2}$/ });
-  await slot.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
+  let tried = 0;
+  for (let i = 0; i < Math.min(dayCount, MAX_DAYS_TRIED); i++) {
+    // The popover closes on select, so it is reopened for each attempt.
+    if (i > 0) {
+      await trigger.first().click();
+      await page.getByRole("dialog").first().waitFor({ state: "visible", timeout: 10_000 });
+    }
+    await day.nth(i).click();
+    tried++;
+    await slot.first().waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
+    if ((await slot.count()) > 0) break;
+  }
   if ((await slot.count()) === 0) {
-    // Reaching here now means a day the picker declared selectable carried no
-    // slot, which is a genuine disagreement between the two and worth seeing.
-    return { ok: false, why: "empty-calendar", detail: "a selectable day carried no slot" };
+    return {
+      ok: false,
+      why: "empty-calendar",
+      detail: `no slot on any of the first ${tried} selectable day(s)`,
+    };
   }
 
   const label = (await slot.first().textContent())?.trim() ?? "";

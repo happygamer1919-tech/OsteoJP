@@ -412,3 +412,54 @@ DOCUMENTS**, which makes this more than hygiene:
 If any of those skips, the citation points at a test that did not run — the same
 defect the LOOP 6 citation audit found in a different form, one layer down.
 **Counted, not fixed, this dispatch.** Carded.
+
+
+---
+
+## 11. THE THIRD CI RUN: BOTH GUARDS FIRED, AND THEY CAUGHT MY OWN REASONING
+
+**Run `31617753535`, shard 3/3.** This is the run that proves §10 works, and it
+failed for a reason §8 had asserted was impossible.
+
+```
+Error: DIRECTION A COULD NOT RUN: a selectable day carried no slot.
+E2E SKIP-GUARD RED — HARD-REQUIRED E2E TEST DID NOT RUN
+```
+
+**Both guards fired independently.** Guard 1 turned what would have been a silent
+skip into a test failure; guard 2 reddened the job from the report, without
+knowing anything about why. **A skip inside a passing shard is no longer
+possible for this test.** That was the objective and it is met in real CI, not in
+a local simulation.
+
+### 11.1 The claim §8.2 made, withdrawn
+
+§8.2 said: *"the first enabled day is by construction a day with availability."*
+**FALSE.** `DatePicker.tsx:119`:
+
+```ts
+const inRange = (iso) => (!min || iso >= min) && (!max || iso <= max);
+```
+
+`inRange` is a **closed interval**, not set membership. `min` and `max` are the
+first and last available dates, so **every day between them is enabled** — and
+the seed's availability is **Monday only**, so six days in seven are enabled and
+carry nothing. The helper clicked the first enabled day, which was simply the
+first day of the range, and found no slots. Correctly.
+
+**The fix walks the enabled days in order until one yields slots**, bounded at 14,
+reopening the popover each time because selecting closes it. The failure detail
+now names how many were tried.
+
+### 11.2 Three wrong readings in one loop, each caught by the layer below
+
+| # | The claim | Caught by |
+|---|---|---|
+| 1 | `strip()`-based anti-SQL assertion is meaningful | running the negative arm |
+| 2 | "empty calendar" means the seed is thin | reading the seed |
+| 3 | "first enabled day has availability" | **CI, because guard 1 made it red** |
+
+**The pattern is the point.** Each was a plausible statement about code I had
+read, and none survived contact with the thing it described. The reason the third
+one surfaced within minutes rather than sitting green for weeks is that the guard
+built in §10 removed the option of failing quietly.
