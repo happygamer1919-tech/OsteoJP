@@ -288,6 +288,36 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   }
   await submit.last().click();
 
+  // ================================================================= //
+  // THE ONE DISCRIMINATING MEASUREMENT. Authorised as a single check.
+  // ================================================================= //
+  // submitBooking (portal booking/actions.ts:29-30) redirects to
+  // /portal/booking/pending?id=<appointment.id> ONLY after the API returns an
+  // appointment, and :32-58 RETURNS A REJECTION on ApiError WITHOUT redirecting.
+  // So the URL after the click separates the two worlds that cannot both be
+  // true:
+  //   ?id= PRESENT -> a row was created; the three probes are wrong in the same
+  //                   way and this is a TEST problem.
+  //   ?id= ABSENT  -> the redirect never happened, the submit failed, and the
+  //                   rejection copy names WHY - which is why the error banner is
+  //                   captured here rather than inferred later.
+  //
+  // TENANT IS ALREADY RULED OUT FOR THE WRITE, by code read rather than by this
+  // run: PORTAL_TENANT_ID is read ONLY by the OTP login path (otp.ts:54), and
+  // bookAppointment (client.ts:260-272) sends no tenantId at all - the API
+  // derives it from the patient's authenticated session, which is the SAME
+  // session the patient's own appointment list reads under.
+  await page.waitForTimeout(1500);
+  const afterUrl = page.url();
+  const banner = await page
+    .getByRole("alert")
+    .first()
+    .innerText()
+    .catch(() => "");
+  console.log(`[W13-07] SUBMIT: url = ${afterUrl}`);
+  console.log(`[W13-07] SUBMIT: has ?id= = ${afterUrl.includes("id=")}`);
+  console.log(`[W13-07] SUBMIT: error banner = ${banner.replace(/\n+/g, " | ").slice(0, 200) || "(none)"}`);
+
   // The pedido landed when the pending screen says so, in the product's own
   // words. Waiting on a URL alone would pass on a redirect that carried an error.
   await expect(page.getByText(/pedido recebido/i)).toBeVisible({ timeout: 30_000 });
