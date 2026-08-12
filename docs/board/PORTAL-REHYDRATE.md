@@ -40,14 +40,33 @@ goal, and with no migration in flight there is nothing to serialise.
 
 **PURPLE owns the LOOP LANE, and it is strictly serial by dependency:**
 
-> **A2** (portal therapist step) -> **LOOP 6** (exposure matrix) -> **LOOP 7**
+> ~~**A2** (portal therapist step) ->~~ **LOOP 6** (exposure matrix) -> **LOOP 7**
 > (SYNC proof) -> **LOOP 8** (experience pass).
 
 Each depends on the one before. LOOP 7's brief says "Depends on: LOOP 6 merged";
 LOOP 8 says "Depends on: LOOP 7 merged" and runs last deliberately because it
-audits the others' output. **A2 precedes LOOP 6** because LOOP 6 Phase A
-enumerates the patient-facing surface and A2 *adds* to that surface: a matrix
-built before A2 lands is wrong on arrival.
+audits the others' output.
+
+> ### A2 IS STRUCK OUT BECAUSE IT ALREADY SHIPPED. CORRECTED 2026-08-12.
+>
+> This section previously read "**A2 precedes LOOP 6** because LOOP 6 Phase A
+> enumerates the patient-facing surface and A2 *adds* to that surface: a matrix
+> built before A2 lands is wrong on arrival." **THE REASONING IS STILL CORRECT
+> AND THE PREMISE IS FALSE.** A2 landed in **#857** (`5e45653`), and the board
+> card `LE-portal-booking-therapist-step` carried `todo` / "CARDED, NOT BUILT"
+> for at least three days afterwards. Two dispatches instructed "DO NOT START
+> A2" on the strength of it.
+>
+> **LOOP 6 IS THE HEAD OF THE LOOP LANE AND HAS NO BLOCKER.** The patient-facing
+> surface LOOP 6 Phase A must enumerate **already includes** the therapist step,
+> so a matrix built now is correct on arrival — it must simply include
+> `GET /api/v1/booking/therapists` and the therapist branch of `listOpenSlots`,
+> which a matrix built before #857 would have missed.
+>
+> Full record on the card and on `LE-board-pr-reconciliation`, which cards the
+> failure mode rather than the instance: nothing in this repo reconciles merged
+> PRs against card status, and this is the third card caught carrying a false
+> one.
 
 **AMBER owns the ISOLATED-CARD LANE.** Cards that touch few files, have no
 dependency on the loops, and can ship in any order:

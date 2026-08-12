@@ -262,3 +262,84 @@ would violate the narrower check.
 
 Merge PR #870. Apply-before-merge: the PR does **not** merge until the journal
 output above is pasted back.
+
+---
+
+## 10. APPLIED. 2026-08-12. The proof, verbatim.
+
+**Status: APPLIED TO PRODUCTION AND MERGED.** Applied 2026-08-12 by the owner
+from `65d9611` in `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply`.
+PR #870 merged after the apply, squashed to `225edfc` on `origin/main`.
+**The next free migration number is `0062`. It is unoccupied.**
+
+### 10.1 The journal output, pasted by the owner, reproduced verbatim
+
+```
+pre-check
+last applied "when" in the database: 1786800000000
+journal entries on disk:             61
+pending:                             1
+  PENDING  0061_no_double_confirmed_and_confirm_notification  when=1786900000000
+OK: the pending set is exactly what was expected.
+
+migrate
+NOTICE 42P06 schema "drizzle" already exists, skipping
+NOTICE 42P07 relation "__drizzle_migrations" already exists, skipping
+NOTICE 00000 using gist uuid opclass public.gist_uuid_ops
+[OK] migrations applied successfully
+
+post-check
+last applied "when" in the database: 1786900000000
+journal entries on disk:             61
+pending:                             0
+OK: the pending set is exactly what was expected.
+```
+
+**This is the section 6 execution proof in full.** `pending: 1` before and
+`pending: 0` after, with the database's `last applied "when"` advancing
+`1786800000000 -> 1786900000000`, which is exactly 0060 -> 0061. A `migrate`
+success line alone would not have been evidence of anything; that is INC-07,
+twice. Here both halves are present and they agree.
+
+**Section 3's pre-check returned ZERO ROWS on production.** No `confirmed`
+overlap existed in the clinic's live diary at apply time, so the `ALTER` had
+nothing to reject and section 7's first STOP condition never fired.
+
+**One deviation from section 5's "what to paste back", recorded rather than
+glossed:** the `git log -1 --oneline` line was not included in the paste. The
+applied sha is corroborated independently instead - `git worktree list` read
+`osteojp-prod-apply  65d9611 (detached HEAD)` after the apply, and `65d9611` is
+an ancestor of #870's head `83ebfb8` with **no** diff between them under
+`packages/db/migrations/`. What was applied is byte-identical to what merged.
+
+### 10.2 THE CONFIRMED PRODUCTION FACT. Do not rediscover this.
+
+> **On the production database (`dfotoodqvmjhbdcxyaxf`), `btree_gist` resolves
+> its uuid gist operator class at `public.gist_uuid_ops`.**
+
+Proven by the migration's own `RAISE NOTICE` at line 182, in the output above:
+`NOTICE 00000 using gist uuid opclass public.gist_uuid_ops`.
+
+**Why this is worth a heading.** The migration does not hardcode a schema. Lines
+104-135 explain why: `practitioner_id WITH =` needs `gist_uuid_ops`, which is not
+built in, and Postgres resolves an unqualified opclass through `search_path`. CI
+installs `btree_gist` wherever its own layout puts it, so **a green CI run cannot
+predict where production put it** - it proves the DDL parses, not that it
+resolves. The block therefore asks `pg_opclass` which schema actually holds it and
+schema-qualifies the result. That catalog-driven resolution ran against a
+production layout CI could not have predicted and **succeeded on the first
+attempt**.
+
+**What a future migration should do with this.** Not hardcode `public.`. The
+recorded fact is the *answer* production gave, not a licence to skip the
+question: the catalog lookup is three lines, it is correct on any layout, and it
+turns a silent wrong-schema failure into an explicit `RAISE EXCEPTION` (line 177).
+Copy the lookup, expect `public.gist_uuid_ops`, and treat any other value as
+worth reading before proceeding.
+
+### 10.3 What this apply closed
+
+| Card | What 0061 supplied |
+|---|---|
+| `INC-08-double-booking-state-not-path` | Part 1, the state-level `EXCLUDE` constraint. Card CLOSED - see the board for the full chain |
+| `ACC-13-item20-staff-fanout` | Part 2, the fifth `kind` value and `actor_user_id`, which unblocks the confirm fan-out shipped in the same PR |
