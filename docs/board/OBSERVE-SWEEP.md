@@ -17,24 +17,19 @@ board is updated from it.
 
 ---
 
-## FIXTURES — fill this in once, first
+## FIXTURES — they live in their own file now
 
-**There is no fixtures file in the repo.** `docs/acceptance-session-wave-13.md:266`
-says so outright: *"the repo has no designated test patient (checked: no seed row,
-no fixture)."* So this table is the fixtures record, and it lives here from now on.
+**`docs/board/FIXTURES.md`.** Fill the blanks there once and they stay filled;
+this sweep, the acceptance plan and anything after it all read the same table.
+They used to live only in a handoff document and in chat, which is the condition
+this project's own rules forbid.
 
-**Never use a real staff account or a real patient on this sweep.** Items 5–8 of
-the acceptance plan write a permanent, unremovable legal record; nothing else here
-does, but the habit is the protection.
+**Two entries you will need on every block below:** the **test patient** (the
+`ZZ`-prefixed record carrying the owner's own mobile) and **`+351900000000`**,
+the number with no patient record and no assigned carrier block.
 
-| What | Value |
-|---|---|
-| Portal URL | `________________________________` |
-| Staff platform URL | `________________________________` |
-| **Test patient** (your own mobile, `ZZ`-prefixed name) | `________________________________` |
-| **Test therapist** (`ZZ TESTE THERAPIST`) — login | `________________________________` |
-| Reception/admin account you will use | `________________________________` |
-| A number with **no** patient record | `+351900000000` — already chosen, see A3 |
+**Never a real staff account, never a real patient.** The reasons are on that
+file and they are not stylistic.
 
 ---
 
@@ -44,11 +39,19 @@ does, but the habit is the protection.
 `limiter.ts:184`. This sweep spends **one** (item A3). If you burn the other two
 experimenting, A3 becomes unrunnable for up to an hour.
 
-**2. Check `OTP_LIVE_SEND` before A3.** If it is armed, A3 sends a real SMS to
-`+351900000000`. That number is in an unassigned block so no handset receives it,
-but the send is still billed. **A1, A2 and A3 do not need it armed** — A3 reaches
-the code screen either way, because that endpoint never queries the patient table.
-That is what makes it non-enumerable, and it is why this block runs first.
+**2. `OTP_LIVE_SEND` STAYS ARMED FOR THIS SWEEP. Owner ruling, 2026-08-12.**
+Plan every OTP step below as a **real send to your own handset**. This is not an
+open question and it is not a risk to be managed around:
+
+- the platform is **not in live use**, and the only number on it is your own, so
+  nothing can fire at a patient;
+- this sweep **is** a supervised sitting, which is exactly the condition R9's
+  binding position permits arming under;
+- it is **disarmed at the end of the sweep**. Launch-day arming stays with
+  `LAUNCH-01`.
+
+A3 uses `+351900000000`, which is in an unassigned block, so **no handset
+receives that one** regardless.
 
 ---
 
@@ -87,7 +90,7 @@ Observed: `________________________________`
 
 ### A3 · A number with no record is refused without telling you why — item 3
 
-**This spends one of your three hourly OTP requests.**
+**This spends one of your three hourly OTP requests, and it is a live send** — to `+351900000000`, which no handset can receive.
 
 | | |
 |---|---|
@@ -326,12 +329,13 @@ These need a decision or a confirmation, not a click. Answer them in one line.
 | F3 | `LE-trusted-device-revoke` | #843 is merged; **A4 above is its observation**. Close it? `____________` |
 | F4 | `LE-e2e-nif-edit-404` | Shipped as *capture, not fix*. It closes when the flake recurs already diagnosed. Leave open? `____________` |
 | F5 | `LE-prod-scripts-cleanup` | Which one-off prod scripts are staged outside the repo? `____________` |
-| F6 | `ACC-13-results-uncommitted` | **Item 25: was `OTP_LIVE_SEND` disarmed after the sitting, and when?** `____________` |
+| F6 | `ACC-13-results-uncommitted` | Item 25 is **RULED, not open** — see the note under BEFORE YOU START. Record the disarm time **at the end of this sweep**: `____________` |
 | F7 | `VERIFY-QUEUE` | Mechanism card. Nothing to do while this sweep is the queue. `____________` |
 
-> **F6 is the most urgent single line in this document.** Until it is answered,
-> `SEC-otp-unauthenticated-sms-pump` treats the flag as armed, and every OTP step
-> above is planned around a live send that may not be live.
+> **F6 is no longer a blocker.** The owner ruled on 2026-08-12 that the flag
+> stays armed for the duration of a supervised sitting and is disarmed at the
+> end. What F6 now collects is the **timestamp of that disarm**, written down
+> once rather than re-asked every dispatch.
 
 ---
 
@@ -354,3 +358,5 @@ merged. Listed so you know they are tracked, not forgotten.
 
 Hand this file back with the boxes filled. Blocks A and C are the two that move
 gates. Everything else is bookkeeping that can wait a week without cost.
+
+**Last action of the sweep: disarm `OTP_LIVE_SEND` and write the time into F6.**
