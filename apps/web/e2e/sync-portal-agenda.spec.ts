@@ -302,15 +302,46 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     // revalidatePath into apps/web — so the agenda is RELOADED here rather than
     // waited on. That reload IS the hop, and measuring it is measuring the only
     // thing that actually delivers the row. See the trace, §3.
-    const seen = await timed("A: agenda reload shows the new row", async () => {
-      await staff.reload();
-      const row = staff.getByText(new RegExp(String(taken).replace(":", "[:h]"), "i"));
-      return row.first().isVisible({ timeout: 30_000 }).catch(() => false);
+    //
+    // THE AGENDA OPENS ON TODAY, AND THE BOOKING IS NOT TODAY. The previous
+    // version reloaded `/agenda` and looked for the slot label. The booking lands
+    // on the first day the seed's MONDAY-ONLY availability offers, which is
+    // never the current day except by coincidence — so the row was real, on the
+    // real agenda, on a date nobody had navigated to. CI said
+    // "[W13-07] A: agenda reload shows the new row: 377ms" and then failed the
+    // assertion, which was exactly right: the hop happened, the assertion looked
+    // in the wrong place.
+    //
+    // SCANNED BY DATE RATHER THAN GUESSED. `/agenda?date=YYYY-MM-DD` is a real
+    // route parameter (agenda/page.tsx, DATE_RE). The scan is bounded and it
+    // REPORTS WHICH DAY IT FOUND, so a future failure distinguishes "not on any
+    // day" from "on a day outside the window".
+    const SCAN_DAYS = 21;
+    const timeRe = new RegExp(String(taken).replace(":", "[:h]"), "i");
+    let foundOn: string | null = null;
+
+    await timed("A: agenda scan for the new row", async () => {
+      for (let i = 0; i <= SCAN_DAYS && foundOn === null; i++) {
+        const d = new Date();
+        d.setUTCHours(12, 0, 0, 0);
+        d.setUTCDate(d.getUTCDate() + i);
+        const iso = d.toISOString().slice(0, 10);
+        await staff.goto(`/agenda?date=${iso}`);
+        const hit = await staff
+          .getByText(timeRe)
+          .first()
+          .isVisible({ timeout: 3_000 })
+          .catch(() => false);
+        if (hit) foundOn = iso;
+      }
     });
 
-    expect(seen, `a portal pedido at ${taken} should be on the staff agenda after a reload`).toBe(
-      true,
-    );
+    expect(
+      foundOn,
+      `a portal pedido at ${taken} should appear on the staff agenda within ${SCAN_DAYS} days`,
+    ).not.toBeNull();
+    console.log(`[W13-07] A: the crossing landed on ${foundOn}`);
+
     await staff.context().close();
   });
 
