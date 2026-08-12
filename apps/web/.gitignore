@@ -45,3 +45,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Playwright json report, read by .github/scripts/assert-e2e-executed.mjs.
+# Build product: regenerated every run, never committed.
+e2e-results.json

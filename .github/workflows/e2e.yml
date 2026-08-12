@@ -262,6 +262,19 @@ jobs:
           if [ -n "${{ github.event.inputs.retries }}" ]; then ARGS="$ARGS --retries=${{ github.event.inputs.retries }}"; fi
           pnpm --filter web exec playwright test $ARGS
 
+      # SKIP-GUARD. Playwright counts a skip as "not a failure", so a
+      # gate-bearing test that never ran leaves a GREEN shard, a green aggregate
+      # and a satisfied branch protection. PG8's direction A skipped green on two
+      # consecutive runs and #879 merged on it. This is the E2E analogue of
+      # assert-rls-executed.mjs and it runs on EVERY shard.
+      #
+      # `if: always()` on purpose: when the suite fails the report still exists,
+      # and a hard-required test that SKIPPED during a failing run is a second,
+      # separate finding that must not be hidden by the first.
+      - name: Assert hard-required E2E tests actually ran
+        if: always() && steps.changes.outputs.code == 'true'
+        run: node .github/scripts/assert-e2e-executed.mjs apps/web/e2e-results.json .
+
       # upload-artifact@v4 rejects a duplicate name outright, so the shard is part
       # of the name rather than a nicety. Three separate reports also mean the
       # failing shard's report is the one you open, named after the job that went

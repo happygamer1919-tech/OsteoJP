@@ -139,7 +139,31 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   // BookingFlow.tsx:457-458 — and `availableDates` is `Object.keys(byDate)`, the
   // days that actually carry slots. So the FIRST ENABLED DAY is by construction a
   // day with availability. Enabled days are gridcells without `aria-disabled`.
-  await page.getByRole("button", { name: /escolh|data/i }).first().click().catch(() => {});
+  // THE PICKER MUST BE PROVEN TO OPEN, AND THIS IS THE SECOND TIME THIS FILE HAS
+  // LEARNED THE SAME LESSON. The first draft clicked the trigger under
+  // `.catch(() => {})`. A missing or mis-located trigger therefore did nothing,
+  // no gridcells existed, and the helper returned `empty-calendar` — a BROKEN
+  // FLOW degrading silently into the one outcome that SKIPS instead of failing.
+  // That is precisely the `string | null` collapse the discriminated result was
+  // introduced to prevent, wearing a different shape.
+  const trigger = page.getByRole("button", { name: /escolh|data/i });
+  if ((await trigger.count()) === 0) {
+    return { ok: false, why: "flow-broken", detail: "date/time step has no date-picker trigger" };
+  }
+  await trigger.first().click();
+
+  // The popover is `role="dialog"` (DatePicker.tsx). If it did not open, the
+  // trigger is not what we think it is — a flow defect, never an empty calendar.
+  const opened = await page
+    .getByRole("dialog")
+    .first()
+    .isVisible({ timeout: 10_000 })
+    .catch(() => false);
+  if (!opened) {
+    return { ok: false, why: "flow-broken", detail: "date picker did not open when clicked" };
+  }
+
+  // ONLY NOW is an absence of selectable days a statement about the calendar.
   const day = page.getByRole("gridcell").and(page.locator(":not([aria-disabled])"));
   await day.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
   if ((await day.count()) === 0) {
@@ -194,12 +218,36 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     if (!booked.ok && booked.why === "flow-broken") {
       throw new Error(`portal booking flow is broken, not merely empty: ${booked.detail}`);
     }
-    // And the legitimate skip announces itself, so a permanently-skipping test is
-    // visible in the log rather than silent in a green run.
+
+    // ============================================================= //
+    // IN CI, AN EMPTY CALENDAR IS A FAILURE TOO. THIS IS THE POINT.
+    // ============================================================= //
+    // This test SKIPPED inside a PASSING shard on two consecutive runs, and #879
+    // merged on four green required checks with PG8's central direction never
+    // executed. A skip inside a passing shard is a guard that cannot fail.
+    //
+    // The skip was originally justified as "a red on an empty calendar would be
+    // testing the seed". THAT JUSTIFICATION IS GONE: the seed provably carries
+    // 09:00-13:00 availability on weekday 1 (Monday) at Linda-a-Velha
+    // (seed-e2e.mjs:365-368). So in CI, against `supabase db reset`, an empty
+    // calendar is NOT a fact about the run day — it is a regression in the seed,
+    // in availability, or in the picker, and every one of those is worth a red.
+    //
+    // LOCALLY it may still skip, because a developer's database need not be
+    // seeded and reddening their whole suite for that would be noise. `CI` is set
+    // by GitHub Actions; the guard is deliberately keyed on it and on nothing
+    // this repo controls, so it cannot be silenced by a config edit.
+    if (!booked.ok && process.env.CI) {
+      throw new Error(
+        `DIRECTION A COULD NOT RUN: ${booked.detail}. In CI this is a failure, not a skip — ` +
+          `the seed carries Monday 09:00-13:00 availability at Linda-a-Velha, so an empty ` +
+          `calendar means the seed, availability, or the date picker has regressed.`,
+      );
+    }
     if (!booked.ok) {
       console.log(`[W13-07] DIRECTION A SKIPPED — ${booked.detail}. Direction A is UNPROVEN in this run.`);
     }
-    test.skip(!booked.ok, "seeded calendar offered no slot on the run day");
+    test.skip(!booked.ok, "local run without a seeded calendar");
     const taken = booked.ok ? booked.slot : "";
 
     // THE CROSSING. A9 is UNBOUNDED BY CONSTRUCTION — apps/api cannot

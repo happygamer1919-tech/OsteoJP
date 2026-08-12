@@ -331,3 +331,84 @@ attached to a condition I had not verified, and it read as a fact about the seed
 on the next pass. Criterion A on `ACC-vacuous-guard-sweep` — *proximity is not
 evidence* — applies to a test's own diagnostics as much as to a citation: the
 message was next to the failure, not derived from it.
+
+
+---
+
+## 9. THE SEED CARRIES MONDAY-ONLY AVAILABILITY. DO NOT DIAGNOSE THE SEED AGAIN.
+
+**Recorded permanently because two sessions were spent reaching for it.**
+
+`apps/web/e2e/seed/seed-e2e.mjs:365-368` seeds availability templates of
+**09:00-13:00 on WEEKDAY 1 (Monday) at Linda-a-Velha**, for two therapists, and
+nothing else. `portal-booking-slot-parity.test.ts` documents the same shape in
+its own header: *"one ACTIVE therapist whose availability template covers ONLY
+Monday 09:00-19:00 at the LV location"*.
+
+**IT IS THE SAME CLASS OF CONSTRAINT AS PRODUCTION'S `ZZ TESTE THERAPIST`
+COVERING SATURDAY ONLY** — a deliberately narrow window that isolates test
+bookings from real clinic days. In both cases a runner who does not know it reads
+a working booking flow as an empty calendar.
+
+**So an empty slot list in CI is never "the seed is thin".** It means the seed,
+the availability query, or the date picker has regressed, and it now FAILS rather
+than skips (see §10).
+
+---
+
+## 10. THE SKIP IS NOW IMPOSSIBLE TO MISS
+
+Two independent guards, because the failure they prevent survived one of them
+already.
+
+**GUARD 1 — the test fails rather than skips, in CI.** `empty-calendar` was
+justified as "a red there would be testing the seed". §9 removes that
+justification: the seed provably carries Monday availability. In CI the test now
+throws with the reason; locally it still skips, because a developer's database
+need not be seeded. Keyed on `process.env.CI`, which this repo does not set and
+therefore cannot silence.
+
+**GUARD 2 — `.github/scripts/assert-e2e-executed.mjs`**, the E2E analogue of
+`assert-rls-executed.mjs`. Playwright's `json` reporter is now configured, and
+every shard runs the guard with `if: always()`. It asserts:
+
+1. every hard-required spec **file still exists** — a rename or delete appears in
+   no report and is otherwise caught by nothing;
+2. any hard-required test **present in this shard's report has status `passed`**.
+   `skipped` is red.
+
+It is absent-tolerant per shard by design, because `--shard` puts a given test in
+exactly one report; check 1 is what covers deletion.
+
+**Six arms, measured by exit code rather than by reading the output** — the first
+attempt piped through `tail` and read `tail`'s status, reporting 0 for a guard
+that had correctly returned 1:
+
+| Arm | Expect | Got |
+|---|---|---|
+| hard-required test skipped | 1 | 1 |
+| hard-required test passed | 0 | 0 |
+| hard-required spec deleted | 1 | 1 |
+| test absent (another shard) | 0 | 0 |
+| empty report | 1 | 1 |
+| report file missing | 2 | 2 |
+
+### 10.1 The sweep: how big this problem actually is
+
+**39 vitest suites can skip inside a passing required check with nothing
+reddening.** 52 skippable suites, 14 hard-required by `assert-rls-executed.mjs`,
+39 unguarded. On the e2e side, 2 of 57 specs carry a skip and one of them is now
+guarded.
+
+**THREE OF THE 39 ARE CITED AS ENFORCEMENT POINTS IN THIS PROJECT'S OWN GATE
+DOCUMENTS**, which makes this more than hygiene:
+
+| Suite | Cited as | Gate |
+|---|---|---|
+| `portal-booking-slot-parity.test.ts` | "a booked window drops out of the offered list" | PG8, §4 |
+| `slot-lock-concurrency.test.ts` | the contention control, "only one survives" | PG8, §4 |
+| `otp-revoke.db.test.ts` | MH-04, the trusted-device revoke | PG6 matrix |
+
+If any of those skips, the citation points at a test that did not run — the same
+defect the LOOP 6 citation audit found in a different form, one layer down.
+**Counted, not fixed, this dispatch.** Carded.
