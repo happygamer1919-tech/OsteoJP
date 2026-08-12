@@ -274,3 +274,290 @@ It now returns a discriminated result and the two meanings are separated:
 skipped.** That is now a *named, observable* condition instead of a quiet one —
 which is the only reason this document can honestly describe the state at all.
 PG8 stays open.
+
+
+---
+
+## 8. THE SECOND CI RUN WAS GREEN AND DIRECTION A STILL SKIPPED
+
+**Run `31614238872`, all three shards green, PR #879 merged as `1cdb36f`.**
+Direction B **passed and was measured**. Direction A **skipped**, and the
+instrumentation added in §7 is the only reason that is visible at all:
+
+```
+[W13-07] A: portal booking submitted: 15806ms
+[W13-07] DIRECTION A SKIPPED — date/time step offered no slot. Direction A is UNPROVEN in this run.
+[W13-07] B: portal slot list first paint: 521ms
+```
+
+**A GREEN REQUIRED CHECK, A MERGED PR, AND THE GATE'S CENTRAL DIRECTION UNTESTED.**
+That is the entire argument for not flipping PG8 on a green run, made by the run
+itself.
+
+### 8.1 I read my own skip reason wrong, and the seed was never at fault
+
+The message said "date/time step offered no slot", and §7 recorded that as the
+legitimate `empty-calendar` case — the seeded calendar being thin on the run day.
+**That reading was wrong.**
+
+**Step 4 preselects no date.** `BookingFlow.tsx:486` renders
+`choose_date_prompt` until the patient picks a day, so slot buttons cannot exist
+before a date is chosen. **The helper never opened the date picker.** It looked
+for slots on a screen that had not been asked for any, found none, and reported
+an empty calendar — every run, forever.
+
+**The seed was fine all along.** `seed-e2e.mjs:365-368` gives 09:00–13:00
+availability on **weekday 1 (Monday)** at Linda-a-Velha — the same Monday-only
+shape `portal-booking-slot-parity.test.ts` documents in its own header, and the
+same *class* of constraint as the production `ZZ TESTE THERAPIST` covering
+Saturday only. The slots existed and nothing had asked for them.
+
+### 8.2 The fix, and why the first enabled day is the right one
+
+The picker's enabled range is `[availableDates[0], availableDates[last]]`
+(`BookingFlow.tsx:457-458`), and `availableDates` is `Object.keys(byDate)` — the
+days that actually carry slots. **So the first enabled day is by construction a
+day with availability**, whatever weekday the run lands on. The helper now opens
+the picker and takes it, and enabled days are gridcells without `aria-disabled`.
+
+A day the picker declares selectable that then carries no slot is now reported
+with its own distinct message, because that would be a real disagreement between
+the two and is worth seeing rather than absorbing.
+
+### 8.3 The lesson, which is the same one for the third time
+
+**A skip reason I wrote, I then trusted.** `empty-calendar` was my own label,
+attached to a condition I had not verified, and it read as a fact about the seed
+on the next pass. Criterion A on `ACC-vacuous-guard-sweep` — *proximity is not
+evidence* — applies to a test's own diagnostics as much as to a citation: the
+message was next to the failure, not derived from it.
+
+
+---
+
+## 9. THE SEED CARRIES MONDAY-ONLY AVAILABILITY. DO NOT DIAGNOSE THE SEED AGAIN.
+
+**Recorded permanently because two sessions were spent reaching for it.**
+
+`apps/web/e2e/seed/seed-e2e.mjs:365-368` seeds availability templates of
+**09:00-13:00 on WEEKDAY 1 (Monday) at Linda-a-Velha**, for two therapists, and
+nothing else. `portal-booking-slot-parity.test.ts` documents the same shape in
+its own header: *"one ACTIVE therapist whose availability template covers ONLY
+Monday 09:00-19:00 at the LV location"*.
+
+**IT IS THE SAME CLASS OF CONSTRAINT AS PRODUCTION'S `ZZ TESTE THERAPIST`
+COVERING SATURDAY ONLY** — a deliberately narrow window that isolates test
+bookings from real clinic days. In both cases a runner who does not know it reads
+a working booking flow as an empty calendar.
+
+**So an empty slot list in CI is never "the seed is thin".** It means the seed,
+the availability query, or the date picker has regressed, and it now FAILS rather
+than skips (see §10).
+
+---
+
+## 10. THE SKIP IS NOW IMPOSSIBLE TO MISS
+
+Two independent guards, because the failure they prevent survived one of them
+already.
+
+**GUARD 1 — the test fails rather than skips, in CI.** `empty-calendar` was
+justified as "a red there would be testing the seed". §9 removes that
+justification: the seed provably carries Monday availability. In CI the test now
+throws with the reason; locally it still skips, because a developer's database
+need not be seeded. Keyed on `process.env.CI`, which this repo does not set and
+therefore cannot silence.
+
+**GUARD 2 — `.github/scripts/assert-e2e-executed.mjs`**, the E2E analogue of
+`assert-rls-executed.mjs`. Playwright's `json` reporter is now configured, and
+every shard runs the guard with `if: always()`. It asserts:
+
+1. every hard-required spec **file still exists** — a rename or delete appears in
+   no report and is otherwise caught by nothing;
+2. any hard-required test **present in this shard's report has status `passed`**.
+   `skipped` is red.
+
+It is absent-tolerant per shard by design, because `--shard` puts a given test in
+exactly one report; check 1 is what covers deletion.
+
+**Six arms, measured by exit code rather than by reading the output** — the first
+attempt piped through `tail` and read `tail`'s status, reporting 0 for a guard
+that had correctly returned 1:
+
+| Arm | Expect | Got |
+|---|---|---|
+| hard-required test skipped | 1 | 1 |
+| hard-required test passed | 0 | 0 |
+| hard-required spec deleted | 1 | 1 |
+| test absent (another shard) | 0 | 0 |
+| empty report | 1 | 1 |
+| report file missing | 2 | 2 |
+
+### 10.1 The sweep: how big this problem actually is
+
+**39 vitest suites can skip inside a passing required check with nothing
+reddening.** 52 skippable suites, 14 hard-required by `assert-rls-executed.mjs`,
+39 unguarded. On the e2e side, 2 of 57 specs carry a skip and one of them is now
+guarded.
+
+**THREE OF THE 39 ARE CITED AS ENFORCEMENT POINTS IN THIS PROJECT'S OWN GATE
+DOCUMENTS**, which makes this more than hygiene:
+
+| Suite | Cited as | Gate |
+|---|---|---|
+| `portal-booking-slot-parity.test.ts` | "a booked window drops out of the offered list" | PG8, §4 |
+| `slot-lock-concurrency.test.ts` | the contention control, "only one survives" | PG8, §4 |
+| `otp-revoke.db.test.ts` | MH-04, the trusted-device revoke | PG6 matrix |
+
+If any of those skips, the citation points at a test that did not run — the same
+defect the LOOP 6 citation audit found in a different form, one layer down.
+**Counted, not fixed, this dispatch.** Carded.
+
+
+---
+
+## 11. THE THIRD CI RUN: BOTH GUARDS FIRED, AND THEY CAUGHT MY OWN REASONING
+
+**Run `31617753535`, shard 3/3.** This is the run that proves §10 works, and it
+failed for a reason §8 had asserted was impossible.
+
+```
+Error: DIRECTION A COULD NOT RUN: a selectable day carried no slot.
+E2E SKIP-GUARD RED — HARD-REQUIRED E2E TEST DID NOT RUN
+```
+
+**Both guards fired independently.** Guard 1 turned what would have been a silent
+skip into a test failure; guard 2 reddened the job from the report, without
+knowing anything about why. **A skip inside a passing shard is no longer
+possible for this test.** That was the objective and it is met in real CI, not in
+a local simulation.
+
+### 11.1 The claim §8.2 made, withdrawn
+
+§8.2 said: *"the first enabled day is by construction a day with availability."*
+**FALSE.** `DatePicker.tsx:119`:
+
+```ts
+const inRange = (iso) => (!min || iso >= min) && (!max || iso <= max);
+```
+
+`inRange` is a **closed interval**, not set membership. `min` and `max` are the
+first and last available dates, so **every day between them is enabled** — and
+the seed's availability is **Monday only**, so six days in seven are enabled and
+carry nothing. The helper clicked the first enabled day, which was simply the
+first day of the range, and found no slots. Correctly.
+
+**The fix walks the enabled days in order until one yields slots**, bounded at 14,
+reopening the popover each time because selecting closes it. The failure detail
+now names how many were tried.
+
+### 11.2 Three wrong readings in one loop, each caught by the layer below
+
+| # | The claim | Caught by |
+|---|---|---|
+| 1 | `strip()`-based anti-SQL assertion is meaningful | running the negative arm |
+| 2 | "empty calendar" means the seed is thin | reading the seed |
+| 3 | "first enabled day has availability" | **CI, because guard 1 made it red** |
+
+**The pattern is the point.** Each was a plausible statement about code I had
+read, and none survived contact with the thing it described. The reason the third
+one surfaced within minutes rather than sitting green for weeks is that the guard
+built in §10 removed the option of failing quietly.
+
+
+---
+
+## 12. `inRange` IS A CLOSED INTERVAL, AND THE SLOT LOCATOR WAS THE FOURTH WRONG ROLE
+
+**Recorded permanently. Nobody rediscovers either of these.**
+
+### 12.1 `DatePicker.tsx:119` — enabled means *in range*, not *has slots*
+
+```ts
+const inRange = (iso) => (!min || iso >= min) && (!max || iso <= max);
+```
+
+`min` and `max` are the first and last **available** dates, so **every day
+between them is enabled** — and against a **Monday-only seed**, six days in seven
+are enabled and carry nothing. §8.2's claim that "the first enabled day is by
+construction a day with availability" was **false**. The helper walks the enabled
+days until one yields slots, **bounded at 14**, reopening the popover each time
+because selecting closes it.
+
+### 12.2 `SlotPicker` renders slots as `role="radio"`, not buttons
+
+`SlotPicker.tsx:76-85` renders each slot as
+`<button type="button" role="radio">` inside a `role="radiogroup"`. **An explicit
+`role` overrides the implicit one**, so `getByRole("button", …)` never matched a
+slot — the walk could not have succeeded on any day, on any run, however many
+days it tried. CI reported *"no slot on any of the first 8 selectable day(s)"*,
+which was true and told the truth about a locator rather than about the calendar.
+
+**This is the FOURTH wrong locator or wrong reading in this loop**, and the third
+of the same kind: an assertion written against a role the DOM does not expose.
+The first was `getByText(/Linda-a-Velha/i)` resolving to a hidden `<option>`.
+
+| # | The claim | Caught by |
+|---|---|---|
+| 1 | a `strip()`-based anti-SQL assertion is meaningful | running the negative arm |
+| 2 | "empty calendar" means the seed is thin | reading the seed |
+| 3 | "first enabled day has availability" | CI, because guard 1 made it red |
+| 4 | slots are `role="button"` | CI, because guard 1 made it red |
+
+**Three and four exist as findings only because the guard removed the option of
+failing quietly.** Before it, both would have been a green shard with a skipped
+test inside.
+
+
+---
+
+## 13. THE SEVENTH WRONG READING PASSED, AND THAT MAKES IT THE WORST
+
+**Run `31623855711`, shard 3: SUCCESS.** Direction A reported
+
+```
+[W13-07] A: portal booking submitted: 1343ms
+[W13-07] A: agenda scan for the new row: 591ms
+[W13-07] A: the crossing landed on 2026-08-12
+Y 39 DIRECTION A: a portal booking APPEARS on the staff agenda (retry #1)
+```
+
+**PG8 WAS NOT CLOSED ON IT, AND MUST NOT BE.** Two independent reasons, either
+sufficient:
+
+**1. The date is impossible.** `2026-08-12` is a **Wednesday**. The seed's
+availability is **Monday only** (section 9). A portal booking cannot land on a
+Wednesday. The scan matched an unrelated `09:00` row that another spec in the same
+shard had created on the shared seeded database.
+
+**2. It passed on RETRY.** Attempt 1 failed, retry #1 passed. This project's own
+e2e doctrine: one green run proves nothing that can race, and retries can change
+the input. A property that needs a retry to hold has not been demonstrated.
+
+### 13.1 Why this one is worse than the six before it
+
+**Every earlier wrong reading produced a RED.** A red is self-correcting: it stops
+the merge and someone reads the artifact. This one produced a **GREEN for a
+property that had not been demonstrated** - the exact failure mode this entire
+loop was spent building instruments against, arriving through the instrument's own
+assertion rather than around it.
+
+The guard from section 10 did its job perfectly and could not have caught this:
+the test **ran**, and it **passed**. Guards prove a test executed. **They cannot
+prove it tested the right thing.**
+
+### 13.2 The fix
+
+The scan now requires the **patient's name AND the time on the same day**. The
+portal test patient is Maria Silva (`fixtures.ts:241-244`), so a row bearing her
+name at the booked time is the booking rather than a neighbour. Either signal
+alone is satisfiable by unrelated data on a shared seeded database.
+
+### 13.3 The rule this adds
+
+> **A guard proves a test RAN. Only the assertion proves it tested the right
+> thing. On a shared seeded database, an assertion matching a value other tests
+> can produce is not an assertion about your subject.**
+
+Time strings, status labels, service names and dates are shared vocabulary.
+**Identity is not.**

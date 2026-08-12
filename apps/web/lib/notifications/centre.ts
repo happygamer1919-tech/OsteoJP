@@ -271,6 +271,28 @@ const RECEPTION_ROLE_SLUG = "reception";
  * confirm it twice. Logged at ERROR with ids only — no name, no contact, no
  * service (CLAUDE.md rule 7).
  */
+/**
+ * INC-09. The notification kinds this platform can render, as a UNION rather
+ * than a bare `string`.
+ *
+ * IT MUST STAY IN STEP WITH THE DATABASE. Migration 0055 pinned four values in a
+ * CHECK constraint; 0061 widened it to five by adding `confirmed`. The staff
+ * notification centre's label map went out of step with that widening and
+ * rendered the raw enum to reception in English — INC-09.
+ *
+ * Declaring it here, beside the only writer in this app, is what lets the label
+ * map be `Record<StaffNotificationKind, string>` and therefore fail to COMPILE
+ * when a sixth kind arrives. `notification-kinds.test.ts` additionally pins this
+ * union against the migration's CHECK values, so a widening in SQL that nobody
+ * mirrors here is a red test rather than an English word on a Portuguese screen.
+ */
+export type StaffNotificationKind =
+  | "booked"
+  | "cancelled"
+  | "rescheduled"
+  | "appointment_request"
+  | "confirmed";
+
 export async function emitConfirmedNotification(args: {
   tenantId: string;
   actorUserId: string;

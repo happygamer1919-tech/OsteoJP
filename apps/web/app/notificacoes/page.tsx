@@ -6,6 +6,7 @@ import {
   listNotifications,
   listPendingRequests,
   type CentreEntry,
+  type StaffNotificationKind,
 } from "@/lib/notifications/centre";
 import { s } from "@/lib/i18n";
 
@@ -33,12 +34,46 @@ export const metadata = { title: s["notifications.title"] };
  * a treatment type.
  */
 
-const KIND_LABEL: Record<string, string> = {
+/**
+ * INC-09. EXHAUSTIVE OVER THE KIND UNION, WITH NO STRING FALLBACK.
+ *
+ * WHAT SHIPPED BEFORE THIS. The map carried four kinds and the render did
+ * `KIND_LABEL[e.kind] ?? e.kind`. Migration 0061 widened the set to FIVE by
+ * adding `confirmed` — the record that a therapist accepted a pedido, which
+ * exists precisely so reception is not blind — and nothing here was updated. So
+ * every confirmation notification rendered the RAW DATABASE ENUM `confirmed`,
+ * in English, on a Portuguese staff screen.
+ *
+ * THE FALLBACK IS WHY IT SHIPPED SILENTLY, and removing it is most of the fix.
+ * `?? e.kind` turned an unhandled case into plausible-looking output instead of
+ * a failure — the same collapse as `string | null` and `empty-calendar`
+ * elsewhere in this repo. A sixth kind must now be a TYPE ERROR at the point it
+ * is added, not a screen showing English to the clinic.
+ *
+ * `Record<StaffNotificationKind, string>` is what enforces that: add a member to the
+ * union and this object stops compiling until it has a label.
+ */
+const KIND_LABEL: Record<StaffNotificationKind, string> = {
   booked: s["notifications.kind.booked"],
   cancelled: s["notifications.kind.cancelled"],
   rescheduled: s["notifications.kind.rescheduled"],
   appointment_request: s["notifications.kind.appointment_request"],
+  confirmed: s["notifications.kind.confirmed"],
 };
+
+/**
+ * A kind the database produced that this build does not know. It cannot happen
+ * while the map is exhaustive and the migration set matches the union — but the
+ * feed is typed `string`, so the possibility exists at the boundary.
+ *
+ * IT SAYS SOMETHING TRUE AND USELESS RATHER THAN SOMETHING FALSE AND SPECIFIC.
+ * "Alteração na marcação" is accurate for any member of this set. The old
+ * behaviour printed the enum; the failure mode that matters is a staff member
+ * reading a CONFIDENT WRONG DESCRIPTION of a clinical event.
+ */
+function labelFor(kind: string): string {
+  return KIND_LABEL[kind as StaffNotificationKind] ?? s["notifications.kind.unknown"];
+}
 
 // Europe/Lisbon, 24h. W12-31 made 24h the format across the product; the clinic
 // is in Lisbon and staff read these against the agenda, so a UTC instant
@@ -139,7 +174,7 @@ export default async function NotificacoesPage() {
             >
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="text-sm font-semibold text-v2-text-primary">
-                  {KIND_LABEL[e.kind] ?? e.kind}
+                  {labelFor(e.kind)}
                 </span>
                 {e.readAt === null && (
                   <span className="rounded-full bg-v2-green-700 px-2 py-0.5 text-[11px] font-medium text-text-inverse">

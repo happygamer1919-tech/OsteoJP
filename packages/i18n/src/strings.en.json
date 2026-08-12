@@ -1285,6 +1285,8 @@
   "notifications.kind.cancelled": "Appointment cancelled",
   "notifications.kind.rescheduled": "Appointment rescheduled",
   "notifications.kind.appointment_request": "Appointment request",
+  "notifications.kind.confirmed": "Appointment confirmed",
+  "notifications.kind.unknown": "Appointment change",
   "notifications.movedFrom": "From",
   "notifications.movedTo": "To",
   "notifications.noPatient": "Patient not identified",

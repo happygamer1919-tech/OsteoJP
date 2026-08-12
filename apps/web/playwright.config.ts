@@ -48,7 +48,16 @@ export default defineConfig({
   // slow-runner timeout was the dominant e2e flake; 120s absorbs the variance
   // without masking real hangs. Individual long tests may still raise it further.
   timeout: 120_000,
-  reporter: [["html", { open: "never" }], ["list"]],
+  // The JSON report is what `.github/scripts/assert-e2e-executed.mjs` reads to
+  // prove a hard-required test RAN rather than merely not-failing. Without it
+  // that guard has nothing to inspect and a skipped gate-bearing test is
+  // invisible inside a green shard - which is exactly how PG8's direction A
+  // skipped green on two consecutive runs before the guard existed.
+  reporter: [
+    ["html", { open: "never" }],
+    ["list"],
+    ["json", { outputFile: "e2e-results.json" }],
+  ],
 
   use: {
     baseURL: process.env.BASE_URL ?? "http://localhost:3000",
