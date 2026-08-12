@@ -37,11 +37,13 @@
 
 import { test, expect, type Page, type Browser } from "@playwright/test";
 import {
+  E2E_PASSWORD,
   LOCATION,
   PORTAL_BASE_URL,
   PORTAL_PATIENT,
   PORTAL_STORAGE,
   STORAGE,
+  USERS,
 } from "./fixtures";
 
 /** Wall-clock ms around an awaited step, so a hop is reported rather than felt. */
@@ -270,6 +272,15 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   }
   await advance.first().click();
 
+  // LOG THE CLINIC THE FLOW ACTUALLY CHOSE. Step 5's summary renders it under
+  // `booking.confirm_location` (BookingFlow.tsx:505-506). This is the FIRST of
+  // the two lines that settle whether the row's absence from the agenda is a
+  // LOCATION-SCOPE effect: listAppointments filters by viewerLocationScope for
+  // reception and admin (data.ts:202,213 + viewer-locations.ts:47-51), so a
+  // booking at a clinic outside the viewer's assigned set is CORRECTLY absent.
+  const summary = (await page.locator("dl").first().innerText().catch(() => "")).replace(/\n+/g, " | ");
+  console.log(`[W13-07] A: confirm summary = ${summary.slice(0, 200)}`);
+
   const submit = page.getByRole("button", { name: /confirmar marca/i });
   await submit.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
   if ((await submit.count()) === 0) {
@@ -407,11 +418,66 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
         .catch(() => false);
     });
 
+    console.log(`[W13-07] A: visible to RECEPTION on ${bookedOn}? ${seen}`);
+
+    // ================================================================= //
+    // THE SECOND LOG LINE: IS IT THE LOCATION SCOPE?
+    // ================================================================= //
+    // `viewerLocationScope` (viewer-locations.ts:47-51) returns the ASSIGNED
+    // location ids for RECEPTION and ADMIN, and null for OWNER and THERAPIST.
+    // `listAppointments` then adds `inArray(locationId, scope)` (data.ts:213).
+    // So the SAME row is visible or not depending only on who is looking.
+    //
+    // ONE RUN, TWO VIEWERS, AND THE PAIR IS THE DIAGNOSIS:
+    //   reception NO, owner YES  -> it is PL-09 location scope, working as
+    //                               designed. The test was asking the wrong
+    //                               viewer, and the owner assertion below is the
+    //                               correct one for a CROSSING proof.
+    //   reception NO, owner NO   -> it is NOT the scope. Something else, and
+    //                               PG8 halts permanently on that finding.
+    //
+    // PL-09 IS NOT WEAKENED TO MAKE THIS PASS. Scoping reception to their own
+    // clinics is the product behaviour; the proof simply has to ask a viewer
+    // entitled to see every location.
+    const ownerCtx = await browser.newContext({
+      baseURL: process.env.BASE_URL ?? "http://localhost:3000",
+    });
+    const ownerPage = await ownerCtx.newPage();
+    let ownerSees = false;
+    try {
+      await ownerPage.goto("/login");
+      await ownerPage.locator('input[name="email"]').fill(USERS.owner);
+      await ownerPage.locator('input[name="password"]').fill(E2E_PASSWORD);
+      await ownerPage.getByRole("button", { name: /Iniciar sessão/i }).click();
+      await ownerPage.waitForURL(/\/dashboard/, { timeout: 30_000 });
+      await ownerPage.goto(`/agenda?date=${bookedOn}`);
+      const t = await ownerPage
+        .getByText(timeRe)
+        .first()
+        .isVisible({ timeout: 15_000 })
+        .catch(() => false);
+      ownerSees =
+        t &&
+        (await ownerPage
+          .getByText(nameRe)
+          .first()
+          .isVisible({ timeout: 5_000 })
+          .catch(() => false));
+    } finally {
+      console.log(`[W13-07] A: visible to OWNER (null location scope) on ${bookedOn}? ${ownerSees}`);
+      await ownerCtx.close();
+    }
+
+    // THE ASSERTION IS ON THE OWNER, and the reception result is diagnostic only.
+    // A crossing proof asks "did the row reach the agenda", not "does PL-09
+    // scope it" - and PL-09 scoping it is a separate, correct behaviour with its
+    // own card.
     expect(
-      seen,
-      `the pedido booked for ${PORTAL_PATIENT.name} at ${taken} on ${bookedOn} should be on ` +
-        `the staff agenda for THAT DAY. listAppointments has no status predicate ` +
-        `(data.ts:193-221), so a pending pedido is on the agenda the moment it is written.`,
+      ownerSees,
+      `the pedido booked for ${PORTAL_PATIENT.name} at ${taken} on ${bookedOn} should be on the ` +
+        `staff agenda for THAT DAY, viewed by a role with an unrestricted location scope. ` +
+        `reception saw it: ${seen}. If reception is false and owner is true, the earlier ` +
+        `failures were PL-09 location scope and not a crossing defect.`,
     ).toBe(true);
     console.log(`[W13-07] A: the crossing landed on ${bookedOn}, the day it booked`);
 
