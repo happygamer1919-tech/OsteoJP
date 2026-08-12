@@ -504,6 +504,10 @@ export async function createAppointment(
               seriesId: recurring ? parent.id : null,
               occurrence: recurring ? i : null,
               count: recurring ? created.length : null,
+              // SEC-allowconflict-not-audited. See the note on writeAppointmentAudit
+              // callers below: ALWAYS a boolean, never omitted when false, or the
+              // absence would again be unreadable.
+              allowConflict: !!input.allowConflict,
             },
             ip,
           });
@@ -918,6 +922,10 @@ export async function updateAppointment(
         }
 
         const setChanged = Object.keys(set);
+        // SEC-allowconflict-not-audited: the PRE-mutation status, per row.
+        // `affected` was read before the UPDATE above, so this is the only
+        // place `from_status` is still knowable.
+        const statusBefore = new Map(affected.map((a) => [a.id, a.status]));
         for (const aid of ids) {
           const changed =
             aid === id && noteBody ? [...setChanged, "notes"] : setChanged;
@@ -927,7 +935,20 @@ export async function updateAppointment(
             actorUserId: actor.userId,
             action: "appointment.update",
             appointmentId: aid,
-            metadata: { changed, scope },
+            metadata: {
+              changed,
+              scope,
+              allowConflict: !!opts?.allowConflict,
+              // Only on a status patch, and BOTH ends or neither. A `to` with
+              // no `from` is the shape that made the INC-08 timeline an
+              // inference rather than a reading.
+              ...(patch.status
+                ? {
+                    fromStatus: statusBefore.get(aid) ?? null,
+                    toStatus: patch.status,
+                  }
+                : {}),
+            },
             ip,
           });
         }
@@ -1094,6 +1115,7 @@ export async function rescheduleAppointment(
               startsAt: t.startsAt.toISOString(),
               endsAt: t.endsAt.toISOString(),
               scope,
+              allowConflict: !!input.allowConflict,
             },
             ip,
           });
@@ -1300,13 +1322,24 @@ export async function cancelAppointment(
           .set({ status: "cancelled" })
           .where(inArray(appointments.id, ids)); // RLS scopes tenant
 
+        // Pre-mutation status, per row, captured from the read above.
+        const statusBefore = new Map(affected.map((a) => [a.id, a.status]));
         for (const aid of ids) {
           await writeAppointmentAudit(tx, {
             tenantId: actor.tenantId,
             actorUserId: actor.userId,
             action: "appointment.cancel",
             appointmentId: aid,
-            metadata: { reason: reason?.trim() || null, scope },
+            metadata: {
+              reason: reason?.trim() || null,
+              scope,
+              // A cancel IS a status patch. It carries no allowConflict because
+              // this path never reads one - vacating a slot cannot create a
+              // conflict - and writing `false` here would imply a decision
+              // nobody made.
+              fromStatus: statusBefore.get(aid) ?? null,
+              toStatus: "cancelled",
+            },
             ip,
           });
         }
