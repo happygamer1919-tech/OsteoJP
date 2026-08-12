@@ -418,6 +418,36 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
         .catch(() => false);
     });
 
+    // ================================================================= //
+    // CANDIDATE A: DID A ROW COMMIT AT ALL? ASKED VIA THE PATIENT'S OWN LIST.
+    // ================================================================= //
+    // THIS IS NOT A PG8 QUESTION AND IT OUTRANKS PG8. "Pedido recebido" proves
+    // the flow NAVIGATED, not that a row COMMITTED — /portal/booking/pending is
+    // reachable by navigation alone (portal-booking-request-mode.spec.ts:195-199
+    // says so outright, and books nothing to assert on it). If no row exists,
+    // then A PATIENT SEES A BOOKING CONFIRMATION FOR A BOOKING THAT DOES NOT
+    // EXIST, and the clinic never learns of it because nothing was written.
+    //
+    // WHY THE PORTAL'S OWN LIST IS THE RIGHT PROBE, and why there is no SQL here:
+    // `store.listOwn` (store.ts:217-235) selects the patient's appointments with
+    // NO STATUS FILTER — RLS scopes it to their own rows and every status comes
+    // back, pending pedidos included. So the patient's list answers "does a row
+    // exist" through the real API and the real database, on the exact surface
+    // where the defect would bite. No database credential is needed and none is
+    // used.
+    const patientSeesIt = await timed("A: patient's own appointment list", async () => {
+      await page.goto("/portal/appointments");
+      await expect(page.locator("body")).toBeVisible({ timeout: 30_000 });
+      const body = await page.locator("body").innerText();
+      // The booked time on the patient's own list. Their list contains only
+      // their rows, so a time match here is about THIS patient by construction —
+      // criterion F is satisfied by RLS rather than by the locator.
+      return timeRe.test(body);
+    });
+    console.log(
+      `[W13-07] CANDIDATE A: does the row exist, per the patient's own list? ${patientSeesIt}`,
+    );
+
     console.log(`[W13-07] A: visible to RECEPTION on ${bookedOn}? ${seen}`);
 
     // ================================================================= //
