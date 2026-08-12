@@ -5,7 +5,7 @@ before this reaches the owner.**
 
 Migration: `0061_no_double_confirmed_and_confirm_notification` (journal idx 60).
 Branch: `db/0061-no-double-confirmed`. PR: #870.
-**Apply from sha `a8b2b1b`.**
+**Apply from sha `65d9611`.**
 Cards: `INC-08-double-booking-state-not-path`, `ACC-13-item20-staff-fanout`.
 
 Written under `docs/runbook-prod-migrations.md`, "The pre-check is mandatory".
@@ -98,7 +98,7 @@ double booking in the clinic's diary and a person decides which one moves.
 |---|---|---|
 | Apply worktree | `git worktree list` | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` |
 | Env file | directory listing, **name only, never read** | `/Users/ivan/osteojp-secrets/new-prod.env` |
-| Apply sha | `git log -n1 -- packages/db/migrations supabase/migrations` | `a8b2b1b` |
+| Apply sha | `git log -n1 -- packages/db/migrations supabase/migrations` | `65d9611` |
 | Migration number | file count + journal tail | `0061`, idx `60` |
 | Journal `when` | previous `+100000000` | `1786900000000` (prev `1786800000000`) |
 | Journal + mirror | `node scripts/check-journal.mjs` | 61 `.sql`, 61 entries, in order, `when` strictly increasing, **mirror matches by CONTENT** |
@@ -113,7 +113,7 @@ NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN
 ```
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 git fetch origin --prune
-git checkout --detach a8b2b1b
+git checkout --detach 65d9611
 git log -1 --oneline
 set -o allexport
 source /Users/ivan/osteojp-secrets/new-prod.env
@@ -136,20 +136,28 @@ what this block assumes and nothing below it means anything.
 
 **`set -o allexport`, never `set -a`.** Standing rule.
 
-**WHY `a8b2b1b` AND NOT THE BRANCH HEAD.** It is the last commit that touches
+**WHY `65d9611` AND NOT THE BRANCH HEAD.** It is the last commit that touches
 anything **this block executes** — `packages/db/migrations/` (the SQL and the
 journal) and `supabase/migrations/` (the mirror). Re-derive it with
 `git log -n1 -- packages/db/migrations supabase/migrations`.
 
 **The paths are narrow deliberately.** A coarser `-- packages/db supabase` also
-matches `packages/db/tests/`, and commits after `a8b2b1b` DO change tests — two
-fixtures encoded a double booking this constraint now refuses, fixed in
-`c4221ba`. The block runs `drizzle-kit migrate`, never vitest, so a test change
-cannot affect what it applies and must not force a repin.
+matches `packages/db/tests/`, and test commits on this branch must NOT force a
+repin: the block runs `drizzle-kit migrate`, never vitest, so a test change
+cannot affect what it applies.
+
+**THIS SHA HAS MOVED TWICE, AND BOTH REASONS ARE WORTH KEEPING.** It first
+pinned `6fd75f5`; rebasing onto `main` to pick up #869 rewrote it to `a8b2b1b`.
+It then pinned `a8b2b1b` while the migration BODY changed underneath it —
+`65d9611` made the DDL schema-agnostic — which is the more dangerous of the two,
+because the sha still existed and still checked out cleanly. It would simply
+have applied the OLD DDL, the one that fails when `search_path` excludes the
+schema holding `btree_gist`. **Whenever `packages/db/migrations/` changes on this
+branch, this sha must change with it.**
 
 **THIS SHA WAS REPINNED ONCE, and the reason is worth keeping.** The block first
 pinned `6fd75f5`, the pre-rebase commit. Rebasing onto `main` to pick up #869
-rewrote it to `a8b2b1b`, and a block pointing at a commit that is no longer on
+rewrote it to `65d9611`, and a block pointing at a commit that is no longer on
 the branch would have sent the apply worktree to a detached sha with the right
 content but no relationship to the PR being merged — or, if the old object had
 been garbage-collected, to a hard failure at the checkout. **If this branch is
