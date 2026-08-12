@@ -122,12 +122,18 @@ fix is a port or a shared package. · `SEC-allowconflict-not-audited` **(high)**
 by uncaught exception, so every future provider failure falls through the same
 crack.
 
-### Test-integrity — 3, and they are why the gates can be trusted
+### Test-integrity — 4, and they are why the gates can be trusted
 `ACC-vacuous-guard-sweep` **(high)** — 123 assertions that may not be able to fail,
 with four triage criteria. · `ACC-skippable-suites-unguarded` **(high)** — 36 suites
 can still skip inside a passing required check; the structural fix is **ruled** and
 scheduled after PG9. · `LE-board-pr-reconciliation` **(high)** — nothing reconciles
-merged PRs against card status; three cards have carried a false one.
+merged PRs against card status; three cards have carried a false one. ·
+`ACC-identity-blind-assertions` **(high)** — assertions that match shared
+vocabulary (a time, a status, a count) rather than identity on a shared seeded
+database. **Worse in kind than a skippable suite: a skip fails to prove, an
+identity-blind assertion proves something false.** 170 count assertions triaged;
+63 are absence assertions and structurally safe, and the presence set is
+dominated by static UI structure. Three genuine candidates, none gate-bearing.
 
 ### Wave-13 loops and launch — 24
 `W13-06a`, `W13-06b`, `W13-08`, the `WF-*` series, `LAUNCH-01` (flag arming),

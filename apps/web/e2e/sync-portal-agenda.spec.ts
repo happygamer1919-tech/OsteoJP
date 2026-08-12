@@ -107,6 +107,8 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
     // day, so no service rows means the flow itself is broken.
     return { ok: false, why: "flow-broken", detail: "service step offered no service" };
   }
+  const serviceName = (await service.first().textContent())?.trim().slice(0, 60) ?? "?";
+  console.log(`[W13-07] A: service chosen = ${serviceName}`);
   await service.first().click();
 
   // A2's therapist step. "Escolham por mim" keeps the pre-A2 auto-assignment,
@@ -201,10 +203,21 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
       await trigger.first().click();
       await page.getByRole("dialog").first().waitFor({ state: "visible", timeout: 10_000 });
     }
+    // The day's slots come from `byDate`, ALREADY IN MEMORY — selecting a date
+    // re-renders, it does not re-fetch. 5s per empty day was dead time: attempt 1
+    // of run 31624728972 spent 37s here walking days, against 1.8s on the retry,
+    // and a 35s swing inside one test is how a race gets in.
+    const label = (await day.nth(i).getAttribute("aria-label")) ?? "?";
     await day.nth(i).click();
     tried++;
-    await slot.first().waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
-    if ((await slot.count()) > 0) break;
+    await slot.first().waitFor({ state: "visible", timeout: 1_500 }).catch(() => {});
+    if ((await slot.count()) > 0) {
+      // LOGGED SO THE NEXT RED IS DIAGNOSABLE WITHOUT GUESSING. Run 31624728972
+      // failed on attempt 1 and passed on retry with no way to tell what differed
+      // between them; this line and the service line above are that answer.
+      console.log(`[W13-07] A: booking day = ${label} (day ${i + 1} of ${dayCount} enabled)`);
+      break;
+    }
   }
   if ((await slot.count()) === 0) {
     return {
@@ -336,7 +349,10 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     // portal test patient is Maria Silva (fixtures.ts:241-244), so a row bearing
     // her name at the booked time on a future date is the booking, not a
     // neighbour.
-    const SCAN_DAYS = 21;
+    // The availability horizon is wider than three weeks, and attempt 1 of run
+    // 31624728972 found nothing in 21 days while the retry landed on 2026-08-24.
+    // Widened so a miss means "not on the agenda" rather than "outside my window".
+    const SCAN_DAYS = 45;
     const timeRe = new RegExp(String(taken).replace(":", "[:h]"), "i");
     const nameRe = new RegExp(PORTAL_PATIENT.name.split(" ")[0], "i");
     let foundOn: string | null = null;
@@ -353,13 +369,13 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
         const hasTime = await staff
           .getByText(timeRe)
           .first()
-          .isVisible({ timeout: 3_000 })
+          .isVisible({ timeout: 1_200 })
           .catch(() => false);
         if (!hasTime) continue;
         const hasPatient = await staff
           .getByText(nameRe)
           .first()
-          .isVisible({ timeout: 3_000 })
+          .isVisible({ timeout: 1_200 })
           .catch(() => false);
         if (hasPatient) foundOn = iso;
       }
