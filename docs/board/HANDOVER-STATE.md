@@ -19,7 +19,7 @@ this build to the clinic team and to legal, and for anyone who reads it after.
 | **PG5 REMINDERS** | **PASS** | 48h email and 24h SMS as separate per-channel offsets with the channel inside the idempotency key, and all ten bodies approved. **Reminders are not live** — `REMINDERS_LIVE_SEND` is false. |
 | **PG6 EXPOSURE** | **PASS** | 51-row exposure matrix committed; 23 MUST-NEVER rows, every one with a verified enforcement point. |
 | **PG7 ENVIRONMENT** | **PASS** | Every environment variable has a safe default or fails loudly at boot; the full four-app estate was walked. |
-| **PG8 SYNC** | **OPEN** | **The property is demonstrated at the DATABASE layer and NOT at the browser layer.** DB-gated and hard-required: a booked window leaves the offered list, contention refuses the loser, a second confirmed overlap is refused. **What is not demonstrated is the browser-level crossing to a SPECIFIC row** — the e2e booked 17 August and its assertion matched an unrelated row on 20 August, so it has never once matched the appointment it created, and it passed twice on that. The product is not at fault: `listAppointments` has no status predicate, so a portal booking is on the agenda immediately. The assertion needs a run-scoped patient. |
+| **PG8 SYNC** | **OPEN — halted deliberately at 7/9** | **The property is demonstrated at the DATABASE layer and not at the browser layer.** DB-gated and hard-required: a booked window leaves the offered list, contention refuses the loser, a second confirmed overlap is refused, availability has one implementation. **The browser-level crossing to a specific row is not demonstrated.** The e2e books successfully and the row is then invisible on the agenda **to every viewer, including the owner, who has no location filter at all** — so it is *not* PL-09 scoping. **PL-09 was not weakened to close this gate and no product file was touched.** Two candidates remain, untested: the appointment was never created, or the agenda card renders in a shape the locator misses. |
 | **PG9 EXPERIENCE** | **OPEN** | **Started.** The machine-checkable half is built — `@axe-core/playwright` at `wcag22aa` across eight patient screens at a 390×844 viewport, plus pt-PT, 24h and one-primary-action checks. **Six of nine DoD lines built, three not**: error-state copy, mobile screenshots, and the per-screen human audit table at `docs/qa/W13-08-portal-experience.md`, which is committed but **not filled**. |
 
 ---
@@ -44,6 +44,15 @@ working as designed. A portal booking made at a clinic outside that viewer's
 locations is correctly absent from their agenda. This matters to the clinic team
 as a **workflow fact**: what reception sees on the agenda depends on which
 locations they are assigned to.
+
+**PG8 was halted on purpose, and the halting is the point.** Two CI runs on
+2026-08-12 reported it passing. Neither demonstrated the property: the assertion
+matched a seeded patient's name and a time, both of which any other spec can
+produce on a shared database, so it found somebody else's row and called it the
+crossing. Once the assertion was pinned to the exact booked date, it went **red** —
+and a red on a correct assertion is worth more than either green was. **A green
+obtained by loosening an assertion until it passes is what this gate produced
+twice, and it was caught twice.** 7/9 is the honest number.
 
 **PG8, stated without softening.** Two CI runs on 2026-08-12 reported direction A
 as passing. Neither demonstrated the property. The assertion matched a seeded
