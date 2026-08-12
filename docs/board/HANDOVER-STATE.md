@@ -15,7 +15,7 @@ this build to the clinic team and to legal, and for anyone who reads it after.
 | **PG1 AUTH** | **PASS** | Phone-only OTP login, removed routes bounce, an unregistered number is refused without disclosing whether it is a patient, and a trusted device does not survive sign-out. All four observed on the deployed build. |
 | **PG2 BOOKING** | **PASS** | A staff confirm over an existing confirmed appointment is REFUSED — and refused again at the database when the operator deliberately forces "Guardar mesmo assim". |
 | **PG3 APPOINTMENTS** | **PASS** | History, cancel and reschedule render for a linked patient; the reminder-link route is live and fails closed on an invalid token. |
-| **PG4 NOTIFICATIONS** | **PASS**, carrying a defect | A therapist confirming a pedido now leaves a record reception can see, with no service name and no clinical content. **The entry's title is wrong** — see risk 1. |
+| **PG4 NOTIFICATIONS** | **PASS** | A therapist confirming a pedido now leaves a record reception can see, with no service name and no clinical content. The wrong-title defect (INC-09) is **fixed**, pending one screen check. |
 | **PG5 REMINDERS** | **PASS** | 48h email and 24h SMS as separate per-channel offsets with the channel inside the idempotency key, and all ten bodies approved. **Reminders are not live** — `REMINDERS_LIVE_SEND` is false. |
 | **PG6 EXPOSURE** | **PASS** | 51-row exposure matrix committed; 23 MUST-NEVER rows, every one with a verified enforcement point. |
 | **PG7 ENVIRONMENT** | **PASS** | Every environment variable has a safe default or fails loudly at boot; the full four-app estate was walked. |
@@ -47,8 +47,9 @@ hypotheses, three fixes and the production evidence, all on the card.
 ## 3. The top three risks before demonstrating this build
 
 ### RISK 1 — Reception is shown a FALSE event description on a real event
+### **FIXED 2026-08-12, pending the owner's screen.**
 
-**`INC-09`, high, open.** A therapist confirming a pedido produces a notification
+**`INC-09`, shipped.** A therapist confirming a pedido produces a notification
 titled **"Marcação remarcada"** — *appointment rescheduled*. Nothing was
 rescheduled.
 
@@ -64,7 +65,19 @@ English string `confirmed` on a Portuguese screen. **That does not explain
 rather than guessing. Either way `notifications.kind.confirmed` exists in neither
 locale.
 
-**Do not demonstrate the notification centre without mentioning this.**
+**FIXED.** `notifications.kind.confirmed` now exists in both locales, the label
+map is exhaustive over the kind union so a sixth kind is a **compile error**, and
+the `?? e.kind` fallback that hid the omission is deleted. 15 assertions, 5
+negative arms.
+
+**"Marcação remarcada" is a different kind** — `rescheduled` — emitted only by a
+patient's own portal reschedule (`booking.ts:721`, the single site repo-wide).
+Nothing on the confirm path can produce it, so the row that was read was either a
+genuine reschedule or a different row. **`OBSERVE-SWEEP.md` step B3b settles it in
+one check on the owner's screen.** If a confirmation still reads "remarcada" after
+this ships, that is a second and separate finding.
+
+**Safe to demonstrate the notification centre once B3b passes.**
 
 ### RISK 2 — Reminders are NOT live. (The dead-hostname half is FIXED.)
 
@@ -106,8 +119,9 @@ agenda will look broken. **Refresh the agenda.**
 
 **64 open of 118.**
 
-### Incidents — 1
-`INC-09-confirm-notification-wrong-label` **(high)** — risk 1 above.
+### Incidents — 0
+None open. `INC-09` shipped 2026-08-12; it closes on the owner's screen via
+`OBSERVE-SWEEP.md` step B3b.
 
 ### Blocked on people — 4
 All four need an observation or a signature, not a build.

@@ -654,6 +654,32 @@ Observed: `________________________________`
 
 > This creates nothing: a refused save leaves the row as it was.
 
+### B3b · A confirmation reads as a CONFIRMATION — `INC-09`
+
+**One step. It is the defect you found on 2026-08-12 and it was a false statement
+about a real clinical event.**
+
+| | |
+|---|---|
+| **On** | `/notificações`, as `ZZ TESTE RECEPCAO` |
+| **Find** | the entry produced when the therapist confirmed **T-A** in session 2 |
+| **Expect** | it is titled **"Marcação confirmada"** |
+| **STOP if** | it reads **"Marcação remarcada"** (a reschedule — nothing was rescheduled), or the raw English word **`confirmed`** |
+
+Observed: `________________________________`
+
+> **What was wrong.** Migration `0061` widened the notification kinds from four to
+> five, adding `confirmed`. The label map was not widened with it and the render
+> fell back to printing the raw database value — so a confirmation showed the
+> English enum `confirmed` on a Portuguese staff screen.
+>
+> **"Marcação remarcada" is a DIFFERENT kind**, `rescheduled`, and only a patient
+> rescheduling from the portal can produce it (`booking.ts:721`). If you still see
+> it against a confirmation, that is a second and separate finding — say so.
+>
+> The map is now exhaustive over the kind union, so a sixth kind is a compile
+> error rather than a screen showing English.
+
 ### B4 · The pedido queue says what it is — `W13-04`
 
 | | |

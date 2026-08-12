@@ -1285,6 +1285,8 @@
   "notifications.kind.cancelled": "Marcação cancelada",
   "notifications.kind.rescheduled": "Marcação remarcada",
   "notifications.kind.appointment_request": "Pedido de marcação",
+  "notifications.kind.confirmed": "Marcação confirmada",
+  "notifications.kind.unknown": "Alteração na marcação",
   "notifications.movedFrom": "De",
   "notifications.movedTo": "Para",
   "notifications.noPatient": "Paciente não identificado",
