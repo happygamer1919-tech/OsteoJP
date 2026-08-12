@@ -19,7 +19,7 @@ this build to the clinic team and to legal, and for anyone who reads it after.
 | **PG5 REMINDERS** | **PASS** | 48h email and 24h SMS as separate per-channel offsets with the channel inside the idempotency key, and all ten bodies approved. **Reminders are not live** — `REMINDERS_LIVE_SEND` is false. |
 | **PG6 EXPOSURE** | **PASS** | 51-row exposure matrix committed; 23 MUST-NEVER rows, every one with a verified enforcement point. |
 | **PG7 ENVIRONMENT** | **PASS** | Every environment variable has a safe default or fails loudly at boot; the full four-app estate was walked. |
-| **PG8 SYNC** | **OPEN** | Structure and behaviour proven; the cross-surface e2e is written and its crossing has been observed in CI. Closing on the final assertion. |
+| **PG8 SYNC** | **OPEN** | Structure and behaviour proven; the cross-surface e2e is written and its crossing observed in CI. **It once passed for the wrong reason** — matching an unrelated appointment's time — and was held. The assertion is now scoped to the patient's identity. |
 | **PG9 EXPERIENCE** | **OPEN** | Not started. Ten portal screens against seven criteria, tool ruled (`@axe-core/playwright`, `wcag22aa`). The largest remaining item; it audits the other seven loops. |
 
 ---
@@ -66,7 +66,7 @@ locale.
 
 **Do not demonstrate the notification centre without mentioning this.**
 
-### RISK 2 — Reminders are NOT live, and the portal is not on its custom domain
+### RISK 2 — Reminders are NOT live. (The dead-hostname half is FIXED.)
 
 **Two separate facts that are easy to present wrongly.**
 
@@ -74,10 +74,16 @@ locale.
 built and its copy approved — **no patient has ever received one**. The
 suppression path has never been observed end to end in a real run.
 
-And **`patient.osteojp.pt` does not resolve.** The portal is live at the Vercel
-default host; the custom domain is deferred to go-live. `apps/portal/.env.example`
-names the custom domain, which is the go-live target and not the current
-deployment — taking it at face value sends a demo to a dead hostname.
+**RETIRED 2026-08-12, the dead-hostname half.** `apps/portal/.env.example` named
+`patient.osteojp.pt`, which does not resolve, and taking it at face value pointed
+a running portal at a dead host. It now names the live Vercel host, with the
+go-live target, the DNS record needed and the cutover runbook all named inline.
+
+A repo-wide sweep found **13 files** mentioning that hostname; **one** could reach
+a running build and it is the one fixed. The other 12 are DNS planning documents,
+historical handoffs, and the four board documents that already warn the host does
+not resolve. The go-live checklist in `docs/cutover-runbook.md` still curls it,
+correctly — that runbook runs *after* the DNS record exists.
 
 `OTP_LIVE_SEND` is armed **for supervised sittings only** and must be disarmed at
 the end of each. Its disarm timestamp is still unrecorded.

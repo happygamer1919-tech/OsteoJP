@@ -507,3 +507,57 @@ The first was `getByText(/Linda-a-Velha/i)` resolving to a hidden `<option>`.
 **Three and four exist as findings only because the guard removed the option of
 failing quietly.** Before it, both would have been a green shard with a skipped
 test inside.
+
+
+---
+
+## 13. THE SEVENTH WRONG READING PASSED, AND THAT MAKES IT THE WORST
+
+**Run `31623855711`, shard 3: SUCCESS.** Direction A reported
+
+```
+[W13-07] A: portal booking submitted: 1343ms
+[W13-07] A: agenda scan for the new row: 591ms
+[W13-07] A: the crossing landed on 2026-08-12
+Y 39 DIRECTION A: a portal booking APPEARS on the staff agenda (retry #1)
+```
+
+**PG8 WAS NOT CLOSED ON IT, AND MUST NOT BE.** Two independent reasons, either
+sufficient:
+
+**1. The date is impossible.** `2026-08-12` is a **Wednesday**. The seed's
+availability is **Monday only** (section 9). A portal booking cannot land on a
+Wednesday. The scan matched an unrelated `09:00` row that another spec in the same
+shard had created on the shared seeded database.
+
+**2. It passed on RETRY.** Attempt 1 failed, retry #1 passed. This project's own
+e2e doctrine: one green run proves nothing that can race, and retries can change
+the input. A property that needs a retry to hold has not been demonstrated.
+
+### 13.1 Why this one is worse than the six before it
+
+**Every earlier wrong reading produced a RED.** A red is self-correcting: it stops
+the merge and someone reads the artifact. This one produced a **GREEN for a
+property that had not been demonstrated** - the exact failure mode this entire
+loop was spent building instruments against, arriving through the instrument's own
+assertion rather than around it.
+
+The guard from section 10 did its job perfectly and could not have caught this:
+the test **ran**, and it **passed**. Guards prove a test executed. **They cannot
+prove it tested the right thing.**
+
+### 13.2 The fix
+
+The scan now requires the **patient's name AND the time on the same day**. The
+portal test patient is Maria Silva (`fixtures.ts:241-244`), so a row bearing her
+name at the booked time is the booking rather than a neighbour. Either signal
+alone is satisfiable by unrelated data on a shared seeded database.
+
+### 13.3 The rule this adds
+
+> **A guard proves a test RAN. Only the assertion proves it tested the right
+> thing. On a shared seeded database, an assertion matching a value other tests
+> can produce is not an assertion about your subject.**
+
+Time strings, status labels, service names and dates are shared vocabulary.
+**Identity is not.**

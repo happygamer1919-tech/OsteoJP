@@ -39,6 +39,7 @@ import { test, expect, type Page, type Browser } from "@playwright/test";
 import {
   LOCATION,
   PORTAL_BASE_URL,
+  PORTAL_PATIENT,
   PORTAL_STORAGE,
   STORAGE,
 } from "./fixtures";
@@ -316,8 +317,28 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     // route parameter (agenda/page.tsx, DATE_RE). The scan is bounded and it
     // REPORTS WHICH DAY IT FOUND, so a future failure distinguishes "not on any
     // day" from "on a day outside the window".
+    // ================================================================= //
+    // MATCH THE PATIENT, NOT JUST THE TIME. THIS ASSERTION ONCE PASSED
+    // BY FINDING SOMEBODY ELSE'S APPOINTMENT.
+    // ================================================================= //
+    // The previous version scanned for the slot LABEL alone — "09:00". Run
+    // 31623855711 duly reported `the crossing landed on 2026-08-12`, which is a
+    // WEDNESDAY, against a seed whose availability is MONDAY ONLY. A portal
+    // booking cannot have landed there. It matched an unrelated 09:00 row that
+    // another spec in the same shard had created on the shared seeded database.
+    //
+    // IT PASSED. That makes it the most dangerous defect in this file's history:
+    // every earlier wrong reading produced a RED, which is self-correcting. This
+    // one produced a GREEN for a property that had not been demonstrated, and it
+    // did so on a retry, which the suite counts as success.
+    //
+    // The scan now requires the PATIENT'S NAME and the TIME on the same day. The
+    // portal test patient is Maria Silva (fixtures.ts:241-244), so a row bearing
+    // her name at the booked time on a future date is the booking, not a
+    // neighbour.
     const SCAN_DAYS = 21;
     const timeRe = new RegExp(String(taken).replace(":", "[:h]"), "i");
+    const nameRe = new RegExp(PORTAL_PATIENT.name.split(" ")[0], "i");
     let foundOn: string | null = null;
 
     await timed("A: agenda scan for the new row", async () => {
@@ -327,18 +348,26 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
         d.setUTCDate(d.getUTCDate() + i);
         const iso = d.toISOString().slice(0, 10);
         await staff.goto(`/agenda?date=${iso}`);
-        const hit = await staff
+        // BOTH, on the same day. Either alone is satisfied by unrelated data on
+        // a shared seeded database.
+        const hasTime = await staff
           .getByText(timeRe)
           .first()
           .isVisible({ timeout: 3_000 })
           .catch(() => false);
-        if (hit) foundOn = iso;
+        if (!hasTime) continue;
+        const hasPatient = await staff
+          .getByText(nameRe)
+          .first()
+          .isVisible({ timeout: 3_000 })
+          .catch(() => false);
+        if (hasPatient) foundOn = iso;
       }
     });
 
     expect(
       foundOn,
-      `a portal pedido at ${taken} should appear on the staff agenda within ${SCAN_DAYS} days`,
+      `a portal pedido for ${PORTAL_PATIENT.name} at ${taken} should appear on the staff agenda within ${SCAN_DAYS} days`,
     ).not.toBeNull();
     console.log(`[W13-07] A: the crossing landed on ${foundOn}`);
 
