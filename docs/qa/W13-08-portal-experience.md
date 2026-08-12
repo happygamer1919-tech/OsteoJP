@@ -5,12 +5,16 @@
 action on landing, patient-readable empty and error states, minimum field
 count."*
 
-> ## STATUS: ALL NINE DoD LINES BUILT. PG9 CLOSES ON THE CI RUN.
-> The automated half runs on every commit; the human half is filled in §3 with
-> the evidence for each verdict; the error-state gap it found is **fixed** — every
-> patient dead end now carries the clinic telephone. **What is not yet in hand is
-> a green run of the suite**, and this gate does not close on a document. §5 is
-> the checklist.
+> ## STATUS: NINE OF NINE DoD LINES BUILT, AND THE RUN IS GREEN AT ATTEMPT 1.
+> **Run `31651759598`, shard 3: 72 passed, 0 failed, 0 flaky.** All eight axe
+> screens, all eight pt-PT checks, all eight 24h checks, the one-primary-action
+> check and the scanner's own negative arm passed on the FIRST attempt, with no
+> retry anywhere in the shard. PG9 is closed on that run.
+>
+> **The run found one real defect before it went green, and that is the point of
+> having run it.** `/portal/booking` failed `color-contrast` on run
+> `31649767622` — the ghost back button at **4.45:1** against a 4.5 floor. See
+> §3.0c. A gate that had closed on the document would have shipped it.
 
 ---
 
@@ -71,27 +75,71 @@ this gate's coverage.
 
 ## 3. Per-screen audit — the half axe cannot judge
 
-**PARTIALLY FILLED, 2026-08-12, by reading the screens and their copy.** `CI`
-means the criterion is machine-checked on every commit by
-`portal-a11y-experience.spec.ts`. The columns below carry a **verdict** where one
-can be reached from the source, and a blank where it genuinely needs a rendered
-screen at 390×844.
+**FILLED. Machine columns closed by run `31651759598` on 2026-08-13; human
+columns by reading the screens and their copy on 2026-08-12.**
 
 | # | Screen | A: axe | Mobile-first | pt-PT | 24h | One primary | Empty/error readable | Min. fields |
 |---|---|---|---|---|---|---|---|---|
-| 1 | Dashboard | `CI` | **PASS** | `CI` | `CI` | `CI` | **FIXED** | n/a |
-| 2 | Consultas | `CI` | **PASS** | `CI` | `CI` | n/a | **FIXED** | n/a |
-| 3 | Marcar consulta | `CI` | **PASS** | `CI` | `CI` | n/a | **FIXED** | **PASS** |
-| 4 | Pedido recebido | `CI` | **PASS** | `CI` | `CI` | n/a | see `SEC-pending-screen-asserts-nothing` | n/a |
-| 5 | Clínicas | `CI` | **PASS** | `CI` | `CI` | n/a | n/a — no error route | n/a |
-| 6 | Documentos | `CI` | **PASS** | `CI` | `CI` | n/a | **FIXED** | n/a |
-| 7 | Fichas | `CI` | **PASS** | `CI` | `CI` | n/a | **FIXED** | **PASS** |
-| 8 | Conta | `CI` | **PASS** | `CI` | `CI` | n/a | **FIXED** | **PASS** |
-| — | 404 | `CI` | **PASS** | `CI` | n/a | n/a | **FIXED** | n/a |
+| 1 | Dashboard | **PASS** | **PASS** | **PASS** | **PASS** | **PASS** | **FIXED** | n/a |
+| 2 | Consultas | **PASS** | **PASS** | **PASS** | **PASS** | n/a | **FIXED** | n/a |
+| 3 | Marcar consulta | **PASS**, after a real red | **PASS** | **PASS** | **PASS** | n/a | **FIXED** | **PASS** |
+| 4 | Pedido recebido | **PASS** | **PASS** | **PASS** | **PASS** | n/a | see `SEC-pending-screen-asserts-nothing` | n/a |
+| 5 | Clínicas | **PASS** | **PASS** | **PASS** | **PASS** | n/a | n/a — no error route | n/a |
+| 6 | Documentos | **PASS** | **PASS** | **PASS** | **PASS** | n/a | **FIXED** | n/a |
+| 7 | Fichas | **PASS** | **PASS** | **PASS** | **PASS** | n/a | **FIXED** | **PASS** |
+| 8 | Conta | **PASS** | **PASS** | **PASS** | **PASS** | n/a | **FIXED** | **PASS** |
+| — | 404 | **PASS** | **PASS** | **PASS** | n/a | n/a | **FIXED** | n/a |
 
-**`CI`** = machine-checked on every commit by `portal-a11y-experience.spec.ts`.
-**PASS / FIXED** = a verdict reached by reading the source, with the evidence
-below. Nothing here is a guess, and nothing is marked from a screenshot alone.
+**The axe, pt-PT, 24h and one-primary columns are machine verdicts** from run
+`31651759598`, re-checked on every commit. **Mobile-first, empty/error and
+minimum-field-count are human verdicts** reached by reading the source, with the
+evidence below. Nothing here is a guess, and nothing is marked from a screenshot
+alone.
+
+**ROW 3 IS MARKED "after a real red" AND STAYS MARKED.** `/portal/booking` was
+the one screen that failed, and it failed for a real reason. Recording it as a
+plain PASS would erase the only evidence this gate has that its scanner is
+pointed at something.
+
+### 3.0c The one violation the scan found, and why it survived eight screens
+
+**`color-contrast (serious) x1` on `/portal/booking`, run `31649767622`.**
+
+The ghost **"Anterior"** back button rendered `v2-green-700` `#4E7D6B` on the
+portal's page background `bg` `#F7F9FB`: **4.45:1**, against AA's 4.5:1 for
+normal text. It missed by 0.05.
+
+**Why only that screen.** The same token, in the same shared `Button`, passes on
+every other portal screen because those buttons sit **inside white `Card`s**,
+where it is 4.70:1. `/portal/booking` is the one screen that puts a green label
+directly on the page background. The token's comment in `theme.css` read *"AA
+label text on light surfaces (§3.4)"* — a claim measured against white and true
+on exactly one of the six light surfaces this repo defines:
+
+| Surface | v2-green-700 | v2-green-800 |
+|---|---|---|
+| `surface` `#FFFFFF` | 4.70 | 7.03 |
+| `bg` `#F7F9FB` | **4.45** | 6.66 |
+| `surface-muted` `#F0F3F6` | **4.22** | 6.31 |
+| `v2-bg` `#F7F8FA` | **4.42** | 6.62 |
+| `v2-green-50` `#EFF7F3` | **4.31** | 6.45 |
+| `v2-green-100` `#DCEDE5` | **3.87** | 5.79 |
+
+The last two rows are the `ghost` and `secondary` variants' **own hover and
+active tints**, so `secondary` was also failing in a state no scan photographs.
+
+**Fixed** by moving both label variants to `v2-green-800`. The token is unchanged
+and remains correct as a **fill** — `primary` puts white on it at 4.70:1.
+
+**Guarded** by `packages/ui/src/contrast-aa.test.ts`, which computes the whole
+matrix from `theme.css` in milliseconds on every commit, including combinations
+no screen renders yet. Both arms were proven red before being trusted: reverting
+`ghost` to 700 fails with the measured ratio, and re-annotating the token fails
+with all five surfaces listed.
+
+**`v2-gold-700` fails the same way** (3.94:1 as label text on `v2-gold-100`, on
+the staff admin badge). It is **not** fixed here — staff-facing, outside this
+gate's patient surface — and is carded as `ACC-gold-700-label-fails-aa`.
 
 ### 3.0a Mobile-first — PASS, by construction rather than by inspection
 
@@ -223,14 +271,18 @@ visible as a regression:
 | A test proves exactly one primary action on the landing screen | **BUILT** |
 | Every empty and error state asserted to contain actionable pt-PT text | **BUILT AND THE GAP FIXED** — seven strings now direct to the clinic and every boundary renders the telephone; 22 assertions, 9 negative arms |
 | The per-screen audit table committed | **COMMITTED AND FILLED** — §3 |
-| Mobile-viewport screenshots of every screen | **BUILT** — `pg9-*.png`, full page, 390×844, uploaded with the Playwright report |
-| The axe scan proven capable of failing | **BUILT** — the slot-lock template, in the one place it fits |
-| Lint, typecheck, unit, e2e, build pass | lint / typecheck / unit / build **GREEN**; **e2e run outstanding** |
+| Mobile-viewport screenshots of every screen | **DONE** — eight `pg9-*.png`, full page, 390×844, downloaded from run `31651759598`'s shard-3 artifact and verified present, not merely written |
+| The axe scan proven capable of failing | **DONE** — passed in the green run: *"a deliberately broken page DOES produce violations"* |
+| Lint, typecheck, unit, e2e, build pass | **ALL GREEN.** lint 0 errors · typecheck 10/10 · unit 2012 passed · build 4/4 · **e2e run `31651759598`, shard 3: 72 passed, 0 failed, 0 flaky** |
 
-**Nine of nine DoD lines are built.** PG9 closes when the e2e suite reports green
-— not on this document, and not on the build passing locally. That is the same
-standard PG8 was held to, and it is why PG8 is open at 7/9 rather than closed on
-a loosened assertion.
+**Nine of nine DoD lines are done, and the e2e run is green at attempt 1.** PG9
+closed on that run, not on this document and not on the build passing locally.
+That is the same standard PG8 was held to.
+
+**THE RUN EARNED ITS KEEP.** It reddened first, on a real contrast defect
+(§3.0c), and the fix was measured rather than guessed. A gate closed on the
+document would have shipped a patient-facing AA failure with a green tick beside
+it.
 
 ### 5.1 The slot-lock template, and where it fits here
 
@@ -244,8 +296,16 @@ explicitly warns against adding a production path that exists only for a test.
 Contrast, landmarks and target size have no disable flag; they are properties of
 the markup.
 
-**Where it does fit is the axe scan itself**, and that arm is worth building: a
-run with the ruleset narrowed to a tag the portal provably violates should turn
-the check RED. Without it, "axe found no violations" is indistinguishable from
-"axe was misconfigured and scanned nothing" — the same class as a skipped test
-inside a green shard. **Not yet built.**
+**Where it does fit is the axe scan itself**, and that arm is **BUILT AND GREEN**.
+A `data:` URL page carrying three separate violations at once — an image with no
+alt, an input with no label, a document with no lang — is scanned with the same
+ruleset and the test requires violations to come back. No production file carries
+the markup, and one rule being disabled cannot satisfy it. Without this arm, "axe
+found no violations" is indistinguishable from "axe was misconfigured and scanned
+nothing" — the same class as a skipped test inside a green shard.
+
+**AND THE SCAN PROVED ITSELF THE HARD WAY TOO**, which is worth more than the
+synthetic arm: on run `31649767622` it reddened on a **real portal screen** for a
+**real defect** (§3.0c), then went green on the fix. A scanner that has caught
+something is a different kind of evidence from a scanner that has only ever
+agreed with you.

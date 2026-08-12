@@ -1,14 +1,23 @@
 # OsteoJP portal — handover state
 
-**As of 2026-08-12, `origin/main` @ `1cdb36f`.** Written for the person who hands
-this build to the clinic team and to legal, and for anyone who reads it after.
+**As of 2026-08-13.** Written for the person who hands this build to the clinic
+team and to legal, and for anyone who reads it after.
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**118 cards. 54 shipped, 64 open. Launch readiness 7/9.**
+**128 cards. 57 shipped, 71 open. Launch readiness 8/9.**
+
+> **PG9 EXPERIENCE closed on 2026-08-13**, on run `31651759598` — shard 3, **72
+> passed, 0 failed, 0 flaky, green at attempt 1**. It reddened first, on a real
+> patient-facing AA contrast failure, which is the best evidence the gate has.
+>
+> **PG8 SYNC is still open at 8/9, and the reason has changed completely.** The
+> browser-level crossing it was missing is now **observed**: a portal booking
+> appears on the staff agenda on the day it booked, green at attempt 1 in the
+> same run. It is held open for **confirmation, not discovery** — see §1.
 
 ---
 
-## 1. Readiness — 7 of 9
+## 1. Readiness — 8 of 9
 
 | Gate | State | One line |
 |---|---|---|
@@ -19,8 +28,8 @@ this build to the clinic team and to legal, and for anyone who reads it after.
 | **PG5 REMINDERS** | **PASS** | 48h email and 24h SMS as separate per-channel offsets with the channel inside the idempotency key, and all ten bodies approved. **Reminders are not live** — `REMINDERS_LIVE_SEND` is false. |
 | **PG6 EXPOSURE** | **PASS** | 51-row exposure matrix committed; 23 MUST-NEVER rows, every one with a verified enforcement point. |
 | **PG7 ENVIRONMENT** | **PASS** | Every environment variable has a safe default or fails loudly at boot; the full four-app estate was walked. |
-| **PG8 SYNC** | **OPEN — halted deliberately at 7/9** | **The property is demonstrated at the DATABASE layer and not at the browser layer.** DB-gated and hard-required: a booked window leaves the offered list, contention refuses the loser, a second confirmed overlap is refused, availability has one implementation. **The browser-level crossing to a specific row is not demonstrated.** The e2e books successfully and the row is then invisible on the agenda **to every viewer, including the owner, who has no location filter at all** — so it is *not* PL-09 scoping. **PL-09 was not weakened to close this gate and no product file was touched.** Two candidates remain, untested: the appointment was never created, or the agenda card renders in a shape the locator misses. |
-| **PG9 EXPERIENCE** | **OPEN — all nine DoD lines built, awaiting a green e2e run** | axe `wcag22aa` across eight patient screens at 390×844, plus pt-PT, 24h, one-primary-action, mobile screenshots, and an arm proving the scanner can fail. The per-screen audit is filled. **The gap it found is fixed**: every patient dead end now carries the clinic telephone, where before five strings said "contacte a clínica" and no screen said how. |
+| **PG8 SYNC** | **OPEN — but the crossing is now OBSERVED** | The property was demonstrated at the DATABASE layer and not at the browser layer. **That changed on 2026-08-13:** a portal booking appears on reception's agenda on the day it booked, green at attempt 1. **The "invisible row" was never real** — every probe used `isVisible({timeout})`, which playwright-core ignores and answers instantly, so a check written to wait 15 seconds answered in 443ms from an unpainted page. Held open for **one more independent green**, because this gate has produced two wrong greens before and a third is worth confirming rather than trusting. |
+| **PG9 EXPERIENCE** | **PASS** | axe `wcag2a/2aa/21aa/22aa` across eight patient screens at 390×844, plus pt-PT, 24h, one-primary-action, mobile screenshots, and an arm proving the scanner can fail. Green at attempt 1 on run `31651759598`. **It reddened first on a real defect** — the ghost back button at 4.45:1 against a 4.5 floor — and **the gap the human half found is fixed**: every patient dead end now carries the clinic telephone, where before five strings said "contacte a clínica" and no screen said how. |
 
 ---
 
@@ -52,15 +61,59 @@ produce on a shared database, so it found somebody else's row and called it the
 crossing. Once the assertion was pinned to the exact booked date, it went **red** —
 and a red on a correct assertion is worth more than either green was. **A green
 obtained by loosening an assertion until it passes is what this gate produced
-twice, and it was caught twice.** 7/9 is the honest number.
+twice, and it was caught twice.**
 
-**PG8, stated without softening.** Two CI runs on 2026-08-12 reported direction A
-as passing. Neither demonstrated the property. The assertion matched a seeded
-fixture patient's name and a time — both of which any other spec can produce on a
-shared database — so it found somebody else's row and called it the crossing. It
-is held open at 7/9 deliberately. **The crossing itself works**: the staff agenda
-query carries no status filter, so a portal booking appears on it the moment it is
-written. What is missing is a test that can tell its own row from a neighbour's.
+### The 2026-08-13 correction to that red, and it is the most transferable finding here
+
+**The pinned assertion was right. The probe behind it could not answer.**
+
+`locator.isVisible({ timeout: N })` — the form every probe in that spec used —
+**ignores the timeout**. From the installed playwright-core 1.60.0, verbatim:
+*"@deprecated This option is ignored. `locator.isVisible()` does not wait for the
+element to become visible and returns immediately."* Wrapped in `.catch(() =>
+false)`, a check written to wait 15 seconds answered in zero, from whatever the
+DOM held at that instant.
+
+**The timings prove it with no further argument.** Every reading that said
+"absent" came back faster than a page can paint; every reading that waited found
+the row:
+
+| Run | Time to answer | Answer |
+|---|---|---|
+| `31635017752` | 391ms | absent |
+| `31641934973` | ~400ms | absent to reception **and** to the owner |
+| `31649767622` attempt 1 | 443ms | absent |
+| `31649767622` attempt 2 | 1683ms | **present** — same commit, same seed |
+| `31651759598` attempt 1 | 548ms | **present** — with a probe that waits |
+
+**The "three independent surfaces" were one instrument, called three times.**
+Reception, the owner viewer and the patient's own appointment list were three
+calls to the same non-waiting probe, and the corroboration they appeared to give
+each other is what made a test defect look like a product defect. `INC-10` — the
+possible patient-facing booking that never committed — is **closed on this
+evidence**. The submit path was correct all along, exactly as the code read said.
+
+**It cost:** PG8 held open, an incident card raised as possibly patient-facing, a
+session spent ruling out tenant mismatch and location scope by code read, and a
+diagnostic block added and then removed for slowing the suite enough to be
+cancelled. All of it downstream of one deprecated option.
+
+**8/9 is the honest number, and PG8 is now held for confirmation rather than
+discovery** — one more independent attempt-1 green, from a different commit.
+
+**PG8, stated without softening, as of 2026-08-13.** The crossing works and is
+now **observed in a browser**, on the day it booked, at attempt 1. What is left
+is confirmation: **one more independent attempt-1 green from a different
+commit**. That standard is not ceremony — this gate reported passing twice on an
+assertion that was matching a neighbour's row, and both greens were withdrawn. A
+third green on a test that was flaky in the previous run is worth checking once
+more, and the next PR in this lane runs the same suite anyway, so it costs
+nothing.
+
+`LE-pg8-e2e-needs-run-scoped-patient` stays open either way. The assertion is
+pinned to the booked **date**, so a neighbour would now have to book the same
+patient at the same time on the same specific day — materially stronger than
+what produced the two false greens, and still not a run-unique identity.
 
 **Migration `0061` was applied to production** and its journal is recorded verbatim
 at `docs/migration-apply-0061.md` §10. The next free migration number is **0062**,
@@ -172,11 +225,12 @@ shipped test sink — and it is the top item in the build queue.
 
 ## 4. Every open card, by bucket
 
-**64 open of 118.**
+**71 open of 128.**
 
 ### Incidents — 0
 None open. `INC-09` shipped 2026-08-12; it closes on the owner's screen via
-`OBSERVE-SWEEP.md` step B3b.
+`OBSERVE-SWEEP.md` step B3b. **`INC-10` closed 2026-08-13** — the portal booking
+that appeared not to commit did commit; the instrument was wrong (§2).
 
 ### Blocked on people — 4
 All four need an observation or a signature, not a build.
@@ -204,11 +258,20 @@ identity-blind assertion proves something false.** 170 count assertions triaged;
 63 are absence assertions and structurally safe, and the presence set is
 dominated by static UI structure. Three genuine candidates, none gate-bearing.
 
-### Wave-13 loops and launch — 24
-`W13-06a`, `W13-06b`, `W13-08`, the `WF-*` series, `LAUNCH-01` (flag arming),
-`LAUNCH-03-client-data-migration`. Several `W13-*` and `LE-*` cards sit at
-`in_flight` **on purpose**: WF-03 rules that a patient-visible loop closes on the
-owner's deployed screen, not on green CI.
+### Wave-13 loops and launch — 23
+`W13-06a`, `W13-06b`, the `WF-*` series, `LAUNCH-01` (flag arming),
+`LAUNCH-03-client-data-migration`. **`W13-08` shipped 2026-08-13** and closed
+PG9. Several `W13-*` and `LE-*` cards sit at `in_flight` **on purpose**: WF-03
+rules that a patient-visible loop closes on the owner's deployed screen, not on
+green CI.
+
+### Accessibility and test-integrity, added 2026-08-13 — 3
+`ACC-gold-700-label-fails-aa` (medium) — the same measurement that reddened PG9
+found `v2-gold-700` at **3.94:1** as label text on the staff admin badge. Not
+fixed in a portal PR; it is staff-facing. · `ACC-immediate-isvisible-probes`
+(medium) — seven more e2e probes treat `isVisible()` as if it waited, the shape
+that cost PG8 four runs. · `ACC-preselection-spec-flaky` (medium) — a flaky pass
+inside the very run that closed PG9, reported rather than left in the log.
 
 ### Loose ends — 28
 Includes `LE-inc08-survivor-still-confirmed` **(high)** — now resolved in the
@@ -233,6 +296,14 @@ Over 2026-08-12 the verification found, in its own work:
   consecutive runs**, while a PR merged on four green required checks with that
   direction never executed;
 - **36 further suites** that can still do the same thing.
+
+**And on 2026-08-13, the one that cost the most:** a probe whose 15-second
+timeout **was silently ignored by the library**, so four runs across two days
+reported a booking as missing that was there the whole time. It produced an
+incident card, two abandoned hypotheses and a held gate before anyone measured
+it. Nothing in the code looked wrong — `isVisible({ timeout: 15_000 })` reads at
+the call site exactly like a check that waits, **and the call site is what gets
+reviewed.**
 
 Two guards now exist: the test **fails rather than skips** in CI, and
 `.github/scripts/assert-e2e-executed.mjs` reddens the job from the report
@@ -266,6 +337,14 @@ Four instances, all found on **2026-08-12**, all in this project's own
 | `test.skip()` | A gate-bearing test never ran, inside a **green** shard, on two consecutive runs. A pull request merged on four green required checks with the property untested. |
 | `.catch(() => {})` | A broken flow — a date picker that never opened — degraded into "the calendar is empty", which skips instead of failing. |
 | `?? e.kind` | A notification kind with no label rendered the **raw database enum** to reception, in English, on a Portuguese screen, instead of failing to compile. |
+| `isVisible({timeout})` | **Added 2026-08-13.** A deprecated option the library *ignores*: the probe answered in 443ms instead of waiting 15 seconds, so "the page has not painted yet" was reported as "the appointment does not exist" — across four runs, three surfaces and two days. |
+
+**The fifth one is different in kind, and worth the extra line.** The first four
+were written by this project. **The fifth was written by the library**, and the
+call site gives no hint: `isVisible({ timeout: 15_000 })` reads exactly like a
+check that waits. It is the same failure mode arriving through a dependency —
+which means *reading your own code carefully is not sufficient*, and a probe on a
+verdict path has to be **proven to wait**, not assumed to.
 
 **Each was one line. Each cost a day.** None was written carelessly; every one
 was written to make a program keep going in an unexpected case, which is normally
