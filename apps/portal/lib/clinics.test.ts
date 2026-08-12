@@ -67,6 +67,65 @@ describe('PG9 — the clinic telephone is reachable from a locked-out patient', 
     }
   })
 
+  it.each([
+    'apps/portal/app/portal/account/error.tsx',
+    'apps/portal/app/portal/appointments/error.tsx',
+    'apps/portal/app/portal/booking/error.tsx',
+    'apps/portal/app/portal/dashboard/error.tsx',
+    'apps/portal/app/portal/documents/error.tsx',
+    'apps/portal/app/portal/forms/error.tsx',
+    'apps/portal/app/not-found.tsx',
+  ])('%s renders the telephone, not just the sentence promising one', (file) => {
+    // PG9: "what happened, what to do, and the clinic's telephone where the
+    // answer is 'call us'". The copy in these boundaries now says "contacte a
+    // clínica"; WITHOUT THIS ASSERTION the sentence could keep the promise while
+    // the number quietly disappeared, which is the dead end the whole change
+    // exists to remove.
+    // THE JSX USAGE, NOT THE IMPORT, AND THE FIRST VERSION GOT THIS WRONG.
+    // `/ClinicPhones/` matched the `import { ClinicPhones } from ...` line, so
+    // deleting the actual `<ClinicPhones />` element left the assertion green.
+    // Matching a MENTION rather than a USE is the same defect as matching a
+    // comment - criterion A on ACC-vacuous-guard-sweep - and it was caught only
+    // by running the negative arm.
+    expect(strip(read(file))).toMatch(/<ClinicPhones\s*\/?>/)
+  })
+
+  it.each([
+    'load_appointments_desc',
+    'load_documents_desc',
+    'load_forms_desc',
+    'load_dashboard_desc',
+    'load_account_desc',
+    '404_body',
+  ])('%s still directs the patient to the clinic, in BOTH locales', (key) => {
+    // The sentence and the number must move together. Pinned in both locales so
+    // a translation cannot silently drop the half that makes the other useful.
+    const pt = JSON.parse(read('packages/i18n/src/portal/strings.pt.json')) as {
+      errors: Record<string, string>
+    }
+    const en = JSON.parse(read('packages/i18n/src/portal/strings.en.json')) as {
+      errors: Record<string, string>
+    }
+    expect(pt.errors[key], `pt ${key}`).toMatch(/contacte a clínica/i)
+    expect(en.errors[key], `en ${key}`).toMatch(/contact the clinic/i)
+  })
+
+  it('the booking boundary directs to the clinic too — it uses its OWN namespace', () => {
+    // CAUGHT BY THIS SUITE'S OWN NEGATIVE ARM. booking/error.tsx renders
+    // `s.booking.load_error_description`, not `s.errors.*`, so the rewrite that
+    // fixed the other five silently skipped it and only the import landed. A
+    // second string namespace for the same kind of screen is exactly the drift
+    // an enumeration test exists to catch.
+    const pt = JSON.parse(read('packages/i18n/src/portal/strings.pt.json')) as {
+      booking: Record<string, string>
+    }
+    const en = JSON.parse(read('packages/i18n/src/portal/strings.en.json')) as {
+      booking: Record<string, string>
+    }
+    expect(pt.booking.load_error_description).toMatch(/contacte a clínica/i)
+    expect(en.booking.load_error_description).toMatch(/contact the clinic/i)
+  })
+
   it('the Clínicas screen reads the same source, so the two cannot drift', () => {
     const page = strip(read('apps/portal/app/portal/clinics/page.tsx'))
     expect(page).toMatch(/CLINIC_CONTACTS/)

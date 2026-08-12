@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { s } from '@/lib/i18n'
+import { ClinicPhones } from '@/components/ClinicPhones'
 
 // Custom 404 page for the patient portal.
 // Replaces the Next.js framework default (English, unstyled) with a
@@ -15,6 +16,9 @@ export default function NotFound() {
         <p className="max-w-xs text-sm text-text-secondary">
           {s.errors['404_body']}
         </p>
+        {/* PG9: "the clinic's telephone where the answer is 'call us'". The copy
+            above now says to contact the clinic; this is the number it means. */}
+        <ClinicPhones />
       </div>
       <Link
         href="/portal/dashboard"

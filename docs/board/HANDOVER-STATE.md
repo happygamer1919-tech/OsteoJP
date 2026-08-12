@@ -140,6 +140,34 @@ someone navigates or refreshes.
 booking. But in a live demo, booking on the portal and pointing at an unrefreshed
 agenda will look broken. **Refresh the agenda.**
 
+### RISK 4 — Decision D's patient login has ZERO automated coverage
+
+**`SEC-otp-login-path-has-zero-e2e-coverage`, high, open.** Two facts compose into
+a gap:
+
+1. `.github/workflows/e2e.yml:250` writes only `NEXT_PUBLIC_API_URL` to the
+   portal's CI environment. **It never writes `PORTAL_TENANT_ID`.**
+2. `apps/portal/lib/auth/otp.ts:54-57` reads that variable and **throws** without
+   it — deliberately and loudly, per PG7.
+
+**Together they mean the portal's OTP login cannot work in CI, and no test
+notices**, because every portal spec signs in through the **trusted-device** door
+instead: the seed writes a device row and the setup presents the cookie. That
+choice is well-reasoned on its own terms, but its consequence was never stated.
+
+**So the primary patient login — phone, code, session — is exercised by unit
+tests and by nothing else automated.** Its only end-to-end coverage has ever been
+**Ivan's own sitting**, and **PG1 passed on that observation** rather than on CI.
+A point-in-time check with no automated guard behind it does not defend the path
+between now and launch.
+
+**It is worse than the 36 skippable suites in one specific way:** those *fail to
+prove* and can be un-skipped. **This is a path no test can reach.** There is
+nothing to un-skip; the coverage was never possible in this configuration.
+
+The fix is small — write the variable, then drive the real OTP path through the
+shipped test sink — and it is the top item in the build queue.
+
 ---
 
 ## 4. Every open card, by bucket
@@ -260,6 +288,44 @@ lawyer, a security reviewer or the next engineer will, and it is the most
 transferable thing this project has produced: it explains why the gate numbers in
 §1 are stated with their evidence, and why several of them were **taken back
 down** before being trusted.
+
+---
+
+## 5c. Portal error copy authored under delegated authority — PLEASE READ IT
+
+**Seven patient-facing strings were changed on 2026-08-12 by the build terminal,
+under authority delegated for operational error text.** They carry **no
+commitment**: no fee, no cancellation term, no consent, no retention, no promise
+about response time or outcome. **They have not been reviewed by a Portuguese
+speaker and are not approved copy.**
+
+**Please have the clinic team read these in the demo.** Every change is the same
+edit — appending a clause the repo already used elsewhere so a dead end offers
+something to do:
+
+| Key | Before | After |
+|---|---|---|
+| `errors.load_appointments_desc` | Ocorreu um erro ao carregar as suas marcações. Tente novamente. | …Tente novamente **ou contacte a clínica.** |
+| `errors.load_documents_desc` | …os seus documentos. Tente novamente. | …Tente novamente **ou contacte a clínica.** |
+| `errors.load_forms_desc` | …as suas fichas. Tente novamente. | …Tente novamente **ou contacte a clínica.** |
+| `errors.load_dashboard_desc` | …a sua informação. Tente novamente. | …Tente novamente **ou contacte a clínica.** |
+| `errors.load_account_desc` | …os seus dados. Tente novamente. | …Tente novamente **ou contacte a clínica.** |
+| `booking.load_error_description` | …a oferta de marcação. Tente novamente. | …Tente novamente **ou contacte a clínica.** |
+| `errors.404_body` | A página que procura não existe. | …existe. **Se precisar de ajuda, contacte a clínica.** |
+
+English equivalents changed in step. **"ou contacte a clínica" is not new
+wording** — it is already committed in `otp_refused` and `booking.no_slots`. Only
+`404_body`'s "Se precisar de ajuda" is a phrase this repo had not used before,
+and it is the one most worth a second opinion.
+
+**And the numbers are now on the screen.** Every one of those surfaces renders the
+clinic telephones as `tel:` links from a single source, `apps/portal/lib/clinics.ts`.
+Before this, five strings told a patient to contact the clinic and no screen said
+how.
+
+**`403`, `500` and `offline` were left alone deliberately.** Those strings are
+rendered by nothing in the portal — a patient cannot reach them — so writing copy
+for them would be dead weight. Recorded rather than quietly skipped.
 
 ---
 

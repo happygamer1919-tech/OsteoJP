@@ -153,7 +153,7 @@
     "pending_home_cta": "Ir para o início",
     "step_info_pending": "O seu pedido ficará a aguardar confirmação da receção. O horário só fica reservado depois de confirmado.",
     "load_error_title": "Não foi possível abrir as marcações",
-    "load_error_description": "Ocorreu um erro ao carregar a oferta de marcação. Tente novamente."
+    "load_error_description": "Ocorreu um erro ao carregar a oferta de marcação. Tente novamente ou contacte a clínica."
   },
   "appointments": {
     "title": "As minhas consultas",
@@ -260,7 +260,7 @@
     "type_document": "Documento",
     "type_image": "Imagem",
     "load_error_title": "Não foi possível carregar os documentos",
-    "load_error_description": "Ocorreu um erro ao carregar os seus documentos. Tente novamente."
+    "load_error_description": "Ocorreu um erro ao carregar os seus documentos. Tente novamente ou contacte a clínica."
   },
   "clinics": {
     "title": "As nossas clínicas",
@@ -359,7 +359,7 @@
   },
   "errors": {
     "404_title": "Página não encontrada",
-    "404_body": "A página que procura não existe.",
+    "404_body": "A página que procura não existe. Se precisar de ajuda, contacte a clínica.",
     "404_cta": "Ir para o início",
     "403_title": "Acesso não autorizado",
     "403_body": "Não tem permissão para ver esta página.",
@@ -368,15 +368,15 @@
     "offline_title": "Sem ligação",
     "offline_body": "Verifique a sua ligação à internet e tente novamente.",
     "load_appointments": "Não foi possível carregar as marcações",
-    "load_appointments_desc": "Ocorreu um erro ao carregar as suas marcações. Tente novamente.",
+    "load_appointments_desc": "Ocorreu um erro ao carregar as suas marcações. Tente novamente ou contacte a clínica.",
     "load_documents": "Não foi possível carregar os documentos",
-    "load_documents_desc": "Ocorreu um erro ao carregar os seus documentos. Tente novamente.",
+    "load_documents_desc": "Ocorreu um erro ao carregar os seus documentos. Tente novamente ou contacte a clínica.",
     "load_forms": "Não foi possível carregar as fichas",
-    "load_forms_desc": "Ocorreu um erro ao carregar as suas fichas. Tente novamente.",
+    "load_forms_desc": "Ocorreu um erro ao carregar as suas fichas. Tente novamente ou contacte a clínica.",
     "load_dashboard": "Não foi possível carregar o início",
-    "load_dashboard_desc": "Ocorreu um erro ao carregar a sua informação. Tente novamente.",
+    "load_dashboard_desc": "Ocorreu um erro ao carregar a sua informação. Tente novamente ou contacte a clínica.",
     "load_account": "Não foi possível carregar a conta",
-    "load_account_desc": "Ocorreu um erro ao carregar os seus dados. Tente novamente."
+    "load_account_desc": "Ocorreu um erro ao carregar os seus dados. Tente novamente ou contacte a clínica."
   },
   "patientAppointments": {
     "error": {
