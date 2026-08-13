@@ -200,40 +200,66 @@ function AppointmentRow({
     <GlassCard
       className={conflicting ? "ring-1 ring-warning" : undefined}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
-        {/* Date/time (24h Lisbon), mirroring the agenda block format. */}
-        <span className="shrink-0 text-sm tabular-nums text-v2-text-primary sm:w-28">
-          {formatTimeOfDay(new Date(appt.startsAt))}-{formatTimeOfDay(new Date(appt.endsAt))}
-        </span>
+      {/* ================================================================= */}
+      {/* STAFF-04 - THE PATIENT NAME IS NEVER TRUNCATED.                    */}
+      {/* ================================================================= */}
+      {/* Reported from reception: the list rendered "Abilio J..." - the row was
+          ONE flex line and every field competed for its width, so the name lost.
+          It carried `truncate`, which is a promise that something will be cut.
 
-        {/* Patient, led by the estado glyph. */}
-        <span
-          className={`flex min-w-0 items-center gap-1 text-sm font-medium sm:flex-1 ${
-            struck ? "text-v2-text-secondary line-through" : "text-v2-text-primary"
-          }`}
-        >
-          <EstadoMarker estado={estado} />
-          <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
-          {recurring && (
-            <>
-              <Repeat
-                size={14}
-                strokeWidth={1.75}
-                aria-hidden="true"
-                className="shrink-0 text-v2-text-secondary"
-              />
-              <span className="sr-only">{s["appointment.recurring"]}</span>
-            </>
-          )}
-          <span className="truncate">{appt.patientName}</span>
-        </span>
+          THE ROW IS NOW TWO LINES, and that is the whole change:
+            line 1  IDENTITY  - time, estado glyph, FULL patient name, actions
+            line 2  ATTRIBUTES - service, location, therapist, who created it
 
-        {/* Service. */}
-        <ServiceChip name={appt.serviceName} cancelled={cancelled} />
+          WHY THIS SHAPE RATHER THAN JUST DROPPING `truncate`. Removing it from a
+          single-line row makes a long name shove the service, location and
+          therapist along, so every row wraps to a different height and the list
+          stops being scannable - the columns were the only thing holding it
+          together. Giving identity its own line means the name can be any length
+          without moving anything else.
 
-        {/* Location + therapist. */}
-        <span className="text-xs text-v2-text-secondary">{appt.locationName}</span>
-        <span className="text-xs text-v2-text-secondary">{appt.practitionerName}</span>
+          NOTHING WAS DROPPED. Every field that was on the row is still on the
+          row: service chip, location, therapist, created-by, conflict marker,
+          no-note chip, status badge, hover card, Notas and Abrir. The second line
+          is smaller and secondary, which is what those fields already were - they
+          were already `text-xs text-v2-text-secondary`.
+
+          WHAT RECEPTION SCANS FOR IS TIME AND NAME, and those are now the only
+          two things on the primary line. */}
+      <div className="flex flex-col gap-2">
+        {/* Line 1 - identity and actions. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
+          {/* Date/time (24h Lisbon), mirroring the agenda block format. */}
+          <span className="shrink-0 text-sm tabular-nums text-v2-text-primary sm:w-28">
+            {formatTimeOfDay(new Date(appt.startsAt))}-{formatTimeOfDay(new Date(appt.endsAt))}
+          </span>
+
+          {/* Patient, led by the estado glyph. */}
+          <span
+            className={`flex min-w-0 items-center gap-1 text-sm font-medium sm:flex-1 ${
+              struck ? "text-v2-text-secondary line-through" : "text-v2-text-primary"
+            }`}
+          >
+            <EstadoMarker estado={estado} />
+            <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
+            {recurring && (
+              <>
+                <Repeat
+                  size={14}
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                  className="shrink-0 text-v2-text-secondary"
+                />
+                <span className="sr-only">{s["appointment.recurring"]}</span>
+              </>
+            )}
+            {/* `break-words`, not `truncate`. A name too long for the line WRAPS
+                rather than being cut - the one behaviour that guarantees it is
+                always fully readable, whatever it is. */}
+            <span data-testid="marcacoes-patient-name" className="break-words">
+              {appt.patientName}
+            </span>
+          </span>
 
         {/* Audit provenance (W9-06, item 10): who created the marcacao. NULL
             createdByName = a portal booking, shown as the owner-ruled label, never
@@ -243,29 +269,29 @@ function AppointmentRow({
           {s["appointment.createdBy"]}: {appt.createdByName ?? s["appointment.createdByPortal"]}
         </span>
 
-        {/* W10-05: the shared unified hover popup (mini-dashboard), replacing the
-            W9-06 note-only NoteHoverCard. The SAME AppointmentHoverPanel the agenda
-            card renders; staff-only (the portal never imports it). Shown on hover
-            AND keyboard focus of its trigger. */}
-        <AppointmentHoverCard appt={appt} />
+          {/* W10-05: the shared unified hover popup (mini-dashboard), replacing the
+              W9-06 note-only NoteHoverCard. The SAME AppointmentHoverPanel the agenda
+              card renders; staff-only (the portal never imports it). Shown on hover
+              AND keyboard focus of its trigger. */}
+          <AppointmentHoverCard appt={appt} />
 
-        {/* Conflict marker, consistent with the agenda (warning tone, not red). */}
-        {conflicting && (
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-warning-700">
-            <TriangleAlert size={14} strokeWidth={1.75} aria-hidden="true" />
-            {s["agenda.conflict"]}
-          </span>
-        )}
-
-        {/* Status + no-note indicator. */}
-        <span className="flex items-center gap-2 sm:ml-auto">
-          {appt.status === "completed" && !appt.hasNote && (
-            <StatusChip tone="warning">{s["appointment.noNote"]}</StatusChip>
+          {/* Conflict marker, consistent with the agenda (warning tone, not red). */}
+          {conflicting && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-warning-700">
+              <TriangleAlert size={14} strokeWidth={1.75} aria-hidden="true" />
+              {s["agenda.conflict"]}
+            </span>
           )}
-          <StatusBadge tone={STATUS_TONE[appt.status]}>
-            {s[STATUS_KEY[appt.status]]}
-          </StatusBadge>
-        </span>
+
+          {/* Status + no-note indicator. */}
+          <span className="flex items-center gap-2 sm:ml-auto">
+            {appt.status === "completed" && !appt.hasNote && (
+              <StatusChip tone="warning">{s["appointment.noNote"]}</StatusChip>
+            )}
+            <StatusBadge tone={STATUS_TONE[appt.status]}>
+              {s[STATUS_KEY[appt.status]]}
+            </StatusBadge>
+          </span>
 
         {/* W12-00 (CB GRAVE): the row's open/edit affordance. Before this loop the
             /marcacoes rows were inert display cards with no way to open or edit a
@@ -278,25 +304,42 @@ function AppointmentRow({
         {/* PL-17 (owner CR 2026-07-30): the note thread of THIS marcacao, one
             press away from the list. Same board the booking panel renders, so a
             note written here shows in the drawer, the hover and the ficha. */}
-        <button
-          type="button"
-          onClick={() => onOpenNotes(appt)}
-          aria-label={`${s["marcacoes.notes"]}: ${appt.patientName}`}
-          data-testid="marcacoes-notes-button"
-          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-        >
-          <FileText size={16} strokeWidth={1.75} aria-hidden="true" />
-          {s["marcacoes.notes"]}
-        </button>
+          <button
+            type="button"
+            onClick={() => onOpenNotes(appt)}
+            aria-label={`${s["marcacoes.notes"]}: ${appt.patientName}`}
+            data-testid="marcacoes-notes-button"
+            className="inline-flex h-9 shrink-0 items-center gap-1 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          >
+            <FileText size={16} strokeWidth={1.75} aria-hidden="true" />
+            {s["marcacoes.notes"]}
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onOpen(appt)}
-          aria-label={`${s["marcacoes.openAppointment"]}: ${appt.patientName}`}
-          className="inline-flex h-9 shrink-0 items-center rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-        >
-          {s["marcacoes.openAppointment"]}
-        </button>
+          <button
+            type="button"
+            onClick={() => onOpen(appt)}
+            aria-label={`${s["marcacoes.openAppointment"]}: ${appt.patientName}`}
+            className="inline-flex h-9 shrink-0 items-center rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          >
+            {s["marcacoes.openAppointment"]}
+          </button>
+        </div>
+
+        {/* Line 2 - the attributes. Every field that used to compete with the
+            patient name for row width, at the size they already had. Indented
+            under the time column on wide screens so the eye reads name-then-detail
+            rather than treating them as a second row of equals. */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:pl-28">
+          <ServiceChip name={appt.serviceName} cancelled={cancelled} />
+          <span className="text-xs text-v2-text-secondary">{appt.locationName}</span>
+          <span className="text-xs text-v2-text-secondary">{appt.practitionerName}</span>
+          {/* Audit provenance (W9-06, item 10): who created the marcacao. NULL
+              createdByName = a portal booking, shown as the owner-ruled label,
+              never blank. */}
+          <span className="text-xs text-v2-text-secondary">
+            {s["appointment.createdBy"]}: {appt.createdByName ?? s["appointment.createdByPortal"]}
+          </span>
+        </div>
       </div>
     </GlassCard>
   );
