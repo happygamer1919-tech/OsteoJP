@@ -1,14 +1,23 @@
 # Apply block - migration 0062, the E.164 reading of a phone a human typed
 
-**Status: NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN**
+**Status: VALIDATED by strategy 2026-08-13. APPLIED TO PRODUCTION 2026-08-13.**
 
-Per `docs/board/PORTAL-REHYDRATE.md` §4.9, every apply block starts under this
-banner and **PURPLE never clears its own**. The path is draft -> strategy -> Ivan.
+The `NOT VALIDATED` banner that stood here was cleared by **strategy**, not by
+PURPLE, on the **nine-point review** the 0061 doc established: the working
+directory, the detached checkout of the pinned sha, the env source and
+`set -o allexport`, the pre-check with a literal expected count, the post-check
+proving pending drops to zero, one command per line with no backticks, no
+credential echoed or interpolated, nothing that builds or installs or tests, and
+explicit paste-back instructions.
+
+**PURPLE did not clear its own banner**, per `PORTAL-REHYDRATE.md` §4.9. The path
+was draft -> strategy -> Ivan, and it held.
 
 Migration: `0062_patient_phone_e164` (journal idx 61).
-Branch: `db/0062-patient-phone-e164`. PR: #888.
-**Apply from sha `4adafcf`.**
-Card: `SEC-otp-linkage-exact-phone-match` - **LAUNCH-BLOCKING**.
+Branch: `db/0062-patient-phone-e164`. PR: **#888, merged as `4ae5a39`**.
+**Applied from sha `4adafcf`.** Journal verbatim in section 9.
+Card: `SEC-otp-linkage-exact-phone-match` - **LAUNCH-BLOCKING, now closed**.
+**Next free migration number: `0063`.**
 
 Written under `docs/runbook-prod-migrations.md`, "The pre-check is mandatory".
 
@@ -56,6 +65,14 @@ finding**, per the dispatch.
 ---
 
 ## 3. THE PRE-CHECK. Read-only. Run this BEFORE anything in section 6.
+
+> **SUPERSEDED 2026-08-13 BY SECTION 10. DO NOT RUN THIS ONE.**
+> It was never pasted back and the apply went ahead without it - which risked
+> nothing, because this migration cannot fail on existing data (section 2), but
+> left its **second finding unmeasured**. Now that `phone_e164` exists, the same
+> question is a plain count of the column instead of a hand-recomputation of the
+> expression. **Section 10 is the version to run**, and it is still owed.
+> Retained here unedited because it is what strategy reviewed and cleared.
 
 It computes the same expression the migration will store, **without writing
 anything**, and reports four numbers.
@@ -199,7 +216,7 @@ builtins, which is what permits `GENERATED ... STORED` in the first place.
 
 ## 6. The block
 
-NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN
+VALIDATED BY STRATEGY 2026-08-13 - RUN AND COMPLETED 2026-08-13
 
 ```
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
@@ -273,3 +290,145 @@ is stored `+351 916 000 005`, with spaces, exactly as a receptionist would type
 it, and `portal-otp-login.spec.ts` drives the real login for that patient. It is
 green in CI on this branch **because CI applies this migration itself**, so the
 fix is proven end to end before production ever sees it.
+
+---
+
+## 9. THE JOURNAL. Verbatim, as pasted back by the owner 2026-08-13.
+
+```
+HEAD is now at 4adafcf docs(db): the whitespace boundary is measured, not hypothesised
+Scope: all 11 workspace projects
+Lockfile is up to date, resolution step is skipped
+Packages: +2
+++
+Progress: resolved 2, reused 2, downloaded 0, added 2, done
+Done in 474ms using pnpm v11.1.3
+last applied "when" in the database: 1786900000000
+journal entries on disk:             62
+pending:                             1
+  PENDING  0062_patient_phone_e164  when=1787000000000
+
+OK: the pending set is exactly what was expected.
+No config path provided, using default 'drizzle.config.ts'
+Reading config file '/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply/packages/db/drizzle.config.ts'
+Using 'postgres' driver for database querying
+[⣯] applying migrations...{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P06',
+  message: 'schema "drizzle" already exists, skipping',
+  file: 'schemacmds.c',
+  line: '132',
+  routine: 'CreateSchemaCommand'
+}
+[⣟] applying migrations...{
+  severity_local: 'NOTICE',
+  severity: 'NOTICE',
+  code: '42P07',
+  message: 'relation "__drizzle_migrations" already exists, skipping',
+  file: 'parse_utilcmd.c',
+  line: '207',
+  routine: 'transformCreateStmt'
+}
+[✓] migrations applied successfully!last applied "when" in the database: 1787000000000
+journal entries on disk:             62
+pending:                             0
+
+OK: the pending set is exactly what was expected.
+```
+
+### 9.1 What this proves, line by line
+
+| Line | What it rules out |
+|---|---|
+| `HEAD is now at 4adafcf` | the wrong sha, or a plain `git checkout <branch>` leaving the tree on `main` - INC-07, twice |
+| `last applied "when" in the database: 1786900000000` | the 0058 defect, where a hand-appended `when` LOWER than the previous one read as already applied |
+| `pending: 1` + `PENDING 0062_...` | a no-op. The database itself agreed exactly one migration was outstanding, and named it |
+| `[✓] migrations applied successfully!` | **nothing on its own.** `drizzle-kit` prints this whether or not it applied anything, which is why it is the least valuable line here |
+| `last applied "when" ...: 1787000000000` | the `when` MOVED. The database's own bookkeeping advanced to this migration |
+| `pending: 0` | the execution proof, and only in combination with the `1` above |
+
+**No `postgres://` appears anywhere in the output**, so the pre-paste scan passed.
+
+### 9.2 TWO DEVIATIONS FROM WHAT THE BLOCK PREDICTED. Both benign, both recorded.
+
+**1. `Packages: +2 / resolved 2, reused 2, downloaded 0, added 2`.** Section 4
+said this block performs **no install**, and in the sense that mattered it did
+not: `downloaded 0` - **nothing came from the network** and the lockfile was
+untouched (`Lockfile is up to date, resolution step is skipped`). What happened is
+that `pnpm exec` linked two packages **from the local store** into the worktree
+before running.
+
+Recorded rather than waved off, because the *claim* was absolute and the
+*observation* is not. The claim should have read "no dependency is resolved,
+downloaded or upgraded" rather than "no install". **The property that mattered -
+that the apply cannot silently pick up a different dependency tree than the one
+CI proved - held**, and `downloaded 0` is what proves it.
+
+**2. Two `NOTICE`s: `schema "drizzle" already exists` and `relation
+"__drizzle_migrations" already exists`.** Expected and correct. `drizzle-kit`
+issues `CREATE ... IF NOT EXISTS` for its own bookkeeping on every run; these are
+the server saying it skipped them. They concern drizzle's schema, **not
+`public.patients`**, and would appear identically on any apply after the first.
+
+**Neither deviation touches the DDL.** `0062` itself emitted no notice and no
+warning, which for `ALTER TABLE ... ADD COLUMN ... GENERATED` and `CREATE INDEX`
+is what a clean apply looks like.
+
+### 9.3 The pre-check was NOT pasted back, and that is an open item
+
+**Section 3's four numbers never arrived.** The apply proceeded without them.
+
+**This did not risk the apply**, and section 2 says why: unlike `0061`, this
+migration **cannot fail on existing data** - a nullable generated column and a
+non-unique index cannot be refused by any row. So the apply was never gated on it
+in the way `0061`'s was.
+
+**What is still unknown is the second finding.** `STILL_CANNOT_LOG_IN` was the
+count of patients whose stored number does not normalize even after `0062` - a
+foreign number, a malformed entry, or a normalization gap. **Nobody has measured
+it.** The migration is applied and correct; what is not known is whether it
+repaired *everyone* or merely *most*.
+
+**It is cheaper to answer now than it was before**, because the column exists and
+can simply be counted rather than recomputed. See section 10.
+
+---
+
+## 10. THE POST-APPLY CHECK. Read-only. Still owed.
+
+Replaces section 3, which recomputed the expression by hand. Now that
+`phone_e164` exists, the same question is a plain count of the column:
+
+```
+SELECT count(*) FILTER (WHERE phone IS NOT NULL AND btrim(phone) <> '')
+         AS with_a_phone,
+       count(*) FILTER (WHERE phone_e164 IS NOT NULL)
+         AS CAN_LOG_IN,
+       count(*) FILTER (WHERE phone IS NOT NULL AND btrim(phone) <> ''
+                          AND phone_e164 IS NULL)
+         AS STILL_CANNOT_LOG_IN
+  FROM public.patients
+ WHERE deleted_at IS NULL
+   AND merged_into_id IS NULL;
+```
+
+**Three integers and no phone number.** No `SELECT phone`, no sample rows, no
+identifiers - nothing that could put a patient's number into a chat window
+(PII rule 7).
+
+**`STILL_CANNOT_LOG_IN = 0`** - `0062` repaired everyone and this card closes
+completely.
+
+**`STILL_CANNOT_LOG_IN > 0`** - it is the second finding, and it is **not a
+regression**: those patients could not log in before `0062` either. They are one
+of three things and only one is a defect:
+
+| Category | What it is | Where it goes |
+|---|---|---|
+| foreign number | a real patient this clinic cannot reach by PT SMS | `LE-staff-assisted-activation` - a product path, not a bug |
+| malformed entry | a note, an extension, two numbers in one field | a data-quality fix, the only category worth cleaning |
+| normalization gap | a character the SQL does not strip and the TypeScript does | a code fix, and `phone-e164-parity.db.test.ts` is where it would be pinned |
+
+**Read it as a proportion.** Ten out of ten thousand is a support list. Four
+thousand is a launch that stops.
