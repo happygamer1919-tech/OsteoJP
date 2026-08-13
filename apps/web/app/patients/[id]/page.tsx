@@ -221,7 +221,7 @@ export default async function PatientProfilePage({
   const agendaOptions =
     tab === "notas" && noteRevisions.length > 0
       ? await getAgendaOptions(ctx)
-      : { therapists: [], locations: [], services: [], packs: [] };
+      : { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
   // Documentos tab: patient-level administrative documents (attachments with a
   // patient_id and no clinical_record_id). Tenant + role scoped in the query.
   const patientDocuments = tab === "documentos" ? await listPatientDocuments(ctx, id) : [];

@@ -77,6 +77,7 @@ const BUCKETS = {
       ["ACC-13-results-uncommitted", "The results file. Five rows now carry the 2026-08-11 closure ruling; item 25 (was OTP_LIVE_SEND disarmed) is still the most urgent blank."],
       ["ACC-therapist-queue-unobserved", "Item 26 a/b/c. Code-complete, never seen. (c) is the negative arm and must not be skipped."],
       ["STAFF-01-timefield-offstep-value", "**NEW 2026-08-13, staff feedback.** FIXED and awaiting Ivan's screen: the edit panel showed 11:00 for an appointment stored at 11:25. TimeField could not display a value off its own 15-min step. DISPLAY ONLY - saving never moved the appointment."],
+      ["STAFF-02-booking-location-unscoped", "**NEW 2026-08-13, staff feedback.** FIXED, awaiting Ivan's screen. The read path was scoped by PL-09 and the write path by nothing, so staff booked blind into clinics they can never see. Four write paths now refuse SERVER-SIDE; the form restriction is the courtesy."],
       ["VERIFY-QUEUE", "The mechanism card for WF-09/WF-16 batching. Its notes ARE the queue."],
       ["LE-suppression-observation", "Watch for the log line on the next real booking."],
       ["LE-prod-scripts-cleanup", "Inventory the one-off prod scripts staged outside the repo."],

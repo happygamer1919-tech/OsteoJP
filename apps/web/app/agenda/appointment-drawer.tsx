@@ -199,7 +199,7 @@ export function AppointmentDrawer({
       practitionerId: selfLocked ? selfUserId : "",
       patientTwoId: "",
       practitionerTwoId: "",
-      locationId: options.locations[0]?.id ?? "",
+      locationId: options.bookableLocations[0]?.id ?? "",
       room: "",
       date: slot?.date ?? anchor,
       time: slot?.time ?? "09:00",
@@ -208,7 +208,7 @@ export function AppointmentDrawer({
       notes: "",
       scope: "one",
     };
-  }, [editing, state, anchor, options.locations, selfLocked, selfUserId]);
+  }, [editing, state, anchor, options.bookableLocations, selfLocked, selfUserId]);
 
   const [form, setForm] = useState<FormState>(init);
   const [error, setError] = useState<string | null>(null);
@@ -545,6 +545,11 @@ export function AppointmentDrawer({
     // override may not reach. The owner is demonstrating this build to the
     // clinic team; a raw database error here would be worse than the bug.
     else if (r.error === "double_booked") setError(s["appointment.doubleBooked"]);
+    // STAFF-02. The form now offers only assigned locations, so reaching this is
+    // either a stale tab or a request that did not come from the form - and in
+    // both cases the honest message names the location, not a permission.
+    else if (r.error === "location_not_assigned")
+      setError(s["appointment.locationNotAssigned"]);
     else if (r.error === "validation") setError(s["appointment.requiredFields"]);
     else if (r.error === "unauthenticated") setError(s["errors.unauthenticated"]);
     else setError(s["errors.generic"]);
@@ -960,10 +965,20 @@ export function AppointmentDrawer({
             the form already defaults to it (options.locations[0]), so the Select
             becomes a read-only line. The value still travels in `form.locationId`
             and the server re-checks it, exactly as when the Select was shown. */}
-        {options.locations.length === 1 ? (
+        {/* STAFF-02: the list is the actor's BOOKABLE locations, not the agenda's
+            viewable ones. Exactly one assigned -> the PL-14 branch below already
+            renders a locked read-only line, which is the ruled behaviour with no
+            new code. Several -> a restricted dropdown. Owner -> unrestricted,
+            because bookingLocationScope returns null for them.
+
+            THE SERVER RE-CHECKS IT REGARDLESS. This list is the courtesy; the
+            refusal in createAppointment / batchScheduleAppointments /
+            rescheduleAppointment is the control. A UI-only lock is the INC-08
+            root cause repeated. */}
+        {options.bookableLocations.length === 1 ? (
           <Field label={s["header.location"]}>
             <p data-testid="appointment-fixed-location" className="text-sm text-v2-text-primary">
-              {options.locations[0]!.label}
+              {options.bookableLocations[0]!.label}
             </p>
           </Field>
         ) : (
@@ -983,7 +998,7 @@ export function AppointmentDrawer({
             }}
           >
             <option value="">{s["appointment.selectLocation"]}</option>
-            {options.locations.map((o) => (
+            {options.bookableLocations.map((o) => (
               <option key={o.id} value={o.id}>{o.label}</option>
             ))}
           </Select>

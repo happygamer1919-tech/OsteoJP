@@ -79,12 +79,22 @@ let seriesRow = {
 function fakeTx() {
   return {
     execute: async () => [],
+    // STAFF-02: the reschedule path now consults staff_locations before writing.
+    // No rows -> unrestricted, so this suite keeps testing the audit trace.
+    // The location guard has its own suite in booking-location-scope.test.ts.
     select: () => {
       const chain: Record<string, unknown> = {
         from: () => chain,
         innerJoin: () => chain,
         leftJoin: () => chain,
         where: () => chain,
+        // STAFF-02: `resolveViewerLocationIds` AWAITS `.where(...)` directly
+        // rather than calling `.limit()`, so the chain needs to be a thenable or
+        // it fails with "then is not a function". Resolves to NO ROWS, which
+        // means unrestricted (PL-09's fallback for an unassigned staffer), so
+        // this suite keeps testing the audit trace rather than the location
+        // guard - which has its own suite in booking-location-scope.test.ts.
+        then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
         limit: async () => [seriesRow],
       };
       return chain;

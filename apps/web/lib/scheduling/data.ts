@@ -15,7 +15,7 @@ import {
   type DbTx,
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
-import { viewerLocationScope } from "@/lib/auth/viewer-locations";
+import { bookingLocationScope, viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { filterBookableTherapists } from "./therapist-bookable";
 import {
   filterRosterByViewerScope,
@@ -388,11 +388,30 @@ export async function getAgendaOptions(
     ? locationRows.filter((l) => locationScope.includes(l.id))
     : locationRows;
 
+  // STAFF-02: the WRITE scope, which is NOT the read scope above.
+  //
+  // `locations` is narrowed by `viewerLocationScope`, which returns null for a
+  // THERAPIST - correct for reads, because a therapist is bounded by their
+  // own-data rules rather than by location. The owner then ruled that
+  // therapists, like reception and admin, may only BOOK into their assigned
+  // locations. Reusing the read scope would have left exactly that gap open one
+  // role over.
+  //
+  // Both scopes call resolveViewerLocationIds; neither has its own query. Two
+  // sources of location truth drift silently, and the drift would be invisible
+  // until somebody booked into a clinic they cannot see - which is precisely how
+  // this defect was found.
+  const bookingScope = await bookingLocationScope(ctx);
+  const bookableLocations = bookingScope
+    ? locationRows.filter((l) => bookingScope.includes(l.id))
+    : locationRows;
+
   return {
     therapists,
     allTherapists: rosterRows,
     therapistLocationIds,
     locations,
+    bookableLocations,
     services: serviceRows,
     packs: packRows,
   };

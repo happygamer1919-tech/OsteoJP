@@ -304,6 +304,7 @@
   "appointment.statusNoShow": "No-show",
   "appointment.illegalTransition": "Status change not allowed. A confirmed appointment cannot return to pending, and completed, cancelled and no-show are final.",
   "appointment.doubleBooked": "This therapist already has a confirmed appointment at this time. Two confirmed appointments cannot overlap.",
+  "appointment.locationNotAssigned": "You cannot book at this location. You can only book at the locations assigned to you. If you need access to another, contact administration.",
   "appointment.selectPatient": "Select patient",
   "appointment.patientTypeToSearch": "Type to search…",
   "appointment.selectService": "Select service",

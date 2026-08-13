@@ -80,7 +80,7 @@ function mkAppt(over: Partial<AgendaAppointment>): AgendaAppointment {
   };
 }
 
-const OPTIONS: AgendaOptions = { therapists: [], locations: [], services: [], packs: [] };
+const OPTIONS: AgendaOptions = { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
 // PL-10: MarcacoesView forwards `viewer` to the shared drawer. This view only
 // opens the drawer in EDIT mode, so the therapist self-lock never fires here; a
 // non-therapist viewer keeps these render assertions on the unchanged surface.

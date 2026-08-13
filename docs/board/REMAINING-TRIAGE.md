@@ -1,8 +1,8 @@
 # Remaining work, triaged
 
 **Board:** `docs/board/portal-board.json` @ `as_of 2026-08-13T23:59:59Z`.
-**Scope:** every card not `status: shipped`. **70 cards.**
-**Shipped and out of scope here:** 64. **Board total: 134.**
+**Scope:** every card not `status: shipped`. **71 cards.**
+**Shipped and out of scope here:** 64. **Board total: 135.**
 
 Generated from the board, not typed: the generator refuses to emit this file
 unless every unshipped card lands in exactly one bucket. So the four counts
@@ -16,10 +16,10 @@ mutually exclusive without judgement calls:
 | Bucket | Unblocked by | Count |
 |---|---|---|
 | **BUILD** | a terminal | **49** |
-| **OBSERVE** | Ivan | **14** |
+| **OBSERVE** | Ivan | **15** |
 | **EXTERNAL** | a third party | **4** |
 | **LAUNCH-DAY** | launch itself | **3** |
-| | **total** | **70** |
+| | **total** | **71** |
 
 `blocked_on` on this board is `ivan | jp | lawyer | infra`. Ivan is deliberately
 **not** an EXTERNAL party, which is why everything waiting on him is OBSERVE even
@@ -83,7 +83,7 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `LE-notes-list-hydration-mismatch` | low | todo | toLocaleString differs server vs client. Low. |
 | `LE-stale-auth-user-id-sweep` | low | todo | PURPLE authors the read-only count, Ivan runs it. The authoring half is terminal work. |
 
-## OBSERVE — 14
+## OBSERVE — 15
 
 Built and merged. Waiting only on Ivan - a deployed screen, a log line, a ruling, or a confirmation to close. No terminal can advance these.
 
@@ -96,6 +96,7 @@ Built and merged. Waiting only on Ivan - a deployed screen, a log line, a ruling
 | `ACC-13-results-uncommitted` | high | blocked (ivan) | The results file. Five rows now carry the 2026-08-11 closure ruling; item 25 (was OTP_LIVE_SEND disarmed) is still the most urgent blank. |
 | `ACC-therapist-queue-unobserved` | high | blocked (ivan) | Item 26 a/b/c. Code-complete, never seen. (c) is the negative arm and must not be skipped. |
 | `STAFF-01-timefield-offstep-value` | high | in_flight (ivan) | **NEW 2026-08-13, staff feedback.** FIXED and awaiting Ivan's screen: the edit panel showed 11:00 for an appointment stored at 11:25. TimeField could not display a value off its own 15-min step. DISPLAY ONLY - saving never moved the appointment. |
+| `STAFF-02-booking-location-unscoped` | high | in_flight (ivan) | **NEW 2026-08-13, staff feedback.** FIXED, awaiting Ivan's screen. The read path was scoped by PL-09 and the write path by nothing, so staff booked blind into clinics they can never see. Four write paths now refuse SERVER-SIDE; the form restriction is the courtesy. |
 | `LE-suppression-observation` | high | blocked (ivan) | Watch for the log line on the next real booking. |
 | `VERIFY-QUEUE` | medium | todo | The mechanism card for WF-09/WF-16 batching. Its notes ARE the queue. |
 | `LE-portal-supabase-residue` | medium | in_flight | **#841 merged, verified ancestor of main.** Same. |
