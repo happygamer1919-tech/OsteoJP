@@ -215,17 +215,103 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: pnpm --filter web exec playwright install --with-deps chromium
 
+      # ================================================================= //
+      # THE CLI INSTALL IS RETRIED, AND A RETRY IS ANNOUNCED RATHER THAN HIDDEN.
+      # ================================================================= //
+      # TWO OF THE THREE 2026-08-12 FLAKES DIED HERE, AND THE LOG NAMES THE
+      # CAUSE. Run 31622714249, verbatim:
+      #     Unexpected HTTP response: 503
+      #     Waiting 17 seconds before trying again
+      #     socket hang up
+      #     Waiting 14 seconds before trying again
+      #     ##[error]socket hang up
+      # supabase/setup-cli ALREADY retries twice with backoff and still lost: the
+      # release CDN was down for longer than its internal budget. Run 31635017752
+      # failed identically on shard 1. The CLI version was already pinned, so
+      # "pin the version" - the card's first guess - was already true and was
+      # never the cause.
+      #
+      # continue-on-error on the action, then a fallback that installs the SAME
+      # PINNED version straight from the GitHub release with its own backoff. No
+      # new vendor and no new action: it is the same artifact the action fetches.
+      #
+      # IT FAILS LOUD AND IT REPORTS ITSELF. If the fallback also loses, the step
+      # exits non-zero, because a CLI that will not install is a real red. And
+      # when the fallback DOES rescue a run it prints ::warning::, so a run that
+      # needed rescuing stays VISIBLE in the checks UI instead of reading as
+      # clean. A silent retry would make this flake un-measurable, which is how
+      # it reached three occurrences before anyone counted them.
       - name: Set up Supabase CLI
+        id: supabase_cli
         if: steps.changes.outputs.code == 'true'
+        continue-on-error: true
         uses: supabase/setup-cli@v1
         with:
           version: v2.107.0
 
+      - name: Set up Supabase CLI (fallback, direct release download)
+        if: steps.changes.outputs.code == 'true' && steps.supabase_cli.outcome == 'failure'
+        env:
+          CLI_VERSION: v2.107.0
+        run: |
+          set -euo pipefail
+          echo "::warning title=Supabase CLI action failed::supabase/setup-cli@v1 did not install the CLI. Falling back to a direct release download. This run hit CI-supabase-cli-setup-flaky."
+          url="https://github.com/supabase/cli/releases/download/${CLI_VERSION}/supabase_linux_amd64.tar.gz"
+          for attempt in 1 2 3; do
+            if curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o /tmp/supabase.tar.gz "$url"; then
+              tar -xzf /tmp/supabase.tar.gz -C /tmp
+              sudo install -m 0755 /tmp/supabase /usr/local/bin/supabase
+              supabase --version
+              exit 0
+            fi
+            echo "fallback download attempt ${attempt} failed"
+            sleep $((attempt * 10))
+          done
+          echo "::error title=Supabase CLI unavailable::supabase/setup-cli@v1 and three direct download attempts all failed. This is infrastructure, not the change under test."
+          exit 1
+
+      # ================================================================= //
+      # THE START IS RETRIED ONCE, AFTER CLEANING UP WHAT BLOCKED IT.
+      # ================================================================= //
+      # THE THIRD FLAKE DIED HERE, AND IT IS A DIFFERENT CAUSE FROM THE OTHER
+      # TWO - which the card had listed as one of three guesses, unresolved.
+      # Run 31647425292, verbatim:
+      #     failed to start docker container "supabase_db_OsteoJP": Error response
+      #     from daemon: failed to set up container networking: driver failed
+      #     programming external connectivity on endpoint supabase_db_OsteoJP:
+      #     failed to bind host port for 0.0.0.0:54322:172.18.0.2:5432/tcp:
+      #     address already in use
+      # A port collision, not a download. A half-started stack leaves containers
+      # behind holding their published ports, and `supabase stop` clears them.
+      #
+      # THE DIAGNOSTIC RUNS BEFORE THE CLEANUP, ON PURPOSE. A fourth occurrence
+      # must name its own cause instead of costing another archaeology session:
+      # `ss -ltnp` says WHAT holds the port and `docker ps -a` says whether a
+      # container is already there. Cleaning up first would erase the evidence,
+      # which is the mistake that makes an intermittent failure permanent.
       - name: Start Supabase (lean stack)
         if: steps.changes.outputs.code == 'true'
-        run: >
-          supabase start
-          -x analytics,vector,studio,realtime,storage,imgproxy,edge-runtime,functions,inbucket,meta
+        run: |
+          set -uo pipefail
+          LEAN="analytics,vector,studio,realtime,storage,imgproxy,edge-runtime,functions,inbucket,meta"
+          if supabase start -x "$LEAN"; then exit 0; fi
+
+          echo "::warning title=Supabase start failed, retrying once::This run hit CI-supabase-cli-setup-flaky. The diagnostics below name the cause; do not dismiss them as noise."
+          echo "----- what is listening on 54321-54324 -----"
+          ss -ltnp 2>/dev/null | grep -E ":5432[1-4]\b" || echo "(nothing listening on 54321-54324)"
+          echo "----- docker containers, including exited -----"
+          docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Ports}}' || true
+
+          echo "----- stopping any partial stack, then retrying -----"
+          supabase stop --no-backup || true
+          leftovers="$(docker ps -aq --filter 'name=supabase_')"
+          if [ -n "$leftovers" ]; then docker rm -f $leftovers || true; fi
+          sleep 5
+
+          # SECOND AND LAST ATTEMPT. No loop, deliberately: two failures in a row
+          # is not a flake, and retrying past that would burn CI minutes while
+          # reporting nothing new about a breakage that is real.
+          supabase start -x "$LEAN"
 
       - name: Apply migrations + base seed
         if: steps.changes.outputs.code == 'true'
