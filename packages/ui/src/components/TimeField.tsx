@@ -52,23 +52,65 @@ export function TimeField({
   const maxM = toMinutes(max);
   const [hh, mm] = value ? value.split(":").map(Number) : [undefined, undefined];
 
-  const hours = Array.from({ length: 24 }, (_, h) => h).filter((h) => {
-    // keep the hour if any in-step minute falls within [min, max]
-    for (let m = 0; m < 60; m += step) {
-      const t = h * 60 + m;
-      if (t >= minM && t <= maxM) return true;
-    }
-    return false;
-  });
+  // ================================================================= //
+  // A CONTROL MUST BE ABLE TO DISPLAY ITS OWN VALUE.
+  // ================================================================= //
+  // THIS WAS A LIVE DEFECT, reported from reception 2026-08-13. An appointment
+  // stored at 11:25 rendered in this field as 11:00.
+  //
+  // The minute options are generated on `step` (default 15), so they are
+  // 00/15/30/45. A controlled <select> handed `value={25}` matches no option;
+  // the browser then shows the first one, and the first is the hidden
+  // placeholder, so it paints the first VISIBLE option - 00.
+  //
+  // NO DATA WAS EVER CORRUPTED and that is worth stating, because the obvious
+  // fear is worse than the truth: the parent's form state still held "11:25",
+  // and submitting without touching this control saved 11:25. THE HARM WAS
+  // ENTIRELY ON THE SCREEN - a receptionist reads 11:00 and tells a patient to
+  // arrive 25 minutes early. There was a second trap too: once the minute
+  // select was touched, 25 could not be chosen back.
+  //
+  // OFF-STEP TIMES ARE LEGITIMATE AND REACHABLE, which is why clamping the
+  // value to the step would have been the wrong fix. Chaining 55-minute
+  // appointments off a 30-minute cadence lands on :25 - the same screen's
+  // Ocupado block showed 09:00-09:55 and 11:25-12:20. The control has to
+  // represent what the diary can hold, not what its own step generates.
+  //
+  // SO THE VALUE IS ALWAYS INJECTED INTO ITS OWN OPTION LIST, for the hour as
+  // well as the minute: an hour outside [min,max] fails identically, and a
+  // caller who narrows the window around an existing appointment would hit it.
+  // `step` still governs what a user can PICK; it no longer governs what the
+  // field can SHOW.
+  const withValue = (options: number[], current: number | undefined): number[] =>
+    current === undefined || options.includes(current)
+      ? options
+      : [...options, current].sort((a, b) => a - b);
+
+  const hours = withValue(
+    Array.from({ length: 24 }, (_, h) => h).filter((h) => {
+      // keep the hour if any in-step minute falls within [min, max]
+      for (let m = 0; m < 60; m += step) {
+        const t = h * 60 + m;
+        if (t >= minM && t <= maxM) return true;
+      }
+      return false;
+    }),
+    hh,
+  );
 
   const minutesForHour = (h: number | undefined): number[] => {
-    if (h === undefined) return Array.from({ length: Math.ceil(60 / step) }, (_, i) => i * step);
+    if (h === undefined) {
+      return Array.from({ length: Math.ceil(60 / step) }, (_, i) => i * step);
+    }
     const out: number[] = [];
     for (let m = 0; m < 60; m += step) {
       const t = h * 60 + m;
       if (t >= minM && t <= maxM) out.push(m);
     }
-    return out;
+    // Only when this IS the value's own hour: another hour's list has no reason
+    // to carry this minute, and adding it everywhere would offer a step the
+    // caller deliberately excluded.
+    return h === hh ? withValue(out, mm) : out;
   };
 
   const emit = (nextH: number | undefined, nextM: number | undefined) => {
