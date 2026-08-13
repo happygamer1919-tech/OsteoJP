@@ -331,9 +331,22 @@ jobs:
       # Write apps/portal/.env.local so Next.js's DefinePlugin inlines
       # NEXT_PUBLIC_API_URL at compile time. Without this file the portal dev
       # server has no .env source for the variable and apiBase() compiles to ''.
+      # PORTAL_TENANT_ID IS THE SECOND LINE, AND ITS ABSENCE WAS A COVERAGE HOLE
+      # RATHER THAN A BUG. apps/portal/lib/auth/otp.ts:54-57 reads it and THROWS
+      # without it - deliberately and loudly, per PG7. So the portal's OTP login
+      # could not work in CI at all, and NO TEST NOTICED, because every portal
+      # spec signed in through the trusted-device door instead. Decision D's
+      # PRIMARY patient login had zero e2e coverage by construction: there was
+      # nothing to un-skip, the coverage was never possible in this config.
+      # See SEC-otp-login-path-has-zero-e2e-coverage. The value is TENANT_A, the
+      # same id fixtures.ts:8 already pins.
       - name: Write portal .env.local for E2E
         if: steps.changes.outputs.code == 'true'
-        run: echo "NEXT_PUBLIC_API_URL=http://localhost:3002" > apps/portal/.env.local
+        run: |
+          {
+            echo "NEXT_PUBLIC_API_URL=http://localhost:3002"
+            echo "PORTAL_TENANT_ID=00000000-0000-0000-0000-0000000000a1"
+          } > apps/portal/.env.local
 
       - name: Run Playwright E2E (Chromium, shard ${{ matrix.shard }}/3)
         id: playwright
