@@ -1,0 +1,22 @@
+{
+  "name": "@osteojp/rate-limit",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@osteojp/db": "workspace:*",
+    "drizzle-orm": "0.45.2"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "^22.10.0"
+  }
+}

@@ -2,7 +2,7 @@
 
 **Board:** `docs/board/portal-board.json` @ `as_of 2026-08-13T23:59:59Z`.
 **Scope:** every card not `status: shipped`. **69 cards.**
-**Shipped and out of scope here:** 62. **Board total: 131.**
+**Shipped and out of scope here:** 63. **Board total: 132.**
 
 Generated from the board, not typed: the generator refuses to emit this file
 unless every unshipped card lands in exactly one bucket. So the four counts
@@ -38,7 +38,6 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `W13-06b` | high | todo | LOOP 6 Phase B - close every deficient row Phase A names. Depends on 06a. |
 | `W13-07` | high | todo | LOOP 7 SYNC proof. Depends on LOOP 6 merged. **The browser crossing is now PROVEN** - direction A green at attempt 1 on three runs. PG8 is held by ONE DoD line: per-hop timings. |
 | `LE-pg8-per-hop-timings` | high | todo | **THE LAST THING BETWEEN THE BUILD AND 9/9.** Nine hops named, none measured individually. Needs server-side instrumentation - a browser cannot see inside one fetch. A measurement, not a discovery. |
-| `SEC-r-token-no-rate-limit` | high | todo | apps/web has no rate limiter at all. Structural port; a LOOP 6 Phase B output, NOT AMBER's (rehydrate 1.1). |
 | `ACC-vacuous-guard-sweep` | high | todo | 123 assertions that cannot fail, across 385 test files. Large, mechanical, high value. |
 | `AI-02-payload-structural-drift` | high | todo | A partner key mapping to no ficha field is silently discarded. |
 | `SEC-allowconflict-not-audited` | high | todo | **NEW 2026-08-11.** "Guardar mesmo assim" is written nowhere. It already cost a diagnosis during INC-08. No migration - audit metadata is jsonb. |
@@ -60,6 +59,7 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `WF-14` | high | todo | Owner ruling: GREEN is retired - custody of the platform board transfers to PURPLE, closur |
 | `WF-15` | high | todo | Owner ruling: legal and regulatory work leaves engineering - external counsel owns it |
 | `WF-16` | high | todo | Owner ruling: supervision minimized - one acceptance session at wave end, four return cond |
+| `SEC-web-surface-limiter-adoption` | medium | todo | **NEW 2026-08-13.** The limiter now EXISTS in apps/web and exactly one route uses it - the public /r/[token] POST. Every other server action on the STAFF surface is still unlimited, which is authenticated and therefore medium. Adoption per route, write paths first, never as one blanket PR. |
 | `AI-01-projection-null-safety` | medium | in_flight | In flight, NO EVIDENCE on the board. The only in-flight card with none. |
 | `LE-pedido-emit-best-effort` | medium | todo | A failed appointment_request emit loses the pedido AND makes it block. Known weakness recorded in 0059:82-90. |
 | `LE-vacuous-template-guard` | medium | todo | The email-template guard passes on a comment. |

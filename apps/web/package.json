@@ -17,6 +17,7 @@
     "@osteojp/db": "workspace:*",
     "@osteojp/i18n": "workspace:*",
     "@osteojp/notify": "workspace:*",
+    "@osteojp/rate-limit": "workspace:*",
     "@osteojp/ui": "workspace:*",
     "@sentry/nextjs": "^10.54.0",
     "@supabase/ssr": "^0.10.3",

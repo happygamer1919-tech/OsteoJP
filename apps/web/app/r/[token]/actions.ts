@@ -2,6 +2,12 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import {
+  RULES,
+  checkDurableRateLimit,
+  clientKeyFromHeaders,
+  createDurableRateLimitStore,
+} from "@osteojp/rate-limit";
 import { redeemActionToken, type RedeemAction } from "@/lib/reminders/redeem";
 
 // The single server action behind the token landing page's confirmation screen.
@@ -36,6 +42,43 @@ export async function redeemAction(formData: FormData): Promise<void> {
 
   if (!token || !ACTIONS.has(raw as RedeemAction)) {
     // Indistinguishable from every other refusal, per counsel section 3.
+    redirect(`/r/${encodeURIComponent(token)}?r=refused`);
+  }
+
+  // ================================================================= //
+  // THE FIRST RATE LIMIT IN apps/web. SEC-r-token-no-rate-limit.
+  // ================================================================= //
+  // Until 2026-08-13 there was NO limiter anywhere in this application - not a
+  // route missing one, an entire app with no limiting concept - while this
+  // action sat on the PUBLIC, UNAUTHENTICATED, patient-facing domain and hit the
+  // database on every request.
+  //
+  // LIMITED AFTER THE SHAPE CHECK AND BEFORE THE DATABASE, deliberately. A
+  // malformed submission is refused above without spending budget, so an
+  // attacker cannot exhaust a real patient's allowance with garbage that never
+  // reaches a query. This is the same ordering apps/api's OTP route settled on
+  // for the same reason.
+  //
+  // WHAT IT DOES NOT CLAIM. The token is 128 bits and is not brute-forceable at
+  // any rate; a GET performs nothing, because opening a link renders and only
+  // this POST mutates. This is defence in depth and a cost control. The card is
+  // explicit that it must not be read as plugging a live hole.
+  const verdict = await checkDurableRateLimit(
+    clientKeyFromHeaders(await headers(), "r-token"),
+    RULES.tokenRedeem,
+    createDurableRateLimitStore(),
+  );
+  if (!verdict.ok) {
+    // NOT a 429, and that is the counsel-section-3 constraint rather than a
+    // shortcut. This is a server action behind a form on a page that renders one
+    // generic outcome for every refusal - bad token, expired, forged, unknown,
+    // already spent. A distinguishable "you are rate limited" response would be
+    // a new signal on the one surface designed to emit none, and it would tell a
+    // prober that their previous attempts registered.
+    //
+    // So it takes the SAME `refused` path every other rejection takes. The
+    // patient sees the same page; the attacker learns nothing; and the database
+    // work is skipped, which is the point of the control.
     redirect(`/r/${encodeURIComponent(token)}?r=refused`);
   }
 

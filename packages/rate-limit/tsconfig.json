@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    // DOM is here for `Response` and `Headers`, which `tooManyRequests` and
+    // `clientKey` use. They are Web APIs available in Node 18+ and in every
+    // runtime this package targets; the base config lists ES2022 only because
+    // most packages are pure logic. The apps get these types from Next's own
+    // tsconfig, which is why this only surfaced once the module moved out of
+    // apps/api.
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
