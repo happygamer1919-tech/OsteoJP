@@ -130,8 +130,30 @@ async function bookFirstAvailable(page: Page): Promise<boolean> {
     throw new Error("the date picker did not open when clicked");
   }
 
-  const days = page.getByRole("gridcell").filter({ hasNot: page.locator("[aria-disabled='true']") });
-  const slot = page.getByRole("radio");
+  // THE LOCATORS ARE COPIED VERBATIM FROM sync-portal-agenda.spec.ts:244,273,
+  // WHICH IS PROVEN IN CI. The first version of this helper invented its own and
+  // both were wrong:
+  //
+  //   `getByRole("gridcell").filter({ hasNot: locator("[aria-disabled='true']") })`
+  //     `hasNot` filters by DESCENDANT, not by the element's own attribute, so it
+  //     matched every gridcell INCLUDING the disabled ones. The click then hung
+  //     on a disabled button for the full 120s test budget - "element is not
+  //     enabled", retried until timeout - three times, at 2.1 minutes each.
+  //   `getByRole("radio")` unnamed
+  //     matches any radio on the step, not only a time.
+  //
+  // `.and()` intersects on the ELEMENT, which is what was wanted. Enabled cells
+  // carry no `aria-disabled` attribute at all, which is why `:not([aria-disabled])`
+  // is right and `[aria-disabled='false']` would find nothing.
+  //
+  // DUPLICATED RATHER THAN SHARED, AND CARDED. sync-portal-agenda.spec.ts has a
+  // fuller version of this traversal that took five sessions to stabilise.
+  // Extracting it into a shared helper is the correct end state and is NOT done
+  // here: that spec is PG8's, and refactoring it mid-bucket to save a duplication
+  // would risk the one gate-bearing e2e in the repo for a tidy-up.
+  // ACC-e2e-booking-traversal-duplicated.
+  const days = page.getByRole("gridcell").and(page.locator(":not([aria-disabled])"));
+  const slot = page.getByRole("radio", { name: /^\d{2}:\d{2}$/ });
   const dayCount = Math.min(await days.count(), 8);
   for (let i = 0; i < dayCount; i += 1) {
     await days.nth(i).click();

@@ -42,6 +42,7 @@ const BUCKETS = {
       ["CI-docs-only-required-checks-skip", "**NEW 2026-08-11.** Noted, not chased: three of four required checks are 4-7s path-filter skips on a docs-only diff."],
       ["LE-notes-list-hydration-mismatch", "toLocaleString differs server vs client. Low."],
       ["LE-staff-assisted-activation", "Buildable now; WF-07 rules it POST-LAUNCH, so it is scheduled late, not blocked."],
+      ["ACC-e2e-booking-traversal-duplicated", "**NEW 2026-08-13.** Two specs drive the booking flow with their own copy of the same date-picker traversal; the second invented its locators and cost a 12m33s shard. Extraction deferred deliberately - the other copy is PG8s gate-bearing spec. Do it when LE-pg8-per-hop-timings is taken."],
       ["LE-stale-auth-user-id-sweep", "PURPLE authors the read-only count, Ivan runs it. The authoring half is terminal work."],
 
       /* ---- added 2026-08-13. Loose ends that had never been bucketed, plus
