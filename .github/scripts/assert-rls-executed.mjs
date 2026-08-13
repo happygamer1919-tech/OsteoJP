@@ -95,6 +95,14 @@ const SUITES = [
   // suite's fake select returns whatever the test set, so it proves the query is
   // ASSEMBLED correctly and cannot prove it FINDS anything.
   { file: "patient-linkage.db.test.ts", hard: true },
+  // 0062, added 2026-08-13. THE PRICE OF THE GENERATED COLUMN. normalizePhonePT
+  // and patients.phone_e164 compute the same thing in two languages, and two
+  // implementations of one rule is a divergence waiting to happen. This suite
+  // runs BOTH over one corpus and requires identical answers on every input, so
+  // the day they disagree CI says so instead of a patient discovering it at a
+  // login screen. A silent skip would leave the duplication unguarded, which is
+  // the only reason the duplication was acceptable in the first place.
+  { file: "phone-e164-parity.db.test.ts", hard: true },
   // ===================================================================== //
   // W13-06 / W13-07, added 2026-08-12. THE THREE SUITES A GATE DOCUMENT CITES.
   // ===================================================================== //

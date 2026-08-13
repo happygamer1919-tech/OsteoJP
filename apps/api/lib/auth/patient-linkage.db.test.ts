@@ -19,35 +19,44 @@
  * `redeem.db.test.ts`.
  *
  * ============================================================================
- * WHAT IT FOUND, ON ITS FIRST RUN
+ * WHAT IT FOUND ON ITS FIRST RUN, AND WHAT FIXED IT
  * ============================================================================
- * `resolvePatientByProvenPhone` matches with `eq(patients.phone, phoneE164)` —
- * an EXACT string comparison against the raw stored column. `patients.phone` is
+ * `resolvePatientByProvenPhone` matched `eq(patients.phone, phoneE164)` — an
+ * EXACT string comparison against the raw stored column. `patients.phone` is
  * free text: `optionalText` (apps/web/lib/patients/validation.ts:117-124) trims
  * it and normalizes nothing, and the module header of
  * `apps/api/lib/notify/phone.ts` says so outright — *"numbers arrive as
  * '912 345 678', '00351912345678', '+351 912-345-678', etc."*
  *
- * **A patient whose number is stored the way a human writes it cannot log in to
- * the portal.** Not "logs in with a warning" — refused, with the same single
- * `otp_refused` string that a wrong code produces, because the API deliberately
- * collapses all six failures into one response.
+ * **A patient whose number was stored the way a human writes it could not log in
+ * to the portal.** Not "logged in with a warning" — refused, with the same
+ * single `otp_refused` string that a wrong code produces, because the API
+ * deliberately collapses all six failures into one response.
  *
- * Every patient in the e2e seed except the OTP fixture is stored with spaces.
- * Portuguese numbers are conventionally written with spaces.
+ * **Fixed by migration 0062**, which added `phone_e164` — GENERATED ALWAYS from
+ * `phone`, so it cannot drift and no write path can forget it — and by pointing
+ * the linkage query at it. `phone` itself is untouched: owner ruling, it is what
+ * a receptionist typed and it stays that.
  *
  * ============================================================================
- * THE SECOND TEST PINS A DEFECT, AND IT IS GREEN ON PURPOSE. READ THIS.
+ * THE PINNED-DEFECT PATTERN, WHICH IS WORTH MORE THAN THIS ONE DEFECT
  * ============================================================================
- * `SEC-otp-linkage-exact-phone-match` is **launch-blocking and HALTED for the
- * owner**: every candidate fix needs a migration (an expression index or a
- * normalized column plus a backfill), and this lane does not author migrations
- * without the owner — `0062` is unoccupied and stays that way.
+ * Between 2026-08-13's discovery and its fix, the second test here asserted
+ * `.toBe(false)` — **it stated the broken behaviour as fact** — and carried its
+ * own instruction: *"IF THIS IS NOW TRUE, THE DEFECT IS FIXED AND THIS TEST MUST
+ * BE INVERTED."*
  *
- * So the defect is RECORDED here rather than fixed. The assertion states the
- * behaviour as it is today. **When the defect is fixed, this test MUST go red**,
- * and its message says so, so the fix cannot land while quietly leaving a test
- * that asserts the broken behaviour. A card can be missed; a red test cannot.
+ * That is the shape to reach for whenever a defect cannot be fixed today.
+ * `SEC-otp-linkage-exact-phone-match` needed a migration, migrations need the
+ * owner, and `0062` was unoccupied at the time. A card would have carried the
+ * knowledge; only a test carries it into CI, changes colour the day the world
+ * changes, and cannot be missed by someone who did not read the board.
+ *
+ * It has now been inverted, exactly as instructed, and two counterweights were
+ * added with it — see the tests below. **An inversion that only proves the new
+ * happy path is half a test**: a normalization too permissive would satisfy it
+ * while linking patients to numbers they do not have, which is the mis-link this
+ * whole module exists to prevent and strictly worse than the defect fixed.
  */
 import { randomUUID } from "node:crypto";
 
@@ -109,27 +118,58 @@ d("WF-07 linkage against a real database", () => {
     if (result.ok) expect(result.patientId).toBe(canonicalId);
   });
 
-  it("REFUSES a patient whose number is stored the way a human writes it — SEC-otp-linkage-exact-phone-match", async () => {
+  it("LINKS a patient whose number is stored the way a human writes it — SEC-otp-linkage-exact-phone-match, FIXED", async () => {
     // ================================================================= //
-    // THIS ASSERTION RECORDS A DEFECT. IT IS NOT A PROPERTY WORTH HAVING.
+    // INVERTED 2026-08-13, EXACTLY AS THE PREVIOUS VERSION INSTRUCTED.
     // ================================================================= //
-    // The row IS this number. `normalizePhonePT("+351 900 000 102")` returns
-    // exactly HUMAN_E164, so the two are the same phone by the repo's own
-    // definition. Linkage refuses because it compares raw text.
+    // This assertion used to read `.toBe(false)` and to say, in its own message,
+    // "IF THIS IS NOW TRUE, THE DEFECT IS FIXED AND THIS TEST MUST BE INVERTED".
+    // Migration 0062 added `phone_e164`, GENERATED ALWAYS from `phone`, and
+    // resolvePatientByProvenPhone now matches on it. So it is true, and this is
+    // the inverted form: the regression guard the fix wanted.
     //
-    // WHEN THE DEFECT IS FIXED THIS TEST GOES RED, WHICH IS THE POINT. Invert it
-    // then: `expect(result.ok).toBe(true)` and `result.patientId === humanId`.
-    // Do not delete it — the inverted form is the regression guard the fix wants.
+    // THE PINNED-DEFECT PATTERN, WORTH KEEPING FOR THE NEXT ONE. A defect that
+    // cannot be fixed today — this one needed a migration, and migrations need
+    // the owner — goes into CI as an assertion of what IS true, carrying its own
+    // instruction to be flipped. A card can be missed. A test that changes
+    // colour the day the world changes cannot.
     const result = await resolve(tenantId, HUMAN_E164);
     expect(
       result.ok,
-      "IF THIS IS NOW TRUE, THE DEFECT IS FIXED AND THIS TEST MUST BE INVERTED. " +
-        "SEC-otp-linkage-exact-phone-match: resolvePatientByProvenPhone compares " +
-        "eq(patients.phone, phoneE164) against a free-text column that nothing " +
-        "normalizes on write, so a patient stored as '+351 900 000 102' cannot log " +
-        "in with +351900000102 — the same number. Flip this to toBe(true) and " +
-        "assert the patientId.",
-    ).toBe(false);
+      "a patient stored as '+351 900 000 102' must link when +351900000102 is " +
+        "proven — the same number. If this is false, either migration 0062 has not " +
+        "been applied to this database, or the linkage query has regressed to " +
+        "matching the raw free-text `phone` column.",
+    ).toBe(true);
+    if (result.ok) expect(result.patientId).toBe(humanId);
+  });
+
+  it("still refuses a number no patient carries, so the fix did not widen the match", async () => {
+    // THE COUNTERWEIGHT TO THE INVERSION ABOVE, and it is not decoration. The
+    // fix moved the comparison to a DERIVED column; a normalization that was too
+    // permissive — one that stripped digits, or that matched NULL against NULL —
+    // would make the test above pass while linking patients to numbers they do
+    // not have. That is the mis-link this whole module exists to prevent, and it
+    // would be strictly worse than the defect just fixed.
+    const stranger = await resolve(tenantId, "+351900000199");
+    expect(stranger.ok, "a number belonging to nobody must refuse").toBe(false);
+  });
+
+  it("refuses a patient whose stored number does not normalize at all", async () => {
+    // `phone_e164` is NULL for free text, a foreign number, or an extension —
+    // and `eq` on NULL is never true in SQL, so the row is unreachable by login
+    // rather than reachable by accident. Asserted rather than reasoned about,
+    // because "NULL never matches" is exactly the kind of claim that is true
+    // until somebody writes `IS NOT DISTINCT FROM`.
+    const oddId = randomUUID();
+    await db.execute(raw`insert into patients (id, tenant_id, full_name, phone)
+      values (${oddId}, ${tenantId}, 'Paciente Estrangeiro', '+44 20 7946 0958')`);
+    try {
+      const uk = await resolve(tenantId, "+442079460958");
+      expect(uk.ok, "a foreign number is not a PT subscriber number and must refuse").toBe(false);
+    } finally {
+      await db.execute(raw`delete from patients where id = ${oddId}`);
+    }
   });
 
   it("still refuses when TWO live rows carry the same canonical number", async () => {
