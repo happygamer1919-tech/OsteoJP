@@ -135,14 +135,58 @@ describe("emitConfirmedNotification", () => {
   // would leave every test above green.
   // ================================================================
   it("excludes the actor from BOTH recipient queries", async () => {
+    // REPOINTED 2026-08-13 at `emitStaffTransitionNotification`, and the reason
+    // is worth keeping. `emitConfirmedNotification` used to hold the queries; it
+    // is now a thin wrapper over one shared fan-out that cancel and reschedule
+    // also use (LE-staff-transitions-emit-nothing). This assertion went RED on
+    // that refactor, which is exactly what it was written to do — the slice it
+    // reads no longer contained any query at all.
+    //
+    // THE CONSOLIDATION IS WHY THE ACTOR EXCLUSION IS SAFER NOW, not less safe.
+    // Three copies of a recipient rule would have been three places for it to go
+    // missing; there is one, and this guard watches it for all three kinds.
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const src = readFileSync(join(__dirname, "centre.ts"), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/[^\n]*/g, "");
-    const fn = src.slice(src.indexOf("export async function emitConfirmedNotification"));
+    const fn = src.slice(src.indexOf("async function emitStaffTransitionNotification"));
     expect(fn.length).toBeGreaterThan(500); // vacuous-pass guard on the slice
     const exclusions = fn.match(/ne\(users\.id,\s*args\.actorUserId\)/g) ?? [];
     expect(exclusions).toHaveLength(2);
+  });
+
+  it("routes confirm, cancel and reschedule through that ONE fan-out", async () => {
+    // The guard above is only worth anything if all three kinds actually go
+    // through the function it inspects. If a later change gave one of them its
+    // own copy of the queries, the exclusion assertion would still pass while
+    // that copy drifted — which is the failure this whole consolidation exists
+    // to prevent.
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const src = readFileSync(join(__dirname, "centre.ts"), "utf8");
+
+    for (const wrapper of [
+      "emitConfirmedNotification",
+      "emitCancelledNotification",
+      "emitRescheduledNotification",
+    ]) {
+      const body = src.slice(src.indexOf(`export async function ${wrapper}`));
+      // TO THE NEXT TOP-LEVEL DECLARATION, not to the first `\n}`. The first one
+      // closes the ARGS TYPE LITERAL — `}): Promise<...>` — so slicing there cut
+      // the function off before its body and the assertion failed against a
+      // wrapper that was in fact delegating correctly.
+      const nextDecl = body.indexOf("\nexport ", 1);
+      const upToNext = nextDecl === -1 ? body : body.slice(0, nextDecl);
+      expect(upToNext.length, `could not slice ${wrapper}`).toBeGreaterThan(200);
+      expect(
+        upToNext,
+        `${wrapper} must delegate to emitStaffTransitionNotification, not carry its own queries`,
+      ).toContain("emitStaffTransitionNotification");
+      expect(
+        upToNext,
+        `${wrapper} must not query users directly`,
+      ).not.toContain("ne(users.id");
+    }
   });
 });

@@ -2,7 +2,7 @@
 
 **Board:** `docs/board/portal-board.json` @ `as_of 2026-08-13T23:59:59Z`.
 **Scope:** every card not `status: shipped`. **69 cards.**
-**Shipped and out of scope here:** 63. **Board total: 132.**
+**Shipped and out of scope here:** 64. **Board total: 133.**
 
 Generated from the board, not typed: the generator refuses to emit this file
 unless every unshipped card lands in exactly one bucket. So the four counts
@@ -66,7 +66,7 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `LE-portal-booking-home-clinic-preselect` | medium | todo | Portal booking preselects the home clinic. |
 | `LE-portal-multi-appointment-booking` | medium | todo | Portal exposure of Agendar lote. |
 | `LE-reminders-landline-dispatch` | medium | todo | **AMBER, 2026-08-11.** The OTP route now refuses landlines; the shared reminder path does not. Consequence of the fork-2 ruling. |
-| `LE-staff-transitions-emit-nothing` | medium | todo | **NEW 2026-08-11.** Only the CONFIRM path emits. Cancel and reschedule need no migration; no-show needs a kind and therefore a ruling. |
+| `LE-no-show-notification-kind` | medium | todo | **NEW 2026-08-13.** Cancel and reschedule now emit; no-show is the one arm that CANNOT ship without a migration - there is no no_show kind in the CHECK constraint. Owner-gated. Bundle it with the next migration that has to be applied anyway. |
 | `LE-staff-assisted-activation` | medium | todo | Buildable now; WF-07 rules it POST-LAUNCH, so it is scheduled late, not blocked. |
 | `ACC-e2e-booking-traversal-duplicated` | medium | todo | **NEW 2026-08-13.** Two specs drive the booking flow with their own copy of the same date-picker traversal; the second invented its locators and cost a 12m33s shard. Extraction deferred deliberately - the other copy is PG8s gate-bearing spec. Do it when LE-pg8-per-hop-timings is taken. |
 | `ACC-gold-700-label-fails-aa` | medium | todo | **NEW 2026-08-13.** v2-gold-700 is 3.94:1 as label text on the admin badge - the same defect class PG9's axe scan found in green, on the staff side. Fix is the same shape: use 800 for the label, leave 700 as the fill. |
