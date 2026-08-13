@@ -139,6 +139,8 @@
     "confirm_submit": "Confirm booking",
     "pending_title": "Request received",
     "pending_body": "Your appointment request is awaiting confirmation by reception. The time is only reserved once it is confirmed. You will receive an SMS as soon as reception confirms it.",
+    "pending_unverified_title": "We could not find this request",
+    "pending_unverified_body": "We could not confirm this appointment request. If you have just made it, check your appointments. Otherwise, contact the clinic.",
     "pending_cta": "View my appointments",
     "error_submit": "Could not submit booking. Please try again or call the clinic.",
     "error_slot_taken": "This slot is no longer available. Choose another time or contact the clinic.",

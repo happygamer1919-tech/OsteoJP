@@ -1,8 +1,8 @@
 # Remaining work, triaged
 
 **Board:** `docs/board/portal-board.json` @ `as_of 2026-08-13T23:59:59Z`.
-**Scope:** every card not `status: shipped`. **69 cards.**
-**Shipped and out of scope here:** 61. **Board total: 130.**
+**Scope:** every card not `status: shipped`. **68 cards.**
+**Shipped and out of scope here:** 62. **Board total: 130.**
 
 Generated from the board, not typed: the generator refuses to emit this file
 unless every unshipped card lands in exactly one bucket. So the four counts
@@ -15,11 +15,11 @@ mutually exclusive without judgement calls:
 
 | Bucket | Unblocked by | Count |
 |---|---|---|
-| **BUILD** | a terminal | **49** |
+| **BUILD** | a terminal | **48** |
 | **OBSERVE** | Ivan | **13** |
 | **EXTERNAL** | a third party | **4** |
 | **LAUNCH-DAY** | launch itself | **3** |
-| | **total** | **69** |
+| | **total** | **68** |
 
 `blocked_on` on this board is `ivan | jp | lawyer | infra`. Ivan is deliberately
 **not** an EXTERNAL party, which is why everything waiting on him is OBSERVE even
@@ -27,7 +27,7 @@ when what he owes is a ruling rather than a screenshot.
 
 ---
 
-## BUILD — 49
+## BUILD — 48
 
 Code work a terminal can do. Nothing outside this repo has to happen first.
 
@@ -42,7 +42,6 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `ACC-vacuous-guard-sweep` | high | todo | 123 assertions that cannot fail, across 385 test files. Large, mechanical, high value. |
 | `AI-02-payload-structural-drift` | high | todo | A partner key mapping to no ficha field is silently discarded. |
 | `SEC-allowconflict-not-audited` | high | todo | **NEW 2026-08-11.** "Guardar mesmo assim" is written nowhere. It already cost a diagnosis during INC-08. No migration - audit metadata is jsonb. |
-| `SEC-pending-screen-asserts-nothing` | high | todo | **HIGH. The only defect in this list facing a PATIENT.** /portal/booking/pending says "Pedido recebido" to anyone who navigates to it - no id, no row read. Back button, refresh after a failed submit, or a stale link all say a booking was received. Section 1.3's pattern, in the product. |
 | `ACC-skippable-suites-unguarded` | high | todo | **HIGH, and RULED.** 36 suites can still skip inside a passing required check. The structural fix was scheduled after PG9, and PG9 is closed - so it is now next in this bucket. Expect it red the first time. |
 | `ACC-identity-blind-assertions` | high | todo | **HIGH.** Assertions matching shared vocabulary rather than identity on a shared seeded database. Worse in kind than a skip: a skip fails to prove, this proves something false. See ACC-preselection-spec-flaky for two live instances. |
 | `ACC-preselection-spec-flaky` | high | todo | **HIGH, widened 2026-08-13.** TWO DIFFERENT tests flaked on shard 1 in two runs - the preselection Servico select, then agenda-card stacking. The pattern is the shard, not either spec, and both read shared mutable appointment state. First step discriminates in one run: --repeat-each=5 alone. |
@@ -134,7 +133,7 @@ with `evidence: null` for one reason: **none of them is written into**
 **`docs/DECISIONS.md`.** Verified 2026-08-11 by grep over that file - R2 through
 R10 and the four unnumbered rulings return zero hits.
 
-So 15 of the 49 BUILD cards are a single documentation PR:
+So 15 of the 48 BUILD cards are a single documentation PR:
 append each ruling to `DECISIONS.md`, close each card with that commit as evidence.
 No code, no migration, no owner time. **It is the cheapest large move on the board**
 and it matters for a handover: right now the project's governing decisions live in

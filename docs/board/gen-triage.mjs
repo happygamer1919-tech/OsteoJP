@@ -48,7 +48,6 @@ const BUCKETS = {
              everything W13-08 and the OTP-coverage card turned up. The
              generator threw on all sixteen, which is the guard working: a card
              that reaches no bucket reaches no reader. ---- */
-      ["SEC-pending-screen-asserts-nothing", "**HIGH. The only defect in this list facing a PATIENT.** /portal/booking/pending says \"Pedido recebido\" to anyone who navigates to it - no id, no row read. Back button, refresh after a failed submit, or a stale link all say a booking was received. Section 1.3's pattern, in the product."],
       ["ACC-skippable-suites-unguarded", "**HIGH, and RULED.** 36 suites can still skip inside a passing required check. The structural fix was scheduled after PG9, and PG9 is closed - so it is now next in this bucket. Expect it red the first time."],
       ["ACC-identity-blind-assertions", "**HIGH.** Assertions matching shared vocabulary rather than identity on a shared seeded database. Worse in kind than a skip: a skip fails to prove, this proves something false. See ACC-preselection-spec-flaky for two live instances."],
       ["ACC-preselection-spec-flaky", "**HIGH, widened 2026-08-13.** TWO DIFFERENT tests flaked on shard 1 in two runs - the preselection Servico select, then agenda-card stacking. The pattern is the shard, not either spec, and both read shared mutable appointment state. First step discriminates in one run: --repeat-each=5 alone."],
