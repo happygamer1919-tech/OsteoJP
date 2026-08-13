@@ -25,8 +25,6 @@ const BUCKETS = {
       ["W13-06", "Umbrella for 06a/06b. Carries no work of its own."],
       ["W13-06a", "LOOP 6 Phase A - rebuild the exposure matrix from the code. Blocked by dependency on A2, not by anything external."],
       ["W13-06b", "LOOP 6 Phase B - close every deficient row Phase A names. Depends on 06a."],
-      ["W13-07", "LOOP 7 SYNC proof. Depends on LOOP 6 merged. **The browser crossing is now PROVEN** - direction A green at attempt 1 on three runs. PG8 is held by ONE DoD line: per-hop timings."],
-      ["LE-pg8-per-hop-timings", "**THE LAST THING BETWEEN THE BUILD AND 9/9.** Nine hops named, none measured individually. Needs server-side instrumentation - a browser cannot see inside one fetch. A measurement, not a discovery."],
       ["SEC-web-surface-limiter-adoption", "**NEW 2026-08-13.** The limiter now EXISTS in apps/web and exactly one route uses it - the public /r/[token] POST. Every other server action on the STAFF surface is still unlimited, which is authenticated and therefore medium. Adoption per route, write paths first, never as one blanket PR."],
       ["ACC-vacuous-guard-sweep", "123 assertions that cannot fail, across 385 test files. Large, mechanical, high value."],
       ["AI-01-projection-null-safety", "In flight, NO EVIDENCE on the board. The only in-flight card with none."],

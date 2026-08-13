@@ -1,8 +1,8 @@
 # Remaining work, triaged
 
 **Board:** `docs/board/portal-board.json` @ `as_of 2026-08-13T23:59:59Z`.
-**Scope:** every card not `status: shipped`. **73 cards.**
-**Shipped and out of scope here:** 64. **Board total: 137.**
+**Scope:** every card not `status: shipped`. **71 cards.**
+**Shipped and out of scope here:** 66. **Board total: 137.**
 
 Generated from the board, not typed: the generator refuses to emit this file
 unless every unshipped card lands in exactly one bucket. So the four counts
@@ -15,11 +15,11 @@ mutually exclusive without judgement calls:
 
 | Bucket | Unblocked by | Count |
 |---|---|---|
-| **BUILD** | a terminal | **49** |
+| **BUILD** | a terminal | **47** |
 | **OBSERVE** | Ivan | **17** |
 | **EXTERNAL** | a third party | **4** |
 | **LAUNCH-DAY** | launch itself | **3** |
-| | **total** | **73** |
+| | **total** | **71** |
 
 `blocked_on` on this board is `ivan | jp | lawyer | infra`. Ivan is deliberately
 **not** an EXTERNAL party, which is why everything waiting on him is OBSERVE even
@@ -27,7 +27,7 @@ when what he owes is a ruling rather than a screenshot.
 
 ---
 
-## BUILD — 49
+## BUILD — 47
 
 Code work a terminal can do. Nothing outside this repo has to happen first.
 
@@ -36,8 +36,6 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `W13-06` | high | todo | Umbrella for 06a/06b. Carries no work of its own. |
 | `W13-06a` | high | todo | LOOP 6 Phase A - rebuild the exposure matrix from the code. Blocked by dependency on A2, not by anything external. |
 | `W13-06b` | high | todo | LOOP 6 Phase B - close every deficient row Phase A names. Depends on 06a. |
-| `W13-07` | high | todo | LOOP 7 SYNC proof. Depends on LOOP 6 merged. **The browser crossing is now PROVEN** - direction A green at attempt 1 on three runs. PG8 is held by ONE DoD line: per-hop timings. |
-| `LE-pg8-per-hop-timings` | high | todo | **THE LAST THING BETWEEN THE BUILD AND 9/9.** Nine hops named, none measured individually. Needs server-side instrumentation - a browser cannot see inside one fetch. A measurement, not a discovery. |
 | `ACC-vacuous-guard-sweep` | high | todo | 123 assertions that cannot fail, across 385 test files. Large, mechanical, high value. |
 | `AI-02-payload-structural-drift` | high | todo | A partner key mapping to no ficha field is silently discarded. |
 | `SEC-allowconflict-not-audited` | high | todo | **NEW 2026-08-11.** "Guardar mesmo assim" is written nowhere. It already cost a diagnosis during INC-08. No migration - audit metadata is jsonb. |
@@ -138,7 +136,7 @@ with `evidence: null` for one reason: **none of them is written into**
 **`docs/DECISIONS.md`.** Verified 2026-08-11 by grep over that file - R2 through
 R10 and the four unnumbered rulings return zero hits.
 
-So 15 of the 49 BUILD cards are a single documentation PR:
+So 15 of the 47 BUILD cards are a single documentation PR:
 append each ruling to `DECISIONS.md`, close each card with that commit as evidence.
 No code, no migration, no owner time. **It is the cheapest large move on the board**
 and it matters for a handover: right now the project's governing decisions live in

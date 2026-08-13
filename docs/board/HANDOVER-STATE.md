@@ -55,7 +55,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**133 cards. 64 shipped, 69 open. Launch readiness 8/9.**
+**137 cards. 66 shipped, 71 open. Launch readiness 9/9 — every launch gate passes.**
 
 > **PG9 EXPERIENCE closed on 2026-08-13**, on run `31651759598` — shard 3, **72
 > passed, 0 failed, 0 flaky, green at attempt 1**. It reddened first, on a real
@@ -68,7 +68,7 @@ non-engineer needs.*
 
 ---
 
-## 1. Readiness — 8 of 9
+## 1. Readiness — 9 of 9, all gates passing
 
 | Gate | State | One line |
 |---|---|---|
@@ -79,7 +79,7 @@ non-engineer needs.*
 | **PG5 REMINDERS** | **PASS** | 48h email and 24h SMS as separate per-channel offsets with the channel inside the idempotency key, and all ten bodies approved. **Reminders are not live** — `REMINDERS_LIVE_SEND` is false. |
 | **PG6 EXPOSURE** | **PASS** | 51-row exposure matrix committed; 23 MUST-NEVER rows, every one with a verified enforcement point. |
 | **PG7 ENVIRONMENT** | **PASS** | Every environment variable has a safe default or fails loudly at boot; the full four-app estate was walked. |
-| **PG8 SYNC** | **OPEN — one named DoD line short** | The crossing is **proven**: a portal booking appears on reception's agenda on the day it booked, green at attempt 1 on **two independent runs**. **The "invisible row" was never real** — every probe used `isVisible({timeout})`, which playwright-core ignores and answers instantly, so a check written to wait 15 seconds answered in 443ms from an unpainted page. What remains is the DoD's **per-hop timing table**: nine hops are named, none is measured individually, and a browser cannot see inside one `fetch`. `LE-pg8-per-hop-timings`. |
+| **PG8 SYNC** | **PASS** | A portal booking appears on reception's agenda on the day it booked, green at attempt 1 on three independent runs, and the hop-by-hop timing table is sourced at `docs/recon/W13-07-sync-trace.md` §2.1a. **The "invisible row" was never real** — every probe used `isVisible({timeout})`, which playwright-core ignores and answers instantly, so a check written to wait 15 seconds answered in 443ms from an unpainted page. **The product was correct throughout; every failure this gate recorded was in its own instruments.** |
 | **PG9 EXPERIENCE** | **PASS** | axe `wcag2a/2aa/21aa/22aa` across eight patient screens at 390×844, plus pt-PT, 24h, one-primary-action, mobile screenshots, and an arm proving the scanner can fail. Green at attempt 1 on run `31651759598`. **It reddened first on a real defect** — the ghost back button at 4.45:1 against a 4.5 floor — and **the gap the human half found is fixed**: every patient dead end now carries the clinic telephone, where before five strings said "contacte a clínica" and no screen said how. |
 
 ---
