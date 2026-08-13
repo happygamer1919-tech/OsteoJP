@@ -30,8 +30,11 @@ patient on every change, so it cannot come back unnoticed.
 1. **Reminders do not send yet.** The system is built and the wording approved,
    but sending is switched off. No patient has ever received one.
 2. **A patient with a foreign mobile, or no mobile on record, still cannot log
-   in.** That is by design, not a fault — there is no password to fall back on.
-   They need a staff-assisted route, which is not built yet.
+   in.** That is **Decision D, not a defect**: the owner chose a phone-and-code
+   login with no password and no magic link, so there is deliberately nothing to
+   fall back on. Those patients need a staff-assisted route, which is not built
+   yet. If the clinic team reports it as a bug, it is not one — it is the
+   decision working as intended, and the missing piece is the staff route.
 
 *Engineering detail is in §3. The two paragraphs above are the whole of what a
 non-engineer needs.*
@@ -39,7 +42,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**130 cards. 60 shipped, 70 open. Launch readiness 8/9.**
+**133 cards. 64 shipped, 69 open. Launch readiness 8/9.**
 
 > **PG9 EXPERIENCE closed on 2026-08-13**, on run `31651759598` — shard 3, **72
 > passed, 0 failed, 0 flaky, green at attempt 1**. It reddened first, on a real
