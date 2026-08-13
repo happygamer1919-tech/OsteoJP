@@ -1,8 +1,8 @@
 # Remaining work, triaged
 
 **Board:** `docs/board/portal-board.json` @ `as_of 2026-08-13T23:59:59Z`.
-**Scope:** every card not `status: shipped`. **71 cards.**
-**Shipped and out of scope here:** 59. **Board total: 130.**
+**Scope:** every card not `status: shipped`. **70 cards.**
+**Shipped and out of scope here:** 60. **Board total: 130.**
 
 Generated from the board, not typed: the generator refuses to emit this file
 unless every unshipped card lands in exactly one bucket. So the four counts
@@ -16,10 +16,10 @@ mutually exclusive without judgement calls:
 | Bucket | Unblocked by | Count |
 |---|---|---|
 | **BUILD** | a terminal | **50** |
-| **OBSERVE** | Ivan | **14** |
+| **OBSERVE** | Ivan | **13** |
 | **EXTERNAL** | a third party | **4** |
 | **LAUNCH-DAY** | launch itself | **3** |
-| | **total** | **71** |
+| | **total** | **70** |
 
 `blocked_on` on this board is `ivan | jp | lawyer | infra`. Ivan is deliberately
 **not** an EXTERNAL party, which is why everything waiting on him is OBSERVE even
@@ -84,13 +84,12 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `LE-notes-list-hydration-mismatch` | low | todo | toLocaleString differs server vs client. Low. |
 | `LE-stale-auth-user-id-sweep` | low | todo | PURPLE authors the read-only count, Ivan runs it. The authoring half is terminal work. |
 
-## OBSERVE — 14
+## OBSERVE — 13
 
 Built and merged. Waiting only on Ivan - a deployed screen, a log line, a ruling, or a confirmation to close. No terminal can advance these.
 
 | Card | Pri | Status | Note |
 |---|---|---|---|
-| `SEC-otp-linkage-exact-phone-match` | high | halted | **LAUNCH-BLOCKING, HALTED FOR THE OWNER, AND IT IS THE MOST IMPORTANT LINE IN THIS DOCUMENT.** A patient whose phone is stored the way a human writes it CANNOT LOG IN - linkage compares the proven E.164 against the raw free-text column with an exact string match, and nothing normalizes that column on write. Every seeded patient is stored with spaces. In OBSERVE rather than BUILD because **every candidate fix needs a migration** and this lane does not author one without him: three options with a recommendation are on the card. Pinned in CI by patient-linkage.db.test.ts, whose defect assertion goes RED the day it is fixed. |
 | `W13-03` | high | in_flight | LOOP 3 patient AUTH. #828 merged. Held in_flight ON PURPOSE under WF-03. |
 | `W13-04` | high | in_flight | LOOP 4 booking. #830 merged. Same hold. |
 | `W13-05` | high | in_flight | LOOP 5 ficha terms. #833 + #835 merged, 0058 applied. Same hold. |

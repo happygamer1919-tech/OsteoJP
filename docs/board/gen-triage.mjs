@@ -71,7 +71,6 @@ const BUCKETS = {
     blurb:
       "Built and merged. Waiting only on Ivan - a deployed screen, a log line, a ruling, or a confirmation to close. No terminal can advance these.",
     items: [
-      ["SEC-otp-linkage-exact-phone-match", "**LAUNCH-BLOCKING, HALTED FOR THE OWNER, AND IT IS THE MOST IMPORTANT LINE IN THIS DOCUMENT.** A patient whose phone is stored the way a human writes it CANNOT LOG IN - linkage compares the proven E.164 against the raw free-text column with an exact string match, and nothing normalizes that column on write. Every seeded patient is stored with spaces. In OBSERVE rather than BUILD because **every candidate fix needs a migration** and this lane does not author one without him: three options with a recommendation are on the card. Pinned in CI by patient-linkage.db.test.ts, whose defect assertion goes RED the day it is fixed."],
       ["W13-03", "LOOP 3 patient AUTH. #828 merged. Held in_flight ON PURPOSE under WF-03."],
       ["W13-04", "LOOP 4 booking. #830 merged. Same hold."],
       ["W13-05", "LOOP 5 ficha terms. #833 + #835 merged, 0058 applied. Same hold."],

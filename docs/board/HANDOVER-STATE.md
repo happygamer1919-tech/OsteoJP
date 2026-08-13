@@ -10,33 +10,36 @@ team and to legal, and for anyone who reads it after.
 ## ✅ The STAFF PLATFORM is ready for the clinic team to test now.
 
 Reception and therapists can run the diary, the patient records, the fichas and
-the notifications. Book it, use it, tell us what is wrong with it. Nothing below
-holds this back.
+the notifications. Book it, use it, tell us what is wrong with it.
 
-## ⛔ The PATIENT PORTAL is NOT ready, and will not be until one database change is applied.
+## ✅ The PATIENT PORTAL is ready for testing too, as of 2026-08-13.
 
-**Most patients cannot log in.** Not "it is slow", not "some edge cases" — a
-patient whose telephone number is written in the file the way a person writes a
-telephone number, **with spaces**, is turned away.
+Patients can log in with their telephone number and a code by SMS, see their
+appointments, request a booking, and read their documents.
 
-They get the text message with the code. They type the code correctly. They are
-told it did not work. There is no other way in.
+**A defect that stopped almost every patient logging in was found and fixed on
+2026-08-13.** A telephone number written in the file the way a person writes one
+— **with spaces** — was being turned away: the patient got the text message, typed
+the code correctly, and was told it did not work. The fix was applied to the live
+database the same day. **A patient whose number is stored the ordinary way now
+logs in**, and there is an automatic test that logs in as exactly that kind of
+patient on every change, so it cannot come back unnoticed.
 
-**The fix is written and waiting for Ivan to apply it.** It is one database
-change, `0062`, and it takes minutes. **Until it is applied, do not demonstrate
-patient login to the clinic team or to a patient**, because it will fail for
-almost everyone and it will look like the portal does not work.
+**Two things the clinic team should know before demonstrating the portal:**
 
-**After it is applied, the portal is testable too.** Nothing else on the list
-below stops the portal being used; this one thing does.
+1. **Reminders do not send yet.** The system is built and the wording approved,
+   but sending is switched off. No patient has ever received one.
+2. **A patient with a foreign mobile, or no mobile on record, still cannot log
+   in.** That is by design, not a fault — there is no password to fall back on.
+   They need a staff-assisted route, which is not built yet.
 
-*The engineering detail is RISK 0 in §3. The one-line summary is above and it is
-the whole of what a non-engineer needs.*
+*Engineering detail is in §3. The two paragraphs above are the whole of what a
+non-engineer needs.*
 
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**130 cards. 59 shipped, 71 open. Launch readiness 8/9.**
+**130 cards. 60 shipped, 70 open. Launch readiness 8/9.**
 
 > **PG9 EXPERIENCE closed on 2026-08-13**, on run `31651759598` — shard 3, **72
 > passed, 0 failed, 0 flaky, green at attempt 1**. It reddened first, on a real
@@ -174,17 +177,19 @@ hypotheses, three fixes and the production evidence, all on the card.
 
 ## 3. The top risks before demonstrating this build
 
-### RISK 0 — MOST PATIENTS CANNOT LOG IN AT ALL. Launch-blocking, found 2026-08-13.
-### **FIX AUTHORED THE SAME DAY. AWAITING IVAN'S APPLY OF MIGRATION `0062`.**
+### RISK 0 — RESOLVED 2026-08-13. Most patients could not log in; now they can.
+### Kept in full because how it was found and fixed is worth more than the defect.
 
-**`SEC-otp-linkage-exact-phone-match`.** This is the most serious open item in the
-build and it displaces everything below it.
+**`SEC-otp-linkage-exact-phone-match`, closed.** Migration `0062` was applied to
+production on 2026-08-13 and PR #888 merged as `4ae5a39`. The journal is recorded
+verbatim at `docs/migration-apply-0062.md` §9.
 
-**Status: the fix is written, reviewed and proven in CI — PR #888, apply sha
-`b7b5b0a`, apply document `docs/migration-apply-0062.md`.** It is not merged and
-must not be: the application code queries a column that does not exist in
-production yet, so merging before the apply would take the login from *refusing
-most patients* to *erroring for all of them*. Apply first, then merge.
+**One thing is still owed and it is not a regression.** The pre-check that would
+have counted how many patients `0062` could *not* repair was never run, so nobody
+knows whether it fixed everyone or merely most. Those patients could not log in
+before `0062` either. A three-integer read-only query is at
+`docs/migration-apply-0062.md` §10, and it is cheaper now than it was before
+because the column exists and can simply be counted.
 
 **A patient whose telephone number is stored the way a human writes it cannot log
 in to the portal.** Not degraded — refused.
@@ -252,8 +257,8 @@ patients to numbers they do not have, which is worse than the defect fixed.
 end-to-end login test drives that patient. It passes in CI because CI applies the
 migration itself.
 
-**Until Ivan applies it:** do not demonstrate patient login. After he applies it
-and the PR merges, the portal is testable.
+**Applied 2026-08-13, and the acceptance test has run against the real migration
+since.** The portal is testable.
 
 ---
 
