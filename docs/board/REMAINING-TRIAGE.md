@@ -1,8 +1,8 @@
 # Remaining work, triaged
 
 **Board:** `docs/board/portal-board.json` @ `as_of 2026-08-13T23:59:59Z`.
-**Scope:** every card not `status: shipped`. **70 cards.**
-**Shipped and out of scope here:** 60. **Board total: 130.**
+**Scope:** every card not `status: shipped`. **69 cards.**
+**Shipped and out of scope here:** 61. **Board total: 130.**
 
 Generated from the board, not typed: the generator refuses to emit this file
 unless every unshipped card lands in exactly one bucket. So the four counts
@@ -15,11 +15,11 @@ mutually exclusive without judgement calls:
 
 | Bucket | Unblocked by | Count |
 |---|---|---|
-| **BUILD** | a terminal | **50** |
+| **BUILD** | a terminal | **49** |
 | **OBSERVE** | Ivan | **13** |
 | **EXTERNAL** | a third party | **4** |
 | **LAUNCH-DAY** | launch itself | **3** |
-| | **total** | **70** |
+| | **total** | **69** |
 
 `blocked_on` on this board is `ivan | jp | lawyer | infra`. Ivan is deliberately
 **not** an EXTERNAL party, which is why everything waiting on him is OBSERVE even
@@ -27,7 +27,7 @@ when what he owes is a ruling rather than a screenshot.
 
 ---
 
-## BUILD — 50
+## BUILD — 49
 
 Code work a terminal can do. Nothing outside this repo has to happen first.
 
@@ -69,7 +69,6 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `LE-reminders-landline-dispatch` | medium | todo | **AMBER, 2026-08-11.** The OTP route now refuses landlines; the shared reminder path does not. Consequence of the fork-2 ruling. |
 | `LE-staff-transitions-emit-nothing` | medium | todo | **NEW 2026-08-11.** Only the CONFIRM path emits. Cancel and reschedule need no migration; no-show needs a kind and therefore a ruling. |
 | `LE-staff-assisted-activation` | medium | todo | Buildable now; WF-07 rules it POST-LAUNCH, so it is scheduled late, not blocked. |
-| `SEC-otp-unassigned-prefix-500` | medium | todo | A 500 on the LOGIN endpoint arriving by uncaught exception, so every future provider failure falls through the same crack. Found during PG1's A3 observation. |
 | `ACC-gold-700-label-fails-aa` | medium | todo | **NEW 2026-08-13.** v2-gold-700 is 3.94:1 as label text on the admin badge - the same defect class PG9's axe scan found in green, on the staff side. Fix is the same shape: use 800 for the label, leave 700 as the fill. |
 | `ACC-immediate-isvisible-probes` | medium | todo | **NEW 2026-08-13.** Seven more e2e probes treat isVisible() as if it waited. The gate-bearing one cost PG8 four runs and an incident card. None of these seven is gate-bearing yet. |
 | `LE-pg8-e2e-needs-run-scoped-patient` | medium | todo | The portal patient is fixed by the trusted-device storage state, so direction A cannot mint a run-unique one. Pinning the booked DATE achieves the same end for that assertion; this is the residual. |
@@ -135,7 +134,7 @@ with `evidence: null` for one reason: **none of them is written into**
 **`docs/DECISIONS.md`.** Verified 2026-08-11 by grep over that file - R2 through
 R10 and the four unnumbered rulings return zero hits.
 
-So 15 of the 50 BUILD cards are a single documentation PR:
+So 15 of the 49 BUILD cards are a single documentation PR:
 append each ruling to `DECISIONS.md`, close each card with that commit as evidence.
 No code, no migration, no owner time. **It is the cheapest large move on the board**
 and it matters for a handover: right now the project's governing decisions live in

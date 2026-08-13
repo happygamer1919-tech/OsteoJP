@@ -96,6 +96,33 @@ export function createOtpTestSink(): OtpTestSink {
 }
 
 /**
+ * A DEPLOYMENT fault, not a delivery failure, and the difference is the whole
+ * reason this class exists.
+ *
+ * The OTP request route answers `204` no matter what, because every additional
+ * distinguishable outcome is a signal an attacker can read. So it now CATCHES
+ * what the transport throws and answers `204` anyway — which is right for a
+ * carrier refusing one number, and WRONG for "the flag is armed and there are no
+ * credentials", because that fails for EVERY patient and must stay loud.
+ *
+ * TELLING THE TWO APART BY MESSAGE STRING WOULD BE THE DEFECT, NOT THE FIX.
+ * A `.includes("not configured")` match couples the route to prose that anyone
+ * may reword, and it fails OPEN: reword the message and a total outage starts
+ * being swallowed as a per-number delivery failure, silently. A class survives
+ * rewording, and `instanceof` is checkable by the compiler.
+ *
+ * Nothing else in this module throws this. A Twilio rejection, a network fault
+ * and an unroutable prefix are all ordinary `Error`s and all mean the same
+ * thing operationally: this one send did not happen.
+ */
+export class OtpTransportMisconfigured extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OtpTransportMisconfigured";
+  }
+}
+
+/**
  * The Twilio adapter (LOOP 3 step 3), behind the flag, LEFT OFF.
  *
  * ENV FAILURES HERE ARE LOUD, inheriting PG7's posture: "no silent default on a
@@ -118,7 +145,7 @@ export function createTwilioOtpTransport(): OtpTransport {
 
       if (!sid || !token || !from) {
         // Names only, never values. This is the loud failure PG7 requires.
-        throw new Error(
+        throw new OtpTransportMisconfigured(
           "otp/twilio: OTP_LIVE_SEND is armed but the transport is not configured. " +
             "Required: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and one of " +
             "TWILIO_SMS_FROM | TWILIO_MESSAGING_SERVICE_SID.",

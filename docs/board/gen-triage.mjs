@@ -55,7 +55,6 @@ const BUCKETS = {
       ["LE-board-pr-reconciliation", "**HIGH.** Nothing reconciles merged PRs against card status; three cards have carried a false one. This bucket list is the same failure in miniature - four ghosts and sixteen unbucketed cards had accumulated by 2026-08-13."],
       ["LE-inc08-survivor-still-confirmed", "**HIGH.** Resolved in the production diary - all four test appointments cancelled - but the card has not been closed against that."],
       ["LE-prod-apply-worktree-loose-scripts", "**HIGH.** One-off scripts staged outside the repo in the apply worktree. Hygiene on the one tree that touches production."],
-      ["SEC-otp-unassigned-prefix-500", "A 500 on the LOGIN endpoint arriving by uncaught exception, so every future provider failure falls through the same crack. Found during PG1's A3 observation."],
       ["ACC-gold-700-label-fails-aa", "**NEW 2026-08-13.** v2-gold-700 is 3.94:1 as label text on the admin badge - the same defect class PG9's axe scan found in green, on the staff side. Fix is the same shape: use 800 for the label, leave 700 as the fill."],
       ["ACC-immediate-isvisible-probes", "**NEW 2026-08-13.** Seven more e2e probes treat isVisible() as if it waited. The gate-bearing one cost PG8 four runs and an incident card. None of these seven is gate-bearing yet."],
       ["LE-pg8-e2e-needs-run-scoped-patient", "The portal patient is fixed by the trusted-device storage state, so direction A cannot mint a run-unique one. Pinning the booked DATE achieves the same end for that assertion; this is the residual."],
