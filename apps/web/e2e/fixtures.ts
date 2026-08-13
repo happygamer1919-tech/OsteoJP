@@ -242,3 +242,47 @@ export const PORTAL_PATIENT = {
   id: PATIENTS.maria.id,
   name: PATIENTS.maria.name,
 } as const;
+
+/**
+ * The OTP FIRST-LOGIN patient — a SECOND portal fixture, and a correction to the
+ * reasoning above it.
+ *
+ * THE COMMENT ON `PORTAL_DEVICE_TOKEN` SAYS THE OTP CODE CANNOT BE READ BY A
+ * TEST "without a back door in the login path". That was right about the SINK
+ * and wrong about the DATABASE, and the difference is the whole of this fixture.
+ *
+ * The sink does hold the code in the API process's memory, where a Playwright
+ * process cannot reach it. But `verifyCode` has to check the code against
+ * something, and that something is a row in `patient_otp_codes` holding
+ * `sha256(sha256(e164) + ":" + code)` — both hashes unsalted and deterministic,
+ * by design and documented as such in `apps/api/lib/auth/otp.ts`. A test with
+ * service-role access to the LOCAL seeded database can therefore recover the
+ * code by trying all 10^6 of them: **measured at 305ms worst case.**
+ *
+ * THAT IS NOT A SECURITY FINDING AND MUST NOT BE READ AS ONE. A 6-digit code has
+ * a 10^6 space by definition; the hash was never what protects it. What protects
+ * it is the table being service-role only (migration 0056), the five-attempt cap
+ * and the five-minute expiry — all of which `otp.ts` states outright. An attacker
+ * who can already read this table has the patient's row anyway.
+ *
+ * WHAT IT BUYS: the portal's REAL first login — phone, code, session — driven
+ * through shipped production code with **no test-only endpoint, no back door and
+ * no production change whatsoever**. LOOP 3 removed the back doors; this adds
+ * coverage without putting one back.
+ *
+ * WHY NOT MARIA. `resolvePatientByProvenPhone` requires `auth_user_id IS NULL`,
+ * and the seed sets hers for the trusted-device path. She is permanently
+ * ineligible for a first login. This row never gets an auth user — the verify
+ * route issues a trusted device and mints a session, and writes no
+ * `auth_user_id` — so the spec is re-runnable without cleanup.
+ */
+export const PORTAL_OTP_PATIENT = {
+  id: "00000000-0000-0000-0000-00000000a305",
+  name: "Otp Primeiro Acesso",
+  /** As stored. The API normalizes it to the E.164 below. */
+  phone: "+351 916 000 005",
+  /** What `normalizePhonePT` produces, and therefore what `hashPhone` hashes. */
+  phoneE164: "+351916000005",
+  /** What a patient actually types on the login screen. */
+  phoneTyped: "916000005",
+} as const;

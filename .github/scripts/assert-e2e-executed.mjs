@@ -57,6 +57,16 @@ const HARD_REQUIRED = [
     titleContains: "DIRECTION A",
     why: "PG8 SYNC. The portal->agenda crossing. Skipped green on two runs before this guard existed.",
   },
+  {
+    file: "apps/web/e2e/portal-otp-login.spec.ts",
+    titleContains: "mints a session",
+    why:
+      "PG1 AUTH. Decision D's PRIMARY patient login - phone, code, session. It had ZERO e2e " +
+      "coverage until 2026-08-13, not because it was skipped but because PORTAL_TENANT_ID was " +
+      "never written to the portal's CI environment, so the path could not run at all and no " +
+      "test noticed. A silent skip here returns it to exactly that state, and PG1 closed on a " +
+      "point-in-time owner observation with nothing in CI defending it.",
+  },
 ];
 
 const reportPath = process.argv[2];

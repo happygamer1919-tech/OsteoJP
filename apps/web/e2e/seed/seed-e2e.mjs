@@ -185,6 +185,36 @@ const PATIENTS_A = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// W13-03 / SEC-otp-login-path-has-zero-e2e-coverage — the OTP LOGIN patient.
+//
+// A SECOND portal patient, and it exists because Maria Silva CANNOT be used for
+// this. resolvePatientByProvenPhone (apps/api/lib/auth/patient-linkage.ts:73)
+// requires `auth_user_id IS NULL` - an unclaimed row - and ensurePortalPatient
+// below sets Maria's auth_user_id so the trusted-device path can use her. She is
+// permanently ineligible for a first OTP login, by design and not by accident.
+//
+// So this row is the FIRST-LOGIN fixture: never linked to an auth user, with a
+// phone no other seeded patient shares. Linkage refuses on zero rows and on
+// several, so a duplicate phone would make the OTP spec fail for a reason that
+// has nothing to do with the OTP path.
+//
+// THE NUMBER IS A ROUTABLE PT MOBILE. PT_SUBSCRIBER (apps/api/lib/notify/phone.ts)
+// accepts /^[29]\d{8}$/, and #865's isSmsCapablePT rejects the geographic `2`
+// range, so a 9-prefix number is required for the send path to be reachable.
+//
+// THE OTP FLOW NEVER CLAIMS THE ROW. Verify issues a trusted-device row and mints
+// a session; it does not write auth_user_id. So this fixture stays eligible and
+// the spec is naturally re-runnable, in CI and locally alike.
+const PATIENT_OTP_LOGIN_A = {
+  id: "00000000-0000-0000-0000-00000000a305",
+  full_name: "Otp Primeiro Acesso",
+  nif: "567891234",
+  phone: "+351 916 000 005",
+  email: null,
+  deleted_at: null,
+};
+
 const PATIENT_B = {
   id: "00000000-0000-0000-0000-00000000b301",
   full_name: "Beatriz Outro-Tenant",
@@ -454,6 +484,17 @@ async function ensureBaseData(userIds) {
     )).error,
     "patient other-therapist",
   );
+  // The OTP first-login fixture. `auth_user_id: null` is written EXPLICITLY on
+  // every run rather than left to the upsert's default: if a previous run or a
+  // manual experiment ever linked this row, linkage would refuse forever and the
+  // OTP spec would fail with a refusal that looks like a broken login path.
+  must(
+    (await db.from("patients").upsert(
+      { tenant_id: TENANT_A, auth_user_id: null, ...PATIENT_OTP_LOGIN_A },
+      { onConflict: "id" },
+    )).error,
+    "patient otp-login",
+  );
   must(
     (await db.from("patients").upsert(
       { tenant_id: TENANT_B, deleted_at: null, ...PATIENT_B },
@@ -684,8 +725,9 @@ async function main() {
   console.log("[seed-e2e] tenant A:", TENANT_A);
   console.log("[seed-e2e] tenant B:", TENANT_B);
   console.log("[seed-e2e] users:", USERS.map((u) => `${u.email} (${u.slug})`).join(", "));
-  console.log("[seed-e2e] patients A:", PATIENTS_A.length + 1, "(1 soft-deleted, +1 other-therapist)");
+  console.log("[seed-e2e] patients A:", PATIENTS_A.length + 2, "(1 soft-deleted, +1 other-therapist, +1 otp-login)");
   console.log("[seed-e2e] portal patient:", E2E_PORTAL_PATIENT_EMAIL, "→", MARIA_SILVA_ID);
+  console.log("[seed-e2e] otp-login patient:", PATIENT_OTP_LOGIN_A.phone, "→", PATIENT_OTP_LOGIN_A.id, "(auth_user_id null, first-login eligible)");
   console.log("[seed-e2e] portal trusted device:", `${PORTAL_DEVICE_HASH.slice(0, 12)}… (30d)`);
   console.log("[seed-e2e] ai review draft:", AI_REVIEW_DRAFT_ID, "→", AI_REVIEW_DRAFT_PATIENT);
   console.log("[seed-e2e] ai delete draft:", AI_DELETE_DRAFT_ID, "(+ ingestion back-pointer)");
