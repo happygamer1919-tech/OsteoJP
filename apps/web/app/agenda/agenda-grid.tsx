@@ -28,13 +28,103 @@ import type { AgendaAppointment } from "@/lib/scheduling/types";
 import { HoverPopover } from "./appointment-hover-card";
 import { EstadoMarker } from "./estado-marker";
 
-const SLOT_HEIGHT = 48; // px per 30-min slot
+const SLOT_HEIGHT = 48; // px per 30-min slot at the BASE (unexpanded) height
 const DAY_START_MIN = DAY_START_HOUR * 60;
 const DAY_END_MIN = DAY_END_HOUR * 60;
 const GUTTER = 64;
 
-/** Minutes from the grid's first row -> px. Shared by names and blocked bands. */
-const minToPx = (min: number) => ((min - DAY_START_MIN) / 30) * SLOT_HEIGHT;
+/** One appointment name line, and the group's own vertical padding. */
+const NAME_LINE_PX = 20;
+const GROUP_PAD_PX = 4;
+
+/* ==================================================================== */
+/* STAFF-03 - THE HOUR ROW GROWS TO FIT WHAT STARTS INSIDE IT.          */
+/* ==================================================================== */
+/*
+ * REPORTED FROM RECEPTION: several appointments in one hour crop, crowd the
+ * hover target, and an off-hour start sits mid-row. The old layout capped each
+ * start-group to its hour band and SCROLLED the overflow (PL-01) - nothing was
+ * hidden, but a receptionist had to scroll inside a 96px cell to read a name.
+ *
+ * WHAT CHANGED, AND WHAT DELIBERATELY DID NOT.
+ *
+ * The scale was LINEAR - `((min - start) / 30) * 48` - so every hour was exactly
+ * 96px whatever it held. It is now CUMULATIVE over per-hour heights: an hour is
+ * its base height, or taller when a day needs the room.
+ *
+ * THE 30-MINUTE SLOT GRID UNDERNEATH IS UNTOUCHED. `daySlots()` still yields a
+ * slot every 30 minutes, each is still its own focusable <button> with its own
+ * aria-label and click, and a slot inside a blocked span is still DISABLED
+ * rather than merely covered. Collapsing to hour granularity would look like a
+ * tidy follow-up and would SILENTLY HALVE THE BOOKABLE START TIMES;
+ * agenda-grid.test.tsx pins the :30 slot as clickable precisely so that cannot
+ * happen quietly. A half-hour slot is now half of its (possibly taller) hour.
+ *
+ * HOUR HEIGHTS ARE UNIFORM ACROSS EVERY DAY COLUMN, which is the detail that
+ * makes this work at all. They are computed from the BUSIEST day in view, so
+ * Monday and Tuesday share one vertical scale and a row still reads straight
+ * across. Per-column heights would misalign the week and make the gutter lie.
+ */
+
+/** Every hour the grid renders, as minutes-from-midnight. */
+function dayHours(): number[] {
+  const out: number[] = [];
+  for (let h = DAY_START_HOUR; h < DAY_END_HOUR; h += 1) out.push(h * 60);
+  return out;
+}
+
+/**
+ * The rendered height of each hour, in grid order.
+ *
+ * The base is two 30-minute slots. An hour grows only when a single day's
+ * start-groups within it need more room than that - and it grows to the WORST
+ * day in view, so all columns share one scale.
+ *
+ * Pure and exported so the arithmetic is unit-testable without a DOM.
+ */
+export function hourHeights(startCountsByDay: number[][]): number[] {
+  const base = SLOT_HEIGHT * 2;
+  return dayHours().map((_, hourIndex) => {
+    let needed = base;
+    for (const day of startCountsByDay) {
+      const lines = day[hourIndex] ?? 0;
+      // Groups within one hour sit at their own start offsets, so the room an
+      // hour needs is the total of its lines plus one padding per hour - not per
+      // group, which would over-grow an hour holding several small groups.
+      if (lines > 0) needed = Math.max(needed, lines * NAME_LINE_PX + GROUP_PAD_PX * 2);
+    }
+    return needed;
+  });
+}
+
+/** Cumulative top offset of each hour, plus the total day height at the end. */
+export function hourTops(heights: number[]): number[] {
+  const tops = [0];
+  for (const h of heights) tops.push(tops[tops.length - 1]! + h);
+  return tops;
+}
+
+/**
+ * Minutes from midnight -> px, on a possibly non-uniform hour scale.
+ *
+ * Within an hour the mapping stays PROPORTIONAL, so a :30 start sits exactly
+ * halfway down its hour however tall that hour is, and an off-hour start like
+ * :25 still lands where the clock says. That is what keeps the vertical
+ * position encoding time rather than merely ordering.
+ *
+ * Exported for the same reason `groupBandPx` was: the placement arithmetic is
+ * the part most worth pinning, and a DOM is not needed to pin it.
+ */
+export function makeMinToPx(heights: number[]): (min: number) => number {
+  const tops = hourTops(heights);
+  return (min: number) => {
+    const clamped = Math.max(DAY_START_MIN, Math.min(min, DAY_END_MIN));
+    const hourIndex = Math.floor((clamped - DAY_START_MIN) / 60);
+    const idx = Math.min(hourIndex, heights.length - 1);
+    const within = clamped - (DAY_START_MIN + idx * 60);
+    return tops[idx]! + (within / 60) * heights[idx]!;
+  };
+}
 
 /**
  * W11-00 v3 (owner ruling, Fisiozero list model): appointments are NOT cards.
@@ -60,19 +150,25 @@ function groupByStart(appts: AgendaAppointment[]): [string, AgendaAppointment[]]
 }
 
 /**
- * PL-01 - the max height a same-start group may occupy. The intentional vertical
- * stack (W11-00 v3) is PRESERVED, but bounded to the nearer of (a) the next hour
- * gridline and (b) the next start-group, so a large same-hour cluster no longer
- * grows down past its hour ("as marcacoes descem para a hora seguinte"). Overflow
- * scrolls WITHIN the band (overflow-y-auto on the group) - names are never
- * truncated and nothing is hidden, it just cannot bleed into the next hour's row.
- * Placement math (minToPx/SLOT_HEIGHT/daySlots) is untouched; this only caps a
- * group's rendered height. Pure + exported so the bound is unit-testable.
+ * PL-01 - the max height a same-start group may occupy, bounded to the nearer of
+ * (a) the next hour gridline and (b) the next start-group, so a cluster never
+ * grows down past its hour ("as marcacoes descem para a hora seguinte").
+ *
+ * STAFF-03 CHANGED WHAT THIS BOUND MEANS WITHOUT CHANGING THE RULE. It used to
+ * cap against a FIXED 96px hour and the overflow scrolled inside the band. The
+ * hour now GROWS to fit what starts in it, so the same bound resolves to a band
+ * that already holds the names - the scroll is the fallback it always was,
+ * rather than the everyday experience reception reported.
+ *
+ * It takes the mapper rather than closing over a module-level one, because the
+ * scale is now per-render (it depends on what the visible days hold). Pure +
+ * exported so the bound stays unit-testable.
  */
 export function groupBandPx(
   startMin: number,
   nextGroupStartMin: number | null,
   dayBottomPx: number,
+  minToPx: (min: number) => number,
 ): number {
   const thisTop = minToPx(startMin);
   const nextHourTop = minToPx((Math.floor(startMin / 60) + 1) * 60);
@@ -101,7 +197,6 @@ export function AgendaGrid({
 }) {
   const dates = viewDates(view, anchor);
   const slots = daySlots();
-  const totalHeight = slots.length * SLOT_HEIGHT;
   const today = todayInLisbon();
 
   // Current-time line position (refreshed each minute). Rendered only on today.
@@ -110,9 +205,6 @@ export function AgendaGrid({
     const id = window.setInterval(() => setNowMin(lisbonMinutesFromMidnight(new Date())), 60_000);
     return () => window.clearInterval(id);
   }, []);
-  const nowTop = ((nowMin - DAY_START_MIN) / 30) * SLOT_HEIGHT;
-  const nowVisible = nowMin >= DAY_START_MIN && nowTop <= totalHeight;
-
   const byDate = new Map<string, AgendaAppointment[]>();
   for (const a of appointments) {
     const d = lisbonParts(new Date(a.startsAt)).date;
@@ -120,6 +212,28 @@ export function AgendaGrid({
     if (list) list.push(a);
     else byDate.set(d, [a]);
   }
+
+  // STAFF-03: the vertical scale, derived from what is actually in view.
+  //
+  // ONE COUNT PER (DAY, HOUR) - how many appointment LINES start in that hour on
+  // that day. `hourHeights` then takes the worst day per hour, so every column
+  // shares one scale and a row still reads straight across the week.
+  const startCountsByDay = dates.map((d) => {
+    const perHour = dayHours().map(() => 0);
+    for (const a of byDate.get(d) ?? []) {
+      const min = lisbonMinutesFromMidnight(new Date(a.startsAt));
+      const idx = Math.floor((min - DAY_START_MIN) / 60);
+      if (idx >= 0 && idx < perHour.length) perHour[idx] = (perHour[idx] ?? 0) + 1;
+    }
+    return perHour;
+  });
+  const heights = hourHeights(startCountsByDay);
+  const minToPx = makeMinToPx(heights);
+  const tops = hourTops(heights);
+  const totalHeight = tops[tops.length - 1]!;
+
+  const nowTop = minToPx(nowMin);
+  const nowVisible = nowMin >= DAY_START_MIN && nowMin <= DAY_END_MIN;
 
   const gridCols = { gridTemplateColumns: `${GUTTER}px repeat(${dates.length}, minmax(0, 1fr))` };
 
@@ -154,7 +268,10 @@ export function AgendaGrid({
               // BELOW - on the 09:30 gridline. i===0 (08:00) omits it: the
               // header/body divider already delimits the first hour.
               className={`absolute inset-x-0 ${m % 60 === 0 && i !== 0 ? "border-t border-v2-border" : ""}`}
-              style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }}
+              // STAFF-03: the gutter uses the SAME mapper as the columns, or the
+              // hour labels drift off their rules the moment an hour expands -
+              // which would make the clock lie rather than merely look untidy.
+              style={{ top: minToPx(m), height: minToPx(m + 30) - minToPx(m) }}
             >
               {m % 60 === 0 && (
                 // The first hour label (i === 0) sits at the gutter top rather
@@ -228,7 +345,11 @@ export function AgendaGrid({
                         ? "cursor-not-allowed"
                         : "motion-safe:active:scale-[0.97] hover:bg-v2-green-50"
                     } ${rule}`}
-                    style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }}
+                    // STAFF-03: positioned by the mapper, so a 30-minute slot is
+                    // half of its (possibly taller) hour. Still one focusable
+                    // button per 30 minutes - the grid was NOT collapsed to hour
+                    // granularity, which would have halved the bookable starts.
+                    style={{ top: minToPx(m), height: minToPx(m + 30) - minToPx(m) }}
                   />
                 );
               })}
@@ -238,7 +359,7 @@ export function AgendaGrid({
                   reads, below the appointment names (z-10) so a booking made
                   before the block was entered stays visible and fixable. */}
               {dayBlocks.map((p) => (
-                <BlockedBand key={p.id} placement={p} />
+                <BlockedBand key={p.id} placement={p} minToPx={minToPx} />
               ))}
 
               {/* W11-00 v3: appointment names as a Fisiozero-style vertical list.
@@ -260,7 +381,7 @@ export function AgendaGrid({
                     className="absolute inset-x-0 z-10 flex flex-col overflow-y-auto"
                     style={{
                       top: minToPx(startMin),
-                      maxHeight: groupBandPx(startMin, nextStartMin, totalHeight),
+                      maxHeight: groupBandPx(startMin, nextStartMin, totalHeight, minToPx),
                     }}
                   >
                     {group.map((a) => (
@@ -299,7 +420,17 @@ export function AgendaGrid({
  * still carry the state in their aria-label, so the information is never
  * colour-only for a screen reader either.
  */
-function BlockedBand({ placement }: { placement: BlockPlacement }) {
+function BlockedBand({
+  placement,
+  minToPx,
+}: {
+  placement: BlockPlacement;
+  // STAFF-03: the mapper is PASSED, not closed over. A blocked band that kept
+  // the old linear scale would drift off the slots it is meant to cover the
+  // moment an hour expanded - and the band is the visual half of a fact whose
+  // enforcement half is the disabled slot underneath it. They must agree.
+  minToPx: (min: number) => number;
+}) {
   const top = minToPx(placement.startMin);
   const height = minToPx(placement.endMin) - top;
   const showLabel = height >= SLOT_HEIGHT;
