@@ -60,6 +60,64 @@ that the row appears, promptly, and to the right therapist's column.**
 | **A9** | **staff agenda learns** | **NOTHING. NO PUSH, NO POLL, NO INVALIDATION.** | **UNBOUNDED** |
 | A10 | agenda render | dynamic SSR, fresh DB read per request | request-bound |
 
+### 2.1a THE TIMING TABLE. Sourced, and honest about what each number is.
+
+**DoD AMENDED BY STRATEGY 2026-08-13:** the `createBooking` transaction —
+**A5 + A6 + A7** — counts as **ONE measured hop**, grouped **by design rather
+than by limitation**, and **no instrumentation goes inside it**. That amendment is
+what made this table producible; the earlier attempt would have needed timing
+marks on the hot path inside a transaction, which trace §3 explicitly warns
+against.
+
+| # | Hop | Measured | Source |
+|---|---|---|---|
+| A1 | patient submits | *within A1+A2+A5-A7 below* | not separable from the browser |
+| A2 | portal → API | *within the same span* | server-to-server, no browser timer |
+| A3 | API orchestration | *entry point, not a span* | — |
+| A4 | service resolution | *within the same span* | one query, inside the submit round trip |
+| **A5+A6+A7** | **lock, conflict re-check, insert + commit** | **1317ms** / **12689ms** | `[W13-07] A: portal booking submitted` |
+| A8 | pedido emit | **off the measured path** | post-commit, best-effort, by construction |
+| **A9** | **staff agenda learns** | **UNBOUNDED** | **no push, no poll, no invalidation** |
+| A10 | agenda render → row visible | **587ms** / **592ms** | `[W13-07] A: agenda shows the row on the booked day` |
+
+| # | Hop | Measured | Source |
+|---|---|---|---|
+| B1-B4 | staff submits → insert + commit | *covered by A5-A7's arithmetic* | same `acquireSlotLocks` buckets |
+| B5 | own-surface invalidation | **immediate** | `revalidatePath`, same app, synchronous |
+| B6+B7 | portal learns → renders | **552ms** / **617ms** | `[W13-07] B: portal slot list first paint` |
+
+**Runs of record:** `31701031843` and `31706266207`, both shard 3, both green at
+attempt 1, both with the waiting probe in place.
+
+### 2.1b WHAT THE NUMBERS DO AND DO NOT SAY
+
+**THE 12689ms IS NOT A LATENCY AND MUST NOT BE READ AS ONE.** On run
+`31701031843` the seeded calendar's first free day was the **eighth** the picker
+offered, so that span includes the spec clicking through seven empty days at up
+to 1.5s each. `31706266207` found a slot on **day 1** and the same span was
+**1317ms**. The measurement is of a browser driving a form, not of the server.
+**Where the two runs disagree by 10x, the smaller one is the signal and the
+larger is the harness** — stated here rather than averaged, because an average of
+those two would be a number describing nothing.
+
+**A9 IS THE FINDING AND IT IS UNBOUNDED BY CONSTRUCTION**, which the DoD asks be
+named rather than reported with a lucky measurement. `apps/api` cannot
+`revalidatePath` into `apps/web`; they are separate deployments. An agenda left
+open at reception learns of a portal booking **only when someone navigates or
+refreshes**. The 587ms in the table is the *reload* — the hop that actually
+delivers the row — not a push that does not exist. Carded separately as
+`LE-agenda-does-not-learn-of-portal-bookings`, and it is **not a double-booking
+risk**: the protection is the slot lock and 0061's constraint, not the render.
+
+**WHY A1, A2 AND A4 CARRY NO NUMBER OF THEIR OWN.** They sit inside one `fetch`
+from the browser's point of view. Separating them needs server-side
+instrumentation on a pre-authentication write path, which is exactly what the
+amended DoD rules out. **They are grouped honestly rather than estimated** — the
+alternative was a table that looked complete and was not, which is this project's
+most-repeated failure mode.
+
+---
+
 ### 2.2 Direction B — staff books in the agenda → portal
 
 | # | Hop | Boundary | Latency |
@@ -160,13 +218,13 @@ the arm.
 
 ## 5. WHAT PG8 STILL NEEDS. This document does not close it.
 
-**UPDATED 2026-08-13. FOUR OF FIVE LINES ARE NOW DONE. ONE IS NOT, AND IT IS THE
-ONE THIS GATE IS NAMED AFTER.**
+**UPDATED 2026-08-13. ALL FIVE LINES ARE DONE.** The last one closed on
+strategy's amendment: the `createBooking` transaction counts as one measured hop.
 
 | DoD line | State |
 |---|---|
 | An automated test proves each direction, not a manual observation | **DONE 2026-08-13.** Both directions green at **attempt 1 on two independent runs**, `31651759598` and `31652671983`, different commits. See §5.1. |
-| The trace names every hop and its timing, in both directions | **HOPS: DONE (§2). PER-HOP TIMINGS: STILL NOT MEASURED.** §5.2 adds the *spans* two runs measured, which is not the same thing and is not claimed to be. **THIS IS THE ONE LINE HOLDING PG8.** |
+| The trace names every hop and its timing, in both directions | **DONE 2026-08-13, under the amended DoD.** §2.1a is the sourced table. The `createBooking` transaction (A5+A6+A7) is ONE measured hop, grouped **by design** — strategy's amendment, and the reason this line could close without instrumenting a hot path inside a transaction. |
 | The contention control passes and the loser is REFUSED | **DONE**, `slot-lock-concurrency.test.ts`. |
 | Any unbounded hop is named as such | **DONE (§3)**, and now asserted by test. |
 | Lint, typecheck, unit, DB-gated, e2e, build pass | **DONE 2026-08-13.** lint 0 errors · typecheck 10/10 · unit 2012 · DB-gated green · build 4/4 · e2e green on both runs above. |
