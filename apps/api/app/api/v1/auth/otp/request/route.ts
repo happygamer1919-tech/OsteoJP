@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { hashPhone, requestCode } from "@/lib/auth/otp";
 import { isSmsCapablePT } from "@/lib/auth/otp-sms-capability";
 import { createDrizzleOtpStore } from "@/lib/auth/otp-store";
-import { resolveOtpTransport } from "@/lib/auth/otp-transport";
+import { OtpTransportMisconfigured, resolveOtpTransport } from "@/lib/auth/otp-transport";
 import { normalizePhonePT } from "@/lib/notify/phone";
 import { createDurableRateLimitStore, checkDurableRateLimit } from "@/lib/rate-limit/durable-store";
 import {
@@ -136,10 +136,62 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  await requestCode(tenantId, phone, {
-    store: createDrizzleOtpStore(),
-    transport: resolveOtpTransport(),
-  });
+  // ================================================================= //
+  // A FAILED SEND MUST NOT BECOME A FOURTH DISTINGUISHABLE OUTCOME.
+  // ================================================================= //
+  // SEC-otp-unassigned-prefix-500. This `await` was unwrapped, and apps/api has
+  // no middleware.ts, so anything the transport threw became a 500 - a fourth
+  // outcome on the one endpoint whose entire design is to have as few as
+  // possible, arriving BY EXCEPTION rather than by decision.
+  //
+  // It was found by typing an unassigned 9x prefix, which Twilio cannot route.
+  // BUT THE PREFIX IS THE SYMPTOM, NOT THE DEFECT. Every other provider-side
+  // failure fell through the identical crack into the identical 500: a
+  // suspended account, an exhausted balance, a destination-country permission
+  // never enabled, Twilio's own rate limiting. Whatever the 500 discloses today,
+  // it would disclose something else the first time the provider failed for a
+  // different reason, and nobody would be watching. Catching here closes all of
+  // them at once instead of the one number that happened to be typed.
+  //
+  // IT ALSO STOPPED MIS-ATTRIBUTING THE FAULT TO THE PATIENT. A 500 renders
+  // `otp_unavailable` - "the service is unavailable, try later" - which invites a
+  // patient to wait for something that will never work. A 204 renders
+  // `otp_sent`, which is worded "if the number is registered" and is the honest
+  // answer here: we accepted the request and cannot tell them more without
+  // becoming an oracle. Whether an undeliverable number deserves its own pt-PT
+  // copy is a separate PRODUCT question and is deliberately not decided here.
+  try {
+    await requestCode(tenantId, phone, {
+      store: createDrizzleOtpStore(),
+      transport: resolveOtpTransport(),
+    });
+  } catch (e) {
+    // A DEPLOYMENT FAULT IS RE-THROWN. `OtpTransportMisconfigured` means the
+    // live flag is armed with no credentials, which fails for EVERY patient and
+    // is not a delivery problem. PG7's posture is that such a thing fails at
+    // boot, loudly, rather than degrading into a cheerful 204 that silently
+    // sends nothing to anyone. Discriminated by CLASS, never by message text:
+    // a string match would fail open the moment somebody reworded the prose.
+    if (e instanceof OtpTransportMisconfigured) throw e;
+
+    // NAMES AND CLASSES ONLY, NEVER THE PHONE, THE HASH OR THE CODE (PII rule
+    // 7). The tenant is omitted too - it identifies the clinic, and this line
+    // may be read by anyone with log access.
+    //
+    // AND IT SAYS THE ROW SURVIVES, because that is the non-obvious part.
+    // `requestCode` writes the code row BEFORE sending, deliberately, so a
+    // delivered code always has a record behind it. A throwing send therefore
+    // leaves a live unused row with no delivery. It is bounded by the 3/hour
+    // per-phone limit and the 5-minute TTL, so it is not an exhaustion vector -
+    // but somebody reading that table later will wonder why codes exist that
+    // nobody received, and this line is the answer.
+    console.error(
+      `[otp] SEND FAILED, request still answered 204: ${e instanceof Error ? e.name : "unknown"}: ` +
+        `${e instanceof Error ? e.message : "no message"}. The code row was already ` +
+        `written and is now live-but-undelivered until its TTL expires. If this ` +
+        `repeats, the transport is failing for a reason worth naming, not one number.`,
+    );
+  }
 
   // 204 regardless. See the header: this is the enumeration property.
   return new Response(null, { status: 204 });
