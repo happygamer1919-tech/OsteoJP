@@ -28,7 +28,7 @@ team and to legal, and for anyone who reads it after.
 | **PG5 REMINDERS** | **PASS** | 48h email and 24h SMS as separate per-channel offsets with the channel inside the idempotency key, and all ten bodies approved. **Reminders are not live** — `REMINDERS_LIVE_SEND` is false. |
 | **PG6 EXPOSURE** | **PASS** | 51-row exposure matrix committed; 23 MUST-NEVER rows, every one with a verified enforcement point. |
 | **PG7 ENVIRONMENT** | **PASS** | Every environment variable has a safe default or fails loudly at boot; the full four-app estate was walked. |
-| **PG8 SYNC** | **OPEN — but the crossing is now OBSERVED** | The property was demonstrated at the DATABASE layer and not at the browser layer. **That changed on 2026-08-13:** a portal booking appears on reception's agenda on the day it booked, green at attempt 1. **The "invisible row" was never real** — every probe used `isVisible({timeout})`, which playwright-core ignores and answers instantly, so a check written to wait 15 seconds answered in 443ms from an unpainted page. Held open for **one more independent green**, because this gate has produced two wrong greens before and a third is worth confirming rather than trusting. |
+| **PG8 SYNC** | **OPEN — one named DoD line short** | The crossing is **proven**: a portal booking appears on reception's agenda on the day it booked, green at attempt 1 on **two independent runs**. **The "invisible row" was never real** — every probe used `isVisible({timeout})`, which playwright-core ignores and answers instantly, so a check written to wait 15 seconds answered in 443ms from an unpainted page. What remains is the DoD's **per-hop timing table**: nine hops are named, none is measured individually, and a browser cannot see inside one `fetch`. `LE-pg8-per-hop-timings`. |
 | **PG9 EXPERIENCE** | **PASS** | axe `wcag2a/2aa/21aa/22aa` across eight patient screens at 390×844, plus pt-PT, 24h, one-primary-action, mobile screenshots, and an arm proving the scanner can fail. Green at attempt 1 on run `31651759598`. **It reddened first on a real defect** — the ghost back button at 4.45:1 against a 4.5 floor — and **the gap the human half found is fixed**: every patient dead end now carries the clinic telephone, where before five strings said "contacte a clínica" and no screen said how. |
 
 ---
@@ -98,8 +98,24 @@ session spent ruling out tenant mismatch and location scope by code read, and a
 diagnostic block added and then removed for slowing the suite enough to be
 cancelled. All of it downstream of one deprecated option.
 
-**8/9 is the honest number, and PG8 is now held for confirmation rather than
-discovery** — one more independent attempt-1 green, from a different commit.
+**The confirmation arrived the same day.** Run `31652671983`, a different commit,
+shard 3: **72 passed, 0 flaky**, direction A green at attempt 1 in 587ms. Two
+independent attempt-1 greens on the tightest assertion this spec has ever
+carried.
+
+**PG8 is still open, and now for one small, named reason.** The wave doc's LOOP 7
+DoD requires *"the trace names every hop and its timing, in both directions"* and
+a **timing table** as evidence. Nine hops are named; **none is measured
+individually**. What exists is three end-to-end spans — the booking submits in
+~1.3s, the agenda shows the row in ~0.6s — and each crosses a *group* of hops. A
+browser cannot see inside one `fetch`, so closing that line needs server-side
+instrumentation, not another log line in the spec.
+
+**Four of five DoD lines done is a card, not gate credit.** That rule is what
+caught this gate's two earlier false greens, and applying it against my own
+result is the only way it means anything. Carded as `LE-pg8-per-hop-timings`
+**(high)** — the last thing between the build and 9/9, and a measurement rather
+than a discovery.
 
 **PG8, stated without softening, as of 2026-08-13.** The crossing works and is
 now **observed in a browser**, on the day it booked, at attempt 1. What is left
