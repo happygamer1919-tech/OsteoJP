@@ -7,7 +7,7 @@ banner and **PURPLE never clears its own**. The path is draft -> strategy -> Iva
 
 Migration: `0062_patient_phone_e164` (journal idx 61).
 Branch: `db/0062-patient-phone-e164`. PR: #888.
-**Apply from sha `b7b5b0a`.**
+**Apply from sha `4adafcf`.**
 Card: `SEC-otp-linkage-exact-phone-match` - **LAUNCH-BLOCKING**.
 
 Written under `docs/runbook-prod-migrations.md`, "The pre-check is mandatory".
@@ -152,7 +152,7 @@ of them tried.
 |---|---|---|
 | Apply worktree | `git worktree list` | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` |
 | Env file | directory listing, **name only, never read** | `/Users/ivan/osteojp-secrets/new-prod.env` |
-| Apply sha | `git log -n1 -- packages/db/migrations supabase/migrations` | `b7b5b0a` |
+| Apply sha | `git log -n1 -- packages/db/migrations supabase/migrations` | `4adafcf` |
 | Migration number | file count + journal tail | `0062`, idx `61` |
 | Journal `when` | previous `+100000000` | `1787000000000` (prev `1786900000000`) |
 | Journal + mirror | `node scripts/check-journal.mjs` | 62 `.sql`, 62 entries, in order, `when` strictly increasing, **mirror matches by CONTENT** |
@@ -164,7 +164,7 @@ of them tried.
 it by the lockfile at `65d9611` being byte-identical to the worktree's. **It is
 no longer identical**: `#883` added `@axe-core/playwright`. So the check was
 redone at the level that matters - `diff` of the lockfile between `65d9611` and
-`b7b5b0a` touches **only `apps/web`'s dependency block and an eslint peer
+`4adafcf` touches **only `apps/web`'s dependency block and an eslint peer
 re-resolution**. Nothing in `packages/db`, nothing about drizzle. The block runs
 `pnpm --filter @osteojp/db exec drizzle-kit migrate` and nothing else, so a new
 `apps/web` devDependency cannot affect it.
@@ -204,7 +204,7 @@ NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN
 ```
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 git fetch origin --prune
-git checkout --detach b7b5b0a
+git checkout --detach 4adafcf
 git log -1 --oneline
 set -o allexport
 source /Users/ivan/osteojp-secrets/new-prod.env
@@ -237,7 +237,7 @@ Closing the window is the only complete answer.
 migrate` can print the connection string on some failures. A leaked connection
 string in a pasted block has already cost this project one password rotation.
 
-**WHY `b7b5b0a`.** It is the last commit touching anything this block executes -
+**WHY `4adafcf`.** It is the last commit touching anything this block executes -
 `packages/db/migrations/` (the SQL and the journal) and `supabase/migrations/`
 (the mirror). Re-derive with
 `git log -n1 -- packages/db/migrations supabase/migrations`. **If this branch is
