@@ -279,8 +279,21 @@ export const PORTAL_PATIENT = {
 export const PORTAL_OTP_PATIENT = {
   id: "00000000-0000-0000-0000-00000000a305",
   name: "Otp Primeiro Acesso",
-  /** As stored. The API normalizes it to the E.164 below. */
-  phone: "+351 916 000 005",
+  /**
+   * STORED AS BARE E.164, WHICH IS NOT REALISTIC DATA, AND THE GREEN THIS
+   * FIXTURE PRODUCES MUST NOT BE READ AS "PATIENTS CAN LOG IN".
+   *
+   * `resolvePatientByProvenPhone` matches with `eq(patients.phone, phoneE164)` —
+   * an exact string comparison against the RAW stored value. Every other seeded
+   * patient, and every number a human types, carries spaces. Those patients
+   * cannot log in at all. Carded as `SEC-otp-linkage-exact-phone-match`
+   * (launch-blocking) and pinned against a real row by
+   * `apps/api/lib/auth/patient-linkage.db.test.ts`.
+   *
+   * This fixture is spaceless so the OTP spec can prove THE LOGIN PATH. It
+   * proves nothing about the clinic's data.
+   */
+  phone: "+351916000005",
   /** What `normalizePhonePT` produces, and therefore what `hashPhone` hashes. */
   phoneE164: "+351916000005",
   /** What a patient actually types on the login screen. */

@@ -206,11 +206,33 @@ const PATIENTS_A = [
 // THE OTP FLOW NEVER CLAIMS THE ROW. Verify issues a trusted-device row and mints
 // a session; it does not write auth_user_id. So this fixture stays eligible and
 // the spec is naturally re-runnable, in CI and locally alike.
+//
+// ===================================================================== //
+// THE PHONE IS STORED AS BARE E.164 AND THAT IS **NOT** REALISTIC DATA.
+// READ THIS BEFORE TREATING THE GREEN e2e AS "PORTAL LOGIN WORKS".
+// ===================================================================== //
+// Every OTHER patient in this seed stores a human-formatted number with spaces
+// ("+351 912 345 678"), which is how Portuguese numbers are written and how
+// staff will type them - `optionalText` in apps/web/lib/patients/validation.ts
+// TRIMS the value and normalizes nothing.
+//
+// `resolvePatientByProvenPhone` (apps/api/lib/auth/patient-linkage.ts:69) matches
+// with `eq(patients.phone, phoneE164)` - AN EXACT STRING COMPARISON against the
+// raw stored value, using the E.164 form the caller proved. So a patient whose
+// number is stored with spaces CANNOT LOG IN AT ALL.
+//
+// THIS FIXTURE IS SPACELESS SO THE OTP SPEC CAN PROVE THE LOGIN PATH ITSELF.
+// It is NOT evidence that a real patient can log in, and the spec says so at its
+// own assertion. The defect is carded as SEC-otp-linkage-exact-phone-match
+// (launch-blocking, HALTED for the owner: every fix needs a migration) and it is
+// pinned by apps/api/lib/auth/patient-linkage.db.test.ts against a REAL row,
+// because the existing unit test mocks the database and so agrees with the query
+// by construction.
 const PATIENT_OTP_LOGIN_A = {
   id: "00000000-0000-0000-0000-00000000a305",
   full_name: "Otp Primeiro Acesso",
   nif: "567891234",
-  phone: "+351 916 000 005",
+  phone: "+351916000005",
   email: null,
   deleted_at: null,
 };

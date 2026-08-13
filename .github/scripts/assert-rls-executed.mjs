@@ -84,6 +84,17 @@ const SUITES = [
   // transaction. Hard-required: a silent skip here would leave Decision D's
   // login proven by mocks agreeing with themselves.
   { file: "otp-claim.db.test.ts", hard: true },
+  // SEC-otp-linkage-exact-phone-match, added 2026-08-13, and hard-required for a
+  // reason the others do not have: ONE OF ITS TESTS PINS A LIVE DEFECT. It
+  // asserts that a patient whose phone is stored the way a human writes it is
+  // REFUSED at login, which is true today and must not be true at launch. A
+  // silent skip would take that record out of CI and leave a launch-blocking
+  // defect held only by a card - and the whole reason this file exists is that a
+  // card can be missed while a red test cannot. It also replaces
+  // patient-linkage.test.ts's mocked query-shape assertions with real rows: that
+  // suite's fake select returns whatever the test set, so it proves the query is
+  // ASSEMBLED correctly and cannot prove it FINDS anything.
+  { file: "patient-linkage.db.test.ts", hard: true },
   // ===================================================================== //
   // W13-06 / W13-07, added 2026-08-12. THE THREE SUITES A GATE DOCUMENT CITES.
   // ===================================================================== //
