@@ -28,7 +28,11 @@ import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
 import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conflict";
 import { isLegalEstadoTransition } from "./estado-transitions";
-import { emitConfirmedNotification } from "@/lib/notifications/centre";
+import {
+  emitCancelledNotification,
+  emitConfirmedNotification,
+  emitRescheduledNotification,
+} from "@/lib/notifications/centre";
 import { getTherapistAvailability, type DayAvailability } from "./day-availability";
 import { isValidInterval } from "./overlap";
 import { expandRecurrence, toRRule } from "./recurrence";
@@ -193,6 +197,90 @@ type SeriesMember = {
  *   following → series members at/after the target's start.
  * A non-recurring appointment resolves to itself for every scope.
  */
+/**
+ * What a staff-transition fan-out needs, per appointment.
+ *
+ * SEPARATE FROM `SeriesMember` because `resolveSeries` deliberately selects only
+ * what the SCHEDULING logic needs, and widening it to carry notification fields
+ * would make every caller pay for a concern most of them do not have.
+ */
+type StaffTransitionFanOut = {
+  appointmentId: string;
+  patientId: string;
+  practitionerIds: string[];
+  startsAt: Date;
+};
+
+/**
+ * Read the fan-out subjects for a set of appointment ids, INSIDE the caller's
+ * transaction and therefore under RLS.
+ *
+ * BOTH PRACTITIONERS, because a two-therapist appointment has two people who
+ * need to know it moved, and the confirm path already established that shape.
+ * Nulls are filtered rather than passed through: `emitStaffTransitionNotification`
+ * validates ids against the tenant anyway, but sending it a null would be asking
+ * it to ignore something rather than not sending it.
+ */
+async function readStaffTransitionFanOut(
+  tx: DbTx,
+  ids: string[],
+): Promise<StaffTransitionFanOut[]> {
+  if (ids.length === 0) return [];
+  try {
+    return await readStaffTransitionFanOutOrThrow(tx, ids);
+  } catch (e) {
+    // ================================================================= //
+    // A NOTIFICATION READ MUST NEVER ABORT A CLINICAL ACTION.
+    // ================================================================= //
+    // This read runs INSIDE the caller's transaction, because it needs the
+    // PRE-UPDATE instants and it must be RLS-scoped. That placement means an
+    // unhandled throw here would roll back the cancellation or the reschedule
+    // itself - a staff member's clinical action failing because the notification
+    // centre could not be told about it. That trade is the wrong way round.
+    //
+    // THIS IS NOT THE SECTION 1.3 FALLBACK, AND THE DISTINCTION IS THE POINT.
+    // That rule is about VERDICT paths: an unhandled case must fail rather than
+    // map onto a benign-looking one. The verdict here - did the cancel succeed -
+    // is untouched; only the notification is lost, and it is lost LOUDLY. 1.3's
+    // own wording is that a fallback is right "where the cost of stopping
+    // exceeds the cost of being wrong", and stopping a clinical cancellation
+    // because a fan-out read failed is exactly that case.
+    console.error(
+      `[notifications] staff-transition fan-out READ failed for ${ids.length} ` +
+        `appointment(s); the transition itself is unaffected and will proceed, ` +
+        `but no notification will be written for it`,
+      e instanceof Error ? `${e.name}: ${e.message}` : "unknown",
+    );
+    return [];
+  }
+}
+
+/** The read itself. Separated so the caller above owns the failure policy. */
+async function readStaffTransitionFanOutOrThrow(
+  tx: DbTx,
+  ids: string[],
+): Promise<StaffTransitionFanOut[]> {
+  const rows = await tx
+    .select({
+      id: appointments.id,
+      patientId: appointments.patientId,
+      practitionerId: appointments.practitionerId,
+      practitionerTwoId: appointments.practitionerTwoId,
+      startsAt: appointments.startsAt,
+    })
+    .from(appointments)
+    .where(inArray(appointments.id, ids));
+
+  return rows.map((r) => ({
+    appointmentId: r.id,
+    patientId: r.patientId,
+    practitionerIds: [r.practitionerId, r.practitionerTwoId].filter(
+      (p): p is string => Boolean(p),
+    ),
+    startsAt: r.startsAt,
+  }));
+}
+
 async function resolveSeries(
   tx: DbTx,
   targetId: string,
@@ -1071,6 +1159,7 @@ export async function rescheduleAppointment(
   const ip = await clientIp();
   // Captured inside the tx, enqueued AFTER commit (network out of the tx).
   let reminderTargets: ReminderEnqueueTarget[] = [];
+  let rescheduleFanOut: Array<StaffTransitionFanOut & { newStartsAt: Date }> = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -1080,6 +1169,12 @@ export async function rescheduleAppointment(
           return { ok: false, error: "not_found" };
         }
         const ids = affected.map((a) => a.id);
+
+        // BEFORE the update, so `startsAt` here is the instant the appointment
+        // is moving FROM. Read once and reused below rather than re-read after
+        // the write, which would return the new value and silently make every
+        // notification say it moved from where it now is.
+        const before = await readStaffTransitionFanOut(tx, ids);
 
         // scope "one": move to the exact window from input (date may change).
         // scope following/series: keep each occurrence's date, apply the new
@@ -1176,6 +1271,18 @@ export async function rescheduleAppointment(
           appointmentId: t.id,
           startsAt: t.startsAt,
         }));
+        // THE OLD INSTANTS, matched to the new ones by id. This is the only kind
+        // where the two differ, and it is why staff_notifications carries the
+        // column pair at all: a reader needs to know what it moved FROM.
+        // `before` was read at the top of this transaction, so it still holds
+        // the pre-update value even though the rows have now been written.
+        const newStartById = new Map(targets.map((t) => [t.id, t.startsAt]));
+        rescheduleFanOut = before
+          .filter((b) => newStartById.has(b.appointmentId))
+          .map((b) => ({
+            ...b,
+            newStartsAt: newStartById.get(b.appointmentId)!,
+          }));
         return { ok: true, data: { id } };
       },
     );
@@ -1185,7 +1292,23 @@ export async function rescheduleAppointment(
       // time never fires. Best-effort, post-commit.
       await afterCommit("reschedule", async () => {
         revalidatePath(AGENDA_PATH);
+        revalidatePath("/notificacoes");
         await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
+        // LE-staff-transitions-emit-nothing. Best-effort and post-commit: the
+        // appointment really has moved, so a failed notification must never be
+        // reported as a failed reschedule.
+        for (const f of rescheduleFanOut) {
+          await emitRescheduledNotification({
+            tenantId: actor.tenantId,
+            actorUserId: actor.userId,
+            appointmentId: f.appointmentId,
+            patientId: f.patientId,
+            practitionerIds: f.practitionerIds,
+            previousStartsAt: f.startsAt,
+            newStartsAt: f.newStartsAt,
+            occurredAt: new Date(),
+          });
+        }
       });
     }
     return result;
@@ -1396,6 +1519,10 @@ export async function cancelAppointment(
   const scope: SeriesScope = opts?.scope ?? "one";
 
   const ip = await clientIp();
+  // Captured inside the tx, emitted AFTER commit. LE-staff-transitions-emit-nothing:
+  // until 2026-08-13 only the CONFIRM path was instrumented, so a staff
+  // cancellation left no record in the notification centre at all.
+  let cancelFanOut: StaffTransitionFanOut[] = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -1405,6 +1532,12 @@ export async function cancelAppointment(
           return { ok: false, error: "not_found" };
         }
         const ids = affected.map((a) => a.id);
+
+        // The fan-out needs the patient and BOTH practitioners, which
+        // resolveSeries does not select. Read BEFORE the update: after it the
+        // rows are cancelled, and a later reader would have to know that a
+        // cancelled row is still a legitimate notification subject.
+        cancelFanOut = await readStaffTransitionFanOut(tx, ids);
 
         // Never hard delete — cancel via the status field only.
         await tx
@@ -1436,7 +1569,26 @@ export async function cancelAppointment(
         return { ok: true, data: { id } };
       },
     );
-    if (result.ok) revalidatePath(AGENDA_PATH);
+    if (result.ok) {
+      revalidatePath(AGENDA_PATH);
+      await afterCommit("cancel", async () => {
+        revalidatePath("/notificacoes");
+        // POST-COMMIT and best-effort, the same contract the confirm path set:
+        // the appointment really is cancelled, so a failed notification must
+        // never be reported as a failed cancellation.
+        for (const f of cancelFanOut) {
+          await emitCancelledNotification({
+            tenantId: actor.tenantId,
+            actorUserId: actor.userId,
+            appointmentId: f.appointmentId,
+            patientId: f.patientId,
+            practitionerIds: f.practitionerIds,
+            startsAt: f.startsAt,
+            occurredAt: new Date(),
+          });
+        }
+      });
+    }
     return result;
   } catch (e) {
     return fail("cancel", e);

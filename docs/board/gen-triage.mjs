@@ -38,7 +38,7 @@ const BUCKETS = {
       ["LE-reminders-landline-dispatch", "**AMBER, 2026-08-11.** The OTP route now refuses landlines; the shared reminder path does not. Consequence of the fork-2 ruling."],
       ["SEC-otp-request-tenant-500-oracle", "**AMBER, 2026-08-11.** An unknown tenantId answers 500 where a known one answers 204 - a tenant-existence oracle."],
       ["SEC-allowconflict-not-audited", "**NEW 2026-08-11.** \"Guardar mesmo assim\" is written nowhere. It already cost a diagnosis during INC-08. No migration - audit metadata is jsonb."],
-      ["LE-staff-transitions-emit-nothing", "**NEW 2026-08-11.** Only the CONFIRM path emits. Cancel and reschedule need no migration; no-show needs a kind and therefore a ruling."],
+      ["LE-no-show-notification-kind", "**NEW 2026-08-13.** Cancel and reschedule now emit; no-show is the one arm that CANNOT ship without a migration - there is no no_show kind in the CHECK constraint. Owner-gated. Bundle it with the next migration that has to be applied anyway."],
       ["CI-docs-only-required-checks-skip", "**NEW 2026-08-11.** Noted, not chased: three of four required checks are 4-7s path-filter skips on a docs-only diff."],
       ["LE-notes-list-hydration-mismatch", "toLocaleString differs server vs client. Low."],
       ["LE-staff-assisted-activation", "Buildable now; WF-07 rules it POST-LAUNCH, so it is scheduled late, not blocked."],

@@ -293,13 +293,49 @@ export type StaffNotificationKind =
   | "appointment_request"
   | "confirmed";
 
-export async function emitConfirmedNotification(args: {
+/**
+ * The kinds a STAFF transition may emit. Deliberately narrower than 0055's CHECK
+ * constraint, which also permits `booked` and `appointment_request` - those are
+ * emitted elsewhere and are not staff transitions.
+ *
+ * `no_show` IS ABSENT AND THAT IS NOT AN OVERSIGHT. It has no kind in the CHECK
+ * constraint, so adding it needs a MIGRATION and therefore an owner ruling under
+ * the WF-04 precedent. Carded as LE-no-show-notification-kind. Widening this
+ * union without widening the constraint would move the failure from a compile
+ * error to a runtime insert violation on a staff click.
+ */
+type StaffTransitionKind = "confirmed" | "cancelled" | "rescheduled";
+
+/**
+ * ONE fan-out for every staff transition, parameterised by kind.
+ *
+ * WHY IT IS ONE FUNCTION AND NOT THREE. `emitConfirmedNotification` was the only
+ * instrumented path; cancel and reschedule emitted nothing
+ * (LE-staff-transitions-emit-nothing). The obvious move was to copy it twice.
+ * THREE COPIES OF A RECIPIENT RULE IS THREE PLACES FOR THE ACTOR EXCLUSION TO GO
+ * MISSING, and the actor exclusion is the part that matters: without it staff are
+ * notified of their own clicks and the queue gets noisier rather than truer. The
+ * card says so in its last line, and it is the reason for this shape.
+ *
+ * THE RECIPIENT RULE, unchanged from the confirm path it generalises: every
+ * active reception user in the tenant, plus the appointment's practitioners,
+ * minus whoever just acted.
+ *
+ * BEST-EFFORT BY CONTRACT. Every caller runs this AFTER the transaction commits,
+ * so a failed notification must never be reported as a failed cancellation. The
+ * catch returns `delivered: false` and logs; it never throws into the caller.
+ */
+async function emitStaffTransitionNotification(args: {
   tenantId: string;
   actorUserId: string;
   appointmentId: string;
   patientId: string;
   practitionerIds: string[];
-  startsAt: Date;
+  kind: StaffTransitionKind;
+  /** The instant the appointment held BEFORE this transition. */
+  previousStartsAt: Date;
+  /** The instant it holds AFTER. Equal to the previous one when nothing moved. */
+  newStartsAt: Date;
   occurredAt: Date;
 }): Promise<{ delivered: boolean }> {
   try {
@@ -344,7 +380,7 @@ export async function emitConfirmedNotification(args: {
       // it means a therapist confirmed their own pedido in a tenant with no
       // other active reception user.
       console.warn(
-        `[notifications] confirm fan-out resolved ZERO recipients ` +
+        `[notifications] ${args.kind} fan-out resolved ZERO recipients ` +
           `tenant=${args.tenantId} appointment=${args.appointmentId}`,
       );
       return { delivered: false };
@@ -356,15 +392,17 @@ export async function emitConfirmedNotification(args: {
         [...recipients].map((recipientUserId) => ({
           tenantId: args.tenantId,
           recipientUserId,
-          kind: "confirmed",
+          kind: args.kind,
           actorUserId: args.actorUserId,
           appointmentId: args.appointmentId,
           patientId: args.patientId,
-          // A confirmation moves nothing, so both instants are the appointment's
-          // own start — the convention the emitting contract already set for
-          // bookings and cancellations.
-          previousStartsAt: args.startsAt,
-          newStartsAt: args.startsAt,
+          // The two instants are the caller's, because only the caller knows
+          // whether anything moved. A confirmation and a cancellation pass the
+          // same value twice - the convention the emitting contract already set
+          // for bookings and cancellations - and a reschedule passes the old and
+          // the new, which is the only case where they differ.
+          previousStartsAt: args.previousStartsAt,
+          newStartsAt: args.newStartsAt,
           occurredAt: args.occurredAt,
         })),
       )
@@ -375,10 +413,85 @@ export async function emitConfirmedNotification(args: {
     return { delivered: true };
   } catch (err) {
     console.error(
-      `[notifications] confirm fan-out FAILED tenant=${args.tenantId} ` +
+      `[notifications] ${args.kind} fan-out FAILED tenant=${args.tenantId} ` +
         `appointment=${args.appointmentId}`,
       err instanceof Error ? `${err.name}: ${err.message}` : "unknown",
     );
     return { delivered: false };
   }
+}
+
+/**
+ * A therapist ACCEPTED a pedido. PG4 / acceptance item 20, shipped with 0061.
+ *
+ * Until then the staff app emitted nothing here, so a therapist confirming made
+ * the pedido VANISH from reception's live queue - `listPendingRequests` filters
+ * `status = 'scheduled'` - with no record written anywhere, indistinguishable
+ * from cancelled or from never having existed.
+ *
+ * A confirmation moves nothing, so both instants are the appointment's own start.
+ */
+export async function emitConfirmedNotification(args: {
+  tenantId: string;
+  actorUserId: string;
+  appointmentId: string;
+  patientId: string;
+  practitionerIds: string[];
+  startsAt: Date;
+  occurredAt: Date;
+}): Promise<{ delivered: boolean }> {
+  return emitStaffTransitionNotification({
+    ...args,
+    kind: "confirmed",
+    previousStartsAt: args.startsAt,
+    newStartsAt: args.startsAt,
+  });
+}
+
+/**
+ * A staff member CANCELLED an appointment. LE-staff-transitions-emit-nothing.
+ *
+ * NO MIGRATION: `cancelled` has been in 0055's CHECK constraint since the table
+ * existed and was simply never emitted, which is why this arm and the reschedule
+ * one could ship together while no-show could not.
+ *
+ * A cancellation moves nothing either - the appointment stops rather than
+ * shifting - so both instants are its start, exactly as the confirm path does.
+ */
+export async function emitCancelledNotification(args: {
+  tenantId: string;
+  actorUserId: string;
+  appointmentId: string;
+  patientId: string;
+  practitionerIds: string[];
+  startsAt: Date;
+  occurredAt: Date;
+}): Promise<{ delivered: boolean }> {
+  return emitStaffTransitionNotification({
+    ...args,
+    kind: "cancelled",
+    previousStartsAt: args.startsAt,
+    newStartsAt: args.startsAt,
+  });
+}
+
+/**
+ * A staff member RESCHEDULED an appointment. LE-staff-transitions-emit-nothing.
+ *
+ * THE ONLY KIND WHERE THE TWO INSTANTS DIFFER, and the reason the column pair
+ * exists at all: a reader needs to know what it moved FROM as well as TO. The
+ * caller passes both because only it knows the old value - by the time this runs
+ * the row already holds the new one.
+ */
+export async function emitRescheduledNotification(args: {
+  tenantId: string;
+  actorUserId: string;
+  appointmentId: string;
+  patientId: string;
+  practitionerIds: string[];
+  previousStartsAt: Date;
+  newStartsAt: Date;
+  occurredAt: Date;
+}): Promise<{ delivered: boolean }> {
+  return emitStaffTransitionNotification({ ...args, kind: "rescheduled" });
 }
