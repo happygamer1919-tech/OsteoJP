@@ -251,3 +251,71 @@ describe("W12-00 - marcacoes row exposes an open/edit control", () => {
     expect(html).toContain('aria-label="Abrir marcação: Rui Alves"');
   });
 });
+
+// ============================================================================
+// STAFF-04 — the patient name is never truncated.
+// ============================================================================
+// Reported from reception: the list rendered "Abilio J...". The row was ONE flex
+// line and every field competed for its width, so the name lost. It carried
+// `truncate`, which is a promise that something will be cut.
+//
+// The row is now two lines — identity, then attributes — so the name can be any
+// length without moving anything else. NOTHING WAS DROPPED.
+describe("STAFF-04 — the full patient name is always visible", () => {
+  const LONG = "Abílio Joaquim Vasconcelos de Sousa Marques";
+
+  const renderRow = (overrides: Parameters<typeof mkAppt>[0]) =>
+    render(
+      <MarcacoesView
+        filters={baseFilters}
+        lockTherapist={false}
+        viewer={VIEWER}
+        options={OPTIONS}
+        serviceFilterOptions={SERVICES}
+        canHardDelete={false}
+        appointments={[mkAppt(overrides)]}
+      />,
+    );
+
+  it("renders the patient name in FULL, with no truncate class on it", () => {
+    // The regression, both halves. The text must be complete AND the element
+    // must not carry the class that promises to cut it — a name that happens to
+    // fit today would satisfy a text-only assertion while the defect stayed.
+    const html = renderRow({ id: "a", patientName: LONG });
+    expect(html).toContain(LONG);
+    const nameSpan = /<span[^>]*data-testid="marcacoes-patient-name"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(nameSpan, "the name element must exist").not.toBe("");
+    expect(nameSpan, "`truncate` is a promise to cut the name").not.toContain("truncate");
+    expect(nameSpan, "it must wrap instead").toContain("break-words");
+  });
+
+  it("drops NO field that was on the row before", () => {
+    // The requirement was explicit: full name always visible, no existing field
+    // dropped. Asserted one by one rather than as a count, so a future edit that
+    // removes one is named rather than merely off-by-one.
+    const html = renderRow({
+      id: "a",
+      patientName: LONG,
+      serviceName: "Osteopatia",
+      locationName: "OsteoJP (LV)",
+      practitionerName: "Catarina Vieira",
+      createdByName: "Carlos Barrelas",
+    });
+    for (const field of ["Osteopatia", "OsteoJP (LV)", "Catarina Vieira", "Carlos Barrelas"]) {
+      expect(html, `${field} must still be on the row`).toContain(field);
+    }
+    // And the row's affordances, which are the only way into a marcação here.
+    expect(html).toContain('data-testid="marcacoes-notes-button"');
+  });
+
+  it("keeps the time on the SAME line as the name, not below it", () => {
+    // Time and name are what reception scans. If the split had put them on
+    // different lines the change would have cost more than it bought.
+    const html = renderRow({ id: "a", patientName: LONG });
+    const nameIdx = html.indexOf("marcacoes-patient-name");
+    const line2Idx = html.indexOf("sm:pl-28");
+    expect(nameIdx).toBeGreaterThan(-1);
+    expect(line2Idx, "the attribute line must exist").toBeGreaterThan(-1);
+    expect(nameIdx, "the name belongs on the FIRST line").toBeLessThan(line2Idx);
+  });
+});

@@ -79,6 +79,7 @@ const BUCKETS = {
       ["STAFF-01-timefield-offstep-value", "**NEW 2026-08-13, staff feedback.** FIXED and awaiting Ivan's screen: the edit panel showed 11:00 for an appointment stored at 11:25. TimeField could not display a value off its own 15-min step. DISPLAY ONLY - saving never moved the appointment."],
       ["STAFF-02-booking-location-unscoped", "**NEW 2026-08-13, staff feedback.** FIXED, awaiting Ivan's screen. The read path was scoped by PL-09 and the write path by nothing, so staff booked blind into clinics they can never see. Four write paths now refuse SERVER-SIDE; the form restriction is the courtesy."],
       ["STAFF-03-agenda-hour-row-expansion", "**NEW 2026-08-13, staff feedback.** SHIPPED, awaiting Ivan's screen. The hour row grows to fit what starts in it; the 30-minute slot grid underneath is untouched and all 26 existing pins still pass."],
+      ["STAFF-04-marcacoes-name-truncated", "**NEW 2026-08-13, staff feedback.** SHIPPED, awaiting Ivan's screen. The Marcacoes row is now two lines - identity then attributes - so a long patient name wraps instead of being cut, and no field was dropped."],
       ["VERIFY-QUEUE", "The mechanism card for WF-09/WF-16 batching. Its notes ARE the queue."],
       ["LE-suppression-observation", "Watch for the log line on the next real booking."],
       ["LE-prod-scripts-cleanup", "Inventory the one-off prod scripts staged outside the repo."],
