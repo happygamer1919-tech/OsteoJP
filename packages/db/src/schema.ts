@@ -540,6 +540,45 @@ export const patients = pgTable(
       .default(sql`'[]'::jsonb`),
     email: text("email"),
     phone: varchar("phone", { length: 32 }),
+    // 0062 — the E.164 READING of `phone`, derived by the database and written
+    // by nobody. SEC-otp-linkage-exact-phone-match.
+    //
+    // WHY IT EXISTS. resolvePatientByProvenPhone matched `eq(patients.phone,
+    // phoneE164)` — an exact string comparison — against this free-text column,
+    // which `optionalText` trims and does not normalize. A patient stored as
+    // "+351 912 345 678" therefore could not log in to the portal AT ALL: they
+    // received the SMS code, typed it correctly, and were refused with the same
+    // single string a wrong code produces. Decision D left no other door.
+    //
+    // WHY GENERATED. It cannot drift from `phone`. Whatever writes the row — the
+    // staff form, the portal PATCH, a seed, or LAUNCH-03's importer bringing
+    // ~10,000 legacy records with a decade of inconsistent formatting — the
+    // database recomputes this. An application-side write would be correct on
+    // the paths we remembered and wrong on the next one somebody adds.
+    //
+    // `phone` IS NEVER REWRITTEN. Owner ruling: it is what a receptionist typed
+    // and it stays that, exactly. This is a derived reading beside it.
+    //
+    // NULL means "not a valid PT subscriber number", and therefore "this patient
+    // cannot use the portal login" — a fact worth being able to query.
+    //
+    // The SQL mirrors normalizePhonePT, and phone-e164-parity.db.test.ts runs
+    // both over one corpus and requires identical answers rather than trusting
+    // this comment.
+    phoneE164: varchar("phone_e164", { length: 16 }).generatedAlwaysAs(
+      sql`CASE
+      WHEN phone IS NULL THEN NULL
+      WHEN pg_catalog.regexp_replace(phone, '[[:space:].()-]', '', 'g') ~ '^\\+351[29][0-9]{8}$'
+        THEN '+351' || pg_catalog.right(pg_catalog.regexp_replace(phone, '[[:space:].()-]', '', 'g'), 9)
+      WHEN pg_catalog.regexp_replace(phone, '[[:space:].()-]', '', 'g') ~ '^00351[29][0-9]{8}$'
+        THEN '+351' || pg_catalog.right(pg_catalog.regexp_replace(phone, '[[:space:].()-]', '', 'g'), 9)
+      WHEN pg_catalog.regexp_replace(phone, '[[:space:].()-]', '', 'g') ~ '^351[29][0-9]{8}$'
+        THEN '+351' || pg_catalog.right(pg_catalog.regexp_replace(phone, '[[:space:].()-]', '', 'g'), 9)
+      WHEN pg_catalog.regexp_replace(phone, '[[:space:].()-]', '', 'g') ~ '^[29][0-9]{8}$'
+        THEN '+351' || pg_catalog.regexp_replace(phone, '[[:space:].()-]', '', 'g')
+      ELSE NULL
+    END`,
+    ),
     address: text("address"),
     postalCode: varchar("postal_code", { length: 16 }),
     city: text("city"),
@@ -605,6 +644,13 @@ export const patients = pgTable(
     index("patients_tenant_name_idx").on(t.tenantId, t.fullName),
     // R16 (0043) — supports the clinical_records admin fallback location match.
     index("patients_tenant_primary_location_idx").on(t.tenantId, t.primaryLocationId),
+    // 0062 — the portal login's only lookup. NOT unique, deliberately: two live
+    // patients may legitimately share one number (a couple, a parent and child),
+    // and the login screen carries pt-PT copy for exactly that case
+    // (`otp_shared_number`). resolvePatientByProvenPhone REFUSES on several
+    // matches rather than picking one, which is what stops a medical record
+    // being mis-linked; a unique index would reject real clinic data instead.
+    index("patients_tenant_phone_e164_idx").on(t.tenantId, t.phoneE164),
     // Patient number is unique per tenant; the same number may recur across
     // tenants. Also serves MAX(patient_number) lookups in the assignment path.
     unique("patients_tenant_number_uq").on(t.tenantId, t.patientNumber),

@@ -20,7 +20,7 @@ vi.mock("@osteojp/db", () => ({
     },
   }),
   patients: {
-    id: "id", tenantId: "tenant_id", phone: "phone",
+    id: "id", tenantId: "tenant_id", phone: "phone", phoneE164: "phone_e164",
     deletedAt: "deleted_at", mergedIntoId: "merged_into_id", authUserId: "auth_user_id",
   },
 }));
@@ -76,9 +76,36 @@ describe("the query itself carries the rule", () => {
     H.rows = [{ id: "p1" }];
     await resolvePatientByProvenPhone(T, PHONE);
     const w = JSON.stringify(H.where);
-    for (const col of ["deleted_at", "merged_into_id", "auth_user_id", "tenant_id", "phone"]) {
+    for (const col of ["deleted_at", "merged_into_id", "auth_user_id", "tenant_id", "phone_e164"]) {
       expect(w).toContain(col);
     }
+  });
+
+  it("matches the DERIVED phone_e164 column and NEVER the raw phone", async () => {
+    // ================================================================= //
+    // THE REGRESSION GUARD FOR SEC-otp-linkage-exact-phone-match.
+    // ================================================================= //
+    // This query compared `eq(patients.phone, phoneE164)` until 2026-08-13 - an
+    // exact string match against a FREE-TEXT column that nothing normalizes on
+    // write - so a patient stored as "+351 912 345 678" could not log in at all.
+    // Migration 0062 added `phone_e164`, GENERATED ALWAYS from `phone`.
+    //
+    // A SUBSTRING CHECK CANNOT EXPRESS THIS, and that is why the assertion is
+    // written on the operand: "phone_e164" CONTAINS "phone", so
+    // `expect(w).toContain("phone")` passes under both the broken and the fixed
+    // query and would have caught nothing. The operands are compared exactly.
+    H.rows = [{ id: "p1" }];
+    await resolvePatientByProvenPhone(T, PHONE);
+
+    const operands = JSON.stringify(H.where).match(/"a":"[a-z_0-9]+"/g) ?? [];
+    expect(
+      operands,
+      "the linkage query must match phone_e164; matching the raw `phone` column is the defect",
+    ).toContain('"a":"phone_e164"');
+    expect(
+      operands,
+      "the raw `phone` column must NOT appear as a match operand - it is free text",
+    ).not.toContain('"a":"phone"');
   });
 
   it("fetches TWO rows, because LIMIT 1 cannot tell one from many", async () => {

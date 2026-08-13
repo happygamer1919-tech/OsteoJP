@@ -208,31 +208,28 @@ const PATIENTS_A = [
 // the spec is naturally re-runnable, in CI and locally alike.
 //
 // ===================================================================== //
-// THE PHONE IS STORED AS BARE E.164 AND THAT IS **NOT** REALISTIC DATA.
-// READ THIS BEFORE TREATING THE GREEN e2e AS "PORTAL LOGIN WORKS".
+// THE PHONE IS STORED WITH SPACES, ON PURPOSE, AND THAT IS THE POINT.
 // ===================================================================== //
-// Every OTHER patient in this seed stores a human-formatted number with spaces
-// ("+351 912 345 678"), which is how Portuguese numbers are written and how
-// staff will type them - `optionalText` in apps/web/lib/patients/validation.ts
-// TRIMS the value and normalizes nothing.
+// It was briefly stored as bare E.164 - the only patient in this seed that was -
+// because SEC-otp-linkage-exact-phone-match meant a spaced number could not log
+// in at all: resolvePatientByProvenPhone compared the proven E.164 against the
+// RAW free-text column with eq(), and `optionalText` in
+// apps/web/lib/patients/validation.ts trims and normalizes nothing.
 //
-// `resolvePatientByProvenPhone` (apps/api/lib/auth/patient-linkage.ts:69) matches
-// with `eq(patients.phone, phoneE164)` - AN EXACT STRING COMPARISON against the
-// raw stored value, using the E.164 form the caller proved. So a patient whose
-// number is stored with spaces CANNOT LOG IN AT ALL.
+// A SPACELESS FIXTURE MADE THE SPEC PASS BY TUNING THE INPUT UNTIL IT AGREED,
+// which is the anti-pattern this project keeps finding in its own instruments.
+// It was labelled as such at the time rather than left to be discovered.
 //
-// THIS FIXTURE IS SPACELESS SO THE OTP SPEC CAN PROVE THE LOGIN PATH ITSELF.
-// It is NOT evidence that a real patient can log in, and the spec says so at its
-// own assertion. The defect is carded as SEC-otp-linkage-exact-phone-match
-// (launch-blocking, HALTED for the owner: every fix needs a migration) and it is
-// pinned by apps/api/lib/auth/patient-linkage.db.test.ts against a REAL row,
-// because the existing unit test mocks the database and so agrees with the query
-// by construction.
+// MIGRATION 0062 FIXED THE DEFECT - phone_e164, GENERATED ALWAYS from phone -
+// so the fixture is back to how a Portuguese number is actually written, and how
+// every other patient here is stored. THE PORTAL OTP e2e IS NOW THE ACCEPTANCE
+// TEST FOR THAT MIGRATION: if the derived column or the linkage query regresses,
+// this patient stops being able to log in and portal-otp-login.spec.ts goes red.
 const PATIENT_OTP_LOGIN_A = {
   id: "00000000-0000-0000-0000-00000000a305",
   full_name: "Otp Primeiro Acesso",
   nif: "567891234",
-  phone: "+351916000005",
+  phone: "+351 916 000 005",
   email: null,
   deleted_at: null,
 };

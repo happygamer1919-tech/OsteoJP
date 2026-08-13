@@ -3,15 +3,40 @@
 **As of 2026-08-13.** Written for the person who hands this build to the clinic
 team and to legal, and for anyone who reads it after.
 
+---
+
+# Where this build stands, in one paragraph
+
+## ✅ The STAFF PLATFORM is ready for the clinic team to test now.
+
+Reception and therapists can run the diary, the patient records, the fichas and
+the notifications. Book it, use it, tell us what is wrong with it. Nothing below
+holds this back.
+
+## ⛔ The PATIENT PORTAL is NOT ready, and will not be until one database change is applied.
+
+**Most patients cannot log in.** Not "it is slow", not "some edge cases" — a
+patient whose telephone number is written in the file the way a person writes a
+telephone number, **with spaces**, is turned away.
+
+They get the text message with the code. They type the code correctly. They are
+told it did not work. There is no other way in.
+
+**The fix is written and waiting for Ivan to apply it.** It is one database
+change, `0062`, and it takes minutes. **Until it is applied, do not demonstrate
+patient login to the clinic team or to a patient**, because it will fail for
+almost everyone and it will look like the portal does not work.
+
+**After it is applied, the portal is testable too.** Nothing else on the list
+below stops the portal being used; this one thing does.
+
+*The engineering detail is RISK 0 in §3. The one-line summary is above and it is
+the whole of what a non-engineer needs.*
+
+---
+
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
 **130 cards. 59 shipped, 71 open. Launch readiness 8/9.**
-
-> ## READ RISK 0 IN §3 BEFORE DEMONSTRATING PATIENT LOGIN.
-> **Most patients cannot log in.** A number stored the way a human writes it —
-> with spaces, as every seeded patient and every staff-typed number is — is
-> refused at the code step, with the same message a wrong code produces. Found
-> 2026-08-13 by the first CI run in which that path had ever been executable.
-> **Halted for the owner: every fix needs a migration.**
 
 > **PG9 EXPERIENCE closed on 2026-08-13**, on run `31651759598` — shard 3, **72
 > passed, 0 failed, 0 flaky, green at attempt 1**. It reddened first, on a real
@@ -150,9 +175,16 @@ hypotheses, three fixes and the production evidence, all on the card.
 ## 3. The top risks before demonstrating this build
 
 ### RISK 0 — MOST PATIENTS CANNOT LOG IN AT ALL. Launch-blocking, found 2026-08-13.
+### **FIX AUTHORED THE SAME DAY. AWAITING IVAN'S APPLY OF MIGRATION `0062`.**
 
-**`SEC-otp-linkage-exact-phone-match`, halted for the owner.** This is the most
-serious open item in the build and it displaces everything below it.
+**`SEC-otp-linkage-exact-phone-match`.** This is the most serious open item in the
+build and it displaces everything below it.
+
+**Status: the fix is written, reviewed and proven in CI — PR #888, apply sha
+`b7b5b0a`, apply document `docs/migration-apply-0062.md`.** It is not merged and
+must not be: the application code queries a column that does not exist in
+production yet, so merging before the apply would take the login from *refusing
+most patients* to *erroring for all of them*. Apply first, then merge.
 
 **A patient whose telephone number is stored the way a human writes it cannot log
 in to the portal.** Not degraded — refused.
@@ -193,22 +225,35 @@ executable.** That path had no automated coverage until the same day, because
 `PORTAL_TENANT_ID` was never written to the portal's CI environment — so the
 login could not run in CI at all and no test noticed. **One run, one defect.**
 
-**It is halted rather than fixed because every candidate fix needs a migration**,
-and this lane does not author one without the owner. Three options with a
-recommendation are on the card; the recommended one is a normalized shadow column
-plus an expression index, which fixes the login **without rewriting the number
-anyone typed**.
+**The fix, authorized by the owner on 2026-08-13 and authored the same day.**
+Migration `0062` adds `patients.phone_e164`, `GENERATED ALWAYS` from
+`patients.phone`, plus an index; the login matches the derived column.
 
-**It is pinned in CI, not just carded.**
-`apps/api/lib/auth/patient-linkage.db.test.ts` builds two real rows carrying the
-same number written two ways and asserts the E.164 one links and the human one is
-refused. **That assertion is green today and goes red the day the defect is
-fixed**, with a message saying to invert it. A card can be missed; a red test
-cannot.
+**The number a receptionist typed is never rewritten.** Owner ruling: it is
+clinical record data, and annul-never-delete extends to not silently rewriting a
+field a person entered. The derived value sits beside it.
 
-**For a demo:** log in with a patient whose number is stored as bare E.164, or
-fix the stored value for the demo patient first. **Do not demonstrate patient
-login against real clinic data until this is fixed.**
+**A generated column rather than a trigger or application code**, because it
+cannot drift and no write path can forget it. That matters most for the coming
+import of ~10,000 legacy records: they normalize on arrival with no import-time
+work at all.
+
+**It was pinned in CI before it was fixed, and that is the transferable part.**
+`patient-linkage.db.test.ts` asserted the *broken* behaviour as fact and carried
+its own instruction — *"IF THIS IS NOW TRUE, THE DEFECT IS FIXED AND THIS TEST
+MUST BE INVERTED."* It has been inverted, with two counterweights added: a number
+belonging to nobody must still refuse, and a stored number that does not
+normalize must still refuse. **An inversion that only proves the new happy path
+is half a test** — a normalization too permissive would satisfy it while linking
+patients to numbers they do not have, which is worse than the defect fixed.
+
+**The acceptance test runs itself.** The seeded portal patient is stored
+`+351 916 000 005`, with spaces, exactly as a receptionist would type it, and the
+end-to-end login test drives that patient. It passes in CI because CI applies the
+migration itself.
+
+**Until Ivan applies it:** do not demonstrate patient login. After he applies it
+and the PR merges, the portal is testable.
 
 ---
 

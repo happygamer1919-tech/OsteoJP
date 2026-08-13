@@ -55,6 +55,38 @@ const REFUSED: LinkageResult = { ok: false };
  * transaction that consumes the code. Read on one connection and consumed on
  * another, "exactly one live row" would be a fact about a moment already past by
  * the time anything acted on it.
+ *
+ * ===================================================================== //
+ * IT MATCHES `phone_e164`, NOT `phone`, AND THAT IS THE FIX FOR A DEFECT
+ * THAT STOPPED MOST PATIENTS LOGGING IN.
+ * ===================================================================== //
+ *
+ * This compared `eq(patients.phone, phoneE164)` until 2026-08-13 — an exact
+ * string match against a FREE-TEXT column. `optionalText`
+ * (apps/web/lib/patients/validation.ts:117-124) trims it and normalizes nothing,
+ * and phone.ts's own header says numbers arrive as "912 345 678",
+ * "00351912345678", "+351 912-345-678". So a patient stored the way a human
+ * writes a number - which is every patient in the e2e seed but one, and every
+ * number a receptionist types - could not log in AT ALL. They received the SMS
+ * code, typed it correctly, and were refused with the same single string a
+ * WRONG code produces, because the API deliberately collapses all six failure
+ * modes into one response. Decision D left no other door.
+ *
+ * `phone_e164` (migration 0062) is GENERATED ALWAYS from `phone` by the
+ * database, so it cannot drift from it and no write path can forget to set it.
+ * `phone` itself is untouched: it is what the receptionist typed and it stays
+ * exactly that.
+ *
+ * NULL NEVER MATCHES, WHICH IS THE BEHAVIOUR WE WANT. A patient whose stored
+ * number is not a valid PT subscriber number derives NULL, and `eq` on NULL is
+ * never true in SQL, so they are refused rather than matched loosely. The
+ * refusal is honest - they genuinely cannot be identified by that number - and
+ * `caller` here has already proven a well-formed E.164, so the argument side is
+ * never NULL.
+ *
+ * WHY NOT NORMALIZE IN TYPESCRIPT AT READ TIME. It would turn an indexed
+ * equality on a PRE-AUTHENTICATION endpoint into a scan of every patient in the
+ * tenant. That endpoint is the one an unauthenticated caller can reach.
  */
 export async function resolvePatientByProvenPhone(
   tenantId: string,
@@ -67,7 +99,7 @@ export async function resolvePatientByProvenPhone(
     .where(
       and(
         eq(patients.tenantId, tenantId),
-        eq(patients.phone, phoneE164),
+        eq(patients.phoneE164, phoneE164),
         isNull(patients.deletedAt),
         isNull(patients.mergedIntoId),
         isNull(patients.authUserId),

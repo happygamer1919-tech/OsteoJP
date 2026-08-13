@@ -280,20 +280,20 @@ export const PORTAL_OTP_PATIENT = {
   id: "00000000-0000-0000-0000-00000000a305",
   name: "Otp Primeiro Acesso",
   /**
-   * STORED AS BARE E.164, WHICH IS NOT REALISTIC DATA, AND THE GREEN THIS
-   * FIXTURE PRODUCES MUST NOT BE READ AS "PATIENTS CAN LOG IN".
+   * STORED WITH SPACES, THE WAY A PORTUGUESE NUMBER IS ACTUALLY WRITTEN, AND
+   * THAT MAKES THIS SPEC THE ACCEPTANCE TEST FOR MIGRATION 0062.
    *
-   * `resolvePatientByProvenPhone` matches with `eq(patients.phone, phoneE164)` —
-   * an exact string comparison against the RAW stored value. Every other seeded
-   * patient, and every number a human types, carries spaces. Those patients
-   * cannot log in at all. Carded as `SEC-otp-linkage-exact-phone-match`
-   * (launch-blocking) and pinned against a real row by
-   * `apps/api/lib/auth/patient-linkage.db.test.ts`.
+   * It was briefly stored as bare E.164 — the only patient in the seed that was
+   * — because `SEC-otp-linkage-exact-phone-match` meant a spaced number could
+   * not log in at all. That was a fixture tuned until the test agreed, labelled
+   * as such at the time rather than left to be found.
    *
-   * This fixture is spaceless so the OTP spec can prove THE LOGIN PATH. It
-   * proves nothing about the clinic's data.
+   * `0062` added `phone_e164`, GENERATED ALWAYS from `phone`, and the linkage
+   * query now matches on it. So this is back to realistic data: if the derived
+   * column or the query regresses, this patient stops being able to log in and
+   * `portal-otp-login.spec.ts` goes red.
    */
-  phone: "+351916000005",
+  phone: "+351 916 000 005",
   /** What `normalizePhonePT` produces, and therefore what `hashPhone` hashes. */
   phoneE164: "+351916000005",
   /** What a patient actually types on the login screen. */
