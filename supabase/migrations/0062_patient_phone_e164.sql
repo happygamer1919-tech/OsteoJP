@@ -68,15 +68,26 @@
 /*   input. That test is hard-required in the skip guard: the day the */
 /*   two disagree, CI says so.                                        */
 /*                                                                    */
-/*   ONE KNOWN BOUNDARY, STATED RATHER THAN DISCOVERED LATER.         */
-/*   JavaScript's \s includes Unicode spaces (U+00A0 and friends);    */
-/*   POSIX [[:space:]] under this server's collation may not. A       */
-/*   number pasted from a document with a non-breaking space could    */
-/*   therefore normalize in TypeScript and NOT here. THAT FAILS       */
-/*   CLOSED - the patient is refused exactly as they are today, never */
-/*   linked to the wrong row - and the read-only pre-check in         */
-/*   docs/migration-apply-0062.md COUNTS such rows before the apply.  */
-/*   If any exist, the apply halts and they are a second finding.     */
+/*   ONE BOUNDARY WAS SUSPECTED AND HAS NOW BEEN MEASURED.           */
+/*   JavaScript's \s includes Unicode spaces (U+00A0 and friends) and */
+/*   it was not obvious that POSIX [[:space:]] would. A NON-BREAKING  */
+/*   SPACE ENTRY IS IN THE PARITY CORPUS - codepoint 160, verified as */
+/*   actually present in the source rather than an ordinary space     */
+/*   that merely looks like one - AND THE TWO AGREE. So this Postgres */
+/*   strips U+00A0 as JavaScript does.                                */
+/*                                                                    */
+/*   MEASURED IN CI, WHICH IS NOT PRODUCTION. Same major version and  */
+/*   almost certainly the same collation, but "almost certainly" is   */
+/*   not a pre-check. The read-only pre-check in                      */
+/*   docs/migration-apply-0062.md COUNTS every row that would still   */
+/*   fail to normalize, whatever the cause, and the apply HALTS if    */
+/*   any exist. That gate covers this and every other cause at once,  */
+/*   which is why it is written as a count and not as a whitespace    */
+/*   test.                                                            */
+/*                                                                    */
+/*   AND IT FAILS CLOSED EITHER WAY: a row that does not normalize    */
+/*   derives NULL, `eq` on NULL is never true, and the patient is     */
+/*   refused exactly as they are today - never linked to a wrong row. */
 /*                                                                    */
 /* ------------------------------------------------------------------ */
 /* NOTHING HERE TRUSTS AMBIENT search_path OR EXTENSION LAYOUT.       */

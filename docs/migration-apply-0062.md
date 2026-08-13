@@ -124,12 +124,25 @@ statement; the last one is the gate.
 cleanly.** A leftover is one of three things and they are not interchangeable: a
 **foreign number** (a real patient this clinic cannot reach by PT SMS - a product
 question, not a bug), a **malformed entry** (a note or an extension typed into
-the phone field - a data-quality fix), or a **Unicode-whitespace case** where
-JavaScript's `\s` strips a character POSIX `[[:space:]]` does not - which is the
-one boundary `0062` is known to have and is exactly what this count exists to
-measure. Applying over any of them would ship a migration believing it fixed the
-login while some patients still could not use it, and nobody would find out until
-one of them tried.
+the phone field - a data-quality fix), or a **normalization gap** - a character
+the TypeScript strips and the SQL does not, or the reverse.
+
+**The third one was suspected and has been measured.** JavaScript's `\s` includes
+Unicode spaces and POSIX `[[:space:]]` was not obviously going to match them, so a
+**non-breaking space** entry sits in the parity corpus - codepoint 160, verified
+as actually present in the source rather than an ordinary space that merely looks
+like one - and `phone-e164-parity.db.test.ts` **passes**, so this Postgres strips
+it exactly as JavaScript does.
+
+**That measurement was taken in CI, which is not production.** Same major version
+and almost certainly the same collation, but "almost certainly" is not a
+pre-check - which is the whole reason this count is written as *"how many rows
+fail to normalize"* rather than as a whitespace test. **It covers this cause and
+every other one at the same time.**
+
+Applying over any leftover would ship a migration believing it fixed the login
+while some patients still could not use it, and nobody would find out until one
+of them tried.
 
 ---
 
