@@ -55,16 +55,26 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**137 cards. 66 shipped, 71 open. Launch readiness 9/9 — every launch gate passes.**
+**137 cards. 71 shipped, 66 open. Launch readiness 9/9 — every launch gate passes.**
 
 > **PG9 EXPERIENCE closed on 2026-08-13**, on run `31651759598` — shard 3, **72
 > passed, 0 failed, 0 flaky, green at attempt 1**. It reddened first, on a real
 > patient-facing AA contrast failure, which is the best evidence the gate has.
 >
-> **PG8 SYNC is still open at 8/9, and the reason has changed completely.** The
-> browser-level crossing it was missing is now **observed**: a portal booking
-> appears on the staff agenda on the day it booked, green at attempt 1 in the
-> same run. It is held open for **confirmation, not discovery** — see §1.
+> **PG8 SYNC closed on 2026-08-13, and it was the last gate.** The browser-level
+> crossing it was missing is **observed**: a portal booking appears on the staff
+> agenda on the day it booked, green at attempt 1 across three independent runs.
+> It was held open to the end for **confirmation, not discovery**, and the
+> per-hop timing table that was its final outstanding line is committed at
+> `docs/recon/W13-07-sync-trace.md` §2.1a. See §1.
+>
+> **Four defects reported from live staff use on 2026-08-13 are fixed and
+> accepted on the deployed build** (PRs #895 to #898): an appointment stored at
+> 11:25 displayed as 11:00 in the edit panel, staff could book into clinics they
+> are not assigned to, a busy agenda hour cropped its appointments, and a long
+> patient name was cut in the Marcações list. The location one is a **behaviour
+> change the clinic team must know about**, and it is item 2 of the three above.
+> Full detail on the board, cards `STAFF-01` to `STAFF-04`.
 
 ---
 
@@ -154,28 +164,36 @@ shard 3: **72 passed, 0 flaky**, direction A green at attempt 1 in 587ms. Two
 independent attempt-1 greens on the tightest assertion this spec has ever
 carried.
 
-**PG8 is still open, and now for one small, named reason.** The wave doc's LOOP 7
-DoD requires *"the trace names every hop and its timing, in both directions"* and
-a **timing table** as evidence. Nine hops are named; **none is measured
-individually**. What exists is three end-to-end spans — the booking submits in
-~1.3s, the agenda shows the row in ~0.6s — and each crosses a *group* of hops. A
-browser cannot see inside one `fetch`, so closing that line needs server-side
-instrumentation, not another log line in the spec.
+**PG8 held open for one small, named reason, and it closed on 2026-08-13.** The
+wave doc's LOOP 7 DoD requires *"the trace names every hop and its timing, in
+both directions"* and a **timing table** as evidence. Nine hops were named and
+**none was measured individually**. What existed was three end-to-end spans (the
+booking submits in ~1.3s, the agenda shows the row in ~0.6s), each crossing a
+*group* of hops, and a browser cannot see inside one `fetch`.
 
 **Four of five DoD lines done is a card, not gate credit.** That rule is what
-caught this gate's two earlier false greens, and applying it against my own
-result is the only way it means anything. Carded as `LE-pg8-per-hop-timings`
-**(high)** — the last thing between the build and 9/9, and a measurement rather
-than a discovery.
+caught this gate's two earlier false greens, and applying it against our own
+result is the only way it means anything. It was carded as
+`LE-pg8-per-hop-timings` **(high)**, the last thing between the build and 9/9,
+and a measurement rather than a discovery.
+
+**How it closed, and what the table does and does not claim.** The timing table
+is committed at `docs/recon/W13-07-sync-trace.md` §2.1a. **No instrumentation was
+added inside the transaction and none was added to the spec**: the spans were
+already being logged by the `timed()` helper, so the table is assembled from runs
+that had already happened rather than from a new measurement campaign. It is
+**not** presented as nine per-hop figures. A5+A6+A7 is labelled as one grouped
+hop, A1/A2/A4 are labelled as inseparable from the browser, and A9 is labelled
+unbounded. **Every cell says what it is**, which was the card's own stop
+condition: do not close PG8 by re-reading the spans as though they were per-hop
+timings.
 
 **PG8, stated without softening, as of 2026-08-13.** The crossing works and is
-now **observed in a browser**, on the day it booked, at attempt 1. What is left
-is confirmation: **one more independent attempt-1 green from a different
-commit**. That standard is not ceremony — this gate reported passing twice on an
-assertion that was matching a neighbour's row, and both greens were withdrawn. A
-third green on a test that was flaky in the previous run is worth checking once
-more, and the next PR in this lane runs the same suite anyway, so it costs
-nothing.
+**observed in a browser**, on the day it booked, at attempt 1, on **three
+independent runs from different commits**. The confirmation standard this gate
+was held to is not ceremony: it reported passing twice on an assertion that was
+matching a neighbour's row, and both greens were withdrawn. The third and fourth
+greens were obtained on the tightest assertion the spec has ever carried.
 
 `LE-pg8-e2e-needs-run-scoped-patient` stays open either way. The assertion is
 pinned to the booked **date**, so a neighbour would now have to book the same
@@ -377,7 +395,7 @@ shipped test sink — and it is the top item in the build queue.
 
 ## 4. Every open card, by bucket
 
-**71 open of 128.**
+**66 open of 137**, as of 2026-08-13 after the STAFF bucket closed.
 
 ### Incidents — 1
 **`SEC-otp-linkage-exact-phone-match` (high, halted, launch-blocking)** — most
@@ -429,13 +447,25 @@ fixed in a portal PR; it is staff-facing. · `ACC-immediate-isvisible-probes`
 that cost PG8 four runs. · `ACC-preselection-spec-flaky` (medium) — a flaky pass
 inside the very run that closed PG9, reported rather than left in the log.
 
-### Loose ends — 28
+### Loose ends — 27
 Includes `LE-inc08-survivor-still-confirmed` **(high)** — now resolved in the
-production diary, all four test appointments cancelled — `LE-ocupado-lists-pending-pedido`
-(a staff panel contradicting the rule stated on the next screen),
+production diary, all four test appointments cancelled —
 `LE-prod-apply-worktree-loose-scripts` **(high)**, and
 `LE-staff-transitions-emit-nothing` (cancel, reschedule and no-show still emit no
 notification).
+
+**`LE-ocupado-lists-pending-pedido` closed 2026-08-13 as already fixed**, and it
+left this bucket without a code change. The panel it reported (a slot marked
+`Ocupado` while the next screen says a request holds nothing) **already routes
+through the pedido exclusion** shipped in `be0e1d4` on 2026-08-07. What produced
+the report is that **two orthogonal columns both spell the word "pending"**:
+`status` is where the appointment is in its lifecycle and is what decides
+occupancy, while `confirmation_state` records whether the *patient* answered a
+reminder and defaults to `pending` on every appointment ever created. Reminders
+do not send, so **every** appointment reads `pending` on that second axis. A
+confirmed pedido correctly shows `Ocupado` and correctly shows "Confirmação
+pendente" at the same time. Both surfaces were telling the truth about different
+questions.
 
 ---
 
