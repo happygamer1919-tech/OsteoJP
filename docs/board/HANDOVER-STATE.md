@@ -25,11 +25,17 @@ database the same day. **A patient whose number is stored the ordinary way now
 logs in**, and there is an automatic test that logs in as exactly that kind of
 patient on every change, so it cannot come back unnoticed.
 
-**Two things the clinic team should know before demonstrating the portal:**
+**Three things the clinic team should know before demonstrating:**
 
 1. **Reminders do not send yet.** The system is built and the wording approved,
    but sending is switched off. No patient has ever received one.
-2. **A patient with a foreign mobile, or no mobile on record, still cannot log
+2. **Staff bookings are location-scoped on both read and write.** A staff member
+   sees, and can book into, only the clinics they are assigned to in Equipa. The
+   owner sees and books everything. **Until 2026-08-13 only the *seeing* half was
+   enforced**, so a receptionist assigned to one clinic could create appointments
+   at the other and then never find them again. Both halves are now enforced on
+   the server, not just hidden in the form.
+3. **A patient with a foreign mobile, or no mobile on record, still cannot log
    in.** That is **Decision D, not a defect**: the owner chose a phone-and-code
    login with no password and no magic link, so there is deliberately nothing to
    fall back on. Those patients need a staff-assisted route, which is not built

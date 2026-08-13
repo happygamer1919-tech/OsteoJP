@@ -64,7 +64,7 @@ vi.mock("@osteojp/ui", () => {
 
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
 
-const options: AgendaOptions = { therapists: [], locations: [], services: [], packs: [] };
+const options: AgendaOptions = { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
 
 const editAppt: AgendaAppointment = {
   id: "appt-1",
@@ -262,6 +262,7 @@ describe("AppointmentDrawer — therapist self-lock on create (PL-10)", () => {
       { id: "therapist-other", label: "Dr. Outro Terapeuta" },
     ],
     locations: [{ id: "loc-1", label: "Linda-a-Velha" }],
+    bookableLocations: [{ id: "loc-1", label: "Linda-a-Velha" }],
     services: [
       { id: "svc-primary", label: "Osteopatia", durationMin: 60, contraindicationSensitive: false },
       // An UNRELATED active service the therapist is not mapped to — it MUST stay
@@ -338,10 +339,21 @@ describe("AppointmentDrawer — therapist self-lock on create (PL-10)", () => {
 const ONE_LOCATION: AgendaOptions = {
   ...options,
   locations: [{ id: "loc-lv", label: "OsteoJP (LV)" }],
+  bookableLocations: [{ id: "loc-lv", label: "OsteoJP (LV)" }],
 };
 const TWO_LOCATIONS: AgendaOptions = {
   ...options,
   locations: [
+    { id: "loc-lv", label: "OsteoJP (LV)" },
+    { id: "loc-cb", label: "OsteoJP (CB)" },
+  ],
+  // STAFF-02: the drawer now reads `bookableLocations`, not `locations`.
+  // `locations` is the agenda TOOLBAR's list, a READ concern under PL-09; this
+  // is the WRITE list, scoped for reception, admin and therapists alike. Both
+  // are set here so the fixture stays honest about the distinction rather than
+  // implying they are always equal - for a two-clinic viewer assigned to both,
+  // they are.
+  bookableLocations: [
     { id: "loc-lv", label: "OsteoJP (LV)" },
     { id: "loc-cb", label: "OsteoJP (CB)" },
   ],

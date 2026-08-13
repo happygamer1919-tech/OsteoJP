@@ -103,6 +103,19 @@ export type AgendaOptions = {
   // the booking dropdown's per-location scoping. Optional (see above).
   therapistLocationIds?: Record<string, string[]>;
   locations: Option[];
+  /**
+   * STAFF-02 — the locations the CALLER may book into, a subset of `locations`.
+   *
+   * SEPARATE FROM `locations`, DELIBERATELY, and this is the whole reason it is
+   * a second field rather than a filter applied to the first. `locations` feeds
+   * the agenda TOOLBAR, which is a READ concern governed by PL-09; a therapist
+   * has null read scope there and narrowing it would change what they can VIEW.
+   * This field feeds the booking drawer, which is a WRITE concern and is scoped
+   * for reception, admin AND therapists per the owner ruling.
+   *
+   * Equal to `locations` for the owner, who is unrestricted on both axes.
+   */
+  bookableLocations: Option[];
   services: ServiceOption[];
   packs: PackOption[];
 };
@@ -210,6 +223,13 @@ export type ActionErrorCode =
   // with "Guardar mesmo assim", and this is the one refusal that override may
   // not reach.
   | "double_booked"
+  // STAFF-02: the actor tried to write an appointment at a location outside
+  // their `staff_locations` assignment. Its own code rather than `forbidden`,
+  // for the same reason `illegal_transition` is its own: reception needs to be
+  // told WHICH thing was refused. "Não tem permissão para esta ação" would send
+  // them to look for a missing capability that is not the problem - they have
+  // appointments:write, they simply do not work at that clinic.
+  | "location_not_assigned"
   | "error";
 
 export type ActionResult<T> =

@@ -28,6 +28,7 @@ import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
 import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conflict";
 import { isLegalEstadoTransition } from "./estado-transitions";
+import { bookingLocationScope, isLocationBookable } from "@/lib/auth/viewer-locations";
 import {
   emitCancelledNotification,
   emitConfirmedNotification,
@@ -452,6 +453,25 @@ export async function createAppointment(
   if (!input.patientId || !input.practitionerId || !input.locationId) {
     return { ok: false, error: "validation" };
   }
+
+  // ================================================================= //
+  // STAFF-02 - THE SERVER REFUSES A LOCATION OUTSIDE THE ACTOR'S SCOPE.
+  // ================================================================= //
+  // THE FORM RESTRICTION IS THE COURTESY; THIS IS THE DELIVERABLE. A UI-only
+  // lock is the INC-08 root cause repeated: the Estado <Select> offered every
+  // status with no server check, and reception reached an illegal transition in
+  // one click. A restricted dropdown is defeated by a stale tab, a second
+  // window, or any request that did not come from the form.
+  //
+  // THE DEFECT THIS CLOSES: the READ path was scoped by PL-09 and the WRITE path
+  // was scoped by NOTHING. An LV-only receptionist selected CB and created
+  // appointments at CB he could then never see. PL-09 was not the bug; it is
+  // what made the bug visible.
+  //
+  // OWNER IS EXCEPTED via `bookingLocationScope`, which returns null for them.
+  if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
+    return { ok: false, error: "location_not_assigned" };
+  }
   // PL-10 (defense in depth): a therapist self-books ONLY. The create form hides
   // the Terapeuta selector and forces practitionerId = self, so a therapist
   // request naming a DIFFERENT practitioner did not come from the form — reject
@@ -691,6 +711,11 @@ export async function batchScheduleAppointments(
   if (!input.patientId || !input.practitionerId || !input.locationId) {
     return { ok: false, error: "validation" };
   }
+  // STAFF-02: the batch path is a create path and is guarded identically. It
+  // would otherwise be the obvious way around the single-create check.
+  if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
+    return { ok: false, error: "location_not_assigned" };
+  }
   // PL-10 (defense in depth): the "Agendar lote" path is also a create form —
   // a self-locked therapist may only batch-book their OWN calendar. Same guard,
   // same role gate as createAppointment; admin/reception/owner unaffected.
@@ -761,6 +786,25 @@ export async function cloneAppointment(
           .where(eq(appointments.id, sourceId))
           .limit(1);
         if (!source) return { ok: false, error: "not_found" };
+
+        // STAFF-02: a clone INHERITS the source's location, so it is a write
+        // path that can land an appointment at a clinic the actor is not
+        // assigned to - without ever naming one. Guarded on the SOURCE's
+        // location, which is the clone's destination.
+        //
+        // THE CHECK IS INSIDE THE TRANSACTION BECAUSE THE LOCATION IS NOT KNOWN
+        // UNTIL THE SOURCE IS READ. That is the one honest exception to
+        // "refuse at the door": there is no door-side value to refuse on. It
+        // still refuses before the INSERT, and the read it depends on is the
+        // cheap one.
+        //
+        // AND IT DOES NOT RELY ON THE ACTOR BEING UNABLE TO FIND THE ID. They
+        // cannot see CB appointments on a PL-09-scoped agenda, but "they cannot
+        // find it" is the read scope doing the write scope's job - which is the
+        // exact confusion this card exists to end.
+        if (!isLocationBookable(await bookingLocationScope(actor), source.locationId)) {
+          return { ok: false, error: "location_not_assigned" };
+        }
 
         const values = buildClonedAppointment(source, newStart, {
           tenantId: actor.tenantId,
@@ -1148,6 +1192,12 @@ export async function rescheduleAppointment(
 
   if (!id || !input.practitionerId || !input.locationId) {
     return { ok: false, error: "validation" };
+  }
+  // STAFF-02: a reschedule carries a locationId and can therefore MOVE an
+  // appointment into an unassigned clinic. Guarded on the DESTINATION, which is
+  // the only location this call can create a booking at.
+  if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
+    return { ok: false, error: "location_not_assigned" };
   }
   const inStart = new Date(input.startsAt);
   const inEnd = new Date(input.endsAt);

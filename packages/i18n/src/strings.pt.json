@@ -304,6 +304,7 @@
   "appointment.statusNoShow": "Falta",
   "appointment.illegalTransition": "Mudança de estado não permitida. Uma marcação confirmada não volta a pendente, e concluída, cancelada e falta são estados finais.",
   "appointment.doubleBooked": "Este terapeuta já tem uma marcação confirmada neste horário. Duas marcações confirmadas não podem sobrepor-se.",
+  "appointment.locationNotAssigned": "Não pode marcar nesta localização. Só pode marcar nas localizações que lhe estão atribuídas. Se precisar de acesso a outra, contacte a administração.",
   "appointment.selectPatient": "Selecionar paciente",
   "appointment.patientTypeToSearch": "Digite para pesquisar…",
   "appointment.selectService": "Selecionar serviço",

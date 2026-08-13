@@ -44,6 +44,17 @@ let executed: unknown[] = [];
 
 function fakeTx() {
   return {
+    // STAFF-02: the create path now consults the actor's staff_locations
+    // assignment before it writes. Without this the fake throws
+    // "tx.select is not a function" and every assertion below fails for a
+    // reason that has nothing to do with what it tests.
+    //
+    // RETURNS NO ROWS ON PURPOSE. An empty assignment set means "unrestricted"
+    // (bookingLocationScope -> null), which is PL-09's own documented fallback
+    // for an unassigned staffer, so this suite keeps testing the creation
+    // invariant rather than the location guard. The guard has its own suite in
+    // booking-location-scope.test.ts.
+    select: () => ({ from: () => ({ where: async () => [] }) }),
     // createAppointment takes the slot lock via tx.execute before it inserts.
     // Captured rather than ignored so the assertions below can prove the lock
     // is actually acquired, not merely tolerated by the fake.
