@@ -1,8 +1,8 @@
 # Remaining work, triaged
 
-**Board:** `docs/board/portal-board.json` @ `as_of 2026-08-12T07:00:00Z`.
-**Scope:** every card not `status: shipped`. **59 cards.**
-**Shipped and out of scope here:** 47. **Board total: 106.**
+**Board:** `docs/board/portal-board.json` @ `as_of 2026-08-13T23:59:59Z`.
+**Scope:** every card not `status: shipped`. **71 cards.**
+**Shipped and out of scope here:** 59. **Board total: 130.**
 
 Generated from the board, not typed: the generator refuses to emit this file
 unless every unshipped card lands in exactly one bucket. So the four counts
@@ -15,11 +15,11 @@ mutually exclusive without judgement calls:
 
 | Bucket | Unblocked by | Count |
 |---|---|---|
-| **BUILD** | a terminal | **37** |
-| **OBSERVE** | Ivan | **15** |
+| **BUILD** | a terminal | **50** |
+| **OBSERVE** | Ivan | **14** |
 | **EXTERNAL** | a third party | **4** |
 | **LAUNCH-DAY** | launch itself | **3** |
-| | **total** | **59** |
+| | **total** | **71** |
 
 `blocked_on` on this board is `ivan | jp | lawyer | infra`. Ivan is deliberately
 **not** an EXTERNAL party, which is why everything waiting on him is OBSERVE even
@@ -27,7 +27,7 @@ when what he owes is a ruling rather than a screenshot.
 
 ---
 
-## BUILD — 37
+## BUILD — 50
 
 Code work a terminal can do. Nothing outside this repo has to happen first.
 
@@ -36,11 +36,19 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `W13-06` | high | todo | Umbrella for 06a/06b. Carries no work of its own. |
 | `W13-06a` | high | todo | LOOP 6 Phase A - rebuild the exposure matrix from the code. Blocked by dependency on A2, not by anything external. |
 | `W13-06b` | high | todo | LOOP 6 Phase B - close every deficient row Phase A names. Depends on 06a. |
-| `W13-07` | high | todo | LOOP 7 SYNC proof. Depends on LOOP 6 merged. |
+| `W13-07` | high | todo | LOOP 7 SYNC proof. Depends on LOOP 6 merged. **The browser crossing is now PROVEN** - direction A green at attempt 1 on three runs. PG8 is held by ONE DoD line: per-hop timings. |
+| `LE-pg8-per-hop-timings` | high | todo | **THE LAST THING BETWEEN THE BUILD AND 9/9.** Nine hops named, none measured individually. Needs server-side instrumentation - a browser cannot see inside one fetch. A measurement, not a discovery. |
 | `SEC-r-token-no-rate-limit` | high | todo | apps/web has no rate limiter at all. Structural port; a LOOP 6 Phase B output, NOT AMBER's (rehydrate 1.1). |
 | `ACC-vacuous-guard-sweep` | high | todo | 123 assertions that cannot fail, across 385 test files. Large, mechanical, high value. |
 | `AI-02-payload-structural-drift` | high | todo | A partner key mapping to no ficha field is silently discarded. |
 | `SEC-allowconflict-not-audited` | high | todo | **NEW 2026-08-11.** "Guardar mesmo assim" is written nowhere. It already cost a diagnosis during INC-08. No migration - audit metadata is jsonb. |
+| `SEC-pending-screen-asserts-nothing` | high | todo | **HIGH. The only defect in this list facing a PATIENT.** /portal/booking/pending says "Pedido recebido" to anyone who navigates to it - no id, no row read. Back button, refresh after a failed submit, or a stale link all say a booking was received. Section 1.3's pattern, in the product. |
+| `ACC-skippable-suites-unguarded` | high | todo | **HIGH, and RULED.** 36 suites can still skip inside a passing required check. The structural fix was scheduled after PG9, and PG9 is closed - so it is now next in this bucket. Expect it red the first time. |
+| `ACC-identity-blind-assertions` | high | todo | **HIGH.** Assertions matching shared vocabulary rather than identity on a shared seeded database. Worse in kind than a skip: a skip fails to prove, this proves something false. See ACC-preselection-spec-flaky for two live instances. |
+| `ACC-preselection-spec-flaky` | high | todo | **HIGH, widened 2026-08-13.** TWO DIFFERENT tests flaked on shard 1 in two runs - the preselection Servico select, then agenda-card stacking. The pattern is the shard, not either spec, and both read shared mutable appointment state. First step discriminates in one run: --repeat-each=5 alone. |
+| `LE-board-pr-reconciliation` | high | todo | **HIGH.** Nothing reconciles merged PRs against card status; three cards have carried a false one. This bucket list is the same failure in miniature - four ghosts and sixteen unbucketed cards had accumulated by 2026-08-13. |
+| `LE-inc08-survivor-still-confirmed` | high | todo | **HIGH.** Resolved in the production diary - all four test appointments cancelled - but the card has not been closed against that. |
+| `LE-prod-apply-worktree-loose-scripts` | high | todo | **HIGH.** One-off scripts staged outside the repo in the apply worktree. Hygiene on the one tree that touches production. |
 | `WF-03` | high | todo | Owner ruling: a patient-visible loop closes only on the deployed screen |
 | `WF-04` | high | todo | Owner ruling R1: extending the patient-change event contract from 2 kinds to 4 is growth,  |
 | `WF-05` | high | todo | Owner ruling R2: for dual-therapist services, BOTH assigned therapists are notified |
@@ -53,16 +61,21 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `WF-14` | high | todo | Owner ruling: GREEN is retired - custody of the platform board transfers to PURPLE, closur |
 | `WF-15` | high | todo | Owner ruling: legal and regulatory work leaves engineering - external counsel owns it |
 | `WF-16` | high | todo | Owner ruling: supervision minimized - one acceptance session at wave end, four return cond |
-| `W13-08` | medium | todo | LOOP 8 experience pass. Runs last, deliberately: it audits the others. |
 | `AI-01-projection-null-safety` | medium | in_flight | In flight, NO EVIDENCE on the board. The only in-flight card with none. |
 | `LE-pedido-emit-best-effort` | medium | todo | A failed appointment_request emit loses the pedido AND makes it block. Known weakness recorded in 0059:82-90. |
 | `LE-vacuous-template-guard` | medium | todo | The email-template guard passes on a comment. |
-| `LE-portal-booking-therapist-step` | medium | todo | **A2 — THIS IS PURPLE'S NEXT CARD.** It precedes LOOP 6 by dependency (rehydrate 1.1): Phase A enumerates the patient-facing surface and A2 *adds* to it, so a matrix built before A2 is wrong on arrival. Its `medium` priority reflects its size, not its order. |
 | `LE-portal-booking-home-clinic-preselect` | medium | todo | Portal booking preselects the home clinic. |
 | `LE-portal-multi-appointment-booking` | medium | todo | Portal exposure of Agendar lote. |
 | `LE-reminders-landline-dispatch` | medium | todo | **AMBER, 2026-08-11.** The OTP route now refuses landlines; the shared reminder path does not. Consequence of the fork-2 ruling. |
 | `LE-staff-transitions-emit-nothing` | medium | todo | **NEW 2026-08-11.** Only the CONFIRM path emits. Cancel and reschedule need no migration; no-show needs a kind and therefore a ruling. |
 | `LE-staff-assisted-activation` | medium | todo | Buildable now; WF-07 rules it POST-LAUNCH, so it is scheduled late, not blocked. |
+| `SEC-otp-unassigned-prefix-500` | medium | todo | A 500 on the LOGIN endpoint arriving by uncaught exception, so every future provider failure falls through the same crack. Found during PG1's A3 observation. |
+| `ACC-gold-700-label-fails-aa` | medium | todo | **NEW 2026-08-13.** v2-gold-700 is 3.94:1 as label text on the admin badge - the same defect class PG9's axe scan found in green, on the staff side. Fix is the same shape: use 800 for the label, leave 700 as the fill. |
+| `ACC-immediate-isvisible-probes` | medium | todo | **NEW 2026-08-13.** Seven more e2e probes treat isVisible() as if it waited. The gate-bearing one cost PG8 four runs and an incident card. None of these seven is gate-bearing yet. |
+| `LE-pg8-e2e-needs-run-scoped-patient` | medium | todo | The portal patient is fixed by the trusted-device storage state, so direction A cannot mint a run-unique one. Pinning the booked DATE achieves the same end for that assertion; this is the residual. |
+| `LE-ocupado-lists-pending-pedido` | medium | todo | The Ocupado panel counts a pending pedido as blocking, contradicting the rule stated on the very next screen. |
+| `LE-agenda-does-not-learn-of-portal-bookings` | medium | todo | revalidatePath cannot cross the deployment boundary, so an open agenda only updates on navigation. NOT a double-booking risk - the slot lock and 0061 are the protection, not the render - but it looks broken in a demo. |
+| `LE-dead-i18n-keys-imply-screens` | medium | todo | 403, 500 and offline strings are rendered by nothing in the portal. Recorded during PG9 rather than quietly skipped. |
 | `WF-01` | medium | todo | Owner ruling: wave docs end after Wave 13 - the board card becomes the loop spec |
 | `WF-09` | medium | todo | Owner ruling R6: owner verifications are batched - trigger at 3 or more waiting, or when n |
 | `WF-10` | medium | todo | Owner ruling R7: no launch date - the condition is a patient completing every planned port |
@@ -71,14 +84,13 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `LE-notes-list-hydration-mismatch` | low | todo | toLocaleString differs server vs client. Low. |
 | `LE-stale-auth-user-id-sweep` | low | todo | PURPLE authors the read-only count, Ivan runs it. The authoring half is terminal work. |
 
-## OBSERVE — 15
+## OBSERVE — 14
 
 Built and merged. Waiting only on Ivan - a deployed screen, a log line, a ruling, or a confirmation to close. No terminal can advance these.
 
 | Card | Pri | Status | Note |
 |---|---|---|---|
-| `INC-08-double-booking-state-not-path` | high | in_flight | **App half MERGED (#869).** DB half is #870, awaiting the owner running the read-only pre-check then the apply. Apply-before-merge. |
-| `ACC-13-item20-staff-fanout` | high | in_flight | **Contract RULED and BUILT.** Rides on #870. Closes when 0061 applies and the owner sees /notificacoes populated. |
+| `SEC-otp-linkage-exact-phone-match` | high | halted | **LAUNCH-BLOCKING, HALTED FOR THE OWNER, AND IT IS THE MOST IMPORTANT LINE IN THIS DOCUMENT.** A patient whose phone is stored the way a human writes it CANNOT LOG IN - linkage compares the proven E.164 against the raw free-text column with an exact string match, and nothing normalizes that column on write. Every seeded patient is stored with spaces. In OBSERVE rather than BUILD because **every candidate fix needs a migration** and this lane does not author one without him: three options with a recommendation are on the card. Pinned in CI by patient-linkage.db.test.ts, whose defect assertion goes RED the day it is fixed. |
 | `W13-03` | high | in_flight | LOOP 3 patient AUTH. #828 merged. Held in_flight ON PURPOSE under WF-03. |
 | `W13-04` | high | in_flight | LOOP 4 booking. #830 merged. Same hold. |
 | `W13-05` | high | in_flight | LOOP 5 ficha terms. #833 + #835 merged, 0058 applied. Same hold. |
@@ -124,7 +136,7 @@ with `evidence: null` for one reason: **none of them is written into**
 **`docs/DECISIONS.md`.** Verified 2026-08-11 by grep over that file - R2 through
 R10 and the four unnumbered rulings return zero hits.
 
-So 15 of the 37 BUILD cards are a single documentation PR:
+So 15 of the 50 BUILD cards are a single documentation PR:
 append each ruling to `DECISIONS.md`, close each card with that commit as evidence.
 No code, no migration, no owner time. **It is the cheapest large move on the board**
 and it matters for a handover: right now the project's governing decisions live in
