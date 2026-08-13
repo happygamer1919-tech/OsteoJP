@@ -537,6 +537,21 @@ wording** — it is already committed in `otp_refused` and `booking.no_slots`. O
 `404_body`'s "Se precisar de ajuda" is a phrase this repo had not used before,
 and it is the one most worth a second opinion.
 
+**TWO MORE STRINGS ADDED 2026-08-13, under the same delegated authority and
+carrying the same no-commitment guarantee.** They are the booking confirmation
+screen's new fail-closed state (`SEC-pending-screen-asserts-nothing`): the screen
+used to say *"Pedido recebido"* to anyone who navigated to it, including after a
+**failed** submit, and now refuses to claim a booking it cannot verify.
+
+| Key | New string |
+|---|---|
+| `booking.pending_unverified_title` | Não encontrámos este pedido |
+| `booking.pending_unverified_body` | Não conseguimos confirmar este pedido de marcação. Se acabou de o fazer, veja as suas consultas. Caso contrário, contacte a clínica. |
+
+**No fee, no cancellation term, no consent, no retention, no promise about
+response time or outcome.** Please have the clinic team read these two alongside
+the seven above.
+
 **And the numbers are now on the screen.** Every one of those surfaces renders the
 clinic telephones as `tel:` links from a single source, `apps/portal/lib/clinics.ts`.
 Before this, five strings told a patient to contact the clinic and no screen said

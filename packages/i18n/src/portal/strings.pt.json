@@ -139,6 +139,8 @@
     "confirm_submit": "Confirmar marcação",
     "pending_title": "Pedido recebido",
     "pending_body": "O seu pedido de marcação está a aguardar confirmação pela receção. O horário só fica reservado depois de confirmado. Receberá um SMS assim que a receção confirmar.",
+    "pending_unverified_title": "Não encontrámos este pedido",
+    "pending_unverified_body": "Não conseguimos confirmar este pedido de marcação. Se acabou de o fazer, veja as suas consultas. Caso contrário, contacte a clínica.",
     "pending_cta": "Ver as minhas consultas",
     "error_submit": "Não foi possível enviar a marcação. Tente novamente ou ligue para a clínica.",
     "error_slot_taken": "Este horário já não está disponível. Escolha outro horário ou contacte a clínica.",

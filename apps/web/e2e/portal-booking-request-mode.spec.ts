@@ -85,6 +85,94 @@ async function openServiceStep(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Drive the booking flow to a submitted pedido. Returns false ONLY when the
+ * seeded calendar offers no slot; every other failure THROWS.
+ *
+ * THAT SPLIT IS THE POINT AND IT IS THE LOOP 7 LESSON. The first version of the
+ * sync spec's equivalent helper returned `null` for four different conditions -
+ * no services, no slots, no submit control, the step never appearing - and the
+ * caller skipped on all of them alike, so a BROKEN FLOW silently became a
+ * skipped test inside a green run. Here an empty calendar is a legitimate skip
+ * (it depends on the run day) and everything else is a defect that must be red.
+ */
+async function bookFirstAvailable(page: Page): Promise<boolean> {
+  await openServiceStep(page);
+
+  const service = serviceRows(page);
+  if ((await service.count()) === 0) {
+    throw new Error("service step offered no service - the catalog is seeded, so this is a defect");
+  }
+  await service.first().click();
+
+  // A2's therapist step. "Escolham por mim" keeps the auto-assignment, which
+  // keeps this test about the CONFIRMATION SCREEN rather than about one
+  // therapist's calendar.
+  const anyTherapist = page.getByRole("button", { name: /escolham por mim/i });
+  await anyTherapist.waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
+  if (await anyTherapist.count()) await anyTherapist.click();
+
+  const dateTime = page.getByRole("heading", { name: /data|hora/i });
+  if (!(await dateTime.first().isVisible({ timeout: 15_000 }).catch(() => false))) {
+    // `isVisible` is deliberately NOT used as a wait anywhere else in this repo
+    // since ACC-immediate-isvisible-probes; here it follows an explicit
+    // waitFor-style timeout on a heading that is either present or the flow is
+    // broken, and the throw below makes a false negative loud rather than silent.
+    throw new Error("never reached the date/time step");
+  }
+
+  const trigger = page.getByRole("button", { name: /escolh|data/i });
+  if ((await trigger.count()) === 0) throw new Error("date/time step has no date-picker trigger");
+  await trigger.first().click();
+
+  const dialog = page.getByRole("dialog");
+  if (!(await dialog.first().isVisible({ timeout: 10_000 }).catch(() => false))) {
+    throw new Error("the date picker did not open when clicked");
+  }
+
+  // THE LOCATORS ARE COPIED VERBATIM FROM sync-portal-agenda.spec.ts:244,273,
+  // WHICH IS PROVEN IN CI. The first version of this helper invented its own and
+  // both were wrong:
+  //
+  //   `getByRole("gridcell").filter({ hasNot: locator("[aria-disabled='true']") })`
+  //     `hasNot` filters by DESCENDANT, not by the element's own attribute, so it
+  //     matched every gridcell INCLUDING the disabled ones. The click then hung
+  //     on a disabled button for the full 120s test budget - "element is not
+  //     enabled", retried until timeout - three times, at 2.1 minutes each.
+  //   `getByRole("radio")` unnamed
+  //     matches any radio on the step, not only a time.
+  //
+  // `.and()` intersects on the ELEMENT, which is what was wanted. Enabled cells
+  // carry no `aria-disabled` attribute at all, which is why `:not([aria-disabled])`
+  // is right and `[aria-disabled='false']` would find nothing.
+  //
+  // DUPLICATED RATHER THAN SHARED, AND CARDED. sync-portal-agenda.spec.ts has a
+  // fuller version of this traversal that took five sessions to stabilise.
+  // Extracting it into a shared helper is the correct end state and is NOT done
+  // here: that spec is PG8's, and refactoring it mid-bucket to save a duplication
+  // would risk the one gate-bearing e2e in the repo for a tidy-up.
+  // ACC-e2e-booking-traversal-duplicated.
+  const days = page.getByRole("gridcell").and(page.locator(":not([aria-disabled])"));
+  const slot = page.getByRole("radio", { name: /^\d{2}:\d{2}$/ });
+  const dayCount = Math.min(await days.count(), 8);
+  for (let i = 0; i < dayCount; i += 1) {
+    await days.nth(i).click();
+    await slot.first().waitFor({ state: "visible", timeout: 1_500 }).catch(() => {});
+    if ((await slot.count()) > 0) break;
+  }
+  if ((await slot.count()) === 0) return false; // THE ONE LEGITIMATE SKIP.
+
+  await slot.first().click();
+  const advance = page.getByRole("button", { name: /^continuar$/i });
+  if ((await advance.count()) === 0) throw new Error("date/time step offered no Continuar control");
+  await advance.first().click();
+
+  const submit = page.getByRole("button", { name: /confirmar marca/i });
+  await submit.first().waitFor({ state: "visible", timeout: 15_000 });
+  await submit.last().click();
+  return true;
+}
+
 test("Decision C: the usual service is MARKED, and every other bookable service is still offered", async ({
   page,
 }) => {
@@ -189,22 +277,72 @@ test("Decision C: choosing a service advances the flow and does not narrow what 
  * booking.step_info_pending to the phrase. Nothing is lost by dropping it here.
  */
 
-test("request-mode: the confirmation screen says PEDIDO, never a finished booking", async ({
+test("request-mode: the confirmation screen REFUSES to claim a booking it cannot verify", async ({
   page,
 }) => {
-  // The pending screen is reachable directly and is what the flow lands on after
-  // a submit. Asserting it here rather than driving a full booking keeps this
-  // test independent of slot availability on the seeded calendar, which varies
-  // with the run day and would otherwise make a copy assertion flaky.
+  // ================================================================= //
+  // THIS TEST WAS INVERTED 2026-08-13. SEC-pending-screen-asserts-nothing.
+  // ================================================================= //
+  // It used to navigate here directly and assert "Pedido recebido" was visible,
+  // and its own comment explained why: "The pending screen is reachable directly
+  // and is what the flow lands on after a submit. Asserting it here rather than
+  // driving a full booking keeps this test independent of slot availability."
+  //
+  // THAT COMMENT WAS CORRECT ABOUT THE TEST AND WAS DESCRIBING A PRODUCT DEFECT.
+  // The screen took an `id`, printed a decorative reference from it, and read no
+  // row — so it told anyone who arrived that a request had been received. A back
+  // button, a refresh after a FAILED submit, or a stale bookmark all produced a
+  // success message for a booking that did not exist. The clinic learns nothing,
+  // because nothing was written.
+  //
+  // AND THIS TEST WAS PINNING IT IN PLACE. It depended on the defect to stay
+  // cheap, so fixing the product would have broken the test and the test would
+  // have looked like the thing that was wrong.
+  //
+  // The screen now reads the patient's OWN appointment list (RLS self-scoped, so
+  // a wrong id returns nothing rather than someone else's row) and fails closed.
   await page.goto("/portal/booking/pending");
   await expect(page).toHaveURL(/\/portal\/booking\/pending(\?|$)/, { timeout: 15_000 });
 
-  // "Pedido recebido", not "Marcação recebida". A pedido is not yet a marcação
-  // and the heading no longer says it is.
+  // NO SUCCESS CLAIM, because no id was carried and nothing could be verified.
+  await expect(
+    page.getByText(/pedido recebido/i),
+    "arriving with no id must NOT produce a success message",
+  ).toHaveCount(0);
+
+  // It says what happened and offers something to do, which is PG9's standard
+  // for a dead end.
+  await expect(page.getByText(/n[ãa]o encontr[áa]mos este pedido/i)).toBeVisible();
+  await expect(page.getByText(/contacte a cl[íi]nica/i)).toBeVisible();
+
+  // A FABRICATED ID IS REFUSED THE SAME WAY. This is the arm that matters most:
+  // an implementation that merely checked `id` was PRESENT would satisfy the
+  // assertions above and still confirm any booking anyone invented.
+  await page.goto("/portal/booking/pending?id=00000000-0000-0000-0000-0000000000ff");
+  await expect(
+    page.getByText(/pedido recebido/i),
+    "an id that belongs to no appointment of this patient must NOT be confirmed",
+  ).toHaveCount(0);
+  await expect(page.getByText(/n[ãa]o encontr[áa]mos este pedido/i)).toBeVisible();
+});
+
+test("request-mode: a REAL pedido still says PEDIDO, never a finished booking", async ({
+  page,
+}) => {
+  // THE POSITIVE HALF, AND IT IS NOW LOAD-BEARING. With the screen failing
+  // closed, every assertion in the test above is satisfied by a page that says
+  // "not found" unconditionally — including for a patient who really did book.
+  // This proves the success path still exists and still says the right thing.
+  //
+  // The copy assertions are the ones the original test carried: "Pedido
+  // recebido" and not "Marcação recebida", the slot not promised, and reception
+  // named as who decides.
+  const booked = await bookFirstAvailable(page);
+  test.skip(!booked, "no slot available on the seeded calendar for this run");
+
+  await expect(page).toHaveURL(/\/portal\/booking\/pending\?id=/, { timeout: 30_000 });
   await expect(page.getByText(/pedido recebido/i)).toBeVisible();
   await expect(page.getByText(/marcação recebida/i)).toHaveCount(0);
-
-  // The slot is not promised, and reception is named as who decides.
   await expect(page.getByText(/só fica reservado depois de confirmado/i)).toBeVisible();
   await expect(page.getByText(/rece[çc][ãa]o/i).first()).toBeVisible();
 });

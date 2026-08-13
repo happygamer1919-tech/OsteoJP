@@ -2,7 +2,7 @@
 
 **Board:** `docs/board/portal-board.json` @ `as_of 2026-08-13T23:59:59Z`.
 **Scope:** every card not `status: shipped`. **69 cards.**
-**Shipped and out of scope here:** 61. **Board total: 130.**
+**Shipped and out of scope here:** 62. **Board total: 131.**
 
 Generated from the board, not typed: the generator refuses to emit this file
 unless every unshipped card lands in exactly one bucket. So the four counts
@@ -42,7 +42,6 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `ACC-vacuous-guard-sweep` | high | todo | 123 assertions that cannot fail, across 385 test files. Large, mechanical, high value. |
 | `AI-02-payload-structural-drift` | high | todo | A partner key mapping to no ficha field is silently discarded. |
 | `SEC-allowconflict-not-audited` | high | todo | **NEW 2026-08-11.** "Guardar mesmo assim" is written nowhere. It already cost a diagnosis during INC-08. No migration - audit metadata is jsonb. |
-| `SEC-pending-screen-asserts-nothing` | high | todo | **HIGH. The only defect in this list facing a PATIENT.** /portal/booking/pending says "Pedido recebido" to anyone who navigates to it - no id, no row read. Back button, refresh after a failed submit, or a stale link all say a booking was received. Section 1.3's pattern, in the product. |
 | `ACC-skippable-suites-unguarded` | high | todo | **HIGH, and RULED.** 36 suites can still skip inside a passing required check. The structural fix was scheduled after PG9, and PG9 is closed - so it is now next in this bucket. Expect it red the first time. |
 | `ACC-identity-blind-assertions` | high | todo | **HIGH.** Assertions matching shared vocabulary rather than identity on a shared seeded database. Worse in kind than a skip: a skip fails to prove, this proves something false. See ACC-preselection-spec-flaky for two live instances. |
 | `ACC-preselection-spec-flaky` | high | todo | **HIGH, widened 2026-08-13.** TWO DIFFERENT tests flaked on shard 1 in two runs - the preselection Servico select, then agenda-card stacking. The pattern is the shard, not either spec, and both read shared mutable appointment state. First step discriminates in one run: --repeat-each=5 alone. |
@@ -69,6 +68,7 @@ Code work a terminal can do. Nothing outside this repo has to happen first.
 | `LE-reminders-landline-dispatch` | medium | todo | **AMBER, 2026-08-11.** The OTP route now refuses landlines; the shared reminder path does not. Consequence of the fork-2 ruling. |
 | `LE-staff-transitions-emit-nothing` | medium | todo | **NEW 2026-08-11.** Only the CONFIRM path emits. Cancel and reschedule need no migration; no-show needs a kind and therefore a ruling. |
 | `LE-staff-assisted-activation` | medium | todo | Buildable now; WF-07 rules it POST-LAUNCH, so it is scheduled late, not blocked. |
+| `ACC-e2e-booking-traversal-duplicated` | medium | todo | **NEW 2026-08-13.** Two specs drive the booking flow with their own copy of the same date-picker traversal; the second invented its locators and cost a 12m33s shard. Extraction deferred deliberately - the other copy is PG8s gate-bearing spec. Do it when LE-pg8-per-hop-timings is taken. |
 | `ACC-gold-700-label-fails-aa` | medium | todo | **NEW 2026-08-13.** v2-gold-700 is 3.94:1 as label text on the admin badge - the same defect class PG9's axe scan found in green, on the staff side. Fix is the same shape: use 800 for the label, leave 700 as the fill. |
 | `ACC-immediate-isvisible-probes` | medium | todo | **NEW 2026-08-13.** Seven more e2e probes treat isVisible() as if it waited. The gate-bearing one cost PG8 four runs and an incident card. None of these seven is gate-bearing yet. |
 | `LE-pg8-e2e-needs-run-scoped-patient` | medium | todo | The portal patient is fixed by the trusted-device storage state, so direction A cannot mint a run-unique one. Pinning the booked DATE achieves the same end for that assertion; this is the residual. |
