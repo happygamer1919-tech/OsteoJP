@@ -4,7 +4,14 @@
 team and to legal, and for anyone who reads it after.
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**128 cards. 57 shipped, 71 open. Launch readiness 8/9.**
+**130 cards. 59 shipped, 71 open. Launch readiness 8/9.**
+
+> ## READ RISK 0 IN §3 BEFORE DEMONSTRATING PATIENT LOGIN.
+> **Most patients cannot log in.** A number stored the way a human writes it —
+> with spaces, as every seeded patient and every staff-typed number is — is
+> refused at the code step, with the same message a wrong code produces. Found
+> 2026-08-13 by the first CI run in which that path had ever been executable.
+> **Halted for the owner: every fix needs a migration.**
 
 > **PG9 EXPERIENCE closed on 2026-08-13**, on run `31651759598` — shard 3, **72
 > passed, 0 failed, 0 flaky, green at attempt 1**. It reddened first, on a real
@@ -140,7 +147,70 @@ hypotheses, three fixes and the production evidence, all on the card.
 
 ---
 
-## 3. The top three risks before demonstrating this build
+## 3. The top risks before demonstrating this build
+
+### RISK 0 — MOST PATIENTS CANNOT LOG IN AT ALL. Launch-blocking, found 2026-08-13.
+
+**`SEC-otp-linkage-exact-phone-match`, halted for the owner.** This is the most
+serious open item in the build and it displaces everything below it.
+
+**A patient whose telephone number is stored the way a human writes it cannot log
+in to the portal.** Not degraded — refused.
+
+**What the patient experiences.** They type their number. **They receive the SMS
+code**, because the request endpoint deliberately never touches the patient table.
+They type the code correctly. They are refused, with the same single message a
+*wrong code* produces — because the API collapses all six failure modes into one
+response so the login screen cannot be used to enumerate patients. **So the
+screen tells them to check a code they typed correctly.** Decision D removed the
+password and the magic link, so there is no other door.
+
+**The mechanism, in two lines of shipped code:**
+
+| Where | What it does |
+|---|---|
+| `apps/api/lib/auth/patient-linkage.ts:69` | `eq(patients.phone, phoneE164)` — an **exact string comparison** |
+| `apps/web/lib/patients/validation.ts:117` | `optionalText()` **trims and normalizes nothing** |
+
+`patients.phone` is free text, and `apps/api/lib/notify/phone.ts` says so in its
+own header: *"numbers arrive as `912 345 678`, `00351912345678`,
+`+351 912-345-678`, etc."* The **reminders** path calls `normalizePhonePT` on the
+stored value before sending, precisely because of this. **The login path does
+not.**
+
+**How likely in real data: very.** Every patient in the e2e seed except the new
+OTP fixture is stored with spaces. Portuguese numbers are conventionally written
+with spaces. Nothing anywhere writes bare E.164 into that column.
+
+**Why no test caught it, and it is the pattern in §5b again.**
+`patient-linkage.test.ts` **mocks the database entirely** — its fake `select()`
+returns whatever the test set. It proves the query is *assembled* correctly and
+**cannot prove it finds anything**. The one DB-gated OTP suite seeds its own
+patient spaceless, so it agreed with the code by construction.
+
+**It was found by the first CI run in which the portal's OTP login had ever been
+executable.** That path had no automated coverage until the same day, because
+`PORTAL_TENANT_ID` was never written to the portal's CI environment — so the
+login could not run in CI at all and no test noticed. **One run, one defect.**
+
+**It is halted rather than fixed because every candidate fix needs a migration**,
+and this lane does not author one without the owner. Three options with a
+recommendation are on the card; the recommended one is a normalized shadow column
+plus an expression index, which fixes the login **without rewriting the number
+anyone typed**.
+
+**It is pinned in CI, not just carded.**
+`apps/api/lib/auth/patient-linkage.db.test.ts` builds two real rows carrying the
+same number written two ways and asserts the E.164 one links and the human one is
+refused. **That assertion is green today and goes red the day the defect is
+fixed**, with a message saying to invert it. A card can be missed; a red test
+cannot.
+
+**For a demo:** log in with a patient whose number is stored as bare E.164, or
+fix the stored value for the demo patient first. **Do not demonstrate patient
+login against real clinic data until this is fixed.**
+
+---
 
 ### RISK 1 — Reception is shown a FALSE event description on a real event
 ### **FIXED 2026-08-12, pending the owner's screen.**
@@ -243,8 +313,12 @@ shipped test sink — and it is the top item in the build queue.
 
 **71 open of 128.**
 
-### Incidents — 0
-None open. `INC-09` shipped 2026-08-12; it closes on the owner's screen via
+### Incidents — 1
+**`SEC-otp-linkage-exact-phone-match` (high, halted, launch-blocking)** — most
+patients cannot log in. Full write-up at **RISK 0**, §3. Waiting on the owner
+because every fix needs a migration.
+
+`INC-09` shipped 2026-08-12; it closes on the owner's screen via
 `OBSERVE-SWEEP.md` step B3b. **`INC-10` closed 2026-08-13** — the portal booking
 that appeared not to commit did commit; the instrument was wrong (§2).
 
