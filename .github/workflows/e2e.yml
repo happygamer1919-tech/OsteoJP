@@ -299,7 +299,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-chromium-shard-${{ matrix.shard }}
-          path: apps/web/playwright-report
+          # test-results carries PG9's mobile screenshots (pg9-*.png, 390x844,
+          # full page) alongside Playwright's own failure captures. Uploaded
+          # rather than committed: a screenshot in git goes stale the day after
+          # it is taken and nobody notices, while an artifact is always OF THE
+          # RUN whose verdict sits beside it.
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
           retention-days: 7
 
   # -------------------------------------------------------------------------

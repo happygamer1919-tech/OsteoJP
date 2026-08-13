@@ -1,37 +1,15 @@
 import { ExternalLink, Mail, MapPin, Phone } from 'lucide-react'
 import { s } from '@/lib/i18n'
+import { CLINIC_CONTACTS } from '@/lib/clinics'
 
-// Clinic data sourced from osteojp.pt/contactos — kept static, updated on redeploy.
-const CLINICS = [
-  {
-    id: 'linda-a-velha',
-    name: 'Linda-a-Velha',
-    address: 'Praça Central Plaza, n.º 1 – A',
-    postalCode: '2795-246',
-    city: 'Linda-a-Velha',
-    phone: [
-      { number: '+351969472111', display: '969 472 111' },
-      { number: '+351214191988', display: '214 191 988' },
-    ],
-    email: 'clinica.osteojp@gmail.com',
-    hours: [{ days: s.clinics.weekdays, time: '09:00 – 19:00' }],
-    mapsUrl: 'https://maps.google.com/?q=Praça+Central+Plaza+1+Linda-a-Velha+2795-246',
-  },
-  {
-    id: 'castelo-branco',
-    name: 'Castelo Branco',
-    address: 'R. Fernando Namora, n.º 6',
-    postalCode: '6000-140',
-    city: 'Castelo Branco',
-    phone: [
-      { number: '+351969877553', display: '969 877 553' },
-      { number: '+351272328221', display: '272 328 221' },
-    ],
-    email: 'geral.castelobranco@osteojp.pt',
-    hours: [{ days: s.clinics.weekdays, time: '09:00 – 19:00' }],
-    mapsUrl: 'https://maps.google.com/?q=R.+Fernando+Namora+6+Castelo+Branco+6000-140',
-  },
-]
+// Clinic data now lives in lib/clinics.ts so the LOGIN SCREEN can reach it too:
+// five patient-facing strings say "contacte a clínica" and none could give a
+// number while the numbers were hardcoded in this file. `hours` stays here
+// because only this screen renders it.
+const CLINICS = CLINIC_CONTACTS.map((c) => ({
+  ...c,
+  hours: [{ days: s.clinics.weekdays, time: '09:00 – 19:00' }],
+}))
 
 const CONTACT_LINK =
   'flex min-h-11 items-center gap-2 text-sm font-medium text-accent-2-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2'

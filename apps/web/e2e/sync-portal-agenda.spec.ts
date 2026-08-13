@@ -52,6 +52,52 @@ async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
   return out;
 }
 
+/**
+ * ================================================================= //
+ * WAIT, THEN ANSWER. `isVisible({ timeout })` DOES NEITHER.
+ * ================================================================= //
+ *
+ * THIS FUNCTION EXISTS BECAUSE OF A MEASURED FALSE NEGATIVE, and it is the
+ * fifth instance of section 1.3's pattern found in this project's own
+ * instruments.
+ *
+ * Every probe in this file used `locator.isVisible({ timeout: N })`. In
+ * playwright-core 1.60.0 that option is, verbatim from types.d.ts:14491:
+ *
+ *   @deprecated This option is ignored. locator.isVisible() does not wait for
+ *   the element to become visible and returns immediately.
+ *
+ * So a probe written to wait 15 seconds answered in zero, from whatever the DOM
+ * happened to hold at that instant — and `.catch(() => false)` then made the
+ * race indistinguishable from a genuine absence.
+ *
+ * WHAT IT COST. Run 31649767622 shard 3, direction A, same commit, same seed:
+ *   attempt 1  agenda checked 443ms after goto   ->  false
+ *   attempt 2  agenda checked 1683ms after goto  ->  true
+ * The row was always there. The check was early. That false negative was read as
+ * "the booking produced no row", raised INC-10 as a possible patient-facing
+ * defect, was reported on three surfaces as independent corroboration — all
+ * three being the same non-waiting probe — and held PG8 open.
+ *
+ * `waitFor` genuinely waits, and its timeout rejection IS the negative answer.
+ * The rejection is narrowed rather than swallowed: a TimeoutError means "not
+ * visible within the budget", and ANY OTHER error (a closed page, a crashed
+ * context, a bad selector) is re-thrown, because those are not negative answers
+ * and must never be reported as one.
+ */
+async function becameVisible(
+  locator: ReturnType<Page["getByText"]>,
+  timeout: number,
+): Promise<boolean> {
+  try {
+    await locator.waitFor({ state: "visible", timeout });
+    return true;
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") return false;
+    throw err;
+  }
+}
+
 /** A reception-authenticated page on the STAFF app, whatever the file-level baseURL is. */
 async function receptionPage(browser: Browser): Promise<Page> {
   const ctx = await browser.newContext({
@@ -84,9 +130,32 @@ async function receptionPage(browser: Browser): Promise<Page> {
  *                      empty calendar.
  */
 type BookOutcome =
-  | { ok: true; slot: string }
+  | { ok: true; slot: string; isoDate: string }
   | { ok: false; why: "empty-calendar"; detail: string }
   | { ok: false; why: "flow-broken"; detail: string };
+
+
+/**
+ * The DatePicker's day cells carry `aria-label` as a pt-PT long date —
+ * "segunda-feira, 17 de agosto de 2026". Converted to ISO here so the test can
+ * assert against THE DAY IT BOOKED rather than searching a window.
+ *
+ * THE LOCALE IS FIXED, so this is deterministic rather than a guess: the portal
+ * renders pt-PT only, and `DatePicker` formats with that locale unconditionally.
+ * A month name it does not recognise returns null and the caller treats that as
+ * a flow defect, never as an empty calendar.
+ */
+const PT_MONTHS = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+];
+function isoFromPtLabel(label: string): string | null {
+  const m = /(\d{1,2})\s+de\s+([a-zçã]+)\s+de\s+(\d{4})/i.exec(label.toLowerCase());
+  if (!m) return null;
+  const month = PT_MONTHS.indexOf(m[2]);
+  if (month < 0) return null;
+  return `${m[3]}-${String(month + 1).padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+}
 
 /** Drive the portal booking flow to a submitted pedido. */
 async function bookFromPortal(page: Page): Promise<BookOutcome> {
@@ -94,8 +163,17 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
 
   // Clinic step, if it is shown. A1 preselects the home clinic and SKIPS this
   // step forward, so its absence is correct behaviour rather than a failure.
+  // A BOUNDED WAIT, NOT AN IMMEDIATE PROBE, AND NOT THE FULL BUDGET. This
+  // element is legitimately OPTIONAL, so a long wait would cost that budget on
+  // every run where preselection correctly skipped the step. But an immediate
+  // check straight after `goto` races the first paint exactly as the agenda
+  // probe did, and here the false negative surfaces later and less honestly:
+  // the clinic is never clicked, the service step never renders, and the helper
+  // reports "service step offered no service" — a flow-broken failure blaming
+  // the wrong step. 5s beats a render, and costs 5s once when the step is
+  // genuinely absent.
   const clinic = page.getByRole("button", { name: new RegExp(LOCATION.name, "i") });
-  if (await clinic.first().isVisible().catch(() => false)) await clinic.first().click();
+  if (await becameVisible(clinic.first(), 5_000)) await clinic.first().click();
 
   // Service step: take the first offered service, whatever it is. Naming one
   // would couple this sync proof to the service catalog, which is LOOP 4's
@@ -114,16 +192,16 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   // A2's therapist step. "Escolham por mim" keeps the pre-A2 auto-assignment,
   // which keeps this test about the CROSSING rather than about one therapist's
   // seeded calendar.
+  // Same bounded wait, same reason: this step renders after a click, so an
+  // immediate probe can miss it and the failure then arrives one step later as
+  // "never reached the date/time step".
   const anyTherapist = page.getByRole("button", { name: /escolham por mim/i });
-  if (await anyTherapist.isVisible().catch(() => false)) await anyTherapist.click();
+  if (await becameVisible(anyTherapist, 5_000)) await anyTherapist.click();
 
   // The date/time step must be REACHED. Reaching it and finding it empty is the
   // legitimate skip; never reaching it is a broken flow.
   const step = page.getByRole("heading", { name: /data|hora/i });
-  const reached = await step
-    .first()
-    .isVisible({ timeout: 20_000 })
-    .catch(() => false);
+  const reached = await becameVisible(step.first(), 20_000);
   if (!reached) {
     return { ok: false, why: "flow-broken", detail: "never reached the date/time step" };
   }
@@ -157,11 +235,7 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
 
   // The popover is `role="dialog"` (DatePicker.tsx). If it did not open, the
   // trigger is not what we think it is — a flow defect, never an empty calendar.
-  const opened = await page
-    .getByRole("dialog")
-    .first()
-    .isVisible({ timeout: 10_000 })
-    .catch(() => false);
+  const opened = await becameVisible(page.getByRole("dialog").first(), 10_000);
   if (!opened) {
     return { ok: false, why: "flow-broken", detail: "date picker did not open when clicked" };
   }
@@ -188,6 +262,7 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   // So the days are TRIED, in order, until one yields slots. Bounded, because an
   // unbounded walk over a wide range would be a slow way to fail.
   const MAX_DAYS_TRIED = 14;
+  let bookedIso: string | null = null;
   // ROLE `radio`, NOT `button`, AND THIS IS THE FOURTH WRONG LOCATOR IN THIS FILE.
   // SlotPicker renders each slot as `<button type="button" role="radio">`
   // (SlotPicker.tsx:76-85) inside a `role="radiogroup"`. An explicit `role`
@@ -215,7 +290,10 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
       // LOGGED SO THE NEXT RED IS DIAGNOSABLE WITHOUT GUESSING. Run 31624728972
       // failed on attempt 1 and passed on retry with no way to tell what differed
       // between them; this line and the service line above are that answer.
-      console.log(`[W13-07] A: booking day = ${label} (day ${i + 1} of ${dayCount} enabled)`);
+      bookedIso = isoFromPtLabel(label);
+      console.log(
+        `[W13-07] A: booking day = ${label} -> ${bookedIso} (day ${i + 1} of ${dayCount} enabled)`,
+      );
       break;
     }
   }
@@ -253,7 +331,16 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   // The pedido landed when the pending screen says so, in the product's own
   // words. Waiting on a URL alone would pass on a redirect that carried an error.
   await expect(page.getByText(/pedido recebido/i)).toBeVisible({ timeout: 30_000 });
-  return { ok: true, slot: label };
+  if (!bookedIso) {
+    // A day was selected and slots appeared, so the flow WORKED — this is a
+    // parsing failure, not an empty calendar, and it must not skip.
+    return {
+      ok: false,
+      why: "flow-broken",
+      detail: "could not derive an ISO date from the picker's aria-label",
+    };
+  }
+  return { ok: true, slot: label, isoDate: bookedIso };
 }
 
 test.describe("W13-07 — the two surfaces stay in step across the app boundary", () => {
@@ -331,61 +418,60 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     // REPORTS WHICH DAY IT FOUND, so a future failure distinguishes "not on any
     // day" from "on a day outside the window".
     // ================================================================= //
-    // MATCH THE PATIENT, NOT JUST THE TIME. THIS ASSERTION ONCE PASSED
-    // BY FINDING SOMEBODY ELSE'S APPOINTMENT.
+    // ASSERT ON THE DAY IT BOOKED. NO SCAN. THIS IS THE WHOLE FIX.
     // ================================================================= //
-    // The previous version scanned for the slot LABEL alone — "09:00". Run
-    // 31623855711 duly reported `the crossing landed on 2026-08-12`, which is a
-    // WEDNESDAY, against a seed whose availability is MONDAY ONLY. A portal
-    // booking cannot have landed there. It matched an unrelated 09:00 row that
-    // another spec in the same shard had created on the shared seeded database.
+    // The previous version SCANNED a window for the patient's name and the slot
+    // time. Both are SHARED VOCABULARY on a shared seeded database: Maria Silva
+    // is a name every spec can produce, and 09:00 is a time every spec can
+    // produce. Run 31628095909 booked `segunda-feira 17 de agosto` and reported
+    // "the crossing landed on 2026-08-20" — a Thursday. IT MATCHED SOMEBODY
+    // ELSE'S ROW, AND IT PASSED, twice.
     //
-    // IT PASSED. That makes it the most dangerous defect in this file's history:
-    // every earlier wrong reading produced a RED, which is self-correcting. This
-    // one produced a GREEN for a property that had not been demonstrated, and it
-    // did so on a retry, which the suite counts as success.
+    // The scan is gone. The helper now returns the ISO date it actually booked,
+    // parsed from the picker's own aria-label, and the assertion navigates to
+    // EXACTLY THAT DATE. A row on any other day can no longer satisfy it — which
+    // is precisely the check that was missing, since the booked day (17th) and
+    // the matched day (20th) were both known and never compared.
     //
-    // The scan now requires the PATIENT'S NAME and the TIME on the same day. The
-    // portal test patient is Maria Silva (fixtures.ts:241-244), so a row bearing
-    // her name at the booked time on a future date is the booking, not a
-    // neighbour.
-    // The availability horizon is wider than three weeks, and attempt 1 of run
-    // 31624728972 found nothing in 21 days while the retry landed on 2026-08-24.
-    // Widened so a miss means "not on the agenda" rather than "outside my window".
-    const SCAN_DAYS = 45;
+    // WHY NOT A RUN-UNIQUE PATIENT, which is the stronger form of criterion F:
+    // the portal patient is fixed by the trusted-device storage state, so this
+    // spec cannot mint one without a second auth path. Pinning the DATE achieves
+    // the same end for this assertion — a neighbour would have to book the same
+    // patient at the same time on the same specific day — and it costs nothing.
+    // The residual risk is recorded on LE-pg8-e2e-needs-run-scoped-patient.
+    const bookedOn = booked.isoDate;
     const timeRe = new RegExp(String(taken).replace(":", "[:h]"), "i");
     const nameRe = new RegExp(PORTAL_PATIENT.name.split(" ")[0], "i");
-    let foundOn: string | null = null;
 
-    await timed("A: agenda scan for the new row", async () => {
-      for (let i = 0; i <= SCAN_DAYS && foundOn === null; i++) {
-        const d = new Date();
-        d.setUTCHours(12, 0, 0, 0);
-        d.setUTCDate(d.getUTCDate() + i);
-        const iso = d.toISOString().slice(0, 10);
-        await staff.goto(`/agenda?date=${iso}`);
-        // BOTH, on the same day. Either alone is satisfied by unrelated data on
-        // a shared seeded database.
-        const hasTime = await staff
-          .getByText(timeRe)
-          .first()
-          .isVisible({ timeout: 1_200 })
-          .catch(() => false);
-        if (!hasTime) continue;
-        const hasPatient = await staff
-          .getByText(nameRe)
-          .first()
-          .isVisible({ timeout: 1_200 })
-          .catch(() => false);
-        if (hasPatient) foundOn = iso;
-      }
+    // BOTH PROBES NOW WAIT. They did not, and that produced the false negative
+    // this whole card was built on — see `becameVisible`. The time probe carries
+    // the full budget because it is the one that races the agenda's first paint;
+    // the name probe follows on an already-painted page, so 5s is generous.
+    const seen = await timed("A: agenda shows the row on the booked day", async () => {
+      await staff.goto(`/agenda?date=${bookedOn}`);
+      const hasTime = await becameVisible(staff.getByText(timeRe).first(), 15_000);
+      if (!hasTime) return false;
+      return becameVisible(staff.getByText(nameRe).first(), 5_000);
     });
 
+    console.log(`[W13-07] A: visible to RECEPTION on ${bookedOn}? ${seen}`);
+
+    // THE OWNER-VIEWER BLOCK WAS REMOVED HERE, 2026-08-12, AND THE REASON IS
+    // WORTH KEEPING. It answered its question - reception false, OWNER false, so
+    // PL-09 location scope is NOT the cause - and then it kept costing: a 30s
+    // waitForURL running on every attempt including both retries pushed shard 3
+    // past the job timeout and the run was CANCELLED, which destroyed the very
+    // measurement the next commit had added.
+    //
+    // A DIAGNOSTIC THAT OUTLIVES ITS QUESTION BECOMES AN OBSTACLE. Removed as
+    // soon as it was answered, which is the rule this file is now under.
     expect(
-      foundOn,
-      `a portal pedido for ${PORTAL_PATIENT.name} at ${taken} should appear on the staff agenda within ${SCAN_DAYS} days`,
-    ).not.toBeNull();
-    console.log(`[W13-07] A: the crossing landed on ${foundOn}`);
+      seen,
+      `the pedido booked for ${PORTAL_PATIENT.name} at ${taken} on ${bookedOn} should be on the ` +
+        `staff agenda for THAT DAY. Location scope is ruled out: run 31641934973 showed the row ` +
+        `invisible to the OWNER too, who has no location filter at all.`,
+    ).toBe(true);
+    console.log(`[W13-07] A: the crossing landed on ${bookedOn}, the day it booked`);
 
     await staff.context().close();
   });

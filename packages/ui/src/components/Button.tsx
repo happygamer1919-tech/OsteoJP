@@ -21,8 +21,12 @@ import {
  * icon-only button (no children) is square and REQUIRES an `aria-label`.
  *
  * Contrast note: the primary fill is v2-green-700 (~4.7:1 with text-inverse),
- * hover v2-green-800, active v2-green-900. v2-green-700 text on light surfaces
- * (secondary/ghost) also clears AA (§3.4 SPEC). Resolved in QUESTIONS.md Q9.
+ * hover v2-green-800, active v2-green-900. THE LABEL VARIANTS USE 800, NOT 700 —
+ * this note previously claimed "v2-green-700 text on light surfaces
+ * (secondary/ghost) also clears AA (§3.4 SPEC)", which is true on white and
+ * FALSE on every other light surface in theme.css. See the measured table beside
+ * VARIANTS below and packages/ui/src/contrast-aa.test.ts, which now fails if the
+ * claim is ever reintroduced. Originally resolved in QUESTIONS.md Q9.
  *
  * @example
  * import { Plus } from "lucide-react";
@@ -61,14 +65,35 @@ const BASE =
   "disabled:bg-surface-muted disabled:text-text-muted";
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  // v2-green-700 (#4E7D6B) + white ≈ 4.7:1 — AA compliant.
+  // v2-green-700 (#4E7D6B) + white ≈ 4.7:1 — AA compliant. This is the FILL,
+  // where the background is the token and the text is white, so it is unaffected
+  // by the correction below.
   primary:
     "bg-v2-green-700 text-text-inverse hover:bg-v2-green-800 active:bg-v2-green-900",
-  // Green border + green text on white; hover tints with v2-green-50.
+  // ================================================================= //
+  // LABEL GREEN IS 800, NOT 700, AND THE REASON IS A MEASURED FAILURE.
+  // ================================================================= //
+  // These two variants put the green on the SURFACE as TEXT, and the surface is
+  // not always white. v2-green-700 clears AA on `surface` (#FFFFFF, 4.70:1) and
+  // MISSES IT ON EVERY OTHER LIGHT SURFACE THIS REPO DEFINES:
+  //   bg #F7F9FB            4.45   the portal's page background
+  //   surface-muted #F0F3F6 4.22
+  //   v2-bg #F7F8FA         4.42
+  //   v2-green-50 #EFF7F3   4.31   these two are the variants' OWN hover and
+  //   v2-green-100 #DCEDE5  3.87   active tints, so secondary failed on hover
+  // Found by PG9's axe scan on /portal/booking, where the ghost back button is
+  // the one control rendered directly on `bg` rather than inside a white card:
+  // one color-contrast violation, on one screen, at 4.45:1 against a 4.5
+  // threshold. The dashboard's ghost and secondary buttons passed the same scan
+  // because they sit inside Cards, which is why the defect survived.
+  //
+  // v2-green-800 (#3C6052) clears AA on all six: 5.79:1 at worst, 7.03:1 on
+  // white. The token itself is NOT changed — it is correct as a fill, and its
+  // §3.4 note in theme.css is corrected to say which surfaces it holds on.
   secondary:
-    "bg-surface text-v2-green-700 border border-v2-green-700 hover:bg-v2-green-50 active:bg-v2-green-100",
+    "bg-surface text-v2-green-800 border border-v2-green-700 hover:bg-v2-green-50 active:bg-v2-green-100",
   ghost:
-    "bg-transparent text-v2-green-700 hover:bg-v2-green-50 hover:text-v2-green-800 active:bg-v2-green-100",
+    "bg-transparent text-v2-green-800 hover:bg-v2-green-50 hover:text-v2-green-900 active:bg-v2-green-100",
   // error now has a 50–900 scale (QUESTIONS.md Q10); base = error-700, so
   // hover/active step to error-800 / error-900 per SPEC §4.1.
   destructive:

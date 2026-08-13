@@ -160,13 +160,76 @@ the arm.
 
 ## 5. WHAT PG8 STILL NEEDS. This document does not close it.
 
+**UPDATED 2026-08-13. FOUR OF FIVE LINES ARE NOW DONE. ONE IS NOT, AND IT IS THE
+ONE THIS GATE IS NAMED AFTER.**
+
 | DoD line | State |
 |---|---|
-| An automated test proves each direction, not a manual observation | **PARTIAL.** Direction B (staff → portal) is proven DB-gated. Direction A's *write* is proven; its *appearance on the agenda* is not covered end to end. |
-| The trace names every hop and its timing, in both directions | **HOPS: DONE (§2). TIMINGS: NOT MEASURED.** Every latency above is characterised (`request-bound`, `one query`, `UNBOUNDED`), which is not the same as measured. |
+| An automated test proves each direction, not a manual observation | **DONE 2026-08-13.** Both directions green at **attempt 1 on two independent runs**, `31651759598` and `31652671983`, different commits. See §5.1. |
+| The trace names every hop and its timing, in both directions | **HOPS: DONE (§2). PER-HOP TIMINGS: STILL NOT MEASURED.** §5.2 adds the *spans* two runs measured, which is not the same thing and is not claimed to be. **THIS IS THE ONE LINE HOLDING PG8.** |
 | The contention control passes and the loser is REFUSED | **DONE**, `slot-lock-concurrency.test.ts`. |
 | Any unbounded hop is named as such | **DONE (§3)**, and now asserted by test. |
-| Lint, typecheck, unit, DB-gated, e2e, build pass | **NOT RUN for e2e** this session. |
+| Lint, typecheck, unit, DB-gated, e2e, build pass | **DONE 2026-08-13.** lint 0 errors · typecheck 10/10 · unit 2012 · DB-gated green · build 4/4 · e2e green on both runs above. |
+
+### 5.1 Direction A is proven, and the four runs that said otherwise were the probe
+
+**The brief's standard, verbatim: *"One green e2e run proves nothing that can
+race. Run it enough times to mean something and say how many."***
+
+**How many: two, on different commits, both green at attempt 1, with no retry
+anywhere in the shard.** And the count matters less than what changed underneath
+it — the race that made earlier runs meaningless is **removed and understood**,
+not averaged over:
+
+`locator.isVisible({ timeout: N })` ignores its timeout. From the installed
+playwright-core 1.60.0, `types.d.ts:14491`: *"@deprecated This option is ignored.
+`locator.isVisible()` does not wait for the element to become visible and returns
+immediately."* Every probe on this direction used that form under `.catch(() =>
+false)`, so a check written to wait 15 seconds answered in zero from an unpainted
+page.
+
+| Run | Answer took | Verdict |
+|---|---|---|
+| `31635017752` | 391ms | absent |
+| `31641934973` | ~400ms | absent to reception **and** to the owner |
+| `31649767622` attempt 1 | 443ms | absent |
+| `31649767622` attempt 2 | 1683ms | **present** — same commit, same seed |
+| `31651759598` attempt 1 | 548ms | **present** — probe now waits |
+| `31652671983` attempt 1 | 587ms | **present** |
+
+**Every reading that said "absent" came back faster than a page can paint.** The
+three "independent surfaces" that agreed the row was missing were three calls to
+one non-waiting probe. `INC-10` closed on this.
+
+**The assertion was never loosened to get here.** It is pinned to the exact ISO
+date the picker reported booking, which is *tighter* than the assertion that
+produced this gate's two withdrawn greens. `becameVisible()` waits and narrows
+its rejection: a `TimeoutError` is the negative answer, every other error is
+re-thrown rather than swallowed.
+
+### 5.2 The spans two runs measured — and why they are not the timing table
+
+```
+[W13-07] A: portal booking submitted                 1268ms / 1342ms
+[W13-07] A: agenda shows the row on the booked day    548ms /  587ms
+[W13-07] B: portal slot list first paint              424ms /  (B run)
+```
+
+**THIS IS NOT WHAT THE DoD ASKED FOR AND IT IS NOT BEING PRESENTED AS THOUGH IT
+WERE.** The DoD says *"the trace names every hop and its timing"*, and §2 lists
+nine hops in direction A. The three numbers above are **end-to-end spans across
+groups of hops**, measured from the browser. They tell you the crossing is
+sub-second; they do not tell you which hop owns the second.
+
+**Why the gap is real work and not an oversight.** A Playwright spec can only
+time what the browser observes. Hops A3–A7 happen inside `apps/api` and the
+database, on the far side of one `fetch`, and no browser-side measurement can
+separate them. Closing this line means **server-side instrumentation**, not
+another console.log in the spec — and §3's own lesson applies: a diagnostic added
+to answer one question and left in place becomes the next problem.
+
+**Carded as `LE-pg8-per-hop-timings`.** It is the last thing between this gate
+and 9/9, and it is a measurement, not a discovery.
 
 **The honest remaining work is one e2e spec and one measured run.** A portal
 e2e spec must drive a booking and then assert the row on the staff agenda, with

@@ -129,6 +129,48 @@ the other lane, stop and say so rather than editing across the boundary.**
 `apps/web/lib/observability/sentry-scrub.ts`. That path is **AMBER's** going
 forward.
 
+### 1.3 THE ONE PRINCIPLE EVERY TERMINAL BOOTS WITH. Added 2026-08-12.
+
+Read this before you write a test, a guard, a fallback or a default branch.
+
+> **A one-line convenience that maps an unknown or failed case onto a known,
+> harmless-looking one WILL be read as the harmless one. It does not announce
+> itself, because the system carries on reporting something reasonable.**
+
+**FOUR INSTANCES, ALL FOUND IN ONE DAY, ALL IN THIS PROJECT'S OWN INSTRUMENTS
+RATHER THAN IN THE PRODUCT:**
+
+| The convenience | What it hid |
+|---|---|
+| `string \| null` | four distinct failures returned the same `null`; the caller skipped on all of them |
+| `test.skip()` | a gate-bearing test never ran, inside a GREEN shard, twice; a PR merged on four green checks with the property untested |
+| `.catch(() => {})` | a broken flow degraded into "the calendar is empty", which skips instead of failing |
+| `?? e.kind` | a notification kind with no label rendered the RAW DATABASE ENUM to reception, in English, on a pt-PT screen |
+
+**Each was one line. Each cost a day.** None was written carelessly. Every one was
+written to keep a program going in an unexpected case, which is ordinarily good
+engineering. What made them expensive is WHERE THEY SAT: on the path that decides
+whether something is TRUE.
+
+**THE RULE.** On any path that produces a verdict - a test, a guard, a check, a
+rendered claim about a clinical event - **an unhandled case must FAIL, not fall
+back.** A fallback is right where the cost of stopping exceeds the cost of being
+wrong. On a verdict path, being wrong IS the cost.
+
+**THE PRACTICAL TEST, cheap enough to apply every time:** find every `??`, every
+bare `catch`, every `| null` return and every default branch on the path, and ask
+**WHAT ELSE REACHES THIS**. If the answer is more than one thing, the cases are
+being conflated, and the conflation will be read as the benign one - because the
+benign one is what the screen or the check reports.
+
+**Related, and they are the same family:** `ACC-vacuous-guard-sweep` carries the
+six triage criteria (A-F) this came from. Criterion F is the one that generalises
+furthest: **a guard proves a test RAN; only the assertion proves it tested the
+right SUBJECT** - and on a shared seeded database, identity must mean RUN-SCOPED
+identity, never a shared fixture's name.
+
+---
+
 ### Standing rules, in full. These are not summaries; they are the rules.
 
 1. **No prod-connected execution.** Never point a command, script, migration or
