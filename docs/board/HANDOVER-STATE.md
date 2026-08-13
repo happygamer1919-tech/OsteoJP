@@ -35,6 +35,13 @@ patient on every change, so it cannot come back unnoticed.
    enforced**, so a receptionist assigned to one clinic could create appointments
    at the other and then never find them again. Both halves are now enforced on
    the server, not just hidden in the form.
+
+   **ASSIGNING A LOCATION IS A MANDATORY ONBOARDING STEP for every staff
+   account.** A staff member with *no* assignment is deliberately unrestricted —
+   they see and can book everywhere — so that nobody is locked out of the
+   application on their first day. That is a ratified design decision, not an
+   oversight, and it means **the scoping only protects a staffer once Equipa has
+   assigned them a clinic.** Add the location when the account is created.
 3. **A patient with a foreign mobile, or no mobile on record, still cannot log
    in.** That is **Decision D, not a defect**: the owner chose a phone-and-code
    login with no password and no magic link, so there is deliberately nothing to

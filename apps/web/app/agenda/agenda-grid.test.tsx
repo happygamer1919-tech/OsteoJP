@@ -1,7 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { AgendaGrid, groupBandPx, shortPatientName } from "./agenda-grid";
+import {
+  AgendaGrid,
+  groupBandPx,
+  hourHeights,
+  hourTops,
+  makeMinToPx,
+  shortPatientName,
+} from "./agenda-grid";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 
@@ -427,17 +434,22 @@ describe("W12-02 - strong hour rule on the on-the-hour slot TOP, coincident with
 describe("PL-01 - same-start group bounded to its hour band (no bleed into the next hour)", () => {
   const DAY_BOTTOM = 24 * 48; // 08:00-20:00, 24 half-hour slots x SLOT_HEIGHT.
 
+  // STAFF-03: the scale is now per-render, so the mapper is passed in. AT BASE
+  // HEIGHTS IT IS THE OLD LINEAR ONE, which is why every expectation below is
+  // unchanged - the bound's rule did not change, only where the hour edges are.
+  const BASE = makeMinToPx(hourHeights([]));
+
   it("groupBandPx caps a group to the nearer of the next hour and the next group", () => {
     // 09:00, nothing after -> the full hour band (96px), never past 10:00.
-    expect(groupBandPx(540, null, DAY_BOTTOM)).toBe(96);
+    expect(groupBandPx(540, null, DAY_BOTTOM, BASE)).toBe(96);
     // 09:00 with a 10:00 group -> 96px (coincides with the hour line).
-    expect(groupBandPx(540, 600, DAY_BOTTOM)).toBe(96);
+    expect(groupBandPx(540, 600, DAY_BOTTOM, BASE)).toBe(96);
     // 09:00 with a 09:30 group -> only 48px, so it cannot overlap the 09:30 group.
-    expect(groupBandPx(540, 570, DAY_BOTTOM)).toBe(48);
+    expect(groupBandPx(540, 570, DAY_BOTTOM, BASE)).toBe(48);
     // a 09:30 group -> 48px (to the 10:00 hour line).
-    expect(groupBandPx(570, null, DAY_BOTTOM)).toBe(48);
+    expect(groupBandPx(570, null, DAY_BOTTOM, BASE)).toBe(48);
     // never below half a slot even in a tight sub-slot band (09:50 -> 10:00).
-    expect(groupBandPx(590, 600, DAY_BOTTOM)).toBe(24);
+    expect(groupBandPx(590, 600, DAY_BOTTOM, BASE)).toBe(24);
   });
 
   it("renders the 09:00 start-group with a max-height bound + internal scroll (FAILS pre-fix)", () => {
@@ -464,5 +476,91 @@ describe("PL-01 - same-start group bounded to its hour band (no bleed into the n
     ]);
     expect(html).not.toMatch(/width:\s*calc\([^)]*%/); // never columnised
     expect(faces(html)).toHaveLength(2); // still two stacked name lines
+  });
+});
+
+// ============================================================================
+// STAFF-03 — the hour row grows to fit what starts inside it.
+// ============================================================================
+// Reported from reception: several appointments in one hour crop, crowd the
+// hover target, and an off-hour start sits mid-row. The old scale was LINEAR —
+// every hour exactly 96px whatever it held — and PL-01 capped each group to its
+// hour and SCROLLED the overflow. Nothing was hidden; a receptionist simply had
+// to scroll inside a 96px cell to read a name.
+//
+// THE 30-MINUTE GRID UNDERNEATH IS UNTOUCHED, and the pins above still prove it:
+// the :30 slot is still clickable, focusable and labelled. Collapsing to hour
+// granularity would have halved the bookable start times.
+describe("STAFF-03 — the hour row expands to fit its appointments", () => {
+  it("is EXACTLY the old linear scale when nothing needs extra room", () => {
+    // The fix must be inert on a quiet day, or it is a redesign dressed as a bug
+    // fix. 08:00 -> 0, 09:00 -> 96, 09:30 -> 144, and the day is 24 slots deep.
+    const px = makeMinToPx(hourHeights([]));
+    expect(px(8 * 60)).toBe(0);
+    expect(px(9 * 60)).toBe(96);
+    expect(px(9 * 60 + 30)).toBe(144);
+    const tops = hourTops(hourHeights([]));
+    expect(tops[tops.length - 1]).toBe(24 * 48);
+  });
+
+  it("grows the hour that needs it, and ONLY that hour", () => {
+    // 09:00 holds eight lines; every other hour is untouched. A change that grew
+    // the whole day would pass a naive "is it taller" check and would push the
+    // afternoon off the screen for no reason.
+    const counts = [[0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]];
+    const heights = hourHeights(counts);
+    expect(heights[1], "the 09:00 hour must grow past its 96px base").toBeGreaterThan(96);
+    expect(heights[0]).toBe(96);
+    expect(heights[2]).toBe(96);
+  });
+
+  it("takes the WORST day per hour, so every column shares one scale", () => {
+    // THE DETAIL THAT MAKES THE WEEK VIEW WORK. Per-column heights would put
+    // Monday's 10:00 at a different y than Tuesday's, and the gutter — which is
+    // drawn once — would then agree with neither.
+    const quiet = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const busy = [0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    expect(hourHeights([quiet, busy])).toEqual(hourHeights([busy, quiet]));
+    expect(hourHeights([quiet, busy])[1]).toBe(hourHeights([busy])[1]);
+  });
+
+  it("keeps a :30 start exactly halfway down its hour, however tall the hour", () => {
+    // The property that keeps vertical position encoding TIME rather than merely
+    // ordering. Without it, an expanded hour would slide its :30 appointments
+    // away from the clock they are supposed to sit against.
+    const heights = hourHeights([[0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]);
+    const px = makeMinToPx(heights);
+    const tops = hourTops(heights);
+    const half = px(9 * 60 + 30) - tops[1]!;
+    expect(half).toBeCloseTo(heights[1]! / 2, 5);
+  });
+
+  it("places an off-hour start where the clock says, not at a slot boundary", () => {
+    // 11:25 is a real, reachable time — 55-minute appointments chained off a
+    // 30-minute cadence land there, which is what STAFF-01 was about. It must
+    // sit 25/60 of the way down its hour, not snapped to :00 or :30.
+    const heights = hourHeights([[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0]]);
+    const px = makeMinToPx(heights);
+    const tops = hourTops(heights);
+    const within = px(11 * 60 + 25) - tops[3]!;
+    expect(within).toBeCloseTo((25 / 60) * heights[3]!, 5);
+  });
+
+  it("renders a taller day column when one hour is busy (end to end)", () => {
+    // The unit arithmetic above proves the scale; this proves the component
+    // actually uses it. Six same-hour appointments must produce a day column
+    // taller than the 1152px a quiet day renders.
+    const quiet = render([appt({ id: "solo", patientName: "Ana Costa" })]);
+    const busy = render(
+      ["Ana Costa", "Bruno Dias", "Carla Eanes", "Duarte Faria", "Elsa Gomes", "Rui Horta"].map(
+        (patientName, i) => appt({ id: `x${i}`, patientName }),
+      ),
+    );
+    const heightOf = (html: string): number =>
+      Math.max(...[...html.matchAll(/height:\s*(\d+(?:\.\d+)?)px/g)].map((m) => Number(m[1])));
+    expect(
+      heightOf(busy),
+      "six appointments in one hour must make the day taller than one appointment does",
+    ).toBeGreaterThan(heightOf(quiet));
   });
 });
