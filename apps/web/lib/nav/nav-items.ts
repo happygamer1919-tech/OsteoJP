@@ -7,7 +7,11 @@ export type NavItem = { href: string; label: string };
 // each link. Dashboard / Agenda / Patients are open to every authenticated
 // role; Clinical and Admin are capability-gated. Pure + role-only so it is
 // unit-testable (see nav-items.test.ts).
-const ALL: (NavItem & { capability?: Capability; hideIfCapability?: Capability })[] = [
+const ALL: (NavItem & {
+  capability?: Capability;
+  hideIfCapability?: Capability;
+  hideForRoles?: readonly Role[];
+})[] = [
   { href: "/dashboard", label: s["nav.dashboard"] },
   { href: "/agenda", label: s["nav.agenda"] },
   { href: "/patients", label: s["nav.patients"] },
@@ -24,9 +28,24 @@ const ALL: (NavItem & { capability?: Capability; hideIfCapability?: Capability }
   // Horários (PL-09 Phase 5): reception manages their location's therapist
   // schedules here. Owner/admin also hold schedule:read but manage schedules
   // inside Equipa (/admin/staff), so hide this entry for them (settings:read) to
-  // avoid a duplicate surface — reception is the only role with schedule:read and
-  // no settings:read. The route re-enforces schedule:read server-side.
-  { href: "/horarios", label: s["nav.schedule"], capability: "schedule:read", hideIfCapability: "settings:read" },
+  // avoid a duplicate surface. The route re-enforces schedule:read server-side.
+  //
+  // ITEM 3 (2026-08-14): the therapist role gained schedule:read so it can see
+  // and remove its OWN time-off blocks, which would have made this entry appear
+  // in their sidebar as a side effect. IT IS HELD BACK DELIBERATELY. The owner
+  // asked for the "Bloquear horário" affordance on the AGENDA, not for a new
+  // page in a therapist's navigation, and adding a sidebar entry nobody asked
+  // for is a product decision rather than a consequence. The page itself is
+  // already self-scoped for a therapist (listAvailabilityTemplates filters to
+  // scope.userId), so admitting them later is a one-line change to this array
+  // and needs no further work. Carded as LE-therapist-horarios-nav.
+  {
+    href: "/horarios",
+    label: s["nav.schedule"],
+    capability: "schedule:read",
+    hideIfCapability: "settings:read",
+    hideForRoles: ["therapist"],
+  },
   // Faturação (W10-04 isolation, owner ruling 2026-07-21): owner/admin/reception
   // only - gated on invoices:issue (therapist holds only invoices:read, so it is
   // hidden for the therapist role, matching the /invoicing route guard).
@@ -44,6 +63,7 @@ export function navItemsForRole(role: Role): NavItem[] {
   return ALL.filter(
     (i) =>
       (!i.capability || can(role, i.capability)) &&
-      (!i.hideIfCapability || !can(role, i.hideIfCapability)),
+      (!i.hideIfCapability || !can(role, i.hideIfCapability)) &&
+      !i.hideForRoles?.includes(role),
   ).map(({ href, label }) => ({ href, label }));
 }

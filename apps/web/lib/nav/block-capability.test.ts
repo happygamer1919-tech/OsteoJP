@@ -37,7 +37,17 @@ describe("agenda block control capability (PL-27)", () => {
     }
   });
 
-  it("therapist cannot manage schedules, so the control stays hidden for them", () => {
-    expect(can("therapist", "schedule:manage")).toBe(false);
+  it("ITEM 3: a therapist manages their OWN schedule, so the control is now SHOWN", () => {
+    // This assertion was `toBe(false)` until 2026-08-14. It is inverted on the
+    // owner's ruling that a therapist blocks their own schedule, not to make a
+    // test pass. The control appearing is the FEATURE; the restriction is a
+    // scope (`{kind:"self"}`), proven in lib/admin/therapist-self-schedule.test.ts.
+    expect(can("therapist", "schedule:manage")).toBe(true);
+  });
+
+  it("every role that may write a block may see the control, therapist included", () => {
+    for (const role of ["owner", "admin", "reception", "therapist"] as const) {
+      expect(can(role, "schedule:manage")).toBe(true);
+    }
   });
 });

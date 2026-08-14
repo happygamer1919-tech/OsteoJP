@@ -330,6 +330,11 @@ export function AgendaView({
         <BlockTimeDialog
           therapists={options.therapists}
           defaultTherapistId={filters.practitionerId}
+          // ITEM 3: a therapist is already practitioner-locked on this page
+          // (page.tsx forces practitionerId to their own id), so the preselect
+          // is correct for them; this pins it so the roster dropdown cannot
+          // offer a colleague the server would refuse anyway.
+          lockTherapist={lockTherapist}
           slot={blockOpen.slot ?? null}
           onClose={() => setBlockOpen(null)}
           onDone={() => {

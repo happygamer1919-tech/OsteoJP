@@ -76,7 +76,7 @@ describe("navItemsForRole — role-aware nav gating", () => {
     expect(r).not.toContain("/admin");
   });
 
-  it("PL-09 Phase 5: Horários nav is reception-only (owner/admin manage schedules in Equipa; therapist has no schedule:read)", () => {
+  it("PL-09 Phase 5 + ITEM 3: Horários nav is STILL reception-only, even though a therapist now holds schedule:read", () => {
     const seesHorarios = (["owner", "admin", "therapist", "reception"] as const).filter(
       (role) => hrefs(role).includes("/horarios"),
     );

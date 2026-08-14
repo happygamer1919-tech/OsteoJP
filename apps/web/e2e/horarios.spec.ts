@@ -36,8 +36,44 @@ test.describe("Horários — reception schedule surface", () => {
 test.describe("Horários — gate", () => {
   test.use({ storageState: STORAGE.therapist });
 
-  test("a therapist (no schedule:read) is redirected from /horarios", async ({ page }) => {
+  /**
+   * ITEM 3 (2026-08-14) CHANGED THIS, AND THE ASSERTION GOT STRONGER RATHER THAN
+   * WEAKER.
+   *
+   * This test used to assert a therapist is REDIRECTED, because the role held no
+   * schedule:read. It now holds it, so it may block its OWN schedule, and the
+   * redirect is gone. The property worth pinning was never "the door is shut" -
+   * it was "a therapist cannot reach a colleague's schedule", and a redirect was
+   * only one way of achieving that.
+   *
+   * So the page is asserted to be SELF-SCOPED: the therapist's own name is
+   * present, and no colleague's is. That is the same guarantee, checked where it
+   * actually matters, and it keeps holding if the route is ever linked from the
+   * navigation (see LE-therapist-horarios-nav, deliberately not done here).
+   */
+  test("ITEM 3: a therapist reaching /horarios sees ONLY their own schedule", async ({ page }) => {
     await page.goto("/horarios");
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 12_000 });
+    await page.waitForLoadState("domcontentloaded");
+    // Not redirected any more.
+    await expect(page).toHaveURL(/\/horarios/);
+    // The page renders rather than erroring - the STAFF-05 symptom must not
+    // reappear for the role that just gained access to this surface.
+    await expect(page.locator("body")).not.toContainText(
+      /Application error|client-side exception/i,
+    );
+    // NEGATIVE ARM: EXACTLY ONE schedule card, which is their own.
+    //
+    // SCOPED TO `main` AND COUNTED, not name-matched. The first version of this
+    // assertion filtered every <h2> on the page for the word "terapeuta" and
+    // failed on "Menu" (the app shell's own heading, outside main) and on "E2E
+    // Therapist" (the seeded therapist's ENGLISH display name - their own card,
+    // which is the correct result). It reported a leak that was not there.
+    // Counting cards inside main asserts the actual property and does not depend
+    // on what anybody is called.
+    const scheduleOwners = await page.locator("main h2").allInnerTexts();
+    expect(
+      scheduleOwners,
+      `a therapist must see exactly their own schedule card, found: ${scheduleOwners.join(", ")}`,
+    ).toHaveLength(1);
   });
 });

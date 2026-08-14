@@ -40,17 +40,23 @@ export async function listAvailabilityTemplates(
   return runScoped(actor, async (tx) => {
     const conds = [eq(availabilityTemplates.isActive, true)];
     // PL-09 Phase 5: reception/admin see only their own location's therapists'
-    // schedules; owner/therapist/unassigned unrestricted (scope === null).
-    if (scope) {
+    // schedules; owner and unassigned staff are unrestricted.
+    if (scope.kind === "locations") {
       conds.push(
         inArray(
           availabilityTemplates.userId,
           tx
             .select({ id: staffLocations.userId })
             .from(staffLocations)
-            .where(inArray(staffLocations.locationId, scope)),
+            .where(inArray(staffLocations.locationId, scope.locationIds)),
         ),
       );
+    }
+    // ITEM 3: a therapist reads their OWN schedule only. Without this the
+    // Horarios surface would list the whole clinic's working hours to them the
+    // moment they were granted schedule:read.
+    if (scope.kind === "self") {
+      conds.push(eq(availabilityTemplates.userId, scope.userId));
     }
     const rows = await tx
       .select({
