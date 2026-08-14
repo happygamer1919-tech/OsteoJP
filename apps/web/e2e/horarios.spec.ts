@@ -61,13 +61,19 @@ test.describe("Horários — gate", () => {
     await expect(page.locator("body")).not.toContainText(
       /Application error|client-side exception/i,
     );
-    // NEGATIVE ARM: no OTHER therapist's schedule is on this page. The seeded
-    // e2e therapist is the only name that may appear as a schedule owner.
-    const headings = await page.locator("h2").allInnerTexts();
-    const others = headings.filter((h) => h.trim() && !/terapeuta/i.test(h));
+    // NEGATIVE ARM: EXACTLY ONE schedule card, which is their own.
+    //
+    // SCOPED TO `main` AND COUNTED, not name-matched. The first version of this
+    // assertion filtered every <h2> on the page for the word "terapeuta" and
+    // failed on "Menu" (the app shell's own heading, outside main) and on "E2E
+    // Therapist" (the seeded therapist's ENGLISH display name - their own card,
+    // which is the correct result). It reported a leak that was not there.
+    // Counting cards inside main asserts the actual property and does not depend
+    // on what anybody is called.
+    const scheduleOwners = await page.locator("main h2").allInnerTexts();
     expect(
-      others,
-      `a therapist must not see another therapist's schedule, found: ${others.join(", ")}`,
-    ).toEqual([]);
+      scheduleOwners,
+      `a therapist must see exactly their own schedule card, found: ${scheduleOwners.join(", ")}`,
+    ).toHaveLength(1);
   });
 });
