@@ -55,7 +55,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**143 cards. 74 shipped, 69 open. Launch readiness 9/9 — every launch gate passes.**
+**146 cards. 75 shipped, 71 open. Launch readiness 9/9 — every launch gate passes.**
 
 > **The clinic team is testing on production.** Defects reported from live use
 > are being fixed as they arrive; they are `STAFF-xx` cards on the board.
@@ -411,7 +411,7 @@ shipped test sink — and it is the top item in the build queue.
 
 ## 4. Every open card, by bucket
 
-**69 open of 143**, as of 2026-08-14 after the post-presentation bucket.
+**71 open of 146**, as of 2026-08-14 after the post-presentation bucket.
 
 ### Incidents — 1
 **`SEC-otp-linkage-exact-phone-match` (high, halted, launch-blocking)** — most
