@@ -15,7 +15,7 @@ import {
 import type { AppointmentTone } from "@osteojp/ui";
 import { CalendarClock, FileText, MapPin, Repeat, Search, TriangleAlert, User } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import type { Role } from "@osteojp/auth";
 
 import { s } from "@/lib/i18n";
@@ -180,11 +180,14 @@ function ServiceChip({ name, cancelled }: { name: string | null; cancelled: bool
 function AppointmentRow({
   appt,
   conflicting,
+  highlighted = false,
   onOpen,
   onOpenNotes,
 }: {
   appt: AgendaAppointment;
   conflicting: boolean;
+  /** ITEM 4: this row is the target of a ?appointment= deep link. */
+  highlighted?: boolean;
   /** W12-00: opens this marcacao in the shared AppointmentDrawer (edit mode). */
   onOpen: (appt: AgendaAppointment) => void;
   /** PL-17: opens this marcacao's note thread in a popup. */
@@ -197,8 +200,23 @@ function AppointmentRow({
   const struck = estadoStrikesName(estado);
   const recurring = !!(appt.recurrenceRule || appt.recurrenceParentId);
   return (
+    // ITEM 4: the scroll anchor sits on a plain wrapper, NOT on GlassCard.
+    // GlassCard destructures a fixed prop list (title, className, href, ...) and
+    // silently drops anything else, so `data-appointment-id` on it would reach
+    // neither the DOM nor the querySelector that looks for it. Caught by the
+    // render test rather than in production.
+    <div data-appointment-id={appt.id}>
     <GlassCard
-      className={conflicting ? "ring-1 ring-warning" : undefined}
+      // A deep-linked row is ringed so it is findable after the drawer is
+      // closed. Conflict wins the ring when both apply: it is a warning about
+      // the data, where this is only navigation.
+      className={
+        conflicting
+          ? "ring-1 ring-warning"
+          : highlighted
+            ? "ring-2 ring-v2-green-500"
+            : undefined
+      }
     >
       {/* ================================================================= */}
       {/* STAFF-04 - THE PATIENT NAME IS NEVER TRUNCATED.                    */}
@@ -342,6 +360,7 @@ function AppointmentRow({
         </div>
       </div>
     </GlassCard>
+    </div>
   );
 }
 
@@ -353,6 +372,8 @@ export function MarcacoesView({
   serviceFilterOptions,
   appointments,
   canHardDelete,
+  focusAppointmentId = null,
+  deepLinkMissing = false,
 }: {
   filters: MarcacoesFilters;
   lockTherapist: boolean;
@@ -369,6 +390,15 @@ export function MarcacoesView({
    *  agenda passes it (`can(role, "settings:manage")`). The reused drawer, not
    *  this view, enforces every action server-side. */
   canHardDelete: boolean;
+  /** ITEM 4: the appointment a "Ver marcação" notification linked to. Already
+   *  resolved and scope-checked on the server, so it is either a real, visible
+   *  appointment id or null. */
+  focusAppointmentId?: string | null;
+  /** ITEM 4: a ?appointment= was followed and resolved to NOTHING - malformed,
+   *  deleted, or outside this viewer's scope. Rendered as a plain line rather
+   *  than swallowed, so a stale notification says so instead of dumping the
+   *  reader on an ordinary list with no explanation. */
+  deepLinkMissing?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -377,7 +407,21 @@ export function MarcacoesView({
   // (agenda-view.tsx `setModal`). The list only ever opens edit mode; create/lote
   // stay on the agenda. Reuses the drawer's existing wiring with zero logic
   // duplication.
-  const [modal, setModal] = useState<ModalState | null>(null);
+  // ITEM 4: a deep link opens the drawer on the FIRST render, via the initial
+  // state rather than an effect.
+  //
+  // AN EFFECT WAS THE OBVIOUS SHAPE AND THE WRONG ONE. It needed a second piece
+  // of state to latch "already handled", or closing the drawer would re-open it
+  // on the next render because the prop is still set - the row would have been
+  // impossible to dismiss. It also called setState synchronously inside an
+  // effect, which the lint rule rejects for exactly the cascading-render reason.
+  // Deriving the initial value needs no latch and no effect: state initialisers
+  // run once, and closing sets null, which stays null.
+  const [modal, setModal] = useState<ModalState | null>(() => {
+    if (!focusAppointmentId) return null;
+    const appt = appointments.find((a) => a.id === focusAppointmentId);
+    return appt ? { mode: "edit", appt } : null;
+  });
   // PL-17: the marcacao whose note thread is open in the popup, or null.
   const [notesFor, setNotesFor] = useState<AgendaAppointment | null>(null);
 
@@ -398,6 +442,23 @@ export function MarcacoesView({
     if (merged.service) params.set("service", merged.service);
     startTransition(() => router.push(`/marcacoes?${params.toString()}`));
   }
+
+  // ITEM 4 - scroll the linked row into view. THE DOM IS THE EXTERNAL SYSTEM
+  // here, which is what an effect is actually for; it sets no state.
+  //
+  // THE ROW MAY BE ABSENT EVEN THOUGH THE APPOINTMENT RESOLVED: the presentation
+  // filters (status, serviço, name search) run on the client over the fetched
+  // window, so a link followed while a filter is active points at a row this
+  // render does not contain. The drawer still opens - that is what the
+  // notification promised and it does not depend on the row being on screen -
+  // and only the scroll is skipped. Hence the optional call rather than a guard
+  // that would also suppress the drawer.
+  useEffect(() => {
+    if (!focusAppointmentId) return;
+    document
+      .querySelector(`[data-appointment-id="${focusAppointmentId}"]`)
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [focusAppointmentId]);
 
   // Conflicts are computed over the full fetched window (before the
   // presentation filters), exactly as the agenda runs them.
@@ -435,6 +496,19 @@ export function MarcacoesView({
     // toast would unmount the instant it appears.
     <ToastProvider regionLabel={s["toast.regionLabel"]}>
     <main className="space-y-6">
+      {/* ITEM 4: a followed "Ver marcação" link that resolved to nothing SAYS SO.
+          Silence here would be the fail-blank shape: reception clicks a
+          notification, lands on an ordinary week, and has no way to tell whether
+          the appointment is gone or they simply cannot see it. */}
+      {deepLinkMissing && (
+        <p
+          role="status"
+          data-testid="marcacoes-deeplink-missing"
+          className="rounded-v2 border border-v2-border bg-v2-surface px-4 py-2 text-sm text-v2-text-primary"
+        >
+          {s["marcacoes.deepLinkMissing"]}
+        </p>
+      )}
       <div className="space-y-1">
         <h1 className="text-2xl text-v2-text-primary">{s["marcacoes.title"]}</h1>
         <p className="text-sm text-v2-text-secondary">{s["marcacoes.subtitle"]}</p>
@@ -592,6 +666,7 @@ export function MarcacoesView({
                     <AppointmentRow
                       key={a.id}
                       appt={a}
+                      highlighted={a.id === focusAppointmentId}
                       conflicting={conflicts.has(a.id)}
                       onOpen={(appt) => setModal({ mode: "edit", appt })}
                       onOpenNotes={(appt) => setNotesFor(appt)}

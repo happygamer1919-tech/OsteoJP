@@ -1230,6 +1230,7 @@
   "agenda.serviceOther": "Other services",
   "marcacoes.title": "Bookings",
   "marcacoes.subtitle": "View your patients' bookings.",
+  "marcacoes.deepLinkMissing": "The appointment from that notification is no longer available. It may have been deleted, or you may not have access to it.",
   "marcacoes.filterDateFrom": "Start date",
   "marcacoes.filterDateTo": "End date",
   "marcacoes.dateTo": "to",
