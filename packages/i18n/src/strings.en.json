@@ -59,6 +59,8 @@
   "schedule.empty": "No therapists at your location.",
   "schedule.saved": "Schedule saved.",
   "schedule.error": "Could not save the changes.",
+  "schedule.unmanagedTitle": "No clinic assigned",
+  "schedule.unmanagedBody": "This therapist is not assigned to any clinic, so their schedule cannot be managed here. Assign a location in Equipa.",
   "header.location": "Location",
   "header.userMenu": "User menu",
   "common.save": "Save",

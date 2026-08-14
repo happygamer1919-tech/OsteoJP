@@ -59,6 +59,8 @@
   "schedule.empty": "Sem terapeutas na sua unidade.",
   "schedule.saved": "Horário guardado.",
   "schedule.error": "Não foi possível guardar as alterações.",
+  "schedule.unmanagedTitle": "Sem clínica atribuída",
+  "schedule.unmanagedBody": "Este terapeuta não está atribuído a nenhuma clínica, por isso o horário não pode ser gerido aqui. Atribua uma localização em Equipa.",
   "header.location": "Localização",
   "header.userMenu": "Menu de utilizador",
   "common.save": "Guardar",

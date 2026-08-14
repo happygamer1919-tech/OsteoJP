@@ -71,6 +71,7 @@ export function StaffManageModal({
   services,
   currentPrimaryId,
   showHours,
+  scheduleManageable = true,
   days,
   locations,
   memberships,
@@ -99,6 +100,12 @@ export function StaffManageModal({
   currentPrimaryId: string;
   /** Non-reception: show the working-hours section (schedule + blocks). */
   showHours: boolean;
+  /** False when the VIEWER may not manage this member's schedule (they are at
+   *  no clinic in the viewer's scope). DISTINCT from `showHours`, which says
+   *  the member HAS no schedule. Collapsing the two would tell an admin a
+   *  therapist has no working hours when the truth is that the admin cannot
+   *  see them from here. Defaults true so the owner path is unchanged. */
+  scheduleManageable?: boolean;
   /** Weekday rows for the schedule editor (Monday-first order). */
   days: ScheduleDay[];
   /** Active tenant locations for the per-day location select + membership picker. */
@@ -506,7 +513,16 @@ export function StaffManageModal({
               </form>
             )}
 
-            {section === "hours" && showHours && (
+            {section === "hours" && showHours && !scheduleManageable && (
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-medium text-v2-text-primary">
+                  {s["schedule.unmanagedTitle"]}
+                </p>
+                <p className="text-sm text-v2-text-secondary">{s["schedule.unmanagedBody"]}</p>
+              </div>
+            )}
+
+            {section === "hours" && showHours && scheduleManageable && (
               <div className="flex flex-col gap-4">
                 <div className="flex items-start justify-between gap-3">
                   <p className="text-xs text-v2-text-secondary">

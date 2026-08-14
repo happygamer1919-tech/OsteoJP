@@ -55,3 +55,61 @@ export async function assertTargetInScheduleScope(
     .limit(1);
   if (!row) throw new AdminError("not_found", "therapist is not at your location");
 }
+
+/**
+ * The same question as `assertTargetInScheduleScope`, asked about MANY targets
+ * and ANSWERED rather than thrown. Returns the subset of `targetUserIds` this
+ * actor may manage.
+ *
+ * WHY THIS EXISTS, and it is a defect fix rather than an optimisation.
+ * A SURFACE THAT LISTS THERAPISTS AND A GATE THAT REFUSES THEM ARE TWO
+ * DIFFERENT PREDICATES, and they disagreed on exactly one case: a therapist
+ * with NO location assignment at all.
+ *
+ *   filterRosterByViewerScope (scheduling/therapist-location-filter.ts) KEEPS
+ *     that therapist, deliberately - "dropping them would silently hide a real
+ *     colleague behind a data-entry gap rather than isolate anything".
+ *   assertTargetInScheduleScope (above) THROWS on that therapist, also
+ *     deliberately - a located actor manages only their own location's staff.
+ *
+ * Both are right on their own. /horarios and Equipa put them in series: render
+ * the roster, then run the assert once per rostered member inside a
+ * `Promise.all`. One unassigned therapist rejected the whole batch, the server
+ * component threw, and reception got a black page reading "Application error:
+ * a client-side exception has occurred". It failed in front of the clinic team.
+ *
+ * A THROW IS THE WRONG SHAPE FOR A LIST. The assert is correct where a single
+ * target is being acted on - a write must refuse. Building a LIST is a
+ * different question: "which of these may I manage" has a per-member answer,
+ * and a page that renders many members must be able to hold that answer per
+ * member instead of losing every member to the first refusal.
+ *
+ * ONE QUERY, NOT N. The callers previously issued one round-trip per therapist.
+ * Reading the membership once also removes the possibility that two members'
+ * answers come from different snapshots.
+ *
+ * THIS DOES NOT WEAKEN THE GATE. `assertTargetInScheduleScope` is unchanged and
+ * still runs inside every time-off read and write, so a caller that renders a
+ * member it should not have still cannot act on them.
+ */
+export async function manageableTargets(
+  tx: DbTx,
+  targetUserIds: readonly string[],
+  scope: string[] | null,
+): Promise<Set<string>> {
+  const ids = [...new Set(targetUserIds)];
+  // An unscoped actor (owner / therapist / unassigned) manages everyone, and is
+  // never worth a query - the same short-circuit the assert takes.
+  if (!scope) return new Set(ids);
+  if (ids.length === 0 || scope.length === 0) return new Set();
+  const rows = await tx
+    .selectDistinct({ userId: staffLocations.userId })
+    .from(staffLocations)
+    .where(
+      and(
+        inArray(staffLocations.userId, ids),
+        inArray(staffLocations.locationId, scope),
+      ),
+    );
+  return new Set(rows.map((r) => r.userId));
+}
