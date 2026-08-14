@@ -7,11 +7,7 @@ export type NavItem = { href: string; label: string };
 // each link. Dashboard / Agenda / Patients are open to every authenticated
 // role; Clinical and Admin are capability-gated. Pure + role-only so it is
 // unit-testable (see nav-items.test.ts).
-const ALL: (NavItem & {
-  capability?: Capability;
-  hideIfCapability?: Capability;
-  hideForRoles?: readonly Role[];
-})[] = [
+const ALL: (NavItem & { capability?: Capability; hideIfCapability?: Capability })[] = [
   { href: "/dashboard", label: s["nav.dashboard"] },
   { href: "/agenda", label: s["nav.agenda"] },
   { href: "/patients", label: s["nav.patients"] },
@@ -30,22 +26,23 @@ const ALL: (NavItem & {
   // inside Equipa (/admin/staff), so hide this entry for them (settings:read) to
   // avoid a duplicate surface. The route re-enforces schedule:read server-side.
   //
-  // ITEM 3 (2026-08-14): the therapist role gained schedule:read so it can see
-  // and remove its OWN time-off blocks, which would have made this entry appear
-  // in their sidebar as a side effect. IT IS HELD BACK DELIBERATELY. The owner
-  // asked for the "Bloquear horário" affordance on the AGENDA, not for a new
-  // page in a therapist's navigation, and adding a sidebar entry nobody asked
-  // for is a product decision rather than a consequence. The page itself is
-  // already self-scoped for a therapist (listAvailabilityTemplates filters to
-  // scope.userId), so admitting them later is a one-line change to this array
-  // and needs no further work. Carded as LE-therapist-horarios-nav.
-  {
-    href: "/horarios",
-    label: s["nav.schedule"],
-    capability: "schedule:read",
-    hideIfCapability: "settings:read",
-    hideForRoles: ["therapist"],
-  },
+  // RULING A (Ivan, 2026-08-14): THERAPISTS GET THIS ENTRY. They view and
+  // manage their OWN schedule only.
+  //
+  // The entry was held back when ITEM 3 granted schedule:read, because a
+  // sidebar page nobody had asked for is a product decision rather than a
+  // consequence of a capability. The owner has now asked. It is a one-line
+  // deletion because the page was built self-scoped from the start:
+  // listAvailabilityTemplates filters to scope.userId, and horarios/page.tsx
+  // narrows the ROSTER to the actor when the schedule scope is `self`.
+  //
+  // THAT SECOND NARROWING IS THE ONE THAT MATTERS HERE and it is not
+  // theoretical: without it a therapist saw a card for EVERY colleague (seven
+  // on the seeded database), each wrongly labelled "Sem clínica atribuída".
+  // That leak shipped and was caught by the e2e arm before it reached anyone.
+  // Its regression arms now guard this surface for a role that can actually
+  // reach it - see therapist-self-schedule.test.ts and e2e/horarios.spec.ts.
+  { href: "/horarios", label: s["nav.schedule"], capability: "schedule:read", hideIfCapability: "settings:read" },
   // Faturação (W10-04 isolation, owner ruling 2026-07-21): owner/admin/reception
   // only - gated on invoices:issue (therapist holds only invoices:read, so it is
   // hidden for the therapist role, matching the /invoicing route guard).
@@ -63,7 +60,6 @@ export function navItemsForRole(role: Role): NavItem[] {
   return ALL.filter(
     (i) =>
       (!i.capability || can(role, i.capability)) &&
-      (!i.hideIfCapability || !can(role, i.hideIfCapability)) &&
-      !i.hideForRoles?.includes(role),
+      (!i.hideIfCapability || !can(role, i.hideIfCapability)),
   ).map(({ href, label }) => ({ href, label }));
 }
