@@ -1786,3 +1786,70 @@ export const patientTermsAcceptances = pgTable(
     ),
   ],
 );
+
+/**
+ * ITEM 6 (migration 0063) — booking requests from people who are NOT existing
+ * patients: no account, no OTP login.
+ *
+ * NOTHING ANONYMOUS REACHES A CLINICAL TABLE. The alternative was a provisional
+ * `patients` row (appointments.patient_id and staff_notifications.patient_id are
+ * both NOT NULL, so the existing pedido path cannot represent a person who does
+ * not exist yet). That would write a clinical record from an anonymous HTTP
+ * request AND auto-link under another name, which R-GUEST forbids. A request
+ * lives here until reception converts it, with a human already in the loop.
+ *
+ * WRITTEN BY THE SERVICE ROLE, NOT BY `anon`. There is deliberately NO anon RLS
+ * policy on this table in either direction — see the migration header. Rule 3
+ * therefore binds the caller: a service-role insert MUST set tenantId
+ * explicitly, and it is notNull so forgetting fails loudly.
+ */
+export const guestBookingRequests = pgTable(
+  "guest_booking_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    /** R-GUEST-2: the minimum. No NIF (PL-20), nothing clinical. */
+    fullName: text("full_name").notNull(),
+    phone: text("phone").notNull(),
+    /** DERIVED, GENERATED ALWAYS from `phone`, using 0062's expression VERBATIM.
+     *  It is what reception's possible-existing-patient flag matches on against
+     *  patients.phone_e164; if the two normalised differently the flag would
+     *  silently miss real matches, and a miss looks exactly like "no match".
+     *  Never written by application code — there is no write path to audit. */
+    phoneE164: varchar("phone_e164", { length: 16 }),
+    serviceId: uuid("service_id")
+      .notNull()
+      .references(() => services.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    /** Null = "any available therapist", which is a real answer from the flow's
+     *  therapist step rather than a missing one. */
+    practitionerId: uuid("practitioner_id").references(() => users.id),
+    requestedStartsAt: timestamp("requested_starts_at", { withTimezone: true }).notNull(),
+    requestedEndsAt: timestamp("requested_ends_at", { withTimezone: true }).notNull(),
+    /** R-GUEST-1: every guest booking is a REQUEST. No path creates it
+     *  confirmed. Pinned by a CHECK in 0063 to pending|confirmed|declined. */
+    status: text("status").notNull().default("pending"),
+    /** Set on conversion. No reference(): recorded as DATA, matching
+     *  staff_notifications.appointment_id — a cascade must not erase the trail
+     *  of what a guest asked for, and SET NULL must not silently rewrite it. */
+    convertedAppointmentId: uuid("converted_appointment_id"),
+    convertedPatientId: uuid("converted_patient_id"),
+    /** HASHED, never the address. An IP is personal data under RGPD and the
+     *  clinic has no purpose for the raw value; this exists for abuse
+     *  forensics only. */
+    sourceIpHash: text("source_ip_hash"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+    handledBy: uuid("handled_by").references(() => users.id),
+  },
+  (t) => [
+    /** Reception's queue: pending first, newest first, per tenant. */
+    index("guest_booking_requests_tenant_status_idx").on(t.tenantId, t.status, t.createdAt.desc()),
+    /** The duplicate flag's lookup and the per-phone rate-limit read. */
+    index("guest_booking_requests_tenant_phone_idx").on(t.tenantId, t.phoneE164),
+  ],
+);
