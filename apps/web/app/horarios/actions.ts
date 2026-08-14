@@ -9,6 +9,10 @@ import {
   updateAvailabilityTemplate,
 } from "@/lib/admin/availability";
 import { reconcileWeek } from "@/lib/admin/schedule-reconcile";
+import { applyAlternatingWeeks } from "@/lib/admin/alternating-schedule";
+// formatCreatedAt is the existing pt-PT Lisbon "dd/mm/yyyy HH:mm" formatter;
+// reused rather than adding a second one that could format differently.
+import { formatCreatedAt } from "@/lib/scheduling/time";
 import {
   createTimeOffBlock,
   createTimeOffBlockBatch,
@@ -114,4 +118,50 @@ export async function saveScheduleAction(fd: FormData): Promise<void> {
       archive: (id) => archiveAvailabilityTemplate(actor, id),
     }),
   );
+}
+
+/**
+ * ITEM 5 - apply an alternating-week pattern.
+ *
+ * RETURNS A RESULT RATHER THAN REDIRECTING, unlike saveScheduleAction above.
+ * The affected-appointments list is the whole point of the response: PL-11 makes
+ * this advisory, so the save SUCCEEDS and the caller has to be able to show what
+ * it ran over. A redirect would throw that list away at exactly the moment
+ * somebody needs to act on it.
+ */
+export async function applyAlternatingWeeksAction(input: {
+  userId: string;
+  weekdays: number[];
+  startDate: string;
+  endDate: string;
+  locationAId: string;
+  locationBId: string;
+  startTime: string;
+  endTime: string;
+}): Promise<{ ok: boolean; error?: string; affected?: { id: string; label: string }[] }> {
+  const actor = await requireRequestContext();
+  try {
+    const res = await applyAlternatingWeeks(actor, input.userId, {
+      weekdays: input.weekdays,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      locationAId: input.locationAId,
+      locationBId: input.locationBId,
+      startTime: input.startTime,
+      endTime: input.endTime,
+    });
+    revalidatePath("/horarios");
+    revalidatePath("/agenda");
+    return {
+      ok: true,
+      affected: res.affected.map((a) => ({
+        id: a.id,
+        // Formatted here, on the server, where the Lisbon helpers already live.
+        label: `${formatCreatedAt(a.startsAt)} · ${a.patientName}`,
+      })),
+    };
+  } catch (e) {
+    // The guard codes reach the caller as a code, never as an internal message.
+    return { ok: false, error: isAdminError(e) ? e.code : "generic" };
+  }
 }

@@ -14,6 +14,7 @@ import {
 } from "@/app/admin/working-hours/TherapistBlocks";
 import type { ScheduleDay } from "@/app/admin/staff/StaffManageModal";
 import { WeekScheduleEditor } from "./WeekScheduleEditor";
+import { AlternatingWeeksPanel } from "./AlternatingWeeksPanel";
 import {
   createTimeOffBlockAction,
   deleteTimeOffBlockAction,
@@ -199,13 +200,23 @@ export default async function HorariosPage({
             <GlassPanel key={t.id} className="flex flex-col gap-4 p-6">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
-                <TherapistBlocks
-                  therapistId={t.id}
-                  therapistName={t.label}
-                  blocks={timeOff.blocks}
-                  labels={blockLabels}
-                  actions={blockActions}
-                />
+                <div className="flex items-center gap-2">
+                  {/* ITEM 5: sits beside Bloquear horario because both are
+                      "change this therapist's availability", and reception
+                      looks for them in the same place. */}
+                  <AlternatingWeeksPanel
+                    therapistId={t.id}
+                    therapistName={t.label}
+                    locations={locations}
+                  />
+                  <TherapistBlocks
+                    therapistId={t.id}
+                    therapistName={t.label}
+                    blocks={timeOff.blocks}
+                    labels={blockLabels}
+                    actions={blockActions}
+                  />
+                </div>
               </div>
               <WeekScheduleEditor userId={t.id} days={buildDays(t.id)} locations={locations} />
             </GlassPanel>
