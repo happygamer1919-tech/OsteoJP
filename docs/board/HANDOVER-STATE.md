@@ -55,12 +55,14 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**139 cards. 72 shipped, 67 open. Launch readiness 9/9 — every launch gate passes.**
+**143 cards. 74 shipped, 69 open. Launch readiness 9/9 — every launch gate passes.**
 
 > **The clinic team is testing on production.** Defects reported from live use
 > are being fixed as they arrive; they are `STAFF-xx` cards on the board.
 >
-> **A crash reported on 2026-08-14 is fixed.** Opening **Horários** as a
+> **Three things reported after the presentation are fixed, all on 2026-08-14.**
+>
+> **1. Horários crashed for reception.** Opening **Horários** as a
 > receptionist assigned to a clinic showed a black page reading "Application
 > error". It needed two things at once, which is why it was never seen before:
 > the person looking had to be **assigned to a clinic**, and at least one
@@ -409,7 +411,7 @@ shipped test sink — and it is the top item in the build queue.
 
 ## 4. Every open card, by bucket
 
-**66 open of 137**, as of 2026-08-13 after the STAFF bucket closed.
+**69 open of 143**, as of 2026-08-14 after the post-presentation bucket.
 
 ### Incidents — 1
 **`SEC-otp-linkage-exact-phone-match` (high, halted, launch-blocking)** — most
@@ -462,6 +464,8 @@ that cost PG8 four runs. · `ACC-preselection-spec-flaky` (medium) — a flaky p
 inside the very run that closed PG9, reported rather than left in the log.
 
 ### Loose ends — 27
+
+*(Two policy questions were added on 2026-08-14 and sit in "Blocked on people", not here: whether an unassigned therapist should appear on reception's Horários at all, and whether a therapist should get a Horários entry in their own sidebar. Neither blocks anything; both have a recommended default already shipped.)*
 Includes `LE-inc08-survivor-still-confirmed` **(high)** — now resolved in the
 production diary, all four test appointments cancelled —
 `LE-prod-apply-worktree-loose-scripts` **(high)**, and
