@@ -29,6 +29,7 @@ const BLOCK_WEEKDAYS = [
 export function BlockTimeDialog({
   therapists,
   defaultTherapistId,
+  lockTherapist = false,
   slot,
   onClose,
   onDone,
@@ -36,6 +37,15 @@ export function BlockTimeDialog({
   therapists: Option[];
   /** Preselect this therapist (e.g. the agenda's single-therapist filter). */
   defaultTherapistId?: string | null;
+  /** ITEM 3: a THERAPIST blocks only their own schedule, so the selector is
+   *  pinned to `defaultTherapistId` and rendered as a label rather than a
+   *  control. THE LOCK IS A COURTESY, NOT THE ENFORCEMENT - the server refuses
+   *  a block whose target is not the acting therapist
+   *  (assertTargetInScheduleScope, scope kind "self"), which is what actually
+   *  holds when the request does not come from this form. INC-08 is the
+   *  precedent: the Estado Select offered every status with no server check and
+   *  reception reached an illegal transition in one click. */
+  lockTherapist?: boolean;
   /** Prefill date/time when opened from an empty slot. */
   slot?: { date: string; time: string } | null;
   onClose: () => void;
@@ -101,12 +111,21 @@ export function BlockTimeDialog({
     >
       <div className="flex flex-col gap-3">
         <Field label={s["appointment.therapist"]} required>
-          <Select value={userId} onChange={(e) => setUserId(e.target.value)} data-testid="block-therapist">
-            <option value="">{s["appointment.selectTherapist"]}</option>
-            {therapists.map((o) => (
-              <option key={o.id} value={o.id}>{o.label}</option>
-            ))}
-          </Select>
+          {lockTherapist ? (
+            // Rendered as TEXT, not a disabled <select>. A disabled control
+            // still reads as "a choice you cannot make right now"; for a
+            // therapist there is no choice to make at all.
+            <p className="text-sm text-v2-text-primary" data-testid="block-therapist-locked">
+              {therapists.find((o) => o.id === userId)?.label ?? ""}
+            </p>
+          ) : (
+            <Select value={userId} onChange={(e) => setUserId(e.target.value)} data-testid="block-therapist">
+              <option value="">{s["appointment.selectTherapist"]}</option>
+              {therapists.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </Select>
+          )}
         </Field>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">{s["appointment.date"]}</span>

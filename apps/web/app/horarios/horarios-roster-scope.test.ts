@@ -38,6 +38,7 @@ describe("ITEM 1 - the roster and the schedule-manage gate must agree per member
     ["ther-cb", [CB]],
   ]);
   const roster = [{ id: "ther-lv" }, { id: "ther-cb" }, { id: "ther-unassigned" }];
+  const LOC_LV = { kind: "locations" as const, locationIds: [LV] };
 
   /** The assert's DB shape: one row iff the single target shares a location. */
   const assertTx = (targetAssignments: readonly string[], scope: readonly string[]) =>
@@ -73,7 +74,7 @@ describe("ITEM 1 - the roster and the schedule-manage gate must agree per member
     const manageable = await manageableTargets(
       membershipTx([LV]),
       visible.map((t) => t.id),
-      [LV],
+      LOC_LV,
     );
 
     // Every rostered member is decided, one way or the other. A member missing
@@ -89,7 +90,7 @@ describe("ITEM 1 - the roster and the schedule-manage gate must agree per member
     await expect(
       Promise.all(
         visible.map((t) =>
-          assertTargetInScheduleScope(assertTx(assignments.get(t.id) ?? [], [LV]), t.id, [LV]),
+          assertTargetInScheduleScope(assertTx(assignments.get(t.id) ?? [], [LV]), t.id, LOC_LV),
         ),
       ),
     ).rejects.toSatisfy((e: unknown) => isAdminError(e) && e.code === "not_found");
@@ -100,7 +101,7 @@ describe("ITEM 1 - the roster and the schedule-manage gate must agree per member
     // assert is unchanged and still throws, so a page that renders a member it
     // may not manage still cannot act on them.
     await expect(
-      assertTargetInScheduleScope(assertTx([], [LV]), "ther-unassigned", [LV]),
+      assertTargetInScheduleScope(assertTx([], [LV]), "ther-unassigned", LOC_LV),
     ).rejects.toSatisfy((e: unknown) => isAdminError(e) && e.code === "not_found");
   });
 
@@ -118,7 +119,9 @@ describe("ITEM 1 - the roster and the schedule-manage gate must agree per member
         return { from: () => ({ where: async () => [] }) };
       },
     } as never;
-    const manageable = await manageableTargets(spyTx, ["ther-lv", "ther-cb", "ther-unassigned"], null);
+    const manageable = await manageableTargets(spyTx, ["ther-lv", "ther-cb", "ther-unassigned"], {
+      kind: "all",
+    });
     expect(manageable.size).toBe(3);
     expect(queried).toBe(false);
   });
@@ -131,7 +134,7 @@ describe("ITEM 1 - the roster and the schedule-manage gate must agree per member
         return { from: () => ({ where: async () => [] }) };
       },
     } as never;
-    expect((await manageableTargets(spyTx, [], [LV])).size).toBe(0);
+    expect((await manageableTargets(spyTx, [], LOC_LV)).size).toBe(0);
     expect(queried).toBe(false);
   });
 });

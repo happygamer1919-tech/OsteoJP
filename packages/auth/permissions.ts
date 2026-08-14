@@ -153,6 +153,22 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     "services:read",
     "locations:read",
     "invoices:read",
+    // ITEM 3 (owner ruling 2026-08-14): a therapist blocks their OWN schedule.
+    //
+    // THE CAPABILITY IS NOT THE RESTRICTION AND MUST NOT BE READ AS ONE. Like
+    // every other row in this matrix the grant is target-blind: it says a
+    // therapist may reach the scheduling surfaces, not whose schedule they may
+    // touch. The self-only rule is a SCOPE, resolved in
+    // lib/admin/schedule-scope.ts as `{kind:"self"}` and asserted on every
+    // availability and time-off write.
+    //
+    // WHY THAT SEPARATION IS LOAD-BEARING HERE: before this grant, a therapist
+    // resolved to an UNRESTRICTED schedule scope, sharing the owner's `null`.
+    // Adding the capability without changing the scope would have handed every
+    // therapist the whole clinic's schedule. The scope change shipped in the
+    // same commit for that reason.
+    "schedule:read",
+    "schedule:manage",
   ]),
 
   // Reception: front-desk scheduling + billing-issue. NO clinical_records at

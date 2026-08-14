@@ -12,16 +12,18 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
 vi.mock("./audit", () => ({ writeAudit: vi.fn() }));
 vi.mock("./schedule-scope", () => ({
-  resolveScheduleScope: vi.fn(async () => null),
+  resolveScheduleScope: vi.fn(async () => ({ kind: "all" })),
   assertTargetInScheduleScope: vi.fn(async () => undefined),
 }));
 
 import { runScoped } from "@/lib/auth/context";
+import { assertTargetInScheduleScope } from "./schedule-scope";
 import { writeAudit } from "./audit";
 import { createTimeOffBlockBatch } from "./time-off";
 import type { RequestContext } from "@/lib/auth/context";
 
 const mockRunScoped = vi.mocked(runScoped);
+const mockAssertTarget = vi.mocked(assertTargetInScheduleScope);
 const admin = { tenantId: "tenant-A", role: "admin", userId: "admin-1" } as RequestContext;
 
 type Inserted = { startsAt: Date; endsAt: Date; userId: string; note: string | null };
@@ -171,9 +173,43 @@ describe("createTimeOffBlockBatch", () => {
     expect(inserted).toHaveLength(0);
   });
 
-  it("still enforces schedule:manage", async () => {
+  /**
+   * ITEM 3 CHANGED WHAT PROTECTS THIS PATH, so this test changed with it.
+   *
+   * IT USED TO ASSERT that a therapist is refused by `assertCan(schedule:manage)`
+   * before the transaction opens. That is no longer true and cannot be made true
+   * by any role: owner, admin, reception AND therapist all hold schedule:manage
+   * now, so the CAPABILITY gate is vacuous at the role level. Leaving the old
+   * assertion would have meant deleting a real protection and keeping a test
+   * that no longer describes one.
+   *
+   * WHAT ACTUALLY PROTECTS THE BATCH WRITE IS THE TARGET ASSERT, and what this
+   * file can prove about it is the WIRING: that the batch path calls it, with
+   * the requested target, before inserting anything. The RULE the assert applies
+   * (a therapist may act on themselves and nobody else) is proven against the
+   * real implementation in ./therapist-self-schedule.test.ts.
+   */
+  it("ITEM 3: the batch write goes through the target assert, and a refusal inserts nothing", async () => {
+    const { tx, inserted } = makeTx();
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+    mockAssertTarget.mockRejectedValueOnce(new Error("out of scope"));
+
     const therapist = { tenantId: "tenant-A", role: "therapist", userId: "t-1" } as RequestContext;
+    // base.userId is "ther-1" - a COLLEAGUE, not this therapist.
     await expect(createTimeOffBlockBatch(therapist, base)).rejects.toThrow();
-    expect(mockRunScoped).not.toHaveBeenCalled();
+    expect(mockAssertTarget).toHaveBeenCalledWith(expect.anything(), "ther-1", expect.anything());
+    // NEGATIVE ARM: the refusal must land BEFORE any row is written. A gate that
+    // throws after four inserts is not a gate.
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("NEGATIVE ARM: a therapist blocking their OWN schedule is not refused by this path", async () => {
+    const { tx, inserted } = makeTx();
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+    // The assert resolves, as it does for a self-target.
+    const therapist = { tenantId: "tenant-A", role: "therapist", userId: "t-1" } as RequestContext;
+    await expect(createTimeOffBlockBatch(therapist, { ...base, userId: "t-1" })).resolves.toBeTruthy();
+    expect(inserted.length).toBeGreaterThan(0);
+    expect(inserted.every((r) => r.userId === "t-1")).toBe(true);
   });
 });

@@ -18,6 +18,12 @@ export type AdminErrorCode =
   | "has_activity" // staff delete refused: therapist has appointments/records/audit (W4-01)
   | "has_clinical_records" // patient hard-delete refused: clinical records reference the patient (W5-08)
   | "not_found"
+  // ITEM 3: the actor may not act on THIS target, and saying so discloses
+  // nothing. Deliberately distinct from `not_found`, which exists to keep a
+  // located receptionist from learning another clinic's roster. A therapist
+  // already knows their colleagues exist, so concealment would buy nothing and
+  // cost them a comprehensible message.
+  | "forbidden"
   | "invalid";
 
 export class AdminError extends Error {

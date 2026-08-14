@@ -137,9 +137,18 @@ describe("matrix lock — granted capabilities (escalation guard)", () => {
     expect(can("reception", "schedule:manage")).toBe(true);
     expect(can("reception", "settings:read")).toBe(false);
     expect(can("reception", "settings:manage")).toBe(false);
-    // owner + admin also manage schedules; therapist does not.
+    // owner + admin also manage schedules.
     expect(can("owner", "schedule:manage")).toBe(true);
     expect(can("admin", "schedule:manage")).toBe(true);
-    expect(can("therapist", "schedule:manage")).toBe(false);
+    // ITEM 3 (2026-08-14): the therapist role now manages schedules too, but
+    // ONLY its own - the restriction is a SCOPE, not a capability, and lives in
+    // lib/admin/schedule-scope.ts (`{kind:"self"}`) with its own suite in
+    // lib/admin/therapist-self-schedule.test.ts. This line used to read
+    // `toBe(false)`; it is changed on the owner's ruling, not to make a test
+    // pass. What matters HERE is that the grant carried nothing else with it:
+    expect(can("therapist", "schedule:manage")).toBe(true);
+    expect(can("therapist", "settings:read")).toBe(false);
+    expect(can("therapist", "settings:manage")).toBe(false);
+    expect(can("therapist", "users:manage")).toBe(false);
   });
 });
