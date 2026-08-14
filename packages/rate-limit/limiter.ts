@@ -186,6 +186,35 @@ export function tooManyRequests(verdict: RateLimitVerdict): Response {
 export const RULES = {
   /** Identity/session reads on the patient auth surface. */
   authSession: { limit: 30, windowMs: 60_000 },
+
+  /* ================================================================== */
+  /* GUEST BOOKING (ITEM 6) - the project's FIRST unauthenticated write. */
+  /* ================================================================== */
+  //
+  // WHAT IS BEING PROTECTED IS NOT A BILL. Under R9 this flow sends NO SMS, so
+  // unlike the OTP ceilings below there is no spend to exhaust. What an abuser
+  // can burn instead is RECEPTION'S QUEUE and the cleanliness of the patient
+  // list - a hundred junk requests is a morning of somebody's work and a queue
+  // nobody trusts afterwards. That is the thing being rate-limited.
+  //
+  // THREE INDEPENDENT AXES, because each alone is trivially bypassable: rotate
+  // the phone, rotate the source, or spread thinly across both.
+  //
+  // The per-phone limit is TIGHTEST because a real person books once. It sits
+  // at the same 3/hour as otpRequest, which is the closest analogue: a
+  // legitimate human on a phone number, doing a thing once.
+  /** Per phone. A real person books once; three is already generous. */
+  guestBookingPhone: { limit: 3, windowMs: 60 * 60_000 },
+  guestBookingPhoneDay: { limit: 5, windowMs: 24 * 60 * 60_000 },
+  /** Per source. Looser than per-phone: a family or an office share an IP. */
+  guestBookingIp: { limit: 5, windowMs: 60 * 60_000 },
+  guestBookingIpDay: { limit: 20, windowMs: 24 * 60 * 60_000 },
+  /** Tenant-wide backstop, the shape otpGlobal* established: the only limit a
+   *  distributed attacker cannot rotate around. Sized so a busy real clinic
+   *  never approaches it - 30 new-client requests in an hour would itself be
+   *  remarkable news. */
+  guestBookingGlobalHour: { limit: 30, windowMs: 60 * 60_000 },
+  guestBookingGlobalDay: { limit: 100, windowMs: 24 * 60 * 60_000 },
   /** Booking writes. Deliberately tight: each one mutates the agenda. */
   booking: { limit: 10, windowMs: 60_000 },
 
@@ -298,3 +327,9 @@ export const RULES = {
  */
 export const OTP_GLOBAL_HOUR_KEY = "otp-request:global:hour";
 export const OTP_GLOBAL_DAY_KEY = "otp-request:global:day";
+
+/* ITEM 6 - the tenant-wide guest-booking backstop. Constant keys, like the OTP
+   pair above: the counter must not be divisible by anything the caller
+   controls, or it is not a global limit. */
+export const GUEST_BOOKING_GLOBAL_HOUR_KEY = "guest-booking:global:hour";
+export const GUEST_BOOKING_GLOBAL_DAY_KEY = "guest-booking:global:day";
