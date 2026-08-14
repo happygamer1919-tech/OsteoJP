@@ -26,3 +26,9 @@ export { provisionTenant, type ProvisionTenantResult } from "./src/provision";
 // Data migration pipeline foundation (Phase 5) — intermediate types, staging
 // + idempotency ledger, importer, and the unimplemented Fisiozero adapter seam.
 export * from "./src/migration";
+
+// GUEST-04 — what 0063's requested_starts_at/_ends_at pair MEANS under the
+// Option A ruling. Exported from the package rather than from either app
+// because apps/api writes the pair and apps/web reads it, and a copy in each is
+// how the two would come to disagree about what a window says.
+export * from "./src/guest-preferred-window";

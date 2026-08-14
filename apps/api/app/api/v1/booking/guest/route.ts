@@ -1,7 +1,16 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
-import { getDbAdmin, guestBookingRequests } from "@osteojp/db";
+import {
+  calendarDaysBetween,
+  compareCalendarDates,
+  encodeGuestPreferredWindow,
+  getDbAdmin,
+  guestBookingRequests,
+  isGuestPreferredPeriod,
+  lisbonToday,
+  parseCalendarDate,
+} from "@osteojp/db";
 
 import { hashPhone } from "@/lib/auth/otp";
 import { isSmsCapablePT } from "@/lib/auth/otp-sms-capability";
@@ -42,10 +51,53 @@ import {
  * call from the clinic and nothing leaves the building. The response carries no
  * confirmation token and promises no reservation: the slot is NOT held until
  * reception confirms, which is the same rule the pedido queue header states.
+ *
+ * ------------------------------------------------------------------------
+ * OPTION A, RATIFIED 2026-08-14 — THIS ROUTE TAKES A PREFERENCE, NOT A SLOT.
+ * ------------------------------------------------------------------------
+ * The body carries `preferredDate` + `preferredPeriod` (manhã / tarde). It no
+ * longer accepts `startsAt` / `endsAt`, and that removal is the enforcement
+ * point for the ruling rather than a tidy-up:
+ *
+ *   - THE THREE READS THE OLD SHAPE IMPLIED DO NOT EXIST FOR A GUEST. The
+ *     catalog, the therapist roster and the slot list are all authenticated and
+ *     answer 401 without a patient principal. Option A exposes ONE of them - a
+ *     minimal public service list - and deliberately leaves the roster and the
+ *     slot list authenticated, so no anonymous caller can learn who works when
+ *     or which times are free.
+ *   - AN EXACT TIMESTAMP FROM THIS ROUTE WOULD THEREFORE BE UNSOURCED. Nothing
+ *     public could have offered it, so a caller supplying one is either a
+ *     hand-rolled client or a guess - and reception would read it as a time the
+ *     person was shown. Refusing the field is the only way the queue can be
+ *     trusted to mean what it says.
+ *   - `practitionerId` IS NOT ACCEPTED EITHER, for the same reason: with the
+ *     roster unexposed there is no legitimate way for a guest to name a
+ *     therapist, so the column is written NULL and the field is refused rather
+ *     than left as an unsourced input on a public endpoint. The COLUMN stays -
+ *     0063 declared it nullable and reception may set it on convert.
+ *
+ * The (date, period) pair is encoded into 0063's existing timestamptz columns by
+ * `encodeGuestPreferredWindow`, which lives in @osteojp/db beside the schema so
+ * that this writer and reception's reader cannot disagree about what a window
+ * means. NO MIGRATION: 0064 is not authorized and none is needed.
  */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * How far ahead a guest may ask.
+ *
+ * DELIBERATELY NOT `OPEN_SLOTS_HORIZON_DAYS` (14), and the difference is the
+ * point. That constant bounds a list of REAL SLOTS a patient is offered, so it
+ * is a promise about availability. This bounds a PREFERENCE nobody has checked:
+ * its only job is to keep the queue actionable, so a request for a date five
+ * years out is refused and a request for next month is not. A guest with no
+ * account who wants an appointment in six weeks is an ordinary caller, not an
+ * abuser, and refusing them would be the form telling a true customer they are
+ * wrong.
+ */
+export const GUEST_REQUEST_HORIZON_DAYS = 90;
 
 /** The IP, hashed. Never stored in the clear: an address is personal data under
  *  RGPD and the clinic has no purpose for the raw value. Abuse forensics only. */
@@ -62,9 +114,10 @@ type GuestBody = {
   phone?: unknown;
   serviceId?: unknown;
   locationId?: unknown;
-  practitionerId?: unknown;
-  startsAt?: unknown;
-  endsAt?: unknown;
+  /** YYYY-MM-DD, Europe/Lisbon calendar day. */
+  preferredDate?: unknown;
+  /** "manha" | "tarde". */
+  preferredPeriod?: unknown;
 };
 
 const isNonEmptyString = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
@@ -90,16 +143,23 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
-  const { tenantId, fullName, phone: rawPhone, serviceId, locationId, startsAt, endsAt } =
-    body ?? {};
+  const {
+    tenantId,
+    fullName,
+    phone: rawPhone,
+    serviceId,
+    locationId,
+    preferredDate,
+    preferredPeriod,
+  } = body ?? {};
   if (
     !isNonEmptyString(tenantId) ||
     !isNonEmptyString(fullName) ||
     !isNonEmptyString(rawPhone) ||
     !isNonEmptyString(serviceId) ||
     !isNonEmptyString(locationId) ||
-    !isNonEmptyString(startsAt) ||
-    !isNonEmptyString(endsAt)
+    !isNonEmptyString(preferredDate) ||
+    !isGuestPreferredPeriod(preferredPeriod)
   ) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
@@ -109,11 +169,26 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
-  const start = new Date(startsAt);
-  const end = new Date(endsAt);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+  // THE DATE IS A CALENDAR DAY IN LISBON, and the three checks are separate
+  // because they refuse three different things: a string that is not a date, a
+  // date already gone, and a date so far out that the row would sit in the queue
+  // unactionable. `parseCalendarDate` refuses 2026-02-30 rather than rolling it
+  // into March, which `new Date()` would do silently.
+  const date = parseCalendarDate(preferredDate);
+  if (!date) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
+  const today = lisbonToday(new Date());
+  if (
+    compareCalendarDates(date, today) < 0 ||
+    calendarDaysBetween(today, date) > GUEST_REQUEST_HORIZON_DAYS
+  ) {
+    return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  }
+  const { startsAt: start, endsAt: end } = encodeGuestPreferredWindow(
+    date,
+    preferredPeriod,
+  );
 
   // E.164 or nothing, then the SMS-capability gate. Both reuse `invalid_input`
   // rather than naming themselves: they tell the caller about their OWN input
@@ -164,7 +239,13 @@ export async function POST(req: Request): Promise<Response> {
     phone,
     serviceId,
     locationId,
-    practitionerId: isNonEmptyString(body?.practitionerId) ? body.practitionerId : null,
+    // NULL, ALWAYS, AND NOT READ FROM THE BODY. Option A does not expose the
+    // therapist roster to an unauthenticated caller, so there is no public way
+    // to learn a practitioner id and no legitimate caller who has one. Reception
+    // sets it when they convert the request, with a person deciding.
+    practitionerId: null,
+    // The PERIOD's boundaries, not a slot. See the header, and
+    // @osteojp/db `guest-preferred-window` for what the pair means.
     requestedStartsAt: start,
     requestedEndsAt: end,
     sourceIpHash: hashClientIp(req),

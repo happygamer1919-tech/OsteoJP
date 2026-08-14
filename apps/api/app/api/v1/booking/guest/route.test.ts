@@ -30,7 +30,16 @@ const H = vi.hoisted(() => ({
   inserted: [] as Record<string, unknown>[],
 }));
 
-vi.mock("@osteojp/db", () => ({
+// THE REAL MODULE IS SPREAD IN, and only the database seam is replaced. The
+// route now derives its stored window through @osteojp/db's
+// `guest-preferred-window` helpers, and a factory that returned only
+// `getDbAdmin` would make every one of them `undefined` — the route would throw
+// before reaching a single assertion, and the obvious "fix" is to stub the
+// encoder, which would leave the encoding itself untested in the one suite that
+// watches this endpoint. `@osteojp/db` connects lazily (src/client.ts: "no
+// connection is opened until the first query"), so importing it here is free.
+vi.mock("@osteojp/db", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   getDbAdmin: () => ({
     insert: () => ({
       values: async (v: Record<string, unknown>) => {
@@ -51,15 +60,39 @@ vi.mock("@/lib/rate-limit/durable-store", () => ({
   },
 }));
 
-import { POST as guestBooking } from "./route";
+import { POST as guestBooking, GUEST_REQUEST_HORIZON_DAYS } from "./route";
 import {
   GUEST_BOOKING_GLOBAL_DAY_KEY,
   GUEST_BOOKING_GLOBAL_HOUR_KEY,
 } from "@/lib/rate-limit/limiter";
+import {
+  decodeGuestPreferredWindow,
+  formatCalendarDate,
+  lisbonToday,
+  lisbonWallClock,
+} from "@osteojp/db";
 
 const T = "11111111-1111-1111-1111-111111111111";
 const MOBILE = "912345678";
 const LANDLINE = "210000000";
+
+/**
+ * A date N days from today, in Lisbon.
+ *
+ * RELATIVE, NOT A LITERAL, and that is deliberate. The horizon check compares
+ * against the real clock, so a hardcoded `2026-09-07` would pass today and start
+ * failing on a wall-clock date months from now with no commit to blame — the
+ * kind of red that gets skipped rather than read.
+ */
+const dayOffset = (days: number): string => {
+  const t = lisbonToday(new Date());
+  const shifted = new Date(Date.UTC(t.year, t.month - 1, t.day + days));
+  return formatCalendarDate({
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  });
+};
 
 const validBody = (over: Record<string, unknown> = {}) => ({
   tenantId: T,
@@ -67,8 +100,9 @@ const validBody = (over: Record<string, unknown> = {}) => ({
   phone: MOBILE,
   serviceId: "22222222-2222-2222-2222-222222222222",
   locationId: "33333333-3333-3333-3333-333333333333",
-  startsAt: "2026-09-07T09:00:00.000Z",
-  endsAt: "2026-09-07T10:00:00.000Z",
+  // OPTION A: a preferred DATE and a preferred PERIOD. Not a slot — see (d).
+  preferredDate: dayOffset(7),
+  preferredPeriod: "manha",
   ...over,
 });
 
@@ -190,6 +224,123 @@ describe("(c) the limits, and their order", () => {
     // Without this, every "inserted: 0" could be a route that never writes at
     // all and the whole block would pass vacuously.
     await guestBooking(post(validBody()));
+    expect(H.inserted).toHaveLength(1);
+  });
+});
+
+/**
+ * (d) OPTION A — WHAT IS STORED IS A PREFERENCE, NEVER A SLOT.
+ *
+ * Ratified 2026-08-14. The form shows no availability, so nothing public can
+ * have offered the caller a time. Every assertion here exists because the
+ * failure it prevents is INVISIBLE at the screen: reception would read a precise
+ * time, in the ordinary place a precise time appears, for a person who only ever
+ * said "morning".
+ */
+describe("(d) the request carries a PERIOD, not a slot", () => {
+  it("stores the MORNING window, and it decodes back to the same day and period", async () => {
+    const date = dayOffset(7);
+    await guestBooking(post(validBody({ preferredDate: date, preferredPeriod: "manha" })));
+
+    const row = H.inserted[0]!;
+    const starts = row.requestedStartsAt as Date;
+    const ends = row.requestedEndsAt as Date;
+
+    // Lisbon wall clock, whatever the runner's zone and whatever the offset on
+    // the day. A UTC-naive encoder is one hour out for seven months of the year.
+    expect(lisbonWallClock(starts)).toMatchObject({ hour: 9, minute: 0 });
+    expect(lisbonWallClock(ends)).toMatchObject({ hour: 13, minute: 0 });
+    expect(decodeGuestPreferredWindow(starts, ends)).toEqual({
+      kind: "period",
+      dateYmd: date,
+      period: "manha",
+    });
+  });
+
+  it("stores the AFTERNOON window", async () => {
+    const date = dayOffset(3);
+    await guestBooking(post(validBody({ preferredDate: date, preferredPeriod: "tarde" })));
+    const row = H.inserted[0]!;
+    expect(
+      decodeGuestPreferredWindow(row.requestedStartsAt as Date, row.requestedEndsAt as Date),
+    ).toEqual({ kind: "period", dateYmd: date, period: "tarde" });
+  });
+
+  it("REFUSES a body carrying startsAt/endsAt instead of a period", async () => {
+    // The pre-ruling contract. A client still sending it must fail loudly rather
+    // than have its exact time quietly ignored or quietly honoured.
+    const { preferredDate: _d, preferredPeriod: _p, ...rest } = validBody();
+    const res = await guestBooking(
+      post({
+        ...rest,
+        startsAt: "2026-09-07T09:30:00.000Z",
+        endsAt: "2026-09-07T10:30:00.000Z",
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(H.inserted).toHaveLength(0);
+  });
+
+  it("IGNORES startsAt/endsAt smuggled ALONGSIDE a valid period", async () => {
+    // The dangerous half of the arm above: a body that satisfies the new
+    // contract AND carries the old fields must store the PERIOD. If the route
+    // ever preferred the supplied timestamps, this suite would still see a 202
+    // and a row, and only reception would notice - months later, on one request.
+    const date = dayOffset(5);
+    await guestBooking(
+      post(
+        validBody({
+          preferredDate: date,
+          preferredPeriod: "tarde",
+          startsAt: "2026-09-07T09:30:00.000Z",
+          endsAt: "2026-09-07T10:30:00.000Z",
+        }),
+      ),
+    );
+    expect(
+      decodeGuestPreferredWindow(
+        H.inserted[0]!.requestedStartsAt as Date,
+        H.inserted[0]!.requestedEndsAt as Date,
+      ),
+    ).toEqual({ kind: "period", dateYmd: date, period: "tarde" });
+  });
+
+  it("NEVER stores a practitioner, even when one is posted", async () => {
+    // Option A does not expose the therapist roster, so no legitimate caller can
+    // have an id. Writing one would put an unsourced therapist preference in
+    // front of reception.
+    await guestBooking(
+      post(validBody({ practitionerId: "44444444-4444-4444-4444-444444444444" })),
+    );
+    expect(H.inserted[0]!.practitionerId).toBeNull();
+  });
+
+  it.each([
+    ["an unknown period", { preferredPeriod: "noite" }],
+    ["a missing period", { preferredPeriod: undefined }],
+    ["an empty period", { preferredPeriod: "" }],
+    ["a date that does not exist", { preferredDate: "2026-02-30" }],
+    ["an unpadded date", { preferredDate: "2026-2-3" }],
+    ["a timestamp in the date field", { preferredDate: "2026-09-07T09:00:00Z" }],
+    ["yesterday", { preferredDate: dayOffset(-1) }],
+    ["beyond the horizon", { preferredDate: dayOffset(GUEST_REQUEST_HORIZON_DAYS + 1) }],
+  ])("REFUSES %s and writes nothing", async (_label, over) => {
+    const res = await guestBooking(post(validBody(over)));
+    expect(res.status).toBe(400);
+    expect(H.inserted).toHaveLength(0);
+    // The ordering property from (c), restated over the new input space: a bad
+    // date must not be able to spend the day's allowance either.
+    expect(H.keys).not.toContain(GUEST_BOOKING_GLOBAL_HOUR_KEY);
+  });
+
+  it.each([
+    ["TODAY", 0],
+    ["the LAST day of the horizon", GUEST_REQUEST_HORIZON_DAYS],
+  ])("ACCEPTS %s - the boundaries are inclusive", async (_label, offset) => {
+    // Without these two, every refusal above could be a route that refuses
+    // everything, and the whole block would pass while the form was dead.
+    const res = await guestBooking(post(validBody({ preferredDate: dayOffset(offset) })));
+    expect(res.status).toBe(202);
     expect(H.inserted).toHaveLength(1);
   });
 });

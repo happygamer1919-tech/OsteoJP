@@ -215,6 +215,29 @@ export const RULES = {
    *  remarkable news. */
   guestBookingGlobalHour: { limit: 30, windowMs: 60 * 60_000 },
   guestBookingGlobalDay: { limit: 100, windowMs: 24 * 60 * 60_000 },
+
+  /**
+   * GUEST-04 - the PUBLIC SERVICE LIST behind the guest form. A READ, and the
+   * limits are shaped differently from the write above for two reasons worth
+   * stating rather than inferring.
+   *
+   * LOOSER, because one page load is one call and a person who reloads the form
+   * three times is ordinary. The write's 5/hour would have made re-opening the
+   * page cost the same budget as submitting it.
+   *
+   * PER SOURCE ONLY - THERE IS DELIBERATELY NO GLOBAL CEILING ON THIS READ, and
+   * that is a departure from the two global-ceiling precedents above (the OTP
+   * send ceiling and the guest-booking backstop). Those
+   * ceilings bound a COST that a distributed attacker could otherwise run up
+   * without limit: real money for an SMS, reception's morning for a queue full
+   * of junk. This endpoint costs one indexed query returning data that is already
+   * published on the clinic's website. A global ceiling would buy nothing against
+   * that and would hand any single attacker a switch that takes the public
+   * booking form off the air for everyone - converting a cheap resource attack
+   * into a guaranteed outage. The absence is the decision, not an omission.
+   */
+  guestCatalogIp: { limit: 30, windowMs: 60_000 },
+  guestCatalogIpHour: { limit: 200, windowMs: 60 * 60_000 },
   /** Booking writes. Deliberately tight: each one mutates the agenda. */
   booking: { limit: 10, windowMs: 60_000 },
 

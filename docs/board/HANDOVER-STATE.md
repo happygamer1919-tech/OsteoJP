@@ -1,6 +1,6 @@
 # OsteoJP portal — handover state
 
-**As of 2026-08-13.** Written for the person who hands this build to the clinic
+**As of 2026-08-14.** Written for the person who hands this build to the clinic
 team and to legal, and for anyone who reads it after.
 
 ---
@@ -55,7 +55,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**146 cards. 75 shipped, 71 open. Launch readiness 9/9 — every launch gate passes.**
+**155 cards. 82 shipped, 73 open. Launch readiness 9/9 — every launch gate passes.**
 
 > **The clinic team is testing on production.** Defects reported from live use
 > are being fixed as they arrive; they are `STAFF-xx` cards on the board.
@@ -91,6 +91,34 @@ non-engineer needs.*
 > patient name was cut in the Marcações list. The location one is a **behaviour
 > change the clinic team must know about**, and it is item 2 of the three above.
 > Full detail on the board, cards `STAFF-01` to `STAFF-04`.
+
+> **THE PUBLIC BOOKING FORM FOR NEW CLIENTS EXISTS, AND ITS LINK IS NOT
+> PUBLISHED.** Added 2026-08-14. A person who is **not** a patient can now ask
+> for an appointment at **`/marcacao`** on the portal: they choose a clinic, a
+> service, a preferred date and a preferred period (morning or afternoon), give
+> their name and mobile number, and tick the RGPD acknowledgement. The request
+> lands in reception's **Pedidos de novos clientes** queue on Notificações.
+>
+> **Three things to say about it plainly, because each is deliberate:**
+>
+> 1. **The address works and nothing links to it.** It is not on the portal, not
+>    on osteojp.pt, not in any navigation. It is reachable so the owner can walk
+>    it on the deployed build. **It does not go public until the confirmation
+>    wording lands** — see 3.
+> 2. **It never shows availability.** No therapist list, no times, no "09:30 is
+>    free". Somebody with no account cannot learn who works at a clinic or when
+>    the building is empty. They say *morning* or *afternoon*, and **reception
+>    decides the actual time when they telephone**. Every request is a request;
+>    nothing books itself.
+> 3. **The screen shown after sending is BLANK COPY ON PURPOSE, and the form
+>    refuses to send until JP writes it.** That screen tells a member of the
+>    public whether the clinic will call and when — a promise, and the one kind
+>    of wording the build terminal is not allowed to invent. Two strings are
+>    needed (`guest.confirmation_title`, `guest.confirmation_body`). Until they
+>    exist the submit is refused with the ordinary "try again or contact the
+>    clinic" message and **nothing is written**, so nobody's request can go into
+>    the queue without them being told it arrived. Board card
+>    `GUEST-05-confirmation-copy`.
 
 ---
 
@@ -411,7 +439,7 @@ shipped test sink — and it is the top item in the build queue.
 
 ## 4. Every open card, by bucket
 
-**71 open of 146**, as of 2026-08-14 after the post-presentation bucket.
+**73 open of 155**, as of 2026-08-14 after the guest-booking bucket.
 
 ### Incidents — 1
 **`SEC-otp-linkage-exact-phone-match` (high, halted, launch-blocking)** — most

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 
 import { getRequestContext } from "@/lib/auth/context";
+import { formatGuestPreferredWhen } from "@/lib/scheduling/guest-preferred-when";
 import {
   listNotifications,
   listPendingRequests,
@@ -128,12 +129,24 @@ export default async function NotificacoesPage() {
   // Same server-side Lisbon formatting as the pedido queue, for the same
   // reason: a client-side format would use the browser's zone and quietly
   // disagree with the agenda.
+  //
+  // A GUEST ASKED FOR A DATE AND A PERIOD, NOT A TIME (GUEST-04, Option A), so
+  // this row must not be formatted like the pedido row above it. `stamp()` on
+  // the window's start renders "20/08/2026 09:00" — a precise time, in the place
+  // reception reads precise times, for somebody who was never shown one and
+  // never chose one. Reception would ring them to confirm nine o'clock.
+  //
+  // `decodeGuestPreferredWindow` returns a UNION and never a fallback: a window
+  // that does not encode a period is reported as `exact` and rendered as the
+  // timestamp it actually is. Nothing in the shipped product can write such a
+  // row — the public form always encodes a period — so that arm is here so a
+  // hand-written or future row cannot be read as a preference nobody stated.
   const guestRows: GuestRequestRow[] = guestRequests.map((g) => ({
     id: g.id,
     fullName: g.fullName,
     phone: g.phone,
     locationName: g.locationName,
-    when: stamp(g.requestedStartsAt),
+    when: formatGuestPreferredWhen(g.requestedStartsAt, g.requestedEndsAt),
     requestedAt: stamp(g.createdAt),
     possiblePatientMatches: g.possiblePatientMatches,
   }));

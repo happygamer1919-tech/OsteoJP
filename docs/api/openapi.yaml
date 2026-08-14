@@ -99,11 +99,116 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v1/booking/guest/catalog:
+    get:
+      operationId: getPublicBookingCatalog
+      tags: [booking]
+      summary: What can be booked and where, for the public guest form
+      security: []
+      description: >
+        GUEST-04, Option A. The ONE unauthenticated READ the guest booking form
+        is allowed.
+
+
+        WHAT IT DISCLOSES IS ALREADY PUBLISHED. Service names are on osteojp.pt
+        and both clinics are on the portal's own public Clínicas page with their
+        addresses and telephone numbers. The projection is `id` and `name` and
+        nothing else — no price, no duration, no internal flag — and nothing
+        about any PERSON is reachable through it: no patient, no therapist, no
+        appointment, no schedule.
+
+
+        THE TWO READS THIS IS NOT. `booking/therapists` and `booking/slots` stay
+        authenticated, permanently and by ruling (exposure matrix MN-27, MN-28).
+        A public roster tells a stranger who works at a clinic; a public slot
+        list tells them when the building is empty and when a named therapist is
+        not with a patient.
+
+
+        It applies the SAME four predicates as the authenticated catalog —
+        tenant, active, not `internal_only`, `patient_bookable` — so it can never
+        offer a stranger something a logged-in patient is not allowed to book.
+
+
+        `tenantId` is an UNVERIFIED query parameter, unavoidably: the route runs
+        before authentication, exactly as `auth/otp/request` does, so there is no
+        token to derive a tenant from. It is not a rate-limit key, and an unknown
+        tenant answers with empty lists rather than an error, so it is not a
+        tenant-existence oracle.
+
+
+        Rate limited per source on the durable store, two windows (30/minute,
+        200/hour). There is deliberately NO tenant-wide ceiling: a global limit
+        on a read of published data protects nothing a per-source limit does not,
+        and would hand a single attacker a switch that takes the public booking
+        form off the air for everybody.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The bookable services and the clinics that offer them.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [locations, services]
+                properties:
+                  locations:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, name]
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                  services:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, name, locationIds]
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                        locationIds:
+                          type: array
+                          description: >
+                            Which clinics offer it. A service bound to no
+                            location lists every active clinic, so the form
+                            cannot produce a service/clinic pair the clinic does
+                            not offer.
+                          items:
+                            type: string
+                            format: uuid
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
   /api/v1/booking/guest:
     post:
       operationId: createGuestBookingRequest
       tags: [booking]
       summary: Request an appointment as a NEW client, with no account
+      # CORRECTED 2026-08-14. This override was MISSING, so the document's
+      # default (`patientBearer`) applied and the spec claimed the project's one
+      # unauthenticated write surface required a patient JWT - the exact
+      # opposite of what it is, in the document a reviewer reads to find out.
+      # The route was always correct; the description of it was not.
+      security: []
       description: >
         ITEM 6. A booking REQUEST from somebody who is not a patient: no
         account, no OTP login. The project's FIRST unauthenticated write
@@ -133,6 +238,13 @@ paths:
 
         NO SMS IS SENT (R9). The caller shows an on-screen confirmation and
         tells the person the clinic will make contact.
+
+
+        IT TAKES A PREFERENCE, NOT A SLOT (Option A, 2026-08-14). `startsAt`,
+        `endsAt` and `practitionerId` are REFUSED; `preferredDate` and
+        `preferredPeriod` are required. See `GuestBookingInput` for why: with the
+        roster and the slot list unexposed, an exact time arriving here could not
+        have come from anything public.
 
 
         Rate limited on THREE independent axes — per source, per phone hash, and
@@ -1221,11 +1333,22 @@ components:
     GuestBookingInput:
       type: object
       additionalProperties: false
-      required: [tenantId, fullName, phone, serviceId, locationId, startsAt, endsAt]
+      required:
+        [tenantId, fullName, phone, serviceId, locationId, preferredDate, preferredPeriod]
       description: >
-        R-GUEST-2: the MINIMUM. A name, a number, the service and the slot.
-        NO NIF (PL-20), no health information, nothing clinical before the first
-        visit.
+        R-GUEST-2: the MINIMUM. A name, a number, the service, the clinic and
+        WHEN THEY WOULD PREFER TO COME. NO NIF (PL-20), no health information,
+        nothing clinical before the first visit.
+
+
+        OPTION A, ratified 2026-08-14. This used to take `startsAt`/`endsAt` and
+        an optional `practitionerId`, on the assumption the public form would
+        offer real slots. It does not: the therapist roster and the slot list
+        stay authenticated (exposure matrix MN-27, MN-28), so nothing public
+        could have offered a caller a time or a therapist. An exact timestamp
+        arriving here would therefore be UNSOURCED, and reception would read it
+        as a time the person had been shown. Those three fields are now
+        REFUSED — a body carrying them and nothing else is a 400.
       properties:
         tenantId:
           type: string
@@ -1250,20 +1373,30 @@ components:
         locationId:
           type: string
           format: uuid
-        practitionerId:
-          # OpenAPI 3.1: a nullable type is a type UNION, not a `nullable: true`
-          # flag - that spelling is 3.0 and the linter refuses it here.
-          type: [string, "null"]
-          format: uuid
+        preferredDate:
+          type: string
+          format: date
           description: >
-            Omitted or null means "any available therapist" — a real answer from
-            the flow's therapist step, not a missing one.
-        startsAt:
+            The calendar day the caller would prefer, YYYY-MM-DD, read in
+            Europe/Lisbon. Must not be in the past and must be within 90 days.
+            A date that does not exist (2026-02-30) is refused rather than
+            rolled forward.
+          examples: ["2026-09-07"]
+        preferredPeriod:
           type: string
-          format: date-time
-        endsAt:
-          type: string
-          format: date-time
+          enum: [manha, tarde]
+          description: >
+            Morning (09:00–13:00) or afternoon (13:00–19:00), Europe/Lisbon,
+            from the clinic's published opening hours.
+
+
+            THIS IS A PREFERENCE AND NOT AN AVAILABILITY CLAIM. No schedule is
+            consulted on this path and nothing is reserved. The pair
+            (preferredDate, preferredPeriod) is encoded into the existing
+            `requested_starts_at` / `requested_ends_at` columns by
+            `encodeGuestPreferredWindow` in @osteojp/db — the window's
+            boundaries, not a slot anybody was offered. Reception resolves the
+            real time when they telephone.
 
     OtpRequestInput:
       type: object

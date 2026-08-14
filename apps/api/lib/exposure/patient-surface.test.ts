@@ -60,6 +60,10 @@ const PRE_AUTH: Record<string, string> = {
   // longer describes the set - see the amended note.
   "booking/guest":
     "ITEM 6 guest booking. The caller is BY DEFINITION not a patient - the flow exists for people who have no record and no account - so there is no principal to present and requiring one would refuse every legitimate use. It writes ONLY to guest_booking_requests, never to a clinical table, every row is a REQUEST a human confirms (R-GUEST-1), and it answers identically whether or not the phone matches a patient so it is not a patient-list oracle. Rate limited per IP, per phone, and by two tenant-wide ceilings, all on the DURABLE store.",
+  // GUEST-04, Option A. The SIXTH entry, and the SECOND that is not part of the
+  // OTP flow. It is also the only READ on this list.
+  "booking/guest/catalog":
+    "GUEST-04 Option A, the ONE unauthenticated READ the guest form is allowed. It returns what can be booked and where - service id + name, location id + name - all of which is already published on osteojp.pt and on the portal's own public Clinicas page. Nothing about any PERSON is reachable through it: no patient, no therapist, no appointment, no schedule, no price. It applies the same four predicates as the authenticated catalog (tenant, active, not internal_only, patient_bookable) so it can never offer a stranger something a logged-in patient may not book. tenantId is an unverified query parameter because the route runs before authentication and there is no token to derive one from; an unknown tenant answers with empty lists, so it is not an oracle. Rate limited per IP on the DURABLE store, two windows.",
 };
 
 /** Strip comments before matching anything.

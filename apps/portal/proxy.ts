@@ -31,8 +31,18 @@ import { PORTAL_SESSION_COOKIE } from '@/lib/auth/cookie-names'
  * `/auth/activate`, `/auth/reset-password` and `/auth/callback` were deleted
  * with the password login, so listing them here would keep a door open in the
  * one file most likely to be read as the door list.
+ *
+ * `/marcacao` IS PUBLIC BY DESIGN (GUEST-04). It is the booking form for people
+ * who are NOT patients: they have no record, no account and nothing to log in
+ * with, so requiring a session would refuse every legitimate visitor. It is the
+ * only entry here that is not part of the patient's own portal, and it sits
+ * outside the `/portal` prefix for exactly that reason — everything under that
+ * prefix belongs to a signed-in person, and this page belongs to a stranger.
+ * What it may reach is bounded at the API, not here: one public catalog read and
+ * one write to `guest_booking_requests`, both rate limited, neither touching a
+ * clinical table. See docs/recon/W13-06-exposure-matrix.md rows 20 and 21.
  */
-const PUBLIC_PATHS = ['/auth/login', '/portal/clinics']
+const PUBLIC_PATHS = ['/auth/login', '/portal/clinics', '/marcacao']
 
 export async function proxy(request: NextRequest) {
   const hasSession = Boolean(request.cookies.get(PORTAL_SESSION_COOKIE)?.value)
