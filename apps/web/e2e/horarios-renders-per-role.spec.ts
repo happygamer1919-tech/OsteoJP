@@ -71,8 +71,12 @@ test.describe("horarios renders - owner", () => {
     await page.goto("/login");
     await page.locator('input[name="email"]').fill(USERS.owner);
     await page.locator('input[name="password"]').fill(E2E_PASSWORD);
-    await page.getByRole("button", { name: /entrar/i }).click();
-    await page.waitForURL(/\/(dashboard|agenda)/);
+    // The button reads "Iniciar sessão", and the redirect lands on /dashboard.
+    // Both taken verbatim from e2e/auth.setup.ts rather than guessed - the first
+    // draft of this spec guessed /entrar/i and no timeout, and hung for the full
+    // 2-minute default three times over.
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+    await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
 
     await page.goto("/horarios");
     await page.waitForLoadState("domcontentloaded");
