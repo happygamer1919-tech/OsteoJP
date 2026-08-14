@@ -12,6 +12,8 @@ import { s } from "@/lib/i18n";
 
 import { MarkAllReadButton } from "./mark-all-read";
 import { PendingRequests, type PendingRequestView } from "./pending-requests";
+import { GuestRequestsQueue, type GuestRequestRow } from "./guest-requests-queue";
+import { listPendingGuestRequests } from "@/lib/scheduling/guest-requests";
 
 export const metadata = { title: s["notifications.title"] };
 
@@ -105,9 +107,10 @@ export default async function NotificacoesPage() {
   const ctx = await getRequestContext();
   if (!ctx) redirect("/login");
 
-  const [entries, requests] = await Promise.all([
+  const [entries, requests, guestRequests] = await Promise.all([
     listNotifications(ctx),
     listPendingRequests(ctx),
+    listPendingGuestRequests(ctx),
   ]);
   const unread = entries.filter((e) => e.readAt === null).length;
 
@@ -120,6 +123,19 @@ export default async function NotificacoesPage() {
     patientName: r.patientName,
     when: stamp(r.startsAt),
     requestedAt: stamp(r.requestedAt),
+  }));
+
+  // Same server-side Lisbon formatting as the pedido queue, for the same
+  // reason: a client-side format would use the browser's zone and quietly
+  // disagree with the agenda.
+  const guestRows: GuestRequestRow[] = guestRequests.map((g) => ({
+    id: g.id,
+    fullName: g.fullName,
+    phone: g.phone,
+    locationName: g.locationName,
+    when: stamp(g.requestedStartsAt),
+    requestedAt: stamp(g.createdAt),
+    possiblePatientMatches: g.possiblePatientMatches,
   }));
 
   return (
@@ -138,6 +154,27 @@ export default async function NotificacoesPage() {
           {s["requests.subtitle"]} {s["requests.slotNotHeld"]}
         </p>
         <PendingRequests items={requestViews} />
+      </section>
+
+      {/* ITEM 6 - GUEST requests, in their OWN section beneath the pedidos.
+          Separate because the ACTION is different: a pedido is an existing
+          patient's appointment changing state, a guest request has no patient
+          and no appointment behind it and confirming one CREATES both. One list
+          would put two different actions behind one word.
+
+          BELOW the pedidos because a pedido is a patient already waiting on a
+          slot, where a guest has not been promised anything yet - the copy they
+          saw says the time is not reserved. */}
+      <section className="mb-10" aria-labelledby="guest-requests-heading">
+        <h2
+          id="guest-requests-heading"
+          className="text-xl font-semibold text-v2-text-primary"
+        >
+          {s["guest.queueTitle"]}
+        </h2>
+        <div className="mt-4">
+          <GuestRequestsQueue rows={guestRows} />
+        </div>
       </section>
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">

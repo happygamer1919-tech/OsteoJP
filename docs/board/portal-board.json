@@ -2551,6 +2551,38 @@
       "blocked_on": null,
       "last_checkpoint": "2026-08-14",
       "notes": "RULED BY IVAN 2026-08-14. Supersedes LE-therapist-horarios-nav, which asked the\nquestion and recommended leaving it until a therapist asked. A therapist asked.\n\nMICROCOPY: NONE. The entry reuses the existing nav.schedule string (\"Horarios\"),\nand the page's own copy is unchanged. Nothing new was written."
+    },
+    {
+      "id": "GUEST-03-reception-queue",
+      "title": "Reception can SEE guest booking requests, each marked new client or possible existing patient. Its own section, separate from the pedido queue, because confirming one CREATES a patient and an appointment rather than changing a state",
+      "lane": "shipped",
+      "home_lane": "in_flight",
+      "status": "shipped",
+      "priority": "high",
+      "owner_terminal": "purple",
+      "gate": "green_self_merge",
+      "evidence": {
+        "kind": "e2e",
+        "ref": "SHIPPED 2026-08-14. Gates: lint 0 errors, typecheck 11/11, test suite green, build 4/4.\n6 render assertions in app/notificacoes/guest-requests-queue.test.tsx.\n\nA SEPARATE SECTION, NOT A SECOND KIND OF ROW IN THE PEDIDO QUEUE. A pedido is an\nexisting patient's appointment changing state; the row already exists and\nconfirming it is an UPDATE. A guest request has no patient, no appointment and no\nnotification behind it, and confirming one CREATES both. One list would have put\ntwo different actions behind one word.\n\nTHE FLAG IS A COUNT AND NEVER A LINK, on 0062's precedent:\nresolvePatientByProvenPhone REFUSES when several patients share a number rather\nthan picking one, because mis-linking a medical record is the worst outcome\navailable. Zero matches renders \"Novo cliente\"; one renders \"Podera ja ser\npaciente\"; several says so explicitly, because picking is not obvious. Exactly\nONE mark per row, asserted - rendering both would leave reception to work out\nwhich applies, rendering neither reads as an ordinary appointment.\n\nTHE MATCH IS COUNTED IN THE SAME QUERY as a correlated subquery, so the flag and\nthe row come from ONE snapshot. Two round trips could report a match for a\npatient created between them, or miss one deleted between them.\n\nLOCATION-SCOPED like every other reception read (PL-09), via inArray rather than\na hand-built IN list - these ids come from the database so interpolating them is\nnot exploitable today, but a parameterised predicate cannot BECOME exploitable\nwhen somebody later feeds this function a request value.\n\nA REAL BUG CAUGHT BY THE TEST, AND IT IS THE SECOND TIME TODAY: the row's\ndata-testid was on GlassCard, which destructures a fixed prop list and SILENTLY\nDROPS anything else - so it reached neither the DOM nor the querySelector looking\nfor it. Identical to the Marcacoes row defect in STAFF-07. Moved to the <li> and\nthe reason is now written at the call site so a third occurrence does not need a\ntest to find it.\n\nDEFERRED, NOT FORGOTTEN: the CONVERT action. The queue displays only, because\nbuilding interactivity before the action exists is scaffolding with nothing\nbehind it. Nothing can create a row yet either - the public form is not built -\nso there is no live gap.\n\nAWAITING WF-03, batched into the next acceptance sitting per WF-16.",
+        "at": "2026-08-14"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-14",
+      "notes": "MICROCOPY, DELEGATED ON STANDING CONDITIONS, VERBATIM (pt-PT):\n  guest.queueTitle          \"Pedidos de novos clientes\"\n  guest.queueEmpty          \"Sem pedidos de novos clientes.\"\n  guest.newClient           \"Novo cliente\"\n  guest.possibleMatch       \"Podera ja ser paciente\"\n  guest.possibleMatchMany   \"Podera ja ser paciente (varios registos com este numero)\"\n  guest.requestedAt         \"Pedido em\"\n  guest.phone               \"Telemovel\"\n(Committed strings carry their diacritics; transliterated here to keep the board\nASCII.) EN counterparts in the same commit.\n\n\"PODERA\" AND NOT \"E\": the wording is a possibility because the system is not\nallowed to conclude. That is the flag-never-link rule expressed in the copy\nrather than only in the code."
+    },
+    {
+      "id": "LE-guest-queue-service-name",
+      "title": "QUESTION for the owner and counsel: may the guest queue show the SERVICE the guest requested. PG4 forbids a service name anywhere on the notifications page, and the guard is enforced file-wide",
+      "lane": "blocked_on_people",
+      "home_lane": "in_flight",
+      "status": "blocked",
+      "priority": "low",
+      "owner_terminal": "purple",
+      "gate": "stakeholder",
+      "evidence": null,
+      "blocked_on": "ivan",
+      "last_checkpoint": "2026-08-14",
+      "notes": "RAISED BY GUEST-03 2026-08-14. THE GUARD WAS LEFT COMPLETELY UNTOUCHED AND THE\nFIELD WAS REMOVED INSTEAD.\n\nWHAT HAPPENED: the guest queue row showed the requested service, which reception\nplausibly wants for triage. lib/notifications/centre.test.ts went red - it\nforbids \"serviceName\" anywhere in the notificacoes page SOURCE, enforced over the\nwhole FILE rather than over the notification list alone.\n\nTHE ARGUMENT FOR ALLOWING IT, which is not mine to accept: PG4's rule exists so a\nnotification about an existing PATIENT does not leak what treatment they are\nhaving. A guest's service is different in kind - they chose it themselves on a\npublic form, and they have no clinical record for it to be about.\n\nWHY I DID NOT ACT ON THAT ARGUMENT: PG4 is a LAUNCH GATE, and the sibling\npayload-minimization test is annotated \"counsel requires this maintained\".\nWeakening a counsel-adjacent guard on my own reading of its intent is exactly the\ndecision the standing rules reserve. Removing one display field costs reception\none glance; getting the other call wrong costs a gate.\n\nWHAT RECEPTION LOSES TODAY: nothing structural. They see the requested date and\ntime, the name, the phone and the clinic, and the service when they open the\nrequest to convert it.\n\nTO DECIDE: whether the guard's scope should be narrowed to the notification LIST\n(making the file-wide grep more precise), or the guest queue should stay without\nit. RECOMMENDED DEFAULT: leave it as shipped until somebody asks. BLOCKING\nNOTHING."
     }
   ]
 }
