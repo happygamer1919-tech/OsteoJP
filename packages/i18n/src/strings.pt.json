@@ -1230,6 +1230,7 @@
   "agenda.serviceOther": "Outros serviços",
   "marcacoes.title": "Marcações",
   "marcacoes.subtitle": "Consulte as marcações dos seus pacientes.",
+  "marcacoes.deepLinkMissing": "A marcação indicada na notificação já não está disponível. Pode ter sido eliminada, ou não tem acesso a ela.",
   "marcacoes.filterDateFrom": "Data de início",
   "marcacoes.filterDateTo": "Data de fim",
   "marcacoes.dateTo": "a",
