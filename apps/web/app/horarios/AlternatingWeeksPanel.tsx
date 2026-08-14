@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, Dialog, Select, useToast } from "@osteojp/ui";
+import { Button, Dialog, Select } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { TimeFieldInput } from "@/components/time-field-input";
 import { applyAlternatingWeeksAction } from "./actions";
@@ -45,7 +45,6 @@ export function AlternatingWeeksPanel({
   therapistName: string;
   locations: LocationOption[];
 }) {
-  const showToast = useToast();
   const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [weekdays, setWeekdays] = useState<number[]>([1, 2, 3, 4, 5]);
@@ -57,6 +56,20 @@ export function AlternatingWeeksPanel({
   const [endTime, setEndTime] = useState("17:00");
   const [affected, setAffected] = useState<{ id: string; label: string }[] | null>(null);
   const [busy, setBusy] = useState(false);
+  // STATUS IS INLINE, NOT A TOAST, AND THE FIRST DRAFT GOT THIS WRONG IN A WAY
+  // THAT CRASHED THE PAGE. `useToast` throws unless a <ToastProvider> is an
+  // ancestor; the agenda has one, /horarios does not, so calling it here threw
+  // during render and reproduced the exact STAFF-05 symptom - a black
+  // "Application error" page - on the surface STAFF-05 had just fixed. Caught by
+  // e2e/horarios-renders-per-role.spec.ts, which is the spec STAFF-05 added for
+  // precisely this failure mode.
+  //
+  // Wrapping the page in a provider would have worked; one provider PER
+  // THERAPIST CARD would have meant N aria-live regions on one page, which PG9
+  // would rightly fail. Inline is also simply better here: the dialog is still
+  // open when the answer arrives, and the affected-appointments list is already
+  // rendered in it.
+  const [status, setStatus] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
   // TWO CLINICS ARE REQUIRED and the control says so by existing: with one
   // location the pattern is meaningless, so the entry point is not offered.
@@ -90,10 +103,10 @@ export function AlternatingWeeksPanel({
     });
     setBusy(false);
     if (!res.ok) {
-      showToast({ tone: "error", message: s["schedule.altError"] });
+      setStatus({ tone: "err", text: s["schedule.altError"] });
       return;
     }
-    showToast({ tone: "success", message: s["schedule.altSaved"] });
+    setStatus({ tone: "ok", text: s["schedule.altSaved"] });
     // The list is kept on screen rather than toasted: a toast disappears, and
     // these are appointments somebody has to act on.
     setAffected(res.affected ?? []);
@@ -113,6 +126,7 @@ export function AlternatingWeeksPanel({
           onClose={() => {
             setOpen(false);
             setAffected(null);
+            setStatus(null);
           }}
           title={`${s["schedule.altTitle"]} · ${therapistName}`}
           cancelLabel={s["common.close"]}
@@ -189,6 +203,20 @@ export function AlternatingWeeksPanel({
             <Button onClick={submit} disabled={!canSave} data-testid="alt-weeks-save">
               {s["common.save"]}
             </Button>
+
+            {status && (
+              <p
+                role="status"
+                data-testid="alt-weeks-status"
+                className={
+                  status.tone === "ok"
+                    ? "rounded-v2 border border-v2-border bg-v2-surface px-3 py-2 text-sm text-v2-text-primary"
+                    : "rounded-v2 border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800"
+                }
+              >
+                {status.text}
+              </p>
+            )}
 
             {affected && affected.length > 0 && (
               <div className="flex flex-col gap-1 rounded-v2 border border-v2-border p-3">
