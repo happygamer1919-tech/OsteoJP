@@ -28,7 +28,7 @@ function fakeTx(rows: unknown[]) {
 }
 
 describe("assertTargetInScheduleScope", () => {
-  it("is a no-op for a null scope (owner/therapist/unassigned) — never queries", async () => {
+  it("is a no-op for an unrestricted scope (owner/unassigned) — never queries", async () => {
     let queried = false;
     const tx = {
       select: () => {
@@ -36,19 +36,22 @@ describe("assertTargetInScheduleScope", () => {
         return { from: () => ({ where: () => ({ limit: async () => [] }) }) };
       },
     } as never;
-    await expect(assertTargetInScheduleScope(tx, "ther-1", null)).resolves.toBeUndefined();
+    await expect(assertTargetInScheduleScope(tx, "ther-1", { kind: "all" })).resolves.toBeUndefined();
     expect(queried).toBe(false);
   });
 
   it("passes when the target therapist shares a location with the viewer", async () => {
     await expect(
-      assertTargetInScheduleScope(fakeTx([{ userId: "ther-1" }]), "ther-1", ["loc-A"]),
+      assertTargetInScheduleScope(fakeTx([{ userId: "ther-1" }]), "ther-1", {
+        kind: "locations",
+        locationIds: ["loc-A"],
+      }),
     ).resolves.toBeUndefined();
   });
 
   it("throws not_found when the target is NOT at any of the viewer's locations", async () => {
     try {
-      await assertTargetInScheduleScope(fakeTx([]), "ther-2", ["loc-A"]);
+      await assertTargetInScheduleScope(fakeTx([]), "ther-2", { kind: "locations", locationIds: ["loc-A"] });
       throw new Error("expected throw");
     } catch (e) {
       expect(isAdminError(e) && e.code).toBe("not_found");
