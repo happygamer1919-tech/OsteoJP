@@ -2493,6 +2493,34 @@
       "blocked_on": null,
       "last_checkpoint": "2026-08-14",
       "notes": "RATIFIED 2026-08-14 as designed, option B.\n\nMICROCOPY, DELEGATED ON STANDING CONDITIONS, VERBATIM (pt-PT):\n  schedule.altTitle     \"Semanas alternadas\"\n  schedule.altOpen      \"Definir semanas alternadas\"\n  schedule.altHelp      \"Para terapeutas que alternam de clinica de semana a\n                         semana. O horario semanal habitual mantem-se para todas\n                         as datas fora deste periodo.\"\n  schedule.altWeekA     \"Clinica na 1.a semana\"\n  schedule.altWeekB     \"Clinica na 2.a semana\"\n  schedule.altFrom      \"Inicio\"\n  schedule.altTo        \"Fim\"\n  schedule.altSaved     \"Semanas alternadas definidas.\"\n  schedule.altAffected  \"Estas marcacoes ja existem neste periodo. Nao foram\n                         alteradas nem canceladas; verifique-as.\"\n  schedule.altError     \"Nao foi possivel definir as semanas alternadas.\"\n(Committed strings carry their diacritics; transliterated here to keep the board\nASCII.) EN counterparts in the same commit.\n\nTHE SELF-VIEW CAN BE ADDED WITHOUT REWORK, as the ruling required.\nAlternatingWeeksPanel takes therapistId + locations and holds NO opinion about\nwho is looking; the pending sidebar question (LE-therapist-horarios-nav) is\nanswered by whoever renders it. Mounting it on a therapist self-view is passing\nthe same two props.\n\nTHE ENTRY POINT HIDES ITSELF WITH ONE CLINIC. A tenant with a single location\ncannot express an alternating pattern, so the button is not rendered rather than\nrendered-and-refused.\n\nHORIZON ENFORCED SERVER-SIDE at 100 days (R-SCHED-1's three months plus slack\nfor month lengths), alongside the same-clinic-both-weeks refusal - that one is\nnot a technical constraint, it is that 65 rows would be written to say what one\nweekly row already says."
+    },
+    {
+      "id": "GUEST-01-migration-0063-authored",
+      "title": "MIGRATION 0063 AUTHORED, NOT APPLIED: guest_booking_requests. The project's first unauthenticated write surface touches NO clinical table. PR #907 is DO NOT MERGE until Ivan applies it",
+      "lane": "in_flight",
+      "home_lane": "in_flight",
+      "status": "in_flight",
+      "priority": "high",
+      "owner_terminal": "purple",
+      "gate": "owner_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-14",
+      "notes": "AUTHORED 2026-08-14. Migration 0063 authorized by strategy for guest_booking_requests\nONLY. PR #907, all checks green on its own sha, held at the apply gate.\n\nSCOPE OF THAT PR, STATED SO IT IS NOT MISREAD: the TABLE ONLY. The guest flow -\npublic route, rate limiting, the 5-step form, the reception queue - is NOT built\nand is the next commit. The migration was opened first because apply-before-merge\ngates everything downstream anyway.\n\nWHY A NEW TABLE AND NOT A PROVISIONAL PATIENT ROW. appointments.patient_id and\nstaff_notifications.patient_id are both NOT NULL, so the existing pedido path\ncannot represent someone who does not exist yet without inventing them. Doing so\nwould (a) write a CLINICAL record from an anonymous HTTP request and (b) be\nauto-linking under another name, which R-GUEST forbids - creating a new patient\nfor someone who may BE an existing patient is the same mistake with a duplicate\nattached.\n\nNO ANON RLS POLICY, IN EITHER DIRECTION. The insert runs from apps/api under the\nSERVICE ROLE, the seam the durable rate-limit store already uses (0056). An anon\nINSERT policy would have left a writable, internet-reachable policy on a tenant\ntable permanently, guarded only by whatever WITH CHECK survives future edits.\nNO DELETE POLICY either: a declined request is a STATUS, not a deletion.\nRule 3 binds the caller - tenant_id is NOT NULL so a service-role insert that\nforgets it fails loudly.\n\nJOURNAL RECONCILED: \"63 .sql files match 63 journal entries in order, when\nstrictly increasing, and the supabase mirror matches by CONTENT.\" Number derived\nat authoring (main ended at 0062), when = 1787100000000 on the SYNTHETIC series,\nnever Date.now() - INC-07 was a Date.now() value landing below its predecessor.\n\nAPPLY BLOCK DRAFTED under the standing doctrine, opening NOT VALIDATED, sent to\nstrategy and NOT to Ivan. Pre-check must read pending: 1, post-check pending: 0,\nplus check-migration-tables.mjs guest_booking_requests as the receipt - valid\nhere because the table is genuinely new, unlike 0059 where the object already\nexisted and existence proved nothing."
+    },
+    {
+      "id": "GUEST-02-phone-normalisation-duplicated",
+      "title": "0063 COPIES 0062's phone-normalisation expression verbatim. Required for the possible-existing-patient flag to match at all, and a drift between them would fail SILENTLY as a no-match. Parity test required before the guest flow ships",
+      "lane": "in_flight",
+      "home_lane": "in_flight",
+      "status": "todo",
+      "priority": "high",
+      "owner_terminal": "purple",
+      "gate": "green_self_merge",
+      "evidence": null,
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-14",
+      "notes": "RAISED BY GUEST-01 2026-08-14, DELIBERATELY AND NOT DISCOVERED LATER.\n\nguest_booking_requests.phone_e164 carries patients.phone_e164's GENERATED ALWAYS\nexpression VERBATIM. That is what reception's possible-existing-patient flag\nmatches on: guest.phone_e164 = patients.phone_e164.\n\nWHY THE DUPLICATION IS DANGEROUS IN THIS PARTICULAR PLACE. If the two ever\nnormalise differently, the flag silently stops matching - and A MISS LOOKS\nEXACTLY LIKE A GENUINE NO-MATCH. Nothing errors, no screen reports anything odd,\nand the outcome is a guest being treated as a new person when they are an\nexisting patient. That is the vacuous-guard shape this project has counted 123\ninstances of, sitting on a verdict path.\n\nWHAT IS REQUIRED BEFORE THE GUEST FLOW SHIPS: a DB-gated parity test running one\ncorpus through BOTH generated columns and requiring identical answers, modelled\non phone-e164-parity.db.test.ts which already does this for SQL-vs-JS. Hard-\nrequired in the skip guard, not optional.\n\nTHE RIGHT END STATE IS ONE SQL FUNCTION used by both columns, and it was NOT\nbuilt in 0063 for two stated reasons: 0063 is authorized for the new table only,\nand rewriting patients.phone_e164 is a generated-column rewrite on a table\nholding live clinical data. That is a separate migration with its own apply, and\ninventing it inside an authorized-for-one-table migration would have been exactly\nthe scope creep the migration doctrine exists to prevent."
     }
   ]
 }
