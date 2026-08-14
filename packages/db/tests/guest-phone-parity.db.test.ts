@@ -83,6 +83,22 @@ describe.skipIf(!live)("GUEST-02 - guest and patient phone normalisation agree",
 
   afterAll(async () => {
     if (!sql) return;
+    // THE CHILDREN FIRST. `guest_booking_requests.tenant_id` references
+    // `tenants` with NO ON DELETE CASCADE - deliberately, because a guest
+    // request is a record of what somebody asked for and a cascade must not be
+    // able to erase it. That is right for production and it means THIS teardown
+    // has to do the work: deleting the tenant alone raises a foreign-key
+    // violation and fails the suite AFTER every assertion has already passed.
+    //
+    // Caught by CI on the first run, and worth the comment: the failure looked
+    // like a parity failure in the summary line and was not one. Both parity
+    // assertions passed; only the cleanup fell over.
+    await sql`delete from guest_booking_requests where tenant_id = ${T}`;
+    await sql`delete from patients where tenant_id = ${T}`;
+    await sql`delete from services where tenant_id = ${T}`;
+    await sql`delete from locations where tenant_id = ${T}`;
+    await sql`delete from users where tenant_id = ${T}`;
+    await sql`delete from roles where tenant_id = ${T}`;
     await sql`delete from tenants where id = ${T}`;
     await sql.end();
   });
