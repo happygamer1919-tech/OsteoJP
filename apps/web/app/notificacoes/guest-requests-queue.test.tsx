@@ -29,7 +29,10 @@ const row = (over: Partial<GuestRequestRow> = {}): GuestRequestRow => ({
   fullName: "Maria Convidada",
   phone: "+351912345678",
   locationName: "Linda-a-Velha",
-  when: "07/09/2026 09:00",
+  // A PREFERENCE, not a slot (GUEST-04 Option A). The string is built by
+  // lib/scheduling/guest-preferred-when.ts, which has its own suite; this
+  // fixture only has to look like what that function returns.
+  when: "07/09/2026, manhã",
   requestedAt: "14/08/2026 18:20",
   possiblePatientMatches: 0,
   ...over,
@@ -94,6 +97,14 @@ describe("guest queue - the new-client mark", () => {
     const html = render([row()]);
     expect(html).not.toContain("Osteopatia");
     expect(html).not.toContain("Servi\u00e7o");
+  });
+
+  it("the WHEN is labelled a preference, not a date", () => {
+    // GUEST-04 Option A. The label carries the meaning: this row is what
+    // somebody ASKED FOR, and the whole risk of the shape is reception reading
+    // it as an appointment that exists. "Data:" beside a date does exactly that.
+    const html = render([row()]);
+    expect(html).toContain("Preferência");
   });
 
   it("an empty queue says so, and does not render an empty list", () => {

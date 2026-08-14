@@ -38,7 +38,17 @@ export type GuestRequestView = {
   phone: string;
   serviceName: string | null;
   locationName: string | null;
+  /**
+   * THE PAIR, NOT JUST THE START, and that is a correctness requirement rather
+   * than completeness. Under the GUEST-04 Option A ruling these two columns
+   * encode a preferred DATE and a preferred PERIOD (see
+   * @osteojp/db `guest-preferred-window`), and the period cannot be read off the
+   * start alone: 09:00 means "morning" only when the window ends at 13:00.
+   * Returning the start by itself is what let this page render "20/08/2026,
+   * 09:00" for somebody who only ever said "manhã".
+   */
   requestedStartsAt: Date;
+  requestedEndsAt: Date;
   createdAt: Date;
   /** How many existing patients share this number. 0 = genuinely new. */
   possiblePatientMatches: number;
@@ -80,6 +90,7 @@ export async function listPendingGuestRequests(
         serviceName: services.name,
         locationName: locations.name,
         requestedStartsAt: guestBookingRequests.requestedStartsAt,
+        requestedEndsAt: guestBookingRequests.requestedEndsAt,
         createdAt: guestBookingRequests.createdAt,
         // COUNTED IN THE SAME QUERY, as a correlated subquery, so the flag and
         // the row come from ONE snapshot. Two round trips could report a match
@@ -104,6 +115,7 @@ export async function listPendingGuestRequests(
       serviceName: r.serviceName,
       locationName: r.locationName,
       requestedStartsAt: r.requestedStartsAt,
+      requestedEndsAt: r.requestedEndsAt,
       createdAt: r.createdAt,
       possiblePatientMatches: Number(r.matches ?? 0),
     }));

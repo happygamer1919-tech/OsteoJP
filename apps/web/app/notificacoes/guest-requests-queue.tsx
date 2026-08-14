@@ -35,8 +35,14 @@ export type GuestRequestRow = {
   fullName: string;
   phone: string;
   locationName: string | null;
-  /** Preformatted in Europe/Lisbon by the server, exactly as the pedido queue
-   *  does, so both lists read one instant the same way. */
+  /**
+   * THE GUEST'S STATED PREFERENCE, preformatted in Europe/Lisbon by the server —
+   * "20/08/2026, manhã" — and NOT a time anybody was offered. Under the
+   * GUEST-04 Option A ruling the public form shows no availability at all, so a
+   * precise time here would be an invention; the page derives this through
+   * `decodeGuestPreferredWindow` and falls back to nothing. Reception resolves
+   * the real slot when they call, which is R-GUEST-1 working as intended.
+   */
   when: string;
   requestedAt: string;
   possiblePatientMatches: number;
@@ -102,8 +108,11 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
                     <dd className="text-v2-text-primary">{r.locationName}</dd>
                   </div>
                 )}
+                {/* "Preferência", not "Data". The label is doing work: this row
+                    is what somebody asked for, and reading it as a booked date
+                    is the mistake the whole Option A shape exists to prevent. */}
                 <div className="flex gap-1">
-                  <dt>{s["appointment.date"]}:</dt>
+                  <dt>{s["guest.preferredWhen"]}:</dt>
                   <dd className="text-v2-text-primary">{r.when}</dd>
                 </div>
                 <div className="flex gap-1">

@@ -22,7 +22,11 @@ grep -rl "^'use server'" apps/portal/app | sort           #  5 server-action fil
 find apps/web/app/r -type f                               #  1 token page
 ```
 
-### 1.1 API routes — 19
+### 1.1 API routes — 21
+
+> **The heading read "19" while the table listed 20** — `booking/guest` was
+> appended with ITEM 6 and the count above it was not moved. Corrected
+> 2026-08-14, when row 21 was added.
 
 | # | Route | Methods | Auth |
 |---|---|---|---|
@@ -46,6 +50,7 @@ find apps/web/app/r -type f                               #  1 token page
 | 18 | `auth/otp/trusted` | POST | **pre-auth**, rate limited |
 | 19 | `auth/otp/revoke` | POST | **pre-auth**, device cookie + rate limited |
 | 20 | `booking/guest` | POST | **pre-auth**, rate limited (per IP, per phone, two tenant-wide ceilings). ITEM 6. The caller is by definition NOT a patient, so there is no principal to present. Safety comes from what it may WRITE: `guest_booking_requests` only, never a clinical table, always as a request a human confirms (R-GUEST-1). |
+| 21 | `booking/guest/catalog` | GET | **pre-auth**, rate limited per IP (two windows, durable store; **no global ceiling — see `RULES.guestCatalogIp`**). GUEST-04 Option A, 2026-08-14. The ONE unauthenticated READ the guest form gets: service id + name and location id + name, already published on osteojp.pt and on the portal's public Clínicas page. Same four predicates as `booking/catalog` (tenant, active, not `internal_only`, `patient_bookable`). No person, no schedule, no price. `booking/therapists` and `booking/slots` stay authenticated — **MN-27, MN-28**. |
 
 ### 1.2 Portal server actions — 5 files
 
@@ -140,9 +145,24 @@ divergence from the claimed figure and is reported in §5.
 | MN-24 | **reach a clinical table from an unauthenticated request** | `booking/guest` writes to `guest_booking_requests` and nothing else; the table has NO anon RLS policy in either direction and the insert runs service-role with an explicit `tenant_id` (rule 3). Migration 0063; `booking/guest/route.test.ts` counts the insert on every arm | PRESENT |
 | MN-25 | **enumerate the patient list through the public booking form** | the route answers `202 {status:"received"}` identically whether or not the phone matches a patient, and never queries `patients` on the write path at all. The duplicate flag is computed for RECEPTION when the queue is read. `route.test.ts` asserts the two responses are byte-identical AND that the body carries exactly one key | PRESENT |
 | MN-26 | **exhaust the guest-booking allowance with malformed input** | the tenant-wide ceiling is spent LAST, after parsing, phone normalisation and the SMS-capability gate, so garbage cannot deny the form to real people. `route.test.ts` asserts the ordering AND that a malformed body never touches the global key | PRESENT |
+| MN-27 | **learn WHO WORKS AT A CLINIC from an unauthenticated request** | `booking/therapists` STAYS AUTHENTICATED — GUEST-04 Option A ruling, 2026-08-14. It is absent from `PRE_AUTH` in `patient-surface.test.ts`, so the repo-wide scan requires it to call `getPatientPrincipal` and to refuse before any awaited work; adding it to the allowlist is the only way to expose it, and that is a decision with a name on it | PRESENT |
+| MN-28 | **learn WHEN A CLINIC IS EMPTY from an unauthenticated request** | `booking/slots` STAYS AUTHENTICATED — same ruling. A public slot list discloses, for any named therapist, exactly when they are not with a patient. Enforced identically: absent from `PRE_AUTH`, so the MN-01 scan covers it | PRESENT |
 | MN-23 | **have a new `appointments` writer added without a decision about the slot lock** — RESCOPED 2026-08-12, see §9 | `write-paths.test.ts` — repo-wide enumeration of every INSERT and time/therapist UPDATE, pinned to an allowlist that records a decision per path, comment-stripped | PRESENT |
 
-**23 MUST-NEVER rows. 23 enforcement points. ZERO rows without one.**
+**28 MUST-NEVER rows. 28 enforcement points. ZERO rows without one.**
+
+> **COUNT CORRECTED 2026-08-14.** This line read "23 MUST-NEVER rows" while the
+> table above it carried **26** — `MN-24`, `MN-25` and `MN-26` were added with
+> the guest write endpoint (GUEST-01) and the total below them was not moved.
+> The §9 audit table is **deliberately left alone**: it records what was claimed
+> and what was found on 2026-08-12 and is a historical reconciliation, not a
+> live count. `LE-board-pr-reconciliation`'s failure mode, one document over.
+>
+> **MN-27 AND MN-28 ARE RULINGS RECORDED WHERE THE SUITE ENFORCES THEM**, which
+> is the whole reason they are rows rather than a paragraph. Neither route
+> changed in this commit and neither needs to. What is new is that the next
+> person who considers exposing one now finds a MUST-NEVER row saying it was
+> decided, instead of an absence they could read as an oversight.
 
 **EVERY CITATION ABOVE WAS READ LINE BY LINE ON 2026-08-12 and graded REFUSAL or
 EXISTENCE. Four were wrong and are corrected in place. The audit is §9 and it is
