@@ -2450,29 +2450,37 @@
     },
     {
       "id": "LE-therapist-horarios-nav",
-      "title": "PRODUCT QUESTION: a therapist now holds schedule:read, so the Horários page is reachable and self-scoped for them, but the sidebar entry is deliberately held back",
-      "lane": "blocked_on_people",
+      "title": "ANSWERED by RULING A: therapists DO get the Horarios sidebar entry, self-scoped. Built in SCHED-02",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "low",
       "owner_terminal": "purple",
       "gate": "owner_authorizo",
-      "evidence": null,
-      "blocked_on": "ivan",
+      "evidence": {
+        "kind": "pr",
+        "ref": "ANSWERED 2026-08-14. Ivan ruled that therapists get the entry, view and manage their\nown schedule only. Built as SCHED-02 - a one-line deletion, because the page was\nself-scoped from the start.\n\nTHIS CARD RECOMMENDED THE OPPOSITE DEFAULT (\"leave it until a therapist asks\")\nand the owner ruled the other way. Recorded as answered rather than silently\ndeleted: the recommendation was a judgement about who the surface was for, not a\ntechnical finding, and it was the owner's call to make.",
+        "at": "2026-08-14"
+      },
+      "blocked_on": null,
       "last_checkpoint": "2026-08-14",
       "notes": "RAISED BY STAFF-06. The dispatch asked to extend the \"Bloquear horário\"\naffordance ON THE AGENDA. It did not ask for a new page in a therapist's\nnavigation, and adding one is a product decision rather than a consequence of the\ngrant, so it was held back rather than allowed to appear by side effect.\n\nWHAT IS TRUE TODAY:\n  - The therapist role holds schedule:read, which it needs to SEE and remove its\n    own blocks.\n  - /horarios is therefore REACHABLE by URL for a therapist, and is correctly\n    SELF-SCOPED: listAvailabilityTemplates filters to scope.userId, so they see\n    their own schedule and no colleague's. An e2e arm asserts exactly that.\n  - The SIDEBAR entry is suppressed by an explicit hideForRoles on the nav item.\n\nSO THE ONLY QUESTION IS THE SIDEBAR LINK. Admitting them is a one-line change to\none array and needs no further work. RECOMMENDED DEFAULT: leave it as shipped\nuntil a therapist asks for it; they have the agenda affordance the owner actually\nrequested. BLOCKING NOTHING."
     },
     {
       "id": "STAFF-08-jp-appointments-absent-from-agenda",
-      "title": "PARKED, PREMISE NOT REPRODUCIBLE: JP's two CB appointments show in Marcacoes and were reported missing from the OWNER's agenda. No code path found produces that split. Waiting on the appointments' exact date",
-      "lane": "blocked_on_people",
+      "title": "CLOSED, NO DEFECT: JP's CB appointments render correctly on the agenda. The presentation sighting was a DATE MISMATCH, confirmed by the owner rechecking on the appointments' actual date",
+      "lane": "shipped",
       "home_lane": "in_flight",
-      "status": "blocked",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "purple",
       "gate": "owner_authorizo",
-      "evidence": null,
-      "blocked_on": "ivan",
+      "evidence": {
+        "kind": "screenshot",
+        "ref": "CLOSED 2026-08-14 ON THE OWNER'S RECHECK, per WF-03. Ivan reopened the agenda on the\nAPPOINTMENTS' ACTUAL DATE, as owner, with null scope and full filters. THE JP\nROWS RENDER. The presentation sighting compared two different dates.\n\nNO CODE WAS CHANGED, AND THAT IS THE RESULT RATHER THAN AN OMISSION.\n\nTHE RECON DISPROVED THE DISPATCH'S OWN HYPOTHESIS AND DID NOT SUBSTITUTE ONE.\nThe hypothesis was that agenda-grid paints only appointments whose practitioner\nappears in the therapist column source. It is FALSE: agenda-grid.tsx:369 renders\ngroupByStart(dayAppts) over byDate (:207-213), built from the full appointments\nprop with NO practitioner predicate, and the grid has no therapist axis at all\n(:192). There was no line to name because the filter does not exist.\n\nFOUR INDEPENDENT REASONS THE REPORTED SPLIT COULD NOT BE PRODUCED, all\nre-derived from the code:\n  - Marcacoes and the agenda call the SAME listAppointments.\n  - For an OWNER, viewerLocationScope is null: no location predicate, and no\n    practitioner predicate is set. PL-06b intact.\n  - The agenda's FETCH RANGE IS DERIVED FROM THE SAME viewDates that produces\n    its COLUMNS (time.ts:149), so fetched and rendered sets CANNOT diverge.\n  - Staleness would hit MARCACOES, not the agenda: only /agenda is revalidated\n    on scheduling writes.\n\nWHAT THE HALT BOUGHT. Three fixes in this bucket were real and were built. This\none was not, and building a \"fix\" for it would have changed working scheduling\ncode on a false premise - the most expensive kind of change, on the surface the\nclinic depends on most. Strategy's note: the refusal to invent a reconciliation\nwas correct.\n\nSEPARATE AND STILL TRUE, from the same report: the Conflito flag on both rows is\nCORRECT. Alfredo 09:30-10:25 and Ana Rita 10:00-10:55 are both JP's and OVERLAP\nBY 25 MINUTES - a genuine double booking, permitted because 0061's constraint\nkeys on 'confirmed' only and both rows are 'Agendada'. The database behaved as\ndesigned. That finding survives this closure and is unaffected by the date\nmismatch.",
+        "at": "2026-08-14"
+      },
+      "blocked_on": null,
       "last_checkpoint": "2026-08-14",
       "notes": "RECON RUN 2026-08-14. THE DISPATCH'S HYPOTHESIS WAS DISPROVEN AND NO SUBSTITUTE\nCAUSE WAS INVENTED.\n\nTHE HYPOTHESIS: \"agenda-grid only paints appointments whose practitioner_id\nappears in the therapist column source, so any reason JP falls out of that list\nsilently drops his appointments.\"\nIT IS FALSE. agenda-grid.tsx:369 renders groupByStart(dayAppts) over byDate\n(:207-213), built from the full appointments prop with NO practitioner predicate\nanywhere. The grid has no therapist axis at all (:192). There is no line to name\nbecause the filter does not exist.\n\nWHY THE REPORTED SPLIT CANNOT BE PRODUCED BY THE CODE AS READ:\n  - Marcacoes and the agenda call the SAME listAppointments.\n  - For an OWNER, viewerLocationScope is null, so no location predicate is added\n    and no practitioner predicate is set. PL-06b intact: the therapist source is\n    users.isActive + the explicit is_bookable flag (data.ts:265-278), NO role\n    predicate.\n  - The agenda's FETCH RANGE IS DERIVED FROM THE SAME viewDates that produces its\n    COLUMNS (time.ts:149), so fetched and rendered sets cannot diverge.\n  - Both surfaces default to the same Mon-Sat week.\n  - Staleness would hit MARCACOES, not the agenda: only /agenda is revalidated on\n    scheduling writes (actions.ts), /marcacoes only from patients actions.\n\nWHAT IS NEEDED TO CLOSE IT: the appointments' exact DATE, and both screens\ncompared at the same moment on that date. Owner is re-checking.\n\nTWO REAL FAIL-SILENT DEFECTS FOUND WHILE LOOKING, NEITHER EXPLAINING THE REPORT,\nBOTH UNBUILT because they were outside the ruled fix shape:\n  1. makeMinToPx (agenda-grid.tsx:120) CLAMPS an out-of-band start onto the grid\n     edge, so a 07:00 appointment renders AT 08:00 - claiming a time it does not\n     have, rather than being absent.\n  2. startCountsByDay (:222) excludes out-of-band appointments from the hour\n     heights.\nThe grid runs 08:00-20:00, so neither touches JP's 09:30/10:00 rows.\n\nSEPARATE AND CONFIRMED, from the same report: the Conflito flag on both rows is\nCORRECT. conflictingIds (marcacoes-view.tsx:117) flags two non-cancelled\nappointments sharing a practitioner whose intervals overlap; Alfredo 09:30-10:25\nand Ana Rita 10:00-10:55 are both JP and OVERLAP BY 25 MINUTES. A genuine double\nbooking. It was allowed because 0061's constraint keys on `confirmed` only and\nboth rows are `Agendada` (scheduled), so the database behaved as designed."
     },
@@ -2521,6 +2529,24 @@
       "blocked_on": null,
       "last_checkpoint": "2026-08-14",
       "notes": "RAISED BY GUEST-01 2026-08-14, DELIBERATELY AND NOT DISCOVERED LATER.\n\nguest_booking_requests.phone_e164 carries patients.phone_e164's GENERATED ALWAYS\nexpression VERBATIM. That is what reception's possible-existing-patient flag\nmatches on: guest.phone_e164 = patients.phone_e164.\n\nWHY THE DUPLICATION IS DANGEROUS IN THIS PARTICULAR PLACE. If the two ever\nnormalise differently, the flag silently stops matching - and A MISS LOOKS\nEXACTLY LIKE A GENUINE NO-MATCH. Nothing errors, no screen reports anything odd,\nand the outcome is a guest being treated as a new person when they are an\nexisting patient. That is the vacuous-guard shape this project has counted 123\ninstances of, sitting on a verdict path.\n\nWHAT IS REQUIRED BEFORE THE GUEST FLOW SHIPS: a DB-gated parity test running one\ncorpus through BOTH generated columns and requiring identical answers, modelled\non phone-e164-parity.db.test.ts which already does this for SQL-vs-JS. Hard-\nrequired in the skip guard, not optional.\n\nTHE RIGHT END STATE IS ONE SQL FUNCTION used by both columns, and it was NOT\nbuilt in 0063 for two stated reasons: 0063 is authorized for the new table only,\nand rewriting patients.phone_e164 is a generated-column rewrite on a table\nholding live clinical data. That is a separate migration with its own apply, and\ninventing it inside an authorized-for-one-table migration would have been exactly\nthe scope creep the migration doctrine exists to prevent."
+    },
+    {
+      "id": "SCHED-02-therapist-horarios-nav",
+      "title": "RULING A: therapists get a Horarios sidebar entry, self-scoped. They view and manage their OWN schedule only, through the same schedule scope #902 established",
+      "lane": "shipped",
+      "home_lane": "in_flight",
+      "status": "shipped",
+      "priority": "medium",
+      "owner_terminal": "purple",
+      "gate": "green_self_merge",
+      "evidence": {
+        "kind": "e2e",
+        "ref": "SHIPPED 2026-08-14 on RULING A (Ivan). Gates green.\n\nA ONE-LINE DELETION, AND THAT IS THE POINT. The entry was held back when ITEM 3\ngranted schedule:read, because a sidebar page nobody had asked for is a product\ndecision rather than a consequence of a capability. The owner has now asked, and\nthe page needed no work because it was built self-scoped from the start:\n  listAvailabilityTemplates filters to scope.userId\n  horarios/page.tsx narrows the ROSTER to the actor when the scope is 'self'\n\nTHE SECOND NARROWING IS THE ONE THAT MATTERS AND IT IS NOT THEORETICAL. Without\nit a therapist saw a card for EVERY colleague - seven on the seeded database -\neach wrongly labelled \"Sem clinica atribuida\", which is false about an assigned\ncolleague. That leak was written by me, shipped into a PR, and caught by the e2e\narm STAFF-05 had added for exactly that failure mode. Its regression arms now\nguard this surface for a role that can finally reach it.\n\nhideForRoles WAS REMOVED, not left behind. It was added for this one suppression\nand now has zero call sites; an unused optional field on a nav item is the kind\nof thing that rots quietly.\n\nTWO EXISTING ASSERTIONS CHANGED ON THE RULING, each with the reason at the\nassertion: the nav list now expects [therapist, reception] where it expected\n[reception], and the therapist's full sidebar gained /horarios. OWNER AND ADMIN\nARE STILL EXCLUDED and that is deliberate - they hold settings:read and manage\nschedules inside Equipa, so a second entry would be a duplicate surface.\n\nNEW e2e ARM asserts the therapist reaches Horarios FROM THE SIDEBAR rather than\nby URL, because the URL was already reachable before the ruling; what changed is\nthat a therapist can find it.\n\nAWAITING WF-03, batched into the next acceptance sitting per WF-16.",
+        "at": "2026-08-14"
+      },
+      "blocked_on": null,
+      "last_checkpoint": "2026-08-14",
+      "notes": "RULED BY IVAN 2026-08-14. Supersedes LE-therapist-horarios-nav, which asked the\nquestion and recommended leaving it until a therapist asked. A therapist asked.\n\nMICROCOPY: NONE. The entry reuses the existing nav.schedule string (\"Horarios\"),\nand the page's own copy is unchanged. Nothing new was written."
     }
   ]
 }
