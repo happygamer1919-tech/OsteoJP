@@ -45,6 +45,7 @@ find apps/web/app/r -type f                               #  1 token page
 | 17 | `auth/otp/verify` | POST | **pre-auth**, rate limited |
 | 18 | `auth/otp/trusted` | POST | **pre-auth**, rate limited |
 | 19 | `auth/otp/revoke` | POST | **pre-auth**, device cookie + rate limited |
+| 20 | `booking/guest` | POST | **pre-auth**, rate limited (per IP, per phone, two tenant-wide ceilings). ITEM 6. The caller is by definition NOT a patient, so there is no principal to present. Safety comes from what it may WRITE: `guest_booking_requests` only, never a clinical table, always as a request a human confirms (R-GUEST-1). |
 
 ### 1.2 Portal server actions — 5 files
 
@@ -136,6 +137,9 @@ divergence from the claimed figure and is reported in §5.
 | MN-20 | make the clinic text a number that cannot receive SMS | `isSmsCapablePT`; `otp-sms-capability.test.ts` | PRESENT |
 | MN-21 | distinguish a wrong code from an unknown number | one 401, one body, six failure modes; `otp.test.ts`, `degradation-copy.test.ts` | PRESENT |
 | MN-22 | receive contact data in a notification payload | `payload-minimization.test.ts` (counsel requires this maintained) | PRESENT |
+| MN-24 | **reach a clinical table from an unauthenticated request** | `booking/guest` writes to `guest_booking_requests` and nothing else; the table has NO anon RLS policy in either direction and the insert runs service-role with an explicit `tenant_id` (rule 3). Migration 0063; `booking/guest/route.test.ts` counts the insert on every arm | PRESENT |
+| MN-25 | **enumerate the patient list through the public booking form** | the route answers `202 {status:"received"}` identically whether or not the phone matches a patient, and never queries `patients` on the write path at all. The duplicate flag is computed for RECEPTION when the queue is read. `route.test.ts` asserts the two responses are byte-identical AND that the body carries exactly one key | PRESENT |
+| MN-26 | **exhaust the guest-booking allowance with malformed input** | the tenant-wide ceiling is spent LAST, after parsing, phone normalisation and the SMS-capability gate, so garbage cannot deny the form to real people. `route.test.ts` asserts the ordering AND that a malformed body never touches the global key | PRESENT |
 | MN-23 | **have a new `appointments` writer added without a decision about the slot lock** — RESCOPED 2026-08-12, see §9 | `write-paths.test.ts` — repo-wide enumeration of every INSERT and time/therapist UPDATE, pinned to an allowlist that records a decision per path, comment-stripped | PRESENT |
 
 **23 MUST-NEVER rows. 23 enforcement points. ZERO rows without one.**

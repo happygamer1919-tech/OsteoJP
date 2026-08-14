@@ -32,8 +32,14 @@ const MATRIX = join(REPO_ROOT, "docs", "recon", "W13-06-exposure-matrix.md");
 
 /**
  * Routes that legitimately run BEFORE a patient principal exists, each with the
- * reason. These are the only four, and they are all one flow: you cannot
- * present a credential you are in the act of obtaining.
+ * reason.
+ *
+ * FOUR OF THEM ARE ONE FLOW: you cannot present a credential you are in the act
+ * of obtaining. THE FIFTH IS A DIFFERENT ARGUMENT ENTIRELY and is worth reading
+ * as such rather than being filed beside them - `booking/guest` has no
+ * credential to obtain, because the caller is not a patient and may never
+ * become one. Its safety comes from what it can WRITE (one non-clinical table,
+ * always as a request) rather than from who it can prove itself to be.
  *
  * EVERY ONE OF THEM IS RATE LIMITED, which is what stands in for authentication
  * on an unauthenticated surface. That is asserted below, not assumed — an
@@ -49,6 +55,11 @@ const PRE_AUTH: Record<string, string> = {
     "spends the 30-day device token, which is itself a credential, verified server-side against the device row. Rate limited per IP.",
   "auth/otp/revoke":
     "authenticated BY THE DEVICE COOKIE itself, deliberately, so a patient can revoke without a session. Rate limited per IP.",
+  // ITEM 6. The FIRST entry here that is not part of the OTP flow, so the
+  // comment above ("these are the only four, and they are all one flow") no
+  // longer describes the set - see the amended note.
+  "booking/guest":
+    "ITEM 6 guest booking. The caller is BY DEFINITION not a patient - the flow exists for people who have no record and no account - so there is no principal to present and requiring one would refuse every legitimate use. It writes ONLY to guest_booking_requests, never to a clinical table, every row is a REQUEST a human confirms (R-GUEST-1), and it answers identically whether or not the phone matches a patient so it is not a patient-list oracle. Rate limited per IP, per phone, and by two tenant-wide ceilings, all on the DURABLE store.",
 };
 
 /** Strip comments before matching anything.

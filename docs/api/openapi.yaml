@@ -99,6 +99,74 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v1/booking/guest:
+    post:
+      operationId: createGuestBookingRequest
+      tags: [booking]
+      summary: Request an appointment as a NEW client, with no account
+      description: >
+        ITEM 6. A booking REQUEST from somebody who is not a patient: no
+        account, no OTP login. The project's FIRST unauthenticated write
+        surface.
+
+
+        EVERY SUBMISSION IS A REQUEST (R-GUEST-1). Nothing is booked and no slot
+        is held, whatever the availability. `status` is defaulted by the
+        database and is never set by this route, so the path cannot be made to
+        auto-confirm by passing a field. Reception confirms each one by hand and
+        creates the patient and the appointment at that moment.
+
+
+        NOTHING CLINICAL IS TOUCHED. The write goes to `guest_booking_requests`
+        and nowhere else — no patient row, no appointment, no notification.
+        That table has no anon policy in either direction; the insert runs
+        service-role with an explicit `tenant_id`.
+
+
+        IT ANSWERS 202 WHETHER OR NOT THE PHONE MATCHES AN EXISTING PATIENT, and
+        never queries the patient table on this path at all, so membership
+        cannot leak even through the timing of a lookup. The
+        possible-existing-patient flag is computed for RECEPTION when the queue
+        is read, and is never returned here. A response that differed would make
+        a public form a patient-list oracle.
+
+
+        NO SMS IS SENT (R9). The caller shows an on-screen confirmation and
+        tells the person the clinic will make contact.
+
+
+        Rate limited on THREE independent axes — per source, per phone hash, and
+        two tenant-wide ceilings — because each alone is bypassable. The
+        tenant-wide ceiling is checked LAST, after parsing and validation, so
+        malformed input cannot exhaust the day's allowance and deny the form to
+        real people.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestBookingInput"
+      responses:
+        "202":
+          description: >
+            Accepted as a REQUEST. Returned identically whether or not the phone
+            matches an existing patient — see the description. The body carries
+            exactly one key and no match information of any kind.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [received]
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
   /api/v1/auth/otp/request:
     post:
       operationId: requestOtp
@@ -1150,6 +1218,53 @@ components:
             $ref: "#/components/schemas/Error"
 
   schemas:
+    GuestBookingInput:
+      type: object
+      additionalProperties: false
+      required: [tenantId, fullName, phone, serviceId, locationId, startsAt, endsAt]
+      description: >
+        R-GUEST-2: the MINIMUM. A name, a number, the service and the slot.
+        NO NIF (PL-20), no health information, nothing clinical before the first
+        visit.
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+          maxLength: 120
+          description: >
+            Bounded so the reception queue cannot be filled with essays. The one
+            free-text field on this surface.
+        phone:
+          type: string
+          description: >
+            Portuguese MOBILE number in any format; normalized to E.164 server
+            side. A geographic (landline) number is refused: reception's only way
+            to reach a guest is to ring them, so a landline typed by mistake is a
+            request nobody can action.
+          examples: ["+351912345678"]
+        serviceId:
+          type: string
+          format: uuid
+        locationId:
+          type: string
+          format: uuid
+        practitionerId:
+          # OpenAPI 3.1: a nullable type is a type UNION, not a `nullable: true`
+          # flag - that spelling is 3.0 and the linter refuses it here.
+          type: [string, "null"]
+          format: uuid
+          description: >
+            Omitted or null means "any available therapist" — a real answer from
+            the flow's therapist step, not a missing one.
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+
     OtpRequestInput:
       type: object
       additionalProperties: false
