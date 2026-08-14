@@ -3007,3 +3007,79 @@ failure once the owner's terminal session is already over.
 
 Next free migration number is **0059**. Nothing in the repo holds an unapplied migration, so the
 one-in-flight rule is satisfied and `W13-04a-availability-exclusion` may take the slot.
+
+## 2026-08-14 - scripts/ingestion-sign.mjs, and where a root-level test can run (branch tools/ingestion-hmac-signer)
+
+Standalone HMAC signer for the live acceptance session with the AI ingestion partner. Three of the
+six acceptance steps need signed POSTs the partner's scenario cannot produce: an exact-bytes replay
+(200), a one-character mutation under the same idempotency key (409), and a deliberately bad
+signature (401). Owner instruction, out of band, no board card. See Q-ACC-SIGN-1.
+
+### The signer signs the bytes it sends, structurally rather than by claim
+
+There is exactly one Buffer. It is read from disk, optionally mutated once, then hashed and handed to
+`fetch`. `buildSignedRequest()` returns the very Buffer it signed, so "signs the exact bytes
+transmitted" is a property of the data flow and not of a comment. The HMAC is fed as two byte-wise
+`update()` calls (`` `${timestamp}.` `` then the raw bytes), so the body never becomes a string in
+this process and no decode or re-encode can alter it.
+
+The defect this is built against is the ordinary one: parse the JSON, re-stringify it, sign that.
+Key order, unicode escaping and whitespace all move, the MAC no longer covers what went on the wire,
+and the endpoint answers a flat 401 that discloses nothing about why. During an acceptance window
+that reads as a wrong shared secret.
+
+### Two byte-level cases that fail loud rather than being repaired
+
+The endpoint MACs over `await req.text()`, a UTF-8 decode of what it receives. Bytes that do not
+survive that decode are refused, because signing them would sign something we did not send. A UTF-8
+BOM is refused separately, and for the opposite reason: it round-trips, so the signature verifies and
+the server's `JSON.parse` then fails, answering 400 during a step whose expected answer is 200, 401
+or 409. Both are the §1.3 rule from PORTAL-REHYDRATE.md applied to bytes: on a path that produces a
+verdict, an unhandled case must fail rather than fall back.
+
+`--mutate-body` follows the same rule. It flips the first ASCII alphanumeric inside a string VALUE
+within the `payload` object, located by walking the JSON structure rather than by searching for the
+text `"payload"` (which can appear inside a value). Inside the payload so the transport envelope is
+untouched and the request still routes to the same `(tenant, idempotency_key)` pair; inside a string
+value so the body stays valid JSON; ASCII alphanumeric so no multi-byte sequence is cut in half. If
+no such byte exists it throws. Flipping something else would send a request whose status code answers
+a different question than the one being asked.
+
+### Where the test runs, which was the real decision
+
+The test compares the script's signature against `signIngestionBody()` and `verifyIngestionSignature()`
+imported from `apps/web/lib/ingestion/hmac.ts` - the endpoint's own code, not a second copy of the
+algorithm, which would drift in step with the signer and prove nothing.
+
+`scripts/` is not a workspace package, so `turbo run test` never sees it and a test file there would
+have sat in the repo looking like protection while running nowhere. That is the `test.skip()` failure
+from §1.3 in a different costume. Three ways out were available:
+
+1. put the test under `apps/web` - rejected, the dispatch ruled that tree untouchable during the
+   acceptance window;
+2. stand up a `tools/` workspace for it - rejected, it moves the lockfile and the workspace config
+   for one file;
+3. run it with the Node 22 built-in test runner and add one step to the existing CI quality job -
+   taken.
+
+Node 22 strips the TypeScript types on import, so `hmac.ts` is imported directly with no build step
+and no new dependency. `pnpm test:scripts` runs `node --test "scripts/**/*.test.mjs"`. The CI step
+sits INSIDE the existing `quality` job rather than in a new job, because a new job is a new check
+name and would not be in the REQUIRED set - green, and blocking nothing.
+
+### Proven capable of failing
+
+Three negative arms, each applied to the real file, run, observed red, reverted:
+
+- `signBytes` re-serialises the JSON before signing - 6 red, including the cross-check against the
+  endpoint helper;
+- the mutation lands outside the payload object - 4 red;
+- the UTF-8 round-trip guard removed - 1 red.
+
+23 tests, 23 passing on the restored file.
+
+### Nothing in the runtime surface moved
+
+No change to the endpoint, the ingestion library, or anything under `apps/web`. Files: two new under
+`scripts/`, one script entry in the root `package.json`, one step in `.github/workflows/ci.yml`, and
+these log entries.

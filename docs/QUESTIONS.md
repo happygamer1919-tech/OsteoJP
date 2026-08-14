@@ -1042,3 +1042,27 @@ final*). Guessing either way risks blocking a legal invoice or permitting a non-
 an invoice is a known, legal shape in Portugal; a wrongly blocked invoice stops the clinic being paid,
 which is a worse failure than a fatura that has to be reissued. The "ficha incompleta" banner is
 already visible on the same patient's record, so whoever issues the invoice can see the gap.
+
+## Q-ACC-SIGN-1 - the ingestion signer shipped without a ticket (opened 2026-08-14, CYAN)
+
+CLAUDE.md: "Never start work that has no ticket. If the owner gives an ad-hoc instruction, create the
+ticket first, then execute." `scripts/ingestion-sign.mjs` was built on a direct owner instruction for
+a live acceptance window and carries no card on either board.
+
+**Why a card was not created instead of asking.** `docs/board/portal-board.json` is named in
+PORTAL-REHYDRATE.md §1.2 as the one real collision risk on the repo, written by both active lanes
+every dispatch. This is an acceptance-session tool for an `apps/web` endpoint, so it is not a portal
+card in the first place, and adding a foreign card to a board two other terminals are editing buys a
+conflict for no traceability gain.
+
+**Recommended default: card it on the platform board, after the acceptance session, as shipped.**
+`docs/board/prelaunch-board.json` is the platform board and WF-14 transfers its custody to PURPLE.
+One card, `status: shipped`, evidence `pr:<this PR>`, written by whoever next has that board open
+rather than by a third terminal reaching across. Retroactive, which is the wrong order, but the
+alternative was either a board conflict during a live window or not sending the three signed requests
+the acceptance session is blocked on.
+
+**What is actually open for the owner:** whether an out-of-band tool built during an acceptance
+window needs a card at all, or whether the DECISIONS.md entry is the record. This is the third
+instance in a fortnight of work existing without a card, and `LE-board-pr-reconciliation` already
+cards the general failure.
