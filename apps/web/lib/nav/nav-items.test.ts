@@ -47,12 +47,16 @@ describe("navItemsForRole — role-aware nav gating", () => {
 
   // W10-04 isolation (owner ruling 2026-07-21): the therapist role loses
   // Faturação (owner/admin/reception only); Review stays.
-  it("therapist sees Review but NOT Invoicing, NOT Admin, NOT the top-level /clinical", () => {
+  it("therapist sees Review and Horários but NOT Invoicing, NOT Admin, NOT the top-level /clinical", () => {
+    // RULING A added "/horarios" here. The list is asserted in FULL rather than
+    // by `toContain`, so a future capability change that quietly adds a fifth
+    // surface to a clinician's sidebar has to break this test first.
     expect(hrefs("therapist")).toEqual([
       "/dashboard",
       "/agenda",
       "/patients",
       "/marcacoes",
+      "/horarios",
       "/clinical/review",
     ]);
     expect(hrefs("therapist")).not.toContain("/invoicing");
@@ -76,11 +80,18 @@ describe("navItemsForRole — role-aware nav gating", () => {
     expect(r).not.toContain("/admin");
   });
 
-  it("PL-09 Phase 5 + ITEM 3: Horários nav is STILL reception-only, even though a therapist now holds schedule:read", () => {
+  it("RULING A: reception AND therapist see Horários; owner/admin manage schedules in Equipa", () => {
+    // This assertion read `["reception"]` until RULING A (Ivan, 2026-08-14),
+    // which admitted therapists so they can view and manage their OWN schedule.
+    // Changed on the ruling, not to make a build pass.
+    //
+    // OWNER AND ADMIN ARE STILL EXCLUDED, and that is not an oversight: they
+    // hold settings:read and manage schedules inside Equipa, so a second entry
+    // would be a duplicate surface for the same job.
     const seesHorarios = (["owner", "admin", "therapist", "reception"] as const).filter(
       (role) => hrefs(role).includes("/horarios"),
     );
-    expect(seesHorarios).toEqual(["reception"]);
+    expect(seesHorarios).toEqual(["therapist", "reception"]);
   });
 
   it("NO role sees the top-level Registos Clínicos (/clinical) section (ruling F)", () => {

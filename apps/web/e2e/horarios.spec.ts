@@ -51,6 +51,17 @@ test.describe("Horários — gate", () => {
    * actually matters, and it keeps holding if the route is ever linked from the
    * navigation (see LE-therapist-horarios-nav, deliberately not done here).
    */
+  test("RULING A: a therapist REACHES Horários from the sidebar", async ({ page }) => {
+    // The nav entry is the whole of RULING A. Asserted from the sidebar rather
+    // than by navigating to the URL, because the URL was already reachable
+    // before the ruling - what changed is that a therapist can FIND it.
+    await page.goto("/dashboard");
+    const link = page.getByRole("link", { name: /hor[\u00e1a]rios/i });
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL(/\/horarios/);
+  });
+
   test("ITEM 3: a therapist reaching /horarios sees ONLY their own schedule", async ({ page }) => {
     await page.goto("/horarios");
     await page.waitForLoadState("domcontentloaded");
