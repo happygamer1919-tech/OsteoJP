@@ -37,3 +37,11 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # Root-level scripts are not a workspace package, so `turbo run test` never
+      # sees them. Without this step scripts/*.test.mjs would sit in the repo
+      # looking like protection while running nowhere. Inside the existing
+      # quality job on purpose: a separate job would be a new check name and
+      # would not be in the REQUIRED set.
+      - name: Test scripts
+        run: pnpm test:scripts
