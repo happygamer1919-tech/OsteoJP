@@ -6,6 +6,7 @@ import { requireRequestContext } from "@/lib/auth/context";
 import { getAgendaOptions } from "@/lib/scheduling/data";
 import { listAvailabilityTemplates } from "@/lib/admin/availability";
 import { listTimeOffBlocksForRoster } from "@/lib/admin/time-off";
+import { resolveScheduleScope } from "@/lib/admin/schedule-scope";
 import { buildScheduleDays, indexScheduleTemplates } from "@/lib/admin/schedule-days";
 import {
   TherapistBlocks,
@@ -53,7 +54,24 @@ export default async function HorariosPage({
     getAgendaOptions(actor),
     listAvailabilityTemplates(actor),
   ]);
-  const therapists = options.therapists; // { id, label }, location-scoped
+  // WHO THIS SURFACE LISTS IS THE SCHEDULE SCOPE'S QUESTION, NOT THE AGENDA'S.
+  //
+  // `getAgendaOptions` is scoped by `viewerLocationScope`, which returns null for
+  // a THERAPIST - correct for the agenda, where a therapist is bounded by their
+  // own-data rules rather than by location. Read here it meant a therapist saw a
+  // schedule card for EVERY colleague: seven cards on the seeded database, six of
+  // them other people, each rendered with "Sem clínica atribuída" - a sentence
+  // that is FALSE about those colleagues, since they are assigned and the viewer
+  // simply may not manage them.
+  //
+  // It is the same mistake ITEM 3 fixed one layer down, resurfacing one layer up:
+  // a scope resolved for one question being reused for a different one. The
+  // schedule scope is what decides this list.
+  const scheduleScope = await resolveScheduleScope(actor);
+  const therapists =
+    scheduleScope.kind === "self"
+      ? options.therapists.filter((t) => t.id === scheduleScope.userId)
+      : options.therapists; // location-scoped; ITEM 1 keeps unassigned members visible here
   const locations = options.locations.map((l) => ({ id: l.id, name: l.label }));
 
   // Up to TWO active templates per (therapist, weekday) since W13-A, so a split

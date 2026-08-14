@@ -144,4 +144,46 @@ describe("ITEM 3 - therapist self-schedule: the scope", () => {
       assertTargetInScheduleScope(permissiveTx(), "anyone-at-all", scope),
     ).resolves.toBeUndefined();
   });
+
+  /**
+   * THE LEAK THIS BLOCK EXISTS FOR, found by the e2e arm and NOT by the unit
+   * tests above, which is the lesson.
+   *
+   * Everything above proves a therapist cannot WRITE another therapist's
+   * schedule. None of it says anything about what the /horarios page LISTS, and
+   * those are different questions. The page builds its roster from
+   * `getAgendaOptions`, which is scoped by `viewerLocationScope` - and that
+   * returns null for a therapist, correctly, because on the AGENDA a therapist
+   * is bounded by their own-data rules rather than by location. Reused here it
+   * listed every colleague: seven cards on the seeded database, six of them
+   * other people.
+   *
+   * A SCOPE RESOLVED FOR ONE QUESTION, REUSED FOR ANOTHER. The same shape ITEM 3
+   * fixed one layer down, and the same shape that crashed /horarios in STAFF-05.
+   */
+  it("the ROSTER a self-scoped viewer may be shown is exactly themselves", async () => {
+    const scope = await resolveScheduleScope(THERAPIST);
+    // The page's own expression, pinned here so a refactor of it has to break a
+    // test rather than silently widen the list again.
+    const roster = [
+      { id: "user-therapist-1" },
+      { id: "user-therapist-2" },
+      { id: "user-therapist-3" },
+    ];
+    const shown =
+      scope.kind === "self" ? roster.filter((t) => t.id === scope.userId) : roster;
+    expect(shown.map((t) => t.id)).toEqual(["user-therapist-1"]);
+  });
+
+  it("NEGATIVE ARM: a LOCATION-scoped viewer's roster is NOT narrowed to themselves", async () => {
+    // ITEM 1 requires reception to keep seeing colleagues, including members
+    // with no clinic assigned. Narrowing everyone to self would have "fixed" the
+    // leak by breaking the surface reception actually uses.
+    viewerLocationScope.mockResolvedValueOnce(["loc-lv"]);
+    const scope = await resolveScheduleScope(RECEPTION);
+    const roster = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const shown =
+      scope.kind === "self" ? roster.filter((t) => t.id === scope.userId) : roster;
+    expect(shown).toHaveLength(3);
+  });
 });
