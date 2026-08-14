@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gt, lt, ne } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { appointments, patients, timeOff } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
@@ -7,7 +7,11 @@ import { addDays, lisbonDateTimeToUtc, lisbonMidnightUtc, lisbonParts } from "@/
 import { generateLoteSchedule, type LoteEnd } from "@/lib/scheduling/lote";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
-import { assertTargetInScheduleScope, resolveScheduleScope } from "./schedule-scope";
+import {
+  assertTargetInScheduleScope,
+  manageableTargets,
+  resolveScheduleScope,
+} from "./schedule-scope";
 
 /**
  * W5-12 — therapist availability blocks, migration-free on the existing
@@ -207,6 +211,75 @@ export async function listTimeOffBlocks(
  * (and after) writing a block — the appointments are NEVER cancelled (owner
  * ruling Q-W5-4: clinical/scheduling data is never silently destroyed).
  */
+/**
+ * One roster member's time-off, or an explicit statement that this actor may not
+ * manage them. THE TWO CASES ARE DISTINCT ON PURPOSE: "no blocks" and "not
+ * yours to manage" render differently and must never collapse into each other.
+ * An empty array for a therapist you cannot manage is the exact conflation this
+ * project keeps paying for - the screen would read "no absences" for a therapist
+ * whose absences you simply cannot see.
+ */
+export type RosterTimeOff =
+  | { manageable: true; blocks: TimeOffBlockView[] }
+  | { manageable: false };
+
+/**
+ * Time-off for a WHOLE ROSTER, in two queries, with the unmanageable members
+ * named rather than thrown.
+ *
+ * REPLACES `listTimeOffBlocks` IN A LOOP, which is what crashed /horarios for a
+ * located receptionist: one unassigned therapist threw `not_found` and took the
+ * entire page down with it. The full reasoning is on `manageableTargets` in
+ * ./schedule-scope.ts.
+ *
+ * EVERY id THE CALLER ASKS ABOUT COMES BACK IN THE MAP. A caller that renders a
+ * member missing from the map would be back to guessing, so there is no such
+ * member: `manageable: false` is a value, not an absence.
+ */
+export async function listTimeOffBlocksForRoster(
+  actor: RequestContext,
+  userIds: readonly string[],
+): Promise<Map<string, RosterTimeOff>> {
+  assertCan(actor.role, "schedule:read");
+  const scope = await resolveScheduleScope(actor);
+  const ids = [...new Set(userIds)];
+  return runScoped(actor, async (tx) => {
+    const manageable = await manageableTargets(tx, ids, scope);
+    const out = new Map<string, RosterTimeOff>();
+    for (const id of ids) if (!manageable.has(id)) out.set(id, { manageable: false });
+
+    const wanted = ids.filter((id) => manageable.has(id));
+    if (wanted.length === 0) return out;
+
+    // ONE query for every manageable member, then bucketed in memory. The old
+    // shape issued one round-trip per therapist; on a 16-person roster that is
+    // 16 sequential-ish queries for data that fits in one.
+    const rows = await tx
+      .select({
+        id: timeOff.id,
+        userId: timeOff.userId,
+        startsAt: timeOff.startsAt,
+        endsAt: timeOff.endsAt,
+        reason: timeOff.reason,
+        note: timeOff.note,
+      })
+      .from(timeOff)
+      .where(inArray(timeOff.userId, wanted))
+      .orderBy(asc(timeOff.startsAt));
+
+    for (const id of wanted) out.set(id, { manageable: true, blocks: [] });
+    for (const row of rows) {
+      const held = out.get(row.userId);
+      // Defensive rather than decorative: RLS could in principle return a row
+      // for a user outside `wanted`. Dropping it silently is the conflation
+      // this type exists to prevent, so it is skipped only when the bucket is
+      // genuinely absent, which cannot happen for a wanted id.
+      if (held?.manageable) held.blocks.push(viewFor(row));
+    }
+    return out;
+  });
+}
+
 async function appointmentsOverlapping(
   tx: Parameters<Parameters<typeof runScoped>[1]>[0],
   args: { userId: string; startsAt: Date; endsAt: Date },

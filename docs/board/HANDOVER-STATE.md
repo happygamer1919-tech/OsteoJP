@@ -55,7 +55,21 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**137 cards. 71 shipped, 66 open. Launch readiness 9/9 — every launch gate passes.**
+**139 cards. 72 shipped, 67 open. Launch readiness 9/9 — every launch gate passes.**
+
+> **The clinic team is testing on production.** Defects reported from live use
+> are being fixed as they arrive; they are `STAFF-xx` cards on the board.
+>
+> **A crash reported on 2026-08-14 is fixed.** Opening **Horários** as a
+> receptionist assigned to a clinic showed a black page reading "Application
+> error". It needed two things at once, which is why it was never seen before:
+> the person looking had to be **assigned to a clinic**, and at least one
+> therapist had to be assigned to **no clinic at all**. Every account used in
+> demonstrations was unassigned, so nobody hit it. **Equipa had the same fault
+> for an admin assigned to a clinic**, reported by nobody and fixed in the same
+> change. A therapist with no clinic now appears on the schedule page with a
+> line saying their schedule cannot be managed there and that a location should
+> be assigned in Equipa; they are **not** hidden.
 
 > **PG9 EXPERIENCE closed on 2026-08-13**, on run `31651759598` — shard 3, **72
 > passed, 0 failed, 0 flaky, green at attempt 1**. It reddened first, on a real

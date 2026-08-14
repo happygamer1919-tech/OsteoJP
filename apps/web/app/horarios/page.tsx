@@ -5,12 +5,11 @@ import { s } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { getAgendaOptions } from "@/lib/scheduling/data";
 import { listAvailabilityTemplates } from "@/lib/admin/availability";
-import { listTimeOffBlocks } from "@/lib/admin/time-off";
+import { listTimeOffBlocksForRoster } from "@/lib/admin/time-off";
 import { buildScheduleDays, indexScheduleTemplates } from "@/lib/admin/schedule-days";
 import {
   TherapistBlocks,
   type BlockLabels,
-  type BlockView,
 } from "@/app/admin/working-hours/TherapistBlocks";
 import type { ScheduleDay } from "@/app/admin/staff/StaffManageModal";
 import { WeekScheduleEditor } from "./WeekScheduleEditor";
@@ -66,13 +65,20 @@ export default async function HorariosPage({
   const buildDays = (userId: string): ScheduleDay[] =>
     buildScheduleDays(templateIndex, userId, WEEKDAY_ORDER, (wd) => s[WEEKDAY_KEYS[wd]]);
 
-  // Time-off blocks per therapist (listTimeOffBlocks re-asserts own-location).
-  const blocksByTherapist = new Map<string, BlockView[]>(
-    await Promise.all(
-      therapists.map(
-        async (t): Promise<[string, BlockView[]]> => [t.id, await listTimeOffBlocks(actor, t.id)],
-      ),
-    ),
+  // Time-off blocks for the whole roster, in two queries.
+  //
+  // THIS WAS A `Promise.all` OF ONE `listTimeOffBlocks` PER THERAPIST AND IT
+  // CRASHED THE PAGE. The roster this page renders KEEPS a therapist with no
+  // location assignment (filterRosterByViewerScope, deliberately - hiding an
+  // unassigned colleague is a data-entry gap silently swallowing a real
+  // person). The schedule gate REFUSES that same therapist, also deliberately.
+  // Chained, the refusal rejected the whole batch, the server component threw,
+  // and a located receptionist got "Application error: a client-side exception
+  // has occurred" - in front of the clinic team. Full reasoning on
+  // `manageableTargets` in lib/admin/schedule-scope.ts.
+  const timeOffByTherapist = await listTimeOffBlocksForRoster(
+    actor,
+    therapists.map((t) => t.id),
   );
 
   const blockLabels: BlockLabels = {
@@ -153,21 +159,40 @@ export default async function HorariosPage({
           <p className="text-sm text-v2-text-secondary">{s["schedule.empty"]}</p>
         </GlassPanel>
       ) : (
-        therapists.map((t) => (
-          <GlassPanel key={t.id} className="flex flex-col gap-4 p-6">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
-              <TherapistBlocks
-                therapistId={t.id}
-                therapistName={t.label}
-                blocks={blocksByTherapist.get(t.id) ?? []}
-                labels={blockLabels}
-                actions={blockActions}
-              />
-            </div>
-            <WeekScheduleEditor userId={t.id} days={buildDays(t.id)} locations={locations} />
-          </GlassPanel>
-        ))
+        therapists.map((t) => {
+          const timeOff = timeOffByTherapist.get(t.id);
+          // A therapist this viewer cannot manage is RENDERED AND EXPLAINED, not
+          // dropped and not shown with an empty editor. Dropping them would hide
+          // a real colleague; an empty editor would say "no absences, no hours"
+          // about someone whose schedule simply is not visible from here, and
+          // every Guardar on it would be refused by the server anyway.
+          if (!timeOff?.manageable) {
+            return (
+              <GlassPanel key={t.id} className="flex flex-col gap-2 p-6">
+                <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
+                <p className="text-sm font-medium text-v2-text-primary">
+                  {s["schedule.unmanagedTitle"]}
+                </p>
+                <p className="text-sm text-v2-text-secondary">{s["schedule.unmanagedBody"]}</p>
+              </GlassPanel>
+            );
+          }
+          return (
+            <GlassPanel key={t.id} className="flex flex-col gap-4 p-6">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
+                <TherapistBlocks
+                  therapistId={t.id}
+                  therapistName={t.label}
+                  blocks={timeOff.blocks}
+                  labels={blockLabels}
+                  actions={blockActions}
+                />
+              </div>
+              <WeekScheduleEditor userId={t.id} days={buildDays(t.id)} locations={locations} />
+            </GlassPanel>
+          );
+        })
       )}
     </main>
   );

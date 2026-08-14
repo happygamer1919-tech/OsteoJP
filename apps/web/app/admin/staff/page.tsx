@@ -13,7 +13,7 @@ import { listAvailabilityTemplates } from "@/lib/admin/availability";
 import { listLocations } from "@/lib/admin/locations";
 import { listStaffLocations } from "@/lib/admin/staff-locations";
 import { seesEveryLocation } from "@/lib/admin/location-scope-warning";
-import { listTimeOffBlocks } from "@/lib/admin/time-off";
+import { listTimeOffBlocksForRoster } from "@/lib/admin/time-off";
 import { buildScheduleDays, indexScheduleTemplates } from "@/lib/admin/schedule-days";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import { EquipaLocationFilter } from "./EquipaLocationFilter";
@@ -112,13 +112,24 @@ export default async function StaffPage({
   const schedulableIds = staff
     .filter((u) => u.roleSlug !== "reception")
     .map((u) => u.id);
-  const blocksByMember = new Map<string, BlockView[]>(
-    await Promise.all(
-      schedulableIds.map(
-        async (id): Promise<[string, BlockView[]]> => [id, await listTimeOffBlocks(actor, id)],
-      ),
-    ),
-  );
+  // ONE roster read, not one query per member.
+  //
+  // THIS WAS A `Promise.all` OF ONE `listTimeOffBlocks` PER MEMBER, and it
+  // carried the same defect that crashed /horarios for reception: a member with
+  // NO location assignment stays visible here (see the PL-14 note below) while
+  // the schedule gate REFUSES them, so for a LOCATED ADMIN one unassigned
+  // colleague rejected the whole batch and took Equipa down. The owner never
+  // saw it because viewerLocationScope returns null for them. Full reasoning on
+  // `manageableTargets` in lib/admin/schedule-scope.ts.
+  const timeOffByMember = await listTimeOffBlocksForRoster(actor, schedulableIds);
+  // Two readers of one answer, kept separate ON PURPOSE. `blocksFor` returns []
+  // for a member this viewer cannot manage, and `manageableFor` is what tells
+  // the modal to SAY SO rather than render an empty editor over that [].
+  const blocksFor = (id: string): BlockView[] => {
+    const held = timeOffByMember.get(id);
+    return held?.manageable ? held.blocks : [];
+  };
+  const manageableFor = (id: string): boolean => timeOffByMember.get(id)?.manageable ?? false;
 
   // Presentation-only filter over the SAME role-scoped listStaff read (W5-02):
   // name/role search AND (W5-32) assigned location compose as an AND.
@@ -414,7 +425,8 @@ export default async function StaffPage({
                       days={days}
                       locations={locations.map((l) => ({ id: l.id, name: l.name }))}
                       memberships={memberships}
-                      blocks={blocksByMember.get(u.id) ?? []}
+                      blocks={blocksFor(u.id)}
+                      scheduleManageable={manageableFor(u.id)}
                       autoOpen={focusId === u.id}
                     />
                   </div>
