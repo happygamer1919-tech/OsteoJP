@@ -35,7 +35,24 @@ import { GUEST_FORM_HORIZON_DAYS } from './state'
  * because the ruling's condition is met and the answer is still "no".
  */
 
-export const metadata = { title: s.guest.title }
+/**
+ * NOINDEX, AND IT MUST BE REMOVED WHEN THE LINK IS PUBLISHED.
+ *
+ * "Not published" has to mean something stronger than "not linked". This page
+ * deploys to production the moment the PR merges, and a crawler that finds it -
+ * through a referrer, a shared address, a browser extension - would put the
+ * clinic's booking form in a search index months before anybody decided it was
+ * ready, with a confirmation screen that cannot render yet.
+ *
+ * THE REMOVAL IS A CLOSE CONDITION ON GUEST-05, not a follow-up to remember.
+ * Publishing the link while this line survives is the mirror failure: the clinic
+ * announces a form that search engines are instructed to ignore, and nothing
+ * reports it because the page works perfectly for anyone who has the address.
+ */
+export const metadata = {
+  title: s.guest.title,
+  robots: { index: false, follow: false },
+}
 
 /**
  * DYNAMIC, AND IT WAS STATIC UNTIL THE BUILD SHOWED IT.
