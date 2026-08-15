@@ -161,6 +161,70 @@ block (where both are).
 
 ---
 
+## THE PRE-FLIGHT. Four lines, before the credentials are sourced.
+
+**This block was canonical in practice and uncommitted in fact.** It has run
+before every apply, because strategy pastes it at the top of every validated
+apply block — and it existed nowhere but that paste discipline. That is the same
+failure mode as a ruling that lives in chat: correct, followed, and one forgotten
+paste away from not existing. Committed here 2026-08-15 so the next apply-block
+author reads it rather than inherits it.
+
+**It is what caught the 21 stray scripts before the 0063 apply**
+(`docs/migration-apply-0063.md` §3.1) — 21 untracked files in the one tree whose
+shell holds production credentials, every one of them a single `node <path>` from
+the live database once `allexport` has run.
+
+```
+cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
+git status --short
+git fetch origin --prune
+git cat-file -t PINNED_SHA
+```
+
+**The two expected outputs, and there are exactly two:**
+
+| Command | Expected | Meaning |
+|---|---|---|
+| `git status --short` | **prints nothing** | the tree holds nothing but the checkout |
+| `git cat-file -t PINNED_SHA` | **`commit`** | the sha resolves, in this clone, to a commit |
+
+**The two STOP conditions:**
+
+1. **Any line at all from `git status --short`.** Not "any line that looks
+   dangerous" — any line. The judgement of which stray file is harmless is
+   exactly the judgement this step exists to avoid making at the top of a
+   production sitting.
+2. **Anything but `commit` from `git cat-file -t`.** A sha that does not resolve
+   is a typo, a stale paste, or a branch that was rebased out from under the
+   block.
+
+**`git fetch origin --prune` sits between them deliberately.** The `cat-file`
+check is worthless against a sha this clone has never seen, and it is the fetch
+that makes "resolves" mean "resolves to the thing the PR actually carries".
+
+### Strategy re-verifies the pin as the LAST action before the owner runs anything
+
+**Not when the block is drafted. Not during the review. Last.**
+
+**A moved sha that still resolves is worse than one that errors**, and both 0061
+and 0062 proved it: a block sits in review while its branch keeps moving, and the
+sha in the paste silently stops being the branch head. `cat-file` still prints
+`commit`, the pre-flight still passes, and what gets applied is an *older* tree
+than the one that was reviewed. The error case is loud; this one is not.
+
+So the last thing strategy does before handing a block to the owner is re-read
+the branch head and confirm the pinned sha is still it. If the branch has moved,
+the pin is updated and the block is re-read — a pin is a statement about a moment,
+and the moment that matters is the one immediately before the apply.
+
+**The pin is also orphaned by the merge that follows.** Under squash-merge the
+applied sha stops being reachable the instant the PR merges, so the receipt
+written afterwards must pin the squash commit alongside it and tie the two with
+the migration's blob hash. Full reasoning at `docs/migration-apply-0063.md` §4.
+
+---
+
 ## The pre-check is mandatory — `drizzle-kit migrate` cannot report a no-op
 
 **Rule.** Every apply block runs `check-pending-migrations.mjs` with the
@@ -377,6 +441,7 @@ This check is **not a required CI gate** — it is informational and never block
 |---|---|
 | Author a migration | `pnpm db:generate` in `packages/db/`, then copy to `supabase/migrations/` |
 | Verify journal integrity | `pnpm test` (runs `journal-sync.test.ts`) + `node scripts/check-journal.mjs` |
+| **Pre-flight before every apply (MANDATORY)** | `git status --short` (empty) + `git fetch origin --prune` + `git cat-file -t <sha>` (`commit`), in the prod-apply worktree |
 | **Pre-check before every apply (MANDATORY)** | `pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs <N>` |
 | Prove a table landed | `pnpm --filter @osteojp/db exec node scripts/check-migration-tables.mjs <table>` |
 | Prove a column landed | `pnpm --filter @osteojp/db exec node scripts/check-migration-columns.mjs <table> <column>` |
