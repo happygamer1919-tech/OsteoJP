@@ -108,6 +108,12 @@ rather than as a period nobody stated. PR #912, merged as `20b8ad2`.
 - **`git status` clean at apply time**, and it was not clean when the sitting
   started. See §3.1.
 
+**All four of those are the canonical pre-flight**, now committed at
+`docs/runbook-prod-migrations.md`, section "THE PRE-FLIGHT" - four lines, two
+expected outputs, two STOP conditions. It was uncommitted when this apply ran,
+living only in strategy's paste discipline; it is the step that caught §3.1's
+strays.
+
 ### 3.1 The 21 stray scripts were cleared, and that closes a high card
 
 `LE-prod-apply-worktree-loose-scripts` had been open since 2026-08-12: 21
