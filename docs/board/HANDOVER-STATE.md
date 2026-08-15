@@ -1,6 +1,6 @@
 # OsteoJP portal — handover state
 
-**As of 2026-08-14.** Written for the person who hands this build to the clinic
+**As of 2026-08-15.** Written for the person who hands this build to the clinic
 team and to legal, and for anyone who reads it after.
 
 ---
@@ -55,7 +55,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**155 cards. 82 shipped, 73 open. Launch readiness 9/9 — every launch gate passes.**
+**155 cards. 84 shipped, 71 open. Launch readiness 9/9 — every launch gate passes.**
 
 > **The clinic team is testing on production.** Defects reported from live use
 > are being fixed as they arrive; they are `STAFF-xx` cards on the board.
@@ -439,7 +439,7 @@ shipped test sink — and it is the top item in the build queue.
 
 ## 4. Every open card, by bucket
 
-**73 open of 155**, as of 2026-08-14 after the guest-booking bucket.
+**71 open of 155**, as of 2026-08-15 after the guest-booking bucket.
 
 ### Incidents — 1
 **`SEC-otp-linkage-exact-phone-match` (high, halted, launch-blocking)** — most
@@ -667,3 +667,4 @@ for them would be dead weight. Recorded rather than quietly skipped.
 | PG6 exposure matrix + citation audit | `docs/recon/W13-06-exposure-matrix.md` |
 | PG8 sync trace | `docs/recon/W13-07-sync-trace.md` |
 | `0061` applied proof | `docs/migration-apply-0061.md` §10 |
+| `0063` applied proof | `docs/migration-apply-0063.md` §5 (apply) and §6 (read-only re-check the day after) |
