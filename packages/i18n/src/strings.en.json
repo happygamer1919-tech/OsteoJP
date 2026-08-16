@@ -768,6 +768,7 @@
   "recording.processing": "Starting processing…",
   "recording.processed": "Recording sent for processing.",
   "recording.savedPending": "Recording saved. Processing will be retried.",
+  "recording.notSaved": "This consultation could not be registered. Processing will NOT be retried: record your notes manually and report the problem.",
   "clinical.bodychart": "Bodychart",
   "clinical.bodychartHint": "Click the diagram to place a marker.",
   "clinical.bodychartMarkerType": "Marker type",

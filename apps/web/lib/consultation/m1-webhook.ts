@@ -35,6 +35,17 @@ export interface M1WebhookPayload {
   consultation_started_at: string;
   consultation_ended_at: string;
   template: string;
+  /** THE ONLY TWO FIELDS ADDED SINCE THE CONTRACT FROZE (0064, retry).
+   *  The seven above are frozen — the partner builds against them.
+   *  `consultation_id` is our row id, so a support conversation about a specific
+   *  recording has one identifier both sides can name.
+   *  `attempt` is 1 on the first fire and increments per retry, so a duplicate
+   *  arrival is legible as a retry rather than as a second consultation. It is
+   *  NOT part of their idempotency key: that key is patient_id + the two
+   *  timestamps, all three of which a retry re-sends verbatim, which is what
+   *  makes attempt 2 an idempotent replay instead of a new record. */
+  consultation_id: string;
+  attempt: number;
 }
 
 /** Build the full, mandatory contract payload. Template is fixed to osteopathy. */
@@ -45,6 +56,8 @@ export function buildM1Payload(input: {
   doctorId: string;
   consultationStartedAt: string;
   consultationEndedAt: string;
+  consultationId: string;
+  attempt: number;
 }): M1WebhookPayload {
   return {
     audio_url: input.audioUrl,
@@ -54,6 +67,8 @@ export function buildM1Payload(input: {
     consultation_started_at: input.consultationStartedAt,
     consultation_ended_at: input.consultationEndedAt,
     template: M1_TEMPLATE,
+    consultation_id: input.consultationId,
+    attempt: input.attempt,
   };
 }
 

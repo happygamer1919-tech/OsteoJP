@@ -23,6 +23,7 @@ type Phase =
   | "firing"
   | "fired"
   | "fire_pending"
+  | "fire_unsaved"
   | "upload_error";
 
 /**
@@ -121,9 +122,16 @@ export function Recorder({
 
   // W4-08 upload → W4-09 fire. After Stop: sign a presigned PUT and upload the
   // blob DIRECT to S3 (never through Vercel), then fire the M1 webhook so André's
-  // pipeline can pull + transcribe it. If the upload fails, that is a hard error;
-  // if only the webhook fire fails (e.g. env not set), the audio is safely stored
-  // and processing is retried — surfaced as a non-error "saved, pending" state.
+  // pipeline can pull + transcribe it. If the upload fails, that is a hard error.
+  //
+  // 0064 — TWO FAILED-FIRE STATES, NOT ONE, AND THE SPLIT IS THE FIX. This used
+  // to be `fired.ok ? "fired" : "fire_pending"`, so every failure showed
+  // "O processamento será retomado" and nothing anywhere resumed anything: the
+  // action persisted nothing, and the object key and both timestamps lived only
+  // in this component's state. That string is now TRUE for `pending` — a row
+  // exists and the Inngest scanner re-fires it — and it must NOT be shown when
+  // the persist itself failed, because then nothing will. Mapping the two onto
+  // one benign-looking state is precisely what made the loss silent.
   async function startUpload(res: RecordingResult) {
     setPhase("uploading");
     const outcome = await uploadRecording(
@@ -141,7 +149,13 @@ export function Recorder({
       consultationStartedAt: res.consultationStartedAt,
       consultationEndedAt: res.consultationEndedAt,
     });
-    setPhase(fired.ok ? "fired" : "fire_pending");
+    if (fired.ok) {
+      setPhase("fired");
+      return;
+    }
+    // `pending` is the only outcome with a row behind it. forbidden, validation
+    // and not_persisted all leave nothing for the retry scanner to find.
+    setPhase(fired.error === "pending" ? "fire_pending" : "fire_unsaved");
   }
 
   if (phase === "unsupported") {
@@ -191,6 +205,13 @@ export function Recorder({
       {phase === "fire_pending" && (
         <p role="status" className="rounded border border-amber-500 bg-amber-50 px-3 py-2 text-sm">
           {s["recording.savedPending"]}
+        </p>
+      )}
+      {/* Not a "status": nothing is in progress and nothing will resume. role
+          alert, error styling, and copy that says so. */}
+      {phase === "fire_unsaved" && (
+        <p role="alert" className="rounded border border-error bg-red-50 px-3 py-2 text-sm text-error">
+          {s["recording.notSaved"]}
         </p>
       )}
       {phase === "upload_error" && (

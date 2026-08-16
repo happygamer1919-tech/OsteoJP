@@ -1853,3 +1853,74 @@ export const guestBookingRequests = pgTable(
     index("guest_booking_requests_tenant_phone_idx").on(t.tenantId, t.phoneE164),
   ],
 );
+
+/**
+ * One row per recorded consultation, written BEFORE the M1 webhook fires.
+ *
+ * Migration 0064. Before it, nothing was persisted at fire time: the audio
+ * object key, the patient, the clinician and both timestamps lived only in
+ * React state in Recorder.tsx, so a failed fire lost the consultation and the
+ * client promised a retry that no code performed. The scoped S3 credential has
+ * no list permission, so an object key that is not written here cannot be found
+ * again by any means.
+ *
+ * BOTH TIMESTAMPS ARE STORED SO A RETRY NEVER RE-STAMPS THEM. The AI partner
+ * derives their idempotency key from patient_id plus these two instants; a
+ * re-stamped retry presents a new key for the same consultation and their side
+ * creates a DUPLICATE clinical record rather than replaying the first. The
+ * unique constraint enforces the same grain on our side.
+ *
+ * fire_status, attempt_count, last_attempt_at and last_error are a machine
+ * verdict about delivery. They are written only through the service-role seam
+ * (rule 3, tenant_id explicit); RLS grants `authenticated` SELECT and nothing
+ * else, so no staff session can mark a consultation delivered.
+ */
+export const consultations = pgTable(
+  "consultations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    /** The recording clinician, from the JWT at fire time. Never client-supplied. */
+    doctorId: uuid("doctor_id")
+      .notNull()
+      .references(() => users.id),
+    /** The ONLY handle on the uploaded recording — the S3 key cannot be
+     *  rediscovered, because the scoped credential is put+get with no list. */
+    audioObjectKey: text("audio_object_key").notNull(),
+    /** Persisted, never re-derived. See the note above. */
+    consultationStartedAt: timestamp("consultation_started_at", { withTimezone: true }).notNull(),
+    consultationEndedAt: timestamp("consultation_ended_at", { withTimezone: true }).notNull(),
+    /** pending | fired | needs_attention. Pinned by a CHECK in 0064. Defaults to
+     *  pending because the row is inserted before the fire is attempted, so
+     *  pending is the only truthful value at insert time. */
+    fireStatus: text("fire_status").notNull().default("pending"),
+    /** Attempts made, including the first fire. Drives backoff and the ceiling,
+     *  and rides on the M1 payload as `attempt`. */
+    attemptCount: integer("attempt_count").notNull().default(0),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    /** PII-free by construction: a status code or an error class name, never a
+     *  response body and never payload content. */
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** The retry scanner's only query: pending rows, oldest attempt first,
+     *  across every tenant. Partial in 0064 so it indexes the work queue rather
+     *  than the table; drizzle does not model the WHERE clause. */
+    index("consultations_pending_idx").on(t.lastAttemptAt),
+    /** The human's query: what is stuck in this clinic. */
+    index("consultations_tenant_status_idx").on(t.tenantId, t.fireStatus, t.createdAt.desc()),
+    /** The partner's idempotency grain, enforced here too. */
+    unique("consultations_recording_unique").on(
+      t.tenantId,
+      t.patientId,
+      t.consultationStartedAt,
+      t.consultationEndedAt,
+    ),
+  ],
+);

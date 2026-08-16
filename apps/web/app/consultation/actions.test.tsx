@@ -23,10 +23,20 @@ vi.mock("@/lib/consultation/audio-storage", () => ({
   signAudioDownload: vi.fn(),
   AudioStorageConfigError: class extends Error {},
 }));
-vi.mock("@/lib/consultation/m1-webhook", () => ({
-  buildM1Payload: vi.fn((x: Record<string, unknown>) => ({ ...x, template: "osteopathy" })),
+// buildM1Payload is the REAL one — a stub that spread its input would not have
+// caught the two fields 0064 adds, nor a frozen field going missing.
+vi.mock("@/lib/consultation/m1-webhook", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/consultation/m1-webhook")>()),
   fireM1Webhook: vi.fn(),
-  M1WebhookConfigError: class extends Error {},
+}));
+// 0064 — the persistence seam. Mocked so this stays unit-scoped; it is the same
+// module fire-attempt writes the outcome through, so the marks are visible here.
+vi.mock("@/lib/consultation/consultation-store", () => ({
+  persistConsultation: vi.fn(),
+  markDelivered: vi.fn(),
+  markPending: vi.fn(),
+  markNeedsAttention: vi.fn(),
+  SCAN_LIMIT: 100,
 }));
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
@@ -35,6 +45,11 @@ import { createStubPatient } from "@/lib/patients/actions";
 import { writeAudit } from "@/lib/patients/audit";
 import { signAudioDownload } from "@/lib/consultation/audio-storage";
 import { fireM1Webhook } from "@/lib/consultation/m1-webhook";
+import {
+  markDelivered,
+  markPending,
+  persistConsultation,
+} from "@/lib/consultation/consultation-store";
 import {
   createStubPatientAction,
   fireConsultationWebhookAction,
@@ -109,9 +124,10 @@ describe("createStubPatientAction", () => {
   });
 });
 
-describe("fireConsultationWebhookAction (W4-09)", () => {
+describe("fireConsultationWebhookAction (W4-09, + 0064 persist-before-fire)", () => {
   const mockSignDownload = vi.mocked(signAudioDownload);
   const mockFire = vi.mocked(fireM1Webhook);
+  const mockPersist = vi.mocked(persistConsultation);
   const OK_INPUT = {
     objectKey: "t1/p1/ts/consultation.webm",
     patientId: "p1",
@@ -124,35 +140,108 @@ describe("fireConsultationWebhookAction (W4-09)", () => {
     mockCan.mockReturnValue(true);
     mockSignDownload.mockResolvedValue("https://s3/get?sig");
     mockFire.mockResolvedValue({ ok: true, status: 200 });
+    mockPersist.mockResolvedValue({ id: "c-1", attemptCount: 0, fireStatus: "pending" });
   });
 
-  it("forbids a non-authoring role", async () => {
+  it("forbids a non-authoring role, and writes nothing", async () => {
     mockCan.mockReturnValue(false);
     await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({ ok: false, error: "forbidden" });
     expect(mockFire).not.toHaveBeenCalled();
+    expect(mockPersist).not.toHaveBeenCalled();
   });
 
-  it("rejects an object key not prefixed by the caller's tenant (forged)", async () => {
+  it("rejects an object key not prefixed by the caller's tenant (forged), and writes nothing", async () => {
     await expect(
       fireConsultationWebhookAction({ ...OK_INPUT, objectKey: "OTHER-TENANT/p1/ts/consultation.webm" }),
     ).resolves.toEqual({ ok: false, error: "forbidden" });
     expect(mockFire).not.toHaveBeenCalled();
+    expect(mockPersist).not.toHaveBeenCalled();
   });
 
   it("validates required fields", async () => {
     await expect(
       fireConsultationWebhookAction({ ...OK_INPUT, consultationEndedAt: "" }),
     ).resolves.toEqual({ ok: false, error: "validation" });
+    expect(mockPersist).not.toHaveBeenCalled();
   });
 
   it("signs a 1h GET and fires the webhook → ok", async () => {
     await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({ ok: true });
     expect(mockSignDownload).toHaveBeenCalledWith("t1/p1/ts/consultation.webm", 3600);
     expect(mockFire).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(markDelivered)).toHaveBeenCalledWith("c-1", 1, expect.any(Date));
   });
 
-  it("returns a webhook error on a non-2xx fire", async () => {
-    mockFire.mockResolvedValue({ ok: false, status: 401 });
-    await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({ ok: false, error: "webhook" });
+  // ---- 0064 ----------------------------------------------------------------
+
+  it("PERSISTS BEFORE IT FIRES, with the tenant and doctor from the JWT", async () => {
+    // The ordering IS the fix. Firing first and persisting after would lose the
+    // consultation on exactly the crash this card exists for.
+    await fireConsultationWebhookAction(OK_INPUT);
+
+    expect(mockPersist).toHaveBeenCalledWith({
+      tenantId: "t1", // JWT, never the payload
+      patientId: "p1",
+      doctorId: "u1", // JWT, never client-supplied
+      audioObjectKey: "t1/p1/ts/consultation.webm",
+      consultationStartedAt: "2026-07-07T01:00:00.000Z",
+      consultationEndedAt: "2026-07-07T01:30:00.000Z",
+    });
+    expect(mockPersist.mock.invocationCallOrder[0]).toBeLessThan(
+      mockFire.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("a failed fire returns `pending` with the row id — the retry has something to find", async () => {
+    mockFire.mockResolvedValue({ ok: false, status: 500 });
+    await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({
+      ok: false,
+      error: "pending",
+      consultationId: "c-1",
+    });
+    expect(vi.mocked(markPending)).toHaveBeenCalledWith("c-1", 1, expect.any(Date), "http_500");
+  });
+
+  it("A FAILED PERSIST IS `not_persisted`, NOT `pending`, and never fires", async () => {
+    // The distinction the client copy depends on. Collapsing this into the
+    // pending branch is what made "O processamento será retomado" a promise
+    // nothing kept: there is no row here, so nothing will ever retry it.
+    mockPersist.mockRejectedValue(new Error("db down"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({
+      ok: false,
+      error: "not_persisted",
+    });
+    expect(mockFire).not.toHaveBeenCalled();
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it("409 from the partner is delivered, not an error", async () => {
+    mockFire.mockResolvedValue({ ok: false, status: 409 });
+    await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({ ok: true });
+    expect(vi.mocked(markDelivered)).toHaveBeenCalledWith("c-1", 1, expect.any(Date));
+  });
+
+  it("a double submit for an already-delivered consultation does not re-fire", async () => {
+    mockPersist.mockResolvedValue({ id: "c-1", attemptCount: 1, fireStatus: "fired" });
+    await expect(fireConsultationWebhookAction(OK_INPUT)).resolves.toEqual({ ok: true });
+    expect(mockFire).not.toHaveBeenCalled();
+  });
+
+  it("the M1 payload carries consultation_id and attempt beside the seven frozen fields", async () => {
+    await fireConsultationWebhookAction(OK_INPUT);
+    expect(mockFire).toHaveBeenCalledWith({
+      audio_url: "https://s3/get?sig",
+      audio_filename: "consultation.webm",
+      patient_id: "p1",
+      doctor_id: "u1",
+      consultation_started_at: "2026-07-07T01:00:00.000Z",
+      consultation_ended_at: "2026-07-07T01:30:00.000Z",
+      template: "osteopathy",
+      consultation_id: "c-1",
+      attempt: 1,
+    });
   });
 });

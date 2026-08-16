@@ -17,17 +17,9 @@ import { patients } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { createStubPatient } from "@/lib/patients/actions";
 import { writeAudit } from "@/lib/patients/audit";
-import {
-  AUDIO_FILENAME,
-  AudioStorageConfigError,
-  signAudioDownload,
-  signAudioUpload,
-} from "@/lib/consultation/audio-storage";
-import {
-  M1WebhookConfigError,
-  buildM1Payload,
-  fireM1Webhook,
-} from "@/lib/consultation/m1-webhook";
+import { AudioStorageConfigError, signAudioUpload } from "@/lib/consultation/audio-storage";
+import { attemptFire, recordOutcome } from "@/lib/consultation/fire-attempt";
+import { persistConsultation } from "@/lib/consultation/consultation-store";
 
 export type StubResult =
   | { ok: true; patientId: string }
@@ -131,17 +123,42 @@ export async function signAudioUploadAction(input: {
   }
 }
 
+/**
+ * FOUR OUTCOMES, AND THE LAST TWO ARE THE POINT OF 0064.
+ *
+ * `pending` and `not_persisted` are both "the fire did not succeed", and
+ * collapsing them into one error is exactly what made this path lose
+ * consultations: the client showed "O processamento será retomado" for both,
+ * and only one of them was ever true. They are separate values so the screen
+ * can only promise a retry when a row exists to be retried.
+ */
 export type FireWebhookResult =
+  /** Delivered. 2xx, or 409 = already there from an attempt we never saw. */
   | { ok: true }
-  | { ok: false; error: "forbidden" | "validation" | "config" | "webhook" };
+  /** Refused before anything was written. No row, nothing to resume. */
+  | { ok: false; error: "forbidden" | "validation" }
+  /** Persisted as pending. The Inngest scanner WILL re-fire it. */
+  | { ok: false; error: "pending"; consultationId: string }
+  /** The persist itself failed. NOTHING will resume this one. */
+  | { ok: false; error: "not_persisted" };
 
 /**
- * W4-09 — after the upload lands, generate a 1h presigned GET and fire the M1
+ * W4-09 — after the upload lands, persist the consultation and fire the M1
  * webhook (André's Make scenario) with the full contract + `x-make-apikey` (from
  * env). `doctor_id` is the recording clinician (JWT userId, READ-ONLY). The
- * object key is verified tenant-prefixed (defense). Timestamps are forwarded
- * from the recording (they feed the ingestion idempotency key), never re-derived.
- * The webhook key is never returned or logged.
+ * object key is verified tenant-prefixed (defense). The webhook key is never
+ * returned or logged.
+ *
+ * 0064 — THE ROW IS WRITTEN BEFORE THE FIRE, and the order is the fix. Before
+ * this, nothing was persisted at fire time: the object key, the patient, the
+ * clinician and both timestamps existed only in React state in Recorder.tsx, so
+ * a failed fire lost every value needed to try again. The scoped S3 credential
+ * cannot list the bucket, so the orphaned audio could not be found by hand
+ * either, and a 7-day lifecycle then deleted it.
+ *
+ * Timestamps are forwarded from the recording and stored verbatim; the retry
+ * reads them back rather than re-stamping, because the partner's idempotency
+ * key is patient_id + those two instants.
  */
 export async function fireConsultationWebhookAction(input: {
   objectKey: string;
@@ -161,22 +178,48 @@ export async function fireConsultationWebhookAction(input: {
   }
   if (!input.objectKey.startsWith(`${ctx.tenantId}/`)) return { ok: false, error: "forbidden" };
 
+  // STEP 1, BEFORE ANY FIRE. If this throws, nothing is recoverable and the
+  // caller must not be told a retry is coming.
+  let row: { id: string; attemptCount: number; fireStatus: string };
   try {
-    const audioUrl = await signAudioDownload(input.objectKey, 3600); // 1h GET
-    const payload = buildM1Payload({
-      audioUrl,
-      audioFilename: AUDIO_FILENAME,
+    row = await persistConsultation({
+      tenantId: ctx.tenantId, // JWT, never the payload (rule 3)
       patientId: input.patientId,
       doctorId: ctx.userId,
+      audioObjectKey: input.objectKey,
       consultationStartedAt: input.consultationStartedAt,
       consultationEndedAt: input.consultationEndedAt,
     });
-    const fired = await fireM1Webhook(payload);
-    return fired.ok ? { ok: true } : { ok: false, error: "webhook" };
   } catch (e) {
-    if (e instanceof AudioStorageConfigError || e instanceof M1WebhookConfigError) {
-      return { ok: false, error: "config" };
-    }
-    return { ok: false, error: "webhook" };
+    // Ids are not available (there is no row), so this line carries the patient
+    // and the error class only. No payload, no audio key — the key is the one
+    // thing that would have made it recoverable and it is now lost with it.
+    console.error(
+      `[consultation] PERSIST FAILED, consultation is unrecoverable ` +
+        `patient=${input.patientId} error=${e instanceof Error ? e.name : "unknown"}`,
+    );
+    return { ok: false, error: "not_persisted" };
   }
+
+  // A duplicate submit for a consultation already delivered. Firing again would
+  // earn a 409 and be classified delivered anyway, but it would burn an attempt
+  // and put a spurious conflict in the partner's log for no information.
+  if (row.fireStatus === "fired") return { ok: true };
+
+  const attempt = row.attemptCount + 1;
+  const outcome = await attemptFire(
+    {
+      id: row.id,
+      patientId: input.patientId,
+      doctorId: ctx.userId,
+      audioObjectKey: input.objectKey,
+      consultationStartedAt: input.consultationStartedAt,
+      consultationEndedAt: input.consultationEndedAt,
+    },
+    attempt,
+  );
+  await recordOutcome({ id: row.id, patientId: input.patientId }, outcome, new Date());
+
+  if (outcome.verdict === "delivered") return { ok: true };
+  return { ok: false, error: "pending", consultationId: row.id };
 }
