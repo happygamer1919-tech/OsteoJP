@@ -118,20 +118,29 @@ describe.skipIf(!live)("consultations RLS + constraints (migration 0064)", () =>
     expect(rows).toHaveLength(0);
   });
 
-  // --- The write policies that deliberately do not exist -------------------
+  // --- The TABLE gate: writes are refused before RLS is consulted ----------
+  //
+  // WHICH GATE REFUSES WHICH, because the two are easy to confuse and the
+  // difference decides what these assertions prove. 0064 grants `authenticated`
+  // SELECT and revokes INSERT / UPDATE / DELETE / TRUNCATE. So a staff write is
+  // refused by the TABLE gate with `permission denied`, before any policy is
+  // evaluated; cross-tenant READS are refused by the ROW gate above, silently,
+  // by filtering. Asserting the wrong one would pass for the wrong reason - and
+  // did: the first draft of this migration shipped no GRANT at all, every
+  // statement was refused including SELECT, and only the positive control above
+  // failed. Every negative assertion here was green over a table reception
+  // could not read.
 
   it("a staff session CANNOT mark a consultation delivered", async () => {
-    // THE ONE THAT MATTERS. With no UPDATE policy the row is filtered out by
-    // RLS rather than erroring, so the update silently affects ZERO rows. That
-    // is the correct outcome and the reason it is asserted on the row count:
-    // a passing "no error thrown" would say nothing at all here.
-    const updated = await asRole(sql, "authenticated", claimsFor(A.tenant), (tx) =>
-      tx<{ id: string }[]>`
-        update consultations set fire_status = 'fired'
-        where id = ${A.consultation} returning id
-      `,
-    );
-    expect(updated).toHaveLength(0);
+    // THE ONE THAT MATTERS. fire_status is a machine verdict; a session that
+    // could set 'fired' would make the retry scanner skip a consultation the
+    // partner never received, and the audio would age out of the 7-day bucket
+    // with nobody told.
+    await expect(
+      asRole(sql, "authenticated", claimsFor(A.tenant), (tx) =>
+        tx`update consultations set fire_status = 'fired' where id = ${A.consultation}`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
 
     // And the row is untouched, read back on the privileged connection.
     const rows = await sql<{ fire_status: string }[]>`
@@ -142,7 +151,6 @@ describe.skipIf(!live)("consultations RLS + constraints (migration 0064)", () =>
   });
 
   it("a staff session cannot INSERT a consultation, even in its own tenant", async () => {
-    // No INSERT policy, so WITH CHECK is absent and every insert is refused.
     // Writes are the service-role seam with tenant_id set explicitly (rule 3).
     await expect(
       asRole(sql, "authenticated", claimsFor(A.tenant), (tx) =>
@@ -153,24 +161,36 @@ describe.skipIf(!live)("consultations RLS + constraints (migration 0064)", () =>
           values (${A.tenant}, ${A.patient}, ${A.user}, 'k', ${STARTED}, ${ENDED})
         `,
       ),
-    ).rejects.toThrow(/row-level security/i);
+    ).rejects.toThrow(/permission denied/i);
   });
 
   it("a staff session cannot DELETE a consultation — a failed fire must not vanish", async () => {
-    const deleted = await asRole(sql, "authenticated", claimsFor(A.tenant), (tx) =>
-      tx<{ id: string }[]>`delete from consultations where id = ${A.consultation} returning id`,
-    );
-    expect(deleted).toHaveLength(0);
+    await expect(
+      asRole(sql, "authenticated", claimsFor(A.tenant), (tx) =>
+        tx`delete from consultations where id = ${A.consultation}`,
+      ),
+    ).rejects.toThrow(/permission denied/i);
   });
 
-  it("a tenant-A JWT cannot touch a tenant-B row in any direction", async () => {
-    const updated = await asRole(sql, "authenticated", claimsFor(A.tenant), (tx) =>
-      tx<{ id: string }[]>`
-        update consultations set fire_status = 'fired'
-        where id = ${B.consultation} returning id
-      `,
+  it("the table gate is closed on writes but OPEN on reads — not shut altogether", async () => {
+    // The anti-vacuous arm for the three assertions above. With no GRANT at all
+    // they would all pass while `authenticated` could not touch the table in any
+    // direction, so this pins that the refusals above are the REVOKE doing its
+    // job and not a missing GRANT doing it by accident.
+    const rows = await asRole(sql, "authenticated", claimsFor(A.tenant), (tx) =>
+      tx<{ id: string }[]>`select id from consultations where id = ${A.consultation}`,
     );
-    expect(updated).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("a tenant-A JWT cannot READ a tenant-B row — the ROW gate, silently", async () => {
+    // SELECT is granted, so this one reaches RLS and is answered by filtering
+    // rather than by an error. Zero rows, no exception: that IS the policy
+    // working, and it is a different mechanism from the three above.
+    const rows = await asRole(sql, "authenticated", claimsFor(A.tenant), (tx) =>
+      tx<{ id: string }[]>`select id from consultations where id = ${B.consultation}`,
+    );
+    expect(rows).toHaveLength(0);
   });
 
   // --- Sanctioned exception: the writers -----------------------------------

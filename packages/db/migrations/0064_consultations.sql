@@ -131,6 +131,62 @@ CREATE INDEX IF NOT EXISTS consultations_tenant_status_idx
 
 ALTER TABLE public.consultations ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 
+/* ------------------------------------------------------------------ */
+/* TABLE GATE. RLS is the ROW gate; GRANT is the TABLE gate; BOTH are  */
+/* required (0003_grants.sql), and a policy without a grant is dead.   */
+/*                                                                    */
+/* THIS TABLE INHERITS NOTHING. `GRANT ... ON ALL TABLES IN SCHEMA     */
+/* public` in 0003 applied to the tables that existed when it ran, and */
+/* never to tables created afterwards - the same note 0055 and 0058    */
+/* carry.                                                             */
+/*                                                                    */
+/* AND IT INHERITS NOTHING FROM SUPABASE'S DEFAULT PRIVILEGES EITHER,  */
+/* WHICH IS NEW INFORMATION AND WORTH THE LINES. 0058's header states  */
+/* that Supabase applies schema-wide DEFAULT PRIVILEGES, so a new      */
+/* table picks up SELECT and INSERT for `authenticated` at CREATE time */
+/* with no statement granting them. On this migration that did not     */
+/* happen: the first draft shipped the policy below with NO grant, and */
+/* the DB-gated suite answered `permission denied for table            */
+/* consultations` to EVERY statement - including the SELECT the policy */
+/* exists to allow. Same Supabase stack, same `supabase db reset`.     */
+/* Whatever 0058 observed does not hold here, so nothing on this table */
+/* relies on it.                                                      */
+/*                                                                    */
+/* THE POSITIVE CONTROL IS WHY THAT WAS CAUGHT AND IT IS THE POINT.    */
+/* With no grant, every negative assertion - cannot insert, cannot     */
+/* update, cannot delete - PASSES, and passes FOR THE WRONG REASON:    */
+/* not because the design refuses those writes but because the role    */
+/* cannot reach the table at all. A suite of only negative assertions  */
+/* would have gone green over a table reception could never read, and  */
+/* the stuck-consultation state this whole migration exists to surface */
+/* would have been invisible in production. The SELECT test is what    */
+/* fails when the table gate is shut, and it did.                     */
+/*                                                                    */
+/* SELECT ONLY, and the REVOKE is not decoration: it is what keeps     */
+/* fire_status a MACHINE verdict. Writes are the service-role seam.    */
+/*                                                                    */
+/* REFERENCES and TRIGGER are left alone, as in 0058: neither reads    */
+/* nor writes a row, and revoking schema-wide defaults this migration  */
+/* did not grant is scope it does not own.                            */
+/*                                                                    */
+/* THE PATIENT ROLE GETS NOTHING. A patient has no business reading    */
+/* the delivery state of a clinical recording.                        */
+/* ------------------------------------------------------------------ */
+
+GRANT SELECT ON public.consultations TO authenticated;--> statement-breakpoint
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.consultations FROM authenticated;--> statement-breakpoint
+REVOKE ALL ON public.consultations FROM patient;--> statement-breakpoint
+
+/* THE WRITER'S GRANT, EXPLICIT, following 0021_grants_hardening's rule for
+   every post-0003 table. 0021 exists because Supabase auto-applies service_role
+   grants at PROJECT CREATION and a table created later gets nothing - the same
+   inheritance gap the block above just proved is real on this table. Leaving it
+   implicit would mean the fire path and the retry job depend on connecting as
+   the table OWNER, which is true today and is not a property this migration
+   should quietly rest on. BYPASSRLS answers the row gate; this answers the
+   table gate. */
+GRANT ALL ON public.consultations TO service_role;--> statement-breakpoint
+
 /* STAFF READ, tenant-scoped on the JWT claim, exactly like every other domain
    table. This is what makes a stuck consultation visible to a human. */
 CREATE POLICY consultations_select_own_tenant
@@ -142,7 +198,13 @@ CREATE POLICY consultations_select_own_tenant
 /* NO INSERT, UPDATE OR DELETE POLICY, FOR ANY ROLE. Deliberate - see the
    header. Writes are the service-role seam with an explicit tenant_id; DELETE
    is absent because a consultation that failed to reach the partner is
-   precisely the record you must not be able to make disappear. */
+   precisely the record you must not be able to make disappear.
+
+   Note which gate refuses which. With SELECT granted and the rest revoked, a
+   staff INSERT/UPDATE/DELETE is refused by the TABLE gate (permission denied)
+   before RLS is consulted at all, and cross-tenant reads are refused by the
+   ROW gate above. Two different mechanisms, and the suite asserts them
+   separately so neither can be mistaken for the other. */
 
 COMMENT ON TABLE public.consultations IS
   'One row per recorded consultation, written BEFORE the M1 webhook fires so a '
