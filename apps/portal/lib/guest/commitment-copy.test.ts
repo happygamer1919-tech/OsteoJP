@@ -5,32 +5,51 @@ import en from '../../../../packages/i18n/src/portal/strings.en.json'
 import { guestConfirmationCopy, isGuestConfirmationCopyReady } from './commitment-copy'
 
 /**
- * GUEST-04 — the confirmation copy is a COMMITMENT, it is unwritten, and the
- * code must not paper over that.
+ * GUEST-05 — the confirmation copy is a COMMITMENT. It is now WRITTEN, and §1
+ * below was INVERTED on the day it landed.
  *
- * WHY THESE TESTS PASS TODAY RATHER THAN FAILING. The unwritten state is the
- * EXPECTED state right now, so the suite asserts the GUARD works, not that the
- * copy exists. Asserting the copy exists would put main permanently red and the
- * red would be read as noise within a day — the failure mode
- * `ACC-skippable-suites-unguarded` is about. The moment JP's words land, §3
- * below starts proving the filled path instead, with no edit: it drives the
- * function with a filled source either way.
+ * WHAT §1 USED TO SAY, because the inversion is the point of the design rather
+ * than a tidy-up: it asserted both keys were EMPTY, which was the true and
+ * expected state while JP had not written them. That made the transition
+ * impossible to make quietly — landing the copy turned three assertions red
+ * across two files, and the red was the instruction to come here and invert
+ * them. The same shape `patient-linkage.db.test.ts` used for the phone defect:
+ * pin what is true now, and say in the test how to flip it.
+ *
+ * §2 IS UNCHANGED AND STILL THE POINT. It drives the guard with explicit EMPTY
+ * sources rather than with the dictionary, so it goes on proving that unwritten
+ * copy fails loudly — for the next screen that needs a commitment, and for the
+ * case where somebody empties these keys again.
  */
 
-describe('§1 — the keys ship EMPTY, in both locales', () => {
-  it('pt-PT carries the keys and they are empty', () => {
-    // The keys must EXIST — a screen referencing a missing key is a different
-    // and worse failure — and they must be empty, because nobody has written
-    // them.
-    expect(pt.guest).toHaveProperty('confirmation_title')
-    expect(pt.guest).toHaveProperty('confirmation_body')
-    expect(pt.guest.confirmation_title).toBe('')
-    expect(pt.guest.confirmation_body).toBe('')
+describe('§1 — the keys are WRITTEN, in both locales, and pt is JP\'s VERBATIM', () => {
+  // JP's words, character for character, dispatched 2026-08-16. Pinned here so
+  // a later "tidy-up" of the semicolon, the "a mesma" phrasing or the accents
+  // has to break a test that says why: this is commitment copy the clinic
+  // stands behind, not microcopy this repo may edit.
+  const JP_TITLE = 'Recebemos a sua solicitação e a mesma encontra-se em análise'
+  const JP_BODY =
+    'O agendamento ainda não foi confirmado; entraremos em contacto assim que estiver na nossa agenda.'
+
+  it('pt-PT carries JP\'s two strings exactly', () => {
+    expect(pt.guest.confirmation_title).toBe(JP_TITLE)
+    expect(pt.guest.confirmation_body).toBe(JP_BODY)
   })
 
-  it('en carries the same two keys, also empty', () => {
-    expect(en.guest.confirmation_title).toBe('')
-    expect(en.guest.confirmation_body).toBe('')
+  it('the body still says the appointment is NOT confirmed', () => {
+    // The single most important property of this screen, asserted on its
+    // meaning rather than only on its bytes. R-GUEST-1: a guest booking is
+    // always a request. Copy that ever reads as a confirmation would make the
+    // screen contradict the entire flow behind it.
+    expect(pt.guest.confirmation_body).toContain('ainda não foi confirmado')
+  })
+
+  it('en carries the same two keys, written', () => {
+    // EN is not patient-facing commitment copy in production; it mirrors the
+    // meaning so the dictionary has no holes.
+    expect(en.guest.confirmation_title.trim()).not.toBe('')
+    expect(en.guest.confirmation_body.trim()).not.toBe('')
+    expect(en.guest.confirmation_body).toContain('not yet confirmed')
   })
 })
 

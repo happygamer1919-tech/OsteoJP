@@ -386,8 +386,8 @@
     "error_unavailable": "Não foi possível enviar o pedido. Tente novamente ou contacte a clínica.",
     "catalog_error_title": "Não foi possível carregar os serviços",
     "catalog_error_body": "Tente novamente ou contacte a clínica.",
-    "confirmation_title": "",
-    "confirmation_body": ""
+    "confirmation_title": "Recebemos a sua solicitação e a mesma encontra-se em análise",
+    "confirmation_body": "O agendamento ainda não foi confirmado; entraremos em contacto assim que estiver na nossa agenda."
   },
   "errors": {
     "404_title": "Página não encontrada",

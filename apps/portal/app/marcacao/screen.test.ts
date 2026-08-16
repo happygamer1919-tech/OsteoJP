@@ -159,12 +159,17 @@ describe('§5 — the dictionary and the screen agree', () => {
     expect(pt.guest).toHaveProperty(key)
   })
 
-  it('every guest string is written EXCEPT the two commitment keys', () => {
+  it('every guest string is written, with no exceptions', () => {
+    // INVERTED 2026-08-16 (GUEST-05). This read `toEqual(['confirmation_body',
+    // 'confirmation_title'])` while JP's commitment copy was outstanding, so
+    // landing it turned this red on purpose - the two keys were the only
+    // permitted blanks and now there are none. A blank string on this screen is
+    // a patient-facing hole from here on.
     const empty = Object.entries(pt.guest)
       .filter(([, v]) => String(v).trim() === '')
       .map(([k]) => k)
       .sort()
-    expect(empty).toEqual(['confirmation_body', 'confirmation_title'])
+    expect(empty).toEqual([])
   })
 })
 

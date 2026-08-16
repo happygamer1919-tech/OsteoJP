@@ -36,23 +36,23 @@ import { GUEST_FORM_HORIZON_DAYS } from './state'
  */
 
 /**
- * NOINDEX, AND IT MUST BE REMOVED WHEN THE LINK IS PUBLISHED.
+ * THE NOINDEX IS GONE, 2026-08-16, WITH JP'S CONFIRMATION COPY (GUEST-05).
  *
- * "Not published" has to mean something stronger than "not linked". This page
- * deploys to production the moment the PR merges, and a crawler that finds it -
- * through a referrer, a shared address, a browser extension - would put the
- * clinic's booking form in a search index months before anybody decided it was
- * ready, with a confirmation screen that cannot render yet.
+ * It was here so that "not published" meant more than "not linked" while the
+ * page sat in production with a confirmation screen that could not render. Both
+ * halves of that condition are now false: the copy exists, so the screen
+ * renders and the submit is no longer refused.
  *
- * THE REMOVAL IS A CLOSE CONDITION ON GUEST-05, not a follow-up to remember.
- * Publishing the link while this line survives is the mirror failure: the clinic
- * announces a form that search engines are instructed to ignore, and nothing
- * reports it because the page works perfectly for anyone who has the address.
+ * Removing it was a stated close condition on GUEST-05 rather than a follow-up
+ * to remember, because leaving it in place is the mirror failure - the clinic
+ * announces a booking form that search engines are instructed to ignore, and
+ * nothing reports it, since the page works perfectly for anyone with the
+ * address.
+ *
+ * THE LINK IS STILL NOT PUBLISHED. Nothing links here yet; the owner's
+ * acceptance comes first and the clinic is given the address after it.
  */
-export const metadata = {
-  title: s.guest.title,
-  robots: { index: false, follow: false },
-}
+export const metadata = { title: s.guest.title }
 
 /**
  * DYNAMIC, AND IT WAS STATIC UNTIL THE BUILD SHOWED IT.

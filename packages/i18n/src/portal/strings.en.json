@@ -386,8 +386,8 @@
     "error_unavailable": "The request could not be sent. Please try again or contact the clinic.",
     "catalog_error_title": "The services could not be loaded",
     "catalog_error_body": "Please try again or contact the clinic.",
-    "confirmation_title": "",
-    "confirmation_body": ""
+    "confirmation_title": "We have received your request and it is being reviewed",
+    "confirmation_body": "The appointment is not yet confirmed; we will be in touch as soon as it is in our diary."
   },
   "errors": {
     "404_title": "Page not found",
