@@ -1,5 +1,5 @@
 import type { CoverageRow } from "./schedule-coverage";
-import { planWindow, type SchedulePlan } from "./schedule-window";
+import { planWindow, settlePlan, type SchedulePlan } from "./schedule-window";
 
 /**
  * SCHED-04 (ITEM B) - the THIRD schedule entry mode: a window of dates with no
@@ -146,5 +146,5 @@ export function planDayByDay(
     opts,
   );
 
-  return { created, carved, deactivate, collisions };
+  return settlePlan({ created, carved, deactivate, collisions });
 }

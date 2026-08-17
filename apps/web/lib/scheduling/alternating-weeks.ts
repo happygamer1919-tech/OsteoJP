@@ -1,7 +1,7 @@
 import { addDays } from "./time";
 import { generateLoteSchedule } from "./lote";
 import type { CoverageRow } from "./schedule-coverage";
-import { planWindow, type SchedulePlan, type WindowCarve } from "./schedule-window";
+import { planWindow, settlePlan, type SchedulePlan, type WindowCarve } from "./schedule-window";
 
 export { projectedRows } from "./schedule-window";
 
@@ -121,5 +121,5 @@ export function planAlternatingWeeks(
     opts,
   );
 
-  return { created, carved, deactivate, collisions };
+  return settlePlan({ created, carved, deactivate, collisions });
 }

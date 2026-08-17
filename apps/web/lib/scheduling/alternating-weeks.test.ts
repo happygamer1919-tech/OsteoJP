@@ -254,6 +254,35 @@ describe("SCHED-05 - re-running the pattern over an already-dated window", () =>
     expect(locationsOnDate(projected, 1, "2026-12-14")).toEqual([LV]);
   });
 
+  it("re-running the IDENTICAL pattern with replace is a no-op, not 65 rewrites", () => {
+    // availability_templates_dedupe_uq is UNIQUE on the row's own columns and
+    // does not include is_active, so retiring a day and re-inserting it
+    // identically would violate it and abort the save. The plan drops that churn.
+    const second = planAlternatingWeeks(JP_PLAN, afterFirstRun, { replace: true });
+    expect(second.deactivate).toEqual([]);
+    expect(second.created).toEqual([]);
+    expect(second.collisions).toHaveLength(65); // still reported, just not rewritten
+  });
+
+  it("re-running a CHANGED pattern with replace supersedes only what actually changed", () => {
+    // The clinics swap: every dated row now names the other location, so every
+    // one of them is a real change and must be retired and rewritten.
+    const swapped = { ...JP_PLAN, locationAId: LV, locationBId: CB };
+    const second = planAlternatingWeeks(swapped, afterFirstRun, { replace: true });
+    expect(second.deactivate).toHaveLength(65);
+    expect(second.created).toHaveLength(65);
+
+    const projected = projectedRows(afterFirstRun, second);
+    expect(invertedRows(projected)).toEqual([]);
+    expect(projected).toHaveLength(afterFirstRun.length);
+    expect(coverageViolations(projected)).toEqual([]);
+    // Week A was CB; after the swap it is LV.
+    expect(locationsOnDate(projected, 1, MON_A)).toEqual([LV]);
+    expect(locationsOnDate(projected, 1, MON_B)).toEqual([CB]);
+    // And the ordinary weekly schedule still resumes after the horizon.
+    expect(locationsOnDate(projected, 1, "2026-12-14")).toEqual([LV]);
+  });
+
   it("COUNTERWEIGHT: the pre-fix carve fails all three of those assertions", () => {
     // The shipped carve, reproduced exactly as it stood before this fix: bound
     // EVERY row on a pattern weekday to the day before the window. If the

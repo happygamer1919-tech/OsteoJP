@@ -88,6 +88,9 @@ export type SupersededRow = {
   id: string;
   /** The tail, or null when the row ended inside the window. */
   resume: CoverageRow | null;
+  /** The row's dedupe key, so an identical re-write can be recognised and
+   *  skipped rather than colliding with the unique constraint. */
+  key: string;
 };
 
 /**
@@ -118,6 +121,17 @@ export type ScheduleWindow = {
    */
   weekdays: readonly number[];
 };
+
+/**
+ * The columns `availability_templates_dedupe_uq` is built on (migration 0006),
+ * minus the tenant and user, which are fixed for one call.
+ *
+ * NULLS NOT DISTINCT, so two rows with the same nulls collide rather than both
+ * being allowed - which is what makes the reconciliation below necessary rather
+ * than tidy.
+ */
+const dedupeKey = (r: CoverageRow): string =>
+  [r.locationId, r.weekday, r.startTime, r.endTime, r.validFrom, r.validUntil].join("|");
 
 /**
  * Everything a window does to the rows that already exist: what it carves, what
@@ -210,6 +224,7 @@ export function planWindow(
         const hasTail = row.validUntil === null || row.validUntil > endDate;
         return {
           id: c.id,
+          key: dedupeKey(row),
           resume: hasTail
             ? {
                 locationId: row.locationId,
@@ -260,6 +275,55 @@ export function projectedRows(
   }
   out.push(...plan.created);
   return out;
+}
+
+
+/**
+ * Drop the churn: a row the plan would retire and then write back IDENTICALLY is
+ * simply left alone.
+ *
+ * WITHOUT THIS, "SUBSTITUIR ESTA JANELA" WOULD FAIL ON ALMOST EVERY REAL USE,
+ * and the reason is a constraint rather than anything visible in the feature.
+ * `availability_templates_dedupe_uq` is UNIQUE on
+ * (tenant, user, location, weekday, start_time, end_time, valid_from, valid_until)
+ * and it does NOT include is_active. A retired row still occupies its key. So
+ * deactivating a day and inserting the same day back would violate the
+ * constraint and abort the whole save - and the ordinary use of replace is
+ * correcting ONE day in a window while every other day is re-submitted exactly
+ * as it was.
+ *
+ * IT IS ALSO THE RIGHT ANSWER INDEPENDENTLY OF THE CONSTRAINT. A day whose
+ * schedule did not change should not be retired and re-created: that is two
+ * writes, an audit trail implying a change nobody made, and a new row id for
+ * something that never moved.
+ */
+function reconcileUnchanged(plan: SchedulePlan): SchedulePlan {
+  if (plan.deactivate.length === 0 || plan.created.length === 0) return plan;
+  const createdByKey = new Map(plan.created.map((r) => [dedupeKey(r), r]));
+  const unchangedKeys = new Set<string>();
+  const deactivate = plan.deactivate.filter((d) => {
+    // Only a supersede with no tail can be an exact re-write: a row with a tail
+    // is being genuinely restructured, so it is never "unchanged".
+    if (d.resume !== null) return true;
+    const key = d.key;
+    if (key === undefined || !createdByKey.has(key)) return true;
+    unchangedKeys.add(key);
+    return false;
+  });
+  if (unchangedKeys.size === 0) return plan;
+  return {
+    ...plan,
+    deactivate,
+    created: plan.created.filter((r) => !unchangedKeys.has(dedupeKey(r))),
+  };
+}
+
+/**
+ * Apply the reconciliation to a finished plan. Both entry modes call this as
+ * their last step, so neither can forget it.
+ */
+export function settlePlan(plan: SchedulePlan): SchedulePlan {
+  return reconcileUnchanged(plan);
 }
 
 /**

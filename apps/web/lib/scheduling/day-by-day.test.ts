@@ -150,14 +150,44 @@ describe("SCHED-04 - a window that lands on dated work REFUSES", () => {
     expect(grid.collisions.every((c) => c.kind === "dated")).toBe(true);
   });
 
-  it("with the explicit replace: superseded by deactivation, nothing inverted, nothing accumulated", () => {
+  it("REPLACING WITH THE SAME DAYS TOUCHES NOTHING, and the reason is a constraint", () => {
+    // availability_templates_dedupe_uq is UNIQUE on the row's own columns and
+    // does NOT include is_active, so retiring a day and inserting it back
+    // identically would violate it and abort the entire save. Since the ordinary
+    // use of replace is correcting ONE day while every other day is re-submitted
+    // exactly as it was, that would have failed almost every real use.
     const replaced = planDayByDay(PLAN, stored, { replace: true });
-    expect(replaced.deactivate).toHaveLength(3); // the three dated rows, by id
+    expect(replaced.deactivate).toEqual([]);
+    expect(replaced.created).toEqual([]);
+    // The collision is still REPORTED - only the churn is dropped.
+    expect(replaced.collisions).toHaveLength(3);
+
     const projected = projectedRows(stored, replaced);
     expect(invertedRows(projected)).toEqual([]);
-    expect(projected).toHaveLength(stored.length); // three out, three in
+    expect(projected).toHaveLength(stored.length);
     expect(coverageViolations(projected)).toEqual([]);
     expect(locationsOnDate(projected, 1, MON_1)).toEqual([CB]);
+  });
+
+  it("with the explicit replace and a day CHANGED: only that day is superseded", () => {
+    const moved: DayByDayPlan = {
+      ...PLAN,
+      entries: PLAN.entries.map((e) =>
+        e.date === MON_1 ? { ...e, locationId: LV } : e, // CB -> LV on the Monday
+      ),
+    };
+    const replaced = planDayByDay(moved, stored, { replace: true });
+    // One retired, one written. The two unchanged days are left alone entirely.
+    expect(replaced.deactivate).toHaveLength(1);
+    expect(replaced.created).toHaveLength(1);
+    expect(replaced.created[0]).toMatchObject({ locationId: LV, validFrom: MON_1 });
+
+    const projected = projectedRows(stored, replaced);
+    expect(invertedRows(projected)).toEqual([]);
+    expect(projected).toHaveLength(stored.length);
+    expect(coverageViolations(projected)).toEqual([]);
+    expect(locationsOnDate(projected, 1, MON_1)).toEqual([LV]); // moved
+    expect(locationsOnDate(projected, 3, WED_1)).toEqual([CB]); // untouched
   });
 
   it("COUNTERWEIGHT: with no dated rows in the way there is no refusal at all", () => {
@@ -328,8 +358,12 @@ describe("SCHED-04 - superseding a row never deletes the part of it that survive
 
   it("a superseded DATED row never gets a tail - it only ever covered one day", () => {
     const stored = asStored(projectedRows(weeklyAtLV, planDayByDay(PLAN, weeklyAtLV)));
-    const replaced = planDayByDay(PLAN, stored, { replace: true });
-    expect(replaced.deactivate).toHaveLength(3);
+    const moved: DayByDayPlan = {
+      ...PLAN,
+      entries: PLAN.entries.map((e) => ({ ...e, locationId: LV })),
+    };
+    const replaced = planDayByDay(moved, stored, { replace: true });
+    expect(replaced.deactivate.length).toBeGreaterThan(0);
     expect(replaced.deactivate.every((d) => d.resume === null)).toBe(true);
   });
 });
