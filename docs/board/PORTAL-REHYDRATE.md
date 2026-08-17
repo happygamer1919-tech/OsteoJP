@@ -464,7 +464,43 @@ Before your context is cleared, in this order:
 |---|---|
 | **PURPLE** | `/Users/ivan/Documents/Projects/GitHub/OsteoJP` |
 | **AMBER** | `/Users/ivan/Documents/Projects/GitHub/osteojp-amber` |
+| **CYAN** | `/Users/ivan/Documents/Projects/GitHub/osteojp-cyan` |
 | migration apply, **NEVER build** | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` |
+
+### 7.0 THE CENSUS RULE. Binding from 2026-08-17, and it has already paid for itself.
+
+**`git worktree list` is part of the mandatory boot report, and EVERY TREE IT PRINTS
+MUST APPEAR IN THE TABLE ABOVE. A tree that does not is reported before any work
+starts.** Not investigated, not tidied away, not worked in: named in the first
+output, and the session continues on its own card while the owner answers.
+
+WHY, because the failure it catches does not look like a failure. On 2026-08-17 the
+boot census printed a fifth tree, `osteojp-purple`, on a branch nobody in this lane
+had created, with an open PR. It was reported rather than adopted or ignored. The
+answer came back within the hour: **the owner had started a second Claude Code
+session in a differently-named directory, and it had booted as PURPLE too.** Neither
+session knew the other existed. Both were writing to the same board file, both
+believed they were the only executor, and both were right about everything except
+that.
+
+**THE STRAY SESSION'S WORK WAS GOOD AND ITS PREMISES WERE NOT.** Its PR (#921, the
+empty seed-guard blocklist) was a real and valuable safety fix, verified line by line
+and merged. But it read a 159-card board when main carried 162, and it declined to
+open a card because it believed AMBER and CYAN were both writing to the board -
+AMBER is stood down and writes nothing. **A duplicate terminal does not produce
+obviously wrong work. It produces work reasoned from a stale copy of the world**,
+which is far harder to spot in a diff than a bug is.
+
+So the census is cheap and the thing it detects is not: one `git worktree list`, read
+against this table, before anything else happens.
+
+**When a stray tree turns out to be a terminated or abandoned session:** verify its
+branch is pushed and its tree clean, adopt or close its open PRs on their merits
+(verify every claim against the diff, never against the PR body - a stray session's
+description can be stale against its own branch, and #921's was), then
+`git worktree remove` it so this census stays true. Removing a tree with uncommitted
+work is destructive and owner-confirmable; removing a clean one whose branch is on
+the remote loses nothing.
 
 ### 7.1 STANDING RULE, beside the table because it is about these trees
 

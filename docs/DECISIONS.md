@@ -3088,6 +3088,13 @@ these log entries.
 
 ## 2026-08-17 - PROD_REFS was empty on the day it stopped being safe (PURPLE, branch fix/seed-guard-prod-ref)
 
+> **ADOPTED AND CORRECTED 2026-08-17.** This entry was written by a second terminal
+> that had booted as PURPLE from a differently-named directory without either session
+> noticing. That session is terminated and its worktree removed; there is one PURPLE.
+> The work itself verified clean and is kept. Two of its statements had gone stale
+> against its own branch before merge and are corrected in place below, marked where
+> they occur.
+
 `packages/db/seed/seed-guard.ts` shipped with `export const PROD_REFS: string[] = []`
 and a comment instructing whoever provisioned the production project to populate it.
 Production `dfotoodqvmjhbdcxyaxf` was provisioned, migrations `0047` through `0063`
@@ -3109,13 +3116,25 @@ The two guards are not redundant, and the header comment now says which is which
 DELIBERATE run aimed at the wrong target. The blocklist is checked first and no
 opt-in overrides it.
 
-### The list holds one ref, deliberately
+### The list holds TWO refs. This section originally said one, and it was wrong by the
+### time it was read.
 
-Only `dfotoodqvmjhbdcxyaxf` was added. The retired old prod `jaxmkwoxjcgzkwxgbayx`
-(CLAUDE.md "Supabase setup": retired, do not target) is a defensible second entry
-and was NOT added - the dispatch scoped this to the live ref, and widening a safety
-blocklist without being asked is still widening scope. Carded as an observation in
-the PR body for the owner to rule on.
+`dfotoodqvmjhbdcxyaxf` (live production) was added first. This entry then stated,
+in the present tense, that the retired old prod `jaxmkwoxjcgzkwxgbayx` was NOT added
+and was left for the owner to rule on - the reasoning being that widening a safety
+blocklist unasked is still widening scope.
+
+**The owner ruled on 2026-08-17: it goes on.** A safety blocklist that omits a ref
+CLAUDE.md already forbids targeting is incomplete by its own logic. It was added on
+the same branch, and the reason is on the file: a retired project is one nobody
+watches, so a stale connection string in an old env file, shell history or runbook is
+exactly where a wrong seed goes unnoticed. **Retired is a reason to add a ref, not to
+omit one.**
+
+CORRECTED IN PLACE RATHER THAN APPENDED BELOW, and the original claim is left visible
+above rather than deleted, because this log is append-only and later sessions read it
+as settled. An entry that says "one ref, deliberately" beside a file holding two is
+the exact defect DECISIONS exists to prevent.
 
 ### Coverage was zero, not stale
 
@@ -3125,20 +3144,27 @@ has no `lint` script, so `pnpm lint` never saw the file either. The guard protec
 the production database was the only safety mechanism in the package with no
 automated proof it worked.
 
-`packages/db/tests/seed-guard.test.ts` (10 tests, no DB required, always runs) now
-pins: the prod ref is present, the list is non-empty, both the pooler and the direct
-URL forms parse to the same ref, a blocklisted ref is refused EVEN WITH
+`packages/db/tests/seed-guard.test.ts` (15 tests, no DB required, always runs) now
+pins: EACH blocked ref is present by name, the list is non-empty, both the pooler and
+the direct URL forms parse to the same ref, a blocklisted ref is refused EVEN WITH
 `SEED_DEV_CONFIRM` set to it, a non-blocklisted ref still requires the opt-in, and a
-confirmed dev ref still returns. It lives in `tests/` rather than beside the source
+confirmed dev ref still returns. Each ref is pinned INDIVIDUALLY as well as driven
+through the full refusal path: a bare `PROD_REFS.length > 0` would stay green if
+somebody replaced the contents rather than emptying them. It lives in `tests/` rather than beside the source
 because `packages/db/vitest.config.ts` includes only `tests/**/*.test.ts` - colocated
 per CLAUDE.md convention, it would have run nowhere, which is the failure mode
 DECISIONS 2026-08-14 §"Where the test runs" already logged once.
 
 ### Proven capable of failing
 
-The list was reverted to `[]` on the real file, the suite run, observed red on 4 of
-10 (both blocklist assertions and both refusal assertions), and restored. 10/10 green
-on the restored file.
+The list was reverted to `[]` on the real file, the suite run, and restored. With one
+ref that was 4 red of 10; **re-run on 2026-08-17 with both refs on the list and both
+counts corrected: 7 red of 15** - the two by-name assertions, the not-empty
+assertion, and all four refusal assertions (each ref, pooler and direct form). 15/15
+green on the restored file, and `git status` clean afterwards.
+
+The re-run was done by the adopting terminal rather than taken from this entry. A
+negative control reported second-hand is a claim, not a control.
 
 ### Gates
 
