@@ -15,6 +15,7 @@ import {
 import type { ScheduleDay } from "@/app/admin/staff/StaffManageModal";
 import { WeekScheduleEditor } from "./WeekScheduleEditor";
 import { AlternatingWeeksPanel } from "./AlternatingWeeksPanel";
+import { RosterSearch } from "./RosterSearch";
 import {
   createTimeOffBlockAction,
   deleteTimeOffBlockAction,
@@ -178,7 +179,11 @@ export default async function HorariosPage({
           <p className="text-sm text-v2-text-secondary">{s["schedule.empty"]}</p>
         </GlassPanel>
       ) : (
-        therapists.map((t) => {
+        // SCHED-03: the cards are still built HERE, on the server, exactly as
+        // before. RosterSearch receives them as nodes and decides only which are
+        // hidden - it re-renders none of them and changes no prop of theirs.
+        <RosterSearch
+          cards={therapists.map((t) => {
           const timeOff = timeOffByTherapist.get(t.id);
           // A therapist this viewer cannot manage is RENDERED AND EXPLAINED, not
           // dropped and not shown with an empty editor. Dropping them would hide
@@ -186,42 +191,57 @@ export default async function HorariosPage({
           // about someone whose schedule simply is not visible from here, and
           // every Guardar on it would be refused by the server anyway.
           if (!timeOff?.manageable) {
-            return (
-              <GlassPanel key={t.id} className="flex flex-col gap-2 p-6">
-                <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
-                <p className="text-sm font-medium text-v2-text-primary">
-                  {s["schedule.unmanagedTitle"]}
-                </p>
-                <p className="text-sm text-v2-text-secondary">{s["schedule.unmanagedBody"]}</p>
-              </GlassPanel>
-            );
+            return {
+              id: t.id,
+              name: t.label,
+              card: (
+                <GlassPanel className="flex flex-col gap-1 p-5">
+                  <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
+                  <p className="text-sm font-medium text-v2-text-primary">
+                    {s["schedule.unmanagedTitle"]}
+                  </p>
+                  <p className="text-sm text-v2-text-secondary">
+                    {s["schedule.unmanagedBody"]}
+                  </p>
+                </GlassPanel>
+              ),
+            };
           }
-          return (
-            <GlassPanel key={t.id} className="flex flex-col gap-4 p-6">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
-                <div className="flex items-center gap-2">
-                  {/* ITEM 5: sits beside Bloquear horario because both are
-                      "change this therapist's availability", and reception
-                      looks for them in the same place. */}
-                  <AlternatingWeeksPanel
-                    therapistId={t.id}
-                    therapistName={t.label}
-                    locations={locations}
-                  />
-                  <TherapistBlocks
-                    therapistId={t.id}
-                    therapistName={t.label}
-                    blocks={timeOff.blocks}
-                    labels={blockLabels}
-                    actions={blockActions}
-                  />
+          return {
+            id: t.id,
+            name: t.label,
+            card: (
+              <GlassPanel className="flex flex-col gap-3 p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
+                  <div className="flex items-center gap-2">
+                    {/* ITEM 5: sits beside Bloquear horario because both are
+                        "change this therapist's availability", and reception
+                        looks for them in the same place. */}
+                    <AlternatingWeeksPanel
+                      therapistId={t.id}
+                      therapistName={t.label}
+                      locations={locations}
+                    />
+                    <TherapistBlocks
+                      therapistId={t.id}
+                      therapistName={t.label}
+                      blocks={timeOff.blocks}
+                      labels={blockLabels}
+                      actions={blockActions}
+                    />
+                  </div>
                 </div>
-              </div>
-              <WeekScheduleEditor userId={t.id} days={buildDays(t.id)} locations={locations} />
-            </GlassPanel>
-          );
-        })
+                <WeekScheduleEditor
+                  userId={t.id}
+                  days={buildDays(t.id)}
+                  locations={locations}
+                />
+              </GlassPanel>
+            ),
+          };
+          })}
+        />
       )}
     </main>
   );
