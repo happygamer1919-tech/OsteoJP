@@ -100,6 +100,53 @@ export function assertPlanWritable(existing: readonly CoverageRow[], plan: Sched
   }
 }
 
+/**
+ * Insert one template row, REVIVING a retired row that already occupies its key
+ * rather than colliding with it.
+ *
+ * WHY THIS IS NOT A PLAIN INSERT. `availability_templates_dedupe_uq` (migration
+ * 0006) is UNIQUE NULLS NOT DISTINCT on
+ * (tenant, user, location, weekday, start_time, end_time, valid_from, valid_until)
+ * and it does NOT include is_active. A row retired by an earlier "substituir
+ * esta janela" still holds its key while being invisible to the planner, which
+ * only ever reads ACTIVE rows. So: set a Monday at CB, replace it with LV,
+ * replace it back to CB - and the third save would try to insert a key that the
+ * retired CB row still owns, and abort.
+ *
+ * Reviving is also the honest outcome: the row being asked for and the retired
+ * row are the same row, down to every column the schedule is made of.
+ */
+async function insertTemplate(
+  tx: DbTx,
+  values: {
+    tenantId: string;
+    userId: string;
+    locationId: string;
+    weekday: number;
+    startTime: string;
+    endTime: string;
+    validFrom: string | null;
+    validUntil: string | null;
+  },
+): Promise<void> {
+  await tx
+    .insert(availabilityTemplates)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [
+        availabilityTemplates.tenantId,
+        availabilityTemplates.userId,
+        availabilityTemplates.locationId,
+        availabilityTemplates.weekday,
+        availabilityTemplates.startTime,
+        availabilityTemplates.endTime,
+        availabilityTemplates.validFrom,
+        availabilityTemplates.validUntil,
+      ],
+      set: { isActive: true },
+    });
+}
+
 /** Apply a checked plan: carve, resume, supersede, insert. In that order. */
 export async function writeSchedulePlan(
   tx: DbTx,
@@ -113,7 +160,7 @@ export async function writeSchedulePlan(
       .set({ validUntil: carve.validUntil })
       .where(eq(availabilityTemplates.id, carve.id));
     if (carve.resume) {
-      await tx.insert(availabilityTemplates).values({
+      await insertTemplate(tx, {
         tenantId,
         userId,
         locationId: carve.resume.locationId,
@@ -140,7 +187,7 @@ export async function writeSchedulePlan(
     // schedule from the window's end onwards, and an empty agenda is exactly
     // what "no schedule" looks like, so nothing would report it.
     if (superseded.resume) {
-      await tx.insert(availabilityTemplates).values({
+      await insertTemplate(tx, {
         tenantId,
         userId,
         locationId: superseded.resume.locationId,
@@ -154,7 +201,7 @@ export async function writeSchedulePlan(
   }
 
   for (const row of plan.created) {
-    await tx.insert(availabilityTemplates).values({
+    await insertTemplate(tx, {
       tenantId,
       userId,
       locationId: row.locationId,

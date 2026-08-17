@@ -171,6 +171,37 @@ describe.skipIf(!live)("SCHED-04 - the day-by-day grid, as the PORTAL's SQL sees
     expect(await templateAllows(sql, F.cb, ...at10(SET_CB))).toBe(false);
   });
 
+  it("THE RETIRED ROW KEEPS ITS KEY, which is why the insert has to revive it", async () => {
+    // availability_templates_dedupe_uq does not include is_active, so the row
+    // retired two tests ago still owns its key. A plain insert of the same day
+    // at the same clinic - "replace it back" - raises 23505 and aborts the whole
+    // save. This asserts the constraint really behaves that way rather than
+    // taking the migration's word for it.
+    let raised = "";
+    try {
+      await sql`insert into availability_templates
+                  (tenant_id, user_id, location_id, weekday, start_time, end_time, valid_from, valid_until)
+                values (${F.tenant}, ${F.therapist}, ${F.cb}, 1, '09:00', '17:00', ${SET_CB}, ${SET_CB})`;
+    } catch (e) {
+      raised = (e as { code?: string }).code ?? "";
+    }
+    expect(raised).toBe("23505");
+
+    // And the upsert the writer uses instead REVIVES it, which is what makes
+    // "set CB, replace with LV, replace back to CB" work at all.
+    await sql`insert into availability_templates
+                (tenant_id, user_id, location_id, weekday, start_time, end_time, valid_from, valid_until)
+              values (${F.tenant}, ${F.therapist}, ${F.cb}, 1, '09:00', '17:00', ${SET_CB}, ${SET_CB})
+              on conflict (tenant_id, user_id, location_id, weekday, start_time, end_time, valid_from, valid_until)
+              do update set is_active = true`;
+    expect(await templateAllows(sql, F.cb, ...at10(SET_CB))).toBe(true);
+
+    // Put it back the way the previous test left it, so the last assertion below
+    // is not reading a fixture this one changed.
+    await sql`update availability_templates set is_active = false
+              where tenant_id = ${F.tenant} and location_id = ${F.cb} and valid_from = ${SET_CB}`;
+  });
+
   it("NEGATIVE ARM: an inverted row can never be offered, which is why SCHED-05 was invisible", async () => {
     // valid_from AFTER valid_until. The predicate refuses every date, so a row
     // like this is dead rather than dangerous - and that is exactly why the
