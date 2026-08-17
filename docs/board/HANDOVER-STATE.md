@@ -3,22 +3,33 @@
 **As of 2026-08-17.** Written for the person who hands this build to the clinic
 team and to legal, and for anyone who reads it after.
 
-> ## ⚠️ ONE OPEN QUESTION THAT COULD BE URGENT, RAISED 2026-08-17
+> ## ✅ THE OPEN QUESTION OF 2026-08-17 IS ANSWERED. NOTHING WAS BROKEN.
 >
-> **Reception's Notificações page may be broken, and we do not yet know.**
+> This block previously warned that reception's Notificações page **might** have
+> been failing since 2026-08-15. **It was not, and it never was.**
 >
-> The database table behind the "Pedidos de novos clientes" queue was created
-> without granting the application permission to read it. Automated testing
-> proves the application cannot read that table, and if the live database
-> matches, that page has been failing for every staff member since 2026-08-15.
+> The question was real: the database table behind the "Pedidos de novos
+> clientes" queue was created without the application being granted permission
+> to read it, and automated testing proved a database built from our own files
+> cannot read it. Against that, the owner had watched the queue work.
 >
-> **Against that: the owner watched the queue work on 2026-08-17.** Both cannot
-> be true, so nothing is being assumed either way.
+> **The owner ran the read-only check against the live database on 2026-08-17
+> and it came back clean.** The live table has the permissions it needs — it
+> picked them up from the hosting platform's defaults when it was created, which
+> our own files never recorded. **No page was ever down and no member of staff
+> was ever affected.**
 >
-> A read-only check is committed at
-> `packages/db/scripts/check-guest-requests-grant.mjs` and takes seconds to run.
-> **Run it before the clinic team is told anything about this page.** Tracked as
-> `INC-11`, with the one-line fix waiting on migration authorisation.
+> **What remains is a housekeeping item, not a fault**: our files should say
+> what the live database says, so that any future copy of this system is built
+> the same way. That correction is written up and waiting its turn, tracked as
+> `GUEST-07`. The original question is closed as `INC-11`.
+>
+> One thing genuinely worth acting on came out of the same check: the live table
+> grants the application **more** permissions than it needs, again from the
+> platform's defaults rather than from any decision of ours. Nothing is exposed
+> by it — a separate protection, which is switched on, is what actually controls
+> who can read a row — but it is on the list for the security review at the end
+> of the project, along with a check of the same setting across every table.
 
 ---
 
@@ -72,7 +83,32 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**158 cards. 87 shipped, 71 open. Launch readiness 9/9, every launch gate passes.**
+**162 cards. 89 shipped, 73 open. Launch readiness 9/9, every launch gate passes.**
+
+> ### Schedules: there are now THREE ways to set one, added 2026-08-17
+>
+> 1. **The weekly schedule.** The ordinary recurring week. Unchanged, and still
+>    the default for every date not covered by one of the others.
+> 2. **Semanas alternadas.** For a therapist who swaps clinic week by week, over
+>    a period of up to three months.
+> 3. **Dia a dia.** New. For a period that follows no rule at all: pick a start
+>    and an end, and every date in between is listed for you to set or leave.
+>
+> **Inside a "dia a dia" period, what you set is the whole schedule.** A day left
+> unticked is a day not worked, not a day left alone — which is why the screen
+> lists every date rather than only the ones you fill in.
+>
+> **Setting a period that already has days set will refuse, and tell you which
+> dates are in the way.** Nothing is written when it refuses. Replacing them is a
+> second button you press afterwards, with those dates in front of you. That is
+> deliberate: it is how the system avoids quietly overwriting a schedule somebody
+> entered by hand.
+>
+> The same refusal now applies to "semanas alternadas". Re-applying a pattern
+> over a period it already covered used to leave behind rows that were dead but
+> invisible — nothing on any screen was ever wrong because of it, and nothing
+> reached a patient, but the schedule table accumulated entries nobody could see.
+> Both modes now refuse instead, and neither can produce those rows again.
 
 > **The owner ran the batched acceptance sitting on 2026-08-17: 15 checks, 14
 > PASS, 0 STOP, 1 SKIPPED.** Fifteen cards closed on what he saw on the deployed

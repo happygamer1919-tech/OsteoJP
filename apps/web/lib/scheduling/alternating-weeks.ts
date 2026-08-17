@@ -1,6 +1,9 @@
 import { addDays } from "./time";
 import { generateLoteSchedule } from "./lote";
 import type { CoverageRow } from "./schedule-coverage";
+import { planWindow, settlePlan, type SchedulePlan, type WindowCarve } from "./schedule-window";
+
+export { projectedRows } from "./schedule-window";
 
 /**
  * ITEM 5 - turn "JP alternates weeks between Castelo Branco and Linda-a-Velha"
@@ -24,6 +27,14 @@ import type { CoverageRow } from "./schedule-coverage";
  * the pattern starts, and an identical row resumes the day after it ends. The
  * owner's ruling is that the weekly setup REMAINS the default, so the pattern is
  * a window cut into it, not a replacement for it.
+ *
+ * THE CARVE ITSELF NOW LIVES IN schedule-window.ts, SHARED WITH THE DAY-BY-DAY
+ * GRID (SCHED-04), and this file is only "which dates does the pattern produce".
+ * It moved because of SCHED-05: re-running a pattern over a window it already
+ * covered bounded its own dated rows BACKWARDS - valid_from after valid_until -
+ * leaving dead rows that no screen and no invariant check could see. First-run
+ * behaviour is unchanged; a re-run now REFUSES and names the dates, and
+ * `replace` supersedes them by deactivation rather than by inversion.
  */
 
 export type AlternatingWeeksPlan = {
@@ -49,20 +60,9 @@ export type PlannedTemplate = CoverageRow;
  * window. Two writes, never a delete: the owner's standing rule is that
  * scheduling data is not silently destroyed (Q-W5-4).
  */
-export type LayerOneCarve = {
-  /** The row being bounded. */
-  id: string;
-  /** Its new validUntil - the day before the pattern starts. */
-  validUntil: string;
-  /** The identical row that resumes after the pattern, or null when the
-   *  original already ended before the pattern does. */
-  resume: PlannedTemplate | null;
-};
+export type LayerOneCarve = WindowCarve;
 
-export type AlternatingWeeksWrite = {
-  created: PlannedTemplate[];
-  carved: LayerOneCarve[];
-};
+export type AlternatingWeeksWrite = SchedulePlan;
 
 /**
  * The dates one location's weeks fall on: every `weekdays` day, every OTHER
@@ -87,9 +87,12 @@ function datesFor(from: string, weekdays: number[], endDate: string): string[] {
 export function planAlternatingWeeks(
   plan: AlternatingWeeksPlan,
   existing: readonly CoverageRow[],
+  opts: { replace?: boolean } = {},
 ): AlternatingWeeksWrite {
   const { weekdays, startDate, endDate, locationAId, locationBId, startTime, endTime } = plan;
-  if (weekdays.length === 0 || startDate > endDate) return { created: [], carved: [] };
+  if (weekdays.length === 0 || startDate > endDate) {
+    return { created: [], carved: [], deactivate: [], collisions: [] };
+  }
 
   const weekBStart = addDays(startDate, 7);
   const rowFor = (date: string, locationId: string): PlannedTemplate => ({
@@ -110,62 +113,13 @@ export function planAlternatingWeeks(
       : []),
   ];
 
-  const dayBefore = addDays(startDate, -1);
-  const dayAfter = addDays(endDate, 1);
-  const carved: LayerOneCarve[] = [];
-  for (const row of existing) {
-    if (!weekdays.includes(row.weekday)) continue;
-    // A row that already stops before the pattern, or starts after it, cannot
-    // double-cover and must not be touched.
-    if (row.validUntil && row.validUntil < startDate) continue;
-    if (row.validFrom && row.validFrom > endDate) continue;
-    if (!row.id) continue;
-    carved.push({
-      id: row.id,
-      validUntil: dayBefore,
-      // Resume only if the original would still have been running after the
-      // pattern. A row that was already going to end inside the window keeps its
-      // own end date and simply is not resumed.
-      resume:
-        row.validUntil && row.validUntil <= endDate
-          ? null
-          : {
-              locationId: row.locationId,
-              weekday: row.weekday,
-              startTime: row.startTime,
-              endTime: row.endTime,
-              validFrom: dayAfter,
-              validUntil: row.validUntil,
-            },
-    });
-  }
+  // The carve, the collision report and the deactivations are the shared part.
+  // Only `created` is this mode's own.
+  const { carved, deactivate, collisions } = planWindow(
+    { startDate, endDate, weekdays },
+    existing,
+    opts,
+  );
 
-  return { created, carved };
-}
-
-/**
- * The rows that WILL exist after a plan is applied: the untouched ones, the
- * carved ones with their new bound, the resumed ones, and the new dated ones.
- *
- * EXISTS SO THE INVARIANT CAN BE CHECKED BEFORE ANYTHING IS WRITTEN. Checking
- * after the insert would mean discovering a double-booked therapist inside a
- * transaction that has already half-run.
- */
-export function projectedRows(
-  existing: readonly CoverageRow[],
-  write: AlternatingWeeksWrite,
-): CoverageRow[] {
-  const carveById = new Map(write.carved.map((c) => [c.id, c]));
-  const out: CoverageRow[] = [];
-  for (const row of existing) {
-    const carve = row.id ? carveById.get(row.id) : undefined;
-    if (!carve) {
-      out.push(row);
-      continue;
-    }
-    out.push({ ...row, validUntil: carve.validUntil });
-    if (carve.resume) out.push(carve.resume);
-  }
-  out.push(...write.created);
-  return out;
+  return settlePlan({ created, carved, deactivate, collisions });
 }
