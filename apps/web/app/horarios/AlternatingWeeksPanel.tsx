@@ -55,6 +55,7 @@ export function AlternatingWeeksPanel({
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("17:00");
   const [affected, setAffected] = useState<{ id: string; label: string }[] | null>(null);
+  const [collisions, setCollisions] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   // STATUS IS INLINE, NOT A TOAST, AND THE FIRST DRAFT GOT THIS WRONG IN A WAY
   // THAT CRASHED THE PAGE. `useToast` throws unless a <ToastProvider> is an
@@ -89,7 +90,7 @@ export function AlternatingWeeksPanel({
     locationAId !== locationBId &&
     endTime > startTime;
 
-  const submit = async () => {
+  const submit = async (replace: boolean) => {
     setBusy(true);
     const res = await applyAlternatingWeeksAction({
       userId: therapistId,
@@ -100,17 +101,32 @@ export function AlternatingWeeksPanel({
       locationBId,
       startTime,
       endTime,
+      replace,
     });
     setBusy(false);
     if (!res.ok) {
+      // SCHED-05: re-running the pattern over a window that already carries
+      // dated rows used to bound those rows BACKWARDS and leave them dead. It
+      // now refuses and says which dates are in the way, and replacing them is
+      // the second action below.
+      if (res.collisionDates && res.collisionDates.length > 0) {
+        setCollisions(res.collisionDates);
+        setStatus(null);
+        return;
+      }
+      setCollisions(null);
       setStatus({ tone: "err", text: s["schedule.altError"] });
       return;
     }
-    setStatus({ tone: "ok", text: s["schedule.altSaved"] });
+    setCollisions(null);
+    setStatus({
+      tone: "ok",
+      text: replace ? s["schedule.windowReplaced"] : s["schedule.altSaved"],
+    });
     // The list is kept on screen rather than toasted: a toast disappears, and
     // these are appointments somebody has to act on.
     setAffected(res.affected ?? []);
-    if ((res.affected ?? []).length === 0) setOpen(false);
+    if ((res.affected ?? []).length === 0 && !replace) setOpen(false);
     startTransition(() => {});
   };
 
@@ -126,6 +142,7 @@ export function AlternatingWeeksPanel({
           onClose={() => {
             setOpen(false);
             setAffected(null);
+            setCollisions(null);
             setStatus(null);
           }}
           title={`${s["schedule.altTitle"]} · ${therapistName}`}
@@ -200,7 +217,7 @@ export function AlternatingWeeksPanel({
               </label>
             </div>
 
-            <Button onClick={submit} disabled={!canSave} data-testid="alt-weeks-save">
+            <Button onClick={() => submit(false)} disabled={!canSave} data-testid="alt-weeks-save">
               {s["common.save"]}
             </Button>
 
@@ -216,6 +233,30 @@ export function AlternatingWeeksPanel({
               >
                 {status.text}
               </p>
+            )}
+
+            {collisions && collisions.length > 0 && (
+              <div
+                role="status"
+                data-testid="alt-weeks-collision"
+                className="flex flex-col gap-2 rounded-v2 border border-v2-border bg-v2-surface p-3"
+              >
+                <p className="text-sm text-v2-text-primary">{s["schedule.windowCollision"]}</p>
+                <ul className="list-disc pl-5 text-sm text-v2-text-secondary">
+                  {collisions.map((d) => (
+                    <li key={d}>{d}</li>
+                  ))}
+                </ul>
+                <p className="text-xs text-v2-text-secondary">{s["schedule.windowReplaceHelp"]}</p>
+                <Button
+                  variant="secondary"
+                  onClick={() => submit(true)}
+                  disabled={busy}
+                  data-testid="alt-weeks-replace"
+                >
+                  {s["schedule.windowReplace"]}
+                </Button>
+              </div>
             )}
 
             {affected && affected.length > 0 && (

@@ -1,18 +1,22 @@
 import "server-only";
-import { and, asc, eq, gt, lt, ne } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { appointments, availabilityTemplates, patients } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
-import { lisbonMidnightUtc, addDays } from "@/lib/scheduling/time";
+import { addDays } from "@/lib/scheduling/time";
 import {
   planAlternatingWeeks,
-  projectedRows,
   type AlternatingWeeksPlan,
 } from "@/lib/scheduling/alternating-weeks";
-import { coverageViolations, type CoverageRow } from "@/lib/scheduling/schedule-coverage";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import { assertTargetInScheduleScope, resolveScheduleScope } from "./schedule-scope";
+import {
+  affectedAppointments,
+  assertPlanWritable,
+  readActiveRows,
+  writeSchedulePlan,
+  type AffectedAppointment,
+  type ScheduleWindowResult,
+} from "./schedule-window-write";
 
 /**
  * ITEM 5 - apply an alternating-week pattern to one therapist's schedule.
@@ -24,31 +28,26 @@ import { assertTargetInScheduleScope, resolveScheduleScope } from "./schedule-sc
  * 1 and the default - the pattern is a window carved into it, never a
  * replacement.
  *
- * THE INVARIANT IS ENFORCED HERE, BEFORE ANY WRITE, AND THAT PLACEMENT IS THE
- * DESIGN. The owner ratified a write-time invariant over read-time precedence
- * precisely so no consumer has to disambiguate anything: four consumers, two of
- * them SQL, would have meant four copies of a precedence rule and the drift that
- * produced migration 0059. Checking the PROJECTED rows means a violation is
- * refused while the transaction has written nothing, rather than discovered
- * halfway through an insert loop.
+ * THE INVARIANT IS ENFORCED BEFORE ANY WRITE, AND THAT PLACEMENT IS THE DESIGN.
+ * The owner ratified a write-time invariant over read-time precedence precisely
+ * so no consumer has to disambiguate anything: four consumers, two of them SQL,
+ * would have meant four copies of a precedence rule and the drift that produced
+ * migration 0059. Checking the PROJECTED rows means a violation is refused while
+ * the transaction has written nothing, rather than discovered halfway through an
+ * insert loop.
+ *
+ * THE CARVE AND THE WRITE ARE SHARED WITH THE DAY-BY-DAY GRID (schedule-window*).
+ * SCHED-05 is why: re-running a pattern over a window it already covered bounded
+ * its OWN dated rows backwards and left them dead. A re-run now refuses and names
+ * the dates, and `replace` supersedes them by deactivation.
  */
 
-/** An appointment the pattern runs over. Reported, NEVER cancelled. */
-export type AffectedAppointment = {
-  id: string;
-  patientName: string;
-  startsAt: string; // ISO UTC
-  endsAt: string;
-};
+export type { AffectedAppointment };
 
-export type ApplyAlternatingResult = {
-  /** How many template rows the pattern created. */
-  created: number;
-  /** How many existing weekly rows were bounded to make room. */
-  carved: number;
-  /** Appointments inside the window. ADVISORY (PL-11): the save succeeded. */
-  affected: AffectedAppointment[];
-};
+export type ApplyAlternatingResult =
+  | ({ ok: true } & ScheduleWindowResult)
+  /** Dated rows already occupy this window. NOTHING was written. */
+  | { ok: false; reason: "collision"; dates: string[] };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** R-SCHED-1: the horizon is three months. A little slack for month lengths. */
@@ -83,6 +82,7 @@ export async function applyAlternatingWeeks(
   actor: RequestContext,
   userId: string,
   plan: AlternatingWeeksPlan,
+  opts: { replace?: boolean } = {},
 ): Promise<ApplyAlternatingResult> {
   assertCan(actor.role, "schedule:manage");
   validate(plan);
@@ -91,104 +91,22 @@ export async function applyAlternatingWeeks(
   return runScoped(actor, async (tx) => {
     await assertTargetInScheduleScope(tx, userId, scope);
 
-    const existingRows = await tx
-      .select({
-        id: availabilityTemplates.id,
-        locationId: availabilityTemplates.locationId,
-        weekday: availabilityTemplates.weekday,
-        startTime: availabilityTemplates.startTime,
-        endTime: availabilityTemplates.endTime,
-        validFrom: availabilityTemplates.validFrom,
-        validUntil: availabilityTemplates.validUntil,
-      })
-      .from(availabilityTemplates)
-      .where(
-        and(
-          eq(availabilityTemplates.isActive, true),
-          eq(availabilityTemplates.userId, userId),
-        ),
-      );
+    const existing = await readActiveRows(tx, userId);
+    const write = planAlternatingWeeks(plan, existing, opts);
 
-    const existing: CoverageRow[] = existingRows.map((r) => ({
-      id: r.id,
-      locationId: r.locationId,
-      weekday: r.weekday,
-      startTime: r.startTime.slice(0, 5),
-      endTime: r.endTime.slice(0, 5),
-      validFrom: r.validFrom,
-      validUntil: r.validUntil,
-    }));
-
-    const write = planAlternatingWeeks(plan, existing);
-
-    // THE GATE. Refuse the whole plan rather than write a schedule that says the
-    // therapist is at two clinics at once. Nothing has been written yet.
-    const violations = coverageViolations(projectedRows(existing, write));
-    if (violations.length > 0) {
-      const first = violations[0]!;
-      throw new AdminError(
-        "invalid",
-        `schedule would double-cover ${first.date} (${first.kind})`,
-      );
+    // THE RE-RUN REFUSAL (SCHED-05). Dated rows in this window are somebody's
+    // entered schedule - this mode's own previous run, or the day-by-day grid's.
+    // Writing over them is a second decision, taken with the dates in view.
+    if (write.collisions.length > 0 && !opts.replace) {
+      return {
+        ok: false as const,
+        reason: "collision" as const,
+        dates: [...new Set(write.collisions.map((c) => c.date))].sort(),
+      };
     }
 
-    for (const carve of write.carved) {
-      await tx
-        .update(availabilityTemplates)
-        .set({ validUntil: carve.validUntil })
-        .where(eq(availabilityTemplates.id, carve.id));
-      if (carve.resume) {
-        await tx.insert(availabilityTemplates).values({
-          tenantId: actor.tenantId,
-          userId,
-          locationId: carve.resume.locationId,
-          weekday: carve.resume.weekday,
-          startTime: carve.resume.startTime,
-          endTime: carve.resume.endTime,
-          validFrom: carve.resume.validFrom,
-          validUntil: carve.resume.validUntil,
-        });
-      }
-    }
-
-    for (const row of write.created) {
-      await tx.insert(availabilityTemplates).values({
-        tenantId: actor.tenantId,
-        userId,
-        locationId: row.locationId,
-        weekday: row.weekday,
-        startTime: row.startTime,
-        endTime: row.endTime,
-        validFrom: row.validFrom,
-        validUntil: row.validUntil,
-      });
-    }
-
-    // ADVISORY, NEVER DESTRUCTIVE. PL-11 makes availability advisory and Q-W5-4
-    // forbids silently destroying scheduling data, so appointments already
-    // booked inside the window are REPORTED for a human to move. Refusing the
-    // save instead would leave reception unable to record that JP is at CB that
-    // week, which is true whether or not the system likes it.
-    const rangeStart = lisbonMidnightUtc(plan.startDate);
-    const rangeEnd = lisbonMidnightUtc(addDays(plan.endDate, 1));
-    const affectedRows = await tx
-      .select({
-        id: appointments.id,
-        patientName: patients.fullName,
-        startsAt: appointments.startsAt,
-        endsAt: appointments.endsAt,
-      })
-      .from(appointments)
-      .innerJoin(patients, eq(patients.id, appointments.patientId))
-      .where(
-        and(
-          eq(appointments.practitionerId, userId),
-          ne(appointments.status, "cancelled"),
-          lt(appointments.startsAt, rangeEnd),
-          gt(appointments.endsAt, rangeStart),
-        ),
-      )
-      .orderBy(asc(appointments.startsAt));
+    assertPlanWritable(existing, write);
+    await writeSchedulePlan(tx, actor.tenantId, userId, write);
 
     await writeAudit(tx, actor, {
       action: "availability_template.alternating_weeks",
@@ -197,14 +115,11 @@ export async function applyAlternatingWeeks(
     });
 
     return {
+      ok: true as const,
       created: write.created.length,
       carved: write.carved.length,
-      affected: affectedRows.map((a) => ({
-        id: a.id,
-        patientName: a.patientName,
-        startsAt: a.startsAt.toISOString(),
-        endsAt: a.endsAt.toISOString(),
-      })),
+      superseded: write.deactivate.length,
+      affected: await affectedAppointments(tx, userId, plan.startDate, plan.endDate),
     };
   });
 }

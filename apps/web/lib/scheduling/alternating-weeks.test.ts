@@ -5,6 +5,7 @@ import {
   type AlternatingWeeksPlan,
 } from "./alternating-weeks";
 import { coverageViolations, locationsOnDate, type CoverageRow } from "./schedule-coverage";
+import { invertedRows } from "./schedule-window";
 import { buildDay } from "./day-availability-core";
 
 /**
@@ -198,5 +199,82 @@ describe("ITEM 5 DoD 2 - CB one week, LV the next, at the consumer", () => {
     const w = planAlternatingWeeks(JP_PLAN, withSaturday);
     expect(w.carved.map((c) => c.id)).not.toContain("sat");
     expect(locationsOnDate(projectedRows(withSaturday, w), 6, "2026-09-12")).toEqual([LV]);
+  });
+});
+
+/**
+ * SCHED-05 - THE RE-RUN. This is the defect the shared window planner exists to
+ * close, and it was in shipped code from 2026-08-14 until 2026-08-17.
+ *
+ * Running the pattern a second time over a window it already covered carved its
+ * OWN dated rows: each one kept its valid_from (a date inside the window) and was
+ * given a valid_until of the day BEFORE the window. valid_from > valid_until.
+ *
+ * Nothing anywhere reported it. An inverted row is inert at read time -
+ * isWithinValidity refuses every date - and it is invisible to the invariant too,
+ * because validityIntersects is false for an inverted range against everything,
+ * so coverageViolations silently excluded the rows it could not reason about.
+ */
+describe("SCHED-05 - re-running the pattern over an already-dated window", () => {
+  /** The rows as the database would hold them after a save: everything the plan
+   *  projected, with ids assigned to the newly inserted ones. */
+  const asStored = (rows: readonly CoverageRow[]): CoverageRow[] =>
+    rows.map((r, i) => (r.id ? r : { ...r, id: `stored-${i}` }));
+
+  const firstRun = planAlternatingWeeks(JP_PLAN, weeklyAtLV);
+  const afterFirstRun = asStored(projectedRows(weeklyAtLV, firstRun));
+
+  it("REFUSES, and names every date that is already dated", () => {
+    const second = planAlternatingWeeks(JP_PLAN, afterFirstRun);
+    expect(second.collisions.length).toBe(65); // 13 weeks x 5 weekdays, all of them
+    expect(second.collisions.every((c) => c.kind === "dated")).toBe(true);
+    // Named, not counted: the dates come back so a person can look at them.
+    expect(second.collisions.map((c) => c.date)).toContain(MON_A);
+    expect(second.collisions.map((c) => c.date)).toContain(MON_B);
+  });
+
+  it("supersedes NOTHING without the explicit opt-in", () => {
+    expect(planAlternatingWeeks(JP_PLAN, afterFirstRun).deactivate).toEqual([]);
+  });
+
+  it("THE DoD: with replace, no row runs backwards and no dead row survives", () => {
+    const second = planAlternatingWeeks(JP_PLAN, afterFirstRun, { replace: true });
+    const projected = projectedRows(afterFirstRun, second);
+
+    // 1. Nothing inverted.
+    expect(invertedRows(projected)).toEqual([]);
+    // 2. Nothing accumulated: the same row count as after the first run, because
+    //    every superseded row left the active set as a new one replaced it.
+    expect(projected).toHaveLength(afterFirstRun.length);
+    // 3. Still correct, checked at the consumer rather than at the planner.
+    expect(coverageViolations(projected)).toEqual([]);
+    expect(locationsOnDate(projected, 1, MON_A)).toEqual([CB]);
+    expect(locationsOnDate(projected, 1, MON_B)).toEqual([LV]);
+    // 4. And the ordinary weekly schedule still resumes afterwards.
+    expect(locationsOnDate(projected, 1, "2026-12-14")).toEqual([LV]);
+  });
+
+  it("COUNTERWEIGHT: the pre-fix carve fails all three of those assertions", () => {
+    // The shipped carve, reproduced exactly as it stood before this fix: bound
+    // EVERY row on a pattern weekday to the day before the window. If the
+    // assertions above cannot tell this apart from the fix, they prove nothing.
+    const dayBefore = "2026-09-06";
+    const oldCarved = afterFirstRun
+      .filter((r) => WEEKDAYS.includes(r.weekday))
+      .filter((r) => !(r.validUntil && r.validUntil < JP_PLAN.startDate))
+      .filter((r) => !(r.validFrom && r.validFrom > JP_PLAN.endDate))
+      .map((r) => ({ id: r.id!, validUntil: dayBefore, resume: null }));
+    const oldProjection = projectedRows(afterFirstRun, {
+      created: planAlternatingWeeks(JP_PLAN, weeklyAtLV).created,
+      carved: oldCarved,
+      deactivate: [],
+    });
+
+    // It inverted 65 rows, and left every one of them in the table.
+    expect(invertedRows(oldProjection).length).toBe(65);
+    expect(oldProjection.length).toBeGreaterThan(afterFirstRun.length);
+    // AND THE INVARIANT SAW NONE OF IT. This is the line that explains why the
+    // defect survived a write-time invariant designed to catch exactly this.
+    expect(coverageViolations(oldProjection)).toEqual([]);
   });
 });

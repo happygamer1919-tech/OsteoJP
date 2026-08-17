@@ -10,6 +10,7 @@ import {
 } from "@/lib/admin/availability";
 import { reconcileWeek } from "@/lib/admin/schedule-reconcile";
 import { applyAlternatingWeeks } from "@/lib/admin/alternating-schedule";
+import { applyDayByDaySchedule } from "@/lib/admin/day-by-day-schedule";
 // formatCreatedAt is the existing pt-PT Lisbon "dd/mm/yyyy HH:mm" formatter;
 // reused rather than adding a second one that could format differently.
 import { formatCreatedAt } from "@/lib/scheduling/time";
@@ -129,6 +130,20 @@ export async function saveScheduleAction(fd: FormData): Promise<void> {
  * it ran over. A redirect would throw that list away at exactly the moment
  * somebody needs to act on it.
  */
+export type ScheduleWindowActionResult = {
+  ok: boolean;
+  error?: string;
+  affected?: { id: string; label: string }[];
+  /**
+   * SCHED-04/SCHED-05: the dates already carrying dated work, when the save was
+   * REFUSED for that reason. Present only on the refusal, and the caller shows
+   * them verbatim - "some dates conflict" is not an answer somebody can act on.
+   */
+  collisionDates?: string[];
+  /** How many dated rows an explicit replace superseded. */
+  superseded?: number;
+};
+
 export async function applyAlternatingWeeksAction(input: {
   userId: string;
   weekdays: number[];
@@ -138,22 +153,31 @@ export async function applyAlternatingWeeksAction(input: {
   locationBId: string;
   startTime: string;
   endTime: string;
-}): Promise<{ ok: boolean; error?: string; affected?: { id: string; label: string }[] }> {
+  /** The opt-in second action. Never set on a first submit. */
+  replace?: boolean;
+}): Promise<ScheduleWindowActionResult> {
   const actor = await requireRequestContext();
   try {
-    const res = await applyAlternatingWeeks(actor, input.userId, {
-      weekdays: input.weekdays,
-      startDate: input.startDate,
-      endDate: input.endDate,
-      locationAId: input.locationAId,
-      locationBId: input.locationBId,
-      startTime: input.startTime,
-      endTime: input.endTime,
-    });
+    const res = await applyAlternatingWeeks(
+      actor,
+      input.userId,
+      {
+        weekdays: input.weekdays,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        locationAId: input.locationAId,
+        locationBId: input.locationBId,
+        startTime: input.startTime,
+        endTime: input.endTime,
+      },
+      { replace: input.replace },
+    );
+    if (!res.ok) return { ok: false, error: res.reason, collisionDates: res.dates };
     revalidatePath("/horarios");
     revalidatePath("/agenda");
     return {
       ok: true,
+      superseded: res.superseded,
       affected: res.affected.map((a) => ({
         id: a.id,
         // Formatted here, on the server, where the Lisbon helpers already live.
@@ -162,6 +186,47 @@ export async function applyAlternatingWeeksAction(input: {
     };
   } catch (e) {
     // The guard codes reach the caller as a code, never as an internal message.
+    return { ok: false, error: isAdminError(e) ? e.code : "generic" };
+  }
+}
+
+/**
+ * SCHED-04 - apply a day-by-day window. Same response shape as the alternating
+ * action above, deliberately: the panels differ in how the dates are chosen and
+ * in nothing else, so the refusal, the superseded count and the advisory
+ * appointment list are read by identical code on both.
+ */
+export async function applyDayByDayScheduleAction(input: {
+  userId: string;
+  startDate: string;
+  endDate: string;
+  entries: { date: string; locationId: string; startTime: string; endTime: string }[];
+  replace?: boolean;
+}): Promise<ScheduleWindowActionResult> {
+  const actor = await requireRequestContext();
+  try {
+    const res = await applyDayByDaySchedule(
+      actor,
+      input.userId,
+      {
+        startDate: input.startDate,
+        endDate: input.endDate,
+        entries: input.entries,
+      },
+      { replace: input.replace },
+    );
+    if (!res.ok) return { ok: false, error: res.reason, collisionDates: res.dates };
+    revalidatePath("/horarios");
+    revalidatePath("/agenda");
+    return {
+      ok: true,
+      superseded: res.superseded,
+      affected: res.affected.map((a) => ({
+        id: a.id,
+        label: `${formatCreatedAt(a.startsAt)} · ${a.patientName}`,
+      })),
+    };
+  } catch (e) {
     return { ok: false, error: isAdminError(e) ? e.code : "generic" };
   }
 }

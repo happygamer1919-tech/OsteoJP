@@ -15,6 +15,7 @@ import {
 import type { ScheduleDay } from "@/app/admin/staff/StaffManageModal";
 import { WeekScheduleEditor } from "./WeekScheduleEditor";
 import { AlternatingWeeksPanel } from "./AlternatingWeeksPanel";
+import { DayByDayPanel } from "./DayByDayPanel";
 import { RosterSearch } from "./RosterSearch";
 import {
   createTimeOffBlockAction,
@@ -219,6 +220,14 @@ export default async function HorariosPage({
                         "change this therapist's availability", and reception
                         looks for them in the same place. */}
                     <AlternatingWeeksPanel
+                      therapistId={t.id}
+                      therapistName={t.label}
+                      locations={locations}
+                    />
+                    {/* SCHED-04: the third entry mode, beside the second. Both
+                        answer "this therapist's dates are not the ordinary
+                        week"; one has a pattern, one does not. */}
+                    <DayByDayPanel
                       therapistId={t.id}
                       therapistName={t.label}
                       locations={locations}
