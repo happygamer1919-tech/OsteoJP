@@ -4,6 +4,7 @@ import { assertCan } from "@osteojp/auth";
 import { guestBookingRequests, locations, patients, services } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
+import { patientPhoneMatchConds } from "./guest-match";
 
 /**
  * ITEM 6 - reception's queue of GUEST booking requests: people with no account
@@ -95,11 +96,26 @@ export async function listPendingGuestRequests(
         // COUNTED IN THE SAME QUERY, as a correlated subquery, so the flag and
         // the row come from ONE snapshot. Two round trips could report a match
         // for a patient created between them, or miss one deleted between them.
+        //
+        // GUEST-06: the predicate is no longer written here. `patientPhoneMatchConds`
+        // owns it, because convert LISTS the same set this COUNTS and the two
+        // disagreeing is worse than either being wrong alone - the badge would
+        // promise a match the dialog then cannot show. Building it from drizzle
+        // conditions rather than raw SQL is also what removed the `p` alias: the
+        // outer query selects from guest_booking_requests, so the columns are
+        // unambiguous fully qualified.
+        //
+        // The tenant correlation this query already had is now INSIDE that
+        // predicate, so the convert path carries it too rather than relying on
+        // RLS alone.
         matches: sql<number>`(
-          select count(*)::int from ${patients} p
-          where p.tenant_id = ${guestBookingRequests.tenantId}
-            and p.phone_e164 is not null
-            and p.phone_e164 = ${guestBookingRequests.phoneE164}
+          select count(*)::int from ${patients}
+          where ${and(
+            ...patientPhoneMatchConds(
+              guestBookingRequests.tenantId,
+              guestBookingRequests.phoneE164,
+            ),
+          )}
         )`,
       })
       .from(guestBookingRequests)

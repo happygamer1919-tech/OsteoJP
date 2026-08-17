@@ -43,6 +43,7 @@ export function AgendaView({
   appointments,
   blocks,
   lockedPatient,
+  prefill,
   canHardDelete,
   canBlockTime,
 }: {
@@ -63,6 +64,12 @@ export function AgendaView({
   /** W6-03: when deep-linked from a patient profile, the create drawer opens
    *  with this patient preselected + locked. Null on a normal agenda visit. */
   lockedPatient: { value: string; label: string } | null;
+  /** GUEST-06: the service and clinic a converted guest request asked for.
+   *  Each is already validated against `options` by page.tsx, so a non-null id
+   *  here is guaranteed to have a matching <option> — see the STAFF-01 note
+   *  there for why that guarantee, and not the raw URL value, is what crosses
+   *  this boundary. Both null on a normal agenda visit. */
+  prefill: { serviceId: string | null; locationId: string | null };
   canHardDelete: boolean;
   /** W12-28, regated by PL-27: gates the "Bloquear horário" affordance =
    *  can(role,"schedule:manage") - the capability createTimeOffBlock ACTUALLY
@@ -84,15 +91,27 @@ export function AgendaView({
   // create drawer ONCE with the patient preselected + locked, then strip the
   // param so a refresh/back does not re-trigger the autopen. history.replaceState
   // (not router.replace) avoids a server refetch and keeps this modal state.
+  //
+  // GUEST-06 extends the same deep link with the service and clinic the guest
+  // asked for, so a convert lands reception on a drawer that needs only the
+  // therapist and the time — the two things the guest was never shown and could
+  // not have chosen. The date rides the agenda's existing `date` param, which
+  // already anchors both the grid and the drawer's default day.
   const deepLinkOpened = useRef(false);
   useEffect(() => {
     if (!lockedPatient || deepLinkOpened.current) return;
     deepLinkOpened.current = true;
-    setModal({ mode: "create", lockedPatient });
+    setModal({
+      mode: "create",
+      lockedPatient,
+      prefill: prefill.serviceId || prefill.locationId ? prefill : undefined,
+    });
     const url = new URL(window.location.href);
     url.searchParams.delete("novaMarcacaoPaciente");
+    url.searchParams.delete("novaMarcacaoServico");
+    url.searchParams.delete("novaMarcacaoLocal");
     window.history.replaceState(null, "", url.pathname + url.search);
-  }, [lockedPatient]);
+  }, [lockedPatient, prefill]);
 
   // SPEC-v2-agenda §4: mobile collapses to the Dia view. This is a presentation
   // override — the URL `view` (and the server fetch range) are untouched; below

@@ -8,6 +8,17 @@ vi.mock("@osteojp/ui", () => ({
   GlassCard: ({ children, className }: { children?: ReactNode; className?: string }) =>
     createElement("div", { className }, children as ReactNode),
 }));
+// GUEST-06 made this a client component. Two consequences for a render test:
+// `useRouter` needs an app-router context that renderToStaticMarkup has no way
+// to mount, and the module now imports the convert server action, which pulls in
+// the database. Both are stubbed; neither is under test here - the action has
+// its own suite (lib/scheduling/guest-convert.test.ts) and the press rule and
+// deep link have theirs (lib/scheduling/guest-convert-handoff.test.ts).
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
+vi.mock("@/lib/scheduling/guest-convert", () => ({
+  convertGuestRequest: async () => ({ ok: false, error: "validation" }),
+  listGuestRequestMatches: async () => ({ ok: true, data: [] }),
+}));
 
 import { GuestRequestsQueue, type GuestRequestRow } from "./guest-requests-queue";
 
@@ -113,5 +124,63 @@ describe("guest queue - the new-client mark", () => {
     const html = render([]);
     expect(html).toContain("Sem pedidos de novos clientes");
     expect(html).not.toContain("guest-request-row");
+  });
+});
+
+/**
+ * GUEST-06 — the convert control.
+ *
+ * WHAT THIS FILE CAN AND CANNOT ASSERT. `renderToStaticMarkup` produces the
+ * FIRST paint and no more: there is no click, so the resolution panel (which
+ * only exists after state changes) is unreachable here. What is asserted is
+ * therefore what the screen offers before anybody touches it — and, importantly,
+ * what it does NOT offer. The behaviour behind the button is covered by the two
+ * suites named in the mock comment above.
+ */
+describe("guest queue - the convert control", () => {
+  it("offers a convert control on every row", () => {
+    const html = render([row({ id: "a" }), row({ id: "b", possiblePatientMatches: 2 })]);
+    expect((html.match(/guest-convert-button/g) ?? []).length).toBe(2);
+    expect(html).toContain("Criar paciente e marcar");
+  });
+
+  it("offers the SAME control whether or not the row is flagged", () => {
+    // The difference between the two rows is what the press DOES, not what it
+    // looks like. A flagged row with a differently-worded button would invite
+    // reception to learn "the orange one is the careful one" and act on the
+    // colour rather than on the question.
+    const clean = render([row({ possiblePatientMatches: 0 })]);
+    const flagged = render([row({ possiblePatientMatches: 1 })]);
+    expect(clean).toContain("Criar paciente e marcar");
+    expect(flagged).toContain("Criar paciente e marcar");
+  });
+
+  it("NEGATIVE ARM: the resolution panel is NOT in the first paint of a flagged row", () => {
+    // It must be reached by pressing, having been asked the question. If it ever
+    // rendered eagerly, the "É este paciente" buttons would be one stray click
+    // away with no question posed - which is exactly the auto-merge this card
+    // exists to prevent, wearing a dialog's clothes.
+    const html = render([row({ possiblePatientMatches: 2 })]);
+    expect(html).not.toContain("guest-resolve-panel");
+    expect(html).not.toContain("guest-resolve-use-existing");
+  });
+
+  it("NEGATIVE ARM: no patient name reaches the page before reception asks for one", () => {
+    // The match LIST is fetched on demand, never rendered with the queue. A
+    // staff member who never opens a row never receives the names of patients
+    // who happen to share a number with a stranger - the same payload
+    // minimisation PG4 applies to the notification centre above it.
+    const html = render([row({ possiblePatientMatches: 3 })]);
+    expect(html).toContain("guest-possible-match");
+    expect(html).not.toContain("guest-resolve-match");
+    expect(html).not.toContain("NIF");
+  });
+
+  it("still renders no link, with the convert control present", () => {
+    // The GUEST-03 invariant, re-asserted now that the row has an action on it:
+    // convert is a decision reception makes, not a link the system followed.
+    const html = render([row({ possiblePatientMatches: 1 })]);
+    expect(html).not.toContain("<a ");
+    expect(html).not.toContain("/patients/");
   });
 });

@@ -118,6 +118,38 @@ export default async function AgendaPage({
       }
     : null;
 
+  // ==========================================================================
+  // GUEST-06 — the service and clinic a converted guest asked for.
+  //
+  // EACH IS RESOLVED AGAINST THE OPTIONS THIS PAGE ACTUALLY LOADED, and an id
+  // that is not among them is DROPPED rather than passed through. That is not
+  // defensive habit, it is STAFF-01 fixed at the source: a controlled <select>
+  // handed a value with no matching <option> does not render the value and does
+  // not render empty — the browser paints the FIRST option instead. Reception
+  // would have read a real, wrong service off the screen, exactly as the Editar
+  // marcação panel showed 11:00 for an appointment stored at 11:25.
+  //
+  // Where an id can legitimately be absent: the location is outside this
+  // viewer's booking scope, the service was deactivated between the request and
+  // the convert, or somebody typed the URL. Dropping it leaves the field on its
+  // ordinary default, which is a field reception must fill in — visibly blank
+  // beats confidently wrong. The server refuses the same values again at
+  // `createAppointment`, so nothing here is load-bearing for correctness.
+  // ==========================================================================
+  const requestedServiceId = firstParam(sp.novaMarcacaoServico);
+  const requestedLocationId = firstParam(sp.novaMarcacaoLocal);
+  const prefill = {
+    serviceId:
+      requestedServiceId && options.services.some((o) => o.id === requestedServiceId)
+        ? requestedServiceId
+        : null,
+    locationId:
+      requestedLocationId &&
+      options.bookableLocations.some((o) => o.id === requestedLocationId)
+        ? requestedLocationId
+        : null,
+  };
+
   // Serialize the block instants for the client boundary, exactly as the
   // appointment rows already are (ISO 8601 UTC in, Lisbon placement at render).
   const blockSpans = blocks.map((b) => ({
@@ -141,6 +173,7 @@ export default async function AgendaPage({
       appointments={appointments}
       blocks={blockSpans}
       lockedPatient={lockedPatient}
+      prefill={prefill}
       canHardDelete={can(actor.role, "settings:manage")}
       // W12-28: same capability createTimeOffBlock server-enforces (settings:manage).
       // PL-27 (owner report 2026-07-31: "reception doesn't have that button I

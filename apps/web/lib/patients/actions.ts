@@ -32,6 +32,7 @@ import { AdminError, isAdminError } from "@/lib/admin/errors";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
+import { insertPatientTx } from "./insert";
 import {
   InvalidMergeError,
   PatientNotFoundError,
@@ -115,15 +116,12 @@ async function createPatientImpl(
       primaryLocationId = loc.id;
     }
 
-    // tenant_id is set explicitly because it is NOT NULL; RLS WITH CHECK then
-    // verifies it equals the caller's tenant. This is the required INSERT value,
-    // not a hand-rolled tenant filter.
-    const [row] = await tx
-      .insert(patients)
-      .values({
-        tenantId: ctx.tenantId,
-        // patient_number omitted on purpose — the 0029 trigger assigns it (see above).
-        createdBy: ctx.userId,
+    // GUEST-06: tenant_id, created_by, the omitted patient_number and the audit
+    // row all moved into `insertPatientTx`, which is now the ONE place a patients
+    // row is inserted — the guest convert needs the same insert inside its own
+    // transaction and cannot call a "use server" export to get it. The four
+    // invariants are documented there; this call site only supplies fields.
+    const row = await insertPatientTx(tx, ctx, {
         primaryLocationId,
         fullName: input.fullName,
         dateOfBirth: input.dateOfBirth,
@@ -146,10 +144,7 @@ async function createPatientImpl(
         contraindicationPacemaker: input.contraindicationPacemaker,
         contraindicationOther: input.contraindicationOther,
         contraindicationOtherNote: input.contraindicationOtherNote,
-      })
-      .returning();
-    if (!row) throw new Error("Patient insert returned no row");
-    await writeAudit(tx, ctx, { action: "patient.create", entityId: row.id });
+    });
     return row;
   });
 
