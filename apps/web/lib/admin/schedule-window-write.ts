@@ -130,11 +130,27 @@ export async function writeSchedulePlan(
   // codebase retires a row everywhere else, the read paths already filter on it,
   // and it leaves the superseded schedule readable in the table afterwards.
   // Rewriting the bounds instead is what SCHED-05 was.
-  for (const id of plan.deactivate) {
+  for (const superseded of plan.deactivate) {
     await tx
       .update(availabilityTemplates)
       .set({ isActive: false })
-      .where(eq(availabilityTemplates.id, id));
+      .where(eq(availabilityTemplates.id, superseded.id));
+    // ITS TAIL GOES BACK. A row that reached past the window was still serving
+    // dates after it; retiring it without this would delete the therapist's
+    // schedule from the window's end onwards, and an empty agenda is exactly
+    // what "no schedule" looks like, so nothing would report it.
+    if (superseded.resume) {
+      await tx.insert(availabilityTemplates).values({
+        tenantId,
+        userId,
+        locationId: superseded.resume.locationId,
+        weekday: superseded.resume.weekday,
+        startTime: superseded.resume.startTime,
+        endTime: superseded.resume.endTime,
+        validFrom: superseded.resume.validFrom,
+        validUntil: superseded.resume.validUntil,
+      });
+    }
   }
 
   for (const row of plan.created) {

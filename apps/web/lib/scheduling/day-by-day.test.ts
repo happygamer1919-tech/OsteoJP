@@ -258,3 +258,78 @@ describe("SCHED-04 - a ticked day is never silently dropped", () => {
     expect(invalid).toEqual([]);
   });
 });
+
+describe("SCHED-04 - superseding a row never deletes the part of it that survives", () => {
+  /**
+   * THE CASE THIS EXISTS FOR, and it is reachable in two clicks: set a window
+   * for September, then set one for October starting the day the first ended.
+   * The September window left a resume row starting 1 October, so the October
+   * window begins exactly where that row begins. It has no head to keep, so it
+   * cannot be bounded - it has to be retired. Retiring it and stopping there
+   * would delete the therapist's ordinary schedule from November onwards, and
+   * nothing would say so: an empty agenda is what "no schedule" looks like.
+   */
+  const OCT_1 = "2026-10-01";
+  const OCT_31 = "2026-10-31";
+
+  /** A weekly Monday row that begins ON the window's first day and never ends. */
+  const startsOnDayOne: CoverageRow[] = [
+    {
+      id: "resumed-mon",
+      locationId: LV,
+      weekday: 1,
+      startTime: "09:00",
+      endTime: "17:00",
+      validFrom: OCT_1,
+      validUntil: null,
+    },
+  ];
+
+  const OCT_PLAN: DayByDayPlan = {
+    startDate: OCT_1,
+    endDate: OCT_31,
+    entries: [{ date: "2026-10-05", locationId: CB, startTime: "09:00", endTime: "17:00" }],
+  };
+
+  it("refuses first, and calls it what it is", () => {
+    const w = planDayByDay(OCT_PLAN, startsOnDayOne);
+    expect(w.collisions).toHaveLength(1);
+    expect(w.collisions[0]!.kind).toBe("starts_inside");
+    expect(w.collisions[0]!.date).toBe(OCT_1);
+  });
+
+  it("THE POINT: with replace, the tail after the window is put back", () => {
+    const w = planDayByDay(OCT_PLAN, startsOnDayOne, { replace: true });
+    expect(w.deactivate).toHaveLength(1);
+    expect(w.deactivate[0]!.resume).toMatchObject({
+      locationId: LV,
+      weekday: 1,
+      validFrom: "2026-11-01", // the day after the window
+      validUntil: null,
+    });
+
+    const projected = projectedRows(startsOnDayOne, w);
+    expect(invertedRows(projected)).toEqual([]);
+    // November: back on the ordinary weekly schedule at LV.
+    expect(locationsOnDate(projected, 1, "2026-11-02")).toEqual([LV]);
+    // Inside the window: only what the grid said, and the unset Mondays are blank.
+    expect(locationsOnDate(projected, 1, "2026-10-05")).toEqual([CB]);
+    expect(locationsOnDate(projected, 1, "2026-10-12")).toEqual([]);
+  });
+
+  it("NEGATIVE ARM: a row that ended INSIDE the window gets no tail invented for it", () => {
+    const endsInside: CoverageRow[] = [
+      { ...startsOnDayOne[0]!, validUntil: "2026-10-20" },
+    ];
+    const w = planDayByDay(OCT_PLAN, endsInside, { replace: true });
+    expect(w.deactivate[0]!.resume).toBeNull();
+    expect(locationsOnDate(projectedRows(endsInside, w), 1, "2026-11-02")).toEqual([]);
+  });
+
+  it("a superseded DATED row never gets a tail - it only ever covered one day", () => {
+    const stored = asStored(projectedRows(weeklyAtLV, planDayByDay(PLAN, weeklyAtLV)));
+    const replaced = planDayByDay(PLAN, stored, { replace: true });
+    expect(replaced.deactivate).toHaveLength(3);
+    expect(replaced.deactivate.every((d) => d.resume === null)).toBe(true);
+  });
+});

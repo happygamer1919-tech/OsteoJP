@@ -73,6 +73,24 @@ export type WindowCarve = {
 };
 
 /**
+ * A row the window supersedes: retired with is_active = false, and - if it
+ * reached past the window's end - REPLACED by an identical row covering only
+ * that surviving tail.
+ *
+ * THE TAIL IS THE WHOLE REASON THIS IS NOT JUST A LIST OF IDS. A row that begins
+ * inside the window cannot be bounded (there is no head to keep) so it must be
+ * retired, but it may still have been serving dates AFTER the window. Retiring
+ * it without putting the tail back would silently delete the therapist's
+ * schedule from the end of the window onwards, and nothing would report it -
+ * the agenda would simply be empty, which is what "no schedule" looks like.
+ */
+export type SupersededRow = {
+  id: string;
+  /** The tail, or null when the row ended inside the window. */
+  resume: CoverageRow | null;
+};
+
+/**
  * The complete set of writes a layer-2 mode wants to make, plus what it found in
  * the way. One type for both modes: they differ only in how `created` is
  * produced.
@@ -82,8 +100,8 @@ export type SchedulePlan = {
   created: CoverageRow[];
   /** Layer-1 rows bounded to make room. */
   carved: WindowCarve[];
-  /** Row ids to set is_active = false. Only ever non-empty with `replace`. */
-  deactivate: string[];
+  /** Rows to retire. Only ever non-empty with `replace`. */
+  deactivate: SupersededRow[];
   /** What was in the way. Non-empty means REFUSE, unless `replace` was given. */
   collisions: WindowCollision[];
 };
@@ -113,13 +131,15 @@ export function planWindow(
   window: ScheduleWindow,
   existing: readonly CoverageRow[],
   opts: { replace?: boolean } = {},
-): { carved: WindowCarve[]; deactivate: string[]; collisions: WindowCollision[] } {
+): { carved: WindowCarve[]; deactivate: SupersededRow[]; collisions: WindowCollision[] } {
   const { startDate, endDate, weekdays } = window;
   const dayBefore = addDays(startDate, -1);
   const dayAfter = addDays(endDate, 1);
 
   const carved: WindowCarve[] = [];
   const collisions: WindowCollision[] = [];
+  /** Keyed so a supersede can put back the tail of the row it retires. */
+  const byId = new Map<string, CoverageRow>();
 
   for (const row of existing) {
     if (!weekdays.includes(row.weekday)) continue;
@@ -132,6 +152,7 @@ export function planWindow(
     // silently rewriting one person's dated schedule from another mode is not a
     // thing this system does. It is reported, and superseded only on request.
     if (isSingleDayRow(row)) {
+      byId.set(row.id, row);
       collisions.push({
         id: row.id,
         date: row.validFrom!,
@@ -146,6 +167,7 @@ export function planWindow(
     // there is no bound that leaves it valid. Same treatment, same reason: the
     // alternative is writing valid_until before valid_from.
     if (row.validFrom && row.validFrom >= startDate) {
+      byId.set(row.id, row);
       collisions.push({
         id: row.id,
         date: row.validFrom,
@@ -179,11 +201,30 @@ export function planWindow(
 
   // COLLISIONS ARE STILL REPORTED WHEN REPLACING. The caller needs to know what
   // it superseded, for the audit trail and for the sentence it shows afterwards.
-  return {
-    carved,
-    deactivate: opts.replace ? collisions.map((c) => c.id) : [],
-    collisions,
-  };
+  const deactivate: SupersededRow[] = opts.replace
+    ? collisions.map((c) => {
+        const row = byId.get(c.id)!;
+        // A row that outlived the window keeps its tail. A single-day row inside
+        // the window has none by definition, so this is null for every "dated"
+        // collision and only ever fires for "starts_inside".
+        const hasTail = row.validUntil === null || row.validUntil > endDate;
+        return {
+          id: c.id,
+          resume: hasTail
+            ? {
+                locationId: row.locationId,
+                weekday: row.weekday,
+                startTime: row.startTime,
+                endTime: row.endTime,
+                validFrom: dayAfter,
+                validUntil: row.validUntil,
+              }
+            : null,
+        };
+      })
+    : [];
+
+  return { carved, deactivate, collisions };
 }
 
 /**
@@ -200,10 +241,15 @@ export function projectedRows(
   plan: Pick<SchedulePlan, "created" | "carved" | "deactivate">,
 ): CoverageRow[] {
   const carveById = new Map(plan.carved.map((c) => [c.id, c]));
-  const dropped = new Set(plan.deactivate);
+  const droppedById = new Map(plan.deactivate.map((d) => [d.id, d]));
   const out: CoverageRow[] = [];
   for (const row of existing) {
-    if (row.id && dropped.has(row.id)) continue; // superseded: is_active = false
+    const dropped = row.id ? droppedById.get(row.id) : undefined;
+    if (dropped) {
+      // Superseded: is_active = false, and its surviving tail put back.
+      if (dropped.resume) out.push(dropped.resume);
+      continue;
+    }
     const carve = row.id ? carveById.get(row.id) : undefined;
     if (!carve) {
       out.push(row);
