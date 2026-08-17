@@ -78,6 +78,7 @@
   "schedule.gridWorking": "Working",
   "schedule.gridClinic": "Clinic",
   "schedule.gridEmpty": "Set at least one day.",
+  "schedule.gridInvalid": "These days are ticked but have no clinic yet, or invalid hours:",
   "schedule.gridSaved": "Day-by-day schedule set.",
   "schedule.gridError": "Could not set the day-by-day schedule.",
   "schedule.windowCollision": "These dates already have a schedule set. Nothing was changed.",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planDayByDay, type DayByDayPlan } from "./day-by-day";
+import { planDayByDay, splitGrid, type DayByDayPlan } from "./day-by-day";
 import { planAlternatingWeeks } from "./alternating-weeks";
 import { invertedRows, projectedRows } from "./schedule-window";
 import { coverageViolations, locationsOnDate, type CoverageRow } from "./schedule-coverage";
@@ -214,5 +214,47 @@ describe("SCHED-04 - what the grid may express", () => {
       projectedRows(weeklyAtLV, planDayByDay(overlapping, weeklyAtLV)),
     );
     expect(violations.map((v) => v.kind)).toEqual(["time_overlap"]);
+  });
+});
+
+describe("SCHED-04 - a ticked day is never silently dropped", () => {
+  const base = { locationId: CB, startTime: "09:00", endTime: "17:00" };
+
+  it("sends every ticked day and no unticked one", () => {
+    const { entries, invalid } = splitGrid([
+      { date: MON_1, on: true, ...base },
+      { date: "2026-09-08", on: false, ...base },
+      { date: WED_1, on: true, ...base },
+    ]);
+    expect(entries.map((e) => e.date)).toEqual([MON_1, WED_1]);
+    expect(invalid).toEqual([]);
+  });
+
+  it("THE POINT: a ticked day with end before start is REPORTED, not filtered away", () => {
+    // If this returned it in neither list, the person would tick a day, mistype
+    // the hours, be told the schedule was saved, and the day would not be there.
+    const { entries, invalid } = splitGrid([
+      { date: MON_1, on: true, ...base },
+      { date: WED_1, on: true, locationId: CB, startTime: "17:00", endTime: "09:00" },
+    ]);
+    expect(invalid.map((d) => d.date)).toEqual([WED_1]);
+    // Still in `entries` too: the panel refuses to save while `invalid` is
+    // non-empty, so the day is never quietly missing from the payload either.
+    expect(entries.map((e) => e.date)).toEqual([MON_1, WED_1]);
+  });
+
+  it("a ticked day with no clinic is reported the same way", () => {
+    const { invalid } = splitGrid([{ date: MON_1, on: true, ...base, locationId: "" }]);
+    expect(invalid.map((d) => d.date)).toEqual([MON_1]);
+  });
+
+  it("NEGATIVE ARM: an UNTICKED day with nonsense in it is not reported at all", () => {
+    // The row keeps whatever was last typed into it. Only ticked days are the
+    // grid's statement about the schedule, so only they can be wrong.
+    const { entries, invalid } = splitGrid([
+      { date: MON_1, on: false, locationId: "", startTime: "17:00", endTime: "09:00" },
+    ]);
+    expect(entries).toEqual([]);
+    expect(invalid).toEqual([]);
   });
 });

@@ -5,6 +5,7 @@ import { Button, Dialog, Select } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { TimeFieldInput } from "@/components/time-field-input";
 import { addDays } from "@/lib/scheduling/time";
+import { splitGrid } from "@/lib/scheduling/day-by-day";
 import { applyDayByDayScheduleAction } from "./actions";
 
 /**
@@ -121,17 +122,12 @@ export function DayByDayPanel({
   const setDay = (date: string, patch: Partial<DayState>) =>
     setDays((prev) => ({ ...prev, [date]: { ...dayState(date), ...patch } }));
 
-  const entries = dates
-    .map((date) => ({ date, st: dayState(date) }))
-    .filter(({ st }) => st.on && st.locationId !== "" && st.endTime > st.startTime)
-    .map(({ date, st }) => ({
-      date,
-      locationId: st.locationId,
-      startTime: st.startTime,
-      endTime: st.endTime,
-    }));
+  // The split is a pure function in lib/scheduling/day-by-day.ts so it can be
+  // tested without a browser: a ticked day that cannot be saved BLOCKS the save
+  // rather than being dropped from the payload. See splitGrid's comment.
+  const { entries, invalid } = splitGrid(dates.map((date) => ({ date, ...dayState(date) })));
 
-  const canSave = !busy && rangeOk && entries.length > 0;
+  const canSave = !busy && rangeOk && entries.length > 0 && invalid.length === 0;
 
   const submit = async (replace: boolean) => {
     setBusy(true);
@@ -275,6 +271,18 @@ export function DayByDayPanel({
 
             {rangeOk && entries.length === 0 && (
               <p className="text-xs text-v2-text-secondary">{s["schedule.gridEmpty"]}</p>
+            )}
+
+            {invalid.length > 0 && (
+              <p
+                role="status"
+                data-testid="day-grid-invalid"
+                className="rounded-v2 border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800"
+              >
+                {/* Which days, not how many - the same rule the collision list
+                    follows, for the same reason. */}
+                {`${s["schedule.gridInvalid"]} ${invalid.map(({ date }) => dayLabel(date)).join(", ")}`}
+              </p>
             )}
 
             {status && (

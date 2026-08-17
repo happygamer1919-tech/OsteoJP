@@ -71,6 +71,43 @@ export type DayByDayPlan = {
 /** The window governs every weekday. See the header: unset means not working. */
 const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6] as const;
 
+/** One row of the grid as the panel holds it. */
+export type GridDay = {
+  date: string;
+  on: boolean;
+  locationId: string;
+  startTime: string;
+  endTime: string;
+};
+
+/**
+ * Split the grid into the entries to send and the ticked days that cannot be
+ * sent yet.
+ *
+ * A TICKED DAY IS NEVER SILENTLY DROPPED, WHICH IS THE ONLY REASON THIS IS A
+ * FUNCTION RATHER THAN A FILTER IN THE PANEL. Filtering the invalid ones out of
+ * the payload would mean somebody ticks a day, sets 17:00 to 09:00 by mistake,
+ * presses Guardar, is told the schedule was saved, and the day is simply not
+ * there. The bad case would render as the good one - which is the failure mode
+ * this whole feature exists to prevent - so it is returned separately and the
+ * panel refuses to save until the list is empty.
+ */
+export function splitGrid(days: readonly GridDay[]): {
+  entries: DayEntry[];
+  invalid: GridDay[];
+} {
+  const ticked = days.filter((d) => d.on);
+  return {
+    entries: ticked.map((d) => ({
+      date: d.date,
+      locationId: d.locationId,
+      startTime: d.startTime,
+      endTime: d.endTime,
+    })),
+    invalid: ticked.filter((d) => d.locationId === "" || d.endTime <= d.startTime),
+  };
+}
+
 /** The weekday of a calendar date, 0=Sunday..6=Saturday, read from the date
  *  itself so it can never disagree with the date it travels with. */
 export function weekdayOf(date: string): number {

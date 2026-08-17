@@ -78,6 +78,7 @@
   "schedule.gridWorking": "Trabalha",
   "schedule.gridClinic": "Clínica",
   "schedule.gridEmpty": "Marque pelo menos um dia.",
+  "schedule.gridInvalid": "Estes dias estão marcados mas ainda não têm clínica ou têm horas inválidas:",
   "schedule.gridSaved": "Horário dia a dia definido.",
   "schedule.gridError": "Não foi possível definir o horário dia a dia.",
   "schedule.windowCollision": "Estas datas já têm horário definido. Nada foi alterado.",
