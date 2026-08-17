@@ -1,7 +1,24 @@
 # OsteoJP portal — handover state
 
-**As of 2026-08-16.** Written for the person who hands this build to the clinic
+**As of 2026-08-17.** Written for the person who hands this build to the clinic
 team and to legal, and for anyone who reads it after.
+
+> ## ⚠️ ONE OPEN QUESTION THAT COULD BE URGENT, RAISED 2026-08-17
+>
+> **Reception's Notificações page may be broken, and we do not yet know.**
+>
+> The database table behind the "Pedidos de novos clientes" queue was created
+> without granting the application permission to read it. Automated testing
+> proves the application cannot read that table, and if the live database
+> matches, that page has been failing for every staff member since 2026-08-15.
+>
+> **Against that: the owner watched the queue work on 2026-08-17.** Both cannot
+> be true, so nothing is being assumed either way.
+>
+> A read-only check is committed at
+> `packages/db/scripts/check-guest-requests-grant.mjs` and takes seconds to run.
+> **Run it before the clinic team is told anything about this page.** Tracked as
+> `INC-11`, with the one-line fix waiting on migration authorisation.
 
 ---
 
@@ -55,7 +72,20 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**155 cards. 85 shipped, 70 open. Launch readiness 9/9 — every launch gate passes.**
+**158 cards. 87 shipped, 71 open. Launch readiness 9/9, every launch gate passes.**
+
+> **The owner ran the batched acceptance sitting on 2026-08-17: 15 checks, 14
+> PASS, 0 STOP, 1 SKIPPED.** Fifteen cards closed on what he saw on the deployed
+> build, including alternating-week schedules flipping clinic correctly across a
+> week boundary on both the agenda and the patient portal, the reception location
+> lock, therapist self-scope, and the guest request queue showing a stated
+> preference rather than an invented appointment time.
+>
+> **The one skipped check is `W13-03`, the patient login screens.** Its checklist
+> was not to hand. It is now written out standalone at
+> `docs/board/W13-03-ACCEPTANCE-CHECKLIST.md`: five steps, four of them runnable
+> today, and the fifth needs a real SMS code so it belongs to the supervised
+> launch canary.
 
 > **The clinic team is testing on production.** Defects reported from live use
 > are being fixed as they arrive; they are `STAFF-xx` cards on the board.
