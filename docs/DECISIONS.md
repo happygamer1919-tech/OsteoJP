@@ -3083,3 +3083,65 @@ Three negative arms, each applied to the real file, run, observed red, reverted:
 No change to the endpoint, the ingestion library, or anything under `apps/web`. Files: two new under
 `scripts/`, one script entry in the root `package.json`, one step in `.github/workflows/ci.yml`, and
 these log entries.
+
+---
+
+## 2026-08-17 - PROD_REFS was empty on the day it stopped being safe (PURPLE, branch fix/seed-guard-prod-ref)
+
+`packages/db/seed/seed-guard.ts` shipped with `export const PROD_REFS: string[] = []`
+and a comment instructing whoever provisioned the production project to populate it.
+Production `dfotoodqvmjhbdcxyaxf` was provisioned, migrations `0047` through `0063`
+were applied to it, real patient data landed in it, and the list stayed empty. The
+comment was the whole enforcement mechanism, and comments do not fail builds.
+
+### What the empty list actually cost
+
+Every dev seed (`patients-dev`, `appointments-dev`, `episodes-dev`, `dev-reference`,
+`availability-dev`) resolves its target through `resolveSeedDatabaseUrl`. With the
+blocklist empty, the only thing between a shell holding the prod `DATABASE_URL` and
+50 synthetic patients in the live clinic database was `SEED_DEV_CONFIRM` - and that
+variable is set by the same person, in the same shell, from the same env file. It
+defends against forgetting. It does not defend against being wrong about which
+database you are pointed at, which is the failure that actually happens.
+
+The two guards are not redundant, and the header comment now says which is which:
+`SEED_DEV_CONFIRM` guards against an ACCIDENT, `PROD_REFS` guards against a
+DELIBERATE run aimed at the wrong target. The blocklist is checked first and no
+opt-in overrides it.
+
+### The list holds one ref, deliberately
+
+Only `dfotoodqvmjhbdcxyaxf` was added. The retired old prod `jaxmkwoxjcgzkwxgbayx`
+(CLAUDE.md "Supabase setup": retired, do not target) is a defensible second entry
+and was NOT added - the dispatch scoped this to the live ref, and widening a safety
+blocklist without being asked is still widening scope. Carded as an observation in
+the PR body for the owner to rule on.
+
+### Coverage was zero, not stale
+
+The dispatch asked whether a test asserted the empty list. None did: `seed-guard.ts`
+had no test at all. Nothing in `packages/db/tests/` imported it, and `packages/db`
+has no `lint` script, so `pnpm lint` never saw the file either. The guard protecting
+the production database was the only safety mechanism in the package with no
+automated proof it worked.
+
+`packages/db/tests/seed-guard.test.ts` (10 tests, no DB required, always runs) now
+pins: the prod ref is present, the list is non-empty, both the pooler and the direct
+URL forms parse to the same ref, a blocklisted ref is refused EVEN WITH
+`SEED_DEV_CONFIRM` set to it, a non-blocklisted ref still requires the opt-in, and a
+confirmed dev ref still returns. It lives in `tests/` rather than beside the source
+because `packages/db/vitest.config.ts` includes only `tests/**/*.test.ts` - colocated
+per CLAUDE.md convention, it would have run nowhere, which is the failure mode
+DECISIONS 2026-08-14 §"Where the test runs" already logged once.
+
+### Proven capable of failing
+
+The list was reverted to `[]` on the real file, the suite run, observed red on 4 of
+10 (both blocklist assertions and both refusal assertions), and restored. 10/10 green
+on the restored file.
+
+### Gates
+
+`pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` all green from the repo root.
+`pnpm test:e2e` not run: the change touches no user-facing flow, only a dev-only seed
+guard that never executes in the app or in CI.
