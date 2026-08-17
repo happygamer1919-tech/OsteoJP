@@ -169,6 +169,47 @@ furthest: **a guard proves a test RAN; only the assertion proves it tested the
 right SUBJECT** - and on a shared seeded database, identity must mean RUN-SCOPED
 identity, never a shared fixture's name.
 
+### 1.4 Two reconciliations ruled by the owner, 2026-08-17
+
+Recorded here rather than in a session report, because both are questions a fresh
+terminal will hit again and neither is inferable from the code.
+
+**FIRST: the rebase-versus-force-push conflict. THIS DOCUMENT WINS.** §1.1 makes
+"rebase on `origin/main` before opening a PR" mandatory, and standing rule 12
+lists force pushes as owner-confirmable. Those cannot both hold literally: a
+branch that has been pushed cannot be rebased and pushed again without a force.
+
+> **The ruling: `--force-with-lease` to a branch you ALONE own and that is
+> UNMERGED is the permitted mechanism, and it needs no confirmation.** Force
+> pushing to a SHARED branch, or to any branch AFTER it has merged, stays
+> forbidden and stays owner-confirmable.
+
+WHY `--force-with-lease` AND NOT `--force`, since the distinction is the whole of
+the safety here: `--force-with-lease` refuses if the remote moved since you last
+fetched it. On a branch you alone own, the remote moving means somebody else
+touched it, which is exactly the case where a force push destroys work. The lease
+turns "I am sure nobody else is here" from an assumption into a check the tool
+performs. `--force` skips that check, which is why it is not what was permitted.
+
+The rule-12 entry now names this exception in place, so a reader of the rule does
+not have to find this section to know the exception exists.
+
+**SECOND: the visual gate. GREEN SELF-MERGE STANDS, unchanged.** An executor
+merges on the required checks. Ivan does NOT review pull requests, does not look
+at diffs, and is not a step in the merge path.
+
+> **Owner review of anything visual happens on DEPLOYED SCREENS, in batched
+> WF-03 sittings, never on a PR.** This is standing practice, not a per-card
+> decision, and it is why a staff- or patient-visible card stays `in_flight`
+> after its PR merges: the merge is the build half, and the sitting is the
+> evidence half.
+
+The two halves are recorded differently on purpose. Build evidence is a PR and a
+sha; acceptance evidence is `kind: screenshot` with what was observed. A card
+carrying only the first is not finished, and the 2026-08-17 sitting is the worked
+example - fifteen checks, one of them skipped, and the skipped one stayed open
+rather than being counted.
+
 ---
 
 ### Standing rules, in full. These are not summaries; they are the rules.
@@ -219,6 +260,10 @@ identity, never a shared fixture's name.
 12. **Destructive operations are owner-confirmable**: data deletion, dropped
     tables, force pushes, production writes, deleting files outside a scratch
     directory. Log them and block; never execute them yourself.
+    **ONE NAMED EXCEPTION, ruled 2026-08-17, and it is narrow: see §1.4.**
+    `--force-with-lease` to a feature branch you alone own and that is unmerged
+    is permitted, because the mandatory pre-PR rebase cannot be pushed any other
+    way. Every other force push is still owner-confirmable.
 13. **No new third-party dependency or vendor without asking first.**
 14. **Failure ceiling: three.** After three distinct failed fix attempts on the
     same card, stop, write down the failure state and everything tried, mark
