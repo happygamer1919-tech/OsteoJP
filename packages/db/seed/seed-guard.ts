@@ -23,7 +23,12 @@
 // (and unaffected by) the SEED_DEV_CONFIRM opt-in.
 //   dfotoodqvmjhbdcxyaxf — PRODUCTION (Central EU / Frankfurt), the live clinic
 //     database. Holds real patient and clinical data.
-export const PROD_REFS: string[] = ["dfotoodqvmjhbdcxyaxf"];
+//   jaxmkwoxjcgzkwxgbayx — the RETIRED old prod (CLAUDE.md "Supabase setup":
+//     "do not target it"). Blocklisted precisely BECAUSE it is retired: a stale
+//     connection string in an old env file, shell history, or runbook still
+//     points here, and a project nobody watches is the one where a wrong seed
+//     goes unnoticed. Retired is a reason to add a ref, not to omit one.
+export const PROD_REFS: string[] = ["dfotoodqvmjhbdcxyaxf", "jaxmkwoxjcgzkwxgbayx"];
 
 /**
  * Parse the Supabase project ref from a connection string. Handles both the

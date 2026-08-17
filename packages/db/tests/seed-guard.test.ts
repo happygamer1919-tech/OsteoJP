@@ -26,6 +26,18 @@ import { PROD_REFS, parseProjectRef, resolveSeedDatabaseUrl } from "../seed/seed
 
 /** CLAUDE.md "Supabase setup" — the live clinic database (Central EU). */
 const PROD_REF = "dfotoodqvmjhbdcxyaxf";
+/** CLAUDE.md "Supabase setup" — the RETIRED old prod ("do not target it"). */
+const OLD_PROD_REF = "jaxmkwoxjcgzkwxgbayx";
+/**
+ * Every ref the blocklist must carry, asserted by name. A membership test
+ * (`PROD_REFS.length > 0`) would stay green if someone replaced the contents
+ * rather than emptying them, so each entry is pinned individually AND the pair
+ * is driven through the full refusal path below.
+ */
+const BLOCKED_REFS: ReadonlyArray<readonly [label: string, ref: string]> = [
+  ["production", PROD_REF],
+  ["retired old production", OLD_PROD_REF],
+];
 /** Shape-accurate but non-existent; 20 chars, same as a real Supabase ref. */
 const DEV_REF = "aaaabbbbccccddddeeee";
 
@@ -88,8 +100,8 @@ afterEach(() => {
 });
 
 describe("PROD_REFS blocklist", () => {
-  it("contains the production project ref", () => {
-    expect(PROD_REFS).toContain(PROD_REF);
+  it.each(BLOCKED_REFS)("contains the %s project ref", (_label, ref) => {
+    expect(PROD_REFS).toContain(ref);
   });
 
   it("is not empty", () => {
@@ -100,12 +112,15 @@ describe("PROD_REFS blocklist", () => {
 });
 
 describe("parseProjectRef", () => {
-  it("reads the ref from a transaction/session pooler URL", () => {
-    expect(parseProjectRef(poolerUrl(PROD_REF))).toBe(PROD_REF);
-  });
+  it.each(BLOCKED_REFS)(
+    "reads the %s ref from a transaction/session pooler URL",
+    (_label, ref) => {
+      expect(parseProjectRef(poolerUrl(ref))).toBe(ref);
+    },
+  );
 
-  it("reads the ref from a direct db.<ref>.supabase.co URL", () => {
-    expect(parseProjectRef(directUrl(PROD_REF))).toBe(PROD_REF);
+  it.each(BLOCKED_REFS)("reads the %s ref from a direct db.<ref>.supabase.co URL", (_label, ref) => {
+    expect(parseProjectRef(directUrl(ref))).toBe(ref);
   });
 
   it("returns null when no ref can be parsed", () => {
@@ -114,15 +129,18 @@ describe("parseProjectRef", () => {
 });
 
 describe("resolveSeedDatabaseUrl", () => {
-  it("refuses a blocklisted ref even when SEED_DEV_CONFIRM matches it", () => {
-    const result = runGuard({ databaseUrl: poolerUrl(PROD_REF), confirm: PROD_REF });
-    expect(result.exited).toBe(true);
-    expect(result.returned).toBeNull();
-    expect(result.stderr).toContain("blocklisted");
-  });
+  it.each(BLOCKED_REFS)(
+    "refuses the %s ref even when SEED_DEV_CONFIRM matches it",
+    (_label, ref) => {
+      const result = runGuard({ databaseUrl: poolerUrl(ref), confirm: ref });
+      expect(result.exited).toBe(true);
+      expect(result.returned).toBeNull();
+      expect(result.stderr).toContain("blocklisted");
+    },
+  );
 
-  it("refuses a blocklisted ref given as a direct URL", () => {
-    const result = runGuard({ databaseUrl: directUrl(PROD_REF), confirm: PROD_REF });
+  it.each(BLOCKED_REFS)("refuses the %s ref given as a direct URL", (_label, ref) => {
+    const result = runGuard({ databaseUrl: directUrl(ref), confirm: ref });
     expect(result.exited).toBe(true);
     expect(result.stderr).toContain("blocklisted");
   });
