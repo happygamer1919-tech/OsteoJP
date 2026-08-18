@@ -1,16 +1,22 @@
-NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN
+# Apply receipt - migration 0064, `consultations`
 
-# Apply block - migration 0064, `consultations`
+**Status: APPLIED TO PRODUCTION 2026-08-18. MERGED THE SAME DAY.**
 
-**Status: DRAFTED, NOT APPLIED.** Per `PORTAL-REHYDRATE.md` §4.9 the first line
-above is written by the drafting terminal and removed only by strategy. The path
-is draft -> strategy -> Ivan. This document has not been sent to the owner and
-must not be.
+The `NOT VALIDATED` line that opened this file is gone because the path it
+guarded completed: draft -> strategy -> owner -> applied. It is quoted in §5.0
+rather than deleted silently, so the next reader can see the block was gated
+rather than assume it.
 
 Migration: `0064_consultations` (journal idx 63, `when` 1787200000000).
-Branch: `consultation/AI-03-fire-pending-retry`.
-Apply worktree: `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply`.
+Branch: `consultation/AI-03-fire-pending-retry` (deleted at merge).
+PR: **#916, squash-merged as `267fce9`.**
+**Applied from sha `f2101ad`** - orphaned by the squash. See §5.1, which is the
+whole reason this receipt pins three identifiers instead of one.
+Applied by the owner from `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply`.
 Written under `docs/runbook-prod-migrations.md`.
+
+**Next free migration number: `0065`.** The slot is now clear, and `GUEST-07`
+(the guest ACL normalisation) is the card that holds it.
 
 **THE PIN IS NOT SET IN THIS FILE, DELIBERATELY.** The runbook requires strategy
 to re-read the branch head and set `PINNED_SHA` as the **last action before the
@@ -152,12 +158,98 @@ Meaningful here in a way it was not for 0059: this migration's whole product is
 a new relation, so `to_regclass('public.consultations')` returning non-null is a
 direct answer to "did the schema change", not an adjacent one.
 
-## 5. THE APPLY
+## 5. THE APPLY. 2026-08-18. Verbatim, as pasted back by the owner.
 
-Not run. This section is filled with the owner's verbatim transcript afterwards,
-and the pinned sha is recorded alongside the squash commit - under squash-merge
-the applied sha stops being reachable the instant the PR merges
-(`docs/migration-apply-0063.md` §4).
+### 5.0 The block was gated, and this is the line that gated it
+
+The file opened with, verbatim:
+
+```
+NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN
+```
+
+Quoted rather than deleted. A receipt that simply lacks the line is
+indistinguishable from a block that never carried one, and PORTAL-REHYDRATE §4.9
+exists because three apply blocks have been defective while their migrations were
+fine.
+
+### 5.1 THE PINNED SHA IS ORPHANED. Read this before trying to verify §5.2.
+
+`f2101ad` **will not resolve in a fresh clone.** It sat on
+`consultation/AI-03-fire-pending-retry`; #916 was squash-merged, so that branch's
+commits never became ancestors of `main`, and the branch was deleted at merge.
+Checked, not assumed: `git merge-base --is-ancestor f2101ad origin/main` exits
+non-zero today.
+
+**What makes this receipt verifiable anyway** is the same tie 0063 §4 established
+as the general rule - pin the sha that was checked out, the squash commit that
+carries the same content, and the blob hash that binds them:
+
+| Ref | Blob for `packages/db/migrations/0064_consultations.sql` |
+|---|---|
+| `f2101ad` (applied) | `226bb858c06af62596fa4a8c51189a4a27a4b935` |
+| `267fce9` (squash merge of #916) | `226bb858c06af62596fa4a8c51189a4a27a4b935` |
+| `origin/main` | `226bb858c06af62596fa4a8c51189a4a27a4b935` |
+
+`meta/_journal.json` is byte-identical across all three as well
+(`2c22a00b7782066bad68f296bf743a977ae1453d`).
+
+**So what ran against production is byte-identical to what is on `main` today**,
+and anyone can check it from any clone:
+
+```
+git rev-parse origin/main:packages/db/migrations/0064_consultations.sql
+```
+
+**AND THE MERGE PRESERVED THE APPLIED SHA EXACTLY, which was a deliberate choice
+rather than a convenience.** #916 was 7 commits BEHIND main when the apply
+completed, so GitHub refused the merge as out of date. Updating the branch would
+have moved the head and broken the identity between "what was applied" and "what
+merged" - the migration file would have been unchanged, but the evidence chain
+would have rested on two different commits. The owner authorised
+`gh pr merge --squash --admin` instead, which merged `f2101ad` as applied. The
+branch head was re-verified as still `f2101ad` as the last action before merging.
+
+### 5.2 The transcript
+
+```
+HEAD is now at f2101ad Merge branch 'main' into consultation/AI-03-fire-pending-retry
+last applied "when" in the database: 1787100000000
+journal entries on disk: 64
+pending: 1
+  PENDING 0064_consultations when=1787200000000
+OK: the pending set is exactly what was expected.
+[drizzle-kit migrate ran; two expected NOTICE lines: schema
+"drizzle" already exists, skipping; relation
+"__drizzle_migrations" already exists, skipping]
+migrations applied successfully!
+last applied "when" in the database: 1787200000000
+journal entries on disk: 64
+pending: 0
+OK: the pending set is exactly what was expected.
+consultations EXISTS
+OK: all 1 table(s) present.
+```
+
+### 5.3 The transcript checked against the committed repo, not just read
+
+Every figure above was re-derived from `origin/main` by the terminal writing this
+file. This is the section that distinguishes a receipt from a paste.
+
+| Transcript says | Committed repo says | Agrees |
+|---|---|---|
+| `journal entries on disk: 64` | `meta/_journal.json` holds 64 entries | yes |
+| `PENDING 0064_consultations when=1787200000000` | last entry is `idx 63`, `tag 0064_consultations`, `when 1787200000000` | yes |
+| `last applied "when" ... 1787200000000` after | same `when` as the journal's final entry | yes |
+| `pending: 0` after | nothing on disk beyond idx 63 | yes |
+| `consultations EXISTS` | `0064_consultations.sql` creates it; blob pinned in §5.1 | yes |
+
+**THE PRE-CHECK IS THE PART THAT MATTERS AND IT DID ITS JOB.** The `when` moved
+`1787100000000` -> `1787200000000` and pending went `1` -> `0`. §2 of this
+document was written because `migrations applied successfully!` is printed even
+when drizzle applies **nothing** - which is how 0058 produced a success over a
+no-op. A success line alone would not have been evidence; the two numbers moving
+is.
 
 ## 6. What this does NOT cover
 
