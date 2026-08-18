@@ -64,6 +64,12 @@ const ENV_KEYS = [
   "TWILIO_AUTH_TOKEN",
   "TWILIO_SMS_FROM",
   "TWILIO_MESSAGING_SERVICE_SID",
+  // INC-12: the env assertion moved into dispatch, so these four are now part
+  // of what "armed" means here and must be saved/restored like the rest.
+  "RESEND_API_KEY",
+  "REMINDERS_EMAIL_FROM",
+  "REMINDERS_RESCHEDULE_BASE_URL",
+  "REMINDERS_LINK_SECRET",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -84,10 +90,25 @@ afterEach(() => {
   }
 });
 
+/**
+ * Armed AND correctly configured, which is what every case below means by
+ * "live".
+ *
+ * INC-12 (2026-08-18) made the second half explicit. The env assertion used to
+ * run at module scope and is now inside `dispatch`, so arming the flag with an
+ * incomplete environment throws NotificationEnvError - correct behaviour, and
+ * it would pre-empt the SENDER RESOLUTION and ERROR PROPAGATION properties
+ * these tests are actually about. The four extra names are placeholders; no
+ * real credential appears in this repo.
+ */
 function armLiveCreds(): void {
   process.env.REMINDERS_LIVE_SEND = "true";
   process.env.TWILIO_ACCOUNT_SID = "AC_test";
   process.env.TWILIO_AUTH_TOKEN = "tok_test";
+  process.env.RESEND_API_KEY = "test";
+  process.env.REMINDERS_EMAIL_FROM = "test";
+  process.env.REMINDERS_RESCHEDULE_BASE_URL = "test";
+  process.env.REMINDERS_LINK_SECRET = "test";
 }
 
 describe("launch gate (shared REMINDERS_LIVE_SEND switch)", () => {

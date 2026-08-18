@@ -10,9 +10,29 @@
 //                                unapproved, so adding a body without registering
 //                                it cannot ship it.
 //   2. live_send_disabled      — the stream's flag is not exactly "true".
-//   3. missing_provider_config — armed, approved, but the transport says it has
+//   3. THE ENV ASSERTION       — armed but required vars missing. THROWS; it is
+//                                not a suppression reason. See below.
+//   4. missing_provider_config — armed, approved, but the transport says it has
 //                                no credentials.
-//   4. invalid_recipient       — empty/blank destination.
+//   5. invalid_recipient       — empty/blank destination.
+//
+// WHY THE ENV ASSERTION SITS AT 3 AND NOT ANYWHERE ELSE (INC-12, 2026-08-18).
+//
+// It is AFTER the flag check because a stream that is off requires nothing —
+// that is what keeps dev, CI and preview builds working, and it is why arming
+// reminders alone never demanded the invites sender.
+//
+// It is BEFORE `transportConfigured` because that check RETURNS rather than
+// throws. Let an armed-but-incomplete config reach it and a broken deploy
+// reports `missing_provider_config`, which is the same line a healthy sandbox
+// deploy writes. The misconfiguration would then look exactly like the safe
+// default state in the logs. That is the silent degradation #763 and #778
+// removed from these paths, and putting the assertion one line later would
+// reintroduce it.
+//
+// It THROWS rather than suppressing for the same reason. A suppression is a
+// decision that the send should not happen; this is a statement that the send
+// CANNOT happen and somebody must fix the environment.
 //
 // The approval gate sits INSIDE this function rather than beside it, so it holds
 // even when live send is armed. There is no code path that consults the flag
@@ -21,7 +41,7 @@
 // PII rule (#7): the suppression log carries template id, channel, appointment
 // id, and reason. Never a recipient, a subject, a body, or any credential.
 
-import { liveSendEnabled } from "./env";
+import { assertNotificationEnv, liveSendEnabled } from "./env";
 import { resolveApproved, type TemplateRegistry } from "./registry";
 import type { Channel, SendOutcome, SuppressionReason, Transport } from "./types";
 
@@ -44,6 +64,22 @@ export type Notifier = {
 export type NotifierOptions = {
   registry: TemplateRegistry;
   transport: Transport;
+  /**
+   * Every live-send flag this app can arm. REQUIRED, and required on purpose.
+   *
+   * INC-12 moved the env assertion out of module scope and into `dispatch`. If
+   * this were optional, an app that forgot it would build, boot, pass its tests
+   * and send with NO env check at all — a hole that announces itself nowhere,
+   * because everything downstream carries on reporting something reasonable.
+   * Making it mandatory turns "did you remember the guard" into a TYPE ERROR at
+   * the one place a notifier is constructed.
+   *
+   * apps/web passes both flags (reminders and invites are both email streams
+   * through this gate); apps/api passes REMINDERS_LIVE_SEND alone, because it
+   * has no invite path and a global requirement would demand a variable it can
+   * never use.
+   */
+  envFlags: readonly string[];
   /**
    * Reports whether the transport actually has credentials. Kept separate from
    * `transport` so the gate can report `missing_provider_config` WITHOUT
@@ -102,6 +138,10 @@ export function createNotifier(opts: NotifierOptions): Notifier {
       if (!liveSendEnabled(entry.liveSendFlag, env)) {
         return suppressed(req, "live_send_disabled", logger);
       }
+
+      // Armed and approved: the environment must now be complete. Throws
+      // NotificationEnvError naming every missing var at once. See the header.
+      assertNotificationEnv(opts.envFlags, env);
 
       if (!opts.transportConfigured(req.channel, req.templateId)) {
         return suppressed(req, "missing_provider_config", logger);

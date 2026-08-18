@@ -1,5 +1,4 @@
 import { serve } from "inngest/next";
-import { assertNotificationEnv } from "@osteojp/notify";
 import { inngest } from "@/lib/reminders/inngest/client";
 import { functions } from "@/lib/reminders/inngest/functions";
 
@@ -16,13 +15,23 @@ import { functions } from "@/lib/reminders/inngest/functions";
 // route, when it is the Inngest SDK's own cloud-mode response to a request with
 // no signature, and therefore proof the request DID reach the handler.)
 //
-// BOOT VALIDATION runs at module scope, so it fires before `serve()` registers a
-// single function. If the notification path is armed and a required var is
-// missing, this deploy fails loudly at startup naming the FULL list of missing
-// vars, instead of registering functions that would each fail separately at send
-// time. It is a no-op while every live-send flag is off, which is what keeps
-// local dev, CI and preview builds working.
-assertNotificationEnv(["REMINDERS_LIVE_SEND", "INVITES_LIVE_SEND"]);
+// ===========================================================================
+// INC-12, 2026-08-18: THE BOOT ASSERTION THAT USED TO SIT HERE TOOK THIS WHOLE
+// ROUTE DOWN.
+// ===========================================================================
+// It was `assertNotificationEnv(["REMINDERS_LIVE_SEND", "INVITES_LIVE_SEND"])`,
+// at module scope, before `serve()`. On 2026-08-18 REMINDERS_LIVE_SEND=true
+// reached production with REMINDERS_LINK_SECRET absent and it threw here, so
+// /api/inngest returned an error for EVERY method - including the GET Inngest
+// uses for introspection and the PUT it uses to register. The reminder stream
+// could not send AND could not be re-registered, from one missing variable.
+//
+// The check moved to createNotifier().dispatch, so an armed-but-incomplete
+// config now fails the individual send with the same NotificationEnvError and
+// leaves the route serving. The deploy-time signal is kept as a log in
+// lib/reminders/clients.ts, which this route's functions import transitively.
+//
+// Nothing is asserted here on purpose: a route is not a send.
 
 export const { GET, POST, PUT } = serve({
   client: inngest,

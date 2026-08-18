@@ -17,9 +17,9 @@
 // PII rule (#7): nothing here logs recipient phone/email or message bodies.
 
 import {
-  assertNotificationEnv,
   createNotifier,
   liveSendEnabled as flagEnabled,
+  warnNotificationEnv,
   type Channel,
   type SendOutcome,
   type TemplateRegistry,
@@ -28,11 +28,22 @@ import {
 import { apiRegistry } from "./registry";
 import { normalizePhonePT } from "./phone";
 
-// BOOT VALIDATION for apps/api's notification path. apps/api registers no Inngest
-// functions, so its earliest deterministic point is this module: nothing here can
-// send without loading it. A no-op while every live-send flag is off, so dev, CI
-// and preview builds are unaffected.
-assertNotificationEnv(["REMINDERS_LIVE_SEND"]);
+/**
+ * REMINDERS_LIVE_SEND ALONE, and the omission is deliberate rather than an
+ * oversight: apps/api has no invite path at all, so demanding INVITES_EMAIL_FROM
+ * here would fail on a variable this app can never use.
+ */
+const API_LIVE_SEND_FLAGS = ["REMINDERS_LIVE_SEND"] as const;
+
+// INC-12, 2026-08-18: this was `assertNotificationEnv([...])` and it threw at
+// module evaluation. The same shape as apps/web/lib/reminders/clients.ts, and it
+// moved for the same reason: a throw here takes down every route that
+// transitively imports the adapters, none of which send anything.
+//
+// The assertion now runs inside createNotifier().dispatch. What remains here is
+// the deploy-time signal, logged once per process, names only. It is not the
+// check and nothing relies on it - see the long note in the apps/web twin.
+warnNotificationEnv("apps/api/lib/notify/clients", API_LIVE_SEND_FLAGS);
 
 export type SendChannel = Channel;
 
@@ -124,6 +135,8 @@ export function createSender(registry: TemplateRegistry = apiRegistry) {
     transport: providerTransport,
     transportConfigured,
     emailFrom: requiredEmailFrom,
+    // INC-12: the env assertion the module scope used to run.
+    envFlags: API_LIVE_SEND_FLAGS,
   });
 
   return {

@@ -4,7 +4,8 @@
 // Nothing outside this package may import `twilio` or `resend`. The provider
 // adapters live in the apps (they own their env), but they are only ever reached
 // through `createNotifier().dispatch`, which enforces, in order: registered +
-// approved template, live-send flag exactly "true", provider configured, valid
+// approved template, live-send flag exactly "true", REQUIRED ENV PRESENT (this
+// one THROWS rather than suppressing - INC-12), provider configured, valid
 // recipient.
 
 export { createNotifier } from "./src/gate";
@@ -19,7 +20,9 @@ export {
   missingNotificationEnv,
   NotificationEnvError,
   REQUIRED_WHEN_LIVE,
+  resetNotificationEnvWarnings,
   TWILIO_SENDER_ONE_OF,
+  warnNotificationEnv,
 } from "./src/env";
 export type { EnvSource } from "./src/env";
 

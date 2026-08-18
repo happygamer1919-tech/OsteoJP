@@ -121,8 +121,30 @@ export function missingNotificationEnv(
 }
 
 /**
- * Boot-time gate. Throws with the FULL list of missing names, not the first one,
- * so a misconfigured deploy is fixed in one pass instead of one var per redeploy.
+ * The gate. Throws with the FULL list of missing names, not the first one, so a
+ * misconfigured deploy is fixed in one pass instead of one var per redeploy.
+ *
+ * ===========================================================================
+ * INC-12, 2026-08-18: THIS IS CALLED FROM THE SEND, NOT FROM MODULE SCOPE.
+ * ===========================================================================
+ * It used to run at module evaluation in three files. On 2026-08-18
+ * `REMINDERS_LIVE_SEND=true` reached production with `REMINDERS_LINK_SECRET`
+ * absent, this threw while the module graph was still being built, and it took
+ * down TWO SURFACES THAT SEND NOTHING: `/admin/staff` (which imports the invite
+ * chain, which imports the adapters) and the ENTIRE `/api/inngest` route.
+ *
+ * **A module-scope throw is not proportional to what it is checking.** The
+ * property is "this stream cannot send" and the blast radius was "anything that
+ * transitively imports the adapters", which is a much larger set and has no
+ * relationship to sending. The guard is now called from
+ * `createNotifier().dispatch`, so the same misconfiguration fails THE SEND with
+ * THE SAME ERROR and nothing else.
+ *
+ * WHAT WAS DELIBERATELY NOT DONE: it was not downgraded to a suppression.
+ * Returning `missing_provider_config` for an armed-but-incomplete stream would
+ * make a misconfigured deploy look like a sandbox one in the logs — the exact
+ * silent degradation #763 and #778 removed from these paths. It still throws;
+ * only WHERE moved.
  */
 export function assertNotificationEnv(
   flags: readonly string[],
@@ -130,4 +152,47 @@ export function assertNotificationEnv(
 ): void {
   const missing = missingNotificationEnv(flags, env);
   if (missing.length > 0) throw new NotificationEnvError(missing);
+}
+
+/** Modules that have already warned, so a hot path logs once and not per send. */
+const warned = new Set<string>();
+
+/**
+ * The boot-time SIGNAL that survived INC-12, without the boot-time throw.
+ *
+ * WHY THIS EXISTS AT ALL, since the send now throws on its own: the throw only
+ * arrives when somebody actually sends, which on the reminder path can be hours
+ * after the deploy that broke it. The old boot check's real value was never the
+ * crash — it was learning at DEPLOY time, in one pass, which names were missing.
+ * That value is kept here and the crash is not.
+ *
+ * IT IS A SIGNAL AND NEVER A VERDICT (PORTAL-REHYDRATE 1.3). Nothing branches on
+ * it, it decides nothing, and it cannot let a bad config through: the send path
+ * asks `assertNotificationEnv` the same question again and refuses. A log that
+ * were the only check would be precisely the "carries on reporting something
+ * reasonable" failure that section names.
+ *
+ * Names only, never values. Once per `key` per process.
+ */
+export function warnNotificationEnv(
+  key: string,
+  flags: readonly string[],
+  env: EnvSource = process.env,
+  logger: Pick<Console, "error"> = console,
+): string[] {
+  const missing = missingNotificationEnv(flags, env);
+  if (missing.length > 0 && !warned.has(key)) {
+    warned.add(key);
+    logger.error(
+      `[notify] ${key}: a live-send flag is armed but required env vars are missing: ` +
+        `${missing.join(", ")}. Sends on that stream WILL THROW. ` +
+        `Set them (names above, values never logged) or set the flag to a value other than "true".`,
+    );
+  }
+  return missing;
+}
+
+/** Test seam: forget which keys have warned. Never called by product code. */
+export function resetNotificationEnvWarnings(): void {
+  warned.clear();
 }

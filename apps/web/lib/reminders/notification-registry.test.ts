@@ -28,15 +28,35 @@ import { REMINDER_TEMPLATES, INVITE_TEMPLATE, WEB_TEMPLATES, webRegistry } from 
 
 const silent = { info: () => {}, error: () => {} } as unknown as Console;
 
+const FLAGS = ["REMINDERS_LIVE_SEND", "INVITES_LIVE_SEND"] as const;
+
+/**
+ * INC-12: `dispatch` now asserts the notification env, so a test that arms a
+ * flag against a bare env would throw NotificationEnvError instead of
+ * exercising the APPROVAL gate it is about. Spread under each case's own env so
+ * "armed" keeps meaning "armed and correctly configured". Placeholders only.
+ */
+const COMPLETE_ENV: Record<string, string> = {
+  RESEND_API_KEY: "test",
+  REMINDERS_EMAIL_FROM: "test",
+  INVITES_EMAIL_FROM: "test",
+  TWILIO_ACCOUNT_SID: "test",
+  TWILIO_AUTH_TOKEN: "test",
+  TWILIO_SMS_FROM: "test",
+  REMINDERS_RESCHEDULE_BASE_URL: "test",
+  REMINDERS_LINK_SECRET: "test",
+};
+
 function harness(env: Record<string, string | undefined>) {
   const sink = createTestSink();
   const notifier = createNotifier({
     registry: webRegistry,
     transport: sink,
     transportConfigured: () => true,
-    env,
+    env: { ...COMPLETE_ENV, ...env },
     logger: silent,
     emailFrom: () => "reminders@send.osteojp.pt",
+    envFlags: FLAGS,
   });
   return { notifier, sink };
 }
@@ -272,9 +292,10 @@ describe("the approval gate now passes, and the kill switch still holds", () => 
       registry: buildRegistry(flipped),
       transport: sink,
       transportConfigured: () => true,
-      env: LIVE,
+      env: { ...COMPLETE_ENV, ...LIVE },
       logger: silent,
       emailFrom: () => "reminders@send.osteojp.pt",
+      envFlags: FLAGS,
     });
 
     const withdrawn = await notifier.dispatch({
