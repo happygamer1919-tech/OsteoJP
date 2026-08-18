@@ -100,25 +100,31 @@ getting lost.
 | **Test patient** | `ZZ Teste …` | `____________________` **REQUIRED** | `____________________` | Carries **the owner's own mobile**. It is the canary for every OTP step and the subject of the terms items. Portal, not staff header: read it from the portal account page. |
 | **Test therapist** | `ZZ TESTE THERAPIST` | `____________________` **REQUIRED** | `8ac3b349…` | The practitioner on both rows of the INC-08 double booking. Already exists. **COVERS SATURDAY ONLY, 08:00-13:00 — see the box below. Every test booking goes on a Saturday morning.** |
 | **Reception** | `ZZ TESTE RECEPCAO` / `alo@gmail.com` | **`Alo`** — role shows as **Receção**. CONFIRMED by the owner 2026-08-12. | `____________________` | **The account for ALL staff-side observation. NOT the owner account — see the box below.** Carries the RECEPTION role slug, which is what puts it in `resolveRecipients`. PG4 was closed on a session run as this account. |
-| **Second therapist** | `ZZ TESTE THERAPIST 2` / `chris+terapeuta2@dlvlogistics.com` | `____________________` **REQUIRED** | `____________________` | Created 2026-08-18 via Convidar. Função **Terapeuta**, **NO location assigned** — which is the point: the negative arm needs a therapist assigned to nothing. Needed **only** for the negative arm of the therapist queue check, where a **non-assigned** therapist must be refused. **THE DISPLAY NAME IS STILL BLANK, so OBSERVE-SWEEP row C3 stays BLOCKED** — read it from the staff header at first login, never from the email above. |
+| **Second therapist** | `ZZ TESTE THERAPIST 2` / `chris+terapeuta2@dlvlogistics.com` | **`Chris+terapeuta2`** — role line reads **Terapeuta**. OBSERVED on the staff header 2026-08-18. | `____________________` | Created 2026-08-18 via Convidar. Função **Terapeuta**, **NO location assigned** — which is the point: the negative arm needs a therapist assigned to nothing. Needed **only** for the negative arm of the therapist queue check, where a **non-assigned** therapist must be refused. Display name read from the header at first login 2026-08-18; **row C3 and `ACC-therapist-queue-unobserved` are both UNBLOCKED.** |
 
-> ### THE SECOND THERAPIST EXISTS BUT HAS NEVER LOGGED IN, 2026-08-18
+> ### THE SECOND THERAPIST IS LIVE AND ITS ROW IS COMPLETE, 2026-08-18
 >
-> **The account was created and the row is still open, and those two facts are
-> not in tension.** The staff card renders `ZZ TESTE THERAPIST 2`, "Sem
-> localização atribuída" and "Sem horário definido", which is the correct shape.
-> But the column this table calls **REQUIRED** is the name **as the staff header
-> renders it**, and no one has seen that header, because nobody has logged in as
-> this account yet.
+> Created, logged into, and the display name read off the staff header in the
+> same sitting. `ACC-therapist-queue-unobserved` closed on it, and it is the
+> account that proved SEC-01: assigned to **no location**, it sees no guest
+> section at `/notificações` while reception sees the full queue.
+>
+> **THE DISPLAY NAME IS THE EMAIL'S LOCAL PART, PLUS-TAG AND ALL.** The header
+> renders `Chris+terapeuta2` and the greeting reads *"Boa noite,
+> Chris+terapeuta2"*. Written here **exactly as it renders**, because this table
+> exists to be matched against a screen — a tidied-up `Chris` would not match
+> and would send the next runner looking for a second account. Carded separately
+> as a cosmetic product defect; harmless on a test account.
 >
 > **NO INVITE EMAIL WAS SENT, AND THAT IS BY DESIGN.** `INVITES_LIVE_SEND` is off
 > per R9, so the Convidar dialog issued a temporary password instead: *"Membro
 > convidado. O email de convite não foi enviado. Palavra-passe temporária…"*.
 > Reading that as a broken invite is the misreading this box exists to prevent.
 >
-> **First login sets a real password over the temporary one**, and the header
-> name is read in that same sitting. Until then, `ACC-therapist-queue-unobserved`
-> stays blocked and row C3 stays blocked with it.
+> **THE FIRST LOGIN EXPOSED A DEFECT: the temporary password was accepted and
+> logged straight in, with no forced rotation.** See
+> `SEC-02-temp-password-no-forced-rotation`. That fixture credential is treated
+> as BURNED and the owner rotated it manually on 2026-08-18.
 
 > ### THE TEST THERAPIST COVERS SATURDAY ONLY, 08:00-13:00
 >
