@@ -5,6 +5,7 @@ import {
   acknowledgement,
   citedPrs,
   claimedGates,
+  consumedBy,
   reconcile,
 } from "./reconcile-board.mjs";
 
@@ -217,6 +218,66 @@ describe("acknowledgement moves a finding, it does not delete it", () => {
     assert.equal(acknowledged.length, 1);
     assert.equal(acknowledged[0].id, "LE-x");
     assert.match(acknowledged[0].ack, /deployed-screen/);
+  });
+});
+
+describe("rule E - consumed, the shape neither PRs nor gates can see", () => {
+  test("consumedBy reads the consumer id, and nothing else", () => {
+    assert.equal(consumedBy(card({ notes: "CONSUMED BY: W13-02 (LOOP 2)." })), "W13-02");
+    assert.equal(consumedBy(card({ notes: "consumed by w13-02" })), null); // exact marker only
+    assert.equal(consumedBy(card()), null);
+  });
+
+  test("FLAGS the WF-04 shape: ruling card whose named consumer has shipped", () => {
+    // WF-04 cites no PR and claims no gate. Every other rule is silent on it by
+    // construction, which is how it sat todo for thirteen days while the code it
+    // ratified had moved past the ruling.
+    const { mismatches } = reconcile(
+      board([
+        card({ id: "WF-04", status: "todo", notes: "CONSUMED BY: W13-02 (LOOP 2)." }),
+        card({ id: "W13-02", status: "shipped" }),
+      ]),
+      null,
+    );
+    assert.equal(mismatches.length, 1);
+    assert.equal(mismatches[0].rule, "consumed");
+    assert.match(mismatches[0].message, /W13-02/);
+  });
+
+  test("SILENT while the consumer is still open - the WF-06 case", () => {
+    // WF-06, WF-07 and WF-08 all name W13-03, which is legitimately open pending
+    // an owner observation. Their rulings are not finished being consumed until
+    // it closes, so firing here would be the false positive that gets a rule
+    // switched off.
+    const { mismatches } = reconcile(
+      board([
+        card({ id: "WF-06", status: "todo", notes: "CONSUMED BY: W13-03 (LOOP 3)." }),
+        card({ id: "W13-03", status: "in_flight" }),
+      ]),
+      null,
+    );
+    assert.deepEqual(mismatches, []);
+  });
+
+  test("SILENT when the named consumer does not exist", () => {
+    // A typo in a card id must not be reported as staleness: it is a different
+    // defect and saying the wrong thing about it is worse than saying nothing.
+    const { mismatches } = reconcile(
+      board([card({ status: "todo", notes: "CONSUMED BY: NOT-A-CARD" })]),
+      null,
+    );
+    assert.deepEqual(mismatches, []);
+  });
+
+  test("SILENT once the ruling card itself is shipped", () => {
+    const { mismatches } = reconcile(
+      board([
+        card({ id: "WF-04", status: "shipped", notes: "CONSUMED BY: W13-02." }),
+        card({ id: "W13-02", status: "shipped" }),
+      ]),
+      null,
+    );
+    assert.deepEqual(mismatches, []);
   });
 });
 
