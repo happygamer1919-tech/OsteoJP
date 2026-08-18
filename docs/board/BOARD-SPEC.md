@@ -7,6 +7,15 @@ A second board, the **Portal Board**, uses this same schema, the same lane ids
 and the same rules. Everything below applies to both unless a line says
 otherwise; the differences are collected in "The Portal Board" at the end.
 
+A third file, **`docs/board/BOARD-TEMPLATE.json`**, is the same schema with every
+project fact removed: one example card, nine placeholder gates, and typed
+placeholder values throughout. It exists so this system can be reused on another
+project without copying OsteoJP's content, and it **must never carry project
+content of its own**. It is not registered in `board-config.mjs` and nothing here
+reads it; `validate-board.mjs` reports exactly one violation against it, the
+board-name allowlist, which is the single line a new project changes to make its
+own board live. See `docs/board/BOARD-TEMPLATE.README.md`.
+
 ## Why this file exists
 
 The board artifact was titled "OsteoJP - Wave 12 board" and lived ONLY as a
