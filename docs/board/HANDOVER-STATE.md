@@ -83,7 +83,31 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**167 cards. 104 shipped, 63 open. Launch readiness 9/9, every launch gate passes.**
+**167 cards. 106 shipped, 61 open. Launch readiness 9/9, every launch gate passes.**
+
+> ### Reception can now turn a guest request into a patient and an appointment, 2026-08-18
+>
+> The public form at **/marcacao** has been able to take requests for days, but
+> reception could only look at them. The action that turns one into a real patient
+> and a real booking is now live on **Notificações**.
+>
+> **It never decides who the person is.** If the phone number already appears on a
+> file, reception is asked *"Quem é esta pessoa?"* and must choose - this patient,
+> or somebody new. The system will not link a request to an existing medical
+> record on a phone-number match, and the button on a flagged row stops being a
+> convert and becomes the question instead. Mis-linking a clinical record is the
+> worst outcome available here, and no automatic match is worth risking it.
+>
+> Pressing it creates the patient and hands reception straight to the diary with
+> the person, the service, the clinic and the requested date already filled in.
+> **It never books the appointment itself** - the slot is chosen by a human, on
+> the ordinary booking screen.
+>
+> **What this depended on.** A permission was missing from the database files that
+> build a fresh copy of the system, which is why this sat finished-but-unmergeable
+> for three weeks. Production always had the permission, so nothing was ever
+> broken for the clinic; the files simply did not say so. That is now corrected
+> and applied.
 
 > ### The consultation recording now survives a failed hand-off, 2026-08-18
 >
