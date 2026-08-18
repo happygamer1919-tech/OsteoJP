@@ -21,6 +21,8 @@ const PAYLOAD_INPUT = {
   doctorId: "d1",
   consultationStartedAt: "2026-07-07T01:00:00.000Z",
   consultationEndedAt: "2026-07-07T01:30:00.000Z",
+  consultationId: "c-1",
+  attempt: 1,
 };
 
 describe("buildM1Payload (full mandatory contract)", () => {
@@ -34,8 +36,29 @@ describe("buildM1Payload (full mandatory contract)", () => {
       consultation_started_at: "2026-07-07T01:00:00.000Z",
       consultation_ended_at: "2026-07-07T01:30:00.000Z",
       template: "osteopathy",
+      consultation_id: "c-1",
+      attempt: 1,
     });
     expect(M1_TEMPLATE).toBe("osteopathy");
+  });
+
+  it("the key set is exactly nine — the seven frozen fields plus 0064's two", () => {
+    // toEqual TREATS AN ABSENT KEY AND AN UNDEFINED ONE AS EQUAL, so the
+    // assertion above passed unchanged when consultation_id and attempt were
+    // first added and left undefined. This one cannot: it counts the keys.
+    // The partner builds against the seven; a field vanishing from the wire is
+    // exactly the change that must not pass a green suite.
+    expect(Object.keys(buildM1Payload(PAYLOAD_INPUT)).sort()).toEqual([
+      "attempt",
+      "audio_filename",
+      "audio_url",
+      "consultation_ended_at",
+      "consultation_id",
+      "consultation_started_at",
+      "doctor_id",
+      "patient_id",
+      "template",
+    ]);
   });
 });
 

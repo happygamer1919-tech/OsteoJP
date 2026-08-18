@@ -785,6 +785,7 @@
   "recording.processing": "A iniciar o processamento…",
   "recording.processed": "Gravação enviada para processamento.",
   "recording.savedPending": "Gravação guardada. O processamento será retomado.",
+  "recording.notSaved": "Não foi possível registar esta consulta. O processamento NÃO será retomado: registe as notas manualmente e comunique o problema.",
   "clinical.bodychart": "Bodychart",
   "clinical.bodychartHint": "Clique no diagrama para colocar um marcador.",
   "clinical.bodychartMarkerType": "Tipo de marcador",

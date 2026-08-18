@@ -120,6 +120,9 @@ describe("W4-10 first fire — (A) outbound M1 webhook carries the full contract
       doctorId: REAL_THERAPIST_DOCTOR_ID,
       consultationStartedAt: STARTED,
       consultationEndedAt: ENDED,
+      // 0064 — the two fields added beside the seven frozen ones.
+      consultationId: "c-first-fire",
+      attempt: 1,
     });
     // All mandatory contract fields present (SPEC §7).
     expect(payload).toMatchObject({
@@ -129,6 +132,8 @@ describe("W4-10 first fire — (A) outbound M1 webhook carries the full contract
       consultation_started_at: STARTED,
       consultation_ended_at: ENDED,
       template: "osteopathy",
+      consultation_id: "c-first-fire",
+      attempt: 1,
     });
     expect(payload.audio_url).toContain("consultation.webm");
 
