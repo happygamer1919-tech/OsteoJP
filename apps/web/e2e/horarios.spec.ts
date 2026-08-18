@@ -33,6 +33,38 @@ test.describe("Horários — reception schedule surface", () => {
   });
 });
 
+/**
+ * NAV-01 (Ivan, 2026-08-18). THE ADMIN ARM IS THE ONE THAT MOVED.
+ *
+ * The single /horarios nav entry carried `hideIfCapability: "settings:read"`, so
+ * it was hidden from exactly the two roles holding every other capability -
+ * owner and admin. The owner could not reach the COMPLEX scheduling page
+ * (SCHED-03 search, SCHED-04 day-by-day, SCHED-05 the overwrite refusal) from
+ * his own sidebar at all; Equipa's horários layer is the simple one and is
+ * untouched.
+ *
+ * ADMIN RATHER THAN OWNER because the seeded storage states are admin,
+ * therapist and reception - there is no owner fixture. Admin is the right proxy
+ * anyway: it holds `settings:read`, so it was excluded by the same line for the
+ * same reason, and it is the role whose sidebar actually changes here.
+ *
+ * ASSERTED FROM THE SIDEBAR, not by visiting the URL. /horarios was always
+ * reachable by URL for anyone with `schedule:read` - what NAV-01 changed is
+ * that these roles can FIND it. Navigating directly would pass before and after
+ * and prove nothing, the same trap the RULING A test below names.
+ */
+test.describe("Horários — NAV-01 owner/admin sidebar entry", () => {
+  test.use({ storageState: STORAGE.admin });
+
+  test("NAV-01: an admin reaches Horários from the sidebar", async ({ page }) => {
+    await page.goto("/dashboard");
+    const link = page.getByRole("link", { name: /hor[\u00e1a]rios/i });
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL(/\/horarios/);
+  });
+});
+
 test.describe("Horários — gate", () => {
   test.use({ storageState: STORAGE.therapist });
 
