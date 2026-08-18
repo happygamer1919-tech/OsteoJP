@@ -28,8 +28,18 @@ const ROWS = [
 /** Location ids the module asked to be restricted to, or null if it asked for none. */
 let requestedLocations: string[] | null = null;
 
+/** The role `guest-convert.ts`'s server actions will resolve for themselves. */
+let actingRole: RequestContext["role"] = "reception";
+
 vi.mock("@/lib/auth/context", () => ({
   runScoped: async (_ctx: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(tx()),
+  // The convert actions take no ctx argument - they resolve their own from the
+  // session, so the role has to arrive this way rather than as a parameter.
+  requireRequestContext: async () => ({
+    tenantId: "tenant-1",
+    role: actingRole,
+    userId: `user-${actingRole}`,
+  }),
 }));
 
 vi.mock("drizzle-orm", async (importOriginal) => {
@@ -57,6 +67,10 @@ function tx() {
     from: () => listChain,
     leftJoin: () => listChain,
     where: () => listChain,
+    // `guest-convert.ts` looks the request up by id before doing anything.
+    // Empty means `not_found`, which is exactly what the front-desk arm below
+    // wants: it asserts the caller is NOT refused, not that a convert succeeds.
+    limit: async () => [],
     orderBy: async () =>
       rows().map((r) => ({
         ...r,
@@ -187,5 +201,57 @@ describe("SEC-01 arm 2 - owner, admin and reception still get their queue", () =
 
     const out = await listPendingGuestRequests(ctxFor("owner"));
     expect(out).toHaveLength(2);
+  });
+});
+
+/**
+ * ==========================================================================
+ * SEC-01 arm 3 - the READ gate and the WRITE gate are ONE definition.
+ * ==========================================================================
+ * `guest-convert.ts` refuses a non-front-desk caller with
+ * `{ok:false, error:"forbidden"}`, and it used to do so from a HARDCODED role
+ * list while this file's read gate used a capability. Two copies of the same
+ * rule drift silently - the failure `bookingLocationScope` documents in its own
+ * header for the location scope - and a drift here would mean a role that can
+ * SEE the queue but not work it, or worse, work it without seeing it.
+ *
+ * THE HISTORY IS THE INTERESTING PART. The hardcoded list was DELIBERATE and its
+ * comment predicted this defect exactly: "every role holds `patients:write` and
+ * `appointments:write`, so a capability gate here would refuse nobody and would
+ * READ LIKE A CONTROL WHILE BEING ONE." That is precisely what
+ * `appointments:read` was doing on the READ path one file away. The write path
+ * saw the trap; the read path walked into it.
+ */
+describe("SEC-01 arm 3 - convert and read agree, by construction", () => {
+  it("the convert actions refuse exactly the role the queue refuses", async () => {
+    const { listGuestRequestMatches, convertGuestRequest } = await import(
+      "./guest-convert"
+    );
+
+    actingRole = "therapist";
+
+    // Refused by BOTH server actions, and the shapes differ on purpose: an
+    // action returns `forbidden` to a client component that renders it, while
+    // the read THROWS because nothing may mistake its answer for data.
+    await expect(listGuestRequestMatches("req-1")).resolves.toMatchObject({
+      ok: false,
+      error: "forbidden",
+    });
+    await expect(
+      convertGuestRequest("req-1", { kind: "new_patient" }),
+    ).resolves.toMatchObject({ ok: false, error: "forbidden" });
+    await expect(listPendingGuestRequests(ctxFor("therapist"))).rejects.toThrow();
+  });
+
+  it("front desk is NOT refused by either, so the gate is not simply closed", async () => {
+    // The half that stops this passing by breaking the feature. A gate that
+    // refuses everybody satisfies every assertion above it.
+    const { listGuestRequestMatches } = await import("./guest-convert");
+
+    for (const role of ["owner", "admin", "reception"] as const) {
+      actingRole = role;
+      const out = await listGuestRequestMatches("req-1");
+      expect(out).not.toMatchObject({ ok: false, error: "forbidden" });
+    }
   });
 });
