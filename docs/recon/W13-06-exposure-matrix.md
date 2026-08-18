@@ -52,11 +52,34 @@ find apps/web/app/r -type f                               #  1 token page
 | 20 | `booking/guest` | POST | **pre-auth**, rate limited (per IP, per phone, two tenant-wide ceilings). ITEM 6. The caller is by definition NOT a patient, so there is no principal to present. Safety comes from what it may WRITE: `guest_booking_requests` only, never a clinical table, always as a request a human confirms (R-GUEST-1). |
 | 21 | `booking/guest/catalog` | GET | **pre-auth**, rate limited per IP (two windows, durable store; **no global ceiling — see `RULES.guestCatalogIp`**). GUEST-04 Option A, 2026-08-14. The ONE unauthenticated READ the guest form gets: service id + name and location id + name, already published on osteojp.pt and on the portal's public Clínicas page. Same four predicates as `booking/catalog` (tenant, active, not `internal_only`, `patient_bookable`). No person, no schedule, no price. `booking/therapists` and `booking/slots` stay authenticated — **MN-27, MN-28**. |
 
-### 1.2 Portal server actions — 5 files
+### 1.2 Portal server actions — 6 files
 
-`apps/portal/app/auth/login/actions.ts`, `portal/account/actions.ts`,
-`portal/appointments/actions.ts`, `portal/booking/actions.ts`,
-`portal/documents/actions.ts`.
+> **The list read 5 and the filesystem held 6.** `apps/portal/app/marcacao/actions.ts`
+> arrived with **GUEST-04 (#912)** and was never added here. Corrected 2026-08-18,
+> together with the reason it could go stale at all: §1.1's route list is held to
+> the filesystem by a test, and this list was held to nothing. It is now covered by
+> the same assertion — see §1.5.
+
+Written as full repo-relative paths rather than abbreviated, because §1.5's
+assertion matches this list against the filesystem exactly. An abbreviation reads
+more easily and cannot be checked, and an unchecked list is what this section was.
+
+```
+apps/portal/app/auth/login/actions.ts
+apps/portal/app/marcacao/actions.ts
+apps/portal/app/portal/account/actions.ts
+apps/portal/app/portal/appointments/actions.ts
+apps/portal/app/portal/booking/actions.ts
+apps/portal/app/portal/documents/actions.ts
+```
+
+**`marcacao/actions.ts` is the second unauthenticated WRITE path on this surface**
+and the only one outside `/portal`. It is the server action behind the public
+guest form at `/marcacao`, and it posts to `booking/guest` — row 20 — rather than
+touching the database itself. Its exposure is therefore row 20's exposure, with
+one addition of its own: it runs for a caller with no session, no patient record
+and no account, so **nothing it receives may be trusted to identify anybody**, and
+it does not try to. See MN-29.
 
 ### 1.3 The token surface — 1
 
@@ -76,8 +99,40 @@ because routes have been added since authoring", and three had been.
    LOOP 1", which is the `/r/[token]` reminder surface. The OTP routes are
    LOOP 3's and are a different, larger unauthenticated surface.
 3. **`apps/portal/app/auth/login/actions.ts`** — not in the brief's list of four
-   portal action files. It is the most exposed of the five: it runs for a caller
-   with no session at all.
+   portal action files. It runs for a caller with no session at all.
+4. **`apps/portal/app/marcacao/actions.ts`** — added 2026-08-18, later than the
+   other three and by a different route: it did not diverge from the wave doc, it
+   diverged from THIS DOCUMENT after GUEST-04 shipped. That is the more dangerous
+   kind, because a divergence from the brief is found by re-deriving the surface
+   once, and a divergence from the matrix is found by nobody at all unless a test
+   is holding the list. §1.5 is now that test.
+
+### 1.5 WHAT HOLDS THIS ENUMERATION TO THE FILESYSTEM
+
+A matrix is a document, and a document rots silently. Each list above is pinned
+by `apps/api/lib/exposure/patient-surface.test.ts`, which enumerates the real
+tree and fails until this file names every entry:
+
+| § | Surface | Enumerated by | Pinned since |
+|---|---|---|---|
+| 1.1 | API routes | `readdirSync` under `apps/api/app/api/v1`, every `route.ts` | LOOP 6, 2026-08-12 |
+| 1.2 | Portal server actions | every file under `apps/portal/app` whose first directive is `use server` | **2026-08-18** |
+| 1.3 | The token surface | one file, `apps/web/app/r/[token]/page.tsx` | not pinned — see below |
+
+**§1.2 WAS UNPINNED FOR SIX DAYS AND THAT IS HOW IT WENT WRONG.** The route list
+could not go stale: add a route and CI reddens until a row exists. The actions
+list had no such assertion, so GUEST-04 added a server action and nothing
+noticed. The fix is not the missing row, it is the assertion — the row would have
+been added on the day if anything had been asking.
+
+**§1.3 IS DELIBERATELY NOT PINNED, and this is the honest note rather than an
+oversight.** It is a single page in a third app (`apps/web`), reached by one
+signed token, and an enumeration of "every page under `apps/web/app`" would sweep
+in the entire staff platform — hundreds of routes that are not patient-facing and
+whose presence here would make this document unreadable. A test that must be
+carefully scoped to stay useful is a test somebody will scope wrongly later. If
+`apps/web` ever grows a second patient-facing surface, pin it then, with a list
+narrow enough to mean something.
 
 ---
 
@@ -148,6 +203,7 @@ divergence from the claimed figure and is reported in §5.
 | MN-27 | **learn WHO WORKS AT A CLINIC from an unauthenticated request** | `booking/therapists` STAYS AUTHENTICATED — GUEST-04 Option A ruling, 2026-08-14. It is absent from `PRE_AUTH` in `patient-surface.test.ts`, so the repo-wide scan requires it to call `getPatientPrincipal` and to refuse before any awaited work; adding it to the allowlist is the only way to expose it, and that is a decision with a name on it | PRESENT |
 | MN-28 | **learn WHEN A CLINIC IS EMPTY from an unauthenticated request** | `booking/slots` STAYS AUTHENTICATED — same ruling. A public slot list discloses, for any named therapist, exactly when they are not with a patient. Enforced identically: absent from `PRE_AUTH`, so the MN-01 scan covers it | PRESENT |
 | MN-23 | **have a new `appointments` writer added without a decision about the slot lock** — RESCOPED 2026-08-12, see §9 | `write-paths.test.ts` — repo-wide enumeration of every INSERT and time/therapist UPDATE, pinned to an allowlist that records a decision per path, comment-stripped | PRESENT |
+| MN-29 | **have a patient-facing SERVER ACTION added without a row in this matrix** — added 2026-08-18 | `patient-surface.test.ts` enumerates every file under `apps/portal/app` whose first directive is `use server` and fails until §1.2 names it. This row exists because the gap was real: `marcacao/actions.ts` shipped with GUEST-04 and sat unlisted for six days, because §1.1 was pinned to the filesystem and §1.2 was pinned to nothing | PRESENT |
 
 **28 MUST-NEVER rows. 28 enforcement points. ZERO rows without one.**
 

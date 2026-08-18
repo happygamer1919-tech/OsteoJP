@@ -104,6 +104,41 @@ function enumerateRoutes(dir: string, acc: string[] = []): string[] {
 const GUARD = /if\s*\(\s*!\s*\w+\s*\)\s*\{?\s*(return|throw)/;
 
 const ROUTES = enumerateRoutes(V1_ROOT);
+
+/**
+ * Every portal server-action file, enumerated from the tree by its DIRECTIVE
+ * rather than by its filename.
+ *
+ * BY THE DIRECTIVE, because that is what actually makes a file a server action.
+ * Matching `actions.ts` would be matching a convention: a file called anything
+ * else carrying `use server` is just as reachable, and a file called actions.ts
+ * without it is not reachable at all. The matrix's own §1.1 command
+ * (`grep -rl "^'use server'" apps/portal/app`) already used this definition;
+ * this is that command, held to it by CI.
+ *
+ * The directive must be the FIRST statement in the file for Next.js to treat the
+ * module as server actions, so only the opening lines are examined - a
+ * `"use server"` string appearing later in a file is not one.
+ */
+const PORTAL_APP = join(REPO_ROOT, "apps", "portal", "app");
+
+function enumerateServerActions(dir: string, acc: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      enumerateServerActions(full, acc);
+      continue;
+    }
+    if (!/\.tsx?$/.test(entry)) continue;
+    const head = readFileSync(full, "utf8").slice(0, 200);
+    if (/^\s*["']use server["']/.test(head)) {
+      acc.push(relative(REPO_ROOT, full).split(sep).join("/"));
+    }
+  }
+  return acc.sort();
+}
+
+const SERVER_ACTIONS = enumerateServerActions(PORTAL_APP);
 const sourceOf = (route: string) =>
   stripComments(readFileSync(join(V1_ROOT, route, "route.ts"), "utf8"));
 
@@ -188,5 +223,31 @@ describe("W13-06 — the committed matrix stays in step with the surface", () =>
     // matrix must gain a row before CI is green again.
     const doc = readFileSync(MATRIX, "utf8");
     expect(ROUTES.filter((r) => !doc.includes(r))).toEqual([]);
+  });
+
+  // MN-29, added 2026-08-18 AFTER THE GAP IT CLOSES WAS FOUND IN THE WILD.
+  //
+  // The assertion above pinned §1.1 of the matrix to the filesystem, so a new
+  // ROUTE could not go unlisted. §1.2, the portal server actions, was pinned to
+  // nothing - it was a hand-typed list of five. `marcacao/actions.ts` shipped
+  // with GUEST-04 (#912) and sat unlisted for six days: the second
+  // unauthenticated WRITE path on the patient-facing surface, absent from the
+  // document whose entire job is to enumerate that surface.
+  //
+  // A server action is not a route and does not look like one - no file name
+  // convention forces it, nothing registers it, and it is reachable by a POST
+  // the framework generates. That is exactly why it needed enumerating rather
+  // than remembering.
+  it("names every portal SERVER ACTION, so a new one forces a matrix row", () => {
+    const doc = readFileSync(MATRIX, "utf8");
+    const missing = SERVER_ACTIONS.filter((f) => !doc.includes(f));
+    expect(missing).toEqual([]);
+  });
+
+  it("finds the server actions at all (guards against a vacuous pass)", () => {
+    // Without this the assertion above passes on an empty array, and a refactor
+    // that moves the actions elsewhere would turn it green while proving
+    // nothing. Same guard the route scan carries, for the same reason.
+    expect(SERVER_ACTIONS.length).toBeGreaterThanOrEqual(6);
   });
 });
