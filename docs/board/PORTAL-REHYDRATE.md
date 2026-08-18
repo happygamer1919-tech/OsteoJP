@@ -281,6 +281,25 @@ Do this before anything else, in this order. Each step's output feeds the next.
    the working tree happens to be sitting on.
 2. **Read `docs/board/portal-board.json` from `origin/main`.** This is **the
    state**: what is done, what is moving, what is blocked, and what proves it.
+
+   **2a. MANDATORY, BEFORE YOU BELIEVE ANY OF IT: `pnpm board:reconcile`.**
+   It asks the one question the validator does not — *is this board TRUE* — by
+   checking every card against merged PRs and against the launch gate's own
+   state. Exit 0 in sync, 1 on a mismatch, 2 if it could not ask. **It also runs
+   in the REQUIRED CI check**, so main cannot carry a mismatch; running it at
+   boot is how you find out that a card you are about to build from went stale
+   between merges.
+
+   > **A mismatch it reports is a PREMISE MISMATCH under rule 5. Halt and report
+   > it. Do not flip the card to make the check pass** — the board being wrong
+   > may mean an earlier session's REPORT was wrong too, and that is the owner's
+   > to know. Four cards have carried a false `todo`; the fourth set put
+   > already-shipped work into a dispatch as the next thing to build.
+   >
+   > A card that is legitimately open after its PR merged (WF-03 closes on the
+   > owner's deployed screen, not on green CI) carries an explicit
+   > `open_on_purpose: "<reason>"`. The reconciler prints every one of those in
+   > full on every run: an exemption nobody sees is an exemption nobody revisits.
 3. **Read the portal wave doc that the board's cards reference.** This is **the
    plan**: the eight loops, their order, and each loop's own definition of done.
    The board tells you WHICH card; the wave doc tells you HOW.
