@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { guestBookingRequests, patients } from "@osteojp/db";
+import { can, type Role } from "@osteojp/auth";
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { bookingLocationScope, isLocationBookable } from "@/lib/auth/viewer-locations";
@@ -134,21 +135,38 @@ export type GuestPatientMatch = {
 };
 
 /**
- * FRONT DESK ONLY, and it is a ROLE check rather than a capability one.
+ * FRONT DESK ONLY: owner, admin, reception. A therapist does not answer the
+ * phone or work the request queue, and convert is the front desk's judgement
+ * call about who a caller IS.
  *
- * Every role in the matrix holds `patients:write` and `appointments:write`,
- * therapists included — so a capability gate here would refuse nobody and would
- * read like a control while being one. STAFF-06 made the same distinction in the
- * other direction: the capability says which surfaces you may reach, the scope
- * says whose data you may touch.
+ * ==========================================================================
+ * SEC-01 (2026-08-18): THIS IS NOW THE CAPABILITY, AND THE REASON IT WAS NOT
+ * IS WORTH KEEPING.
+ * ==========================================================================
+ * It used to be a hardcoded role list, on this reasoning, which was correct at
+ * the time: "every role in the matrix holds `patients:write` and
+ * `appointments:write`, therapists included — so a capability gate here would
+ * refuse nobody and would READ LIKE A CONTROL WHILE BEING ONE."
  *
- * A therapist does not answer the phone or work the request queue, and convert
- * is the front desk's judgement call about who a caller IS. Owner, admin and
- * reception; therapist refused. Recorded on the card because the dispatch said
- * "role gate" without naming the roles.
+ * THAT SENTENCE TURNED OUT TO DESCRIBE THE DEFECT ONE FILE OVER. The READ path
+ * (`listPendingGuestRequests`) was gated on `appointments:read` — a capability
+ * every role holds — and it refused nobody, exactly as predicted here, while
+ * reading like a control. A therapist saw the whole tenant's guest queue on
+ * deployed production. This file's author saw the trap and avoided it; the
+ * neighbouring file walked into it.
+ *
+ * `guest_requests:read` NOW EXISTS AND DOES DISTINGUISH THE ROLES, so the
+ * premise of the hardcoded list is gone. Using it here means the queue's READ
+ * gate and its WRITE gate are ONE definition rather than two copies of the same
+ * role list — and two copies of a rule drift silently, which is the failure
+ * `bookingLocationScope` documents in its own header for the location scope.
+ *
+ * The refusal SHAPE is unchanged: `{ok: false, error: "forbidden"}` for the
+ * caller, not a throw, because these are server actions a client component
+ * awaits and renders.
  */
-function isFrontDesk(role: string): boolean {
-  return role === "owner" || role === "admin" || role === "reception";
+function isFrontDesk(role: Role): boolean {
+  return can(role, "guest_requests:read");
 }
 
 /**

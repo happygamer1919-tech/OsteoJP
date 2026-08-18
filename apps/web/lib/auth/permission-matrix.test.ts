@@ -130,6 +130,26 @@ describe("matrix lock — granted capabilities (escalation guard)", () => {
     }
   });
 
+  it("SEC-01: the guest queue is owner, admin and reception - NEVER the therapist", () => {
+    // Owner ruling 2026-08-18, after a therapist was observed reading the whole
+    // tenant's guest queue - names and phone numbers - on deployed production.
+    //
+    // THE LINE THAT MATTERS IS THE THERAPIST ONE, and it is asserted against the
+    // capability the defect actually rode. `appointments:read` gated this queue
+    // and EVERY role holds it, so the check passed for a therapist while gating
+    // nothing. The pair below is the whole point: the therapist keeps working
+    // the calendar and is refused the queue.
+    expect(can("therapist", "appointments:read")).toBe(true);
+    expect(can("therapist", "guest_requests:read")).toBe(false);
+
+    for (const role of ["owner", "admin", "reception"] as const) {
+      expect(can(role, "guest_requests:read")).toBe(true);
+    }
+
+    // The grant carried nothing else with it: reception still holds no settings.
+    expect(can("reception", "settings:read")).toBe(false);
+  });
+
   it("PL-09 Phase 5: reception manages schedules but holds NO tenant settings", () => {
     // Reception OWNS scheduling for their location (schedule:*), decoupled from
     // settings:* — it must never gain tenant settings by that grant.
