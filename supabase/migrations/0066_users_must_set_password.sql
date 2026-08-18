@@ -1,3 +1,7 @@
+-- AUTO-GENERATED — DO NOT EDIT.
+-- Mirror of packages/db/migrations/0066_users_must_set_password.sql for Supabase branching.
+-- Edit the drizzle source, then run: node scripts/sync-supabase-migrations.mjs
+
 /* ------------------------------------------------------------------ */
 /* 0066 - RECORD THAT A STAFF PASSWORD IS TEMPORARY.                   */
 /*                                                                    */
