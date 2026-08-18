@@ -45,3 +45,18 @@ jobs:
       # would not be in the REQUIRED set.
       - name: Test scripts
         run: pnpm test:scripts
+
+      # Does the BOARD still agree with the repository? The validator next door
+      # only asks whether it is well-formed. Four cards have now gone stale in the
+      # same direction - work shipped, card still saying todo - and the fourth set
+      # cost a dispatch that named already-shipped work as the next thing to build.
+      #
+      # In the existing quality job on purpose, for the reason the step above
+      # already gives: a separate job would be a new check name and would not be
+      # in the REQUIRED set. The PR rules need the API, so the token is passed;
+      # the script exits 2 rather than 0 if it cannot reach it, because a check
+      # that cannot ask must never report success.
+      - name: Reconcile the board against merged PRs
+        run: pnpm board:reconcile
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
