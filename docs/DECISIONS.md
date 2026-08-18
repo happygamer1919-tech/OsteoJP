@@ -3083,3 +3083,91 @@ Three negative arms, each applied to the real file, run, observed red, reverted:
 No change to the endpoint, the ingestion library, or anything under `apps/web`. Files: two new under
 `scripts/`, one script entry in the root `package.json`, one step in `.github/workflows/ci.yml`, and
 these log entries.
+
+---
+
+## 2026-08-17 - PROD_REFS was empty on the day it stopped being safe (PURPLE, branch fix/seed-guard-prod-ref)
+
+> **ADOPTED AND CORRECTED 2026-08-17.** This entry was written by a second terminal
+> that had booted as PURPLE from a differently-named directory without either session
+> noticing. That session is terminated and its worktree removed; there is one PURPLE.
+> The work itself verified clean and is kept. Two of its statements had gone stale
+> against its own branch before merge and are corrected in place below, marked where
+> they occur.
+
+`packages/db/seed/seed-guard.ts` shipped with `export const PROD_REFS: string[] = []`
+and a comment instructing whoever provisioned the production project to populate it.
+Production `dfotoodqvmjhbdcxyaxf` was provisioned, migrations `0047` through `0063`
+were applied to it, real patient data landed in it, and the list stayed empty. The
+comment was the whole enforcement mechanism, and comments do not fail builds.
+
+### What the empty list actually cost
+
+Every dev seed (`patients-dev`, `appointments-dev`, `episodes-dev`, `dev-reference`,
+`availability-dev`) resolves its target through `resolveSeedDatabaseUrl`. With the
+blocklist empty, the only thing between a shell holding the prod `DATABASE_URL` and
+50 synthetic patients in the live clinic database was `SEED_DEV_CONFIRM` - and that
+variable is set by the same person, in the same shell, from the same env file. It
+defends against forgetting. It does not defend against being wrong about which
+database you are pointed at, which is the failure that actually happens.
+
+The two guards are not redundant, and the header comment now says which is which:
+`SEED_DEV_CONFIRM` guards against an ACCIDENT, `PROD_REFS` guards against a
+DELIBERATE run aimed at the wrong target. The blocklist is checked first and no
+opt-in overrides it.
+
+### The list holds TWO refs. This section originally said one, and it was wrong by the
+### time it was read.
+
+`dfotoodqvmjhbdcxyaxf` (live production) was added first. This entry then stated,
+in the present tense, that the retired old prod `jaxmkwoxjcgzkwxgbayx` was NOT added
+and was left for the owner to rule on - the reasoning being that widening a safety
+blocklist unasked is still widening scope.
+
+**The owner ruled on 2026-08-17: it goes on.** A safety blocklist that omits a ref
+CLAUDE.md already forbids targeting is incomplete by its own logic. It was added on
+the same branch, and the reason is on the file: a retired project is one nobody
+watches, so a stale connection string in an old env file, shell history or runbook is
+exactly where a wrong seed goes unnoticed. **Retired is a reason to add a ref, not to
+omit one.**
+
+CORRECTED IN PLACE RATHER THAN APPENDED BELOW, and the original claim is left visible
+above rather than deleted, because this log is append-only and later sessions read it
+as settled. An entry that says "one ref, deliberately" beside a file holding two is
+the exact defect DECISIONS exists to prevent.
+
+### Coverage was zero, not stale
+
+The dispatch asked whether a test asserted the empty list. None did: `seed-guard.ts`
+had no test at all. Nothing in `packages/db/tests/` imported it, and `packages/db`
+has no `lint` script, so `pnpm lint` never saw the file either. The guard protecting
+the production database was the only safety mechanism in the package with no
+automated proof it worked.
+
+`packages/db/tests/seed-guard.test.ts` (15 tests, no DB required, always runs) now
+pins: EACH blocked ref is present by name, the list is non-empty, both the pooler and
+the direct URL forms parse to the same ref, a blocklisted ref is refused EVEN WITH
+`SEED_DEV_CONFIRM` set to it, a non-blocklisted ref still requires the opt-in, and a
+confirmed dev ref still returns. Each ref is pinned INDIVIDUALLY as well as driven
+through the full refusal path: a bare `PROD_REFS.length > 0` would stay green if
+somebody replaced the contents rather than emptying them. It lives in `tests/` rather than beside the source
+because `packages/db/vitest.config.ts` includes only `tests/**/*.test.ts` - colocated
+per CLAUDE.md convention, it would have run nowhere, which is the failure mode
+DECISIONS 2026-08-14 §"Where the test runs" already logged once.
+
+### Proven capable of failing
+
+The list was reverted to `[]` on the real file, the suite run, and restored. With one
+ref that was 4 red of 10; **re-run on 2026-08-17 with both refs on the list and both
+counts corrected: 7 red of 15** - the two by-name assertions, the not-empty
+assertion, and all four refusal assertions (each ref, pooler and direct form). 15/15
+green on the restored file, and `git status` clean afterwards.
+
+The re-run was done by the adopting terminal rather than taken from this entry. A
+negative control reported second-hand is a claim, not a control.
+
+### Gates
+
+`pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` all green from the repo root.
+`pnpm test:e2e` not run: the change touches no user-facing flow, only a dev-only seed
+guard that never executes in the app or in CI.

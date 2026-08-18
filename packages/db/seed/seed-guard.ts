@@ -1,23 +1,34 @@
 /**
  * Shared safety guard for the dev-data seed scripts.
  *
- * OsteoJP currently runs a SINGLE Supabase project. That project is the dev
- * database and also backs the deployed app; a separate production project has
- * not been provisioned yet (a pre-real-data gate). Because there is no
- * dedicated production ref to blocklist by name, these seeds protect the target
+ * A dedicated production Supabase project now exists (CLAUDE.md "Supabase
+ * setup": `dfotoodqvmjhbdcxyaxf`, Central EU), so the seeds protect the target
  * two ways:
  *
- *   1. PROD_REFS blocklist — refs that must never be seeded. Empty today;
- *      populate it with the production ref the moment that project exists.
+ *   1. PROD_REFS blocklist — refs that must never be seeded, refused before
+ *      the confirmation step and with no opt-in that can override them.
  *   2. SEED_DEV_CONFIRM opt-in — the operator must set SEED_DEV_CONFIRM to the
  *      exact project ref parsed from DATABASE_URL. This forces a deliberate
  *      "I verified this target in the Supabase dashboard" step before any write,
  *      and makes an accidental run (wrong env, wrong shell) refuse by default.
+ *
+ * The blocklist is the stronger of the two: SEED_DEV_CONFIRM is a guard against
+ * an ACCIDENT (a stale shell, the wrong env file), while PROD_REFS is a guard
+ * against a DELIBERATE run aimed at the wrong database — setting
+ * SEED_DEV_CONFIRM to a blocklisted ref still refuses. Add a ref here whenever a
+ * project must never receive dev data.
  */
 
-// Populate when the separate production Supabase project is provisioned
-// (pre-real-data gate); seed refuses any ref listed here.
-export const PROD_REFS: string[] = [];
+// Refs that must never be seeded. Seed refuses any ref listed here, ahead of
+// (and unaffected by) the SEED_DEV_CONFIRM opt-in.
+//   dfotoodqvmjhbdcxyaxf — PRODUCTION (Central EU / Frankfurt), the live clinic
+//     database. Holds real patient and clinical data.
+//   jaxmkwoxjcgzkwxgbayx — the RETIRED old prod (CLAUDE.md "Supabase setup":
+//     "do not target it"). Blocklisted precisely BECAUSE it is retired: a stale
+//     connection string in an old env file, shell history, or runbook still
+//     points here, and a project nobody watches is the one where a wrong seed
+//     goes unnoticed. Retired is a reason to add a ref, not to omit one.
+export const PROD_REFS: string[] = ["dfotoodqvmjhbdcxyaxf", "jaxmkwoxjcgzkwxgbayx"];
 
 /**
  * Parse the Supabase project ref from a connection string. Handles both the
