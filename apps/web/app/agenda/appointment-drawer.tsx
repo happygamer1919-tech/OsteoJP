@@ -71,6 +71,14 @@ export type ModalState =
       // W6-03: a deep-link from a patient profile preselects + LOCKS this patient
       // (the user then picks only therapist + date/time). Absent on a normal create.
       lockedPatient?: { value: string; label: string };
+      // GUEST-06: a converted guest request also carries the service and clinic
+      // they asked for. PRESELECTED, NOT LOCKED — unlike the patient, which is
+      // the one fact the convert established. Reception rings the caller and the
+      // service is exactly what that call may change, so locking it would put a
+      // guess beyond reach. Each id is validated against `options` by
+      // agenda/page.tsx before it gets here, so it always has a matching
+      // <option> (STAFF-01).
+      prefill?: { serviceId: string | null; locationId: string | null };
     }
   | { mode: "edit"; appt: AgendaAppointment };
 
@@ -190,25 +198,44 @@ export function AppointmentDrawer({
     const slot = state.mode === "create" ? state.slot : undefined;
     // W6-03: a deep-linked create preselects the locked patient.
     const lockedPatient = state.mode === "create" ? state.lockedPatient : undefined;
+    // GUEST-06: a converted guest request also preselects service + clinic.
+    const prefill = state.mode === "create" ? state.prefill : undefined;
+    // AND ITS DURATION, because the two are ONE fact. Picking a service through
+    // the <Select> runs `onServiceChange`, which sets durationMin from the
+    // service; preselecting one in initial state runs nothing. Without this the
+    // drawer would open reading "Fisioterapia" beside a 60-minute duration the
+    // service does not have, and the length is what gets booked. Same collapse
+    // as STAFF-01: a control displaying a value that is not the value in effect.
+    const prefillService = prefill?.serviceId
+      ? options.services.find((o) => o.id === prefill.serviceId)
+      : undefined;
     return {
       patientId: lockedPatient?.value ?? "",
-      serviceId: "",
+      serviceId: prefill?.serviceId ?? "",
       packId: "",
       // PL-10: a self-locked therapist's practitioner is forced to themselves ON
       // OPEN (the value submit sends). Everyone else starts empty and picks one.
       practitionerId: selfLocked ? selfUserId : "",
       patientTwoId: "",
       practitionerTwoId: "",
-      locationId: options.bookableLocations[0]?.id ?? "",
+      locationId: prefill?.locationId ?? options.bookableLocations[0]?.id ?? "",
       room: "",
       date: slot?.date ?? anchor,
       time: slot?.time ?? "09:00",
-      durationMin: 60,
+      durationMin: prefillService?.durationMin ?? 60,
       status: "scheduled",
       notes: "",
       scope: "one",
     };
-  }, [editing, state, anchor, options.bookableLocations, selfLocked, selfUserId]);
+  }, [
+    editing,
+    state,
+    anchor,
+    options.bookableLocations,
+    options.services,
+    selfLocked,
+    selfUserId,
+  ]);
 
   const [form, setForm] = useState<FormState>(init);
   const [error, setError] = useState<string | null>(null);

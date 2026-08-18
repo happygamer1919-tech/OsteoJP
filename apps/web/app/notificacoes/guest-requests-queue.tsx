@@ -1,14 +1,28 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import { GlassCard } from "@osteojp/ui";
+
+import {
+  convertGuestRequest,
+  listGuestRequestMatches,
+  type GuestConvertError,
+  type GuestPatientMatch,
+} from "@/lib/scheduling/guest-convert";
+import { bookingDeepLink, pressAction } from "@/lib/scheduling/guest-convert-handoff";
 import { s } from "@/lib/i18n";
 
 /**
  * ITEM 6 — reception's queue of GUEST booking requests.
  *
- * A SERVER COMPONENT, unlike the pedido queue above it. That one is a client
- * component because confirming a pedido acts in place and can fail per row.
- * This list currently only DISPLAYS: converting a guest into a patient plus an
- * appointment is the next piece of work, and building the interactivity before
- * the action exists would be scaffolding with nothing behind it.
+ * GUEST-06 MADE THIS A CLIENT COMPONENT. It was a server component while it only
+ * displayed; converting acts in place, can fail per row, and the several-matches
+ * case has to ask a question before anything is written. That is the same
+ * reasoning that made the pedido queue above it a client component, and it holds
+ * no queue data for the same reason: the list is a server prop, and a successful
+ * convert leaves the queue because `revalidatePath` re-derived the DATA, never
+ * because this component spliced a row out of an array it owns.
  *
  * THE NEW-CLIENT MARK IS THE POINT OF THIS LIST. Every row is somebody with no
  * record, so "new client" is the default state and is shown on every row rather
@@ -19,6 +33,13 @@ import { s } from "@/lib/i18n";
  * record is the worst outcome available. Reception decides; the screen only
  * tells them what it noticed.
  *
+ * WHICH IS WHY CONVERT BRANCHES ON THE MARK AND NOT ON A PREFERENCE. A row with
+ * zero matches converts in one press, because there is no question to ask. A row
+ * with one or more opens the dialog FIRST and cannot be converted without an
+ * answer — the button does not carry a default the impatient press through. The
+ * server refuses an unanswered convert as well (`validation`); this is the
+ * courtesy half, exactly as STAFF-06 framed the pinned selector.
+ *
  * THE REQUESTED SERVICE IS DELIBERATELY NOT SHOWN HERE, and it is not an
  * oversight. PG4 forbids the notifications page carrying a service name, and
  * lib/notifications/centre.test.ts enforces it over the whole FILE rather than
@@ -27,7 +48,8 @@ import { s } from "@/lib/i18n";
  * record for it to be about - but PG4 is a launch gate and payload minimisation
  * is maintained for counsel, so the guard was left completely untouched and the
  * question was raised instead. See LE-guest-queue-service-name.
- * Reception sees the service when they open the request to convert it.
+ * The service still reaches the booking drawer: convert returns its ID and the
+ * agenda preselects it, so it is never rendered onto this page.
  */
 
 export type GuestRequestRow = {
@@ -48,7 +70,81 @@ export type GuestRequestRow = {
   possiblePatientMatches: number;
 };
 
+function messageFor(err: GuestConvertError): string {
+  switch (err) {
+    case "forbidden":
+      return s["guest.error.forbidden"];
+    case "not_found":
+      return s["guest.error.notFound"];
+    case "already_handled":
+      return s["guest.error.alreadyHandled"];
+    case "location_not_assigned":
+      return s["guest.error.locationNotAssigned"];
+    case "match_not_found":
+      return s["guest.error.matchNotFound"];
+    case "validation":
+      return s["guest.error.generic"];
+  }
+}
+
+/** Open dialog state. `matches: null` means the fetch is still in flight. */
+type ResolveState = {
+  requestId: string;
+  matches: GuestPatientMatch[] | null;
+};
+
 export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, GuestConvertError>>({});
+  const [resolving, setResolving] = useState<ResolveState | null>(null);
+
+  function clearError(requestId: string) {
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[requestId];
+      return next;
+    });
+  }
+
+  function convert(requestId: string, resolution: Parameters<typeof convertGuestRequest>[1]) {
+    setBusyId(requestId);
+    clearError(requestId);
+    startTransition(async () => {
+      const result = await convertGuestRequest(requestId, resolution);
+      setBusyId(null);
+      if (!result.ok) {
+        setErrors((prev) => ({ ...prev, [requestId]: result.error }));
+        return;
+      }
+      setResolving(null);
+      // THE HANDOFF. The convert wrote a patient and marked the request handled;
+      // the APPOINTMENT is made by the ordinary staff flow, which this deep link
+      // opens with the patient locked and the service, clinic and preferred date
+      // filled in. Every booking guard lives on that path and none is duplicated
+      // here. `push`, not `replace`: reception can come back to the queue.
+      router.push(bookingDeepLink(result.data.patientId, result.data.prefill));
+    });
+  }
+
+  function openResolve(requestId: string) {
+    clearError(requestId);
+    setResolving({ requestId, matches: null });
+    startTransition(async () => {
+      const result = await listGuestRequestMatches(requestId);
+      if (!result.ok) {
+        setResolving(null);
+        setErrors((prev) => ({ ...prev, [requestId]: result.error }));
+        return;
+      }
+      // Guard against a second row being opened while this fetch was in flight.
+      setResolving((prev) =>
+        prev && prev.requestId === requestId ? { ...prev, matches: result.data } : prev,
+      );
+    });
+  }
+
   if (rows.length === 0) {
     return (
       <GlassCard className="p-4">
@@ -66,6 +162,9 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
             : r.possiblePatientMatches === 1
               ? s["guest.possibleMatch"]
               : s["guest.possibleMatchMany"];
+        const err = errors[r.id];
+        const busy = busyId === r.id;
+        const dialogOpen = resolving?.requestId === r.id;
         return (
           // THE TESTID IS ON THE <li>, NOT ON GlassCard. GlassCard destructures
           // a fixed prop list and silently DROPS anything else, so a data-*
@@ -120,6 +219,115 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
                   <dd>{r.requestedAt}</dd>
                 </div>
               </dl>
+
+              {err && (
+                <div
+                  role="alert"
+                  data-testid="guest-convert-error"
+                  className="rounded-v2 border border-v2-red-700 bg-surface-muted p-3"
+                >
+                  <p className="text-sm font-medium text-v2-text-primary">{messageFor(err)}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  data-testid="guest-convert-button"
+                  disabled={busy}
+                  onClick={() =>
+                    // ZERO MATCHES CONVERTS DIRECTLY; ANYTHING ELSE ASKS FIRST.
+                    // The rule lives in `pressAction` so a suite can reach it —
+                    // this repo renders components without a DOM, so a rule
+                    // inside an onClick is a rule nothing can assert.
+                    pressAction(r.possiblePatientMatches).kind === "convert_new"
+                      ? convert(r.id, { kind: "new_patient" })
+                      : openResolve(r.id)
+                  }
+                  className="inline-flex h-11 items-center rounded-v2 bg-v2-green-700 px-4 text-sm font-medium text-text-inverse transition-colors hover:bg-v2-green-800 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                >
+                  {busy ? s["guest.converting"] : s["guest.convert"]}
+                </button>
+              </div>
+
+              {dialogOpen && (
+                <div
+                  data-testid="guest-resolve-panel"
+                  className="rounded-v2 border border-v2-border bg-surface-muted p-4"
+                >
+                  <p className="text-sm font-semibold text-v2-text-primary">
+                    {s["guest.resolveTitle"]}
+                  </p>
+                  <p className="mt-1 text-sm text-v2-text-secondary">{s["guest.resolveHelp"]}</p>
+
+                  {resolving.matches === null ? (
+                    <p className="mt-3 text-sm text-v2-text-secondary">
+                      {s["guest.resolveLoading"]}
+                    </p>
+                  ) : resolving.matches.length === 0 ? (
+                    // The count said there was a match and the list has none.
+                    // Said plainly rather than silently converting: the row was
+                    // rendered from an older snapshot, and the honest answer is
+                    // that the record it referred to is gone.
+                    <p className="mt-3 text-sm text-v2-text-secondary">
+                      {s["guest.resolveNoneFound"]}
+                    </p>
+                  ) : (
+                    <ul className="mt-3 flex flex-col gap-2">
+                      {resolving.matches.map((m) => (
+                        <li
+                          key={m.id}
+                          data-testid="guest-resolve-match"
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-v2 border border-v2-border bg-surface-base p-3"
+                        >
+                          <span className="text-sm text-v2-text-primary">
+                            {m.fullName}
+                            <span className="ml-2 text-xs text-v2-text-secondary">
+                              {s["guest.patientNumber"]} {m.patientNumber}
+                              {m.nif ? ` · NIF ${m.nif}` : ""}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            data-testid="guest-resolve-use-existing"
+                            disabled={busy}
+                            onClick={() =>
+                              convert(r.id, { kind: "existing_patient", patientId: m.id })
+                            }
+                            className="inline-flex h-11 items-center rounded-v2 bg-v2-green-700 px-4 text-sm font-medium text-text-inverse transition-colors hover:bg-v2-green-800 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                          >
+                            {s["guest.resolveUseExisting"]}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setResolving(null)}
+                      className="inline-flex h-11 items-center rounded-v2 border border-v2-border px-4 text-sm font-medium text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                    >
+                      {s["guest.resolveCancel"]}
+                    </button>
+                    {/* CREATE-NEW STAYS AVAILABLE WITH A MATCH ON SCREEN, and it
+                        is not a trap door. Households share a number: a mother
+                        booking for her son is not a duplicate. What the dialog
+                        removes is the ability to reach this WITHOUT having seen
+                        the alternatives. */}
+                    <button
+                      type="button"
+                      data-testid="guest-resolve-create-new"
+                      disabled={busy || resolving.matches === null}
+                      onClick={() => convert(r.id, { kind: "new_patient" })}
+                      className="inline-flex h-11 items-center rounded-v2 border border-v2-border px-4 text-sm font-medium text-v2-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                    >
+                      {s["guest.resolveCreateNew"]}
+                    </button>
+                  </div>
+                </div>
+              )}
             </GlassCard>
           </li>
         );
