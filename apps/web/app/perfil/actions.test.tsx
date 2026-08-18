@@ -14,6 +14,13 @@ vi.mock("@/lib/auth/context", () => ({
 }));
 vi.mock("@/lib/supabase/server", () => ({ createSupabaseServerClient: vi.fn() }));
 vi.mock("@/lib/admin/audit", () => ({ writeAudit: vi.fn(async () => {}) }));
+// SEC-02: the rotation flag has its own suite (lib/auth/password-rotation.test.ts).
+// Stubbed here so these cases stay about the password change and its audit -
+// the action now clears the flag as well, which would otherwise reach the
+// mocked runScoped and change the call counts these tests assert.
+vi.mock("@/lib/auth/password-rotation", () => ({
+  clearPasswordRotationFlag: vi.fn(async () => {}),
+}));
 
 import { users } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";

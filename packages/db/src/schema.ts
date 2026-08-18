@@ -203,6 +203,24 @@ export const users = pgTable(
     // audit trail records the fact of a change, not the number. Admin-entered
     // in Administracao > Equipa; ships NULL for every existing row.
     phone: text("phone"),
+    /**
+     * SEC-02: true while this account still holds the TEMPORARY password the
+     * invite issued. The app refuses every screen except the profile page until
+     * it is cleared, and the password-change action clears it.
+     *
+     * IT IS A COLUMN RATHER THAN A JWT CLAIM ON PURPOSE (migration 0066). A
+     * token is stale until it refreshes, so a staffer who has just set their
+     * password would still present one demanding they set it - the guard would
+     * loop the exact person it exists to help. This is read live on each
+     * request instead.
+     *
+     * DEFAULT false, so nobody already working is disturbed. Which existing
+     * accounts still hold a handed-over password is NOT derivable here: GoTrue
+     * owns the credential and exposes no password-last-changed fact to this
+     * database. Forcing the existing population is an owner-timed action, not a
+     * schema default.
+     */
+    mustSetPassword: boolean("must_set_password").notNull().default(false),
     // W8-02: a professional/display title (Fisioterapeuta, Osteopata,
     // Recepcionista, ...). ORTHOGONAL to the permission role (roleId /
     // roles.slug / packages/auth ROLES) — a "therapist" may hold job_title

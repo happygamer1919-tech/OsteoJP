@@ -89,6 +89,15 @@ export async function provisionStaffUser(
         roleId,
         email: staff.email,
         fullName: staff.fullName,
+        // SEC-02: this account is being created with a password the ADMIN
+        // chose and can read, so it is temporary by construction. The app
+        // refuses every screen but the profile page until it is replaced.
+        //
+        // SET HERE RATHER THAN AT THE CALL SITE, because this is the one
+        // function that mints a staff auth user with a caller-supplied
+        // password. A second invite path added later inherits the marker
+        // instead of having to remember it.
+        mustSetPassword: true,
       });
       await writeAudit(tx, actor, {
         action: "staff.invite",
