@@ -95,6 +95,32 @@ export function claimedGates(card) {
   return [...new Set([...blob.matchAll(/\bcloses\s+(PG[1-9])\b/gi)].map((m) => m[1].toUpperCase()))];
 }
 
+/**
+ * The card this one names as consuming its output ("CONSUMED BY: W13-02").
+ *
+ * THE THIRD SHAPE OF STALENESS, and the reason this rule was added a day after
+ * the other four. A RULING card carries no work of its own: it records an owner
+ * decision that some other card exists to consume. So it cites no PR, and it
+ * claims to close no gate - both PR rules and the gate-claim rule are silent on
+ * it by construction.
+ *
+ * WF-04 ratified growing the patient-change contract from 2 kinds to 4. The
+ * contract on main carries FIVE. Its named consumer, W13-02, shipped on
+ * 2026-08-05 with migration 0055 applied to production. The card said `todo`,
+ * and a dispatch named it as the next thing to build.
+ *
+ * The rule is deliberately narrow: it fires only when the consumer is SHIPPED.
+ * WF-06, WF-07 and WF-08 all name W13-03, which is legitimately open pending an
+ * owner observation, and they stay silent - correctly, because their rulings are
+ * not finished being consumed until that card closes.
+ */
+export function consumedBy(card) {
+  const m = (typeof card?.notes === "string" ? card.notes : "").match(
+    /CONSUMED BY:\s*([A-Za-z0-9][A-Za-z0-9-]*)/,
+  );
+  return m ? m[1] : null;
+}
+
 /** The acknowledgement, or null. Must be a non-empty string: a bare `true`
  *  would let somebody silence a rule without saying why, and the why is the
  *  only part a later reader can act on. */
@@ -115,6 +141,7 @@ export function reconcile(board, prState) {
   const gateState = new Map(
     (board?.launch_gate?.conditions ?? []).map((c) => [c.id, c.state]),
   );
+  const byId = new Map((board?.cards ?? []).map((c) => [c.id, c]));
   const mismatches = [];
   const acknowledged = [];
 
@@ -133,6 +160,20 @@ export function reconcile(board, prState) {
           card,
           "gate-claim",
           `claims to close ${gate}, and ${gate} already passes, but status is "${card.status}"`,
+        );
+      }
+    }
+
+    // RULE E - CONSUMED BY. Local, like rule A, and for the same reason: the
+    // cards it catches cite nothing a network could check.
+    const consumerId = consumedBy(card);
+    if (consumerId && !finished) {
+      const consumer = byId.get(consumerId);
+      if (consumer?.status === FINISHED) {
+        record(
+          card,
+          "consumed",
+          `names ${consumerId} as its consumer, and ${consumerId} has shipped, but status is "${card.status}"`,
         );
       }
     }
