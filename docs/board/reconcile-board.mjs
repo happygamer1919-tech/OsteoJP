@@ -121,6 +121,70 @@ export function consumedBy(card) {
   return m ? m[1] : null;
 }
 
+/**
+ * Phrases with which a card asserts ITS OWN work is finished.
+ *
+ * ============================================================================
+ * WHY THIS EXISTS: A CARD THAT WAS INVISIBLE TO EVERY OTHER RULE.
+ * ============================================================================
+ * AI-01-projection-null-safety shipped in #859 on 2026-08-11. The session that
+ * built it wrote the whole narrative into the card's notes - "WHAT SHIPPED, two
+ * guards", "GATES, all four green: pnpm lint 0 errors, typecheck 10/10..." - and
+ * then never set `status` or `evidence`. The card read `in_flight` with
+ * `evidence: null` for seven days while the work sat on main, and a dispatch
+ * named it as the next thing to build.
+ *
+ * IT IS THE FIFTH CARD IN THIS FAMILY AND THE FIRST OF ITS SHAPE. The previous
+ * four carried a false `todo` while CITING PRs, so the pr-state rules could see
+ * them. This one cited NOTHING, and that is not an oversight in how it was
+ * written - `citedPrs` reads `evidence.ref` and only that, deliberately, because
+ * notes narrate and name adjacent PRs while `evidence.ref` is the only field
+ * whose PR numbers are a CLAIM. With evidence null the function returns `[]` and
+ * every PR rule hits `if (cited.length === 0) continue`. The card claimed no
+ * gate and named no consumer, so rules A and E were silent too.
+ *
+ * So the header of this file predicted it: "a check that only compares cited PR
+ * numbers against merge state would have stayed silent on them forever."
+ *
+ * ============================================================================
+ * THE PHRASES ARE NARROW ON PURPOSE, AND THE FALSE POSITIVE IS THE FAILURE MODE
+ * ============================================================================
+ * This rule runs in a REQUIRED CI check. A rule that fires on a legitimately
+ * open card turns main red and gets switched off within a week, which is worse
+ * than no rule.
+ *
+ * The first draft of this predicate matched the bare word "gates" and hit
+ * LAUNCH-02 and LE-guest-queue-service-name - both of which use it as a VERB
+ * ("it gates LAUNCH-01's arming steps", "this one gates a build decision").
+ * Neither claims to be finished. That draft was thrown away rather than
+ * annotated around: the owner's instruction on 2026-08-18 was to redesign the
+ * rule rather than the cards, and a rule needing four exemptions on the day it
+ * ships is a rule that does not work.
+ *
+ * What survives are phrases that can only be a claim ABOUT THIS CARD'S OWN
+ * WORK: a gates line with a real count in it, and the "WHAT SHIPPED" heading.
+ * Verified against every card on the board in both states - it fires on AI-01
+ * before its flip and on nothing else, before or after.
+ */
+const COMPLETION_CLAIMS = [
+  // The heading a session writes when it is describing what it just built.
+  /\bWHAT SHIPPED\b/,
+  // A gates line. Each carries a COUNT, which is what stops it matching prose
+  // about gating something.
+  /\bpnpm lint\b[^\n]*\b0 errors\b/i,
+  /\btypecheck \d+\/\d+/i,
+  /\bbuild \d+\/\d+/i,
+  /\ball four green\b/i,
+];
+
+/** The phrases by which this card claims its own work is done, or []. */
+export function completionClaims(card) {
+  const blob = [card?.title, card?.notes]
+    .filter((v) => typeof v === "string")
+    .join("\n");
+  return COMPLETION_CLAIMS.filter((re) => re.test(blob)).map((re) => re.source);
+}
+
 /** The acknowledgement, or null. Must be a non-empty string: a bare `true`
  *  would let somebody silence a rule without saying why, and the why is the
  *  only part a later reader can act on. */
@@ -174,6 +238,27 @@ export function reconcile(board, prState) {
           card,
           "consumed",
           `names ${consumerId} as its consumer, and ${consumerId} has shipped, but status is "${card.status}"`,
+        );
+      }
+    }
+
+    // RULE F - EVIDENCE-NULL COMPLETION CLAIM. Local, like A and E, and for the
+    // strongest version of the same reason: this rule exists precisely because
+    // the card it catches cites nothing at all, so no network check could ever
+    // reach it. See COMPLETION_CLAIMS above for the case that produced it.
+    //
+    // `todo` is excluded because a card can legitimately carry a plan written in
+    // the past tense before anyone starts. `shipped` is excluded because the
+    // VALIDATOR already refuses a shipped card with null evidence, and a second
+    // opinion on a rule that is already enforced elsewhere is noise.
+    if (card.status !== "todo" && !finished && !card.evidence) {
+      const claims = completionClaims(card);
+      if (claims.length > 0) {
+        record(
+          card,
+          "evidence-null-claim",
+          `its own notes claim the work is finished (${claims.length} phrase${claims.length === 1 ? "" : "s"}), ` +
+            `but status is "${card.status}" and evidence is null - so no PR rule can see it`,
         );
       }
     }

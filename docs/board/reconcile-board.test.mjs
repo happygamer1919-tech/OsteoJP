@@ -5,6 +5,7 @@ import {
   acknowledgement,
   citedPrs,
   claimedGates,
+  completionClaims,
   consumedBy,
   reconcile,
 } from "./reconcile-board.mjs";
@@ -301,5 +302,157 @@ describe("THE COUNTERWEIGHT: a board that is genuinely in sync produces nothing"
     );
     assert.deepEqual(mismatches, []);
     assert.deepEqual(acknowledged, []);
+  });
+});
+
+/**
+ * ============================================================================
+ * RULE F - the evidence-null completion claim. AI-01, 2026-08-11 to 2026-08-18.
+ * ============================================================================
+ * The fixture below is the real card, trimmed. It shipped in #859, its notes
+ * described the work in full, and `status`/`evidence` were never set. It cited
+ * no PR, claimed no gate and named no consumer, so rules A through E were all
+ * silent BY CONSTRUCTION - `citedPrs` reads `evidence.ref`, which was null.
+ *
+ * THE FALSE-POSITIVE CASES BELOW ARE THE MORE IMPORTANT HALF. This rule runs in
+ * a required CI check, so a rule that fires on a legitimately open card turns
+ * main red and is switched off within a week. The two "gates" -as-a-verb cases
+ * are taken verbatim in shape from LAUNCH-02 and LE-guest-queue-service-name,
+ * which an earlier draft of the predicate DID flag - that draft was thrown away
+ * rather than worked around with exemptions.
+ */
+const AI01_NOTES = [
+  "RAISED 2026-08-11 by the owner. AMBER lane, isolated card, no loop dependency.",
+  "",
+  "WHAT SHIPPED, two guards that are DELIBERATELY NOT SYMMETRIC:",
+  "  1. PRESENCE (the incoming side). Skip when the raw value is undefined, null,",
+  "     or a string that is empty or whitespace-only.",
+  "",
+  "GATES, all four green: pnpm lint 0 errors, typecheck 10/10, test 1930 passed",
+  "across 200 web files (was 1921; +9 new), build 4/4.",
+].join("\n");
+
+describe("completionClaims - what counts as a card claiming its own work is done", () => {
+  test("the gates line and the WHAT SHIPPED heading both count", () => {
+    const claims = completionClaims(card({ notes: AI01_NOTES }));
+    assert.ok(claims.length >= 4, `expected several claim phrases, got ${claims.length}`);
+  });
+
+  test('"gates" used as a VERB is not a claim - this is the false positive that killed draft one', () => {
+    // LAUNCH-02: "It gates LAUNCH-01's template arming steps only".
+    assert.deepEqual(
+      completionClaims(card({ notes: "SCOPE: JP signs the CORRECTED packet ONCE. It gates LAUNCH-01's template arming steps only." })),
+      [],
+    );
+    // LE-guest-queue-service-name: "this one gates a build decision".
+    assert.deepEqual(
+      completionClaims(card({ notes: "END-legal-sweep absorbs findings that need no further build, and this one gates a build decision." })),
+      [],
+    );
+  });
+
+  test("a card merely NAMING another card's shipment is not claiming its own", () => {
+    assert.deepEqual(
+      completionClaims(card({ notes: "Depends on W13-02, which shipped on 2026-08-05 with migration 0055 applied." })),
+      [],
+    );
+  });
+
+  test("an empty or absent notes field claims nothing", () => {
+    assert.deepEqual(completionClaims(card()), []);
+    assert.deepEqual(completionClaims(card({ notes: undefined })), []);
+  });
+});
+
+describe("rule F - evidence-null completion claim, the shape no other rule could see", () => {
+  test("flags an in_flight card whose notes say the work is done and carries no evidence", () => {
+    const { mismatches } = reconcile(
+      board([card({ id: "AI-01", status: "in_flight", notes: AI01_NOTES, evidence: null })]),
+      null, // NO PR STATE: the rule must work offline, like A and E.
+    );
+    assert.equal(mismatches.length, 1);
+    assert.equal(mismatches[0].rule, "evidence-null-claim");
+    assert.match(mismatches[0].message, /evidence is null/);
+  });
+
+  test("NEGATIVE ARM: no other rule catches this card, which is why F exists", () => {
+    // Remove the completion phrases and the SAME card goes completely unseen -
+    // by every rule, with and without PR state. That silence is the defect this
+    // rule closes, and asserting it here is what stops F being deleted later as
+    // redundant.
+    const bare = card({ id: "AI-01", status: "in_flight", notes: "some prose", evidence: null });
+    assert.equal(reconcile(board([bare]), null).mismatches.length, 0);
+    assert.equal(reconcile(board([bare]), new Map([[859, "merged"]])).mismatches.length, 0);
+  });
+
+  test("does NOT fire on a blocked card waiting on a person with no completion claim", () => {
+    const { mismatches } = reconcile(
+      board([
+        card({
+          id: "LAUNCH-02",
+          status: "blocked",
+          blocked_on: "jp",
+          notes: "JP signs the CORRECTED packet ONCE. It gates LAUNCH-01's template arming steps only.",
+          evidence: null,
+        }),
+      ]),
+      null,
+    );
+    assert.equal(mismatches.length, 0);
+  });
+
+  test("does NOT fire on a halted card, nor on a todo card written in the past tense", () => {
+    // `todo` is excluded deliberately: a plan may be drafted before anyone
+    // starts, and past-tense planning prose is not a claim of completion.
+    const cards = [
+      card({ id: "END-sweep", status: "halted", notes: "findings collected", evidence: null }),
+      card({ id: "PLAN-1", status: "todo", notes: AI01_NOTES, evidence: null }),
+    ];
+    assert.equal(reconcile(board(cards), null).mismatches.length, 0);
+  });
+
+  test("does NOT fire once the card carries evidence - setting it is the fix", () => {
+    const { mismatches } = reconcile(
+      board([
+        card({
+          id: "AI-01",
+          status: "in_flight",
+          notes: AI01_NOTES,
+          evidence: { kind: "pr", ref: "#859 merged, 652d1bd", at: "2026-08-11" },
+        }),
+      ]),
+      null,
+    );
+    assert.equal(mismatches.length, 0);
+  });
+
+  test("does NOT fire on a shipped card - the VALIDATOR already refuses that state", () => {
+    // A shipped card with null evidence is a hard validator failure, so a second
+    // opinion here would be noise on a rule already enforced upstream.
+    const { mismatches } = reconcile(
+      board([card({ id: "X", status: "shipped", notes: AI01_NOTES, evidence: null })]),
+      null,
+    );
+    assert.equal(mismatches.length, 0);
+  });
+
+  test("an open_on_purpose acknowledgement routes it to acknowledged, never silence", () => {
+    // Same mechanism every other rule uses: an exemption is PRINTED on every
+    // run, so one nobody sees is one nobody revisits.
+    const { mismatches, acknowledged } = reconcile(
+      board([
+        card({
+          id: "AI-01",
+          status: "in_flight",
+          notes: AI01_NOTES,
+          evidence: null,
+          open_on_purpose: "held deliberately, reason stated",
+        }),
+      ]),
+      null,
+    );
+    assert.equal(mismatches.length, 0);
+    assert.equal(acknowledged.length, 1);
+    assert.equal(acknowledged[0].rule, "evidence-null-claim");
   });
 });
