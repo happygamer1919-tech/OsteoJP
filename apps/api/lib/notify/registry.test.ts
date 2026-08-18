@@ -51,9 +51,24 @@ describe("apps/api approval ledger", () => {
       registry: apiRegistry,
       transport: sink,
       transportConfigured: () => true,
-      env: { REMINDERS_LIVE_SEND: "true", INVITES_LIVE_SEND: "true" },
+      // INC-12: `dispatch` asserts the notification env, so an armed flag needs
+      // a complete environment or the throw would pre-empt the REGISTRY refusal
+      // this test is about. Placeholders only; no real credential.
+      env: {
+        REMINDERS_LIVE_SEND: "true",
+        INVITES_LIVE_SEND: "true",
+        RESEND_API_KEY: "test",
+        REMINDERS_EMAIL_FROM: "test",
+        INVITES_EMAIL_FROM: "test",
+        TWILIO_ACCOUNT_SID: "test",
+        TWILIO_AUTH_TOKEN: "test",
+        TWILIO_SMS_FROM: "test",
+        REMINDERS_RESCHEDULE_BASE_URL: "test",
+        REMINDERS_LINK_SECRET: "test",
+      },
       logger: silent,
       emailFrom: () => "reminders@send.osteojp.pt",
+      envFlags: ["REMINDERS_LIVE_SEND"],
     });
 
     const requests = [

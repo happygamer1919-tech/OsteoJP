@@ -18,9 +18,9 @@
 // PII rule (#7): nothing here logs recipients, subjects, or bodies.
 
 import {
-  assertNotificationEnv,
   createNotifier,
   liveSendEnabled as flagEnabled,
+  warnNotificationEnv,
   type Channel,
   type SendOutcome,
   type TemplateRegistry,
@@ -29,29 +29,41 @@ import {
 import { INVITE_TEMPLATE, webRegistry } from "./notification-registry";
 import { normalizePhonePT } from "./phone";
 
-// BOOT VALIDATION for every apps/web send path that is NOT an Inngest function.
+/**
+ * Every live-send flag apps/web can arm. BOTH, because either one arms an email
+ * send that needs the same vars: staff invites run in a server action
+ * (lib/admin/staff.ts -> lib/invites/email.ts -> sendEmail here) and reminders
+ * run under Inngest, and both reach the same choke point.
+ */
+const WEB_LIVE_SEND_FLAGS = ["REMINDERS_LIVE_SEND", "INVITES_LIVE_SEND"] as const;
+
+// ===========================================================================
+// INC-12, 2026-08-18: THIS LINE USED TO THROW HERE, AND IT TOOK /admin/staff
+// DOWN WITH IT.
+// ===========================================================================
+// It was `assertNotificationEnv([...])` at module scope. On 2026-08-18
+// REMINDERS_LIVE_SEND=true reached production with REMINDERS_LINK_SECRET
+// absent, and the throw happened while this module was still being evaluated -
+// so /admin/staff, which imports the invite chain, which imports this file,
+// returned an error page. It sends nothing. It was collateral.
 //
-// app/api/inngest/route.ts already asserts this pair, but that route is only
-// loaded for Inngest-driven work. Staff invites are not Inngest-driven: they run
-// in a server action (lib/admin/staff.ts -> lib/invites/email.ts -> sendEmail
-// here), a chain that never touches the route and therefore never reached a boot
-// check. Arming INVITES_LIVE_SEND with REMINDERS_EMAIL_FROM or RESEND_API_KEY
-// absent booted clean, then providerConfigured() below returned false and the
-// caller silently degraded every invite to the temporary-password hand-off - no
-// email, no error, no boot signal. That is the exact "fails at the user, not at
-// boot" class #763 removed from the reminder path, surviving on the invite path
-// because the sweep followed the reminder path only.
+// The assertion did not go away; it MOVED to createNotifier().dispatch, which
+// is the one place that actually sends. Same error, same full list of missing
+// names, raised at the send instead of at the import.
 //
-// This module is the right place, and for the same reason apps/api/lib/notify/
-// clients.ts carries the identical line: it is the ONE choke point every send in
-// this app goes through, reminders and invites alike, so nothing can send
-// without loading it.
+// WHAT STAYS HERE IS THE DEPLOY-TIME SIGNAL WITHOUT THE DEPLOY-TIME CRASH.
+// The boot check's real value was learning at deploy time, in one pass, which
+// names were missing - a throw hours later at the first send does not give you
+// that. So this logs the same list, loudly, once per process, and returns.
 //
-// BOTH flags, because either one arms an email send that needs the same vars.
+// IT IS NOT THE CHECK AND NOTHING RELIES ON IT (PORTAL-REHYDRATE 1.3). The send
+// path asks the same question again and refuses. If this line were deleted, the
+// only thing lost is the early warning; nothing becomes sendable.
+//
 // A no-op while every live-send flag is off, so dev, CI and preview builds are
 // unaffected - missingNotificationEnv() returns an empty list unless a stream is
 // actually live.
-assertNotificationEnv(["REMINDERS_LIVE_SEND", "INVITES_LIVE_SEND"]);
+warnNotificationEnv("apps/web/lib/reminders/clients", WEB_LIVE_SEND_FLAGS);
 
 export type SendChannel = Channel;
 
@@ -178,6 +190,9 @@ export function createSender(registry: TemplateRegistry = webRegistry) {
     transport: providerTransport,
     transportConfigured,
     emailFrom: requiredEmailFrom,
+    // INC-12: the env assertion the module scope used to run. Required by the
+    // type, so a notifier cannot be constructed without declaring its flags.
+    envFlags: WEB_LIVE_SEND_FLAGS,
   });
 
   return {

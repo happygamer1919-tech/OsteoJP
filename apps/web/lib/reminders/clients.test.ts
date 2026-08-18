@@ -47,7 +47,26 @@ const ENV_KEYS = [
   "TWILIO_AUTH_TOKEN",
   "TWILIO_SMS_FROM",
   "TWILIO_MESSAGING_SERVICE_SID",
+  // INC-12: the env assertion runs inside dispatch now, so these two are part
+  // of what an armed stream requires and must be saved/restored like the rest.
+  "REMINDERS_RESCHEDULE_BASE_URL",
+  "REMINDERS_LINK_SECRET",
 ] as const;
+
+/**
+ * Armed AND complete. Every "live mode" case below means both halves.
+ * Placeholders; no real credential appears in this repo.
+ */
+function armComplete(): void {
+  process.env.REMINDERS_LIVE_SEND = "true";
+  process.env.RESEND_API_KEY = "re_test";
+  process.env.REMINDERS_EMAIL_FROM = "reminders@osteojp.pt";
+  process.env.TWILIO_ACCOUNT_SID = "AC_test";
+  process.env.TWILIO_AUTH_TOKEN = "tok";
+  process.env.TWILIO_SMS_FROM = "+351900000001";
+  process.env.REMINDERS_RESCHEDULE_BASE_URL = "https://example.test";
+  process.env.REMINDERS_LINK_SECRET = "test";
+}
 
 const saved: Record<string, string | undefined> = {};
 
@@ -105,12 +124,37 @@ describe("sandbox mode (default — zero network)", () => {
     expect(twilioFactory).not.toHaveBeenCalled();
   });
 
-  it("stays in sandbox when live flag is on but keys are missing", async () => {
+  /**
+   * INC-12 CHANGED THIS CASE, AND IT PREVIOUSLY DESCRIBED A STATE THAT COULD
+   * NOT REACH PRODUCTION.
+   *
+   * It used to read "stays in sandbox when live flag is on but keys are
+   * missing" and expect `sandbox: true` with reason `missing_provider_config`.
+   * That was true of the code and false of any deployment: `clients.ts`
+   * asserted the same variables at MODULE SCOPE, so an armed deploy with no
+   * keys never booted far enough to dispatch anything. The suppression branch
+   * was unreachable while armed.
+   *
+   * Now the assertion lives in `dispatch`, so this state is reachable and it
+   * THROWS. That is the whole point: a broken deploy must not write the same
+   * log line a healthy sandbox deploy writes.
+   *
+   * `missing_provider_config` is NOT dead - it still guards a notifier built
+   * with an injected `transportConfigured` (see packages/notify gate tests),
+   * which is how the branch is exercised without pretending an impossible
+   * environment is possible.
+   */
+  it("THROWS rather than degrading to sandbox when armed with no keys", async () => {
     process.env.REMINDERS_LIVE_SEND = "true"; // no keys set
-    const e = await approvedSender.sendEmail({ to: "p@example.com", subject: "s", body: "b", templateId: "confirmation.email" });
-    const s = await approvedSender.sendSms({ to: "+351900000000", body: "b", templateId: "confirmation.sms" });
-    expect(e.sandbox).toBe(true);
-    expect(s.sandbox).toBe(true);
+
+    await expect(
+      approvedSender.sendEmail({ to: "p@example.com", subject: "s", body: "b", templateId: "confirmation.email" }),
+    ).rejects.toThrow(/RESEND_API_KEY/);
+    await expect(
+      approvedSender.sendSms({ to: "+351900000000", body: "b", templateId: "confirmation.sms" }),
+    ).rejects.toThrow(/TWILIO_ACCOUNT_SID/);
+
+    // The throw is not a partial send: no SDK was constructed either way.
     expect(ResendCtor).not.toHaveBeenCalled();
     expect(twilioFactory).not.toHaveBeenCalled();
   });
@@ -140,19 +184,23 @@ describe("dry-run intent logging (PII-safe)", () => {
     }
   });
 
-  it("logs missing_provider_config when the live flag is on but keys are absent", async () => {
+  /**
+   * INC-12: the twin of the case above, and it matters for the same reason.
+   * An armed deploy with no keys must NOT write a suppression line - a
+   * suppression line is what a healthy sandbox deploy writes, so the two
+   * would be indistinguishable in the Vercel logs. It throws instead, naming
+   * the missing variables.
+   */
+  it("writes NO suppression line when armed with no keys - it throws", async () => {
     process.env.REMINDERS_LIVE_SEND = "true"; // no provider keys set
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     try {
-      await approvedSender.sendEmail({ to: "p@example.com", subject: "s", body: "b", templateId: "confirmation.email" });
-      await approvedSender.sendSms({ to: "+351900000000", body: "b", templateId: "confirmation.sms" });
+      await expect(
+        approvedSender.sendEmail({ to: "p@example.com", subject: "s", body: "b", templateId: "confirmation.email" }),
+      ).rejects.toThrow(/notification path is armed/);
+
       const lines = info.mock.calls.map((c) => String(c[0]));
-      expect(lines).toContain(
-        "[notify] suppressed template=confirmation.email channel=email appointment=- reason=missing_provider_config",
-      );
-      expect(lines).toContain(
-        "[notify] suppressed template=confirmation.sms channel=sms appointment=- reason=missing_provider_config",
-      );
+      expect(lines.join("\n")).not.toMatch(/missing_provider_config/);
     } finally {
       info.mockRestore();
     }
@@ -161,12 +209,7 @@ describe("dry-run intent logging (PII-safe)", () => {
 
 describe("live mode (mocked SDKs — verifies wiring, no real network)", () => {
   beforeEach(() => {
-    process.env.REMINDERS_LIVE_SEND = "true";
-    process.env.RESEND_API_KEY = "re_test";
-    process.env.REMINDERS_EMAIL_FROM = "reminders@osteojp.pt";
-    process.env.TWILIO_ACCOUNT_SID = "AC_test";
-    process.env.TWILIO_AUTH_TOKEN = "tok";
-    process.env.TWILIO_SMS_FROM = "+351900000001";
+    armComplete();
   });
 
   it("constructs Resend with the key and sends text email", async () => {

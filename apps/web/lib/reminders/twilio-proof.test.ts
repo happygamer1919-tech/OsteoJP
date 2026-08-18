@@ -56,6 +56,12 @@ const ENV_KEYS = [
   "TWILIO_AUTH_TOKEN",
   "TWILIO_SMS_FROM",
   "TWILIO_MESSAGING_SERVICE_SID",
+  // INC-12: the env assertion moved into dispatch, so an armed stream now
+  // requires these too. Saved and restored like the rest.
+  "RESEND_API_KEY",
+  "REMINDERS_EMAIL_FROM",
+  "REMINDERS_RESCHEDULE_BASE_URL",
+  "REMINDERS_LINK_SECRET",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -167,10 +173,22 @@ describe("worst-case SMS rendering — GSM-7, single segment, both locales", () 
 /* 2. Twilio payload, sender resolution, gate, errors                  */
 /* ================================================================== */
 
+/**
+ * Armed AND correctly configured, which is what every case here means by
+ * "live". INC-12 (2026-08-18) made the second half explicit: the env assertion
+ * used to run at module scope and now runs inside `dispatch`, so arming with an
+ * incomplete environment throws NotificationEnvError - correct, and it would
+ * pre-empt the SENDER RESOLUTION and E.164 properties these tests are about.
+ * Placeholders only; no real credential appears in this repo.
+ */
 function armLiveCreds(): void {
   process.env.REMINDERS_LIVE_SEND = "true";
   process.env.TWILIO_ACCOUNT_SID = "AC_test";
   process.env.TWILIO_AUTH_TOKEN = "tok_test";
+  process.env.RESEND_API_KEY = "test";
+  process.env.REMINDERS_EMAIL_FROM = "test";
+  process.env.REMINDERS_RESCHEDULE_BASE_URL = "https://example.test";
+  process.env.REMINDERS_LINK_SECRET = "test";
 }
 
 describe("sender resolution — from is TWILIO_SMS_FROM, falling back to the messaging service SID", () => {
@@ -219,13 +237,21 @@ describe("sender resolution — from is TWILIO_SMS_FROM, falling back to the mes
 
   it("the code never reads TWILIO_SENDER_ID (the var docs/cutover-runbook.md names)", async () => {
     // Runbook §1.5 / §env-table instructs setting TWILIO_SENDER_ID=OsteoJP in
-    // Vercel prod. The code only reads TWILIO_SMS_FROM. This pins the mismatch:
-    // with ONLY TWILIO_SENDER_ID set, the send is suppressed as unconfigured.
+    // Vercel prod. The code only reads TWILIO_SMS_FROM. This pins the mismatch.
+    //
+    // INC-12 IMPROVED WHAT THE MISMATCH DOES, and the assertion moved with it.
+    // It used to be SUPPRESSED as unconfigured - an operator who followed the
+    // runbook exactly got silence and a sandbox result. Now the send THROWS and
+    // the message names `one of [TWILIO_SMS_FROM | TWILIO_MESSAGING_SERVICE_SID]`,
+    // so the runbook's own variable name appears nowhere in the answer and the
+    // right one appears in it. The mismatch is still pinned here; it just fails
+    // loudly instead of quietly.
     armLiveCreds();
     process.env.TWILIO_SENDER_ID = "OsteoJP"; // not in ENV_KEYS; clean up below
     try {
-      const res = await approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "confirmation.sms" });
-      expect(res.sandbox).toBe(true);
+      await expect(
+        approvedSender.sendSms({ to: "+351912345678", body: "b", templateId: "confirmation.sms" }),
+      ).rejects.toThrow(/TWILIO_SMS_FROM \| TWILIO_MESSAGING_SERVICE_SID/);
       expect(twilioFactory).not.toHaveBeenCalled();
     } finally {
       delete process.env.TWILIO_SENDER_ID;
