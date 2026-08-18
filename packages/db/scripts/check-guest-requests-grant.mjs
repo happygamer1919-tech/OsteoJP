@@ -94,12 +94,30 @@ try {
   const hasSelect = authPrivs.includes("SELECT");
   const hasUpdate = authPrivs.includes("UPDATE");
 
-  if (hasSelect && hasUpdate) {
-    console.log("PRODUCTION IS FINE. authenticated holds SELECT and UPDATE.");
-    console.log("The committed migration is still wrong and CI still fails:");
-    console.log("prod got these grants from somewhere other than 0063 (most");
-    console.log("likely Supabase default privileges at table creation). The");
-    console.log("GRANT migration is then a CI-and-correctness fix, not an incident.");
+  // 0065 REVOKED FIVE PRIVILEGES, so "holds SELECT and UPDATE" is no longer the
+  // whole question - what matters now is whether it holds anything ELSE.
+  // Before 0065 the extras were present and came from Supabase's default
+  // privileges rather than from any migration; after it they are gone.
+  const EXPECTED = ["SELECT", "UPDATE"];
+  const extras = authPrivs.filter((p) => !EXPECTED.includes(p)).sort();
+
+  if (hasSelect && hasUpdate && extras.length === 0) {
+    // THE INTENDED END STATE. This arm did not exist before 2026-08-18: until
+    // 0065 was applied, no database had ever been in it.
+    console.log("CORRECT. authenticated holds SELECT and UPDATE, and nothing else.");
+    console.log("This is the state migration 0065 defines, and the committed");
+    console.log("migrations now reproduce it: a database built from");
+    console.log("packages/db/migrations gets the same ACL production has.");
+    console.log("Nothing to do.");
+  } else if (hasSelect && hasUpdate) {
+    // The PRE-0065 state, and the one the whole script was written to diagnose.
+    console.log("WORKS, BUT OVER-PRIVILEGED. authenticated holds SELECT and UPDATE,");
+    console.log("so reception's queue and the convert both function - AND it also");
+    console.log("holds:", extras.join(", "));
+    console.log("Nothing granted those. They come from Supabase default privileges");
+    console.log("applied at CREATE TABLE. RLS still bounds every one of them, so");
+    console.log("this is not an exposure - but it means 0065 has NOT been applied");
+    console.log("to this database, and the committed migrations do not describe it.");
   } else if (hasSelect && !hasUpdate) {
     console.log("PARTIAL. authenticated can SELECT but NOT UPDATE.");
     console.log("The shipped guest queue (GUEST-03) works; the GUEST-06 convert");
