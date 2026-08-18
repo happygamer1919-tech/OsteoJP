@@ -1,6 +1,11 @@
 # Apply receipt - migration 0065, `guest_booking_requests` ACL
 
-**Status: APPLIED TO PRODUCTION 2026-08-18. MERGED THE SAME DAY.**
+**Status: APPLIED TO PRODUCTION 2026-08-18. MERGED THE SAME DAY. TRANSCRIPT
+COMPLETE.**
+
+The verbatim journal in §5.1 was relayed on 2026-08-18, after this receipt was
+first committed. Until then §5.1 was **deliberately empty and said so** rather
+than carrying a transcript reconstructed from a summary.
 
 Migration: `0065_guest_requests_acl` (journal idx 64, `when` 1787300000000).
 Branch: `db/GUEST-07-0065-guest-acl` (deleted at merge).
@@ -142,35 +147,114 @@ git rev-parse origin/main:packages/db/migrations/0065_guest_requests_acl.sql
 
 ## 5. THE APPLY. 2026-08-18.
 
-### 5.1 The verbatim transcript is NOT YET IN THIS FILE, and it is not being reconstructed
+### 5.1 The transcript. Verbatim, as pasted back by the owner.
 
-**What this receipt has** is a structured summary of the apply, relayed by
-strategy: before-grants showing all seven `authenticated` privileges; pending 1
-naming `0065_guest_requests_acl`; migrate succeeding with the two expected
-NOTICE lines; `when` moving to `1787300000000`; pending 0; after-grants showing
-`authenticated` with SELECT and UPDATE only, `service_role` intact, and RLS
-enabled on both readings. Terminal closed.
+```
+HEAD is now at 17fe9dc feat(db): migration 0065 normalises the guest table ACL [DO NOT MERGE - apply first]
+=== public.guest_booking_requests ===
+RLS enabled: true | forced: false
+grants:
+  authenticated  DELETE
+  authenticated  INSERT
+  authenticated  REFERENCES
+  authenticated  SELECT
+  authenticated  TRIGGER
+  authenticated  TRUNCATE
+  authenticated  UPDATE
+  service_role   DELETE
+  service_role   INSERT
+  service_role   REFERENCES
+  service_role   SELECT
+  service_role   TRIGGER
+  service_role   TRUNCATE
+  service_role   UPDATE
+=== control: public.staff_notifications (0055 granted explicitly) ===
+  authenticated: INSERT, REFERENCES, SELECT, TRIGGER, UPDATE
+=== VERDICT ===
+PRODUCTION IS FINE. authenticated holds SELECT and UPDATE.
+The committed migration is still wrong and CI still fails:
+prod got these grants from somewhere other than 0063 (most
+likely Supabase default privileges at table creation). The
+GRANT migration is then a CI-and-correctness fix, not an incident.
+last applied "when" in the database: 1787200000000
+journal entries on disk:             65
+pending:                             1
+  PENDING  0065_guest_requests_acl  when=1787300000000
+OK: the pending set is exactly what was expected.
+[drizzle-kit migrate ran; two expected NOTICE lines: schema
+"drizzle" already exists, skipping; relation
+"__drizzle_migrations" already exists, skipping]
+[checkmark] migrations applied successfully!
+last applied "when" in the database: 1787300000000
+journal entries on disk:             65
+pending:                             0
+OK: the pending set is exactly what was expected.
+=== public.guest_booking_requests ===
+RLS enabled: true | forced: false
+grants:
+  authenticated  SELECT
+  authenticated  UPDATE
+  service_role   DELETE
+  service_role   INSERT
+  service_role   REFERENCES
+  service_role   SELECT
+  service_role   TRIGGER
+  service_role   TRUNCATE
+  service_role   UPDATE
+=== control: public.staff_notifications (0055 granted explicitly) ===
+  authenticated: INSERT, REFERENCES, SELECT, TRIGGER, UPDATE
+=== VERDICT ===
+PRODUCTION IS FINE. authenticated holds SELECT and UPDATE.
+The committed migration is still wrong and CI still fails:
+prod got these grants from somewhere other than 0063 (most
+likely Supabase default privileges at table creation). The
+GRANT migration is then a CI-and-correctness fix, not an incident.
+```
 
-**What it does not have is the owner's raw terminal output**, and that is
-deliberately left as a gap rather than filled from the summary above.
+**THE TWO VERDICT BLOCKS SHOW THE SCRIPT'S PRE-FIX WORDING, AND IT STAYS.** Both
+say *"The committed migration is still wrong and CI still fails"* - which was true
+when the script was written and was already false by the time the second block
+printed, seconds after the apply. The verdict had only one arm for
+"SELECT and UPDATE are present" and could not tell the pre-0065 state from the
+post-0065 one.
 
-Every other receipt in this series carries a §5 headed *"Verbatim, as pasted
-back by the owner"*. Writing a plausible transcript from a summary would produce
-a section indistinguishable from those - the same monospace block, the same
-shape - while being a reconstruction. That is precisely the error
-`ACC-13-results-uncommitted` was opened for, where the board and the acceptance
-plan disagreed because both were reading inferences rather than records.
+It was corrected in **#930**, after this apply, and now distinguishes them: the
+end state prints *"CORRECT. authenticated holds SELECT and UPDATE, and nothing
+else"*, while the old state prints *"WORKS, BUT OVER-PRIVILEGED"* and names the
+extra privileges. **The stale wording is not edited out of this transcript.** It
+is part of the verbatim record, it is what the terminal actually printed, and a
+receipt that quietly improved its own evidence would be worth nothing. The
+correction is recorded here instead, which is the honest form.
 
-**Requested from strategy. When it arrives, it is pasted here verbatim and this
-subsection is replaced with the check-against-the-repo table §5.3 describes.**
-The evidence in §4 and §5.2 stands on its own in the meantime and needs no
-transcript: it is derived from the committed repository.
+### 5.1a What the two grant blocks prove, which is the whole point of reading them
+
+**BEFORE:** `authenticated` holds **seven** privileges - DELETE, INSERT,
+REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE. No migration granted any of them.
+
+**AFTER:** `authenticated` holds **two** - SELECT and UPDATE. Exactly what
+`apps/web/lib/scheduling/guest-requests.ts` reads with and what
+`guest-convert.ts` updates with, and nothing else.
+
+**`service_role` is IDENTICAL in both blocks**, all seven, untouched. That is the
+control that matters most: the public form writes through the service role, so if
+this migration had caught the wrong grantee, the guest form at `/marcacao` would
+have stopped accepting requests. It did not.
+
+**RLS reads `enabled: true` in both**, and `forced: false` in both. No policy was
+touched and none should have been.
+
+**AND THE CONTROL TABLE DID NOT MOVE.** `staff_notifications` prints the same
+five privileges before and after - INSERT, REFERENCES, SELECT, TRIGGER, UPDATE -
+which is what 0055 granted explicitly. A migration that had reached beyond its
+own table would show up here, and it does not.
 
 ### 5.2 What is verified independently, and does not depend on the transcript
 
-Re-derived from `origin/main` by the terminal writing this file:
+Re-derived from `origin/main` by the terminal writing this file, **before the
+transcript above was available** - so these are checks of the apply, not readings
+of the paste:
 
-| Reported | Committed repo says | Agrees |
+| Transcript says | Committed repo says | Agrees |
 |---|---|---|
 | `when` moved to `1787300000000` | journal's last entry is `when 1787300000000` | yes |
 | pending was `0065_guest_requests_acl` | last entry `tag` is exactly that | yes |
