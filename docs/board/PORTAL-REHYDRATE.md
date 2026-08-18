@@ -482,9 +482,19 @@ Before your context is cleared, in this order:
 | Lane | Absolute path |
 |---|---|
 | **PURPLE** | `/Users/ivan/Documents/Projects/GitHub/OsteoJP` |
-| **AMBER** | `/Users/ivan/Documents/Projects/GitHub/osteojp-amber` |
-| **CYAN** | `/Users/ivan/Documents/Projects/GitHub/osteojp-cyan` |
+| **AMBER** | `/Users/ivan/Documents/Projects/GitHub/osteojp-amber` - **STOOD DOWN**, writes nothing |
 | migration apply, **NEVER build** | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` |
+
+**THE CENSUS IS THREE TREES AS OF 2026-08-18.** `osteojp-cyan` was removed when
+that lane was stood down and its chat retired: its branch had merged as #916
+(0064 applied first, per rule 7), the tree was clean, and its last commit was
+reachable through the squash. `osteojp-purple` was removed on the same day - a
+duplicate terminal the owner had started by accident (see §7.0).
+
+**PURPLE OWNS EVERY LANE NOW.** AMBER and CYAN both exist in this document as
+history, because their rules explain why the boundaries are drawn where they are,
+and because a lane may be restarted. Neither is writing today. If a tree appears
+for either, §7.0 applies: report it before doing anything with it.
 
 ### 7.0 THE CENSUS RULE. Binding from 2026-08-17, and it has already paid for itself.
 

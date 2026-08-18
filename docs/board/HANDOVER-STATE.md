@@ -83,7 +83,26 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**162 cards. 89 shipped, 73 open. Launch readiness 9/9, every launch gate passes.**
+**167 cards. 104 shipped, 63 open. Launch readiness 9/9, every launch gate passes.**
+
+> ### The consultation recording now survives a failed hand-off, 2026-08-18
+>
+> When a consultation was recorded and sent to the AI partner, **nothing was
+> written down on our side until the partner answered.** The recording's location,
+> which patient it belonged to, which clinician made it and when it started and
+> ended all lived only in the open browser tab. If the hand-off failed, the
+> promised retry had nothing to retry from: the audio existed in storage and
+> nothing left could say whose it was.
+>
+> It is now saved before the hand-off is attempted, so a failure is a **retry**
+> rather than a loss. A consultation that still cannot be handed over is marked as
+> needing attention rather than disappearing quietly.
+>
+> **Two honest limits.** There is no screen for the needs-attention state yet -
+> it is a recorded state and a log line, and the screen is scheduled separately.
+> And there is **no backfill**: consultations recorded before this change were
+> never persisted anywhere, their audio cannot be matched to a patient, and
+> nothing pretends otherwise.
 
 > ### Schedules: there are now THREE ways to set one, added 2026-08-17
 >
