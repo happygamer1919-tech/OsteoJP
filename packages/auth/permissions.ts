@@ -62,7 +62,19 @@ export type Capability =
   | "audit_log:read"
   // Owner-only (W6-05): reach the Estatisticas KPI dashboard (revenue + volume
   // aggregates). Owner-only, enforced route-level AND query-level.
-  | "statistics:read";
+  | "statistics:read"
+  // SEC-01 (owner ruling 2026-08-18): read the GUEST BOOKING REQUEST queue - a
+  // list of members of the public who left a name and a PHONE NUMBER on the
+  // website. Owner, admin and reception only.
+  //
+  // WHY IT IS ITS OWN CAPABILITY AND NOT `appointments:read`. A guest request is
+  // not an appointment: there is no patient, no appointment row and no
+  // practitioner assignment behind it, so there is nothing about it that scopes
+  // to a therapist the way an appointment does. Riding `appointments:read` - a
+  // capability every role holds, because every role works the calendar - is
+  // exactly how a therapist came to see the whole tenant's guest queue on
+  // deployed production.
+  | "guest_requests:read";
 
 const ALL_CAPABILITIES: readonly Capability[] = [
   "patients:read",
@@ -93,6 +105,7 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   "schedule:manage",
   "audit_log:read",
   "statistics:read",
+  "guest_requests:read",
 ];
 
 export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
@@ -134,6 +147,10 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // all-locations. The capability grant is location-blind; the SCOPE is applied
     // in lib/statistics (viewerLocationScope), never here.
     "statistics:read",
+    // SEC-01 (owner 2026-08-18): the guest queue. Location-blind grant as
+    // always; the SCOPE (own locations, mirroring PL-09) is applied in
+    // lib/scheduling/guest-requests.ts via viewerLocationScope.
+    "guest_requests:read",
   ]),
 
   // Therapist (clinician): patient + appointment work, full clinical-record
@@ -190,6 +207,10 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // time-off; reception still holds NO settings:* (no tenant settings access).
     "schedule:read",
     "schedule:manage",
+    // SEC-01 (owner 2026-08-18): reception WORKS the guest queue - it is their
+    // queue, and converting a request is a reception action. Same location scope
+    // as every other reception read.
+    "guest_requests:read",
   ]),
 };
 

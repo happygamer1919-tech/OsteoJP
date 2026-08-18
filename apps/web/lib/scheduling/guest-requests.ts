@@ -60,15 +60,53 @@ export type GuestRequestView = {
  * request that has waited longest is the one somebody is most likely still
  * waiting on.
  *
+ * ==========================================================================
+ * SEC-01, owner ruling 2026-08-18. WHO MAY READ THIS AT ALL.
+ * ==========================================================================
+ * OWNER, ADMIN AND RECEPTION. A THERAPIST GETS NOTHING.
+ *
+ * THE DEFECT THIS CLOSES, observed on deployed production: a therapist
+ * (assigned to two clinics) opened /notificacoes and saw the ENTIRE "Pedidos de
+ * novos clientes" section - names, phone numbers and convert buttons - for the
+ * whole tenant, including requests submitted by other staff.
+ *
+ * IT WAS TWO THINGS AT ONCE, AND ONLY ONE OF THEM LOOKS LIKE A BUG:
+ *   1. The gate was `appointments:read`, which EVERY role holds, because every
+ *      role works the calendar. So the capability check passed for a therapist
+ *      and read as a real check while gating nothing.
+ *   2. `viewerLocationScope` returns `null` for a therapist - correct for the
+ *      agenda, where a therapist is bounded by their own-data rules rather than
+ *      by location, and catastrophic here, because `null` means UNRESTRICTED.
+ *      The one role with no location scope got the widest possible read.
+ *
+ * The two combined turn "a therapist may read appointments" into "a therapist
+ * may read every stranger's phone number in the tenant". Neither line is wrong
+ * on its own, which is why this survived review; the gate is now a capability
+ * that means what this list actually is.
+ *
+ * `guest_requests:read` IS A SEPARATE CAPABILITY ON PURPOSE. A guest request is
+ * not an appointment - no patient, no appointment row, no practitioner - so
+ * there is nothing about it that scopes to a therapist the way an appointment
+ * does. There is no therapist-shaped subset of this queue to hand out.
+ *
+ * IT THROWS RATHER THAN RETURNING AN EMPTY LIST. `notificacoes/page.tsx` does
+ * not call this for a role that may not read it, so the throw is unreachable
+ * through the UI - and that is the point. An empty list is a valid answer that
+ * a future caller would render as "no requests"; a throw is not something a
+ * caller can mistake for data. The page hiding the section is the courtesy; this
+ * is the boundary.
+ *
  * LOCATION-SCOPED like every other reception read (PL-09): a located
- * receptionist sees the requests for their own clinic. The owner and an
- * unassigned staffer see all of them, which is the same rule listAppointments
- * applies.
+ * receptionist or admin sees the requests for their own clinic. The owner sees
+ * all of them. An UNASSIGNED reception or admin user is unrestricted, mirroring
+ * STAFF-02 and PL-09's own documented fallback, so nobody is locked out
+ * mid-onboarding; assigning them a location in Equipa makes the restriction take
+ * effect.
  */
 export async function listPendingGuestRequests(
   ctx: RequestContext,
 ): Promise<GuestRequestView[]> {
-  assertCan(ctx.role, "appointments:read");
+  assertCan(ctx.role, "guest_requests:read");
   const locationScope = await viewerLocationScope(ctx);
 
   return runScoped(ctx, async (tx) => {
@@ -138,14 +176,36 @@ export async function listPendingGuestRequests(
   });
 }
 
-/** The pending count, for the notifications badge. */
+/**
+ * The pending count, for the notifications badge.
+ *
+ * SEC-01: SAME GATE AND SAME SCOPE AS THE LIST, and it had NEITHER before.
+ *
+ * IT HAS NO CALLER TODAY, which is precisely why it is fixed in this PR rather
+ * than left. A counterpart of a secured read that is itself unsecured is the
+ * shape that drifts: the badge is the obvious next thing somebody wires up, and
+ * a count is easy to read as harmless because it returns no names. It is not
+ * harmless - it is a count of how many strangers the clinic is holding contact
+ * details for, answered for a role that may not know the queue exists, across
+ * locations that role may not read.
+ *
+ * The location scope was missing too, so a located receptionist would have seen
+ * a badge counting the OTHER clinic's requests and then opened a shorter list.
+ * A badge that disagrees with the list it describes is its own defect.
+ */
 export async function countPendingGuestRequests(ctx: RequestContext): Promise<number> {
-  assertCan(ctx.role, "appointments:read");
+  assertCan(ctx.role, "guest_requests:read");
+  const locationScope = await viewerLocationScope(ctx);
+
   return runScoped(ctx, async (tx) => {
+    const conds = [eq(guestBookingRequests.status, "pending")];
+    if (locationScope) {
+      conds.push(inArray(guestBookingRequests.locationId, locationScope));
+    }
     const rows = await tx
       .select({ n: sql<number>`count(*)::int` })
       .from(guestBookingRequests)
-      .where(eq(guestBookingRequests.status, "pending"));
+      .where(and(...conds));
     return Number(rows[0]?.n ?? 0);
   });
 }

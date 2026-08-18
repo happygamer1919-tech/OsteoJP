@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { can } from "@osteojp/auth";
 
 import { getRequestContext } from "@/lib/auth/context";
 import { formatGuestPreferredWhen } from "@/lib/scheduling/guest-preferred-when";
@@ -21,12 +22,32 @@ export const metadata = { title: s["notifications.title"] };
 /**
  * W13-02 (Wave 13 LOOP 2) — the in-app notification centre. PG4.
  *
- * WHO SEES WHAT. There is no capability gate on this route, deliberately, and
+ * WHO SEES WHAT. There is no capability gate on the ROUTE, deliberately, and
  * that is not a hole: RLS (migration 0055) confines every row to
  * `recipient_user_id = auth.uid()`, so an authenticated staff user reaching this
  * page sees their own entries and nothing else. A role check here would be a
  * second, weaker copy of a rule the database already enforces — and the rule is
  * not "which role", it is "which person".
+ *
+ * ==========================================================================
+ * SEC-01, 2026-08-18: THAT REASONING IS SOUND AND IT DOES NOT COVER THE GUEST
+ * QUEUE. THE PARAGRAPH ABOVE IS WHY THIS DEFECT SHIPPED.
+ * ==========================================================================
+ * Everything on this page WAS per-recipient, and "the rule is not which role, it
+ * is which person" was true of all of it. Then GUEST-04 added a section fed by
+ * `guest_booking_requests` — a TENANT-WIDE table with no recipient column and no
+ * per-person rule to enforce. The route's stated reason for having no role gate
+ * silently became false for one section, and nothing re-read it.
+ *
+ * So `guest_requests:read` gates THAT SECTION, and only that section. Owner,
+ * admin and reception; a therapist gets no data and no heading. The notification
+ * log and the pedido queue keep the per-person rule described above, unchanged,
+ * because for them it is still the right rule.
+ *
+ * THE LESSON IS ABOUT THE COMMENT AS MUCH AS THE CODE: a justification for an
+ * ABSENT check has to be re-read every time the thing it justifies grows. This
+ * one described the page as it was and was quoted, in place, over a page it no
+ * longer described.
  *
  * IN-APP ONLY. This page is the whole delivery mechanism for PG4. No email, no
  * SMS, no push, not behind a flag.
@@ -108,10 +129,26 @@ export default async function NotificacoesPage() {
   const ctx = await getRequestContext();
   if (!ctx) redirect("/login");
 
+  // SEC-01, owner ruling 2026-08-18. THE GUEST QUEUE IS NOT FETCHED AT ALL FOR
+  // A ROLE THAT MAY NOT READ IT.
+  //
+  // A therapist on deployed production saw the whole tenant's guest queue here:
+  // names, phone numbers, convert buttons. The ruling is that they get NO
+  // section, no data, and nothing hidden client-side.
+  //
+  // SO THE CALL IS SKIPPED RATHER THAN THE OUTPUT FILTERED. Fetching the rows
+  // and rendering none of them would leave stranger's contact details in the
+  // RSC payload of a page a therapist opens, where "not rendered" is a CSS-level
+  // distinction rather than a security one. `listPendingGuestRequests` also
+  // throws for this role, so the skip is the courtesy and the throw is the
+  // boundary - the page cannot be the only thing standing between a therapist
+  // and the data.
+  const canReadGuestQueue = can(ctx.role, "guest_requests:read");
+
   const [entries, requests, guestRequests] = await Promise.all([
     listNotifications(ctx),
     listPendingRequests(ctx),
-    listPendingGuestRequests(ctx),
+    canReadGuestQueue ? listPendingGuestRequests(ctx) : Promise.resolve([]),
   ]);
   const unread = entries.filter((e) => e.readAt === null).length;
 
@@ -169,7 +206,13 @@ export default async function NotificacoesPage() {
         <PendingRequests items={requestViews} />
       </section>
 
-      {/* ITEM 6 - GUEST requests, in their OWN section beneath the pedidos.
+      {/* SEC-01: the whole section is absent for a role without
+          `guest_requests:read` - not empty, ABSENT. An empty "Pedidos de novos
+          clientes" heading would tell a therapist that a queue exists, how it is
+          named, and that they are being kept out of it, which is a smaller leak
+          than the rows but is still one. The ruling said no section.
+
+          ITEM 6 - GUEST requests, in their OWN section beneath the pedidos.
           Separate because the ACTION is different: a pedido is an existing
           patient's appointment changing state, a guest request has no patient
           and no appointment behind it and confirming one CREATES both. One list
@@ -178,17 +221,19 @@ export default async function NotificacoesPage() {
           BELOW the pedidos because a pedido is a patient already waiting on a
           slot, where a guest has not been promised anything yet - the copy they
           saw says the time is not reserved. */}
-      <section className="mb-10" aria-labelledby="guest-requests-heading">
-        <h2
-          id="guest-requests-heading"
-          className="text-xl font-semibold text-v2-text-primary"
-        >
-          {s["guest.queueTitle"]}
-        </h2>
-        <div className="mt-4">
-          <GuestRequestsQueue rows={guestRows} />
-        </div>
-      </section>
+      {canReadGuestQueue && (
+        <section className="mb-10" aria-labelledby="guest-requests-heading">
+          <h2
+            id="guest-requests-heading"
+            className="text-xl font-semibold text-v2-text-primary"
+          >
+            {s["guest.queueTitle"]}
+          </h2>
+          <div className="mt-4">
+            <GuestRequestsQueue rows={guestRows} />
+          </div>
+        </section>
+      )}
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-v2-text-primary">
