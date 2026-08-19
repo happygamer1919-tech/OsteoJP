@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**167 cards. 106 shipped, 61 open. Launch readiness 9/9, every launch gate passes.**
+**178 cards. 123 shipped, 55 open. Launch readiness 9/9, every launch gate passes.**
 
 > ### Reception can now turn a guest request into a patient and an appointment, 2026-08-18
 >
@@ -762,6 +762,42 @@ how.
 rendered by nothing in the portal — a patient cannot reach them — so writing copy
 for them would be dead weight. Recorded rather than quietly skipped.
 
+> ### Two of the four things you looked at on 2026-08-19 are now closed
+>
+> You ran a four-item sitting on the deployed screens. **Three items were
+> observed and all three passed. The fourth had nothing to look at**, which is
+> recorded as not run rather than as a pass.
+>
+> **The public booking form now names each clinic beside its own telephone
+> numbers**, and you confirmed the blocks match what osteojp.pt/contactos
+> publishes. That external check is the one worth having: our own test only
+> proves the screen renders the file, and only the live site could prove the file
+> is right.
+>
+> **The service list on that form now differs by clinic**, and each list matches
+> what Administração > Serviços marks as offered at that clinic. **Rodica
+> confirmed the price grid and owns it from here.** That matters more than it
+> sounds: a service with no active price row at a clinic is now ABSENT from the
+> public form. That is the configuration's own meaning, but it means the public
+> form is only as complete as the grid, and no automatic check on our side can
+> read production data to tell whether it is. If a service ever goes missing, the
+> fix is a price row in Serviços, not a change to the software.
+>
+> **The staff header greets you by the name on your staff record**, not by a name
+> guessed from your email address.
+>
+> **The fourth item, the AI unrecognised-fields notice, could not be checked**:
+> no record currently carries a field the ficha has no home for, so there was no
+> notice to see. Seeing nothing does not prove the notice works and does not prove
+> it is broken. It stays on the list until a record with one arrives.
+>
+> One new item was written down while reviewing the above, and **it is a question,
+> not a defect**: the staff booking screen still offers every active service at
+> every clinic, while the public form and Administração > Serviços both go by what
+> is priced where. That may well be right for staff, who book exceptions. Nobody
+> has decided it, so it is now written down to be decided rather than left as an
+> accident.
+
 ---
 
 ## 6. Where to look
@@ -771,6 +807,7 @@ for them would be dead weight. Recorded rather than quietly skipped.
 | Live board | the artifact URL at the top |
 | Board data | `docs/board/portal-board.json` (validate: `node docs/board/validate-board.mjs`) |
 | How to boot a session | `docs/board/PORTAL-REHYDRATE.md` |
+| Process lessons and their prevention | `docs/board/LEARNINGS.md` |
 | Test accounts and their **display names** | `docs/board/FIXTURES.md` |
 | The observation sweep | `docs/board/OBSERVE-SWEEP.md` |
 | PG6 exposure matrix + citation audit | `docs/recon/W13-06-exposure-matrix.md` |
