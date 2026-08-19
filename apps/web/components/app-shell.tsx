@@ -6,6 +6,7 @@ import { type Role } from "@osteojp/auth";
 
 import { getRequestContext } from "@/lib/auth/context";
 import { requiresPasswordRotation } from "@/lib/auth/password-rotation";
+import { staffDisplayName, initialsFor } from "@/lib/auth/staff-identity";
 import { unreadCount } from "@/lib/notifications/centre";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { logout } from "@/app/logout/actions";
@@ -35,9 +36,16 @@ const ROLE_LABEL: Record<Role, string> = {
   reception: s["admin.role.reception"],
 };
 
-// Derive a display name + initials from the session email (the only identity in
-// the JWT — there is no name claim and no profile table read here, per "existing
-// session data, no new data"). "ana.morais@…" → "Ana Morais" / "AM".
+// FALLBACK ONLY since LE-staff-display-name-is-email-local-part. The shell now
+// reads `users.full_name` — the name the clinic typed at invite — and only
+// reaches this when that is empty.
+//
+// IT IS KEPT RATHER THAN DELETED because it is still the best available answer
+// for a session with no staff row to read, and deleting it would mean an empty
+// header in that case. It is NOT a good answer: for the address a real invite
+// used it produced "Chris+terapeuta2". That is why it is no longer first.
+//
+// "ana.morais@…" → "Ana Morais" / "AM".
 function displayFromEmail(email: string | undefined): { name: string; initials: string } {
   if (!email) return { name: "", initials: "" };
   const local = email.split("@")[0] ?? email;
@@ -109,7 +117,25 @@ export async function AppShell({
   const { data } = await supabase.auth.getClaims();
   const email =
     typeof data?.claims?.email === "string" ? data.claims.email : undefined;
-  const { name, initials } = displayFromEmail(email);
+  // LE-staff-display-name-is-email-local-part: the name the clinic actually
+  // typed wins; the email guess is the fallback for a session with no row.
+  //
+  // BEST-EFFORT ON PURPOSE, unlike the rotation gate above it. That one decides
+  // ACCESS and throws when it cannot answer; this decides a GREETING, and
+  // refusing to render the platform because a name could not be read would be a
+  // wildly disproportionate failure. A miss degrades to the previous behaviour.
+  let stored: string | null = null;
+  try {
+    stored = await staffDisplayName(ctx);
+  } catch (e) {
+    console.error(
+      "[shell] display name unavailable, falling back to the email derivation",
+      e instanceof Error ? e.name : "unknown",
+    );
+  }
+  const fromEmail = displayFromEmail(email);
+  const name = stored ?? fromEmail.name;
+  const initials = stored ? initialsFor(stored) : fromEmail.initials;
 
   // W13-02: the bell's badge. Read here rather than in a client component so it
   // is derived from data on every render and cannot drift from the list it
