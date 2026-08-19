@@ -1,24 +1,46 @@
 /**
  * storage-signed-url.integration.test.ts
  *
- * Integration coverage for the clinical attachment signed-URL round-trip:
- * server-issued (service_role) signed UPLOAD url -> direct upload -> server
- * issued signed DOWNLOAD url -> fetch -> byte-for-byte match, against the real
- * `clinical-attachments` bucket using tenant-prefixed object paths.
- *
- * Mirrors the path scheme in lib/clinical/storage.ts:
+ * Path-convention coverage for clinical attachment object keys: attachments are
+ * namespaced under the tenant id, nested under the record id, and the file name
+ * is sanitized. Same scheme as lib/clinical/storage.ts:
  *   `${tenantId}/${recordId}/${uuid}__${safeName(fileName)}`
  *
- * The live round-trip is GATED: it only runs when both
- *   NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
- * are present AND the `clinical-attachments` bucket exists (a manual owner step
- * — see the project setup notes). Without them it is skipped, so `vitest run`
- * stays green locally / in CI without live Supabase credentials. The
- * path-convention assertions below always run.
+ * ==========================================================================
+ * THE LIVE ROUND-TRIP WAS DELETED 2026-08-18, AND IT HAD NEVER RUN.
+ * ==========================================================================
+ * This file used to carry a second suite: a real upload -> signed download ->
+ * byte-for-byte compare against the `clinical-attachments` bucket, behind
+ * `describe.skipIf(!live)` where `live` meant NEXT_PUBLIC_SUPABASE_URL and
+ * SUPABASE_SERVICE_ROLE_KEY both present.
+ *
+ * NO CI JOB EVER RAN IT, for two independent reasons either of which was
+ * enough. Its gate was those two variables rather than DATABASE_URL, and
+ * db-tests.yml sets DATABASE_URL. And its filename ends `.integration.test.ts`,
+ * while the apps/web DB-gated step runs `vitest run .db.test.ts`. So in ci.yml
+ * it collected, skipped, and reported green - for months.
+ *
+ * THE WORKFLOW HAD ALREADY PREDICTED THIS SHAPE, one step above the one that
+ * would have caught it: the apps/web step was changed from a named path to a
+ * glob precisely because naming `redeem.db.test.ts` explicitly meant
+ * `pedido-confirm.db.test.ts` "would have been added to the repo, passed review,
+ * and NEVER RUN". The glob fixed that for files ending `.db.test.ts`. This one
+ * did not end that way, so the defect survived the fix written for it.
+ *
+ * WHY DELETED RATHER THAN WIRED UP (owner ruling, 2026-08-18). Running it needs
+ * SUPABASE_SERVICE_ROLE_KEY available to a CI job, which widens the credential
+ * surface two weeks before a planned rotation. A suite that has never run is not
+ * protection, and one that LOOKS like protection is worse than none - it is the
+ * exact currency ACC-vacuous-guard-sweep exists to remove.
+ *
+ * THE COVERAGE IS NOT ABANDONED, it is reassigned: the live
+ * upload-sign-download path is now a supervised sitting item on LAUNCH-01,
+ * where a real credential is already in the room and under supervision.
+ *
+ * What remains below is pure, needs no network, and runs on every PR.
  */
 import { randomUUID } from "node:crypto";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 // Mirrors ATTACHMENTS_BUCKET in lib/clinical/storage.ts (kept local so this
 // test does not import that "server-only" module under the node test runner).
@@ -62,92 +84,3 @@ describe("attachment object path convention", () => {
     expect(forged.startsWith(`${tenantId}/`)).toBe(false);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Gated live round-trip against the clinical-attachments bucket.
-// ---------------------------------------------------------------------------
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const live = Boolean(url && serviceKey);
-
-describe.skipIf(!live)(
-  "clinical-attachments signed-URL upload/download round-trip (service_role)",
-  () => {
-    // Created in beforeAll, not in the describe body: the describe callback is
-    // evaluated at collection time even when skipIf skips it, so constructing
-    // the client here (with possibly-undefined env) would throw. beforeAll only
-    // runs when the suite is NOT skipped.
-    let admin: SupabaseClient;
-    beforeAll(() => {
-      admin = createClient(url!, serviceKey!, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      });
-    });
-
-    const tenantId = randomUUID();
-    const recordId = randomUUID();
-    const uploaded: string[] = [];
-
-    afterAll(async () => {
-      if (uploaded.length) {
-        await admin.storage.from(ATTACHMENTS_BUCKET).remove(uploaded);
-      }
-    });
-
-    it("issues a signed upload URL, uploads bytes, then downloads them back unchanged", async () => {
-      const path = attachmentPath(tenantId, recordId, "report.txt");
-      const body = Buffer.from(`osteojp signed-url roundtrip ${randomUUID()}`, "utf8");
-
-      // 1. Server issues a one-time signed UPLOAD url (service_role).
-      const signed = await admin.storage
-        .from(ATTACHMENTS_BUCKET)
-        .createSignedUploadUrl(path);
-      expect(signed.error).toBeNull();
-      expect(signed.data?.token).toBeTruthy();
-      expect(signed.data?.path).toBe(path);
-      uploaded.push(path);
-
-      // 2. Client uploads DIRECTLY to storage with that token.
-      const put = await admin.storage
-        .from(ATTACHMENTS_BUCKET)
-        .uploadToSignedUrl(path, signed.data!.token, body, {
-          contentType: "text/plain",
-        });
-      expect(put.error).toBeNull();
-      expect(put.data?.path).toBe(path);
-
-      // 3. Server issues a short-lived signed DOWNLOAD url.
-      const dl = await admin.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(path, 60);
-      expect(dl.error).toBeNull();
-      expect(dl.data?.signedUrl).toMatch(/^https?:\/\//);
-
-      // 4. Fetch the signed url and assert byte-for-byte equality.
-      const res = await fetch(dl.data!.signedUrl);
-      expect(res.ok).toBe(true);
-      const got = Buffer.from(await res.arrayBuffer());
-      expect(got.equals(body)).toBe(true);
-    });
-
-    it("does not expose the object without a signature", async () => {
-      const path = attachmentPath(tenantId, recordId, "private.txt");
-      const body = Buffer.from("no anon access", "utf8");
-
-      const signed = await admin.storage
-        .from(ATTACHMENTS_BUCKET)
-        .createSignedUploadUrl(path);
-      expect(signed.error).toBeNull();
-      uploaded.push(path);
-
-      await admin.storage
-        .from(ATTACHMENTS_BUCKET)
-        .uploadToSignedUrl(path, signed.data!.token, body);
-
-      // The public URL must NOT resolve — the bucket is private; only signed
-      // URLs grant access.
-      const publicUrl = admin.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path)
-        .data.publicUrl;
-      const res = await fetch(publicUrl);
-      expect(res.ok).toBe(false);
-    });
-  },
-);
