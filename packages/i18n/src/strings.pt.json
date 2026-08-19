@@ -1363,5 +1363,7 @@
   "requests.error.notFound": "Este pedido já não está pendente. Pode já ter sido confirmado ou cancelado.",
   "requests.error.forbidden": "Não tem permissão para confirmar pedidos.",
   "requests.error.doubleBooked": "Este terapeuta já tem uma marcação confirmada neste horário. Ligue ao paciente e proponha outro horário.",
-  "requests.error.generic": "Não foi possível confirmar o pedido. Tente novamente."
+  "requests.error.generic": "Não foi possível confirmar o pedido. Tente novamente.",
+  "review.unknownKeysTitle": "Campos não reconhecidos",
+  "review.unknownKeysBody": "O parceiro enviou dados que esta ficha não tem onde mostrar. Nada foi perdido: estão guardados no registo original. Verifique-os antes de finalizar."
 }

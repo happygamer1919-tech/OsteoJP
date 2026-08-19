@@ -134,11 +134,16 @@ function writeFichaKeyPath(
  */
 export function projectAiPayloadOntoFichaFields(
   data: Record<string, unknown>,
-): { data: Record<string, unknown>; projected: string[]; absent: string[] } {
+): {
+  data: Record<string, unknown>;
+  projected: string[];
+  absent: string[];
+  unknown: string[];
+} {
   const raw = data["_aiIngestionRaw"];
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     // No AI payload to project (not an AI-ingested record, or empty payload).
-    return { data, projected: [], absent: [...FICHA_MEDICA_AI_KEYS] };
+    return { data, projected: [], absent: [...FICHA_MEDICA_AI_KEYS], unknown: [] };
   }
   const rawObj = raw as Record<string, unknown>;
   let out = data;
@@ -175,5 +180,70 @@ export function projectAiPayloadOntoFichaFields(
     }
     projected.push(path);
   }
-  return { data: out, projected, absent };
+  return { data: out, projected, absent, unknown: unknownPayloadKeys(rawObj) };
+}
+
+/**
+ * AI-02 — keys the partner sent that this build has NO field for.
+ *
+ * ==========================================================================
+ * INVISIBLE IS NOT ABSENT, AND THAT IS THE WHOLE DEFECT.
+ * ==========================================================================
+ * The projection walks FICHA_MEDICA_AI_KEYS and copies what it finds. It never
+ * looked the other way. A key the partner puts in `_aiIngestionRaw` that maps to
+ * no ficha field is stored verbatim (so it is not LOST) and reaches no field, no
+ * editor and no reviewer's eye.
+ *
+ * OWNER-REPORTED, AND THE INSTANCE IS WHY THIS IS NOT HOUSEKEEPING: a payload
+ * arrived with two keys that never reached a field, AND ONE OF THEM WAS AN
+ * ALARM-SYMPTOM ANSWER. A clinician reviewing that draft saw a complete-looking
+ * form. (Recorded as reported: this function was written from the contract, not
+ * from a stored payload, because no terminal may read production.)
+ *
+ * ==========================================================================
+ * THE ALLOWLIST IS DERIVED, AND HAND-WRITING IT IS THE TRAP IN THIS CARD.
+ * ==========================================================================
+ * FICHA_MEDICA_AI_KEYS holds TWELVE DOTTED PATHS, six of them under
+ * `systems_review.*`. The distinct TOP-LEVEL keys are SEVEN. Comparing the
+ * payload's top-level keys against the twelve paths would flag `systems_review`
+ * — the single most important container in the payload — as unknown drift on
+ * every record, every time. Deriving it with `split(".")[0]` also means it
+ * cannot go stale against the contract it is checking.
+ *
+ * ONE LEVEL DEEP INTO `systems_review`, because an unknown nested leaf has the
+ * same invisibility and the same clinical weight — an unrecognised
+ * `systems_review.neurological_v2` is exactly the shape the reported incident
+ * had. Reported dotted, so a reader sees where it sat.
+ *
+ * KEY NAMES ONLY, NEVER VALUES (CLAUDE.md rule 7). An unknown key's value is
+ * clinical content by definition. Everything downstream of this — the log line,
+ * the reviewer's banner — carries names.
+ *
+ * `template` and anything underscore-prefixed are envelope, not content.
+ */
+function unknownPayloadKeys(raw: Record<string, unknown>): string[] {
+  const top = new Set(FICHA_MEDICA_AI_KEYS.map((k) => k.split(".")[0]!));
+  const nested = new Set(
+    FICHA_MEDICA_AI_KEYS.filter((k) => k.startsWith("systems_review.")).map((k) =>
+      k.slice("systems_review.".length),
+    ),
+  );
+
+  const out: string[] = [];
+  for (const key of Object.keys(raw)) {
+    if (key === "template" || key.startsWith("_")) continue;
+    if (!top.has(key)) {
+      out.push(key);
+      continue;
+    }
+    // A known container: look one level in. Only systems_review has leaves in
+    // the contract, so only it can produce a nested unknown.
+    if (key !== "systems_review") continue;
+    const inner = raw[key];
+    if (!inner || typeof inner !== "object" || Array.isArray(inner)) continue;
+    for (const leaf of Object.keys(inner as Record<string, unknown>)) {
+      if (!nested.has(leaf)) out.push(`systems_review.${leaf}`);
+    }
+  }
+  return out;
 }
