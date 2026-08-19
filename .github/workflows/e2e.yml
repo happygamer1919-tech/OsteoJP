@@ -267,8 +267,36 @@ jobs:
         timeout-minutes: 16
         run: |
           set -uo pipefail
+          # --kill-after: SIGTERM first, SIGKILL 30s later if it ignores it.
           install_browsers() {
-            timeout 420 pnpm --filter web exec playwright install --with-deps chromium
+            timeout --kill-after=30s 420 pnpm --filter web exec playwright install --with-deps chromium
+          }
+
+          # REAP THE ORPHAN BEFORE RETRYING, or the retry is guaranteed to fail.
+          # `timeout` signals the DIRECT child, which is pnpm. `--with-deps` runs
+          # apt-get through sudo, and THAT GRANDCHILD SURVIVES the kill still
+          # holding /var/lib/apt/lists/lock. Observed in run 32278665484: the
+          # first attempt was killed at 420s and the retry died two seconds later
+          # on "Could not get lock ... held by process 2427 (apt-get)".
+          #
+          # Wait first, kill second. The orphan is usually mid-`apt-get update`
+          # and finishes on its own within seconds; killing a package manager is
+          # the last resort, not the first move.
+          reap_apt() {
+            for _ in $(seq 1 30); do
+              pgrep -x apt-get >/dev/null 2>&1 || { echo "apt-get clear"; return 0; }
+              sleep 2
+            done
+            echo "::warning title=Reaping an orphaned apt-get::It survived the timeout and still holds the apt lock after 60s. Killing it so the retry can run."
+            sudo pkill -TERM -x apt-get 2>/dev/null || true
+            sleep 5
+            sudo pkill -KILL -x apt-get 2>/dev/null || true
+            sleep 2
+            if pgrep -x apt-get >/dev/null 2>&1; then
+              echo "::warning title=apt-get survived SIGKILL::The retry will almost certainly fail on the apt lock."
+              return 1
+            fi
+            echo "apt-get reaped"
           }
 
           # `cmd || rc=$?` IS THE ONLY FORM THAT IS RIGHT ON BOTH COUNTS, and it
@@ -302,10 +330,22 @@ jobs:
             echo "::warning title=Playwright install failed, retrying once::The install exited ${rc} (not a timeout). Retrying once before calling it real."
           fi
 
-          echo "----- apt lock holders, if any -----"
-          sudo lsof /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock 2>/dev/null || echo "(no apt locks held)"
+          # NO `|| echo "(no locks held)"` HERE, AND THAT IS DELIBERATE. The first
+          # version had exactly that, and it PRINTED "(no apt locks held)" two
+          # seconds before apt reported the lock WAS held by pid 2427. `lsof`
+          # exits non-zero when ANY named file is merely unlocked, so the
+          # fallback fired on a partial success and asserted the opposite of the
+          # truth - one line mapping "lsof could not examine everything" onto
+          # "there is nothing to examine", in the diagnostic whose whole job was
+          # to tell those apart. Print what lsof found and let it be empty.
+          echo "----- apt lock holders (empty means lsof found none) -----"
+          sudo lsof -t /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend 2>/dev/null | sort -u || true
+          echo "----- apt-get processes -----"
+          pgrep -ax apt-get || true
           echo "----- playwright browser cache -----"
           ls -la ~/.cache/ms-playwright 2>/dev/null || echo "(no browser cache - this attempt had to download)"
+
+          reap_apt || true
 
           # SECOND AND LAST ATTEMPT, matching the Supabase start below: two
           # failures in a row is not a flake, and a third attempt would burn CI
