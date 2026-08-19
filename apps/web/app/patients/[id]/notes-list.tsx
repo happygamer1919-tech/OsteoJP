@@ -24,6 +24,55 @@ import type { PatientNoteRevision } from "@/lib/patients/note-revisions";
  * not the list inside it). Omitted -> the original router.refresh() behaviour,
  * which is what the patient profile tab needs.
  */
+/**
+ * LE-notes-list-hydration-mismatch — one instant, ONE string, on both sides.
+ *
+ * ==========================================================================
+ * THE DEFECT: `toLocaleString("pt-PT")` WITH NO TIMEZONE.
+ * ==========================================================================
+ * A bare `toLocaleString` formats in whatever zone the RUNTIME is in. The
+ * server is Node/ICU on Vercel (UTC); the browser is the viewer's machine. The
+ * two produce different strings for the same instant, so React logs "Hydration
+ * failed because the server rendered text didn't match the client" and
+ * re-renders.
+ *
+ * ==========================================================================
+ * WHY IT IS FIXED RATHER THAN LEFT, GIVEN NOTHING VISIBLY BREAKS.
+ * ==========================================================================
+ * React recovers, every test around it passes, and the card rates it LOW and
+ * says so honestly. What it costs is a REAL ERROR IN THE LOG THAT TRAINS PEOPLE
+ * TO IGNORE ERRORS IN THE LOG — and this project has already paid for that
+ * habit twice, in INC-10 and in the isVisible probe, both found by somebody
+ * finally reading a log line they had learned to scroll past.
+ *
+ * ==========================================================================
+ * Europe/Lisbon, EXPLICITLY, AND IT IS NOT MERELY "A" FIXED ZONE.
+ * ==========================================================================
+ * It is THE zone this product renders in — CLAUDE.md: "All dates in UTC in DB,
+ * Europe/Lisbon for display" — and the same choice the notification centre and
+ * the declaração model already make. Pinning to UTC would have removed the
+ * mismatch too, and shown a clinic in Lisbon a time nobody in the building
+ * recognises.
+ *
+ * THREE CALL SITES, NOT ONE. The card names line 139; the same bare call was
+ * also formatting the appointment instant and the edited-at stamp. A fix that
+ * repaired only the line the card mentioned would have left two live instances
+ * of the identical defect in the same component.
+ */
+const NOTE_STAMP: Intl.DateTimeFormatOptions = {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: "Europe/Lisbon",
+};
+
+function stamp(value: string | Date): string {
+  return new Date(value).toLocaleString("pt-PT", NOTE_STAMP);
+}
+
 export function NotesList({
   notes,
   onChanged,
@@ -136,7 +185,7 @@ function NoteItem({
           </div>
           <p className="mt-1 text-xs text-text-secondary">
             {note.authorName ?? s["patients.noteSystemAuthor"]} ·{" "}
-            {new Date(note.createdAt).toLocaleString("pt-PT")}
+            {stamp(note.createdAt)}
           </p>
           {/* PL-17 — which marcação this note documents. Owner CR 2026-07-30:
               "you can see the notes but it is not written to which appointment
@@ -145,7 +194,7 @@ function NoteItem({
             <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-secondary">
               <span data-testid="note-appointment-line">
                 {s["patients.noteAppointment"]}{" "}
-                {new Date(note.appointment.startsAt).toLocaleString("pt-PT")}
+                {stamp(note.appointment.startsAt)}
                 {note.appointment.practitionerName ? ` · ${note.appointment.practitionerName}` : ""}
               </span>
               {onOpenAppointment && (
@@ -164,7 +213,7 @@ function NoteItem({
           {note.editedAt && (
             <p className="mt-0.5 text-xs italic text-text-secondary" data-testid="note-edited-stamp">
               {s["patients.noteEditedBy"]} {note.editedByName ?? s["patients.noteSystemAuthor"]} ·{" "}
-              {new Date(note.editedAt).toLocaleString("pt-PT")}
+              {stamp(note.editedAt)}
             </p>
           )}
         </>
