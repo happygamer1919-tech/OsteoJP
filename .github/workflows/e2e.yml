@@ -271,15 +271,27 @@ jobs:
             timeout 420 pnpm --filter web exec playwright install --with-deps chromium
           }
 
-          # THE EXIT CODE IS CAPTURED DIRECTLY, NOT AFTER AN `if`. `if cmd; then
-          # ...; fi` leaves $? as the status of the IF STATEMENT, which is 0 when
-          # the condition was false and no branch ran. Written the obvious way,
-          # every failure below would have reported "exited 0 (not a timeout)" -
-          # one line mapping four distinct outcomes onto the one that looks
-          # harmless, which is the shape PORTAL-REHYDRATE section 1.3 exists for.
-          # Verified in a shell before it was relied on.
-          install_browsers
-          rc=$?
+          # `cmd || rc=$?` IS THE ONLY FORM THAT IS RIGHT ON BOTH COUNTS, and it
+          # took two wrong ones to get here. Both are recorded because each looks
+          # obviously correct and fails silently in a different direction.
+          #
+          #   `if cmd; then exit 0; fi` then `rc=$?`  ->  rc IS ALWAYS 0. $? after
+          #   `fi` is the status of the IF STATEMENT, which is 0 when no branch
+          #   ran. Every failure would have reported "exited 0 (not a timeout)".
+          #
+          #   `cmd` then `rc=$?`  ->  THE SCRIPT NEVER GETS THERE. GitHub runs
+          #   `run:` blocks as `bash --noprofile --norc -e -o pipefail`, and the
+          #   `set -uo pipefail` above does NOT remove that injected `-e`. A bare
+          #   failing call aborts the step immediately, so the retry below is
+          #   unreachable. THIS IS NOT THEORETICAL: it shipped in the first
+          #   version of this step and both shards 1 and 2 died on it in run
+          #   32277423282, exit 124, with the retry never running.
+          #
+          # The Supabase step below survives the same `-e` only because its call
+          # sits inside an `if` CONDITION, where `-e` is suppressed by the shell.
+          # That is a property of where it sits, not of how it was written.
+          rc=0
+          install_browsers || rc=$?
           if [ "$rc" -eq 0 ]; then exit 0; fi
 
           # 124 is `timeout`'s own "I killed it" code. Anything else is the
@@ -298,8 +310,8 @@ jobs:
           # SECOND AND LAST ATTEMPT, matching the Supabase start below: two
           # failures in a row is not a flake, and a third attempt would burn CI
           # minutes while reporting nothing new.
-          install_browsers
-          rc=$?
+          rc=0
+          install_browsers || rc=$?
           if [ "$rc" -eq 0 ]; then exit 0; fi
           echo "::error title=Playwright install unavailable::Two attempts failed (last exit ${rc}). This is infrastructure, not the change under test."
           exit 1
