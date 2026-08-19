@@ -43,6 +43,7 @@ import {
   PORTAL_STORAGE,
   STORAGE,
 } from "./fixtures";
+import { becameVisible } from "./helpers";
 
 /** Wall-clock ms around an awaited step, so a hop is reported rather than felt. */
 async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
@@ -84,19 +85,13 @@ async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
  * visible within the budget", and ANY OTHER error (a closed page, a crashed
  * context, a bad selector) is re-thrown, because those are not negative answers
  * and must never be reported as one.
+ *
+ * MOVED TO ./helpers 2026-08-19 (ACC-immediate-isvisible-probes) and imported
+ * below. The body is unchanged; it is shared because two more sites had since
+ * been written with the defective shape, and a pattern that lives in one spec is
+ * a pattern the next spec does not find. The measured evidence above stays here,
+ * with the run that produced it.
  */
-async function becameVisible(
-  locator: ReturnType<Page["getByText"]>,
-  timeout: number,
-): Promise<boolean> {
-  try {
-    await locator.waitFor({ state: "visible", timeout });
-    return true;
-  } catch (err) {
-    if (err instanceof Error && err.name === "TimeoutError") return false;
-    throw err;
-  }
-}
 
 /** A reception-authenticated page on the STAFF app, whatever the file-level baseURL is. */
 async function receptionPage(browser: Browser): Promise<Page> {

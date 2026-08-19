@@ -29,6 +29,49 @@ export function generateValidNif(): string {
 // Navigation
 // ---------------------------------------------------------------------------
 
+/**
+ * WAIT, THEN ANSWER. The ONE correct shape for "is this OPTIONAL element here?"
+ * against a page that may still be rendering.
+ *
+ * WHY IT EXISTS AND WHY IT IS SHARED. `locator.isVisible()` is an IMMEDIATE
+ * POLL - it does not auto-wait - and `isVisible({ timeout })` is worse, because
+ * playwright-core 1.60.0 IGNORES that option outright (its own JSDoc:
+ * "@deprecated This option is ignored"). So a probe written that way reads
+ * whatever happened to be painted at that microsecond and reports it as an
+ * answer. That is INC-10: a booking flow branched on an immediate poll, took the
+ * wrong branch, and the suite reported a pass.
+ *
+ * This waits up to `timeout` for the element to appear, returns TRUE if it did
+ * and FALSE only on a genuine TimeoutError. EVERY OTHER ERROR IS RE-THROWN, and
+ * that is the part a `.catch(() => false)` gets wrong: a detached frame, a
+ * closed page and a bad selector all become "no" under a bare catch, and "no" is
+ * the branch that skips. One unknown case mapped onto one known, harmless-looking
+ * one - PORTAL-REHYDRATE section 1.3, exactly.
+ *
+ * WHAT THE DEFECTIVE FORM COST, measured, so the number travels with the fix:
+ * run 31649767622 shard 3, same commit, same seed, two attempts -
+ *   attempt 1  agenda checked  443ms after goto  ->  false
+ *   attempt 2  agenda checked 1683ms after goto  ->  true
+ * The row was always there; the check was early. That false negative was read as
+ * "the booking produced no row", raised INC-10 as a possible patient-facing
+ * defect, was reported on three surfaces as independent corroboration - all
+ * three being the same non-waiting probe - and held PG8 open. Full account in
+ * sync-portal-agenda.spec.ts, where this function used to live.
+ *
+ * FOR A REQUIRED ELEMENT, DO NOT USE THIS. Use `expect(locator).toBeVisible()`,
+ * which waits AND fails. This returns a boolean, so the caller decides, and a
+ * caller that always throws on false wanted `expect` in the first place.
+ */
+export async function becameVisible(locator: Locator, timeout: number): Promise<boolean> {
+  try {
+    await locator.waitFor({ state: "visible", timeout });
+    return true;
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") return false;
+    throw err;
+  }
+}
+
 export async function goToPatients(page: Page) {
   await page.goto("/patients");
   await expect(page).toHaveURL(/\/patients(\?|$)/);

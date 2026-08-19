@@ -41,6 +41,7 @@ import {
   SERVICE,
   SERVICE_UNMAPPED,
 } from "./fixtures";
+import { becameVisible } from "./helpers";
 
 test.use({
   storageState: PORTAL_STORAGE.patient,
@@ -68,8 +69,13 @@ async function openServiceStep(page: Page): Promise<void> {
   await page.goto("/portal/booking");
   await expect(page).toHaveURL(/\/portal\/booking(\?|$)/, { timeout: 15_000 });
 
+  // ACC-immediate-isvisible-probes. This was `clinicHeading.isVisible()` - an
+  // IMMEDIATE POLL, taken microseconds after a URL assertion that says nothing
+  // about whether the heading has painted. A false reading here does not fail:
+  // it SKIPS the clinic pick and carries on, which is the skip-shaped branch
+  // that reads as a pass. Same question, same answer as sync-portal-agenda.
   const clinicHeading = page.getByRole("heading", { name: /cl[ií]nica/i });
-  if (await clinicHeading.isVisible().catch(() => false)) {
+  if (await becameVisible(clinicHeading, 5_000)) {
     // Multi-clinic: pick the SEEDED clinic BY NAME. The first draft clicked the
     // first button on the page, which is the "Anterior" control in the header -
     // it navigated away and every assertion then timed out waiting for a step it
@@ -113,11 +119,16 @@ async function bookFirstAvailable(page: Page): Promise<boolean> {
   if (await anyTherapist.count()) await anyTherapist.click();
 
   const dateTime = page.getByRole("heading", { name: /data|hora/i });
-  if (!(await dateTime.first().isVisible({ timeout: 15_000 }).catch(() => false))) {
-    // `isVisible` is deliberately NOT used as a wait anywhere else in this repo
-    // since ACC-immediate-isvisible-probes; here it follows an explicit
-    // waitFor-style timeout on a heading that is either present or the flow is
-    // broken, and the throw below makes a false negative loud rather than silent.
+  // THE COMMENT THAT USED TO SIT HERE CLAIMED A WAIT THAT NEVER HAPPENED. It
+  // read: "here it follows an explicit waitFor-style timeout on a heading that
+  // is either present or the flow is broken". Two things were wrong with that.
+  // The `{ timeout: 15_000 }` passed to `isVisible` is THE OPTION
+  // playwright-core 1.60.0 IGNORES - it is the exact INC-10 shape - so there was
+  // no waitFor-style timeout on this heading at all. And the `waitFor` a few
+  // lines above is on `anyTherapist`, a DIFFERENT locator, so it could not have
+  // been the wait the comment meant. A justification that names a wait which is
+  // not there is worse than no justification: it stops the next reader looking.
+  if (!(await becameVisible(dateTime.first(), 15_000))) {
     throw new Error("never reached the date/time step");
   }
 
@@ -126,7 +137,9 @@ async function bookFirstAvailable(page: Page): Promise<boolean> {
   await trigger.first().click();
 
   const dialog = page.getByRole("dialog");
-  if (!(await dialog.first().isVisible({ timeout: 10_000 }).catch(() => false))) {
+  // Same shape, no justification comment at all: an ignored timeout polled
+  // immediately after a click, so it read the frame before the dialog mounted.
+  if (!(await becameVisible(dialog.first(), 10_000))) {
     throw new Error("the date picker did not open when clicked");
   }
 
