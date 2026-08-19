@@ -5,6 +5,7 @@ import { NotificationBell, UserAreaCluster } from "@osteojp/ui";
 import { type Role } from "@osteojp/auth";
 
 import { getRequestContext } from "@/lib/auth/context";
+import { requiresPasswordRotation } from "@/lib/auth/password-rotation";
 import { unreadCount } from "@/lib/notifications/centre";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { logout } from "@/app/logout/actions";
@@ -52,9 +53,53 @@ function displayFromEmail(email: string | undefined): { name: string; initials: 
   return { name: name || local, initials };
 }
 
-export async function AppShell({ children }: { children: React.ReactNode }) {
+/**
+ * SEC-02 — the forced-rotation gate lives HERE, and the placement is the whole
+ * design.
+ *
+ * WHY THIS COMPONENT. Every authenticated section's layout renders AppShell, so
+ * one check covers all eleven of them; a per-page guard would be sixty-one call
+ * sites and the sixty-second page added next month would silently miss it.
+ *
+ * WHY NOT THE PROXY, which would have been better still: `proxy.ts` runs in the
+ * middleware runtime and this check needs the database. The driver is
+ * postgres.js, which is Node-only, so the read cannot happen there. Recorded
+ * because "why is this not in middleware" is the first question a reader has.
+ *
+ * WHAT THIS DOES NOT COVER, stated rather than left to be discovered: a SERVER
+ * ACTION or a route handler invoked directly does not render a shell, so it does
+ * not pass through here. Those paths carry their own capability checks, and a
+ * caller must first load a page to reach them - which this gate refuses. It is
+ * the page-level enforcement, not a universal one, and closing the action-level
+ * gap is its own card if the owner wants it.
+ */
+export async function AppShell({
+  children,
+  /**
+   * Set ONLY by the profile section, which is where the new password is set.
+   * Without an exemption the gate would redirect the very screen it redirects
+   * TO, and the user could never escape.
+   *
+   * A PROP RATHER THAN A PATH CHECK because a path check inside a shared
+   * component is a second, weaker copy of the routing table: it drifts the
+   * moment the route is renamed, and it drifts silently in the direction of
+   * letting people through.
+   */
+  allowDuringPasswordRotation = false,
+}: {
+  children: React.ReactNode;
+  allowDuringPasswordRotation?: boolean;
+}) {
   const ctx = await getRequestContext();
   if (!ctx) redirect("/login");
+
+  // Deliberately NOT wrapped in a try. `requiresPasswordRotation` throws on a
+  // state it cannot resolve, and swallowing that would turn "I do not know
+  // whether this password is temporary" into "it is fine" - the exact collapse
+  // PORTAL-REHYDRATE 1.3 names, on the path where being wrong grants access.
+  if (!allowDuringPasswordRotation && (await requiresPasswordRotation(ctx))) {
+    redirect("/perfil");
+  }
 
   const items = navItemsForRole(ctx.role);
   const roleLabel = ROLE_LABEL[ctx.role];

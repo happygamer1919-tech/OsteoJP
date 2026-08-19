@@ -16,6 +16,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { writeAudit } from "@/lib/admin/audit";
 // Reuse the shared invite/set-password strength precheck (W6-02).
 import { validatePassword } from "../auth/update-password/password";
+import { clearPasswordRotationFlag } from "@/lib/auth/password-rotation";
 
 export type ProfileActionError = "validation" | "password_policy" | "error";
 export type ProfileActionResult = { ok: true } | { ok: false; error: ProfileActionError };
@@ -70,6 +71,20 @@ export async function changeOwnPasswordAction(
     console.error("profile: changeOwnPassword failed", error.name);
     return { ok: false, error: "password_policy" };
   }
+
+  // SEC-02: the temporary password is now gone, so release the account from the
+  // rotation guard.
+  //
+  // AFTER the provider accepted the change, never before: clearing first would
+  // free the account on a change that then failed, leaving the temporary
+  // password working and nothing left to ask again.
+  //
+  // NOT wrapped in the best-effort try below, and that is deliberate. A failed
+  // AUDIT write must not report failure to a user whose password really did
+  // change. A failed FLAG clear is different in kind - it leaves the person
+  // locked to this screen after doing exactly what was asked, which they cannot
+  // diagnose and cannot escape. It surfaces.
+  await clearPasswordRotationFlag(ctx);
 
   try {
     await runScoped(ctx, (tx) =>
