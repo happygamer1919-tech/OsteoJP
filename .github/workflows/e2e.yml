@@ -85,7 +85,26 @@ jobs:
   shard:
     name: E2E shard
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # ================================================================= //
+    # THE JOB CEILING IS A BACKSTOP, NOT THE MECHANISM. Raised 25 -> 35 on
+    # 2026-08-19 together with the per-step budgets below, and it is only safe
+    # to raise BECAUSE of them.
+    #
+    # WHY IT WAS RAISED. At 25 the ceiling was doing the work a step timeout
+    # should do, and doing it blind. Measured across 23 real shard runs the
+    # median is 7.6 minutes and the tests themselves take 4-5; the slowest run
+    # that SURVIVED took 24.2, which is 48 seconds of margin. Two shards died
+    # on the ceiling on 2026-08-19 alone, and neither said why: a hung step
+    # emits no error, so the job ends on a bare "The operation was canceled"
+    # with the real cause twenty minutes earlier in the log. Both were read as
+    # regressions in the change under test before the log was opened.
+    #
+    # WHY 35 AND NOT MORE. A single hung step now fails at its own budget, at
+    # most 16 minutes, which leaves 19 for a run that normally needs 7. So one
+    # hang is absorbed AND named. Two independent hangs in one job would still
+    # reach the ceiling - that has never been observed, and a ceiling that can
+    # never fire is not a backstop.
+    timeout-minutes: 35
 
     strategy:
       # One shard's failure must not cancel the other two: a green sibling is
@@ -159,8 +178,12 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
+      # Normally 11-12s (measured, jobs 96112495496 / 96120746039 / 96120746113).
+      # The budget is an order of magnitude over that because the registry is the
+      # variable, not the work.
       - name: Install dependencies
         if: steps.changes.outputs.code == 'true'
+        timeout-minutes: 10
         run: pnpm install --frozen-lockfile
 
       # Restore the Next.js webpack build cache for the three dev servers Playwright
@@ -211,9 +234,127 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
+      # ================================================================= //
+      # THE BROWSER INSTALL IS BUDGETED AND RETRIED. It killed a shard on
+      # 2026-08-19 and the failure was SILENT.
+      # ================================================================= //
+      # Run 32269074242, shard 3, job 96120745688. The last line this step ever
+      # printed, at 15:18:06, was:
+      #     Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease
+      # Then nothing at all for twenty-four minutes, until the job ceiling killed
+      # it at 15:42:09 with "##[error]The operation was canceled." No error, no
+      # cause, no step named. `--with-deps` shells out to apt-get, and apt-get
+      # hung against archive.ubuntu.com.
+      #
+      # THE VARIANCE IS REAL AND THE BUDGET RESPECTS IT. Measured healthy
+      # durations for this exact step: 12s (job 96112495496), 47s (96120746039)
+      # and 282s (96120746113) - and that last one is shard 2 of THE SAME RUN
+      # that hung on shard 3. A tight budget would redden legitimate slow runs,
+      # so each attempt gets 7 minutes, roughly 1.5x the slowest healthy case.
+      #
+      # `timeout` RATHER THAN timeout-minutes ALONE, and the distinction is the
+      # whole point: a step killed by timeout-minutes is DEAD, so it cannot
+      # retry itself. The inner timeout ends the hung attempt and hands control
+      # back to the script, which is what makes a retry possible at all. The
+      # step-level budget below remains as the backstop.
+      #
+      # IT REPORTS ITSELF, like the Supabase fallback beside it. A rescued run
+      # prints ::warning:: so it stays visible in the checks UI rather than
+      # reading as clean - a silent retry makes a flake un-measurable, which is
+      # how the Supabase one reached three occurrences before anyone counted.
       - name: Install Playwright Chromium (+ system deps)
         if: steps.changes.outputs.code == 'true'
-        run: pnpm --filter web exec playwright install --with-deps chromium
+        timeout-minutes: 16
+        run: |
+          set -uo pipefail
+          # --kill-after: SIGTERM first, SIGKILL 30s later if it ignores it.
+          install_browsers() {
+            timeout --kill-after=30s 420 pnpm --filter web exec playwright install --with-deps chromium
+          }
+
+          # REAP THE ORPHAN BEFORE RETRYING, or the retry is guaranteed to fail.
+          # `timeout` signals the DIRECT child, which is pnpm. `--with-deps` runs
+          # apt-get through sudo, and THAT GRANDCHILD SURVIVES the kill still
+          # holding /var/lib/apt/lists/lock. Observed in run 32278665484: the
+          # first attempt was killed at 420s and the retry died two seconds later
+          # on "Could not get lock ... held by process 2427 (apt-get)".
+          #
+          # Wait first, kill second. The orphan is usually mid-`apt-get update`
+          # and finishes on its own within seconds; killing a package manager is
+          # the last resort, not the first move.
+          reap_apt() {
+            for _ in $(seq 1 30); do
+              pgrep -x apt-get >/dev/null 2>&1 || { echo "apt-get clear"; return 0; }
+              sleep 2
+            done
+            echo "::warning title=Reaping an orphaned apt-get::It survived the timeout and still holds the apt lock after 60s. Killing it so the retry can run."
+            sudo pkill -TERM -x apt-get 2>/dev/null || true
+            sleep 5
+            sudo pkill -KILL -x apt-get 2>/dev/null || true
+            sleep 2
+            if pgrep -x apt-get >/dev/null 2>&1; then
+              echo "::warning title=apt-get survived SIGKILL::The retry will almost certainly fail on the apt lock."
+              return 1
+            fi
+            echo "apt-get reaped"
+          }
+
+          # `cmd || rc=$?` IS THE ONLY FORM THAT IS RIGHT ON BOTH COUNTS, and it
+          # took two wrong ones to get here. Both are recorded because each looks
+          # obviously correct and fails silently in a different direction.
+          #
+          #   `if cmd; then exit 0; fi` then `rc=$?`  ->  rc IS ALWAYS 0. $? after
+          #   `fi` is the status of the IF STATEMENT, which is 0 when no branch
+          #   ran. Every failure would have reported "exited 0 (not a timeout)".
+          #
+          #   `cmd` then `rc=$?`  ->  THE SCRIPT NEVER GETS THERE. GitHub runs
+          #   `run:` blocks as `bash --noprofile --norc -e -o pipefail`, and the
+          #   `set -uo pipefail` above does NOT remove that injected `-e`. A bare
+          #   failing call aborts the step immediately, so the retry below is
+          #   unreachable. THIS IS NOT THEORETICAL: it shipped in the first
+          #   version of this step and both shards 1 and 2 died on it in run
+          #   32277423282, exit 124, with the retry never running.
+          #
+          # The Supabase step below survives the same `-e` only because its call
+          # sits inside an `if` CONDITION, where `-e` is suppressed by the shell.
+          # That is a property of where it sits, not of how it was written.
+          rc=0
+          install_browsers || rc=$?
+          if [ "$rc" -eq 0 ]; then exit 0; fi
+
+          # 124 is `timeout`'s own "I killed it" code. Anything else is the
+          # install genuinely failing, which is a different fact and is said so.
+          if [ "$rc" -eq 124 ]; then
+            echo "::warning title=Playwright install timed out, retrying once::The browser/system-deps install exceeded 7 minutes and was killed. Almost always apt-get or the Playwright CDN hanging. This run hit CI-shard-timeout-budget-defeats-flaky-retry."
+          else
+            echo "::warning title=Playwright install failed, retrying once::The install exited ${rc} (not a timeout). Retrying once before calling it real."
+          fi
+
+          # NO `|| echo "(no locks held)"` HERE, AND THAT IS DELIBERATE. The first
+          # version had exactly that, and it PRINTED "(no apt locks held)" two
+          # seconds before apt reported the lock WAS held by pid 2427. `lsof`
+          # exits non-zero when ANY named file is merely unlocked, so the
+          # fallback fired on a partial success and asserted the opposite of the
+          # truth - one line mapping "lsof could not examine everything" onto
+          # "there is nothing to examine", in the diagnostic whose whole job was
+          # to tell those apart. Print what lsof found and let it be empty.
+          echo "----- apt lock holders (empty means lsof found none) -----"
+          sudo lsof -t /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend 2>/dev/null | sort -u || true
+          echo "----- apt-get processes -----"
+          pgrep -ax apt-get || true
+          echo "----- playwright browser cache -----"
+          ls -la ~/.cache/ms-playwright 2>/dev/null || echo "(no browser cache - this attempt had to download)"
+
+          reap_apt || true
+
+          # SECOND AND LAST ATTEMPT, matching the Supabase start below: two
+          # failures in a row is not a flake, and a third attempt would burn CI
+          # minutes while reporting nothing new.
+          rc=0
+          install_browsers || rc=$?
+          if [ "$rc" -eq 0 ]; then exit 0; fi
+          echo "::error title=Playwright install unavailable::Two attempts failed (last exit ${rc}). This is infrastructure, not the change under test."
+          exit 1
 
       # ================================================================= //
       # THE CLI INSTALL IS RETRIED, AND A RETRY IS ANNOUNCED RATHER THAN HIDDEN.
@@ -241,16 +382,21 @@ jobs:
       # needed rescuing stays VISIBLE in the checks UI instead of reading as
       # clean. A silent retry would make this flake un-measurable, which is how
       # it reached three occurrences before anyone counted them.
+      # Normally 3s. The budget exists because this step's known failure mode is
+      # a CDN that is DOWN rather than slow, and the action retries internally -
+      # so without a ceiling its retries can outlast the job.
       - name: Set up Supabase CLI
         id: supabase_cli
         if: steps.changes.outputs.code == 'true'
         continue-on-error: true
+        timeout-minutes: 6
         uses: supabase/setup-cli@v1
         with:
           version: v2.107.0
 
       - name: Set up Supabase CLI (fallback, direct release download)
         if: steps.changes.outputs.code == 'true' && steps.supabase_cli.outcome == 'failure'
+        timeout-minutes: 6
         env:
           CLI_VERSION: v2.107.0
         run: |
@@ -289,12 +435,25 @@ jobs:
       # `ss -ltnp` says WHAT holds the port and `docker ps -a` says whether a
       # container is already there. Cleaning up first would erase the evidence,
       # which is the mistake that makes an intermittent failure permanent.
+      #
+      # EACH ATTEMPT IS BUDGETED, ADDED 2026-08-19, AND THE FOURTH OCCURRENCE IS
+      # WHY. Run 32263942836 shard 3, job 96103690200: the FIRST `supabase start`
+      # hung for roughly twenty-two minutes before failing, the retry below then
+      # succeeded, Playwright started at 14:51:02 - and the job's ceiling expired
+      # 0.7 seconds later. THE MITIGATION WORKED AND THE JOB DIED ANYWAY, because
+      # the retry cost more than the budget had left.
+      #
+      # A retry that cannot fit in the time remaining is not a mitigation. The
+      # inner `timeout` is what makes it fit: a normal start takes 77-93s
+      # (measured), so 5 minutes is over 3x headroom, and a hang is cut off with
+      # 30 minutes of job budget still unspent instead of 2.
       - name: Start Supabase (lean stack)
         if: steps.changes.outputs.code == 'true'
+        timeout-minutes: 12
         run: |
           set -uo pipefail
           LEAN="analytics,vector,studio,realtime,storage,imgproxy,edge-runtime,functions,inbucket,meta"
-          if supabase start -x "$LEAN"; then exit 0; fi
+          if timeout 300 supabase start -x "$LEAN"; then exit 0; fi
 
           echo "::warning title=Supabase start failed, retrying once::This run hit CI-supabase-cli-setup-flaky. The diagnostics below name the cause; do not dismiss them as noise."
           echo "----- what is listening on 54321-54324 -----"
@@ -311,10 +470,12 @@ jobs:
           # SECOND AND LAST ATTEMPT. No loop, deliberately: two failures in a row
           # is not a flake, and retrying past that would burn CI minutes while
           # reporting nothing new about a breakage that is real.
-          supabase start -x "$LEAN"
+          timeout 300 supabase start -x "$LEAN"
 
+      # Normally 30-31s (measured across three shards).
       - name: Apply migrations + base seed
         if: steps.changes.outputs.code == 'true'
+        timeout-minutes: 8
         run: supabase db reset
 
       - name: Capture Supabase keys for app + seed
