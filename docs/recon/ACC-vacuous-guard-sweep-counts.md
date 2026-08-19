@@ -166,3 +166,72 @@ FILES SCANNED: 385
     packages/db/tests/statistics-aggregates.test.ts  no negative arm anywhere in the file
     packages/db/tests/working-hours-real.test.ts  no negative arm anywhere in the file
     packages/ui/src/tokens-therapist-palette.test.ts  no negative arm anywhere in the file
+
+---
+
+# CATEGORY (B) TRIAGE, 2026-08-19
+
+Re-derived from `origin/main` at `d8275a8`. The counts above are unchanged and
+still correct; what follows is the human read the header said every hit needs.
+
+## The card's SECOND-priority tranche is CLEAN, and three of its four names could never have been defects
+
+The board card recommends, verbatim: *"SECOND - the (B) hits that assert on
+TEMPLATES or MIGRATIONS: supabase-email-templates, private-notes-template-guard,
+migration-syntax, journal-sync."* Read against main:
+
+| file | verdict |
+|---|---|
+| `private-notes-template-guard.test.ts` | **Impossible.** `JSON.parse(readFileSync(...))`. It never scans text. **JSON has no comments.** |
+| `journal-sync.test.ts` | **Impossible**, identically: `JSON.parse` of the migration journal. |
+| `migration-syntax.test.ts` | **Inverted.** Its subject *is* the comment delimiters — it counts `/*` against `*/` to prove they balance. Stripping comments would destroy the property it measures. It also already carries an explicit vacuous-pass guard (`files.length > 40`). |
+| `supabase-email-templates.test.ts` | **REAL**, and it is the known case — owned by its own card `LE-vacuous-template-guard`, fixed 2026-08-19. |
+
+## Why the regex over-counts, stated as three conditions rather than one
+
+The detector asks one question: does the file `readFileSync` and assert on the
+result without stripping? **The defect needs three things to be true at once**,
+and the detector tests only the first:
+
+1. the file is read as **TEXT**, not `JSON.parse`d — JSON cannot carry a comment;
+2. the assertion is a **PRESENCE** assertion — an absence assertion (`.not.toContain`) *fails loudly* when a comment matches, which is the safe direction;
+3. the format **has comments** and the asserted string could plausibly sit in one.
+
+`migration-syntax` adds a fourth case the conditions do not cover: a suite whose
+**subject is the comments**, where stripping is the bug.
+
+## The triage grid, all 25 hits
+
+Classified mechanically then read. `JSON` = parsed not scanned; `pres`/`abs` =
+presence and absence assertion counts; `STRIPS` = already strips.
+
+**NOT REACHABLE — parses JSON (9):** `preselection`, `degradation-copy`,
+`RecordForm`, `services-patient-bookable`, `form-template`, `centre`,
+`pending-requests`, `journal-sync`, `private-notes-template-guard`.
+
+**ALREADY STRIPS (2):** `past-slot-floor`, `api-method-parity`.
+
+**NO PRESENCE ASSERTION, so nothing a comment could satisfy (4):**
+`write-paths`, `device-cookie-parity`, `slot-lock-concurrency`,
+`migration-syntax` (and see the inversion above).
+
+**REMAINING CANDIDATES, text + presence + a commentable format (10).** Not fixed
+here, listed so the next pass starts from a read rather than a regex:
+`base.test.ts` (ts), `consent-terms-axis` (sql), `declaracao-pdf` (ts),
+`approval-packet` (md), `fee-notice` (ts), `pedido-confirm` (ts),
+`tokens.test.ts`, `tokens-v2`, `tokens-therapist-palette` (css), and
+`supabase-email-templates` (html) **— now fixed.**
+
+**A candidate is not a defect.** Each still needs the question the card asks of
+every hit: *could the asserted string plausibly appear in a comment in THIS
+file?* For the three `tokens*` suites, asserting on CSS custom-property values, a
+comment mentioning a hex code is entirely plausible and they are the strongest
+remaining group. That is a claim about where to look next, not a finding.
+
+## What this says about the card's priority order
+
+The FIRST tranche was re-derived on 2026-08-19 and found clean (all four files
+carry genuine refusal assertions). The SECOND tranche is clean too, for the
+reasons above. **Both recommended starting points were already safe**, while ten
+unnamed candidates sat outside the recommendation. The counting method was sound;
+the *ordering* was a guess about severity that the reads did not support.
