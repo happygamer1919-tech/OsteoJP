@@ -13,7 +13,12 @@
  * location server-side from the stored row and never requires the caller to know
  * a service or location id.
  */
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import {
+  resetPatientChangeConsumer,
+  setPatientChangeConsumer,
+  stubConsumer,
+} from "@/lib/notifications/patient-change";
 import { listRescheduleOptions, rescheduleAppointment } from "./booking";
 import { AppointmentError } from "./errors";
 import type { AppointmentsStore } from "./booking";
@@ -49,6 +54,20 @@ function makeStore(slots: string[], over: Record<string, unknown> = {}) {
   // assertions below can reach `store.listOpenSlots` etc.
   return store as typeof store & AppointmentsStore;
 }
+
+/**
+ * ACC-preselection-spec-flaky, second instance. Found by grepping the whole
+ * suite for the log line that gave the first one away, rather than by waiting
+ * for this file to flake too.
+ *
+ * `rescheduleAppointment` calls `emitPatientChange`, which is best-effort: with
+ * no consumer stubbed it resolves a database client and attempts a connection,
+ * swallows the failure, and leaves only a stderr line. Nothing fails, and the
+ * test pays an unbounded network timeout for a result it discards - the same
+ * latency that pushed booking.test.ts past five seconds on a loaded runner.
+ */
+beforeEach(() => setPatientChangeConsumer(stubConsumer));
+afterEach(() => resetPatientChangeConsumer());
 
 describe("listRescheduleOptions", () => {
   it("drops slots inside the 24h minimum notice and keeps the rest", async () => {
