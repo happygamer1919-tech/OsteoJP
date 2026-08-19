@@ -4,7 +4,7 @@ import { useActionState } from 'react'
 import { Banner, Button, Field, Input } from '@osteojp/ui'
 
 import { s } from '@/lib/i18n'
-import { ALL_CLINIC_PHONES } from '@/lib/clinics'
+import { CLINIC_CONTACTS } from '@/lib/clinics'
 import type { PublicCatalog } from '@/lib/guest/api'
 
 import { guestBookingAction } from './actions'
@@ -354,19 +354,52 @@ export function GuestBookingForm({
       </form>
 
       {/* PG9: a patient-facing screen that can dead-end carries the clinic's
-          telephone. Both numbers, because this visitor has not told us which
-          clinic is theirs and the form must not appear to know. */}
-      <p className="mt-6 flex flex-wrap gap-3 text-sm text-text-secondary">
-        {ALL_CLINIC_PHONES.map((p) => (
-          <a
-            key={p.number}
-            href={`tel:${p.number}`}
-            className="min-h-11 font-medium text-accent-2-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-          >
-            {p.display}
-          </a>
-        ))}
-      </p>
+          telephone. EVERY clinic's, because this visitor has not told us which
+          one is theirs and the form must not appear to know.
+
+          GROUPED BY CLINIC, AND THE GROUPING IS THE POINT (owner ruling,
+          2026-08-19). This rendered as a bare row of four green numbers: every
+          number the clinic owns, side by side, attributed to nobody. A visitor
+          who wants to ring Castelo Branco could not tell which two of the four
+          reach it, so the affordance that exists precisely for the moment
+          somebody gives up on the form was unusable at that moment.
+
+          NO SENTENCE IS AUTHORED HERE. The heading is `clinics.phone_label`,
+          which already existed; the clinic names and the numbers are both data
+          from lib/clinics.ts. Structuring data that was already on the screen
+          is presentation, not copy - the same reasoning ClinicPhones records.
+
+          WHY NOT THE SHARED ClinicPhones COMPONENT: it renders the deliberately
+          FLAT list on the login screen and on every error boundary, where the
+          surface has no identity to attach numbers to and narrowing would leak
+          which clinic a patient belongs to. This screen is a form the visitor
+          is actively filling in, so naming the clinics helps rather than
+          discloses. Changing the shared component would have changed seven
+          screens to fix one. */}
+      <div className="mt-6 text-sm text-text-secondary">
+        <p className="font-medium text-text-primary">{s.clinics.phone_label}</p>
+        <ul className="mt-2 flex flex-col gap-2">
+          {CLINIC_CONTACTS.map((clinic) => (
+            <li key={clinic.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="font-medium text-text-primary">{clinic.name}</span>
+              <span className="flex flex-wrap items-center gap-x-3">
+                {clinic.phone.map((p) => (
+                  <a
+                    key={p.number}
+                    href={`tel:${p.number}`}
+                    /* min-h-11 is 44px, the target size PG9 audits for. It is on
+                       the LINK rather than the row so the tap target is the
+                       number itself, not the whitespace beside it. */
+                    className="inline-flex min-h-11 items-center font-medium text-accent-2-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                  >
+                    {p.display}
+                  </a>
+                ))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   )
 }

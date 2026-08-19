@@ -17,7 +17,7 @@ vi.mock("server-only", () => ({}));
 const H = vi.hoisted(() => ({
   keys: [] as string[],
   verdicts: new Map<string, boolean>(),
-  /** Result queue: the route runs locations first, then services. */
+  /** Result queue: locations, then services, then the offering rows (GUEST-08). */
   results: [] as unknown[][],
   selects: 0,
 }));
@@ -67,8 +67,18 @@ const seed = (
     { id: "s1", name: "Osteopatia", locationId: null },
     { id: "s2", name: "Pilates Terapêutico", locationId: CB },
   ],
+  /**
+   * GUEST-08. The active `service_location_prices` rows - the offered-here
+   * authority (W8-01a). The DEFAULT reproduces what every pre-existing case in
+   * this file assumed: everything offered everywhere it is scoped to.
+   */
+  offerings: unknown[] = [
+    { serviceId: "s1", locationId: LV },
+    { serviceId: "s1", locationId: CB },
+    { serviceId: "s2", locationId: CB },
+  ],
 ) => {
-  H.results = [locations, services];
+  H.results = [locations, services, offerings];
 };
 
 beforeEach(() => {
@@ -141,6 +151,10 @@ describe("§2 — THE PROJECTION, pinned key by key", () => {
           notes: "internal note",
         },
       ],
+      // GUEST-08: the offering rows. Without one the service is offered
+      // nowhere and is correctly dropped, which would make this test assert
+      // the projection of a row that is not there.
+      [{ serviceId: "s1", locationId: LV }],
     ];
     const body = (await (await guestCatalog(get())).json()) as {
       services: Record<string, unknown>[];
@@ -198,8 +212,13 @@ describe("§3 — the limits", () => {
   });
 
   it("NEGATIVE ARM: an allowed request really does read", async () => {
+    // THREE reads since GUEST-08, not two: locations, services, and the active
+    // `service_location_prices` rows that decide where each service is offered.
+    // The count is asserted rather than ignored because this case exists to
+    // prove a permitted request reaches the database at all - a rate limiter
+    // that refused everything would pass every other case in this file.
     await guestCatalog(get());
-    expect(H.selects).toBe(2);
+    expect(H.selects).toBe(3);
   });
 });
 
@@ -220,4 +239,92 @@ describe("§4 — the four predicates, guarded in SOURCE", () => {
       expect(SRC).toContain(`services.${column}`);
     },
   );
+});
+
+/**
+ * ==========================================================================
+ * §5 - GUEST-08. WHERE A SERVICE IS OFFERED COMES FROM THE PRICE GRID.
+ * ==========================================================================
+ * Owner ruling 2026-08-19. The public form showed EVERY service whatever
+ * clinic the visitor picked, because this route derived the answer from
+ * `services.location_id` - a column that scopes a service to a clinic and says
+ * nothing about whether the clinic offers it.
+ *
+ * THE AUTHORITY IS `service_location_prices`: offered-only-where-priced
+ * (W8-01a), the same rule that draws "Oferecido aqui" on Administracao >
+ * Servicos. Observed divergence: Drenagem Linfatica reads "Nao oferecido aqui"
+ * at Castelo Branco and "Oferecido aqui" at Linda-a-Velha, while this endpoint
+ * reported it at both.
+ *
+ * BOTH ARMS ARE ASSERTED, per the dispatch, because either alone is passable by
+ * a broken implementation: one that returns nothing satisfies "absent from the
+ * other", and one that returns everything satisfies "present at its own".
+ */
+describe("§5 — offered-here comes from the active price rows", () => {
+  const bodyOf = async () => (await guestCatalog(get())).json();
+
+  it("ARM 1: a service priced at ONE clinic appears there and is ABSENT from the other", async () => {
+    seed(undefined, [{ id: "s1", name: "Drenagem Linfática", locationId: null }], [
+      { serviceId: "s1", locationId: LV },
+    ]);
+
+    const svc = (await bodyOf()).services.find((x: { id: string }) => x.id === "s1");
+    expect(svc.locationIds).toEqual([LV]);
+    expect(svc.locationIds).not.toContain(CB);
+  });
+
+  it("ARM 2: a service priced at BOTH clinics appears for both", async () => {
+    seed(undefined, [{ id: "s1", name: "Osteopatia", locationId: null }], [
+      { serviceId: "s1", locationId: LV },
+      { serviceId: "s1", locationId: CB },
+    ]);
+
+    const svc = (await bodyOf()).services.find((x: { id: string }) => x.id === "s1");
+    expect([...svc.locationIds].sort()).toEqual([LV, CB].sort());
+  });
+
+  it("a service priced NOWHERE is not listed at all", async () => {
+    // It would be an unpickable row: every clinic choice filters it away, so
+    // the visitor reads a name they can never reach.
+    seed(undefined, [{ id: "s1", name: "Sem preço", locationId: null }], []);
+
+    expect((await bodyOf()).services).toEqual([]);
+  });
+
+  it("`services.location_id` is a CEILING - a stray price row cannot widen it", async () => {
+    // A service scoped to Castelo Branco, with a price row at BOTH. The scope
+    // wins on LV; the price row wins on CB. Neither field alone gives this.
+    seed(undefined, [{ id: "s2", name: "Pilates Terapêutico", locationId: CB }], [
+      { serviceId: "s2", locationId: LV },
+      { serviceId: "s2", locationId: CB },
+    ]);
+
+    const svc = (await bodyOf()).services.find((x: { id: string }) => x.id === "s2");
+    expect(svc.locationIds).toEqual([CB]);
+  });
+
+  it("a price row at an INACTIVE clinic does not resurrect it", async () => {
+    // Only LV is active here. A price row at CB must not put CB in the payload,
+    // or the form would offer a clinic it never listed in step 1.
+    seed(
+      [{ id: LV, name: "Linda-a-Velha" }],
+      [{ id: "s1", name: "Osteopatia", locationId: null }],
+      [
+        { serviceId: "s1", locationId: LV },
+        { serviceId: "s1", locationId: CB },
+      ],
+    );
+
+    const svc = (await bodyOf()).services.find((x: { id: string }) => x.id === "s1");
+    expect(svc.locationIds).toEqual([LV]);
+  });
+
+  it("the response shape is unchanged - no new public field (MN-27/MN-28)", async () => {
+    // The ruling changes WHICH locations land in `locationIds`, never what the
+    // internet can see. A price row's EXISTENCE is read; its VALUE never leaves
+    // the route.
+    const body = await bodyOf();
+    expect(Object.keys(body.services[0]!).sort()).toEqual(["id", "locationIds", "name"]);
+    expect(JSON.stringify(body)).not.toMatch(/price|cents|priceCents/i);
+  });
 });
