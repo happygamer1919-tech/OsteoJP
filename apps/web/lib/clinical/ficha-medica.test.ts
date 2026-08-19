@@ -389,3 +389,79 @@ describe("projectAiPayloadOntoFichaFields — null and empty-value hardening", (
     }
   });
 });
+
+/**
+ * ==========================================================================
+ * AI-02 — a key the partner sends that maps to no ficha field.
+ * ==========================================================================
+ * The projection walked the allowlist and copied what it found; it never looked
+ * the other way. A key with no field was stored verbatim under
+ * `_aiIngestionRaw` and reached no field, no editor and no reviewer's eye.
+ * INVISIBLE, not absent, and the reported instance is why that distinction is
+ * not academic: two such keys arrived and ONE WAS AN ALARM-SYMPTOM ANSWER.
+ *
+ * THE FIRST TEST IS THE ONE THAT MATTERS. The trap in this card is comparing
+ * the payload's TOP-LEVEL keys against the TWELVE DOTTED PATHS, which flags
+ * `systems_review` — the most important container in the payload — as drift on
+ * every single record. The allowlist must be derived with `split(".")[0]`.
+ */
+describe("AI-02 — unknown payload keys are reported, never silently discarded", () => {
+  const withRaw = (raw: Record<string, unknown>) =>
+    projectAiPayloadOntoFichaFields({ _aiIngestionRaw: raw });
+
+  it("does NOT flag the known containers - `systems_review` is not drift", () => {
+    // THE REGRESSION THIS CARD WARNS ABOUT. If this fails, the allowlist was
+    // hand-written or compared against the dotted paths, and every record in
+    // the system reports a false alarm.
+    const { unknown } = withRaw({
+      consultation_reason: "x",
+      systems_review: { neurological: "n", cardiovascular: "c" },
+      template: "ficha-medica",
+      _internal: "envelope",
+    });
+    expect(unknown).toEqual([]);
+  });
+
+  it("flags a top-level key the contract has no field for", () => {
+    const { unknown } = withRaw({ consultation_reason: "x", alarm_symptoms: "yes" });
+    expect(unknown).toEqual(["alarm_symptoms"]);
+  });
+
+  it("flags an unknown leaf INSIDE systems_review, reported dotted", () => {
+    // Same invisibility and the same clinical weight as a top-level key, and
+    // the shape the reported incident had.
+    const { unknown } = withRaw({
+      systems_review: { neurological: "n", red_flags: "yes" },
+    });
+    expect(unknown).toEqual(["systems_review.red_flags"]);
+  });
+
+  it("ignores the envelope: `template` and anything underscore-prefixed", () => {
+    const { unknown } = withRaw({ template: "t", _aiMeta: 1, _v: 2 });
+    expect(unknown).toEqual([]);
+  });
+
+  it("REPORTS THE KEY, NEVER THE VALUE (rule 7)", () => {
+    // An unknown key's value IS clinical content by definition. The name says
+    // where to look; the original payload holds the rest.
+    const { unknown } = withRaw({ alarm_symptoms: "chest pain radiating to arm" });
+    expect(unknown).toEqual(["alarm_symptoms"]);
+    expect(JSON.stringify(unknown)).not.toMatch(/chest pain/);
+  });
+
+  it("does not block: the known keys still project alongside the unknown one", () => {
+    // ANNOTATE, NEVER BLOCK. A claim that fails because the partner added a key
+    // is a worse outage than a key that goes unread.
+    const { data, projected, unknown } = withRaw({
+      consultation_reason: "dor lombar",
+      alarm_symptoms: "yes",
+    });
+    expect(unknown).toEqual(["alarm_symptoms"]);
+    expect(projected).toContain("consultation_reason");
+    expect(data.consultation_reason).toBe("dor lombar");
+  });
+
+  it("reports nothing when there is no AI payload at all", () => {
+    expect(projectAiPayloadOntoFichaFields({}).unknown).toEqual([]);
+  });
+});

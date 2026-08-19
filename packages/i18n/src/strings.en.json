@@ -1363,5 +1363,7 @@
   "requests.error.notFound": "This request is no longer pending. It may already have been confirmed or cancelled.",
   "requests.error.forbidden": "You do not have permission to confirm requests.",
   "requests.error.doubleBooked": "This therapist already has a confirmed appointment at this time. Call the patient and offer another time.",
-  "requests.error.generic": "The request could not be confirmed. Try again."
+  "requests.error.generic": "The request could not be confirmed. Try again.",
+  "review.unknownKeysTitle": "Unrecognised fields",
+  "review.unknownKeysBody": "The partner sent data this form has nowhere to show. Nothing was lost: it is kept in the original record. Check it before finalising."
 }
