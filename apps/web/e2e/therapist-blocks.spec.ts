@@ -22,6 +22,16 @@ import { LOCATION, LOCATION_B, THERAPIST_NAME, futureDate, RUN_DAY_BASE, PATIENT
 
 const SAVE = "Guardar";
 
+/**
+ * `YYYY-MM-DD` -> `DD/MM/YYYY`, the format TherapistBlocks.tsx renders a block's
+ * own date in (`fmtDate`). Used to identify a row by the date THIS spec chose,
+ * rather than by a badge label every block of that mode shares.
+ */
+function ptDate(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
 /** The member card for THERAPIST_NAME. */
 function therapistCard(page: Page) {
   return page.locator('[data-testid="equipa-card"]').filter({ hasText: THERAPIST_NAME }).first();
@@ -257,8 +267,40 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   await openBlocks(page);
   modal = blocksModal(page);
   const list = modal.getByTestId("blocks-list");
-  await expect(list.getByText("Bloqueio pontual")).toHaveCount(1);
-  await expect(list.getByText("Ausência prolongada")).toHaveCount(1);
+
+  // CRITERION F (ACC-identity-blind-assertions). These two assertions used to
+  // count the BADGE TEXT - `list.getByText("Bloqueio pontual")).toHaveCount(1)`.
+  // The badge is SHARED VOCABULARY, not identity: every pontual block this
+  // therapist has ever had renders the same string, the modal lists ALL of them
+  // unfiltered by date (TherapistBlocks.tsx maps over `blocks` whole), and
+  // THERAPIST_NAME is a SHARED fixture that another spec writes to -
+  // agenda-blocked-time.spec.ts creates its own pontual block for this same
+  // therapist and its clearBlocks() deletes every block this therapist has,
+  // not only its own.
+  //
+  // WHY THAT IS WORSE THAN A FLAKE. A contaminated exact count usually FAILS,
+  // which is loud and harmless. The case that is not harmless is the
+  // COMPENSATING ERROR: if the save above had silently failed WHILE a foreign
+  // pontual block was present, the count would still be 1, the assertion would
+  // pass, and the test would report that a block it never created was created.
+  // That is the difference the card draws - a skipped test fails to prove, an
+  // identity-blind one proves something FALSE.
+  //
+  // The fix is the card's own rule: identify each row by its OWN run-scoped
+  // date (RUN_DAY_BASE is randomised per run, so a leftover row from an earlier
+  // run lands on a different day), then assert the badge INSIDE that row. Both
+  // halves are needed - the row proves the block is ours, the badge proves it
+  // is the mode we asked for.
+  const pontualRow = list.locator("li").filter({ hasText: ptDate(date) });
+  await expect(pontualRow).toHaveCount(1);
+  await expect(pontualRow).toContainText("Bloqueio pontual");
+  await expect(pontualRow).toContainText("09:00");
+
+  const prolongadaRow = list
+    .locator("li")
+    .filter({ hasText: ptDate(futureDate(RUN_DAY_BASE + 40)) });
+  await expect(prolongadaRow).toHaveCount(1);
+  await expect(prolongadaRow).toContainText("Ausência prolongada");
   await page.keyboard.press("Escape");
   await expect(modal).toBeHidden();
 
