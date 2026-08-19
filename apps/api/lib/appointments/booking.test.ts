@@ -190,6 +190,41 @@ async function code(fn: () => Promise<unknown>): Promise<string> {
 
 /* --------------------------- self-scope ---------------------------------- */
 
+/**
+ * ==========================================================================
+ * ACC-preselection-spec-flaky — THE FLAKE'S CAUSE, NOT ITS TRIGGER.
+ * ==========================================================================
+ * `booking.test.ts > "allows a cancel outside 24h"` failed twice on a 5040ms
+ * TIMEOUT against a suite that runs in well under a second, and passed on
+ * re-run of the same commit. The card's reading was that the runner is
+ * occasionally slow enough for a timeout-bounded assertion to lose.
+ *
+ * THE RUNNER BEING SLOW IS THE TRIGGER. THE CAUSE IS THAT THIS UNIT SUITE WAS
+ * MAKING A REAL DATABASE CONNECTION ATTEMPT. The CI log says so in its own
+ * words, naming this block's own fixture:
+ *
+ *   [notifications] patient-change emit FAILED kind=cancelled tenant=t-1
+ *   appointment=appt-alice Error: @osteojp/db: DATABASE_URL is not set.
+ *
+ * `cancelAppointment` calls `emitPatientChange`, which is best-effort and
+ * swallows its own failure - so nothing failed, nothing was asserted, and the
+ * only trace was a log line. What it does NOT do is return instantly: it
+ * resolves a client and attempts a connection first. On a loaded runner that
+ * attempt is the variable-latency step that pushed a sub-second test past five
+ * seconds.
+ *
+ * THE STUB EXISTED ALL ALONG AND WAS SCOPED TO ONE describe. It sat in a
+ * `beforeEach` inside a later block, so every block above it - including the
+ * 24h cutoff block - ran against the real consumer. Hoisting it to file scope
+ * is the whole fix.
+ *
+ * WHY THIS IS BETTER THAN RAISING THE TIMEOUT, which was the obvious answer: a
+ * longer timeout makes the flake rarer while leaving a unit test dependent on
+ * how fast a socket fails. The test never wanted the network at all.
+ */
+beforeEach(() => setPatientChangeConsumer(stubConsumer));
+afterEach(() => resetPatientChangeConsumer());
+
 describe("self-scope: a patient only ever sees/touches their own", () => {
   const bobRow = ownRow({ id: "appt-bob", patientId: "bob" });
 
@@ -266,8 +301,8 @@ describe("24h cutoff is server-enforced", () => {
 // Without this the emit would reach ./centre and try to open a database from a
 // unit test.
 describe("book", () => {
-  beforeEach(() => setPatientChangeConsumer(stubConsumer));
-  afterEach(() => resetPatientChangeConsumer());
+  // The stub is installed at FILE scope now (see the header): it was scoped to
+  // this block alone, which is why every block above it hit the network.
 
   it("takes patient_id from the principal, never the request body", async () => {
     const { store, createCalls, rows } = makeStore();
