@@ -104,3 +104,113 @@ between a status change and a stale column.
 This restates `PORTAL-REHYDRATE.md` §4.3, which already says it. The entry is
 here because a rule that is written down and still broken needs its instance
 recorded, not just its text repeated.
+
+---
+
+## 3. Diagnosed before reading the log, twice in one session
+
+**2026-08-19.** An E2E shard ran 25 minutes against a 7-minute median and went
+red. **Twice I stated a cause before opening the log, and both times I was
+wrong.**
+
+**FIRST: I blamed my own change.** The failing shard was the one carrying the
+spec I had just edited, so I reported to the owner that it was "my change until
+proven otherwise". The log said the shard had spent 23 of its 25 minutes in
+`Start Supabase (lean stack)`, hit the known `CI-supabase-cli-setup-flaky`, and
+was killed by the job ceiling **0.7 seconds after Playwright started**. Zero
+tests ran. Nothing in that log was evidence about my change in either direction.
+
+**SECOND: I generalised from one sample.** Having found Supabase in that one
+outlier, I told the owner that *every* long run was the Supabase start step. The
+very next kill was a completely different step — `apt-get` hanging against
+`archive.ubuntu.com` inside the Playwright browser install, with no Supabase
+involvement at all. Four distinct causes are now on record across the same
+symptom.
+
+**WHY THE FIRST ERROR IS THE MORE DANGEROUS ONE, and it is not the obvious
+reason.** Blaming your own change *sounds* like the humble, careful assumption,
+which is exactly what makes it hard to challenge. But it is still a claim about
+cause made without evidence, and it points work at the wrong place: the honest
+next step after "probably mine" is to start editing the diff, and the diff was
+innocent. A wrong cause that flatters the speaker is still a wrong cause.
+
+**WHY THE SECOND IS EASY TO REPEAT.** One sample plus a plausible mechanism reads
+exactly like a diagnosis. Nothing about the experience distinguishes them: the
+mechanism was real, the log did say Supabase, and the conclusion was still false
+because a single observation cannot tell you what a *class* of failures is caused
+by. This project's own e2e doctrine already says one green run proves nothing
+that can race; one red run proves no more.
+
+**PREVENTION, and both halves are needed.**
+**Read the failing log before stating any hypothesis** — to strategy, to the
+owner, or in a report. Not before *investigating*; before **speaking**. Saying
+"I don't know yet, reading the log" costs one sentence and forecloses nothing.
+**Never generalise a CI diagnosis from a single failure.** One occurrence is an
+occurrence. A *class* needs a count, and if the count is one, say one.
+
+Related, and the same family one layer out: [[verify-premises-not-transcribe]].
+The repo's e2e doctrine is `ACC-preselection-spec-flaky`, whose reported cause
+was wrong four times before anyone read the artifact.
+
+---
+
+## 4. A test harness that omitted the runner's shell flags
+
+**2026-08-19.** A CI step needed a retry, so the retry logic was extracted from
+the workflow YAML and exercised locally with a stubbed command. **Four cases
+passed.** The same script was then killed by CI, twice, on two shards.
+
+**THE CAUSE.** GitHub executes `run:` blocks as
+`bash --noprofile --norc -e -o pipefail`. The harness ran the extracted script
+under a plain `bash` with no flags. The script's own `set -uo pipefail` does
+**not** remove that injected `-e`, so on the runner a bare failing call aborted
+the step instantly and the retry beneath it was unreachable — the exact code path
+the harness had reported as working.
+
+**WHY IT PASSED LOCALLY AND FAILED REMOTELY IS THE WHOLE POINT.** The script was
+byte-identical in both places. Nothing about the *code* differed. The environment
+differed, and the environment was the thing under test — a retry only exists to
+handle a failure, and how a shell behaves on failure is decided by its flags.
+A harness that changes the flags is testing a different program that happens to
+share source.
+
+**THE SISTER DEFECT, found in the same harness minutes later.** Its stubbing used
+`sed` with `\s`, which **BSD sed does not support**, so on macOS the
+substitutions matched nothing and the real `sudo` and `sleep` ran underneath. A
+substitution that matches nothing exits 0. The harness reported success while
+stubbing nothing — the same shape as the thing it was built to catch, one level
+further out.
+
+**PREVENTION.** **A harness that simulates CI must reproduce the runner's shell
+flags and injected options before any pass it reports counts as evidence.**
+Copy the invocation verbatim (`bash --noprofile --norc -e -o pipefail`), do not
+approximate it. And **stub with shell functions rather than text substitution**:
+a function override either exists or does not, whereas a `sed` that fails to
+match is indistinguishable from one that succeeded.
+
+---
+
+## 5. A negative control that changed nothing and reported a pass
+
+**2026-08-19.** A fix was proven with a negative control: revert the change, and
+confirm the guard goes red. The revert was done with a regex substitution. **It
+replaced zero call sites**, the unmodified (already-correct) script ran, it
+passed, and that pass was briefly read as "the old form works too".
+
+**WHY IT IS WORSE THAN NO CONTROL AT ALL.** A missing negative control leaves you
+knowing you have not checked. A *vacuous* one leaves you believing you have. The
+output is indistinguishable from a real result — same command, same green, same
+sentence in the report — and it arrives at precisely the moment you are looking
+for reassurance, which is when scrutiny is lowest.
+
+It is the same defect the negative control exists to detect, wearing the
+control's own clothes: a check that cannot fail, reporting that it did not fail.
+`ACC-vacuous-guard-sweep` counts 123 of these in the product's tests; this one
+was in the *instrument*, which is where this project keeps finding them
+(see [[osteojp-e2e-debugging-doctrine]]).
+
+**PREVENTION.** **A negative control must assert the count of things it
+changed.** `assert n == 2` before running it. A zero-change control proves
+nothing and must fail loudly rather than pass quietly. The same rule covers every
+mechanical edit made in order to test something: if the edit is the premise of
+the experiment, the edit needs its own assertion.
