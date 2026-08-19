@@ -24,10 +24,17 @@ const DIR = join(REPO_ROOT, "supabase", "templates");
 /** Template file → the GoTrue variable it MUST interpolate. */
 const REQUIRED_VARIABLE: Record<string, string> = {
   "confirm-signup.html": "{{ .ConfirmationURL }}",
-  "invite.html": "{{ .ConfirmationURL }}",
   "magic-link.html": "{{ .ConfirmationURL }}",
   "change-email.html": "{{ .ConfirmationURL }}",
-  "reset-password.html": "{{ .ConfirmationURL }}",
+  // INVITE AND RESET ARE NOT ConfirmationURL, AND HAVE NOT BEEN SINCE #837.
+  // LE-auth-recovery-deadend moved both off GoTrue's /auth/v1/verify link and
+  // onto `?token_hash={{ .TokenHash }}&type=...` pointing at our own INERT
+  // landing page, because the old shape was spent by a mail scanner in transit -
+  // it failed five times before the shape changed. These two entries said
+  // ConfirmationURL for eight days after that and the suite stayed green,
+  // because the string survived in the comment warning against it.
+  "invite.html": "{{ .TokenHash }}",
+  "reset-password.html": "{{ .TokenHash }}",
   // Reauthentication is a CODE, not a link: GoTrue sends {{ .Token }} and there
   // is no URL to follow. A ConfirmationURL here would render empty.
   "reauthentication.html": "{{ .Token }}",
@@ -53,6 +60,35 @@ const STOCK_ENGLISH = [
 
 const files = readdirSync(DIR).filter((f) => f.endsWith(".html")).sort();
 const read = (f: string) => readFileSync(join(DIR, f), "utf-8");
+
+/**
+ * The template body with HTML COMMENTS REMOVED.
+ *
+ * WHY THIS EXISTS, and it is the whole of LE-vacuous-template-guard. The
+ * required-variable assertion below read the RAW file, so a template that no
+ * longer interpolates its variable still passed as long as the string survived
+ * anywhere in the bytes - including inside the comment WARNING AGAINST USING IT.
+ *
+ * That is not hypothetical. #837 moved reset-password.html and invite.html off
+ * `{{ .ConfirmationURL }}` and onto `?token_hash={{ .TokenHash }}`, and both
+ * files carry a comment reading: 'Do not "simplify" to {{ .ConfirmationURL }}'.
+ * `grep -c ConfirmationURL` returns 1 for each file and in each the single hit
+ * is that warning. SO THE TWO TEMPLATES WHOSE SHAPE ACTUALLY CHANGED WERE THE
+ * TWO THE GUARD NO LONGER GUARDED - and it would have kept passing on a
+ * reset-password.html reverted to the old spend-on-GET shape, because the
+ * reverting edit deletes the interpolation and keeps the comment.
+ *
+ * Criterion F: matching a MENTION rather than a USE. The repo already had the
+ * pattern - apps/api/lib/auth/no-session-minting.test.ts:66-70 and
+ * app/auth/update-password/inert-get.test.ts both strip for exactly this reason.
+ * This suite never adopted it.
+ *
+ * SCOPED TO THIS ONE ASSERTION ON PURPOSE. The other checks in this file are
+ * about PROSE - stock English, the brand teal, the clinic names, malformed
+ * entities - and a comment cannot satisfy those in a way that matters. Stripping
+ * everywhere would be a larger change with no argument behind it.
+ */
+const withoutComments = (f: string) => read(f).replace(/<!--[\s\S]*?-->/g, "");
 
 /**
  * The bodies are written with HTML entities for every accented character, on
@@ -97,7 +133,44 @@ describe("every Supabase Auth template that can send mail has a pt-PT body", () 
   it.each(files)("%s interpolates the variable GoTrue actually sends it", (f) => {
     const required = REQUIRED_VARIABLE[f];
     expect(required, `no required variable declared for ${f}`).toBeTruthy();
-    expect(read(f)).toContain(required);
+    expect(
+      withoutComments(f),
+      `${f}: the required variable is absent from the template BODY. A hit inside ` +
+        `an HTML comment does not count - see withoutComments above.`,
+    ).toContain(required);
+  });
+
+  /**
+   * ONE ARM BEYOND THE CARD'S SPEC, and the reason is the card's own risk
+   * sentence: the property #837 protects is "the property a future
+   * 'simplification' would undo".
+   *
+   * The corrected mapping above catches a REVERT - delete the TokenHash link,
+   * put ConfirmationURL back, and the presence assertion fails. It does NOT
+   * catch a template that carries BOTH: a well-meaning edit that adds a
+   * "fallback" ConfirmationURL beside the working link would keep TokenHash
+   * present and sail through. That is precisely the shape the warning comment in
+   * those two files exists to forbid, and until now nothing enforced it.
+   *
+   * A PRESENCE ASSERTION PROVES THE MECHANISM EXISTS; ONLY THE REFUSAL PROVES
+   * THE WRONG SHAPE IS REFUSED. Criterion F, applied to this suite's own fix.
+   */
+  const FORBIDDEN_VARIABLE: Record<string, string[]> = {
+    "invite.html": ["{{ .ConfirmationURL }}", "{{ .RedirectTo }}"],
+    "reset-password.html": ["{{ .ConfirmationURL }}", "{{ .RedirectTo }}"],
+  };
+
+  it.each(files)("%s does not reintroduce a forbidden link variable", (f) => {
+    const forbidden = FORBIDDEN_VARIABLE[f] ?? [];
+    const body = withoutComments(f);
+    for (const v of forbidden) {
+      expect(
+        body,
+        `${f}: ${v} is back in the template body. Both reintroduce the ` +
+          `spend-on-GET shape #837 removed after it failed five times to a mail ` +
+          `scanner. The file's own comment says so; this is the check.`,
+      ).not.toContain(v);
+    }
   });
 
   it.each(files)("%s carries no Supabase stock English", (f) => {
