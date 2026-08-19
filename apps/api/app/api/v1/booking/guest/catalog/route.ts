@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { and, asc, eq } from "drizzle-orm";
-import { getDbAdmin, locations, services } from "@osteojp/db";
+import { getDbAdmin, locations, serviceLocationPrices, services } from "@osteojp/db";
 
 import { createDurableRateLimitStore, checkDurableRateLimit } from "@/lib/rate-limit/durable-store";
 import { RULES, clientKey, tooManyRequests } from "@/lib/rate-limit/limiter";
@@ -106,6 +106,60 @@ export async function GET(req: Request): Promise<Response> {
 
   const activeLocationIds = locationRows.map((l) => l.id);
 
+  // ==========================================================================
+  // WHERE A SERVICE IS OFFERED. Owner ruling 2026-08-19 (GUEST-08).
+  // ==========================================================================
+  // THE AUTHORITY IS `service_location_prices`, AND IT IS NOT A PRICE LOOKUP.
+  // W8-01a calls this offered-only-where-priced: a service is offered at a
+  // location IFF AN ACTIVE PRICE ROW EXISTS THERE. That single rule is what
+  // draws the "Oferecido aqui" / "Nao oferecido aqui" badge on
+  // Administracao > Servicos, which is the screen the clinic actually
+  // maintains, and it is the configuration the owner named.
+  //
+  // WHAT THIS REPLACES, AND THE OLD PREDICATE WAS A DIFFERENT QUESTION.
+  // This route derived the answer from `services.location_id` - null meaning
+  // "all locations". That column scopes a service to a clinic; it says nothing
+  // about whether the clinic offers it. The two disagree the moment somebody
+  // turns a service off at one clinic in Servicos, because that action writes
+  // a price row and never touches `services.location_id`. Observed exactly
+  // that way: Drenagem Linfatica reads "Nao oferecido aqui" at Castelo Branco
+  // and "Oferecido aqui" at Linda-a-Velha, while this endpoint reported it
+  // available at both and the public form offered it at both.
+  //
+  // NO NEW PUBLIC SURFACE (MN-27, MN-28). The response keeps exactly the keys
+  // it had - `locationIds` already existed and is still the only place-shaped
+  // field. What changed is which locations land in it. No price, no count and
+  // no configuration detail is exposed: a price row's EXISTENCE is read, its
+  // VALUE never leaves this function.
+  //
+  // A SERVICE PRICED NOWHERE NOW LISTS NOWHERE, and that is the rule rather
+  // than an edge case. Administracao > Servicos already shows such a service as
+  // "Nao oferecido aqui" at every clinic, so the public form disappearing it is
+  // the form agreeing with the screen the clinic reads. It does mean the
+  // catalog is only as complete as the price grid.
+  const offeringRows = await db
+    .select({
+      serviceId: serviceLocationPrices.serviceId,
+      locationId: serviceLocationPrices.locationId,
+    })
+    .from(serviceLocationPrices)
+    .where(
+      and(
+        eq(serviceLocationPrices.tenantId, tenantId),
+        eq(serviceLocationPrices.isActive, true),
+      ),
+    );
+
+  // serviceId -> the active locations it is priced at, intersected with the
+  // ACTIVE locations. A price row at a closed clinic must not resurrect it.
+  const offeredLocationsByService = new Map<string, string[]>();
+  for (const row of offeringRows) {
+    if (!activeLocationIds.includes(row.locationId)) continue;
+    const list = offeredLocationsByService.get(row.serviceId);
+    if (list) list.push(row.locationId);
+    else offeredLocationsByService.set(row.serviceId, [row.locationId]);
+  }
+
   const payload: PublicBookingCatalog = {
     // MAPPED EXPLICITLY, not passed through, and the difference is not stylistic
     // on a public endpoint. Passing `locationRows` straight out makes the SELECT
@@ -116,10 +170,6 @@ export async function GET(req: Request): Promise<Response> {
     // built, and `catalog/route.test.ts` §2 pins both key sets.
     locations: locationRows.map((l) => ({ id: l.id, name: l.name })),
     services: serviceRows
-      // A location-bound service only lists if its location is active, matching
-      // the authenticated catalog. Otherwise the form would offer a service at a
-      // clinic that is closed.
-      .filter((s) => s.locationId === null || activeLocationIds.includes(s.locationId))
       .map((s) => ({
         id: s.id,
         name: s.name,
@@ -128,8 +178,22 @@ export async function GET(req: Request): Promise<Response> {
         // treatment is available. Without it the form could produce a
         // service/clinic pair the clinic does not offer, and reception would
         // find out by telephone.
-        locationIds: s.locationId === null ? activeLocationIds : [s.locationId],
-      })),
+        //
+        // `services.location_id` IS STILL HONOURED, as a CEILING rather than as
+        // the answer. A service scoped to one clinic cannot be offered at
+        // another, whatever a stray price row says, so the two are intersected:
+        // the price grid decides where a service is offered, and the scope
+        // decides where it COULD be. Neither alone is right - the scope ignores
+        // what the clinic configured, and the grid alone would let a
+        // clinic-specific service surface somewhere it was never meant to.
+        locationIds: (offeredLocationsByService.get(s.id) ?? []).filter(
+          (id) => s.locationId === null || id === s.locationId,
+        ),
+      }))
+      // A service offered at NO active clinic is not listed at all. It would be
+      // an unpickable row: every clinic choice would filter it away, so the
+      // visitor would see a name they can never reach.
+      .filter((s) => s.locationIds.length > 0),
   };
 
   return NextResponse.json(payload);
