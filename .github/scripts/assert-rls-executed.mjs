@@ -213,6 +213,63 @@ for (const tr of report.testResults) {
   byFile.set(name, counts);
 }
 
+/**
+ * ==========================================================================
+ * THE DERIVED HALF, added 2026-08-18. THE LIST ABOVE IS NO LONGER THE LIMIT.
+ * ==========================================================================
+ * Everything above is an ALLOWLIST: 18 named files, each hard-required. It
+ * protects what it names and nothing else, and a hand-maintained list of 18
+ * against a population of 48 drifts - `guest-match.db.test.ts` and seven other
+ * DB-gated suites are not on it and never were.
+ *
+ * WHAT IT DID PROTECT, so this is not read as the list having been useless: if
+ * DATABASE_URL vanished, all 48 would skip together and the 18 would redden the
+ * job. The env failure mode was covered. What was NOT covered is a suite the
+ * list does not name being renamed, deleted, or gaining a SECOND skip condition
+ * while the other 17 still pass.
+ *
+ * SO THIS PASS INVERTS THE QUESTION. Instead of "did each named suite run",
+ * it asks "did ANYTHING in these reports fail to run", and every suite is in
+ * scope the moment it appears in a report. A suite added next month is covered
+ * on arrival rather than when somebody remembers to list it.
+ *
+ * IT MEASURES THE REPORT, NOT THE SOURCE, and that distinction is load-bearing.
+ * The obvious implementation is to grep the tree for `skipIf(` and require every
+ * match - and it is wrong for the reason criterion F names: it matches a MENTION
+ * rather than a USE. It was tried on 2026-08-18 and immediately matched a
+ * DOC COMMENT describing a deleted suite. The vitest JSON report cannot make
+ * that mistake: a test either ran or it did not.
+ *
+ * PERMITTED_SKIPS IS EMPTY AND SHOULD STAY THAT WAY. It exists so that a
+ * legitimate skip is recorded as a decision with a reason, in the same spirit as
+ * `open_on_purpose` on the board, rather than by quietly removing a suite from a
+ * list. An entry here is a claim that somebody made a judgement; an empty set is
+ * a claim that nobody has needed to yet.
+ */
+const PERMITTED_SKIPS = new Map([
+  // ["some-suite.test.ts", "why this one is allowed to skip, and who decided"],
+]);
+
+const derivedFailures = [];
+const derivedRows = [];
+for (const [file, c] of byFile) {
+  if (SUITES.some((s) => s.file === file)) continue; // already hard-checked below
+  if (c.notRun === 0) continue;
+
+  const reason = PERMITTED_SKIPS.get(file);
+  if (reason) {
+    // Printed on EVERY run, never silenced - an exemption nobody sees is an
+    // exemption nobody revisits.
+    derivedRows.push([file, `${c.notRun}/${c.total} skipped - PERMITTED: ${reason}`, "ack"]);
+    continue;
+  }
+  derivedFailures.push(
+    `${file}: ${c.notRun}/${c.total} test(s) did not run, and this suite is on no list - ` +
+      "either it should be executing or its skip needs an entry in PERMITTED_SKIPS with a reason",
+  );
+  derivedRows.push([file, `${c.notRun}/${c.total} not-run`, "RED"]);
+}
+
 const rows = [];
 for (const suite of SUITES) {
   const c = byFile.get(suite.file);
@@ -252,7 +309,10 @@ for (const suite of SUITES) {
 }
 
 // ── Report ────────────────────────────────────────────────────────────────
-const w = Math.max(...SUITES.map((s) => s.file.length));
+rows.push(...derivedRows);
+failures.push(...derivedFailures);
+
+const w = Math.max(...SUITES.map((s) => s.file.length), ...derivedRows.map((r) => r[0].length));
 console.log("RLS isolation skip-guard — DB-gated execution check\n");
 for (const [file, detail, status] of rows) {
   const tag = status === "RED" ? "[31mRED [0m" : `[32m${status === "ok" ? "RUN " : "SKIP"}[0m`;
