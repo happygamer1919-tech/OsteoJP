@@ -1,7 +1,7 @@
 "use client";
 
 import { DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
-import { Ban, ChevronLeft, ChevronRight, MapPin, Plus } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight, MapPin, Plus, RotateCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
@@ -46,6 +46,8 @@ export function AgendaView({
   prefill,
   canHardDelete,
   canBlockTime,
+  renderedAt,
+  renderedAtIso,
 }: {
   view: View;
   anchor: string;
@@ -79,9 +81,26 @@ export function AgendaView({
    *  from the role that owns scheduling. This still never relaxes the guard - the
    *  server re-asserts the same capability and the same location scope. */
   canBlockTime: boolean;
+  /**
+   * LE-agenda-does-not-learn-of-portal-bookings. THE INSTANT THIS DATA WAS READ,
+   * "HH:MM" Lisbon, FORMATTED ON THE SERVER AND PASSED IN.
+   *
+   * IT IS A PROP AND NOT A `new Date()` IN THIS FILE, and that is the whole
+   * correctness of the feature. A client-side clock would re-read on every
+   * render and always say "now" - so the stamp would be freshest exactly when
+   * the data was stalest, and the screen would lie about its own freshness with
+   * more confidence than it does today. The value has to travel with the data
+   * it describes.
+   *
+   * `/agenda` is dynamic SSR and re-queries on every request, so a new value
+   * arriving IS a new read. Nothing else can produce one.
+   */
+  renderedAt: string;
+  /** The same instant as ISO-8601, for the `<time dateTime>` attribute. */
+  renderedAtIso: string;
 }) {
   const router = useRouter();
-  const [, startTransition] = useTransition();
+  const [refreshing, startTransition] = useTransition();
   const [modal, setModal] = useState<ModalState | null>(null);
   // W12-28: "Bloquear horário" dialog state (null = closed). Prefills from a slot
   // when opened from an empty cell; the current therapist filter preselects.
@@ -300,6 +319,60 @@ export function AgendaView({
               {s["agenda.blockTime"]}
             </button>
           )}
+          {/* LE-agenda-does-not-learn-of-portal-bookings — THE AGENDA SAYS HOW
+              OLD IT IS.
+
+              THE PROBLEM IS STRUCTURAL AND IS NOT FIXED HERE. A portal booking
+              is written by `apps/api`; this page is rendered by `apps/web`.
+              They are SEPARATE Next deployments on separate Vercel projects, so
+              `revalidatePath` in one cannot invalidate the other's cache - it
+              invalidates the CALLING deployment's, and apps/api never calls it
+              (asserted in apps/api/lib/exposure/sync-single-source.test.ts).
+              An agenda left open at reception therefore never learns about a
+              portal booking until somebody navigates or reloads.
+
+              IT IS NOT A DOUBLE-BOOKING RISK. The protection is the slot LOCK
+              and 0061's CONSTRAINT, not the render: two writers for one window
+              are serialised at the database and one is refused. A stale screen
+              cannot CREATE a double booking. What it can do is show a
+              receptionist an out-of-date picture while they are on the phone to
+              a patient, and that is the whole cost.
+
+              SO THIS REMOVES THE WRONG BELIEF RATHER THAN THE LAG. The data was
+              never stale ON READ - the page re-queries every request - it is
+              just that nothing PROMPTS a read. A screen with no stamp reads as
+              live. A screen that says 14:32 does not, and the button next to it
+              is the prompt that was missing.
+
+              POLLING (option a on the card) IS NOT BUILT and is the honest next
+              step if reception still finds the lag costly. A shared invalidation
+              channel (option b) is new infrastructure and is not worth it for a
+              surface that cannot cause the harm it looks like it could. */}
+          <span
+            data-testid="agenda-freshness"
+            className="hidden items-center gap-2 rounded-full border border-v2-border bg-v2-surface px-3 py-1 sm:inline-flex"
+          >
+            <span className="text-sm text-v2-text-secondary">
+              {s["agenda.lastUpdated"]}{" "}
+              <time dateTime={renderedAtIso} className="tabular-nums">
+                {renderedAt}
+              </time>
+            </span>
+          </span>
+          <button
+            type="button"
+            data-testid="agenda-refresh"
+            aria-label={s["agenda.refresh"]}
+            disabled={refreshing}
+            onClick={() => startTransition(() => router.refresh())}
+            className="inline-flex h-10 items-center gap-2 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          >
+            <RotateCw size={18} strokeWidth={1.75} aria-hidden="true" />
+            <span className="hidden lg:inline">
+              {refreshing ? s["agenda.refreshing"] : s["agenda.refresh"]}
+            </span>
+          </button>
+
           {/* Primary action: filled Wellness Green (SPEC-v2-agenda §1.4). The
               packages/ui Button is brand-teal with no green variant; styled
               in-route on v2 tokens to meet the spec (green-700 fill + inverse

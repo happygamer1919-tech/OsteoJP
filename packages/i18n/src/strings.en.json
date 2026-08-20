@@ -1376,5 +1376,8 @@
   "consultations.stuck.attempts": "Delivery attempts",
   "consultations.stuck.lastAttempt": "Last attempt",
   "consultations.stuck.lastError": "Technical reason",
-  "consultations.stuck.noError": "No reason recorded"
+  "consultations.stuck.noError": "No reason recorded",
+  "agenda.lastUpdated": "Updated at",
+  "agenda.refresh": "Refresh",
+  "agenda.refreshing": "Refreshing…"
 }
