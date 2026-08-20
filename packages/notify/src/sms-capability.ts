@@ -3,6 +3,24 @@
 // Pure module: no DB, no env, no `server-only`. Unit-testable anywhere.
 //
 // ================================================================== //
+// MOVED HERE FROM apps/api ON 2026-08-20, AND THE MOVE IS THE POINT.
+// ================================================================== //
+//
+// The owner ruled Q-LE-REMINDERS-LANDLINE-1 that the reminder path must SKIP a
+// landline and SURFACE it to reception. That makes this predicate a SECOND
+// app's dependency - apps/web's reminder dispatch - and apps/web and apps/api
+// are separate Next builds that cannot import each other.
+//
+// SO IT WAS EITHER A SHARED PACKAGE OR A THIRD COPY. This repo already carries
+// `normalizePhonePT` twice, guarded by a parity test written that same day
+// because a comment saying "keep in sync" was the whole of the enforcement. A
+// third copy of a SECOND phone predicate, in the same family, was not a trade
+// worth making: the copies would have to agree with each other AND each version
+// would have to agree with its own normalizer.
+//
+// A shared package has no copies to keep in sync. That is the whole argument.
+//
+// ================================================================== //
 // WHY THIS IS NOT A ONE-CHARACTER EDIT TO PT_SUBSCRIBER.
 // ================================================================== //
 //

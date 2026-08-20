@@ -1383,5 +1383,12 @@
   "appointment.outsideAvailability": "Outside the therapist working hours on that day.",
   "appointment.outsideAvailabilityWindows": "Hours that day:",
   "appointment.outsideAvailabilityNoWindows": "This therapist has no hours set for that weekday.",
-  "appointment.outsideAvailabilityHint": "To book outside these hours, change the therapist availability in Horários first."
+  "appointment.outsideAvailabilityHint": "To book outside these hours, change the therapist availability in Horários first.",
+  "reminders.unreachable.title": "Patients who cannot receive an SMS",
+  "reminders.unreachable.subtitle": "These patients have an appointment coming up and the number on file is a landline, which cannot receive SMS. They will not get their reminder. Ask for a mobile next time you speak to them.",
+  "reminders.unreachable.empty": "No patients in this situation.",
+  "reminders.unreachable.emptyHint": "Every patient with an upcoming appointment has a number that can receive SMS.",
+  "reminders.unreachable.nextAppointment": "Next appointment",
+  "reminders.unreachable.noPhone": "No number on file",
+  "reminders.unreachable.openPatient": "Open record"
 }

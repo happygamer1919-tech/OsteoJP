@@ -13,7 +13,7 @@ import {
 } from "@osteojp/db";
 
 import { hashPhone } from "@/lib/auth/otp";
-import { isSmsCapablePT } from "@/lib/auth/otp-sms-capability";
+import { isSmsCapablePT } from "@osteojp/notify";
 import { normalizePhonePT } from "@/lib/notify/phone";
 import { createDurableRateLimitStore, checkDurableRateLimit } from "@/lib/rate-limit/durable-store";
 import {

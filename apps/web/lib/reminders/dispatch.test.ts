@@ -174,7 +174,13 @@ describe("dispatchReminder honors tenant reminder config", () => {
       patientId: PATIENT_ID,
       patientName: "Madalena Sousa",
       patientEmail: "madalena@example.pt",
-      patientPhone: "+351 210 000 000",
+      // A MOBILE, changed from "+351 210 000 000" on 2026-08-20
+      // (Q-LE-REMINDERS-LANDLINE-1). The old value was a 21x GEOGRAPHIC line and
+      // this test asserts an SMS is dispatched to it — which the ruling now
+      // refuses, correctly: a landline cannot receive one. The fixture was
+      // modelling the defect and asserting it was fine. This suite is about
+      // CHANNEL SELECTION, not about landlines.
+      patientPhone: "+351 912 345 678",
       // Default patient prefs: SMS on, email on (same as "both enabled" default).
       patientReminderSmsEnabled: patientPrefs?.smsEnabled ?? true,
       patientReminderEmailEnabled: patientPrefs?.emailEnabled ?? true,

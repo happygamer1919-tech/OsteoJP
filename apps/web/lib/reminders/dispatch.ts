@@ -24,6 +24,7 @@ import {
 import { sendEmail, sendSms, type SendResult } from "./clients";
 import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "./phone";
+import { isSmsCapablePT } from "@osteojp/notify";
 import {
   signRescheduleToken,
   rescheduleTokenExpiry,
@@ -161,6 +162,37 @@ async function sendPatientSms(args: {
   if (!to) {
     console.warn(
       `[reminders] sms skipped: invalid_phone tenantId=${args.tenantId} appointmentId=${args.appointmentId} patientId=${args.patientId}`,
+    );
+    return null;
+  }
+
+  // ================================================================= //
+  // A LANDLINE IS SKIPPED, NOT SENT. Q-LE-REMINDERS-LANDLINE-1, ruled
+  // 2026-08-20: skip AND surface it to reception.
+  // ================================================================= //
+  // `normalizePhonePT` admits the `2` prefix - Portuguese geographic lines,
+  // which cannot receive SMS - so before this the clinic paid Twilio for a
+  // message the carrier had nowhere to deliver. The patient got no reminder
+  // either way; the only difference the skip makes is the bill.
+  //
+  // ITS OWN REASON, NOT `invalid_phone`, and that distinction is the whole
+  // reason this branch is separate. They are different facts about different
+  // problems: `invalid_phone` is a number nobody can use and the record is
+  // wrong; `landline` is a perfectly good number that cannot receive THIS
+  // channel. Reception acts on them differently - one is a typo, the other is a
+  // conversation with the patient - and a single log line saying "invalid"
+  // would send them to correct a number that is correct.
+  //
+  // SKIPPING IS HALF THE RULING AND IT IS THE HALF THAT DOES NOT HELP THE
+  // PATIENT. The clinic stops paying and the patient still gets nothing. The
+  // other half is the reception surface: `listPatientsUnreachableBySms` derives
+  // the patients this WILL happen to from their stored number and their upcoming
+  // appointments - BEFORE the reminder is due, rather than logging it after.
+  if (!isSmsCapablePT(to)) {
+    console.warn(
+      `[reminders] sms skipped: landline tenantId=${args.tenantId} appointmentId=${args.appointmentId} patientId=${args.patientId}. ` +
+        `The stored number is a Portuguese geographic line and cannot receive SMS. ` +
+        `This is a DATA problem, not a delivery failure: reception sees the patient on /notificacoes and asks for a mobile.`,
     );
     return null;
   }

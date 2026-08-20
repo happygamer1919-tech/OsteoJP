@@ -80,7 +80,24 @@ const STARTS_AT = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
 // "Montemor-o-Novo" until 2026-08-07: not a clinic, and a character longer than
 // any real name. The real longest is "Castelo Branco". See twilio-proof.test.ts.
 const LONGEST_LOCATION = "Castelo Branco";
-const LONGEST_PHONE = "+351 210 000 000";
+/**
+ * A MOBILE, changed from "+351 210 000 000" on 2026-08-20 (Q-LE-REMINDERS-LANDLINE-1).
+ *
+ * The old value was a `21x` GEOGRAPHIC line — a Lisbon landline — used as the
+ * PATIENT's number while this suite asserted an SMS went out to it. The ruling
+ * makes that assertion wrong by design: the dispatch path now SKIPS a landline,
+ * because the carrier has nowhere to deliver the message and the clinic was
+ * paying for it.
+ *
+ * SO THE FIXTURE WAS MODELLING THE DEFECT AND ASSERTING IT WAS FINE. The suite
+ * is about rendering and channel selection, not about landlines, so it now uses
+ * a number a patient could actually receive an SMS on.
+ *
+ * THE LENGTH IS UNCHANGED — both are 16 characters — so the worst-case SMS fill
+ * this constant exists to pin is exactly what it was. That was checked, not
+ * assumed: this file's whole point is the segment guard.
+ */
+const LONGEST_PHONE = "+351 912 345 678";
 
 type Fixture = ReturnType<typeof makeData>;
 
@@ -230,9 +247,13 @@ describe("reminder dry-run E2E — render + send intent (PT & EN, 48h & 24h)", (
       if (channel === "sms") {
         expect(h.sms).toHaveLength(1);
         const sms = h.sms[0]!;
-        // Correct recipient, normalized to E.164 (phone.ts strips the display
-        // spacing of the stored "+351 210 000 000" before the send wrapper).
-        expect(sms.to).toBe("+351210000000");
+        // Correct recipient, normalized to E.164 (phone.ts strips the spacing
+        // of the stored "+351 912 345 678" before the send).
+        //
+        // A MOBILE since 2026-08-20 (Q-LE-REMINDERS-LANDLINE-1). It was a 21x
+        // Lisbon LANDLINE, and this line asserted an SMS was addressed to it -
+        // a message the carrier would have discarded and the clinic paid for.
+        expect(sms.to).toBe("+351912345678");
         expect(sms.body).not.toMatch(/https?:\/\//); // NO link
         expect(sms.body).not.toContain("/r/");
         expect(sms.body).toContain(EXPECT[locale].smsVerb); // call-the-clinic wording

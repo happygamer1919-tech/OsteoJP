@@ -18,6 +18,8 @@ import { GuestRequestsQueue, type GuestRequestRow } from "./guest-requests-queue
 import { listPendingGuestRequests } from "@/lib/scheduling/guest-requests";
 import { StuckConsultations, type StuckConsultationRow } from "./stuck-consultations";
 import { listStuckConsultations } from "@/lib/consultation/stuck-consultations";
+import { UnreachablePatients, type UnreachablePatientRow } from "./unreachable-patients";
+import { listPatientsUnreachableBySms } from "@/lib/reminders/unreachable-by-sms";
 
 export const metadata = { title: s["notifications.title"] };
 
@@ -147,7 +149,7 @@ export default async function NotificacoesPage() {
   // and the data.
   const canReadGuestQueue = can(ctx.role, "guest_requests:read");
 
-  const [entries, requests, guestRequests, stuck] = await Promise.all([
+  const [entries, requests, guestRequests, stuck, unreachable] = await Promise.all([
     listNotifications(ctx),
     listPendingRequests(ctx),
     canReadGuestQueue ? listPendingGuestRequests(ctx) : Promise.resolve([]),
@@ -159,6 +161,10 @@ export default async function NotificacoesPage() {
     // subset each role is already entitled to. There is nothing to hide at this
     // layer, because nothing arrives here that the caller may not see.
     listStuckConsultations(ctx),
+    // Q-LE-REMINDERS-LANDLINE-1. Same scoping story as the stuck list above: a
+    // row is about a PATIENT, so the two ratified patient scopes apply inside
+    // the query and there is nothing to hide at this layer.
+    listPatientsUnreachableBySms(ctx),
   ]);
   const unread = entries.filter((e) => e.readAt === null).length;
 
@@ -210,6 +216,13 @@ export default async function NotificacoesPage() {
     lastAttempt: c.lastAttemptAt === null ? null : stamp(c.lastAttemptAt),
     attemptCount: c.attemptCount,
     lastError: c.lastError,
+  }));
+
+  const unreachableRows: UnreachablePatientRow[] = unreachable.map((u) => ({
+    patientId: u.patientId,
+    fullName: u.fullName,
+    phone: u.phone,
+    nextAppointment: stamp(u.nextAppointmentAt),
   }));
 
   return (
@@ -287,6 +300,26 @@ export default async function NotificacoesPage() {
           </div>
         </section>
       )}
+
+      {/* Q-LE-REMINDERS-LANDLINE-1, ruled 2026-08-20: the reminder path now
+          SKIPS a landline, and this is the other half of that ruling. Skipping
+          alone stops the clinic paying for a message nobody receives and leaves
+          the patient with no reminder either way; only this section does
+          anything for the patient.
+
+          BELOW the two request queues and ABOVE the log, because it carries
+          work but not urgency: nobody is waiting on an answer, and the
+          appointment is still days away - which is the whole point of showing it
+          before the reminder is due rather than after. */}
+      <section className="mb-10" aria-labelledby="unreachable-heading">
+        <h2 id="unreachable-heading" className="text-xl font-semibold text-v2-text-primary">
+          {s["reminders.unreachable.title"]}
+        </h2>
+        <p className="mt-1 mb-4 text-sm text-v2-text-secondary">
+          {s["reminders.unreachable.subtitle"]}
+        </p>
+        <UnreachablePatients rows={unreachableRows} />
+      </section>
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-v2-text-primary">
