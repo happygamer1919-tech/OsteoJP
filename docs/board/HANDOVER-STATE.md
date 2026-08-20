@@ -709,6 +709,62 @@ since closed, the board is the count and this section is the story.
 > regardless — but an agenda left open at reception does not learn about a portal
 > booking until somebody navigates, and a screen with no timestamp reads as live.
 > **Open on purpose** for the owner's screen; verification item 3.
+>
+> **`LE-pg8-e2e-needs-run-scoped-patient`** — **#985**. The test that proves a
+> portal booking reaches reception's agenda used to look for *"a card for Maria
+> Silva at nine o'clock"* — something **any other test on the shared test database
+> can also create.** It had passed twice on somebody else's booking. It now looks
+> for the exact appointment it just made, by its own reference number, which
+> nothing else can produce. **The test was already passing; what changed is that a
+> pass now means what it says.**
+>
+> **`LE-dead-i18n-keys-imply-screens`** — **#986**, and it is a **split**. The
+> portal has **163 pieces of Portuguese text with no screen behind them** — the
+> card said six. They are not broken; they are never shown. **Why it matters:
+> anyone checking what the portal does reads them as evidence the feature
+> exists.** The worst case is **33 login strings** — the portal logs patients in
+> by phone and code, and there is still polished copy for "email", "password" and
+> "recover your password" for a screen that was removed. **Whether to delete them
+> is your call**, written up at `docs/QUESTIONS.md` →
+> `Q-PORTAL-DEAD-I18N-1` with a recommendation split by group; the card is blocked
+> on you. What shipped needs no ruling: **the number can no longer grow silently.**
+>
+> **`ACC-gold-700-label-fails-aa`** — **#987**, and the card was **wrong**. It
+> said a gold label on the staff admin page was too faint against its own
+> background. Measured, it is not: that gold is only ever used on a small
+> decorative icon, which has a lower requirement and clears it, and the one place
+> gold is real *text* sits on a much lighter surface. **No colour was changed.**
+> Those facts are now computed on every commit — including one nobody had checked:
+> the agenda's cards are **semi-transparent**, so the real background behind a
+> therapist's name is neither the page colour nor white, and every contrast check
+> in this project had been comparing against the wrong thing.
+>
+> **`ACC-e2e-booking-traversal-duplicated`** — **#988**. Two automated tests were
+> each driving the patient booking flow with **their own private copy of the same
+> fiddly click sequence**; getting one wrong once cost a twelve-minute CI run.
+> Merging them into one copy turned up something better: **the second copy had a
+> bug nobody had noticed.** If the first day it tried had no free slots it would
+> quietly report "the calendar is empty" instead of trying the next day — **the
+> test would skip itself and look fine.** It only ever worked because the test
+> data happens to put free slots on the first day.
+
+> ### Where the sweep stands at the end of 2026-08-20
+>
+> **144 of 185 cards shipped. 41 open.** Of those, **15 are in scope** for a
+> terminal to build and **26 are not** (they need you, counsel, or an
+> authorisation).
+>
+> **Of the 15 in scope, only 8 are buildable now.** Four are open **on purpose**,
+> waiting on something only you can produce: a real aged recovery email
+> (`LE-auth-recovery-deadend`), a third occurrence of a bug
+> (`LE-e2e-nif-edit-404`), an AI record carrying an unmapped field (`AI-02`), and
+> your eyes on two new screens (`AI-04`, the agenda timestamp). One is blocked on
+> a database change neither lane may write (`LE-pedido-emit-best-effort`), and two
+> more now wait on the decisions above.
+>
+> **Three decisions are waiting for you**, all short, all written up in
+> `docs/QUESTIONS.md`: the landline reminders, the 163 dead strings, and (from
+> earlier) the lost-pedido column.
 
 ### Incidents — 1
 **`SEC-otp-linkage-exact-phone-match` (high, halted, launch-blocking)** — most
