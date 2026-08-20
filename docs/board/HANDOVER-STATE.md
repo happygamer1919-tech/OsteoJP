@@ -83,7 +83,39 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**184 cards. 136 shipped, 48 open. Launch readiness 9/9, every launch gate passes.**
+**184 cards. 137 shipped, 47 open. Launch readiness 9/9, every launch gate passes.**
+
+> ### Two decisions taken, 2026-08-20
+>
+> **A lost booking request will be fixed properly, not papered over.** When a
+> patient books and reception cannot be told, **the booking still goes through**
+> and the patient is never shown an error caused by our own failure. The proper
+> fix is a small addition to the patient record that says "a patient asked for
+> this", which also stops the lost request from holding the time slot. It needs a
+> database change, so it waits to be scheduled. Until then the loss is at least
+> **loud**: it writes an error naming the appointment, so it can be found and put
+> right by hand.
+>
+> **Multi-appointment booking is deferred until after launch.** Not cancelled:
+> the request stands and the card stays on the board. It is the largest unbuilt
+> thing patients would see, and its hard part is a design question rather than
+> wiring, so it does not belong in the launch window.
+
+> ### A missing setting was making signed-in patients look signed out, 2026-08-20
+>
+> On the account screen, a patient editing their own details could be told the
+> edit failed **because of a missing setting on our side, reported as though they
+> simply were not signed in.** Four completely different situations were
+> producing one identical answer, and none of them named the setting.
+>
+> Found by finishing a job that had only been half done: earlier checks followed
+> the paths that *send* things, and this one sits on a path that *reads*. Nine
+> settings across the patient portal have now been listed and checked one at a
+> time, rather than sampled. One was broken and is fixed; the other four were
+> already loud and were left alone.
+>
+> **Nothing changes on a correctly configured system**, which production is. This
+> was a fault waiting for a bad deployment, not a fault anyone has seen.
 
 > ### A launch gate had been passing on an observation that never happened, 2026-08-20
 >
