@@ -68,12 +68,17 @@ const PT = "packages/i18n/src/portal/strings.pt.json";
 const EN = "packages/i18n/src/portal/strings.en.json";
 
 /**
- * MEASURED 2026-08-20 against main at 4b385e6. A RATCHET, NOT A TARGET: it may
- * only ever go DOWN. Lowering it when keys are removed is the point; raising it
+ * LOWERED FROM 163 TO 126 on 2026-08-20 by the owner's ruling on
+ * Q-PORTAL-DEAD-I18N-1: the 33 `auth` strings describing the retired
+ * password login, and `errors.403_*`, were DELETED; `errors.500_*` was WIRED UP
+ * (apps/portal/app/global-error.tsx, the root boundary the portal did not have).
+ * 163 - 33 - 2 - 2 = 126, and the count was re-measured rather than subtracted.
+ *
+ * A RATCHET, NOT A TARGET: it may only ever go DOWN. Lowering it when keys are removed is the point; raising it
  * is how a ratchet becomes a rubber stamp, and a PR that needs it raised should
  * say why in its own body rather than edit this number quietly.
  */
-const DEAD_KEY_CEILING = 163;
+const DEAD_KEY_CEILING = 126;
 
 /**
  * The six the card names, each with what should happen to it. THIS IS THE
@@ -87,11 +92,23 @@ const DEAD_KEY_CEILING = 163;
  * stale, which is exactly how a note stops being true without anybody noticing.
  */
 const DECLARED_DEAD = {
-  "errors.403_title": "Decision D: a portal patient has no route that can 403. Delete per option (a).",
-  "errors.403_body": "The worst-written of the six - offers no retry, no navigation, no telephone. Being dead is currently the only thing stopping it shipping as a dead end.",
-  "errors.500_title": "REACHABLE as a browser state even though no route renders it. Option (b): wire a real boundary rather than delete.",
-  "errors.500_body": "As above.",
-  "errors.offline_title": "REACHABLE as a browser state. Option (b).",
+  /**
+   * FOUR OF THE ORIGINAL SIX ARE GONE FROM THIS LIST, and each for a different
+   * reason worth keeping:
+   *
+   *   errors.403_title / errors.403_body  DELETED. Decision D leaves a portal
+   *     patient no route that can 403, and the body offered no retry, no
+   *     navigation and no telephone - being dead was the only thing stopping it
+   *     shipping as a dead end.
+   *   errors.500_title / errors.500_body  NO LONGER DEAD. Wired into
+   *     apps/portal/app/global-error.tsx, the ROOT boundary the portal did not
+   *     have: every route had an error.tsx and a crash in the root layout fell
+   *     past all of them to Next's unstyled English default.
+   *
+   * The two below stay declared because they are still dead ON PURPOSE.
+   */
+  "errors.offline_title":
+    "REACHABLE as a browser state, and NOT wired here on purpose. `navigator.onLine` reports TRUE on a router with no internet, so a banner built on it would tell a working patient they are offline - the section 1.3 shape, on the product. Detecting it honestly means distinguishing a NETWORK failure from an HTTP failure in the portal's api client, which is its own piece of work. Carded as LE-portal-offline-state-unwired.",
   "errors.offline_body": "As above.",
 };
 
