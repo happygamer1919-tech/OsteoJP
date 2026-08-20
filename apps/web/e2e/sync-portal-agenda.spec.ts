@@ -44,6 +44,7 @@ import {
   STORAGE,
 } from "./fixtures";
 import { becameVisible } from "./helpers";
+import { pickFirstDayWithSlots } from "./helpers/booking-picker";
 
 /** Wall-clock ms around an awaited step, so a hop is reported rather than felt. */
 async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
@@ -138,28 +139,6 @@ type BookOutcome =
   | { ok: false; why: "flow-broken"; detail: string };
 
 
-/**
- * The DatePicker's day cells carry `aria-label` as a pt-PT long date —
- * "segunda-feira, 17 de agosto de 2026". Converted to ISO here so the test can
- * assert against THE DAY IT BOOKED rather than searching a window.
- *
- * THE LOCALE IS FIXED, so this is deterministic rather than a guess: the portal
- * renders pt-PT only, and `DatePicker` formats with that locale unconditionally.
- * A month name it does not recognise returns null and the caller treats that as
- * a flow defect, never as an empty calendar.
- */
-const PT_MONTHS = [
-  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
-  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
-];
-function isoFromPtLabel(label: string): string | null {
-  const m = /(\d{1,2})\s+de\s+([a-zçã]+)\s+de\s+(\d{4})/i.exec(label.toLowerCase());
-  if (!m) return null;
-  const month = PT_MONTHS.indexOf(m[2]);
-  if (month < 0) return null;
-  return `${m[3]}-${String(month + 1).padStart(2, "0")}-${m[1].padStart(2, "0")}`;
-}
-
 /** Drive the portal booking flow to a submitted pedido. */
 async function bookFromPortal(page: Page): Promise<BookOutcome> {
   await page.goto("/portal/booking");
@@ -209,107 +188,25 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
     return { ok: false, why: "flow-broken", detail: "never reached the date/time step" };
   }
 
-  // A DATE MUST BE CHOSEN BEFORE ANY SLOT EXISTS, AND THE FIRST VERSION OF THIS
-  // HELPER DID NOT KNOW THAT. Step 4 renders `choose_date_prompt` until the
-  // patient picks a day — no date is preselected — so looking for slot buttons
-  // straight away finds none, always. CI duly skipped direction A twice and
-  // reported "date/time step offered no slot", which was TRUE and which I read
-  // as an empty seeded calendar. It was not: the seed gives 09:00-13:00
-  // availability on WEEKDAY 1 (Monday) at Linda-a-Velha (seed-e2e.mjs:365-368),
-  // exactly the Monday-only shape portal-booking-slot-parity.test.ts documents.
-  // The slots were there and nothing had asked for them.
+  // ACC-e2e-booking-traversal-duplicated. THE TRAVERSAL LIVES IN ONE PLACE NOW.
   //
-  // The picker's enabled range is [availableDates[0], availableDates[last]] —
-  // BookingFlow.tsx:457-458 — and `availableDates` is `Object.keys(byDate)`, the
-  // days that actually carry slots. So the FIRST ENABLED DAY is by construction a
-  // day with availability. Enabled days are gridcells without `aria-disabled`.
-  // THE PICKER MUST BE PROVEN TO OPEN, AND THIS IS THE SECOND TIME THIS FILE HAS
-  // LEARNED THE SAME LESSON. The first draft clicked the trigger under
-  // `.catch(() => {})`. A missing or mis-located trigger therefore did nothing,
-  // no gridcells existed, and the helper returned `empty-calendar` — a BROKEN
-  // FLOW degrading silently into the one outcome that SKIPS instead of failing.
-  // That is precisely the `string | null` collapse the discriminated result was
-  // introduced to prevent, wearing a different shape.
-  const trigger = page.getByRole("button", { name: /escolh|data/i });
-  if ((await trigger.count()) === 0) {
-    return { ok: false, why: "flow-broken", detail: "date/time step has no date-picker trigger" };
-  }
-  await trigger.first().click();
-
-  // The popover is `role="dialog"` (DatePicker.tsx). If it did not open, the
-  // trigger is not what we think it is — a flow defect, never an empty calendar.
-  const opened = await becameVisible(page.getByRole("dialog").first(), 10_000);
-  if (!opened) {
-    return { ok: false, why: "flow-broken", detail: "date picker did not open when clicked" };
-  }
-
-  // ONLY NOW is an absence of selectable days a statement about the calendar.
-  const day = page.getByRole("gridcell").and(page.locator(":not([aria-disabled])"));
-  await day.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
-  const dayCount = await day.count();
-  if (dayCount === 0) {
-    return { ok: false, why: "empty-calendar", detail: "date picker offered no selectable day" };
-  }
-
-  // ============================================================= //
-  // "ENABLED" IS AN INTERVAL, NOT THE SET OF DAYS WITH SLOTS.
-  // ============================================================= //
-  // The previous version clicked the FIRST enabled day and asserted, in the trace
-  // doc, that "the first enabled day is by construction a day with availability".
-  // THAT WAS WRONG, and CI said so: `inRange` is a CLOSED INTERVAL,
-  // `(!min || iso >= min) && (!max || iso <= max)` (DatePicker.tsx:119). So every
-  // day between the first and last available date is enabled — including the six
-  // weekdays that carry nothing, because the seed's availability is MONDAY ONLY.
-  // The first enabled day was simply the first day of the range.
+  // Everything above this line is THIS SPEC'S OWN way of reaching the date step
+  // and is deliberately not shared: the other spec waits on the clinic HEADING
+  // after a URL assertion where this one waits on the clinic BUTTON by seeded
+  // name, and each is right for what its file is about.
   //
-  // So the days are TRIED, in order, until one yields slots. Bounded, because an
-  // unbounded walk over a wide range would be a slow way to fail.
-  const MAX_DAYS_TRIED = 14;
-  let bookedIso: string | null = null;
-  // ROLE `radio`, NOT `button`, AND THIS IS THE FOURTH WRONG LOCATOR IN THIS FILE.
-  // SlotPicker renders each slot as `<button type="button" role="radio">`
-  // (SlotPicker.tsx:76-85) inside a `role="radiogroup"`. An explicit `role`
-  // OVERRIDES the implicit one, so `getByRole("button")` never matched a slot and
-  // the walk below could not have succeeded on any day, on any run. Identical in
-  // kind to the `<option>` locator that failed direction B: an assertion written
-  // against a role the DOM does not expose.
-  const slot = page.getByRole("radio", { name: /^\d{2}:\d{2}$/ });
-  let tried = 0;
-  for (let i = 0; i < Math.min(dayCount, MAX_DAYS_TRIED); i++) {
-    // The popover closes on select, so it is reopened for each attempt.
-    if (i > 0) {
-      await trigger.first().click();
-      await page.getByRole("dialog").first().waitFor({ state: "visible", timeout: 10_000 });
-    }
-    // The day's slots come from `byDate`, ALREADY IN MEMORY — selecting a date
-    // re-renders, it does not re-fetch. 5s per empty day was dead time: attempt 1
-    // of run 31624728972 spent 37s here walking days, against 1.8s on the retry,
-    // and a 35s swing inside one test is how a race gets in.
-    const label = (await day.nth(i).getAttribute("aria-label")) ?? "?";
-    await day.nth(i).click();
-    tried++;
-    await slot.first().waitFor({ state: "visible", timeout: 1_500 }).catch(() => {});
-    if ((await slot.count()) > 0) {
-      // LOGGED SO THE NEXT RED IS DIAGNOSABLE WITHOUT GUESSING. Run 31624728972
-      // failed on attempt 1 and passed on retry with no way to tell what differed
-      // between them; this line and the service line above are that answer.
-      bookedIso = isoFromPtLabel(label);
-      console.log(
-        `[W13-07] A: booking day = ${label} -> ${bookedIso} (day ${i + 1} of ${dayCount} enabled)`,
-      );
-      break;
-    }
-  }
-  if ((await slot.count()) === 0) {
-    return {
-      ok: false,
-      why: "empty-calendar",
-      detail: `no slot on any of the first ${tried} selectable day(s)`,
-    };
-  }
-
-  const label = (await slot.first().textContent())?.trim() ?? "";
-  await slot.first().click();
+  // Everything the two had in common - the picker trigger, the dialog, the two
+  // locators that cost a 12m33s shard to get right, the day walk with its
+  // reopen, and the pt-PT label parsing - is `pickFirstDayWithSlots`. Its
+  // history is in that file, including a defect the extraction itself found.
+  //
+  // THE DISCRIMINATED OUTCOME IS PRESERVED END TO END: the helper returns the
+  // same `empty-calendar` / `flow-broken` split this file introduced, and it is
+  // widened here into this file's own `BookOutcome` rather than flattened.
+  const picked = await pickFirstDayWithSlots(page, (m) => console.log(`[W13-07] A: ${m}`));
+  if (!picked.ok) return picked;
+  const bookedIso: string = picked.isoDate;
+  const label = picked.slot;
 
   // TWO CONTROLS, TWO STEPS, AND THE PREVIOUS VERSION CONFLATED THEM. Step 4
   // advances with `common.continue` = "Continuar" (BookingFlow.tsx:488-495);
@@ -352,15 +249,12 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
     };
   }
 
-  if (!bookedIso) {
-    // A day was selected and slots appeared, so the flow WORKED — this is a
-    // parsing failure, not an empty calendar, and it must not skip.
-    return {
-      ok: false,
-      why: "flow-broken",
-      detail: "could not derive an ISO date from the picker's aria-label",
-    };
-  }
+  // THE ISO-DATE GUARD MOVED INTO THE HELPER and is deliberately not repeated
+  // here. `pickFirstDayWithSlots` returns `flow-broken` when the pt-PT label
+  // will not parse, so `picked.isoDate` is a non-empty string by the time this
+  // line runs. Leaving the old `if (!bookedIso)` in place would be a check that
+  // CAN NO LONGER FAIL - which reads as protection and is not, and is the
+  // vacuous shape ACC-vacuous-guard-sweep counts.
   return { ok: true, slot: label, isoDate: bookedIso, appointmentId };
 }
 

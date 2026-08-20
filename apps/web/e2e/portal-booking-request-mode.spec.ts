@@ -42,6 +42,7 @@ import {
   SERVICE_UNMAPPED,
 } from "./fixtures";
 import { becameVisible } from "./helpers";
+import { pickFirstDayWithSlots } from "./helpers/booking-picker";
 
 test.use({
   storageState: PORTAL_STORAGE.patient,
@@ -132,50 +133,40 @@ async function bookFirstAvailable(page: Page): Promise<boolean> {
     throw new Error("never reached the date/time step");
   }
 
-  const trigger = page.getByRole("button", { name: /escolh|data/i });
-  if ((await trigger.count()) === 0) throw new Error("date/time step has no date-picker trigger");
-  await trigger.first().click();
+  // THE TRIGGER AND THE DIALOG ARE THE HELPER'S NOW, and removing them here is
+  // not tidiness: the helper CLICKS the trigger, so leaving this block would
+  // click it twice and the second click would TOGGLE THE POPOVER SHUT. The walk
+  // would then find no gridcells and report `empty-calendar` - a broken flow
+  // arriving as the one outcome that skips. Exactly the collapse this traversal
+  // has now produced three separate ways.
 
-  const dialog = page.getByRole("dialog");
-  // Same shape, no justification comment at all: an ignored timeout polled
-  // immediately after a click, so it read the frame before the dialog mounted.
-  if (!(await becameVisible(dialog.first(), 10_000))) {
-    throw new Error("the date picker did not open when clicked");
-  }
+  // ACC-e2e-booking-traversal-duplicated. THE COPY IS GONE.
+  //
+  // This block used to be a second copy of sync-portal-agenda's date-picker
+  // traversal, and the comment that stood here explained why it was duplicated:
+  // "that spec is PG8's, and refactoring it mid-bucket to save a duplication
+  // would risk the one gate-bearing e2e in the repo for a tidy-up."
+  //
+  // BOTH HALVES OF THAT DEFERRAL ARE NOW SPENT. PG8 closed at 9/9 on
+  // 2026-08-13, and the card's own condition - "do it when LE-pg8-per-hop-timings
+  // is taken, since that card touches the same file anyway" - passed when that
+  // card shipped and the extraction was not done. So it is done here.
+  //
+  // EXTRACTING IT FOUND A THIRD DEFECT IN THIS COPY, live on main until now:
+  // the popover CLOSES ON SELECT and this loop never reopened it, so it could
+  // only ever succeed on the FIRST day tried. Every later click acted on a
+  // closed dialog and the walk fell through to the LEGITIMATE SKIP - a flow
+  // defect degrading into the one outcome that skips instead of failing. It
+  // never fired because the seed's first enabled day happens to carry slots,
+  // which is luck rather than a property. The shared helper reopens.
+  //
+  // THE CONTRACT OF THIS FUNCTION IS UNCHANGED: `false` for an empty calendar,
+  // THROW for anything else. The helper returns the discriminated outcome and
+  // it is mapped here rather than flattened inside it.
+  const picked = await pickFirstDayWithSlots(page);
+  if (!picked.ok && picked.why === "empty-calendar") return false; // THE ONE LEGITIMATE SKIP.
+  if (!picked.ok) throw new Error(picked.detail);
 
-  // THE LOCATORS ARE COPIED VERBATIM FROM sync-portal-agenda.spec.ts:244,273,
-  // WHICH IS PROVEN IN CI. The first version of this helper invented its own and
-  // both were wrong:
-  //
-  //   `getByRole("gridcell").filter({ hasNot: locator("[aria-disabled='true']") })`
-  //     `hasNot` filters by DESCENDANT, not by the element's own attribute, so it
-  //     matched every gridcell INCLUDING the disabled ones. The click then hung
-  //     on a disabled button for the full 120s test budget - "element is not
-  //     enabled", retried until timeout - three times, at 2.1 minutes each.
-  //   `getByRole("radio")` unnamed
-  //     matches any radio on the step, not only a time.
-  //
-  // `.and()` intersects on the ELEMENT, which is what was wanted. Enabled cells
-  // carry no `aria-disabled` attribute at all, which is why `:not([aria-disabled])`
-  // is right and `[aria-disabled='false']` would find nothing.
-  //
-  // DUPLICATED RATHER THAN SHARED, AND CARDED. sync-portal-agenda.spec.ts has a
-  // fuller version of this traversal that took five sessions to stabilise.
-  // Extracting it into a shared helper is the correct end state and is NOT done
-  // here: that spec is PG8's, and refactoring it mid-bucket to save a duplication
-  // would risk the one gate-bearing e2e in the repo for a tidy-up.
-  // ACC-e2e-booking-traversal-duplicated.
-  const days = page.getByRole("gridcell").and(page.locator(":not([aria-disabled])"));
-  const slot = page.getByRole("radio", { name: /^\d{2}:\d{2}$/ });
-  const dayCount = Math.min(await days.count(), 8);
-  for (let i = 0; i < dayCount; i += 1) {
-    await days.nth(i).click();
-    await slot.first().waitFor({ state: "visible", timeout: 1_500 }).catch(() => {});
-    if ((await slot.count()) > 0) break;
-  }
-  if ((await slot.count()) === 0) return false; // THE ONE LEGITIMATE SKIP.
-
-  await slot.first().click();
   const advance = page.getByRole("button", { name: /^continuar$/i });
   if ((await advance.count()) === 0) throw new Error("date/time step offered no Continuar control");
   await advance.first().click();
