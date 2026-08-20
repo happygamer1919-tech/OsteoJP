@@ -3171,3 +3171,67 @@ negative control reported second-hand is a claim, not a control.
 `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` all green from the repo root.
 `pnpm test:e2e` not run: the change touches no user-facing flow, only a dev-only seed
 guard that never executes in the app or in CI.
+
+---
+
+## 2026-08-20 — PL-11 CHANGED: availability becomes ENFORCED for staff manual time entry (RB-03)
+
+**Owner ruling, 2026-08-20.** Recorded here because it CHANGES a prior decision
+rather than adding one, and a reader of PL-11 must find out from PL-11's own
+register that it no longer holds as written.
+
+### What PL-11 decided, and what it produced
+
+Availability was **advisory**: a booking outside a therapist's `disponibilidade`
+drew a warning and saved anyway. `ADVISORY_CONFLICT_KINDS` lists exactly
+`"availability"`, and `blockingConflicts()` filters it out.
+
+**The check was never missing.** `findScheduleConflicts` computed availability
+correctly and emitted a `kind: "availability"` conflict; `collectConflicts` then
+discarded that verdict **one line above the refusal**, with the comment *"PL-11:
+availability is advisory — never blocks."*
+
+So the reported defect — **Catarina's day ends at 13:00 and a manual entry books
+17:00** — is not a hole in the validation. It is a correct answer that nothing
+acted on.
+
+### What changes
+
+**Availability is ENFORCED at write time, server-side, on create AND edit.** A
+window outside the therapist's hours for that day and location is **refused**,
+with an error that **names the therapist's window that day**.
+
+### Three things the ruling does NOT change, each deliberate
+
+**`allowConflict` cannot reach it.** The generic conflict path is overridable by
+"Guardar mesmo assim". This refusal is not, and it is a separate, earlier check
+precisely so the override cannot be extended to it by accident. **An override
+that reinstates the exact defect is a bypass, not an override.** A therapist who
+genuinely works late is expressed by **extending their disponibilidade** — the
+data being enforced — not by pressing past the check.
+
+**The picker path is unchanged, and that is an observation rather than a
+carve-out.** There is deliberately **no "was this typed or picked?" flag**: the
+server cannot know, and a client-supplied flag on a rule the client is being
+restrained by is not a rule. The picker only ever offers slots inside
+availability, so a picked time cannot trip this. The enforcement is invisible
+there **because that path was already correct**, not because it is exempted.
+
+**Unconfigured still means unenforced.** Availability is opt-in per (therapist,
+location): a therapist with no active template is bookable at any hour, exactly
+as before. **The failure mode this preserves is total** — a clinic that never set
+hours would otherwise be unable to book at all, which is a worse outage than the
+defect being fixed. Asserted in both directions.
+
+### Where it lives
+
+`apps/web/lib/scheduling/availability-enforcement.ts`, called from
+`createAppointment` and `updateAppointment` **before** the `allowConflict` gate.
+`ADVISORY_CONFLICT_KINDS` is left alone: the advisory conflict still flows to the
+UI, which is what draws the warning panel, and removing it there would change the
+picker surface the ruling says is unchanged.
+
+**Error code `outside_availability`**, its own code and not `conflict` — the copy
+differs (it names a window), and folding it into the conflict list would render
+*"conflicts with:"* followed by nothing, because there is no conflicting
+appointment. The candidate window IS the problem.

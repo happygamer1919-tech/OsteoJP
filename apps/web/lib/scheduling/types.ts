@@ -207,6 +207,18 @@ export type ActionErrorCode =
   | "unauthenticated"
   | "validation"
   | "conflict"
+  // RB-03, PL-11 changed by owner ruling 2026-08-20: a manually entered time
+  // outside the therapist's disponibilidade, refused SERVER-SIDE on create and
+  // edit.
+  //
+  // ITS OWN CODE AND NOT `conflict`, for two reasons that both matter. The copy
+  // differs: this one NAMES the therapist's window that day, and a caller that
+  // folded it into the conflict list would render "conflicts with:" followed by
+  // nothing, because there is no conflicting appointment - the candidate window
+  // IS the problem. And `conflict` is OVERRIDABLE by `allowConflict`
+  // ("Guardar mesmo assim"); this is not, because an override that reinstates
+  // the exact defect is a bypass rather than an override.
+  | "outside_availability"
   | "not_found"
   // W3-06 hard-delete: wrong delete password, or linked clinical/invoice records.
   | "password"
@@ -234,4 +246,18 @@ export type ActionErrorCode =
 
 export type ActionResult<T> =
   | { ok: true; data: T }
-  | { ok: false; error: ActionErrorCode; conflicts?: ConflictInfo[] };
+  | {
+      ok: false;
+      error: ActionErrorCode;
+      conflicts?: ConflictInfo[];
+      /**
+       * RB-03. The therapist's working windows on the day the caller asked for,
+       * as "HH:MM" pairs, set only with `error: "outside_availability"`.
+       *
+       * EMPTY IS A DIFFERENT SENTENCE, not a missing value: the therapist has
+       * hours at this location but none on that weekday, which reads as "does
+       * not work that day" rather than "works 08:00-13:00". The caller renders
+       * the two differently and the type does not collapse them.
+       */
+      availabilityWindows?: { startTime: string; endTime: string }[];
+    };
