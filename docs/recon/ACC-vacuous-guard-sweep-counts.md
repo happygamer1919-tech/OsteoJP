@@ -235,3 +235,86 @@ carry genuine refusal assertions). The SECOND tranche is clean too, for the
 reasons above. **Both recommended starting points were already safe**, while ten
 unnamed candidates sat outside the recommendation. The counting method was sound;
 the *ordering* was a guess about severity that the reads did not support.
+
+---
+
+# CATEGORIES (A) AND (C) TRIAGED, 2026-08-19
+
+Re-derived from `origin/main` at `5a8197f`. Counts above unchanged; this is the
+human read. **Both categories come out at zero live defects**, and in each case
+the reason is a specific, statable blind spot in the detector rather than luck.
+
+## (A) SELF-MOCKING — 24 hits, 0 defects
+
+| bucket | n | verdict |
+|---|---|---|
+| `./audit`, `./analytics`, `./reminders` | 14 | The card's **own** stated exclusion: side-effect sinks. Mocking them is how a suite stays unit-level. |
+| `../auth/context` | 5 | **Mandatory in this codebase**, not optional. It opens the DB scope, so a unit test that does *not* mock it opens a real connection — which is exactly the defect `ACC-preselection-spec-flaky` found, where a stub scoped to one `describe` let two suites connect for real. Here, *failing* to self-mock is the bug. |
+| everything else | 5 | Read individually below. All sound. |
+
+**The five read individually:**
+
+- `appointment-delete-password.test.ts` mocks `./tenant-secret` — **storage, not the decider.** The real `verifyDeletePassword` and the real `hashSecret` run. It drives the mock to supply stored state, then asserts the genuine logic accepts `1234` by default, rejects `9999`, honours a changed password and rejects the old one, and refuses a too-short password without writing.
+- `staff.delete.test.ts` mocks `./appointment-delete-password` — **driven, and unusually well.** It sets the gate false and asserts refusal *before any DB work*; and for self-delete and non-admin it asserts `expect(mockVerify).not.toHaveBeenCalled()`, which pins **gate ordering**. The gate's own correctness is proven in its own suite, above.
+- `actions.append-appointment-note.test.ts` and `actions.edit-appointment-note.test.ts` mock `./queries` — driven via `vi.mocked(getPatient)`.
+- `pedido-confirm.test.ts` mocks `./conflict` — **the founding case of this whole card, and its remedy was ADDITIVE.** `pedido-confirm.db.test.ts` exists, its header names this very `vi.mock("./conflict")` as the reason it was written, and it runs the real `findConflictsForWindow` against `public.appointment_conflicts()` across 8 tests including two simultaneous confirms racing for one slot. The unit test was never changed because it was never wrong: it is a legitimate unit test that proves orchestration, and the DB suite proves the query.
+
+**THE CRITERION, RESTATED.** "Mocks a module it also imports" is not the defect —
+it is the normal shape of a unit test. The defect is **mocking the module whose
+behaviour the assertion is ABOUT, without DRIVING it.** A driven mock is the
+test's *input*; a vacuous one is the test's *answer*. All five drive.
+
+## (C) NO NEGATIVE ARM — 74 hits, 0 defects
+
+| bucket | n |
+|---|---|
+| E2E `*.spec.ts` — no colocated module under test | 43 |
+| module under test has **no refusal path**, so there is nothing to assert | 17 |
+| suite spans several modules / not colocated | 10 |
+| module under test **has** a refusal path — real candidates | **4** |
+
+**All four candidates are false positives, for one shared reason.**
+
+- `admin/lib/tenants.test.ts` — three refusal tests, asserting via a `code(...)` helper: `.toBe("invalid_name")`, `"invalid_slug"`, `"invalid_nif"`.
+- `api/lib/auth/patient-linkage.test.ts` — `toEqual({ ok: false })` for zero matches and for multiple matches, plus a test asserting the two refusals are *indistinguishable*.
+- `api/lib/intake/catalog.test.ts` — four refusals as `toEqual({ ok: false, error: "unknown_form" | "therapy_required" | "unknown_therapy" | ... })`.
+- `web/lib/integrations/invoicexpress/profile.test.ts` — the module is a **pure projection with no refusal path at all**; the refusal lives at issue time elsewhere.
+
+**THE DETECTOR'S BLIND SPOT, and it is the opposite of a gap in the tests.** Its
+negative-arm vocabulary — `.not.`, `rejects.`, `toThrow`, `toBe(false)`,
+`toBe(0)`, `toHaveLength(0)`, `toBeNull`, `toBeUndefined` — assumes a refusal is
+expressed as a **boolean or a throw**. This codebase expresses refusals as
+**error codes** and **discriminated result objects**, which is the *better*
+style and one the repo argues for explicitly (`sync-portal-agenda.spec.ts`
+documents choosing "a DISCRIMINATED RESULT rather than `string | null`" after
+four distinct failures returned the same `null`).
+
+So the suites that refuse most carefully are precisely the ones the detector
+cannot see refusing.
+
+## Two defects in this triage itself, recorded rather than quietly fixed
+
+**The E2E specs were inflating the count 14 → 4.** The first version derived "the
+module under test" by stripping `.test.` from the filename. On a `*.spec.ts` that
+substitution matches nothing, so the path came back unchanged, the file existed,
+and each spec was scanned **against itself** for a refusal path. Ten E2E specs
+were about to be reported as candidates on the strength of containing the word
+`throw` somewhere in their own body.
+
+**And the refusal-detector matched a comment.** `invoicexpress/profile.ts`'s only
+hit for the refusal pattern is line 41, inside a doc comment: *"rejects issuing
+without one, so this builder stays a pure projection."* Criterion F, in the
+instrument, for the third time in one session.
+
+## Where the card stands after three tranches
+
+| category | hits | after triage |
+|---|---|---|
+| (A) self-mocking | 24 | **0 defects** |
+| (B) unstripped comments | 25 | 1 real, **fixed** (`LE-vacuous-template-guard`); 9 candidates unread |
+| (C) no negative arm | 74 | **0 defects** |
+
+**123 became 9 unread candidates and one fixed defect.** The counting was always
+sound and the header always said the numbers were an upper bound on suspicion;
+what the reads add is that the bound was roughly an order of magnitude loose, in
+three different ways, each specific to how this codebase is written.
