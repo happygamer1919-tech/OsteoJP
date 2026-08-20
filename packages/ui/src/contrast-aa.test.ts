@@ -40,6 +40,24 @@ const buttonTsx = readFileSync(
   "utf8",
 );
 
+const accentTs = readFileSync(
+  fileURLToPath(new URL("./components/v2-accent.ts", import.meta.url)),
+  "utf8",
+);
+
+/**
+ * ACC-gold-700-label-fails-aa. The therapist palette lives in `apps/web`, which
+ * `packages/ui` does not depend on - so it is read as TEXT from a relative path
+ * rather than imported. A moved file throws here rather than silently checking
+ * nothing, which is the whole point of `token()` throwing above.
+ */
+const therapistColorTs = readFileSync(
+  fileURLToPath(
+    new URL("../../../apps/web/lib/scheduling/therapist-color.ts", import.meta.url),
+  ),
+  "utf8",
+);
+
 /** WCAG 2.x relative luminance. sRGB, the 0.03928 knee, Rec.709 coefficients. */
 function luminance(hex: string): number {
   const linear = (offset: number): number => {
@@ -173,6 +191,135 @@ describe("AA contrast floor for label tokens", () => {
         ).toBeGreaterThanOrEqual(AA_NORMAL);
       }
     }
+  });
+
+  /* ====================================================================== *
+   * ACC-gold-700-label-fails-aa — THE CALL SITES, NOT THE TOKENS.
+   * ====================================================================== *
+   * The card asked for exactly this: "covering it means walking call sites
+   * rather than tokens, and that is this card's work."
+   *
+   * WALKING THEM SHOWED THE CARD IS A FALSE ALARM, and the numbers are below so
+   * nobody has to re-derive them to re-open it. The card says
+   * `text-v2-gold-700` on `bg-v2-gold-100` is "a real AA failure on a rendered
+   * staff screen". It is not, for two separate reasons:
+   *
+   *   1. THAT PAIRING ONLY EVER LANDS ON AN ICON. Both call sites - the admin
+   *      resumo cards and `V2_ACCENT_TINT` - put it on an `aria-hidden="true"`
+   *      circle wrapping a lucide icon and no text at all. That is a GRAPHICAL
+   *      OBJECT (SC 1.4.11, 3:1), and a decorative aria-hidden one at that. It
+   *      measures 3.99:1 and clears.
+   *   2. THE ONE GENUINE TEXT USE IS ON A DIFFERENT SURFACE. `THERAPIST_COLORS`
+   *      renders the patient name in the therapist's hue inside `.glass-card`,
+   *      which is `rgba(255,255,255,0.72)` over `v2-bg` - NOT over
+   *      `surface-muted`, which is where gold-700's worst number comes from.
+   *
+   * THE RESIDUAL, STATED SO IT IS NOT LOST: `gold-700` (4.31:1),
+   * `accent-2-700` (4.34:1) and `green-700` (4.22:1) are all below the floor on
+   * `surface-muted`. NO CURRENT CALL SITE PUTS ANY OF THEM THERE. Arm 1 already
+   * refuses to let any of the three be re-annotated as AA label text; these two
+   * arms refuse to let a call site drift onto a surface where they fail.
+   */
+
+  /** Alpha-composite `rgba(255,255,255,alpha)` over an opaque backdrop.
+   *
+   *  THIS IS THE PIECE NOBODY HAD DONE. Every earlier measurement compared a
+   *  label against an OPAQUE token, and the surface the agenda actually renders
+   *  therapist names on is TRANSLUCENT. Checking against `v2-bg` under-reports
+   *  the contrast and checking against white over-reports it; the composite is
+   *  the only honest number, and it is computed from the tokens so retuning
+   *  either one re-runs the check. */
+  function composite(alpha: number, over: string, backdrop: string): string {
+    const px = (hex: string, o: number) => Number.parseInt(hex.slice(o, o + 2), 16);
+    const hx = (n: number) => n.toString(16).padStart(2, "0");
+    return (
+      "#" +
+      [1, 3, 5]
+        .map((o) => hx(Math.round(alpha * px(over, o) + (1 - alpha) * px(backdrop, o))))
+        .join("")
+    );
+  }
+
+  /** SC 1.4.11: non-text contrast. Icons are graphical objects. */
+  const GRAPHICAL = 3;
+
+  it("every accent icon circle clears the 3:1 graphical floor on its own tint", () => {
+    const pairs = [
+      ...accentTs.matchAll(
+        /(\w+):\s*\{\s*circle:\s*"bg-(v2-[a-z]+-\d{2,3})",\s*icon:\s*"text-(v2-[a-z]+-\d{2,3})"\s*\}/g,
+      ),
+    ].map((m) => ({ accent: m[1] ?? "", circle: m[2] ?? "", icon: m[3] ?? "" }));
+
+    // Without this the loop below iterates nothing. The map has five accents;
+    // a regex that stopped matching would report a clean sweep of zero pairs.
+    expect(
+      pairs.length,
+      "V2_ACCENT_TINT parsed to no pairs - either the map changed shape or this guard is checking nothing",
+    ).toBe(5);
+
+    for (const { accent, circle, icon } of pairs) {
+      const r = ratio(token(icon), token(circle));
+      expect(
+        r,
+        `${accent}: ${icon} on ${circle} is ${r.toFixed(2)}:1, below the ${GRAPHICAL}:1 floor for a graphical object`,
+      ).toBeGreaterThanOrEqual(GRAPHICAL);
+    }
+  });
+
+  it("every therapist hue clears 4.5:1 as TEXT on the composited glass card", () => {
+    // BOTH PALETTES IN THAT FILE, not just THERAPIST_COLORS. Walking the call
+    // sites turned up a SECOND and much larger one - the stored colour keys
+    // behind `paletteColorByKey`, 23 distinct hues against the 7 deterministic
+    // ones. A guard written to "the therapist palette" from memory would have
+    // checked seven of twenty-three and reported a clean sweep.
+    const texts = [
+      ...new Set(
+        [...therapistColorTs.matchAll(/text:\s*"text-([a-z0-9-]+)"/g)].map((m) => m[1] ?? ""),
+      ),
+    ];
+
+    // A regex drifting to zero would pass silently, which is the shape this
+    // whole file exists to refuse. 20 rather than 23 exactly: adding a hue is
+    // ordinary and must not redden this, removing most of them must.
+    expect(
+      texts.length,
+      "the therapist palettes parsed to too few text tokens - the file changed shape or this guard is checking nothing",
+    ).toBeGreaterThanOrEqual(20);
+
+    // `.glass-card` is rgba(255,255,255,0.72); §4.4's no-backdrop fallback is
+    // 0.92. BOTH are checked: a browser without backdrop-filter gets the second,
+    // and a guard that only checked the one it remembered would be right about
+    // half the renderings.
+    const surfaces: Array<[string, string]> = [
+      ["glass-card 0.72 over v2-bg", composite(0.72, "#FFFFFF", token("v2-bg"))],
+      ["glass fallback 0.92 over v2-bg", composite(0.92, "#FFFFFF", token("v2-bg"))],
+    ];
+
+    const failures: string[] = [];
+    for (const t of texts) {
+      // `token()` THROWS on an unknown name, deliberately: a palette entry
+      // naming a token theme.css does not define is a broken class either way,
+      // and skipping it would let the sweep report clean over a colour that
+      // renders as inherited text.
+      for (const [name, hex] of surfaces) {
+        const r = ratio(token(t), hex);
+        if (r < AA_NORMAL) failures.push(`${t} on ${name} ${hex} = ${r.toFixed(2)}:1`);
+      }
+    }
+    expect(
+      failures,
+      `therapist name text below the ${AA_NORMAL}:1 floor on the surface it actually renders on:\n  ${failures.join("\n  ")}`,
+    ).toEqual([]);
+  });
+
+  it("the composite is computed, not assumed - two anchors", () => {
+    // A `composite` that ignored alpha and returned `over` would make the arm
+    // above pass against pure white, which is the most generous surface there
+    // is. These pin both ends.
+    expect(composite(1, "#FFFFFF", "#000000")).toBe("#ffffff");
+    expect(composite(0, "#FFFFFF", "#F7F8FA")).toBe("#f7f8fa");
+    // And the real one, to the value the agenda renders.
+    expect(composite(0.72, "#FFFFFF", "#F7F8FA")).toBe("#fdfdfe");
   });
 
   /**
