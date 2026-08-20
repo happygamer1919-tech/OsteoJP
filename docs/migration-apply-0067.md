@@ -8,7 +8,7 @@ Strategy replaces the line above with `VALIDATED`; the author never removes
 their own.
 
 Migration: `0067_followup_packs_and_provenance` (journal idx 66, `when`
-1787300200000). Branch: `db/0067-followup-packs-and-provenance`.
+1787300200000). Branch: `db/0067-followup-packs-and-provenance`, rebased on main at `0b60e95` on 2026-08-20 so it stays mergeable; apply from the CURRENT branch head, not from a sha noted earlier.
 Card: `RB-00-migration-0067`. Gate: `owner_merge` - **apply BEFORE merge**.
 
 Written under `docs/runbook-prod-migrations.md`.
