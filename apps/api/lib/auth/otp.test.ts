@@ -20,6 +20,7 @@ import {
   hashCode,
   hashDeviceToken,
   hashPhone,
+  OtpCodeNotStored,
   requestCode,
   verifyCode,
   type OtpRecord,
@@ -132,11 +133,67 @@ describe("requesting a code", () => {
 
     await expect(
       requestCode(T, PHONE, { store, transport: sink, now: () => NOW, generate: () => "123456" }),
-    ).rejects.toThrow("db down");
+    ).rejects.toThrow(OtpCodeNotStored);
 
     // A code the server has no record of is indistinguishable, to the patient,
     // from a code that is simply wrong.
     expect(sink.sent).toEqual([]);
+  });
+
+  /* ======================================================================
+   * SEC-otp-request-tenant-500-oracle — THE WRITE FAILURE MUST BE NAMEABLE.
+   * ======================================================================
+   * The test above already proved the send does not happen. What it could not
+   * prove, and what the request route needs, is that the CALLER can tell a
+   * failed write from a failed send.
+   *
+   * IT MATTERS BECAUSE THE TRUE SENTENCE ABOUT THE DATABASE IS THE OPPOSITE IN
+   * EACH CASE. A throwing send leaves a live, undelivered code row; a throwing
+   * write leaves nothing. The route absorbs both into one 204 - correctly, that
+   * is the enumeration property - and then has to say which happened in its log,
+   * because that log is the only account anybody gets of a failure they cannot
+   * otherwise see.
+   */
+  it("names the write failure by CLASS, so the caller can tell it from a send failure", async () => {
+    const store = makeStore();
+    store.create = vi.fn().mockRejectedValue(new Error("db down"));
+    const sink = createOtpTestSink();
+
+    const err = await requestCode(T, PHONE, {
+      store,
+      transport: sink,
+      now: () => NOW,
+      generate: () => "123456",
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(OtpCodeNotStored);
+    // THE ORIGINAL ERROR SURVIVES. The class adds a fact the caller could not
+    // otherwise recover; it must not cost the diagnostic that was already there.
+    expect((err as OtpCodeNotStored).cause).toBeInstanceOf(Error);
+    expect(((err as OtpCodeNotStored).cause as Error).message).toBe("db down");
+  });
+
+  it("does NOT wrap a failing SEND, because that row DID get written", async () => {
+    // THE OTHER DIRECTION, and it is the half that catches a fix that works by
+    // labelling everything. If both failures arrived as OtpCodeNotStored the
+    // route would print "no row exists" over a row that is live and undelivered,
+    // which is the same false sentence pointing the other way.
+    const store = makeStore();
+    const sink = createOtpTestSink();
+    sink.send = vi.fn().mockRejectedValue(new Error("carrier refused"));
+
+    const err = await requestCode(T, PHONE, {
+      store,
+      transport: sink,
+      now: () => NOW,
+      generate: () => "123456",
+    }).catch((e: unknown) => e);
+
+    expect(err).not.toBeInstanceOf(OtpCodeNotStored);
+    expect((err as Error).message).toBe("carrier refused");
+    // And the row really is there, which is what makes the route's other
+    // sentence true.
+    expect(store.rows).toHaveLength(1);
   });
 
   it("issues a code for an unknown number too, and never looks the phone up", async () => {

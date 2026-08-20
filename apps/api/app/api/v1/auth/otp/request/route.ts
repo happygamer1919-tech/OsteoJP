@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { hashPhone, requestCode } from "@/lib/auth/otp";
+import { OtpCodeNotStored, hashPhone, requestCode } from "@/lib/auth/otp";
 import { isSmsCapablePT } from "@/lib/auth/otp-sms-capability";
 import { createDrizzleOtpStore } from "@/lib/auth/otp-store";
 import { OtpTransportMisconfigured, resolveOtpTransport } from "@/lib/auth/otp-transport";
@@ -23,6 +23,31 @@ import {
 // and this clinic's patient list is itself sensitive. The only distinguishable
 // outcomes are a malformed number (400, which reveals nothing about anyone) and
 // rate limiting (429, which an unknown number hits identically).
+//
+// THAT SENTENCE IS A COMPLETENESS CLAIM, AND IT HAS BEEN FALSE ONCE. Recorded
+// here rather than left as history, because the next person to add a branch to
+// this function is the person who needs to know this comment is load-bearing
+// and has to be RE-READ rather than merely preserved.
+//
+// SEC-otp-request-tenant-500-oracle, 2026-08-11: `tenantId` is taken from the
+// body and validated only as a non-empty string, and `patient_otp_codes.tenant_id`
+// carries REFERENCES tenants(id) (migration 0056:95). So a fabricated tenantId
+// raised a foreign-key violation on the insert and this route answered 500 where
+// a real one answered 204 - a THIRD distinguishable outcome, on the endpoint
+// whose whole design is to have as few as possible, and one the paragraph above
+// said did not exist.
+//
+// IT IS CLOSED, AND NOT BY THAT CARD. The try/catch below arrived with
+// SEC-otp-unassigned-prefix-500 on 2026-08-13 for an unrelated reason, and it
+// absorbs the FK violation too, because `store.create` runs inside `requestCode`
+// inside that try. Re-derived from main rather than assumed. The claim above is
+// true again as written, and `send-failure.test.ts` now holds it there.
+//
+// THE FIX IS DELIBERATELY NOT A tenantId LOOKUP, and this is the half worth
+// keeping: validating the tenant against the tenants table would add a database
+// query keyed on caller-supplied input to the endpoint whose stated property is
+// that it performs none (see the paragraph below), and it would turn tenant
+// existence from an accidental oracle into a fast, cheap, deliberate one.
 //
 // AND IT NEVER LOOKS THE PHONE UP. There is no patient query on this path at
 // all, so membership cannot leak even through the timing of a lookup. WF-07
@@ -174,23 +199,63 @@ export async function POST(req: Request): Promise<Response> {
     // a string match would fail open the moment somebody reworded the prose.
     if (e instanceof OtpTransportMisconfigured) throw e;
 
-    // NAMES AND CLASSES ONLY, NEVER THE PHONE, THE HASH OR THE CODE (PII rule
-    // 7). The tenant is omitted too - it identifies the clinic, and this line
-    // may be read by anyone with log access.
+    // ================================================================= //
+    // WHICH HALF FAILED DECIDES WHAT IS TRUE ABOUT THE DATABASE.
+    // ================================================================= //
+    // SEC-otp-request-tenant-500-oracle. This block said "the code row was
+    // already written and is now live-but-undelivered" UNCONDITIONALLY, which
+    // was true when it was written, because the only failure it absorbed was
+    // the send. It now also absorbs a failed WRITE - a fabricated tenantId
+    // raising the foreign-key violation on `patient_otp_codes.tenant_id` - and
+    // for that branch the sentence is FALSE: there is no row, because writing
+    // it is what failed.
     //
-    // AND IT SAYS THE ROW SURVIVES, because that is the non-obvious part.
-    // `requestCode` writes the code row BEFORE sending, deliberately, so a
-    // delivered code always has a record behind it. A throwing send therefore
-    // leaves a live unused row with no delivery. It is bounded by the 3/hour
-    // per-phone limit and the 5-minute TTL, so it is not an exhaustion vector -
-    // but somebody reading that table later will wonder why codes exist that
-    // nobody received, and this line is the answer.
-    console.error(
-      `[otp] SEND FAILED, request still answered 204: ${e instanceof Error ? e.name : "unknown"}: ` +
-        `${e instanceof Error ? e.message : "no message"}. The code row was already ` +
-        `written and is now live-but-undelivered until its TTL expires. If this ` +
-        `repeats, the transport is failing for a reason worth naming, not one number.`,
-    );
+    // A LOG LINE ON A FAILURE PATH IS A VERDICT PATH. It is read exactly when
+    // something has already gone wrong, by somebody who cannot see this code,
+    // and it is the only account they get. Sending them to look for a row that
+    // does not exist is section 1.3's collapse in miniature: two distinct
+    // failures reported as one, and the one reported is the benign one.
+    //
+    // NEITHER BRANCH CHANGES THE RESPONSE. Both still answer 204 and both stay
+    // byte-identical to a success. What is discriminated here is the LOG, never
+    // the caller's view, so no distinguishable outcome is added by fixing this.
+    if (e instanceof OtpCodeNotStored) {
+      // NAMES AND CLASSES ONLY, NEVER THE PHONE, THE HASH OR THE CODE (PII rule
+      // 7). The tenant is omitted too - it identifies the clinic, and on this
+      // branch it is very likely attacker-supplied text besides.
+      //
+      // THE ORIGINAL ERROR IS READ OFF `cause`, not off the wrapper: the wrapper
+      // exists to carry the FACT of which half failed, and the diagnostic value
+      // is still in the driver's own error.
+      const cause = e.cause;
+      console.error(
+        `[otp] CODE ROW NOT WRITTEN, request still answered 204: ` +
+          `${cause instanceof Error ? cause.name : "unknown"}: ` +
+          `${cause instanceof Error ? cause.message : "no message"}. NOTHING WAS SENT ` +
+          `and NO row exists - do not go looking for a live-but-undelivered code. ` +
+          `The ordinary cause is a tenantId that is not a real tenant, which this ` +
+          `route accepts as any non-empty string on purpose; a repeat under a REAL ` +
+          `tenant is a database fault worth naming.`,
+      );
+    } else {
+      // NAMES AND CLASSES ONLY, NEVER THE PHONE, THE HASH OR THE CODE (PII rule
+      // 7). The tenant is omitted too - it identifies the clinic, and this line
+      // may be read by anyone with log access.
+      //
+      // AND IT SAYS THE ROW SURVIVES, because that is the non-obvious part.
+      // `requestCode` writes the code row BEFORE sending, deliberately, so a
+      // delivered code always has a record behind it. A throwing send therefore
+      // leaves a live unused row with no delivery. It is bounded by the 3/hour
+      // per-phone limit and the 5-minute TTL, so it is not an exhaustion vector -
+      // but somebody reading that table later will wonder why codes exist that
+      // nobody received, and this line is the answer.
+      console.error(
+        `[otp] SEND FAILED, request still answered 204: ${e instanceof Error ? e.name : "unknown"}: ` +
+          `${e instanceof Error ? e.message : "no message"}. The code row was already ` +
+          `written and is now live-but-undelivered until its TTL expires. If this ` +
+          `repeats, the transport is failing for a reason worth naming, not one number.`,
+      );
+    }
   }
 
   // 204 regardless. See the header: this is the enumeration property.

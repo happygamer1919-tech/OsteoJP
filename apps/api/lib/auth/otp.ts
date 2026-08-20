@@ -211,6 +211,50 @@ export type RequestCodeDeps = {
 };
 
 /**
+ * THE CODE ROW COULD NOT BE WRITTEN. Nothing was sent and nothing is live.
+ *
+ * WHY THIS CLASS EXISTS, and it is the same reason `OtpTransportMisconfigured`
+ * exists one module over: `requestCode` has two failure points and the caller
+ * cannot tell them apart from an ordinary `Error`, but it has to, because the
+ * TRUE SENTENCE ABOUT THE DATABASE IS THE OPPOSITE IN EACH CASE.
+ *
+ *   - the SEND throws  -> the row was already written and is now live but
+ *     undelivered until its TTL expires. Somebody reading that table later needs
+ *     to know why codes exist that nobody received.
+ *   - the WRITE throws -> there is no row. Nothing is live, nothing needs
+ *     explaining, and looking for one wastes the reader's time.
+ *
+ * THE ROUTE'S LOG LINE USED TO SAY THE FIRST OF THOSE UNCONDITIONALLY, because
+ * when it was written (SEC-otp-unassigned-prefix-500) the only failure it was
+ * absorbing WAS the send. Then `SEC-otp-request-tenant-500-oracle` observed the
+ * other one: `patient_otp_codes.tenant_id` carries `REFERENCES tenants(id)`
+ * (migration 0056:95), so a fabricated tenantId makes `store.create` raise a
+ * foreign-key violation — which that same catch absorbs, and then describes
+ * with a sentence that is false about it.
+ *
+ * A LOG LINE ON A FAILURE PATH IS A VERDICT PATH. It is read exactly when
+ * something has already gone wrong, by somebody who cannot see the code, and it
+ * is the only account they get. Section 1.3's rule applies to it in full: two
+ * distinct failures were being reported as one, and the one being reported was
+ * the one that happens to be benign.
+ *
+ * DISCRIMINATED BY CLASS, NEVER BY MESSAGE TEXT, for the reason
+ * `OtpTransportMisconfigured` already gives: a string match fails OPEN the
+ * moment somebody rewords the prose.
+ *
+ * IT CHANGES NO RESPONSE. Both failures still answer 204. The enumeration
+ * property is the whole design of this endpoint and this class does not touch
+ * it — it decides what the LOG says, not what the CALLER sees.
+ */
+export class OtpCodeNotStored extends Error {
+  constructor(cause: unknown) {
+    super("otp: the code row could not be written; nothing was sent and nothing is live");
+    this.name = "OtpCodeNotStored";
+    this.cause = cause;
+  }
+}
+
+/**
  * Issue a code and send it.
  *
  * IT RETURNS NOTHING ABOUT WHETHER THE PHONE IS KNOWN, and it does not look.
@@ -232,12 +276,20 @@ export async function requestCode(
   const code = (deps.generate ?? generateOtpCode)();
   const phoneHash = hashPhone(phoneE164);
 
-  await deps.store.create({
-    tenantId,
-    phoneHash,
-    codeHash: hashCode(code, phoneHash),
-    expiresAt: new Date(now.getTime() + OTP_TTL_MS),
-  });
+  // THE WRITE IS NAMED SO THE CALLER CAN TELL IT FROM THE SEND. See
+  // `OtpCodeNotStored`. The original error rides along as `cause`, so nothing
+  // diagnostic is lost - the class adds a fact the caller could not otherwise
+  // recover, it does not replace one.
+  try {
+    await deps.store.create({
+      tenantId,
+      phoneHash,
+      codeHash: hashCode(code, phoneHash),
+      expiresAt: new Date(now.getTime() + OTP_TTL_MS),
+    });
+  } catch (e) {
+    throw new OtpCodeNotStored(e);
+  }
 
   // Send AFTER the row exists. The other order can deliver a code the server has
   // no record of, which the patient then cannot use — indistinguishable to them

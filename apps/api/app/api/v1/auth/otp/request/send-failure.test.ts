@@ -41,7 +41,7 @@ vi.mock("server-only", () => ({}));
 
 const H = vi.hoisted(() => ({
   /** What `requestCode` should do when the route calls it. */
-  behaviour: "ok" as "ok" | "delivery-failure" | "misconfigured",
+  behaviour: "ok" as "ok" | "delivery-failure" | "misconfigured" | "write-failure",
   /** One entry per call that reached `requestCode`. */
   calls: [] as Array<{ tenantId: string; phone: string }>,
 }));
@@ -84,6 +84,24 @@ vi.mock("@/lib/auth/otp", async (orig) => {
       if (H.behaviour === "misconfigured") {
         throw new OtpTransportMisconfigured(
           "otp/twilio: OTP_LIVE_SEND is armed but the transport is not configured.",
+        );
+      }
+      if (H.behaviour === "write-failure") {
+        // SEC-otp-request-tenant-500-oracle. What a fabricated tenantId actually
+        // produces: `patient_otp_codes.tenant_id` carries REFERENCES tenants(id)
+        // (0056:95), so `store.create` raises a foreign-key violation from the
+        // driver. THE REAL `OtpCodeNotStored` IS USED, not a stand-in, so
+        // `instanceof` in the route compares against the same class object the
+        // route imports - a local stub would make the branch test pass by
+        // proving the stub works rather than by proving the route does.
+        throw new real.OtpCodeNotStored(
+          Object.assign(
+            new Error(
+              'insert or update on table "patient_otp_codes" violates foreign key ' +
+                'constraint "patient_otp_codes_tenant_id_fkey"',
+            ),
+            { name: "PostgresError" },
+          ),
         );
       }
     },
@@ -215,5 +233,108 @@ describe("a MISCONFIGURED transport is NOT absorbed", () => {
     // concerned, because only the class carries the meaning.
     vi.resetModules();
     expect(new Error("not configured")).not.toBeInstanceOf(OtpTransportMisconfigured);
+  });
+});
+
+/* ==========================================================================
+ * SEC-otp-request-tenant-500-oracle — THE WRITE HALF, WHICH THE CATCH ABOVE
+ * ABSORBS BY ACCIDENT AND USED TO DESCRIBE INCORRECTLY.
+ * ==========================================================================
+ * THE CARD'S PREMISE IS HALF FALSE ON main, AND THAT IS WHY THESE TESTS ARE
+ * SHAPED THE WAY THEY ARE. The card, written 2026-08-11, says this route answers
+ * 500 for an unknown `tenantId`. It does not: `store.create` runs inside
+ * `requestCode` inside the try/catch that `SEC-otp-unassigned-prefix-500` added
+ * on 2026-08-13 for a completely unrelated reason, so the foreign-key violation
+ * is caught and the route answers 204 like everything else.
+ *
+ * NOTHING HELD IT THERE. The behaviour was correct by coincidence - one card's
+ * fix covering another card's defect, with no test naming the second case. The
+ * first test below is that guard, and it is the substantive half of this card:
+ * it turns a coincidence into a property.
+ *
+ * WHAT WAS ACTUALLY STILL WRONG is the log. The catch said "the code row was
+ * already written and is now live-but-undelivered" unconditionally, which is the
+ * opposite of the truth when the WRITE is what failed. A log line on a failure
+ * path is a verdict path - it is read only when something has already gone
+ * wrong, by somebody who cannot see the code - and it was sending that person to
+ * look for a row that does not exist.
+ */
+describe("a failed WRITE is absorbed too, and is not described as a failed send", () => {
+  it("answers 204 when the code row cannot be written, not 500", async () => {
+    // THE REGRESSION GUARD FOR THE CARD'S ORIGINAL FINDING. A fabricated
+    // tenantId must not be distinguishable from a real one. Nothing asserted
+    // this before: the behaviour was right by accident.
+    H.behaviour = "write-failure";
+    const res = await request(post({ tenantId: T, phone: PHONE }));
+    expect(
+      res.status,
+      "a tenantId that is not a real tenant must not be distinguishable from one that is",
+    ).toBe(204);
+  });
+
+  it("is byte-identical to a successful request", async () => {
+    // Status alone is not the property, for the same reason as the send arm: a
+    // body or a header the success path lacks is still an oracle.
+    H.behaviour = "ok";
+    const good = await request(post({ tenantId: T, phone: PHONE }));
+    H.behaviour = "write-failure";
+    const bad = await request(post({ tenantId: T, phone: PHONE }));
+
+    expect(bad.status).toBe(good.status);
+    expect(await bad.text()).toBe(await good.text());
+    expect([...bad.headers].sort()).toEqual([...good.headers].sort());
+  });
+
+  it("says NO row exists, and does NOT claim a live-but-undelivered code", async () => {
+    // THE ASSERTION THIS CARD EXISTS FOR. The negative half is the load-bearing
+    // one: reverting the branch makes the route print the send-failure sentence
+    // here, and this goes red.
+    H.behaviour = "write-failure";
+    await request(post({ tenantId: T, phone: PHONE }));
+
+    expect(errors, "a swallowed write failure must not be silent either").toHaveLength(1);
+    const line = errors[0]!;
+    expect(line).toContain("CODE ROW NOT WRITTEN");
+    expect(line).toContain("NOTHING WAS SENT");
+    expect(
+      line,
+      "the send-failure sentence is FALSE here: writing the row is what failed",
+    ).not.toMatch(/live-but-undelivered until its TTL/);
+    expect(line).not.toContain("SEND FAILED");
+  });
+
+  it("carries the driver's own error through, so nothing diagnostic is lost", async () => {
+    // The wrapper adds a FACT (which half failed); it must not replace the
+    // diagnostic. A wrapper that swallowed its cause would satisfy every
+    // assertion above and leave an operator with nothing to act on.
+    H.behaviour = "write-failure";
+    await request(post({ tenantId: T, phone: PHONE }));
+    expect(errors[0]!).toContain("PostgresError");
+    expect(errors[0]!).toContain("patient_otp_codes_tenant_id_fkey");
+  });
+
+  it("logs no phone, no hash and no tenant, exactly like the send arm", async () => {
+    // PII rule 7, and on this branch the tenant is very likely attacker-supplied
+    // text besides.
+    H.behaviour = "write-failure";
+    await request(post({ tenantId: T, phone: PHONE }));
+    const line = errors[0]!;
+    expect(line, "the E.164 number must never be logged").not.toContain(PHONE);
+    expect(line, "nor the national part of it").not.toContain("912345678");
+    expect(line, "nor the tenant, which identifies the clinic").not.toContain(T);
+  });
+
+  it("still tells the two halves apart by CLASS, so rewording cannot fail it open", async () => {
+    // The same rule `OtpTransportMisconfigured` is held to. An ordinary Error
+    // whose message happens to mention the constraint must take the SEND branch,
+    // because only the class carries the meaning.
+    H.behaviour = "ok";
+    const { OtpCodeNotStored } = await import("@/lib/auth/otp");
+    expect(new OtpCodeNotStored(new Error("x"))).toBeInstanceOf(Error);
+    expect(new OtpCodeNotStored(new Error("x")).name).toBe("OtpCodeNotStored");
+    expect(
+      new Error("patient_otp_codes_tenant_id_fkey"),
+      "a message match would fail OPEN the day somebody reworded the prose",
+    ).not.toBeInstanceOf(OtpCodeNotStored);
   });
 });
