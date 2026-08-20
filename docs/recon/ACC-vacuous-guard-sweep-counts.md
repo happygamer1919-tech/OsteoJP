@@ -318,3 +318,91 @@ instrument, for the third time in one session.
 sound and the header always said the numbers were an upper bound on suspicion;
 what the reads add is that the bound was roughly an order of magnitude loose, in
 three different ways, each specific to how this codebase is written.
+
+---
+
+# FIXTURES, 2026-08-19 — the scope the 2026-08-12 note added
+
+Derived from `origin/main` at `9bc69e0`.
+
+## The known instance is closed, and the class is now unconstructible in the database
+
+`appointment-note-present-capture.test.ts` seeded **two confirmed appointments on
+one therapist at one identical window** — the exact state the system exists to
+prevent — and every assertion in that suite passed against it, for months.
+
+Three things are true on main today:
+
+1. **The fixture is fixed.** It now uses a second window (`START_2`/`END_2`), and
+   carries a comment saying the old shape put two `confirmed` rows on one
+   therapist at one time and that `appointments_no_double_confirmed` refuses it
+   *"and correctly"*.
+2. **The constraint is real.** `0061` adds a GiST `EXCLUDE` constraint on
+   `public.appointments`, with `btree_gist` provisioned and a fail-loud path if
+   the opclass cannot be resolved.
+3. **The constraint is itself tested** — `packages/db/tests/no-double-confirmed.test.ts`.
+
+So for **DB-backed** fixtures this class is no longer a matter of vigilance: the
+database refuses the state at insert. That is the strongest possible answer, and
+it is the one the card asked for.
+
+## The surface that remains, sized honestly
+
+40 test files mention a `confirmed` status. **10 are DB-backed**, where the
+constraint applies. **30 are in-memory**, where no constraint can catch anything
+because nothing is inserted.
+
+Of those 30, six build two or more appointment-shaped objects with
+`status: "confirmed"`:
+
+| file | count |
+|---|---|
+| `double-booked-surface.test.ts` | 7 |
+| `estado-server-enforcement.test.ts` | 6 |
+| `audit-override-trace.test.ts` | 4 |
+| `agenda-grid.test.tsx` | 2 |
+| `actions.status-event.test.ts` | 2 |
+| `pedido-confirm.test.ts` | 2 |
+
+**The largest is legitimate, and it is the key to the criterion.**
+`double-booked-surface.test.ts` exists to prove that the constraint's refusal
+reaches the agenda as pt-PT rather than as a raw Postgres 500 — *"a database
+error on screen during that demo is worse than the bug the constraint
+replaced"*. Constructing the forbidden state **is its subject**. Refusing to
+construct it would leave the refusal path untested.
+
+## THE FIXTURE CRITERION
+
+> **A fixture that constructs a forbidden state is a defect only when the test is
+> not ABOUT that state.**
+
+Where the forbidden state is the subject, building it is correct. Where it is
+merely scenery — as in `appointment-note-present-capture`, which was about notes
+and happened to seed a double booking — it is the defect this card names.
+
+## WHAT IS NOT COVERED, said plainly
+
+The invariant set beyond "no two confirmed appointments on one therapist at one
+window" is **not enumerated**. This pass answered the known invariant across 40
+files; it did not ask *"could production ever contain this?"* of every seed block
+in the repository, which is an open-ended reading task and is carded separately
+as `ACC-fixture-forbidden-state-sweep`.
+
+---
+
+# THE ONE LESSON ALL FOUR CATEGORIES PRODUCED
+
+Each category over-counted for a different mechanical reason, and every one of
+those reasons is the same mistake underneath:
+
+| category | the detector saw | what it could not see |
+|---|---|---|
+| (A) self-mocking | a module mocked and imported | whether the mock is **driven as input** or **used as the answer** |
+| (B) unstripped comments | a text read with no strip | that `migration-syntax`'s **subject is the comment delimiters** |
+| (C) no negative arm | no `toBe(false)` / `toThrow` | refusals written as **error codes and discriminated results** |
+| fixtures | a forbidden state constructed | that `double-booked-surface` is **about** that state |
+
+**A shape-match cannot distinguish DOING the suspicious thing from being ABOUT
+the suspicious thing.** That is why the header's own warning — *"every hit needs
+a human read before it is called vacuous"* — was load-bearing rather than
+cautious boilerplate, and why 123 suspects became one real defect.
