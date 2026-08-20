@@ -21,6 +21,27 @@ const themeCss = readFileSync(
   "utf8",
 );
 
+/**
+ * theme.css with COMMENTS REMOVED (ACC-vacuous-guard-sweep).
+ *
+ * Every assertion below is a PRESENCE check on a bare literal - a hex, or an
+ * rgba() string. On the raw file a COMMENT satisfies it, so a token deleted from
+ * the CSS but still described in prose would keep this suite green.
+ *
+ * NOT HYPOTHETICAL, AND THE WORKED EXAMPLE IS IN THIS VERY FILE'S SUBJECT:
+ * theme.css:307 reads "SPEC 3.1 lists #6E7A89, but that is 4.37:1 on white ..."
+ * - a REJECTED value, recorded in a comment and deliberately absent from the
+ * declarations. Assert that hex and the guard passes on the rejection notice.
+ * Checked before changing anything: of 55 literals asserted across the three
+ * tokens suites, ZERO are currently satisfied only by a comment. This removes
+ * the class rather than fixing an instance.
+ *
+ * ABSENCE assertions deliberately keep using the RAW css: a comment naming a
+ * superseded hex should make `.not.toContain` FAIL, because that is the
+ * direction it is safe to be wrong in.
+ */
+const themeCode = themeCss.replace(/\/\*[\s\S]*?\*\//g, "");
+
 // The 15 named tokens W12-21 ADDS + the W12-40 gray, with the approved hex for
 // each. Order matches the proposal table (gray appended before ink, W12-40).
 const THERAPIST_PALETTE: ReadonlyArray<readonly [token: string, hex: string]> = [
@@ -70,7 +91,7 @@ describe("W12-21 therapist palette (approved proposal 2026-07-25)", () => {
   it.each(THERAPIST_PALETTE)(
     "%s is the approved hex %s (verbatim in theme.css)",
     (token, hex) => {
-      expect(themeCss).toContain(`${token}: ${hex};`);
+      expect(themeCode).toContain(`${token}: ${hex};`);
     },
   );
 
@@ -84,7 +105,7 @@ describe("W12-21 therapist palette (approved proposal 2026-07-25)", () => {
   it("introduces no raw hex that shadows the brand accents (magenta/teal reserved)", () => {
     // The brand accents keep their canonical hexes; the new palette must not
     // redefine accent-1-700 (#8B1863) or accent-2-700 (#2F7E72).
-    expect(themeCss).toContain("--color-accent-1-700: #8B1863;");
-    expect(themeCss).toContain("--color-accent-2-700: #2F7E72;");
+    expect(themeCode).toContain("--color-accent-1-700: #8B1863;");
+    expect(themeCode).toContain("--color-accent-2-700: #2F7E72;");
   });
 });

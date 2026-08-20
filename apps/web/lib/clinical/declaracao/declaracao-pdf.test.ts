@@ -104,8 +104,18 @@ describe("renderDeclaracaoPdf — bytes, stamp slot, accents", () => {
   it("draws the responsável from the MODEL — no name literal in the renderer source", () => {
     const src = readFileSync(path.join(__dirname, "declaracao-pdf.ts"), "utf8");
     // The renderer must not hardcode the responsável; it draws model.responsavel.
+    // The ABSENCE assertion stays on RAW source: a comment mentioning the name
+    // can only make it fail, which is the safe direction and is what we want.
     expect(src).not.toContain("João Paulo Santos Silva");
-    expect(src).toContain("model.responsavel");
+    // The PRESENCE assertion runs on the code only. Otherwise a comment reading
+    // "use model.responsavel, never a hardcoded name" satisfies it while the
+    // hardcoded name is what actually ships - and that comment is exactly the
+    // kind a fix like this leaves behind (ACC-vacuous-guard-sweep, criterion F).
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(
+      code,
+      "model.responsavel is absent from the CODE; a hit in a comment does not count.",
+    ).toContain("model.responsavel");
   });
 });
 
