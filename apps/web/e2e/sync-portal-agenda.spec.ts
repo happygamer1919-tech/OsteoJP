@@ -125,7 +125,15 @@ async function receptionPage(browser: Browser): Promise<Page> {
  *                      empty calendar.
  */
 type BookOutcome =
-  | { ok: true; slot: string; isoDate: string }
+  /**
+   * `appointmentId` is the RUN-SCOPED IDENTITY this spec was missing.
+   * `booking/actions.ts:31` redirects to `/portal/booking/pending?id=<id>`, so
+   * the id of the row THIS RUN created is on the URL the flow lands on. Nothing
+   * new is exposed to read it: it is the patient's own appointment, on the
+   * patient's own screen, and the pending page already refuses an id that is not
+   * theirs.
+   */
+  | { ok: true; slot: string; isoDate: string; appointmentId: string }
   | { ok: false; why: "empty-calendar"; detail: string }
   | { ok: false; why: "flow-broken"; detail: string };
 
@@ -326,6 +334,24 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   // The pedido landed when the pending screen says so, in the product's own
   // words. Waiting on a URL alone would pass on a redirect that carried an error.
   await expect(page.getByText(/pedido recebido/i)).toBeVisible({ timeout: 30_000 });
+
+  // THE ID OF THE ROW THIS RUN CREATED, read off the URL the product itself
+  // built. Taken AFTER "Pedido recebido" and not before: that text is the
+  // product's own statement that a row was found for this id, so reading the id
+  // first would capture a value from a screen that may be about to say it cannot
+  // confirm anything.
+  const appointmentId = new URL(page.url()).searchParams.get("id") ?? "";
+  if (!appointmentId) {
+    // The pending screen SAID the pedido was received, so a row exists; not
+    // being able to name it is a change in the redirect, not an empty calendar,
+    // and it must not skip.
+    return {
+      ok: false,
+      why: "flow-broken",
+      detail: "the pending screen confirmed a pedido but carried no id on its URL",
+    };
+  }
+
   if (!bookedIso) {
     // A day was selected and slots appeared, so the flow WORKED — this is a
     // parsing failure, not an empty calendar, and it must not skip.
@@ -335,7 +361,7 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
       detail: "could not derive an ISO date from the picker's aria-label",
     };
   }
-  return { ok: true, slot: label, isoDate: bookedIso };
+  return { ok: true, slot: label, isoDate: bookedIso, appointmentId };
 }
 
 test.describe("W13-07 — the two surfaces stay in step across the app boundary", () => {
@@ -434,22 +460,61 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     // the same end for this assertion — a neighbour would have to book the same
     // patient at the same time on the same specific day — and it costs nothing.
     // The residual risk is recorded on LE-pg8-e2e-needs-run-scoped-patient.
-    const bookedOn = booked.isoDate;
+    // NARROWED THE SAME WAY `taken` above is. `test.skip` stops the run before
+    // either is read, but it does not narrow the union for the compiler - and
+    // `e2e/` is EXCLUDED from apps/web/tsconfig.json, so nothing was checking.
+    // `booked.isoDate` was already an unnarrowed access on this line before this
+    // change; it is corrected here rather than left because it is being touched.
+    const bookedOn = booked.ok ? booked.isoDate : "";
+    const bookedId = booked.ok ? booked.appointmentId : "";
     const timeRe = new RegExp(String(taken).replace(":", "[:h]"), "i");
     const nameRe = new RegExp(PORTAL_PATIENT.name.split(" ")[0], "i");
 
-    // BOTH PROBES NOW WAIT. They did not, and that produced the false negative
-    // this whole card was built on — see `becameVisible`. The time probe carries
-    // the full budget because it is the one that races the agenda's first paint;
-    // the name probe follows on an already-painted page, so 5s is generous.
+    // ================================================================= //
+    // THE VERDICT IS THE ROW'S OWN ID. LE-pg8-e2e-needs-run-scoped-patient.
+    // ================================================================= //
+    // WHAT WAS STILL WRONG AFTER THE DATE PIN, and it is the residual the card
+    // named: `Maria Silva` and `09:00` are SHARED VOCABULARY on a shared seeded
+    // database. Pinning the DATE narrowed the collision to "the same patient at
+    // the same time on the same day", which is smaller and is not zero - and the
+    // whole history of this spec is two false greens produced by exactly that
+    // kind of match.
+    //
+    // The card's durable fix was a run-unique PATIENT, blocked on the
+    // trusted-device storage state that fixes the portal identity. IT IS NOT
+    // NEEDED. `booking/actions.ts` redirects to
+    // `/portal/booking/pending?id=<appointment.id>`, so the id of the row THIS
+    // RUN created is already on the URL the flow lands on, and
+    // `agenda-grid.tsx` now carries that id on the card. Two neighbours booking
+    // the same patient at the same time on the same day can no longer satisfy
+    // this, because a uuid is not shared vocabulary.
+    //
+    // THE NAME CHECK IS KEPT AND IS NOW SCOPED TO THAT ROW rather than to the
+    // page. Same coverage, minus the cross-match: it asserts THIS card renders
+    // the patient, not that SOME card somewhere renders somebody with that name.
+    const row = staff.locator(`[data-appointment-id="${bookedId}"]`);
+
     const seen = await timed("A: agenda shows the row on the booked day", async () => {
       await staff.goto(`/agenda?date=${bookedOn}`);
-      const hasTime = await becameVisible(staff.getByText(timeRe).first(), 15_000);
-      if (!hasTime) return false;
-      return becameVisible(staff.getByText(nameRe).first(), 5_000);
+      return becameVisible(row.first(), 15_000);
     });
 
-    console.log(`[W13-07] A: visible to RECEPTION on ${bookedOn}? ${seen}`);
+    console.log(`[W13-07] A: row ${bookedId} visible to RECEPTION on ${bookedOn}? ${seen}`);
+
+    // REPORTED, NOT ASSERTED, so a future failure arrives already diagnosed.
+    // The card's two candidates were "the row was never created" and "the card
+    // renders in a shape the locator misses". The id probe answers the first;
+    // these two answer the second, and they cost one page query each on a page
+    // that is already painted. If the id is present and these are false, the
+    // defect is in the CARD's rendering; if the id is absent, no row exists on
+    // this day and the write is what to look at.
+    const alsoTime = await becameVisible(staff.getByText(timeRe).first(), 2_000);
+    const alsoName = await becameVisible(staff.getByText(nameRe).first(), 2_000);
+    console.log(
+      `[W13-07] A: diagnostics - time text "${taken}" visible? ${alsoTime}; ` +
+        `name text "${PORTAL_PATIENT.name.split(" ")[0]}" visible? ${alsoName}. ` +
+        `These are NOT the verdict; the id above is.`,
+    );
 
     // THE OWNER-VIEWER BLOCK WAS REMOVED HERE, 2026-08-12, AND THE REASON IS
     // WORTH KEEPING. It answered its question - reception false, OWNER false, so
@@ -463,10 +528,21 @@ test.describe("W13-07 — the two surfaces stay in step across the app boundary"
     expect(
       seen,
       `the pedido booked for ${PORTAL_PATIENT.name} at ${taken} on ${bookedOn} should be on the ` +
-        `staff agenda for THAT DAY. Location scope is ruled out: run 31641934973 showed the row ` +
-        `invisible to the OWNER too, who has no location filter at all.`,
+        `staff agenda for THAT DAY, as appointment ${bookedId}. Location scope is ruled out: run ` +
+        `31641934973 showed the row invisible to the OWNER too, who has no location filter at all. ` +
+        `The diagnostics line above says whether the TIME and NAME text were present: id absent ` +
+        `with both present means the identity attribute regressed, id absent with both absent ` +
+        `means no row reached this day.`,
     ).toBe(true);
-    console.log(`[W13-07] A: the crossing landed on ${bookedOn}, the day it booked`);
+
+    // THE NAME, SCOPED TO THE ROW THE ID FOUND. Page-wide it was cross-matchable;
+    // inside the row it is a statement about this appointment's card.
+    await expect(
+      row.first().getByTestId("agenda-card-patient"),
+      `the card for appointment ${bookedId} should name the patient who booked it`,
+    ).toContainText(nameRe);
+
+    console.log(`[W13-07] A: the crossing landed on ${bookedOn}, the day it booked, as ${bookedId}`);
 
     await staff.context().close();
   });
