@@ -3379,6 +3379,46 @@
       "evidence": null,
       "last_checkpoint": "2026-08-20",
       "notes": "CARDED 2026-08-20 while executing the Q-PORTAL-DEAD-I18N-1 ruling. The ruling said to WIRE UP 500 and offline. 500 is wired (apps/portal/app/global-error.tsx). OFFLINE IS NOT, and this card is why.\n\nTHE OBVIOUS IMPLEMENTATION IS WRONG. `navigator.onLine` answers 'is there a network interface', not 'can I reach the server'. It reports TRUE on a router with no internet, on a captive portal, and on a VPN that is up but not routing. A banner built on it tells a patient whose portal is working perfectly that they are offline - an unhandled case wearing the face of a known one, which is section 1.3 exactly, and in the PRODUCT rather than in an instrument.\n\nIT ALSO FAILS THE OTHER WAY, which is the half that makes the naive version worse than nothing: a phone that has lost signal mid-request often still reports onLine TRUE for several seconds, so the banner is absent exactly when it would have been useful.\n\nWHAT AN HONEST VERSION LOOKS LIKE: distinguish a NETWORK failure from an HTTP failure in apps/portal/lib/api/client.ts. A fetch that REJECTS (TypeError) never reached the server; a fetch that RESOLVES with 5xx did. Only the first is 'offline', and it is a fact rather than a guess. That is a change to the api client's error contract and to every caller that reads it, which is why it is its own card.\n\nTHE TWO KEYS STAY, and stay declared in scripts/portal-i18n-dead-keys.test.mjs with this reason, so the ratchet does not count them as an accident and a future reader does not delete them as leftovers.\n\nCLOSES ON: the api client distinguishing the two failure classes, a surface that uses it, and a test proving the banner does NOT appear for a 5xx - the direction the naive implementation gets wrong."
+    },
+    {
+      "id": "RB-00-migration-0067",
+      "title": "Migration 0067: appointment provenance, pacote linkage, the pack legacy-consumed record, and the two recuperacao tables - ONE migration for the whole batch",
+      "status": "in_flight",
+      "home_lane": "in_flight",
+      "lane": "in_flight",
+      "priority": "high",
+      "gate": "owner_merge",
+      "blocked_on": null,
+      "evidence": null,
+      "last_checkpoint": "2026-08-20",
+      "open_on_purpose": "APPLY-BEFORE-MERGE (standing rule 7). The PR stops here until Ivan applies 0067 from the osteojp-prod-apply worktree and pastes the journal output back. RB-01 and RB-02 are HALTED behind it. RB-03 needed no schema, was NOT blocked on this, and shipped separately in #992 - a card travels with the work that builds it.",
+      "notes": "AUTHORED 2026-08-20 ON OWNER AUTHORISATION. Slot 0067 confirmed free from packages/db/migrations/meta/_journal.json: 66 entries, idx 0-65, highest tag 0066_users_must_set_password.\n\nONE MIGRATION FOR FOUR NEEDS, by the same ruling. Rule 8 allows one in flight repo-wide and the batch needs all four; they are unrelated in subject and identical in risk profile - additive columns with defaults, two new tables, and one data backfill that is an arithmetic identity.\n\n1. appointments.origin. Q-PEDIDO-EMIT-1 ruling A. is_unconfirmed_pedido stops joining staff_notifications, so a failed best-effort notification emit can no longer make a patient's request indistinguishable from a staff booking while it blocks its slot.\n2. appointments.pack_instance_id. A pacote session becomes a real appointment row instead of a counter decrement.\n3. patient_pack_instances.legacy_consumed. What makes 'existing balances preserved exactly' an identity rather than a hope.\n4. patient_followup_postponements and patient_followup_contacts. The recuperacao surface's two durable facts.\n\nTHE APPLY BLOCK IS A DRAFT AND HAS NOT BEEN SENT TO IVAN. docs/migration-apply-0067.md opens with the mandatory NOT VALIDATED line. Path is draft -> strategy -> Ivan, per section 4.9."
+    },
+    {
+      "id": "RB-01-recuperacao-utentes",
+      "title": "Recuperacao de utentes: patients recently in treatment with no future booking, and reception acts on them from client-side deep links",
+      "status": "blocked",
+      "home_lane": "in_flight",
+      "lane": "in_flight",
+      "priority": "high",
+      "gate": "green_self_merge",
+      "blocked_on": "infra",
+      "evidence": null,
+      "last_checkpoint": "2026-08-20",
+      "notes": "DISPATCHED 2026-08-20. BLOCKED ON MIGRATION 0067 BEING APPLIED - it needs patient_followup_postponements and patient_followup_contacts, which RB-00 carries.\n\nSELECTION, as ruled: a completed attendance from the first day of the PREVIOUS month until 7 days ago, AND no future appointment, AND not currently postponed.\n\nSHOWS: last attendance date, associated therapist, available contacts.\n\nACTIONS ARE ALL CLIENT-SIDE DEEP LINKS opening on the receptionist device - wa.me with a prefilled editable message, an sms: link, a mailto: with prefilled subject and body. NO SERVER-SIDE SENDING, no Twilio, no Resend, R9 live-send flags untouched. The server records only that a human pressed a link.\n\nADIAR: postpone N weeks, removes the patient until that date, stored server-side, REVERSIBLE, and the reversal is recorded rather than erasing the row - visible who and when on both halves.\n\nACCESS: owner, admin, reception. Location-scoped per PL-09. THERAPISTS SEE NOTHING. No new public surface.\n\nCOPY: pt-PT templates are DRAFTED and EDITABLE before send. Marked for Ivan's copy review at the sitting rather than treated as approved."
+    },
+    {
+      "id": "RB-02-pacote-books-its-appointments",
+      "title": "A Pacote of N books N appointments instead of one, the balance derives from linked rows, and `consumir` goes",
+      "status": "blocked",
+      "home_lane": "in_flight",
+      "lane": "in_flight",
+      "priority": "high",
+      "gate": "green_self_merge",
+      "blocked_on": "infra",
+      "evidence": null,
+      "last_checkpoint": "2026-08-20",
+      "notes": "DISPATCHED 2026-08-20. BLOCKED ON MIGRATION 0067 BEING APPLIED - it needs appointments.pack_instance_id and patient_pack_instances.legacy_consumed.\n\nTHE DEFECT: selecting a Pacote in Nova marcacao books ONE appointment, and `consumir` in the patient profile burns a session with NO appointment row - no who, no when, no slot. The balance is a counter nothing can reconcile against the diary.\n\nLEGACY STATE, DERIVED FROM main BEFORE ANYTHING WAS CHANGED, which the dispatch required: service_packs is the pack TYPE; patient_pack_instances is one patient's purchase with sessions_total and a monotonic sessions_remaining; bookPackSessionTx registers-or-decrements that counter inside createAppointment's tx; the profile's consumir/restore adjusts it with an audit row and no appointment. THERE IS NO LINK COLUMN AT ALL - the appointment records the pack's BASE SERVICE as its serviceId and nothing else.\n\nIT DOES MAP CLEANLY, SO THIS DID NOT HALT, and the reasoning is on the migration: a pure derive-from-linked-rows model would count ZERO for every existing instance and silently RESTORE every session already used - fabricating SESSIONS, the mirror of fabricating appointment rows. legacy_consumed records what is known (how many, not which) and the backfill is an identity, so every existing balance is preserved exactly and nothing is invented.\n\nsessions_remaining IS FROZEN, not dropped: it is the only evidence the backfill can ever be checked against. A guard asserts no application code writes it."
     }
   ]
 }

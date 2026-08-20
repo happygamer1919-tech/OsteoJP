@@ -458,7 +458,33 @@ export const patientPackInstances = pgTable(
       .notNull()
       .references(() => servicePacks.id),
     sessionsTotal: integer("sessions_total").notNull(),
+    /**
+     * FROZEN AT 0067. No longer the balance, and no longer written by anything.
+     *
+     * The balance is now DERIVED — `sessionsTotal - legacyConsumed - the count
+     * of linked appointments that are not cancelled` — so this column is the
+     * pre-0067 record, kept because it is the only evidence 0067's backfill can
+     * ever be checked against. `scripts/pack-sessions-remaining-is-frozen.test.mjs`
+     * asserts no application code writes it: a vestigial column that something
+     * still writes drifts silently, which is the whole family of defect this
+     * project keeps finding.
+     */
     sessionsRemaining: integer("sessions_remaining").notNull(),
+    /**
+     * 0067 — sessions consumed BEFORE appointment linkage existed: through the
+     * removed `consumir` action, or by a pacote booking made when appointments
+     * carried no `pack_instance_id`.
+     *
+     * Backfilled ONCE to `sessionsTotal - sessionsRemaining`, which is an
+     * arithmetic identity: with zero linked rows the derived balance equals the
+     * stored one for every existing row, so "existing balances are preserved
+     * exactly" is a claim rather than a hope.
+     *
+     * IT RECORDS HOW MANY AND NOT WHICH, because which is not knowable — a
+     * `consumir` event left no appointment, ever. New consumption is an
+     * appointment row and never an increment here.
+     */
+    legacyConsumed: integer("legacy_consumed").notNull().default(0),
     status: text("status").notNull().default("active"),
     purchasedAt: timestamp("purchased_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -475,6 +501,96 @@ export const patientPackInstances = pgTable(
     check(
       "patient_pack_instances_remaining_range",
       sql`${t.sessionsRemaining} >= 0 AND ${t.sessionsRemaining} <= ${t.sessionsTotal}`,
+    ),
+    check(
+      "patient_pack_instances_legacy_consumed_range",
+      sql`${t.legacyConsumed} >= 0 AND ${t.legacyConsumed} <= ${t.sessionsTotal}`,
+    ),
+  ],
+);
+
+/**
+ * 0067 — RECUPERACAO DE UTENTES. Two tables, and neither of them sends anything.
+ *
+ * Reception finds patients recently in treatment with no future booking and
+ * acts on them. Every contact is a CLIENT-SIDE DEEP LINK opened on the
+ * receptionist's own device (wa.me, sms:, mailto:) — there is no server-side
+ * send on this path, no Twilio, no Resend, and R9's live-send flags are
+ * untouched. These tables record that a human pressed a link, which is the only
+ * thing the server can honestly know.
+ */
+
+/** A patient postponed out of the follow-up list until a date. Reversible, and
+ *  the reversal is RECORDED rather than erasing the row — "visible who and
+ *  when" has to survive the reversal or it answers neither question afterwards. */
+export const patientFollowupPostponements = pgTable(
+  "patient_followup_postponements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    /** A timestamp rather than a week count, so the list's predicate is a
+     *  comparison and never arithmetic over a unit somebody has to remember. */
+    postponedUntil: timestamp("postponed_until", { withTimezone: true }).notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedBy: uuid("revoked_by").references(() => users.id),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("patient_followup_postponements_active_idx").on(
+      t.tenantId,
+      t.patientId,
+      t.postponedUntil,
+    ),
+    /** A reversal has BOTH halves or neither. Without this a row could carry a
+     *  revoker and no time, and the list's predicate would disagree with the
+     *  audit trail. */
+    check(
+      "patient_followup_postponements_revoked_pair",
+      sql`(${t.revokedBy} IS NULL) = (${t.revokedAt} IS NULL)`,
+    ),
+  ],
+);
+
+/** A marker that reception used a channel to reach a patient, with who and when.
+ *  APPEND-ONLY: 0067 grants no UPDATE and no DELETE. The table keeps EVERY
+ *  contact, because "reception rang them three times" is a different fact from
+ *  "reception rang them" and only the history can tell them apart. */
+export const patientFollowupContacts = pgTable(
+  "patient_followup_contacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id),
+    /** whatsapp | sms | email. Pinned by a CHECK in 0067. */
+    channel: text("channel").notNull(),
+    contactedBy: uuid("contacted_by")
+      .notNull()
+      .references(() => users.id),
+    contactedAt: timestamp("contacted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** What the screen asks: the MOST RECENT contact per patient per channel. */
+    index("patient_followup_contacts_latest_idx").on(
+      t.tenantId,
+      t.patientId,
+      t.channel,
+      t.contactedAt.desc(),
+    ),
+    check(
+      "patient_followup_contacts_channel_check",
+      sql`${t.channel} IN ('whatsapp', 'sms', 'email')`,
     ),
   ],
 );
@@ -811,6 +927,30 @@ export const appointments = pgTable(
     // slots in the run failed (busy), so it does NOT reuse recurrence_parent_id
     // (which needs a bookable parent). recurrence_rule still documents the rule.
     batchId: uuid("batch_id"),
+    /**
+     * 0067 — WHERE THE ROW CAME FROM. `staff` (the default, and every pre-0067
+     * row unless the backfill found otherwise) or `patient_portal`.
+     *
+     * IT IS WHAT `is_unconfirmed_pedido` KEYS ON. Before 0067 that function
+     * joined `staff_notifications`, so a failed best-effort notification emit
+     * made a patient's request indistinguishable from a staff booking AND left
+     * it blocking its slot. Q-PEDIDO-EMIT-1, ruled 2026-08-20.
+     *
+     * `created_by IS NULL` cannot serve and this is not a matter of taste:
+     * appointments-created-by-provenance.test.ts proves 7/7 against live
+     * Postgres that 0049's WITH CHECK is a DISJUNCTION, so a staff principal
+     * may insert a null creator.
+     */
+    origin: text("origin").notNull().default("staff"),
+    /**
+     * 0067 — the pack instance this appointment draws a session from, or NULL
+     * for an ordinary appointment (almost every row).
+     *
+     * A REAL FK, unlike `bookingGroupId` and `batchId` above. Those group
+     * appointments with EACH OTHER so there is no row to point at; this points
+     * at a specific instance and the database can refuse a dangling one.
+     */
+    packInstanceId: uuid("pack_instance_id").references(() => patientPackInstances.id),
     notes: text("notes"),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
