@@ -1,6 +1,6 @@
 # OsteoJP portal — handover state
 
-**As of 2026-08-17.** Written for the person who hands this build to the clinic
+**As of 2026-08-20.** Written for the person who hands this build to the clinic
 team and to legal, and for anyone who reads it after.
 
 > ## ✅ THE OPEN QUESTION OF 2026-08-17 IS ANSWERED. NOTHING WAS BROKEN.
@@ -83,7 +83,64 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**183 cards. 133 shipped, 50 open. Launch readiness 9/9, every launch gate passes.**
+**184 cards. 136 shipped, 48 open. Launch readiness 9/9, every launch gate passes.**
+
+> ### A launch gate had been passing on an observation that never happened, 2026-08-20
+>
+> `PG1` is the sign-in launch condition. It passed on four things the owner
+> checked on the live site. **One of the four had not been checked.** On
+> 2026-08-12 he ran the second half of one test believing it was the next one;
+> the record was written up as though both had passed. The real check happened
+> on **2026-08-19**: sign out of the portal, close the tab, reopen it, and land
+> on the telephone screen rather than the dashboard. It passed.
+>
+> **Nothing was wrong with the product and no verdict changes.** The gate still
+> passes, now on four genuine observations instead of three plus one imagined
+> one. What was wrong was the record, and it was wrong for seven days.
+>
+> **The contradiction was written down twice and nobody read either copy.** The
+> gate's own working notes recorded the truth on the day, in plain words, a few
+> lines from the entry that said the opposite. And the checklist the gate cites
+> by name had a **blank answer box** for that row the whole time, in a document
+> whose first page says "a blank is not a pass". Nothing mechanical reads either.
+>
+> The rule that follows: **a gate must cite the filled-in line of a checklist,
+> and a gate resting on a blank one is unproven no matter what its verdict
+> says.** Whether a script can enforce that is now a card of its own.
+
+> ### A card said work was not built, nine days after it was built, 2026-08-20
+>
+> The **seventh** time this has happened. "Preselect the patient's usual clinic
+> when they book" shipped on 2026-08-11 and its card said "not built" until
+> today, when it was picked as the next thing to do and checked against the
+> repository first.
+>
+> The check that runs on every change could not have caught it: that check
+> follows the pull requests a card *names*, and this card named none, because it
+> was written before the work and never touched again. **A green check on the
+> board says nothing about this kind of card.** The limit is now written on the
+> card that introduced the check, so it is not mistaken for a solved problem.
+
+> ### A lost booking request is no longer silent, 2026-08-20
+>
+> When a patient books through the portal, the appointment is saved first and
+> reception is told second. Telling reception is allowed to fail, deliberately:
+> a patient whose booking worked must never be shown an error because the
+> clinic's own notification could not be written.
+>
+> **What was wrong is that failing was silent, and it costs more than a missing
+> notification.** That notification is the only record saying "a patient asked
+> for this". Without it the appointment looks exactly like one reception made:
+> nobody is told to confirm it, and it holds the time slot as though it had been
+> confirmed. The request is lost and the slot is taken by nothing.
+>
+> **It is now loud.** A failure writes an error line naming the appointment and
+> saying what it costs, so a lost request can be found and put right by hand.
+> **It is not yet prevented**, and preventing it needs a database change plus one
+> decision from the owner: should a booking that cannot be recorded as a request
+> be refused to the patient? Written up in `docs/QUESTIONS.md` as
+> `Q-PEDIDO-EMIT-1`, recommending **no** - fix it with the database change
+> instead. The card is marked as waiting on Ivan.
 
 > ### Reception can now turn a guest request into a patient and an appointment, 2026-08-18
 >
