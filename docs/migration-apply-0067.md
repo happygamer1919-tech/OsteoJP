@@ -8,7 +8,7 @@ Strategy replaces the line above with `VALIDATED`; the author never removes
 their own.
 
 Migration: `0067_followup_packs_and_provenance` (journal idx 66, `when`
-1787300200000). Branch: `db/0067-followup-packs-and-provenance`, **rebased on main at `9f196b6` on 2026-08-20** so it stays mergeable. **The branch head is PINNED for this apply.** The pinned sha is given in the dispatch that carries this block, and section 4 has you print the head so it can be compared against it. Apply from the pinned head. The applied sha and the merged sha must be the same commit, so if the printed head is anything other than the pinned sha, STOP (section 6).
+1787300200000). Branch: `db/0067-followup-packs-and-provenance`, **rebased on main at `9f196b6` on 2026-08-20** so it stays mergeable. **The branch head is PINNED for this apply**, and section 4 writes it as the literal placeholder `PINNED_SHA` for strategy to substitute at validation time. **The block checks out the SHA, not the branch**: section 4a proves the sha resolves in that clone and section 4b detaches on the same sha, so the thing verified and the thing applied are one commit. `git log -1 --oneline` in 4b records it in the pasted transcript. **The applied sha and the merged sha must be the same commit**, so main must not move before this merges - see section 6.
 Card: `RB-00-migration-0067`. Gate: `owner_merge` - **apply BEFORE merge**.
 
 Written under `docs/runbook-prod-migrations.md`.
@@ -90,20 +90,76 @@ select count(*) as pack_instances, coalesce(sum(sessions_total - sessions_remain
 
 ## 4. The apply
 
-Per rule 7, and the two failures that make each line non-optional: the worktree
-must be checked out **detached** (`git checkout origin/<branch>`), because a
-plain `git checkout <branch>` is rejected and `db:migrate` then silently no-ops
-on main; and `drizzle-kit migrate` **prints success on a no-op** (INC-07), which
-is why §5 verifies the schema rather than trusting the output.
+**Built from `docs/runbook-prod-migrations.md`, not from a sibling apply
+document.** That is the whole of what went wrong in the draft this replaces, and
+`docs/migration-apply-0065.md` §0 records the same failure happening once
+before: an author works from the previous file, and steps that were corrected
+months ago silently revert to an older form.
+
+**`PINNED_SHA` below is a literal placeholder.** Strategy substitutes the real
+sha when it stamps this block `VALIDATED`, and the runbook requires it re-read
+the branch head at that moment rather than at drafting time - a sha that has
+gone stale still resolves, so the failure is silent.
+
+### 4a. Pre-flight. Its own paste, BEFORE any credential is sourced.
 
 ```
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
+git status --short
 git fetch origin --prune
-git checkout origin/db/0067-followup-packs-and-provenance   # DETACHED. Not `git checkout db/...`
-git log -1 --oneline                                        # paste this. It MUST equal the PINNED SHA
-set -a; . ~/osteojp-secrets/new-prod.env; set +a
-pnpm --filter @osteojp/db db:migrate                        # paste the whole output
+git cat-file -t PINNED_SHA
 ```
+
+| Command | Expected | STOP if |
+|---|---|---|
+| `git status --short` | **prints nothing** | **any line at all.** Not "any line that looks dangerous" - any line. Deciding which stray file is harmless is exactly the judgement this step exists to avoid making at the top of a production sitting. It is what caught 21 stray scripts before the 0063 apply, in the one tree whose shell is about to hold production credentials |
+| `git cat-file -t PINNED_SHA` | **`commit`** | anything else. A sha that does not resolve is a typo, a stale paste, or a branch rebased out from under this block |
+
+`git fetch origin --prune` sits between them deliberately: `cat-file` is
+worthless against a sha this clone has never seen, and the fetch is what makes
+"resolves" mean "resolves to what the PR actually carries".
+
+### 4b. The apply.
+
+```
+cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
+git checkout --detach PINNED_SHA
+git log -1 --oneline
+set -o allexport
+source /Users/ivan/osteojp-secrets/new-prod.env
+set +o allexport
+pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs 1
+pnpm --filter @osteojp/db exec drizzle-kit migrate
+pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs 0
+```
+
+**Paste back the output of every one of those lines**, not only the migrate.
+
+**`git checkout --detach PINNED_SHA` is load-bearing, and it checks out the SHA,
+not the branch.** A plain `git checkout <branch>` is rejected in that worktree
+and the fallback leaves it on `main`, where the migrate finds nothing pending
+and prints success over a no-op - INC-07, twice. Detaching on the **sha** rather
+than on `origin/<branch>` also closes the gap the pre-flight would otherwise
+leave open: `cat-file` verifies a sha, so the checkout must take the same sha,
+or the two steps are about different commits and the check proves nothing about
+what runs.
+
+**`set -o allexport`, never `set -a`**, and **no tilde paths**. Standing rule:
+`set -a` errors in zsh, and the env file is named by absolute path.
+
+**STOP IF `check-pending-migrations.mjs 1` FAILS, AND DO NOT RUN THE MIGRATE
+AT ALL.** It opens a READ ONLY transaction, reads drizzle's own bookkeeping
+table, applies drizzle's own pending predicate, and exits non-zero unless the
+pending set is exactly the expected count. If it does not say exactly one is
+pending, the tree is not what this block assumes and nothing below it means
+anything. The literal count is the point: called bare it reports instead of
+gating.
+
+**The trailing `0` check is the other half.** `drizzle-kit migrate` prints
+`migrations applied successfully` when it applies **nothing**, so its output
+answers "did the command run", never "did the schema change". `1` before and
+`0` after is the pair that proves the pending set actually moved - and §5 then
+verifies the objects themselves, from a different source.
 
 ## 5. Post-checks — the apply is not proven until these are pasted
 
@@ -164,15 +220,21 @@ select tablename, policyname, cmd from pg_policies
   and the whole point of change 1 is undone.
 - **V6 shows `authenticated` with DELETE on either table**, or without SELECT and
   INSERT. Both directions are wrong and both are silent.
-- **`db:migrate` prints success and V2 shows a missing object.** That is INC-07
-  exactly: a no-op reported as a success.
+- **`drizzle-kit migrate` prints success and V2 shows a missing object.** That is
+  INC-07 exactly: a no-op reported as a success.
+- **Either `check-pending-migrations.mjs` call exits non-zero.** The `1` before
+  means do not run the migrate at all; the `0` after means the migrate did not
+  apply what it claimed and §5 must be read as untrusted until it is explained.
+- **`git status --short` prints anything, or `git cat-file -t` prints anything
+  but `commit`.** Both are pre-flight and both stop the sitting before a single
+  credential is sourced.
 - **`git log -1` in section 4 does not print the PINNED SHA** named in the dispatch.
   Main moved and the branch was rebased again, so the commit in front of you is not
   the commit that will merge. **The applied sha and the merged sha must be the same
   commit**; a mismatch means the migration you are applying is not the migration the
   PR will land. Stop and ask for a re-pin. UNLIKE EVERY OTHER STOP CONDITION HERE
   THIS ONE IS CHECKED BEFORE THE APPLY: section 4 prints the head two lines before
-  `db:migrate` runs, so a mismatch stops the run having changed nothing.
+  `drizzle-kit migrate` runs, so a mismatch stops the run having changed nothing.
 
 ## 7. Rollback
 
@@ -195,3 +257,19 @@ can be restored by a forward migration.
 
 Paste every output from §3 and §5 back. **Only then does the PR merge** (rule 7),
 and only then do `RB-01` and `RB-02` leave `blocked`.
+
+## 9. Teardown. Run this, then close the window.
+
+```
+unset DATABASE_URL DATABASE_URL_DIRECT
+close the terminal window
+```
+
+**The second line is not a command and is not decoration.** `set -o allexport`
+exported **every** variable in the secrets file, not the two named here, and this
+block cannot name the rest without reading them - which it must never do. The
+`unset` clears the two that matter for a database connection; **closing the
+window is what clears the others**, along with the shell history holding them.
+
+Until the window is closed, that shell is one `node <path>` away from the live
+database, which is the same exposure the §4a pre-flight exists to measure.
