@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  fetchPrStates,
   acknowledgement,
   citedPrs,
   claimedGates,
@@ -454,5 +455,86 @@ describe("rule F - evidence-null completion claim, the shape no other rule could
     assert.equal(mismatches.length, 0);
     assert.equal(acknowledged.length, 1);
     assert.equal(acknowledged[0].rule, "evidence-null-claim");
+  });
+});
+
+
+/**
+ * CI-reconciler-no-retry-on-transient-gh.
+ *
+ * OPENED FROM A LIVE OCCURRENCE, not a code read: PR #965, run 32318873585,
+ * `gh could not read PR #764: unexpected end of JSON input`, exit 2, reddening a
+ * REQUIRED check on a PR whose content was fine. Re-running the identical commit
+ * passed. One call per cited PR, ~80 sequentially, so one truncated response out
+ * of eighty failed the gate.
+ *
+ * These tests inject the failure rather than wait for the network to misbehave
+ * again - the card's own closing condition, "proven by a test or by an injected
+ * failure, not by the absence of the problem".
+ *
+ * `pause` is stubbed to a no-op throughout: the retry's correctness is in WHAT it
+ * retries, not in how long it waits, and a real backoff would make this suite
+ * take seconds to assert nothing extra.
+ */
+const noPause = () => {};
+const ghErr = (stderr) => Object.assign(new Error("gh failed"), { stderr });
+
+describe("fetchPrStates - transient failure is retried, a 404 is not", () => {
+  test("a transient failure that recovers returns the real state", () => {
+    let calls = 0;
+    const readOne = () => {
+      calls += 1;
+      if (calls < 3) throw ghErr("unexpected end of JSON input");
+      return "closed true";
+    };
+    const out = fetchPrStates([764], readOne, noPause);
+    assert.equal(out.get(764), "merged");
+    assert.equal(calls, 3, "should have retried twice before succeeding");
+  });
+
+  test("THE EXACT OCCURRENCE: one bad read out of many no longer fails the run", () => {
+    const failed = new Set();
+    const readOne = (n) => {
+      if (n === 764 && !failed.has(n)) {
+        failed.add(n);
+        throw ghErr("unexpected end of JSON input");
+      }
+      return "closed true";
+    };
+    const out = fetchPrStates([763, 764, 765], readOne, noPause);
+    assert.deepEqual([...out.values()], ["merged", "merged", "merged"]);
+  });
+
+  test("a 404 is an ANSWER and is NOT retried", () => {
+    let calls = 0;
+    const readOne = () => {
+      calls += 1;
+      throw ghErr("HTTP 404: Not Found");
+    };
+    const out = fetchPrStates([999], readOne, noPause);
+    assert.equal(out.get(999), "missing");
+    assert.equal(calls, 1, "a definite answer must not be retried");
+  });
+
+  test("a persistent failure still THROWS - an unasked question never reads as satisfied", () => {
+    let calls = 0;
+    const readOne = () => {
+      calls += 1;
+      throw ghErr("unexpected end of JSON input");
+    };
+    assert.throws(
+      () => fetchPrStates([764], readOne, noPause),
+      /could not read PR #764 after 3 attempts/,
+    );
+    assert.equal(calls, 3);
+  });
+
+  test("NEGATIVE CONTROL: without the retry the first transient failure would throw", () => {
+    // One attempt is what the code did before. Same injected failure, same input:
+    // proves the tests above pass because of the retry and not by accident.
+    const readOne = () => {
+      throw ghErr("unexpected end of JSON input");
+    };
+    assert.throws(() => fetchPrStates([764], readOne, noPause), /could not read PR #764/);
   });
 });

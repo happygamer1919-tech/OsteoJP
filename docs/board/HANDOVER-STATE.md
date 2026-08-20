@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**183 cards. 131 shipped, 52 open. Launch readiness 9/9, every launch gate passes.**
+**183 cards. 133 shipped, 50 open. Launch readiness 9/9, every launch gate passes.**
 
 > ### Reception can now turn a guest request into a patient and an appointment, 2026-08-18
 >

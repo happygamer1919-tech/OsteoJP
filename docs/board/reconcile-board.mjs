@@ -319,29 +319,89 @@ export function reconcile(board, prState) {
 
 /* --------------------------------------------------------------- effects --- */
 
-/** PR states from GitHub, as a Map. Throws rather than returning a partial map:
- *  a half-answered question about which work has shipped is worse than none. */
-function fetchPrStates(numbers) {
+const REPO = "happygamer1919-tech/OsteoJP";
+
+/** One PR read. Extracted so the retry below can be tested with an injected
+ *  failure rather than by waiting for the network to misbehave again. */
+function ghReadPr(n) {
+  return execFileSync(
+    "gh",
+    ["api", `repos/${REPO}/pulls/${n}`, "--jq", ".state + \" \" + (.merged|tostring)"],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  ).trim();
+}
+
+/** Synchronous pause. This file is sync throughout and the retry must not
+ *  change that: making it async would ripple into main() and every caller. */
+function sleepSeconds(s) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, s * 1000);
+}
+
+/**
+ * PR states from GitHub, as a Map. Throws rather than returning a partial map:
+ * a half-answered question about which work has shipped is worse than none.
+ *
+ * RETRIED ON TRANSIENT FAILURE, added 2026-08-20 after a live occurrence.
+ * PR #965, run 32318873585: `gh could not read PR #764: unexpected end of JSON
+ * input`, exit 2, reddening a REQUIRED check on a PR whose content was fine.
+ * Re-running the identical commit passed. This function makes one call per cited
+ * PR - around 80 of them, sequentially - so a single truncated response out of
+ * eighty failed the whole gate.
+ *
+ * THE 404 RULE IS UNTOUCHED AND MUST STAY THAT WAY. A 404 is an ANSWER: the PR
+ * does not exist, and that is a fact worth recording. Anything else is a failure
+ * to ASK, which must never be reported as an answer. A retry changes only how
+ * hard we try to ask; it does not turn an unasked question into a satisfied one.
+ * That is why 404 breaks out of the retry loop immediately rather than being
+ * retried: retrying a definite answer would be as wrong as accepting a
+ * non-answer.
+ *
+ * A RESCUED READ IS ANNOUNCED, not swallowed. The e2e workflow's Supabase and
+ * Playwright steps already print `::warning::` when a retry saves them, because
+ * a silent retry makes a flake un-measurable - which is how the Supabase one
+ * reached three occurrences before anyone counted them.
+ */
+export function fetchPrStates(numbers, readOne = ghReadPr, pause = sleepSeconds) {
   const out = new Map();
   if (numbers.length === 0) return out;
-  const repo = "happygamer1919-tech/OsteoJP";
+  const ATTEMPTS = 3;
   for (const n of numbers) {
-    let raw;
-    try {
-      raw = execFileSync(
-        "gh",
-        ["api", `repos/${repo}/pulls/${n}`, "--jq", ".state + \" \" + (.merged|tostring)"],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-      ).trim();
-    } catch (err) {
-      const stderr = String(err?.stderr ?? "");
-      // A 404 is an ANSWER (the PR does not exist). Anything else is a failure
-      // to ask, and must not be reported as an answer.
-      if (/HTTP 404|Not Found/i.test(stderr)) {
-        out.set(n, "missing");
-        continue;
+    let raw = null;
+    let lastErr = null;
+    let missing = false;
+    for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+      try {
+        raw = readOne(n);
+        if (attempt > 1) {
+          console.error(
+            `::warning title=Reconciler retried a PR read::gh read of PR #${n} ` +
+              `succeeded on attempt ${attempt}. This run hit ` +
+              `CI-reconciler-no-retry-on-transient-gh.`,
+          );
+        }
+        lastErr = null;
+        break;
+      } catch (err) {
+        const stderr = String(err?.stderr ?? "");
+        if (/HTTP 404|Not Found/i.test(stderr)) {
+          missing = true;
+          lastErr = null;
+          break;
+        }
+        lastErr = err;
+        if (attempt < ATTEMPTS) pause(attempt * 2);
       }
-      throw new Error(`gh could not read PR #${n}: ${stderr.split("\n")[0] || err.message}`);
+    }
+    if (missing) {
+      out.set(n, "missing");
+      continue;
+    }
+    if (lastErr) {
+      const stderr = String(lastErr?.stderr ?? "");
+      throw new Error(
+        `gh could not read PR #${n} after ${ATTEMPTS} attempts: ` +
+          `${stderr.split("\n")[0] || lastErr.message}`,
+      );
     }
     const [state, merged] = raw.split(" ");
     out.set(n, merged === "true" ? "merged" : state === "open" ? "open" : "closed");
