@@ -8,7 +8,7 @@ Strategy replaces the line above with `VALIDATED`; the author never removes
 their own.
 
 Migration: `0067_followup_packs_and_provenance` (journal idx 66, `when`
-1787300200000). Branch: `db/0067-followup-packs-and-provenance`, rebased on main at `0b60e95` on 2026-08-20 so it stays mergeable; apply from the CURRENT branch head, not from a sha noted earlier.
+1787300200000). Branch: `db/0067-followup-packs-and-provenance`, **rebased on main at `9f196b6` on 2026-08-20** so it stays mergeable. **The branch head is PINNED for this apply.** The pinned sha is given in the dispatch that carries this block, and section 4 has you print the head so it can be compared against it. Apply from the pinned head. The applied sha and the merged sha must be the same commit, so if the printed head is anything other than the pinned sha, STOP (section 6).
 Card: `RB-00-migration-0067`. Gate: `owner_merge` - **apply BEFORE merge**.
 
 Written under `docs/runbook-prod-migrations.md`.
@@ -100,7 +100,7 @@ is why §5 verifies the schema rather than trusting the output.
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 git fetch origin --prune
 git checkout origin/db/0067-followup-packs-and-provenance   # DETACHED. Not `git checkout db/...`
-git log -1 --oneline                                        # paste this
+git log -1 --oneline                                        # paste this. It MUST equal the PINNED SHA
 set -a; . ~/osteojp-secrets/new-prod.env; set +a
 pnpm --filter @osteojp/db db:migrate                        # paste the whole output
 ```
@@ -166,6 +166,12 @@ select tablename, policyname, cmd from pg_policies
   INSERT. Both directions are wrong and both are silent.
 - **`db:migrate` prints success and V2 shows a missing object.** That is INC-07
   exactly: a no-op reported as a success.
+- **`git log -1` in section 4 does not print the PINNED SHA** named in the dispatch.
+  Main moved and the branch was rebased again, so the commit in front of you is not
+  the commit that will merge. **The applied sha and the merged sha must be the same
+  commit**; a mismatch means the migration you are applying is not the migration the
+  PR will land. Stop and ask for a re-pin. This is a pre-apply check, not a
+  post-apply one: it is the first line of section 4 for that reason.
 
 ## 7. Rollback
 

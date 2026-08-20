@@ -39,9 +39,15 @@ execution, not legal work, and they gate a deployment rather than a filing.
 **`LAUNCH-03a-caderno-encargos` also stays**, and it is the one judgement call in
 this list worth naming. `PORTAL-REHYDRATE.md` §4.11 calls it a child of the legal
 family, which would put it here. Its own notes say otherwise: it is the
-procurement spec for **the Fisiozero export**, waiting on Ivan forwarding it to
-the vendor — the same launch execution `LAUNCH-03` is, one document earlier. It
-is on the board.
+procurement spec for **the Fisiozero export**, the same launch execution
+`LAUNCH-03` is, one document earlier. It is on the board.
+
+**It is no longer waiting on Ivan, corrected 2026-08-20.** This paragraph used to
+say it waited on him forwarding the document to the vendor. **Caderno v1.1 went to
+Eduardo at Fisiozero on 2026-08-18**, and the card now waits on the vendor's
+*amostra*, the 20-to-50-patient sample section 8 of the document asks for. The
+conclusion is unchanged and the reason it rests on is not: it stays on the board
+because it is procurement for `LAUNCH-03`, which was always the load-bearing half.
 
 **`SEC-02-temp-password-no-forced-rotation` stays.** It is shipped product code
 that forces a rotation at first login. The *operational* rotation of accounts
