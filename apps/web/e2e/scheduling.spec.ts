@@ -427,14 +427,30 @@ test("completed appointment with no note shows the 'Sem nota' indicator (W2-04)"
   // if that rule ever widened, `.first()` could match MARIA's row while ana's
   // status update had silently failed. That is the compensating error: our own
   // write fails, a foreign row satisfies the check, and the suite reports a pass.
-  const anaRow = page.locator(".glass-card", { hasText: PATIENTS.ana.name }).first();
+  // THE ROW ELEMENT IS `[data-appointment-id]`, NOT `.glass-card`. The first
+  // version of this fix used `.glass-card`, copied from agenda-hover.spec.ts and
+  // notes-unification.spec.ts which do use it on this route - but on this page
+  // `.glass-card` is also the OUTER GlassPanel wrapping the whole list
+  // (marcacoes-view.tsx:521 says so), so filtering it by a patient name matched
+  // the PANEL, which contains every row. The "scoped" locator was the whole list
+  // wearing a row's name.
+  //
+  // IT PASSED. The positive assertion below was satisfied by ANA's chip inside
+  // that panel, so a locator that scoped nothing looked exactly like a fix. ONLY
+  // THE NEGATIVE ARM CAUGHT IT - maria's row reported the chip too, because it
+  // was the same panel. A scoping change without a negative arm cannot tell real
+  // scoping from fake scoping.
+  const rowFor = (name: string) =>
+    page.locator("[data-appointment-id]").filter({ hasText: name }).first();
+
+  const anaRow = rowFor(PATIENTS.ana.name);
   await expect(anaRow.getByText("Sem nota")).toBeVisible({ timeout: 8_000 });
 
   // THE NEGATIVE ARM, and it is what makes the scoping mean something: the chip
   // is PER ROW, so maria's row on this same list must NOT carry it. Without this
   // the fix would only narrow the locator; with it, the test states the rule it
   // was previously borrowing from marcacoes-view.tsx.
-  const mariaRow = page.locator(".glass-card", { hasText: PATIENTS.maria.name }).first();
+  const mariaRow = rowFor(PATIENTS.maria.name);
   await expect(mariaRow).toBeVisible({ timeout: 8_000 });
   await expect(mariaRow.getByText("Sem nota")).toHaveCount(0);
 });

@@ -64,11 +64,34 @@ it stated itself. Widen that rule and `.first()` could match maria's row while
 ana's status update had silently failed — **the compensating error**: our own
 write fails, a foreign row satisfies the check, the suite reports a pass.
 
-Fixed by scoping to ana's row with the repo's own idiom
-(`page.locator(".glass-card", { hasText })`, proven on this exact route by
-`agenda-hover` and `notes-unification`), **plus a negative arm asserting maria's
+Fixed by scoping to ana's row via `[data-appointment-id]`, which is the actual
+row wrapper (`marcacoes-view.tsx:208`), **plus a negative arm asserting maria's
 row does NOT carry the chip** — which states the per-row rule the test was
 previously borrowing.
+
+### The first version of this fix was wrong, and the negative arm is the only reason anyone knows
+
+It used `page.locator(".glass-card", { hasText })`, copied from `agenda-hover`
+and `notes-unification`, which do use that selector on this route. **But on this
+page `.glass-card` is also the outer `GlassPanel` wrapping the entire list** —
+`marcacoes-view.tsx:521` says so in as many words. Filtering it by a patient name
+matched **the panel**, which contains every row. The "scoped" locator was the
+whole list wearing one row's name.
+
+**And the positive assertion still passed**, because ana's chip is inside that
+panel. A locator that scoped nothing looked exactly like a fix, and would have
+shipped as one. The CI failure was the negative arm: maria's "row" reported the
+chip too, because it was the same element.
+
+Two things follow, and the second is the general one:
+
+- **Verifying that a selector is used on a route is not verifying that it
+  identifies what you think.** The precedent was real and the reading of it was
+  wrong: those specs use `.glass-card` to reach something row-unique *inside* the
+  match, which tolerates the match being the panel.
+- **A scoping change needs a negative arm, or it cannot tell real scoping from
+  fake scoping.** The positive assertion is satisfied either way — that is what
+  makes it the wrong instrument for checking its own premise.
 
 ## What the number means, said carefully
 
