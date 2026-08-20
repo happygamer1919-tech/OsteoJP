@@ -1376,5 +1376,8 @@
   "consultations.stuck.attempts": "Tentativas de envio",
   "consultations.stuck.lastAttempt": "Última tentativa",
   "consultations.stuck.lastError": "Motivo técnico",
-  "consultations.stuck.noError": "Sem motivo registado"
+  "consultations.stuck.noError": "Sem motivo registado",
+  "agenda.lastUpdated": "Atualizado às",
+  "agenda.refresh": "Atualizar",
+  "agenda.refreshing": "A atualizar…"
 }

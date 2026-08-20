@@ -7,6 +7,7 @@ import { getPatient } from "@/lib/patients/queries";
 import { getAgendaOptions, listAppointments } from "@/lib/scheduling/data";
 import { listTherapistBlocks } from "@/lib/scheduling/day-availability";
 import {
+  formatTimeOfDay,
   rangeForView,
   todayInLisbon,
   type AgendaView,
@@ -72,6 +73,12 @@ export default async function AgendaPage({
   const locationId = lockTherapist ? null : scopedLocationId(locationScope, firstParam(sp.location));
 
   const { startUtc, endUtc } = rangeForView(view, anchor);
+
+  // LE-agenda-does-not-learn-of-portal-bookings. Taken IMMEDIATELY BEFORE the
+  // reads below, not after and not in the render: this is the instant the
+  // appointments the toolbar stamps were fetched, and a stamp that drifts from
+  // its own data is the thing this card is about.
+  const readAt = new Date();
 
   // W6-03: "Nova marcação" on a patient profile deep-links here with the patient
   // id. Resolve the patient (tenant-scoped, active only) so the create drawer can
@@ -186,6 +193,21 @@ export default async function AgendaPage({
       // Now it matches what createTimeOffBlock actually enforces, so the button
       // appears exactly for the roles whose blocks would be accepted.
       canBlockTime={can(actor.role, "schedule:manage")}
+      // LE-agenda-does-not-learn-of-portal-bookings. THE READ INSTANT, STAMPED
+      // HERE AND NOWHERE ELSE.
+      //
+      // WHY IT IS COMPUTED ON THE SERVER: this page is dynamic SSR and re-queries
+      // on every request, so `new Date()` at THIS point is the instant the
+      // appointments above were read. A `new Date()` inside the client component
+      // would re-evaluate on every client render and always say "now" - freshest
+      // exactly when the data is stalest. The stamp has to travel with the data
+      // it describes or it is worse than no stamp.
+      //
+      // FORMATTED HERE TOO, with the agenda's own `formatTimeOfDay`, so the
+      // toolbar reads the same 24h Lisbon axis as the grid gutter and cannot
+      // resolve to the browser's timezone or to a 12-hour locale.
+      renderedAt={formatTimeOfDay(readAt)}
+      renderedAtIso={readAt.toISOString()}
     />
   );
 }

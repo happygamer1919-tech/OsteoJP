@@ -670,6 +670,45 @@ since closed, the board is the count and this section is the story.
 > **described it with a sentence written about a different failure**, telling
 > whoever read the log to go looking for a database row that the failure had just
 > prevented from existing.
+>
+> **`LE-reminders-landline-dispatch`** — **#981**, and it is a **split**. Some
+> patients have a **landline** on file. A landline cannot receive a text, and the
+> system sends the 48h and 24h reminder to it anyway, is billed for it, and
+> nobody receives it. **Whether to stop, stop-and-tell-reception, or leave it, is
+> a decision for the owner or JP** and no terminal may guess it: it is written up
+> at `docs/QUESTIONS.md` → `Q-LE-REMINDERS-LANDLINE-1` with a recommended
+> default, and the card is now blocked on Ivan. What *was* built needs no ruling:
+> the phone-number rule exists in **two copies** and a comment saying "keep in
+> sync" was the whole of the enforcement. A test now compares them, so whichever
+> way the ruling goes, the fix cannot be applied to one copy and quietly miss the
+> other.
+>
+> **`CI-docs-only-required-checks-skip`** — **#982**. On a PR that only edits
+> documents, **three of the four green ticks were never tests that passed** —
+> they were tests that correctly decided not to run, and the only way to tell was
+> to compare how many seconds each took. They now **say so on the check itself**.
+> Observed on #983, the next docs-only PR: the DB-gated check carries the
+> annotation *"DB tests DID NOT RUN … It is an abstention, not a proof."* A guard
+> in the required check keeps it that way, and also refuses a rename of any
+> required job — a rename does not fail, it makes the check **never report**,
+> which would stall every open PR at once with nothing red to point at.
+>
+> **`RECON-observe-sweep-gate-crosscheck`** — **#983**, an answer rather than a
+> build. Back in August a launch gate sat green for seven days on an observation
+> **that had not happened**: the checklist box was blank the whole time and
+> nothing noticed. The question was whether a check could refuse to let a gate
+> pass while its own box is empty. **Yes, one of the three proposed ways works,
+> and it costs more than the card assumed** — four gates need their observations
+> written down properly first, and the checklist file has one inconsistency to
+> fix before any of it can be relied on. Whether to spend that is the owner's
+> call.
+>
+> **`LE-agenda-does-not-learn-of-portal-bookings`** — the agenda toolbar now says
+> **how old its data is**, with a refresh button. **The lag itself is unchanged
+> and is not a double-booking risk** — the database refuses a second booking
+> regardless — but an agenda left open at reception does not learn about a portal
+> booking until somebody navigates, and a screen with no timestamp reads as live.
+> **Open on purpose** for the owner's screen; verification item 3.
 
 ### Incidents — 1
 **`SEC-otp-linkage-exact-phone-match` (high, halted, launch-blocking)** — most
