@@ -140,6 +140,47 @@ function checkDeferred(id, card) {
     fail(id, `status=shipped and deferred is set - built work cannot be deferred; drop the marker`);
 }
 
+/**
+ * EXTERNAL AGENDA. Work the owner tracks somewhere else - legal review and
+ * counsel, credential rotation, force-rotation of staff passwords, and
+ * security-breach response - carried as an EXPLICIT FIELD for the same reason
+ * `deferred` is one.
+ *
+ * WHY THE CARDS ARE NOT DELETED, which is the first thing a reader will ask.
+ * THE LEDGER STAYS. A deleted card takes its history with it: what was found,
+ * when, who ruled on it, and what the ruling was. That record is the only
+ * durable account of a decision nobody wants to re-litigate, and it is worth
+ * more than the tidiness of a shorter file. What the field removes is DUPLICATE
+ * TRACKING - the card stops appearing on a board that implies engineering owes
+ * work on it - not the record.
+ *
+ * `true` OR ABSENT, AND NEVER `false`. A field that means "not external" is
+ * noise on 180 cards and invites `external_agenda: false` to spread through the
+ * file, at which point the absence of the field stops meaning anything. The one
+ * value it takes is the one that changes behaviour.
+ *
+ * A SHIPPED CARD MAY CARRY IT, which is where this differs from `deferred`.
+ * Deferring built work is a contradiction; recording that built work is tracked
+ * elsewhere is not, and several of these cards are closed rulings whose subject
+ * is still owned off-board.
+ *
+ * THE FIELD IS SHAPE-CHECKED HERE AND NOTHING ELSE. Whether every flagged card
+ * appears in `docs/board/EXTERNAL-AGENDA.md` is a PORTAL-BOARD question, and
+ * this validator is shared with the platform board - so that cross-check lives
+ * in `scripts/external-agenda-ledger.test.mjs` rather than here. PORTAL-REHYDRATE
+ * 4.11's scope note is explicit that anything added to a shared instrument is
+ * additive or it does not ship.
+ */
+function checkExternalAgenda(id, card) {
+  const e = card.external_agenda;
+  if (e === undefined || e === null) return;
+  if (e !== true)
+    fail(
+      id,
+      `external_agenda must be exactly true, or be absent - "false" is not a value it takes`,
+    );
+}
+
 function checkLoopSpec(id, card) {
   const kind = card.card_kind ?? null;
   if (kind !== null && !CARD_KIND.includes(kind))
@@ -364,6 +405,7 @@ for (const card of cards) {
 
   // ---- an owner deferral is a FIELD, so the sweep predicate can see it ----
   checkDeferred(id, card);
+  checkExternalAgenda(id, card);
 }
 
 // ---- report ------------------------------------------------------------------

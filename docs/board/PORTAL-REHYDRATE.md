@@ -460,7 +460,8 @@ const PEOPLE=["ivan","jp","lawyer"];
 const out=(c)=>c.id==="VERIFY-QUEUE" || c.gate==="owner_authorizo"
   || /^LAUNCH-/.test(c.id) || /legal/i.test(c.id)
   || /force-rotation/i.test(c.id) || /sandbox/i.test(c.id)
-  || PEOPLE.includes(c.blocked_on) || typeof c.deferred==="string";
+  || PEOPLE.includes(c.blocked_on) || typeof c.deferred==="string"
+  || c.external_agenda===true;
 for(const c of b.cards) if(c.status!=="shipped") console.log(out(c)?"OUT":"IN ", c.id);
 '
 ```
@@ -470,6 +471,29 @@ open cards. **Re-run it rather than trusting the number** - it is a snapshot and
 the composition moves under it. That same day the split stayed 24/24 while two
 cards swapped sides: `LE-portal-multi-appointment-booking` went OUT on its
 deferral and `LE-pedido-emit-best-effort` came IN when its person-block lifted.
+
+### A NINTH clause, added 2026-08-20 with the external-agenda ruling
+
+**A card the owner tracks on his OWN agenda carries `external_agenda: true`, and
+the predicate reads it.** Legal review and counsel, credential rotation,
+force-rotation of staff passwords, and security-breach response left this board
+that day; the cards stay in the JSON as the ledger and are listed in
+`docs/board/EXTERNAL-AGENDA.md`.
+
+**IT CHANGES NOTHING TODAY AND THAT IS WHY IT IS WORTH ADDING.** All five cards
+flagged on 2026-08-20 were already OUT — four on `owner_authorizo`, one on
+`blocked_on: ivan` — so the clause selects nobody. It is here for the sixth: a
+future flagged card need not carry either mark, and without this clause a sweep
+would read it as available and build work the owner moved off the board on
+purpose. Same argument the `deferred` clause makes one section down, and the
+same argument §1.3 makes about every convenience that maps an unknown case onto
+a harmless-looking known one.
+
+The three clauses that select it by NAME today — `/legal/i`, `/force-rotation/i`
+and clause 3 — are left in place rather than replaced. They are prose matches on
+an id, which is the shape §4.11 already warns fails open the day somebody renames
+a card; the field is what actually holds, and the regexes are now belt to its
+braces.
 
 ### An eighth clause the owner's list does not name, because it did not exist yet
 

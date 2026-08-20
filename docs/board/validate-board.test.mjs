@@ -219,6 +219,52 @@ describe("briefing is the optional eighth section", () => {
   });
 });
 
+describe("external_agenda is a field, and it takes exactly one value", () => {
+  // WHY THESE EXIST. The field REMOVES a card from the rendered artifact and from
+  // every count on it, so a malformed one either hides a card nobody meant to
+  // hide or fails to hide one that was meant to go. Both are silent on the page,
+  // which is the only place most readers look.
+
+  test("ACCEPTS a card flagged true", () => {
+    const r = validate([{ ...ORDINARY, status: "todo", external_agenda: true }]);
+    assert.equal(r.code, 0, r.err);
+  });
+
+  test("ACCEPTS a SHIPPED card flagged true - the ledger stays", () => {
+    // This is where it differs from `deferred`, deliberately. Deferring built
+    // work is a contradiction; recording that built work is tracked elsewhere is
+    // not, and several of these cards are closed rulings whose subject is still
+    // owned off-board.
+    const r = validate([
+      {
+        ...ORDINARY,
+        status: "shipped",
+        lane: "shipped",
+        evidence: { kind: "pr", ref: "#1", at: "2026-08-20" },
+        external_agenda: true,
+      },
+    ]);
+    assert.equal(r.code, 0, r.err);
+  });
+
+  test("REJECTS false - a field meaning 'not external' makes absence mean nothing", () => {
+    const r = validate([{ ...ORDINARY, status: "todo", external_agenda: false }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /external_agenda must be exactly true/);
+  });
+
+  test("REJECTS a string, which is the shape a copied `deferred` would take", () => {
+    const r = validate([{ ...ORDINARY, status: "todo", external_agenda: "legal" }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /external_agenda must be exactly true/);
+  });
+
+  test("ACCEPTS a card with no external_agenda field at all - it is additive", () => {
+    const r = validate([{ ...ORDINARY, status: "todo" }]);
+    assert.equal(r.code, 0, r.err);
+  });
+});
+
 describe("an owner deferral is a field, so the sweep predicate can see it", () => {
   // WHY THESE EXIST. The deferral's whole job is to be visible to the
   // out-of-scope predicate in PORTAL-REHYDRATE.md 4.11. A deferral that lives
