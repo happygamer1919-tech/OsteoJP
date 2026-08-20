@@ -130,6 +130,33 @@
   var DENOM = CFG.denominator;
   var EV_KIND = ["pr", "journal", "sha256", "e2e", "screenshot"];
   var PRIO = ["high", "medium", "low"];
+  // WF-01: the board card IS the loop spec. These four must stay in lock-step
+  // with docs/board/validate-board.mjs - one rule, two independent
+  // implementations, the same arrangement deriveLane already has. The reason
+  // the browser needs its own copy is Export: a board that leaves this app must
+  // already satisfy the rule the CI validator will apply to it.
+  var LOOP_SPEC_SECTIONS = [
+    "scope_and_ground_truth",
+    "ordered_steps",
+    "definition_of_done",
+    "verification",
+    "restrictions_and_scope_boundary",
+    "halt_loud_protocol",
+    "report_back_format",
+  ];
+  var LOOP_SPEC_OPTIONAL = ["briefing"];
+  var CARD_KIND = ["loop"];
+  var LOOP_SPEC_REQUIRED_AT = ["in_flight", "shipped"];
+  var SPEC_LABEL = {
+    briefing: "Briefing",
+    scope_and_ground_truth: "Scope and ground truth",
+    ordered_steps: "Ordered steps",
+    definition_of_done: "Definition of done",
+    verification: "Verification",
+    restrictions_and_scope_boundary: "Restrictions and scope boundary",
+    halt_loud_protocol: "Halt-loud protocol",
+    report_back_format: "Report-back format",
+  };
   var PRIO_LABEL = { high: "High", medium: "Medium", low: "Low" };
   var VIEWS = [
     { id: "focus", label: "Focus" },
@@ -895,6 +922,62 @@
     var d = document.querySelector(".drawer-scrim");
     if (d) d.remove();
   }
+  /* WF-01: the loop spec, rendered section by section rather than as one blob.
+     A MISSING SECTION IS DRAWN, NOT OMITTED. An absent section rendered as
+     nothing looks identical to a spec that never needed it, and this drawer is
+     where somebody decides whether a loop is startable - so the gap has to be
+     the visible thing. Same reason the sweep document's blank Observed boxes are
+     printed rather than skipped. */
+  function specBlock(c) {
+    var isLoop = c.card_kind === "loop";
+    if (!isLoop && !c.spec) return "";
+    var spec = c.spec && typeof c.spec === "object" ? c.spec : {};
+    var missing = LOOP_SPEC_SECTIONS.filter(function (k) {
+      return typeof spec[k] !== "string" || !spec[k].trim();
+    });
+    var startable = missing.length === 0;
+    var head =
+      '<div class="seg"><span class="lbl">Loop spec — ' +
+      (startable
+        ? String(LOOP_SPEC_SECTIONS.length) + " of " + String(LOOP_SPEC_SECTIONS.length) + " sections, startable"
+        : String(LOOP_SPEC_SECTIONS.length - missing.length) + " of " + String(LOOP_SPEC_SECTIONS.length) +
+          " sections — NOT startable") +
+      "</span>";
+    if (!isLoop) {
+      head +=
+        '<div class="notesblock" style="color:var(--stop)">This card carries a spec but has not declared ' +
+        "card_kind \"loop\". The validator rejects that: a spec without the marker is a missing marker, " +
+        "not a bonus field.</div>";
+    }
+    var body = LOOP_SPEC_OPTIONAL.concat(LOOP_SPEC_SECTIONS)
+      .map(function (k) {
+        var v = typeof spec[k] === "string" ? spec[k].trim() : "";
+        if (!v && LOOP_SPEC_OPTIONAL.indexOf(k) >= 0) return ""; // optional: absent is fine
+        var label = SPEC_LABEL[k] || k;
+        if (!v) {
+          return (
+            '<div style="margin-top:8px"><span class="lbl" style="color:var(--stop)">' +
+            esc(label) +
+            ' — MISSING</span></div>'
+          );
+        }
+        return (
+          '<div style="margin-top:8px"><span class="lbl">' + esc(label) + "</span>" +
+          '<div class="notesblock">' + esc(v) + "</div></div>"
+        );
+      })
+      .join("");
+    var extra = Object.keys(spec).filter(function (k) {
+      return LOOP_SPEC_SECTIONS.indexOf(k) < 0 && LOOP_SPEC_OPTIONAL.indexOf(k) < 0;
+    });
+    if (extra.length) {
+      body +=
+        '<div style="margin-top:8px"><span class="lbl" style="color:var(--stop)">Not a Loop Package section: ' +
+        esc(extra.join(", ")) + "</span></div>";
+    }
+    return head + body + "</div>";
+  }
+
   function renderDrawer() {
     var c = byId(drawerId);
     if (!c) { closeDrawer(); return; }
@@ -933,6 +1016,7 @@
           "<dt>Terminal</dt><dd>" + esc(c.owner_terminal || "—") + "</dd>" +
           '<dt>Checkpoint</dt><dd class="mono">' + esc(dateOnly(c.last_checkpoint)) + " · " + esc(relDay(c.last_checkpoint)) + "</dd>" +
         "</dl>" +
+        specBlock(c) +
         (c.notes ? '<div class="seg"><span class="lbl">Notes</span><div class="notesblock">' + esc(c.notes) + "</div></div>" : "") +
       "</div>" +
       '<div class="drawer-foot">' +
@@ -956,6 +1040,32 @@
     if (!isIso(ev.at)) { push(id, 'evidence.at "' + ev.at + '" is not an ISO date'); ok = false; }
     return ok;
   }
+  /* WF-01, mirrored from docs/board/validate-board.mjs. Kept as a separate
+     implementation on purpose - the same arrangement as laneOf/deriveLane - so
+     that a board exported from this app cannot be red in CI while looking green
+     here. */
+  function loopSpecOK(id, c, push) {
+    var kind = c.card_kind == null ? null : c.card_kind;
+    if (kind !== null && CARD_KIND.indexOf(kind) < 0) push(id, 'card_kind "' + kind + '" is not valid');
+    var spec = c.spec == null ? null : c.spec;
+    if (spec !== null) {
+      if (typeof spec !== "object" || Array.isArray(spec)) { push(id, "spec must be an object"); return; }
+      if (kind !== "loop") push(id, "carries a spec but has not declared card_kind loop");
+      var allowed = LOOP_SPEC_SECTIONS.concat(LOOP_SPEC_OPTIONAL);
+      Object.keys(spec).forEach(function (k) {
+        if (allowed.indexOf(k) < 0) push(id, 'spec section "' + k + '" is not a Loop Package section');
+        else if (typeof spec[k] !== "string" || !spec[k].trim()) push(id, "spec." + k + " is empty");
+      });
+    }
+    if (kind === "loop" && LOOP_SPEC_REQUIRED_AT.indexOf(c.status) >= 0) {
+      var have = spec && typeof spec === "object" && !Array.isArray(spec) ? spec : {};
+      var missing = LOOP_SPEC_SECTIONS.filter(function (k) {
+        return typeof have[k] !== "string" || !have[k].trim();
+      });
+      if (missing.length) push(id, "loop card is " + c.status + " with " + missing.length + " spec section(s) missing: " + missing.join(", "));
+    }
+  }
+
   function validate(b) {
     var out = [], push = function (id, msg) { out.push({ id: id, msg: msg }); };
     var lg = b.launch_gate || {}, conds = lg.conditions || [];
@@ -990,6 +1100,7 @@
       if (c.status === "shipped" && !has) push(id, "shipped with no evidence");
       if (c.status === "blocked" && (c.blocked_on || null) === null) push(id, "blocked but nobody is named");
       if (c.lane === "blocked_on_people" && PEOPLE.indexOf(c.blocked_on) < 0) push(id, "in the people lane without a person");
+      loopSpecOK(id, c, push);
     });
     return out;
   }

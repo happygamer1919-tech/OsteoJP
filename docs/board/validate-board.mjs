@@ -61,6 +61,96 @@ const GATE = [
 ];
 let BLOCKED_ON = [null, ...PEOPLE, "infra"];
 const EVIDENCE_KIND = ["pr", "journal", "sha256", "e2e", "screenshot"];
+
+// ---- WF-01: THE BOARD CARD IS THE LOOP SPEC ---------------------------------
+// Owner ruling 2026-08-04: wave docs end after Wave 13; from the next authored
+// loop onward the board card carries the loop's full spec. This block is the
+// enforcement half of that ruling.
+//
+// THE SEVEN SECTIONS ARE docs/loops/README.md's, NOT WF-01's PARENTHETICAL, and
+// the two disagree - reported rather than reconciled silently. The card's gloss
+// lists "briefing, scope and ground truth, ordered steps, definition of done,
+// evidence, restrictions and scope boundary, halt-loud protocol - plus the
+// report-back format", which is EIGHT items and includes a briefing that
+// README.md's seven do not. The card itself defers to README.md ("the full
+// 7-field Loop Package that docs/loops/README.md requires"), so README.md wins
+// and the gloss is the loose part. `briefing` is allowed as an eighth,
+// OPTIONAL section, because every LOOP block in WAVE-13.md carried one and the
+// gloss is right that it is useful - it is simply not one of the seven.
+const LOOP_SPEC_SECTIONS = [
+  "scope_and_ground_truth",
+  "ordered_steps",
+  "definition_of_done",
+  "verification",
+  "restrictions_and_scope_boundary",
+  "halt_loud_protocol",
+  "report_back_format",
+];
+const LOOP_SPEC_OPTIONAL = ["briefing"];
+// A card declares itself a loop. It is NOT inferred from the presence of `spec`.
+// Inferring it would fail OPEN in exactly the case the ruling names - "a loop
+// card without a spec must not be startable" - because a loop card carrying no
+// spec at all would be indistinguishable from an ordinary card. PORTAL-REHYDRATE
+// 1.3: an unhandled case that maps onto a harmless-looking known one is read as
+// the harmless one.
+const CARD_KIND = ["loop"];
+// "Entering ready or doing", in the ruling's words. That vocabulary is
+// docs/design/BACKLOG.md's (DRAFT -> WRITTEN -> READY -> IN-FLIGHT -> DONE),
+// and this board's status enum has no such values. The mapping, stated because
+// it is a translation and not an inference: a card is READY-or-DOING once it
+// has left `todo` for work. `blocked` and `halted` are states of NOT working,
+// so a loop card parked in either before it ever started owes no spec yet;
+// `shipped` owes one because it cannot have got there without doing.
+const LOOP_SPEC_REQUIRED_AT = ["in_flight", "shipped"];
+
+// THE ONE HOLE, NAMED RATHER THAN PAPERED OVER: a loop card authored with
+// neither `card_kind` nor `spec` is, to this script, an ordinary card. Nothing
+// mechanical can tell them apart, because loop-ness is a fact about intent.
+// What IS closed is the pair of half-states: a spec without the marker is
+// rejected, and the marker without a spec cannot be started.
+function checkLoopSpec(id, card) {
+  const kind = card.card_kind ?? null;
+  if (kind !== null && !CARD_KIND.includes(kind))
+    fail(id, `card_kind "${kind}" not in ${CARD_KIND.join("|")}`);
+
+  const spec = card.spec ?? null;
+  if (spec !== null) {
+    if (typeof spec !== "object" || Array.isArray(spec)) {
+      fail(id, `spec must be an object with the ${LOOP_SPEC_SECTIONS.length} Loop Package sections`);
+      return;
+    }
+    if (kind !== "loop") {
+      fail(
+        id,
+        `carries a spec but card_kind is "${kind}" - a spec on a card that has not ` +
+          `declared itself a loop is a missing marker, not a bonus field`,
+      );
+    }
+    const allowed = [...LOOP_SPEC_SECTIONS, ...LOOP_SPEC_OPTIONAL];
+    for (const key of Object.keys(spec)) {
+      if (!allowed.includes(key))
+        fail(id, `spec section "${key}" is not one of ${allowed.join("|")}`);
+    }
+    for (const key of Object.keys(spec)) {
+      if (allowed.includes(key) && (typeof spec[key] !== "string" || spec[key].trim() === ""))
+        fail(id, `spec.${key} must be a non-empty string`);
+    }
+  }
+
+  if (kind === "loop" && LOOP_SPEC_REQUIRED_AT.includes(card.status)) {
+    const present = spec && typeof spec === "object" && !Array.isArray(spec) ? spec : {};
+    const missing = LOOP_SPEC_SECTIONS.filter(
+      (k) => typeof present[k] !== "string" || present[k].trim() === "",
+    );
+    if (missing.length > 0)
+      fail(
+        id,
+        `loop card is status=${card.status} with ${missing.length} of ` +
+          `${LOOP_SPEC_SECTIONS.length} spec sections missing or empty (${missing.join(", ")}) - ` +
+          `a loop card without its full spec must not be startable`,
+      );
+  }
+}
 const GATE_STATE = ["pass", "fail"];
 const LAUNCH_GATE_DENOMINATOR = 9;
 
@@ -233,6 +323,12 @@ for (const card of cards) {
   const derived = deriveLane(card);
   if (card.lane !== derived)
     fail(id, `lane "${card.lane}" contradicts status/blocked_on - derived lane is "${derived}"`);
+
+  // ---- WF-01: a loop card carries its own spec, or it is not startable ----
+  // ADDITIVE. A card with neither `card_kind` nor `spec` is untouched by this,
+  // which is what keeps the platform board - and every existing card on both
+  // boards - byte-for-byte as valid as it was.
+  checkLoopSpec(id, card);
 }
 
 // ---- report ------------------------------------------------------------------

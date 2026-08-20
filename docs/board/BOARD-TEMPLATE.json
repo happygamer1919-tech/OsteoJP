@@ -149,7 +149,18 @@
         "at": "2026-01-01"
       },
       "notes": "The card's own record: what was decided and WHY, what was tried, what is deliberately not being done. This field is where the reasoning lives, so a fresh reader needs no chat history.",
-      "open_on_purpose": "OPTIONAL. Present only on a card that stays open after its evidence exists - e.g. the build merged but an owner still has to observe it on a screen. The reconciler prints every one of these in full on every run, so an exemption nobody sees is an exemption nobody revisits. Delete this field on an ordinary card."
+      "open_on_purpose": "OPTIONAL. Present only on a card that stays open after its evidence exists - e.g. the build merged but an owner still has to observe it on a screen. The reconciler prints every one of these in full on every run, so an exemption nobody sees is an exemption nobody revisits. Delete this field on an ordinary card.",
+      "card_kind": "loop",
+      "spec": {
+        "briefing": "OPTIONAL eighth section, and the only optional one. What a stateless terminal is handed alongside this card. docs/loops/README.md requires SEVEN and does not include this one; it is allowed because every LOOP block in WAVE-13.md carried one. Delete card_kind and spec entirely on a card that is not a loop.",
+        "scope_and_ground_truth": "REQUIRED on a loop card once it leaves todo. What is in scope, and which committed files are the ground truth for it.",
+        "ordered_steps": "REQUIRED. The steps, in order.",
+        "definition_of_done": "REQUIRED. Machine-verifiable: a number, a file, or an exit code.",
+        "verification": "REQUIRED. How it is verified, with the evidence pasted rather than described.",
+        "restrictions_and_scope_boundary": "REQUIRED. What this loop must not touch.",
+        "halt_loud_protocol": "REQUIRED. What counts as a premise mismatch here, and what to do on one.",
+        "report_back_format": "REQUIRED. The shape of the report this loop returns."
+      }
     }
   ]
 }
