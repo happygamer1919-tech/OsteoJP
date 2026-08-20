@@ -748,6 +748,63 @@ since closed, the board is the count and this section is the story.
 > test would skip itself and look fine.** It only ever worked because the test
 > data happens to put free slots on the first day.
 
+> ### The Rodica batch and the board cleanup, later on 2026-08-20
+>
+> **The board is five cards shorter and nothing was lost (#990).** Legal review
+> and counsel, credential rotation, the staff password re-issue, and the counsel
+> question about the guest queue **left the engineering board**, because you
+> track them on your own agenda and having them in two places was the problem.
+> Each still has a line saying where it stands, in
+> `docs/board/EXTERNAL-AGENDA.md`, and the full history is untouched in the board
+> file. **The launch cards, the Fisiozero export spec and the shipped
+> password-rotation code all stayed** — the reasons are in that file.
+>
+> **Manual times can no longer be booked outside a therapist's hours (#992).**
+> Catarina's day ends at 13:00 and a typed 17:00 used to save. It now refuses and
+> **names her hours that day**. The check was never missing — it was computed
+> correctly and then thrown away one line before the refusal. **"Guardar mesmo
+> assim" deliberately cannot override it**: an override that reinstates the exact
+> defect is a bypass. If the clinic needs a genuine late booking, the answer is to
+> extend the therapist's disponibilidade — and if it needs a real exception path,
+> say so and it gets carded.
+>
+> **The retired login copy is gone, and the portal finally has a root error page
+> (#993).** 33 pieces of Portuguese text described the password login you
+> replaced, including "Recuperar palavra-passe" — so anyone checking whether the
+> portal had password recovery **found the copy for it**. Deleted. And wiring up
+> the crash page turned out to matter more than tidiness: every individual screen
+> had a friendly Portuguese error page, but a crash that took the **whole page**
+> down showed a blank English framework error. It now shows Portuguese, both
+> clinic numbers and a retry.
+>
+> **Landline reminders stop being sent, and reception is shown who will miss
+> theirs (#994).** Some patients have a fixed line on file. It cannot receive a
+> text, so the clinic was **billed for a message nobody got**. That stops — but
+> stopping it does nothing for the patient, so the other half is a list on
+> `/notificacoes` of patients who have an appointment coming up and a number that
+> cannot receive SMS. **It shows them before the reminder is due, not after.**
+>
+> **The browser tests are now read by the compiler (#995).** They were the one
+> part of the codebase it never checked. Turning it on found two real mistakes,
+> both harmless today and both the kind that bite later.
+>
+> ### One database change is waiting for you
+>
+> **#991 is open and deliberately not merged.** It adds what the rest of the batch
+> needs: a marker saying an appointment came from the patient portal, a link from
+> a pacote session to a real appointment, a record of how many pacote sessions
+> each patient has already used, and two small tables for the recuperação list.
+>
+> **The pacote part is the one worth knowing about.** Today a pacote's remaining
+> sessions are a number in a box that nothing can check against the diary. After
+> this, a session **is** a real appointment — but every pacote you already have
+> would read as untouched if we simply started counting appointments, because the
+> sessions used so far left none behind. So it records, once, how many each has
+> already used. **Every existing balance comes out exactly as it is today.**
+>
+> **Two features are on hold behind it**: the recuperação list and the pacote
+> booking panel. Nothing else is blocked.
+
 > ### Where the sweep stands at the end of 2026-08-20
 >
 > **144 of 185 cards shipped. 41 open.** Of those, **15 are in scope** for a
