@@ -293,8 +293,20 @@ Do this before anything else, in this order. Each step's output feeds the next.
    > **A mismatch it reports is a PREMISE MISMATCH under rule 5. Halt and report
    > it. Do not flip the card to make the check pass** — the board being wrong
    > may mean an earlier session's REPORT was wrong too, and that is the owner's
-   > to know. Four cards have carried a false `todo`; the fourth set put
-   > already-shipped work into a dispatch as the next thing to build.
+   > to know. SEVEN cards have now carried a false `todo` (count updated
+   > 2026-08-20). The fourth set put already-shipped work into a dispatch as the
+   > next thing to build; the sixth was `SEC-allowconflict-not-audited` (#949);
+   > the seventh was `LE-portal-booking-home-clinic-preselect`, which had been
+   > finished by #855 for NINE DAYS.
+   >
+   > **THE RECONCILER CANNOT SEE THE SHAPE THE SEVENTH TOOK, and that is not a
+   > gap in the reconciler.** Its stale-card rule keys on the PRs a card CITES
+   > and its gate-claim rule on the gate a card CLAIMS. A card written BEFORE
+   > the work and never touched after does neither, so both rules are silent -
+   > correctly. `reconcile-board.mjs`'s own header names this as the third shape
+   > of staleness. **The only thing that catches it is the rule at the top of
+   > this document: re-derive every card from `main` before building it.** A
+   > boot report saying the reconciler is clean says nothing about this class.
    >
    > A card that is legitimately open after its PR merged (WF-03 closes on the
    > owner's deployed screen, not on green CI) carries an explicit
