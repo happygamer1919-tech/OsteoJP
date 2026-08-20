@@ -637,7 +637,39 @@ shipped test sink — and it is the top item in the build queue.
 
 ## 4. Every open card, by bucket
 
-**70 open of 155**, as of 2026-08-16 after the guest-booking bucket.
+**46 open of 184**, counted from the board on 2026-08-20, after the self-merge
+sweep of that date. **The bucket write-ups below are as of 2026-08-16** and are
+kept because their reasoning is still the reasoning; where a card named there has
+since closed, the board is the count and this section is the story.
+
+> ### The 2026-08-20 self-merge sweep, in the order it happened
+>
+> **`LE-stale-auth-user-id-sweep`** — closed by the owner's merge of **#976**
+> (`548c6ac`). The column stays dead because a guard in the required check keeps
+> it dead, not because a paragraph says so. **#978** added the PR number and the
+> sha to the card, which its own evidence had not recorded.
+>
+> **`AI-04-stuck-consultation-ui`** — **#979** (`06f4c29`). Reception's
+> notifications page now carries, as its **first** section, a list of
+> consultations whose recording never reached the AI partner. Until this, that
+> state was visible only to somebody with database or log access, and nobody at
+> the clinic has either — while the recording itself is deleted after seven days
+> and the only remaining path to a note is a clinician writing it from memory.
+> **The card stays open on purpose**: it is staff-visible, so it closes on the
+> owner's screen. It is item 2 in the verification queue, and **the expected
+> result there is an empty box** — which is why the empty state says, in as many
+> words, that an empty list does not prove recordings are being delivered.
+>
+> **`SEC-otp-request-tenant-500-oracle`** — closed, and **its main premise was
+> already false when it was picked up**. The 500 it reported had been closed on
+> 2026-08-13 by a different card's fix, incidentally, and neither card noticed.
+> **Nothing held it there**: the behaviour was correct by coincidence and a
+> revert would have restored the defect silently. That is now a test. The half
+> that *was* still wrong is smaller and worth naming, because it is the shape
+> this project keeps finding: the code that swallowed the failure then
+> **described it with a sentence written about a different failure**, telling
+> whoever read the log to go looking for a database row that the failure had just
+> prevented from existing.
 
 ### Incidents — 1
 **`SEC-otp-linkage-exact-phone-match` (high, halted, launch-blocking)** — most
