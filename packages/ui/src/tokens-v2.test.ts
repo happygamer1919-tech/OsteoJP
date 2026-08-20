@@ -13,6 +13,27 @@ const themeCss = readFileSync(
   "utf8",
 );
 
+/**
+ * theme.css with COMMENTS REMOVED (ACC-vacuous-guard-sweep).
+ *
+ * Every assertion below is a PRESENCE check on a bare literal - a hex, or an
+ * rgba() string. On the raw file a COMMENT satisfies it, so a token deleted from
+ * the CSS but still described in prose would keep this suite green.
+ *
+ * NOT HYPOTHETICAL, AND THE WORKED EXAMPLE IS IN THIS VERY FILE'S SUBJECT:
+ * theme.css:307 reads "SPEC 3.1 lists #6E7A89, but that is 4.37:1 on white ..."
+ * - a REJECTED value, recorded in a comment and deliberately absent from the
+ * declarations. Assert that hex and the guard passes on the rejection notice.
+ * Checked before changing anything: of 55 literals asserted across the three
+ * tokens suites, ZERO are currently satisfied only by a comment. This removes
+ * the class rather than fixing an instance.
+ *
+ * ABSENCE assertions deliberately keep using the RAW css: a comment naming a
+ * superseded hex should make `.not.toContain` FAIL, because that is the
+ * direction it is safe to be wrong in.
+ */
+const themeCode = themeCss.replace(/\/\*[\s\S]*?\*\//g, "");
+
 const read = (rel: string): string =>
   readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 
@@ -28,7 +49,7 @@ describe("SPEC-v2-foundation §3 palette (OsteoJP theme)", () => {
     ["Soft Lavender base", "#A786E8"],
     ["Warm Gold base", "#D5A25A"],
   ])("theme.css defines the %s hex %s", (_role, hex) => {
-    expect(themeCss).toContain(hex);
+    expect(themeCode).toContain(hex);
   });
 
   it.each([
@@ -38,42 +59,42 @@ describe("SPEC-v2-foundation §3 palette (OsteoJP theme)", () => {
     ["lavender 700 (AA label)", "#6E4FAB"],
     ["gold 700 (AA label)", "#946A34"],
   ])("theme.css defines the %s step %s", (_role, hex) => {
-    expect(themeCss).toContain(hex);
+    expect(themeCode).toContain(hex);
   });
 });
 
 describe("SPEC-v2-foundation §4 glass system", () => {
   it("defines the glass card fill, nav fill, border, and active tint", () => {
-    expect(themeCss).toContain("rgba(255, 255, 255, 0.72)"); // card bg §4.1
-    expect(themeCss).toContain("rgba(255, 255, 255, 0.75)"); // nav opacity 75%
-    expect(themeCss).toContain("rgba(255, 255, 255, 0.45)"); // card/nav border
-    expect(themeCss).toContain("rgba(122, 183, 159, 0.15)"); // active nav glass
+    expect(themeCode).toContain("rgba(255, 255, 255, 0.72)"); // card bg §4.1
+    expect(themeCode).toContain("rgba(255, 255, 255, 0.75)"); // nav opacity 75%
+    expect(themeCode).toContain("rgba(255, 255, 255, 0.45)"); // card/nav border
+    expect(themeCode).toContain("rgba(122, 183, 159, 0.15)"); // active nav glass
   });
 
   it("defines the blur radii and the no-backdrop fallback fill (§4.4)", () => {
-    expect(themeCss).toContain("blur(24px)"); // card blur
-    expect(themeCss).toContain("blur(20px)"); // nav blur
-    expect(themeCss).toContain("rgba(255, 255, 255, 0.92)"); // fallback fill
-    expect(themeCss).toContain("@supports not");
+    expect(themeCode).toContain("blur(24px)"); // card blur
+    expect(themeCode).toContain("blur(20px)"); // nav blur
+    expect(themeCode).toContain("rgba(255, 255, 255, 0.92)"); // fallback fill
+    expect(themeCode).toContain("@supports not");
   });
 
   it("defines the v2 radius and the single float shadow", () => {
-    expect(themeCss).toContain("--radius-v2: 24px");
-    expect(themeCss).toContain("--radius-v2-kpi: 28px");
-    expect(themeCss).toContain("--shadow-v2-float: 0 8px 30px rgba(0, 0, 0, 0.05)");
+    expect(themeCode).toContain("--radius-v2: 24px");
+    expect(themeCode).toContain("--radius-v2-kpi: 28px");
+    expect(themeCode).toContain("--shadow-v2-float: 0 8px 30px rgba(0, 0, 0, 0.05)");
   });
 
   it("exposes the glass, nav, and hover-lift composite utilities", () => {
-    expect(themeCss).toContain("@utility glass-card");
-    expect(themeCss).toContain("@utility glass-nav");
-    expect(themeCss).toContain("@utility hover-lift");
+    expect(themeCode).toContain("@utility glass-card");
+    expect(themeCode).toContain("@utility glass-nav");
+    expect(themeCode).toContain("@utility hover-lift");
   });
 });
 
 describe("SPEC-v2-foundation §5 typography", () => {
   it("defines the 42px / 600 greeting token", () => {
-    expect(themeCss).toContain("--text-v2-greeting: 42px");
-    expect(themeCss).toContain("--text-v2-greeting--font-weight: 600");
+    expect(themeCode).toContain("--text-v2-greeting: 42px");
+    expect(themeCode).toContain("--text-v2-greeting--font-weight: 600");
   });
 });
 

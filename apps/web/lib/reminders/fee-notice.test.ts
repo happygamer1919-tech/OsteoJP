@@ -114,7 +114,22 @@ describe("the double gate — the three combinations", () => {
     // than combining them: it must call shouldRenderFeeNotice, not `&&` them.
     for (const f of restating) {
       const src = readFileSync(join(dir, f), "utf8");
-      expect(src).toContain("shouldRenderFeeNotice(");
+      // COMMENTS STRIPPED FOR THE PRESENCE ASSERTION (ACC-vacuous-guard-sweep).
+      // `toContain("shouldRenderFeeNotice(")` on raw source is satisfied by a
+      // COMMENT naming the function - including the comment three lines above,
+      // which says "it must call shouldRenderFeeNotice". Delete the real call,
+      // keep any prose that mentions it, and this guard still passes. That is
+      // criterion F: matching a MENTION rather than a USE.
+      //
+      // The paired `.not.toMatch` below deliberately stays on the RAW source. It
+      // is an ABSENCE assertion, so a comment can only make it FAIL - the safe
+      // direction - and running it on the stripped body would quietly narrow
+      // what it refuses.
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      expect(
+        code,
+        `${f}: the call is absent from the CODE. A hit inside a comment does not count.`,
+      ).toContain("shouldRenderFeeNotice(");
       expect(src).not.toMatch(/feeNoticeFlagEnabled\(\)\s*&&/);
     }
   });
