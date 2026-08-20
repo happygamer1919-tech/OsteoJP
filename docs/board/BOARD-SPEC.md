@@ -53,7 +53,8 @@ same anti-pattern). Zero dependencies, read-only, never writes.
 
 ## Card schema
 
-Every entry in `cards[]` has exactly these fields:
+Every entry in `cards[]` has these fields. The first block is required; the
+second is optional and a card carrying none of it is an ordinary card.
 
 | field | type | notes |
 |---|---|---|
@@ -69,6 +70,44 @@ Every entry in `cards[]` has exactly these fields:
 | `blocked_on` | enum | `null` \| `ivan` \| `jp` \| `rodica` \| `infra` |
 | `last_checkpoint` | ISO 8601 | date or timestamp of the last GREEN update to this card |
 | `notes` | string | context; quote the reporter verbatim where relevant |
+
+**Optional fields.** Absent on almost every card. Each was added for a rule that
+needed somewhere to record its exemption or its payload, and each is validated
+only when present.
+
+| field | type | notes |
+|---|---|---|
+| `open_on_purpose` | string | the reconciler's explicit exemption: why this card stays open after its evidence exists. Non-empty or absent - a bare `true` would silence a rule without saying why. Printed in full on every reconciler run |
+| `card_kind` | enum | `loop`. A card that declares itself a loop, so the loop-spec rule below can find it. Absent on an ordinary card |
+| `spec` | object | the Loop Package: the seven sections below, each a non-empty string, plus an optional `briefing`. Only valid on a card whose `card_kind` is `loop` |
+
+### The loop spec (`WF-01`)
+
+Owner ruling, 2026-08-04: **wave docs end after Wave 13; from the next authored
+loop onward, the board card IS the loop spec.** The seven sections are
+`docs/loops/README.md`'s Loop Package, keyed:
+
+`scope_and_ground_truth`, `ordered_steps`, `definition_of_done`,
+`verification`, `restrictions_and_scope_boundary`, `halt_loud_protocol`,
+`report_back_format`. `briefing` is an allowed eighth, and it is optional:
+every LOOP block in `WAVE-13.md` carried one, but `README.md`'s seven do not
+include it.
+
+**The rule the validator enforces: a loop card at `in_flight` or `shipped` must
+carry all seven sections, each non-empty.** The ruling's words are "entering
+ready or doing" - that vocabulary is `docs/design/BACKLOG.md`'s, and this board
+has no such statuses, so the mapping is stated rather than inferred: a card is
+ready-or-doing once it has left `todo` for work. `todo`, `blocked` and
+`halted` are states of not-working and owe no spec yet.
+
+**Loop-ness is DECLARED, never inferred from the presence of `spec`.** Inferring
+it would fail open in exactly the case the ruling names - a loop card with no
+spec at all would be indistinguishable from an ordinary card. So the two
+half-states are both rejected: a `spec` without `card_kind: "loop"` is a
+missing marker, and `card_kind: "loop"` without a full spec is not startable.
+**What remains open, and is named rather than papered over:** a loop card
+authored with neither field is invisible to the rule, because loop-ness is a
+fact about intent that nothing mechanical can read.
 
 `evidence`, when present, is `{ kind, ref, at }`:
 
@@ -119,6 +158,12 @@ Consequences, and the reason the rule exists:
 - `home_lane` is one of the four KIND lanes; `shipped` and `blocked_on_people` are
   states, so they are never a home.
 - `priority` is `high` \| `medium` \| `low`.
+- `card_kind`, when present, is `loop`.
+- A card carrying `spec` must also carry `card_kind: "loop"`, and every key in
+  `spec` must be a Loop Package section with a non-empty string value.
+- A `card_kind: "loop"` card at `in_flight` or `shipped` carries all seven
+  sections. Its own proof, including the negative arm for every section, is
+  `docs/board/validate-board.test.mjs`.
 
 ## Lanes, in render order
 
