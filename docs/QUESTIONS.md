@@ -1139,3 +1139,57 @@ got double-booked twice.
 lost pedido now writes an error line naming the appointment and saying what it
 costs, so it is findable and repairable by hand. **The slot is still blocked and
 the loss is still not prevented.** That does not change until the column lands.
+
+---
+
+## Q-LE-REMINDERS-LANDLINE-1 (2026-08-20) — when a patient's stored number is a landline, what should the 48h/24h reminder do?
+
+**Owner or JP. Recommended default stated below; nothing has been built either
+way, and no terminal may guess this** (`PORTAL-REHYDRATE.md` standing rule 15).
+
+**THE SITUATION, re-derived from `main` rather than taken from the card.**
+Portuguese geographic numbers (the `2` prefix) cannot receive SMS.
+`normalizePhonePT` accepts them — deliberately: normalisation is a different rule
+from SMS capability, and `PT_SUBSCRIBER` at `apps/web/lib/reminders/phone.ts` is
+`/^[29]\d{8}$/`. `#865` added `isSmsCapablePT` and wired it into the **OTP
+request route only**. So today `apps/web/lib/reminders/dispatch.ts` normalises a
+landline successfully, hands it to Twilio, and **the clinic is billed for a
+message nobody can receive.**
+
+**WHY THIS IS NOT THE OTP CASE, stated so nobody promotes it on a security
+card's coat-tails.** The OTP exposure was unbounded because an **unauthenticated
+stranger** chose the numbers. Here the numbers come from the clinic's own patient
+records and the volume is bounded by real appointments. **This is a data-quality
+and small-waste question, not an abuse surface.**
+
+**THE THREE OPTIONS, as the card frames them.**
+
+1. **Skip it**, logging the structured warning `dispatch.ts` already emits for an
+   invalid phone (ids only, never the number). Stops paying for undeliverable
+   messages. **Costs:** the clinic loses a reminder it currently believes it is
+   sending, silently, unless somebody reads the log.
+2. **Skip it and surface it to staff**, so reception can ask the patient for a
+   mobile. More work, and the right answer if the clinic wants the **data
+   cleaned** rather than the sends suppressed.
+3. **Leave it.** The spend is bounded by the appointment count.
+
+**RECOMMENDED DEFAULT: option 2.** Option 1 trades a visible waste for an
+invisible one, and this project has now counted several instances of exactly that
+trade going wrong — a reminder that silently does not send is indistinguishable,
+from the clinic's side, from one that did. Option 3 keeps paying for messages
+that reach nobody **and** leaves a patient with no reminder at all, which is the
+same outcome as option 1 with a bill attached. Option 2 is the only one where the
+landline stops being a silent hole: reception is told, and the number can be
+fixed once instead of failing every appointment.
+
+**WHAT SHIPPED IN THE MEANTIME, and it decides nothing.**
+`apps/web/lib/reminders/phone-parity.test.ts` — a drift guard between the two
+`phone.ts` copies. `apps/api/lib/notify/phone.ts` declares itself a **mirror** of
+`apps/web/lib/reminders/phone.ts` and that comment was the whole of the
+enforcement; nothing compared them. **Whichever way this is ruled, the two copies
+must move together or that comment becomes false**, and the guard is what refuses
+a one-sided change. It takes no position on the ruling: it asserts the two
+**agree**, whatever they agree on.
+
+**WHAT IS BLOCKED UNTIL THIS IS ANSWERED.** `LE-reminders-landline-dispatch`, the
+code half. Nothing else.
