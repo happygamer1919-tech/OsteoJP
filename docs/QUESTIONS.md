@@ -1193,3 +1193,69 @@ a one-sided change. It takes no position on the ruling: it asserts the two
 
 **WHAT IS BLOCKED UNTIL THIS IS ANSWERED.** `LE-reminders-landline-dispatch`, the
 code half. Nothing else.
+
+---
+
+## Q-PORTAL-DEAD-I18N-1 (2026-08-20) — 163 portal strings have no screen behind them. Delete, wire up, or leave?
+
+**Owner. Recommended default below. Nothing has been deleted and nothing has been
+wired up**; `LE-dead-i18n-keys-imply-screens` is blocked on this.
+
+**WHY THIS IS NOT TIDINESS, and it is the only reason it is worth your time.** A
+string with no screen behind it **reads as coverage.** Somebody asking "does the
+portal handle X well?" finds a sensible Portuguese sentence, in the right file,
+and concludes X is handled. **It is not handled — it is unreachable**, which is a
+different and better fact, and nothing on the surface says so.
+
+**THE CARD SAID SIX. IT IS AT LEAST 163 OF 408**, measured on `main` at
+`4b385e6` and now pinned by `scripts/portal-i18n-dead-keys.test.mjs`. By group:
+
+| Group | Dead | What those strings describe |
+|---|---|---|
+| `auth` | **33** | email, password, magic link, activate — **the login flow Decision D retired** |
+| `forms` | 31 | the patient intake forms as originally drawn |
+| `services` | 21 | service and sub-service names |
+| `account` | 17 | change password, delete account, NIF |
+| `booking` | 16 | labels from an earlier booking flow |
+| `documents` / `clinics` | 8 each | invoices, declarations, addresses, hours |
+| `intake` | 7 | error paths |
+| **`errors`** | **6** | **the six the card names**: 403, 500, offline |
+| `common` / `dashboard` / `appointments` / `guest` | 16 total | |
+
+**`auth` at 33 is the one that matters most, and the card never saw it.** Portal
+login is phone-and-code. Those 33 strings describe a password-and-email login
+screen **that no longer exists** — including "Recuperar palavra-passe". Anyone
+checking whether the portal has password recovery finds the copy for it.
+
+**163 IS A FLOOR, NOT A COUNT.** The scan deliberately over-counts *references*
+(so it under-counts dead keys), because a false "this key is dead" could get a
+live string deleted. The true number is at least 163 and may be higher.
+
+### The three options
+
+1. **Delete.** Cleanest. A future screen writes fresh copy — which it would need
+   anyway: the 403 body currently offers no retry, no navigation and no
+   telephone, so wiring it up as-is would ship a dead end.
+2. **Keep and wire up.** Defensible for `500` and `offline`, which **are**
+   reachable states of a browser even though no route renders them today. **Not**
+   defensible for `403` under Decision D, and not defensible for the 33 `auth`
+   strings at all.
+3. **Leave them.** Costs nothing to run and keeps the trap: every audit of the
+   portal's coverage reads them as features.
+
+**RECOMMENDED, and it is deliberately split rather than one answer for all 163:**
+
+- **`auth` (33) — DELETE.** They describe a retired login model. Leaving them is
+  the single most misleading thing in the file.
+- **`errors.403_*` — DELETE.** Unreachable under Decision D, and the copy is
+  unusable as written.
+- **`errors.500_*` and `errors.offline_*` — KEEP AND WIRE UP.** Real browser
+  states, and a portal with no error boundary is a blank page.
+- **The remaining ~120 — LEAVE FOR NOW, ratcheted.** They are mostly forward
+  copy for screens that are planned rather than retired, and deciding them one at
+  a time as those screens land is cheaper than one large sweep.
+
+**WHAT IS ALREADY DONE, and it needs no ruling.** The count **cannot grow
+silently** any more: the guard is in the required check, a 164th dead key is red,
+and the failure says which group it landed in. A string added ahead of its screen
+now has to arrive with the screen, or be declared dead with a reason.
