@@ -161,9 +161,21 @@ jobs:
             echo "code=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # CI-docs-only-required-checks-skip. THE SKIP SAYS SO, OUT LOUD.
+      # See the same block in db-tests.yml for the full reasoning, including why
+      # a genuine `neutral` conclusion is not available to a required check here
+      # and was not attempted.
       - name: Skip — docs-only PR
         if: steps.changes.outputs.code == 'false'
-        run: echo "No code changes detected. E2E tests not required for this PR."
+        run: |
+          echo "::notice title=E2E DID NOT RUN::Docs-only PR. This required check reports green WITHOUT having run any Playwright spec. It is an abstention, not a proof."
+          {
+            echo "### Playwright E2E: SKIPPED, not passed"
+            echo
+            echo "Every changed file is docs/markdown, so no browser was started and no spec ran."
+            echo "This check is green because it is REQUIRED and must report, not because"
+            echo "anything was verified."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up pnpm
         if: steps.changes.outputs.code == 'true'
