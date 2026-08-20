@@ -409,5 +409,48 @@ test("completed appointment with no note shows the 'Sem nota' indicator (W2-04)"
   // W10-05b: the agenda card face is now name-only, so the "Sem nota" chip moved
   // off the agenda card; it still shows on the Marcacoes list (W2-04). Verify there.
   await page.goto(`/marcacoes?from=${date}&to=${date}`);
-  await expect(page.getByText("Sem nota").first()).toBeVisible({ timeout: 8_000 });
+
+  // ACC-visibility-assertions-unswept. This was
+  // `page.getByText("Sem nota").first()` - a page-level presence assertion with
+  // `.first()`, which tolerates several matches and proves nothing about WHICH
+  // row it found.
+  //
+  // THIS DAY IS NOT EXCLUSIVE TO THIS TEST. "a newly created appointment
+  // persists as scheduled / pendente (W3-01)" books MARIA on the SAME
+  // RUN_DAY_BASE + 13, so this list holds two rows and `.first()` was choosing
+  // between them.
+  //
+  // IT WAS SAFE, AND SAFE FOR A REASON THAT LIVES OUTSIDE THE ASSERTION:
+  // marcacoes-view.tsx:306 gates the chip on `status === "completed" &&
+  // !appt.hasNote`, and maria's stays `scheduled`. So the assertion depended on
+  // a render rule in another file rather than on anything it stated itself - and
+  // if that rule ever widened, `.first()` could match MARIA's row while ana's
+  // status update had silently failed. That is the compensating error: our own
+  // write fails, a foreign row satisfies the check, and the suite reports a pass.
+  // THE ROW ELEMENT IS `[data-appointment-id]`, NOT `.glass-card`. The first
+  // version of this fix used `.glass-card`, copied from agenda-hover.spec.ts and
+  // notes-unification.spec.ts which do use it on this route - but on this page
+  // `.glass-card` is also the OUTER GlassPanel wrapping the whole list
+  // (marcacoes-view.tsx:521 says so), so filtering it by a patient name matched
+  // the PANEL, which contains every row. The "scoped" locator was the whole list
+  // wearing a row's name.
+  //
+  // IT PASSED. The positive assertion below was satisfied by ANA's chip inside
+  // that panel, so a locator that scoped nothing looked exactly like a fix. ONLY
+  // THE NEGATIVE ARM CAUGHT IT - maria's row reported the chip too, because it
+  // was the same panel. A scoping change without a negative arm cannot tell real
+  // scoping from fake scoping.
+  const rowFor = (name: string) =>
+    page.locator("[data-appointment-id]").filter({ hasText: name }).first();
+
+  const anaRow = rowFor(PATIENTS.ana.name);
+  await expect(anaRow.getByText("Sem nota")).toBeVisible({ timeout: 8_000 });
+
+  // THE NEGATIVE ARM, and it is what makes the scoping mean something: the chip
+  // is PER ROW, so maria's row on this same list must NOT carry it. Without this
+  // the fix would only narrow the locator; with it, the test states the rule it
+  // was previously borrowing from marcacoes-view.tsx.
+  const mariaRow = rowFor(PATIENTS.maria.name);
+  await expect(mariaRow).toBeVisible({ timeout: 8_000 });
+  await expect(mariaRow.getByText("Sem nota")).toHaveCount(0);
 });
