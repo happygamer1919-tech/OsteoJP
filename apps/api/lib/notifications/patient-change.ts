@@ -124,6 +124,22 @@ export type PatientChangeEvent = {
 export type ConsumerResult = {
   /** false for the stub. True only once something actually persists. */
   delivered: boolean;
+  /**
+   * WHY nothing was delivered. Absent when `delivered` is true.
+   *
+   * LE-pedido-emit-best-effort. A bare `delivered: false` is three different
+   * facts wearing one face, which is PORTAL-REHYDRATE 1.3 exactly:
+   *   `no_recipients`  the consumer ran, resolved nobody, and wrote NOTHING.
+   *                    Not an error anywhere; nothing throws.
+   *   `consumer_threw` the write was attempted and failed.
+   *   `stub`           nothing was ever going to be written.
+   * Every one of them leaves an `appointment_request` with no
+   * `staff_notifications` row, and that row is the ONLY provenance marker
+   * `is_unconfirmed_pedido` (migration 0059) can key on - so the CONSEQUENCES
+   * are identical and the CAUSES are not. Optional, so a consumer that omits it
+   * is still valid.
+   */
+  reason?: "no_recipients" | "consumer_threw" | "stub";
 };
 
 export type PatientChangeConsumer = (e: PatientChangeEvent) => Promise<ConsumerResult>;
@@ -163,7 +179,7 @@ export const stubConsumer: PatientChangeConsumer = async (e) => {
       `practitioners=${e.audience.practitionerIds.join(",")} reception=true ` +
       `occurredAt=${e.occurredAt}`,
   );
-  return { delivered: false };
+  return { delivered: false, reason: "stub" };
 };
 
 /**
@@ -233,13 +249,60 @@ async function resolveConsumer(): Promise<PatientChangeConsumer> {
 export async function emitPatientChange(e: PatientChangeEvent): Promise<ConsumerResult> {
   try {
     const consumer = await resolveConsumer();
-    return await consumer(e);
+    const result = await consumer(e);
+    // A NOT-DELIVERED RESULT WAS AN ERROR NOWHERE, WHICH IS THE WHOLE DEFECT.
+    // LE-pedido-emit-best-effort: all three call sites in
+    // apps/api/lib/appointments/booking.ts write `await emitPatientChange({...})`
+    // and read nothing back, and the only path that logged - the centre's
+    // zero-recipients branch - logs at WARN and says what HAPPENED rather than
+    // what it COSTS. So a pedido could be lost with no error line anywhere in
+    // the system.
+    if (!result.delivered) notDelivered(e, result.reason ?? null);
+    return result;
   } catch (err) {
     console.error(
       `[notifications] patient-change emit FAILED kind=${e.kind} ` +
         `tenant=${e.tenantId} appointment=${e.appointmentId}`,
       err instanceof Error ? `${err.name}: ${err.message}` : "unknown",
     );
-    return { delivered: false };
+    notDelivered(e, "consumer_threw");
+    return { delivered: false, reason: "consumer_threw" };
   }
+}
+
+/**
+ * The one line that says what a lost emit COSTS, rather than what happened.
+ *
+ * WHY IT IS SEPARATE FROM THE FAILED LINE ABOVE, and why both fire on a throw:
+ * they answer different questions. The FAILED line carries the CAUSE and is
+ * what you read when something threw. This line carries the CONSEQUENCE and is
+ * what you grep when reception says a pedido never arrived - and it fires on the
+ * no-recipients path too, which throws nothing at all and would otherwise leave
+ * no error line behind.
+ *
+ * `appointment_request` GETS THE EXTRA SENTENCE BECAUSE IT IS THE ONLY KIND
+ * THAT CARRIES PROVENANCE. `is_unconfirmed_pedido` (migration 0059) decides
+ * whether an appointment blocks its slot by joining `staff_notifications` on
+ * `kind = 'appointment_request'`. No row means the appointment is
+ * indistinguishable from a staff booking: reception is never told to confirm it,
+ * AND it blocks the slot as though it had been confirmed. `cancelled` and
+ * `rescheduled` lose visibility only - the appointment row already carries
+ * their outcome.
+ *
+ * IDS ONLY, never a name, a number or a time of day (rule 7). The patient id is
+ * deliberately absent: it is not needed to find the appointment, and this line
+ * is meant to be safe to read in a shared log.
+ */
+function notDelivered(e: PatientChangeEvent, reason: string | null): void {
+  const provenance =
+    e.kind === "appointment_request"
+      ? " PEDIDO HAS NO PROVENANCE ROW: reception will not see it AND it blocks its slot like a staff booking. Recover by hand from this appointment id."
+      : "";
+  console.error(
+    `[notifications] patient-change NOT DELIVERED kind=${e.kind} ` +
+      `reason=${reason ?? "unreported"} tenant=${e.tenantId} ` +
+      `appointment=${e.appointmentId} ` +
+      `practitioners=${e.audience.practitionerIds.join(",")}` +
+      provenance,
+  );
 }
