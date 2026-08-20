@@ -218,3 +218,72 @@ describe("briefing is the optional eighth section", () => {
     assert.equal(r.code, 0, r.err);
   });
 });
+
+describe("an owner deferral is a field, so the sweep predicate can see it", () => {
+  // WHY THESE EXIST. The deferral's whole job is to be visible to the
+  // out-of-scope predicate in PORTAL-REHYDRATE.md 4.11. A deferral that lives
+  // only in `notes` is invisible to it, and a later sweep would build the thing
+  // the owner deferred - reading an unhandled case as the harmless known one,
+  // which is PORTAL-REHYDRATE 1.3. So the field is validated in both directions.
+
+  test("ACCEPTS a deferred card carrying a reason", () => {
+    const r = validate([{ ...ORDINARY, status: "todo", deferred: "DEFERRED by owner ruling 2026-08-20." }]);
+    assert.equal(r.code, 0, r.err);
+  });
+
+  // The negative arm of the test above.
+  test("REJECTS an empty deferral - a marker with no why is not actionable", () => {
+    const r = validate([{ ...ORDINARY, status: "todo", deferred: "   " }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /deferred must be a non-empty string/);
+  });
+
+  test("REJECTS a bare true, for the reason open_on_purpose rejects one", () => {
+    const r = validate([{ ...ORDINARY, status: "todo", deferred: true }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /deferred must be a non-empty string/);
+  });
+
+  test("REJECTS a shipped card that is still marked deferred", () => {
+    const r = validate([
+      {
+        ...ORDINARY,
+        status: "shipped",
+        lane: "shipped",
+        evidence: { kind: "pr", ref: "#1", at: "2026-08-20" },
+        deferred: "DEFERRED by owner ruling 2026-08-20.",
+      },
+    ]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /built work cannot be deferred/);
+  });
+
+  // The adjacent state that must NOT be flagged: shipped, marker dropped.
+  test("ACCEPTS a shipped card with the marker dropped", () => {
+    const r = validate([
+      {
+        ...ORDINARY,
+        status: "shipped",
+        lane: "shipped",
+        evidence: { kind: "pr", ref: "#1", at: "2026-08-20" },
+      },
+    ]);
+    assert.equal(r.code, 0, r.err);
+  });
+
+  test("ACCEPTS a card with no deferred field at all - it is additive", () => {
+    const r = validate([{ ...ORDINARY, status: "todo" }]);
+    assert.equal(r.code, 0, r.err);
+  });
+
+  // A LIVE assertion, not a fixture: the card the 2026-08-20 ruling deferred
+  // must actually carry the marker. A fixture proves the rule works; this proves
+  // the rule is APPLIED to the card it was written for.
+  test("the card deferred on 2026-08-20 carries the marker on the real board", () => {
+    const board = JSON.parse(readFileSync(REAL_PORTAL, "utf8"));
+    const card = board.cards.find((c) => c.id === "LE-portal-multi-appointment-booking");
+    assert.ok(card, "LE-portal-multi-appointment-booking is missing from the board");
+    assert.equal(typeof card.deferred, "string");
+    assert.match(card.deferred, /2026-08-20/, "the deferral must say when it was ruled");
+  });
+});

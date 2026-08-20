@@ -424,6 +424,100 @@ and Ivan needs to know which.
 
 ---
 
+## 4.11 THE OUT-OF-SCOPE LIST FOR SELF-MERGE SWEEPS. Committed 2026-08-20.
+
+**THIS LIST PREVIOUSLY EXISTED ONLY IN CHAT DISPATCHES. It is committed here on
+2026-08-20 to close that gap.** A terminal that booted stateless could not derive
+it: it was carried from dispatch to dispatch in prose, and a session asked to
+apply "the out-of-scope list" had nothing in the repository to apply. That is the
+same class of defect §1.6 of the rulings register exists to end.
+
+**Any future dispatch that says "out-of-scope list excluded" means THIS SECTION**,
+and nothing else. If a dispatch means something narrower or wider, it must say so
+in its own words rather than by reference.
+
+### The list, verbatim as ruled by the owner
+
+Cards excluded from self-merge sweeps:
+
+1. **`VERIFY-QUEUE` items.**
+2. **AUTORIZO-gated** cards - `gate: "owner_authorizo"`.
+3. **`LAUNCH-*`** - any card whose id begins `LAUNCH-`.
+4. **The legal family** - `END-legal-sweep` and its children.
+5. **Force-rotation.**
+6. **Sandbox-unskip.**
+7. **Person-blocked** - `blocked_on` set to any person.
+
+### What it selects, derived rather than judged
+
+Run this and the answer is the same for every reader. It is deliberately a
+predicate over committed fields, so applying the list is not a matter of taste:
+
+```
+node -e '
+const b=JSON.parse(require("fs").readFileSync("docs/board/portal-board.json","utf8"));
+const PEOPLE=["ivan","jp","lawyer"];
+const out=(c)=>c.id==="VERIFY-QUEUE" || c.gate==="owner_authorizo"
+  || /^LAUNCH-/.test(c.id) || /legal/i.test(c.id)
+  || /force-rotation/i.test(c.id) || /sandbox/i.test(c.id)
+  || PEOPLE.includes(c.blocked_on) || typeof c.deferred==="string";
+for(const c of b.cards) if(c.status!=="shipped") console.log(out(c)?"OUT":"IN ", c.id);
+'
+```
+
+On 2026-08-20, after the rulings of that date, that is **24 out, 24 in** of 48
+open cards. **Re-run it rather than trusting the number** - it is a snapshot and
+the composition moves under it. That same day the split stayed 24/24 while two
+cards swapped sides: `LE-portal-multi-appointment-booking` went OUT on its
+deferral and `LE-pedido-emit-best-effort` came IN when its person-block lifted.
+
+### An eighth clause the owner's list does not name, because it did not exist yet
+
+**A card the owner has DEFERRED carries a `deferred` field, and the predicate
+above reads it.** `LE-portal-multi-appointment-booking` is the first, deferred
+post-launch on 2026-08-20.
+
+It is written as a FIELD and not as a sentence in `notes` for the reason
+`reconcile-board.mjs`'s header already gives about `open_on_purpose`: a prose
+marker stops matching the day somebody rewords a sentence, and **it fails OPEN**
+- the sweep reads the card as available and builds the thing the owner deferred.
+The validator enforces the field (non-empty, and never on a shipped card), and
+`docs/board/validate-board.test.mjs` proves it in both directions.
+
+**Deferred is not cancelled.** The card stays `todo` and stays on the board. What
+a deferral records is WHEN, not WHETHER, and a sweep that reaches one skips it
+**and says so in its report** rather than passing over it silently.
+
+### Four things a reader will otherwise get wrong
+
+**THE LEGAL FAMILY ADDS NO CARD OF ITS OWN TODAY, and that is not a mistake in
+the list.** `END-legal-sweep` is `halted` and AUTORIZO-gated. Its two open
+children, `LAUNCH-03a-caderno-encargos` and `LE-guest-queue-service-name`, are
+already caught by clause 3 and clause 7. Do not go looking for a card the legal
+clause selects alone; there is not one. The clause earns its place because a
+future legal child might carry neither of those marks.
+
+**`blocked` AND `halted` ARE ALREADY SKIPPED, by §3 item 3, and that is a
+DIFFERENT mechanism from this list.** Keep them apart. §3 skips a card because
+work on it cannot proceed; this list excludes a card because a sweep is not the
+right instrument for it even when work could proceed. A card can leave `blocked`
+and still be out of scope - and `LE-pedido-emit-best-effort` is exactly that case
+as of the 2026-08-20 ruling, which removed its person-block and left it waiting on
+a migration.
+
+**A CARD BLOCKED ON A MIGRATION IS NOT ON THIS LIST AND DOES NOT NEED TO BE.**
+§1.1 already forbids either lane authoring one, so such a card cannot be swept in
+any case. If that constraint is ever lifted while this list stands, re-read the
+card rather than assuming the list covers it.
+
+**`owner_merge` IS NOT AN EXCLUSION.** It is a MERGE gate, not a build gate: a
+sweep may build the card and open the PR, and stops there for Ivan. Only
+`owner_authorizo` excludes, because that gate is about permission to start.
+`LE-stale-auth-user-id-sweep` is the card this distinction currently decides, and
+it is IN scope.
+
+---
+
 ## 5. End-of-session protocol
 
 Before your context is cleared, in this order:

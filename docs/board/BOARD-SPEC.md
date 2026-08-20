@@ -78,6 +78,7 @@ only when present.
 | field | type | notes |
 |---|---|---|
 | `open_on_purpose` | string | the reconciler's explicit exemption: why this card stays open after its evidence exists. Non-empty or absent - a bare `true` would silence a rule without saying why. Printed in full on every reconciler run |
+| `deferred` | string | an owner ruling that this card is not to be built YET. Non-empty or absent, and it must say who ruled it and when. A shipped card may not carry it. A FIELD and not a sentence in `notes`, so the out-of-scope predicate in `PORTAL-REHYDRATE.md` §4.11 can see it - a deferral matched out of prose fails OPEN, and a sweep would then build the deferred thing |
 | `card_kind` | enum | `loop`. A card that declares itself a loop, so the loop-spec rule below can find it. Absent on an ordinary card |
 | `spec` | object | the Loop Package: the seven sections below, each a non-empty string, plus an optional `briefing`. Only valid on a card whose `card_kind` is `loop` |
 
@@ -158,6 +159,7 @@ Consequences, and the reason the rule exists:
 - `home_lane` is one of the four KIND lanes; `shipped` and `blocked_on_people` are
   states, so they are never a home.
 - `priority` is `high` \| `medium` \| `low`.
+- `deferred`, when present, is a non-empty string, and the card is not `shipped`.
 - `card_kind`, when present, is `loop`.
 - A card carrying `spec` must also carry `card_kind: "loop"`, and every key in
   `spec` must be a Loop Package section with a non-empty string value.
