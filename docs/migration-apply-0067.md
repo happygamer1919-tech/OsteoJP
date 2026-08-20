@@ -228,13 +228,23 @@ select tablename, policyname, cmd from pg_policies
 - **`git status --short` prints anything, or `git cat-file -t` prints anything
   but `commit`.** Both are pre-flight and both stop the sitting before a single
   credential is sourced.
-- **`git log -1` in section 4 does not print the PINNED SHA** named in the dispatch.
-  Main moved and the branch was rebased again, so the commit in front of you is not
-  the commit that will merge. **The applied sha and the merged sha must be the same
-  commit**; a mismatch means the migration you are applying is not the migration the
-  PR will land. Stop and ask for a re-pin. UNLIKE EVERY OTHER STOP CONDITION HERE
-  THIS ONE IS CHECKED BEFORE THE APPLY: section 4 prints the head two lines before
-  `drizzle-kit migrate` runs, so a mismatch stops the run having changed nothing.
+- **`git checkout --detach PINNED_SHA` errors, or `git log -1` in 4b prints a
+  different sha.** The checkout did not take, and every line below it is running
+  against a tree this block did not describe. This is the one stop condition
+  checked BEFORE anything is applied: 4b prints the head five lines before
+  `drizzle-kit migrate` runs, so stopping here costs nothing.
+
+**ONE FAILURE THIS BLOCK CANNOT CATCH, NAMED SO IT IS OWNED RATHER THAN
+ASSUMED: a STALE pin.** If the branch moved after the sha was written in, the
+pre-flight still passes and the checkout still succeeds - `cat-file` prints
+`commit` and `git log -1` prints exactly what was pasted, because both are
+questions about the sha and not about whether it is still the head. What gets
+applied is then an OLDER tree than the one that was reviewed, silently. Nothing
+the owner runs can see it. **`docs/runbook-prod-migrations.md` puts that check on
+STRATEGY, as the LAST action before the block is handed over**, and 0061 and 0062
+are the two occasions that made it a rule. **The applied sha and the merged sha
+must be the same commit**, which is also why `main` must not move between the
+validation and the apply.
 
 ## 7. Rollback
 
