@@ -71,8 +71,19 @@ test("Nova marcação: Terapeuta first, Serviço auto-fills from the therapist, 
   // Field order: Terapeuta renders ABOVE Serviço (DECISIONS 2026-07-05).
   const tBox = await therapist.boundingBox();
   const sBox = await service.boundingBox();
-  expect(tBox).not.toBeNull();
-  expect(sBox).not.toBeNull();
+  // THROWN, NOT `expect(...).not.toBeNull()` FOLLOWED BY A DOTTED READ.
+  //
+  // `expect(x).not.toBeNull()` asserts at RUNTIME and narrows NOTHING for the
+  // compiler, so `tBox.y` on the next line was `'tBox' is possibly null` - one
+  // of the two errors that surfaced the moment `e2e/` entered the typecheck
+  // (LE-e2e-suite-not-typechecked). It never crashed because the boxes are
+  // always there when the dialog is open, which is exactly why nothing found it.
+  //
+  // A THROW NARROWS AND ASSERTS AT ONCE, and it fails with the reason rather
+  // than with "cannot read property y of null" two lines later.
+  if (!tBox || !sBox) {
+    throw new Error("Terapeuta/Serviço have no bounding box - the dialog did not render");
+  }
   expect(tBox.y).toBeLessThan(sBox.y);
 
   // Serviço is empty until a therapist is chosen; picking the therapist FIRST
