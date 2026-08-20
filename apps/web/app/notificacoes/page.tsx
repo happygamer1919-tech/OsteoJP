@@ -16,6 +16,8 @@ import { MarkAllReadButton } from "./mark-all-read";
 import { PendingRequests, type PendingRequestView } from "./pending-requests";
 import { GuestRequestsQueue, type GuestRequestRow } from "./guest-requests-queue";
 import { listPendingGuestRequests } from "@/lib/scheduling/guest-requests";
+import { StuckConsultations, type StuckConsultationRow } from "./stuck-consultations";
+import { listStuckConsultations } from "@/lib/consultation/stuck-consultations";
 
 export const metadata = { title: s["notifications.title"] };
 
@@ -145,10 +147,18 @@ export default async function NotificacoesPage() {
   // and the data.
   const canReadGuestQueue = can(ctx.role, "guest_requests:read");
 
-  const [entries, requests, guestRequests] = await Promise.all([
+  const [entries, requests, guestRequests, stuck] = await Promise.all([
     listNotifications(ctx),
     listPendingRequests(ctx),
     canReadGuestQueue ? listPendingGuestRequests(ctx) : Promise.resolve([]),
+    // AI-04. NO ROLE BRANCH HERE, and that is not the SEC-01 lapse repeated.
+    // The guest queue is skipped for a therapist because there is no
+    // therapist-shaped subset of it - a guest request has no patient to scope
+    // by. Every consultation HAS a patient, so `listStuckConsultations` applies
+    // this repo's two ratified patient scopes INSIDE the query and returns the
+    // subset each role is already entitled to. There is nothing to hide at this
+    // layer, because nothing arrives here that the caller may not see.
+    listStuckConsultations(ctx),
   ]);
   const unread = entries.filter((e) => e.readAt === null).length;
 
@@ -188,8 +198,51 @@ export default async function NotificacoesPage() {
     possiblePatientMatches: g.possiblePatientMatches,
   }));
 
+  // Same server-side Lisbon formatting as both queues above, for the same
+  // reason. `stamp` on the CONSULTATION instant, not on the failure instant: a
+  // clinician recognises the appointment by when it happened, and the note they
+  // now have to write by hand is a note about that appointment.
+  const stuckRows: StuckConsultationRow[] = stuck.map((c) => ({
+    id: c.id,
+    patientName: c.patientName,
+    clinicianName: c.clinicianName,
+    when: stamp(c.consultationStartedAt),
+    lastAttempt: c.lastAttemptAt === null ? null : stamp(c.lastAttemptAt),
+    attemptCount: c.attemptCount,
+    lastError: c.lastError,
+  }));
+
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6">
+      {/* AI-04 - ABOVE THE PEDIDO QUEUE, and the ordering is the argument.
+          The comment below says the pedido queue comes first because it is the
+          only part of this page carrying WORK. That was true when it was
+          written and it is not the rule; the rule it was expressing is that
+          what is IRREVERSIBLE outranks what is merely undone.
+
+          A pedido that waits an hour is a patient who waits an hour. A stuck
+          consultation is a clinical record that will never exist, whose audio
+          is already deleted, and whose only remaining path to a note is a
+          therapist's memory of an appointment that gets fainter every day.
+          Nothing else on this page has a deadline that runs out.
+
+          IT IS ALSO ALWAYS RENDERED, empty or not. See the empty state in
+          `stuck-consultations.tsx`: a section that vanishes when the list is
+          empty makes "nothing is lost" and "nobody is looking" the same
+          screen. */}
+      <section className="mb-10" aria-labelledby="stuck-consultations-heading">
+        <h2
+          id="stuck-consultations-heading"
+          className="text-xl font-semibold text-v2-text-primary"
+        >
+          {s["consultations.stuck.title"]}
+        </h2>
+        <p className="mt-1 mb-4 text-sm text-v2-text-secondary">
+          {s["consultations.stuck.subtitle"]}
+        </p>
+        <StuckConsultations rows={stuckRows} />
+      </section>
+
       {/* THE QUEUE COMES FIRST because it is the only part of this page that
           carries WORK. Everything below it is a log of what already happened;
           a pedido is a decision nobody else will make. */}

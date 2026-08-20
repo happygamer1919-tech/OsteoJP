@@ -1365,5 +1365,16 @@
   "requests.error.doubleBooked": "This therapist already has a confirmed appointment at this time. Call the patient and offer another time.",
   "requests.error.generic": "The request could not be confirmed. Try again.",
   "review.unknownKeysTitle": "Unrecognised fields",
-  "review.unknownKeysBody": "The partner sent data this form has nowhere to show. Nothing was lost: it is kept in the original record. Check it before finalising."
+  "review.unknownKeysBody": "The partner sent data this form has nowhere to show. Nothing was lost: it is kept in the original record. Check it before finalising.",
+  "consultations.stuck.title": "Recordings that were not processed",
+  "consultations.stuck.subtitle": "These consultations were recorded but never reached the transcription system. They are no longer being retried and the recording has been deleted. There is no record: the notes must be written by hand, while the therapist still remembers the consultation.",
+  "consultations.stuck.empty": "No recordings left to recover.",
+  "consultations.stuck.emptyHint": "This means nothing has been given up on. It does not confirm that recording delivery is working.",
+  "consultations.stuck.unknownPatient": "Patient not identified",
+  "consultations.stuck.unknownClinician": "Therapist not identified",
+  "consultations.stuck.recordedBy": "Recorded by",
+  "consultations.stuck.attempts": "Delivery attempts",
+  "consultations.stuck.lastAttempt": "Last attempt",
+  "consultations.stuck.lastError": "Technical reason",
+  "consultations.stuck.noError": "No reason recorded"
 }

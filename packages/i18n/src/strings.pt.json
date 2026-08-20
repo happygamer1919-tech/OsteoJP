@@ -1365,5 +1365,16 @@
   "requests.error.doubleBooked": "Este terapeuta já tem uma marcação confirmada neste horário. Ligue ao paciente e proponha outro horário.",
   "requests.error.generic": "Não foi possível confirmar o pedido. Tente novamente.",
   "review.unknownKeysTitle": "Campos não reconhecidos",
-  "review.unknownKeysBody": "O parceiro enviou dados que esta ficha não tem onde mostrar. Nada foi perdido: estão guardados no registo original. Verifique-os antes de finalizar."
+  "review.unknownKeysBody": "O parceiro enviou dados que esta ficha não tem onde mostrar. Nada foi perdido: estão guardados no registo original. Verifique-os antes de finalizar.",
+  "consultations.stuck.title": "Gravações que não foram processadas",
+  "consultations.stuck.subtitle": "Estas consultas foram gravadas mas nunca chegaram ao sistema de transcrição. Já não são tentadas de novo e a gravação foi apagada. Não existe ficha: as notas têm de ser escritas à mão, enquanto o terapeuta ainda se lembra da consulta.",
+  "consultations.stuck.empty": "Nenhuma gravação por recuperar.",
+  "consultations.stuck.emptyHint": "Isto significa que nada foi dado como perdido. Não confirma que o envio das gravações está a funcionar.",
+  "consultations.stuck.unknownPatient": "Paciente não identificado",
+  "consultations.stuck.unknownClinician": "Terapeuta não identificado",
+  "consultations.stuck.recordedBy": "Gravada por",
+  "consultations.stuck.attempts": "Tentativas de envio",
+  "consultations.stuck.lastAttempt": "Última tentativa",
+  "consultations.stuck.lastError": "Motivo técnico",
+  "consultations.stuck.noError": "Sem motivo registado"
 }
