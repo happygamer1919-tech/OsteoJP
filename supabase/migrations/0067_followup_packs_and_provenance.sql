@@ -1,3 +1,7 @@
+-- AUTO-GENERATED — DO NOT EDIT.
+-- Mirror of packages/db/migrations/0067_followup_packs_and_provenance.sql for Supabase branching.
+-- Edit the drizzle source, then run: node scripts/sync-supabase-migrations.mjs
+
 /* ------------------------------------------------------------------ */
 /* 0067 - FOUR CHANGES THE 2026-08-20 BATCH NEEDS, IN ONE MIGRATION.   */
 /*                                                                    */
