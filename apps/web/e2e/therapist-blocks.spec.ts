@@ -18,7 +18,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { openNewAppointment, fillAppointment, fillTime } from "./helpers";
-import { LOCATION, LOCATION_B, THERAPIST_NAME, futureDate, RUN_DAY_BASE, PATIENTS } from "./fixtures";
+import { LOCATION_B, THERAPIST_NAME, futureDate, RUN_DAY_BASE, PATIENTS } from "./fixtures";
 
 const SAVE = "Guardar";
 
@@ -119,6 +119,38 @@ async function setWorkingHours(page: Page, weekday: number, locationName: string
   await fillTime(row.locator("label").filter({ hasText: "Início" }), "09:00");
   await fillTime(row.locator("label").filter({ hasText: "Fim" }), "13:00");
   await row.locator(`select[name="d${weekday}_location"]`).selectOption({ label: locationName });
+  await modal.getByRole("button", { name: SAVE }).click();
+  await settleAfterWrite(page);
+  await expect(page.getByText("Horário guardado")).toBeVisible({ timeout: 8_000 });
+}
+
+/**
+ * Turn the weekday OFF again, which is the therapist's ACTUAL seeded state.
+ *
+ * THE OLD CLEANUP REPOINTED THE HOURS AND DID NOT REMOVE THEM. It set the
+ * location back to LOCATION and left 09:00-13:00 in place on this weekday — so
+ * after this test the E2E therapist HAD working hours, where the seed gives them
+ * NONE (`ensureAvailability` is called for `therapistLocOne` and
+ * `therapistLocMulti`, never for `e2e-therapist@osteojp.test`).
+ *
+ * THAT WAS HARMLESS WHILE AVAILABILITY WAS ADVISORY and stopped being harmless
+ * with RB-03. Availability is now ENFORCED at write time, so a leftover window
+ * on one weekday means every OTHER weekday is refused for that therapist — and
+ * `therapist-self-lock`, which runs in this same shard and books an arbitrary
+ * future date, started failing on a booking that had been fine for months.
+ *
+ * The comment below already described this file as mutating shared fixture
+ * state and already named self-lock as the spec it breaks. The restore it added
+ * was partial; this makes it complete.
+ */
+async function clearWorkingHours(page: Page, weekday: number) {
+  await page.goto("/admin/staff");
+  const modal = await openManageHours(page);
+  const row = modal.locator("fieldset").filter({
+    has: page.locator(`select[name="d${weekday}_location"]`),
+  });
+  const worksToggle = row.locator(`input[name="d${weekday}_on"]`);
+  if (await worksToggle.isChecked()) await worksToggle.uncheck();
   await modal.getByRole("button", { name: SAVE }).click();
   await settleAfterWrite(page);
   await expect(page.getByText("Horário guardado")).toBeVisible({ timeout: 8_000 });
@@ -330,6 +362,17 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   // while passing in isolation on BOTH clean main and this branch — the exact
   // signature of an ordering dependency rather than a broken test.
   //
-  // The blocks above are already cleared; the hours were not. Restore them.
-  await setWorkingHours(page, weekday, LOCATION.name);
+  // The blocks above are already cleared; the hours were not.
+  //
+  // RESTORED TO OFF, NOT REPOINTED, AND THE DIFFERENCE NOW MATTERS. The previous
+  // version set the location back to LOCATION and LEFT the 09:00-13:00 window in
+  // place — which is not the seeded state: the seed gives this therapist NO
+  // availability at all. That was invisible while availability was advisory.
+  //
+  // RB-03 made it enforced, and a leftover window on ONE weekday means every
+  // OTHER weekday is now REFUSED for this therapist. `therapist-self-lock` runs
+  // in this shard, books an arbitrary future date, and started failing on a
+  // booking that had been correct for months. Turning the day off restores the
+  // therapist to exactly what the seed produced.
+  await clearWorkingHours(page, weekday);
 });

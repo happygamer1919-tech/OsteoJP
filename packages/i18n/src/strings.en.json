@@ -1379,5 +1379,9 @@
   "consultations.stuck.noError": "No reason recorded",
   "agenda.lastUpdated": "Updated at",
   "agenda.refresh": "Refresh",
-  "agenda.refreshing": "Refreshing…"
+  "agenda.refreshing": "Refreshing…",
+  "appointment.outsideAvailability": "Outside the therapist working hours on that day.",
+  "appointment.outsideAvailabilityWindows": "Hours that day:",
+  "appointment.outsideAvailabilityNoWindows": "This therapist has no hours set for that weekday.",
+  "appointment.outsideAvailabilityHint": "To book outside these hours, change the therapist availability in Horários first."
 }

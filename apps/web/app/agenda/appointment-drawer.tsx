@@ -558,7 +558,12 @@ export function AppointmentDrawer({
   const noTherapistsAtLocation =
     userChangedLocation.current && !!form.locationId && therapistOptions.length === 0;
 
-  function handleResult(r: { ok: boolean; error?: string; conflicts?: ConflictInfo[] }): boolean {
+  function handleResult(r: {
+    ok: boolean;
+    error?: string;
+    conflicts?: ConflictInfo[];
+    availabilityWindows?: { startTime: string; endTime: string }[];
+  }): boolean {
     if (r.ok) return true;
     if (r.error === "conflict") setConflicts(r.conflicts ?? []);
     else if (r.error === "forbidden") setError(s["errors.forbidden"]);
@@ -572,6 +577,31 @@ export function AppointmentDrawer({
     // override may not reach. The owner is demonstrating this build to the
     // clinic team; a raw database error here would be worse than the bug.
     else if (r.error === "double_booked") setError(s["appointment.doubleBooked"]);
+    // RB-03. A plain message and NOT setConflicts, for the same reason as the
+    // double-booking above: that path offers "Guardar mesmo assim", and this is
+    // a refusal the override may not reach. It would also render "conflicts
+    // with:" followed by nothing, because there is no conflicting appointment -
+    // the candidate window IS the problem.
+    //
+    // THE MESSAGE NAMES THE WINDOW, which is the whole point of the refusal.
+    // "Fora do horário" on its own sends reception to another screen to find
+    // out what the horário IS; naming it means the next attempt is informed.
+    // Split shift is why this joins a LIST rather than printing one pair: a
+    // therapist-day can carry two periods (W13-A) and a message naming only the
+    // first would be confidently wrong about the afternoon.
+    //
+    // NO WINDOWS IS A DIFFERENT SENTENCE, not a missing value: the therapist has
+    // hours at this location but none that weekday.
+    else if (r.error === "outside_availability") {
+      const w = r.availabilityWindows ?? [];
+      setError(
+        w.length === 0
+          ? `${s["appointment.outsideAvailability"]} ${s["appointment.outsideAvailabilityNoWindows"]} ${s["appointment.outsideAvailabilityHint"]}`
+          : `${s["appointment.outsideAvailability"]} ${s["appointment.outsideAvailabilityWindows"]} ` +
+            `${w.map((x) => `${x.startTime}-${x.endTime}`).join(", ")}. ` +
+            `${s["appointment.outsideAvailabilityHint"]}`,
+      );
+    }
     // STAFF-02. The form now offers only assigned locations, so reaching this is
     // either a stale tab or a request that did not come from the form - and in
     // both cases the honest message names the location, not a permission.

@@ -1379,5 +1379,9 @@
   "consultations.stuck.noError": "Sem motivo registado",
   "agenda.lastUpdated": "Atualizado às",
   "agenda.refresh": "Atualizar",
-  "agenda.refreshing": "A atualizar…"
+  "agenda.refreshing": "A atualizar…",
+  "appointment.outsideAvailability": "Fora do horário do terapeuta nesse dia.",
+  "appointment.outsideAvailabilityWindows": "Horário nesse dia:",
+  "appointment.outsideAvailabilityNoWindows": "Este terapeuta não tem horário definido nesse dia de semana.",
+  "appointment.outsideAvailabilityHint": "Para marcar fora deste horário, altere primeiro a disponibilidade do terapeuta em Horários."
 }

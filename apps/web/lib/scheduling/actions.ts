@@ -27,6 +27,7 @@ import { writeAppointmentStatusChangedEvent } from "./analytics";
 import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
 import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conflict";
+import { checkAvailability } from "./availability-enforcement";
 import { isLegalEstadoTransition } from "./estado-transitions";
 import { bookingLocationScope, isLocationBookable } from "@/lib/auth/viewer-locations";
 import {
@@ -538,6 +539,38 @@ export async function createAppointment(
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
       async (tx) => {
+        // RB-03 — AVAILABILITY IS ENFORCED, AND IT IS CHECKED BEFORE THE
+        // `allowConflict` GATE ON PURPOSE.
+        //
+        // PL-11 made availability advisory: `findScheduleConflicts` computed it
+        // correctly and `blockingConflicts()` threw the verdict away one line
+        // above the refusal. That is how a manual entry booked 17:00 for a
+        // therapist whose day ends at 13:00.
+        //
+        // OUTSIDE the `if (!input.allowConflict)` block, because "Guardar mesmo
+        // assim" must not reach it. A therapist who genuinely works late is
+        // expressed by EXTENDING THEIR DISPONIBILIDADE - the data being
+        // enforced - not by pressing past the check.
+        //
+        // EVERY occurrence is checked, not just the first: a recurring series
+        // whose second week falls outside the hours is the same defect with a
+        // later date on it.
+        for (const w of occ) {
+          const av = await checkAvailability(tx, {
+            practitionerId: input.practitionerId,
+            locationId: input.locationId,
+            startsAt: w.startsAt,
+            endsAt: w.endsAt,
+          });
+          if (!av.ok) {
+            return {
+              ok: false,
+              error: "outside_availability",
+              availabilityWindows: av.windows,
+            };
+          }
+        }
+
         if (!input.allowConflict) {
           const conflicts = await collectConflicts(tx, occ, {
             practitionerId: input.practitionerId,
@@ -1247,6 +1280,25 @@ export async function rescheduleAppointment(
                 };
               });
 
+        // RB-03 — the reschedule half. Same rule, same reason, same position
+        // relative to `allowConflict`: a time moved into a therapist's evening
+        // is the reported defect with an extra step in front of it.
+        for (const t of targets) {
+          const av = await checkAvailability(tx, {
+            practitionerId: input.practitionerId,
+            locationId: input.locationId,
+            startsAt: t.startsAt,
+            endsAt: t.endsAt,
+          });
+          if (!av.ok) {
+            return {
+              ok: false,
+              error: "outside_availability",
+              availabilityWindows: av.windows,
+            };
+          }
+        }
+
         if (!input.allowConflict) {
           const conflicts: ConflictInfo[] = [];
           for (const t of targets) {
@@ -1258,7 +1310,9 @@ export async function rescheduleAppointment(
               endsAt: t.endsAt,
               excludeIds: ids,
             });
-            // PL-11: availability is advisory — never blocks a reschedule.
+            // PL-11: availability is advisory in the CONFLICT LIST, still. The
+            // enforced check above already refused an outside-hours window, so
+            // this filter now only prevents an advisory entry crowding the cap.
             conflicts.push(...blockingConflicts(c));
             if (conflicts.length >= CONFLICT_CAP) break;
           }
