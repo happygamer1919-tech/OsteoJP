@@ -496,6 +496,24 @@ function AppointmentName({ appt, onClick }: { appt: AgendaAppointment; onClick: 
       <button
         type="button"
         onClick={onClick}
+        // LE-pg8-e2e-needs-run-scoped-patient. THE ROW'S OWN IDENTITY, IN THE DOM.
+        //
+        // Every other handle on this card describes its SHAPE, not WHICH ROW IT
+        // IS: `agenda-card-patient` is on every card, the patient name is shared
+        // vocabulary on a seeded database, and the time is positional rather than
+        // rendered inside the card at all. So a cross-surface test could assert
+        // "a card for Maria Silva at 09:00 is on this day" and be satisfied by
+        // SOMEBODY ELSE'S ROW - which is exactly what happened twice on PG8, and
+        // both times it passed.
+        //
+        // The appointment id is the only value that cannot be produced by a
+        // neighbour. It is not secret (this card already renders the patient's
+        // name to the same viewer, and RLS decides what reaches the page at all),
+        // and it is inert - nothing reads it back, so no behaviour depends on it.
+        //
+        // ACC-vacuous-guard-sweep criterion F, in one attribute: a guard proves a
+        // test RAN; only run-scoped identity proves it tested the right SUBJECT.
+        data-appointment-id={appt.id}
         className={`flex w-full items-start gap-1 rounded-v2 px-2 py-0.5 text-left text-xs font-normal leading-tight ${tColor.text} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1`}
       >
         <EstadoMarker estado={estado} className="mt-0.5" />
