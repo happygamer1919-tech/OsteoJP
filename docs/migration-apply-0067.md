@@ -170,8 +170,9 @@ select tablename, policyname, cmd from pg_policies
   Main moved and the branch was rebased again, so the commit in front of you is not
   the commit that will merge. **The applied sha and the merged sha must be the same
   commit**; a mismatch means the migration you are applying is not the migration the
-  PR will land. Stop and ask for a re-pin. This is a pre-apply check, not a
-  post-apply one: it is the first line of section 4 for that reason.
+  PR will land. Stop and ask for a re-pin. UNLIKE EVERY OTHER STOP CONDITION HERE
+  THIS ONE IS CHECKED BEFORE THE APPLY: section 4 prints the head two lines before
+  `db:migrate` runs, so a mismatch stops the run having changed nothing.
 
 ## 7. Rollback
 
