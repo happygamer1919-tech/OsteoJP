@@ -2,6 +2,7 @@
 
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { supabaseAuthCookieName } from '@/lib/supabase/env'
 
 import { clearDeviceToken, readDeviceToken } from '@/lib/auth/device'
 import { PORTAL_DEVICE_COOKIE } from '@/lib/auth/cookie-names'
@@ -24,14 +25,22 @@ type Patch = {
 // contention that can occur when multiple server actions run in parallel.
 async function getAccessToken(): Promise<string | null> {
   const cookieStore = await cookies()
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
-  let storageKey: string
-  try {
-    const url = new URL(supabaseUrl)
-    storageKey = `sb-${url.hostname.split('.')[0]}-auth-token`
-  } catch {
-    return null
-  }
+  // LE-env-sweep-scope. THIS READ USED TO BE THE SILENT ONE:
+  // `process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''` fed to `new URL()` inside a
+  // bare `catch { return null }`. A MISSING OR MALFORMED VARIABLE therefore
+  // produced the identical null as A PATIENT WHO IS NOT SIGNED IN, and
+  // apiAuthHeader below reads null as "no session" and sends the request with
+  // NO Authorization header. The API answers 401, the account screen says the
+  // edit failed, and nothing named the variable. That is PORTAL-REHYDRATE 1.3's
+  // first instance exactly.
+  //
+  // The null return is UNCHANGED and deliberately so - see lib/api/base.ts,
+  // which keeps its callers' shape and makes the degradation loud instead. What
+  // changed is that the two DEPLOYMENT causes now log, naming the variable,
+  // while the two ordinary causes below (no cookie, unparseable cookie) stay
+  // silent. Logging those would bury the ones somebody can act on.
+  const storageKey = supabaseAuthCookieName()
+  if (!storageKey) return null
 
   const allCookies = cookieStore.getAll()
   const sessionCookie =

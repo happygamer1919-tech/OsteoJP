@@ -1,12 +1,16 @@
 import { createServerClient as _createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
+import { supabaseUrl, supabaseAnonKey } from './env'
+
 export async function createServerClient() {
   const cookieStore = await cookies()
 
   return _createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    // LE-env-sweep-scope: see the note in client.ts. One owner, named log,
+    // the library throw unchanged.
+    supabaseUrl(),
+    supabaseAnonKey(),
     {
       cookies: {
         getAll() {
