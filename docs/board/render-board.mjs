@@ -50,7 +50,33 @@ const config = deriveConfig(board);
 // unchanged and every existing invocation keeps working.
 const outPath = resolve(process.argv[3] ?? `${HERE}/${config.outputPath}`);
 
+/**
+ * EXTERNAL AGENDA — the cards the owner tracks somewhere else are not rendered.
+ *
+ * Legal review and counsel, credential rotation, force-rotation of staff
+ * passwords and security-breach response left this board by owner ruling. THE
+ * CARDS STAY IN THE JSON — the ledger is the point, and a deleted card takes its
+ * history with it — but a card on a rendered engineering board reads as work
+ * engineering owes, and duplicate tracking is what the ruling removes. They are
+ * listed instead, one line of status each, in docs/board/EXTERNAL-AGENDA.md.
+ *
+ * EVERY COUNT ON THE PAGE FOLLOWS FROM `visible`, not from `board`. A card
+ * excluded from the lanes but still inside the totals would be the worst of both
+ * — invisible and yet counted — and "39 open" against a page showing 34 is the
+ * kind of discrepancy that costs an hour to explain.
+ */
+const visible = {
+  ...board,
+  cards: (board.cards ?? []).filter((c) => c.external_agenda !== true),
+};
+const hidden = (board.cards?.length ?? 0) - visible.cards.length;
+
 // --- guard: refuse to render a lie (mirrors validate-board.mjs's core rule) ---
+// DELIBERATELY OVER THE FULL BOARD, NOT OVER `visible`. A shipped card with no
+// evidence is a lie in the committed file whether or not this render shows it,
+// and excluding it from the guard would mean flagging a card could SILENCE a
+// check. The exclusion decides what is DISPLAYED; it must not decide what is
+// VERIFIED.
 const bad = [];
 for (const c of board.cards ?? []) {
   if (c.status === "shipped" && !c.evidence) bad.push(`card ${c.id} shipped w/o evidence`);
@@ -83,15 +109,23 @@ const appJs = readFileSync(`${HERE}/board-app.js`, "utf8");
  * so nobody has to remember to bump a version by hand (and so it cannot be
  * forgotten, which is how this bug happened in the first place).
  */
-const fingerprint = createHash("sha256").update(JSON.stringify(board)).digest("hex").slice(0, 16);
+/**
+ * HASHED OVER `visible`, NOT OVER THE WHOLE BOARD, and the distinction is the
+ * fingerprint's own contract. It answers "did the board data change" for a
+ * browser holding an older snapshot. Hashing a card the viewer cannot see would
+ * fire the staleness notice at somebody for whom nothing changed — a
+ * notification about invisible data, which is noise that teaches people to
+ * ignore the notice.
+ */
+const fingerprint = createHash("sha256").update(JSON.stringify(visible)).digest("hex").slice(0, 16);
 // #board-data carries EXACTLY {...board, fingerprint} and nothing else. The
 // config goes in its own island: merging it here would change these bytes, and
 // would put non-board keys into SEED, which diffVsSeed and exportJSON would then
 // round-trip straight into the committed JSON.
-const dataIsland = JSON.stringify({ ...board, fingerprint }).replace(/</g, "\\u003c");
+const dataIsland = JSON.stringify({ ...visible, fingerprint }).replace(/</g, "\\u003c");
 const configIsland = JSON.stringify(config).replace(/</g, "\\u003c");
 
-const lg = board.launch_gate ?? { denominator: 9, conditions: [] };
+const lg = visible.launch_gate ?? { denominator: 9, conditions: [] };
 const passed = (lg.conditions ?? []).filter((g) => g.state === "pass").length;
 const denom = lg.denominator ?? 9;
 
@@ -119,9 +153,16 @@ ${appJs}
 
 writeFileSync(outPath, html);
 const lanes = {};
-for (const c of board.cards ?? []) lanes[c.lane] = (lanes[c.lane] ?? 0) + 1;
+for (const c of visible.cards) lanes[c.lane] = (lanes[c.lane] ?? 0) + 1;
 console.log(
-  `rendered ${board.cards?.length ?? 0} cards + ${passed}/${denom} gates (portal) -> ${outPath}`,
+  `rendered ${visible.cards.length} cards + ${passed}/${denom} gates (portal) -> ${outPath}`,
 );
+// REPORTED, NEVER SILENT. A render that quietly dropped cards would be
+// indistinguishable from a render of a board that never had them.
+if (hidden > 0) {
+  console.log(
+    `  external agenda: ${hidden} card(s) NOT rendered and NOT counted - see docs/board/EXTERNAL-AGENDA.md`,
+  );
+}
 console.log(`  fingerprint: ${fingerprint}`);
 console.log("  lanes: " + Object.entries(lanes).map(([k, v]) => `${k} ${v}`).join(", "));
