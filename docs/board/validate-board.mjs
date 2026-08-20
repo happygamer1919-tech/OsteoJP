@@ -108,6 +108,38 @@ const LOOP_SPEC_REQUIRED_AT = ["in_flight", "shipped"];
 // mechanical can tell them apart, because loop-ness is a fact about intent.
 // What IS closed is the pair of half-states: a spec without the marker is
 // rejected, and the marker without a spec cannot be started.
+/**
+ * DEFERRED. An owner ruling that a card is not to be built YET, carried as an
+ * EXPLICIT FIELD rather than as a sentence in `notes`.
+ *
+ * WHY A FIELD AND NOT PROSE, which is settled doctrine here rather than a
+ * preference: reconcile-board.mjs's header already states it for
+ * `open_on_purpose` - "a prose marker stops matching the day somebody rewords a
+ * sentence, and it fails OPEN - the check goes quiet and reports success". A
+ * deferral that lives only in notes is invisible to the out-of-scope predicate
+ * in PORTAL-REHYDRATE.md 4.11, so a later sweep would read the card as available
+ * and build the thing the owner deferred. That is PORTAL-REHYDRATE 1.3 exactly:
+ * an unhandled case wearing the face of a harmless known one.
+ *
+ * Non-empty string or absent. A bare `true` would defer a card without saying
+ * who ruled it or when, and the why is the only part a later reader can act on -
+ * the same argument `acknowledgement()` makes for `open_on_purpose`.
+ *
+ * A SHIPPED CARD CANNOT BE DEFERRED. Deferring built work is a contradiction,
+ * and it is the shape a stale field would take if somebody shipped a card and
+ * left the marker behind.
+ */
+function checkDeferred(id, card) {
+  const d = card.deferred;
+  if (d === undefined || d === null) return;
+  if (typeof d !== "string" || d.trim() === "") {
+    fail(id, `deferred must be a non-empty string saying who ruled it and when, or be absent`);
+    return;
+  }
+  if (card.status === "shipped")
+    fail(id, `status=shipped and deferred is set - built work cannot be deferred; drop the marker`);
+}
+
 function checkLoopSpec(id, card) {
   const kind = card.card_kind ?? null;
   if (kind !== null && !CARD_KIND.includes(kind))
@@ -329,6 +361,9 @@ for (const card of cards) {
   // which is what keeps the platform board - and every existing card on both
   // boards - byte-for-byte as valid as it was.
   checkLoopSpec(id, card);
+
+  // ---- an owner deferral is a FIELD, so the sweep predicate can see it ----
+  checkDeferred(id, card);
 }
 
 // ---- report ------------------------------------------------------------------

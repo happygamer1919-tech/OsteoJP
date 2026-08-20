@@ -1108,3 +1108,34 @@ already records why `created_by IS NULL` cannot serve:
 **Why it was not built here:** `PORTAL-REHYDRATE.md` §1.1 - neither lane authors a migration this
 phase, and a lane that finds it needs one stops before writing anything and tells the owner. That is
 what this entry is.
+
+### RULED 2026-08-20 BY THE OWNER: option A. The booking is NOT refused.
+
+**The recommended default is the ruling.** A portal booking that cannot be
+recorded as a pedido is still accepted, and the patient is not shown an error
+caused by the clinic's own notification write. **The provenance column is the
+agreed fix**, and it fixes both halves: reception can find the request, and
+`is_unconfirmed_pedido` stops depending on the notification row, so the pedido
+stops blocking its slot.
+
+**How it gets built, so nobody improvises it.** The column is a MIGRATION. It
+goes through the standard path in full: authored on a card, PR opened, **applied
+by Ivan from the `osteojp-prod-apply` worktree before the PR merges** (standing
+rule 7), with the journal output pasted back. `gate` on that card is therefore
+`owner_merge`, not `green_self_merge`.
+
+**The slot: `0067` IS FREE TODAY, and that is worth stating because the ruling
+names it as the blocker.** Derived from `packages/db/migrations/meta/_journal.json`
+on 2026-08-20: 66 entries, idx 0-65, highest tag `0066_users_must_set_password`.
+Nothing occupies `0067`. **So the card is not waiting for a slot to fall vacant.
+It is waiting for a DISPATCH that authorises authoring a migration**, because
+`PORTAL-REHYDRATE.md` §1.1 forbids either lane authoring one in this phase and
+the 2026-08-20 run was told explicitly to author none. Take the number at
+AUTHORING time from whatever is free then, never from this paragraph - rule 7 is
+explicit that a reserved number in a deferred card's notes is how the same number
+got double-booked twice.
+
+**What shipped in the meantime, and what did not.** #971 made the loss loud: a
+lost pedido now writes an error line naming the appointment and saying what it
+costs, so it is findable and repairable by hand. **The slot is still blocked and
+the loss is still not prevented.** That does not change until the column lands.
