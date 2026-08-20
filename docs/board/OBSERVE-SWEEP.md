@@ -9,11 +9,22 @@ They were unrunnable until the migration landed and they are the only two gates
 your eyes can move tonight. Blocks B and C were rewritten for it; **read the
 header at "BLOCKS B AND C" before starting either.**
 
-**BLOCK A IS DONE AND `PG1` PASSED ON 2026-08-12.** All four rows observed by the
-owner on a deployed build: A1, A2 (both routes), A3 (pass on the security
-property, with the divergence recorded in that row) and **A4**. Block A is kept
-below as the record and as the re-run procedure; **do not re-run it** unless
-something regresses.
+**BLOCK A IS DONE. `PG1` PASSED ON THE 2026-08-12 SITTING PLUS THE 2026-08-19
+A4 OBSERVATION.** All four rows observed by the owner on a deployed build: A1,
+A2 (both routes), A3 (pass on the security property, with the divergence
+recorded in that row) **on 2026-08-12**, and **A4 on 2026-08-19**. Block A is
+kept below as the record and as the re-run procedure; **do not re-run it**
+unless something regresses.
+
+> **CORRECTED 2026-08-20, and the correction is the reason this paragraph now
+> carries two dates.** This header previously read "BLOCK A IS DONE AND `PG1`
+> PASSED ON 2026-08-12", naming A4 among the rows observed that day. **A4 was
+> not run on 2026-08-12** — the owner ran A3's second half believing it was A4 —
+> and the A4 `Observed:` box below stayed **blank for seven days** while `PG1`'s
+> evidence field claimed the row had passed. The blank box was right and the gate
+> was wrong. This file's own instruction at the top, *"a blank is not a pass"*,
+> was the check that would have caught it, and nothing read it. See
+> `LEARNINGS.md` entry 6.
 
 **Grouped by account, not by card**, so you log in once per account.
 **Three sessions now that Block A is closed, in this order:** the test patient on
@@ -195,7 +206,7 @@ budget before starting.
 | **Expect** | the **phone screen** — "Entrar com o seu telemóvel" |
 | **STOP if** | you land straight on the dashboard |
 
-Observed: `________________________________`
+Observed: `PASS — phone screen, 2026-08-19, owner. Signed out via Conta / "Terminar sessão", confirmed the dialog, closed the tab, reopened the portal, landed on "Entrar com o seu telemóvel" and not the dashboard.`
 
 > Landing on the dashboard means sign-out cleared the cookie but not the device
 > row — which is exactly what `LE-trusted-device-revoke` (#843) built the endpoint
@@ -800,7 +811,7 @@ These need a decision or a confirmation, not a click. Answer them in one line.
 |---|---|---|
 | F1 | `LE-env-sweep-scope` | #843 is merged and on main. Anything left, or close it? `____________` |
 | F2 | `LE-portal-supabase-residue` | #841 is merged and on main. Close it? `____________` |
-| F3 | `LE-trusted-device-revoke` | #843 is merged; **A4 above is its observation**. Close it? `____________` |
+| F3 | `LE-trusted-device-revoke` | #843 is merged; **A4 above is its observation**. Close it? `CLOSED on that observation — A4 ran clean 2026-08-19, card shipped 2026-08-20.` |
 | F4 | `LE-e2e-nif-edit-404` | Shipped as *capture, not fix*. It closes when the flake recurs already diagnosed. Leave open? `____________` |
 | F5 | `LE-prod-scripts-cleanup` | Which one-off prod scripts are staged outside the repo? `____________` |
 | F6 | `ACC-13-results-uncommitted` | Item 25 is **RULED, not open** — see the note under BEFORE YOU START. Record the disarm time **at the end of this sweep**: `____________` |

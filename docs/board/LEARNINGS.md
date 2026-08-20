@@ -214,3 +214,52 @@ changed.** `assert n == 2` before running it. A zero-change control proves
 nothing and must fail loudly rather than pass quietly. The same rule covers every
 mechanical edit made in order to test something: if the edit is the premise of
 the experiment, the edit needs its own assertion.
+
+---
+
+## 6. A launch gate carried a false observation claim for seven days
+
+**2026-08-20, about 2026-08-12.** `PG1` — the AUTH launch gate — passed on four
+owner observations of a deployed build. **One of the four had not happened.** Its
+evidence field read `ITEM 15 / A4 PASS - the trusted device does not survive
+sign-out`, dated 2026-08-12. On that day the owner ran **A3's second half**
+believing it was A4. The genuine A4 observation happened on **2026-08-19**: sign
+out via Conta / "Terminar sessão", confirm, close the tab, reopen, land on the
+phone screen. Seven days separate the claim from the fact.
+
+**THE CONTRADICTION WAS ALREADY WRITTEN DOWN, IN TWO PLACES, AND NOBODY READ
+EITHER.** This is the part worth keeping. The same gate's **own `notes` field**
+recorded the truth verbatim on the day — *"A4 NOT RUN. Ivan ran A3's second half
+believing it was A4. PG1 item 15 remains UNOBSERVED."* — sitting a few hundred
+bytes from the evidence field that said the opposite. And
+`docs/board/OBSERVE-SWEEP.md`, the observation document the gate cites by name,
+carried a **blank `Observed:` box** on row A4 for the whole seven days, in a file
+whose own instructions say *"a blank is not a pass"*.
+
+**WHY IT SURVIVED, and it is not because anyone was careless.** A gate's verdict
+is read off `state` and its justification off `evidence`. Both said pass. The
+`notes` field is where derivations accumulate, so it is read when a gate is being
+*re-derived*, not when it is being *believed* — and a passing gate does not get
+re-derived. The blank box was in a third file that nothing mechanical reads. Every
+one of the three surfaces was internally consistent; only the set of them was
+wrong, and no single reader ever held the set.
+
+**WHAT IT COST.** Nothing shipped on it, which is luck rather than design: `PG1`
+is one of nine launch conditions, and readiness was reported as 9/9 with one arm
+of one condition unobserved. The failure mode is the one this project keeps
+finding — a check that reports a verdict it did not earn — one level out from the
+code, in the instrument that says whether the code was ever looked at.
+
+**PREVENTION, two halves, and the second is the enforceable one.**
+
+**A gate's evidence must cite the observation document's FILLED line**, not the
+document, not the row label, and not the sitting. "Per `OBSERVE-SWEEP.md` A4" is
+not a citation; the text in A4's `Observed:` box is.
+
+**Any gate citing an observation whose `Observed:` slot is BLANK is treated as
+UNPROVEN, regardless of its verdict.** A blank slot outranks a `pass`. This is
+mechanically checkable and is carded as `RECON-observe-sweep-gate-crosscheck`
+(read-only feasibility first: the naive form — grep row labels out of evidence
+prose — produces false positives, because `PG8`'s evidence names hops `A1`,
+`A5`–`A9` from a latency table that has nothing to do with the sweep, and a rule
+that needs exemptions on the day it ships is a rule that does not work).
