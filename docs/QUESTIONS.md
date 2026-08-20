@@ -1066,3 +1066,45 @@ the acceptance session is blocked on.
 window needs a card at all, or whether the DECISIONS.md entry is the record. This is the third
 instance in a fortnight of work existing without a card, and `LE-board-pr-reconciliation` already
 cards the general failure.
+
+## Q-PEDIDO-EMIT-1 - when reception cannot be told about a pedido, does the patient's booking fail? (opened 2026-08-20, PURPLE)
+
+`LE-pedido-emit-best-effort`. A patient's portal booking writes the appointment, commits, and then
+emits a staff notification. **That emit is best-effort and cannot fail the booking**, which is a
+deliberate and correct position stated at all three call sites: a patient whose booking succeeded
+must not be told it failed because reception's notification could not be written.
+
+**What that costs, and it is more than a missing notification.** The `staff_notifications` row with
+`kind = 'appointment_request'` is the **only** provenance marker in the database that says "a patient
+asked for this". Migration 0059's `is_unconfirmed_pedido` joins on exactly that row. With no row, the
+appointment is indistinguishable from a staff booking: reception is never told to confirm it, **and
+it blocks its slot as though it had been confirmed**. The patient's request is lost and the slot is
+taken by nothing.
+
+**Two ways it happens, both re-derived from `main` on 2026-08-20.** The insert throws; or
+`resolveRecipients` returns an empty list - a tenant with no active reception user whose practitioner
+id does not resolve to a `users` row. The second path throws nothing at all and, until this PR,
+logged only at WARN.
+
+**Shipped in this PR, and it is the half that needs no ruling:** the loss is now loud. `delivered`
+carries a `reason` (`no_recipients` | `consumer_threw` | `stub`) so three different failures stop
+wearing one face, and `emitPatientChange` logs an ERROR naming the appointment id and, for a pedido,
+the consequence. **A lost pedido is now greppable and recoverable by hand. It is not yet prevented.**
+
+**What is actually open for the owner, and it is one question:** should a portal booking that cannot
+be recorded as a pedido be **refused to the patient**, so that no untracked appointment is ever
+created? Refusing means a patient occasionally sees "tente novamente" when the clinic's own
+notification write failed. Not refusing means a lost request and a blocked slot, silently, at a rate
+nobody has measured.
+
+**Recommended default: do NOT refuse. Fix it with a provenance column instead, when a migration slot
+is free.** A boolean or an enum on `appointments` recording that the row was created by a patient
+principal makes `is_unconfirmed_pedido` independent of the notification entirely, which fixes the
+blocking half AND makes the missing notification recoverable by query rather than by grep. The card
+already records why `created_by IS NULL` cannot serve:
+`packages/db/tests/appointments-created-by-provenance.test.ts` proves 7/7 against live Postgres that
+0049's WITH CHECK is a disjunction, so a staff principal may insert a null `created_by`.
+
+**Why it was not built here:** `PORTAL-REHYDRATE.md` §1.1 - neither lane authors a migration this
+phase, and a lane that finds it needs one stops before writing anything and tells the owner. That is
+what this entry is.

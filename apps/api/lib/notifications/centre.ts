@@ -123,7 +123,11 @@ export const persistingConsumer: PatientChangeConsumer = async (
         `kind=${e.kind} tenant=${e.tenantId} appointment=${e.appointmentId} ` +
         `practitioners=${e.audience.practitionerIds.join(",")}`,
     );
-    return { delivered: false };
+    // THE REASON IS REPORTED rather than left for the caller to infer from a
+    // bare false. LE-pedido-emit-best-effort: this branch writes nothing and
+    // throws nothing, so before the reason existed it was indistinguishable at
+    // the call site from a write that was attempted and failed.
+    return { delivered: false, reason: "no_recipients" };
   }
 
   await getDbAdmin()
