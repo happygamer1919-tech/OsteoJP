@@ -1259,3 +1259,24 @@ live string deleted. The true number is at least 163 and may be higher.
 silently** any more: the guard is in the required check, a 164th dead key is red,
 and the failure says which group it landed in. A string added ahead of its screen
 now has to arrive with the screen, or be declared dead with a reason.
+
+### RULED 2026-08-20 BY THE OWNER: the split recommendation, applied.
+
+**35 keys deleted from both locales** — the 33 `auth` strings and
+`errors.403_*`. **`errors.500_*` wired up**, and it closed a real gap rather than
+merely spending a key: `apps/portal/app/global-error.tsx` **did not exist**, so a
+crash in the root layout fell past every route boundary to Next's unstyled
+English default.
+
+**One departure, flagged rather than buried: `errors.offline_*` is kept and NOT
+wired.** `navigator.onLine` reports **true** on a router with no internet, so the
+obvious banner would tell a working patient they are offline — §1.3's shape, in
+the product rather than in an instrument. It also fails the other way: a phone
+that has lost signal often still reports `onLine` true for several seconds, so
+the banner would be absent exactly when it would help. An honest version
+distinguishes a **network** failure from an **HTTP** failure inside the portal's
+api client, which is its own piece of work. Carded as
+`LE-portal-offline-state-unwired`; the keys stay declared with that reason.
+
+**The ratchet is lowered 163 → 126, re-measured rather than subtracted.** The
+remaining 126 are left per the card, and cannot grow silently.
