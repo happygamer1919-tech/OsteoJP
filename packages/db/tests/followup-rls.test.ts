@@ -27,13 +27,18 @@ import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { asRole, claimsFor, connect, live } from "./rls-harness";
 
-type Ids = { tenant: string; role: string; user: string; patient: string };
+type Ids = { tenant: string; role: string; user: string; patient: string; location: string; service: string };
 
 const newIds = (): Ids => ({
   tenant: randomUUID(),
   role: randomUUID(),
   user: randomUUID(),
   patient: randomUUID(),
+  // appointments.location_id and .service_id are NOT NULL. Seeded because the
+  // is_unconfirmed_pedido arms below insert real appointments, and a fixture
+  // that cannot insert one proves nothing about the function reading it.
+  location: randomUUID(),
+  service: randomUUID(),
 });
 
 const A = newIds();
@@ -49,6 +54,10 @@ async function seed(sql: Sql, x: Ids, label: string): Promise<void> {
                     ${`f-${x.user}@example.pt`}, 'Seed Reception')`;
   await sql`insert into patients (id, tenant_id, full_name)
             values (${x.patient}, ${x.tenant}, 'Seed Patient')`;
+  await sql`insert into locations (id, tenant_id, name)
+            values (${x.location}, ${x.tenant}, 'Seed Clinic')`;
+  await sql`insert into services (id, tenant_id, name, duration_min, price_cents)
+            values (${x.service}, ${x.tenant}, 'Seed Service', 60, 5000)`;
   await sql`insert into patient_followup_postponements
               (tenant_id, patient_id, postponed_until, created_by)
             values (${x.tenant}, ${x.patient}, now() + interval '4 weeks', ${x.user})`;
@@ -71,6 +80,9 @@ describe.skipIf(!live)("patient_followup_* RLS + constraints (migration 0067)", 
     for (const x of [A, B]) {
       await sql`delete from patient_followup_contacts where tenant_id = ${x.tenant}`;
       await sql`delete from patient_followup_postponements where tenant_id = ${x.tenant}`;
+      await sql`delete from appointments where tenant_id = ${x.tenant}`;
+      await sql`delete from services where tenant_id = ${x.tenant}`;
+      await sql`delete from locations where tenant_id = ${x.tenant}`;
       await sql`delete from patients where tenant_id = ${x.tenant}`;
       await sql`delete from users where tenant_id = ${x.tenant}`;
       await sql`delete from roles where tenant_id = ${x.tenant}`;
@@ -187,7 +199,7 @@ describe.skipIf(!live)("patient_followup_* RLS + constraints (migration 0067)", 
     await sql`insert into appointments
                 (id, tenant_id, patient_id, practitioner_id, location_id, service_id,
                  starts_at, ends_at, status, origin)
-              values (${id}, ${A.tenant}, ${A.patient}, ${A.user}, null, null,
+              values (${id}, ${A.tenant}, ${A.patient}, ${A.user}, ${A.location}, ${A.service},
                       now() + interval '3 days', now() + interval '3 days 1 hour',
                       'scheduled', 'patient_portal')`;
 
@@ -202,7 +214,7 @@ describe.skipIf(!live)("patient_followup_* RLS + constraints (migration 0067)", 
     await sql`insert into appointments
                 (id, tenant_id, patient_id, practitioner_id, location_id, service_id,
                  starts_at, ends_at, status)
-              values (${staffId}, ${A.tenant}, ${A.patient}, ${A.user}, null, null,
+              values (${staffId}, ${A.tenant}, ${A.patient}, ${A.user}, ${A.location}, ${A.service},
                       now() + interval '4 days', now() + interval '4 days 1 hour',
                       'scheduled')`;
     const [staffRow] = await asRole(sql, "authenticated", claimsFor(A.tenant), (tx) =>
@@ -222,7 +234,7 @@ describe.skipIf(!live)("patient_followup_* RLS + constraints (migration 0067)", 
     await expect(
       sql`insert into appointments (tenant_id, patient_id, practitioner_id, location_id,
                                     service_id, starts_at, ends_at, status, origin)
-          values (${A.tenant}, ${A.patient}, ${A.user}, null, null,
+          values (${A.tenant}, ${A.patient}, ${A.user}, ${A.location}, ${A.service},
                   now(), now() + interval '1 hour', 'scheduled', 'telepatia')`,
     ).rejects.toThrow(/origin_check|not-null|violates/);
   });
