@@ -89,9 +89,38 @@ jobs:
             echo "code=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # CI-docs-only-required-checks-skip. THE SKIP SAYS SO, OUT LOUD.
+      #
+      # This job is a REQUIRED check, so it has to report a conclusion on every
+      # PR - which means a docs-only PR gets `pass` from a job that ran nothing.
+      # That is correct (a database suite cannot be affected by a markdown diff)
+      # and it READS WRONG: four green required checks look like four proofs,
+      # and on a docs-only PR it is one proof and three abstentions. Until this
+      # line the only tell was the DURATION - 6 seconds versus three minutes -
+      # which nobody reads and no board note can be relied on to carry.
+      #
+      # `::notice::` puts it in the run's annotations, where a reviewer or a
+      # session sees it without knowing to compare timings. The step summary
+      # puts it on the run page. Same shape openapi-drift.yml already uses on
+      # its own skip path; this brings the other two into line with it.
+      #
+      # A GENUINE `neutral` CONCLUSION WOULD BE BETTER AND IS NOT AVAILABLE
+      # HERE. GitHub Actions has no supported way for a normal job to finish
+      # neutral (exit 78 was removed), and reaching for a job-level `if:` skip
+      # instead would change how branch protection sees this context - the one
+      # experiment on this repo that can block every open PR at once if the
+      # answer is not what was assumed. Not attempted. Recorded on the card.
       - name: Skip — docs-only PR
         if: steps.changes.outputs.code == 'false'
-        run: echo "No code changes detected. DB tests not required for this PR."
+        run: |
+          echo "::notice title=DB tests DID NOT RUN::Docs-only PR. This required check reports green WITHOUT having run the RLS suites. It is an abstention, not a proof."
+          {
+            echo "### DB-gated tests: SKIPPED, not passed"
+            echo
+            echo "Every changed file is docs/markdown, so the Supabase stack was never booted"
+            echo "and no RLS suite ran. This check is green because it is REQUIRED and must"
+            echo "report, not because anything was verified."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up pnpm
         if: steps.changes.outputs.code == 'true'
