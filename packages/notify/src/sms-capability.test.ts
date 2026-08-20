@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isSmsCapablePT } from "./otp-sms-capability";
-import { normalizePhonePT } from "@/lib/notify/phone";
+import { isSmsCapablePT } from "./sms-capability";
 
 /**
  * SEC-otp-unauthenticated-sms-pump, direction (b).
@@ -53,23 +52,27 @@ describe("isSmsCapablePT", () => {
   });
 
   /**
-   * THE COMPOSITION THAT MATTERS. normalizePhonePT decides what a well-formed PT
-   * number IS; this decides whether we will send to one. The pair has to agree
-   * on the 9x space and disagree on exactly the 2x space, or one of them is
-   * wrong.
+   * THE COMPOSITION THAT MATTERS, ASSERTED ON THE NORMALISER'S OUTPUTS RATHER
+   * THAN BY CALLING IT.
+   *
+   * `normalizePhonePT` decides what a well-formed PT number IS; this decides
+   * whether we will send to one. The pair has to agree on the 9x space and
+   * disagree on exactly the 2x space, or one of them is wrong.
+   *
+   * IT NO LONGER IMPORTS THE NORMALISER, and the reason is the move that brought
+   * this file here: `normalizePhonePT` lives in the two apps, behind an app
+   * alias this package cannot resolve, and reaching across a workspace boundary
+   * to test a pure predicate would put a build dependency in a package that has
+   * none. The two literals below are `normalizePhonePT`'s ACTUAL outputs for
+   * those inputs, pinned by `apps/web/lib/reminders/phone-parity.test.ts` and by
+   * `apps/api/lib/auth/phone-e164-parity.db.test.ts` - both of which assert the
+   * mobile AND the geographic case explicitly.
    */
-  it("agrees with normalizePhonePT everywhere except the 2 prefix", () => {
-    const mobile = "912345678";
-    const landline = "210000000";
-
-    // Both are well-formed to the normaliser. That is the defect being closed:
+  it("accepts what the normaliser emits for a mobile and refuses it for a landline", () => {
+    // Both are well-formed to the normaliser - THAT is the defect being closed:
     // the normaliser has always accepted the landline.
-    expect(normalizePhonePT(mobile)).toBe("+351912345678");
-    expect(normalizePhonePT(landline)).toBe("+351210000000");
-
-    // And only one of them is something we will pay to text.
-    expect(isSmsCapablePT(normalizePhonePT(mobile)!)).toBe(true);
-    expect(isSmsCapablePT(normalizePhonePT(landline)!)).toBe(false);
+    expect(isSmsCapablePT("+351912345678")).toBe(true);
+    expect(isSmsCapablePT("+351210000000")).toBe(false);
   });
 
   it("halves the accepted input space, which is the blast-radius claim", () => {

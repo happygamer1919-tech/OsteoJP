@@ -39,3 +39,11 @@ export type {
   SuppressionReason,
   Transport,
 } from "./src/types";
+
+/**
+ * Whether an E.164 PT number can receive an SMS. Moved out of `apps/api` on
+ * 2026-08-20 when the reminder path in `apps/web` needed it too: two separate
+ * Next builds cannot import each other, so the choice was a shared package or a
+ * third copy of a phone predicate this repo already duplicates once.
+ */
+export { isSmsCapablePT } from "./src/sms-capability";

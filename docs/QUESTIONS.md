@@ -1194,6 +1194,41 @@ a one-sided change. It takes no position on the ruling: it asserts the two
 **WHAT IS BLOCKED UNTIL THIS IS ANSWERED.** `LE-reminders-landline-dispatch`, the
 code half. Nothing else.
 
+### RULED 2026-08-20 BY THE OWNER: option 2, skip-and-surface-to-reception.
+
+**The recommended default is the ruling.** Both halves are built.
+
+**The skip.** `apps/web/lib/reminders/dispatch.ts` refuses a geographic number
+before `sendSms`, with **its own reason and not `invalid_phone`** — those are
+different facts about different problems, and one log line saying "invalid"
+sends reception to correct a number that is correct.
+
+**The surface is a derived query, not a log of skips**, and that is the design
+decision worth recording. The obvious build records every skipped reminder and
+shows reception the list: it needs a table, and it reports a message that has
+**already** not been sent, at 48 or 24 hours out — when there is least time to
+act. The fact reception needs is knowable without any of it: **a patient whose
+stored number cannot receive SMS and who has an appointment coming up.** Derived
+from `patients.phone_e164` and `appointments.starts_at`, so it needs **no
+migration**, nothing that can drift, and it surfaces the problem **before** the
+reminder is due.
+
+**The predicate moved to `@osteojp/notify` rather than being copied.**
+`isSmsCapablePT` lived in `apps/api`, and the two apps cannot import each other
+— so the choice was a shared package or a **third** copy of a phone predicate
+this repo already duplicates once.
+
+**Two test fixtures were modelling the defect and asserting it was fine**, which
+the change surfaced: `dispatch.test.ts` and `reminders-e2e.smoke.test.ts` both
+used `+351 210 000 000` — a Lisbon **landline** — as the *patient's* number and
+asserted an SMS was dispatched to it. Both now use a mobile of the same length,
+so the smoke test's worst-case segment fill is unchanged.
+
+**What the skip does not do, plainly:** it does not help the patient. The clinic
+stops paying and the patient still gets nothing. **Only the surface half does
+anything for them** — which is why the ruling has two halves and why option 1 was
+not the recommendation.
+
 ---
 
 ## Q-PORTAL-DEAD-I18N-1 (2026-08-20) — 163 portal strings have no screen behind them. Delete, wire up, or leave?

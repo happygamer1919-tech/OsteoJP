@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { OtpCodeNotStored, hashPhone, requestCode } from "@/lib/auth/otp";
-import { isSmsCapablePT } from "@/lib/auth/otp-sms-capability";
+import { isSmsCapablePT } from "@osteojp/notify";
 import { createDrizzleOtpStore } from "@/lib/auth/otp-store";
 import { OtpTransportMisconfigured, resolveOtpTransport } from "@/lib/auth/otp-transport";
 import { normalizePhonePT } from "@/lib/notify/phone";
@@ -109,7 +109,7 @@ export async function POST(req: Request): Promise<Response> {
   //
   // The check is HERE and not in normalizePhonePT: that function has five call
   // sites across two apps, two of them on the launch-critical reminder dispatch
-  // path. See otp-sms-capability.ts for the full reasoning.
+  // path. See packages/notify/src/sms-capability.ts for the full reasoning.
   if (!isSmsCapablePT(phone)) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }

@@ -1383,5 +1383,12 @@
   "appointment.outsideAvailability": "Fora do horário do terapeuta nesse dia.",
   "appointment.outsideAvailabilityWindows": "Horário nesse dia:",
   "appointment.outsideAvailabilityNoWindows": "Este terapeuta não tem horário definido nesse dia de semana.",
-  "appointment.outsideAvailabilityHint": "Para marcar fora deste horário, altere primeiro a disponibilidade do terapeuta em Horários."
+  "appointment.outsideAvailabilityHint": "Para marcar fora deste horário, altere primeiro a disponibilidade do terapeuta em Horários.",
+  "reminders.unreachable.title": "Pacientes sem SMS possível",
+  "reminders.unreachable.subtitle": "Estes pacientes têm marcação próxima e o número que temos é um fixo, que não recebe SMS. Não vão receber o lembrete. Peça um telemóvel quando falar com eles.",
+  "reminders.unreachable.empty": "Nenhum paciente nesta situação.",
+  "reminders.unreachable.emptyHint": "Todos os pacientes com marcação próxima têm um número que recebe SMS.",
+  "reminders.unreachable.nextAppointment": "Próxima marcação",
+  "reminders.unreachable.noPhone": "Sem número registado",
+  "reminders.unreachable.openPatient": "Abrir ficha"
 }
