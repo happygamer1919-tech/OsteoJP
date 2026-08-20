@@ -175,6 +175,44 @@ describe.skipIf(!live)("patient_followup_* RLS + constraints (migration 0067)", 
     expect(rows[0]?.n).toBe("0");
   });
 
+  it("is_unconfirmed_pedido finds a pedido by ORIGIN, with NO notification row", async () => {
+    // THE ARM THE OLD SUITE COULD NOT HAVE CAUGHT, and the entire reason the
+    // column exists. pedido-does-not-block.db.test.ts seeds a pedido the way the
+    // product does TODAY - an appointment PLUS a staff_notifications row - so it
+    // proves the notification arm and says nothing about this one.
+    //
+    // A pedido whose best-effort emit FAILED has no notification row at all. It
+    // was invisible before 0067: reception never told, and the slot blocked.
+    const id = randomUUID();
+    await sql`insert into appointments
+                (id, tenant_id, patient_id, practitioner_id, location_id, service_id,
+                 starts_at, ends_at, status, origin)
+              values (${id}, ${A.tenant}, ${A.patient}, ${A.user}, null, null,
+                      now() + interval '3 days', now() + interval '3 days 1 hour',
+                      'scheduled', 'patient_portal')`;
+
+    const [row] = await asRole(sql, "authenticated", claimsFor(A.tenant), (tx) =>
+      tx<{ ok: boolean }[]>`select public.is_unconfirmed_pedido(${id}) as ok`,
+    );
+    expect(row?.ok, "an origin-marked appointment with NO notification is a pedido").toBe(true);
+
+    // THE NEGATIVE ARM. Without it a function returning true for everything
+    // would satisfy the assertion above.
+    const staffId = randomUUID();
+    await sql`insert into appointments
+                (id, tenant_id, patient_id, practitioner_id, location_id, service_id,
+                 starts_at, ends_at, status)
+              values (${staffId}, ${A.tenant}, ${A.patient}, ${A.user}, null, null,
+                      now() + interval '4 days', now() + interval '4 days 1 hour',
+                      'scheduled')`;
+    const [staffRow] = await asRole(sql, "authenticated", claimsFor(A.tenant), (tx) =>
+      tx<{ ok: boolean }[]>`select public.is_unconfirmed_pedido(${staffId}) as ok`,
+    );
+    expect(staffRow?.ok, "a staff booking is not a pedido by either arm").toBe(false);
+
+    await sql`delete from appointments where id in (${id}, ${staffId})`;
+  });
+
   it("appointments.origin exists, defaults to staff, and refuses an unknown value", async () => {
     const rows = await sql<{ column_default: string | null }[]>`
       select column_default from information_schema.columns

@@ -87,7 +87,7 @@ COMMENT ON COLUMN public.appointments.origin IS
   'Q-PEDIDO-EMIT-1, ruled 2026-08-20. This is what is_unconfirmed_pedido '
   'keys on: before 0067 it joined staff_notifications, so a failed '
   'best-effort notification emit made a patient request indistinguishable '
-  'from a staff booking AND left it blocking its slot. Backfilled from '
+  'from a staff booking AND left it blocking its slot. The function reads this OR the old notification row - a disjunction, so the window between applying this migration and deploying the code that writes the column cannot regress. Backfilled from '
   'those notification rows; a pedido whose notification was never written '
   'was already invisible and is not recoverable. Migration 0067.';--> statement-breakpoint
 
@@ -104,8 +104,28 @@ COMMENT ON COLUMN public.appointments.origin IS
 /* is PROVENANCE and never changes; a pedido reception confirms moves  */
 /* to status='confirmed' and stops matching here, exactly as before.   */
 /*                                                                    */
-/* IT NO LONGER READS staff_notifications, WHICH IS THE POINT. The     */
-/* answer stops depending on a write that is allowed to fail.          */
+/* IT IS A DISJUNCTION, NOT A REPLACEMENT, AND THAT IS A CORRECTION    */
+/* THE DB-GATED SUITE FORCED. The first draft keyed on `origin` ALONE, */
+/* which is what the ruling asks for and is WRONG FOR A WINDOW ON      */
+/* PRODUCTION:                                                        */
+/*                                                                    */
+/*   rule 7 applies a migration BEFORE its PR merges, so between the   */
+/*   apply and the deploy of the app change the OLD code is still      */
+/*   creating portal bookings - with no `origin`, therefore 'staff'.   */
+/*   Keyed on origin alone, every pedido created in that window would  */
+/*   read as a staff booking: reception never told, AND THE SLOT       */
+/*   BLOCKED. That is worse than the defect being fixed, and it would  */
+/*   have shipped silently.                                           */
+/*                                                                    */
+/* pedido-does-not-block.db.test.ts caught it: five assertions went    */
+/* red because they seed a pedido the way the product does TODAY.      */
+/*                                                                    */
+/* THE DISJUNCTION COSTS NOTHING AND WEAKENS NOTHING. `origin` catches */
+/* the case the notification cannot - a pedido whose best-effort emit  */
+/* FAILED - which is the entire point of the column. The notification  */
+/* arm catches the transition window and every legacy row the backfill */
+/* could not reach. Neither arm can produce a false positive: a staff  */
+/* booking has neither marker.                                        */
 /* ------------------------------------------------------------------ */
 CREATE OR REPLACE FUNCTION public.is_unconfirmed_pedido(p_appointment uuid)
   RETURNS boolean
@@ -120,7 +140,14 @@ AS $$
     WHERE a.id = p_appointment
       AND a.tenant_id = public.jwt_tenant_id()
       AND a.status = 'scheduled'
-      AND a.origin = 'patient_portal'
+      AND (
+        a.origin = 'patient_portal'
+        OR EXISTS (
+          SELECT 1 FROM public.staff_notifications n
+          WHERE n.appointment_id = a.id
+            AND n.kind = 'appointment_request'
+        )
+      )
   )
 $$;--> statement-breakpoint
 
