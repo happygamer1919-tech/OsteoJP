@@ -18,9 +18,13 @@
  * GREEN while asserting yesterday's rule.
  *
  * ==========================================================================
- * EVERY CASE IS ONE CLAUSE, FAILING ALONE
+ * EVERY CASE IS ONE CLAUSE, ALONE - IN BOTH DIRECTIONS
  * ==========================================================================
- * Each fixture patient differs from the qualifying one in exactly ONE respect.
+ * Each fixture patient differs from the qualifying one in exactly ONE respect,
+ * and roughly a third of them are POSITIVE controls: cases that must be
+ * INCLUDED, because a clause that over-excludes fails silently. An over-strict
+ * predicate renders an empty list, and an empty list reads as good news on a
+ * screen whose empty state says "nobody to contact".
  * A suite that seeded "a good patient" and "a bad patient" would go green
  * against an implementation that had two of the three clauses backwards, and
  * criterion F on `ACC-vacuous-guard-sweep` is the reason that matters: a guard
@@ -171,12 +175,47 @@ async function selected(predicate: string): Promise<string[]> {
 }
 
 describe.skipIf(!live)("RB-01 selection predicate (migration 0067)", () => {
-  it("the WHOLE predicate selects exactly the qualifying patient", async () => {
-    // The headline. Eight patients differ from it in one respect each, and none
-    // of them may appear.
-    expect(await selected(followupSelectionPredicate("patients.id"))).toEqual([
-      QUALIFIES.label,
-    ]);
+  it("the WHOLE predicate selects the four that qualify and none of the five that do not", async () => {
+    /**
+     * ==================================================================
+     * THIS ASSERTION WAS WRONG ON ITS FIRST RUN AND THE CODE WAS RIGHT.
+     * ==================================================================
+     * It expected `[QUALIFIES]` alone, on the description "eight patients differ
+     * in one respect each, and none of them may appear". That sentence was false
+     * about three of the eight, and the per-clause tests below said so at the
+     * same time - they assert `toContain` for exactly these three. **The suite
+     * contradicted itself**, and the database is what noticed.
+     *
+     * THREE OF THE FIXTURES ARE POSITIVE CONTROLS, NOT NEGATIVE ONES. Each was
+     * built to prove a clause does NOT over-exclude, which is the direction that
+     * fails silently: an over-strict clause shows an empty list, and an empty
+     * list looks like good news on a screen that says "nobody to contact".
+     *   - `FUTURE_CANCELLED` — a cancelled future appointment is not a booking.
+     *     They are the patient who dropped out and whom nobody chased.
+     *   - `POSTPONE_EXPIRED` — a postponement is a pause, not a deletion.
+     *   - `POSTPONE_REVOKED` — "bring back" has to actually bring them back.
+     *
+     * So the list is asserted in BOTH directions, by name. A test that only
+     * pinned the four would go green against a predicate that dropped a clause
+     * and let a fifth in.
+     */
+    const got = await selected(followupSelectionPredicate("patients.id"));
+
+    expect(got).toEqual(
+      [QUALIFIES, FUTURE_CANCELLED, POSTPONE_EXPIRED, POSTPONE_REVOKED]
+        .map((p) => p.label)
+        .sort(),
+    );
+
+    for (const excluded of [
+      SEEN_TOO_RECENTLY,
+      SEEN_TOO_LONG_AGO,
+      HAS_FUTURE_BOOKING,
+      POSTPONED,
+      NEVER_ATTENDED,
+    ]) {
+      expect(got).not.toContain(excluded.label);
+    }
   });
 
   describe("clause 1 - the MOST RECENT completed attendance is in the window", () => {
