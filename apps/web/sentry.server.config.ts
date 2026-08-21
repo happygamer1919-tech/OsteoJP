@@ -1,9 +1,14 @@
 import * as Sentry from "@sentry/nextjs";
 
+import { serverSentryDsn } from "./lib/observability/sentry-dsn";
+
 import { stripFrameVars } from "./lib/observability/sentry-scrub";
 
 Sentry.init({
-  dsn: process.env.SENTRY_DSN,
+  // Read through the accessor so an ABSENT dsn is LOUD instead of a silent
+  // no-op. See sentry-dsn.ts: zero events had ever reached Sentry and nothing
+  // anywhere said so.
+  dsn: serverSentryDsn(),
   tracesSampleRate: process.env.NODE_ENV === "development" ? 1.0 : 0.1,
 
   // Explicit, not inherited. Both already default to false in the current SDK;
