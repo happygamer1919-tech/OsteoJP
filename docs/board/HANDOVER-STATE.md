@@ -83,7 +83,16 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**194 cards. 147 shipped, 47 open. Launch readiness 9/9, every launch gate passes.**
+**190 cards on the board. 149 shipped, 41 open. Launch readiness 9/9, every launch gate passes.**
+
+*These are the numbers **on the board above**, which is the only place you count
+them. The underlying file holds five more cards that the board deliberately does
+not show — legal review, credential rotation and the staff password re-issue —
+because you track those on your own agenda. They are listed in
+`docs/board/EXTERNAL-AGENDA.md` and they are not work anybody owes you here. A
+report quoting 195 instead of 190 is quoting the file rather than your screen,
+and `scripts/handover-counts-match-the-render.test.mjs` now fails the build when
+this line and the board disagree.*
 
 > ### Two decisions taken, 2026-08-20
 >
