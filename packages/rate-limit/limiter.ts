@@ -165,6 +165,25 @@ function fingerprintToken(authHeader: string): string {
   return createHash("sha256").update(authHeader).digest("hex").slice(0, 16);
 }
 
+/**
+ * A bucket key for a credential the CALLER holds - an email address, in the
+ * staff-login case. EXPORTED because the caller cannot be trusted to hash it
+ * correctly and must not be tempted to skip it: a bucket key lives in a durable
+ * store, and an email address in that store is personal data at rest for no
+ * reason. Same digest, same reasoning, same length as fingerprintToken.
+ *
+ * LOWERCASED FIRST. "Ana@osteojp.pt" and "ana@osteojp.pt" are one account to
+ * Supabase and must be one bucket here, or the limit is bypassed by holding
+ * down the shift key.
+ */
+export function credentialKey(scope: string, credential: string): string {
+  const digest = createHash("sha256")
+    .update(credential.trim().toLowerCase())
+    .digest("hex")
+    .slice(0, 16);
+  return `${scope}:cred:${digest}`;
+}
+
 /** 429 with the standard headers. Body is intentionally opaque. */
 export function tooManyRequests(verdict: RateLimitVerdict): Response {
   return new Response(JSON.stringify({ error: "rate_limited" }), {
@@ -265,6 +284,53 @@ export const RULES = {
    * credential and has no business being a bucket key.
    */
   tokenRedeem: { limit: 10, windowMs: 60_000 },
+
+  /**
+   * STAFF LOGIN - the email-and-password sign-in for the whole staff platform.
+   * SEC-web-surface-limiter-adoption, route 1 of the adoption.
+   *
+   * ==================================================================
+   * IT IS THE HIGHEST-EXPOSURE ROUTE LEFT IN apps/web, AND IT HAD NOTHING.
+   * ==================================================================
+   * Everything else on that surface is AUTHENTICATED, which bounds abuse to a
+   * named person with an audit trail - the card's own reason for grading itself
+   * medium. THIS ROUTE IS THE EXCEPTION AND IS THE THING THAT DOES THE
+   * AUTHENTICATING. It is unauthenticated by definition, publicly reachable at
+   * app.osteojp.pt/login, and it accepts a password. Unlimited, it is an
+   * offline-speed credential-guessing oracle against every staff account,
+   * including the owner's.
+   *
+   * TWO AXES, AND NEITHER IS SUFFICIENT ALONE. Per credential, because a real
+   * person knows their own password and does not need six tries a minute at it;
+   * per source, because an attacker who rotates the email address would
+   * otherwise get a fresh budget for every guess.
+   *
+   * PER-CREDENTIAL IS THE TIGHTER OF THE TWO, and it is keyed on a NON-REVERSIBLE
+   * DIGEST of the email, never the address itself - the same treatment
+   * fingerprintToken already gives an authorization header, for the same reason:
+   * a bucket key sits in a durable store and an email address is personal data.
+   *
+   * SIX PER MINUTE PER CREDENTIAL. A person mistypes twice and looks it up; six
+   * is already generous, and the window is short enough that a locked-out
+   * receptionist waits under a minute rather than filing a ticket.
+   *
+   * TWENTY PER MINUTE PER SOURCE. A clinic behind one NAT can have several
+   * people arriving at once - a shift change is the realistic worst case - and
+   * this must not turn a Monday morning into an outage.
+   *
+   * THERE IS DELIBERATELY NO GLOBAL CEILING, AND THE ABSENCE IS THE DECISION.
+   * The two global ceilings in this file - the OTP send ceiling and the
+   * guest-booking backstop - both bound a COST a distributed attacker could run
+   * up without limit: real money for an SMS, reception's morning for a junk
+   * queue. A failed login costs one auth call. A tenant-wide ceiling here would
+   * buy nothing against that and would hand any single attacker a switch that
+   * LOCKS THE ENTIRE CLINIC OUT OF ITS OWN PLATFORM - converting a cheap
+   * resource attack into a guaranteed outage, on the one route with no way
+   * around it. Same reasoning guestCatalogIp records for the public service
+   * list, and it applies with more force here because the consequence is worse.
+   */
+  staffLoginCredential: { limit: 6, windowMs: 60_000 },
+  staffLoginIp: { limit: 20, windowMs: 60_000 },
 
   /**
    * OTP request. Per phone AND per client, both keyed separately by the caller.
