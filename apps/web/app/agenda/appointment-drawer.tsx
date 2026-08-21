@@ -267,6 +267,22 @@ export function AppointmentDrawer({
   // without touching anything produces what it always did.
   const [loteWeekdays, setLoteWeekdays] = useState<number[]>([]);
   const [loteEndMode, setLoteEndMode] = useState<LoteEnd["kind"]>("count");
+
+  /**
+   * RB-02b — the pacote batch. SEPARATE STATE FROM THE LOTE, deliberately.
+   *
+   * The lote is a PATTERN: weekdays, an interval, an end, and a generator that
+   * produces rows. The pacote path has none of those by owner ruling - every
+   * slot is hand-picked - so sharing the lote's state would mean carrying four
+   * controls that must never be shown and hoping nobody wires them up. Two
+   * states, and the pacote one cannot express a cadence at all.
+   *
+   * Row 1 is seeded from the form's own date and time, which the user has
+   * already chosen. Rows 2..N start EMPTY: seeding them would imply a spacing,
+   * and imposing a spacing is precisely the decision Q-RB-02-1 says is the
+   * clinic's rather than ours.
+   */
+  const [packRows, setPackRows] = useState<LoteRow[]>([]);
   const [loteUntil, setLoteUntil] = useState("");
 
   // A conflict banner describes one specific therapist/date/time/duration
@@ -411,6 +427,29 @@ export function AppointmentDrawer({
       ? packBalanceResult.balance
       : null;
   const selectedPack = options.packs.find((p) => p.id === form.packId) ?? null;
+
+  // RB-02b — how many sessions this booking may take. Null until the balance
+  // lands; a fresh pacote registers on save, so its ceiling is the pack size.
+  const packSessionsAvailable = packBalance
+    ? packBalance.sessionsAvailable
+    : (selectedPack?.sessionCount ?? null);
+
+  /** Resize the hand-picked slot list, keeping what is already filled in. */
+  function setPackCount(next: number) {
+    const ceiling = packSessionsAvailable ?? 1;
+    const n = Math.max(1, Math.min(ceiling, Math.floor(next) || 1));
+    setPackRows((rows) => {
+      if (n <= rows.length) return rows.slice(0, n);
+      const seed: LoteRow[] = [{ date: form.date, time: form.time }];
+      const grown = [...rows];
+      while (grown.length < n) {
+        // Row 1 takes the form's slot; every other row starts EMPTY and must be
+        // picked. An empty row is refused at submit rather than guessed.
+        grown.push(grown.length === 0 ? seed[0] : { date: "", time: "" });
+      }
+      return grown;
+    });
+  }
   // Packs offered at the chosen location (or at all locations). Create-only.
   const packOptions = options.packs.filter(
     (p) => p.locationId === null || p.locationId === form.locationId,
@@ -429,9 +468,14 @@ export function AppointmentDrawer({
     applyService(serviceId);
   }
   // W8-01c — selecting a pack forces the base service + its duration and locks
-  // the Serviço field; clearing it frees Serviço again. A pack booking is
-  // single-session, so the lote path is turned off while a pack is selected.
+  // the Serviço field; clearing it frees Serviço again. The LOTE path is turned
+  // off while a pacote is selected, and stays off after RB-02b: a pacote books N
+  // through its own hand-picked list, which carries no pattern controls at all.
+  // RB-02b — changing or clearing the pacote discards the hand-picked slots.
+  // Carrying them across would attach dates chosen for one pacote's balance to
+  // another's, and the count ceiling would be wrong from the first render.
   function onPackChange(packId: string) {
+    setPackRows([]);
     const pack = options.packs.find((p) => p.id === packId);
     if (!pack) {
       setForm((f) => ({ ...f, packId: "" }));
@@ -639,6 +683,42 @@ export function AppointmentDrawer({
         // Agendar lote (W2-10, ruling G): partial-success batch over an EXPLICIT
         // per-date slot list — book every free slot, report the busy ones in a
         // dialog. Single creation (lote off) is unchanged.
+        /**
+         * RB-02b — a pacote asking for MORE THAN ONE session routes to the batch
+         * engine, which is the only path that books many slots and reports each
+         * one's fate. A single-session pacote keeps the create path unchanged.
+         *
+         * EVERY ROW MUST BE PICKED. Rows 2..N start empty on purpose, and an
+         * empty row is REFUSED here rather than defaulted: defaulting it would
+         * book a real appointment at a time nobody chose, which is worse than
+         * being asked to fill it in.
+         */
+        if (form.packId && packRows.length > 1) {
+          const incomplete = packRows.some((r) => !r.date || !r.time);
+          if (incomplete) {
+            setError(s["pack.batchIncomplete"]);
+            return;
+          }
+          const r = await batchScheduleAppointments({
+            patientId: form.patientId,
+            practitionerId: form.practitionerId,
+            locationId: form.locationId,
+            serviceId: form.serviceId || null,
+            packId: form.packId,
+            slots: buildLoteSlots(packRows, form.durationMin),
+          });
+          if (!r.ok) {
+            handleResult(r);
+            return;
+          }
+          if (r.data.failures.length === 0) {
+            succeed();
+            return;
+          }
+          setBatchFailures({ bookedCount: r.data.booked.length, failures: r.data.failures });
+          return;
+        }
+
         if (loteMode) {
           const slots = buildLoteSlots(loteRows, form.durationMin);
           if (slots.length === 0) {
@@ -961,6 +1041,67 @@ export function AppointmentDrawer({
               ? `${s["appointment.packRemaining"]}: ${packBalance.sessionsAvailable}/${packBalance.sessionsTotal}`
               : `${s["appointment.packNew"]} (${selectedPack.sessionCount} ${s["appointment.packSessions"]})`}
           </Banner>
+        )}
+
+        {/* ==================================================================
+            RB-02b — BOOK N SESSIONS OF THIS PACOTE, EVERY SLOT HAND-PICKED.
+            ==================================================================
+            NO WEEKDAY PICKER, NO EVERY-N-WEEKS, NO GENERATOR, by owner ruling.
+            A pacote spread on a fixed cadence commits a patient to a weekday for
+            months, and how far apart the sessions should be is a clinical
+            decision the clinic makes per patient (Q-RB-02-1). So this offers a
+            COUNT and then N date/time pickers, and nothing that could impose a
+            rhythm.
+
+            THE COUNT IS CAPPED AT THE BALANCE and editable DOWNWARDS: booking
+            four now and the rest as the treatment progresses is the ordinary
+            case, not an edge one. Over-booking is refused by name on the server
+            as well - this input is a courtesy, not the boundary. */}
+        {!editing && selectedPack && form.patientId && packSessionsAvailable !== null && (
+          <div className="flex flex-col gap-3 rounded-v2 border border-border-strong p-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <Field label={s["pack.batchCount"]}>
+                <Input
+                  type="number"
+                  min={1}
+                  max={packSessionsAvailable}
+                  data-testid="pack-batch-count"
+                  value={String(packRows.length || 1)}
+                  onChange={(e) => setPackCount(Number(e.target.value))}
+                />
+              </Field>
+              <p className="flex-1 text-xs text-text-secondary">
+                {s["pack.batchHint"].replace("{n}", String(packSessionsAvailable))}
+              </p>
+            </div>
+
+            {packRows.length > 1 && (
+              <ul className="flex flex-col gap-2">
+                {packRows.map((row, i) => (
+                  <li key={i} className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="w-6 text-xs text-text-secondary">{i + 1}.</span>
+                    <div className="w-44">
+                      <DatePicker
+                        value={row.date}
+                        onChange={(d) =>
+                          setPackRows((rs) => rs.map((r, j) => (j === i ? { ...r, date: d } : r)))
+                        }
+                        triggerLabel={s["lote.rowDate"]}
+                        prevMonthLabel={s["calendar.previousMonth"]}
+                        nextMonthLabel={s["calendar.nextMonth"]}
+                      />
+                    </div>
+                    <TimeField
+                      value={row.time}
+                      onChange={(v) =>
+                        setPackRows((rs) => rs.map((r, j) => (j === i ? { ...r, time: v } : r)))
+                      }
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
 
         {/* Optional secondary participants (W4-19) — de-emphasized, create-only.
