@@ -703,7 +703,20 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           endsAt: args.endsAt,
           status: "scheduled",
           room: null, // no room catalog in schema — WAVE B (no migration this wave)
-          createdBy: null, // patient has no users row — WAVE B provenance column
+          createdBy: null, // patient has no users row — see `origin` below
+          /**
+           * 0067 — THE PROVENANCE THIS INSERT HAS BEEN MISSING. The line above
+           * used to end "WAVE B provenance column"; this is that column.
+           *
+           * WITHOUT IT THE MIGRATION MAKES THINGS WORSE, not better.
+           * `is_unconfirmed_pedido` reads `origin`, so a portal booking written
+           * without it is indistinguishable from a staff booking: reception is
+           * never told to confirm it AND IT BLOCKS ITS SLOT. The function is a
+           * disjunction precisely so the window between the apply and this
+           * deploy is safe — but this is the arm that survives a failed
+           * notification emit, which is the whole reason the column exists.
+           */
+          origin: "patient_portal",
         })
         .returning({ id: appointments.id });
       return inserted[0].id;
