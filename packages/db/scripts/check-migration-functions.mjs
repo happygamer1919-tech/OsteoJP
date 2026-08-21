@@ -46,12 +46,47 @@
 // Exit 0 only when EVERY named function passes its check. Exit 1 names what
 // failed and says plainly not to merge, so it is a gate and not a report.
 
+import { pathToFileURL } from "node:url";
+
 // The driver is imported LAZILY, after the argument and environment checks, so
 // running this the wrong way prints the usage message rather than
 // ERR_MODULE_NOT_FOUND before any guard can fire.
 
-const args = process.argv.slice(2).filter(Boolean);
-if (args.length === 0) {
+/**
+ * Strip SQL comments from a function definition before matching.
+ *
+ * WHY THIS IS NOT COSMETIC. A bare `includes()` matches a COMMENT as readily as
+ * a CALL, and the two mean opposite things here. The exact failure it lets
+ * through: someone replaces
+ *
+ *     AND NOT public.is_unconfirmed_pedido(a.id)
+ * with
+ *     -- pedido exclusion via public.is_unconfirmed_pedido, temporarily disabled
+ *
+ * The function still exists, the token is still in `pg_get_functiondef` output,
+ * and the checker prints OK for a body that no longer excludes anything. That is
+ * a receipt for a regression - the same class of failure as an existence check
+ * on a REPLACE, which is why this script exists at all.
+ *
+ * Handles both SQL comment forms plus dollar-quoted bodies, which
+ * `pg_get_functiondef` always returns:
+ *   - block comments, non-greedy so two comments do not merge into one span
+ *   - line comments to end of line
+ *
+ * Exported for the negative-arm test, which proves the swap above FAILS.
+ */
+export function stripSqlComments(sql) {
+  return String(sql)
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/--[^\n]*/g, " ");
+}
+
+// Everything below runs ONLY as a CLI. Importing this module (the negative-arm
+// test does) must not read argv, open a connection, or call process.exit.
+const IS_CLI = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+const args = IS_CLI ? process.argv.slice(2).filter(Boolean) : [];
+if (IS_CLI && args.length === 0) {
   console.error(
     "usage: check-migration-functions.mjs <fn>[:<body-substring>] [...]\n" +
       "example: check-migration-functions.mjs is_unconfirmed_pedido " +
@@ -79,14 +114,14 @@ for (const raw of args) {
 }
 
 const DB_URL = process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL;
-if (!DB_URL) {
+if (IS_CLI && !DB_URL) {
   // Names only. The value is never printed, here or anywhere.
   console.error("Set DATABASE_URL_DIRECT or DATABASE_URL (names only; never paste the value).");
   process.exit(2);
 }
 
 let postgres;
-try {
+if (IS_CLI) try {
   ({ default: postgres } = await import("postgres"));
 } catch {
   console.error(
@@ -98,16 +133,16 @@ try {
   process.exit(2);
 }
 
-const sql = postgres(DB_URL, {
+const sql = IS_CLI ? postgres(DB_URL, {
   ssl: "require",
   max: 1,
   idle_timeout: 10,
   connect_timeout: 15,
   // The driver must not print the URL on a connection error.
   onnotice: () => {},
-});
+}) : null;
 
-try {
+if (IS_CLI) try {
   const names = specs.map((s) => s.name);
   const rows = await sql.begin(async (tx) => {
     // Belt and braces: the server refuses writes for the whole transaction.
@@ -143,8 +178,22 @@ try {
     }
     // The body check. This is the half that distinguishes a real REPLACE from a
     // no-op on a function that already existed.
-    if (def.includes(needle)) {
-      console.log(`${name.padEnd(width)}  EXISTS, body contains "${needle}"`);
+    //
+    // MATCHED AGAINST THE COMMENT-STRIPPED BODY. A commented-out call still
+    // carries the token, so a raw substring match would report OK for a body
+    // that no longer does the thing. See stripSqlComments.
+    const live = stripSqlComments(def);
+    if (live.includes(needle)) {
+      console.log(`${name.padEnd(width)}  EXISTS, live body calls "${needle}"`);
+    } else if (def.includes(needle)) {
+      // Named separately from a plain STALE BODY because the operator needs to
+      // know the token IS there and is inert - that is a different problem from
+      // "the migration did not run", and diagnosing it as the latter wastes a
+      // round trip.
+      console.log(`${name.padEnd(width)}  COMMENTED OUT: "${needle}" appears only in a comment`);
+      failures.push(
+        `${name} mentions "${needle}" ONLY inside a comment - the call is not live`,
+      );
     } else {
       console.log(`${name.padEnd(width)}  STALE BODY, missing "${needle}"`);
       failures.push(`${name} exists but its body does not contain "${needle}"`);
@@ -163,5 +212,5 @@ try {
   console.error(`query failed: ${err instanceof Error ? err.message : "unknown"}`);
   process.exit(1);
 } finally {
-  await sql.end({ timeout: 5 });
+  await sql?.end({ timeout: 5 });
 }

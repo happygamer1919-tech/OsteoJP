@@ -1,6 +1,7 @@
 # Apply block - migration 0059, pedido does not block a slot
 
-**Status: DRAFTED, FOR STRATEGY VALIDATION. Not yet handed to Ivan.**
+**Status: APPLIED AND PROVEN, 2026-08-07. Evidence in section 9.**
+**Applied from `494d82f` detached in the prod-apply worktree, first attempt.**
 
 Migration: `0059_pedido_does_not_block_slot` (journal idx 58).
 Branch: `portal/W13-04a-availability-exclusion`.
@@ -151,3 +152,64 @@ side of the ruling - it over-blocks, so no double booking becomes possible.
 
 The evidence section gets written into this file **in the same turn the output
 arrives**, not later. Then, and only then, #836 merges.
+
+
+---
+
+## 9. APPLIED, 2026-08-07. The evidence.
+
+Run by Ivan from the prod-apply worktree, **first attempt, no retry**. Written
+into the repo in the same turn the output arrived, per section 8, and committed
+BEFORE #836 merged.
+
+```
+Checkout:   494d82f (detached) fix(db): the supabase mirror held a SUPERSEDED 0059 body, and nothing counted it
+
+Pre-check:  pending 1
+            PENDING 0059_pedido_does_not_block_slot when=1786700000000
+            last applied when in DB 1786600000000
+            OK: the pending set is exactly what was expected.
+
+Migrate:    migrations applied successfully.
+
+Checker:    is_unconfirmed_pedido   EXISTS
+            appointment_conflicts   EXISTS, body contains "is_unconfirmed_pedido"
+            OK: all 2 function check(s) passed.
+```
+
+### What each line proves, and what it does not
+
+| Line | What it proves | Would it print on a NO-OP? |
+|---|---|---|
+| `494d82f` detached | Applied from the reviewed commit, not from `main` | It would print a different sha. This is the 0049 guard |
+| Pre-check `pending 1` | Drizzle's OWN pending predicate, read-only, BEFORE any write, agreed exactly one migration was pending and named it | **No.** It would print `pending 0` and exit non-zero, and `migrate` would never run |
+| `migrations applied successfully` | **Nothing on its own** | **Yes, identically.** It printed on the 0058 run that applied nothing. It is not evidence |
+| `is_unconfirmed_pedido EXISTS` | A genuinely NEW object is in `pg_catalog` | **No.** 0059 is the only thing that creates it |
+| `appointment_conflicts` **body contains** the token | The REPLACE landed. The 0052 body does not contain that token | **No — and this is the half an existence check could not give.** `appointment_conflicts` has existed since 0048, so "does it exist" answers true whether 0059 ran or not |
+
+### The arithmetic reconciles in both directions
+
+Last applied `when` in the database was `1786600000000`, which is 0058. The
+journal's 0059 entry is `1786700000000`, which is `+100000000` and forward on the
+synthetic series — so drizzle's `lastDbMigration.created_at < folderMillis` test
+is TRUE and the entry is pending, which is exactly what the pre-check reported.
+59 entries on disk, 58 applied, 1 pending, computed from the database rather than
+asserted from the file.
+
+**Both new guards were exercised and both passed.** The mandatory pre-check
+(INC-07, made binding in #834) confirmed the work existed before the write. The
+mirror-content assertion in `check-journal.mjs` — added the same day, after the
+supabase mirror was found holding a superseded body — passed on the corrected
+mirror, which is what the DB-gated CI job applied when it proved the SQL against
+a real Postgres.
+
+### State after the apply
+
+- Production (`dfotoodqvmjhbdcxyaxf`) holds `public.is_unconfirmed_pedido(uuid)`
+  and an `appointment_conflicts` whose body calls it.
+- `drizzle.__drizzle_migrations` has a tracking row at `created_at = 1786700000000`.
+- Journal on disk: 59 entries, last `idx` 58, tag `0059_pedido_does_not_block_slot`.
+- **The migration slot is FREE.** Next free number is `0060`. Nothing anywhere in
+  the repo holds an unapplied migration.
+- **This was the wave's final planned migration.** W13-04a was sequenced as the
+  last one after LOOP 5 (strategy ruling 2026-08-06), and it has now landed.
