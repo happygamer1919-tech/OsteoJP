@@ -381,12 +381,19 @@ merges - `docs/migration-apply-0063.md` §4 in full. **This receipt commit rides
 the same branch**, so the head moves after the apply; what must be identical is
 the CONTENT, and it is, byte for byte:
 
-| Path | Blob at the applied sha `8148725` |
+**PR #991 squash-merged as `e331b5b7ef390b072a67b7c8d64edb54ff10774a`**, and the
+applied sha `8148725` is now confirmed unreachable from `main` -
+`git merge-base --is-ancestor 8148725 origin/main` exits non-zero, exactly as
+0063 predicted. Both shas are pinned here because only one of them resolves in a
+fresh clone.
+
+| Path | Blob, IDENTICAL at applied `8148725`, at squash `e331b5b`, and on `main` |
 |---|---|
 | `packages/db/migrations/0067_followup_packs_and_provenance.sql` | `a65ed6e2f76314107e47799417af4638bd41016d` |
 | `packages/db/migrations/meta/_journal.json` | `aaeeefc36ff27f05f98251d6d6d722ccd2429ec7` |
 | `supabase/migrations/0067_followup_packs_and_provenance.sql` | `90d609636f4c7c5813e6288f973978958a844741` |
 
+**Verified across all three refs after the merge rather than assumed.**
 Checkable from any clone, forever, with
 `git rev-parse origin/main:packages/db/migrations/0067_followup_packs_and_provenance.sql`.
 **If that blob ever stops matching `a65ed6e2`, what is on `main` is not what ran

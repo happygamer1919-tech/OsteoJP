@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**184 cards. 137 shipped, 47 open. Launch readiness 9/9, every launch gate passes.**
+**194 cards. 147 shipped, 47 open. Launch readiness 9/9, every launch gate passes.**
 
 > ### Two decisions taken, 2026-08-20
 >
@@ -788,22 +788,47 @@ since closed, the board is the count and this section is the story.
 > part of the codebase it never checked. Turning it on found two real mistakes,
 > both harmless today and both the kind that bite later.
 >
-> ### One database change is waiting for you
+> ### ✅ The database change you were waiting on is DONE, 2026-08-20
 >
-> **#991 is open and deliberately not merged.** It adds what the rest of the batch
-> needs: a marker saying an appointment came from the patient portal, a link from
-> a pacote session to a real appointment, a record of how many pacote sessions
-> each patient has already used, and two small tables for the recuperação list.
+> **You applied it and it merged the same day (#991).** It added what the rest of
+> the batch needs: a marker saying an appointment came from the patient portal, a
+> link from a pacote session to a real appointment, a record of how many pacote
+> sessions each patient has already used, and two small tables for the
+> recuperação list.
 >
-> **The pacote part is the one worth knowing about.** Today a pacote's remaining
-> sessions are a number in a box that nothing can check against the diary. After
-> this, a session **is** a real appointment — but every pacote you already have
-> would read as untouched if we simply started counting appointments, because the
-> sessions used so far left none behind. So it records, once, how many each has
-> already used. **Every existing balance comes out exactly as it is today.**
+> **Your pacote balances came out exactly as they were.** That was the part worth
+> watching, and it was checked rather than hoped: the query that would have found
+> a single wrong balance returned **zero**. Every pacote reads today what it read
+> yesterday, and from now on a session is a real appointment in the diary instead
+> of a number in a box that nothing could check.
 >
-> **Two features are on hold behind it**: the recuperação list and the pacote
-> booking panel. Nothing else is blocked.
+> **Six appointments were correctly identified as patient requests**, which is
+> exactly the number the count taken beforehand predicted. Nothing was invented
+> and nothing was missed.
+>
+> **The two features behind it are now unblocked**: the recuperação list and the
+> pacote booking panel. They are being built next.
+>
+> **One thing went wrong and it was our paperwork, not your database.** One of the
+> checks in the apply instructions expected the wrong answer — it had been written
+> for an earlier version of the change and was never updated when the change
+> improved. So a correct apply looked, for a moment, like a failed one. **Nothing
+> was wrong with the migration, nothing was rolled back, and no data was
+> affected.** The instruction is corrected, and the general problem it exposed —
+> a check that quietly stops matching the thing it checks — is written up as its
+> own item rather than fixed once and forgotten.
+
+> ### The caderno went to the vendor, 2026-08-18
+>
+> **The export specification is with Eduardo at Fisiozero** and has been since
+> 2026-08-18. What it waits on now is the **amostra**: the sample of 20 to 50
+> patients the document asks for, so the import is built against the real format
+> instead of our best reading of it. **It is not waiting on you.**
+>
+> One gap worth knowing about, because nothing in the repository can close it: the
+> copy we hold is **version 1.0** and **version 1.1 is what you sent**. The
+> delivery will be validated against the specification field by field, and the
+> version that will be validated against is not the one on file here.
 
 > ### Where the sweep stands at the end of 2026-08-20
 >
