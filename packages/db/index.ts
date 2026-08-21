@@ -32,3 +32,9 @@ export * from "./src/migration";
 // because apps/api writes the pair and apps/web reads it, and a copy in each is
 // how the two would come to disagree about what a window says.
 export * from "./src/guest-preferred-window";
+
+// RB-01 — the recuperacao selection predicate. Exported from the package for
+// the reason `guest-preferred-window` above is: its two readers are the staff
+// query in apps/web and the DB-gated test that proves it against real Postgres,
+// and a copy in each is how a selection rule and its proof come to disagree.
+export * from "./src/followup-selection";

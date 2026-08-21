@@ -39,6 +39,22 @@ const ALL: (NavItem & { capability?: Capability })[] = [
   // Faturação (W10-04 isolation, owner ruling 2026-07-21): owner/admin/reception
   // only - gated on invoices:issue (therapist holds only invoices:read, so it is
   // hidden for the therapist role, matching the /invoicing route guard).
+  // Recuperação (RB-01, owner ruling 2026-08-20): the patients recently in
+  // treatment with no future booking. Owner, admin and reception, gated on
+  // `followup:read` - a THERAPIST sees no entry and cannot reach the route.
+  //
+  // IT SITS HERE, AFTER MARCAÇÕES, AND NOT LOWER DOWN. NAV-01 ruled that
+  // Horários sits BETWEEN Estatísticas and Administração, and nav-items.test.ts
+  // asserts that by INDEX because the position was the ruling and not an
+  // incidental. Any entry inserted into that run breaks a committed owner
+  // ruling, so this one goes beside Marcações instead - which is also where it
+  // belongs: it is a reception work queue about bookings that do not exist yet.
+  //
+  // THE NAV IS NOT THE GATE and is not treated as one here: /recuperacao
+  // redirects a role without the capability, and listFollowupCandidates throws
+  // for one. Hiding the link is what stops a therapist WONDERING about a page
+  // they may not open; it is not what stops them opening it.
+  { href: "/recuperacao", label: s["nav.followup"], capability: "followup:read" },
   { href: "/invoicing", label: s["nav.invoicing"], capability: "invoices:issue" },
   { href: "/clinical/review", label: s["nav.review"], capability: "clinical_records:review" },
   // Estatisticas (W6-05; PL-09 Phase 3): KPI dashboard for owner + admin. Gated on
