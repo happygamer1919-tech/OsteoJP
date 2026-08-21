@@ -22,7 +22,7 @@ import {
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { clientIp } from "./actor";
-import { batchSchedule, type BatchScheduleInput, type BatchScheduleResult } from "./batch";
+import { batchSchedule, type BatchScheduleInput, type BatchScheduleResult, PackBatchRefused } from "./batch";
 import { writeAppointmentStatusChangedEvent } from "./analytics";
 import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
@@ -786,6 +786,15 @@ export async function batchScheduleAppointments(
   if (!input.patientId || !input.practitionerId || !input.locationId) {
     return { ok: false, error: "validation" };
   }
+  /**
+   * RB-02b — an EMPTY packId is not a pacote booking, it is a form that sent
+   * "". Normalised to null at the door so the engine's `if (packId)` cannot be
+   * fooled by a falsy-but-present value, and so a pacote batch is decided in one
+   * place rather than by every truthiness test downstream.
+   */
+  if ("slots" in input && input.packId !== undefined) {
+    input = { ...input, packId: input.packId || null };
+  }
   // STAFF-02: the batch path is a create path and is guarded identically. It
   // would otherwise be the obvious way around the single-create check.
   if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
@@ -802,6 +811,16 @@ export async function batchScheduleAppointments(
     revalidatePath(AGENDA_PATH);
     return { ok: true, data: result };
   } catch (e) {
+    /**
+     * RB-02b — a pacote batch refusal is a VERDICT, not a crash.
+     *
+     * `fail()` maps an unrecognised throw to the generic error, which on this
+     * screen reads "algo correu mal" - and the one thing the person needs to
+     * know is that the pacote does not have enough sessions. Caught by TYPE
+     * rather than by message so a reworded message cannot silently downgrade a
+     * named refusal into a generic one.
+     */
+    if (e instanceof PackBatchRefused) return { ok: false, error: e.kind };
     return fail("batchSchedule", e);
   }
 }

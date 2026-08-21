@@ -136,3 +136,28 @@ export function packLinkedCountSql(instanceIdExpr: string): string {
      AND a.${PACK_CONSUMING_STATUS_SQL}
 )`;
 }
+
+/**
+ * RB-02b — may this batch be booked against this pacote?
+ *
+ * ==========================================================================
+ * A REFUSAL, NEVER A TRUNCATION, AND THE DECISION IS ITS OWN FUNCTION
+ * ==========================================================================
+ * Booking eight of the ten asked for looks like success. Reception closes the
+ * drawer, and the two that were dropped are discovered later from the diary, by
+ * somebody who has no way to tell them from appointments nobody ever made. That
+ * is PORTAL-REHYDRATE §1.3 exactly: an unhandled case wearing the face of a
+ * harmless one.
+ *
+ * IT KEYS ON WHAT WAS REQUESTED, NOT ON WHAT IS BOOKABLE. A batch of five
+ * against a pacote with three left is refused even if two of the five slots are
+ * busy and only three would have been written. The person asked for five
+ * sessions from a pacote that has three; that is the error, and how many of them
+ * happen to be free is a different question with a different answer (partial
+ * success, reported per slot).
+ *
+ * PURE, so the boundary is testable without a database and without a drawer.
+ */
+export function packBatchIsOverbooked(requested: number, available: number): boolean {
+  return requested > available;
+}

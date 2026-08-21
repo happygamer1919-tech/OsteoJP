@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  packBatchIsOverbooked,
   PACK_CONSUMING_STATUS_SQL,
   packLinkedCountSql,
   packIsActive,
@@ -115,5 +116,36 @@ describe("packLinkedCountSql — the correlation that was silently wrong", () =>
 
   it("counts by the shared status rule rather than restating it", () => {
     expect(packLinkedCountSql("x")).toContain(PACK_CONSUMING_STATUS_SQL);
+  });
+});
+
+describe("packBatchIsOverbooked — the refusal boundary", () => {
+  it("refuses a batch larger than the balance", () => {
+    expect(packBatchIsOverbooked(5, 3)).toBe(true);
+  });
+
+  it("allows a batch equal to the balance, which is the whole-pacote case", () => {
+    // Booking all ten of a ten-session pacote is the ordinary use, not an edge.
+    // An off-by-one here would make the headline case impossible.
+    expect(packBatchIsOverbooked(10, 10)).toBe(false);
+  });
+
+  it("allows a PARTIAL batch, which is the other ordinary use", () => {
+    // Four now and the rest as the treatment progresses.
+    expect(packBatchIsOverbooked(4, 10)).toBe(false);
+  });
+
+  it("refuses anything at all against an exhausted pacote", () => {
+    expect(packBatchIsOverbooked(1, 0)).toBe(true);
+  });
+
+  it("keys on what was REQUESTED, which is the decision it exists to hold", () => {
+    // The engine passes slots.length, never toBook.length. Asking for five
+    // sessions from a pacote with three is the error; how many of the five
+    // happen to be free is a separate question with a separate answer.
+    // Written as its own case because the two numbers are easy to swap and the
+    // swap would go unnoticed - it only differs when a slot is busy.
+    expect(packBatchIsOverbooked(5, 3)).toBe(true);
+    expect(packBatchIsOverbooked(3, 3)).toBe(false);
   });
 });

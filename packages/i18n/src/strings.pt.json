@@ -1422,5 +1422,8 @@
   "followup.messageHint": "A mensagem abre já escrita na aplicação do seu telemóvel ou computador e pode ser alterada antes de enviar.",
   "nav.followup": "Recuperação",
   "packs.derivedNote": "As sessões são contadas a partir das marcações do pacote. Uma marcação cancelada devolve a sessão; uma falta não.",
-  "appointment.packInsufficient": "O pacote não tem sessões suficientes para esta marcação. Veja o saldo do pacote na ficha do paciente e marque menos sessões, ou registe um novo pacote."
+  "appointment.packInsufficient": "O pacote não tem sessões suficientes para esta marcação. Veja o saldo do pacote na ficha do paciente e marque menos sessões, ou registe um novo pacote.",
+  "pack.batchCount": "Quantas sessões marcar agora",
+  "pack.batchHint": "O pacote tem {n} sessões disponíveis. Pode marcar menos e deixar as restantes para depois. Escolha a data e a hora de cada sessão.",
+  "pack.batchIncomplete": "Falta escolher a data ou a hora de pelo menos uma sessão. Preencha todas as linhas antes de guardar."
 }
