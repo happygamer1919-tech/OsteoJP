@@ -62,7 +62,12 @@ test("a mobile row offers WhatsApp, SMS and Email; a landline row offers none of
   await expect(landline.getByRole("link", { name: "WhatsApp" })).toHaveCount(0);
   await expect(landline.getByRole("link", { name: "SMS" })).toHaveCount(0);
   await expect(landline.getByRole("link", { name: "Email" })).toHaveCount(0);
-  await expect(landline.getByText("Sem número registado")).toBeVisible();
+  // THE LANDLINE ROW MUST NOT SAY "Sem número registado" - IT HAS ONE.
+  // This spec asserted that string here and PASSED, because the text was on the
+  // screen for the wrong reason. Both directions now, so the false copy cannot
+  // come back and still satisfy the test.
+  await expect(landline.getByText("Sem número registado")).toHaveCount(0);
+  await expect(landline.getByText(/linha fixa e não recebe/)).toBeVisible();
   await expect(landline.getByText("Sem email registado")).toBeVisible();
 });
 

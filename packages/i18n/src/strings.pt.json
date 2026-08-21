@@ -1427,5 +1427,6 @@
   "pack.batchHint": "O pacote tem {n} sessões disponíveis. Pode marcar menos e deixar as restantes para depois. Escolha a data e a hora de cada sessão.",
   "pack.batchIncomplete": "Falta escolher a data ou a hora de pelo menos uma sessão. Preencha todas as linhas antes de guardar.",
   "followup.errorTitle": "Não foi possível carregar a recuperação de utentes",
-  "followup.errorDescription": "Ocorreu um erro ao carregar a lista. Isto não significa que não haja pacientes para contactar. Tente novamente; se continuar, avise a equipa técnica."
+  "followup.errorDescription": "Ocorreu um erro ao carregar a lista. Isto não significa que não haja pacientes para contactar. Tente novamente; se continuar, avise a equipa técnica.",
+  "followup.phoneCannotReceive": "Este número é uma linha fixa e não recebe WhatsApp nem SMS. Peça um telemóvel quando falar com o paciente."
 }

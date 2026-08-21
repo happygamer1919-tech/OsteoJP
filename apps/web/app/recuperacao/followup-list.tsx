@@ -179,12 +179,35 @@ function FollowupCard({ row }: { row: FollowupRow }) {
         </button>
       </div>
 
-      {/* WHY BOTH ABSENCES ARE NAMED rather than the buttons simply not being
-          there. "No WhatsApp button" and "this patient cannot be reached that
-          way" are different facts, and only the second tells reception to ask
-          for a mobile next time they speak. */}
-      {!canMessagePhone ? (
-        <p className="mt-2 text-xs text-v2-text-secondary">{s["followup.noPhone"]}</p>
+      {/* ==================================================================
+          THE ABSENCE IS NAMED, BUT ONLY WHERE THE FIELD CANNOT NAME IT ITSELF.
+          ==================================================================
+          This used to render `followup.noPhone` for EVERY row that cannot be
+          messaged, which is two different rows:
+
+            - NO PHONE AT ALL. The field above already reads "Sem número
+              registado" - it is the field's own value - so a second copy under
+              the buttons said the same thing twice. That is the duplication the
+              owner saw on his screen.
+
+            - A LANDLINE. The field above shows the REAL NUMBER, and this line
+              said "Sem número registado" underneath it. Not redundant: FALSE.
+              There is a number; it cannot receive these two channels.
+
+          So the field keeps the empty case, because that IS the field, and this
+          line now carries only the case the field cannot express - a good
+          number that this screen cannot use, which is the one that tells
+          reception to ask for a telemóvel. Same distinction
+          LE-reminders-landline-dispatch drew between "invalid" and "cannot
+          receive THIS channel".
+
+          MY OWN E2E ASSERTED THE WRONG STRING ON THE LANDLINE ROW AND PASSED,
+          because the text was present - for the wrong reason. Criterion F on
+          ACC-vacuous-guard-sweep, in a spec I wrote two days ago. */}
+      {row.phoneE164 !== null && !row.smsCapable ? (
+        <p className="mt-2 text-xs text-v2-text-secondary">
+          {s["followup.phoneCannotReceive"]}
+        </p>
       ) : null}
       {!row.email ? (
         <p className="mt-1 text-xs text-v2-text-secondary">{s["followup.noEmail"]}</p>
