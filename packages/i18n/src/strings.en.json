@@ -1425,5 +1425,7 @@
   "appointment.packInsufficient": "The pacote does not have enough sessions for this booking. Check the balance on the patient record and book fewer sessions, or register a new pacote.",
   "pack.batchCount": "How many sessions to book now",
   "pack.batchHint": "The pacote has {n} sessions available. You can book fewer and leave the rest for later. Choose the date and time of each session.",
-  "pack.batchIncomplete": "At least one session is missing its date or time. Fill in every row before saving."
+  "pack.batchIncomplete": "At least one session is missing its date or time. Fill in every row before saving.",
+  "followup.errorTitle": "Could not load the patient follow-up list",
+  "followup.errorDescription": "Something went wrong loading the list. This does not mean there is nobody to contact. Try again; if it persists, tell the technical team."
 }

@@ -97,3 +97,68 @@ export function followupSelectionPredicate(patientIdExpr: string): string {
     followupNotPostponedClause(patientIdExpr),
   ].join("\n  AND ");
 }
+
+/* ==================================================================== */
+/* THE TWO SELECT EXPRESSIONS. INC 2026-08-21.                          */
+/* ==================================================================== */
+/**
+ * The patient's most recent completed attendance, as SQL text with an EXPLICIT
+ * outer reference.
+ *
+ * ==========================================================================
+ * THESE EXIST BECAUSE THE PAGE CRASHED IN PRODUCTION, AND IT IS THE SAME BUG
+ * `packLinkedCountSql` WAS WRITTEN FOR, IN THE FILE NEXT DOOR, ONE DAY LATER.
+ * ==========================================================================
+ * `apps/web/lib/followup/queries.ts` built these two subqueries inline and
+ * interpolated the Drizzle column:
+ *
+ *     sql`... WHERE (done.patient_id = ${patients.id} OR ...)`
+ *
+ * Drizzle renders that as the BARE `"id"`, not `"patients"."id"`. Inside
+ * `FROM appointments done` the unqualified `"id"` resolves to **`done.id`**, so
+ * the predicate reads `done.patient_id = done.id`, which is never true.
+ * `max()` over zero rows returns **NULL**, and `page.tsx` then called
+ * `toLocaleDateString` on it - a TypeError inside a Server Component, which is
+ * the digest-only error the owner saw.
+ *
+ * THE WHERE CLAUSE WAS NEVER WRONG. It used the qualified builders above, so
+ * the RIGHT patients were selected and their date came back null. The crash
+ * therefore fires only when the list has at least one row - which is why it hit
+ * the OWNER first: he sees every patient in the tenant, so he is the most likely
+ * to have one.
+ *
+ * WHY THE FIX IS A SHARED BUILDER AND NOT A ONE-CHARACTER EDIT: the same
+ * mistake, in the same shape, has now happened twice in two days. Both times the
+ * cure was to make the CALLER name the outer column. `pack-balance.ts` says the
+ * same thing about the same failure; these live here so the recuperação page has
+ * one place where correlation is spelled out, and `followup-sql.test.ts` pins
+ * what they render.
+ */
+export function followupLastAttendanceSql(patientIdExpr: string): string {
+  return `(
+  SELECT max(done.starts_at)
+    FROM appointments done
+   WHERE (done.patient_id = ${patientIdExpr} OR done.patient_2_id = ${patientIdExpr})
+     AND done.status = 'completed'
+)`;
+}
+
+/**
+ * The practitioner of THAT attendance, not "a practitioner who has seen them".
+ *
+ * Reception opens with "o Dr. X gostaria de saber como está", and naming the
+ * wrong clinician is worse than naming none. `ORDER BY starts_at DESC LIMIT 1`
+ * over the same completed set, so it can only be the practitioner of the visit
+ * the date refers to.
+ */
+export function followupPractitionerSql(patientIdExpr: string): string {
+  return `(
+  SELECT u.full_name
+    FROM appointments done
+    JOIN users u ON u.id = done.practitioner_id
+   WHERE (done.patient_id = ${patientIdExpr} OR done.patient_2_id = ${patientIdExpr})
+     AND done.status = 'completed'
+   ORDER BY done.starts_at DESC
+   LIMIT 1
+)`;
+}

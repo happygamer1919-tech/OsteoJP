@@ -2,6 +2,8 @@ import "server-only";
 import { and, inArray, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import {
+  followupLastAttendanceSql,
+  followupPractitionerSql,
   followupLastAttendanceClause,
   followupNoFutureBookingClause,
   followupNotPostponedClause,
@@ -38,6 +40,15 @@ import { followupWindow } from "./window";
  * bodies before it could ship safely. A deep link is a receptionist writing to
  * one person from their own phone, which is what the clinic already does.
  */
+
+/**
+ * The qualified reference to the outer `patients` row, written ONCE.
+ *
+ * Every correlated subquery on this page takes it. Two of them used to build
+ * their own and both were wrong in the same way - see `followupLastAttendanceSql`
+ * in `@osteojp/db`. One constant means the next one cannot be wrong differently.
+ */
+const PATIENT_ID = '"patients"."id"';
 
 export type FollowupChannelMark = {
   channel: "whatsapp" | "sms" | "email";
@@ -119,7 +130,7 @@ export async function listFollowupCandidates(
      * ordinary Drizzle parameters immediately after — the clause carries no
      * caller data, so nothing user-supplied reaches `raw`.
      */
-    const pid = '"patients"."id"';
+    const pid = PATIENT_ID;
     /**
      * THE PLACEHOLDERS BECOME REAL BOUND PARAMETERS, never interpolated text.
      *
@@ -160,12 +171,17 @@ export async function listFollowupCandidates(
         fullName: patients.fullName,
         phone: patients.phone,
         email: patients.email,
-        lastAttendanceAt: sql<Date>`(
-          SELECT max(done.starts_at)
-            FROM appointments done
-           WHERE (done.patient_id = ${patients.id} OR done.patient_2_id = ${patients.id})
-             AND done.status = 'completed'
-        )`.as("last_attendance_at"),
+        /**
+         * THE OUTER COLUMN IS NAMED, and that is not style - it is the INC of
+         * 2026-08-21. Interpolating `patients.id` here rendered as the BARE
+         * `"id"`, which inside `FROM appointments done` binds to `done.id`;
+         * the predicate was never true, max() returned NULL, and page.tsx
+         * crashed formatting it. `followupLastAttendanceSql` carries the full
+         * account.
+         */
+        lastAttendanceAt: sql<Date>`${sql.raw(followupLastAttendanceSql(PATIENT_ID))}`.as(
+          "last_attendance_at",
+        ),
         /**
          * THE THERAPIST OF THAT ATTENDANCE, not "a therapist who has seen them".
          * Reception opens the conversation with "o Dr. X gostaria de saber como
@@ -173,15 +189,9 @@ export async function listFollowupCandidates(
          * `ORDER BY starts_at DESC LIMIT 1` on the same completed set, so it can
          * only ever be the practitioner of the visit the date refers to.
          */
-        practitionerName: sql<string | null>`(
-          SELECT u.full_name
-            FROM appointments done
-            JOIN users u ON u.id = done.practitioner_id
-           WHERE (done.patient_id = ${patients.id} OR done.patient_2_id = ${patients.id})
-             AND done.status = 'completed'
-           ORDER BY done.starts_at DESC
-           LIMIT 1
-        )`.as("practitioner_name"),
+        practitionerName: sql<string | null>`${sql.raw(followupPractitionerSql(PATIENT_ID))}`.as(
+          "practitioner_name",
+        ),
       })
       .from(patients)
       .where(and(...conds))

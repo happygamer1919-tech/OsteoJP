@@ -37,6 +37,8 @@ import { randomUUID } from "node:crypto";
 import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  followupLastAttendanceSql,
+  followupPractitionerSql,
   followupLastAttendanceClause,
   followupNoFutureBookingClause,
   followupNotPostponedClause,
@@ -173,6 +175,56 @@ async function selected(predicate: string): Promise<string[]> {
   );
   return rows.map((r) => r.full_name as string);
 }
+
+describe.skipIf(!live)("INC 2026-08-21 - the SELECT expressions return a real date", () => {
+  /**
+   * THE FIXTURE THAT REPRODUCES THE PRODUCTION SHAPE.
+   *
+   * The crash needed exactly one thing the seeded suite never had: a patient who
+   * QUALIFIES, so the page renders a row and formats its date. `QUALIFIES` above
+   * is that patient. Before the fix these two subqueries returned NULL for him -
+   * the predicate correlated `done.patient_id` to `done.id` - and the page
+   * called toLocaleDateString on it.
+   *
+   * IT ASSERTS THE VALUE, NOT MERELY NON-NULL. A non-null assertion would pass
+   * against a subquery correlated to the WRONG patient, which is the other half
+   * of what a bare column could have produced.
+   */
+  it("last attendance is the seeded date, not null", async () => {
+    const rows = await sql.unsafe(
+      `select ${followupLastAttendanceSql("patients.id")} as last_at
+         from patients where tenant_id = $1 and full_name = $2`,
+      [tenant, QUALIFIES.label],
+    );
+    const row = rows[0];
+    if (!row) throw new Error("fixture patient missing - the suite is asserting nothing");
+    expect(row.last_at).not.toBeNull();
+    expect(new Date(row.last_at as string).toISOString()).toBe(IN_WINDOW.toISOString());
+  });
+
+  it("the practitioner is the one who saw them, not null", async () => {
+    const rows = await sql.unsafe(
+      `select ${followupPractitionerSql("patients.id")} as who
+         from patients where tenant_id = $1 and full_name = $2`,
+      [tenant, QUALIFIES.label],
+    );
+    const row = rows[0];
+    if (!row) throw new Error("fixture patient missing - the suite is asserting nothing");
+    expect(row.who).toBe("Seed Reception");
+  });
+
+  it("a patient with NO completed attendance yields null, which the page must tolerate", async () => {
+    // The honest null. The page may still meet one - a row selected on a future
+    // rule change, or a race - so the boundary is asserted here and the page
+    // guards it rather than assuming it cannot happen.
+    const rows = await sql.unsafe(
+      `select ${followupLastAttendanceSql("patients.id")} as last_at
+         from patients where tenant_id = $1 and full_name = $2`,
+      [tenant, NEVER_ATTENDED.label],
+    );
+    expect(rows[0]?.last_at ?? null).toBeNull();
+  });
+});
 
 describe.skipIf(!live)("RB-01 selection predicate (migration 0067)", () => {
   it("the WHOLE predicate selects the four that qualify and none of the five that do not", async () => {

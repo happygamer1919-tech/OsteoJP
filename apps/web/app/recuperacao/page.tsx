@@ -51,7 +51,24 @@ const DATE_FMT: Intl.DateTimeFormatOptions = {
   timeZone: "Europe/Lisbon",
 };
 
-function day(d: Date): string {
+/**
+ * INC 2026-08-21 — THIS THREW, AND THE GUARD IS NOT THE FIX.
+ *
+ * The subquery behind `lastAttendanceAt` was correlating a column to itself and
+ * returned NULL for every row; this function then called `toLocaleDateString`
+ * on it inside a Server Component. The real fix is in the query, and it is
+ * done - `followupLastAttendanceSql` names the outer column now.
+ *
+ * THE GUARD STAYS ANYWAY, AND IT MUST NOT BE READ AS DEFENSIVE PADDING. A null
+ * IS reachable honestly: a patient with no completed attendance yields one, and
+ * a future change to the selection rule could return such a row. What matters is
+ * that it renders a VISIBLE placeholder rather than a plausible-looking date -
+ * "-" tells reception the date is missing, whereas any fallback date would be a
+ * clinical claim nobody made. Section 1.3: an unknown case must not be dressed
+ * as a known one.
+ */
+function day(d: Date | null): string {
+  if (!d) return "—";
   return d.toLocaleDateString("pt-PT", DATE_FMT);
 }
 
@@ -62,7 +79,10 @@ const DATETIME_FMT: Intl.DateTimeFormatOptions = {
   hour12: false,
 };
 
-function stamp(d: Date): string {
+function stamp(d: Date | null): string {
+  // Same reasoning as day(). A contact with no timestamp is not a contact that
+  // happened at an unknown moment; it is a row that should not exist.
+  if (!d) return "—";
   return d.toLocaleString("pt-PT", DATETIME_FMT);
 }
 

@@ -68,6 +68,21 @@ describe("the batch engine and pacotes", () => {
     expect(src()).toContain("packBatchIsOverbooked(slots.length");
   });
 
+  it("the assign-now path creates the instance INSIDE the booking transaction", () => {
+    // Owner ruling 2026-08-21: a pacote being ASSIGNED now must reveal N slot
+    // pickers too, and "a batch that half creates an instance is worse than a
+    // refusal". bookPackSessionTx registers the instance when none exists, and
+    // it is called with the transaction handle - so the instance and its N
+    // appointments commit or roll back together. Asserted rather than assumed,
+    // because the property is invisible at the call site.
+    const s2 = src();
+    expect(s2).toContain("bookPackSessionTx(tx, ctx");
+    // And it is inside runScoped, not before it.
+    expect(s2.indexOf("bookPackSessionTx(tx, ctx")).toBeGreaterThan(
+      s2.indexOf("runScoped(ctx, async (tx)"),
+    );
+  });
+
   it("cannot express a pacote with a recurrence, by TYPE", () => {
     // The owner ruling is "no interval control and no weekday recurrence for the
     // pacote path". `packId` sits on BatchExplicitInput only, so a caller has
