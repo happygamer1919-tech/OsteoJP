@@ -1323,15 +1323,28 @@ remaining 126 are left per the card, and cannot grow silently.
 **Raised 2026-08-20 while building RB-02. Not blocking: the capability shipped,
 this is about the form's default.**
 
-**WHAT IS BUILT AND WORKING.** A Pacote can now book **N appointments**. The
-refusal that used to reject "pacote + repetição" is gone, every occurrence is
-linked to the instance, the balance derives from those links, and a batch larger
-than the pacote's remaining sessions is **refused by name** rather than
-truncated. Reception books ten sessions by choosing the pacote and setting the
-repeat count to ten.
+> ### CORRECTED 2026-08-21, BEFORE ANYBODY ACTED ON IT.
+>
+> **This question was written on a false premise and the false half is struck
+> out below.** It said reception could already book ten sessions "by choosing the
+> pacote and setting the repeat count to ten". **They cannot**, and there is no
+> repeat count to set: **"Agendar lote" is hidden whenever a Pacote is
+> selected**, and has been since W8-01c. What shipped was a server-side change on
+> a code path the interface does not use.
+>
+> **The question below is still worth answering and is unchanged in substance** —
+> it is now a question about `RB-02b`, the card that makes the behaviour
+> reachable, rather than about a default on a control that exists.
 
-**WHAT IS NOT DECIDED.** Whether selecting a pacote should **pre-fill** that
-count with the sessions remaining, and at what interval.
+**WHAT IS BUILT AND WORKING.** A pacote booking writes a real link, so the
+balance is derived from actual appointments rather than a counter, and booking
+against a pacote with nothing left is **refused by name**.
+
+**WHAT IS NOT BUILT** (`RB-02b`): booking N at once from the interface at all.
+
+**WHAT IS NOT DECIDED, and this is the question.** When that control does open
+for pacotes, should it **pre-fill** the number of appointments with the sessions
+remaining, and at what interval?
 
 **WHY IT IS NOT A DEFAULT I WILL PICK.** The count is the easy half; the
 **interval** is the question, and it is clinical rather than technical. Weekly is
@@ -1346,5 +1359,7 @@ INTERVAL blank.** The count is a fact about the pacote the form already knows;
 the interval is a decision about the patient. That gets the "a pacote of ten
 books ten" behaviour without the system committing anyone to a Tuesday.
 
-**WHAT HAPPENS IF THIS IS NEVER ANSWERED:** nothing breaks. Reception types the
-number, which is what they do today for every other repeating booking.
+**WHAT HAPPENS IF THIS IS NEVER ANSWERED:** nothing breaks and nothing is
+blocked. `RB-02b` can ship the control with the number typed by hand, which is
+what reception already does for every other repeating booking, and the pre-fill
+can be added later without touching anything else.
