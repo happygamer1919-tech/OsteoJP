@@ -788,6 +788,52 @@ since closed, the board is the count and this section is the story.
 > part of the codebase it never checked. Turning it on found two real mistakes,
 > both harmless today and both the kind that bite later.
 >
+> ### Two new things to look at, 2026-08-20
+>
+> **Reception can see who has stopped coming.** A new page, **Recuperação**, lists
+> patients who were in treatment recently and have **no future booking** — the
+> people who quietly drift away and whom nobody notices until they are gone. It
+> shows when they were last seen, which therapist saw them, and their contact
+> details, oldest-quiet first.
+>
+> **Nothing is sent by the system.** Pressing WhatsApp, SMS or Email opens the
+> app on the receptionist's own phone or computer, with a message **already
+> written and fully editable**. The clinic decides what goes out and presses send
+> themselves. The system only records that somebody opened the contact — and the
+> screen says so in those words, because "contacted" and "the message arrived"
+> are different facts and a tick invites people to confuse them.
+>
+> **The Portuguese wording is a draft and it is yours to change.**
+>
+> A patient can also be **postponed** for a few weeks if it is too soon to ring
+> them. That is reversible, and both the postponement and the reversal record who
+> did it and when.
+>
+> **Therapists cannot see this page at all**, and that is deliberate: it is every
+> patient's telephone number in one list, which is front-desk work.
+>
+> ---
+>
+> **A pacote session is now a real appointment.** Before today, a pacote's
+> remaining sessions were a number in a box, and a button marked "consumir" could
+> spend one **without any appointment existing** — no date, no therapist, no slot.
+> Nothing could ever check that number against the diary.
+>
+> Now a session **is** a booking. The balance is worked out from the actual
+> appointments, so it always agrees with the diary. The **consumir button is
+> gone**, and it did not need replacing: a patient who does not turn up is marked
+> "Faltou" on their appointment, and that spends the session by itself — the rule
+> survives, without anybody having to remember a button.
+>
+> **Your existing balances came out exactly as they were.** That was checked on
+> the live database, and it is the first thing to look at when you next open a
+> patient with a pacote.
+>
+> **One question for you**, written up as `Q-RB-02-1`: a pacote can now book
+> several appointments at once, and the form does not yet fill in how many. The
+> count is easy; **the spacing between them is a clinical decision**, not a
+> technical one, so it is not being guessed.
+
 > ### ✅ The database change you were waiting on is DONE, 2026-08-20
 >
 > **You applied it and it merged the same day (#991).** It added what the rest of
