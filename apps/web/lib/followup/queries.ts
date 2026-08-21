@@ -64,8 +64,13 @@ export type FollowupCandidate = {
   /** As STORED, not normalised: reception reads it back to a person. */
   phone: string | null;
   email: string | null;
-  /** The most recent completed attendance. Always inside the window. */
-  lastAttendanceAt: Date;
+  /**
+   * The most recent completed attendance. Always inside the window for a row the
+   * predicate selected, so in practice never null - but typed nullable because
+   * the SELECT can return null and a type that promised otherwise is how the
+   * page came to call a date method on nothing.
+   */
+  lastAttendanceAt: Date | null;
   /** Who saw them. Null only if the practitioner row is gone. */
   practitionerName: string | null;
   /** Every recorded contact for this patient, most recent first. */
@@ -196,7 +201,26 @@ export async function listFollowupCandidates(
          * crashed formatting it. `followupLastAttendanceSql` carries the full
          * account.
          */
-        lastAttendanceAt: sql<Date>`${sql.raw(followupLastAttendanceSql(PATIENT_ID))}`.as(
+        /**
+         * TYPED `string | null`, WHICH IS WHAT IT ACTUALLY IS. INC-12, fourth
+         * defect, and the e2e found this one too.
+         *
+         * It was `sql<Date>`, and that annotation is a CLAIM TO TYPESCRIPT, NOT
+         * A DECODER. Drizzle converts a timestamptz to a Date when it reads a
+         * KNOWN COLUMN, because the column carries its type; a raw `sql`
+         * fragment carries nothing, so the postgres driver's own value comes
+         * straight through - a string. The page then called
+         * `toLocaleDateString` on it: "d.toLocaleDateString is not a function",
+         * which is a different error from the null one and needed a different
+         * fix.
+         *
+         * THE LESSON IS THE FAMILY, NOT THE LINE. Every defect on this page has
+         * been a claim the runtime did not honour: a column reference that bound
+         * elsewhere, an alias that did not exist, a Date the driver could not
+         * encode, and now a type that did not convert. `sql<T>` is the most
+         * convincing of them because it type-checks.
+         */
+        lastAttendanceAt: sql<string | null>`${sql.raw(followupLastAttendanceSql(PATIENT_ID))}`.as(
           "last_attendance_at",
         ),
         /**
@@ -268,7 +292,10 @@ export async function listFollowupCandidates(
       fullName: r.fullName,
       phone: r.phone,
       email: r.email,
-      lastAttendanceAt: r.lastAttendanceAt,
+      // CONVERTED AT THE BOUNDARY, once, where the string is known to be one.
+      // The alternative - handing a string to the page and formatting it there -
+      // would put the same decision on every future caller.
+      lastAttendanceAt: r.lastAttendanceAt ? new Date(r.lastAttendanceAt) : null,
       practitionerName: r.practitionerName,
       contacts: byPatient.get(r.patientId) ?? [],
     }));
