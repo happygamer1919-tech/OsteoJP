@@ -74,7 +74,25 @@ export type Capability =
   // capability every role holds, because every role works the calendar - is
   // exactly how a therapist came to see the whole tenant's guest queue on
   // deployed production.
-  | "guest_requests:read";
+  | "guest_requests:read"
+  // RB-01 (owner ruling 2026-08-20): read the RECUPERACAO DE UTENTES list - the
+  // patients recently in treatment who have no future booking, with their
+  // telephone number and email so reception can reach out. Owner, admin and
+  // reception. A THERAPIST GETS NOTHING.
+  //
+  // ITS OWN CAPABILITY, FOR THE REASON SEC-01 PAID FOR ONE CARD EARLIER. The
+  // obvious host was `patients:read`, which every role holds because every role
+  // works with patients - so the check would have passed for a therapist and
+  // read as a real gate while gating nothing. That is not a hypothetical: it is
+  // exactly how a therapist came to see the whole tenant's guest queue on
+  // deployed production, and `guest_requests:read` exists because of it.
+  //
+  // THERE IS NO THERAPIST-SHAPED SUBSET OF THIS LIST TO HAND OUT, which is the
+  // test for whether a capability should be separate. The list is a front-desk
+  // work queue: who to ring today. A therapist's own-data rules bound them by
+  // the patients they treat, and "the patients I treated who have not rebooked"
+  // is a clinically meaningless slice that nobody asked for.
+  | "followup:read";
 
 const ALL_CAPABILITIES: readonly Capability[] = [
   "patients:read",
@@ -106,6 +124,7 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   "audit_log:read",
   "statistics:read",
   "guest_requests:read",
+  "followup:read",
 ];
 
 export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
@@ -151,6 +170,10 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // always; the SCOPE (own locations, mirroring PL-09) is applied in
     // lib/scheduling/guest-requests.ts via viewerLocationScope.
     "guest_requests:read",
+    // RB-01 (owner 2026-08-20): the recuperacao list. Location-blind grant, as
+    // always; the SCOPE is applied in lib/followup/queries.ts via
+    // viewerLocationScope + patientLocationScope.
+    "followup:read",
   ]),
 
   // Therapist (clinician): patient + appointment work, full clinical-record
@@ -211,6 +234,10 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // queue, and converting a request is a reception action. Same location scope
     // as every other reception read.
     "guest_requests:read",
+    // RB-01 (owner 2026-08-20): reception OWNS the recuperacao list - ringing a
+    // patient who has not rebooked is front-desk work, and every action on the
+    // list opens on the receptionist's own device.
+    "followup:read",
   ]),
 };
 

@@ -18,6 +18,10 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/agenda",
       "/patients",
       "/marcacoes",
+      // RB-01 (2026-08-20): Recuperação, beside Marcações rather than in the
+      // Estatísticas → Horários → Administração run, because NAV-01 ruled that
+      // run and the test below asserts it BY INDEX.
+      "/recuperacao",
       "/invoicing",
       "/clinical/review",
       "/estatisticas",
@@ -42,6 +46,9 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/agenda",
       "/patients",
       "/marcacoes",
+      // RB-01 (2026-08-20): Recuperação, beside Marcações. Admin holds
+      // `followup:read`.
+      "/recuperacao",
       "/invoicing",
       "/estatisticas",
       "/horarios",
@@ -74,6 +81,17 @@ describe("navItemsForRole — role-aware nav gating", () => {
     ]);
     expect(hrefs("therapist")).not.toContain("/invoicing");
     expect(hrefs("therapist")).not.toContain("/clinical");
+    // ======================================================================
+    // RB-01, 2026-08-20: THE THERAPIST SIDEBAR IS UNCHANGED BY RECUPERAÇÃO.
+    // ======================================================================
+    // The full list above already proves it, and this line is here anyway,
+    // because the full list will be edited again by the next feature and this
+    // assertion says WHY the absence matters rather than leaving it as one of
+    // six entries somebody could add a seventh to without thinking.
+    //
+    // The list is a tenant-wide set of patients with telephone numbers and
+    // email addresses. SEC-01 is what happens when that reaches a therapist.
+    expect(hrefs("therapist")).not.toContain("/recuperacao");
   });
 
   it("reception sees Marcações, Horários and Invoicing but NEITHER Clinical NOR Review NOR Admin", () => {
@@ -87,6 +105,9 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/agenda",
       "/patients",
       "/marcacoes",
+      // RB-01 (2026-08-20): Recuperação. It is RECEPTION'S queue above all -
+      // ringing a patient who has not rebooked is front-desk work.
+      "/recuperacao",
       "/invoicing",
       "/horarios",
     ]);

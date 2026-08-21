@@ -150,6 +150,28 @@ describe("matrix lock — granted capabilities (escalation guard)", () => {
     expect(can("reception", "settings:read")).toBe(false);
   });
 
+  it("RB-01: the recuperacao list is owner, admin and reception - NEVER the therapist", () => {
+    // Owner ruling 2026-08-20. The list is one tenant-wide set of patients with
+    // their telephone numbers and email addresses: a front-desk work queue.
+    //
+    // THE THERAPIST LINE IS THE ONE THAT MATTERS, and it is asserted against the
+    // capability this feature would OBVIOUSLY have ridden. `patients:read` is
+    // held by every role, because every role works with patients - so gating on
+    // it would have passed for a therapist while reading as a real check. That
+    // is not hypothetical: it is SEC-01, one card earlier, on the section
+    // directly above this one.
+    expect(can("therapist", "patients:read")).toBe(true);
+    expect(can("therapist", "followup:read")).toBe(false);
+
+    for (const role of ["owner", "admin", "reception"] as const) {
+      expect(can(role, "followup:read")).toBe(true);
+    }
+
+    // The grant carried nothing else with it.
+    expect(can("reception", "settings:read")).toBe(false);
+    expect(can("reception", "clinical_records:read")).toBe(false);
+  });
+
   it("PL-09 Phase 5: reception manages schedules but holds NO tenant settings", () => {
     // Reception OWNS scheduling for their location (schedule:*), decoupled from
     // settings:* — it must never gain tenant settings by that grant.
