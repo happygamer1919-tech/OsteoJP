@@ -1,5 +1,5 @@
 import "server-only";
-import { and, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import {
   followupLastAttendanceSql,
@@ -7,6 +7,8 @@ import {
   followupLastAttendanceClause,
   followupNoFutureBookingClause,
   followupNotPostponedClause,
+  patientFollowupContacts,
+  patientFollowupPostponements,
   patients,
   users,
 } from "@osteojp/db";
@@ -205,23 +207,41 @@ export async function listFollowupCandidates(
      * clinic had a real backlog — which is exactly when this screen matters.
      */
     const ids = rows.map((r) => r.patientId);
+    /**
+     * ==================================================================
+     * THE SCHEMA TABLE, NOT A HAND-WRITTEN ALIAS. INC-12, second cause.
+     * ==================================================================
+     * This was `.from(sql`patient_followup_contacts c`)` with a select of
+     * `u.full_name`. Drizzle emits `left join "users"`, NOT `left join users u`
+     * - it does not know about an alias somebody typed in a string - so the
+     * statement referenced a `u` that was never in the FROM clause and Postgres
+     * answered 42P01, missing FROM-clause entry for table "u".
+     *
+     * The cure is not to write `"users"."full_name"` by hand. It is to stop
+     * hand-writing the FROM clause at all: `patientFollowupContacts` has been in
+     * the schema since 0067, and using it means the aliases are Drizzle's own
+     * and cannot disagree with themselves.
+     */
     const marks = await tx
       .select({
-        patientId: sql<string>`c.patient_id`,
-        channel: sql<"whatsapp" | "sms" | "email">`c.channel`,
-        contactedAt: sql<Date>`c.contacted_at`,
-        contactedByName: sql<string | null>`u.full_name`,
+        patientId: patientFollowupContacts.patientId,
+        channel: patientFollowupContacts.channel,
+        contactedAt: patientFollowupContacts.contactedAt,
+        contactedByName: users.fullName,
       })
-      .from(sql`patient_followup_contacts c`)
-      .leftJoin(users, sql`${users.id} = c.contacted_by`)
-      .where(inArray(sql`c.patient_id`, ids))
-      .orderBy(sql`c.contacted_at DESC`);
+      .from(patientFollowupContacts)
+      .leftJoin(users, eq(users.id, patientFollowupContacts.contactedBy))
+      .where(inArray(patientFollowupContacts.patientId, ids))
+      .orderBy(desc(patientFollowupContacts.contactedAt));
 
     const byPatient = new Map<string, FollowupChannelMark[]>();
     for (const m of marks) {
       const list = byPatient.get(m.patientId) ?? [];
       list.push({
-        channel: m.channel,
+        // The column is `text` with a CHECK pinning the three values (0067), so
+        // the DB guarantees the union the type claims. Narrowed here rather than
+        // asserted at the query, where it would hide a widened CHECK.
+        channel: m.channel as FollowupChannelMark["channel"],
         contactedAt: m.contactedAt,
         contactedByName: m.contactedByName,
       });
@@ -265,25 +285,38 @@ export async function listActivePostponements(
   const locationScope = await viewerLocationScope(ctx);
 
   return runScoped(ctx, async (tx) => {
+    /**
+     * ==================================================================
+     * THE QUERY THAT ACTUALLY BROUGHT THE PAGE DOWN. INC-12.
+     * ==================================================================
+     * Same defect as the marks query above and worse in effect: this one runs
+     * on EVERY request, in parallel with the candidates query, so it threw
+     * 42P01 whether or not there was a single patient to show. **The page had
+     * never rendered for anyone.**
+     *
+     * It also selected two columns both named `id` and two named `full_name`,
+     * leaving the row mapping to positional luck. Using the schema tables gives
+     * Drizzle's own generated aliases and removes both problems at once.
+     */
     const conds = [
-      sql`p.revoked_at IS NULL`,
-      sql`p.postponed_until > ${now}`,
+      isNull(patientFollowupPostponements.revokedAt),
+      gt(patientFollowupPostponements.postponedUntil, now),
     ];
     if (locationScope) conds.push(patientLocationScope(patients.id, locationScope));
 
     return tx
       .select({
-        id: sql<string>`p.id`,
+        id: patientFollowupPostponements.id,
         patientId: patients.id,
         fullName: patients.fullName,
-        postponedUntil: sql<Date>`p.postponed_until`,
-        createdAt: sql<Date>`p.created_at`,
-        createdByName: sql<string | null>`u.full_name`,
+        postponedUntil: patientFollowupPostponements.postponedUntil,
+        createdAt: patientFollowupPostponements.createdAt,
+        createdByName: users.fullName,
       })
-      .from(sql`patient_followup_postponements p`)
-      .innerJoin(patients, sql`${patients.id} = p.patient_id`)
-      .leftJoin(users, sql`${users.id} = p.created_by`)
+      .from(patientFollowupPostponements)
+      .innerJoin(patients, eq(patients.id, patientFollowupPostponements.patientId))
+      .leftJoin(users, eq(users.id, patientFollowupPostponements.createdBy))
       .where(and(...conds))
-      .orderBy(sql`p.postponed_until ASC`);
+      .orderBy(asc(patientFollowupPostponements.postponedUntil));
   });
 }
