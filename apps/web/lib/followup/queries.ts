@@ -148,12 +148,27 @@ export async function listFollowupCandidates(
         clause
           .split(/(\$[123])/g)
           .map((part) =>
+            /**
+             * ISO STRING + AN EXPLICIT CAST, NOT A BARE Date. INC-12, third
+             * defect, and the new e2e caught it on its first run.
+             *
+             * These parameters sit inside a fragment assembled with sql.raw, so
+             * Drizzle has NO COLUMN TYPE to encode them against - unlike
+             * `gt(table.column, now)`, where the column tells it what to do.
+             * With no type hint the postgres driver is handed a Date it cannot
+             * serialise: "The string argument must be of type string... Received
+             * an instance of Date".
+             *
+             * STILL A BOUND PARAMETER. The value is not interpolated into the
+             * text - it is `$n::timestamptz` with the string bound - so the
+             * reasoning above about `now` being a function parameter still holds.
+             */
             part === "$1"
-              ? sql`${from}`
+              ? sql`${from.toISOString()}::timestamptz`
               : part === "$2"
-                ? sql`${to}`
+                ? sql`${to.toISOString()}::timestamptz`
                 : part === "$3"
-                  ? sql`${now}`
+                  ? sql`${now.toISOString()}::timestamptz`
                   : sql.raw(part),
           ),
         sql``,
