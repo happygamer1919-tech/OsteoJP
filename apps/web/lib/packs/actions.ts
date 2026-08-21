@@ -1,32 +1,26 @@
 "use server";
-import { revalidatePath } from "next/cache";
 import { requireRequestContext } from "@/lib/auth/context";
-import { adjustPackInstance, getActivePackBalance, type AdjustOutcome } from "./instances";
-import type { AdjustDirection } from "./instances-core";
+import { getActivePackBalance } from "./instances";
 
 /**
- * W8-01c — server actions for the pack booking + patient-profile surfaces.
- * getPatientPackBalanceAction feeds the drawer's remaining-sessions banner;
- * adjustPackSessionAction is the staff manual consume/restore control on the
- * patient profile. Both re-authorize server-side (never trust the client).
+ * Server actions for the pacote surfaces.
+ *
+ * RB-02 DELETED `adjustPackSessionAction`. It was the staff manual
+ * consume/restore control on the patient profile, and it burned a session with
+ * NO appointment row - no who, no when, no slot. It existed for the under-24h /
+ * no-show rule, which is now a consequence of the data: a no-show is an
+ * appointment with `status = 'no_show'` and the derived balance counts it.
+ *
+ * IT IS DELETED RATHER THAN HIDDEN. A server action left in place with its UI
+ * removed is still callable by anything that can POST, and it would still write
+ * a balance that nothing can reconcile.
  */
 
 export async function getPatientPackBalanceAction(
   patientId: string,
   packId: string,
-): Promise<{ sessionsTotal: number; sessionsRemaining: number } | null> {
+): Promise<{ sessionsTotal: number; sessionsAvailable: number } | null> {
   const actor = await requireRequestContext();
   if (!patientId || !packId) return null;
   return getActivePackBalance(actor, patientId, packId);
-}
-
-export async function adjustPackSessionAction(
-  instanceId: string,
-  direction: AdjustDirection,
-  patientId: string,
-): Promise<AdjustOutcome> {
-  const actor = await requireRequestContext();
-  const result = await adjustPackInstance(actor, instanceId, direction);
-  if (result.ok && patientId) revalidatePath(`/patients/${patientId}`);
-  return result;
 }

@@ -1,22 +1,68 @@
 import "server-only";
-import { and, desc, eq, gt } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { patientPackInstances, servicePacks, services, type DbTx } from "@osteojp/db";
+import {
+  packLinkedCountSql,
+  packIsActive,
+  packSessionsAvailable,
+  packSessionsConsumed,
+  patientPackInstances,
+  servicePacks,
+  services,
+  type DbTx,
+} from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "@/lib/admin/audit";
-import {
-  instanceStatus,
-  resolvePackAdjust,
-  resolvePackBooking,
-  type AdjustDirection,
-} from "./instances-core";
 
 /**
- * W8-01c — per-patient pack instances (consumption side of the W8-01a model).
- * Booking a pack registers or decrements an instance; staff can manually
- * consume/restore a session (the under-24h/no-show rule, never a charge); the
- * patient profile lists remaining sessions. All tenant-scoped (RLS) + audited.
+ * Per-patient pack instances. W8-01c built this as a COUNTER; RB-02 makes it a
+ * DERIVED BALANCE.
+ *
+ * ==========================================================================
+ * WHAT CHANGED, AND WHY IT IS NOT A REFACTOR
+ * ==========================================================================
+ * Before: booking a pacote decremented `sessions_remaining`, and a "consumir"
+ * button on the patient profile decremented it again with **no appointment
+ * row** — no who, no when, no slot. The balance was a number nothing could
+ * reconcile against the diary, and the only thing that could correct it was
+ * another press of the same button.
+ *
+ * After: a pacote session **is an appointment**, linked by
+ * `appointments.pack_instance_id` (migration 0067), and the balance is
+ *
+ *     sessionsTotal - legacyConsumed - linked appointments that are not cancelled
+ *
+ * `@osteojp/db`'s `pack-balance` carries the formula and the reasoning for both
+ * subtracted terms. Two consequences are worth stating here because they are
+ * the point of the card:
+ *
+ * 1. **`consumir` and `restore` are DELETED, not reimplemented.** They existed
+ *    for the under-24h / no-show rule. A no-show is now an appointment with
+ *    `status = 'no_show'`, which the formula counts by itself, so the rule is a
+ *    consequence of the data rather than a button somebody must remember. It
+ *    also can no longer be applied to a patient with no appointment at all,
+ *    which is what made the old counter unreconcilable.
+ * 2. **`sessions_remaining` and `status` are FROZEN.** Nothing below UPDATEs
+ *    either. `sessions_remaining` is the only evidence 0067's backfill can ever
+ *    be checked against, and `scripts/pack-sessions-remaining-is-frozen.test.mjs`
+ *    asserts in the required check that no application code writes it. A
+ *    vestigial column something still writes drifts silently, which is the
+ *    family of defect this project keeps paying for.
  */
+
+/**
+ * Appointments linked to an instance that CONSUME a session. One definition,
+ * used by every read and by the booking path.
+ *
+ * THE OUTER COLUMN IS NAMED EXPLICITLY, and that is not style. Interpolating the
+ * Drizzle column here rendered as the BARE `"id"`, which inside
+ * `FROM appointments a` resolves to `a.id` - so the predicate read
+ * `a.pack_instance_id = a.id` and counted ZERO for every instance, silently.
+ * `packLinkedCountSql` carries the full account.
+ */
+const linkedCount = sql<number>`${sql.raw(
+  packLinkedCountSql('"patient_pack_instances"."id"'),
+)}`;
 
 export type PackInstanceView = {
   id: string;
@@ -24,27 +70,45 @@ export type PackInstanceView = {
   packName: string;
   baseServiceName: string;
   sessionsTotal: number;
-  sessionsRemaining: number;
-  status: string;
+  /**
+   * DERIVED. Deliberately NOT called `sessionsRemaining`: that name now belongs
+   * to the frozen pre-0067 column, and reusing it for a different number is the
+   * conflation this codebase keeps finding in its own instruments.
+   */
+  sessionsAvailable: number;
+  /** What has been spent. Can exceed the total; see `packSessionsConsumed`. */
+  sessionsConsumed: number;
+  /** Derived, not the vestigial `status` column. */
+  active: boolean;
 };
 
 export type PackBookResult = {
   instanceId: string;
-  // The pack's base service — the appointment records this as its serviceId.
+  /** The pack's base service — the appointment records this as its serviceId. */
   baseServiceId: string;
   sessionsTotal: number;
-  sessionsRemaining: number;
+  /** Available BEFORE this booking's appointments are inserted. */
+  sessionsAvailableBefore: number;
   registered: boolean;
 };
 
 /**
- * Register-or-decrement one pack session for a patient, INSIDE a caller-provided
- * tenant-scoped tx (createAppointment shares its tx so the appointment and the
- * consumption commit or roll back together). Returns null when the pack is
- * missing or inactive — the caller maps that to a validation error WITHOUT
- * having written anything (this reads before it writes). The 0037 checks
- * (remaining 0..total) are the DB backstop; resolvePackBooking never proposes an
- * out-of-range value.
+ * Find or open the instance a pacote booking should attach to, INSIDE a
+ * caller-provided tenant-scoped tx. Returns null when the pack is missing or
+ * inactive — the caller maps that to a validation error with nothing written.
+ *
+ * ==========================================================================
+ * IT NO LONGER CONSUMES ANYTHING, AND THAT IS THE WHOLE CHANGE
+ * ==========================================================================
+ * It used to decrement a counter here. Now it only resolves WHICH instance the
+ * appointments will be linked to; the consumption happens when the caller writes
+ * `pack_instance_id` on the rows it inserts, in the same transaction. So a
+ * booking that rolls back consumes nothing without any compensating update, and
+ * an appointment that is later cancelled returns its session by itself.
+ *
+ * `sessionsAvailableBefore` is returned so the caller can refuse a batch larger
+ * than the balance. Refusing is the caller's job because only the caller knows
+ * how many appointments it is about to insert.
  */
 export async function bookPackSessionTx(
   tx: DbTx,
@@ -63,103 +127,132 @@ export async function bookPackSessionTx(
     .limit(1);
   if (!pack || !pack.isActive) return null;
 
-  const [active] = await tx
+  /**
+   * THE MOST RECENT INSTANCE WITH SESSIONS LEFT, by the DERIVED balance rather
+   * than by the frozen `status` column. Filtering on `status = 'active'` would
+   * read a value nothing maintains any more, and it would go on looking correct.
+   */
+  /**
+   * THE MOST RECENT INSTANCE **WITH SESSIONS LEFT**, not simply the most recent.
+   *
+   * The distinction is load-bearing and it is easy to get wrong: a patient who
+   * bought a second pacote before finishing the first has two rows, newest
+   * first. Taking the newest unconditionally attaches to it even when it is
+   * exhausted and the older one still has sessions, and the patient is charged
+   * for a pacote they had already paid for. The old code avoided this with a
+   * `sessions_remaining > 0` filter in SQL; the balance is derived now, so the
+   * choice is made here over all of them.
+   *
+   * There are a handful of rows per (patient, pack), so fetching them and
+   * choosing in JS costs nothing and keeps ONE definition of "available".
+   */
+  const instances = await tx
     .select({
       id: patientPackInstances.id,
       sessionsTotal: patientPackInstances.sessionsTotal,
-      sessionsRemaining: patientPackInstances.sessionsRemaining,
+      legacyConsumed: patientPackInstances.legacyConsumed,
+      linked: linkedCount,
     })
     .from(patientPackInstances)
     .where(
-      and(
-        eq(patientPackInstances.patientId, patientId),
-        eq(patientPackInstances.packId, packId),
-        eq(patientPackInstances.status, "active"),
-        gt(patientPackInstances.sessionsRemaining, 0),
-      ),
+      and(eq(patientPackInstances.patientId, patientId), eq(patientPackInstances.packId, packId)),
     )
-    .orderBy(desc(patientPackInstances.purchasedAt))
-    .limit(1);
+    .orderBy(desc(patientPackInstances.purchasedAt));
 
-  const res = resolvePackBooking(active ?? null, pack.sessionCount);
+  const withBalance = instances.map((i) => ({
+    ...i,
+    available: packSessionsAvailable({
+      sessionsTotal: i.sessionsTotal,
+      legacyConsumed: i.legacyConsumed,
+      linkedAppointments: i.linked,
+    }),
+  }));
+  const active = withBalance.find((i) => i.available > 0);
 
-  if (res.action === "register") {
-    const [row] = await tx
-      .insert(patientPackInstances)
-      // tenant_id NOT NULL, no default; RLS WITH CHECK validates it vs the JWT.
-      .values({
-        tenantId: actor.tenantId,
-        patientId,
-        packId,
-        sessionsTotal: res.sessionsTotal,
-        sessionsRemaining: res.sessionsRemaining,
-        status: instanceStatus(res.sessionsRemaining),
-      })
-      .returning({ id: patientPackInstances.id });
-    await writeAudit(tx, actor, {
-      action: "pack_instance.register",
-      entityType: "patient_pack_instance",
-      entityId: row!.id,
-      metadata: {
-        packId,
-        patientId,
-        sessionsTotal: res.sessionsTotal,
-        sessionsRemaining: res.sessionsRemaining,
-      },
-    });
+  if (active) {
     return {
-      instanceId: row!.id,
+      instanceId: active.id,
       baseServiceId: pack.baseServiceId,
-      sessionsTotal: res.sessionsTotal,
-      sessionsRemaining: res.sessionsRemaining,
-      registered: true,
+      sessionsTotal: active.sessionsTotal,
+      sessionsAvailableBefore: active.available,
+      registered: false,
     };
   }
 
-  await tx
-    .update(patientPackInstances)
-    .set({ sessionsRemaining: res.sessionsRemaining, status: instanceStatus(res.sessionsRemaining) })
-    .where(eq(patientPackInstances.id, active!.id));
+  /**
+   * A FRESH PURCHASE. `sessions_remaining` is written ONCE, here, to the full
+   * total — the honest value at purchase, when nothing has been consumed — and
+   * never touched again. The frozen-column guard asserts no UPDATE writes it;
+   * an INSERT of a brand-new row is not the drift that guard exists to catch,
+   * and the column is NOT NULL with no default, so a row cannot be created
+   * without one.
+   */
+  const [row] = await tx
+    .insert(patientPackInstances)
+    // tenant_id NOT NULL, no default; RLS WITH CHECK validates it vs the JWT.
+    .values({
+      tenantId: actor.tenantId,
+      patientId,
+      packId,
+      sessionsTotal: pack.sessionCount,
+      sessionsRemaining: pack.sessionCount,
+      legacyConsumed: 0,
+    })
+    .returning({ id: patientPackInstances.id });
+
   await writeAudit(tx, actor, {
-    action: "pack_instance.consume",
+    action: "pack_instance.register",
     entityType: "patient_pack_instance",
-    entityId: active!.id,
-    metadata: { packId, patientId, sessionsRemaining: res.sessionsRemaining },
+    entityId: row!.id,
+    metadata: { packId, patientId, sessionsTotal: pack.sessionCount },
   });
+
   return {
-    instanceId: active!.id,
+    instanceId: row!.id,
     baseServiceId: pack.baseServiceId,
-    sessionsTotal: active!.sessionsTotal,
-    sessionsRemaining: res.sessionsRemaining,
-    registered: false,
+    sessionsTotal: pack.sessionCount,
+    sessionsAvailableBefore: pack.sessionCount,
+    registered: true,
   };
 }
 
-/** The active (still-bookable) instance's balance for a (patient, pack), or null. */
+/** The balance of the instance a new booking would attach to, or null. */
 export async function getActivePackBalance(
   actor: RequestContext,
   patientId: string,
   packId: string,
-): Promise<{ sessionsTotal: number; sessionsRemaining: number } | null> {
+): Promise<{ sessionsTotal: number; sessionsAvailable: number } | null> {
   assertCan(actor.role, "appointments:read");
   return runScoped(actor, async (tx) => {
-    const [active] = await tx
+    const rows = await tx
       .select({
         sessionsTotal: patientPackInstances.sessionsTotal,
-        sessionsRemaining: patientPackInstances.sessionsRemaining,
+        legacyConsumed: patientPackInstances.legacyConsumed,
+        linked: linkedCount,
       })
       .from(patientPackInstances)
       .where(
-        and(
-          eq(patientPackInstances.patientId, patientId),
-          eq(patientPackInstances.packId, packId),
-          eq(patientPackInstances.status, "active"),
-          gt(patientPackInstances.sessionsRemaining, 0),
-        ),
+        and(eq(patientPackInstances.patientId, patientId), eq(patientPackInstances.packId, packId)),
       )
-      .orderBy(desc(patientPackInstances.purchasedAt))
-      .limit(1);
-    return active ?? null;
+      .orderBy(desc(patientPackInstances.purchasedAt));
+    if (rows.length === 0) return null;
+
+    const withBalance = rows.map((r) => ({
+      sessionsTotal: r.sessionsTotal,
+      sessionsAvailable: packSessionsAvailable({
+        sessionsTotal: r.sessionsTotal,
+        legacyConsumed: r.legacyConsumed,
+        linkedAppointments: r.linked,
+      }),
+    }));
+
+    /**
+     * THE SAME INSTANCE `bookPackSessionTx` WOULD ATTACH TO, and the banner has
+     * to agree with the booking or it tells reception one thing while the save
+     * does another. First with sessions left, newest first; if none has any, the
+     * newest, so the banner reads "0/10" rather than disappearing.
+     */
+    return withBalance.find((r) => r.sessionsAvailable > 0) ?? withBalance[0]!;
   });
 }
 
@@ -170,67 +263,39 @@ export async function listPatientPackInstances(
   patientId: string,
 ): Promise<PackInstanceView[]> {
   assertCan(actor.role, "appointments:read");
-  return runScoped(actor, (tx) =>
-    tx
+  return runScoped(actor, async (tx) => {
+    const rows = await tx
       .select({
         id: patientPackInstances.id,
         packId: patientPackInstances.packId,
         packName: servicePacks.name,
         baseServiceName: services.name,
         sessionsTotal: patientPackInstances.sessionsTotal,
-        sessionsRemaining: patientPackInstances.sessionsRemaining,
-        status: patientPackInstances.status,
+        legacyConsumed: patientPackInstances.legacyConsumed,
+        linked: linkedCount,
       })
       .from(patientPackInstances)
       .innerJoin(servicePacks, eq(patientPackInstances.packId, servicePacks.id))
       .innerJoin(services, eq(servicePacks.baseServiceId, services.id))
       .where(eq(patientPackInstances.patientId, patientId))
-      .orderBy(desc(patientPackInstances.purchasedAt)),
-  );
-}
+      .orderBy(desc(patientPackInstances.purchasedAt));
 
-export type AdjustOutcome =
-  | { ok: true; sessionsRemaining: number }
-  | { ok: false; error: "not_found" | "exhausted" | "complete" };
-
-/**
- * Manual staff adjust of one instance (consume/restore a session for the
- * under-24h/no-show rule). Audited; NEVER a charge. Enforces the no-negative /
- * no-over-grant bounds (resolvePackAdjust) with the 0037 checks as backstop.
- */
-export async function adjustPackInstance(
-  actor: RequestContext,
-  instanceId: string,
-  direction: AdjustDirection,
-): Promise<AdjustOutcome> {
-  assertCan(actor.role, "appointments:write");
-  return runScoped(actor, async (tx) => {
-    const [inst] = await tx
-      .select({
-        id: patientPackInstances.id,
-        sessionsTotal: patientPackInstances.sessionsTotal,
-        sessionsRemaining: patientPackInstances.sessionsRemaining,
-      })
-      .from(patientPackInstances)
-      .where(eq(patientPackInstances.id, instanceId))
-      .limit(1);
-    if (!inst) return { ok: false, error: "not_found" };
-
-    const res = resolvePackAdjust(inst, direction);
-    if (!res.ok) return { ok: false, error: res.reason };
-
-    await tx
-      .update(patientPackInstances)
-      .set({ sessionsRemaining: res.sessionsRemaining, status: instanceStatus(res.sessionsRemaining) })
-      .where(eq(patientPackInstances.id, instanceId));
-    await writeAudit(tx, actor, {
-      // Explicit direction in the action so the audit trail distinguishes a
-      // manual restore (no-show reversed) from a manual consume.
-      action: direction === "consume" ? "pack_instance.adjust.consume" : "pack_instance.adjust.restore",
-      entityType: "patient_pack_instance",
-      entityId: instanceId,
-      metadata: { direction, sessionsRemaining: res.sessionsRemaining },
+    return rows.map((r) => {
+      const inputs = {
+        sessionsTotal: r.sessionsTotal,
+        legacyConsumed: r.legacyConsumed,
+        linkedAppointments: r.linked,
+      };
+      return {
+        id: r.id,
+        packId: r.packId,
+        packName: r.packName,
+        baseServiceName: r.baseServiceName,
+        sessionsTotal: r.sessionsTotal,
+        sessionsAvailable: packSessionsAvailable(inputs),
+        sessionsConsumed: packSessionsConsumed(inputs),
+        active: packIsActive(inputs),
+      };
     });
-    return { ok: true, sessionsRemaining: res.sessionsRemaining };
   });
 }

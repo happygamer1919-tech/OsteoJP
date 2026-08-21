@@ -332,11 +332,10 @@ export default async function PatientProfilePage({
           aria-label={s["patients.tabAppointments"]}
           className="flex flex-col gap-6"
         >
-          <PatientPacks
-            patientId={id}
-            instances={patientPackInstances}
-            canAdjust={canEditAppointments}
-          />
+          {/* RB-02: no patientId and no canAdjust - the consumir/restaurar
+              controls are gone, so there is nothing here to authorise and
+              nothing to revalidate. */}
+          <PatientPacks instances={patientPackInstances} />
           <AppointmentsList
             appointments={patientAppointments}
             canEdit={canEditAppointments}

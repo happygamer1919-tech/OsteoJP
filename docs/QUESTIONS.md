@@ -1315,3 +1315,36 @@ api client, which is its own piece of work. Carded as
 
 **The ratchet is lowered 163 → 126, re-measured rather than subtracted.** The
 remaining 126 are left per the card, and cannot grow silently.
+
+---
+
+## Q-RB-02-1 — should Nova marcação PRE-FILL the repeat count from the pacote?
+
+**Raised 2026-08-20 while building RB-02. Not blocking: the capability shipped,
+this is about the form's default.**
+
+**WHAT IS BUILT AND WORKING.** A Pacote can now book **N appointments**. The
+refusal that used to reject "pacote + repetição" is gone, every occurrence is
+linked to the instance, the balance derives from those links, and a batch larger
+than the pacote's remaining sessions is **refused by name** rather than
+truncated. Reception books ten sessions by choosing the pacote and setting the
+repeat count to ten.
+
+**WHAT IS NOT DECIDED.** Whether selecting a pacote should **pre-fill** that
+count with the sessions remaining, and at what interval.
+
+**WHY IT IS NOT A DEFAULT I WILL PICK.** The count is the easy half; the
+**interval** is the question, and it is clinical rather than technical. Weekly is
+the obvious guess and it is a guess: a ten-session pacote spread weekly commits a
+patient to a specific weekday for two and a half months, and the clinic may well
+book four now and the rest as the treatment progresses. Guessing wrong here does
+not produce an error — it produces **ten real appointments in the diary at the
+wrong cadence**, which somebody then has to unpick one at a time.
+
+**RECOMMENDED DEFAULT, if you want one now: pre-fill the COUNT, leave the
+INTERVAL blank.** The count is a fact about the pacote the form already knows;
+the interval is a decision about the patient. That gets the "a pacote of ten
+books ten" behaviour without the system committing anyone to a Tuesday.
+
+**WHAT HAPPENS IF THIS IS NEVER ANSWERED:** nothing breaks. Reception types the
+number, which is what they do today for every other repeating booking.

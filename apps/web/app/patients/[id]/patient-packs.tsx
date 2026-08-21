@@ -1,105 +1,60 @@
-"use client";
-
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Button, Card, StatusChip } from "@osteojp/ui";
+import { Card, StatusChip } from "@osteojp/ui";
 
 import { s } from "@/lib/i18n";
-import { adjustPackSessionAction } from "@/lib/packs/actions";
 import type { PackInstanceView } from "@/lib/packs/instances";
 
 /**
- * W8-01c — the patient's pack instances with remaining sessions and the staff
- * manual consume/restore adjust control (the under-24h/no-show rule; audited,
- * NEVER a charge). Rendered in the Consultas tab. Renders nothing when the
- * patient has no packs.
+ * The patient's pacotes, with sessions left.
+ *
+ * ==========================================================================
+ * RB-02 REMOVED THE CONSUMIR / RESTAURAR CONTROLS, AND THE COMPONENT STOPPED
+ * BEING A CLIENT COMPONENT AS A RESULT.
+ * ==========================================================================
+ * They were the staff manual adjust for the under-24h / no-show rule: press
+ * "consumir" and the balance dropped by one, with an audit row and **no
+ * appointment**. No who, no when, no slot — and nothing that could ever
+ * reconcile the number against the diary.
+ *
+ * A no-show is now an appointment with `status = 'no_show'`, and the derived
+ * balance counts it. So the rule survives and the button does not: it is a
+ * consequence of the data instead of something somebody has to remember, and it
+ * can no longer be applied to a patient who has no appointment at all.
+ *
+ * THE SERVER ACTION WENT WITH IT. Removing the button alone would have left a
+ * "use server" function callable by anything that can POST, still writing a
+ * balance nothing can reconcile.
+ *
+ * WHAT THE NUMBER MEANS NOW: `sessionsAvailable` is DERIVED —
+ * `total - legacyConsumed - linked appointments that are not cancelled`. It is
+ * deliberately not called `sessionsRemaining`; that name belongs to the frozen
+ * pre-0067 column, and reusing it for a different number is the conflation this
+ * codebase keeps finding in its own instruments.
  */
-export function PatientPacks({
-  patientId,
-  instances,
-  canAdjust,
-}: {
-  patientId: string;
-  instances: PackInstanceView[];
-  canAdjust: boolean;
-}) {
-  const router = useRouter();
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function adjust(instanceId: string, direction: "consume" | "restore") {
-    setBusy(`${instanceId}:${direction}`);
-    setError(null);
-    try {
-      const r = await adjustPackSessionAction(instanceId, direction, patientId);
-      if (!r.ok) {
-        setError(
-          r.error === "exhausted"
-            ? s["packs.adjustExhausted"]
-            : r.error === "complete"
-              ? s["packs.adjustComplete"]
-              : s["errors.generic"],
-        );
-        return;
-      }
-      router.refresh();
-    } finally {
-      setBusy(null);
-    }
-  }
-
+export function PatientPacks({ instances }: { instances: PackInstanceView[] }) {
   if (instances.length === 0) return null;
 
   return (
     <Card title={s["packs.sectionTitle"]}>
       <ul className="flex flex-col gap-3">
-        {instances.map((inst) => {
-          const active = inst.sessionsRemaining > 0;
-          return (
-            <li
-              key={inst.id}
-              className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0"
-            >
-              <div className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-text-primary">{inst.packName}</span>
-                <span className="text-xs text-text-secondary">{inst.baseServiceName}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <StatusChip tone={active ? "success" : "neutral"}>
-                  {inst.sessionsRemaining}/{inst.sessionsTotal} {s["packs.sessions"]}
-                </StatusChip>
-                {canAdjust && (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy !== null || inst.sessionsRemaining <= 0}
-                      onClick={() => adjust(inst.id, "consume")}
-                    >
-                      {s["packs.consume"]}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy !== null || inst.sessionsRemaining >= inst.sessionsTotal}
-                      onClick={() => adjust(inst.id, "restore")}
-                    >
-                      {s["packs.restore"]}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </li>
-          );
-        })}
+        {instances.map((inst) => (
+          <li
+            key={inst.id}
+            className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0"
+          >
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-text-primary">{inst.packName}</span>
+              <span className="text-xs text-text-secondary">{inst.baseServiceName}</span>
+            </div>
+            <StatusChip tone={inst.active ? "success" : "neutral"}>
+              {inst.sessionsAvailable}/{inst.sessionsTotal} {s["packs.sessions"]}
+            </StatusChip>
+          </li>
+        ))}
       </ul>
-      {error && (
-        <p role="alert" className="mt-3 text-sm text-error">
-          {error}
-        </p>
-      )}
+      {/* WHERE THE SESSIONS WENT, said once under the list. Without it, a
+          balance that moved because an appointment was booked elsewhere in the
+          product looks like the number changing on its own. */}
+      <p className="mt-3 text-xs text-text-secondary">{s["packs.derivedNote"]}</p>
     </Card>
   );
 }
