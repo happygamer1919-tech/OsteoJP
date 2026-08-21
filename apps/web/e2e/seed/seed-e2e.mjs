@@ -386,6 +386,129 @@ async function ensureDeclaracaoAppointment(therapistUserId) {
   must(error, "declaracao appointment (Maria)");
 }
 
+/**
+ * INC-12 — the /recuperacao fixtures, with the AWKWARD SHAPES.
+ *
+ * ==========================================================================
+ * WHY A DEDICATED SEED AND NOT A REUSE OF MARIA
+ * ==========================================================================
+ * /recuperacao selects patients whose MOST RECENT completed attendance falls
+ * inside a window that moves with the clock, who have NO future booking, and who
+ * are not postponed. None of the existing fixtures satisfies that by accident,
+ * and the one completed marcacao in this seed is deliberately in 2022 - far
+ * outside the window.
+ *
+ * THE CRASH NEEDED A NON-EMPTY LIST. A test that only proves the page returns
+ * 200 on an empty list is worthless here: the empty page rendered fine
+ * throughout the incident. These rows are what make the assertion mean anything.
+ *
+ * DATES ARE RELATIVE TO NOW, at now-14d. The window is
+ * [first of the previous month, now-7d], so now-14d is inside it on EVERY day of
+ * every month - later than the window opens, earlier than it closes - which a
+ * hardcoded date could not promise.
+ */
+async function ensureRecuperacaoFixtures(therapistUserId) {
+  const day = 24 * 60 * 60 * 1000;
+  const seen = new Date(Date.now() - 14 * day);
+  const seenEnd = new Date(seen.getTime() + 60 * 60 * 1000);
+
+  const rows = [
+    {
+      id: "00000000-0000-0000-0000-00000000fec1",
+      full_name: "E2E Recuperar Movel",
+      // A real PT mobile: WhatsApp and SMS must both be offered.
+      phone: "+351 913 111 001",
+      email: "recuperar.movel@example.pt",
+      nif: null,
+    },
+    {
+      id: "00000000-0000-0000-0000-00000000fec2",
+      full_name: "E2E Recuperar Fixo",
+      // A Lisbon GEOGRAPHIC line. It normalises fine and cannot receive SMS, so
+      // the row must offer NEITHER WhatsApp NOR SMS and say so in words - the
+      // distinction LE-reminders-landline-dispatch drew and this page inherits.
+      phone: "+351 212 345 678",
+      // AND no email, so the row has no channel at all. This is the shape that
+      // renders the most absent affordances at once.
+      email: null,
+      nif: null,
+    },
+    {
+      id: "00000000-0000-0000-0000-00000000fec3",
+      full_name: "E2E Recuperar Adiado",
+      phone: "+351 913 111 003",
+      email: "recuperar.adiado@example.pt",
+      nif: null,
+    },
+  ];
+
+  for (const p of rows) {
+    const { error } = await db.from("patients").upsert(
+      { ...p, tenant_id: TENANT_A, deleted_at: null },
+      { onConflict: "id" },
+    );
+    must(error, `recuperacao patient ${p.full_name}`);
+  }
+
+  // One COMPLETED attendance each, inside the window, with a real practitioner.
+  for (const [i, p] of rows.entries()) {
+    const { error } = await db.from("appointments").upsert(
+      {
+        id: `00000000-0000-0000-0000-00000000fea${i + 1}`,
+        tenant_id: TENANT_A,
+        patient_id: p.id,
+        practitioner_id: therapistUserId,
+        location_id: LOCATION_A,
+        service_id: SERVICE_A,
+        starts_at: seen.toISOString(),
+        ends_at: seenEnd.toISOString(),
+        status: "completed",
+      },
+      { onConflict: "id" },
+    );
+    must(error, `recuperacao attendance ${p.full_name}`);
+  }
+
+  /**
+   * THE THIRD PATIENT IS POSTPONED, so the list and the Adiados section are
+   * asserted against DIFFERENT patients. Without this, "the section rendered"
+   * and "the section is empty" would be the same observation - the shape this
+   * whole incident is about.
+   */
+  const { error: postErr } = await db.from("patient_followup_postponements").upsert(
+    {
+      id: "00000000-0000-0000-0000-00000000feb1",
+      tenant_id: TENANT_A,
+      patient_id: rows[2].id,
+      postponed_until: new Date(Date.now() + 28 * day).toISOString(),
+      created_by: therapistUserId,
+      revoked_by: null,
+      revoked_at: null,
+    },
+    { onConflict: "id" },
+  );
+  must(postErr, "recuperacao postponement");
+
+  /**
+   * ONE RECORDED CONTACT, which is what exercises the contacts query - the
+   * SECOND of the two statements that brought the page down, and the one that
+   * only runs when the candidate list is non-empty. Without a contact row the
+   * join is never evaluated against real data.
+   */
+  const { error: contactErr } = await db.from("patient_followup_contacts").upsert(
+    {
+      id: "00000000-0000-0000-0000-00000000fec9",
+      tenant_id: TENANT_A,
+      patient_id: rows[0].id,
+      channel: "whatsapp",
+      contacted_by: therapistUserId,
+      contacted_at: new Date(Date.now() - day).toISOString(),
+    },
+    { onConflict: "id" },
+  );
+  must(contactErr, "recuperacao contact");
+}
+
 async function ensureAvailability(therapistUserId, locationId, weekday) {
   const { error } = await db.from("availability_templates").upsert(
     {
@@ -731,6 +854,7 @@ async function main() {
   await ensureBaseData(userIds);
   await ensureTherapistServices(userIds.therapist);
   await ensureDeclaracaoAppointment(userIds.therapist);
+  await ensureRecuperacaoFixtures(userIds.therapist);
   await ensureLocationFixtures(userIds);
   await ensurePortalPatient();
   await ensurePortalTrustedDevice();
