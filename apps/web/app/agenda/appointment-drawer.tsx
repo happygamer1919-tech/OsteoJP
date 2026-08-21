@@ -434,6 +434,26 @@ export function AppointmentDrawer({
     ? packBalance.sessionsAvailable
     : (selectedPack?.sessionCount ?? null);
 
+  /**
+   * THE CEILING CAN TIGHTEN UNDER THE USER, so the visible list is DERIVED from
+   * it rather than synchronised to it.
+   *
+   * Pick a pacote of ten with no patient chosen and the ceiling is ten. Choose a
+   * patient who already HOLDS that pacote with three left, and the ceiling
+   * becomes three while the stored list still has ten rows. The server would
+   * refuse that batch by name - loud, not silent - but being told "not enough
+   * sessions" about a number the screen itself just offered is a bad way to find
+   * out.
+   *
+   * DERIVED, NOT AN EFFECT. A `useEffect` calling `setPackRows` was written
+   * first and the lint rule refused it, correctly: it is a cascading render, and
+   * it also leaves one frame where the screen shows rows that are already
+   * invalid. Slicing at render has neither problem, and the stored rows survive
+   * intact if the ceiling widens again.
+   */
+  const packSlots =
+    packSessionsAvailable === null ? packRows : packRows.slice(0, packSessionsAvailable);
+
   /** Resize the hand-picked slot list, keeping what is already filled in. */
   function setPackCount(next: number) {
     const ceiling = packSessionsAvailable ?? 1;
@@ -693,8 +713,8 @@ export function AppointmentDrawer({
          * book a real appointment at a time nobody chose, which is worse than
          * being asked to fill it in.
          */
-        if (form.packId && packRows.length > 1) {
-          const incomplete = packRows.some((r) => !r.date || !r.time);
+        if (form.packId && packSlots.length > 1) {
+          const incomplete = packSlots.some((r) => !r.date || !r.time);
           if (incomplete) {
             setError(s["pack.batchIncomplete"]);
             return;
@@ -705,7 +725,7 @@ export function AppointmentDrawer({
             locationId: form.locationId,
             serviceId: form.serviceId || null,
             packId: form.packId,
-            slots: buildLoteSlots(packRows, form.durationMin),
+            slots: buildLoteSlots(packSlots, form.durationMin),
           });
           if (!r.ok) {
             handleResult(r);
@@ -1056,8 +1076,32 @@ export function AppointmentDrawer({
             THE COUNT IS CAPPED AT THE BALANCE and editable DOWNWARDS: booking
             four now and the rest as the treatment progresses is the ordinary
             case, not an edge one. Over-booking is refused by name on the server
-            as well - this input is a courtesy, not the boundary. */}
-        {!editing && selectedPack && form.patientId && packSessionsAvailable !== null && (
+            as well - this input is a courtesy, not the boundary.
+
+            ==================================================================
+            IT DOES NOT WAIT FOR A PATIENT. Owner ruling 2026-08-21.
+            ==================================================================
+            This was gated on `form.patientId` and the owner selected a pacote
+            before picking a patient, so nothing appeared and the feature read as
+            missing. The ruling: selecting a pacote of N reveals N slot pickers
+            in BOTH cases - a pacote the patient already HOLDS and one being
+            ASSIGNED now - because pacotes are booked in advance, never consumed
+            one appointment at a time.
+
+            SO THE CEILING HAS TWO SOURCES AND THEY ARRIVE AT DIFFERENT TIMES:
+            the pacote's own `sessionCount` immediately, and the held
+            instance's remaining balance once a patient is chosen and the
+            balance query lands. `packSessionsAvailable` prefers the balance
+            when it exists, which means the count can TIGHTEN after a patient is
+            picked. That is correct and it is why `setPackCount` clamps on every
+            change rather than trusting the input's max attribute.
+
+            THE ASSIGN-NOW PATH NEEDS NO NEW TRANSACTION WORK, verified rather
+            than assumed: `bookPackSessionTx` registers the instance INSIDE the
+            booking transaction when none exists, so the instance and its N
+            appointments commit or roll back together. A batch that half-created
+            an instance was never reachable. */}
+        {!editing && selectedPack && packSessionsAvailable !== null && (
           <div className="flex flex-col gap-3 rounded-v2 border border-border-strong p-3">
             <div className="flex flex-wrap items-end gap-3">
               <Field label={s["pack.batchCount"]}>
@@ -1066,7 +1110,7 @@ export function AppointmentDrawer({
                   min={1}
                   max={packSessionsAvailable}
                   data-testid="pack-batch-count"
-                  value={String(packRows.length || 1)}
+                  value={String(packSlots.length || 1)}
                   onChange={(e) => setPackCount(Number(e.target.value))}
                 />
               </Field>
@@ -1075,9 +1119,9 @@ export function AppointmentDrawer({
               </p>
             </div>
 
-            {packRows.length > 1 && (
+            {packSlots.length > 1 && (
               <ul className="flex flex-col gap-2">
-                {packRows.map((row, i) => (
+                {packSlots.map((row, i) => (
                   <li key={i} className="flex flex-wrap items-center gap-2 text-sm">
                     <span className="w-6 text-xs text-text-secondary">{i + 1}.</span>
                     <div className="w-44">

@@ -1425,5 +1425,7 @@
   "appointment.packInsufficient": "O pacote não tem sessões suficientes para esta marcação. Veja o saldo do pacote na ficha do paciente e marque menos sessões, ou registe um novo pacote.",
   "pack.batchCount": "Quantas sessões marcar agora",
   "pack.batchHint": "O pacote tem {n} sessões disponíveis. Pode marcar menos e deixar as restantes para depois. Escolha a data e a hora de cada sessão.",
-  "pack.batchIncomplete": "Falta escolher a data ou a hora de pelo menos uma sessão. Preencha todas as linhas antes de guardar."
+  "pack.batchIncomplete": "Falta escolher a data ou a hora de pelo menos uma sessão. Preencha todas as linhas antes de guardar.",
+  "followup.errorTitle": "Não foi possível carregar a recuperação de utentes",
+  "followup.errorDescription": "Ocorreu um erro ao carregar a lista. Isto não significa que não haja pacientes para contactar. Tente novamente; se continuar, avise a equipa técnica."
 }
