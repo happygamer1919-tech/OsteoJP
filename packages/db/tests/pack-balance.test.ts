@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PACK_CONSUMING_STATUS_SQL,
+  packLinkedCountSql,
   packIsActive,
   packSessionsAvailable,
   packSessionsConsumed,
@@ -90,5 +92,28 @@ describe("PACK_CONSUMING_STATUSES", () => {
 
   it("does NOT include cancelled - a cancelled appointment returns its session", () => {
     expect(PACK_CONSUMING_STATUSES).not.toContain("cancelled");
+  });
+});
+
+describe("packLinkedCountSql — the correlation that was silently wrong", () => {
+  it("uses the outer expression the CALLER names, not a bare column", () => {
+    // ==================================================================
+    // THIS IS A REGRESSION PIN FOR A BUG THAT SHIPPED TO CI AND RETURNED
+    // ZERO WITHOUT ERRORING.
+    // ==================================================================
+    // The first version interpolated the Drizzle column directly, and Drizzle
+    // rendered `a.pack_instance_id = "id"` — the BARE name. Inside
+    // `FROM appointments a` that resolves to `a.id`, so the predicate read
+    // `a.pack_instance_id = a.id` and counted 0 for every instance. No error,
+    // no warning: every pacote simply read as untouched.
+    const sql = packLinkedCountSql('"patient_pack_instances"."id"');
+    expect(sql).toContain('a.pack_instance_id = "patient_pack_instances"."id"');
+    // The failure mode, stated as its own assertion so a future edit that
+    // reintroduces it fails HERE rather than on a screenshot three checks later.
+    expect(sql).not.toMatch(/a\.pack_instance_id\s*=\s*"id"/);
+  });
+
+  it("counts by the shared status rule rather than restating it", () => {
+    expect(packLinkedCountSql("x")).toContain(PACK_CONSUMING_STATUS_SQL);
   });
 });

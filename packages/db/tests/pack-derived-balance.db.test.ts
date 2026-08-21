@@ -20,7 +20,7 @@
 import { randomUUID } from "node:crypto";
 import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PACK_CONSUMING_STATUS_SQL, packSessionsAvailable } from "../src/pack-balance";
+import { packLinkedCountSql, packSessionsAvailable } from "../src/pack-balance";
 import { connect, live } from "./rls-harness";
 
 const tenant = randomUUID();
@@ -40,10 +40,21 @@ let sql: Sql;
 
 /** The derived balance, computed the way the application computes it. */
 async function derivedAvailable(): Promise<number> {
+  /**
+   * THE COUNT SUBQUERY COMES FROM `packLinkedCountSql`, THE SAME FUNCTION THE
+   * APPLICATION QUERY USES.
+   *
+   * It did not, at first: this file wrote its own `(select count(*) ... )` and
+   * passed, while the application's Drizzle version rendered the correlation as
+   * a BARE `"id"` and counted zero for every instance. The suite proved the
+   * predicate STRING and the application shipped something else - which is
+   * `LE-apply-block-expectation-drift` in miniature, inside a single card.
+   *
+   * Importing the function is what makes this test about the thing that ships.
+   */
   const rows = await sql.unsafe(
     `select i.sessions_total, i.legacy_consumed,
-            (select count(*)::int from appointments a
-              where a.pack_instance_id = i.id and a.${PACK_CONSUMING_STATUS_SQL}) as linked
+            ${packLinkedCountSql("i.id")} as linked
        from patient_pack_instances i
       where i.id = $1`,
     [instance],

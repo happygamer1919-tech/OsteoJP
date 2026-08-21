@@ -100,3 +100,39 @@ export function packIsActive(i: PackBalanceInputs): boolean {
 export function packSessionsConsumed(i: PackBalanceInputs): number {
   return i.legacyConsumed + i.linkedAppointments;
 }
+
+/**
+ * The linked-appointment count, as SQL text with an EXPLICIT outer reference.
+ *
+ * ==========================================================================
+ * THIS FUNCTION EXISTS BECAUSE THE OBVIOUS DRIZZLE VERSION WAS SILENTLY WRONG
+ * ==========================================================================
+ * The first implementation interpolated the Drizzle column into the subquery:
+ *
+ *     sql`... WHERE a.pack_instance_id = ${patientPackInstances.id} ...`
+ *
+ * Drizzle rendered that as **`a.pack_instance_id = "id"`** - the BARE column
+ * name, not `"patient_pack_instances"."id"`. Inside `FROM appointments a` the
+ * unqualified `"id"` resolves to **`a.id`**, so the predicate became
+ * `a.pack_instance_id = a.id`, which is never true.
+ *
+ * **It did not error. It returned 0 for every instance**, so every pacote read
+ * as untouched and the agenda banner showed 10/10 after a booking. A wrong
+ * answer wearing the face of a valid one: PORTAL-REHYDRATE §1.3, in a query.
+ *
+ * It was caught by an E2E screenshot, and it is worth naming what did NOT catch
+ * it: the DB-gated test asserted the PREDICATE STRINGS against real Postgres and
+ * passed, because those strings were never the broken part. The broken part was
+ * how Drizzle rendered a correlation, which no test looked at.
+ *
+ * So the caller now NAMES the outer column, exactly as `followup-selection.ts`
+ * makes its caller name the patient-id expression, and
+ * `pack-balance.test.ts` pins the generated SQL.
+ */
+export function packLinkedCountSql(instanceIdExpr: string): string {
+  return `(
+  SELECT count(*)::int FROM appointments a
+   WHERE a.pack_instance_id = ${instanceIdExpr}
+     AND a.${PACK_CONSUMING_STATUS_SQL}
+)`;
+}

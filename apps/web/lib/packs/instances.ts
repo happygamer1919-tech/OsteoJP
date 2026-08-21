@@ -2,7 +2,7 @@ import "server-only";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import {
-  PACK_CONSUMING_STATUS_SQL,
+  packLinkedCountSql,
   packIsActive,
   packSessionsAvailable,
   packSessionsConsumed,
@@ -53,12 +53,16 @@ import { writeAudit } from "@/lib/admin/audit";
 /**
  * Appointments linked to an instance that CONSUME a session. One definition,
  * used by every read and by the booking path.
+ *
+ * THE OUTER COLUMN IS NAMED EXPLICITLY, and that is not style. Interpolating the
+ * Drizzle column here rendered as the BARE `"id"`, which inside
+ * `FROM appointments a` resolves to `a.id` - so the predicate read
+ * `a.pack_instance_id = a.id` and counted ZERO for every instance, silently.
+ * `packLinkedCountSql` carries the full account.
  */
-const linkedCount = sql<number>`(
-  SELECT count(*)::int FROM appointments a
-   WHERE a.pack_instance_id = ${patientPackInstances.id}
-     AND a.${sql.raw(PACK_CONSUMING_STATUS_SQL)}
-)`;
+const linkedCount = sql<number>`${sql.raw(
+  packLinkedCountSql('"patient_pack_instances"."id"'),
+)}`;
 
 export type PackInstanceView = {
   id: string;
