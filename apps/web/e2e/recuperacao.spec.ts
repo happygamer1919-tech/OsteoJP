@@ -38,7 +38,10 @@ test("recuperacao renders a NON-EMPTY list for an unscoped admin (INC-12)", asyn
 
   // A REAL ROW. The empty state must NOT be what we are looking at.
   await expect(page.getByText("Ninguém para contactar.")).toHaveCount(0);
-  await expect(page.getByText(NAMES.mobile)).toBeVisible();
+  // EXACT: "E2E Recuperar Movel" is a prefix of nothing else, but exactness costs
+  // nothing and removes the whole question - the two assertions above it failed on
+  // precisely this ambiguity.
+  await expect(page.getByText(NAMES.mobile, { exact: true })).toBeVisible();
 });
 
 test("a mobile row offers WhatsApp, SMS and Email; a landline row offers none of them", async ({
@@ -79,7 +82,15 @@ test("the date and the therapist render, which is what the null-date crash broke
   // elements and Playwright strict mode failed it - a red test over a correct
   // page. Anchoring pins the field that carries only the date.
   await expect(row.getByText(/^\d{2}\/\d{2}\/\d{4}$/)).toBeVisible();
-  await expect(row.getByText("E2E Therapist")).toBeVisible();
+  // EXACT, for the same reason the date is anchored one line up: the contact
+  // line also carries the therapist name ("Contactado por E2E Therapist em ..."),
+  // so a substring match resolves to two elements and strict mode fails it.
+  //
+  // I FIXED THE DATE FIRST AND SHIPPED THIS ONE RED, which is this incident's
+  // own lesson committed a fifth time at small scale: finding a defect class
+  // obliges a sweep for the class, and the sweep includes the file you are
+  // holding.
+  await expect(row.getByText("E2E Therapist", { exact: true })).toBeVisible();
 });
 
 test("a recorded contact renders with who and when (the contacts query)", async ({ page }) => {
@@ -99,7 +110,7 @@ test("a postponed patient is in Adiados and NOT in the main list", async ({ page
   await expect(page.getByText("Nenhum paciente adiado.")).toHaveCount(0);
 
   const adiados = page.locator("section").filter({ hasText: "Adiados" }).last();
-  await expect(adiados.getByText(NAMES.postponed)).toBeVisible();
+  await expect(adiados.getByText(NAMES.postponed, { exact: true })).toBeVisible();
   await expect(adiados.getByRole("button", { name: "Trazer de volta" }).first()).toBeVisible();
 
   // AND the postponed patient must NOT be offered for contact. A patient in both
