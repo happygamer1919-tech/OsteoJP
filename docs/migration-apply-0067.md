@@ -1,14 +1,19 @@
-NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN
+# Apply receipt - migration 0067, the 2026-08-20 batch
 
-# Apply block - migration 0067, the 2026-08-20 batch
+**Status: VALIDATED by strategy 2026-08-20. APPLIED TO PRODUCTION 2026-08-20.**
 
-**Status: DRAFT. Authored by PURPLE 2026-08-20. Not reviewed, not sent to the
-owner.** The path is draft -> strategy -> Ivan, per `PORTAL-REHYDRATE.md` §4.9.
-Strategy replaces the line above with `VALIDATED`; the author never removes
-their own.
+The `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN` banner that stood
+here was cleared on **strategy's** validation, not on PURPLE's judgement:
+`PORTAL-REHYDRATE.md` §4.9 is explicit that the author never removes their own,
+and 0062 records the same attribution for the same reason. It was rejected once
+first, on five defects, every one of which had already been fixed at 0065 - §4
+carries that history.
+
+**DO NOT RE-RUN §4.** This document is now a record of what happened, not an
+instruction. The migration is applied; running it again is what §7 forbids.
 
 Migration: `0067_followup_packs_and_provenance` (journal idx 66, `when`
-1787300200000). Branch: `db/0067-followup-packs-and-provenance`, **rebased on main at `9f196b6` on 2026-08-20** so it stays mergeable. **The branch head is PINNED for this apply**, and section 4 writes it as the literal placeholder `PINNED_SHA` for strategy to substitute at validation time. **The block checks out the SHA, not the branch**: section 4a proves the sha resolves in that clone and section 4b detaches on the same sha, so the thing verified and the thing applied are one commit. `git log -1 --oneline` in 4b records it in the pasted transcript. **The applied sha and the merged sha must be the same commit**, so main must not move before this merges - see section 6.
+1787300200000). Branch: `db/0067-followup-packs-and-provenance`, **rebased on main at `9f196b6` on 2026-08-20** so it stays mergeable. **APPLIED FROM PINNED SHA `814872591ce9dacaff9fbe5655fd0787689f95e3`.** §4 wrote it as the placeholder `814872591ce9dacaff9fbe5655fd0787689f95e3` while the block was in review, and it is resolved to the real sha throughout now that the apply has happened. **The block checked out the SHA, not the branch**: §4a proved the sha resolved in that clone and §4b detached on the same sha, so the thing verified and the thing applied were one commit. **That sha is ORPHANED by the squash merge and the migration BLOB is what ties the receipt to `main` - see §10.4.**
 Card: `RB-00-migration-0067`. Gate: `owner_merge` - **apply BEFORE merge**.
 
 Written under `docs/runbook-prod-migrations.md`.
@@ -96,10 +101,10 @@ document.** That is the whole of what went wrong in the draft this replaces, and
 before: an author works from the previous file, and steps that were corrected
 months ago silently revert to an older form.
 
-**`PINNED_SHA` below is a literal placeholder.** Strategy substitutes the real
-sha when it stamps this block `VALIDATED`, and the runbook requires it re-read
-the branch head at that moment rather than at drafting time - a sha that has
-gone stale still resolves, so the failure is silent.
+**The sha below was a placeholder while this was in review and is now resolved
+to what actually ran.** Strategy re-read the branch head before handing the block
+over, which the runbook requires as its LAST action rather than at drafting time:
+a sha that has gone stale still resolves, so that failure is silent.
 
 ### 4a. Pre-flight. Its own paste, BEFORE any credential is sourced.
 
@@ -107,13 +112,13 @@ gone stale still resolves, so the failure is silent.
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 git status --short
 git fetch origin --prune
-git cat-file -t PINNED_SHA
+git cat-file -t 814872591ce9dacaff9fbe5655fd0787689f95e3
 ```
 
 | Command | Expected | STOP if |
 |---|---|---|
 | `git status --short` | **prints nothing** | **any line at all.** Not "any line that looks dangerous" - any line. Deciding which stray file is harmless is exactly the judgement this step exists to avoid making at the top of a production sitting. It is what caught 21 stray scripts before the 0063 apply, in the one tree whose shell is about to hold production credentials |
-| `git cat-file -t PINNED_SHA` | **`commit`** | anything else. A sha that does not resolve is a typo, a stale paste, or a branch rebased out from under this block |
+| `git cat-file -t 814872591ce9dacaff9fbe5655fd0787689f95e3` | **`commit`** | anything else. A sha that does not resolve is a typo, a stale paste, or a branch rebased out from under this block |
 
 `git fetch origin --prune` sits between them deliberately: `cat-file` is
 worthless against a sha this clone has never seen, and the fetch is what makes
@@ -123,7 +128,7 @@ worthless against a sha this clone has never seen, and the fetch is what makes
 
 ```
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-git checkout --detach PINNED_SHA
+git checkout --detach 814872591ce9dacaff9fbe5655fd0787689f95e3
 git log -1 --oneline
 set -o allexport
 source /Users/ivan/osteojp-secrets/new-prod.env
@@ -135,7 +140,7 @@ pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs 0
 
 **Paste back the output of every one of those lines**, not only the migrate.
 
-**`git checkout --detach PINNED_SHA` is load-bearing, and it checks out the SHA,
+**`git checkout --detach 814872591ce9dacaff9fbe5655fd0787689f95e3` is load-bearing, and it checks out the SHA,
 not the branch.** A plain `git checkout <branch>` is rejected in that worktree
 and the fallback leaves it on `main`, where the migrate finds nothing pending
 and prints success over a no-op - INC-07, twice. Detaching on the **sha** rather
@@ -186,9 +191,14 @@ select count(*) as rows_where_backfill_is_wrong
 select count(*) as origin_patient_portal
   from public.appointments where origin = 'patient_portal';
 
--- V5. The function was replaced and no longer reads staff_notifications.
+-- V5. The function was replaced and now reads BOTH arms of the disjunction.
+-- CORRECTED 2026-08-20 AFTER THE APPLY: see section 10. The function is a
+-- DISJUNCTION (origin = 'patient_portal' OR the notification row exists), so it
+-- must read staff_notifications too - that arm is what covers the window between
+-- applying this migration and deploying the code that writes the column, during
+-- which the old code still creates pedidos with no origin.
 select pg_get_functiondef('public.is_unconfirmed_pedido(uuid)'::regprocedure)
-         like '%staff_notifications%' as still_reads_notifications;   -- expect FALSE
+         like '%staff_notifications%' as still_reads_notifications;   -- expect TRUE
 select pg_get_functiondef('public.is_unconfirmed_pedido(uuid)'::regprocedure)
          like '%origin%' as reads_origin;                             -- expect TRUE
 
@@ -216,8 +226,11 @@ select tablename, policyname, cmd from pg_policies
 - **V4 does not equal P4's `pedidos_by_notification`.** The origin backfill saw a
   different set than the pre-check did, which means something wrote appointments
   between the two.
-- **V5's `still_reads_notifications` is TRUE.** The function was not replaced,
-  and the whole point of change 1 is undone.
+- **V5's `reads_origin` is FALSE.** The function was not replaced and the whole
+  point of change 1 is undone. **`still_reads_notifications` is EXPECTED TRUE
+  and is not a stop condition** - the function is a disjunction and that arm is
+  load-bearing. This condition was inverted until 2026-08-20 and fired falsely on
+  a correct apply; section 10 records why.
 - **V6 shows `authenticated` with DELETE on either table**, or without SELECT and
   INSERT. Both directions are wrong and both are silent.
 - **`drizzle-kit migrate` prints success and V2 shows a missing object.** That is
@@ -228,7 +241,7 @@ select tablename, policyname, cmd from pg_policies
 - **`git status --short` prints anything, or `git cat-file -t` prints anything
   but `commit`.** Both are pre-flight and both stop the sitting before a single
   credential is sourced.
-- **`git checkout --detach PINNED_SHA` errors, or `git log -1` in 4b prints a
+- **`git checkout --detach 814872591ce9dacaff9fbe5655fd0787689f95e3` errors, or `git log -1` in 4b prints a
   different sha.** The checkout did not take, and every line below it is running
   against a tree this block did not describe. This is the one stop condition
   checked BEFORE anything is applied: 4b prints the head five lines before
@@ -283,3 +296,98 @@ window is what clears the others**, along with the shell history holding them.
 
 Until the window is closed, that shell is one `node <path>` away from the live
 database, which is the same exposure the §4a pre-flight exists to measure.
+
+## 10. THE RECEIPT. Applied 2026-08-20. One stop condition fired and it was WRONG.
+
+### 10.1 What ran
+
+| | |
+|---|---|
+| **Applied sha** | `814872591ce9dacaff9fbe5655fd0787689f95e3` |
+| **Migration** | `0067_followup_packs_and_provenance`, journal idx 66 |
+| **Journal row** | id **67**, `when` **1787300200000** |
+| **Row hash** | `76e20edde13a63b52e0c901189f26a45646bb3793fbb69020564f9858fee20d5` |
+| **Pre-check** | `check-pending-migrations.mjs 1` - **1 pending**, as expected |
+| **Post-check** | `check-pending-migrations.mjs 0` - **0 pending**, as expected |
+
+**The journal moved 66 to 67**, which with the checker pair either side is the
+proof the migrate was not a no-op. That pair is the half 0058 did not have.
+
+### 10.2 V1 to V7, as verified
+
+| | Result |
+|---|---|
+| **V1** journal | advanced by exactly one, to this tag |
+| **V2** objects | `origin`, `pack_instance_id`, `legacy_consumed` all present; both `patient_followup_*` tables non-null |
+| **V3** backfill identity | **0** rows where `legacy_consumed <> sessions_total - sessions_remaining`. **Every existing pacote balance is preserved exactly** |
+| **V4** origin backfill | **6**, equal to P4's `pedidos_by_notification` of **6**. The two counts match, so nothing wrote appointments between the pre-check and the apply |
+| **V5** function | `still_reads_notifications` **TRUE**, `reads_origin` **TRUE**. **Correct.** See 10.3 |
+| **V6** grants | clean; no `DELETE` to `authenticated` on either new table, SELECT and INSERT present |
+| **V7** RLS | on, policies present on both tables |
+
+### 10.3 THE ONE STOP CONDITION THAT FIRED WAS THE DOCUMENT'S FAULT, NOT THE DATABASE'S
+
+**V5 expected `still_reads_notifications` FALSE. It came back TRUE, and TRUE is
+right.** Read the committed body at the applied sha:
+
+```sql
+AND (
+  a.origin = 'patient_portal'
+  OR EXISTS (
+    SELECT 1 FROM public.staff_notifications n
+    WHERE n.appointment_id = a.id
+      AND n.kind = 'appointment_request'
+  )
+)
+```
+
+A disjunction. `pg_get_functiondef` therefore **must** contain both
+`staff_notifications` and `origin`, so the observed pair is the only pair this
+body can produce. An apply that returned FALSE would have meant the migration did
+**not** run.
+
+**HOW THE EXPECTATION WENT STALE, from the branch's own history:**
+
+| Commit | What it did | Touched the apply block? |
+|---|---|---|
+| `208e753` | authored the migration with the function keyed on `origin` **alone**, and authored §5 with `expect FALSE` to match | yes, it wrote it |
+| `2642c35` | **changed the function to a disjunction**, after `pedido-does-not-block.db.test.ts` went red on five assertions | **no** |
+| `9a7c81c`, `7eb7d09`, `61d033f`, `51b5dfa`, `8148725` | five further edits to the apply block | yes, and none revisited §5 |
+
+**The design changed and its verification query did not.** Five subsequent passes
+over this document, including a full rebuild from the runbook after a five-defect
+rejection, all read straight past an expectation that had been false since
+`2642c35`.
+
+**THE LESSON, AND IT GENERALISES PAST THIS FILE.** *A verification query whose
+expectation is not regenerated when the migration changes produces a FALSE STOP -
+the same class as the stale-sha defect, and arguably worse.* A stale sha stops an
+apply that should have run; a stale expectation **stops an apply that DID run,
+correctly**, and it does so at the moment of least tolerance for ambiguity: mid
+sitting, credentials live, with the operator asked to decide whether production is
+broken. It cost a full round-trip here and it was one grep from costing a rollback.
+
+The structural point is the one `PORTAL-REHYDRATE.md` §1.3 makes about every
+convenience that maps an unknown case onto a known-looking one: **a check is only
+as true as the design it was written against, and nothing mechanical ties the
+two.** The migration file and its verification live in different documents, in
+different formats, and no test reads the second. **Carded as
+`LE-apply-block-expectation-drift`.**
+
+### 10.4 The applied sha is ORPHANED by the merge, and the blob is the tie
+
+Under squash-merge the applied sha stops being reachable the instant the PR
+merges - `docs/migration-apply-0063.md` §4 in full. **This receipt commit rides
+the same branch**, so the head moves after the apply; what must be identical is
+the CONTENT, and it is, byte for byte:
+
+| Path | Blob at the applied sha `8148725` |
+|---|---|
+| `packages/db/migrations/0067_followup_packs_and_provenance.sql` | `a65ed6e2f76314107e47799417af4638bd41016d` |
+| `packages/db/migrations/meta/_journal.json` | `aaeeefc36ff27f05f98251d6d6d722ccd2429ec7` |
+| `supabase/migrations/0067_followup_packs_and_provenance.sql` | `90d609636f4c7c5813e6288f973978958a844741` |
+
+Checkable from any clone, forever, with
+`git rev-parse origin/main:packages/db/migrations/0067_followup_packs_and_provenance.sql`.
+**If that blob ever stops matching `a65ed6e2`, what is on `main` is not what ran
+against production.**
