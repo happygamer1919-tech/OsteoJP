@@ -1,7 +1,9 @@
 import * as Sentry from "@sentry/nextjs";
 
+import { serverSentryDsn } from "./lib/observability/sentry-dsn";
+
 Sentry.init({
-  dsn: process.env.SENTRY_DSN,
+  dsn: serverSentryDsn(),
   tracesSampleRate: process.env.NODE_ENV === "development" ? 1.0 : 0.1,
 
   // Explicit, not inherited. It already defaults to false; pinning it means a
