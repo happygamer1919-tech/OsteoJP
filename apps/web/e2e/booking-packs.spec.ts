@@ -1,8 +1,31 @@
 /**
- * booking-packs.spec.ts — W8-01c. Books a pack for a disposable test patient and
- * exercises the full loop: registration (fresh instance + consume session 1),
- * decrement (subsequent booking + the remaining-count banner), surfacing on the
- * patient profile, and the staff manual consume/restore adjust. Runs as admin.
+ * booking-packs.spec.ts — books a pacote for a disposable test patient and
+ * exercises the loop: registration, the balance moving as appointments are
+ * booked, and surfacing on the patient profile. Runs as admin.
+ *
+ * ==========================================================================
+ * RB-02 CHANGED WHAT THE NUMBERS MEAN, AND STEPS 1-4 DID NOT NEED CHANGING.
+ * ==========================================================================
+ * The balance used to be a COUNTER decremented on booking. It is now DERIVED -
+ * `sessions_total - legacy_consumed - linked appointments that are not
+ * cancelled`. For a fresh pacote the two models produce the same screen: book
+ * once and 9/10, book twice and 8/10. **That the assertions below survived a
+ * complete replacement of the mechanism is the point of them**, and it is the
+ * strongest evidence available that existing balances read the same.
+ *
+ * THE MANUAL ADJUST STEPS ARE GONE, replaced by an assertion that the controls
+ * are ABSENT. "Consumir" and "Restaurar" burned a session with no appointment
+ * row; a no-show is now an appointment with `status = 'no_show'` and the
+ * formula counts it.
+ *
+ * WHY THE "A CANCELLED APPOINTMENT RETURNS ITS SESSION" ARM IS NOT HERE, since
+ * it is the obvious thing to reach for: driving it through this UI means a
+ * disclosure, a cancel drawer and a confirmation, on a spec that already carries
+ * two twelve-second saves - and this project has a card open on exactly that
+ * class of flake (`ACC-immediate-isvisible-probes`, `ACC-preselection-spec-flaky`).
+ * The property is proven against a real Postgres, through the SAME predicate the
+ * application ships, in `packages/db/tests/pack-derived-balance.db.test.ts`.
+ * A second, more fragile copy would add flake without adding proof.
  *
  * Never touches the real Maria João Silva; uses the synthetic seed patient
  * PATIENTS.ana. Each run creates a UNIQUE pack, so its instance is isolated from
@@ -14,7 +37,7 @@ import { PATIENTS, LOCATION, SERVICE, THERAPIST_NAME, futureDate, RUN_DAY_BASE }
 
 const SAVE = "Guardar";
 
-test("book a pack: register + decrement + surfacing + manual adjust (W8-01c)", async ({
+test("book a pacote: register, derived balance, surfacing, and NO manual adjust (RB-02)", async ({
   page,
 }) => {
   // 1. Create a fresh 10-session pack on Osteopatia, offered at all locations.
@@ -70,11 +93,16 @@ test("book a pack: register + decrement + surfacing + manual adjust (W8-01c)", a
   await expect(packRow).toBeVisible();
   await expect(packRow.getByText(/8\/10/)).toBeVisible();
 
-  // 5. Manual RESTORE (reversing an under-24h no-show) → 9/10.
-  await packRow.getByRole("button", { name: "Restaurar" }).click();
-  await expect(packRow.getByText(/9\/10/)).toBeVisible();
+  // 5. RB-02 — THE MANUAL ADJUST CONTROLS ARE GONE.
+  //
+  // Asserted on the ROW rather than the page, so this cannot pass because the
+  // profile failed to render: step 4 above already proved the row is there with
+  // the right balance, and these two checks then say what is NOT on it.
+  await expect(packRow.getByRole("button", { name: "Consumir" })).toHaveCount(0);
+  await expect(packRow.getByRole("button", { name: "Restaurar" })).toHaveCount(0);
 
-  // 6. Manual CONSUME → 8/10.
-  await packRow.getByRole("button", { name: "Consumir" }).click();
-  await expect(packRow.getByText(/8\/10/)).toBeVisible();
+  // 6. And the screen SAYS where the sessions come from now. Without this line
+  //    a balance that moved because an appointment was booked on another screen
+  //    looks like the number changing on its own.
+  await expect(page.getByText(/contadas a partir das marcações/i)).toBeVisible();
 });

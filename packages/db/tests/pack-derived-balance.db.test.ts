@@ -40,7 +40,7 @@ let sql: Sql;
 
 /** The derived balance, computed the way the application computes it. */
 async function derivedAvailable(): Promise<number> {
-  const [row] = await sql.unsafe(
+  const rows = await sql.unsafe(
     `select i.sessions_total, i.legacy_consumed,
             (select count(*)::int from appointments a
               where a.pack_instance_id = i.id and a.${PACK_CONSUMING_STATUS_SQL}) as linked
@@ -48,6 +48,12 @@ async function derivedAvailable(): Promise<number> {
       where i.id = $1`,
     [instance],
   );
+  // THROWS RATHER THAN RETURNING A DEFAULT. A missing instance means the fixture
+  // did not seed, and every assertion below would then compare two numbers that
+  // are both wrong - the suite would go green over nothing, which is exactly
+  // what criterion F on ACC-vacuous-guard-sweep is about.
+  const row = rows[0];
+  if (!row) throw new Error("fixture instance not found - the suite is asserting nothing");
   return packSessionsAvailable({
     sessionsTotal: row.sessions_total as number,
     legacyConsumed: row.legacy_consumed as number,

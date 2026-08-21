@@ -65,6 +65,12 @@ const ALLOWED = new Set([
   // forbade them would delete its own justification.
   "packages/db/tests/followup-rls.test.ts",
   "packages/db/tests/pack-model-rls.test.ts",
+  // Seeds a realistic PRE-0067 instance - a pacote with sessions already spent -
+  // which is the only fixture that can prove the legacy term does its job. The
+  // column is NOT NULL with no default, so the row cannot be created without it.
+  // This guard caught this file minutes after it was written, which is the
+  // clearest evidence available that the guard is not decorative.
+  "packages/db/tests/pack-derived-balance.db.test.ts",
 ]);
 
 function sources() {
