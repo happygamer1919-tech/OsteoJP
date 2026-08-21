@@ -1420,5 +1420,7 @@
   "followup.messageSubject": "OsteoJP",
   "followup.messageTemplate": "Bom dia {name}, fala a OsteoJP. Notámos que já não a/o vemos desde {date} e queríamos saber como está. Se quiser marcar uma consulta, é só responder a esta mensagem.",
   "followup.messageHint": "A mensagem abre já escrita na aplicação do seu telemóvel ou computador e pode ser alterada antes de enviar.",
-  "nav.followup": "Recuperação"
+  "nav.followup": "Recuperação",
+  "packs.derivedNote": "As sessões são contadas a partir das marcações do pacote. Uma marcação cancelada devolve a sessão; uma falta não.",
+  "appointment.packInsufficient": "O pacote não tem sessões suficientes para esta marcação. Veja o saldo do pacote na ficha do paciente e marque menos sessões, ou registe um novo pacote."
 }

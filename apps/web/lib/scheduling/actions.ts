@@ -488,11 +488,21 @@ export async function createAppointment(
   }
 
   const recurring = !!input.recurrence && input.recurrence.count >= 2;
-  // W8-01c — a pack booking is single-session (one appointment consumes one
-  // session). Recurrence + pack is rejected rather than silently draining N.
-  if (input.packId && recurring) {
-    return { ok: false, error: "validation" };
-  }
+  /**
+   * RB-02 — A PACOTE MAY NOW BOOK N APPOINTMENTS, AND THE OLD REFUSAL IS GONE.
+   *
+   * W8-01c rejected pack + recurrence with the reason "a pack booking is
+   * single-session (one appointment consumes one session)... rather than
+   * silently draining N". **That reasoning is exactly what this card inverts.**
+   * A pacote of ten is ten sessions, and booking them is the point; draining N
+   * is no longer a hazard to be avoided, it is the feature. It is also no longer
+   * SILENT: every occurrence gets a `pack_instance_id`, so all N are visible in
+   * the diary and reconcilable against the balance.
+   *
+   * The refusal moves rather than disappearing: the batch is checked against the
+   * instance's AVAILABLE balance inside the transaction, below, where the
+   * instance is known. Over-booking a pacote is refused there.
+   */
   const durationMin = (firstEnd.getTime() - firstStart.getTime()) / 60_000;
   const occ = recurring
     ? expandRecurrence(
@@ -610,10 +620,32 @@ export async function createAppointment(
         // writes, so a missing/inactive pack returns validation with nothing
         // written. Non-recurring only (guarded above).
         let serviceIdForAppt = common.serviceId;
+        let packInstanceId: string | null = null;
         if (input.packId) {
           const booked = await bookPackSessionTx(tx, actor, input.patientId, input.packId);
           if (!booked) return { ok: false, error: "validation" };
           serviceIdForAppt = booked.baseServiceId;
+          packInstanceId = booked.instanceId;
+
+          /**
+           * RB-02 — REFUSE A BATCH LARGER THAN THE BALANCE, rather than booking
+           * it and letting the balance go negative.
+           *
+           * The check is HERE and not in `bookPackSessionTx` because only this
+           * caller knows how many appointments it is about to insert. It is
+           * inside the transaction and after the instance is resolved, so it
+           * cannot race a concurrent booking on the same pacote: both writers
+           * are serialised on the instance row they read.
+           *
+           * A REFUSAL, NOT A TRUNCATION. Booking eight of the ten asked for
+           * would look like success and leave reception to discover the missing
+           * two from the diary - the "harmless-looking known case" §1.3 is
+           * about. The clinic is told the pacote has fewer sessions than the
+           * booking needs, and decides.
+           */
+          if (occ.length > booked.sessionsAvailableBefore) {
+            return { ok: false, error: "pack_insufficient" };
+          }
         }
 
         // 2.9 — order concurrent writers for these therapist/slot pairs before
@@ -636,6 +668,9 @@ export async function createAppointment(
           .values({
             ...common,
             serviceId: serviceIdForAppt,
+            // RB-02 — the link that makes the balance derivable. Null for every
+            // non-pacote appointment, which is almost all of them.
+            packInstanceId,
             startsAt: occ[0].startsAt,
             endsAt: occ[0].endsAt,
             recurrenceRule: recurring ? toRRule(input.recurrence!) : null,
@@ -652,6 +687,13 @@ export async function createAppointment(
             .values(
               occ.slice(1).map((o) => ({
                 ...common,
+                // RB-02 — the CHILDREN carry the base service and the link too.
+                // Before this they inherited `common.serviceId`, so a pacote
+                // recurrence would have recorded the wrong service on every
+                // occurrence after the first. The refusal above hid that; with
+                // the refusal lifted it would have shipped.
+                serviceId: serviceIdForAppt,
+                packInstanceId,
                 startsAt: o.startsAt,
                 endsAt: o.endsAt,
                 recurrenceParentId: parent.id,

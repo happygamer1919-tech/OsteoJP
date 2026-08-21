@@ -38,3 +38,9 @@ export * from "./src/guest-preferred-window";
 // query in apps/web and the DB-gated test that proves it against real Postgres,
 // and a copy in each is how a selection rule and its proof come to disagree.
 export * from "./src/followup-selection";
+
+// RB-02 — what a pacote's balance IS. Exported from the package because the
+// staff query, the booking guard and the DB-gated test must all agree on one
+// formula, and because `legacy_consumed` only makes sense next to the reasoning
+// that produced it.
+export * from "./src/pack-balance";

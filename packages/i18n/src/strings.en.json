@@ -1420,5 +1420,7 @@
   "followup.messageSubject": "OsteoJP",
   "followup.messageTemplate": "Hello {name}, this is OsteoJP. We noticed we have not seen you since {date} and wanted to check how you are. If you would like to book, just reply to this message.",
   "followup.messageHint": "The message opens ready-written in the app on your phone or computer and can be edited before sending.",
-  "nav.followup": "Follow-up"
+  "nav.followup": "Follow-up",
+  "packs.derivedNote": "Sessions are counted from the pacote's appointments. A cancelled appointment returns the session; a no-show does not.",
+  "appointment.packInsufficient": "The pacote does not have enough sessions for this booking. Check the balance on the patient record and book fewer sessions, or register a new pacote."
 }

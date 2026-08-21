@@ -219,6 +219,17 @@ export type ActionErrorCode =
   // ("Guardar mesmo assim"); this is not, because an override that reinstates
   // the exact defect is a bypass rather than an override.
   | "outside_availability"
+  // RB-02: the pacote has fewer sessions left than this booking needs.
+  //
+  // ITS OWN CODE AND NOT `validation`, because the two need different copy and
+  // different actions. `validation` means "you left something blank"; this
+  // means "the pacote has 3 sessions and you asked for 5", and the person
+  // reading it decides whether to book fewer or sell another pacote.
+  //
+  // A REFUSAL RATHER THAN A TRUNCATION. Booking three of the five and reporting
+  // success is the shape section 1.3 warns about: an unhandled case wearing the
+  // face of a harmless one, discovered later from the diary.
+  | "pack_insufficient"
   | "not_found"
   // W3-06 hard-delete: wrong delete password, or linked clinical/invoice records.
   | "password"

@@ -388,7 +388,9 @@ export function AppointmentDrawer({
   const [packBalanceResult, setPackBalanceResult] = useState<{
     patientId: string;
     packId: string;
-    balance: { sessionsTotal: number; sessionsRemaining: number } | null;
+    // RB-02: DERIVED from linked appointments, not the frozen sessions_remaining
+    // column. The name change is deliberate - see lib/packs/instances.ts.
+    balance: { sessionsTotal: number; sessionsAvailable: number } | null;
   } | null>(null);
   useEffect(() => {
     const pid = form.patientId;
@@ -607,6 +609,12 @@ export function AppointmentDrawer({
     // both cases the honest message names the location, not a permission.
     else if (r.error === "location_not_assigned")
       setError(s["appointment.locationNotAssigned"]);
+    // RB-02: the pacote has fewer sessions left than this booking needs. The
+    // message NAMES both numbers, for the same reason outside_availability names
+    // the window: "não há sessões suficientes" on its own sends reception to
+    // another screen to find out how many there are.
+    else if (r.error === "pack_insufficient")
+      setError(s["appointment.packInsufficient"]);
     else if (r.error === "validation") setError(s["appointment.requiredFields"]);
     else if (r.error === "unauthenticated") setError(s["errors.unauthenticated"]);
     else setError(s["errors.generic"]);
@@ -950,7 +958,7 @@ export function AppointmentDrawer({
         {!editing && selectedPack && form.patientId && (
           <Banner tone="info">
             {packBalance
-              ? `${s["appointment.packRemaining"]}: ${packBalance.sessionsRemaining}/${packBalance.sessionsTotal}`
+              ? `${s["appointment.packRemaining"]}: ${packBalance.sessionsAvailable}/${packBalance.sessionsTotal}`
               : `${s["appointment.packNew"]} (${selectedPack.sessionCount} ${s["appointment.packSessions"]})`}
           </Banner>
         )}
