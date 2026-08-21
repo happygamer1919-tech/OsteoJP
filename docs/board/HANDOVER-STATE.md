@@ -829,9 +829,17 @@ since closed, the board is the count and this section is the story.
 > the live database, and it is the first thing to look at when you next open a
 > patient with a pacote.
 >
-> **One question for you**, written up as `Q-RB-02-1`: a pacote can now book
-> several appointments at once, and the form does not yet fill in how many. The
-> count is easy; **the spacing between them is a clinical decision**, not a
+> **A correction, made the next morning and before you looked at any of it.**
+> This paragraph said a pacote could now book several appointments at once. **It
+> cannot**, and you would have gone looking for a control that is not on the
+> screen: booking several at a time is hidden whenever a pacote is chosen, and
+> this batch did not change that. What was built is the part that makes the
+> **balance trustworthy**, which is everything above — that half is real and is
+> worth your check.
+>
+> The missing half is written up as `RB-02b` and it is next. The question that
+> went with it, `Q-RB-02-1`, is still worth answering when it lands: how far
+> apart should the appointments be? **The spacing is a clinical decision**, not a
 > technical one, so it is not being guessed.
 
 > ### ✅ The database change you were waiting on is DONE, 2026-08-20
