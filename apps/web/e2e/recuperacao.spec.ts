@@ -71,9 +71,14 @@ test("the date and the therapist render, which is what the null-date crash broke
 
   // A REAL dd/mm/aaaa, not the em dash the null guard renders. This is the
   // assertion that distinguishes "the query returned a date" from "the page
-  // survived a null" - and the first fix of this incident was about exactly
-  // that difference.
-  await expect(row.getByText(/\d{2}\/\d{2}\/\d{4}/)).toBeVisible();
+  // survived a null" - and two of this incident's four defects were about
+  // exactly that difference.
+  //
+  // ANCHORED, AND THAT IS NOT COSMETIC. Unanchored, the pattern also matches the
+  // contact line ("... em 20/08/2026, 14:48"), so the locator resolved to TWO
+  // elements and Playwright strict mode failed it - a red test over a correct
+  // page. Anchoring pins the field that carries only the date.
+  await expect(row.getByText(/^\d{2}\/\d{2}\/\d{4}$/)).toBeVisible();
   await expect(row.getByText("E2E Therapist")).toBeVisible();
 });
 
