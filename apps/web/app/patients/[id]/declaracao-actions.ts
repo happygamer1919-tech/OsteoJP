@@ -8,6 +8,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getPatient } from "@/lib/patients/queries";
 import { updatePatient } from "@/lib/patients/actions";
 import { shouldPersistCapturedValue } from "@/lib/patients/known-field";
+import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
 import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
 
 // W5-31 — generate the Declaração de Presença PDF for a patient and hand back a
@@ -34,6 +35,13 @@ export async function generateDeclaracaoUrlAction(
   // (reception front-desk task). Reception has patients:read.
   if (!can(ctx.role, "patients:read")) return { url: null };
   if (!input.patientId || !input.date || !input.startTime || !input.endTime) {
+    return { url: null };
+  }
+
+  // ROUTE 6. AFTER the capability and shape checks, BEFORE the render. This is
+  // the widest of the three - it is gated on `patients:read`, so RECEPTION can
+  // reach it, not only clinical readers.
+  if (!(await documentGenerationAllowed(ctx.userId))) {
     return { url: null };
   }
 

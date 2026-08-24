@@ -11,6 +11,7 @@ import {
   signAndLockRecord,
   updateRecordData,
 } from "@/lib/clinical/records";
+import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
 import { recordTermsAcceptance } from "@/lib/clinical/terms-acceptance";
 import {
   confirmAttachment,
@@ -115,6 +116,14 @@ export async function downloadReportUrlAction(
   // Defense in depth beyond the layout gate: a direct action call still needs
   // clinical read. Reception (no clinical_records:read) is refused here.
   if (!can(ctx.role, "clinical_records:read")) return { url: null };
+  if (!id) return { url: null };
+
+  // ROUTE 6. AFTER the capability and shape checks, BEFORE the render: every
+  // call that gets past here writes a NEW PERMANENT Storage object under a
+  // random path that nothing overwrites and nothing cleans up.
+  if (!(await documentGenerationAllowed(ctx.userId))) {
+    return { url: null };
+  }
 
   try {
     // Tenant-scoped + finalized-only gate live inside the report engine (RLS in
@@ -157,6 +166,13 @@ export async function generateRgpdFormUrlAction(
   // A reader of clinical records may print the RGPD form. Reception (no
   // clinical_records:read) is refused here (defense in depth beyond the layout).
   if (!can(ctx.role, "clinical_records:read")) return { url: null };
+  if (!id) return { url: null };
+
+  // ROUTE 6. Same reasoning and the same ceiling as the report above: this
+  // writes a permanent object per call.
+  if (!(await documentGenerationAllowed(ctx.userId))) {
+    return { url: null };
+  }
 
   try {
     const pdf = await generateRgpdFormPdf(toClaims(ctx), id, locale);

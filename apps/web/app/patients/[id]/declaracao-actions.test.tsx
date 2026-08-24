@@ -15,6 +15,17 @@ vi.mock("@/lib/supabase/admin", () => ({
 // the DECISION, not the database.
 vi.mock("@/lib/patients/queries", () => ({ getPatient: vi.fn() }));
 vi.mock("@/lib/patients/actions", () => ({ updatePatient: vi.fn() }));
+// SEC-web-surface-limiter-adoption route 6: the action now takes a per-user
+// ceiling before it renders. STUBBED OPEN HERE, deliberately - this suite is
+// about download-vs-preview and the NIF write-back, and the real helper is
+// backed by the DURABLE store, which FAILS CLOSED with no DATABASE_URL. Left
+// unstubbed it refuses every call and every assertion below fails for a reason
+// that has nothing to do with what they test. The ceiling has its own suite
+// (lib/clinical/document-rate-limit.test.ts), including the source guards that
+// prove this action is wired to it.
+vi.mock("@/lib/clinical/document-rate-limit", () => ({
+  documentGenerationAllowed: vi.fn(async () => true),
+}));
 
 import { requireRequestContext } from "@/lib/auth/context";
 import { generateDeclaracaoPdf } from "@/lib/clinical/declaracao/generate";
