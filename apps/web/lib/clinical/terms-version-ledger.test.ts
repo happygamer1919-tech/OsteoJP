@@ -74,10 +74,22 @@ describe("a terms label may never gain text after acceptances were recorded with
     expect(TERMS_VERSION).toBe("2026-08");
   });
 
-  it("TEXTED is empty until JP returns a document", () => {
-    // Not an invariant - a fact, asserted so that the day it changes, the
-    // change is deliberate and visible in a diff rather than incidental.
-    expect(TEXTED_TERMS_VERSIONS).toEqual([]);
+  it("records the label JP's document will carry, and it is NOT 2026-08", () => {
+    // OWNER RULING 2026-08-24: JP confirmed version 1, the discretionary
+    // wording, and the label is "condicoes-v1-2026". Asserted by NAME rather
+    // than by length, because "TEXTED has one entry" would stay green if the
+    // entry were "2026-08" - the exact collision this file exists to refuse.
+    expect(TEXTED_TERMS_VERSIONS).toEqual(["condicoes-v1-2026"]);
+    expect(TEXTED_TERMS_VERSIONS).not.toContain("2026-08");
+  });
+
+  it("TERMS_VERSION has NOT yet been moved to the new label", () => {
+    // The switch is its own card and waits for JP's text to land. Moving it
+    // early would record acceptances against a label whose document nobody can
+    // produce - the same defect one step to the left. This assertion goes red
+    // the day somebody moves it, which is when that card should be doing it.
+    expect(TERMS_VERSION).toBe("2026-08");
+    expect(TEXTLESS_TERMS_VERSIONS).toContain(TERMS_VERSION);
   });
 
   it("neither list carries a blank or untrimmed label", () => {
