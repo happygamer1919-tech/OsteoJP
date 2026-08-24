@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**195 cards on the board. 154 shipped, 41 open. Launch readiness 9/9, every launch gate passes.**
+**196 cards on the board. 154 shipped, 42 open. Launch readiness 9/9, every launch gate passes.**
 
 *These are the numbers **on the board above**, which is the only place you count
 them. The underlying file holds five more cards that the board deliberately does
@@ -1196,6 +1196,40 @@ work on this item. It ranks last because abuse there means a named member of
 staff with an audit trail behind every action, not a stranger.
 
 **Nothing on any screen changed.** There is nothing here for you to look at.
+
+---
+
+## Every printed document is kept forever, and nobody decided that
+
+**Found while finishing the rate-limit work. It is not a fault and nothing is
+broken — it is a decision nobody has made.**
+
+Every time a member of staff prints a **declaração de presença**, a **clinical
+report**, or an **RGPD form**, the platform saves a copy of that PDF in storage.
+The download link the staff member gets expires after **one minute**. **The saved
+copy never expires.** Nothing deletes it, ever.
+
+Reprint the same declaration tomorrow and you get a second permanent copy. A
+receptionist printing twenty a day leaves roughly **seven thousand PDFs a year**,
+and every one of them is somebody doing their job properly.
+
+**The new rate limit does not help with this**, and it would be wrong to think it
+does. It stops a runaway loop generating thousands in minutes. It does not slow
+ordinary printing by one document, because ordinary printing is nowhere near it.
+
+**Why it needs you rather than us.** These are clinical and fiscal documents with
+patients' names on them. How long a copy may sit in storage is a retention
+question, and retention is yours to decide — it is the same area as ruling D on
+JP's packet, where you kept the wording generic and fixed no number.
+
+The cheapest fix is a rule on the storage bucket that clears old generated
+copies automatically. It needs no code and no deployment: the documents can
+always be printed again on demand, because that is how they are made in the
+first place.
+
+**Nothing has been built.** Tracked as `LE-generated-documents-no-lifecycle`.
+We also cannot tell you how many are there today — no terminal may read
+production storage, so that number is unknown rather than estimated.
 
 ---
 

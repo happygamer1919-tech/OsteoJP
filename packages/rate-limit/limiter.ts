@@ -134,7 +134,7 @@ export function clientKeyFromHeaders(
   scope: string,
   subject?: string,
 ): string {
-  if (subject) return `${scope}:sub:${subject}`;
+  if (subject) return subjectKey(scope, subject);
 
   const forwarded = headers.get("x-forwarded-for");
   const ip = forwarded?.split(",")[0]?.trim();
@@ -155,6 +155,32 @@ export function clientKeyFromHeaders(
   // one bucket, deliberately - it is the strict direction, and an anonymous
   // unattributable caller is exactly what we are willing to throttle hard.
   return `${scope}:unattributed`;
+}
+
+/**
+ * The bucket key for a caller we can NAME - a patient id, a staff user id.
+ *
+ * EXTRACTED SO A SUBJECT-KEYED CALLER NEED NOT INVENT A `Headers` IT WILL NEVER
+ * READ. `clientKeyFromHeaders` short-circuits on `subject` before touching a
+ * single header, so an authenticated call site was passing an object purely to
+ * satisfy a parameter - which is how route 6's first cut came to call Next's
+ * `headers()` for a value nothing consumed, and broke seven existing tests that
+ * invoke the action outside a request scope.
+ *
+ * ONE DEFINITION OF THE FORMAT, which is the whole reason this is a function
+ * rather than a template literal at each call site. `clientKeyFromHeaders`
+ * delegates here, so the address-keyed and subject-keyed paths cannot come to
+ * disagree about what a bucket is named.
+ *
+ * NOT HASHED, UNLIKE `credentialKey`, and the difference is deliberate. That one
+ * hashes because its input is an email address - personal data that has no
+ * business sitting in a durable table. A subject here is an opaque internal id
+ * that the audit log already records against every mutation; hashing it would
+ * destroy the only property that makes it useful after an incident, which is
+ * that an operator can line the counter up against what that account did.
+ */
+export function subjectKey(scope: string, subject: string): string {
+  return `${scope}:sub:${subject}`;
 }
 
 /**
@@ -444,6 +470,59 @@ export const RULES = {
   ingestionIp: { limit: 120, windowMs: 60_000 },
   /** Stripe webhook receiver. Signature over the raw body; cost bound only. */
   stripeWebhookIp: { limit: 120, windowMs: 60_000 },
+
+  /* ==================================================================== */
+  /* STAFF DOCUMENT GENERATION - route 6 of the adoption, and the ONLY    */
+  /* authenticated action class that earns a limit.                       */
+  /* ==================================================================== */
+  //
+  // THREE ACTIONS, ONE SHAPE: downloadReportUrlAction and
+  // generateRgpdFormUrlAction in apps/web/app/clinical/[id]/actions.ts, and
+  // generateDeclaracaoUrlAction in apps/web/app/patients/[id]/declaracao-
+  // actions.ts.
+  //
+  // WHY THESE AND NOT THE OTHER ~120 STAFF ACTIONS. The card grades the
+  // authenticated surface medium because abuse there is bounded to named people
+  // with an audit trail, and that reasoning holds for ordinary CRUD: a
+  // receptionist who edits a patient a thousand times has written a thousand
+  // audit rows against their own name and changed one row a thousand times.
+  //
+  // THESE THREE ARE NOT THAT. Each call renders a PDF and writes a NEW
+  // PERMANENT OBJECT to Supabase Storage under a `randomUUID()` path. The
+  // `upsert: true` on those uploads is INERT, because a fresh UUID never
+  // collides - so nothing is ever overwritten, and nothing deletes them. The
+  // cost is CUMULATIVE AND PERMANENT rather than a row a named person is
+  // allowed to change.
+  //
+  // THE DURABLE STORE, AND HERE IT IS THE CHEAP OPTION. Routes 3 and 4 use the
+  // memory store because a Postgres upsert costs more than the HMAC it would
+  // guard. The subject here is a PDF RENDER PLUS A STORAGE UPLOAD, both of
+  // which dwarf an upsert, so the same test - THE LIMITER MUST BE CHEAPER THAN
+  // ITS SUBJECT - selects durable this time. The rule is one rule; it is the
+  // subject that changed.
+  //
+  // KEYED ON THE STAFF USER, NOT THE SOURCE ADDRESS. This is the first rule in
+  // this file whose caller is a KNOWN, NAMED PRINCIPAL. A user id survives an
+  // address change, and it is the identifier the audit log already records - so
+  // an operator reading `rate_limit_counters` after an incident can line a
+  // refusal up against what that account actually did. An IP key would do
+  // neither, and would additionally throttle a whole clinic behind one NAT.
+  //
+  // WHAT THIS DOES NOT FIX, AND IT IS THE LARGER PROBLEM: THERE IS NO LIFECYCLE
+  // ON GENERATED DOCUMENTS. A receptionist legitimately printing twenty
+  // declarations a day leaves roughly seven thousand PDFs a year in the bucket,
+  // every one of them permanent. THIS LIMIT DOES NOT ADDRESS THAT AND MUST NOT
+  // BE READ AS ADDRESSING IT - it bounds a BURST (a runaway client loop, a
+  // compromised session) and nothing else. The accumulation is storage
+  // configuration plus a cleanup decision, it is the owner's, and it is carded
+  // separately rather than implied here.
+  //
+  // THE NUMBERS. Twenty a minute is far above any human printing a morning's
+  // declarations one at a time, and ruinous for a loop. The hour window is what
+  // actually bounds a slow drip: a script pacing itself under the per-minute
+  // limit still stops at two hundred.
+  staffDocumentGeneration: { limit: 20, windowMs: 60_000 },
+  staffDocumentGenerationHour: { limit: 200, windowMs: 60 * 60_000 },
 
   /**
    * OTP request. Per phone AND per client, both keyed separately by the caller.
