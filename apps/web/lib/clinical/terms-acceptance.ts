@@ -39,6 +39,58 @@ import { writeClinicalAudit, clientIp } from "./audit";
  */
 export const TERMS_VERSION = "2026-08" as const;
 
+/**
+ * ==========================================================================
+ * THE LABEL LEDGER. TWO LISTS, AND THE GUARD IS THAT THEY NEVER INTERSECT.
+ * ==========================================================================
+ * LE-terms-version-label-collision-guard, 2026-08-24. The owner is telling JP
+ * not to label his document "2026-08". THIS IS THE MACHINE HALF OF THAT
+ * INSTRUCTION, because a human instruction is forgotten and this one is
+ * uncorrectable when it is.
+ *
+ * THE HAZARD, precisely. Acceptances have been recorded under `2026-08` since
+ * this constant was written, and NO DOCUMENT TEXT HAS EVER EXISTED FOR IT. If
+ * JP's returned document is labelled `2026-08`, every row captured before the
+ * text existed instantly becomes a claim that the patient accepted THAT TEXT -
+ * text nobody had written when reception ticked the box. The record would look
+ * perfect and be false, and 0058 REVOKEs UPDATE/DELETE/TRUNCATE at the table,
+ * so IT COULD NOT BE PUT RIGHT. That property is correct and it is exactly what
+ * makes a wrong row permanent.
+ *
+ * WHY THE OBVIOUS GUARD WOULD NOT FIRE, and this is the reason the ledger has
+ * this shape rather than the simpler one. The natural guard is "fail if
+ * TERMS_VERSION is set to an already-used label". IT WOULD NEVER FIRE HERE:
+ * `2026-08` is ALREADY the value, so a document arriving under that name
+ * requires NO CODE CHANGE AT ALL. The collision would happen in silence, with a
+ * clean diff and a green build. So the guard cannot watch the constant - it has
+ * to watch the thing that actually changes, which is SOMEBODY DECLARING THAT A
+ * LABEL NOW HAS TEXT.
+ *
+ * HOW TO USE IT WHEN JP ANSWERS:
+ *   he returns a document labelled something OTHER than a text-less label ->
+ *     add that label to TEXTED, point TERMS_VERSION at it. `2026-08` stays
+ *     text-less forever, which is TRUE and stays visibly true.
+ *   he returns one labelled `2026-08` -> adding it to TEXTED FAILS THE BUILD,
+ *     with this comment attached. That is the intended outcome: the answer is
+ *     to relabel the document, never to edit this list.
+ */
+
+/**
+ * Labels under which acceptances were recorded while NO document text existed.
+ * APPEND ONLY, and never move an entry out of here: the rows it describes
+ * cannot be edited or deleted, so the fact it records cannot stop being true.
+ */
+export const TEXTLESS_TERMS_VERSIONS = ["2026-08"] as const;
+
+/**
+ * Labels whose document text is fixed and available.
+ *
+ * EMPTY, AND THE EMPTINESS IS THE CURRENT STATE OF THE WORLD rather than an
+ * unfinished list: JP has two drafts and has returned neither. The first entry
+ * arrives with his answer.
+ */
+export const TEXTED_TERMS_VERSIONS: readonly string[] = [];
+
 export type TermsAcceptance = {
   acceptedAt: string;
   termsVersion: string;
