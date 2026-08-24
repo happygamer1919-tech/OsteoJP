@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**196 cards on the board. 156 shipped, 40 open. Launch readiness 9/9, every launch gate passes.**
+**197 cards on the board. 157 shipped, 40 open. Launch readiness 9/9, every launch gate passes.**
 
 *These are the numbers **on the board above**, which is the only place you count
 them. The underlying file holds five more cards that the board deliberately does
@@ -1258,6 +1258,15 @@ legal record.
 
 Any other label avoids it entirely. The old records then keep pointing at a
 document that never had text, which is awkward but *true*.
+
+**We have now added the machine half of that, so it does not rest on anyone
+remembering.** The platform records, in its own files, that "2026-08" is a label
+patients accepted *while no text existed*. The day someone tries to attach JP's
+returned text to that same label, **the build stops** and says why. The fix at
+that point is to relabel the document, not to override the check.
+
+It does not depend on you or JP remembering the conversation, and it costs
+nothing if you both do.
 
 ### The decision that is yours
 
