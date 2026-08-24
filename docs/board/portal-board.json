@@ -3736,7 +3736,7 @@
       "gate": "owner_authorizo",
       "evidence": {
         "kind": "pr",
-        "ref": "PR #PENDINGP. normalizePhonePT moved to packages/notify/src/phone.ts; apps/api/lib/notify/phone.ts DELETED; 10 import sites re-pointed; zero copies remain in apps/, asserted by a git-grep source guard. Adapter normalises telefone (first valid wins, remainder into notes) and sexo (unrecognised -> to_review), and zips seguro_saude/numero_apolice into the PL-23 list. 42 adapter assertions, 80 notify, 16 runner. Negative controls: a second copy under apps/ -> 2 red; telefone passed through verbatim -> 4 red.",
+        "ref": "PR #1028. normalizePhonePT moved to packages/notify/src/phone.ts; apps/api/lib/notify/phone.ts DELETED; 10 import sites re-pointed; zero copies remain in apps/, asserted by a git-grep source guard. Adapter normalises telefone (first valid wins, remainder into notes) and sexo (unrecognised -> to_review), and zips seguro_saude/numero_apolice into the PL-23 list. 42 adapter assertions, 80 notify, 16 runner. Negative controls: a second copy under apps/ -> 2 red; telefone passed through verbatim -> 4 red.",
         "at": "2026-08-24"
       },
       "blocked_on": null,
