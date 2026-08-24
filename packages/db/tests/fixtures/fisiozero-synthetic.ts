@@ -43,6 +43,7 @@ export function syntheticBatch(): SyntheticRow[] {
           city: "Linda-a-Velha",
           notes: "Sintético — fixture de teste.",
           locationKeys: ["linda-a-velha"],
+          primaryLocationKey: "linda-a-velha",
         },
       },
       raw: {
@@ -70,6 +71,7 @@ export function syntheticBatch(): SyntheticRow[] {
           city: "Castelo Branco",
           notes: null,
           locationKeys: ["castelo-branco"],
+          primaryLocationKey: "castelo-branco",
         },
       },
       raw: {
@@ -97,6 +99,7 @@ export function syntheticBatch(): SyntheticRow[] {
           city: null,
           notes: "Paciente vista nas duas clínicas (sintético).",
           locationKeys: ["linda-a-velha", "castelo-branco"],
+          primaryLocationKey: "linda-a-velha",
         },
       },
       raw: {
@@ -212,6 +215,7 @@ export function invalidPatientRow(): SyntheticRow {
         sourceId: "fz-pat-9999",
         fullName: "", // invalid: patients.full_name is NOT NULL / non-empty
         locationKeys: ["linda-a-velha"],
+        primaryLocationKey: "linda-a-velha",
       },
     },
     raw: { id: "9999", nome: "", clinica: "Linda-a-Velha" },
