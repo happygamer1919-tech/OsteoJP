@@ -1,4 +1,10 @@
 import { NextResponse } from "next/server";
+import {
+  RULES,
+  checkRateLimit,
+  clientKey,
+  tooManyRequests,
+} from "@osteojp/rate-limit";
 import { verifyIngestionSignature } from "@/lib/ingestion/hmac";
 import { hashPayload, ingest, parseEnvelope } from "@/lib/ingestion/ingest";
 import { drizzleIngestionStore } from "@/lib/ingestion/store";
@@ -24,11 +30,47 @@ import { drizzleIngestionStore } from "@/lib/ingestion/store";
 // proxy (apps/web/proxy.ts matcher, same as /api/inngest), so this unauthenticated
 // server-to-server request reaches the handler instead of being redirected to
 // /login. The HMAC check below is the ONLY auth gate.
+//
+// ===========================================================================
+// RATE LIMITED SINCE SEC-web-surface-limiter-adoption ROUTE 3.
+// ===========================================================================
+// SAY WHAT IT BUYS, BECAUSE IT IS LESS THAN IT LOOKS. The gate here is an HMAC
+// over the raw body. An attacker without AI_INGESTION_HMAC_SECRET cannot
+// produce a valid signature at any rate, so NO number in RULES changes what is
+// reachable. What the limit bounds is COST: the body read and the HMAC an
+// unauthenticated caller can force us to perform, over and over, for free.
+//
+// IT IS THE FIRST STATEMENT IN THE HANDLER, ABOVE `req.text()`, AND THAT
+// ORDERING IS THE POINT. This route reads an ARBITRARY-SIZE BODY into memory
+// before it authenticates anything. Limiting after the read would leave the
+// expensive half unbounded and count only the reads that already happened.
+// Limiting above it means a source over its budget cannot make us read a body
+// at all.
+//
+// IT DOES NOT FIX THE FIRST LARGE BODY. A size cap is the control for that and
+// this is not one; the limit bounds REPEATS from a source, not the size of any
+// single request. Named here so nobody later reads this as a body-size guard.
+//
+// MEMORY STORE, NOT THE DURABLE ONE, and the reasoning is the opposite of
+// route 2's on purpose. A durable hit is a Postgres upsert and the thing it
+// would protect is an HMAC costing microseconds - a limiter more expensive
+// than its subject is an amplifier. Route 2 pays that price because its
+// subject is a guess budget that a cold start would reset. There is no guess
+// budget here, so this is coarse per-instance throttling, which is exactly
+// what limiter.ts's header says the memory store is for. It is not a cap.
 
 export const runtime = "nodejs"; // node:crypto + server-only
 export const dynamic = "force-dynamic"; // signed, per-request; never cached
 
 export async function POST(req: Request): Promise<Response> {
+  // ABOVE the body read, deliberately: see the header. A source over budget
+  // must not be able to make us read an arbitrary-size body.
+  const verdict = checkRateLimit(
+    clientKey(req, "ingestion"),
+    RULES.ingestionIp,
+  );
+  if (!verdict.ok) return tooManyRequests(verdict);
+
   // Raw bytes first — the HMAC is over exactly what was sent, before any parse.
   const rawBody = await req.text();
 

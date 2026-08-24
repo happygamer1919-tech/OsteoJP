@@ -1,4 +1,10 @@
 import { NextResponse } from "next/server";
+import {
+  RULES,
+  checkRateLimit,
+  clientKey,
+  tooManyRequests,
+} from "@osteojp/rate-limit";
 import { constructEvent } from "@/lib/integrations/stripe/webhook";
 import { referenceFromMetadata } from "@/lib/integrations/stripe/mapper";
 import {
@@ -32,6 +38,27 @@ import type { SxPaymentIntent } from "@/lib/integrations/stripe/types";
 // Session middleware: `/api/v1/integrations/stripe/webhook` is excluded from
 // the Supabase session proxy (apps/web/proxy.ts matcher negative lookahead),
 // same as /api/v1/ingestion, so the signature check above is the only auth gate.
+//
+// ===========================================================================
+// RATE LIMITED SINCE SEC-web-surface-limiter-adoption ROUTE 4.
+// ===========================================================================
+// SAME SHAPE AND SAME HONEST LIMIT AS THE INGESTION ROUTE, which is why the
+// two shipped together. The gate is a Stripe signature over the raw body: an
+// attacker without STRIPE_WEBHOOK_SECRET cannot produce one at any rate, so no
+// number in RULES changes what is reachable. The limit bounds COST only - the
+// body read and the signature computation an unauthenticated caller can force.
+//
+// FIRST STATEMENT IN THE HANDLER, ABOVE `req.text()`, so a source over budget
+// cannot make us read a body at all.
+//
+// MEMORY STORE, NOT DURABLE: a Postgres upsert in front of a microsecond
+// signature check would cost more than the thing it protects. Route 2 pays
+// that price because its subject is a guess budget; there is none here. Coarse
+// per-instance throttling, not a cap.
+//
+// A REFUSAL IS SAFE FOR STRIPE AND THAT IS NOT LUCK. Stripe redelivers on any
+// non-2xx with backoff, and the enqueue below is already idempotent on the
+// event id, so a throttled real event is DELAYED, never lost or double-counted.
 
 export const runtime = "nodejs"; // node:crypto for signature verification
 export const dynamic = "force-dynamic"; // signed, per-request; never cached
@@ -46,6 +73,13 @@ const HANDLED_EVENTS = new Set<string>([
 ]);
 
 export async function POST(req: Request): Promise<Response> {
+  // ABOVE the body read, deliberately: see the header.
+  const verdict = checkRateLimit(
+    clientKey(req, "stripe_webhook"),
+    RULES.stripeWebhookIp,
+  );
+  if (!verdict.ok) return tooManyRequests(verdict);
+
   // Raw bytes first — the signature is over exactly what was sent, pre-parse.
   const rawBody = await req.text();
 
