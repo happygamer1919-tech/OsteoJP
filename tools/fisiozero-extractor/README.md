@@ -34,11 +34,19 @@ If any request bounces to the login screen, the run stops with
 From the repo root:
 
 ```bash
-FISIOZERO_STORAGE_STATE=/secure/fz-state.json \
+FISIOZERO_STORAGE_STATE=/secure/fisiozero.storageState.json \
   pnpm --filter @osteojp/fisiozero-extractor extract -- \
   --limit 8 \
   --out /secure/fz-archive
 ```
+
+> **The storageState file is a LIVE SESSION CREDENTIAL. Never place it inside
+> the repository tree.** Anyone holding it is logged in as you, with no password
+> and no second factor, until the session expires. The `/secure/` path above is
+> outside the repo on purpose. Both the name above and the bare `fz-state.json`
+> this example used to name are covered by `.gitignore` as a backstop, but an
+> ignore rule is the last line of defence and not the first: keep the file out
+> of the tree.
 
 `--limit 8` stops after 8 **present** patients (absent/gapped ids don't count).
 Do not remove `--limit` until the 8-patient batch has been hand-reviewed.

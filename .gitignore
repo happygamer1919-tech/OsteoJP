@@ -60,3 +60,11 @@ docs/board/portal-board.rendered.html
 # W13-01a: apps/web DB-gated vitest report + log (build products, like packages/db's)
 apps/web/web-db-results.json
 apps/web/web-db-run.log
+
+# Fisiozero extractor - session credentials and plaintext archives
+fz-state.json
+**/fz-state.json
+fisiozero-archive/
+**/fisiozero-archive/
+*.storageState.json
+**/*.storageState.json
