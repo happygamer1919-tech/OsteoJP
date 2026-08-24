@@ -333,6 +333,73 @@ export const RULES = {
   staffLoginIp: { limit: 20, windowMs: 60_000 },
 
   /**
+   * THE IFTHENPAY PAYMENT CALLBACK - `GET /api/webhooks/ifthenpay`.
+   * SEC-web-surface-limiter-adoption, route 2 of the adoption.
+   *
+   * ==================================================================
+   * IT OUTRANKS THE TWO SIGNED WEBHOOKS, AND THE CARD'S ORDERING HAD IT
+   * BELOW THEM. RE-DERIVED 2026-08-22 AND CORRECTED.
+   * ==================================================================
+   * The card ordered the four proxy-excluded paths ingestion, ifthenpay,
+   * stripe, inngest. That ordering treated "signature- or key-gated" as one
+   * category. IT IS TWO, and the difference decides which of them a rate limit
+   * can actually help.
+   *
+   * The ingestion and Stripe endpoints verify an HMAC OVER THE REQUEST BODY. To
+   * forge one an attacker must hold the shared secret; the signature itself is
+   * not guessable at any rate, so no limit changes what is reachable. A limit
+   * there bounds COST only.
+   *
+   * THIS ROUTE COMPARES A STATIC SHARED SECRET FOR EQUALITY. The
+   * anti-phishing key (IFTHENPAY_ANTIPHISHING_KEY, name only) arrives as a
+   * query parameter and `safeKeyEqual` compares it constant-time against the
+   * configured value. Constant time defeats a TIMING oracle; it does nothing
+   * about GUESS RATE. Unlimited, the number of guesses an attacker may make
+   * against that key was bounded by nothing but their bandwidth - and a
+   * successful guess is not a read, it is a FORGED SETTLEMENT: an invoice
+   * marked paid for money that never arrived.
+   *
+   * So this is the only one of the three where the gate is guessable and the
+   * consequence of a forge is a financial write. It goes first.
+   *
+   * ==================================================================
+   * PER SOURCE ONLY, AND THE MISSING GLOBAL CEILING IS THE DECISION
+   * ==================================================================
+   * Same reasoning `guestCatalogIp` and `staffLogin*` already record, and it
+   * binds here too: a tenant-wide ceiling on this path would hand any single
+   * attacker a switch that STOPS REAL SETTLEMENTS BEING RECORDED. Payments
+   * would still be taken by IfThenPay and would silently stop reaching the
+   * ledger. That converts a cheap resource attack into a reconciliation
+   * incident, which is worse than the thing the ceiling would buy.
+   *
+   * ==================================================================
+   * WHAT THIS DOES NOT DO. SAID HERE RATHER THAN DISCOVERED LATER.
+   * ==================================================================
+   * IT DOES NOT STOP A DISTRIBUTED GUESSER. Buckets are per source, so an
+   * attacker with a proxy pool gets a fresh budget per address. The real
+   * control against that is the ENTROPY OF THE KEY, which is owner-configured
+   * and not ours to assert, plus the platform firewall. This limit bounds a
+   * SINGLE-SOURCE guesser and the cost of forced key comparisons. It is
+   * defence in depth and must not be read as a cap.
+   *
+   * IT DOES NOT BOUND ITS OWN COST. The durable store writes one row per
+   * request, INCLUDING the requests it refuses, so a flood still costs one
+   * upsert each. Bounding volume before the function runs is the platform
+   * firewall's job; this module cannot do it and does not claim to.
+   *
+   * ==================================================================
+   * THE NUMBERS
+   * ==================================================================
+   * A clinic settles a handful of payments a day and each one is a single
+   * callback. Sixty a minute from one source is far above anything real,
+   * including an IfThenPay redelivery backlog after an outage on our side -
+   * which is the case that must not be throttled, because those callbacks
+   * carry settlements we have not recorded yet.
+   */
+  ifthenpayCallbackIp: { limit: 60, windowMs: 60_000 },
+  ifthenpayCallbackIpHour: { limit: 600, windowMs: 60 * 60_000 },
+
+  /**
    * OTP request. Per phone AND per client, both keyed separately by the caller.
    *
    * THREE PER HOUR is deliberately mean, and the reason is money as much as
