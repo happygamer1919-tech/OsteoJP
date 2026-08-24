@@ -1,6 +1,6 @@
 # OsteoJP portal — handover state
 
-**As of 2026-08-22.** Written for the person who hands this build to the clinic
+**As of 2026-08-24.** Written for the person who hands this build to the clinic
 team and to legal, and for anyone who reads it after.
 
 > ## ✅ THE OPEN QUESTION OF 2026-08-17 IS ANSWERED. NOTHING WAS BROKEN.
@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**194 cards on the board. 154 shipped, 40 open. Launch readiness 9/9, every launch gate passes.**
+**195 cards on the board. 154 shipped, 41 open. Launch readiness 9/9, every launch gate passes.**
 
 *These are the numbers **on the board above**, which is the only place you count
 them. The underlying file holds five more cards that the board deliberately does
@@ -1196,6 +1196,70 @@ work on this item. It ranks last because abuse there means a named member of
 staff with an audit trail behind every action, not a stranger.
 
 **Nothing on any screen changed.** There is nothing here for you to look at.
+
+---
+
+## The clinic's conditions: a decision waiting on you, and a sentence for JP
+
+**Two draft "condições de marcação e cancelamento" are going to JP with the
+packet.** Whichever he returns becomes the document this platform records
+acceptance of.
+
+**One sentence should go with them, and it costs nothing.** Ask JP not to label
+his document **"2026-08"**.
+
+Here is why that matters more than it sounds. The ficha already has a box
+reception ticks: *"O paciente aceitou as condições da clínica."* It has been
+there for weeks, it is being ticked, and **the record it writes cannot be
+changed or deleted afterwards, by design.** Each of those records says the
+patient accepted document **"2026-08"** — a name for a document nobody had
+written yet.
+
+If JP's document comes back called "2026-08", **every one of those records
+instantly becomes a claim that the patient accepted his text** — text that did
+not exist when the box was ticked. It would look completely correct, it would be
+false, and **it cannot be corrected**: the database refuses edits and deletions
+on that table on purpose, because a legal record staff can rewrite is not a
+legal record.
+
+Any other label avoids it entirely. The old records then keep pointing at a
+document that never had text, which is awkward but *true*.
+
+### The decision that is yours
+
+**Should reception stop ticking that box until JP's text arrives?**
+
+The recommendation is **yes** — provided one thing is true, and it is the one
+thing nobody here can look up.
+
+Turning it off costs nothing today. The only thing that reads those records is
+the 50% no-show fee line, and **that is switched off** until the terms exist.
+Nothing else in the platform uses them.
+
+**But if the clinic already has a paper conditions document that patients
+actually sign, the answer flips.** In that case the box is recording something
+real that happened on paper, and it should stay — what should change instead is
+which document the record names.
+
+So: **does a paper conditions document exist today?** If yes, the box stays. If
+no, it should be switched off until JP's text arrives, and switched back on in
+the same breath as installing it.
+
+Nothing has been built either way. Tracked as `LE-ficha-terms-checkbox-no-document`.
+
+### And on the cancellation notice period
+
+The packet asks JP to choose a threshold for the 50% fee, proposing 24 hours.
+**It is worth telling him that patients are already shown a 24-hour rule** — the
+portal stops letting them cancel online 24 hours before their appointment and
+tells them to telephone instead. That has been live since early August.
+
+So he is not choosing from nothing. He is choosing whether the fee threshold
+**matches a number patients already see.** If he picks something else, patients
+would be told online cancellation closes at 24 hours while being charged on a
+different rule. Nothing would break; it would simply be two different numbers
+about cancellation on the same journey. Lining them up afterwards is a product
+change and would get its own card.
 
 ---
 
