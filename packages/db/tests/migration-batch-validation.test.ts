@@ -28,7 +28,7 @@ import { connect, live } from "./rls-harness";
 
 const validPatient = (sourceId: string): MigrationRecord => ({
   entityType: "patient",
-  data: { sourceId, fullName: "Sintético Teste", locationKeys: [] },
+  data: { sourceId, fullName: "Sintético Teste", locationKeys: [], primaryLocationKey: "linda-a-velha" },
 });
 
 const validAppointment = (sourceId: string, patientSourceId: string): MigrationRecord => ({
@@ -84,7 +84,7 @@ describe("detectBatchIssues — pure batch validation", () => {
 
   it("flags a patient with empty fullName", () => {
     const records: MigrationRecord[] = [
-      { entityType: "patient", data: { sourceId: "bad-pat-001", fullName: "", locationKeys: [] } },
+      { entityType: "patient", data: { sourceId: "bad-pat-001", fullName: "", locationKeys: [], primaryLocationKey: "linda-a-velha" } },
     ];
     const issue = detectBatchIssues(records).get("patient:bad-pat-001");
     expect(issue).toBeDefined();
@@ -206,7 +206,7 @@ describe("detectBatchIssues — pure batch validation", () => {
 
   it("error detail never contains source field values — field names only", () => {
     const records: MigrationRecord[] = [
-      { entityType: "patient", data: { sourceId: "pii-check-001", fullName: "", locationKeys: [] } },
+      { entityType: "patient", data: { sourceId: "pii-check-001", fullName: "", locationKeys: [], primaryLocationKey: "linda-a-velha" } },
     ];
     const issues = detectBatchIssues(records);
     const serialized = JSON.stringify([...issues.values()]);
@@ -229,7 +229,7 @@ describe.skipIf(!live)("applyBatchValidation — failed row write (live DB)", ()
   // Batch: 1 valid patient, 1 invalid patient, 1 valid appointment, 1 orphan appointment
   const records: MigrationRecord[] = [
     validPatient("bv-pat-001"),
-    { entityType: "patient", data: { sourceId: "bv-pat-002", fullName: "", locationKeys: [] } },
+    { entityType: "patient", data: { sourceId: "bv-pat-002", fullName: "", locationKeys: [], primaryLocationKey: "linda-a-velha" } },
     validAppointment("bv-apt-001", "bv-pat-001"),
     validAppointment("bv-apt-002", "bv-missing-9999"),
   ];
