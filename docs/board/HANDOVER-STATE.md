@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**197 cards on the board. 157 shipped, 40 open. Launch readiness 9/9, every launch gate passes.**
+**197 cards on the board. 159 shipped, 38 open. Launch readiness 9/9, every launch gate passes.**
 
 *These are the numbers **on the board above**, which is the only place you count
 them. The underlying file holds five more cards that the board deliberately does
@@ -1196,6 +1196,32 @@ work on this item. It ranks last because abuse there means a named member of
 staff with an audit trail behind every action, not a stranger.
 
 **Nothing on any screen changed.** There is nothing here for you to look at.
+
+---
+
+## Error reporting is working, and that was the last hard block on arming sends
+
+**Proven on 22 August.** A deliberate test error was raised on the live site and
+**it appeared in Sentry's own issue list** — `OSTEOJP-SENTRY-VERIFY`, one event,
+on `/admin/sentry-check`.
+
+That distinction is the whole reason this stayed open for days. Our own check
+page had been reporting *configurado* for a while, but that is **our software
+telling us about our own settings**. It cannot know whether anything actually
+arrives at the other end. The proof had to be Sentry's list, and now it is.
+
+**What was wrong:** the connection string never reached the live environment. It
+was not a setting somebody forgot to tick — it needed a fix and a deployment.
+
+**Why it mattered enough to block the launch.** The recovery page failed on every
+single request for a day and **you found it by opening the page**, not because
+anything told us. Arming real messages to real patients with nothing watching
+behind them was the specific risk this blocked, and that risk is now gone.
+
+**One honest limit.** An error *arriving* is not the same as a person being
+*told*. Nobody is alerted automatically yet. On a supervised launch day that is
+fine, because someone is watching on purpose. It should not stay that way
+afterwards.
 
 ---
 
