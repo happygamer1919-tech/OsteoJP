@@ -25,6 +25,11 @@ Reference site: https://osteojp.pt — brand and tone source of truth.
 - Attachment filenames may contain patient names and are treated as personal data. Scripts report filename patterns and extensions only.
 - Reason: patient health data entering an AI context creates an unapproved RGPD processor relationship.
 
+## Import execution rules (Fisiozero import)
+- A LIVE import run requires the exact phrase `IMPORT FISIOZERO INTO PRODUCTION`, typed by Ivan once per window, IN ADDITION to `--apply`. `--apply` alone is refused.
+- Import tooling exit codes are fixed: `0` OK, `1` FAILED, `2` BAD_INVOCATION. Every import script conforms.
+- Ratified 2026-08-24. Before this, both were carried between dispatches in prose and a stateless terminal could not derive either — the failure PORTAL-REHYDRATE §4.11 exists to end.
+
 ## Stack
 - Next.js 16 App Router, TypeScript strict
 - shadcn/ui + Tailwind v4
