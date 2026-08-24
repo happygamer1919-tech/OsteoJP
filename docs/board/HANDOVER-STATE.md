@@ -1,6 +1,6 @@
 # OsteoJP portal — handover state
 
-**As of 2026-08-20.** Written for the person who hands this build to the clinic
+**As of 2026-08-22.** Written for the person who hands this build to the clinic
 team and to legal, and for anyone who reads it after.
 
 > ## ✅ THE OPEN QUESTION OF 2026-08-17 IS ANSWERED. NOTHING WAS BROKEN.
@@ -1158,6 +1158,44 @@ for them would be dead weight. Recorded rather than quietly skipped.
 > is priced where. That may well be right for staff, who book exceptions. Nobody
 > has decided it, so it is now written down to be decided rather than left as an
 > accident.
+
+---
+
+## The public doors of the staff platform now have limits on them
+
+**As of 2026-08-22, four of them do, and this is being done one door at a time
+on purpose.**
+
+Until last week the staff platform had no concept of "too many attempts" at all.
+Anyone could try the sign-in page as fast as a script could type. That is now
+fixed, along with the three other addresses on that platform that anybody on the
+internet can reach.
+
+**The one that mattered most was not the obvious one.** The payment provider
+confirms a settled payment by calling us with a shared password in the web
+address. We compare it carefully, but **nothing stopped somebody guessing it, at
+any speed they liked** — and a correct guess does not read data, it **marks an
+invoice as paid for money that never arrived.** That is now limited.
+
+The other two public doors — where the AI partner delivers a record, and where
+Stripe reports a payment — are locked with a signature that cannot be guessed at
+any speed. Limiting those buys less, and it is written down as buying less: it
+stops a stranger making the system do pointless work, nothing more.
+
+**Two things are deliberately not done, and both are decisions rather than gaps.**
+
+The background-job address is **left alone on purpose**. Our job system calls
+back in for every step of every task, and retrying is how it guarantees work
+finishes. Refusing it there would look like a failed step, and giving up means
+the job is abandoned — a patient who never gets a reminder, or a consultation
+recording with no path left to a written note. **We have already taken that
+endpoint down once this month by putting a check in front of it.**
+
+And the *signed-in* staff screens are still unlimited. That is the remaining
+work on this item. It ranks last because abuse there means a named member of
+staff with an audit trail behind every action, not a stranger.
+
+**Nothing on any screen changed.** There is nothing here for you to look at.
 
 ---
 
