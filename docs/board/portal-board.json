@@ -3616,15 +3616,15 @@
     {
       "id": "LE-terms-version-label-collision-guard",
       "title": "A terms label may never gain text after acceptances were recorded without it - the machine half of 'do not call it 2026-08'",
-      "lane": "loose_ends",
+      "lane": "shipped",
       "home_lane": "loose_ends",
-      "status": "in_flight",
+      "status": "shipped",
       "priority": "medium",
       "owner_terminal": "purple",
       "gate": "green_self_merge",
       "evidence": {
         "kind": "pr",
-        "ref": "BUILD HALF DONE 2026-08-24. PR #1017 OPEN, branch sec/LE-terms-version-label-guard. IT FLIPS TO shipped WHEN #1017 MERGES, not before - a card cannot be shipped on a PR that has not merged, which the reconciler caught on the first push of this very card. 6 assertions in apps/web/lib/clinical/terms-version-ledger.test.ts, all pass; the ledger itself is TEXTLESS_TERMS_VERSIONS and TEXTED_TERMS_VERSIONS in apps/web/lib/clinical/terms-acceptance.ts. Three negative controls run and restored, baseline 6/6 after: \"2026-08\" added to TEXTED (the hazard) -> 3 red; emptying TEXTLESS to force a pass (the evasion) -> 2 red; TERMS_VERSION pointed at an untracked label -> 2 red. Four gates green from the repo root: pnpm lint (0 errors), pnpm typecheck (11/11), pnpm test (web 2435 pass), pnpm build. NO OWNER OBSERVATION IS OWED: this is a build-time check with no screen, so CI is the whole of its evidence.",
+        "ref": "PR #1017 MERGED, squashed to 0d03e430. 6 assertions in apps/web/lib/clinical/terms-version-ledger.test.ts, all pass; the ledger itself is TEXTLESS_TERMS_VERSIONS and TEXTED_TERMS_VERSIONS in apps/web/lib/clinical/terms-acceptance.ts. Three negative controls run and restored, baseline 6/6 after: \"2026-08\" added to TEXTED (the hazard) -> 3 red; emptying TEXTLESS to force a pass (the evasion) -> 2 red; TERMS_VERSION pointed at an untracked label -> 2 red. Four gates green from the repo root: pnpm lint (0 errors), pnpm typecheck (11/11), pnpm test (web 2435 pass), pnpm build. NO OWNER OBSERVATION IS OWED: this is a build-time check with no screen, so CI is the whole of its evidence.",
         "at": "2026-08-24"
       },
       "blocked_on": null,
