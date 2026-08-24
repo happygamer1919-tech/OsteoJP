@@ -14,7 +14,7 @@ import {
 
 import { hashPhone } from "@/lib/auth/otp";
 import { isSmsCapablePT } from "@osteojp/notify";
-import { normalizePhonePT } from "@/lib/notify/phone";
+import { normalizePhonePT } from "@osteojp/notify";
 import { createDurableRateLimitStore, checkDurableRateLimit } from "@/lib/rate-limit/durable-store";
 import {
   RULES,

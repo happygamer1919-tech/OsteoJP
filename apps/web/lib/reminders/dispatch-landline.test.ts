@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { isSmsCapablePT } from "@osteojp/notify";
-import { normalizePhonePT } from "./phone";
+import { normalizePhonePT } from "@osteojp/notify";
 
 /**
  * Q-LE-REMINDERS-LANDLINE-1 — the SKIP half, and the source guard that keeps it

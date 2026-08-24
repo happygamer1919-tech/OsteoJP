@@ -27,6 +27,8 @@
 
 import { createHash } from "node:crypto";
 
+import { normalizePhonePT } from "@osteojp/notify";
+
 import type {
   MigrationAppointment,
   MigrationAttachment,
@@ -278,6 +280,93 @@ export function specialtyFromFileName(fileName: string): string {
 }
 
 /* ====================================================================== */
+/* NORMALISATION AT THE MIGRATION BOUNDARY                                */
+/* ====================================================================== */
+
+/**
+ * `sexo` -> the canonical value, per docs/migration-notes.md 2026-07-01:
+ * "normalize sex to canonical values... F/feminino/Feminino/f -> female,
+ * M/masculino/Masculino/m -> male. Fix at the migration boundary."
+ *
+ * `patients.sex` is `varchar(16)` and NOT an enum, so the database would accept
+ * a raw "F" without complaint - which is exactly why this has to be done here.
+ * An unrecognised value returns null and the row goes to to_review rather than
+ * being guessed into one bucket or the other.
+ */
+export const SEX_MAP: Readonly<Record<string, string>> = Object.freeze({
+  f: "female",
+  feminino: "female",
+  female: "female",
+  m: "male",
+  masculino: "male",
+  male: "male",
+});
+
+export function normalizeSex(raw: string): string | null {
+  return SEX_MAP[raw.trim().toLowerCase()] ?? null;
+}
+
+export type PhoneNormalisation = {
+  /** E.164, or null when NO supplied number resolves. */
+  phone: string | null;
+  /** Every additional number that parsed, E.164, in source order. */
+  additional: string[];
+  /** Raw entries that did not resolve. COUNT is what gets reported, never these. */
+  unresolvedCount: number;
+};
+
+/**
+ * The multi-number rule: FIRST VALID WINS, the remainder is preserved.
+ *
+ * The caderno v1.1 specifies multiple telephone numbers as SEMICOLON-SEPARATED
+ * WITH THE PRINCIPAL ONE FIRST, so source order is meaningful and the first
+ * entry that resolves is the one the patient is reached on.
+ *
+ * NOTHING IS DISCARDED. Numbers after the first are preserved by the caller into
+ * `notes`, because a second number is often the only way to reach an elderly
+ * patient and dropping it silently is exactly what migration-notes.md warns
+ * against: "surface (not silently drop) rows that do not resolve".
+ *
+ * THE RULES ARE NOT RE-DERIVED HERE. `normalizePhonePT` is imported from
+ * @osteojp/notify - the same function the OTP login, the reminder dispatch and
+ * the guest booking use. That is the literal instruction from
+ * docs/migration-notes.md 2026-07-07, and it only became possible when the
+ * function moved out of apps/web into a package.
+ */
+export function normalizePhones(raw: string): PhoneNormalisation {
+  const parts = raw.split(";").map((p) => p.trim()).filter((p) => p !== "");
+  const resolved: string[] = [];
+  let unresolvedCount = 0;
+  for (const p of parts) {
+    const e164 = normalizePhonePT(p);
+    if (e164) {
+      if (!resolved.includes(e164)) resolved.push(e164);
+    } else unresolvedCount += 1;
+  }
+  return { phone: resolved[0] ?? null, additional: resolved.slice(1), unresolvedCount };
+}
+
+/**
+ * `seguro_saude` and `numero_apolice` -> `patients.health_insurance_numbers`.
+ *
+ * THE TARGET IS A LIST, NOT TWO SCALARS. PL-23 (migration 0051) models health
+ * insurance as `{ insurer, number }[]` because "a patient may hold more than one
+ * (ADSE plus a private insurer is ordinary in PT)". The caderno specifies both
+ * vendor columns as semicolon-separated IN MATCHING ORDER, so they zip.
+ *
+ * A MISMATCHED COUNT IS NOT SILENTLY PADDED. Pairing an insurer with the wrong
+ * policy number is worse than recording neither, so the caller routes the row to
+ * to_review instead.
+ */
+export function zipInsurance(seguro: string, apolice: string): { insurer: string | null; number: string }[] | "mismatched" {
+  const insurers = seguro.split(";").map((v) => v.trim()).filter((v) => v !== "");
+  const numbers = apolice.split(";").map((v) => v.trim()).filter((v) => v !== "");
+  if (numbers.length === 0) return [];
+  if (insurers.length > 0 && insurers.length !== numbers.length) return "mismatched";
+  return numbers.map((number, i) => ({ insurer: insurers[i] ?? null, number }));
+}
+
+/* ====================================================================== */
 /* OPTIONS                                                                */
 /* ====================================================================== */
 
@@ -356,6 +445,8 @@ export type FisiozeroAdapterResult = {
     duplicateAttachmentFileNames: number;
     /** Instants that fell in the autumn fold and were resolved to the earlier. */
     ambiguousLocalTimes: number;
+    /** Patients whose telefone resolved to NO valid PT number. COUNT ONLY. */
+    unresolvablePhones: number;
     /** Unmapped operational keys, by value and occurrence count. Safe to print. */
     unmappedTerapeuta: Array<[string, number]>;
     unmappedTipoServico: Array<[string, number]>;
@@ -386,6 +477,10 @@ export function adaptFisiozeroDelivery(
   // COUNTED BY VALUE so the runner can refuse an incomplete mapping and say
   // WHICH keys are missing and how much each one matters. One row is a typo;
   // four hundred is a real therapist whose whole diary would be skipped.
+  // THE DAY-ONE LOGIN COUNT. Reported as a NUMBER and never as numbers:
+  // LAUNCH-03 names this as the check that decides whether most of the patient
+  // base can log in, and a phone is personal data.
+  let unresolvablePhones = 0;
   const unmappedTerapeuta = new Map<string, number>();
   const unmappedTipoServico = new Map<string, number>();
   const push = (entityType: SourceRecord["entityType"], sourceId: string, raw: unknown, record: MigrationRecord) =>
@@ -440,23 +535,52 @@ export function adaptFisiozeroDelivery(
       }
     }
 
+    // SEX: unrecognised routes to review rather than being guessed into a
+    // bucket. patients.sex is varchar(16), so the database would take "F".
+    const rawSex = row["sexo"] ?? "";
+    const sex = nonEmpty(rawSex) ? normalizeSex(rawSex) : null;
+    if (nonEmpty(rawSex) && sex === null) {
+      toReview.push({ ...at, reason: "unrecognised_sexo" });
+      return;
+    }
+
+    // PHONE: first valid wins, the rest are preserved into notes. An
+    // un-normalised number derives NULL in phone_e164 (migration 0062) and that
+    // patient cannot log into the portal at all - LAUNCH-03's day-one check.
+    const phones = normalizePhones(row["telefone"] ?? "");
+    if (phones.phone === null && nonEmpty(row["telefone"])) unresolvablePhones += 1;
+
+    const insurance = zipInsurance(row["seguro_saude"] ?? "", row["numero_apolice"] ?? "");
+    if (insurance === "mismatched") {
+      // Pairing an insurer with the wrong policy number is worse than
+      // recording neither.
+      toReview.push({ ...at, reason: "insurance_columns_mismatched" });
+      return;
+    }
+
+    const carriedNotes = [
+      nonEmpty(row["observacoes"]) ? row["observacoes"]!.trim() : null,
+      phones.additional.length > 0 ? `Outros contactos: ${phones.additional.join(", ")}` : null,
+    ].filter((v): v is string => v !== null);
+
     const patient: MigrationPatient = {
       sourceId,
       fullName: row["nome_completo"]!.trim(),
       // REQUIREMENT 7: `data_criacao` is an EXPORT timestamp, not a
       // registration date, and is deliberately not read anywhere in this file.
       dateOfBirth: nonEmpty(row["data_nascimento"]) ? row["data_nascimento"]!.trim() : null,
-      sex: nonEmpty(row["sexo"]) ? row["sexo"]!.trim() : null,
+      sex,
       nif: nonEmpty(row["nif"]) ? row["nif"]!.trim() : null,
       email: nonEmpty(row["email"]) ? row["email"]!.trim() : null,
-      phone: nonEmpty(row["telefone"]) ? row["telefone"]!.trim() : null,
+      phone: phones.phone,
       address: nonEmpty(row["morada"]) ? row["morada"]!.trim() : null,
       postalCode: nonEmpty(row["codigo_postal"]) ? row["codigo_postal"]!.trim() : null,
       city: nonEmpty(row["localidade"]) ? row["localidade"]!.trim() : null,
-      notes: nonEmpty(row["observacoes"]) ? row["observacoes"]!.trim() : null,
+      notes: carriedNotes.length > 0 ? carriedNotes.join("\n") : null,
       locationKeys: [locationKey],
       primaryLocationKey: locationKey,
       patientNumber,
+      healthInsuranceNumbers: insurance,
     };
     push("patient", sourceId, row, { entityType: "patient", data: patient });
   });
@@ -713,6 +837,7 @@ export function adaptFisiozeroDelivery(
       duplicateSyntheticEpisodeIds,
       duplicateAttachmentFileNames,
       ambiguousLocalTimes,
+      unresolvablePhones,
       unmappedTerapeuta: [...unmappedTerapeuta.entries()].sort((a, b) => b[1] - a[1]),
       unmappedTipoServico: [...unmappedTipoServico.entries()].sort((a, b) => b[1] - a[1]),
     },

@@ -176,6 +176,24 @@ export async function runImport({
     log(`      ${r.padEnd(34)} ${n}`);
   }
   for (const w of adapterResult.warnings) log(`  warning  ${w}`);
+
+  // THE DAY-ONE LOGIN CHECK. LAUNCH-03 names this as the count that decides
+  // whether most of the patient base can log in: the portal authenticates BY
+  // TELEPHONE, migration 0062 derives phone_e164 and yields NULL for a shape it
+  // does not recognise, and that patient then simply cannot get in - with
+  // nothing in any log to say so.
+  //
+  // A COUNT AND NEVER THE NUMBERS. A phone number is personal data; how many
+  // patients are locked out is not.
+  const noPhone = adapterResult.checks?.unresolvablePhones ?? 0;
+  if (noPhone > 0) {
+    log("");
+    log(`  DAY-ONE LOGIN  ${noPhone} patient(s) have NO resolvable telephone number.`);
+    log("                 They will be imported and will NOT be able to log into the");
+    log("                 portal. This is a data question for the clinic, not a bug.");
+  } else {
+    log("  DAY-ONE LOGIN  every patient has a resolvable telephone number.");
+  }
   log("");
 
   if (dryRun) {

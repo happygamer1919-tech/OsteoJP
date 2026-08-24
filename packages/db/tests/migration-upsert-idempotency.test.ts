@@ -214,6 +214,29 @@ describe.skipIf(!live)("migration pipeline — staging + idempotent upsert (live
     expect(ledger!.missing).toBe(0);
   });
 
+  it("PERSISTS all four carried fields - the round trip", async () => {
+    // Until 2026-08-24 these were derived by the adapter, validated, staged in
+    // `raw`, and then DROPPED at the last step: importPatient mapped ten
+    // columns and none of these were among them. The type carried a warning in
+    // capitals saying so. This is the assertion that the wire is connected.
+    const rows = await sql`
+      select patient_number, primary_location_id, health_insurance_numbers, sex, phone
+        from patients
+       where tenant_id = ${tenantA}
+       order by patient_number`;
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      // PL-09: an unplaced patient is looser, not tighter - patientLocationScope
+      // falls back to unrestricted - so a null here would widen visibility.
+      expect(r.primary_location_id).not.toBeNull();
+      expect(Object.values(locationIds)).toContain(r.primary_location_id);
+      // 0051 keeps this NOT NULL DEFAULT '[]', so it is an array either way.
+      expect(Array.isArray(r.health_insurance_numbers)).toBe(true);
+      // NOT NULL and filled by the trigger when the import supplies nothing.
+      expect(Number(r.patient_number)).toBeGreaterThan(0);
+    }
+  });
+
   it("run #2 with the same batch creates ZERO duplicates (idempotent re-run)", async () => {
     const before = await targetCounts();
 
