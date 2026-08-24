@@ -18,6 +18,13 @@ Reference site: https://osteojp.pt — brand and tone source of truth.
 7. PII never appears in logs, error messages, or Sentry events. Sanitize before logging.
 8. EU data residency: Supabase EU (Frankfurt), Vercel `fra1`, Resend EU. No US-region resources for stored data.
 
+## Patient data isolation (Fisiozero import)
+- No Claude terminal ever opens, reads, cats, greps, or samples patient data files from the Fisiozero delivery (amostra or final). This includes CSVs, ZIP contents, and any extracted files.
+- Terminals author import and inspection scripts BLIND, against the caderno spec or against sanitized structure output pasted by Ivan.
+- Ivan runs all scripts that touch delivery files. Evidence returned to terminals is limited to: column headers, row counts, file counts, encodings, extension patterns, sha256 hashes, exit codes, and validation error summaries that contain no personal data.
+- Attachment filenames may contain patient names and are treated as personal data. Scripts report filename patterns and extensions only.
+- Reason: patient health data entering an AI context creates an unapproved RGPD processor relationship.
+
 ## Stack
 - Next.js 16 App Router, TypeScript strict
 - shadcn/ui + Tailwind v4
