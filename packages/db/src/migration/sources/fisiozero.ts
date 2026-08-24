@@ -331,6 +331,10 @@ export type ToReviewRow = {
   reason: string;
   estado?: string;
   tipoServico?: string;
+  /** The unmapped practitioner name. Operational metadata, ruled safe to print:
+   *  a therapist's professional name as the vendor stored it is not a patient's
+   *  data, and an unmapped-key report is useless without saying which key. */
+  terapeuta?: string;
 };
 
 export type FisiozeroAdapterResult = {
@@ -352,6 +356,9 @@ export type FisiozeroAdapterResult = {
     duplicateAttachmentFileNames: number;
     /** Instants that fell in the autumn fold and were resolved to the earlier. */
     ambiguousLocalTimes: number;
+    /** Unmapped operational keys, by value and occurrence count. Safe to print. */
+    unmappedTerapeuta: Array<[string, number]>;
+    unmappedTipoServico: Array<[string, number]>;
   };
 };
 
@@ -376,6 +383,11 @@ export function adaptFisiozeroDelivery(
   const warnings: string[] = [];
 
   let ambiguousLocalTimes = 0;
+  // COUNTED BY VALUE so the runner can refuse an incomplete mapping and say
+  // WHICH keys are missing and how much each one matters. One row is a typo;
+  // four hundred is a real therapist whose whole diary would be skipped.
+  const unmappedTerapeuta = new Map<string, number>();
+  const unmappedTipoServico = new Map<string, number>();
   const push = (entityType: SourceRecord["entityType"], sourceId: string, raw: unknown, record: MigrationRecord) =>
     records.push({ entityType, sourceId, raw, record });
 
@@ -496,7 +508,8 @@ export function adaptFisiozeroDelivery(
       const terapeuta = (row["terapeuta"] ?? "").trim();
       const practitionerKey = opts.practitionerKeyByName?.[terapeuta] ?? null;
       if (!practitionerKey) {
-        toReview.push({ ...at, reason: "unresolved_terapeuta" });
+        toReview.push({ ...at, reason: "unresolved_terapeuta", terapeuta });
+        unmappedTerapeuta.set(terapeuta, (unmappedTerapeuta.get(terapeuta) ?? 0) + 1);
         return;
       }
       const locationKey = locationKeyFor(row);
@@ -538,7 +551,7 @@ export function adaptFisiozeroDelivery(
       const tipo = (row["tipo_servico"] ?? "").trim();
       const serviceKey = nonEmpty(tipo) ? (opts.serviceKeyByType?.[tipo] ?? null) : null;
       if (nonEmpty(tipo) && !serviceKey) {
-        warnings.push(`marcacoes.csv row ${i + 2}: tipo_servico has no resolver entry; imported without a service`);
+        unmappedTipoServico.set(tipo, (unmappedTipoServico.get(tipo) ?? 0) + 1);
       }
 
       const appointment: MigrationAppointment = {
@@ -700,6 +713,8 @@ export function adaptFisiozeroDelivery(
       duplicateSyntheticEpisodeIds,
       duplicateAttachmentFileNames,
       ambiguousLocalTimes,
+      unmappedTerapeuta: [...unmappedTerapeuta.entries()].sort((a, b) => b[1] - a[1]),
+      unmappedTipoServico: [...unmappedTipoServico.entries()].sort((a, b) => b[1] - a[1]),
     },
   };
 }
