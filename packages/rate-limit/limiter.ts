@@ -399,6 +399,52 @@ export const RULES = {
   ifthenpayCallbackIp: { limit: 60, windowMs: 60_000 },
   ifthenpayCallbackIpHour: { limit: 600, windowMs: 60 * 60_000 },
 
+  /* ==================================================================== */
+  /* THE TWO SIGNED WEBHOOKS - routes 3 and 4 of the adoption.            */
+  /* ==================================================================== */
+  //
+  // AI ingestion (`POST /api/v1/ingestion/clinical-records`) and the Stripe
+  // receiver (`POST /api/v1/integrations/stripe/webhook`). Both are
+  // proxy-excluded, both are server-to-server from a named partner, and both
+  // authenticate an HMAC OVER THE RAW BODY.
+  //
+  // WHAT A LIMIT BUYS HERE, AND IT IS LESS THAN ON THE OTHER THREE. Nothing
+  // about these gates is guessable: an attacker without the shared secret
+  // cannot produce a valid signature at any rate, so the reachable surface is
+  // unchanged by any number chosen below. What is bounded is COST - the body
+  // read and the HMAC computation an unauthenticated caller can force us to
+  // perform, repeatedly, for free.
+  //
+  // THE MEMORY STORE, NOT THE DURABLE ONE, AND THE REASONING INVERTS THE
+  // ROUTE-2 DECISION RATHER THAN CONTRADICTING IT. A durable hit is a Postgres
+  // upsert. An HMAC-SHA256 over a request body is microseconds. Putting the
+  // durable store in front of these would make each request MORE expensive
+  // than the work it is meant to protect - a limiter that costs more than its
+  // subject is an amplifier, not a control. Route 2 pays that cost willingly
+  // because there the subject is a GUESS BUDGET and a counter that resets on a
+  // cold start would not bound it at all. Here there is no guess budget.
+  //
+  // SO THIS IS COARSE PER-INSTANCE THROTTLING AND IS NOT A CAP, exactly as
+  // this file's own header describes the memory store. Volume control in front
+  // of the function is the platform firewall's job.
+  //
+  // TWO RULES WITH THE SAME NUMBERS RATHER THAN ONE SHARED RULE, deliberately.
+  // They are the same today because neither partner's real volume is agreed:
+  // the AI partner contract is still open (see the `ai_review_state`
+  // PLACEHOLDER note in CLAUDE.md) and STRIPE_WEBHOOK_SECRET is unset, so
+  // neither endpoint has a live caller to measure. They will diverge the day
+  // one of them does, and a shared constant would force a coupled change to
+  // the other.
+  //
+  // 120/min is roughly two a second sustained from one source. A clinic
+  // produces a handful of ingested records a day and a handful of settlements;
+  // nothing legitimate is near this, including a partner's retry burst.
+
+  /** AI partner ingestion. HMAC over the raw body; cost bound only. */
+  ingestionIp: { limit: 120, windowMs: 60_000 },
+  /** Stripe webhook receiver. Signature over the raw body; cost bound only. */
+  stripeWebhookIp: { limit: 120, windowMs: 60_000 },
+
   /**
    * OTP request. Per phone AND per client, both keyed separately by the caller.
    *
