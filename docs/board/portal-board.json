@@ -3658,7 +3658,7 @@
       "gate": "green_self_merge",
       "evidence": {
         "kind": "pr",
-        "ref": "PR #PENDINGM. packages/db/src/migration/sources/fisiozero.ts + packages/db/tests/fisiozero-adapter.test.ts (33 assertions), and scripts/import/check-delivery.mjs + scripts/import/check-delivery.test.mjs (14 assertions). Four negative controls run and restored: emitting a patient with no resolvable clinic -> 1 red; treating escala_eva 0 as absent -> 1 red; parsing naive local times as UTC -> 4 red; dropping the orphaned-zip-entry direction -> 1 red. Gates green from the repo root.",
+        "ref": "PR #1025. packages/db/src/migration/sources/fisiozero.ts + packages/db/tests/fisiozero-adapter.test.ts (33 assertions), and scripts/import/check-delivery.mjs + scripts/import/check-delivery.test.mjs (14 assertions). Four negative controls run and restored: emitting a patient with no resolvable clinic -> 1 red; treating escala_eva 0 as absent -> 1 red; parsing naive local times as UTC -> 4 red; dropping the orphaned-zip-entry direction -> 1 red. Gates green from the repo root.",
         "at": "2026-08-24"
       },
       "blocked_on": null,
