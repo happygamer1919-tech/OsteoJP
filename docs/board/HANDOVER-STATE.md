@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**197 cards on the board. 159 shipped, 38 open. Launch readiness 9/9, every launch gate passes.**
+**198 cards on the board. 160 shipped, 38 open. Launch readiness 9/9, every launch gate passes.**
 
 *These are the numbers **on the board above**, which is the only place you count
 them. The underlying file holds five more cards that the board deliberately does
@@ -1294,27 +1294,28 @@ that point is to relabel the document, not to override the check.
 It does not depend on you or JP remembering the conversation, and it costs
 nothing if you both do.
 
-### The decision that is yours
+### That decision is now answered: the box stays
 
-**Should reception stop ticking that box until JP's text arrives?**
+You confirmed a paper conditions document exists and patients physically sign it.
+**So the box is recording something that really happened**, in front of the
+receptionist ticking it, and it stays exactly as it is.
 
-The recommendation is **yes** — provided one thing is true, and it is the one
-thing nobody here can look up.
+**Nothing was built while the question was open**, which is the point of having
+asked. Had we switched the box off on the recommendation, reception would have
+lost a control that was working correctly — and the signatures collected
+meanwhile would simply not have been recorded anywhere, because the event is ink
+on paper that nobody would go back and log.
 
-Turning it off costs nothing today. The only thing that reads those records is
-the 50% no-show fee line, and **that is switched off** until the terms exist.
-Nothing else in the platform uses them.
+**What was actually wrong was never the box.** It is which document the record
+names. It currently names "2026-08", a label with no document behind it, while
+patients are signing a real one. That is a one-line change, and it happens the
+moment JP's text lands: `LE-terms-version-switch-on-jp-text`.
 
-**But if the clinic already has a paper conditions document that patients
-actually sign, the answer flips.** In that case the box is recording something
-real that happened on paper, and it should stay — what should change instead is
-which document the record names.
-
-So: **does a paper conditions document exist today?** If yes, the box stays. If
-no, it should be switched off until JP's text arrives, and switched back on in
-the same breath as installing it.
-
-Nothing has been built either way. Tracked as `LE-ficha-terms-checkbox-no-document`.
+When it does, older records keep pointing at the old label. **That is correct and
+deliberate, not untidy.** Those patients signed on paper and the platform recorded
+that an acceptance happened; it never knew which document text. Rewriting them to
+claim they accepted JP's version 1 would be asserting something nobody can show.
+The database refuses such a rewrite in any case, by design.
 
 ### And on the cancellation notice period
 

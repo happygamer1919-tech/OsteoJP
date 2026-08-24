@@ -83,13 +83,27 @@ export const TERMS_VERSION = "2026-08" as const;
 export const TEXTLESS_TERMS_VERSIONS = ["2026-08"] as const;
 
 /**
- * Labels whose document text is fixed and available.
+ * Labels whose document text is FIXED AND IDENTIFIED.
  *
- * EMPTY, AND THE EMPTINESS IS THE CURRENT STATE OF THE WORLD rather than an
- * unfinished list: JP has two drafts and has returned neither. The first entry
- * arrives with his answer.
+ * `condicoes-v1-2026` ADDED 2026-08-24 ON OWNER RULING. JP confirmed VERSION 1
+ * of the condicoes de marcacao e cancelamento - the DISCRETIONARY wording, "podem
+ * dar lugar" - and the label was fixed as `condicoes-v1-2026`. It is deliberately
+ * NOT `2026-08`, which is the whole point of the ledger below it.
+ *
+ * WHAT THIS ENTRY ASSERTS: that this LABEL is spoken for, and that it is not one
+ * of the text-less ones. Nothing else. It does NOT assert that the document is in
+ * our hands, that counsel has cleared it, or that anybody here has read it - the
+ * document travels to counsel with packet items 5.1 and 5.3 and is not ours to
+ * hold. The platform never stores the text in any case (schema.ts:1908), so
+ * "texted" here means the identity resolves to a real document, not that a copy
+ * lives in this repository.
+ *
+ * TERMS_VERSION STILL POINTS AT `2026-08` AND MUST NOT BE MOVED YET. The switch
+ * is its own card, LE-terms-version-switch-on-jp-text, and it waits for JP's text
+ * to land. Moving it early would start recording acceptances against a label
+ * whose document nobody can produce - the same defect one step to the left.
  */
-export const TEXTED_TERMS_VERSIONS: readonly string[] = [];
+export const TEXTED_TERMS_VERSIONS: readonly string[] = ["condicoes-v1-2026"];
 
 export type TermsAcceptance = {
   acceptedAt: string;
