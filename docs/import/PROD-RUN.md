@@ -31,6 +31,8 @@ extraction the vendor contract does not let you repeat.
 ```
 1. Legacy staff accounts exist          ← FK targets; the import fails without them
 2. Patient-number preflight             ← decided BEFORE the window, not during
+2b. Test-patient cleanup + re-preflight  ← 33 training rows out, so vendor
+                                           numbers carry over verbatim
 3. Freeze                               ← the clinic stops writing
 4. Backup                               ← the only undo you will have
 5. Linda-a-Velha:  byte copy → preview → apply → reconcile
@@ -143,6 +145,65 @@ than discovered during it.
 **STOP IF the vendor's `numero_paciente` range overlaps `max_patient_number`.**
 That is an owner decision about which numbering wins, and it is not a decision
 to take at 22:00.
+
+### 1.3b Remove the staff-training test patients
+
+**Owner-confirmed 2026-08-25: production holds 33 patients, numbers 1–35, all
+staff-training data.** They are removed before the import so every vendor
+`numero_paciente` carries over **verbatim, with zero collisions**.
+
+**This is the most destructive step in the whole migration.** Take the §2.2
+backup *first* — earlier than the runbook otherwise calls for it. There is no
+undo inside the script.
+
+Run [`scripts/import/cleanup-test-patients.sql`](../../scripts/import/cleanup-test-patients.sql)
+in the Supabase SQL editor against production, in order:
+
+| Step | What | Expected |
+|---|---|---|
+| **1** | preview counts, read-only | `patients` = **33**, `distinct_patient_numbers` = 33, min/max within 1–35 |
+| **1b** | storage paths, read-only | likely `path_count` 0; **run before step 2** or the paths are unrecoverable |
+| **2** | the delete, one transaction | a count per statement matching step 1, ending `DELETE 33` |
+| **3** | verify, read-only | **every column 0**, `staff_rows` unchanged at **30** |
+
+**STOP IF step 1 does not say exactly 33.** The database is not in the state the
+script was written for — a real patient may exist. Do not run step 2 until the
+difference is explained.
+
+**STOP IF any step-2 count disagrees with step 1.** The `begin` is still open;
+type `rollback;` instead of `commit;`.
+
+**STOP IF any `orphan_*` column in step 3 is non-zero.** Rows survive pointing at
+patients that no longer exist — the dependency graph missed a table, and the
+import would write on top of it.
+
+**STOP IF `staff_rows` is not 30.** That is 28 real staff plus the two legacy
+accounts from §1.2. The script must not touch `users` at all.
+
+**If `path_count` was non-zero:** after step 2, delete those objects in
+Supabase dashboard → Storage → `clinical-attachments`. Deleting the row does not
+delete the object; nothing in the database reaches into Storage.
+
+**There is no Auth cleanup step, and that is a finding rather than an omission.**
+Patients have **no `auth.users` rows** — the portal issues its own token and
+migration 0010 creates a *login-less* Postgres role for them. The script header
+carries the four pieces of evidence.
+
+### 1.3c Re-run the number preflight — this is what decides the flag
+
+Run [`scripts/import/preflight-patient-numbers.sql`](../../scripts/import/preflight-patient-numbers.sql)
+again, now that the tenant has no patients.
+
+**Expected: zero patients, so `max_patient_number` comes back NULL** and there is
+no existing range for a vendor number to collide with.
+
+> **THAT RESULT IS WHAT AUTHORISES THE IMPORT TO RUN WITHOUT
+> `--reassign-conflicting-patient-numbers`.** With the table empty there is
+> nothing to collide with, so every vendor number imports verbatim and §3.3b is
+> skipped entirely.
+
+**STOP IF ANYTHING STILL COMES BACK.** The cleanup did not finish, and the flag
+decision in §3.3b has to be revisited before the window continues.
 
 ### 1.4 Fill both mapping configs
 
@@ -579,6 +640,8 @@ step.
 |---|---|
 | §1.2 | STEP 1 and STEP 3 output of `legacy-staff-accounts.sql` |
 | §1.3 | the four preflight numbers |
+| §1.3b | cleanup steps 1, 1b `path_count`, and 3 — including `staff_rows` = 30 |
+| §1.3c | the re-run preflight, showing zero |
 | §1.5 | both dry-run outputs and exit codes |
 | §2.1 | the freeze time |
 | §2.2 | the backup id |

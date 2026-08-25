@@ -248,3 +248,57 @@ test("the pairs list is in the paste-back table", () => {
   const t = text.slice(text.indexOf("## 7. What to paste back"));
   assert.match(t, /pairs/i);
 });
+
+/* ---------------- the test-patient cleanup, added 2026-08-25 ---------------- */
+
+test("the cleanup step exists and comes BEFORE the import sequence", () => {
+  const cleanup = text.indexOf("### 1.3b Remove the staff-training test patients");
+  const apply = text.indexOf("--apply");
+  assert.ok(cleanup > -1, "the cleanup step must exist");
+  assert.ok(cleanup < apply, "cleanup must precede any import");
+  assert.ok(text.includes("cleanup-test-patients.sql"));
+  assert.ok(
+    fs.existsSync(path.join(REPO, "scripts/import/cleanup-test-patients.sql")),
+    "the runbook names a script that does not exist",
+  );
+});
+
+test("it states the literal expected counts", () => {
+  const s = text.slice(text.indexOf("### 1.3b"), text.indexOf("### 1.4"));
+  assert.match(s, /33/);
+  assert.match(s, /DELETE 33/);
+  assert.match(s, /staff_rows.{0,40}30/s);
+  assert.match(s, /every column 0/i);
+});
+
+test("it says the backup comes FIRST - earlier than the runbook otherwise says", () => {
+  const s = text.slice(text.indexOf("### 1.3b"), text.indexOf("### 1.4"));
+  assert.match(s, /backup/i);
+  assert.match(s, /no\s+undo/i);  // the line wraps between the two words
+});
+
+test("the re-run preflight is what authorises running WITHOUT the flag", () => {
+  const s = text.slice(text.indexOf("### 1.3c"), text.indexOf("### 1.4"));
+  assert.ok(s.length > 0, "the re-preflight subsection must exist");
+  assert.match(s, /preflight-patient-numbers\.sql/);
+  assert.match(s, /zero/i);
+  assert.match(s, /WITHOUT\s*\n?>?\s*`--reassign-conflicting-patient-numbers`/);
+});
+
+test("it records that there is NO auth cleanup, with the reason", () => {
+  // An omission reads as forgetfulness. The finding has to be stated.
+  const s = text.slice(text.indexOf("### 1.3b"), text.indexOf("### 1.4"));
+  assert.match(s, /no `auth\.users` rows/i);
+  assert.match(s, /login-less/i);
+});
+
+test("it warns that deleting the row does not delete the storage object", () => {
+  const s = text.slice(text.indexOf("### 1.3b"), text.indexOf("### 1.4"));
+  assert.match(s, /does not\s*\n?delete the object/i);
+});
+
+test("the cleanup outputs are in the paste-back table", () => {
+  const t = text.slice(text.indexOf("## 7. What to paste back"));
+  assert.match(t, /1\.3b/);
+  assert.match(t, /1\.3c/);
+});
