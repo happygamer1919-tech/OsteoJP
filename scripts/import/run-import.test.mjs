@@ -371,6 +371,35 @@ test("a TO_NORMALIZE service does NOT block an otherwise complete run, AND IS ST
   );
 });
 
+test("a placeholder tenantId refuses the run and NAMES the slot", async () => {
+  // ADDED 2026-08-25 WITH THE `tenantId` SLOT. `findPlaceholders` scanned three
+  // nested maps and never the config ROOT, so a slot added at the top level had
+  // no placeholder check at all. tenantId is the worst one to miss: an all-zero
+  // tenant uuid does not trip a foreign key - it writes the whole delivery into
+  // a tenant that does not exist, under RLS policies that then hide every row,
+  // and the run reports success.
+  const lines = [];
+  const p = fakePipeline();
+  const r = await runImport({
+    adapterResult: adapterResult(),
+    config: { ...CONFIG, tenantId: PLACEHOLDER_UUID },
+    pipeline: p,
+    log: (l) => lines.push(l),
+  });
+  assert.equal(r.exit, EXIT.FAILED);
+  assert.deepEqual(p.calls, [], "nothing may be staged behind a placeholder tenant");
+  assert.match(lines.join("\n"), /config\."tenantId" still holds placeholder uuid/);
+});
+
+test("the committed TEMPLATE carries a tenantId slot, and it is a placeholder", () => {
+  // The adapter REQUIRES tenantId (it builds the storage prefix from it) and
+  // the template shipped without the slot, so a config filled exactly as the
+  // template asked could not run at all. Both halves are pinned: the slot
+  // exists, and it ships refusing.
+  assert.equal(typeof TEMPLATE.tenantId, "string");
+  assert.equal(TEMPLATE.tenantId, PLACEHOLDER_UUID);
+});
+
 test("the template's two clinics and two specialties match the vendor's answer", () => {
   // Vendor confirmed 2026-08-25: two exports one per clinic, and only these two
   // specialties. A third filename in a future delivery should be visibly a
