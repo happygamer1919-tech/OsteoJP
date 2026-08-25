@@ -3782,7 +3782,7 @@
       ],
       "evidence": {
         "kind": "pr",
-        "ref": "PR PENDING. packages/db/scripts/{import-core,prod-import}.ts, scripts/import/legacy-staff-accounts.sql, docs/import/PROD-RUN.md. 18 prod-entrypoint + 13 SQL + 18 runbook assertions, plus 3 rewritten estado assertions; twelve negative controls run and restored. Gates: lint 0 errors, typecheck 11/11, db 386 passed, build 4/4, test:scripts 239.",
+        "ref": "MERGED as PR #1034, squashed to 95c19e39. Verified against the HEAD SHA rather than the PR page: ZERO non-success check runs on bda1e8d2, all four required checks run for real (Lint+typecheck+test 3m2s, DB-gated 2m39s, three full E2E shards 7m42s/7m51s/6m39s, spec drift 7s). NO MIGRATION in the diff.\n\npackages/db/scripts/{import-core,prod-import}.ts, scripts/import/legacy-staff-accounts.sql, docs/import/PROD-RUN.md. 18 prod-entrypoint + 13 SQL + 18 runbook assertions plus 3 rewritten estado assertions; twelve negative controls run and restored. Gates: lint 0 errors, typecheck 11/11, db 386 passed, build 4/4, test:scripts 239.",
         "at": "2026-08-25"
       },
       "open_on_purpose": "THE PRODUCTION RUN HAS NOT HAPPENED, and it must not until the MIG-04 rehearsal transcript exists - PROD-RUN.md says so on its own first page. Every path that can be exercised without a Supabase project has been, from this terminal, against a synthetic delivery. What remains is Ivan's: the two SQL steps, the two deliveries, and the transcript PROD-RUN.md section 7 lists.",
