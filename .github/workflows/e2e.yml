@@ -524,6 +524,35 @@ jobs:
       - name: Run Playwright E2E (Chromium, shard ${{ matrix.shard }}/3)
         id: playwright
         if: steps.changes.outputs.code == 'true'
+        # ================================================================= //
+        # THE BUDGET THIS FILE ALREADY CLAIMED IT HAD. Owner-ratified
+        # 2026-08-25, CI-e2e-playwright-step-has-no-budget.
+        #
+        # The header above argues the 35-minute ceiling is "only safe to raise
+        # BECAUSE of the per-step budgets below" and that "a single hung step
+        # now fails at its own budget, at most 16 minutes". Five budgets were
+        # added - install, browsers, Supabase, migrate, upload - and THIS step,
+        # the one that actually overruns, had none.
+        #
+        # WHAT IT COST, observed on run 32857988428. Four tests timed out at the
+        # 120s test timeout and retried twice each; the shard reached the job
+        # ceiling at 35m17s and was CANCELLED MID-RUN. Playwright prints its
+        # failure summary at the END of a run, so no summary was printed, and
+        # "Upload Playwright report" never executed - no trace, no artifact. The
+        # cause had to be reconstructed from a DIFFERENT run's log, which is
+        # exactly the failure the header says these budgets prevent.
+        #
+        # WHY 16. It matches the Chromium install budget and the header's own
+        # "at most 16 minutes" claim. Measured median shard is 7.6 minutes and
+        # the tests take 4-5, so 16 is more than double the worst healthy case
+        # and leaves 19 of the 35 for everything else - the arithmetic the
+        # header already states as the design.
+        #
+        # WHAT IT DOES NOT DO, said plainly: it does not make a bad shard pass.
+        # It makes it fail 19 minutes sooner, WITH its report uploaded and its
+        # reason named. That is the whole point - the budget buys evidence, not
+        # green.
+        timeout-minutes: 16
         env:
           E2E_UNQUARANTINE: ${{ github.event.inputs.unquarantine }}
         run: |
