@@ -3804,7 +3804,7 @@
       ],
       "evidence": {
         "kind": "pr",
-        "ref": "PR PENDING. scripts/import/prod-refs.mjs (new), copy-attachments.mjs gate, run-import.mjs reassignment, import-core.ts pipeline reads + CLI flag, PROD-RUN.md 3.3b. 19 gate + 15 collision + 7 new runbook assertions; fifteen negative controls run and restored. test:scripts 280 (was 239).",
+        "ref": "MERGED as PR #1036, squashed to 5fe9c444. Verified against the HEAD SHA rather than the PR page: ZERO non-success check runs on 76e7e8ab, all four required checks run for real (Lint+typecheck+test 2m56s, DB-gated 2m42s, three full E2E shards 8m1s/7m55s/6m1s, spec drift 6s). NO MIGRATION in the diff.\n\nscripts/import/prod-refs.mjs (new), the copy-attachments gate, the run-import reassignment, import-core pipeline reads + CLI flag, PROD-RUN.md 3.3b. 19 gate + 15 collision + 7 new runbook assertions; fifteen negative controls run and restored. test:scripts 280 (was 239).",
         "at": "2026-08-25"
       },
       "open_on_purpose": "NEITHER GUARD HAS FIRED IN ANGER. The byte-copy gate is proven against a real prod-shaped SUPABASE_URL from this terminal, but no object has been uploaded through it; the collision fallback is proven against a fake pipeline that reproduces the unique constraint and the MAX+1 trigger, but it has never met patients_tenant_number_uq. Both close on Ivan's transcript - the gate on the PROD-RUN.md section 3.2 output, the fallback ONLY IF the preflight shows an overlap. A fallback nobody needed is a fallback that stays unproven, and that is the correct outcome.",
