@@ -191,3 +191,60 @@ test("the paste-back list exists and excludes the three personal-data files", ()
   }
   assert.match(text, /Every exit code, including the zeros/i);
 });
+
+/* ---------------- the two guards added 2026-08-25 ---------------- */
+
+test("the byte-copy step tells you it will ask for the phrase", () => {
+  // The gate is new. A runbook that still shows an unprompted byte copy would
+  // read the prompt as something having gone wrong.
+  const step = text.slice(text.indexOf("### 3.2 Byte copy"), text.indexOf("### 3.3 Preview"));
+  assert.match(step, /confirmation phrase/i);
+  assert.ok(step.includes("IMPORT FISIOZERO INTO PRODUCTION"));
+  assert.match(step, /non-prod target is not asked/i);
+  assert.match(step, /exits `2`/i);
+});
+
+test("the blocklist-failure exit is documented, not just the wrong-phrase one", () => {
+  // `prod blocklist is EMPTY` is a repository problem wearing a delivery
+  // problem's exit code. Confusing the two costs the window.
+  const step = text.slice(text.indexOf("### 3.2 Byte copy"), text.indexOf("### 3.3 Preview"));
+  assert.match(step, /blocklist/i);
+});
+
+test("the collision contingency exists and is scoped to the preflight", () => {
+  const s = text.slice(text.indexOf("### 3.3b"), text.indexOf("### 3.4 Apply"));
+  assert.ok(s.length > 0, "the contingency subsection must exist");
+  assert.match(s, /--reassign-conflicting-patient-numbers/);
+  // WHEN it is used, stated as a condition rather than left to judgement.
+  assert.match(s, /preflight/i);
+  assert.match(s, /overlap/i);
+  assert.match(s, /Skip this unless/i);
+});
+
+test("the contingency says the pairs go to reception on Monday", () => {
+  const s = text.slice(text.indexOf("### 3.3b"), text.indexOf("### 3.4 Apply"));
+  assert.match(s, /reception/i);
+  assert.match(s, /Monday/i);
+  assert.match(s, /numbers only/i);
+});
+
+test("the contingency says the flag goes on BOTH preview and apply", () => {
+  // Applying with a flag the preview did not carry means authorising counts you
+  // did not read.
+  const s = text.slice(text.indexOf("### 3.3b"), text.indexOf("### 3.4 Apply"));
+  assert.match(s, /both.{0,40}preview.{0,40}apply/is);
+});
+
+test("the flag name matches the runner's actual flag", () => {
+  // Two spellings of a flag is one too many: a typo in the runbook is a silently
+  // ignored flag and an import under the default behaviour.
+  const runner = fs.readFileSync(path.join(REPO, "packages/db/scripts/import-core.ts"), "utf8");
+  const m = runner.match(/has\("(--reassign-conflicting-patient-numbers)"\)/);
+  assert.ok(m, "the entrypoint must read this flag");
+  assert.ok(text.includes(m[1]), "the runbook must name the same flag");
+});
+
+test("the pairs list is in the paste-back table", () => {
+  const t = text.slice(text.indexOf("## 7. What to paste back"));
+  assert.match(t, /pairs/i);
+});

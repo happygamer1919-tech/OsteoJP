@@ -292,7 +292,32 @@ node "$REPO/scripts/import/copy-attachments.mjs" \
 
 `--emit-attachment-mapping` opens no database and needs no phrase.
 
+**IT WILL ASK FOR THE CONFIRMATION PHRASE.** Since 2026-08-25 the byte copy
+resolves the project ref from `SUPABASE_URL` and, on a **production** target,
+refuses to move a single byte without `IMPORT FISIOZERO INTO PRODUCTION` typed on
+stdin. Expect:
+
+```
+target project ref: dfotoodqvmjhbdcxyaxf   PRODUCTION (matched: parsed)
+This target is PRODUCTION. Type the confirmation phrase to authorise the
+upload, then press Enter.
+> phrase accepted.
+```
+
+**A non-prod target is not asked** — that asymmetry is deliberate, so the prompt
+never becomes something you type without reading.
+
 **Expected:** `uploaded N`, `skipped 0`, `conflicts 0`, `failures 0`, exit `0`.
+
+**STOP IF IT EXITS `2` WITH `REFUSED - the confirmation phrase did not match`.**
+Nothing was uploaded and no object was created, read or overwritten. Re-run and
+type it exactly.
+
+**STOP IF IT EXITS `2` WITH A BLOCKLIST MESSAGE** (`prod blocklist is EMPTY` /
+`NOT FOUND` / `unreadable`). The guard could not read
+`packages/db/seed/seed-guard.ts`, so it has cleared nothing. That is a repository
+problem, not a delivery problem, and it must be fixed before the window
+continues.
 
 **`N` is not the `documentos.csv` row count.** Attachments also come from the
 `FICHEIRO` column on `pacientes.csv` and each `Episodios_*.csv`, deduplicated by
@@ -384,6 +409,70 @@ clinic, and the number LAUNCH-03 cares about most.
 
 **Do not proceed until you have read the preview counts.** They are what you are
 about to authorise.
+
+### 3.3b CONTINGENCY — patient-number collisions
+
+**Skip this unless §1.3's preflight said you need it.** It is a pre-ruled
+fallback, built in advance so the decision is never improvised mid-window.
+
+**WHEN IT IS USED, AND ONLY THEN:** the §1.3 preflight, or the vendor's
+`numero_paciente` range, shows an **overlap** with numbers the clinic's existing
+patients already hold. Nothing else justifies it.
+
+**Why the default is to reject.** `patients.patient_number` is per-tenant unique
+and the vendor's number is authoritative (owner ruling 2026-08-24), so it
+imports verbatim. A collision is rejected by `patients_tenant_number_uq` and no
+migration fixes it — those existing rows own those numbers. Rejecting is the
+right default because silently renumbering a patient the clinic identifies *by
+that number* is a data change nobody asked for.
+
+**With the flag**, existing numbers are read **once** before patients import,
+any colliding vendor number has its key omitted, and the 0029 trigger assigns
+the next free number. Everything non-colliding is preserved **verbatim** —
+the flag changes nothing for a patient whose number is free.
+
+Add the flag to **both** the preview and the apply, so the counts you authorise
+are the counts you get:
+
+```
+pnpm --filter @osteojp/db exec tsx scripts/prod-import.ts \
+  --delivery "$LV" --config "$WORK/mapping-lv.json" \
+  --checkpoint "$WORK/checkpoint-lv.jsonl" \
+  --reassign-conflicting-patient-numbers
+```
+
+**Expected extra output:**
+
+```
+PATIENT NUMBERS  <n> already in use for this tenant
+                 <k> vendor number(s) collide and will be REASSIGNED by the trigger
+```
+
+and, in the reconciliation block after `--apply`:
+
+```
+  PATIENT NUMBERS REASSIGNED  <k>
+  vendor -> assigned   (numbers only; hand this list to reception)
+        41 -> 10412
+       118 -> 10413
+```
+
+**THE PAIRS LIST IS A DELIVERABLE, NOT A LOG LINE. Save it and hand it to
+reception on Monday.** A patient walks in quoting the number they have always
+had; without the mapping nobody can find them. A *count* of reassignments is
+useless for that — the pairs are the whole point.
+
+**It is numbers only.** No name, no id, no vendor key — a pair of integers is
+not personal data, and a list of renamed patients would be. It is safe to paste
+back and safe to print for the front desk.
+
+**STOP IF THE RUN PRINTS `cannot read back assigned numbers`.** The patients
+imported correctly, but the mapping reception needs was not produced. Do not
+treat that as "no collisions" — it is the opposite.
+
+**STOP IF IT REFUSES with `needs a pipeline that can read existing patient
+numbers`.** The flag was passed to something that cannot honour it; proceeding
+would import under the default behaviour while you believed reassignment was on.
 
 ### 3.4 Apply
 
@@ -498,6 +587,7 @@ step.
 | §3.2 / §4 | both byte-copy summaries and exit codes |
 | §3.3 / §4 | both previews in full — counts, `to_review`, the ruling-B warning, `DAY-ONE LOGIN` |
 | §3.4 / §4 | both `IMPORTED` blocks and `RECONCILIATION` blocks, with exit codes |
+| §3.3b | **the vendor → assigned pairs list, if the flag was used** — this goes to reception on Monday |
 | §5 | the four final numbers, and what you saw on the agenda |
 
 **Every exit code, including the zeros.** A transcript with no exit codes proves

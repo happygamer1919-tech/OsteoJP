@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**206 cards on the board. 163 shipped, 43 open. Launch readiness 9/9, every launch gate passes.**
+**207 cards on the board. 163 shipped, 44 open. Launch readiness 9/9, every launch gate passes.**
 
 *These are the numbers **on the board above**, which is the only place you count
 them. The underlying file holds five more cards that the board deliberately does
