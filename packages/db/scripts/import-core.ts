@@ -32,14 +32,14 @@
  * Exit: 0 OK - 1 FAILED or refused - 2 BAD_INVOCATION  (CLAUDE.md, ratified)
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { withTenantContext, type DbTx } from "../src/client";
-import { migrationStagingRows } from "../src/schema";
+import { migrationStagingRows, patients } from "../src/schema";
 import {
   adaptFisiozeroDelivery,
   type FisiozeroAdapterResult,
@@ -280,6 +280,10 @@ export type Pipeline = {
   validate(staged: SourceRecord[]): Promise<{ validated: number; failed: number }>;
   importRecords(entityType: string, batch: SourceRecord[]): Promise<{ imported: number }>;
   reconcile(): Promise<unknown>;
+  /** Every patient_number already in use for this tenant. Read ONCE per run. */
+  existingPatientNumbers(): Promise<number[]>;
+  /** sourceId -> the number the trigger actually assigned, read back after import. */
+  assignedPatientNumbers(sourceIds: string[]): Promise<Map<string, number>>;
 };
 
 /**
@@ -404,6 +408,49 @@ export function livePipeline(
     async reconcile() {
       return tx((t) => generateReconciliationReport(t, tenantId, batchId));
     },
+
+    /**
+     * ONE QUERY, ONE COLUMN, NO NAMES. Only the integers are read - this list
+     * exists to be compared against vendor numbers and nothing else.
+     */
+    async existingPatientNumbers() {
+      return tx(async (t) => {
+        const rows = await t
+          .select({ n: patients.patientNumber })
+          .from(patients)
+          .where(eq(patients.tenantId, tenantId));
+        return rows.map((r) => r.n).filter((n): n is number => typeof n === "number");
+      });
+    },
+
+    /**
+     * Read back what the trigger assigned, THROUGH THE LEDGER.
+     *
+     * The join is `migration_staging_rows.imported_entity_id -> patients.id`,
+     * which is the only link between a vendor sourceId and the row that was
+     * written. Reading `patients` alone could not tell you WHICH patient came
+     * from which vendor record.
+     */
+    async assignedPatientNumbers(sourceIds) {
+      if (sourceIds.length === 0) return new Map<string, number>();
+      return tx(async (t) => {
+        const rows = await t
+          .select({ sourceId: migrationStagingRows.sourceId, n: patients.patientNumber })
+          .from(migrationStagingRows)
+          .innerJoin(patients, eq(patients.id, migrationStagingRows.importedEntityId))
+          .where(
+            and(
+              eq(migrationStagingRows.tenantId, tenantId),
+              eq(migrationStagingRows.sourceSystem, SOURCE_SYSTEM),
+              eq(migrationStagingRows.entityType, "patient"),
+              inArray(migrationStagingRows.sourceId, sourceIds),
+            ),
+          );
+        const m = new Map<string, number>();
+        for (const r of rows) if (typeof r.n === "number") m.set(r.sourceId, r.n);
+        return m;
+      });
+    },
   };
 }
 
@@ -467,7 +514,8 @@ export async function runEntrypoint(gate: TargetGate): Promise<never> {
     console.error(
       `usage (${gate.label}): --delivery <dir> --config <mapping-config.local.json>\n` +
         "       [--emit-attachment-mapping <out.json>] [--dry-run]\n" +
-        "       [--apply] [--checkpoint <file.jsonl>] [--batch <uuid>]",
+        "       [--apply] [--checkpoint <file.jsonl>] [--batch <uuid>]\n" +
+        "       [--reassign-conflicting-patient-numbers]",
     );
     process.exit(EXIT.BAD_INVOCATION);
   }
@@ -556,6 +604,7 @@ export async function runEntrypoint(gate: TargetGate): Promise<never> {
     apply,
     confirm,
     dryRun,
+    reassignConflictingPatientNumbers: has("--reassign-conflicting-patient-numbers"),
   });
 
   // `process.exit` and not a pool drain. `packages/db` exposes no handle to

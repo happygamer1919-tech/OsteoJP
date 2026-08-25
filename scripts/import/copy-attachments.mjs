@@ -29,19 +29,35 @@
  * making cloud writes. Every test below drives a MOCK client. Ivan's first run
  * is the proof, and it should be a handful of files before it is tens of GB.
  *
+ * ==========================================================================
+ * IT NOW HAS A PRODUCTION GATE. IT DID NOT UNTIL 2026-08-25.
+ * ==========================================================================
+ * Every other step of the import was guarded and this one was not: it imported
+ * seed-guard NOT AT ALL, so nothing stood between a stale `SUPABASE_URL` and
+ * the live clinic bucket. The runbooks mitigated it by ordering - run
+ * assert-not-prod first - but an ordering convention is not a guard.
+ *
+ * A PRODUCTION target now requires the confirmation phrase, typed on stdin,
+ * before a single byte moves. A NON-PROD target is completely unaffected: no
+ * prompt, nothing to type. See `gateOnTarget`.
+ *
  * Usage:
  *   node scripts/import/copy-attachments.mjs \
  *     --source <dir|zip> --mapping <mapping.json> --checkpoint <file.jsonl>
+ *   ... then type the phrase when prompted, IF the target is production.
  * Env (NAMES only, values never read into any log):
  *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
- * Exit: 0 clean · 1 conflicts or failures · 2 bad invocation
+ * Exit: 0 clean · 1 conflicts or failures · 2 bad invocation OR refused target
  */
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
 import zlib from "node:zlib";
+
+import { isProdSupabaseUrl } from "./prod-refs.mjs";
 
 export const BUCKET = "clinical-attachments";
 const DEFAULT_CONCURRENCY = 4;
@@ -367,6 +383,89 @@ export function supabaseStorageClient(fetchImpl = globalThis.fetch) {
 }
 
 /* ====================================================================== */
+/* THE PRODUCTION GATE                                                     */
+/* ====================================================================== */
+
+/** CLAUDE.md, "Import execution rules", ratified 2026-08-24. */
+export const CONFIRM_PHRASE = "IMPORT FISIOZERO INTO PRODUCTION";
+
+/**
+ * Read one line from stdin. The prompt goes to STDERR so stdout stays a clean,
+ * pasteable transcript, and the phrase is never echoed on any path.
+ */
+export async function readPhraseFromStdin(input = process.stdin) {
+  process.stderr.write(
+    "\nThis target is PRODUCTION. Type the confirmation phrase to authorise the\n" +
+      "upload, then press Enter. (CLAUDE.md, Import execution rules. Not echoed,\n" +
+      "not stored.)\n> ",
+  );
+  const rl = createInterface({ input });
+  try {
+    for await (const line of rl) return line.trim();
+    return "";
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * Decide whether this run may upload, BEFORE a single byte moves.
+ *
+ * ==========================================================================
+ * WHY THE BYTE COPY NEEDED ITS OWN GATE
+ * ==========================================================================
+ * Until now this job had NO production guard of any kind - it imported
+ * seed-guard not at all. Every other step of the import had one:
+ * rehearsal-import refuses a blocklisted ref, prod-import demands the phrase,
+ * assert-not-prod checks the whole shell. This job wrote to Supabase STORAGE
+ * with nothing between a stale `SUPABASE_URL` and the live clinic bucket.
+ *
+ * The runbooks mitigated it by ordering - run assert-not-prod first - but an
+ * ordering convention is not a guard. The one file that could put patient
+ * documents into production was the one file that would not stop you.
+ *
+ * ==========================================================================
+ * THE ASYMMETRY IS THE POINT
+ * ==========================================================================
+ * A NON-PROD target is unaffected: no prompt, no phrase, nothing to type. The
+ * rehearsal is run repeatedly and a gate on it would be trained away.
+ * A PROD target cannot proceed without the phrase, typed.
+ *
+ * EXIT 2 AND NOT 1, deliberately. A missing phrase is not a data failure - the
+ * delivery is fine and nothing was attempted. It is a wrong INVOCATION, which
+ * is what 2 means throughout this tooling (CLAUDE.md's ratified table). It also
+ * keeps `1` meaning exactly one thing here: conflicts or failures during a run
+ * that actually happened.
+ */
+export async function gateOnTarget({
+  supabaseUrl = process.env.SUPABASE_URL,
+  readPhrase = readPhraseFromStdin,
+  log = console.log,
+  err = console.error,
+} = {}) {
+  // THROWS on an unreadable or empty blocklist rather than returning [] - see
+  // prod-refs.mjs. An unknown blocklist state must never read as "not prod".
+  const verdict = isProdSupabaseUrl(supabaseUrl ?? "");
+
+  if (!verdict.prod) {
+    log(`target project ref: ${verdict.ref ?? "(unresolved from SUPABASE_URL)"}   NOT production`);
+    return { ok: true, prod: false, ref: verdict.ref };
+  }
+
+  log(`target project ref: ${verdict.ref}   PRODUCTION (matched: ${verdict.how})`);
+  const typed = await readPhrase();
+  if (typed !== CONFIRM_PHRASE) {
+    // The expected phrase is NOT printed. Printing it on failure turns a
+    // refusal into a copy-paste prompt, which is the opposite of a gate.
+    err("REFUSED - the confirmation phrase did not match.");
+    err("Nothing was uploaded. No object was created, read or overwritten.");
+    return { ok: false, prod: true, ref: verdict.ref };
+  }
+  log("phrase accepted.");
+  return { ok: true, prod: true, ref: verdict.ref };
+}
+
+/* ====================================================================== */
 /* CLI                                                                     */
 /* ====================================================================== */
 
@@ -397,6 +496,20 @@ async function main() {
     console.error(`source unreadable: ${safeErr(e)}`);
     process.exit(2);
   }
+
+  // THE GATE, BEFORE THE STORAGE CLIENT AND BEFORE ANY BYTE MOVES. Placed
+  // after argument parsing so a typo still exits 2 without prompting, and
+  // before `supabaseStorageClient()` so a refusal never even builds a client.
+  let gate;
+  try {
+    gate = await gateOnTarget();
+  } catch (e) {
+    // An unreadable or EMPTY blocklist lands here. It is a refusal, never a
+    // pass: a guard that cannot read its list has not cleared anything.
+    console.error(`REFUSED - ${e?.message ?? "prod blocklist unavailable"}`);
+    process.exit(2);
+  }
+  if (!gate.ok) process.exit(2);
 
   const storage = supabaseStorageClient();
   const r = await copyAttachments({ source, mapping, checkpointFile, storage });

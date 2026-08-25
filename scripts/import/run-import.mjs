@@ -197,6 +197,56 @@ export function attachmentsWithoutObjects(records, checkpointByPath) {
 }
 
 /* ====================================================================== */
+/* PATIENT-NUMBER COLLISIONS                                               */
+/* ====================================================================== */
+
+/**
+ * OWNER-PRE-RULED FALLBACK, 2026-08-25. Built now, used only if needed.
+ *
+ * ==========================================================================
+ * THE PROBLEM IT SOLVES, AND WHY THE DEFAULT STAYS AS IT IS
+ * ==========================================================================
+ * `patients.patient_number` is per-tenant unique (`patients_tenant_number_uq`,
+ * migration 0029) and the vendor's `numero_paciente` is AUTHORITATIVE by owner
+ * ruling 2026-08-24 - so it is imported verbatim. The clinic's EXISTING
+ * patients already hold numbers. A vendor number colliding with one of those is
+ * REJECTED at insert, and no migration fixes it: those rows own those numbers.
+ *
+ * WITHOUT THE FLAG NOTHING CHANGES, deliberately. A collision still rejects, and
+ * rejecting is the RIGHT default: silently renumbering a patient the clinic
+ * identifies by that number is a data change nobody asked for. The flag exists
+ * so the decision is made once, in advance, by the owner - not improvised at
+ * 22:00 with rows already written.
+ *
+ * ==========================================================================
+ * HOW A REASSIGNMENT ACTUALLY HAPPENS: BY OMITTING THE KEY
+ * ==========================================================================
+ * `upsert.ts` spreads `patientNumber` CONDITIONALLY, and 0029's
+ * `assign_patient_number` only fills the column `IF NEW.patient_number IS NULL`.
+ * So a patient whose key is ABSENT gets a trigger-assigned number, and one
+ * whose key is present keeps it. Deleting the key is the entire mechanism -
+ * there is no renumbering code, and passing `null` would be REJECTED because
+ * the column is NOT NULL.
+ */
+export function planPatientNumberReassignment(records, existingNumbers) {
+  const existing = existingNumbers instanceof Set ? existingNumbers : new Set(existingNumbers ?? []);
+  const reassign = new Map(); // sourceId -> vendor number
+  const planned = records.map((r) => {
+    if (r.entityType !== "patient") return r;
+    const n = r.record?.data?.patientNumber;
+    if (typeof n !== "number" || !existing.has(n)) return r;
+    // A COPY, never a mutation of the caller's record. The STAGED row keeps the
+    // vendor's number in `raw` - that is the audit trail, and it must still say
+    // what the vendor sent even though the target row will not.
+    reassign.set(r.sourceId, n);
+    const data = { ...r.record.data };
+    delete data.patientNumber;
+    return { ...r, record: { ...r.record, data } };
+  });
+  return { records: planned, reassign };
+}
+
+/* ====================================================================== */
 /* THE RUN                                                                 */
 /* ====================================================================== */
 
@@ -217,6 +267,7 @@ export async function runImport({
   apply = false,
   confirm = null,
   dryRun = false,
+  reassignConflictingPatientNumbers = false,
   log = console.log,
 }) {
   const counts = {};
@@ -313,11 +364,33 @@ export async function runImport({
     return { exit: EXIT.FAILED, staged: staged.length, imported: 0, counts, reasons, coverage, effectiveConfig, validation, orphanAttachments };
   }
 
+  /* -- 5b. patient-number collisions, ONLY when the flag is set -- */
+  // READ ONCE, before any patient is imported. Re-reading per patient would be
+  // thousands of round trips, and would also see numbers this very run had just
+  // assigned - so a later vendor number could collide with an earlier
+  // reassignment and be reassigned again, for no reason.
+  let importRecords = adapterResult.records;
+  let reassign = new Map();
+  if (reassignConflictingPatientNumbers) {
+    if (typeof pipeline.existingPatientNumbers !== "function") {
+      log("REFUSED - --reassign-conflicting-patient-numbers needs a pipeline that can read");
+      log("existing patient numbers, and this one cannot. Nothing was imported.");
+      return { exit: EXIT.FAILED, staged: staged.length, imported: 0, counts, reasons, coverage, effectiveConfig, validation };
+    }
+    const existing = await pipeline.existingPatientNumbers();
+    const plan = planPatientNumberReassignment(adapterResult.records, existing);
+    importRecords = plan.records;
+    reassign = plan.reassign;
+    log(`PATIENT NUMBERS  ${existing.length ?? existing.size ?? 0} already in use for this tenant`);
+    log(`                 ${reassign.size} vendor number(s) collide and will be REASSIGNED by the trigger`);
+    log("");
+  }
+
   /* -- 6. import, in dependency order -- */
   let imported = 0;
   const perEntity = {};
   for (const entityType of ENTITY_ORDER) {
-    const batch = adapterResult.records.filter((r) => r.entityType === entityType);
+    const batch = importRecords.filter((r) => r.entityType === entityType);
     if (batch.length === 0) {
       perEntity[entityType] = 0;
       continue;
@@ -326,6 +399,26 @@ export async function runImport({
     perEntity[entityType] = res.imported ?? 0;
     imported += res.imported ?? 0;
     log(`IMPORTED  ${entityType.padEnd(18)} ${res.imported ?? 0}`);
+  }
+
+  /* -- 6b. what the trigger actually assigned -- */
+  // THE PAIR IS THE DELIVERABLE. A count of reassignments is useless to
+  // reception: the patient walks in quoting the OLD number, and somebody has to
+  // map it to the new one. NUMBERS ONLY - no name, no sourceId, no id. A pair
+  // of integers is not personal data; a list of renamed patients would be.
+  let numberPairs = [];
+  if (reassign.size > 0) {
+    if (typeof pipeline.assignedPatientNumbers === "function") {
+      const assigned = await pipeline.assignedPatientNumbers([...reassign.keys()]);
+      numberPairs = [...reassign.entries()]
+        .map(([sourceId, vendor]) => [vendor, assigned.get(sourceId) ?? null])
+        .sort((a, b) => a[0] - b[0]);
+    } else {
+      // NAMED, not swallowed. The rows imported correctly; what is missing is
+      // the mapping reception needs, and silence would read as "no collisions".
+      log("WARNING  the pipeline cannot read back assigned numbers - the");
+      log(`         vendor-to-assigned pairs for ${reassign.size} patient(s) are NOT available.`);
+    }
   }
 
   /* -- 7. reconcile -- */
@@ -340,9 +433,17 @@ export async function runImport({
   if (report.referentialIntegrity) {
     log(`  referential integrity: ${report.referentialIntegrity.ok ? "OK" : `${report.referentialIntegrity.problems} problem(s)`}`);
   }
+  if (numberPairs.length > 0) {
+    log("");
+    log(`  PATIENT NUMBERS REASSIGNED  ${numberPairs.length}`);
+    log("  vendor -> assigned   (numbers only; hand this list to reception)");
+    for (const [vendor, assigned] of numberPairs) {
+      log(`    ${String(vendor).padStart(8)} -> ${assigned === null ? "(not read back)" : assigned}`);
+    }
+  }
 
   const clean = validation.failed === 0 && report.referentialIntegrity?.ok !== false;
-  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, counts, reasons, coverage, effectiveConfig, validation, report };
+  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, counts, reasons, coverage, effectiveConfig, validation, report, numberPairs };
 }
 
 /* ====================================================================== */
