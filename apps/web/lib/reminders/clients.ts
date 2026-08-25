@@ -27,7 +27,7 @@ import {
   type Transport,
 } from "@osteojp/notify";
 import { INVITE_TEMPLATE, webRegistry } from "./notification-registry";
-import { normalizePhonePT } from "./phone";
+import { normalizePhonePT } from "@osteojp/notify";
 
 /**
  * Every live-send flag apps/web can arm. BOTH, because either one arms an email

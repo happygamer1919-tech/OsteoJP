@@ -244,3 +244,30 @@ test("a referential-integrity problem in the report fails the run", async () => 
   });
   assert.equal(r.exit, EXIT.FAILED);
 });
+
+test("the preview reports the day-one login count, as a COUNT", async () => {
+  // LAUNCH-03's check. The portal logs in by telephone; a patient whose number
+  // does not resolve is imported and cannot get in, with nothing in any log.
+  const lines = [];
+  await runImport({
+    adapterResult: adapterResult({ checks: { unresolvablePhones: 137 } }),
+    config: CONFIG,
+    pipeline: fakePipeline(),
+    log: (l) => lines.push(l),
+  });
+  const out = lines.join("\n");
+  assert.match(out, /DAY-ONE LOGIN\s+137 patient\(s\) have NO resolvable telephone/);
+});
+
+test("it says so affirmatively when every patient has a number", async () => {
+  // Silence would read as "not checked". The absence of a warning and a
+  // positive statement are different facts.
+  const lines = [];
+  await runImport({
+    adapterResult: adapterResult({ checks: { unresolvablePhones: 0 } }),
+    config: CONFIG,
+    pipeline: fakePipeline(),
+    log: (l) => lines.push(l),
+  });
+  assert.match(lines.join("\n"), /every patient has a resolvable telephone number/);
+});

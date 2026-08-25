@@ -22,7 +22,10 @@ import {
   mapEstado,
   naiveLocalToIso,
   parseCsv,
+  normalizePhones,
+  normalizeSex,
   specialtyFromFileName,
+  zipInsurance,
 } from "../src/migration/sources/fisiozero";
 import type { MigrationPatient } from "../src/migration";
 
@@ -380,5 +383,90 @@ describe("to_review carries no personal data", () => {
     }
     // The invented patient's name must not appear anywhere in the review output.
     expect(JSON.stringify(r.toReview)).not.toContain("Ana Sintetica");
+  });
+});
+
+describe("normalisation at the migration boundary", () => {
+  it("normalises sexo per the 2026-07-01 note", () => {
+    for (const v of ["F", "f", "Feminino", "feminino"]) expect(normalizeSex(v)).toBe("female");
+    for (const v of ["M", "m", "Masculino", "masculino"]) expect(normalizeSex(v)).toBe("male");
+  });
+
+  it("routes an UNRECOGNISED sexo to review rather than guessing a bucket", () => {
+    // patients.sex is varchar(16), not an enum - the database would accept "X"
+    // without a word, which is exactly why this is caught here.
+    expect(normalizeSex("X")).toBeNull();
+    const r = adaptFisiozeroDelivery(
+      { pacientes: pacientes(P1.replace(",1980-05-04,F,", ",1980-05-04,X,")) },
+      opts,
+    );
+    expect(patientsOf(r)).toHaveLength(0);
+    expect(r.toReview[0]).toMatchObject({ reason: "unrecognised_sexo" });
+  });
+
+  it("normalises telefone to E.164 through the SHARED function", () => {
+    const r = adaptFisiozeroDelivery(
+      { pacientes: pacientes(P1.replace("+351900000001", "912 345 678")) },
+      opts,
+    );
+    // The portal logs in BY PHONE. 0062 derives phone_e164 and yields NULL for
+    // a shape it does not know, so an un-normalised number means that patient
+    // cannot log in and nothing reports it.
+    expect(patientsOf(r)[0]!.phone).toBe("+351912345678");
+  });
+
+  it("FIRST VALID WINS across semicolons, and the rest are preserved in notes", () => {
+    const r = adaptFisiozeroDelivery(
+      { pacientes: pacientes(P1.replace("+351900000001", "912 345 678;933 222 111")) },
+      opts,
+    );
+    const p = patientsOf(r)[0]!;
+    expect(p.phone).toBe("+351912345678");
+    // Nothing is discarded: a second number is often the only way to reach an
+    // elderly patient.
+    expect(p.notes).toContain("+351933222111");
+  });
+
+  it("skips an unresolvable entry and still takes the first VALID one", () => {
+    const r = adaptFisiozeroDelivery(
+      { pacientes: pacientes(P1.replace("+351900000001", "not-a-number;912 345 678")) },
+      opts,
+    );
+    expect(patientsOf(r)[0]!.phone).toBe("+351912345678");
+  });
+
+  it("COUNTS patients with no resolvable phone - the day-one login check", () => {
+    const r = adaptFisiozeroDelivery(
+      { pacientes: pacientes(P1.replace("+351900000001", "+44 7700 900000")) },
+      opts,
+    );
+    expect(r.checks.unresolvablePhones).toBe(1);
+    expect(patientsOf(r)[0]!.phone).toBeNull();
+    // A count, never the numbers.
+    expect(typeof r.checks.unresolvablePhones).toBe("number");
+  });
+
+  it("zips seguro_saude and numero_apolice into the PL-23 list shape", () => {
+    expect(zipInsurance("ADSE;Medis", "111;222")).toEqual([
+      { insurer: "ADSE", number: "111" },
+      { insurer: "Medis", number: "222" },
+    ]);
+    expect(zipInsurance("", "111")).toEqual([{ insurer: null, number: "111" }]);
+    expect(zipInsurance("", "")).toEqual([]);
+  });
+
+  it("routes MISMATCHED insurance columns to review rather than mispairing", () => {
+    // Pairing an insurer with the wrong policy number is worse than recording
+    // neither.
+    expect(zipInsurance("ADSE;Medis", "111")).toBe("mismatched");
+    const row = P1.replace(",Linda-a-Velha,,,nota,", ",Linda-a-Velha,ADSE;Medis,111,nota,");
+    const r = adaptFisiozeroDelivery({ pacientes: pacientes(row) }, opts);
+    expect(r.toReview[0]).toMatchObject({ reason: "insurance_columns_mismatched" });
+  });
+
+  it("carries the insurance list onto the emitted patient", () => {
+    const row = P1.replace(",Linda-a-Velha,,,nota,", ",Linda-a-Velha,ADSE,111,nota,");
+    const r = adaptFisiozeroDelivery({ pacientes: pacientes(row) }, opts);
+    expect(patientsOf(r)[0]!.healthInsuranceNumbers).toEqual([{ insurer: "ADSE", number: "111" }]);
   });
 });

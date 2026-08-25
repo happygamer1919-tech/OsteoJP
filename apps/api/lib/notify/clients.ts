@@ -26,7 +26,7 @@ import {
   type Transport,
 } from "@osteojp/notify";
 import { apiRegistry } from "./registry";
-import { normalizePhonePT } from "./phone";
+import { normalizePhonePT } from "@osteojp/notify";
 
 /**
  * REMINDERS_LIVE_SEND ALONE, and the omission is deliberate rather than an

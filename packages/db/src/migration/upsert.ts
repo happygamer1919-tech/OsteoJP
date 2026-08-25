@@ -214,6 +214,17 @@ async function importPatient(
     return id;
   });
 
+  // The primary clinic. Resolved through the same map as `locationKeys` and
+  // REQUIRED on the intermediate shape, so a patient can never be imported
+  // without one: PL-09 makes an UNPLACED patient looser rather than tighter -
+  // patientLocationScope falls back to unrestricted - so thousands of imported
+  // rows with a null primary location would be visible more widely than the
+  // clinic expects, quietly.
+  const primaryLocationId = resolvers.locationIdByKey[p.primaryLocationKey];
+  if (!primaryLocationId) {
+    throw unresolved("primaryLocationKey", "primary location key has no resolver entry");
+  }
+
   const values = {
     fullName: p.fullName,
     dateOfBirth: p.dateOfBirth ?? null,
@@ -225,6 +236,25 @@ async function importPatient(
     postalCode: p.postalCode ?? null,
     city: p.city ?? null,
     notes: p.notes ?? null,
+    primaryLocationId,
+    // PL-23 (0051): a LIST, because a patient may hold ADSE and a private
+    // insurer at once. NOT NULL DEFAULT '[]', so the fallback is the empty
+    // array and never a null.
+    healthInsuranceNumbers: p.healthInsuranceNumbers ?? [],
+    // OWNER RULING 2026-08-24: THE VENDOR NUMBER IS AUTHORITATIVE.
+    //
+    // Supplying it EXPLICITLY is what preserves it, and it is also what makes
+    // the trigger stand down: 0029's assign_patient_number only fills the
+    // column `IF NEW.patient_number IS NULL`, and its own comment says
+    // "Explicit values skip this path entirely (keep original numbers)".
+    //
+    // OMITTING THE KEY IS NOT THE SAME AS PASSING NULL, and that is the whole
+    // subtlety here. The column is `integer NOT NULL DEFAULT sql\`null\``, a
+    // type-level marker letting callers leave it out so the trigger can fill
+    // it. So a patient with no vendor number must have the key ABSENT, not set
+    // to null - which is why this is spread conditionally rather than written
+    // as `patientNumber: p.patientNumber ?? null`.
+    ...(typeof p.patientNumber === "number" ? { patientNumber: p.patientNumber } : {}),
   };
 
   let patientId: string;

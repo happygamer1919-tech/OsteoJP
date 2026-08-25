@@ -23,7 +23,7 @@ import {
 } from "./fee-notice";
 import { sendEmail, sendSms, type SendResult } from "./clients";
 import type { Channel } from "@osteojp/notify";
-import { normalizePhonePT } from "./phone";
+import { normalizePhonePT } from "@osteojp/notify";
 import { isSmsCapablePT } from "@osteojp/notify";
 import {
   signRescheduleToken,

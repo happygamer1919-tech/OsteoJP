@@ -4,7 +4,7 @@ import { OtpCodeNotStored, hashPhone, requestCode } from "@/lib/auth/otp";
 import { isSmsCapablePT } from "@osteojp/notify";
 import { createDrizzleOtpStore } from "@/lib/auth/otp-store";
 import { OtpTransportMisconfigured, resolveOtpTransport } from "@/lib/auth/otp-transport";
-import { normalizePhonePT } from "@/lib/notify/phone";
+import { normalizePhonePT } from "@osteojp/notify";
 import { createDurableRateLimitStore, checkDurableRateLimit } from "@/lib/rate-limit/durable-store";
 import {
   RULES,

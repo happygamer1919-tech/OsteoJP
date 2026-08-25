@@ -14,7 +14,7 @@ import {
   createDrizzleTrustedDeviceStore,
 } from "@/lib/auth/otp-store";
 import { resolvePatientByProvenPhone } from "@/lib/auth/patient-linkage";
-import { normalizePhonePT } from "@/lib/notify/phone";
+import { normalizePhonePT } from "@osteojp/notify";
 import { createDurableRateLimitStore, checkDurableRateLimit } from "@/lib/rate-limit/durable-store";
 import { RULES, clientKey, tooManyRequests } from "@/lib/rate-limit/limiter";
 

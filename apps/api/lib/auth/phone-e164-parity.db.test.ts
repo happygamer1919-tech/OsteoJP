@@ -51,7 +51,7 @@ import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { normalizePhonePT } from "../notify/phone";
+import { normalizePhonePT } from "@osteojp/notify";
 
 vi.mock("server-only", () => ({}));
 

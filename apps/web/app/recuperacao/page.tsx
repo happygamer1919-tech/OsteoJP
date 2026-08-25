@@ -3,7 +3,7 @@ import { can } from "@osteojp/auth";
 import { isSmsCapablePT } from "@osteojp/notify";
 
 import { getRequestContext } from "@/lib/auth/context";
-import { normalizePhonePT } from "@/lib/reminders/phone";
+import { normalizePhonePT } from "@osteojp/notify";
 import { listFollowupCandidates, listActivePostponements } from "@/lib/followup/queries";
 import { s } from "@/lib/i18n";
 

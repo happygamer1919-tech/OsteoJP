@@ -55,28 +55,14 @@ export type MigrationPatient = {
    * into patient_locations rows. Empty = no location link. */
   locationKeys: string[];
 
-  /* ---------------------------------------------------------------- *
-   * CARRIED BY THE ADAPTER, NOT YET PERSISTED BY upsert.ts.
-   *
-   * Both fields below are populated by the Fisiozero adapter and are
-   * currently WRITTEN NOWHERE: `importPatient` maps ten columns and
-   * neither of these is among them. They are here so the adapter does
-   * not silently DROP data it has correctly derived, and the gap is
-   * carded (LE-migration-patient-fields-not-persisted) rather than left
-   * for somebody to discover when the numbers do not add up.
-   *
-   * SAYING SO HERE IS THE POINT. A field that exists on the type and
-   * reaches no column is exactly the half-connected wire that reads as
-   * done — PORTAL-REHYDRATE 1.3. Do not treat either as imported until
-   * upsert.ts writes it.
-   * ---------------------------------------------------------------- */
-
   /**
    * Resolver key → locations.id for `patients.primary_location_id`.
    *
    * A KEY AND NOT AN ID, matching every other cross-reference in this file:
    * ids for platform-managed rows are resolved through MigrationResolvers,
    * because the adapter cannot know a uuid the platform assigned.
+   *
+   * PERSISTED by upsert.ts since 2026-08-24.
    *
    * REQUIRED. The adapter refuses to emit a patient it cannot place at a
    * clinic — an unplaced patient routes to to_review instead. PL-09 makes an
@@ -88,14 +74,23 @@ export type MigrationPatient = {
   /**
    * `numero_paciente` from the vendor export → `patients.patient_number`.
    *
-   * CARRYING IT IS NOT THE SAME AS IMPORTING IT, and the target column makes
-   * that a real decision rather than a mapping: `patient_number` is
-   * `integer NOT NULL` filled BY A TRIGGER, under the tenant-unique constraint
-   * `patients_tenant_number_uq`. Vendor numbers and trigger-assigned numbers
-   * are two numbering schemes for one column. Who owns it is an owner
-   * question, not an adapter one.
+   * OWNER RULING 2026-08-24: VENDOR NUMBERS ARE AUTHORITATIVE AND PRESERVED.
+   * The trigger keeps assigning for patients with no `numero_paciente` and for
+   * every future patient, and the import migration seeds the per-tenant
+   * counter ABOVE the highest imported number so the two schemes cannot
+   * collide under `patients_tenant_number_uq`.
    */
   patientNumber?: number | null;
+
+  /**
+   * `seguro_saude` + `numero_apolice` → `patients.health_insurance_numbers`.
+   *
+   * A LIST, because PL-23 (migration 0051) models insurance as
+   * `{ insurer, number }[]` - a patient may hold ADSE and a private insurer at
+   * once, which is ordinary in PT. The two vendor columns are semicolon
+   * separated in matching order and are zipped by the adapter.
+   */
+  healthInsuranceNumbers?: { insurer: string | null; number: string }[];
 };
 
 /** → appointments. */
