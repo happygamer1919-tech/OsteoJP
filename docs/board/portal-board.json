@@ -3712,7 +3712,7 @@
       "gate": "green_self_merge",
       "evidence": {
         "kind": "pr",
-        "ref": "PR #1026. scripts/import/run-import.mjs + run-import.test.mjs, 14 assertions. Three negative controls run and restored: importing in the adapter's emitted order -> 1 red; warning instead of hard-failing on an incomplete mapping -> 3 red; skipping the attachment-object precondition -> 1 red. VENDOR ANSWERS 2026-08-25 (PR #PENDINGV): registration date persisted, mapping-config template committed with placeholder refusal, preflight overlap SQL authored. 45 adapter + 23 runner assertions.",
+        "ref": "PR #1026. scripts/import/run-import.mjs + run-import.test.mjs, 14 assertions. Three negative controls run and restored: importing in the adapter's emitted order -> 1 red; warning instead of hard-failing on an incomplete mapping -> 3 red; skipping the attachment-object precondition -> 1 red. VENDOR ANSWERS 2026-08-25 (PR #1030): registration date persisted, mapping-config template committed with placeholder refusal, preflight overlap SQL authored. 45 adapter + 23 runner assertions.",
         "at": "2026-08-24"
       },
       "blocked_on": null,
