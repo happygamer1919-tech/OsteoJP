@@ -7,9 +7,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   attachmentsWithoutObjects,
   checkMappingCoverage,
+  findPlaceholders,
+  PLACEHOLDER_UUID,
+  stripToNormalize,
   CONFIRM_PHRASE,
   ENTITY_ORDER,
   EXIT,
@@ -270,4 +277,108 @@ test("it says so affirmatively when every patient has a number", async () => {
     log: (l) => lines.push(l),
   });
   assert.match(lines.join("\n"), /every patient has a resolvable telephone number/);
+});
+
+/* ---------------- the committed template and its placeholders ---------------- */
+
+const TEMPLATE = JSON.parse(
+  fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "mapping-config.template.json"),
+    "utf8",
+  ),
+);
+
+test("the committed TEMPLATE is refused as-is - every slot is a placeholder", async () => {
+  // The whole point of the template: it must be impossible to run unfilled.
+  // Before 2026-08-25 a config of all-zero uuids passed every check, staged the
+  // delivery, and failed at import time on a foreign key with rows written.
+  const p = fakePipeline();
+  const r = await runImport({
+    adapterResult: adapterResult(),
+    config: TEMPLATE,
+    pipeline: p,
+    log: silent,
+  });
+  assert.equal(r.exit, EXIT.FAILED);
+  assert.deepEqual(p.calls, [], "nothing may be staged from a template");
+});
+
+test("a single placeholder uuid is enough to refuse the run", async () => {
+  // A placeholder is worse than a MISSING key: a missing key routes its rows to
+  // to_review and the run stays honest, while a placeholder uuid is a confident
+  // answer that is false.
+  const p = fakePipeline();
+  const r = await runImport({
+    adapterResult: adapterResult(),
+    config: { ...CONFIG, practitionerKeyByName: { "Dr Sintetico": PLACEHOLDER_UUID } },
+    pipeline: p,
+    log: silent,
+  });
+  assert.equal(r.exit, EXIT.FAILED);
+  assert.deepEqual(p.calls, []);
+});
+
+test("PENDING_OWNER_RULING refuses the run and NAMES the key", async () => {
+  const lines = [];
+  const r = await runImport({
+    adapterResult: adapterResult(),
+    config: { ...CONFIG, practitionerKeyByName: { "Clínica OsteoJP": "PENDING_OWNER_RULING" } },
+    pipeline: fakePipeline(),
+    log: (l) => lines.push(l),
+  });
+  assert.equal(r.exit, EXIT.FAILED);
+  assert.match(lines.join("\n"), /Clínica OsteoJP.*PENDING_OWNER_RULING/);
+});
+
+test("findPlaceholders ignores _README keys, which are documentation", () => {
+  const found = findPlaceholders(TEMPLATE);
+  assert.ok(found.length > 0);
+  assert.ok(!found.some((f) => f.key.startsWith("_")), "a _README must not read as a placeholder");
+});
+
+test("TO_NORMALIZE is STRIPPED, not passed through - upsert throws on an unresolved key", () => {
+  // appointments.service_id is nullable so this is not fatal, but upsert.ts:320
+  // throws unresolved("serviceKey") for a key with no resolver entry. Handing
+  // "TO_NORMALIZE" to the adapter would turn an undecided catalogue label into a
+  // mid-import crash.
+  const { config, removed } = stripToNormalize({
+    serviceKeyByType: { Tratamento: "svc-1", Diversos: "TO_NORMALIZE" },
+  });
+  assert.deepEqual(removed, ["Diversos"]);
+  assert.deepEqual(config.serviceKeyByType, { Tratamento: "svc-1" });
+});
+
+test("a TO_NORMALIZE service does NOT block an otherwise complete run, AND IS STRIPPED", async () => {
+  // THE SECOND HALF IS THE ONE THAT MATTERS. `stripToNormalize` had a passing
+  // unit test while nothing proved runImport CALLED it: a negative control
+  // passing TO_NORMALIZE straight through left every assertion green. The
+  // function working and the function being used are different facts, and
+  // upsert.ts:320 throws on an unresolved serviceKey - so an unstripped value
+  // is a mid-import crash, not a harmless label.
+  const p = fakePipeline();
+  const r = await runImport({
+    adapterResult: adapterResult(),
+    config: { ...CONFIG, serviceKeyByType: { Tratamento: "svc-1", Diversos: "TO_NORMALIZE" } },
+    pipeline: p,
+    log: silent,
+  });
+  assert.equal(r.exit, EXIT.OK);
+  assert.ok(p.calls.some(([m]) => m === "stageRows"));
+  assert.deepEqual(
+    r.effectiveConfig.serviceKeyByType,
+    { Tratamento: "svc-1" },
+    "runImport must use the STRIPPED config, not the one it was handed",
+  );
+});
+
+test("the template's two clinics and two specialties match the vendor's answer", () => {
+  // Vendor confirmed 2026-08-25: two exports one per clinic, and only these two
+  // specialties. A third filename in a future delivery should be visibly a
+  // surprise rather than absorbed.
+  assert.deepEqual(Object.keys(TEMPLATE.location.knownLocations).sort(), [
+    "castelo-branco",
+    "linda-a-velha",
+  ]);
+  assert.deepEqual(TEMPLATE._specialties.known.sort(), ["Fisioterapia", "Osteopatia"]);
+  assert.equal(TEMPLATE.location.kind, "fixed");
 });

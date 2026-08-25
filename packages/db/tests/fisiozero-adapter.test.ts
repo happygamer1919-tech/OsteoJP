@@ -180,11 +180,43 @@ describe("patients", () => {
     expect(patientsOf(r)[0]!.primaryLocationKey).toBe("linda-a-velha");
   });
 
-  it("NEVER reads data_criacao as a registration date", () => {
-    // Requirement 7: it is an export timestamp. The type has no registration
-    // field, and this pins that the value does not leak in through `notes`.
+  it("reads data_criacao as the REGISTRATION DATE, DST-correct", () => {
+    // REVERSES the earlier assertion, on vendor confirmation 2026-08-25 that
+    // data_criacao is genuine and not an export stamp. The fixture's
+    // "2026-08-01 10:00:00" is naive Lisbon summer time, so the instant is
+    // 09:00Z - reading it as UTC would shift a decade of registrations by an
+    // hour for half the year.
     const r = adaptFisiozeroDelivery({ pacientes: pacientes(P1) }, opts);
-    expect(JSON.stringify(patientsOf(r)[0])).not.toContain("2026-08-01");
+    expect(patientsOf(r)[0]!.registeredAt).toBe("2026-08-01T09:00:00.000Z");
+  });
+
+  it("applies NO heuristic to the legacy import-day batch, by instruction", () => {
+    // The vendor confirmed some legacy rows carry their own import-day date.
+    // They import verbatim: a rule guessing which dates are "wrong" from their
+    // shape would silently rewrite genuine registrations that fall on the same
+    // day, and a wrong date nobody can audit is worse than an honest one.
+    const legacy = P1.replace("2026-08-01 10:00:00", "2019-03-14 00:00:00");
+    const r = adaptFisiozeroDelivery({ pacientes: pacientes(legacy) }, opts);
+    expect(patientsOf(r)[0]!.registeredAt).toBe("2019-03-14T00:00:00.000Z");
+  });
+
+  it("leaves registeredAt null and COUNTS an unparseable data_criacao", () => {
+    // Provenance, not an appointment: dropping the whole patient over a bad
+    // date would lose far more than letting created_at take its default.
+    const bad = P1.replace("2026-08-01 10:00:00", "nao-e-uma-data");
+    const r = adaptFisiozeroDelivery({ pacientes: pacientes(bad) }, opts);
+    expect(patientsOf(r)).toHaveLength(1);
+    expect(patientsOf(r)[0]!.registeredAt).toBeNull();
+    expect(r.checks.unparseableRegistrationDates).toBe(1);
+  });
+
+  it("leaves registeredAt null when data_criacao is EMPTY", () => {
+    // Absent is not malformed: created_at falls back to its NOT NULL default
+    // and nothing is counted as a defect.
+    const blank = P1.replace("2026-08-01 10:00:00", "");
+    const r = adaptFisiozeroDelivery({ pacientes: pacientes(blank) }, opts);
+    expect(patientsOf(r)[0]!.registeredAt).toBeNull();
+    expect(r.checks.unparseableRegistrationDates).toBe(0);
   });
 
   it("counts repeated numero_paciente and warns, because patient_number is tenant-unique", () => {

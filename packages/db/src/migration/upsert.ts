@@ -255,6 +255,13 @@ async function importPatient(
     // to null - which is why this is spread conditionally rather than written
     // as `patientNumber: p.patientNumber ?? null`.
     ...(typeof p.patientNumber === "number" ? { patientNumber: p.patientNumber } : {}),
+    // The source registration date, into created_at. Same conditional-spread
+    // shape as importClinicalRecord uses for recordedAt, and for the same
+    // reason: created_at is NOT NULL DEFAULT now(), so a patient with no source
+    // date must have the key ABSENT and let the default stand - passing null
+    // would be rejected, and passing new Date() would silently stamp import day
+    // onto a patient the clinic has had for a decade.
+    ...(p.registeredAt ? { createdAt: new Date(p.registeredAt) } : {}),
   };
 
   let patientId: string;

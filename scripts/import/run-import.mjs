@@ -72,6 +72,68 @@ export const ENTITY_ORDER = [
  * and an unmapped-key report is useless without saying which keys. Counts tell
  * Ivan which ones matter: one row is a typo, four hundred is a real therapist.
  */
+/** The template's deliberately-invalid uuid. Every slot ships holding this. */
+export const PLACEHOLDER_UUID = "00000000-0000-0000-0000-000000000000";
+/** Slots the template marks as needing a decision before any run. */
+export const PENDING_MARKERS = ["PENDING_OWNER_RULING", "TO_NORMALIZE"];
+
+/**
+ * Find every slot still holding a template placeholder.
+ *
+ * THE RUNNER DID NOT DO THIS UNTIL 2026-08-25, and the gap mattered more than
+ * it looks. `checkMappingCoverage` checked that the maps EXISTED and that
+ * `location.kind` was one of two strings - a config filled entirely with
+ * `00000000-...` passed every check, staged the whole delivery, and then failed
+ * at import time on a foreign key, halfway through, with rows already written.
+ *
+ * A PLACEHOLDER IS NOT A MISSING KEY. It is worse: a missing key routes its rows
+ * to to_review and the run continues honestly, while a placeholder uuid is a
+ * confident answer that happens to be false.
+ *
+ * `TO_NORMALIZE` IS TREATED SEPARATELY, and not as fatal - see stripToNormalize.
+ */
+export function findPlaceholders(config) {
+  const found = [];
+  const scan = (obj, label) => {
+    if (!obj || typeof obj !== "object") return;
+    for (const [k, v] of Object.entries(obj)) {
+      if (k.startsWith("_") || typeof v !== "string") continue;
+      if (v === PLACEHOLDER_UUID) found.push({ where: label, key: k, value: "placeholder uuid" });
+      else if (v === "PENDING_OWNER_RULING") found.push({ where: label, key: k, value: "PENDING_OWNER_RULING" });
+    }
+  };
+  scan(config?.practitionerKeyByName, "practitionerKeyByName");
+  scan(config?.serviceKeyByType, "serviceKeyByType");
+  scan(config?.location?.knownLocations, "location.knownLocations");
+  return found;
+}
+
+/**
+ * Remove `TO_NORMALIZE` service entries, and say which were removed.
+ *
+ * NOT FATAL, BECAUSE `appointments.service_id` IS NULLABLE and an unmapped type
+ * already imports without a service. Blocking the whole run on an undecided
+ * catalogue label would stop the import for a field the schema itself treats as
+ * optional.
+ *
+ * BUT IT CANNOT BE PASSED THROUGH EITHER, and that is the reason this function
+ * exists rather than the value simply being ignored: upsert.ts:320 THROWS
+ * `unresolved("serviceKey")` when a serviceKey has no resolver entry. Handing
+ * "TO_NORMALIZE" to the adapter as if it were a real key would turn an
+ * undecided label into a mid-import crash.
+ */
+export function stripToNormalize(config) {
+  const removed = [];
+  const services = { ...(config?.serviceKeyByType ?? {}) };
+  for (const [k, v] of Object.entries(services)) {
+    if (k.startsWith("_") || v === "TO_NORMALIZE") {
+      if (v === "TO_NORMALIZE") removed.push(k);
+      delete services[k];
+    }
+  }
+  return { config: { ...config, serviceKeyByType: services }, removed };
+}
+
 export function checkMappingCoverage(adapterResult, config) {
   // READ FROM THE ADAPTER'S OWN TALLIES rather than re-derived from the review
   // rows. Re-deriving was the first cut and it produced an EMPTY list, because
@@ -81,6 +143,8 @@ export function checkMappingCoverage(adapterResult, config) {
   const unmappedServico = new Map(adapterResult.checks?.unmappedTipoServico ?? []);
 
   const missing = [];
+  const placeholders = findPlaceholders(config);
+  for (const p of placeholders) missing.push(`${p.where}.${JSON.stringify(p.key)} still holds ${p.value}`);
   if (!config || typeof config !== "object") missing.push("config is not an object");
   else {
     if (!config.practitionerKeyByName || typeof config.practitionerKeyByName !== "object") {
@@ -156,7 +220,19 @@ export async function runImport({
   for (const t of adapterResult.toReview) reasons.set(t.reason, (reasons.get(t.reason) ?? 0) + 1);
 
   /* -- 1. mapping coverage, BEFORE anything is staged -- */
-  const coverage = checkMappingCoverage(adapterResult, config);
+  // TO_NORMALIZE entries are stripped BEFORE coverage, so they read as unmapped
+  // rather than as a key upsert would later throw on.
+  const stripped = stripToNormalize(config);
+  for (const k of stripped.removed) {
+    log(`  note  serviceKeyByType ${JSON.stringify(k)} is TO_NORMALIZE - imported WITHOUT a service`);
+  }
+  // RETURNED ON EVERY PATH so the WIRING is assertable, not just the helper.
+  // `stripToNormalize` had a passing unit test while nothing proved runImport
+  // called it - a negative control that passed TO_NORMALIZE straight through
+  // left all 23 assertions green. The function working and the function being
+  // used are different facts.
+  const effectiveConfig = stripped.config;
+  const coverage = checkMappingCoverage(adapterResult, effectiveConfig);
   if (!coverage.ok) {
     log("REFUSED - the mapping config does not cover this delivery.");
     for (const m of coverage.missing) log(`  missing   ${m}`);
@@ -165,7 +241,7 @@ export async function runImport({
     log("");
     log("NOTHING WAS STAGED. A partial mapping does not crash - it imports a");
     log("fraction of the diary and reports success over the rest.");
-    return { exit: EXIT.FAILED, staged: 0, imported: 0, counts, reasons, coverage };
+    return { exit: EXIT.FAILED, staged: 0, imported: 0, counts, reasons, coverage, effectiveConfig };
   }
 
   /* -- 2. report what the adapter produced -- */
@@ -198,7 +274,7 @@ export async function runImport({
 
   if (dryRun) {
     log("DRY RUN - nothing was staged and no database was contacted.");
-    return { exit: EXIT.OK, staged: 0, imported: 0, counts, reasons, coverage };
+    return { exit: EXIT.OK, staged: 0, imported: 0, counts, reasons, coverage, effectiveConfig };
   }
 
   /* -- 3. stage + validate. Writes the LEDGER, never a target table. -- */
@@ -211,14 +287,14 @@ export async function runImport({
   if (!apply) {
     log("PREVIEW - staged and validated only. NO TARGET TABLE WAS WRITTEN.");
     log(`To run for real: --apply --confirm ${JSON.stringify(CONFIRM_PHRASE)}`);
-    return { exit: EXIT.OK, staged: staged.length, imported: 0, counts, reasons, coverage, validation };
+    return { exit: EXIT.OK, staged: staged.length, imported: 0, counts, reasons, coverage, effectiveConfig, validation };
   }
 
   /* -- 4. the live gate -- */
   if (confirm !== CONFIRM_PHRASE) {
     log("REFUSED - --apply requires the exact confirmation phrase.");
     log("Nothing was imported. The staging ledger is untouched and can be re-used.");
-    return { exit: EXIT.FAILED, staged: staged.length, imported: 0, counts, reasons, coverage, validation };
+    return { exit: EXIT.FAILED, staged: staged.length, imported: 0, counts, reasons, coverage, effectiveConfig, validation };
   }
 
   /* -- 5. attachments must have their bytes already in the bucket -- */
@@ -227,7 +303,7 @@ export async function runImport({
     log(`REFUSED - ${orphanAttachments.length} attachment(s) have no uploaded object.`);
     log("storage_path is NOT NULL, so these rows would be written and would point");
     log("at nothing. Run copy-attachments.mjs to completion first.");
-    return { exit: EXIT.FAILED, staged: staged.length, imported: 0, counts, reasons, coverage, validation, orphanAttachments };
+    return { exit: EXIT.FAILED, staged: staged.length, imported: 0, counts, reasons, coverage, effectiveConfig, validation, orphanAttachments };
   }
 
   /* -- 6. import, in dependency order -- */
@@ -259,7 +335,7 @@ export async function runImport({
   }
 
   const clean = validation.failed === 0 && report.referentialIntegrity?.ok !== false;
-  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, counts, reasons, coverage, validation, report };
+  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, counts, reasons, coverage, effectiveConfig, validation, report };
 }
 
 /* ====================================================================== */
