@@ -144,7 +144,12 @@ test("the to_review expectation is derived from the estado table", () => {
   for (const estado of ["realizada", "falta", "marcada"]) {
     assert.match(text, new RegExp(`\`${estado}\``), `the estado table omits ${estado}`);
   }
-  assert.match(text, /marcada_in_the_past/);
+  // OWNER RULING B, 2026-08-25: a past-dated `marcada` is CANCELLED and imports.
+  // The runbook must state the ruling, not the superseded review route - a
+  // runbook still expecting these in to_review reads a correct run as a large
+  // unexplained review queue.
+  assert.match(text, /pastMarcadaCancelled/);
+  assert.match(text, /owner ruling B/i);
   assert.match(text, /unknown_estado/);
   // The ruling that nothing maps to confirmed, carried into the runbook.
   assert.match(text, /Nothing maps to `confirmed`/);

@@ -222,8 +222,30 @@ export function naiveLocalToIso(naive: string, timeZone = DEFAULT_TIME_ZONE): Na
  * `marcada` IS CONDITIONAL AND IS NOT IN THIS TABLE ALONE. A booking still
  * marked "marcada" whose start is in the PAST is not a scheduled appointment -
  * it is a row nobody ever closed out, and importing it as `scheduled` would put
- * a decade of dead bookings into reception's future diary. Those route to
- * to_review; see `mapEstado`.
+ * a decade of dead bookings into reception's future diary.
+ *
+ * ==========================================================================
+ * OWNER RULING B, 2026-08-25: A PAST-DATED `marcada` IS `cancelled`.
+ * IT IS IMPORTED, NOT ROUTED TO REVIEW. THIS REVERSES THE EARLIER BEHAVIOUR.
+ * ==========================================================================
+ * Until this ruling those rows went to `toReview` with reason
+ * `marcada_in_the_past`. That was the safe default while nobody had decided
+ * what they MEAN, and it is now the wrong one for a specific, countable reason:
+ * the amostra's `marcada` rows are almost entirely historical, so the old rule
+ * routed most of a decade's dead bookings into a review queue that a human
+ * would then have to empty by hand, one row at a time, to reach the same answer
+ * every time.
+ *
+ * `cancelled` IS THE HONEST STATUS AND NOT MERELY THE CONVENIENT ONE. The
+ * appointment was booked and it did not happen: no `realizada`, no `falta`, and
+ * a start time long past. That is what `cancelled` means in
+ * `appointment_status`, and it keeps the row in the patient's history where the
+ * clinic can see it - which routing to review never did.
+ *
+ * IT IS STILL COUNTED, and that is what stops the ruling hiding anything.
+ * `checks.pastMarcadaCancelled` reports how many rows took this path, so the
+ * number is on the run's face instead of being absorbed into a status. A ruling
+ * that makes rows silently change meaning is a ruling nobody can audit.
  *
  * NOTHING MAPS TO `confirmed`, DELIBERATELY. Confirmation in this platform
  * means a patient answered a reminder we sent. No Fisiozero row can evidence
@@ -235,16 +257,22 @@ export const ESTADO_MAP: Readonly<Record<string, MigrationAppointment["status"]>
   marcada: "scheduled",
 });
 
+/**
+ * `pastDatedMarcada` rides on the SUCCESS branch because, after ruling B, the
+ * row IMPORTS - it is not a refusal any more. The flag exists so the caller can
+ * count it; nothing branches on it.
+ */
 export type EstadoDecision =
-  | { ok: true; status: MigrationAppointment["status"] }
-  | { ok: false; reason: "unknown_estado" | "marcada_in_the_past" };
+  | { ok: true; status: MigrationAppointment["status"]; pastDatedMarcada?: boolean }
+  | { ok: false; reason: "unknown_estado" };
 
 export function mapEstado(estado: string, startsAtIso: string, now: Date): EstadoDecision {
   const key = estado.trim().toLowerCase();
   const mapped = ESTADO_MAP[key];
   if (!mapped) return { ok: false, reason: "unknown_estado" };
   if (key === "marcada" && new Date(startsAtIso).getTime() <= now.getTime()) {
-    return { ok: false, reason: "marcada_in_the_past" };
+    // OWNER RULING B. Imported as cancelled, counted, never reviewed.
+    return { ok: true, status: "cancelled", pastDatedMarcada: true };
   }
   return { ok: true, status: mapped };
 }
@@ -445,6 +473,12 @@ export type FisiozeroAdapterResult = {
     duplicateAttachmentFileNames: number;
     /** Instants that fell in the autumn fold and were resolved to the earlier. */
     ambiguousLocalTimes: number;
+    /**
+     * OWNER RULING B (2026-08-25): past-dated `marcada` rows imported as
+     * `cancelled` rather than routed to review. A COUNT, so a ruling that
+     * changes what a decade of rows mean stays auditable on the run's face.
+     */
+    pastMarcadaCancelled: number;
     /** Patients whose telefone resolved to NO valid PT number. COUNT ONLY. */
     unresolvablePhones: number;
     /** Patients whose data_criacao did not convert; created_at falls back to the default. */
@@ -476,6 +510,8 @@ export function adaptFisiozeroDelivery(
   const warnings: string[] = [];
 
   let ambiguousLocalTimes = 0;
+  /** OWNER RULING B: past-dated `marcada` rows imported as `cancelled`. */
+  let pastMarcadaCancelled = 0;
   // COUNTED BY VALUE so the runner can refuse an incomplete mapping and say
   // WHICH keys are missing and how much each one matters. One row is a typo;
   // four hundred is a real therapist whose whole diary would be skipped.
@@ -691,6 +727,9 @@ export function adaptFisiozeroDelivery(
         toReview.push({ ...at, reason: decision.reason, estado: estadoRaw });
         return;
       }
+      // OWNER RULING B. The row imports as `cancelled`; the count is what keeps
+      // the ruling auditable instead of silently rewriting a decade of statuses.
+      if (decision.pastDatedMarcada) pastMarcadaCancelled += 1;
 
       const sourceId = appointmentSourceId(patientSourceId, (row["inicio"] ?? "").trim(), terapeuta);
       if (seenAppointmentIds.has(sourceId)) {
@@ -849,6 +888,13 @@ export function adaptFisiozeroDelivery(
     );
   }
 
+  if (pastMarcadaCancelled > 0) {
+    warnings.push(
+      `${pastMarcadaCancelled} appointment(s) were still "marcada" with a start in the PAST and were ` +
+        `imported as CANCELLED (owner ruling B, 2026-08-25). They are in the patient's history, not in the diary.`,
+    );
+  }
+
   return {
     records,
     toReview,
@@ -864,6 +910,7 @@ export function adaptFisiozeroDelivery(
       duplicateSyntheticEpisodeIds,
       duplicateAttachmentFileNames,
       ambiguousLocalTimes,
+      pastMarcadaCancelled,
       unresolvablePhones,
       unparseableRegistrationDates,
       unmappedTerapeuta: [...unmappedTerapeuta.entries()].sort((a, b) => b[1] - a[1]),
