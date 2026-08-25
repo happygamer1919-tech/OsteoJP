@@ -10,6 +10,8 @@
 // landing in the future diary, a patient with no clinic, a pain score of 0 read
 // as absent, an id that changes between runs.
 
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -114,11 +116,44 @@ describe("estado mapping", () => {
     });
   });
 
-  it("routes a PAST `marcada` to review - a decade of dead bookings is not a diary", () => {
+  it("OWNER RULING B: a PAST `marcada` is CANCELLED and imports - it is not reviewed", () => {
+    // REVERSES the earlier behaviour, which routed these to toReview with
+    // reason "marcada_in_the_past". The row was booked and did not happen: no
+    // realizada, no falta, a start long past. That is what `cancelled` means,
+    // and it keeps the row in the patient's history where the clinic can see
+    // it - which a review queue never did.
     expect(mapEstado("marcada", "2020-01-01T10:00:00.000Z", opts.now)).toEqual({
-      ok: false,
-      reason: "marcada_in_the_past",
+      ok: true,
+      status: "cancelled",
+      pastDatedMarcada: true,
     });
+  });
+
+  it("`cancelled` is a real appointment_status, not a string this file invented", () => {
+    // The whole ruling rests on it. appointment_status is
+    // scheduled|confirmed|completed|cancelled|no_show (schema.ts:42-48), and a
+    // status outside it is rejected by validate.ts before anything is staged.
+    const d = mapEstado("marcada", "2020-01-01T10:00:00.000Z", opts.now);
+    expect(d.ok).toBe(true);
+    expect(["scheduled", "confirmed", "completed", "cancelled", "no_show"]).toContain(
+      d.ok ? d.status : "",
+    );
+  });
+
+  it("a FUTURE `marcada` carries no pastDated flag, so the counter cannot over-count", () => {
+    const d = mapEstado("marcada", "2027-01-01T10:00:00.000Z", opts.now);
+    expect(d.ok && d.pastDatedMarcada).toBeFalsy();
+  });
+
+  it("marcada_in_the_past is GONE from the decision vocabulary", () => {
+    // The reason string is no longer reachable. Pinning its absence is what
+    // stops a future edit quietly restoring the review route under a ruling
+    // that says otherwise.
+    const src = readFileSync(
+      new URL("../src/migration/sources/fisiozero.ts", import.meta.url),
+      "utf8",
+    );
+    expect(src).not.toMatch(/reason: "marcada_in_the_past"/);
   });
 });
 

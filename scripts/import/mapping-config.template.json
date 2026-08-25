@@ -95,7 +95,7 @@
     ],
     "realizada": "completed",
     "falta": "no_show",
-    "marcada": "scheduled ONLY when inicio is in the future at import time, otherwise to_review",
+    "marcada": "scheduled when inicio is in the FUTURE; when inicio is in the PAST -> cancelled (owner ruling B, 2026-08-25), imported and counted as checks.pastMarcadaCancelled, NOT routed to review",
     "*": "any other value -> to_review, carrying the value"
   },
 

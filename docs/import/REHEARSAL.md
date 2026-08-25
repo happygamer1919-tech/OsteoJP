@@ -607,7 +607,8 @@ is reproduced in the config template for reference only:
 |---|---|
 | `realizada` | → `completed` |
 | `falta` | → `no_show` |
-| `marcada` | → `scheduled` **only if `inicio` is in the future at import time**; otherwise `to_review`, reason `marcada_in_the_past` |
+| `marcada`, future `inicio` | → `scheduled` |
+| `marcada`, **past** `inicio` | → **`cancelled`** (owner ruling B, 2026-08-25). Imported, counted as `checks.pastMarcadaCancelled`, **not** routed to review |
 | anything else | → `to_review`, reason `unknown_estado`, carrying the value |
 
 **Nothing maps to `confirmed`, and a test pins it.** Confirmation in this
@@ -616,10 +617,15 @@ evidence that, and asserting it would fabricate a patient's action.
 
 So, taking the `estado seen:` line you wrote down in §3:
 
-> **expected `marcada_in_the_past`** = the `marcada` count, minus any whose
+> **expected `pastMarcadaCancelled`** = the `marcada` count, minus any whose
 > `inicio` is still in the future. The amostra is historical data, so for a
 > sample drawn from a closed period **this should be the entire `marcada`
 > count.**
+>
+> **It is a `checks` figure and a warning line, NOT a `to_review` reason.** Owner
+> ruling B (2026-08-25) reversed that: these rows now IMPORT as `cancelled`.
+> Before the ruling they went to review, and a runbook that still expected them
+> there would read a correct run as a large unexplained review queue.
 
 > **expected `unknown_estado`** = **0**. §3 exits non-zero on any estado outside
 > `{realizada, falta, marcada}`, so a clean §3 guarantees it.
@@ -633,6 +639,9 @@ numbers, and each is a count you report rather than predict:
 `unresolved_location`, `inicio_unparseable`, `inicio_nonexistent_local_time`,
 `fim_unparseable`, `fim_not_after_inicio`, `missing_data_avaliacao`,
 `data_avaliacao_unparseable`, `missing_ficheiro`.
+
+`marcada_in_the_past` is NOT in that list any more, and its absence is the
+ruling: see the estado table above.
 
 **Expect `unresolved_terapeuta` to be 0**, and not because the data is clean:
 the runner *refuses the entire run* on an unmapped `terapeuta` before anything
