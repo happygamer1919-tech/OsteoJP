@@ -447,6 +447,8 @@ export type FisiozeroAdapterResult = {
     ambiguousLocalTimes: number;
     /** Patients whose telefone resolved to NO valid PT number. COUNT ONLY. */
     unresolvablePhones: number;
+    /** Patients whose data_criacao did not convert; created_at falls back to the default. */
+    unparseableRegistrationDates: number;
     /** Unmapped operational keys, by value and occurrence count. Safe to print. */
     unmappedTerapeuta: Array<[string, number]>;
     unmappedTipoServico: Array<[string, number]>;
@@ -481,6 +483,8 @@ export function adaptFisiozeroDelivery(
   // LAUNCH-03 names this as the check that decides whether most of the patient
   // base can log in, and a phone is personal data.
   let unresolvablePhones = 0;
+  /** data_criacao values that did not convert. COUNT ONLY - the patient still imports. */
+  let unparseableRegistrationDates = 0;
   const unmappedTerapeuta = new Map<string, number>();
   const unmappedTipoServico = new Map<string, number>();
   const push = (entityType: SourceRecord["entityType"], sourceId: string, raw: unknown, record: MigrationRecord) =>
@@ -558,6 +562,30 @@ export function adaptFisiozeroDelivery(
       return;
     }
 
+    // REGISTRATION DATE, on vendor confirmation 2026-08-25 that `data_criacao`
+    // is genuine and not an export stamp. Same naive-Lisbon conversion as every
+    // other instant in this adapter: it arrives as `YYYY-MM-DD HH:MM:SS` with no
+    // zone, so reading it as UTC would shift a decade of registrations by an
+    // hour for half the year.
+    //
+    // AN UNPARSEABLE OR NONEXISTENT DATE DOES NOT SINK THE PATIENT. Unlike an
+    // appointment, where a wrong instant is a wrong appointment, a registration
+    // date is provenance: dropping the whole patient over it would be a far
+    // larger loss than leaving created_at at its default. It is counted so the
+    // number is visible rather than absorbed.
+    let registeredAt: string | null = null;
+    const rawCriacao = row["data_criacao"] ?? "";
+    if (nonEmpty(rawCriacao)) {
+      const conv = naiveLocalToIso(
+        /^\d{4}-\d{2}-\d{2}$/.test(rawCriacao.trim()) ? `${rawCriacao.trim()} 00:00:00` : rawCriacao,
+        tz,
+      );
+      if (conv.ok) {
+        registeredAt = conv.iso;
+        if (conv.ambiguous) ambiguousLocalTimes += 1;
+      } else unparseableRegistrationDates += 1;
+    }
+
     const carriedNotes = [
       nonEmpty(row["observacoes"]) ? row["observacoes"]!.trim() : null,
       phones.additional.length > 0 ? `Outros contactos: ${phones.additional.join(", ")}` : null,
@@ -566,8 +594,6 @@ export function adaptFisiozeroDelivery(
     const patient: MigrationPatient = {
       sourceId,
       fullName: row["nome_completo"]!.trim(),
-      // REQUIREMENT 7: `data_criacao` is an EXPORT timestamp, not a
-      // registration date, and is deliberately not read anywhere in this file.
       dateOfBirth: nonEmpty(row["data_nascimento"]) ? row["data_nascimento"]!.trim() : null,
       sex,
       nif: nonEmpty(row["nif"]) ? row["nif"]!.trim() : null,
@@ -581,6 +607,7 @@ export function adaptFisiozeroDelivery(
       primaryLocationKey: locationKey,
       patientNumber,
       healthInsuranceNumbers: insurance,
+      registeredAt,
     };
     push("patient", sourceId, row, { entityType: "patient", data: patient });
   });
@@ -838,6 +865,7 @@ export function adaptFisiozeroDelivery(
       duplicateAttachmentFileNames,
       ambiguousLocalTimes,
       unresolvablePhones,
+      unparseableRegistrationDates,
       unmappedTerapeuta: [...unmappedTerapeuta.entries()].sort((a, b) => b[1] - a[1]),
       unmappedTipoServico: [...unmappedTipoServico.entries()].sort((a, b) => b[1] - a[1]),
     },

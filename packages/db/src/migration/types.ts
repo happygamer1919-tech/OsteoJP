@@ -56,6 +56,27 @@ export type MigrationPatient = {
   locationKeys: string[];
 
   /**
+   * When the patient was first registered in the source system, ISO UTC.
+   * Preserved into `patients.created_at`, exactly as
+   * `MigrationClinicalRecord.recordedAt` is, so the clinic's own history keeps
+   * its real chronology instead of collapsing onto import day.
+   *
+   * REVERSES THE EARLIER RULING, ON VENDOR CONFIRMATION 2026-08-25. This field
+   * was deliberately absent while `data_criacao` was believed to be an EXPORT
+   * timestamp; the vendor has now confirmed it is the genuine registration
+   * date. The reasoning that kept it out was sound on the facts then held, and
+   * the fact changed.
+   *
+   * NO HEURISTIC GUARDS THE LEGACY BATCH, BY INSTRUCTION. The vendor also
+   * confirmed that some legacy rows carry their own import-day date rather than
+   * a real registration. Those are imported verbatim. A rule guessing which
+   * rows are "wrong" from the shape of a date would silently rewrite genuine
+   * registrations that happen to fall on the same day - a wrong date nobody can
+   * audit is worse than an honest one the clinic knows about.
+   */
+  registeredAt?: string | null;
+
+  /**
    * Resolver key → locations.id for `patients.primary_location_id`.
    *
    * A KEY AND NOT AN ID, matching every other cross-reference in this file:

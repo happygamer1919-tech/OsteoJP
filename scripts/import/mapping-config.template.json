@@ -1,0 +1,98 @@
+{
+  "_README": [
+    "TEMPLATE. Copy to mapping-config.local.json, fill in the real uuids, and run:",
+    "  node scripts/import/run-import.mjs --config scripts/import/mapping-config.local.json --dry-run",
+    "",
+    "THE FILLED FILE IS NEVER COMMITTED. mapping-config.local.json is gitignored.",
+    "It carries live tenant uuids for staff and services; those are not secrets in",
+    "the credential sense, but they are production identifiers and they have no",
+    "reason to be in a public history.",
+    "",
+    "EVERY PLACEHOLDER BELOW IS DELIBERATELY INVALID. The runner hard-fails on an",
+    "incomplete mapping BEFORE anything is staged, because a partial mapping does",
+    "not crash - it imports a fraction of the diary and reports success over the",
+    "rest. Leaving a 00000000-... in place is caught, not silently used."
+  ],
+
+  "location": {
+    "_README": [
+      "TWO EXPORTS, ONE PER CLINIC (vendor confirmed 2026-08-25), so each RUN uses",
+      "kind:'fixed' with the clinic that delivery belongs to. The clinic is in the",
+      "FILENAME, not in any column, which is why the adapter supports both shapes",
+      "and hardcodes neither.",
+      "",
+      "Set locationKey to ONE of the entries in knownLocations below, and make sure",
+      "it is the clinic THIS delivery came from. Getting it wrong places every",
+      "patient in the file at the wrong clinic, and PL-09 scopes reading by it."
+    ],
+    "kind": "fixed",
+    "locationKey": "linda-a-velha",
+    "knownLocations": {
+      "linda-a-velha": "00000000-0000-0000-0000-000000000000",
+      "castelo-branco": "00000000-0000-0000-0000-000000000000"
+    }
+  },
+
+  "practitionerKeyByName": {
+    "_README": [
+      "Keys are the `terapeuta` strings AS THE VENDOR STORED THEM, observed in the",
+      "amostra. They are matched exactly, so spelling and accents matter.",
+      "",
+      "TWO ENTRIES ARE NOT PEOPLE AND NEED AN OWNER RULING before the run:",
+      "'Clinica OsteoJP' and 'NESA'. An appointment attributed to a clinic or to a",
+      "method is not attributable to a practitioner, and appointments.practitioner_id",
+      "is NOT NULL - so these cannot simply be left blank. Either they map to a real",
+      "staff member, or those rows go to to_review and are placed by hand."
+    ],
+    "Jp": "00000000-0000-0000-0000-000000000000",
+    "Mafalda Toscano": "00000000-0000-0000-0000-000000000000",
+    "Tiago Grilo": "00000000-0000-0000-0000-000000000000",
+    "Isaac Fonseca": "00000000-0000-0000-0000-000000000000",
+    "Bernardo Calmeiro": "00000000-0000-0000-0000-000000000000",
+    "Clínica OsteoJP": "PENDING_OWNER_RULING",
+    "NESA": "PENDING_OWNER_RULING"
+  },
+
+  "serviceKeyByType": {
+    "_README": [
+      "Keys are the `tipo_servico` strings as the vendor stored them.",
+      "",
+      "appointments.service_id is NULLABLE, so an unmapped type does NOT sink the",
+      "appointment - it imports without a service and the runner warns. That is a",
+      "deliberate difference from terapeuta, which is NOT NULL and does sink it.",
+      "",
+      "'Diversos' IS A BUCKET, NOT A SERVICE, and mapping it to one would assert",
+      "something the source never said. TO-NORMALIZE: decide with the clinic whether",
+      "it becomes a real catalogue entry or is left unmapped."
+    ],
+    "Tratamento": "00000000-0000-0000-0000-000000000000",
+    "1ª Avaliação": "00000000-0000-0000-0000-000000000000",
+    "Consulta": "00000000-0000-0000-0000-000000000000",
+    "Diversos": "TO_NORMALIZE"
+  },
+
+  "_estado": {
+    "_README": [
+      "REFERENCE ONLY. The estado table is ratified and lives IN CODE, as",
+      "ESTADO_MAP in packages/db/src/migration/sources/fisiozero.ts. It is",
+      "reproduced here so this file reads as a complete picture of the run, and it",
+      "is NOT read from this file - editing it here changes nothing.",
+      "",
+      "NOTHING MAPS TO 'confirmed'. Confirmation means a patient answered a reminder",
+      "WE sent; no vendor row can evidence that."
+    ],
+    "realizada": "completed",
+    "falta": "no_show",
+    "marcada": "scheduled ONLY when inicio is in the future at import time, otherwise to_review",
+    "*": "any other value -> to_review, carrying the value"
+  },
+
+  "_specialties": {
+    "_README": [
+      "Vendor confirmed 2026-08-25: ONLY these two exist. Specialty is derived from",
+      "each episode FILENAME (Episodios_<Especialidade>.csv), not from this file.",
+      "Listed so a third filename in a future delivery is visibly a surprise."
+    ],
+    "known": ["Fisioterapia", "Osteopatia"]
+  }
+}

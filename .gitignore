@@ -61,6 +61,12 @@ docs/board/portal-board.rendered.html
 apps/web/web-db-results.json
 apps/web/web-db-run.log
 
+# Fisiozero import - the FILLED mapping config. The template beside it is
+# committed; this one carries live tenant uuids for staff and services and has
+# no reason to be in a public history.
+scripts/import/mapping-config.local.json
+**/mapping-config.local.json
+
 # Fisiozero extractor - session credentials and plaintext archives
 fz-state.json
 **/fz-state.json
