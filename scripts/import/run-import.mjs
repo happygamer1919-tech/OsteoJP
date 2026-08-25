@@ -105,6 +105,13 @@ export function findPlaceholders(config) {
   scan(config?.practitionerKeyByName, "practitionerKeyByName");
   scan(config?.serviceKeyByType, "serviceKeyByType");
   scan(config?.location?.knownLocations, "location.knownLocations");
+  scan(config?.location?.locationKeyByValue, "location.locationKeyByValue");
+  // THE ROOT IS SCANNED TOO, added 2026-08-25 with `tenantId`. A slot added to
+  // the template but not to this list is a slot with NO placeholder check, and
+  // `tenantId` is the worst possible one to miss: an all-zero tenant uuid does
+  // not fail a foreign key, it writes a full delivery into a tenant that does
+  // not exist, under RLS policies that will then hide every row.
+  scan(config, "config");
   return found;
 }
 

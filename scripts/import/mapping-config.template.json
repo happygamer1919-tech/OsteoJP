@@ -14,6 +14,18 @@
     "rest. Leaving a 00000000-... in place is caught, not silently used."
   ],
 
+  "_tenantId_README": [
+    "THE TENANT UUID THIS DELIVERY IMPORTS INTO. Required, and it was ABSENT",
+    "from this template until MIG-04 wired the live entrypoint and found the",
+    "gap: adaptFisiozeroDelivery() takes tenantId (it builds the storage prefix",
+    "<tenantId>/migration/fisiozero/<file>) and every pipeline call is",
+    "tenant-scoped, so a config filled exactly as this template asked was NOT",
+    "sufficient to run anything.",
+    "",
+    "GET IT FROM scripts/import/rehearsal-uuids.sql, query 0."
+  ],
+  "tenantId": "00000000-0000-0000-0000-000000000000",
+
   "location": {
     "_README": [
       "TWO EXPORTS, ONE PER CLINIC (vendor confirmed 2026-08-25), so each RUN uses",
