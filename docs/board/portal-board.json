@@ -3826,7 +3826,7 @@
       ],
       "evidence": {
         "kind": "pr",
-        "ref": "PR PENDING. scripts/import/cleanup-test-patients.sql + its guard, PROD-RUN.md 1.3b/1.3c. 19 cleanup + 7 new runbook assertions; ten negative controls run and restored (two of which were MY OWN faulty controls, caught and redone). test:scripts 306 (was 280).",
+        "ref": "MERGED as PR #1038, squashed to f237ac8e. Verified against the HEAD SHA rather than the PR page: ZERO non-success check runs on 46266d4f, all four required checks run for real (Lint+typecheck+test 3m49s, DB-gated 2m47s, three full E2E shards 7m1s/7m57s/6m22s, spec drift 6s). NO MIGRATION in the diff.\n\nscripts/import/cleanup-test-patients.sql + its guard, PROD-RUN.md 1.3b/1.3c. 19 cleanup + 7 new runbook assertions; ten negative controls run and restored, two of which were MY OWN faulty controls caught and redone. test:scripts 306 (was 280).",
         "at": "2026-08-25"
       },
       "open_on_purpose": "NOT RUN, AND IT MUST NOT BE BY A TERMINAL. Standing rule 12 makes data deletion owner-confirmable and standing rule 1 forbids a terminal touching production at all. Every assertion here is static analysis of the SQL against the committed schema; NOTHING has been executed against any database. The card closes on Ivan's pasted STEP 1 / STEP 3 output - specifically `patients` 33 before and 0 after, `staff_rows` 30 unchanged, and every orphan column 0.",
