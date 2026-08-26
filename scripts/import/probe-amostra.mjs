@@ -361,6 +361,8 @@ function readZipCentralDirectory(full) {
     let entries = 0;
     let dirEntries = 0;
     let uncompressed = 0;
+    /** Bytes of the single largest file entry. Decides the 50 MB upload limit. */
+    let largestEntry = 0;
     let minLen = Infinity;
     let maxLen = 0;
     let truncatedSizes = 0;
@@ -420,6 +422,9 @@ function readZipCentralDirectory(full) {
 
       entries += 1;
       uncompressed += uSize;
+      // A SIZE, NEVER THE NAME. Which file is the biggest is a filename, and a
+      // filename may carry a patient's name; how big the biggest one is, is not.
+      if (uSize > largestEntry) largestEntry = uSize;
       p = nameStart + nameLen + extraLen + commentLen;
     }
 
@@ -429,6 +434,7 @@ function readZipCentralDirectory(full) {
       walkedEntries: entries,
       dirEntries,
       uncompressed,
+      largestEntry,
       truncatedSizes,
       minLen: minLen === Infinity ? 0 : minLen,
       maxLen,
@@ -462,6 +468,12 @@ function probeZip(file, full) {
     say(`    WARNING          directory declares ${r.declaredEntries}, walked ${r.walkedEntries}`);
   }
   say(`    uncompressed     ${r.uncompressed} bytes`);
+  // THE NUMBER THAT DECIDES WHETHER THE BYTE COPY CAN RUN AT ALL. The Supabase
+  // project carries a 50 MB per-file upload limit, so one oversized attachment
+  // fails its upload while every other file succeeds - a partial copy that the
+  // summary reports as a single failure among hundreds. Printed here so it is
+  // known BEFORE the copy starts. PROD-RUN.md 3.2 carries the STOP.
+  say(`    largest entry (uncompressed)  ${r.largestEntry} bytes`);
   if (r.truncatedSizes > 0) {
     say(`    WARNING          ${r.truncatedSizes} entr(ies) had no readable 64-bit size; total is a FLOOR`);
   }
