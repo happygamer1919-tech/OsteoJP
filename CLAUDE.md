@@ -25,6 +25,12 @@ Reference site: https://osteojp.pt — brand and tone source of truth.
 - Attachment filenames may contain patient names and are treated as personal data. Scripts report filename patterns and extensions only.
 - Reason: patient health data entering an AI context creates an unapproved RGPD processor relationship.
 
+### Exemption, ruled 2026-08-26: the August 2026 amostra only
+- The August 2026 **amostra** is vendor-confirmed **synthetic test data** and contains no real patient data. Terminals MAY read it, and MAY execute the rehearsal against the **non-prod** project, sourcing the non-prod env file.
+- **This exemption covers the amostra ONLY.** The final delivery contains real patient data and is **NEVER** exempt: every rule above applies to it in full.
+- **The production run remains owner-executed**, per `docs/import/PROD-RUN.md`. Nothing in this exemption authorises a terminal to touch the production project, and standing rules 1 and 2 are unchanged.
+- The exemption is about the DATA, not about the TARGET. A terminal may not point at production merely because the file it is holding is synthetic.
+
 ## Import execution rules (Fisiozero import)
 - A LIVE import run requires the exact phrase `IMPORT FISIOZERO INTO PRODUCTION`, typed by Ivan once per window, IN ADDITION to `--apply`. `--apply` alone is refused.
 - Import tooling exit codes are fixed: `0` OK, `1` FAILED, `2` BAD_INVOCATION. Every import script conforms.
