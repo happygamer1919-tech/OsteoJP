@@ -426,15 +426,18 @@ export async function runImport({
 
   /* -- 6. import, in dependency order -- */
   let imported = 0;
+  let importSkipped = 0;
   let importFailed = 0;
   let importRetried = 0;
   const perEntity = {};
+  const perEntitySkipped = {};
   const perEntityFailed = {};
   const perEntitySecs = {};
   for (const entityType of ENTITY_ORDER) {
     const batch = orderForImport(entityType, importRecords.filter((r) => r.entityType === entityType));
     if (batch.length === 0) {
       perEntity[entityType] = 0;
+      perEntitySkipped[entityType] = 0;
       perEntityFailed[entityType] = 0;
       continue;
     }
@@ -442,9 +445,11 @@ export async function runImport({
     const res = await pipeline.importRecords(entityType, batch);
     const secs = (Date.now() - t0) / 1000;
     perEntity[entityType] = res.imported ?? 0;
+    perEntitySkipped[entityType] = res.skipped ?? 0;
     perEntityFailed[entityType] = res.failed ?? 0;
     perEntitySecs[entityType] = secs;
     imported += res.imported ?? 0;
+    importSkipped += res.skipped ?? 0;
     importFailed += res.failed ?? 0;
     importRetried += res.retried ?? 0;
     // B8: instrumentation only. The rate is the number that turns "the apply
@@ -452,10 +457,14 @@ export async function runImport({
     const rate = secs > 0 ? (batch.length / secs).toFixed(1) : "n/a";
     log(
       `IMPORTED  ${entityType.padEnd(18)} ${String(res.imported ?? 0).padStart(5)}` +
+        `   skipped ${String(res.skipped ?? 0).padStart(5)}` +
         `   failed ${String(res.failed ?? 0).padStart(4)}` +
         `   ${secs.toFixed(1)}s   ${rate} rows/s`,
     );
   }
+  // THE IDEMPOTENCY NUMBER. On a second --apply every IMPORTED reads 0 and this
+  // carries the first run's count: nothing was written and nothing was lost.
+  log(`SKIPPED   ${importSkipped}`);
   if (importRetried > 0) {
     log(`RETRIED   ${importRetried} row(s) that had failed on an earlier run`);
   }
@@ -537,7 +546,7 @@ export async function runImport({
     log(`IMPORT FAILED - ${failedCount} ledger row(s) failed`);
   }
   const clean = problems.length === 0;
-  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, perEntityFailed, perEntitySecs, importFailed, importRetried, counts, reasons, coverage, effectiveConfig, validation, report, numberPairs };
+  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, perEntitySkipped, perEntityFailed, perEntitySecs, importSkipped, importFailed, importRetried, counts, reasons, coverage, effectiveConfig, validation, report, numberPairs };
 }
 
 /* ====================================================================== */

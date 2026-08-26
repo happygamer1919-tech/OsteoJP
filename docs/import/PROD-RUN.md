@@ -696,9 +696,23 @@ rather than duplicate.
 same command.
 
 **A failure DURING `--apply`**: the ledger records exactly how far it got. Re-run
-the identical command — rows already `imported` are skipped, not repeated. That
-property is what the rehearsal's idempotency step exists to prove, and it is why
-that step is not optional.
+the identical command — rows already `imported` are **skipped, not repeated and
+not re-written**. Every `IMPORTED` line reads `0` with `skipped` carrying the
+count, and the `SKIPPED` total equals the first run's `STAGED`:
+
+```
+IMPORTED  patient                   0   skipped  1000   failed    0   …
+SKIPPED   2001
+```
+
+**Read `SKIPPED`, not the zeros.** Five zeros are also what an empty batch
+prints; `SKIPPED 2001` says every row was found, recognised as already imported,
+and left alone.
+
+**A row that failed AT IMPORT is retried on that re-run** (ruled 2026-08-26) and
+counted on a `RETRIED n row(s)` line. A row that failed VALIDATION is not: it
+stays excluded until it is re-staged. That property is what the rehearsal's
+idempotency step exists to prove, and it is why that step is not optional.
 
 **Only if the database itself must be rewound**: restore the §2.2 backup. That
 loses everything the clinic entered after it, so it is an owner decision, not a

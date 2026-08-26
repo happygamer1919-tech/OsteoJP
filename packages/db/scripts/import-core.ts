@@ -284,7 +284,7 @@ export type Pipeline = {
   importRecords(
     entityType: string,
     batch: SourceRecord[],
-  ): Promise<{ imported: number; failed: number; retried: number }>;
+  ): Promise<{ imported: number; skipped: number; failed: number; retried: number }>;
   reconcile(): Promise<unknown>;
   /** Every patient_number already in use for this tenant. Read ONCE per run. */
   existingPatientNumbers(): Promise<number[]>;
@@ -404,15 +404,29 @@ export function livePipeline(
           resolvers,
         ),
       );
-      // INSERTED + UPDATED, NOT INSERTED ALONE. `importOne` returns "skipped"
-      // for a re-run that changed nothing, so the second --apply reports
-      // imported=0 with skipped carrying the count - which is exactly the
-      // number the idempotency step is looking for.
+      // INSERTED + UPDATED, NOT INSERTED ALONE.
+      //
+      // CORRECTED 2026-08-26. This comment used to claim `importOne` returns
+      // "skipped" for a re-run that changed nothing. It did not: every entity
+      // except clinical_record took an UPDATE path on `ledger.importedEntityId`
+      // and returned "updated", so a second `--apply` re-wrote every target row
+      // and this sum reported the full count where §7.3 promises 0.
+      //
+      // WHAT IS TRUE NOW: `importRecords` skips any ledger row whose status is
+      // `imported`, for every entity, writing nothing. The UPDATE path is
+      // reached only by a `validated` row that already carries an
+      // importedEntityId. So on a clean re-run this sum is 0 and `skipped`
+      // carries the count, which is the number the idempotency step reads.
       //
       // `failed` AND `retried` ARE CARRIED OUT TOO. They were dropped here, so
       // the runner's exit expression could not see the import phase at all and
       // 162 failures exited 0.
-      return { imported: summary.inserted + summary.updated, failed: summary.failed, retried: summary.retried };
+      return {
+        imported: summary.inserted + summary.updated,
+        skipped: summary.skipped,
+        failed: summary.failed,
+        retried: summary.retried,
+      };
     },
 
     async reconcile() {

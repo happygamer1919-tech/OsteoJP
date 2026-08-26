@@ -156,6 +156,24 @@ export async function importRecords(
         continue;
       }
 
+      // ALREADY IMPORTED: SKIP, FOR EVERY ENTITY. ZERO WRITES.
+      //
+      // Ruled 2026-08-26. This used to fall through to `importOne`, where every
+      // entity except clinical_record took an UPDATE path on
+      // `ledger.importedEntityId` and returned "updated" - so the second
+      // `--apply` re-wrote all 2001 target rows and reported them as imported.
+      // REHEARSAL.md §7.3 and PROD-RUN.md §6 both describe that run as writing
+      // nothing, and `import-core.ts` sums inserted + updated, so the
+      // idempotency proof would have shown the full count where it promised 0.
+      //
+      // A no-op is the correct answer here: the ledger already holds the target
+      // row's uuid, nothing about the delivery has changed, and re-writing a
+      // migrated clinical row would falsify history rather than confirm it.
+      if (st.status === "imported") {
+        summary.skipped += 1;
+        continue;
+      }
+
       if (st.status === "pending") {
         const detail: MigrationErrorDetail = {
           code: "invalid_transition",
@@ -166,7 +184,10 @@ export async function importRecords(
         continue;
       }
 
-      // st.status is 'validated', 'failed' (retry path) or 'imported' (re-run).
+      // st.status is 'validated' or 'failed' (retry path). An 'imported' row
+      // was skipped above, so the per-entity UPDATE path below is reached ONLY
+      // for a `validated` row that already carries an importedEntityId - the
+      // shape a re-staged, re-validated row takes after an earlier import.
       try {
         const action = await tx.transaction(async (sp) => {
           return importOne(sp, tenantId, sourceSystem, rec, resolvers, {

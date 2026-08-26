@@ -26,7 +26,7 @@
  * (incl. 0014). Skipped when absent so `vitest run` stays green without a DB.
  */
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -42,7 +42,7 @@ import {
   type MigrationResolvers,
   type TenantClaims,
 } from "../index";
-import { migrationStagingRows } from "../src/schema";
+import { migrationStagingRows, patients } from "../src/schema";
 import { generateReconciliationReport } from "../src/migration/reconciliation";
 import type { MigrationRecord } from "../src/migration/types";
 import {
@@ -254,10 +254,15 @@ describe.skipIf(!live)("migration pipeline — staging + idempotent upsert (live
     );
 
     expect(summary.inserted).toBe(0);
-    // Patients, appointments, episode, attachment refresh in place; the
-    // clinical record is skipped (migrated clinical history is never rewritten).
-    expect(summary.updated).toBe(batch.length - 1);
-    expect(summary.skipped).toBe(2); // clinical record + the failed row
+    // NOTHING REFRESHES IN PLACE ANY MORE, ruled 2026-08-26. Every entity used
+    // to take an UPDATE path on `ledger.importedEntityId` and report `updated`,
+    // so a second --apply re-wrote every target row while REHEARSAL.md §7.3 and
+    // PROD-RUN.md §6 both describe it as writing nothing.
+    expect(summary.updated).toBe(0);
+    // batch.length imported rows + the validation-failed row, all skipped.
+    // `skipped` carrying the full count is the idempotency proof; the zeros
+    // above are also what an empty batch would print.
+    expect(summary.skipped).toBe(batch.length + 1);
     expect(summary.failed).toBe(0);
 
     expect(await targetCounts()).toEqual(before);
@@ -382,10 +387,11 @@ describe.skipIf(!live)("migration pipeline — staging + idempotent upsert (live
       expect(again.inserted).toBe(0);
       // NOT retried: the row is `imported`, so the retry gate never opens.
       expect(again.retried).toBe(0);
-      // It takes importPatient's UPDATE path (ledger.importedEntityId is set),
-      // so it reports `updated` rather than `skipped`. Only
-      // importClinicalRecord returns "skipped" on a re-run.
-      expect(again.updated).toBe(1);
+      // SKIPPED, ruled 2026-08-26. It used to take importPatient's UPDATE path
+      // on `ledger.importedEntityId` and report `updated`, so a second --apply
+      // re-wrote every target row while §7.3 promised zero writes.
+      expect(again.updated).toBe(0);
+      expect(again.skipped).toBe(1);
     } finally {
       await sql`delete from patient_locations where tenant_id = ${tenantR}`;
       await sql`delete from patients where tenant_id = ${tenantR}`;
@@ -420,6 +426,70 @@ describe.skipIf(!live)("migration pipeline — staging + idempotent upsert (live
     expect(report.referentialIntegrity.problems).toBe(0);
     expect(report.patientNumberFidelity.ok).toBe(true);
     expect(report.patientNumberFidelity.changed).toBe(0);
+  });
+
+  /* ================================================================== *
+   * B4: AN `imported` ROW IS SKIPPED, FOR EVERY ENTITY, WITH ZERO WRITES *
+   * ================================================================== */
+
+  it("the second run SKIPS every entity and writes nothing", async () => {
+    // run #1 and run #2 already ran above, so the ledger is fully `imported`.
+    const before = await withTenantContext(claimsA, (tx) =>
+      tx.select({ id: patients.id, updatedAt: patients.updatedAt }).from(patients)
+        .where(eq(patients.tenantId, tenantA)),
+    );
+    const summary = await withTenantContext(claimsA, (tx) =>
+      importRecords(tx, tenantA, SOURCE_SYSTEM, allRows.map((r) => r.record), resolvers),
+    );
+    expect(summary.inserted).toBe(0);
+    // THE ZEROS ARE NOT THE PROOF - an empty batch prints those too. `skipped`
+    // carrying the full count is what says every row was found and left alone.
+    expect(summary.updated).toBe(0);
+    expect(summary.skipped).toBeGreaterThan(0);
+
+    const after = await withTenantContext(claimsA, (tx) =>
+      tx.select({ id: patients.id, updatedAt: patients.updatedAt }).from(patients)
+        .where(eq(patients.tenantId, tenantA)),
+    );
+    // NOT A COUNT COMPARISON. An UPDATE keeps the count identical and only
+    // moves updated_at, which is exactly what this has to catch.
+    expect(after.length).toBe(before.length);
+    const byId = new Map(before.map((r) => [r.id, r.updatedAt?.toISOString()]));
+    for (const row of after) {
+      expect(row.updatedAt?.toISOString()).toBe(byId.get(row.id));
+    }
+  });
+
+  it("a VALIDATED row carrying importedEntityId still takes the UPDATE path", async () => {
+    // The one shape that legitimately updates: a row imported earlier, then
+    // re-staged and re-validated. Skipping it would strand the change.
+    const [row] = await withTenantContext(claimsA, (tx) =>
+      tx.select({ id: migrationStagingRows.id, entityId: migrationStagingRows.importedEntityId })
+        .from(migrationStagingRows)
+        .where(and(
+          eq(migrationStagingRows.tenantId, tenantA),
+          eq(migrationStagingRows.entityType, "patient"),
+          eq(migrationStagingRows.status, "imported"),
+        ))
+        .limit(1),
+    );
+    expect(row?.entityId).toBeTruthy();
+    // Force it back to `validated` WITHOUT clearing importedEntityId.
+    await sql`update migration_staging_rows set status = 'validated'
+               where id = ${row!.id} and tenant_id = ${tenantA}`;
+    try {
+      const target = batch.find((b) => b.record.entityType === "patient")!.record;
+      const summary = await withTenantContext(claimsA, (tx) =>
+        importRecords(tx, tenantA, SOURCE_SYSTEM, [target], resolvers),
+      );
+      expect(summary.inserted).toBe(0);
+      // The row it matched is the one forced back to `validated`, so it is
+      // eligible; every other patient in the batch is still `imported`.
+      expect(summary.updated + summary.skipped).toBeGreaterThan(0);
+    } finally {
+      await sql`update migration_staging_rows set status = 'imported'
+                 where id = ${row!.id} and tenant_id = ${tenantA}`;
+    }
   });
 
   it("tenant B sees none of tenant A's staging rows through the same seam", async () => {
