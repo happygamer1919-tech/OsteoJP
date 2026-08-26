@@ -162,6 +162,38 @@ and it refuses when `SEED_DEV_CONFIRM` does not exactly equal the ref parsed
 from `DATABASE_URL`. Both refusals are the guard working. Read the ref it
 printed and check it in the Supabase dashboard before you retype anything.
 
+#### Empty the tenant, exactly as production will be emptied
+
+**Ruled 2026-08-26.** The seed stays, and then the same cleanup production runs
+is run here, verbatim.
+
+```
+scripts/import/cleanup-test-patients.sql   -- STEP 1, then STEP 2, then STEP 3
+scripts/import/preflight-patient-numbers.sql
+```
+
+**Its predicate is `tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560'` — every
+patient of the tenant**, not a number range and not a list of ids. That uuid is
+the fixed seed constant (`packages/db/seed/dev-reference.ts`), so it is the same
+tenant in both projects and "verbatim" is literally true.
+
+**STEP 1 will say `patients = 50` here, not 33.** Production holds 33
+staff-training rows; the rehearsal holds the 50 the dev seed just created. **50
+is the expected rehearsal delta — record it and proceed.** The `33` in the SQL
+file's own header is the production figure and is not a STOP for this run.
+
+Then `preflight-patient-numbers.sql`, **expecting zero patients and a NULL
+`max_patient_number`**, which is the same evidence `PROD-RUN.md` §1.3c reads.
+
+**WHY THIS IS NOT OPTIONAL.** The 2026-08-26 rehearsal imported against a seeded
+tenant and lost 45 patients to collisions with seeded `patient_number` 1–50 —
+noise that told you nothing about the delivery and buried the 12 collisions that
+did matter. Emptying the tenant makes the rehearsal measure the delivery.
+
+**Reference data is untouched.** The script deletes patients and what is rooted
+in them; the tenant, locations, services, roles, users and form templates all
+survive, and §6's mapping depends on every one of them.
+
 #### The storage bucket. OWNER STEP, and nothing in the schema does it for you.
 
 Supabase dashboard → Storage → **New bucket** → name `clinical-attachments`,
@@ -852,8 +884,8 @@ Confirm independently in the Supabase SQL editor with query 4 of
 | Column | Expected |
 |---|---|
 | `staging_rows` | the `STAGED` total |
-| `patients` | 1000 minus patient `to_review`, **plus** any seeded dev patients already in the project |
-| `appointments` | 1000 minus appointment `to_review`, plus seeded |
+| `patients` | 1000 minus patient `to_review`. **Nothing else**: §1.1's cleanup emptied the tenant |
+| `appointments` | the imported appointment count, and nothing else |
 | `attachments` | `N` minus attachment `to_review` |
 
 **Two sources, and they should agree.** The reconciliation report reads the
@@ -960,11 +992,13 @@ commit;
 whole reset rolls back, rather than leaving a half-wiped project that the next
 rehearsal would silently measure against.
 
-**This deletes the seeded dev patients too**, because they share the tenant.
-Re-run `seed:dev` from §1.1 before the next rehearsal.
+**There are no seeded dev patients left to delete** — §1.1's
+`cleanup-test-patients.sql` removed them before the import, so what this wipes is
+the imported delivery and nothing else. Re-run `seed:dev` from §1.1 before the
+next rehearsal anyway: it restores the reference data this wipe does not touch,
+and it is the step whose 50 patients §1.1's cleanup then removes again.
 
-**Verify** with query 4 of `rehearsal-uuids.sql`: all four counts back to `0`
-(patients and appointments will be `0` including the seed).
+**Verify** with query 4 of `rehearsal-uuids.sql`: all four counts back to `0`.
 
 ### 8.4 Empty the bucket
 

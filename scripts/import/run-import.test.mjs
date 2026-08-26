@@ -20,6 +20,7 @@ import {
   CONFIRM_PHRASE,
   ENTITY_ORDER,
   EXIT,
+  orderForImport,
   runImport,
 } from "./run-import.mjs";
 
@@ -59,17 +60,44 @@ function fakePipeline(over = {}) {
       return over.validation ?? { validated: staged.length, failed: 0 };
     },
     async importRecords(entityType, batch) {
-      calls.push(["importRecords", entityType, batch.length]);
-      return { imported: batch.length };
+      calls.push(["importRecords", entityType, batch.length, batch.map((r) => r.sourceId)]);
+      return over.importResult?.(entityType, batch) ?? { imported: batch.length, failed: 0, retried: 0 };
     },
     async reconcile() {
       calls.push(["reconcile"]);
-      return over.report ?? { staged: {}, imported: {}, toReview: {}, referentialIntegrity: { ok: true } };
+      // THE REAL SHAPE. This double used to return {staged:{}, imported:{},
+      // toReview:{}, referentialIntegrity:{ok:true}}, which the producer never
+      // returned - so the printer was asserted against a contract nothing
+      // honoured and both sides stayed green while every RECONCILIATION line
+      // printed zeros in production.
+      return over.report ?? emptyReport();
     },
   };
 }
 
 const silent = () => {};
+
+const ZERO = () => ({ patient: 0, appointment: 0, clinical_episode: 0, clinical_record: 0, attachment: 0 });
+/** Mirrors generateReconciliationReport's return shape, all-clean. */
+function emptyReport(over = {}) {
+  return {
+    batchId: "00000000-0000-0000-0000-000000000001",
+    generatedAt: "2026-08-26T00:00:00.000Z",
+    totalRows: 0,
+    byEntityType: ZERO(),
+    byStatus: { pending: 0, validated: 0, imported: 0, failed: 0 },
+    failedRows: [],
+    importedCount: 0,
+    pendingCount: 0,
+    staged: ZERO(),
+    imported: ZERO(),
+    toReview: ZERO(),
+    failed: ZERO(),
+    referentialIntegrity: { ok: true, problems: 0, byEntityType: ZERO() },
+    patientNumberFidelity: { ok: true, checked: 0, changed: 0 },
+    ...over,
+  };
+}
 
 test("the dependency order is patient -> episode -> appointment -> record -> attachment", () => {
   assert.deepEqual(ENTITY_ORDER, [
@@ -243,7 +271,7 @@ test("a referential-integrity problem in the report fails the run", async () => 
     adapterResult: adapterResult(),
     config: CONFIG,
     pipeline: fakePipeline({
-      report: { staged: {}, imported: {}, toReview: {}, referentialIntegrity: { ok: false, problems: 3 } },
+      report: emptyReport({ referentialIntegrity: { ok: false, problems: 3, byEntityType: ZERO() } }),
     }),
     apply: true,
     confirm: CONFIRM_PHRASE,
@@ -429,4 +457,148 @@ test("the template's two clinics and two specialties match the vendor's answer",
   ]);
   assert.deepEqual(TEMPLATE._specialties.known.sort(), ["Fisioterapia", "Osteopatia"]);
   assert.equal(TEMPLATE.location.kind, "fixed");
+});
+
+/* ====================================================================== */
+/* B1: THE EXIT CODE READS THE IMPORT PHASE                                */
+/* ====================================================================== */
+//
+// The 2026-08-26 apply failed 162 of 2001 rows and exited 0. The expression was
+// `validation.failed === 0 && report.referentialIntegrity?.ok !== false`:
+// the first half is the VALIDATE phase, which knows nothing about the import,
+// and the second was permanently `undefined !== false`.
+
+const APPLY = { apply: true, confirm: CONFIRM_PHRASE };
+
+test("a batch with ONE failed ledger row exits 1 and says so on the LAST line", async () => {
+  const lines = [];
+  const r = await runImport({
+    adapterResult: adapterResult(),
+    config: CONFIG,
+    pipeline: fakePipeline({
+      report: emptyReport({
+        staged: { ...ZERO(), patient: 3 },
+        imported: { ...ZERO(), patient: 2 },
+        failed: { ...ZERO(), patient: 1 },
+      }),
+    }),
+    ...APPLY,
+    log: (l) => lines.push(l),
+  });
+  assert.equal(r.exit, 1);
+  assert.equal(lines.at(-1), "IMPORT FAILED - 1 ledger row(s) failed");
+});
+
+test("an imported count BELOW staged minus to_review exits 1, even with nothing marked failed", async () => {
+  const lines = [];
+  const r = await runImport({
+    adapterResult: adapterResult(),
+    config: CONFIG,
+    pipeline: fakePipeline({
+      report: emptyReport({
+        staged: { ...ZERO(), appointment: 10 },
+        imported: { ...ZERO(), appointment: 7 },
+      }),
+    }),
+    ...APPLY,
+    log: (l) => lines.push(l),
+  });
+  assert.equal(r.exit, 1);
+  assert.match(lines.join("\n"), /PROBLEM {2}imported below staged for: appointment/);
+});
+
+test("referential integrity NOT ok exits 1", async () => {
+  const r = await runImport({
+    adapterResult: adapterResult(), config: CONFIG,
+    pipeline: fakePipeline({ report: emptyReport({ referentialIntegrity: { ok: false, problems: 2, byEntityType: ZERO() } }) }),
+    ...APPLY, log: silent,
+  });
+  assert.equal(r.exit, 1);
+});
+
+test("a CHANGED vendor patient number exits 1 - the ruling says the number is authoritative", async () => {
+  const lines = [];
+  const r = await runImport({
+    adapterResult: adapterResult(), config: CONFIG,
+    pipeline: fakePipeline({ report: emptyReport({ patientNumberFidelity: { ok: false, checked: 882, changed: 4 } }) }),
+    ...APPLY, log: (l) => lines.push(l),
+  });
+  assert.equal(r.exit, 1);
+  assert.match(lines.join("\n"), /4 vendor patient number\(s\) changed/);
+});
+
+test("a fully clean batch exits 0 and prints no IMPORT FAILED line", async () => {
+  const lines = [];
+  const r = await runImport({
+    adapterResult: adapterResult(), config: CONFIG,
+    pipeline: fakePipeline({ report: emptyReport() }),
+    ...APPLY, log: (l) => lines.push(l),
+  });
+  assert.equal(r.exit, 0);
+  assert.ok(!lines.some((l) => l.startsWith("IMPORT FAILED")), lines.join("\n"));
+});
+
+test("the reconciliation block prints failed, integrity and fidelity", async () => {
+  const lines = [];
+  await runImport({
+    adapterResult: adapterResult(), config: CONFIG,
+    pipeline: fakePipeline({ report: emptyReport({ patientNumberFidelity: { ok: true, checked: 882, changed: 0 } }) }),
+    ...APPLY, log: (l) => lines.push(l),
+  });
+  const out = lines.join("\n");
+  assert.match(out, /staged=\d+ {2}imported=\d+ {2}to_review=\d+ {2}failed=\d+/);
+  assert.match(out, /referential integrity: OK/);
+  assert.match(out, /patient number fidelity: OK {3}\(882 vendor number\(s\) checked\)/);
+});
+
+/* ====================================================================== */
+/* B5: NUMBERED PATIENTS IMPORT FIRST                                      */
+/* ====================================================================== */
+
+test("orderForImport puts numbered patients before unnumbered ones, stably", () => {
+  const pat = (sourceId, patientNumber) => ({ entityType: "patient", sourceId, record: { data: { patientNumber } } });
+  const batch = [pat("a"), pat("b", 41), pat("c"), pat("d", 12), pat("e")];
+  assert.deepEqual(orderForImport("patient", batch).map((r) => r.sourceId), ["b", "d", "a", "c", "e"]);
+});
+
+test("orderForImport leaves every OTHER entity untouched", () => {
+  const batch = [{ entityType: "appointment", sourceId: "x" }, { entityType: "appointment", sourceId: "y" }];
+  assert.equal(orderForImport("appointment", batch), batch);
+});
+
+test("the runner hands the patient batch to the pipeline NUMBERED FIRST", async () => {
+  // The 12 self-collisions of 2026-08-26: an unnumbered row imported early took
+  // a low trigger-assigned number that a later vendor row legitimately owned.
+  const pat = (sourceId, patientNumber) => ({
+    entityType: "patient", sourceId,
+    record: { entityType: "patient", data: { sourceId, patientNumber } },
+  });
+  const pipeline = fakePipeline({ report: emptyReport() });
+  await runImport({
+    adapterResult: adapterResult({ records: [pat("p1"), pat("p2", 7), pat("p3"), pat("p4", 3)] }),
+    config: CONFIG,
+    pipeline,
+    ...APPLY, log: silent,
+  });
+  const call = pipeline.calls.find((c) => c[0] === "importRecords" && c[1] === "patient");
+  assert.deepEqual(call[3], ["p2", "p4", "p1", "p3"]);
+});
+
+/* ====================================================================== */
+/* B6: TO_NORMALIZE NEVER REACHES THE RESOLVERS                            */
+/* ====================================================================== */
+
+test("stripToNormalize removes the sentinel, and that stripped config is what must be resolved through", () => {
+  // The runner computed this and kept it as effectiveConfig, but import-core
+  // built the pipeline from the RAW config - so resolvers.serviceIdByKey held
+  // TO_NORMALIZE -> TO_NORMALIZE and importAppointment handed that string to
+  // Postgres as a uuid: 22P02, killing all 61 Diversos appointments while the
+  // run printed "imported WITHOUT a service" and exited 0.
+  const stripped = stripToNormalize({
+    ...CONFIG,
+    serviceKeyByType: { Osteopatia: "osteopatia", Diversos: "TO_NORMALIZE" },
+  });
+  assert.deepEqual(stripped.removed, ["Diversos"]);
+  assert.ok(!Object.values(stripped.config.serviceKeyByType).includes("TO_NORMALIZE"));
+  assert.ok(!("Diversos" in stripped.config.serviceKeyByType));
 });

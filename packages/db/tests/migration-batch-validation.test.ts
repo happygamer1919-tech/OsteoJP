@@ -14,6 +14,7 @@ import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { applyBatchValidation, detectBatchIssues } from "../src/migration/batch-validate";
+import { sanitizeImportError } from "../src/migration/upsert";
 import type { MigrationRecord } from "../src/migration/types";
 import {
   stageRows,
@@ -341,5 +342,59 @@ describe.skipIf(!live)("applyBatchValidation — failed row write (live DB)", ()
     // The appointment should be VALIDATED (patient is in ledger, not truly orphaned)
     expect(result.validated).toBe(1);
     expect(result.failed).toBe(0);
+  });
+});
+
+/* ====================================================================== *
+ * B2: sanitizeImportError unwraps the cause chain                         *
+ * ====================================================================== *
+ * Drizzle wraps every driver failure in a DrizzleQueryError carrying NEITHER
+ * `code` NOR `constraint_name`; the PostgresError holding both sits at
+ * `.cause`. Reading the outer object alone wrote the bare string "database
+ * error" for all 162 failures of the 2026-08-26 rehearsal. */
+
+describe("import error sanitisation", () => {
+  /** The exact two-layer shape postgres.js + drizzle produce. */
+  function wrapped() {
+    const driver = Object.assign(new Error("duplicate key value violates unique constraint"), {
+      code: "23505",
+      constraint_name: "patients_tenant_number_uq",
+      table_name: "patients",
+      detail: "Key (tenant_id, patient_number)=(abc, 10) already exists.",
+    });
+    Object.defineProperty(driver.constructor, "name", { value: "PostgresError" });
+    const outer = new Error("Failed query: insert into patients ...");
+    Object.defineProperty(outer.constructor, "name", { value: "DrizzleQueryError" });
+    (outer as Error & { cause?: unknown }).cause = driver;
+    return outer;
+  }
+
+  it("records the sqlstate and the constraint from the CAUSE, not the wrapper", () => {
+    const d = sanitizeImportError(wrapped());
+    expect(d.code).toBe("import_failed");
+    expect(d.message).toContain("sqlstate 23505");
+    expect(d.message).toContain("constraint patients_tenant_number_uq");
+  });
+
+  it("carries NO raw message and NO cell value", () => {
+    const d = sanitizeImportError(wrapped());
+    expect(d.message).not.toContain("duplicate key");
+    expect(d.message).not.toContain("Key (");
+    expect(d.message).not.toContain("10");
+  });
+
+  it("still reports something useful when there is no cause at all", () => {
+    const d = sanitizeImportError(new Error("boom"));
+    expect(d.message).toContain("database error");
+    expect(d.message).not.toContain("boom");
+  });
+
+  it("walks MORE than one level", () => {
+    const inner = Object.assign(new Error("x"), { code: "22P02" });
+    const mid = new Error("mid");
+    (mid as Error & { cause?: unknown }).cause = inner;
+    const outer = new Error("outer");
+    (outer as Error & { cause?: unknown }).cause = mid;
+    expect(sanitizeImportError(outer).message).toContain("sqlstate 22P02");
   });
 });

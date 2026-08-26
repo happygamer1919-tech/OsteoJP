@@ -253,7 +253,13 @@ test("a mixed batch: colliding reassigned, clean preserved, in one run", async (
     reassignConflictingPatientNumbers: true,
   });
   assert.equal(r.imported, 2);
-  assert.deepEqual(r.numberPairs, [[7, 8]]);
+  // 501, NOT 8, since B5 (2026-08-26): stripping the colliding number makes P1
+  // unnumbered, and `orderForImport` imports every NUMBERED row first - so by
+  // the time the trigger runs, MAX(patient_number) already includes 500. The
+  // old expectation of 8 was the trigger filling a LOW gap, which is exactly
+  // the behaviour that manufactured 12 self-collisions in the rehearsal: a low
+  // assigned number can be one a later vendor row legitimately owns.
+  assert.deepEqual(r.numberPairs, [[7, 501]]);
   assert.ok(p.inUse.has(500), "the non-colliding number is untouched");
 });
 
