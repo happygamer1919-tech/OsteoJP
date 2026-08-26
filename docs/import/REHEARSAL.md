@@ -1,6 +1,13 @@
 # Fisiozero import — the dress rehearsal
 
-**Card MIG-04. Ivan executes this; no terminal may run any step of it.**
+**Card MIG-04.** Executable by **Ivan or a terminal**, against the **non-prod**
+project only — CLAUDE.md, *Exemption, ruled 2026-08-26*: the August 2026 amostra
+is vendor-confirmed synthetic test data.
+
+**The exemption is about the DATA, not the TARGET.** It authorises reading the
+amostra and running against the rehearsal project. It authorises nothing against
+production, where standing rules 1 and 2 are unchanged and `PROD-RUN.md` stays
+owner-executed. The FINAL delivery is never exempt.
 
 This is the runbook that closes the two integration gaps `MIG-02` and `MIG-03`
 are held open by. Both cards are green on their own tests and both say, in their
@@ -22,11 +29,17 @@ is needed is in §9.
 
 ## 0. Read this before the first command
 
-### 0.1 The blind rule still applies, and it applies to you differently
+### 0.1 The blind rule, and what the 2026-08-26 exemption changed
 
-CLAUDE.md, *Patient data isolation (Fisiozero import)*: no Claude terminal
-opens, reads, cats, greps or samples a delivery file. **You are not a terminal.**
-You may open anything you like. What the rule constrains is what comes *back*:
+CLAUDE.md, *Patient data isolation (Fisiozero import)*, still says no terminal
+opens, reads, cats, greps or samples a delivery file — **and that rule is intact
+for the final delivery.**
+
+**What changed:** the August 2026 **amostra** is vendor-confirmed synthetic test
+data, so it is exempt. Whoever is running this — Ivan or a terminal — may open
+it. The output discipline below is kept anyway, because it costs nothing and
+because the same commands are run against the real delivery in `PROD-RUN.md`,
+where none of it is exempt:
 
 > Evidence returned to terminals is limited to column headers, row counts, file
 > counts, encodings, extension patterns, sha256 hashes, exit codes, and
