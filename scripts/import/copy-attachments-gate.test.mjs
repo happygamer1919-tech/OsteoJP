@@ -16,7 +16,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
-import { CONFIRM_PHRASE, gateOnTarget, readPhraseFromStdin, copyAttachments } from "./copy-attachments.mjs";
+import { BUCKET, bucketExists, CONFIRM_PHRASE, gateOnTarget, readPhraseFromStdin, copyAttachments } from "./copy-attachments.mjs";
 import { isProdSupabaseUrl, readProdRefs, refFromSupabaseUrl, SEED_GUARD_PATH } from "./prod-refs.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -234,4 +234,48 @@ test("a thrown blocklist error exits 2, and is not swallowed into a pass", () =>
   assert.match(block, /catch/);
   assert.match(block, /process\.exit\(2\)/);
   assert.ok(!/gate\s*=\s*\{\s*ok:\s*true/.test(block), "a catch must never default to ok");
+});
+
+/* ====================================================================== */
+/* THE BUCKET PRECHECK                                                     */
+/* ====================================================================== */
+
+test("an ABSENT bucket refuses, names the bucket and the ref, and attempts nothing", async () => {
+  const lines = [];
+  const storage = {
+    listBuckets: async () => ["some-other-bucket"],
+    exists: async () => assert.fail("exists() must not be called"),
+    upload: async () => assert.fail("upload() must not be called"),
+  };
+  const ok = await bucketExists({ storage, ref: FAKE, err: (m) => lines.push(m) });
+  assert.equal(ok, false);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0], `bucket ${BUCKET} does not exist in project ${FAKE}`);
+});
+
+test("a PRESENT bucket passes and says nothing", async () => {
+  const lines = [];
+  const storage = { listBuckets: async () => ["avatars", BUCKET] };
+  assert.equal(await bucketExists({ storage, ref: FAKE, err: (m) => lines.push(m) }), true);
+  assert.deepEqual(lines, []);
+});
+
+test("a bucket list that THROWS is a refusal, never a pass", async () => {
+  // An unknown state must not read as "fine": that is the shape that puts
+  // clinical documents nowhere while the run reports success.
+  const lines = [];
+  const storage = {
+    listBuckets: async () => { throw new Error("storage bucket list failed: 401"); },
+    upload: async () => assert.fail("upload() must not be called"),
+  };
+  assert.equal(await bucketExists({ storage, ref: FAKE, err: (m) => lines.push(m) }), false);
+  assert.match(lines[0], /bucket check failed/);
+});
+
+test("the refusal message carries no key and no object name", async () => {
+  const lines = [];
+  const storage = { listBuckets: async () => [] };
+  await bucketExists({ storage, ref: FAKE, err: (m) => lines.push(m) });
+  const out = lines.join("\n");
+  assert.ok(!/eyJ|Bearer|service_role/.test(out), out);
 });

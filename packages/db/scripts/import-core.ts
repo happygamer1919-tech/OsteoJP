@@ -238,9 +238,12 @@ export function attachmentMapping(result: FisiozeroAdapterResult): Record<string
   const mapping: Record<string, string> = {};
   for (const r of result.records) {
     if (r.entityType !== "attachment") continue;
-    const data = r.record.data as { fileName?: string; storagePath?: string };
-    if (typeof data.fileName === "string" && typeof data.storagePath === "string") {
-      mapping[data.fileName] = data.storagePath;
+    // `deliveryFileName`, NEVER `fileName`. The byte copy looks each key up
+    // among the archive's entry names, and `documentos.csv` sets `fileName` to
+    // the display name (`nome_original`), which is not in the archive.
+    const data = r.record.data as { deliveryFileName?: string; storagePath?: string };
+    if (typeof data.deliveryFileName === "string" && typeof data.storagePath === "string") {
+      mapping[data.deliveryFileName] = data.storagePath;
     }
   }
   return mapping;

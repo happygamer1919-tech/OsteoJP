@@ -257,13 +257,32 @@ test("the preview reports the day-one login count, as a COUNT", async () => {
   // does not resolve is imported and cannot get in, with nothing in any log.
   const lines = [];
   await runImport({
-    adapterResult: adapterResult({ checks: { unresolvablePhones: 137 } }),
+    adapterResult: adapterResult({
+      checks: { blankPhones: 505, unresolvablePhones: 7, noPortalLogin: 512 },
+    }),
     config: CONFIG,
     pipeline: fakePipeline(),
     log: (l) => lines.push(l),
   });
   const out = lines.join("\n");
-  assert.match(out, /DAY-ONE LOGIN\s+137 patient\(s\) have NO resolvable telephone/);
+  // THE TOTAL AND THE SPLIT. Reporting only the unparseable count understated
+  // the August 2026 amostra by 505: a blank telefone derives phone_e164 NULL
+  // exactly as an unparseable one does, and locks the patient out identically.
+  assert.match(out, /DAY-ONE LOGIN\s+512 patient\(s\) will have no portal login: 505 blank telefone, 7 unparseable/);
+});
+
+test("the day-one count is the TOTAL, not the unparseable half", async () => {
+  const lines = [];
+  await runImport({
+    adapterResult: adapterResult({
+      checks: { blankPhones: 505, unresolvablePhones: 7, noPortalLogin: 512 },
+    }),
+    config: CONFIG,
+    pipeline: fakePipeline(),
+    log: (l) => lines.push(l),
+  });
+  const out = lines.join("\n");
+  assert.ok(!/DAY-ONE LOGIN\s+7 /.test(out), out);
 });
 
 test("it says so affirmatively when every patient has a number", async () => {
@@ -271,7 +290,7 @@ test("it says so affirmatively when every patient has a number", async () => {
   // positive statement are different facts.
   const lines = [];
   await runImport({
-    adapterResult: adapterResult({ checks: { unresolvablePhones: 0 } }),
+    adapterResult: adapterResult({ checks: { blankPhones: 0, unresolvablePhones: 0, noPortalLogin: 0 } }),
     config: CONFIG,
     pipeline: fakePipeline(),
     log: (l) => lines.push(l),

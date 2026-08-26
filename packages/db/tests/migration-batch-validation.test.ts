@@ -154,6 +154,7 @@ describe("detectBatchIssues — pure batch validation", () => {
         data: {
           sourceId: "att-bad-001",
           storagePath: "",
+          deliveryFileName: "rx.pdf",
           fileName: "rx.pdf",
         },
       },

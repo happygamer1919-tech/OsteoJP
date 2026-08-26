@@ -185,6 +185,47 @@ test("zip correspondence passes when every reference and every entry line up", (
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("a COMMA-JOINED FICHEIRO cell counts as TWO references, not one phantom", () => {
+  // Taken whole, "a.pdf,b.pdf" matches nothing in the archive, so a correct
+  // delivery reported both a missing file and an orphan and neither message
+  // named the cause.
+  const dir = fixture({
+    pacientes: `${PAC_H}\nFZ1,${TOK(1)},4001,1980-05-04,F,${TOK(2)},${TOK(3)},${TOK(4)},"${TOK(5)}, 12",1000-001,${TOK(6)},Linda-a-Velha,,,${TOK(7)},2026-08-01 10:00:00,"pA.pdf,pB.pdf"\n`,
+  });
+  try {
+    const zip = zipWith(dir, ["f1.pdf", "pA.pdf", "pB.pdf"]);
+    const r = run(dir, ["--zip", zip]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /zip: 3 file entr\(ies\), 3 referenced name\(s\)/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("FICHEIRO on pacientes.csv IS part of the correspondence check", () => {
+  // It was not: ficheiroRefs was built only from the id_paciente-REFERENCING
+  // files, so a patient-level document missing from the archive was silent.
+  const dir = fixture({
+    pacientes: `${PAC_H}\nFZ1,${TOK(1)},4001,1980-05-04,F,${TOK(2)},${TOK(3)},${TOK(4)},"${TOK(5)}, 12",1000-001,${TOK(6)},Linda-a-Velha,,,${TOK(7)},2026-08-01 10:00:00,onlyOnPaciente.pdf\n`,
+  });
+  try {
+    const zip = zipWith(dir, ["f1.pdf"]);
+    const r = run(dir, ["--zip", zip]);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /1 referenced file\(s\) are NOT in the archive/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a SEMICOLON-joined FICHEIRO cell splits the same way", () => {
+  const dir = fixture({
+    pacientes: `${PAC_H}\nFZ1,${TOK(1)},4001,1980-05-04,F,${TOK(2)},${TOK(3)},${TOK(4)},"${TOK(5)}, 12",1000-001,${TOK(6)},Linda-a-Velha,,,${TOK(7)},2026-08-01 10:00:00,"sA.pdf; sB.pdf"\n`,
+  });
+  try {
+    const zip = zipWith(dir, ["f1.pdf", "sA.pdf", "sB.pdf"]);
+    const r = run(dir, ["--zip", zip]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /zip: 3 file entr\(ies\), 3 referenced name\(s\)/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("a REFERENCED file absent from the archive is REJECTED - a document is gone", () => {
   const dir = fixture();
   try {

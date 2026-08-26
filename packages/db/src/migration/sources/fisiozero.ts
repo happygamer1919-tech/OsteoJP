@@ -479,8 +479,24 @@ export type FisiozeroAdapterResult = {
      * changes what a decade of rows mean stays auditable on the run's face.
      */
     pastMarcadaCancelled: number;
-    /** Patients whose telefone resolved to NO valid PT number. COUNT ONLY. */
+    /**
+     * Patients whose `telefone` was PRESENT and did not parse. COUNT ONLY.
+     * This is NOT the day-one login figure - see `noPortalLogin`.
+     */
     unresolvablePhones: number;
+    /** Patients whose `telefone` cell was empty. COUNT ONLY. */
+    blankPhones: number;
+    /**
+     * THE DAY-ONE LOGIN FIGURE: every patient whose resolved phone is null,
+     * blank cell or unparseable alike. `blankPhones + unresolvablePhones`.
+     *
+     * IT EXISTS BECAUSE THE OLD COUNT WAS THE WRONG ONE. `unresolvablePhones`
+     * increments only when the cell is non-empty, so a patient with no number
+     * at all was never counted - yet migration 0062 derives `phone_e164` as
+     * NULL for both, and the portal authenticates by that column. On the August
+     * 2026 amostra the reported figure was 7 and the real one was 512.
+     */
+    noPortalLogin: number;
     /** Patients whose data_criacao did not convert; created_at falls back to the default. */
     unparseableRegistrationDates: number;
     /** Unmapped operational keys, by value and occurrence count. Safe to print. */
@@ -498,6 +514,29 @@ const nonEmpty = (v: string | undefined): v is string => typeof v === "string" &
 /** Destination object path. The BYTE COPY is a separate job and not this one. */
 export const attachmentStoragePath = (tenantId: string, fileName: string): string =>
   `${tenantId}/migration/fisiozero/${fileName}`;
+
+/**
+ * A `FICHEIRO` CELL IS MULTI-VALUED. Split it into archive filenames.
+ *
+ * The August 2026 amostra carries eight cells holding two filenames joined by a
+ * COMMA. Taken whole, each becomes one attachment whose object can never exist:
+ * `a.pdf,b.pdf` is not a file, and both real documents are lost behind it.
+ *
+ * BOTH SEPARATORS, because the vendor is not consistent. Every other
+ * multi-valued column in this delivery (`telefone`, `seguro_saude`,
+ * `numero_apolice`) uses a SEMICOLON, so a comma here is as likely to be a slip
+ * as a convention, and a delivery that switches costs nothing to accept.
+ *
+ * `documentos.ficheiro` is NOT split: that file is one row per document, with
+ * `id_documento`, `nome_original` and `tipo_mime` pinned to the single name, and
+ * splitting it would pair one mime type with two files.
+ */
+export function splitDeliveryFileNames(raw: string): string[] {
+  return raw
+    .split(/[,;]/)
+    .map((p) => p.trim())
+    .filter((p) => p !== "");
+}
 
 export function adaptFisiozeroDelivery(
   input: FisiozeroInput,
@@ -519,6 +558,7 @@ export function adaptFisiozeroDelivery(
   // LAUNCH-03 names this as the check that decides whether most of the patient
   // base can log in, and a phone is personal data.
   let unresolvablePhones = 0;
+  let blankPhones = 0;
   /** data_criacao values that did not convert. COUNT ONLY - the patient still imports. */
   let unparseableRegistrationDates = 0;
   const unmappedTerapeuta = new Map<string, number>();
@@ -588,7 +628,13 @@ export function adaptFisiozeroDelivery(
     // un-normalised number derives NULL in phone_e164 (migration 0062) and that
     // patient cannot log into the portal at all - LAUNCH-03's day-one check.
     const phones = normalizePhones(row["telefone"] ?? "");
-    if (phones.phone === null && nonEmpty(row["telefone"])) unresolvablePhones += 1;
+    // BOTH ARMS COUNT, and they are reported separately because they are
+    // different questions for the clinic: a blank cell is a number nobody ever
+    // recorded, an unparseable one is a number stored in a shape we do not read.
+    if (phones.phone === null) {
+      if (nonEmpty(row["telefone"])) unresolvablePhones += 1;
+      else blankPhones += 1;
+    }
 
     const insurance = zipInsurance(row["seguro_saude"] ?? "", row["numero_apolice"] ?? "");
     if (insurance === "mismatched") {
@@ -670,14 +716,24 @@ export function adaptFisiozeroDelivery(
       sourceId: synthId("attachment", key),
       patientSourceId,
       storagePath: attachmentStoragePath(opts.tenantId, key),
+      deliveryFileName: key,
       fileName: key,
       ...extra,
     });
   };
 
+  /** One attachment PER COMPONENT of a FICHEIRO cell. See splitDeliveryFileNames. */
+  const addAttachmentsFromCell = (
+    cell: string,
+    patientSourceId: string | null,
+    extra: Partial<MigrationAttachment> = {},
+  ) => {
+    for (const name of splitDeliveryFileNames(cell)) addAttachment(name, patientSourceId, extra);
+  };
+
   pacientes.rows.forEach((row) => {
     if (nonEmpty(row["FICHEIRO"]) && nonEmpty(row["id_paciente"])) {
-      addAttachment(row["FICHEIRO"]!, row["id_paciente"]!.trim());
+      addAttachmentsFromCell(row["FICHEIRO"]!, row["id_paciente"]!.trim());
     }
   });
 
@@ -840,7 +896,8 @@ export function adaptFisiozeroDelivery(
       push("clinical_record", sourceId, row, { entityType: "clinical_record", data: record });
       clinicalRecords += 1;
 
-      if (nonEmpty(row["FICHEIRO"])) addAttachment(row["FICHEIRO"]!, patientSourceId, { clinicalRecordSourceId: sourceId });
+      if (nonEmpty(row["FICHEIRO"]))
+        addAttachmentsFromCell(row["FICHEIRO"]!, patientSourceId, { clinicalRecordSourceId: sourceId });
     });
   }
 
@@ -871,6 +928,9 @@ export function adaptFisiozeroDelivery(
         sourceId: (row["id_documento"] ?? "").trim() || synthId("attachment", fileName),
         patientSourceId,
         storagePath: attachmentStoragePath(opts.tenantId, fileName),
+        // THE ARCHIVE NAME AND THE DISPLAY NAME ARE DIFFERENT COLUMNS, and only
+        // the first one is in the zip. See MigrationAttachment.deliveryFileName.
+        deliveryFileName: fileName,
         fileName: nonEmpty(row["nome_original"]) ? row["nome_original"]!.trim() : fileName,
         mimeType: nonEmpty(row["tipo_mime"]) ? row["tipo_mime"]!.trim() : null,
       });
@@ -912,6 +972,8 @@ export function adaptFisiozeroDelivery(
       ambiguousLocalTimes,
       pastMarcadaCancelled,
       unresolvablePhones,
+      blankPhones,
+      noPortalLogin: blankPhones + unresolvablePhones,
       unparseableRegistrationDates,
       unmappedTerapeuta: [...unmappedTerapeuta.entries()].sort((a, b) => b[1] - a[1]),
       unmappedTipoServico: [...unmappedTipoServico.entries()].sort((a, b) => b[1] - a[1]),

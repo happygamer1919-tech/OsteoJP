@@ -236,7 +236,17 @@ describe("the attachment mapping the byte-copy job consumes", () => {
         { entityType: "patient", record: { data: { sourceId: "P1" } } },
         {
           entityType: "attachment",
-          record: { data: { fileName: "scan-1.pdf", storagePath: "t/migration/fisiozero/scan-1.pdf" } },
+          record: {
+            data: {
+              deliveryFileName: "scan-1.pdf",
+              // THE DISPLAY NAME IS DELIBERATELY DIFFERENT. Keying off this
+              // field is the defect the delivery/display split exists to end:
+              // every documentos row was looked up in the archive under
+              // `nome_original`, which the archive does not contain.
+              fileName: "Relatorio Consulta.pdf",
+              storagePath: "t/migration/fisiozero/scan-1.pdf",
+            },
+          },
         },
       ]),
     );
@@ -249,8 +259,10 @@ describe("the attachment mapping the byte-copy job consumes", () => {
     // string "undefined" and upload bytes to a path nothing references.
     const m = attachmentMapping(
       adapterResult([
-        { entityType: "attachment", record: { data: { fileName: "a.pdf" } } },
+        { entityType: "attachment", record: { data: { deliveryFileName: "a.pdf" } } },
         { entityType: "attachment", record: { data: { storagePath: "t/b.pdf" } } },
+        // A display name alone is NOT a mapping key.
+        { entityType: "attachment", record: { data: { fileName: "c.pdf", storagePath: "t/c.pdf" } } },
       ]),
     );
     expect(m).toEqual({});

@@ -360,8 +360,19 @@ export function supabaseStorageClient(fetchImpl = globalThis.fetch) {
     throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in the environment");
   }
   const base = `${url.replace(/\/+$/, "")}/storage/v1/object`;
+  const bucketApi = `${url.replace(/\/+$/, "")}/storage/v1/bucket`;
   const auth = { authorization: `Bearer ${key}` };
   return {
+    /**
+     * Bucket NAMES only. Never an object listing - an object name is an
+     * attachment filename, which may carry a patient's name.
+     */
+    async listBuckets() {
+      const res = await fetchImpl(bucketApi, { method: "GET", headers: auth });
+      if (!res.ok) throw new Error(`storage bucket list failed: ${res.status}`);
+      const body = await res.json();
+      return Array.isArray(body) ? body.map((b) => b?.name).filter((n) => typeof n === "string") : [];
+    },
     async exists(storagePath) {
       const res = await fetchImpl(`${base}/info/${BUCKET}/${storagePath}`, { method: "GET", headers: auth });
       if (res.status === 404) return false;
@@ -465,6 +476,37 @@ export async function gateOnTarget({
   return { ok: true, prod: true, ref: verdict.ref };
 }
 
+/**
+ * THE BUCKET MUST EXIST BEFORE THE FIRST BYTE, and this is checked rather than
+ * discovered.
+ *
+ * Without it every upload fails one at a time, each recorded in the checkpoint
+ * as a bare `Error` with the HTTP status stripped - failures are sanitised
+ * because a filename may carry a patient's name - so the run reports N failures
+ * whose single shared cause appears nowhere in the output. A fresh rehearsal
+ * project has NO buckets at all: nothing in the schema or the seeds creates
+ * one, and REHEARSAL.md 1.1 had no step that did.
+ *
+ * A THROWN LIST IS A REFUSAL, NOT A PASS. If the bucket list cannot be read we
+ * do not know what is there, and an unknown state must never read as "fine".
+ *
+ * Returns true only when the bucket is present. Never uploads, never creates.
+ */
+export async function bucketExists({ storage, ref, bucket = BUCKET, err = console.error } = {}) {
+  let names;
+  try {
+    names = await storage.listBuckets();
+  } catch (e) {
+    err(`bucket check failed: ${safeErr(e)}`);
+    return false;
+  }
+  if (!names.includes(bucket)) {
+    err(`bucket ${bucket} does not exist in project ${ref ?? "(unresolved)"}`);
+    return false;
+  }
+  return true;
+}
+
 /* ====================================================================== */
 /* CLI                                                                     */
 /* ====================================================================== */
@@ -512,6 +554,9 @@ async function main() {
   if (!gate.ok) process.exit(2);
 
   const storage = supabaseStorageClient();
+
+  if (!(await bucketExists({ storage, ref: gate.ref }))) process.exit(1);
+
   const r = await copyAttachments({ source, mapping, checkpointFile, storage });
   source.close?.();
 

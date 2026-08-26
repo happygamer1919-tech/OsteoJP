@@ -82,6 +82,26 @@ data. Two places where it is deliberately not true, called out where they occur:
   and the script reports the file as unreadable. This is the single most likely
   way to lose ten minutes below.
 
+### 0.35 `pnpm` prints a bare `undefined` on failure. It is not a defect.
+
+`pnpm 11` prints a lone `undefined` line before its
+`ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL` block whenever a
+`pnpm --filter <pkg> exec ...` command exits non-zero:
+
+```
+NOTHING WAS STAGED. A partial mapping does not crash - it imports a
+fraction of the diary and reports success over the rest.
+undefined
+/Users/ivan/.../packages/db:
+[ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL] Command failed with exit code 1: ...
+```
+
+It comes from pnpm's own failure reporter, not from any script in this
+repository — the same command run without `--filter`, or through `npx tsx`
+directly, does not print it. **Expect it on every refusal path below and read
+past it.** It is noise on a correct refusal, and treating it as a finding costs
+a diagnosis.
+
 ### 0.4 Exit codes, ratified (CLAUDE.md, *Import execution rules*)
 
 | Code | Meaning |
@@ -142,6 +162,33 @@ and it refuses when `SEED_DEV_CONFIRM` does not exactly equal the ref parsed
 from `DATABASE_URL`. Both refusals are the guard working. Read the ref it
 printed and check it in the Supabase dashboard before you retype anything.
 
+#### The storage bucket. OWNER STEP, and nothing in the schema does it for you.
+
+Supabase dashboard → Storage → **New bucket** → name `clinical-attachments`,
+**private** (never public), matching the production bucket's settings.
+
+**NO MIGRATION CREATES IT.** The schema has no `storage.buckets` statement and
+the seeds have none either, so a project that has just had §1.1 run against it
+has **zero** buckets. §5.2 then fails every upload one at a time, each recorded
+in the checkpoint as a bare `Error` with the status stripped, and the single
+shared cause appears nowhere in the output.
+
+Verify from the terminal, with the rehearsal env sourced. **Bucket names only —
+never list objects, whose names are attachment filenames:**
+
+```
+curl -s "$SUPABASE_URL/storage/v1/bucket" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  | python3 -c 'import json,sys; print([b["name"] for b in json.load(sys.stdin)])'
+```
+
+**Expected:** a list containing `clinical-attachments`.
+
+**STOP IF IT IS ABSENT.** Since 2026-08-26 `copy-attachments.mjs` checks this
+itself before the first byte and exits `1` with
+`bucket clinical-attachments does not exist in project <ref>`, having attempted
+nothing. This step is here so you find it before §5 rather than during it.
+
 ### 1.2 The environment file
 
 Create `/Users/ivan/osteojp-secrets/rehearsal.env` — **a new file, beside
@@ -152,9 +199,17 @@ in any transcript, or in any message to a terminal):
 
 | Name | What it points at |
 |---|---|
-| `DATABASE_URL` | the rehearsal project, transaction pooler, port 6543 |
+| `DATABASE_URL` | the rehearsal project, **session pooler, port 5432** (`...pooler.supabase.com:5432`) |
 | `SUPABASE_URL` | `https://<rehearsal-ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | the rehearsal project's service role key |
+
+**THE SESSION POOLER, NOT THE TRANSACTION POOLER.** This table said 6543 until
+2026-08-26 and it was wrong for this file: `drizzle.config.ts` falls back to
+`DATABASE_URL` when `DATABASE_URL_DIRECT` is unset, and §1.1's `drizzle-kit
+migrate` needs session-level advisory locks that the transaction pooler on 6543
+does not support. Port 5432 serves both §1.1 and every step after it from one
+variable. (Production is different and correctly uses 6543: `PROD-RUN.md` §2.3
+applies no migrations.)
 
 **Do not put `DATABASE_URL_DEV` or `DATABASE_URL_DIRECT` in this file** unless
 they point at the same rehearsal project. `seed-guard.ts` *prefers*
@@ -342,10 +397,17 @@ no patient table** — see §0.1.
 **STOP IF query 0 returns more than one row.** The project holds more than one
 tenant and you must choose deliberately rather than take the first.
 
-**STOP IF query 4's four counts are not all `0`.** A previous rehearsal is still
-in the ledger and the idempotency proof in §7.3 would be measuring the wrong
-thing: a second `--apply` over a half-populated ledger looks identical to the
-clean no-op it is supposed to prove. Run §8's cleanup first.
+**STOP IF query 4's `staging_rows` and `attachments` are not both `0`.** A
+previous rehearsal is still in the ledger and the idempotency proof in §7.3
+would be measuring the wrong thing: a second `--apply` over a half-populated
+ledger looks identical to the clean no-op it is supposed to prove. Run §8's
+cleanup first.
+
+**`patients` and `appointments` are EXPECTED to be non-zero here**, and this
+STOP used to demand all four be `0`, which no correctly prepared project could
+satisfy: §1.1 seeds 50 patients and 271 appointments into this same tenant, §7.2
+expects the target counts to include them, and §8.3 says the cleanup removes
+them. Only the two migration-owned counts prove the ledger is clean.
 
 ### 4.2 Fill the file
 
@@ -458,8 +520,18 @@ the `FICHEIRO` column on `pacientes.csv` and on each `Episodios_*.csv`,
 deduplicated by filename with `documentos.csv` winning (it is the only source
 carrying the mime type and the original name). So:
 
-> `N` = 22 + (pacientes rows with a non-empty `FICHEIRO`) + (episodios rows with
-> a non-empty `FICHEIRO`) − (filenames appearing in more than one source)
+> `N` = (documentos rows) + (FILENAMES obtained by splitting every non-empty
+> `FICHEIRO` cell on comma and semicolon, across pacientes and every
+> `Episodios_*.csv`) − (filenames appearing in more than one source)
+
+**COUNT SPLIT NAMES, NOT CELLS.** A `FICHEIRO` cell is multi-valued: the August
+2026 amostra has eight cells holding two filenames joined by a comma. Counting
+cells inflated `N` from 22 to 30 and put eight phantom entries in the mapping,
+each naming an object that can never exist. Since 2026-08-26 the adapter splits
+them (`splitDeliveryFileNames`), and `check-delivery.mjs` splits identically, so
+the two agree by construction. `documentos.ficheiro` is **not** split: that file
+is one row per document, with `nome_original` and `tipo_mime` pinned to a single
+name.
 
 Take the fill-rate figures for `FICHEIRO` from §2's probe and check `N` is
 consistent with them. **STOP IF `N` is less than 22** — that would mean rows in

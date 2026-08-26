@@ -183,6 +183,19 @@ export type MigrationAttachment = {
   patientSourceId?: string | null;
   clinicalRecordSourceId?: string | null;
   storagePath: string;
+  /**
+   * THE NAME THE FILE HAS INSIDE THE DELIVERY ARCHIVE, and the key the byte
+   * copy looks it up by. This is `documentos.ficheiro`, or one component of a
+   * `FICHEIRO` cell - never `nome_original`.
+   *
+   * IT IS A SEPARATE FIELD FROM `fileName` BECAUSE THE TWO DIVERGE. Before this
+   * existed, `attachmentMapping()` keyed the byte copy off `fileName`, which
+   * `documentos.csv` overwrites with the display name - so every mapped
+   * document was looked up in the archive under a name the archive does not
+   * contain, and came back `not_in_delivery`.
+   */
+  deliveryFileName: string;
+  /** What a human sees. `nome_original` when the vendor supplied one. */
   fileName: string;
   mimeType?: string | null;
   sizeBytes?: number | null;

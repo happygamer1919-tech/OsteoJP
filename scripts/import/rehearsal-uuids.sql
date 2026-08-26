@@ -2,9 +2,18 @@
 -- REHEARSAL UUIDS. The values that fill mapping-config.local.json.
 -- ===========================================================================
 --
--- WHO RUNS THIS: Ivan, in the Supabase SQL editor, against the NON-PROD
--- rehearsal project. No terminal may run it (standing rule 1), which is why it
--- is a committed .sql file and not a script that opens a connection.
+-- WHO RUNS THIS: Ivan OR A TERMINAL, against the NON-PROD rehearsal project.
+--
+-- UPDATED 2026-08-26. This header used to say "No terminal may run it (standing
+-- rule 1)". CLAUDE.md, *Exemption, ruled 2026-08-26*, changed that for the
+-- rehearsal: the August 2026 amostra is vendor-confirmed synthetic test data and
+-- a terminal may execute the rehearsal against the NON-PROD project. REHEARSAL.md
+-- carries the same ruling.
+--
+-- THE EXEMPTION IS ABOUT THE DATA, NOT THE TARGET, and this file is about the
+-- TARGET. Against PRODUCTION it is still owner-only: standing rules 1 and 2 are
+-- unchanged, PROD-RUN.md stays owner-executed, and nothing here authorises a
+-- terminal to open a shell that holds production credentials.
 --
 -- READ ONLY. Five SELECTs. No INSERT, UPDATE, DELETE, no temp table, no
 -- function, no transaction left open.
