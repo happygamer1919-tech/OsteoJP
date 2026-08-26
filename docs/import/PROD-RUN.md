@@ -415,6 +415,24 @@ continues.
 comma and semicolon** (a cell is multi-valued) and then deduplicated by
 filename. `N` is whatever `--emit-attachment-mapping` reported.
 
+**STOP IF THE ARCHIVE'S LARGEST ENTRY IS ABOVE 50 MB.** Read it from the probe,
+which prints a size and never an entry name:
+
+```
+node "$REPO/scripts/import/probe-amostra.mjs" "$LV" | grep "largest entry"
+```
+
+Expected: `largest entry (uncompressed)  <bytes>`, and `52428800` is the line.
+
+The Supabase project carries a **project-wide 50 MB upload limit** (confirmed
+2026-08-26; the bucket itself sets no per-bucket limit). An
+attachment over it fails its own upload while every other file succeeds, so the
+summary shows a single `failure` among hundreds and the copy is silently
+partial. **This is an owner decision BEFORE the copy starts, not during it** —
+raise the project limit, or accept that those documents do not migrate and
+record which patients they belong to. Deciding it at 22:00 with a half-copied
+bucket is the situation this line exists to prevent.
+
 **STOP IF `conflicts` IS NON-ZERO.** On a bucket that has never held an import
 there is nothing to conflict with, so a conflict means the bucket is not what
 you think it is. **The job never overwrites** — an object of unknown origin may

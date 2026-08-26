@@ -17,6 +17,7 @@ import {
   copyAttachments,
   directorySource,
   readCheckpoint,
+  supabaseStorageClient,
   zipSource,
 } from "./copy-attachments.mjs";
 
@@ -213,4 +214,104 @@ test("the checkpoint survives a truncated final line", async () => {
   const { byPath } = readCheckpoint(cp);
   assert.equal(byPath.size, 1);
   assert.equal(byPath.get("t/a.pdf").line, 1);
+});
+
+/* ====================================================================== */
+/* exists(): SUPABASE ANSWERS "NOT FOUND" WITH AN HTTP 400                 */
+/* ====================================================================== */
+//
+// THE FAULT THESE PIN. `storage/v1/object/info` returns 400 for a missing
+// object and carries the real code in the body. Reading the HTTP status alone
+// made the absent case unreachable, so every upload against a fresh bucket
+// threw before a byte was sent. No mock could have caught it: a stub `exists()`
+// returns a boolean and never meets the wire. These stub FETCH instead, at the
+// exact shape the live API returned on 2026-08-26.
+
+/** Builds a client over a stubbed fetch, with the env the real one demands. */
+function clientOver(response) {
+  const prevUrl = process.env.SUPABASE_URL;
+  const prevKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.SUPABASE_URL = "https://abcdefghijklmnopqrst.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-key-never-logged";
+  try {
+    return supabaseStorageClient(async () => response);
+  } finally {
+    if (prevUrl === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = prevUrl;
+    if (prevKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = prevKey;
+  }
+}
+
+const res = (status, body) => ({
+  status,
+  ok: status >= 200 && status < 300,
+  json: async () => {
+    if (body === undefined) throw new SyntaxError("Unexpected end of JSON input");
+    return body;
+  },
+});
+
+/** VERBATIM from the live API, 2026-08-26, against an empty bucket. */
+const NOT_FOUND_400 = {
+  statusCode: "404",
+  error: "not_found",
+  message: "Object not found",
+  code: "NoSuchKey",
+};
+
+test("a 400 whose body says NoSuchKey resolves to ABSENT - the live shape", async () => {
+  const c = clientOver(res(400, NOT_FOUND_400));
+  assert.equal(await c.exists("t/migration/fisiozero/a.pdf"), false);
+});
+
+test("a 400 whose body says only error:not_found also resolves to ABSENT", async () => {
+  const c = clientOver(res(400, { error: "not_found", message: "Object not found" }));
+  assert.equal(await c.exists("t/a.pdf"), false);
+});
+
+test("a 400 with a DIFFERENT body still throws, carrying the status", async () => {
+  // Malformed path, wrong bucket, bad token: unknown state, never "absent".
+  // Reading it as absent would let a later run overwrite a live document.
+  const c = clientOver(res(400, { error: "InvalidRequest", message: "invalid bucket name" }));
+  await assert.rejects(() => c.exists("t/a.pdf"), /storage info failed: 400/);
+});
+
+test("a 400 with an UNPARSEABLE body throws rather than guessing absent", async () => {
+  const c = clientOver(res(400, undefined));
+  await assert.rejects(() => c.exists("t/a.pdf"), /storage info failed: 400/);
+});
+
+test("a plain 404 is still ABSENT", async () => {
+  const c = clientOver(res(404));
+  assert.equal(await c.exists("t/a.pdf"), false);
+});
+
+test("a 200 is PRESENT", async () => {
+  const c = clientOver(res(200, { name: "a.pdf" }));
+  assert.equal(await c.exists("t/a.pdf"), true);
+});
+
+test("a 500 throws and its body is NEVER read", async () => {
+  // The body is consumed only on the 400 branch. A 500 carrying a stray
+  // "not_found" must not be read as absent.
+  let bodyRead = false;
+  const c = clientOver({
+    status: 500,
+    ok: false,
+    json: async () => {
+      bodyRead = true;
+      return { error: "not_found", code: "NoSuchKey" };
+    },
+  });
+  await assert.rejects(() => c.exists("t/a.pdf"), /storage info failed: 500/);
+  assert.equal(bodyRead, false, "the body was read on a non-400 status");
+});
+
+test("a 403 throws, carrying the status and no credential", async () => {
+  const c = clientOver(res(403, { error: "Unauthorized" }));
+  await assert.rejects(
+    () => c.exists("t/a.pdf"),
+    (e) => /storage info failed: 403/.test(e.message) && !/test-key-never-logged/.test(e.message),
+  );
 });

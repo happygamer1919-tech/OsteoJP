@@ -373,9 +373,43 @@ export function supabaseStorageClient(fetchImpl = globalThis.fetch) {
       const body = await res.json();
       return Array.isArray(body) ? body.map((b) => b?.name).filter((n) => typeof n === "string") : [];
     },
+    /**
+     * Is the object already in the bucket?
+     *
+     * SUPABASE ANSWERS "NO" WITH AN HTTP 400. `storage/v1/object/info` returns
+     * `400` for a missing object and puts the real code in the JSON body:
+     *
+     *     {"statusCode":"404","error":"not_found","message":"Object not found","code":"NoSuchKey"}
+     *
+     * Reading the HTTP status alone made the absent case UNREACHABLE: the 400
+     * fell through to the throw, `copyAttachments` recorded a sanitised
+     * `failed / Error`, and every upload against a fresh bucket failed before a
+     * byte was sent. The job had never uploaded a file anywhere, which is what
+     * MIG-02 was open for and what no mock could show - a stub's `exists()`
+     * returns a boolean and never meets the wire.
+     *
+     * THE BODY IS READ ONLY ON THE 400 BRANCH. On any other non-ok status the
+     * body is not consumed and not inspected: an error body is attacker- and
+     * accident-shaped input, and a 500 with a stray `not_found` in it must not
+     * be read as "absent" and silently overwritten later.
+     *
+     * A 400 THAT IS NOT A NOT-FOUND STILL THROWS. Malformed path, bad bucket,
+     * bad token: unknown state, never "absent".
+     */
     async exists(storagePath) {
       const res = await fetchImpl(`${base}/info/${BUCKET}/${storagePath}`, { method: "GET", headers: auth });
       if (res.status === 404) return false;
+      if (res.status === 400) {
+        let body = null;
+        try {
+          body = await res.json();
+        } catch {
+          // An unparseable 400 is an unknown state, not an absent object.
+          throw new Error(`storage info failed: ${res.status}`);
+        }
+        if (body?.code === "NoSuchKey" || body?.error === "not_found") return false;
+        throw new Error(`storage info failed: ${res.status}`);
+      }
       if (!res.ok) throw new Error(`storage info failed: ${res.status}`);
       return true;
     },
