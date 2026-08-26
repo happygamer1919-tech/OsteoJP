@@ -276,7 +276,7 @@ export async function copyAttachments({
   const runOne = async ([name, storagePath]) => {
     try {
       const prior = byPath.get(storagePath);
-      const digest = await hashOf(source, name);
+      const { sha256: digest, bytes: localBytes } = await digestAndSize(source, name);
 
       if (prior && prior.status === "uploaded") {
         // THE CHECKPOINT IS NOT TRUSTED ON ITS OWN. It records what we believe
@@ -310,11 +310,12 @@ export async function copyAttachments({
         }
       }
 
-      const bytes = await storage.upload(storagePath, () => source.open(name));
+      await storage.upload(storagePath, () => source.open(name));
       lineNo += 1;
       counts.uploaded += 1;
-      counts.bytes += bytes ?? 0;
-      appendCheckpoint(checkpointFile, { storagePath, sha256: digest, bytes: bytes ?? 0, status: "uploaded" });
+      // THE LOCAL SIZE, not the response header. See digestAndSize.
+      counts.bytes += localBytes;
+      appendCheckpoint(checkpointFile, { storagePath, sha256: digest, bytes: localBytes, status: "uploaded" });
     } catch (e) {
       lineNo += 1;
       counts.failures += 1;
@@ -339,10 +340,24 @@ export async function copyAttachments({
   return { counts, conflicts, failures, elapsedMs };
 }
 
-async function hashOf(source, name) {
+/**
+ * Digest AND byte count, from the one pass the digest already costs.
+ *
+ * B4, 2026-08-26: `counts.bytes` used to come from the upload RESPONSE's
+ * `content-length`, which Supabase does not set to the size of what it just
+ * received - so the summary reported `bytes 0` after uploading 1413 bytes, and
+ * would have reported `0` after tens of gigabytes. The number that means
+ * something is what we SENT, measured locally, and this loop already reads
+ * every chunk to hash it.
+ */
+async function digestAndSize(source, name) {
   const h = createHash("sha256");
-  for await (const chunk of source.open(name)) h.update(chunk);
-  return h.digest("hex");
+  let bytes = 0;
+  for await (const chunk of source.open(name)) {
+    h.update(chunk);
+    bytes += chunk.length;
+  }
+  return { sha256: h.digest("hex"), bytes };
 }
 
 /* ====================================================================== */

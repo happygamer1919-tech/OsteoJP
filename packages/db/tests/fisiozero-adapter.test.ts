@@ -625,3 +625,27 @@ describe("normalisation at the migration boundary", () => {
     expect(patientsOf(r)[0]!.healthInsuranceNumbers).toEqual([{ insurer: "ADSE", number: "111" }]);
   });
 });
+
+/* ====================================================================== *
+ * B6: TO_NORMALIZE NEVER REACHES THE DATABASE                             *
+ * ====================================================================== */
+
+describe("the TO_NORMALIZE sentinel", () => {
+  it("leaves a Diversos appointment with NO serviceKey, so it persists with a null service", () => {
+    const marc =
+      "id_paciente,inicio,fim,terapeuta,clinica,tipo_servico,estado,observacoes\n" +
+      "FZ1,2026-07-15 09:00:00,2026-07-15 10:00:00,Dr Sintetico,Linda-a-Velha,Diversos,realizada,\n";
+    const r = adaptFisiozeroDelivery({ pacientes: pacientes(P1), marcacoes: marc }, {
+      ...opts,
+      serviceKeyByType: {},
+    });
+    const a = r.records.find((x) => x.entityType === "appointment")!.record.data as never as {
+      serviceKey: string | null | undefined;
+    };
+    // appointments.service_id is NULLABLE (verified against the live schema
+    // 2026-08-26), so an unmapped type imports WITHOUT a service rather than
+    // sinking the appointment - deliberately unlike terapeuta, which is NOT NULL.
+    expect(a.serviceKey == null).toBe(true);
+    expect(r.toReview.length).toBe(0);
+  });
+});

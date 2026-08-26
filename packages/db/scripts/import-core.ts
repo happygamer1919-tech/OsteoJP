@@ -281,7 +281,10 @@ export function readCheckpoint(file: string | null): Map<string, { status: strin
 export type Pipeline = {
   stageRows(records: SourceRecord[]): Promise<SourceRecord[]>;
   validate(staged: SourceRecord[]): Promise<{ validated: number; failed: number }>;
-  importRecords(entityType: string, batch: SourceRecord[]): Promise<{ imported: number }>;
+  importRecords(
+    entityType: string,
+    batch: SourceRecord[],
+  ): Promise<{ imported: number; failed: number; retried: number }>;
   reconcile(): Promise<unknown>;
   /** Every patient_number already in use for this tenant. Read ONCE per run. */
   existingPatientNumbers(): Promise<number[]>;
@@ -405,7 +408,11 @@ export function livePipeline(
       // for a re-run that changed nothing, so the second --apply reports
       // imported=0 with skipped carrying the count - which is exactly the
       // number the idempotency step is looking for.
-      return { imported: summary.inserted + summary.updated };
+      //
+      // `failed` AND `retried` ARE CARRIED OUT TOO. They were dropped here, so
+      // the runner's exit expression could not see the import phase at all and
+      // 162 failures exited 0.
+      return { imported: summary.inserted + summary.updated, failed: summary.failed, retried: summary.retried };
     },
 
     async reconcile() {
@@ -469,6 +476,7 @@ export type RunImportModule = {
   CONFIRM_PHRASE: string;
   EXIT: { OK: number; FAILED: number; BAD_INVOCATION: number };
   runImport(args: Record<string, unknown>): Promise<{ exit: number }>;
+  stripToNormalize(config: MappingConfig): { config: MappingConfig; removed: string[] };
 };
 
 export async function loadRunner(): Promise<RunImportModule> {
@@ -597,7 +605,16 @@ export async function runEntrypoint(gate: TargetGate): Promise<never> {
     console.error("--batch must be a uuid (migration_staging_rows.batch_id is uuid); got a non-uuid");
     process.exit(EXIT.BAD_INVOCATION);
   }
-  const pipeline = dryRun ? null : livePipeline(tenantId, batchId, buildResolvers(config), tenantId);
+  // B6: THE STRIPPED CONFIG, NEVER THE RAW ONE. `serviceKeyByType` ships
+  // `"Diversos": "TO_NORMALIZE"`, a sentinel meaning "not a service". The runner
+  // strips it for the coverage check and keeps the result as `effectiveConfig`,
+  // but the pipeline was built from `config`, so `resolvers.serviceIdByKey`
+  // still held `TO_NORMALIZE -> TO_NORMALIZE` and `importAppointment` handed
+  // that string to Postgres as a uuid: `22P02 invalid input syntax for type
+  // uuid: "TO_NORMALIZE"`, killing all 61 Diversos appointments while the run
+  // printed "imported WITHOUT a service" and exited 0.
+  const effective = runner.stripToNormalize(config).config;
+  const pipeline = dryRun ? null : livePipeline(tenantId, batchId, buildResolvers(effective), tenantId);
 
   const result = await runner.runImport({
     adapterResult,

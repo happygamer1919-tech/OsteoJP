@@ -129,7 +129,9 @@ export async function markFailed(
   stagingRowId: string,
   errorDetail: MigrationErrorDetail,
 ) {
-  await transition(tx, tenantId, stagingRowId, ["pending", "validated"], {
+  // `failed` IS IN THE EXPECTED SET so a retry that fails again re-records the
+  // reason rather than throwing an invalid-transition over the real cause.
+  await transition(tx, tenantId, stagingRowId, ["pending", "validated", "failed"], {
     status: "failed",
     errorDetail,
   });
@@ -144,11 +146,24 @@ export async function markImported(
   tenantId: string,
   stagingRowId: string,
   importedEntityId: string,
+  /**
+   * True when this row was `failed` before this run. RECORDED, because a retry
+   * that leaves no trace makes "imported" mean two different things: landed
+   * first time, and landed only after an earlier attempt failed. The second is
+   * a fact somebody reconciling a production import will want.
+   *
+   * It rides in `error_detail` because that is the only free-form column on the
+   * ledger, and adding one would be a migration this change does not carry. The
+   * `retried` code is NOT an error - `reconcile()` counts it as imported.
+   */
+  retried = false,
 ) {
-  await transition(tx, tenantId, stagingRowId, ["validated"], {
+  await transition(tx, tenantId, stagingRowId, ["validated", "failed"], {
     status: "imported",
     importedEntityId,
-    errorDetail: null,
+    errorDetail: retried
+      ? { code: "retried", message: "imported on a re-run after an earlier failure" }
+      : null,
   });
 }
 

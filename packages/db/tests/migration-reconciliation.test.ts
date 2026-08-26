@@ -53,6 +53,16 @@ const sampleReport = (): ReconciliationReport => ({
   ],
   importedCount: 4,
   pendingCount: 0,
+  staged: { patient: 2, appointment: 2, clinical_episode: 1, clinical_record: 0, attachment: 0 },
+  imported: { patient: 2, appointment: 1, clinical_episode: 1, clinical_record: 0, attachment: 0 },
+  toReview: { patient: 0, appointment: 0, clinical_episode: 0, clinical_record: 0, attachment: 0 },
+  failed: { patient: 0, appointment: 1, clinical_episode: 0, clinical_record: 0, attachment: 0 },
+  referentialIntegrity: {
+    ok: true,
+    problems: 0,
+    byEntityType: { patient: 0, appointment: 0, clinical_episode: 0, clinical_record: 0, attachment: 0 },
+  },
+  patientNumberFidelity: { ok: true, checked: 2, changed: 0 },
 });
 
 // ────────────────────────────────────────────────────────────────────────────

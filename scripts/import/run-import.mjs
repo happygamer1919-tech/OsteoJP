@@ -129,6 +129,36 @@ export function findPlaceholders(config) {
  * "TO_NORMALIZE" to the adapter as if it were a real key would turn an
  * undecided label into a mid-import crash.
  */
+/**
+ * B5, ruled 2026-08-26: WITHIN THE PATIENT GROUP, ROWS CARRYING A VENDOR
+ * `numero_paciente` IMPORT FIRST.
+ *
+ * The 2026-08-26 rehearsal lost 12 patients to a collision the import created
+ * itself. 0029's `assign_patient_number` fills a NULL with
+ * `COALESCE(MAX(patient_number), 0) + 1`, so an unnumbered row imported early
+ * takes a low number - and a LATER row whose vendor number happens to be that
+ * value is then rejected by `patients_tenant_number_uq`. The vendor set had no
+ * internal duplicates at all; every one of those collisions was manufactured by
+ * ordering.
+ *
+ * Numbered first means the trigger only ever sees a MAX that already includes
+ * every vendor number, so what it assigns cannot collide with one. STABLE
+ * within each half, so a re-run stages and imports in the identical order.
+ *
+ * OTHER ENTITIES ARE RETURNED UNTOUCHED. This is a patient-number property and
+ * nothing else depends on intra-group order.
+ */
+export function orderForImport(entityType, batch) {
+  if (entityType !== "patient") return batch;
+  const numbered = [];
+  const unnumbered = [];
+  for (const r of batch) {
+    if (typeof r.record?.data?.patientNumber === "number") numbered.push(r);
+    else unnumbered.push(r);
+  }
+  return [...numbered, ...unnumbered];
+}
+
 export function stripToNormalize(config) {
   const removed = [];
   const services = { ...(config?.serviceKeyByType ?? {}) };
@@ -396,17 +426,38 @@ export async function runImport({
 
   /* -- 6. import, in dependency order -- */
   let imported = 0;
+  let importFailed = 0;
+  let importRetried = 0;
   const perEntity = {};
+  const perEntityFailed = {};
+  const perEntitySecs = {};
   for (const entityType of ENTITY_ORDER) {
-    const batch = importRecords.filter((r) => r.entityType === entityType);
+    const batch = orderForImport(entityType, importRecords.filter((r) => r.entityType === entityType));
     if (batch.length === 0) {
       perEntity[entityType] = 0;
+      perEntityFailed[entityType] = 0;
       continue;
     }
+    const t0 = Date.now();
     const res = await pipeline.importRecords(entityType, batch);
+    const secs = (Date.now() - t0) / 1000;
     perEntity[entityType] = res.imported ?? 0;
+    perEntityFailed[entityType] = res.failed ?? 0;
+    perEntitySecs[entityType] = secs;
     imported += res.imported ?? 0;
-    log(`IMPORTED  ${entityType.padEnd(18)} ${res.imported ?? 0}`);
+    importFailed += res.failed ?? 0;
+    importRetried += res.retried ?? 0;
+    // B8: instrumentation only. The rate is the number that turns "the apply
+    // took a while" into a window you can schedule.
+    const rate = secs > 0 ? (batch.length / secs).toFixed(1) : "n/a";
+    log(
+      `IMPORTED  ${entityType.padEnd(18)} ${String(res.imported ?? 0).padStart(5)}` +
+        `   failed ${String(res.failed ?? 0).padStart(4)}` +
+        `   ${secs.toFixed(1)}s   ${rate} rows/s`,
+    );
+  }
+  if (importRetried > 0) {
+    log(`RETRIED   ${importRetried} row(s) that had failed on an earlier run`);
   }
 
   /* -- 6b. what the trigger actually assigned -- */
@@ -435,11 +486,16 @@ export async function runImport({
   log("RECONCILIATION");
   for (const e of ENTITY_ORDER) {
     log(
-      `  ${e.padEnd(18)} staged=${report.staged?.[e] ?? 0}  imported=${report.imported?.[e] ?? 0}  to_review=${report.toReview?.[e] ?? 0}`,
+      `  ${e.padEnd(18)} staged=${report.staged?.[e] ?? 0}  imported=${report.imported?.[e] ?? 0}` +
+        `  to_review=${report.toReview?.[e] ?? 0}  failed=${report.failed?.[e] ?? 0}`,
     );
   }
   if (report.referentialIntegrity) {
     log(`  referential integrity: ${report.referentialIntegrity.ok ? "OK" : `${report.referentialIntegrity.problems} problem(s)`}`);
+  }
+  if (report.patientNumberFidelity) {
+    const f = report.patientNumberFidelity;
+    log(`  patient number fidelity: ${f.ok ? "OK" : `${f.changed} changed`}   (${f.checked} vendor number(s) checked)`);
   }
   if (numberPairs.length > 0) {
     log("");
@@ -450,8 +506,38 @@ export async function runImport({
     }
   }
 
-  const clean = validation.failed === 0 && report.referentialIntegrity?.ok !== false;
-  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, counts, reasons, coverage, effectiveConfig, validation, report, numberPairs };
+  /* -- 8. THE EXIT CODE, ruled 2026-08-26 -- *
+   * It used to be `validation.failed === 0 && report.referentialIntegrity?.ok
+   * !== false`, and both halves were blind. `validation.failed` is the VALIDATE
+   * phase, which knows nothing about what the import did; `referentialIntegrity`
+   * was never produced, so `undefined !== false` was permanently true. A run
+   * that failed 162 of 2001 rows exited 0 and read as a clean import.
+   *
+   * FOUR INDEPENDENT CONDITIONS, all of which must hold. */
+  const ledgerFailed = ENTITY_ORDER.reduce((n, e) => n + (report.failed?.[e] ?? 0), 0);
+  const shortfall = ENTITY_ORDER.filter(
+    (e) => (report.imported?.[e] ?? 0) < (report.staged?.[e] ?? 0) - (report.toReview?.[e] ?? 0),
+  );
+  const problems = [];
+  if (validation.failed > 0) problems.push(`${validation.failed} row(s) failed validation`);
+  if (importFailed > 0 || ledgerFailed > 0)
+    problems.push(`${Math.max(importFailed, ledgerFailed)} ledger row(s) failed`);
+  if (shortfall.length > 0)
+    problems.push(`imported below staged for: ${shortfall.join(", ")}`);
+  if (report.referentialIntegrity && !report.referentialIntegrity.ok)
+    problems.push(`referential integrity: ${report.referentialIntegrity.problems} problem(s)`);
+  if (report.patientNumberFidelity && !report.patientNumberFidelity.ok)
+    problems.push(`${report.patientNumberFidelity.changed} vendor patient number(s) changed`);
+
+  const failedCount = Math.max(importFailed, ledgerFailed, validation.failed);
+  if (problems.length > 0) {
+    log("");
+    for (const p of problems) log(`  PROBLEM  ${p}`);
+    // THE LAST LINE, so a transcript that is scrolled to the bottom says it.
+    log(`IMPORT FAILED - ${failedCount} ledger row(s) failed`);
+  }
+  const clean = problems.length === 0;
+  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, perEntityFailed, perEntitySecs, importFailed, importRetried, counts, reasons, coverage, effectiveConfig, validation, report, numberPairs };
 }
 
 /* ====================================================================== */

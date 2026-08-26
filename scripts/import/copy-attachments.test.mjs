@@ -315,3 +315,36 @@ test("a 403 throws, carrying the status and no credential", async () => {
     (e) => /storage info failed: 403/.test(e.message) && !/test-key-never-logged/.test(e.message),
   );
 });
+
+/* ====================================================================== */
+/* B4: THE BYTE TALLY IS WHAT WE SENT, NOT A RESPONSE HEADER               */
+/* ====================================================================== */
+
+test("bytes counts the LOCAL entry size, even when the response sets no content-length", async () => {
+  // Supabase does not set content-length on an upload response, so the old
+  // tally read 0 after uploading 1413 bytes and would read 0 after 40 GB.
+  const cp = path.join(tmp(), "cp.jsonl");
+  const src = directorySource(delivery({ [NAME(1)]: "0123456789", [NAME(2)]: "abc" }));
+  const storage = {
+    exists: async () => false,
+    upload: async (_p, open) => {
+      for await (const _c of open()) void _c;   // drain, return nothing
+      return undefined;                          // no content-length
+    },
+  };
+  const r = await copyAttachments({
+    source: src, mapping: { [NAME(1)]: "t/a.pdf", [NAME(2)]: "t/b.pdf" }, checkpointFile: cp, storage,
+  });
+  assert.equal(r.counts.uploaded, 2);
+  assert.equal(r.counts.bytes, 13);
+});
+
+test("the checkpoint records the local size per entry, not zero", async () => {
+  const cp = path.join(tmp(), "cp.jsonl");
+  const src = directorySource(delivery({ [NAME(1)]: "seven!!" }));
+  const storage = { exists: async () => false, upload: async () => undefined };
+  await copyAttachments({ source: directorySource(delivery({ [NAME(1)]: "seven!!" })), mapping: { [NAME(1)]: "t/a.pdf" }, checkpointFile: cp, storage });
+  const line = JSON.parse(fs.readFileSync(cp, "utf8").trim());
+  assert.equal(line.bytes, 7);
+  assert.equal(line.status, "uploaded");
+});

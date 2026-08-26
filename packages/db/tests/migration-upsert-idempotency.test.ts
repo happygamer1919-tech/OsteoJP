@@ -26,6 +26,7 @@
  * (incl. 0014). Skipped when absent so `vitest run` stays green without a DB.
  */
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -42,6 +43,8 @@ import {
   type TenantClaims,
 } from "../index";
 import { migrationStagingRows } from "../src/schema";
+import { generateReconciliationReport } from "../src/migration/reconciliation";
+import type { MigrationRecord } from "../src/migration/types";
 import {
   invalidPatientRow,
   LOCATION_KEYS,
@@ -314,6 +317,109 @@ describe.skipIf(!live)("migration pipeline — staging + idempotent upsert (live
         markImported(tx, tenantA, pendingRow!.id, randomUUID()),
       ),
     ).rejects.toThrow(MigrationStagingError);
+  });
+
+  /* ================================================================== *
+   * B7: A FAILED LEDGER ROW IS RETRIED ON THE NEXT RUN                  *
+   * ================================================================== *
+   * It used to be skipped outright, so a row that failed once was skipped by
+   * EVERY later run. PROD-RUN.md's "re-run the identical command" and the
+   * idempotency proof both quietly excluded it, permanently and silently. */
+
+  it("a FAILED row is retried on the next run, and records that it was retried", async () => {
+    const tenantR = randomUUID();
+    const batchR = randomUUID();
+    const locR = randomUUID();
+    const claimsR: TenantClaims = { tenant_id: tenantR, user_role: "owner" };
+    await sql`insert into tenants (id, name, slug) values (${tenantR}, 'Retry', ${`mig-retry-${tenantR}`})`;
+    await sql`insert into locations (id, tenant_id, name) values (${locR}, ${tenantR}, 'Linda-a-Velha')`;
+    try {
+      const rec: MigrationRecord = {
+        entityType: "patient",
+        data: {
+          sourceId: "retry-p1",
+          fullName: "Paciente Sintético",
+          locationKeys: ["linda-a-velha"],
+          primaryLocationKey: "linda-a-velha",
+        },
+      } as MigrationRecord;
+      const res: MigrationResolvers = { locationIdByKey: { "linda-a-velha": locR }, practitionerIdByKey: {} };
+
+      await withTenantContext(claimsR, async (tx) => {
+        await stageRows(tx, tenantR, batchR, [
+          { sourceSystem: SOURCE_SYSTEM, entityType: "patient", sourceId: "retry-p1", raw: {} },
+        ]);
+      });
+      // Drive it to `failed` the way a real import failure would.
+      const [row] = await withTenantContext(claimsR, (tx) =>
+        tx.select({ id: migrationStagingRows.id }).from(migrationStagingRows)
+          .where(eq(migrationStagingRows.tenantId, tenantR)),
+      );
+      await withTenantContext(claimsR, (tx) => markValidated(tx, tenantR, row!.id));
+      await withTenantContext(claimsR, (tx) =>
+        markFailed(tx, tenantR, row!.id, { code: "import_failed", message: "database error, sqlstate 23505" }),
+      );
+
+      const summary = await withTenantContext(claimsR, (tx) =>
+        importRecords(tx, tenantR, SOURCE_SYSTEM, [rec], res),
+      );
+      expect(summary.inserted).toBe(1);
+      expect(summary.retried).toBe(1);
+      expect(summary.skipped).toBe(0);
+
+      const [after] = await withTenantContext(claimsR, (tx) =>
+        tx.select({ status: migrationStagingRows.status, detail: migrationStagingRows.errorDetail })
+          .from(migrationStagingRows).where(eq(migrationStagingRows.tenantId, tenantR)),
+      );
+      expect(after!.status).toBe("imported");
+      // The retry is RECORDED, not silent.
+      expect((after!.detail as { code?: string } | null)?.code).toBe("retried");
+
+      // ...and an already-imported row is NOT retried on the run after that.
+      const again = await withTenantContext(claimsR, (tx) =>
+        importRecords(tx, tenantR, SOURCE_SYSTEM, [rec], res),
+      );
+      expect(again.inserted).toBe(0);
+      // NOT retried: the row is `imported`, so the retry gate never opens.
+      expect(again.retried).toBe(0);
+      // It takes importPatient's UPDATE path (ledger.importedEntityId is set),
+      // so it reports `updated` rather than `skipped`. Only
+      // importClinicalRecord returns "skipped" on a re-run.
+      expect(again.updated).toBe(1);
+    } finally {
+      await sql`delete from patient_locations where tenant_id = ${tenantR}`;
+      await sql`delete from patients where tenant_id = ${tenantR}`;
+      await sql`delete from migration_staging_rows where tenant_id = ${tenantR}`;
+      await sql`delete from tenants where id = ${tenantR}`;
+    }
+  });
+
+  /* ================================================================== *
+   * B3: reconcile() RETURNS THE SHAPE THE RUNNER PRINTS                 *
+   * ================================================================== *
+   * The producer returned byEntityType/byStatus and the reader asked for
+   * staged/imported/toReview/failed/referentialIntegrity - so every
+   * RECONCILIATION line printed zeros over a populated ledger, and both sides
+   * were green because the test doubles asserted the reader's contract. */
+
+  it("the REAL reconcile returns per-entity counts, integrity and number fidelity", async () => {
+    const report = await withTenantContext(claimsA, (tx) =>
+      generateReconciliationReport(tx, tenantA, batchId),
+    );
+    for (const k of ["patient", "appointment", "clinical_episode", "clinical_record", "attachment"]) {
+      expect(typeof report.staged[k as keyof typeof report.staged]).toBe("number");
+      expect(typeof report.imported[k as keyof typeof report.imported]).toBe("number");
+      expect(typeof report.failed[k as keyof typeof report.failed]).toBe("number");
+    }
+    // The batch staged in this suite: staged is non-zero and matches the ledger.
+    expect(report.staged.patient).toBeGreaterThan(0);
+    expect(report.staged.patient).toBe(report.byEntityType.patient);
+    expect(report.imported.patient + report.failed.patient).toBeLessThanOrEqual(report.staged.patient);
+    // Computed by query, not assumed.
+    expect(report.referentialIntegrity.ok).toBe(true);
+    expect(report.referentialIntegrity.problems).toBe(0);
+    expect(report.patientNumberFidelity.ok).toBe(true);
+    expect(report.patientNumberFidelity.changed).toBe(0);
   });
 
   it("tenant B sees none of tenant A's staging rows through the same seam", async () => {

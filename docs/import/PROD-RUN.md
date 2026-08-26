@@ -204,13 +204,36 @@ again, now that the tenant has no patients.
 **Expected: zero patients, so `max_patient_number` comes back NULL** and there is
 no existing range for a vendor number to collide with.
 
-> **THAT RESULT IS WHAT AUTHORISES THE IMPORT TO RUN WITHOUT
-> `--reassign-conflicting-patient-numbers`.** With the table empty there is
-> nothing to collide with, so every vendor number imports verbatim and §3.3b is
-> skipped entirely.
+> **AN EMPTY TABLE REMOVES ONE COLLISION CLASS, NOT BOTH.** Corrected
+> 2026-08-26 after the rehearsal found the second one.
+>
+> - **Collisions with rows the clinic already had** — removed by §1.3b. With the
+>   table empty there is nothing pre-existing to collide with.
+> - **Collisions the import creates against ITSELF** — *not* removed by an empty
+>   table. `numero_paciente` is filled on some vendor rows and blank on others
+>   (882 of 1000 in the amostra). For a blank one the importer omits the column
+>   and 0029's `assign_patient_number` fills it with
+>   `COALESCE(MAX(patient_number), 0) + 1` — which can be a number a LATER
+>   vendor row legitimately owns. The rehearsal lost 12 patients exactly this
+>   way, from a vendor set with **zero** internal duplicates.
+>
+> **The second class is removed by ORDERING, and that is now in the runner.**
+> `orderForImport` imports every row carrying a vendor number before every row
+> without one, so by the time the trigger runs, `MAX(patient_number)` already
+> includes every vendor number and what it assigns cannot collide with one.
+>
+> **Together those two authorise the run WITHOUT
+> `--reassign-conflicting-patient-numbers`, and §3.3b stays a contingency.**
+> Use the flag only if §1.3's preflight shows an overlap that survives both.
 
 **STOP IF ANYTHING STILL COMES BACK.** The cleanup did not finish, and the flag
 decision in §3.3b has to be revisited before the window continues.
+
+**The reconciliation now checks the outcome rather than assuming it.** §3.4's
+block prints `patient number fidelity: OK (<n> vendor number(s) checked)`, which
+compares each imported patient's persisted `patient_number` against the
+`numero_paciente` in its own staged row. A single changed number fails the run
+and exits `1`.
 
 ### 1.3d The storage bucket precheck
 

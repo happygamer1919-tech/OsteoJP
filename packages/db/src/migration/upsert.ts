@@ -60,6 +60,8 @@ export type ImportSummary = {
   updated: number;
   skipped: number;
   failed: number;
+  /** Rows that had previously failed and were re-attempted this run. */
+  retried: number;
   /** Failures by (entityType, sourceId) — source ids are opaque, never PII. */
   failures: Array<{
     entityType: MigrationEntityType;
@@ -96,6 +98,7 @@ export async function importRecords(
     updated: 0,
     skipped: 0,
     failed: 0,
+    retried: 0,
     failures: [],
   };
 
@@ -133,8 +136,22 @@ export async function importRecords(
         continue;
       }
 
-      if (st.status === "failed") {
-        // Already failed validation; nothing to do until it is re-staged.
+      // A row that failed AT IMPORT is eligible again, ruled 2026-08-26. It
+      // used to be skipped outright, which meant a row that failed once was
+      // skipped by EVERY later run - so PROD-RUN.md's "re-run the identical
+      // command" and the idempotency proof both quietly excluded it,
+      // permanently, with nothing in any summary to say so. A retry is safe
+      // because the row never reached a target table: `markFailed` only fires
+      // when no write landed.
+      //
+      // A VALIDATION FAILURE IS NOT RETRIED, and the difference is the whole
+      // point. `validation_failed` means the record cannot be written as it
+      // stands; re-attempting it just fails again, and treating the two alike
+      // would import rows the validate phase deliberately rejected. Those stay
+      // excluded until they are RE-STAGED, which resets them to `pending`.
+      const failureCode = (st.errorDetail as { code?: string } | null)?.code;
+      const retrying = st.status === "failed" && failureCode !== "validation_failed";
+      if (st.status === "failed" && !retrying) {
         summary.skipped += 1;
         continue;
       }
@@ -149,20 +166,23 @@ export async function importRecords(
         continue;
       }
 
-      // st.status is 'validated' (insert path) or 'imported' (re-run path).
+      // st.status is 'validated', 'failed' (retry path) or 'imported' (re-run).
       try {
         const action = await tx.transaction(async (sp) => {
           return importOne(sp, tenantId, sourceSystem, rec, resolvers, {
             stagingRowId: st.id,
             importedEntityId: st.importedEntityId,
+            retrying,
           });
         });
         summary[action] += 1;
+        if (retrying) summary.retried += 1;
       } catch (err) {
         const detail = sanitizeImportError(err);
-        // markFailed only transitions pending|validated; on a re-run failure
-        // the row stays 'imported' and the failure is reported in the summary.
-        if (st.status === "validated") {
+        // markFailed transitions pending|validated|failed; on a re-run failure
+        // of an already-imported row it stays 'imported' and the failure is
+        // reported in the summary.
+        if (st.status === "validated" || st.status === "failed") {
           await markFailed(tx, tenantId, st.id, detail);
         }
         fail(detail);
@@ -177,7 +197,12 @@ export async function importRecords(
 /* Per-entity import                                                   */
 /* ================================================================== */
 
-type LedgerState = { stagingRowId: string; importedEntityId: string | null };
+type LedgerState = {
+  stagingRowId: string;
+  importedEntityId: string | null;
+  /** True when this row had previously failed. Recorded on the ledger row. */
+  retrying?: boolean;
+};
 
 async function importOne(
   tx: DbTx,
@@ -280,7 +305,7 @@ async function importPatient(
       .values({ tenantId, ...values })
       .returning({ id: patients.id });
     patientId = row!.id;
-    await markImported(tx, tenantId, ledger.stagingRowId, patientId);
+    await markImported(tx, tenantId, ledger.stagingRowId, patientId, ledger.retrying);
     action = "inserted";
   }
 
@@ -344,7 +369,7 @@ async function importAppointment(
     .insert(appointments)
     .values({ tenantId, ...values })
     .returning({ id: appointments.id });
-  await markImported(tx, tenantId, ledger.stagingRowId, row!.id);
+  await markImported(tx, tenantId, ledger.stagingRowId, row!.id, ledger.retrying);
   return "inserted";
 }
 
@@ -397,7 +422,7 @@ async function importEpisode(
     .insert(clinicalEpisodes)
     .values({ tenantId, ...values })
     .returning({ id: clinicalEpisodes.id });
-  await markImported(tx, tenantId, ledger.stagingRowId, row!.id);
+  await markImported(tx, tenantId, ledger.stagingRowId, row!.id, ledger.retrying);
   return "inserted";
 }
 
@@ -456,7 +481,7 @@ async function importClinicalRecord(
       ...(r.recordedAt ? { createdAt: new Date(r.recordedAt) } : {}),
     })
     .returning({ id: clinicalRecords.id });
-  await markImported(tx, tenantId, ledger.stagingRowId, row!.id);
+  await markImported(tx, tenantId, ledger.stagingRowId, row!.id, ledger.retrying);
   return "inserted";
 }
 
@@ -511,7 +536,7 @@ async function importAttachment(
     .insert(attachments)
     .values({ tenantId, ...values })
     .returning({ id: attachments.id });
-  await markImported(tx, tenantId, ledger.stagingRowId, row!.id);
+  await markImported(tx, tenantId, ledger.stagingRowId, row!.id, ledger.retrying);
   return "inserted";
 }
 
@@ -550,13 +575,18 @@ async function loadStagingRows(
   sourceSystem: string,
   entityType: MigrationEntityType,
   sourceIds: string[],
-): Promise<Map<string, { id: string; status: string; importedEntityId: string | null }>> {
+): Promise<
+  Map<string, { id: string; status: string; importedEntityId: string | null; errorDetail: unknown }>
+> {
   const rows = await tx
     .select({
       id: migrationStagingRows.id,
       sourceId: migrationStagingRows.sourceId,
       status: migrationStagingRows.status,
       importedEntityId: migrationStagingRows.importedEntityId,
+      // Carried so the import loop can tell a VALIDATION failure (never
+      // retried) from an IMPORT failure (retried). See the retry gate.
+      errorDetail: migrationStagingRows.errorDetail,
     })
     .from(migrationStagingRows)
     .where(
@@ -600,12 +630,43 @@ function unresolved(field: string, message: string): MigrationStagingError {
  * SQLSTATE code and constraint name are kept — never err.message from the
  * driver. Our own MigrationStagingError messages are value-free by contract.
  */
-function sanitizeImportError(err: unknown): MigrationErrorDetail {
+export function sanitizeImportError(err: unknown): MigrationErrorDetail {
   if (err instanceof MigrationStagingError) return err.errorDetail;
 
-  const pg = err as { code?: string; constraint_name?: string };
+  // WALK THE CAUSE CHAIN. Drizzle wraps every driver failure in a
+  // `DrizzleQueryError` that carries NEITHER `code` NOR `constraint_name`; the
+  // `PostgresError` holding both sits at `.cause`. Reading the outer object
+  // alone produced the bare string "database error" for all 162 failures of the
+  // 2026-08-26 rehearsal, so the one instruction the runbook gives on failure -
+  // "the reason is in migration_staging_rows.error_detail" - named nothing.
+  //
+  // FIELDS ONLY, NEVER A MESSAGE. A Postgres message and its DETAIL embed the
+  // offending cell values (a unique violation prints the key), and this string
+  // is written to the ledger and pasted into chats. Class, SQLSTATE and
+  // constraint name are all structural.
+  let cursor: unknown = err;
+  let errorClass: string | undefined;
+  let sqlstate: string | undefined;
+  let constraint: string | undefined;
+  for (let depth = 0; cursor && depth < 8; depth += 1) {
+    const layer = cursor as { code?: unknown; constraint_name?: unknown; cause?: unknown };
+    const name = (cursor as { constructor?: { name?: string } })?.constructor?.name;
+    // The class we keep is the one that CARRIED the sqlstate: that is the
+    // driver error, and it is the layer worth naming.
+    if (typeof layer.code === "string" && sqlstate === undefined) {
+      sqlstate = layer.code;
+      errorClass = name;
+    }
+    if (typeof layer.constraint_name === "string" && constraint === undefined) {
+      constraint = layer.constraint_name;
+    }
+    if (errorClass === undefined && depth === 0 && typeof name === "string") errorClass = name;
+    cursor = layer.cause;
+  }
+
   const parts = ["database error"];
-  if (typeof pg?.code === "string") parts.push(`sqlstate ${pg.code}`);
-  if (typeof pg?.constraint_name === "string") parts.push(`constraint ${pg.constraint_name}`);
+  if (errorClass) parts.push(`class ${errorClass}`);
+  if (sqlstate) parts.push(`sqlstate ${sqlstate}`);
+  if (constraint) parts.push(`constraint ${constraint}`);
   return { code: "import_failed", message: parts.join(", ") };
 }
