@@ -198,6 +198,22 @@ function main() {
   const names = fs.readdirSync(dir);
   const has = (n) => names.includes(n);
 
+  /* -- every archive filename any row points at, from EVERY source -- */
+  const ficheiroRefs = new Set();
+  /**
+   * A `FICHEIRO` CELL IS MULTI-VALUED: comma or semicolon separated. Taken
+   * whole, `a.pdf,b.pdf` is compared against the archive as one entry name,
+   * which is in the archive under neither name - so a correct delivery reports
+   * both a missing file and an orphan, and neither message names the cause.
+   * Mirrors splitDeliveryFileNames in packages/db/src/migration/sources/fisiozero.ts.
+   */
+  const addFicheiroCell = (cell) => {
+    for (const p of String(cell).split(/[,;]/)) {
+      const t = p.trim();
+      if (t !== "") ficheiroRefs.add(t);
+    }
+  };
+
   /* -- pacientes: the spine. Everything else references it. -- */
   const patientIds = new Set();
   if (!has("pacientes.csv")) fail("pacientes.csv: absent");
@@ -211,6 +227,12 @@ function main() {
         if (id === "") { blank += 1; continue; }
         if (patientIds.has(id)) dupes += 1;
         else patientIds.add(id);
+        // PACIENTES CARRIES ATTACHMENTS TOO, and this loop is the only place
+        // that reads the file. It was omitted while `ficheiroRefs` was built
+        // solely from the id_paciente-REFERENCING files, which left 10 of the
+        // amostra's 14 FICHEIRO cells outside the correspondence check: a
+        // patient-level document missing from the archive was unreportable.
+        if (r["FICHEIRO"]) addFicheiroCell(r["FICHEIRO"]);
       }
       if (blank > 0) fail(`pacientes.csv: ${blank} row(s) with an empty id_paciente`);
       // THE SINGLE MOST LOAD-BEARING REQUIREMENT in the caderno: without a
@@ -231,7 +253,6 @@ function main() {
 
   const estadoCounts = new Map();
   const tipoUnknown = new Map();
-  const ficheiroRefs = new Set();
 
   for (const [file, expected] of referencing) {
     const csv = readCsv(path.join(dir, file), file);
@@ -246,7 +267,7 @@ function main() {
         const k = r["estado"].toLowerCase();
         estadoCounts.set(k, (estadoCounts.get(k) ?? 0) + 1);
       }
-      if (r["FICHEIRO"]) ficheiroRefs.add(r["FICHEIRO"]);
+      if (r["FICHEIRO"]) addFicheiroCell(r["FICHEIRO"]);
     }
     if (orphans > 0) {
       fail(`${file}: ${orphans} row(s) reference an id_paciente not present in pacientes.csv`);

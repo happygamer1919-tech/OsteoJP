@@ -54,6 +54,13 @@ Steps 1 and 2 are **prep, done days earlier**. Everything from 3 is the window.
   never a data finding — it means the command was typed wrong.
 - **The prod-apply worktree** is `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply`.
   It is the only tree whose shell holds production credentials.
+- **`pnpm 11` prints a bare `undefined` before its
+  `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL` block** whenever a
+  `pnpm --filter <pkg> exec ...` command exits non-zero. It comes from pnpm's
+  own failure reporter, not from any script here — the same command without
+  `--filter` does not print it. **Expect it on every refusal below and read past
+  it.** Inside a window, treating it as a finding costs a diagnosis you do not
+  have time for.
 
 ### 0.4 What is safe to paste back
 
@@ -204,6 +211,29 @@ no existing range for a vendor number to collide with.
 
 **STOP IF ANYTHING STILL COMES BACK.** The cleanup did not finish, and the flag
 decision in §3.3b has to be revisited before the window continues.
+
+### 1.3d The storage bucket precheck
+
+`clinical-attachments` already exists on production and holds live clinical
+documents — this is a **verification**, not a creation step. Confirm it from the
+prod-apply shell before the window, because §3.2 refuses without it.
+
+**Bucket names only. Never list objects:** an object name is an attachment
+filename and may carry a patient's name.
+
+```
+curl -s "$SUPABASE_URL/storage/v1/bucket" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  | python3 -c 'import json,sys; print([b["name"] for b in json.load(sys.stdin)])'
+```
+
+**Expected:** a list containing `clinical-attachments`.
+
+**STOP IF IT IS ABSENT.** Since 2026-08-26 `copy-attachments.mjs` checks this
+itself before the first byte and exits `1` with
+`bucket clinical-attachments does not exist in project <ref>`, having attempted
+nothing. On production an absent bucket means the shell is pointed somewhere
+unexpected, which is a bigger finding than the missing bucket.
 
 ### 1.4 Fill both mapping configs
 
@@ -381,7 +411,8 @@ problem, not a delivery problem, and it must be fixed before the window
 continues.
 
 **`N` is not the `documentos.csv` row count.** Attachments also come from the
-`FICHEIRO` column on `pacientes.csv` and each `Episodios_*.csv`, deduplicated by
+`FICHEIRO` column on `pacientes.csv` and each `Episodios_*.csv`, **split on
+comma and semicolon** (a cell is multi-valued) and then deduplicated by
 filename. `N` is whatever `--emit-attachment-mapping` reported.
 
 **STOP IF `conflicts` IS NON-ZERO.** On a bucket that has never held an import

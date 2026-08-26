@@ -27,6 +27,7 @@ import {
   normalizePhones,
   normalizeSex,
   specialtyFromFileName,
+  splitDeliveryFileNames,
   zipInsurance,
 } from "../src/migration/sources/fisiozero";
 import type { MigrationPatient } from "../src/migration";
@@ -409,6 +410,73 @@ describe("attachments", () => {
     expect(a.storagePath).toBe(`${TENANT}/migration/fisiozero/scan1.pdf`);
   });
 
+  it("keys the byte copy by ficheiro, NOT by nome_original, when the two differ", () => {
+    // THE DEFECT THIS PINS: `documentos.csv` overwrites `fileName` with the
+    // display name, and the byte-copy mapping used to be keyed off that field -
+    // so every mapped document was looked up in the archive under a name the
+    // archive does not contain, and came back `not_in_delivery`.
+    const r = adaptFisiozeroDelivery(
+      {
+        pacientes: pacientes(P1),
+        documentos:
+          "id_documento,id_paciente,ficheiro,nome_original,tipo_mime,descricao\n" +
+          "D1,FZ1,9f3a17b2c4.pdf,Relatorio Consulta.pdf,application/pdf,d\n",
+      },
+      opts,
+    );
+    const a = r.records.find((x) => x.entityType === "attachment")!.record.data as never as {
+      deliveryFileName: string;
+      fileName: string;
+      storagePath: string;
+    };
+    expect(a.deliveryFileName).toBe("9f3a17b2c4.pdf");
+    expect(a.fileName).toBe("Relatorio Consulta.pdf");
+    expect(a.storagePath).toBe(`${TENANT}/migration/fisiozero/9f3a17b2c4.pdf`);
+  });
+
+  it("splits a comma-joined FICHEIRO cell into ONE attachment PER FILE", () => {
+    // `a.pdf,b.pdf` taken whole is not a file. Both real documents were lost
+    // behind a single phantom attachment whose object can never exist.
+    const withTwo = P1 + '"scanA.pdf,scanB.pdf"';
+    const r = adaptFisiozeroDelivery({ pacientes: pacientes(withTwo) }, opts);
+    expect(r.checks.attachments).toBe(2);
+    const names = r.records
+      .filter((x) => x.entityType === "attachment")
+      .map((x) => (x.record.data as never as { deliveryFileName: string }).deliveryFileName)
+      .sort();
+    expect(names).toEqual(["scanA.pdf", "scanB.pdf"]);
+  });
+
+  it("splits on a SEMICOLON too, and deduplicates a component across sources", () => {
+    const withTwo = P1 + '"scanA.pdf; scanB.pdf"';
+    const r = adaptFisiozeroDelivery(
+      {
+        pacientes: pacientes(withTwo),
+        documentos:
+          "id_documento,id_paciente,ficheiro,nome_original,tipo_mime,descricao\n" +
+          "D1,FZ1,scanB.pdf,B Original.pdf,application/pdf,d\n",
+      },
+      opts,
+    );
+    // Three references, two files: documentos wins on the shared component.
+    expect(r.checks.attachments).toBe(2);
+    const byName = new Map(
+      r.records
+        .filter((x) => x.entityType === "attachment")
+        .map((x) => x.record.data as never as { deliveryFileName: string; mimeType: string | null })
+        .map((a) => [a.deliveryFileName, a.mimeType]),
+    );
+    expect([...byName.keys()].sort()).toEqual(["scanA.pdf", "scanB.pdf"]);
+    expect(byName.get("scanB.pdf")).toBe("application/pdf");
+  });
+
+  it("splitDeliveryFileNames trims, drops empties and leaves a single name alone", () => {
+    expect(splitDeliveryFileNames("a.pdf")).toEqual(["a.pdf"]);
+    expect(splitDeliveryFileNames(" a.pdf , b.pdf ")).toEqual(["a.pdf", "b.pdf"]);
+    expect(splitDeliveryFileNames("a.pdf;;,b.pdf,")).toEqual(["a.pdf", "b.pdf"]);
+    expect(splitDeliveryFileNames("   ")).toEqual([]);
+  });
+
   it("routes a documentos row whose patient does not exist to review", () => {
     const r = adaptFisiozeroDelivery(
       {
@@ -511,6 +579,26 @@ describe("normalisation at the migration boundary", () => {
     expect(patientsOf(r)[0]!.phone).toBeNull();
     // A count, never the numbers.
     expect(typeof r.checks.unresolvablePhones).toBe("number");
+  });
+
+  it("SPLITS the day-one login count into blank and unparseable, and totals BOTH", () => {
+    // THE DEFECT THIS PINS: the old counter incremented only when the cell was
+    // non-empty, so a patient with no number at all was invisible - yet 0062
+    // derives phone_e164 as NULL for both and the portal authenticates by it.
+    const blank = P1.replace("+351900000001", "");
+    const unparseable = P1.replace("FZ1", "FZ2").replace("+351900000001", "+44 7700 900000");
+    const ok = P1.replace("FZ1", "FZ3");
+    const r = adaptFisiozeroDelivery({ pacientes: pacientes(blank, unparseable, ok) }, opts);
+    expect(r.checks.blankPhones).toBe(1);
+    expect(r.checks.unresolvablePhones).toBe(1);
+    expect(r.checks.noPortalLogin).toBe(2);
+  });
+
+  it("reports noPortalLogin as zero when every patient has a readable number", () => {
+    const r = adaptFisiozeroDelivery({ pacientes: pacientes(P1) }, opts);
+    expect(r.checks.blankPhones).toBe(0);
+    expect(r.checks.unresolvablePhones).toBe(0);
+    expect(r.checks.noPortalLogin).toBe(0);
   });
 
   it("zips seguro_saude and numero_apolice into the PL-23 list shape", () => {

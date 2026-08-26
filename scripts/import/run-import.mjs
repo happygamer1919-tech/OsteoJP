@@ -319,10 +319,18 @@ export async function runImport({
   //
   // A COUNT AND NEVER THE NUMBERS. A phone number is personal data; how many
   // patients are locked out is not.
-  const noPhone = adapterResult.checks?.unresolvablePhones ?? 0;
+  const blank = adapterResult.checks?.blankPhones ?? 0;
+  const unparseable = adapterResult.checks?.unresolvablePhones ?? 0;
+  // THE TOTAL, NOT THE UNPARSEABLE COUNT. A blank `telefone` locks a patient out
+  // exactly as an unparseable one does - 0062 derives NULL for both - and
+  // reporting only the second understated the amostra by 505.
+  const noPhone = adapterResult.checks?.noPortalLogin ?? blank + unparseable;
   if (noPhone > 0) {
     log("");
-    log(`  DAY-ONE LOGIN  ${noPhone} patient(s) have NO resolvable telephone number.`);
+    log(
+      `  DAY-ONE LOGIN  ${noPhone} patient(s) will have no portal login: ` +
+        `${blank} blank telefone, ${unparseable} unparseable`,
+    );
     log("                 They will be imported and will NOT be able to log into the");
     log("                 portal. This is a data question for the clinic, not a bug.");
   } else {

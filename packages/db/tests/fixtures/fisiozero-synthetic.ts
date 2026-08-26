@@ -193,6 +193,7 @@ export function syntheticBatch(): SyntheticRow[] {
           patientSourceId: "fz-pat-1001",
           clinicalRecordSourceId: "fz-rec-4001",
           storagePath: "migration/fisiozero/fz-att-5001/rx-lombar.pdf",
+          deliveryFileName: "rx-lombar.pdf",
           fileName: "rx-lombar.pdf",
           mimeType: "application/pdf",
           sizeBytes: 12345,
