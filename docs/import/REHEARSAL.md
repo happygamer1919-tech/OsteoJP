@@ -896,15 +896,22 @@ target table that is empty is the failure mode this cross-check exists for.
 
 **Run the exact same command from §7.1 a second time. Change nothing.**
 
-**Expected output shape:** identical adapter and staging lines, and then:
+**Expected output shape:** identical adapter and staging lines, and then every
+`IMPORTED` at **0** with `skipped` carrying the first run's count, and a
+`SKIPPED` total equal to the first run's `STAGED`:
 
 ```
-IMPORTED  patient               0
-IMPORTED  clinical_episode      0
-IMPORTED  appointment           0
-IMPORTED  clinical_record       0
-IMPORTED  attachment            0
+IMPORTED  patient                   0   skipped  1000   failed    0   …
+IMPORTED  clinical_episode          0   skipped    44   failed    0   …
+IMPORTED  appointment               0   skipped   891   failed    0   …
+IMPORTED  clinical_record           0   skipped    44   failed    0   …
+IMPORTED  attachment                0   skipped    22   failed    0   …
+SKIPPED   2001
 ```
+
+**`SKIPPED` IS THE NUMBER THAT PROVES IT, not the zeros.** Five zeros are also
+what an empty batch prints. `SKIPPED 2001` says the runner found all 2001 rows,
+recognised every one as already imported, and wrote nothing.
 
 **Expected exit code: `0`.**
 
@@ -966,6 +973,41 @@ pnpm --filter @osteojp/db exec tsx scripts/assert-not-prod.ts
 dashboard header **visually** before running anything in §8.3. Two independent
 confirmations, because the SQL editor has no guard at all.
 
+### 8.2b The immutability trigger, and why this step exists
+
+**A finalized clinical record cannot be deleted, and it cannot be downgraded
+either.** `clinical_records_enforce_immutability` (migration 0005) raises
+`23514 check_violation` on a DELETE of any row whose `status` is `locked` or
+`signed`, and raises again on an UPDATE unless the change is a merge re-parent
+gated by `app.merge_reparent` with every other column byte-identical. Setting
+`status = 'draft'` fails that test, so **there is no in-band downgrade**:
+
+```
+[0] code=23514 msg=clinical_records <id>: status=locked is finalized and
+    immutable; create a new versioned record (addendum) instead
+```
+
+That is not a bug to route around — it is CLAUDE.md rule 4 working. It does mean
+§8.3 as written can never complete: the dev seed leaves 45 finalized records of
+60, and `fisiozero.ts` imports every migrated record as `locked`, so a wipe
+after any rehearsal hits the same wall.
+
+**So the trigger is disabled for the duration of the reset transaction**, which
+is the narrowest form available, and three properties make it safe:
+
+- **`ALTER TABLE ... DISABLE TRIGGER` is transactional.** On a rollback the
+  trigger comes back enabled — verified: `tgenabled` reads `O` after an aborted
+  reset. A failed wipe cannot leave clinical records unprotected.
+- **It takes a `ShareRowExclusiveLock`** on `clinical_records`, so no other
+  session can write one while the trigger is off. Reads are unaffected.
+- **It is re-enabled inside the same transaction**, before `commit`, so the
+  window is the wipe and nothing more.
+
+**REHEARSAL ONLY.** Production has no §8 at all (`PROD-RUN.md` §6), and nothing
+here authorises disabling a clinical-safety trigger there. The one place
+production disables it is `cleanup-test-patients.sql`, under its own guards, for
+the 33 training patients.
+
 ### 8.3 Wipe the imported rows
 
 In the Supabase SQL editor, **against the rehearsal project**, substituting the
@@ -974,6 +1016,9 @@ tenant uuid from query 0. Children before parents:
 ```sql
 -- REHEARSAL PROJECT ONLY. NEVER production.
 begin;
+
+-- §8.2b. Transactional, ShareRowExclusiveLock, re-enabled before commit.
+alter table clinical_records disable trigger clinical_records_enforce_immutability;
 
 delete from attachments        where tenant_id = ':tenant_id';
 delete from clinical_records   where tenant_id = ':tenant_id';
@@ -985,8 +1030,23 @@ delete from patients           where tenant_id = ':tenant_id';
 delete from migration_staging_rows
  where tenant_id = ':tenant_id' and source_system = 'fisiozero';
 
+-- BEFORE COMMIT, ALWAYS. A rollback restores it too, but leaving it to the
+-- rollback would mean a committed reset could ship with the trigger off.
+alter table clinical_records enable trigger clinical_records_enforce_immutability;
+
 commit;
 ```
+
+**Confirm the trigger is back on** before you do anything else:
+
+```sql
+select tgenabled from pg_trigger
+ where tgrelid = 'public.clinical_records'::regclass
+   and tgname = 'clinical_records_enforce_immutability';
+```
+
+**Expected `O`.** **STOP ON ANYTHING ELSE** and re-enable it by hand before any
+other work touches this project.
 
 **`begin`/`commit` deliberately.** If one statement fails on a foreign key the
 whole reset rolls back, rather than leaving a half-wiped project that the next

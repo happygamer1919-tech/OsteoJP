@@ -59,14 +59,44 @@ test("the script exists and targets the confirmed tenant", () => {
 /* ---------------- data only ---------------- */
 
 test("DATA ONLY - no DDL, no schema change, no migration", () => {
+  // THE ONE PERMITTED EXCEPTION, ruled 2026-08-26: toggling the clinical-record
+  // immutability trigger around the delete. It is the only way the delete can
+  // complete - a finalized record can be neither deleted nor downgraded (STEP
+  // 1c) - and it changes no schema: no column, no type, no constraint, no
+  // function. The exception is spelled out here rather than by widening the
+  // guard, so any OTHER alter still fails this test.
+  const PERMITTED =
+    /alter\s+table\s+clinical_records\s+(disable|enable)\s+trigger\s+clinical_records_enforce_immutability/gi;
+  const rest = statements.replace(PERMITTED, "");
   for (const ddl of [
     /\bcreate\s+(table|index|type|function|trigger|schema|extension|temp)\b/i,
     /\balter\s+table\b/i,
     /\bdrop\s+\w+/i,
     /\btruncate\b/i,
   ]) {
-    assert.ok(!ddl.test(statements), `must not contain ${ddl}`);
+    assert.ok(!ddl.test(rest), `must not contain ${ddl}`);
   }
+});
+
+test("the trigger toggle is BALANCED and both halves are inside the transaction", () => {
+  // An unbalanced pair, or an `enable` after `commit`, would leave clinical
+  // records unprotected on a committed run.
+  const disable = [...statements.matchAll(/alter\s+table\s+clinical_records\s+disable\s+trigger/gi)];
+  const enable = [...statements.matchAll(/alter\s+table\s+clinical_records\s+enable\s+trigger/gi)];
+  assert.equal(disable.length, 1, "exactly one disable");
+  assert.equal(enable.length, 1, "exactly one enable");
+  const begin = statements.search(/\bbegin\s*;/i);
+  const commit = statements.search(/\bcommit\s*;/i);
+  assert.ok(begin !== -1 && commit !== -1);
+  assert.ok(disable[0].index > begin, "disable must be AFTER begin");
+  assert.ok(enable[0].index < commit, "enable must be BEFORE commit");
+  assert.ok(disable[0].index < enable[0].index, "disable then enable");
+});
+
+test("STEP 3 verifies the trigger came back on", () => {
+  // A committed cleanup that left it off would be silent otherwise.
+  assert.match(sql, /immutability_trigger/);
+  assert.match(sql, /STOP IF `immutability_trigger` IS NOT 'O'/);
 });
 
 test("it never writes to the auth schema", () => {

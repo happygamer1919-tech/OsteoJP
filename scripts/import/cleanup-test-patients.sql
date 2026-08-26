@@ -9,6 +9,11 @@
 -- DATA ONLY. No migration, no schema change, no DDL. It deletes rows from
 -- existing tables and nothing else.
 --
+-- THE TENANT UUID BELOW IS THE DETERMINISTIC SEED TENANT
+-- (packages/db/seed/dev-reference.ts), so it is the SAME id in production and
+-- in the rehearsal project - which is what makes running this file verbatim in
+-- the rehearsal a valid dress rehearsal for running it here.
+--
 -- WHY IT EXISTS: production holds 33 patients numbered 1-35, all confirmed by
 -- the owner as staff-training data. Removing them before the Fisiozero import
 -- lets every vendor `numero_paciente` carry over VERBATIM with zero collisions -
@@ -222,7 +227,32 @@ order  by storage_path;
 
 
 -- ---------------------------------------------------------------------------
--- STEP 2. THE DELETE. One transaction. Run only after STEP 1 and STEP 1b.
+-- STEP 1c. CLINICAL RECORDS BY STATUS. Read-only. Run before STEP 2.
+-- ---------------------------------------------------------------------------
+-- A FINALIZED CLINICAL RECORD CANNOT BE DELETED, AND CANNOT BE DOWNGRADED.
+-- `clinical_records_enforce_immutability` (migration 0005) raises
+-- 23514 check_violation on a DELETE of any row whose status is 'locked' or
+-- 'signed', and raises again on an UPDATE unless the change is a merge
+-- re-parent gated by `app.merge_reparent` with every other column
+-- byte-identical - so `set status = 'draft'` fails that test too. There is no
+-- in-band downgrade. That is CLAUDE.md rule 4 working, not a bug.
+--
+-- WHY IT APPLIES HERE: the 33 training patients were created by staff
+-- practising the real workflow, which includes locking and signing. Their
+-- records are finalized like any other, and STEP 2 aborts on the first one.
+--
+-- READ THESE COUNTS. They are the rows STEP 2's trigger window covers, and
+-- `locked + signed` is the number that would otherwise have stopped the delete.
+-- A STATUS IS NOT PATIENT DATA - no content, no name, no record id.
+select status, count(*) as records
+from   clinical_records
+where  patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560')
+group  by status
+order  by status;
+
+
+-- ---------------------------------------------------------------------------
+-- STEP 2. THE DELETE. One transaction. Run only after STEP 1, 1b and 1c.
 -- ---------------------------------------------------------------------------
 -- ONE TRANSACTION, AND THAT IS LOAD-BEARING. If any statement fails - an FK
 -- this graph missed, a permission, a typo - the WHOLE THING rolls back. The
@@ -237,7 +267,24 @@ order  by storage_path;
 --
 -- STOP AND DO NOT COMMIT IF ANY COUNT DISAGREES WITH STEP 1. The `begin` is
 -- still open at that point; type `rollback;` instead of `commit;`.
+--
+-- THE IMMUTABILITY TRIGGER IS OFF FOR THE LENGTH OF THIS TRANSACTION, and
+-- nowhere else. See STEP 1c for why there is no alternative. Three properties
+-- bound it:
+--   * ALTER TABLE ... DISABLE TRIGGER is TRANSACTIONAL. On a rollback the
+--     trigger comes back enabled on its own - verified: pg_trigger.tgenabled
+--     reads 'O' after an aborted run. A failed cleanup cannot leave clinical
+--     records unprotected.
+--   * It takes a ShareRowExclusiveLock on clinical_records, so no other session
+--     can write one while it is off. Reads are unaffected.
+--   * It is re-enabled BEFORE commit, explicitly, so a committed cleanup can
+--     never ship with it off.
+-- IT IS TABLE-WIDE, because a trigger cannot be scoped to a row set. The DELETEs
+-- are what is scoped to this tenant's patients; the lock is what makes the
+-- table-wide window safe.
 begin;
+
+alter table clinical_records disable trigger clinical_records_enforce_immutability;
 
 -- depth 4 - through clinical_records
 delete from ai_ingestion_requests
@@ -331,6 +378,10 @@ update guest_booking_requests
 delete from patients
  where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560';
 
+-- BEFORE COMMIT, ALWAYS. A rollback restores it too, but leaving it to the
+-- rollback would mean a COMMITTED cleanup could ship with the trigger off.
+alter table clinical_records enable trigger clinical_records_enforce_immutability;
+
 commit;
 
 
@@ -347,7 +398,14 @@ commit;
 --   found before the import writes on top of it.
 -- STOP IF `staff_rows` IS NOT 30. This script must not touch `users` at all;
 --   any change there is a defect, not a side effect.
+-- STOP IF `immutability_trigger` IS NOT 'O'. STEP 2 turned it off and must have
+--   turned it back on before committing. 'O' is enabled; anything else means
+--   clinical records are unprotected RIGHT NOW and it must be re-enabled by
+--   hand before any other work touches this database.
 select
+  (select tgenabled from pg_trigger
+    where tgrelid = 'public.clinical_records'::regclass
+      and tgname = 'clinical_records_enforce_immutability')                     as immutability_trigger,
   (select count(*) from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560')          as patients,
   (select count(*) from appointments where patient_id not in (select id from patients))             as orphan_appointments,
   (select count(*) from clinical_records where patient_id not in (select id from patients))         as orphan_clinical_records,
