@@ -158,12 +158,20 @@
     report_back_format: "Report-back format",
   };
   var PRIO_LABEL = { high: "High", medium: "Medium", low: "Low" };
+  // RULINGS ARE A VIEW, NOT A LANE, and that is the whole of the owner's ruling
+  // of 2026-08-27: "recorded rulings are not build work and must stop rendering
+  // as to-do tasks". A ruling has no status, so it cannot sit in a lane without
+  // borrowing one, and every lane on this board means something about work.
+  // Giving them their own view is what stops a decision being read as a task.
+  //
+  // Its key is `6`. The footer's "keys 1-5" hint moves with it.
   var VIEWS = [
     { id: "focus", label: "Focus" },
     { id: "board", label: "Board" },
     { id: "gate", label: "Launch gate" },
     { id: "list", label: "List" },
     { id: "timeline", label: "Timeline" },
+    { id: "rulings", label: "Rulings" },
   ];
   var ISO_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2}))?$/;
 
@@ -176,6 +184,7 @@
     fPrio: [],
     sort: { key: "checkpoint", dir: -1 },
     openGateNotes: {},
+    openRulingNotes: {},
     shippedOpen: false,
   };
   var undoStack = [];
@@ -619,6 +628,74 @@
     return '<h2 class="section">Timeline · every card by its last checkpoint</h2><div class="timeline">' + body + "</div>";
   }
 
+  /* ------------------------------------------------------ rulings view -- */
+  /**
+   * RECORDED DECISIONS. Never a card, never in a lane, never in a count.
+   *
+   * The fields are deliberately the ones a ruling HAS - what was decided, when,
+   * by whom, what it binds, and whether a later ruling replaced it. There is no
+   * status chip and no evidence chip, because a ruling is not done or not done
+   * and a control offering to "close" one would be an invitation to lie.
+   *
+   * A SUPERSEDED RULING IS SHOWN, NOT HIDDEN. It is struck through and names the
+   * ruling that replaced it. Hiding it would take the chain with it, and the
+   * chain is the only record of why a decision stopped applying.
+   *
+   * Search applies here too: `/` over the ruling text, the title and the notes,
+   * so looking for "migration" finds the ruling that governs migrations rather
+   * than only the cards that mention them.
+   */
+  function visibleRulings() {
+    var q = ui.q.trim().toLowerCase();
+    var all = board.rulings || [];
+    if (!q) return all;
+    return all.filter(function (r) {
+      return [r.id, r.title, r.ruling, r.notes, (r.governs || []).join(" ")]
+        .filter(Boolean).join(" ").toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  function rulingsHTML() {
+    var all = board.rulings || [];
+    if (!all.length) {
+      return '<h2 class="section">Rulings</h2>' +
+        '<p class="lede">No recorded rulings on this board. A ruling is a decision somebody took — ' +
+        'it has no status and nothing finishes it, which is why it lives here and not in a lane.</p>';
+    }
+    var rows = visibleRulings();
+    if (!rows.length) return '<h2 class="section">Rulings · ' + all.length + "</h2><p class=\"lede\">Nothing matches.</p>";
+    var body = rows.map(function (r) {
+      var sup = r.superseded_by || null;
+      var notes = String(r.notes || "");
+      var open = !!ui.openRulingNotes[r.id];
+      return '<article class="ruling' + (sup ? " superseded" : "") + '">' +
+        '<div class="r1"><span class="rid">' + esc(r.id) + "</span>" +
+          '<span class="rdate mono">' + esc(String(r.date || "")) + "</span>" +
+          '<span class="rby">ruled by ' + esc(String(r.ruled_by || "")) + "</span>" +
+          (sup ? '<span class="rsup">superseded by ' + esc(sup) + "</span>" : "") +
+        "</div>" +
+        (r.title ? '<div class="rtitle">' + esc(r.title) + "</div>" : "") +
+        '<blockquote class="rtext">' + esc(String(r.ruling || "")) + "</blockquote>" +
+        '<div class="rgoverns"><span class="lbl">Governs</span>' +
+          (r.governs || []).map(function (g) { return '<code>' + esc(g) + "</code>"; }).join("") +
+        "</div>" +
+        (notes
+          ? '<div class="rnotes' + (open ? "" : " clip") + '">' + esc(notes) + "</div>" +
+            (notes.length > 220
+              ? '<button class="gmore" data-act="ruling-notes" data-rid="' + esc(r.id) + '">' +
+                (open ? "Show less" : "Read the full record") + "</button>"
+              : "")
+          : "") +
+      "</article>";
+    }).join("");
+    var superseded = all.filter(function (r) { return !!r.superseded_by; }).length;
+    return '<h2 class="section">Rulings · ' + all.length + " recorded decision" + (all.length === 1 ? "" : "s") +
+        (superseded ? " · " + superseded + " superseded" : "") + "</h2>" +
+      '<p class="lede">Decisions the owner took. <b>They are not cards.</b> They carry no status, no gate and no ' +
+        'evidence, because a ruling is not done or not done — nothing here is work anybody owes. They are ' +
+        'excluded from every count on this page for that reason.</p>' +
+      '<div class="rulings">' + body + "</div>";
+  }
+
   /* ------------------------------------------------------------- chrome -- */
   function cmdbarHTML() {
     var d = diffVsSeed();
@@ -640,7 +717,7 @@
     return '<footer class="pf"><span class="mono">' + esc(CFG.footerLabel) + ' · snapshot ' + esc(board.as_of || "") + "</span>" +
       '<span class="mono">source ' + esc(CFG.sourcePath) + ' · readiness ' +
       ((lg.conditions || []).filter(function (g) { return g.state === "pass"; }).length) + "/" + (lg.denominator || DENOM) +
-      " · keys / n e u 1-5 · </span>" +
+      " · keys / n e u 1-" + VIEWS.length + " · </span>" +
       '<button class="btn btn-sm ghost" data-act="reset">Discard local changes</button></footer>';
   }
 
@@ -689,6 +766,11 @@
       : ui.view === "gate" ? gateViewHTML()
       : ui.view === "list" ? filtersHTML() + listHTML()
       : ui.view === "timeline" ? filtersHTML() + timelineHTML()
+      // No filtersHTML(): every filter on this board is a filter over card
+      // STATE - status, who is blocked, priority - and a ruling has none of it.
+      // Offering them here would render controls that can only ever empty the
+      // list, which reads as a bug rather than as a rule.
+      : ui.view === "rulings" ? rulingsHTML()
       : filtersHTML() + focusHTML();
 
     document.getElementById("app").innerHTML = cmdbarHTML() + seedNoticeHTML() + cockpitHTML() + main + footerHTML();
@@ -1066,8 +1148,52 @@
     }
   }
 
+  // RULINGS - mirrored from docs/board/validate-board.mjs for the reason this
+  // whole validate() exists: a board that leaves this app through Export must
+  // already satisfy the rule CI will apply to it, or it is green here and red
+  // there. Same arrangement as loopSpecOK above.
+  var RULING_REQUIRED = ["id", "ruling", "date", "ruled_by", "superseded_by", "governs"];
+  var RULING_OPTIONAL = ["title", "notes", "external_agenda"];
+  var RULING_FORBIDDEN = [
+    "status", "gate", "evidence", "acceptance", "lane", "home_lane", "blocked_on",
+    "card_kind", "spec", "deferred", "open_on_purpose", "priority", "owner_terminal",
+    "last_checkpoint",
+  ];
+  function rulingOK(id, r, push, ids) {
+    if (typeof r !== "object" || r === null || Array.isArray(r)) { push(id, "ruling must be an object"); return; }
+    RULING_REQUIRED.forEach(function (k) {
+      if (!(k in r)) push(id, 'ruling is missing required field "' + k + '"');
+    });
+    RULING_FORBIDDEN.forEach(function (k) {
+      if (k in r) push(id, 'ruling carries "' + k + '" - a ruling is not done or not done');
+    });
+    var allowed = RULING_REQUIRED.concat(RULING_OPTIONAL);
+    Object.keys(r).forEach(function (k) {
+      if (allowed.indexOf(k) < 0 && RULING_FORBIDDEN.indexOf(k) < 0)
+        push(id, 'ruling field "' + k + '" is not a ruling field');
+    });
+    if (typeof r.ruling !== "string" || !r.ruling.trim()) push(id, "ruling text is empty");
+    if (!isIso(r.date)) push(id, "ruling date is not an ISO date");
+    if (typeof r.ruled_by !== "string" || !r.ruled_by.trim()) push(id, "ruled_by does not name who decided");
+    var sup = r.superseded_by == null ? null : r.superseded_by;
+    if (sup !== null && ids.indexOf(sup) < 0) push(id, 'superseded_by "' + sup + '" names no ruling on this board');
+    if (sup !== null && sup === r.id) push(id, "superseded_by names itself");
+    if (!Array.isArray(r.governs) || !r.governs.length) push(id, "governs must name at least one card or file");
+    if ("external_agenda" in r && r.external_agenda !== true)
+      push(id, 'external_agenda must be exactly true, or be absent');
+  }
+
   function validate(b) {
     var out = [], push = function (id, msg) { out.push({ id: id, msg: msg }); };
+    var rulings = b.rulings || [];
+    var rulingIds = rulings.map(function (r) { return r && r.id; });
+    var rseen = {};
+    rulings.forEach(function (r) {
+      var id = (r && r.id) || "ruling?";
+      if (rseen[id]) push(id, "duplicate ruling id");
+      rseen[id] = 1;
+      rulingOK(id, r, push, rulingIds);
+    });
     var lg = b.launch_gate || {}, conds = lg.conditions || [];
     if (lg.denominator !== DENOM) push("launch gate", "denominator must be " + DENOM + ", got " + lg.denominator);
     if (conds.length !== DENOM) push("launch gate", "expected " + DENOM + " conditions, got " + conds.length);
@@ -1086,6 +1212,7 @@
     (b.cards || []).forEach(function (c) {
       var id = c.id || "card?";
       if (seen[id]) push(id, "duplicate card id");
+      if (rulingIds.indexOf(id) >= 0) push(id, "id exists in BOTH cards and rulings - a move is a move");
       seen[id] = 1;
       if (typeof c.title !== "string" || !c.title.trim()) push(id, "title is empty");
       if (ALL_LANES.indexOf(c.lane) < 0) push(id, 'lane "' + c.lane + '" is not a lane');
@@ -1338,6 +1465,12 @@
       case "gate-edit": { var g = gateById(gid); if (g) openGateModal(g); break; }
       case "gate-notes": ui.openGateNotes[gid] = !ui.openGateNotes[gid]; render(); break;
       case "shipped-toggle": ui.shippedOpen = !ui.shippedOpen; render(); break;
+      case "ruling-notes": {
+        var rid = t.getAttribute("data-rid");
+        ui.openRulingNotes[rid] = !ui.openRulingNotes[rid];
+        render();
+        break;
+      }
       case "stat":
         if (el.getAttribute("data-key") === "mine") {
           ui.fWho = ui.fWho.length === 1 && ui.fWho[0] === OWNER ? [] : [OWNER];
@@ -1401,7 +1534,10 @@
     if (e.key === "n") { e.preventDefault(); openCardModal(null, { home: "in_flight" }); return; }
     if (e.key === "e") { e.preventDefault(); openExport(); return; }
     if (e.key === "u") { e.preventDefault(); undo(); return; }
-    var i = ["1", "2", "3", "4", "5"].indexOf(e.key);
+    // DERIVED FROM VIEWS, not a hand-written list. The literal ["1".."5"] was
+    // already one view short the moment a sixth was added, and a number key that
+    // silently does nothing is indistinguishable from a broken keyboard.
+    var i = VIEWS.map(function (_, n) { return String(n + 1); }).indexOf(e.key);
     if (i >= 0 && VIEWS[i]) { ui.view = VIEWS[i].id; render(); }
   });
 

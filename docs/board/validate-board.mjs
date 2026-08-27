@@ -224,6 +224,123 @@ function checkLoopSpec(id, card) {
       );
   }
 }
+/**
+ * ============================================================================
+ * RULINGS - RECORDED DECISIONS, WHICH ARE NOT WORK AND MUST NOT RENDER AS WORK.
+ * ============================================================================
+ * Owner ruling, 2026-08-27: "recorded rulings are not build work and must stop
+ * rendering as to-do tasks."
+ *
+ * A ruling records a decision somebody took. It has no acceptance line, so
+ * nothing can ever finish it, and for fifteen of them that produced a board
+ * saying nine items were `todo` when not one of them was buildable by anybody.
+ * The WF-* family sat in the IN FLIGHT lane for three weeks being counted as
+ * open work, and every sweep that read the board had to know, out of band, that
+ * those particular ids were not tasks. A section is what makes that structural
+ * instead of tribal.
+ *
+ * THE FIELDS ARE THE WHOLE ARGUMENT, AND SO ARE THE ABSENT ONES.
+ *
+ *   id, ruling, date, ruled_by  - who decided what, and when.
+ *   superseded_by               - null, or the id of the ruling that replaced
+ *                                 it. A ruling is never deleted and never
+ *                                 edited to record that it stopped applying;
+ *                                 a later ruling supersedes it and the chain
+ *                                 stays readable.
+ *   governs                     - the cards or files it binds. Non-empty: a
+ *                                 ruling that governs nothing is either
+ *                                 finished history or was never a ruling, and
+ *                                 in both cases somebody has to say which.
+ *
+ *   NO status. NO gate. NO evidence. NO acceptance. A ruling is not done or
+ *   not done, so a status field on one could only ever be a lie, and `evidence`
+ *   would invite somebody to "close" it. These are REJECTED rather than
+ *   ignored: a ruling carrying `status: "todo"` is exactly the state this
+ *   section exists to end, and silently dropping the field would let it back in
+ *   through a hand edit.
+ *
+ * OPTIONAL: `title` (the headline the card carried), `notes` (its full record),
+ * and `external_agenda`, which means here exactly what it means on a card.
+ *
+ * THE SECTION IS OPTIONAL. The platform board has no rulings, and a shared
+ * instrument is additive or it does not ship (PORTAL-REHYDRATE 4.11). A board
+ * with no `rulings` key is as valid as it was before this rule existed.
+ */
+const RULING_REQUIRED = ["id", "ruling", "date", "ruled_by", "superseded_by", "governs"];
+const RULING_OPTIONAL = ["title", "notes", "external_agenda"];
+// The card-only fields, named one by one rather than by a catch-all "unknown
+// key" rule, so the failure message says WHY the field is refused rather than
+// only that it is unexpected.
+const RULING_FORBIDDEN = {
+  status: "a ruling is not done or not done - a status on one can only be a lie",
+  gate: "nothing merges a ruling, so there is nothing for a gate to govern",
+  evidence: "evidence proves work finished; a ruling has no work to finish",
+  acceptance: "a card with a machine-checkable acceptance is WORK - move it to cards[]",
+  lane: "rulings render in their own view and never in a lane",
+  home_lane: "rulings render in their own view and never in a lane",
+  blocked_on: "nothing is blocked on a decision that has already been taken",
+  card_kind: "a ruling is not a loop card",
+  spec: "a ruling is not a loop card",
+  deferred: "a ruling is not built, so it cannot be deferred",
+  open_on_purpose: "the reconciler's card exemption; a ruling is never open in that sense",
+  priority: "rulings are not scheduled, so they carry no priority",
+  owner_terminal: "no terminal owns a decision the owner took",
+  last_checkpoint: "a ruling does not progress, so it has no checkpoint",
+};
+
+function checkRuling(id, r, ruleIds) {
+  if (typeof r !== "object" || r === null || Array.isArray(r)) {
+    fail(id, `ruling must be an object`);
+    return;
+  }
+  for (const key of RULING_REQUIRED) {
+    if (!(key in r)) fail(id, `ruling is missing required field "${key}"`);
+  }
+  for (const [key, why] of Object.entries(RULING_FORBIDDEN)) {
+    if (key in r) fail(id, `ruling carries "${key}" - ${why}`);
+  }
+  const allowed = [...RULING_REQUIRED, ...RULING_OPTIONAL];
+  for (const key of Object.keys(r)) {
+    if (!allowed.includes(key) && !(key in RULING_FORBIDDEN))
+      fail(id, `ruling field "${key}" is not one of ${allowed.join("|")}`);
+  }
+
+  if (typeof r.ruling !== "string" || r.ruling.trim() === "")
+    fail(id, `ruling text must be a non-empty string - the decision itself, in the words it was taken in`);
+  if (!isValidIso(r.date)) fail(id, `ruling date "${r.date}" is not an ISO 8601 date/timestamp`);
+  if (typeof r.ruled_by !== "string" || r.ruled_by.trim() === "")
+    fail(id, `ruled_by must name who took the decision`);
+
+  // null, or a ruling that EXISTS. A supersession pointing at nothing breaks
+  // the only chain that records why a ruling stopped applying.
+  const sup = r.superseded_by ?? null;
+  if (sup !== null) {
+    if (typeof sup !== "string" || sup.trim() === "") {
+      fail(id, `superseded_by must be null or the id of the ruling that replaced it`);
+    } else if (!ruleIds.has(sup)) {
+      fail(id, `superseded_by "${sup}" names no ruling on this board`);
+    } else if (sup === r.id) {
+      fail(id, `superseded_by names itself`);
+    }
+  }
+
+  if (!Array.isArray(r.governs) || r.governs.length === 0) {
+    fail(id, `governs must be a non-empty array of the card ids or file paths this ruling binds`);
+  } else {
+    for (const g of r.governs) {
+      if (typeof g !== "string" || g.trim() === "")
+        fail(id, `governs entries must be non-empty strings`);
+    }
+  }
+
+  if ("title" in r && (typeof r.title !== "string" || r.title.trim() === ""))
+    fail(id, `title, when present, must be a non-empty string`);
+  if ("notes" in r && typeof r.notes !== "string")
+    fail(id, `notes, when present, must be a string`);
+  if ("external_agenda" in r && r.external_agenda !== true)
+    fail(id, `external_agenda must be exactly true, or be absent - "false" is not a value it takes`);
+}
+
 const GATE_STATE = ["pass", "fail"];
 const LAUNCH_GATE_DENOMINATOR = 9;
 
@@ -345,12 +462,33 @@ if (typeof lg.readiness_passed === "number" && lg.readiness_passed !== passed) {
   fail("launch_gate", `readiness_passed says ${lg.readiness_passed} but ${passed} conditions are state=pass`);
 }
 
+// ---- rulings ----------------------------------------------------------------
+// Recorded decisions. Checked BEFORE the cards, because the id namespace is
+// shared: a ruling and a card may not carry the same id, or `governs` and every
+// cross-reference on the board becomes ambiguous.
+const rulings = Array.isArray(board.rulings) ? board.rulings : [];
+if (board.rulings !== undefined && !Array.isArray(board.rulings))
+  fail("rulings", `rulings must be an array, or be absent`);
+const rulingIds = new Set();
+for (const r of rulings) {
+  const id = r?.id ?? "ruling?";
+  if (rulingIds.has(id)) fail(id, `duplicate ruling id`);
+  rulingIds.add(id);
+}
+for (const r of rulings) checkRuling(r?.id ?? "ruling?", r, rulingIds);
+
 // ---- cards -------------------------------------------------------------------
 const cards = Array.isArray(board.cards) ? board.cards : [];
 const seenIds = new Set();
 for (const card of cards) {
   const id = card.id ?? "card?";
   if (seenIds.has(id)) fail(id, `duplicate card id`);
+  if (rulingIds.has(id))
+    fail(
+      id,
+      `id exists in BOTH cards[] and rulings[] - a move is a MOVE, and a card left ` +
+        `behind under the same id would be counted as work and recorded as a decision at once`,
+    );
   seenIds.add(id);
 
   if (typeof card.title !== "string" || card.title.trim() === "")
@@ -421,4 +559,14 @@ console.log(`  launch readiness: ${passed}/${LAUNCH_GATE_DENOMINATOR} gates pass
 console.log(`  cards: ${cards.length} across lanes ->`);
 for (const id of LANES_IN_ORDER.filter((l) => l !== "launch_gate"))
   console.log(`    ${id.padEnd(18)} ${laneCount(id)}`);
+// COUNTED SEPARATELY AND NEVER ADDED IN. A ruling is not an open card and not a
+// shipped one, so folding it into either number would restate the problem the
+// section exists to end.
+if (rulings.length > 0) {
+  const superseded = rulings.filter((r) => (r.superseded_by ?? null) !== null).length;
+  console.log(
+    `  rulings: ${rulings.length} recorded decision(s), NOT cards and NOT counted above` +
+      (superseded > 0 ? ` (${superseded} superseded)` : ""),
+  );
+}
 process.exit(0);

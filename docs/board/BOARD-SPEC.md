@@ -8,13 +8,16 @@ and the same rules. Everything below applies to both unless a line says
 otherwise; the differences are collected in "The Portal Board" at the end.
 
 A third file, **`docs/board/BOARD-TEMPLATE.json`**, is the same schema with every
-project fact removed: one example card, nine placeholder gates, and typed
-placeholder values throughout. It exists so this system can be reused on another
+project fact removed: one example card, one example ruling, nine placeholder
+gates, and typed placeholder values throughout. `docs/board/BOARD-TEMPLATE.md`
+explains every field in it. It exists so this system can be reused on another
 project without copying OsteoJP's content, and it **must never carry project
 content of its own**. It is not registered in `board-config.mjs` and nothing here
 reads it; `validate-board.mjs` reports exactly one violation against it, the
 board-name allowlist, which is the single line a new project changes to make its
-own board live. See `docs/board/BOARD-TEMPLATE.README.md`.
+own board live. Every field in it is explained, field by field, in
+`docs/board/BOARD-TEMPLATE.md` (which replaces the former
+`BOARD-TEMPLATE.README.md`).
 
 ## Why this file exists
 
@@ -167,6 +170,87 @@ Consequences, and the reason the rule exists:
   sections. Its own proof, including the negative arm for every section, is
   `docs/board/validate-board.test.mjs`.
 
+## Rulings — recorded decisions, which are not work
+
+**Owner ruling, 2026-08-27: "recorded rulings are not build work and must stop
+rendering as to-do tasks."**
+
+`rulings[]` is a top-level section beside `cards[]`. It holds decisions somebody
+took. A ruling has **no acceptance line**, so nothing can ever finish it — which
+is why fifteen of them sat in the IN FLIGHT lane reading `todo` for three weeks,
+being counted as open work that nobody could build.
+
+### What decides whether something is a ruling
+
+> **A card with a machine-checkable acceptance is WORK, not a ruling.**
+
+That is the whole test, and it is a test on the card's CONTENT rather than on its
+id. `WF-01` is an owner ruling by title and stayed in `cards[]`, because it
+mandated a validator function and a test suite and those either exist or they do
+not. `WF-06` is also an owner ruling by title and moved, because what proves it
+is the state of the card that consumed it — the card's own evidence field said
+so: *"a ruling card carries no work of its own."*
+
+### The fields
+
+| field | type | notes |
+|---|---|---|
+| `id` | string | unique across `cards[]` **and** `rulings[]` — one namespace |
+| `ruling` | string | the decision, in the words it was taken in. Non-empty |
+| `date` | ISO 8601 | when it was ruled |
+| `ruled_by` | string | who ruled it |
+| `superseded_by` | null or id | the ruling that replaced this one |
+| `governs` | string[] | the cards or files it binds. **Non-empty** |
+| `title` | string | optional. The headline |
+| `notes` | string | optional. The full record: why, what it resolves, what it does not |
+| `external_agenda` | `true` | optional, and it means here exactly what it means on a card |
+
+### The fields a ruling MAY NOT carry, and why the validator rejects them
+
+`status`, `gate`, `evidence`, `acceptance`, `lane`, `home_lane`, `blocked_on`,
+`card_kind`, `spec`, `deferred`, `open_on_purpose`, `priority`,
+`owner_terminal`, `last_checkpoint`.
+
+**A ruling is not done or not done.** A `status` on one can only be a lie —
+`todo` on a decision already taken is exactly the state this section exists to
+end. `evidence` would invite somebody to "close" it. They are **rejected** rather
+than ignored, because silently dropping a stray field would let the old state
+back in through a hand edit.
+
+### Supersession, not editing
+
+**A ruling is never deleted and never edited to record that it stopped
+applying.** A later ruling supersedes it, `superseded_by` names that ruling, and
+the chain stays readable. The portal renders a superseded ruling struck through
+and dimmed — shown, never hidden, because the chain is the only record of *why* a
+decision stopped applying. `WF-09` (batch at 3 waiting) is superseded by `WF-16`
+(accumulate silently for the whole wave).
+
+### Every reader treats them separately
+
+- **`validate-board.mjs`** validates the section, refuses the forbidden fields,
+  refuses a `superseded_by` naming no ruling, and refuses an id present in both
+  sections. It prints the ruling count **on its own line**, never inside the card
+  count. The section is **optional**: the platform board has none and is
+  byte-for-byte as valid as before.
+- **`reconcile-board.mjs`** reconciles them separately, because rules A–F all ask
+  about a `status` a ruling does not have. Two rules apply: **governs-ghost** (a
+  `governs` entry naming a card id that no longer exists — file paths and prose
+  are skipped) and **supersede-cycle**.
+- **`render-board.mjs`** passes them through the same `external_agenda` filter as
+  the cards, keeps them out of every card count, and prints how many it carried.
+- **`board-app.js`** renders them as a **sixth view, "Rulings"** (key `6`), never
+  in a lane and never in the List, Board, Focus or Timeline views. Every count on
+  the page reads `board.cards`, which no ruling is in.
+
+### Cards are never deleted; a move is a MOVE
+
+Moving a card into `rulings[]` is a move, not a rewrite. The card's former
+card-only fields and its evidence field are carried into the ruling's `notes`
+under a header saying where they came from, so the move loses nothing, and the
+id is removed from `cards[]` in the same commit — the validator refuses an id
+present in both.
+
 ## Lanes, in render order
 
 1. **LAUNCH GATE** - the explicit go/no-go conditions, each pass or fail, nothing
@@ -207,7 +291,7 @@ until its evidence exists.
 ## The portal (what the artifact is)
 
 The artifact is a working surface, not a picture of one. It renders from the JSON
-and gives five views over the same data:
+and gives six views over the same data:
 
 | view | what it answers |
 |---|---|
@@ -216,6 +300,7 @@ and gives five views over the same data:
 | **Launch gate** | the nine go/no-go conditions in full, with their notes |
 | **List** | every card, sortable, for scanning |
 | **Timeline** | every card by its last checkpoint, newest first |
+| **Rulings** | the recorded decisions, which are not cards and not in any count |
 
 Interaction rules worth knowing before editing the app:
 
@@ -231,7 +316,8 @@ Interaction rules worth knowing before editing the app:
   validator, and offers the JSON plus a plain-language change brief to hand back.
 - Everything is undoable (`Ctrl/Cmd+Z`, or the Undo button), and "Discard local
   changes" restores the committed board exactly.
-- Keys: `/` search, `n` new card, `e` export, `u` undo, `1`-`5` views, `Esc` closes.
+- Keys: `/` search, `n` new card, `e` export, `u` undo, `1`-`6` views, `Esc` closes.
+  The number keys are derived from the view list, so adding a view adds its key.
 
 ## Rendering the artifact
 
@@ -273,10 +359,11 @@ differences are listed here; everything else in this file governs it unchanged.
 | lane 4 title | RODICA BATCH | STAKEHOLDER FEEDBACK |
 | launch gate | G1-G9, the pre-launch conditions | PG1-PG9, the portal Definition of Ready |
 | rehydrate prompt | - | `docs/board/PORTAL-REHYDRATE.md` |
+| rulings section | none | 15 recorded decisions (the `WF-*` family) |
 
 **One renderer, one app, one design system.** Both boards render through
 `render-board.mjs`, which inlines `board-app.js` and `board.css` and gives both
-boards the same five interactive views. The portal board originally shipped with
+boards the same six interactive views. The portal board originally shipped with
 a second, static renderer (`render-portal-board.mjs`); it is retired, because a
 second renderer that nothing runs is where drift starts. Everything that differs
 between the two boards lives in `docs/board/board-config.mjs` and nowhere else.

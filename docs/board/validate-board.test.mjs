@@ -333,3 +333,188 @@ describe("an owner deferral is a field, so the sweep predicate can see it", () =
     assert.match(card.deferred, /2026-08-20/, "the deferral must say when it was ruled");
   });
 });
+
+/**
+ * ============================================================================
+ * RULINGS - THE SECTION THAT EXISTS BECAUSE FIFTEEN DECISIONS RENDERED AS TASKS
+ * ============================================================================
+ * Owner ruling 2026-08-27. Every rule below is asserted in BOTH directions, for
+ * the reason the header of this file already gives: a guard that cannot fire is
+ * the defect this project keeps finding in its own instruments. The difference
+ * from the loop-spec rules above is that these fire on the REAL board today -
+ * fifteen rulings live in it - so the control that matters most is the first
+ * one: the real board, and the platform board that has no rulings at all, both
+ * still validate.
+ */
+const RULING = {
+  id: "R-1",
+  ruling: "The decision, in the words it was taken in.",
+  date: "2026-08-27",
+  ruled_by: "owner",
+  superseded_by: null,
+  governs: ["SOME-CARD", "docs/some/file.md"],
+};
+
+/** A board with its rulings replaced. Cards are left exactly as the real board
+ *  has them, so the card rules are never the thing under test here. */
+function boardWithRulings(rulings, cards) {
+  const board = JSON.parse(readFileSync(REAL_PORTAL, "utf8"));
+  board.rulings = rulings;
+  if (cards) board.cards = cards;
+  const path = join(TMP, `board-${seq++}.json`);
+  writeFileSync(path, JSON.stringify(board, null, 2));
+  return path;
+}
+function validateRulings(rulings, cards) {
+  const r = spawnSync(process.execPath, [VALIDATOR, boardWithRulings(rulings, cards)], {
+    encoding: "utf8",
+  });
+  return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "" };
+}
+
+describe("rulings validate as their own section", () => {
+  test("the real portal board, which HAS rulings, still validates", () => {
+    const r = spawnSync(process.execPath, [VALIDATOR, REAL_PORTAL], { encoding: "utf8" });
+    assert.equal(r.status, 0, `portal board went red:\n${r.stderr}`);
+    assert.match(r.stdout, /rulings: \d+ recorded decision/);
+  });
+
+  // THE ADDITIVE ARM. The platform board carries no `rulings` key at all, and a
+  // shared instrument is additive or it does not ship.
+  test("the platform board, which has NO rulings key, is untouched", () => {
+    const r = spawnSync(process.execPath, [VALIDATOR, REAL_PLATFORM], { encoding: "utf8" });
+    assert.equal(r.status, 0, `platform board went red:\n${r.stderr}`);
+    assert.doesNotMatch(r.stdout, /rulings:/);
+  });
+
+  test("ACCEPTS a well-formed ruling", () => {
+    const r = validateRulings([RULING]);
+    assert.equal(r.code, 0, r.err);
+  });
+
+  test("the ruling count is NOT folded into the card count", () => {
+    const r = validateRulings([RULING]);
+    const cards = JSON.parse(readFileSync(REAL_PORTAL, "utf8")).cards.length;
+    assert.match(r.out, new RegExp(`cards: ${cards} across lanes`));
+    assert.match(r.out, /rulings: 1 recorded decision\(s\), NOT cards and NOT counted above/);
+  });
+});
+
+describe("a ruling is not done or not done - the fields it may NOT carry", () => {
+  // The state the whole section exists to end: a decision wearing a task's
+  // clothes. Each is asserted separately so the failure names the field.
+  for (const [field, value] of [
+    ["status", "todo"],
+    ["gate", "owner_authorizo"],
+    ["evidence", { kind: "pr", ref: "#1", at: "2026-08-27" }],
+    ["acceptance", "a machine-checkable line"],
+    ["lane", "in_flight"],
+    ["home_lane", "in_flight"],
+    ["blocked_on", "ivan"],
+    ["priority", "high"],
+    ["last_checkpoint", "2026-08-27"],
+  ]) {
+    test(`REJECTS a ruling carrying "${field}"`, () => {
+      const r = validateRulings([{ ...RULING, [field]: value }]);
+      assert.equal(r.code, 1, `expected a violation, got:\n${r.out}`);
+      assert.match(r.err, new RegExp(`ruling carries "${field}"`));
+    });
+  }
+
+  // THE ADJACENT STATE. Without this the block above would pass over a
+  // validator that rejected every ruling for any reason at all.
+  test("ACCEPTS the same ruling with none of them - the adjacent state", () => {
+    assert.equal(validateRulings([RULING]).code, 0);
+  });
+});
+
+describe("the required fields, each with its negative arm", () => {
+  for (const field of ["id", "ruling", "date", "ruled_by", "superseded_by", "governs"]) {
+    test(`REJECTS a ruling missing "${field}"`, () => {
+      const r = { ...RULING };
+      delete r[field];
+      const out = validateRulings([r]);
+      assert.equal(out.code, 1, `expected a violation, got:\n${out.out}`);
+      assert.match(out.err, new RegExp(`missing required field "${field}"`));
+    });
+  }
+
+  test("REJECTS an empty ruling text - a ruling with no decision in it", () => {
+    const r = validateRulings([{ ...RULING, ruling: "   " }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /ruling text must be a non-empty string/);
+  });
+
+  test("REJECTS a date that is not ISO 8601", () => {
+    const r = validateRulings([{ ...RULING, date: "August 2026" }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /is not an ISO 8601 date/);
+  });
+
+  test("REJECTS an empty governs - a ruling that binds nothing", () => {
+    const r = validateRulings([{ ...RULING, governs: [] }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /governs must be a non-empty array/);
+  });
+
+  test("REJECTS an unknown field, so a card field cannot arrive by typo", () => {
+    const r = validateRulings([{ ...RULING, owner: "purple" }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /ruling field "owner" is not one of/);
+  });
+});
+
+describe("superseded_by is the only record of why a ruling stopped applying", () => {
+  test("ACCEPTS null - the ordinary case", () => {
+    assert.equal(validateRulings([RULING]).code, 0);
+  });
+
+  test("ACCEPTS a pointer at a ruling that exists", () => {
+    const later = { ...RULING, id: "R-2" };
+    const r = validateRulings([{ ...RULING, superseded_by: "R-2" }, later]);
+    assert.equal(r.code, 0, r.err);
+  });
+
+  test("REJECTS a pointer at a ruling that does not exist", () => {
+    const r = validateRulings([{ ...RULING, superseded_by: "R-99" }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /superseded_by "R-99" names no ruling on this board/);
+  });
+
+  test("REJECTS a ruling superseding itself", () => {
+    const r = validateRulings([{ ...RULING, superseded_by: "R-1" }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /superseded_by names itself/);
+  });
+});
+
+describe("the id namespace is shared - a move is a MOVE", () => {
+  test("REJECTS the same id in BOTH cards and rulings", () => {
+    const card = { ...ORDINARY, id: "R-1" };
+    const r = validateRulings([RULING], [card]);
+    assert.equal(r.code, 1, `expected a violation, got:\n${r.out}`);
+    assert.match(r.err, /id exists in BOTH cards\[\] and rulings\[\]/);
+  });
+
+  test("ACCEPTS distinct ids - the adjacent state", () => {
+    const r = validateRulings([RULING], [ORDINARY]);
+    assert.equal(r.code, 0, r.err);
+  });
+
+  test("REJECTS two rulings with the same id", () => {
+    const r = validateRulings([RULING, { ...RULING, governs: ["OTHER"] }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /duplicate ruling id/);
+  });
+});
+
+describe("external_agenda means the same thing on a ruling as on a card", () => {
+  test("ACCEPTS exactly true", () => {
+    assert.equal(validateRulings([{ ...RULING, external_agenda: true }]).code, 0);
+  });
+  test("REJECTS false, the value the field does not take", () => {
+    const r = validateRulings([{ ...RULING, external_agenda: false }]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /external_agenda must be exactly true/);
+  });
+});
