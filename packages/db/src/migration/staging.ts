@@ -67,51 +67,86 @@ export type StagedRow = {
   sourceId: string;
 };
 
+/**
+ * ROWS PER STAGING STATEMENT (MIG-09).
+ *
+ * THIS IS A CORRECTNESS BOUND BEFORE IT IS A PERFORMANCE ONE, and that is the
+ * reason it is 500 rather than something larger. `stageRows` used to build ONE
+ * `INSERT` for the whole entity, and every column of every row is a BOUND
+ * PARAMETER: six per row here. **Postgres refuses more than 65535 bind
+ * parameters in one statement**, so that single statement stops working at
+ * ~10,900 rows - and the real delivery is 8,000-10,000 patients plus a decade
+ * of appointments. The amostra's 1000 never came close, which is exactly the
+ * shape of defect the rehearsal cannot find: it fails FIRST on the night the
+ * extraction cannot be repeated, on the biggest entity, with the old system
+ * already retired.
+ *
+ * 500 x 6 = 3000 parameters per statement, twenty times under the limit, and it
+ * is the same trade MIG-08's chunk is: small enough that a statement stays
+ * cheap to parse and plan, large enough that the round trips disappear.
+ */
+export const STAGE_CHUNK_SIZE = 500;
+
 export async function stageRows(
   tx: DbTx,
   tenantId: string,
   batchId: string,
   rows: StageRowInput[],
+  chunkSize: number = STAGE_CHUNK_SIZE,
 ): Promise<{ staged: number; rows: StagedRow[] }> {
   if (rows.length === 0) return { staged: 0, rows: [] };
 
-  const inserted = await tx
-    .insert(migrationStagingRows)
-    .values(
-      rows.map((r) => ({
-        tenantId,
-        batchId,
-        sourceSystem: r.sourceSystem,
-        entityType: r.entityType,
-        sourceId: r.sourceId,
-        raw: r.raw,
-      })),
-    )
-    .onConflictDoUpdate({
-      target: [
-        migrationStagingRows.tenantId,
-        migrationStagingRows.sourceSystem,
-        migrationStagingRows.entityType,
-        migrationStagingRows.sourceId,
-      ],
-      set: {
-        raw: sql`excluded.raw`,
-        batchId: sql`excluded.batch_id`,
-        status: sql`case when ${migrationStagingRows.status} = 'imported'
-                    then 'imported'::migration_staging_status
-                    else 'pending'::migration_staging_status end`,
-        errorDetail: sql`case when ${migrationStagingRows.status} = 'imported'
-                         then ${migrationStagingRows.errorDetail} else null end`,
-        updatedAt: new Date(),
-      },
-    })
-    .returning({
-      id: migrationStagingRows.id,
-      entityType: migrationStagingRows.entityType,
-      sourceId: migrationStagingRows.sourceId,
-    });
+  const out: StagedRow[] = [];
+  const size = chunkSize > 0 ? chunkSize : rows.length;
 
-  return { staged: inserted.length, rows: inserted };
+  for (let i = 0; i < rows.length; i += size) {
+    const chunk = rows.slice(i, i + size);
+    const inserted = await tx
+      .insert(migrationStagingRows)
+      .values(
+        chunk.map((r) => ({
+          tenantId,
+          batchId,
+          sourceSystem: r.sourceSystem,
+          entityType: r.entityType,
+          sourceId: r.sourceId,
+          raw: r.raw,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [
+          migrationStagingRows.tenantId,
+          migrationStagingRows.sourceSystem,
+          migrationStagingRows.entityType,
+          migrationStagingRows.sourceId,
+        ],
+        set: {
+          raw: sql`excluded.raw`,
+          batchId: sql`excluded.batch_id`,
+          status: sql`case when ${migrationStagingRows.status} = 'imported'
+                      then 'imported'::migration_staging_status
+                      else 'pending'::migration_staging_status end`,
+          errorDetail: sql`case when ${migrationStagingRows.status} = 'imported'
+                           then ${migrationStagingRows.errorDetail} else null end`,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({
+        id: migrationStagingRows.id,
+        entityType: migrationStagingRows.entityType,
+        sourceId: migrationStagingRows.sourceId,
+      });
+    out.push(...inserted);
+  }
+
+  // SEMANTICS ARE UNCHANGED BY THE CHUNKING, and the ON CONFLICT clause above is
+  // byte-for-byte what it was: a non-imported row resets to `pending` with its
+  // raw replaced and its error cleared; an `imported` row keeps its status, its
+  // imported_entity_id and its error_detail, and only its raw and batch_id are
+  // refreshed for audit. Chunking cannot change that, because every chunk runs
+  // the same clause and no row appears in two chunks - the caller's set is
+  // unique on the conflict target by construction.
+  return { staged: out.length, rows: out };
 }
 
 /** pending → validated. Throws if the row is not currently `pending`. */
@@ -231,6 +266,97 @@ export async function markImportedMany(
       `bulk transition to 'imported' updated ${updated} of ${pairs.length} staging row(s) — ` +
       `at least one was missing, out of tenant scope, or not in [validated, failed]`;
     throw new MigrationStagingError(message, { code: "invalid_transition", message });
+  }
+}
+
+/* ================================================================== */
+/* MIG-09: THE BULK TRANSITIONS THE VALIDATE PHASE USES                */
+/* ================================================================== */
+
+/**
+ * ROWS PER LEDGER-TRANSITION STATEMENT.
+ *
+ * THE PHASE THIS EXISTS FOR. After MIG-08 batched the import writes, the
+ * 2026-08-27 rehearsal imported 2001 rows in 78.3s inside an `--apply` that took
+ * 401s. The other ~5m20s was the validate phase marking every row one at a time:
+ * 2001 `markValidated`/`markFailed` round trips to a pooler in Frankfurt.
+ * Staging was never the problem - it was already one statement - and measuring
+ * that rather than assuming it is what pointed here.
+ *
+ * 500, matching `STAGE_CHUNK_SIZE`, and bounded by the same 65535-parameter
+ * ceiling: two bound parameters per row in the VALUES list.
+ */
+export const TRANSITION_CHUNK_SIZE = 500;
+
+/** One row's target state in a bulk transition. */
+export type BulkTransition = {
+  stagingRowId: string;
+  status: MigrationStagingStatus;
+  errorDetail?: MigrationErrorDetail | null;
+};
+
+/**
+ * MANY ROWS, ONE STATEMENT, ONE GUARD. The bulk form of `transition`.
+ *
+ * THE TRANSITION GUARD IS KEPT, COLLECTIVELY, exactly as `markImportedMany`
+ * keeps it: the `WHERE` still refuses a row that is not in `expected`, and a
+ * mismatch between the updated count and the input count throws. That is
+ * stricter than per-row on purpose - the caller's answer to a throw is to
+ * re-run the chunk ONE ROW AT A TIME, where each row gets `transition`'s own
+ * verdict and its own message. Nothing is lost by refusing the batch; the
+ * precise reason is recovered by the fallback.
+ *
+ * EVERY ROW IN ONE CALL SHARES `expected`, which is what lets one statement do
+ * the work. The validate phase satisfies that naturally: it marks `pending`
+ * rows and nothing else.
+ *
+ * RAW SQL, and every value is a BOUND PARAMETER. `UPDATE ... FROM (VALUES ...)`
+ * has no drizzle query-builder form; nothing here is interpolated.
+ */
+export async function transitionMany(
+  tx: DbTx,
+  tenantId: string,
+  expected: MigrationStagingStatus[],
+  rows: BulkTransition[],
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  const tuples = sql.join(
+    rows.map(
+      (r) =>
+        sql`(${r.stagingRowId}::uuid, ${r.status}::migration_staging_status, ${
+          r.errorDetail === undefined || r.errorDetail === null
+            ? sql`null::jsonb`
+            : sql`${JSON.stringify(r.errorDetail)}::jsonb`
+        })`,
+    ),
+    sql`, `,
+  );
+  const expectedList = sql.join(
+    expected.map((e) => sql`${e}::migration_staging_status`),
+    sql`, `,
+  );
+
+  const result = await tx.execute(sql`
+    update migration_staging_rows as m
+       set status = v.status,
+           error_detail = v.error_detail,
+           updated_at = now()
+      from (values ${tuples}) as v(staging_row_id, status, error_detail)
+     where m.id = v.staging_row_id
+       and m.tenant_id = ${tenantId}::uuid
+       and m.status in (${expectedList})
+    returning m.id
+  `);
+
+  const updated = Array.isArray(result)
+    ? result.length
+    : ((result as { length?: number }).length ?? 0);
+  if (updated !== rows.length) {
+    const message =
+      `bulk transition updated ${updated} of ${rows.length} staging row(s) — at least one ` +
+      `was missing, out of tenant scope, or not in [${expected.join(", ")}]`;
+    throw new MigrationStagingError(message, { code: "invalid_transition", message }, { expected });
   }
 }
 
