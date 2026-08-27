@@ -46,7 +46,13 @@ import {
   type FisiozeroLocationResolution,
 } from "../src/migration/sources/fisiozero";
 import { generateReconciliationReport } from "../src/migration/reconciliation";
-import { markFailed, markValidated, stageRows } from "../src/migration/staging";
+import {
+  markFailed,
+  markValidated,
+  stageRows,
+  transitionMany,
+  TRANSITION_CHUNK_SIZE,
+} from "../src/migration/staging";
 import { importRecords } from "../src/migration/upsert";
 import { validateMigrationRecord } from "../src/migration/validate";
 import type {
@@ -392,16 +398,58 @@ export function livePipeline(
           );
         const statusByKey = new Map(current.map((r) => [key(r.entityType, r.sourceId), r]));
 
+        /* ==============================================================
+         * MIG-09: THE VERDICTS ARE WRITTEN IN BULK, 500 ROWS PER STATEMENT.
+         * ==============================================================
+         * This loop used to call `markValidated` or `markFailed` PER ROW. On
+         * the 2026-08-27 rehearsal that was 2001 round trips to a pooler in
+         * Frankfurt and it was ~5m20s of a 401s `apply` whose import phase was
+         * 78.3s. Staging was never the cost - it was already one statement -
+         * and measuring rather than assuming is what pointed here.
+         *
+         * THE VERDICT ITSELF IS UNCHANGED. `validateMigrationRecord` runs per
+         * record exactly as before, in the same order, and `pending` is still
+         * the only status that gets marked: on the idempotency re-run every row
+         * is already `imported`, and marking blindly would turn the second
+         * --apply into a crash instead of the no-op it is supposed to prove.
+         * All that changed is how many statements carry the answers.
+         */
+        const pending: Array<{ id: string; detail: ReturnType<typeof validateMigrationRecord> }> =
+          [];
         for (const r of staged) {
           const row = statusByKey.get(key(r.entityType, r.sourceId));
           const detail = validateMigrationRecord(r.record);
-          if (detail) {
-            failed += 1;
-            if (row && row.status === "pending") await markFailed(t, tenantId, row.id, detail);
-            continue;
+          if (detail) failed += 1;
+          else validated += 1;
+          if (row && row.status === "pending") pending.push({ id: row.id, detail });
+        }
+
+        for (let i = 0; i < pending.length; i += TRANSITION_CHUNK_SIZE) {
+          const chunk = pending.slice(i, i + TRANSITION_CHUNK_SIZE);
+          try {
+            await transitionMany(
+              t,
+              tenantId,
+              ["pending"],
+              chunk.map((c) => ({
+                stagingRowId: c.id,
+                status: c.detail ? ("failed" as const) : ("validated" as const),
+                errorDetail: c.detail ?? null,
+              })),
+            );
+          } catch {
+            // THE SAME FALLBACK MIG-08 USES, and for the same reason. A bulk
+            // transition refuses the WHOLE chunk when any one row is not in the
+            // expected status, and which row that is is not in the error. Going
+            // one at a time gives every row `transition`'s own verdict and its
+            // own message. `markFailed` accepts `failed` in its expected set, so
+            // a row that fails validation twice re-records the reason rather
+            // than throwing an invalid-transition over the real cause.
+            for (const c of chunk) {
+              if (c.detail) await markFailed(t, tenantId, c.id, c.detail);
+              else await markValidated(t, tenantId, c.id);
+            }
           }
-          validated += 1;
-          if (row && row.status === "pending") await markValidated(t, tenantId, row.id);
         }
       });
 

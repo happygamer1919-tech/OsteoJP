@@ -870,6 +870,18 @@ RECONCILIATION
 
 **Expected exit code: `0`.**
 
+**STAGING AND VALIDATION ARE CHUNKED TOO (MIG-09).** The ledger writes go 500
+rows per statement: staging is one multi-row `INSERT ... ON CONFLICT DO UPDATE`
+per chunk, and the validate phase writes its verdicts with one
+`UPDATE ... FROM (VALUES ...)` per chunk carrying a per-row status and a per-row
+error detail. If a chunk's transition guard refuses — which it does when any one
+row is not in the status it expected — that chunk is re-marked one row at a
+time, so the offending row gets its own message. **THE 500 IS A CORRECTNESS
+BOUND BEFORE IT IS A SPEED ONE:** every column of every row is a bound
+parameter, Postgres refuses more than 65535 in one statement, and the single
+whole-entity `INSERT` this replaced stops working at about 10,900 rows — inside
+the range this delivery actually is.
+
 **THE WRITES ARE CHUNKED, AND A CHUNK FALLBACK LOOKS LIKE NOTHING (MIG-08).**
 Each entity is imported in chunks of 200 rows: one multi-row `INSERT` and one
 bulk ledger `UPDATE` per chunk, inside one savepoint, with the parent-id lookups

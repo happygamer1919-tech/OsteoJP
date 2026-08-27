@@ -374,16 +374,31 @@ export async function runImport({
   }
 
   /* -- 3. stage + validate. Writes the LEDGER, never a target table. -- */
+  // MIG-09: THESE TWO PHASES ARE TIMED AND THE TIMES ARE PRINTED, for the same
+  // reason the import lines carry them. The 2026-08-27 rehearsal's `apply` took
+  // 401s of which the import phase was 78.3s, and NOTHING IN THE TRANSCRIPT
+  // said where the other five minutes went - it had to be measured by
+  // subtraction, after the fact, on a run that could have said so itself.
+  const stageT0 = Date.now();
   const staged = await pipeline.stageRows(adapterResult.records);
+  const stageSecs = (Date.now() - stageT0) / 1000;
+
+  const validateT0 = Date.now();
   const validation = await pipeline.validate(staged);
-  log(`STAGED     ${staged.length}`);
-  log(`VALIDATED  ${validation.validated}   FAILED ${validation.failed}`);
+  const validateSecs = (Date.now() - validateT0) / 1000;
+
+  const rate = (n, secs) => (secs > 0 ? (n / secs).toFixed(1) : "n/a");
+  log(`STAGED     ${staged.length}   ${stageSecs.toFixed(1)}s   ${rate(staged.length, stageSecs)} rows/s`);
+  log(
+    `VALIDATED  ${validation.validated}   FAILED ${validation.failed}` +
+      `   ${validateSecs.toFixed(1)}s   ${rate(staged.length, validateSecs)} rows/s`,
+  );
   log("");
 
   if (!apply) {
     log("PREVIEW - staged and validated only. NO TARGET TABLE WAS WRITTEN.");
     log(`To run for real: --apply --confirm ${JSON.stringify(CONFIRM_PHRASE)}`);
-    return { exit: EXIT.OK, staged: staged.length, imported: 0, counts, reasons, coverage, effectiveConfig, validation };
+    return { exit: EXIT.OK, staged: staged.length, imported: 0, stageSecs, validateSecs, counts, reasons, coverage, effectiveConfig, validation };
   }
 
   /* -- 4. the live gate -- */
@@ -546,7 +561,7 @@ export async function runImport({
     log(`IMPORT FAILED - ${failedCount} ledger row(s) failed`);
   }
   const clean = problems.length === 0;
-  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, perEntitySkipped, perEntityFailed, perEntitySecs, importSkipped, importFailed, counts, reasons, coverage, effectiveConfig, validation, report, numberPairs };
+  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, perEntitySkipped, perEntityFailed, perEntitySecs, stageSecs, validateSecs, importSkipped, importFailed, counts, reasons, coverage, effectiveConfig, validation, report, numberPairs };
 }
 
 /* ====================================================================== */

@@ -36,6 +36,27 @@ three things neither rehearsal proved.
 
 ---
 
+> ### A NOTE FOR WHOEVER EDITS THIS FILE
+>
+> **PROSE ABOVE §1 MUST NEVER CONTAIN THE LITERAL STRING `-` `-apply`** (written
+> split here so this note does not break the rule it states). Three of
+> `scripts/import/prod-run-runbook.test.mjs`'s ordering guards find the FIRST
+> occurrence of that token and assert that `legacy-staff-accounts.sql`, the
+> patient-number preflight, `cleanup-test-patients.sql`, `copy-attachments.mjs`
+> and "Take a backup now" all appear before it. A header sentence mentioning the
+> flag moves that first occurrence to the top of the file and every one of those
+> guards fails.
+>
+> **THE GUARDS ARE RIGHT AND THE PROSE IS WRONG**, every time. It has happened
+> twice — 2026-08-27, both times in a header paragraph added by a terminal — and
+> both times the fix was to reword the sentence, never to relax the test. The
+> ordering those guards pin is the actual safety property of this document: the
+> backup and the preflight precede the first write, on a night with no undo.
+>
+> Say "the apply command" or "the live run". Never the flag.
+
+---
+
 ## 0. Read this before the window opens
 
 ### 0.1 What makes this different from the rehearsal
@@ -718,6 +739,18 @@ and the clinic being able to use its history are different facts.
 `migration_staging_rows` on production under any circumstances — it is the only
 record of what was imported, and the ledger is also what makes a re-run resume
 rather than duplicate.
+
+**STAGING AND VALIDATION ARE CHUNKED TOO (MIG-09).** The ledger writes go 500
+rows per statement: staging is one multi-row `INSERT ... ON CONFLICT DO UPDATE`
+per chunk, and the validate phase writes its verdicts with one
+`UPDATE ... FROM (VALUES ...)` per chunk carrying a per-row status and a per-row
+error detail. If a chunk's transition guard refuses — which it does when any one
+row is not in the status it expected — that chunk is re-marked one row at a
+time, so the offending row gets its own message. **THE 500 IS A CORRECTNESS
+BOUND BEFORE IT IS A SPEED ONE:** every column of every row is a bound
+parameter, Postgres refuses more than 65535 in one statement, and the single
+whole-entity `INSERT` this replaced stops working at about 10,900 rows — inside
+the range this delivery actually is.
 
 **THE WRITES ARE CHUNKED, AND A CHUNK FALLBACK IS INVISIBLE HERE (MIG-08).**
 Each entity imports in chunks of 200 rows — one multi-row `INSERT`, one bulk
