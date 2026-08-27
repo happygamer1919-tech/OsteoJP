@@ -162,8 +162,12 @@ test("a backup step exists before the first write", () => {
 test("both clinics are sequenced, with separate configs and ONE ledger", () => {
   assert.match(text, /Linda-a-Velha/);
   assert.match(text, /Castelo Branco/);
-  assert.match(text, /mapping-lv\.json/);
-  assert.match(text, /mapping-cb\.json/);
+  assert.match(text, /mapping-config\.LV\.json/);
+  assert.match(text, /mapping-config\.CB\.json/);
+  // The two shell variables every later step uses, so a filename lives in ONE
+  // place rather than in nine.
+  assert.match(text, /\$LVCFG/);
+  assert.match(text, /\$CBCFG/);
   assert.match(text, /staging ledger is SHARED/i);
 });
 
@@ -186,7 +190,7 @@ test("no tilde path in any command block", () => {
 
 test("the paste-back list exists and excludes the three personal-data files", () => {
   const donot = text.slice(text.indexOf("Never paste:"));
-  for (const f of ["mapping-lv.json", "attachment-mapping", "checkpoint-"]) {
+  for (const f of ["mapping-config.LV.json", "attachment-mapping", "checkpoint-"]) {
     assert.ok(donot.includes(f), `${f} must be named as unpasteable`);
   }
   assert.match(text, /Every exit code, including the zeros/i);
@@ -265,10 +269,36 @@ test("the cleanup step exists and comes BEFORE the import sequence", () => {
 
 test("it states the literal expected counts", () => {
   const s = text.slice(text.indexOf("### 1.3b"), text.indexOf("### 1.4"));
-  assert.match(s, /33/);
-  assert.match(s, /DELETE 33/);
+  // THE PATIENT COUNT IS NOT ONE OF THEM ANY MORE. It was 33, and 33 went
+  // stale: production held 35 on 2026-08-27 with the newest row created the day
+  // before. The runbook now RECORDS that reading and tells the owner to take a
+  // fresh one on the day. What is still literal is what does not move.
   assert.match(s, /staff_rows.{0,40}30/s);
   assert.match(s, /every column 0/i);
+});
+
+test("the owner counts and CONFIRMS the patients on the day, before anything else", () => {
+  // The only step that protects a real patient from 1.3b, and it has to be a
+  // human question because a count cannot answer it.
+  const s = text.slice(text.indexOf("### 1.3c"), text.indexOf("### 1.4"));
+  assert.match(s, /app\.expected_patients/, "names the setting the count goes into");
+  assert.match(s, /newest_created_at/, "prints how recent the newest row is");
+  assert.match(s, /Rodica/i, "the confirmation is with a person, not a query");
+  assert.match(s, /no default/i, "and there is no default to fall back on");
+  // The 2026-08-27 reading is RECORDED and explicitly not the number to reuse.
+  assert.match(s, /\b35\b/);
+  assert.match(s, /2026-08-26/, "the newest row's date is the reason to re-ask");
+});
+
+test("1.4 points at the real config files and does not copy the template", () => {
+  // Following the old `cp` lines would create a second, EMPTY pair beside the
+  // filled ones, with nothing on a command line to say which pair a run used.
+  const s = text.slice(text.indexOf("### 1.4"), text.indexOf("### 1.5"));
+  assert.match(s, /mapping-config\.LV\.json/);
+  assert.match(s, /mapping-config\.CB\.json/);
+  assert.ok(!/cp\s+"\$REPO\/scripts\/import\/mapping-config\.template\.json"/.test(s),
+    "the template cp lines must be gone");
+  assert.match(s, /34c34/, "the diff's expected output is literal, not described");
 });
 
 test("it says the backup comes FIRST - earlier than the runbook otherwise says", () => {

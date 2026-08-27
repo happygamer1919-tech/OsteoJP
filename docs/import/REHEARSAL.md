@@ -182,10 +182,25 @@ patient of the tenant**, not a number range and not a list of ids. That uuid is
 the fixed seed constant (`packages/db/seed/dev-reference.ts`), so it is the same
 tenant in both projects and "verbatim" is literally true.
 
-**STEP 1 will say `patients = 50` here, not 33.** Production holds 33
-staff-training rows; the rehearsal holds the 50 the dev seed just created. **50
-is the expected rehearsal delta — record it and proceed.** The `33` in the SQL
-file's own header is the production figure and is not a STOP for this run.
+**STEP 1 WILL SAY `patients = 50` HERE, AND 50 IS WHAT YOU SET.** The dev seed
+creates exactly 50; production holds whatever the clinic has been practising on
+(35 on 2026-08-27, and it moves). Put `50` into `app.expected_patients` at the
+top of STEP 2:
+
+```sql
+set local app.expected_patients = '50';
+```
+
+**THERE IS NO DEFAULT, AND STEP 2 REFUSES WITHOUT IT.** Left empty it raises
+`EXPECTED_PATIENTS is not set` and deletes nothing; set to a number the live
+count disagrees with it raises and deletes nothing. That guard is not a
+rehearsal formality — it is the production safeguard, and running it here is
+what proves the refusal works before it matters.
+
+**The file no longer hardcodes a patient count anywhere.** It used to say `33`,
+which was already two behind by 2026-08-27. `newest_created_at`, new in STEP 1,
+is the column that would have shown it: a count alone cannot tell 50 seeded rows
+from 49 seeded plus one somebody made this morning.
 
 Then `preflight-patient-numbers.sql`, **expecting zero patients and a NULL
 `max_patient_number`**, which is the same evidence `PROD-RUN.md` §1.3c reads.
