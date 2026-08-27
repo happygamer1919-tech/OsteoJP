@@ -66,10 +66,14 @@ describe.skipIf(!live)("migration pipeline — staging + idempotent upsert (live
   // R16 (migration 0043): admin is READ-ONLY on clinical_records — a historical
   // clinical-history import writes clinical_records/attachments, so the pipeline
   // must run under a principal that can write clinical data in-tenant. That is
-  // OWNER (all in-tenant) or service_role, NOT admin. The pipeline has no
-  // production caller yet; when it is wired it must use owner/service_role (see
-  // DECISIONS 2026-07-25). The tenant-isolation assertion (claimsB sees none of
-  // tenant A) is unchanged — owner is still tenant-scoped by tenant_id.
+  // OWNER (all in-tenant) or service_role, NOT admin. THE CALLER NOW EXISTS:
+  // `livePipeline` in scripts/import-core.ts, behind both import entrypoints
+  // (rehearsal-import.ts and prod-import.ts), and it runs as user_role
+  // "owner" — the same role these claims use, ruled 2026-08-26 (see also
+  // DECISIONS 2026-07-25). It shipped as "admin" and failed every
+  // clinical_record on the 0045 RLS check, which is the failure this comment
+  // predicted. The tenant-isolation assertion (claimsB sees none of tenant A)
+  // is unchanged — owner is still tenant-scoped by tenant_id.
   const claimsA: TenantClaims = { tenant_id: tenantA, user_role: "owner" };
   const claimsB: TenantClaims = { tenant_id: tenantB, user_role: "owner" };
 

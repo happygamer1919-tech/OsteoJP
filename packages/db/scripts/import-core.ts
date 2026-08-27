@@ -312,7 +312,22 @@ export function livePipeline(
   resolvers: MigrationResolvers,
   actorId: string,
 ): Pipeline {
-  const claims = { tenant_id: tenantId, user_role: "admin", sub: actorId };
+  // OWNER, NOT ADMIN, AND NOT service_role. Ruled 2026-08-26: the pipeline
+  // principal is IN-TENANT.
+  //
+  // `admin` cannot write clinical data. Migration 0045 (owner ruling R16)
+  // dropped the admin WRITE policy on `clinical_records` - admin holds
+  // `clinical_records:read` only - so a historical clinical-history import
+  // running as admin inserts patients and appointments and then fails EVERY
+  // clinical_record on the RLS check. `owner` is all-in-tenant and can write
+  // them; the tenant isolation is unchanged, because `owner` is still scoped
+  // by the `tenant_id` claim exactly as `admin` was.
+  //
+  // NOT service_role, which is the other principal that could write these:
+  // service_role is OUT of tenant, so the rehearsal would stop proving that
+  // the tenant policies hold for every statement of the run - which is the
+  // reason the comment below gives for using `withTenantContext` at all.
+  const claims = { tenant_id: tenantId, user_role: "owner", sub: actorId };
   const tx = <T>(fn: (t: DbTx) => Promise<T>) => withTenantContext(claims, fn);
 
   /** (entityType|sourceId) -> ledger row id, from the stage call. */
@@ -579,6 +594,27 @@ export async function runEntrypoint(gate: TargetGate): Promise<never> {
   }
 
   /* -- adapter -- */
+  // B6/B1: THE STRIPPED CONFIG, NEVER THE RAW ONE, AND THE ADAPTER GETS IT TOO.
+  // `serviceKeyByType` ships `"Diversos": "TO_NORMALIZE"`, a sentinel meaning
+  // "not a service". The runner strips it for the coverage check and keeps the
+  // result as `effectiveConfig`.
+  //
+  // B6 fixed the PIPELINE half: it was built from `config`, so
+  // `resolvers.serviceIdByKey` still held `TO_NORMALIZE -> TO_NORMALIZE` and
+  // `importAppointment` handed that string to Postgres as a uuid: `22P02
+  // invalid input syntax for type uuid: "TO_NORMALIZE"`, killing all 61
+  // Diversos appointments while the run printed "imported WITHOUT a service"
+  // and exited 0.
+  //
+  // B1 fixes the ADAPTER half, which B6 left. Feeding the adapter the RAW map
+  // makes it emit `serviceKey: "TO_NORMALIZE"` on every Diversos appointment;
+  // the stripped resolvers then have no entry for it and upsert.ts throws
+  // `unresolved("serviceKey")` - the same 61 rows lost, one layer further in.
+  // Stripped on BOTH sides, `serviceKeyByType?.["Diversos"]` is undefined, the
+  // adapter emits `serviceKey: null` (fisiozero.ts:798), `service_id` is
+  // nullable, and the row imports WITHOUT a service - which is exactly what the
+  // runner's note has always claimed and is now true.
+  const effective = runner.stripToNormalize(config).config;
   const delivery = readDelivery(deliveryDir);
   let adapterResult: FisiozeroAdapterResult;
   try {
@@ -593,7 +629,7 @@ export async function runEntrypoint(gate: TargetGate): Promise<never> {
         tenantId,
         location: locationResolution(config),
         practitionerKeyByName: stripReadme(config.practitionerKeyByName),
-        serviceKeyByType: stripReadme(config.serviceKeyByType),
+        serviceKeyByType: stripReadme(effective.serviceKeyByType),
       },
     );
   } catch (e) {
@@ -619,15 +655,7 @@ export async function runEntrypoint(gate: TargetGate): Promise<never> {
     console.error("--batch must be a uuid (migration_staging_rows.batch_id is uuid); got a non-uuid");
     process.exit(EXIT.BAD_INVOCATION);
   }
-  // B6: THE STRIPPED CONFIG, NEVER THE RAW ONE. `serviceKeyByType` ships
-  // `"Diversos": "TO_NORMALIZE"`, a sentinel meaning "not a service". The runner
-  // strips it for the coverage check and keeps the result as `effectiveConfig`,
-  // but the pipeline was built from `config`, so `resolvers.serviceIdByKey`
-  // still held `TO_NORMALIZE -> TO_NORMALIZE` and `importAppointment` handed
-  // that string to Postgres as a uuid: `22P02 invalid input syntax for type
-  // uuid: "TO_NORMALIZE"`, killing all 61 Diversos appointments while the run
-  // printed "imported WITHOUT a service" and exited 0.
-  const effective = runner.stripToNormalize(config).config;
+  // The SAME `effective` the adapter was fed, above. One strip, both halves.
   const pipeline = dryRun ? null : livePipeline(tenantId, batchId, buildResolvers(effective), tenantId);
 
   const result = await runner.runImport({
