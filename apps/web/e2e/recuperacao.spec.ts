@@ -103,9 +103,119 @@ test("the date and the therapist render, which is what the null-date crash broke
 test("a recorded contact renders with who and when (the contacts query)", async ({ page }) => {
   // THE SECOND CRASHING STATEMENT. It only runs when the candidate list is
   // non-empty, so nothing before this spec ever executed it against real rows.
+  //
+  // ==========================================================================
+  // WHAT THIS TEST DOES AND DOES NOT PROVE, NAMED 2026-08-28.
+  // ==========================================================================
+  // It proves the READ. The row it renders is inserted by `seed-e2e.mjs`
+  // through the SERVICE-ROLE client, so it arrives by a route no user takes.
+  // For as long as RB-01 has existed this has been green while the WRITE PATH
+  // was broken on the deployed screen - a spec named after the visible outcome,
+  // asserting the visible outcome, reaching it another way.
+  //
+  // The write is now covered by the test directly below and by
+  // lib/followup/record-contact.db.test.ts. This one keeps its job and its
+  // name is now honest about what that job is.
   await page.goto("/recuperacao");
   const row = page.locator("li").filter({ hasText: NAMES.mobile }).first();
   await expect(row.getByText(/Contactado (por .+ )?em \d{2}\/\d{2}\/\d{4}/)).toBeVisible();
+});
+
+/**
+ * ==========================================================================
+ * LE-followup-contact-mark-never-recorded - THE WRITE, ON THE DEPLOYED SCREEN.
+ * ==========================================================================
+ * ASSERT THE ROW, NOT THE LABEL. The instruction is the card's own, and it is
+ * this spec's own history: the seeded patient ALREADY shows a "Contactado …"
+ * line, so a test that pressed a channel and then asserted that text would be
+ * green before the click, after the click, and against a build where the write
+ * does nothing at all.
+ *
+ * So this counts. The number of contact lines on the row must GO UP by one, and
+ * the new line must name the CHANNEL that was pressed.
+ */
+test("pressing a channel RECORDS a mark - counted, not matched", async ({ page, context }) => {
+  await page.goto("/recuperacao");
+  const row = page.locator("li").filter({ hasText: NAMES.mobile }).first();
+  await expect(row).toBeVisible();
+
+  // The seeded row already carries one whatsapp mark, so the COUNT is the
+  // measurement and its starting value is read rather than assumed.
+  const before = await row.locator("li", { hasText: /Contactado/ }).count();
+  expect(before).toBeGreaterThan(0);
+
+  /**
+   * WHATSAPP, NOT EMAIL, AND THE FIRST VERSION OF THIS TEST GOT IT WRONG.
+   *
+   * It clicked the Email link and tried to neutralise the handoff with
+   * `context.route("mailto:**")`. PLAYWRIGHT ONLY ROUTES http(s): the pattern
+   * matched nothing, the `mailto:` click produced no request the test could
+   * see, and the count stayed where it started. The test failed for a reason
+   * that had nothing to do with the code under test.
+   *
+   * `https://wa.me/...` IS routable, so the outbound navigation is aborted at
+   * the network and the click still exercises the real path - an anchor with a
+   * real href and `target="_blank"`, which is the exact shape the defect turned
+   * on.
+   */
+  await context.route("https://wa.me/**", (r) => r.abort());
+
+  /**
+   * WAIT FOR THE RESPONSE, DO NOT SLEEP ON IT. The promise is armed BEFORE the
+   * click, so this cannot race; and it asserts the thing the card is about -
+   * that a request was actually made and answered - rather than inferring it
+   * from a screen that might be slow.
+   */
+  const recorded = page.waitForResponse(
+    (r) => r.url().includes("/api/followup/contact") && r.request().method() === "POST",
+  );
+  await row.getByRole("link", { name: "WhatsApp", exact: true }).click();
+  const res = await recorded;
+  expect(res.status()).toBe(200);
+
+  // A GENUINE RELOAD, which is how the owner observed the defect and the only
+  // check that cannot pass on optimistic client state.
+  await page.reload();
+  const after = page.locator("li").filter({ hasText: NAMES.mobile }).first();
+  await expect(after.locator("li", { hasText: /Contactado/ })).toHaveCount(before + 1);
+  // And the new one is the channel that was pressed: two whatsapp lines now,
+  // where the seed left one.
+  await expect(
+    after.locator("li", { hasText: /Contactado/ }).filter({ hasText: "WhatsApp" }),
+  ).toHaveCount(2);
+});
+
+test("a failed mark is VISIBLE, not swallowed", async ({ page, context }) => {
+  // The other half of the defect. The old handler caught every rejection into
+  // an empty block, so a write that never happened was indistinguishable from a
+  // patient nobody had contacted - on the exact row a receptionist reads to
+  // answer that question.
+  await page.goto("/recuperacao");
+  const row = page.locator("li").filter({ hasText: NAMES.mobile }).first();
+  await expect(row).toBeVisible();
+  const before = await row.locator("li", { hasText: /Contactado/ }).count();
+
+  await context.route("https://wa.me/**", (r) => r.abort());
+  // Refuse the write at the network. A 500 stands for every non-401 refusal;
+  // the 401 branch is unit-tested, because manufacturing an expired session
+  // mid-spec would test the harness rather than the handler.
+  await page.route("**/api/followup/contact", (r) =>
+    r.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: '{"ok":false,"code":"server_error"}',
+    }),
+  );
+
+  await row.getByRole("link", { name: "WhatsApp", exact: true }).click();
+  await expect(row.getByRole("alert")).toBeVisible();
+
+  // AND IT MUST NOT HAVE ADDED A LINE. A failure that also looked like a
+  // success would be worse than the silence it replaced.
+  await page.unroute("**/api/followup/contact");
+  await page.reload();
+  const after = page.locator("li").filter({ hasText: NAMES.mobile }).first();
+  await expect(after.locator("li", { hasText: /Contactado/ })).toHaveCount(before);
 });
 
 test("a postponed patient is in Adiados and NOT in the main list", async ({ page }) => {

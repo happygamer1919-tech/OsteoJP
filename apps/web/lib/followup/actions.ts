@@ -3,13 +3,33 @@
 import { revalidatePath } from "next/cache";
 import { sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { patientFollowupContacts, patientFollowupPostponements } from "@osteojp/db";
+import { patientFollowupPostponements } from "@osteojp/db";
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { assertFollowupPatientInScope, followupLocationScope, FollowupScopeError } from "./scope";
 
 /**
- * RB-01 — the three mutations behind the recuperacao list. There is no fourth.
+ * RB-01 — the mutations behind the recuperacao list.
+ *
+ * ==========================================================================
+ * THERE WERE THREE. THE THIRD MOVED, AND IT IS NOT A FOURTH.
+ * ==========================================================================
+ * `recordFollowupContact` used to live here as a Server Action. It is now
+ * `apps/web/app/api/followup/contact/route.ts`, over the ONE definition in
+ * `lib/followup/record-contact.ts`, and the route handler's own header carries
+ * the full reasoning. The short version: that write is issued by a click that
+ * ALSO navigates, and a Server Action cannot be marked `keepalive`, so whether
+ * the request survived the navigation was left to the browser. On 2026-08-28 it
+ * did not.
+ *
+ * IT IS GONE FROM HERE RATHER THAN KEPT AS A SECOND DOOR. Two entry points to
+ * one write is how the two come to disagree, and there is exactly one caller.
+ *
+ * WHAT STAYS HERE ARE THE TWO THAT DO NOT NAVIGATE - postpone and revoke - and
+ * that is not a coincidence: they are invoked from ordinary buttons, so a
+ * Server Action's transport is entirely adequate for them. `postponeFollowup`
+ * working on the owner's screen in the same sitting where the contact mark
+ * failed is what isolated the defect to the navigation.
  *
  * EVERY ONE RE-DERIVES THE ACTOR FROM THE VERIFIED SESSION and never takes a
  * user id from the caller. These are "use server" functions, so their arguments
@@ -35,11 +55,6 @@ import { assertFollowupPatientInScope, followupLocationScope, FollowupScopeError
  * and the difference is written on the screen as well as here — see §"what the
  * tick means" in `followup-list.tsx`.
  */
-
-/** The channels 0067's CHECK constraint admits. Kept as a const so a typo is a
- *  compile error here rather than a `23514` at the database. */
-const CHANNELS = ["whatsapp", "sms", "email"] as const;
-export type FollowupChannel = (typeof CHANNELS)[number];
 
 /**
  * The postponement lengths reception may choose, in weeks.
@@ -133,52 +148,6 @@ export async function revokeFollowupPostponement(postponementId: string): Promis
         sql`${patientFollowupPostponements.id} = ${postponementId}
             AND ${patientFollowupPostponements.revokedAt} IS NULL`,
       );
-  });
-
-  revalidatePath("/recuperacao");
-}
-
-/**
- * Record that reception opened a channel to this patient.
- *
- * ==========================================================================
- * WHAT THIS DOES AND DOES NOT PROVE, because the screen shows it as a tick and
- * a tick is the most over-read symbol available.
- * ==========================================================================
- * It proves a member of staff PRESSED A LINK at an instant. It does not prove a
- * message was composed, sent, delivered or read — the deep link opens WhatsApp
- * or the mail client and everything after that happens on the receptionist's
- * device, where this system has no visibility and deliberately wants none.
- *
- * The UI therefore says "contactado" with a name and a time, never "enviado".
- * That distinction is the whole reason this is one table and not a messaging
- * log, and it is repeated on the component because whoever changes the label
- * will be reading that file rather than this one.
- *
- * APPEND-ONLY, and 0067 grants no UPDATE and no DELETE. Three attempts to reach
- * somebody is a different fact from one attempt, and only the history can tell
- * them apart.
- */
-export async function recordFollowupContact(
-  patientId: string,
-  channel: string,
-): Promise<void> {
-  const ctx = await requireRequestContext();
-  assertCan(ctx.role, "followup:read");
-  if (!(CHANNELS as readonly string[]).includes(channel)) {
-    throw new Error(`recordFollowupContact: unknown channel ${channel}`);
-  }
-
-  const locationScope = await followupLocationScope(ctx);
-
-  await runScoped(ctx, async (tx) => {
-    await assertFollowupPatientInScope(tx, ctx, patientId, locationScope);
-    await tx.insert(patientFollowupContacts).values({
-      tenantId: ctx.tenantId,
-      patientId,
-      channel,
-      contactedBy: ctx.userId,
-    });
   });
 
   revalidatePath("/recuperacao");
