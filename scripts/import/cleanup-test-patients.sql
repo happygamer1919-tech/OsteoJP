@@ -14,10 +14,31 @@
 -- in the rehearsal project - which is what makes running this file verbatim in
 -- the rehearsal a valid dress rehearsal for running it here.
 --
--- WHY IT EXISTS: production holds 33 patients numbered 1-35, all confirmed by
--- the owner as staff-training data. Removing them before the Fisiozero import
--- lets every vendor `numero_paciente` carry over VERBATIM with zero collisions -
--- which is what makes `--reassign-conflicting-patient-numbers` unnecessary.
+-- WHY IT EXISTS: production holds a small set of staff-training patients, all
+-- confirmed by the owner as test data. Removing them before the Fisiozero
+-- import lets every vendor `numero_paciente` carry over VERBATIM with zero
+-- collisions - which is what makes `--reassign-conflicting-patient-numbers`
+-- unnecessary.
+--
+-- ---------------------------------------------------------------------------
+-- THE COUNT IS NOT WRITTEN IN THIS FILE. YOU SET IT ON THE DAY.
+-- ---------------------------------------------------------------------------
+-- THIS FILE USED TO SAY 33, AND 33 WENT STALE. On 2026-08-27 production held
+-- THIRTY-FIVE, numbered 1 and 3-36, and the newest was created 2026-08-26 - the
+-- day before. The clinic is still using the platform, so the number moves, and
+-- a hardcoded expectation that is one behind is worse than none: it reads as a
+-- verified fact right up to the moment it authorises deleting a row nobody
+-- meant to delete.
+--
+-- SO STEP 2 REFUSES UNLESS YOU TELL IT WHAT TO EXPECT, and there is NO DEFAULT.
+-- `app.expected_patients` is a session setting you fill in at the top of STEP 2
+-- from what STEP 1 just printed, AFTER confirming with the clinic that none of
+-- those rows is a real patient. Unset, STEP 2 raises and nothing is deleted.
+-- Set to a number that does not match the live count, STEP 2 raises and nothing
+-- is deleted.
+--
+-- THE REHEARSAL SETS 50 - the dev seed's patient count - and everything else in
+-- this file is identical between the two targets. See REHEARSAL.md section 1.1.
 --
 -- ===========================================================================
 -- READ THIS BEFORE RUNNING IT
@@ -26,9 +47,10 @@
 -- row for the tenant and everything rooted in them. There is no undo inside the
 -- script. TAKE THE BACKUP FIRST (PROD-RUN.md 2.2) - it is the only rollback.
 --
--- STEP 1 IS NOT OPTIONAL. Its counts are the evidence that the 33 rows about to
--- be deleted are the 33 rows the owner confirmed. Run it, read it, and only then
--- run STEP 2.
+-- STEP 1 IS NOT OPTIONAL. Its counts are the evidence that the rows about to be
+-- deleted are the rows the owner confirmed, AND they are where the number in
+-- STEP 2's `app.expected_patients` comes from. Run it, read it, confirm it with
+-- the clinic, and only then run STEP 2.
 --
 -- ===========================================================================
 -- THE DEPENDENCY GRAPH, DERIVED FROM THE COMMITTED MIGRATIONS
@@ -138,20 +160,35 @@
 -- ---------------------------------------------------------------------------
 -- Every count below is the number of rows STEP 2 will delete.
 --
--- EXPECTED: `patients` = 33.
+-- `patients` IS THE NUMBER YOU WRITE INTO STEP 2. Read it, confirm with the
+-- clinic that not one of those rows is a real patient, then set
+-- `app.expected_patients` to exactly this figure. STEP 2 refuses if the two
+-- disagree, so a row created between this SELECT and that transaction stops the
+-- delete rather than being swept into it.
 --
--- STOP IF `patients` IS NOT EXACTLY 33. The owner confirmed 33 training rows.
---   Any other number means the database is not in the state this script was
---   written for - a real patient may have been created, or a previous run
---   already removed some. Do not run STEP 2 until the difference is explained.
+-- ON PRODUCTION 2026-08-27 IT READ 35, numbers 1 and 3-36, newest created
+-- 2026-08-26. RECORDED, NOT ASSERTED: the clinic is still using the platform
+-- and the number will have moved by Sunday. That is the whole reason this file
+-- no longer carries one.
 --
--- STOP IF ANY COUNT IS UNEXPECTEDLY LARGE. 33 training patients cannot have
---   thousands of clinical records or invoices. A large number means the scoping
---   is selecting more than the test set, and STEP 2 would delete it.
+-- READ `newest_created_at` AND DO NOT SKIP IT. It is the age of the most recent
+--   patient row. If it is TODAY OR YESTERDAY, somebody was creating patients
+--   after the last time anyone confirmed this set was all training data - go and
+--   ask before you delete it. A count alone cannot tell you that: 35 confirmed
+--   rows and 34-confirmed-plus-1-real both read as 35.
 --
--- STOP IF `distinct_patient_numbers` IS NOT 33 or the min/max fall outside
---   1..35. The owner's description is "33 patients, numbers 1-35"; anything
---   else is a different population.
+-- STOP IF ANY COUNT IS UNEXPECTEDLY LARGE. A few dozen training patients cannot
+--   have thousands of clinical records or invoices. A large number means the
+--   scoping is selecting more than the test set, and STEP 2 would delete it.
+--
+-- STOP IF `distinct_patient_numbers` IS NOT EQUAL TO `patients`. Two rows share
+--   a number, which `patients_tenant_number_uq` should make impossible - so
+--   something is wrong with the scoping rather than with the data.
+--
+-- `min_patient_number` AND `max_patient_number` ARE RECORDED, NOT ASSERTED. The
+--   range used to be pinned at 1..35 and that went stale the moment patient 36
+--   was created. A span wider than the count simply means numbers were skipped
+--   or rows deleted, which is normal.
 with p as (
   select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560'
 ),
@@ -166,6 +203,12 @@ select
      where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560')                      as min_patient_number,
   (select max(patient_number) from patients
      where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560')                      as max_patient_number,
+  -- THE AGE OF THE MOST RECENT ROW. A count cannot distinguish 35 confirmed
+  -- training rows from 34 confirmed plus one real patient created yesterday;
+  -- this can, and it is the cheapest question to ask before an irreversible
+  -- delete. On production 2026-08-27 it read 2026-08-26.
+  (select max(created_at) from patients
+     where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560')                      as newest_created_at,
   -- depth 4
   (select count(*) from ai_ingestion_requests    where clinical_record_id in (select id from r)) as ai_ingestion_requests,
   (select count(*) from attachments              where patient_id in (select id from p)
@@ -237,9 +280,9 @@ order  by storage_path;
 -- byte-identical - so `set status = 'draft'` fails that test too. There is no
 -- in-band downgrade. That is CLAUDE.md rule 4 working, not a bug.
 --
--- WHY IT APPLIES HERE: the 33 training patients were created by staff
--- practising the real workflow, which includes locking and signing. Their
--- records are finalized like any other, and STEP 2 aborts on the first one.
+-- WHY IT APPLIES HERE: the training patients were created by staff practising
+-- the real workflow, which includes locking and signing. Their records are
+-- finalized like any other, and STEP 2 aborts on the first one.
 --
 -- READ THESE COUNTS. They are the rows STEP 2's trigger window covers, and
 -- `locked + signed` is the number that would otherwise have stopped the delete.
@@ -263,10 +306,34 @@ order  by status;
 -- ORDER IS DEEPEST-FIRST, derived above. Do not reorder these statements.
 --
 -- EXPECTED RESULT: a DELETE count per statement matching STEP 1 exactly, and
--- `DELETE 33` on the final `patients` statement.
+-- `DELETE <app.expected_patients>` on the final `patients` statement.
 --
 -- STOP AND DO NOT COMMIT IF ANY COUNT DISAGREES WITH STEP 1. The `begin` is
 -- still open at that point; type `rollback;` instead of `commit;`.
+--
+-- ---------------------------------------------------------------------------
+-- SET `app.expected_patients` ON THE LINE BELOW. THERE IS NO DEFAULT.
+-- ---------------------------------------------------------------------------
+-- Put in the `patients` figure STEP 1 just printed, after confirming with the
+-- clinic that not one of those rows is a real patient.
+--
+--   production, 2026-08-27:  35   (re-read it on the day; it moves)
+--   rehearsal:               50   (the dev seed's patient count)
+--
+-- THE GUARD RAISES, AND A RAISE INSIDE THIS TRANSACTION IS THE REFUSAL. Nothing
+-- after it runs and the `commit` cannot succeed, so the table is untouched. Two
+-- ways to be refused and they are different problems:
+--
+--   'EXPECTED_PATIENTS is not set' - you ran STEP 2 without editing the line.
+--     Go back to STEP 1, read the count, confirm it, and put it in.
+--
+--   'EXPECTED_PATIENTS is N but the tenant holds M' - the live count moved
+--     between STEP 1 and now, or you typed the wrong number. DO NOT just change
+--     the number to M: a row appeared, and finding out whose it is comes first.
+--     This is the case the whole guard exists for.
+--
+-- `set local` SCOPES IT TO THIS TRANSACTION. It is gone on commit or rollback,
+-- so a second run cannot inherit the first run's number.
 --
 -- TWO TRIGGERS ARE OFF FOR THE LENGTH OF THIS TRANSACTION, and nowhere else.
 -- Both are OFF TOGETHER and BACK ON IN REVERSE ORDER before the commit.
@@ -297,6 +364,35 @@ order  by status;
 -- DELETEs are what is scoped to this tenant's patients; the locks are what make
 -- the table-wide window safe.
 begin;
+
+-- >>> SET THIS. No default. <<<
+set local app.expected_patients = '';
+
+do $$
+declare
+  raw      text := nullif(btrim(current_setting('app.expected_patients', true)), '');
+  expected int;
+  actual   int;
+begin
+  if raw is null then
+    raise exception
+      'EXPECTED_PATIENTS is not set. Read STEP 1''s `patients` count, confirm '
+      'with the clinic that none of those rows is a real patient, and set '
+      '`app.expected_patients` at the top of STEP 2. Nothing was deleted.';
+  end if;
+  expected := raw::int;
+
+  select count(*) into actual
+    from patients
+   where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560';
+
+  if actual <> expected then
+    raise exception
+      'EXPECTED_PATIENTS is % but the tenant holds % patient(s). A row appeared '
+      'or disappeared since STEP 1, or the number is a typo. Find out which '
+      'before changing it. Nothing was deleted.', expected, actual;
+  end if;
+end $$;
 
 alter table clinical_records disable trigger clinical_records_enforce_immutability;
 alter table patient_audit_log disable trigger patient_audit_log_append_only;

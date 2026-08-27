@@ -303,10 +303,56 @@ test("a preview SELECT precedes the delete and a verify SELECT follows", () => {
 });
 
 test("literal expected counts are stated, not described", () => {
-  assert.match(sql, /`patients` = 33/);
-  assert.match(sql, /DELETE 33/);
+  // THE PATIENT COUNT IS NO LONGER ONE OF THEM, deliberately. It used to be 33
+  // here and 33 went stale: production held 35 on 2026-08-27 with the newest row
+  // created the day before. A hardcoded expectation that is one behind reads as
+  // a verified fact right up to the moment it authorises deleting a row nobody
+  // meant to delete. What IS still literal is everything that does not move.
   assert.match(sql, /EVERY COLUMN 0/);
-  assert.match(sql, /STOP IF `patients` IS NOT EXACTLY 33/);
+  assert.match(sql, /staff_rows`? UNCHANGED at 30/);
+  // And the two figures the owner types in, each named with its target.
+  assert.match(sql, /production, 2026-08-27:\s+35/);
+  assert.match(sql, /rehearsal:\s+50/);
+});
+
+test("STEP 2 refuses without an EXPECTED_PATIENTS, and there is NO default", () => {
+  // The guard is the whole point of this change. A `set local` with a number
+  // already in it would be a default, and a default is what 33 was.
+  assert.match(statements, /set local app\.expected_patients = ''/,
+    "the setting must ship EMPTY - a value here would be a default");
+  assert.match(statements, /current_setting\('app\.expected_patients', true\)/,
+    "read with the missing_ok form, so unset is NULL rather than an error");
+  assert.match(statements, /raise exception[\s\S]{0,120}EXPECTED_PATIENTS is not set/i,
+    "unset must raise");
+});
+
+test("STEP 2 refuses when the live count disagrees with EXPECTED_PATIENTS", () => {
+  // This is the case the guard exists for: a row appeared between STEP 1 and
+  // the transaction. Counting inside the transaction is what makes it airtight -
+  // STEP 1's number is already stale by the time anyone reads it.
+  assert.match(statements, /select count\(\*\) into actual[\s\S]{0,200}from\s+patients/i,
+    "the live count is taken INSIDE the transaction, not trusted from STEP 1");
+  assert.match(statements, /if actual <> expected then/i);
+  assert.match(statements, /raise exception[\s\S]{0,160}but the tenant holds/i);
+});
+
+test("the guard runs BEFORE the first delete and inside the transaction", () => {
+  // A guard after the first DELETE would refuse a transaction that had already
+  // done damage - which the rollback would undo, but the ordering should not
+  // rely on that.
+  const begin = statements.search(/\bbegin\s*;/i);
+  const guard = statements.search(/current_setting\('app\.expected_patients'/);
+  const firstDelete = statements.search(/delete\s+from/i);
+  assert.ok(begin > -1 && guard > begin, "the guard must be inside the transaction");
+  assert.ok(guard < firstDelete, "the guard must precede every DELETE");
+});
+
+test("STEP 1 prints how recent the newest patient row is", () => {
+  // A count cannot distinguish 35 confirmed training rows from 34 confirmed
+  // plus one real patient created yesterday. This can.
+  assert.match(sql, /newest_created_at/);
+  assert.match(sql, /max\(created_at\)/i);
+  assert.match(sql, /READ `newest_created_at` AND DO NOT SKIP IT/);
 });
 
 test("every scoped delete is rooted in the tenant's patients, never a bare table", () => {

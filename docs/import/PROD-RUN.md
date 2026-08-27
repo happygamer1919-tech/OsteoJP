@@ -255,7 +255,54 @@ Patients have **no `auth.users` rows** — the portal issues its own token and
 migration 0010 creates a *login-less* Postgres role for them. The script header
 carries the four pieces of evidence.
 
-### 1.3c Re-run the number preflight — this is what decides the flag
+### 1.3c SUNDAY MORNING, FIRST, BEFORE ANYTHING ELSE: count the patients and confirm them
+
+**THIS IS THE ONLY STEP THAT PROTECTS A REAL PATIENT FROM `§1.3b`.** Everything
+else in that section is mechanical; this is the human check, and it has to
+happen on the day because **the number moves**.
+
+Run this against production, read-only, before the freeze:
+
+```sql
+select count(*)                        as patients,
+       count(distinct patient_number)  as distinct_patient_numbers,
+       min(patient_number)             as min_patient_number,
+       max(patient_number)             as max_patient_number,
+       max(created_at)                 as newest_created_at
+from   patients
+where  tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560';
+```
+
+**THEN ASK RODICA, IN WORDS, BEFORE YOU TYPE A NUMBER ANYWHERE:** *is every one
+of these N patients still test data, and has nobody entered a real client?* A
+count cannot answer that. `newest_created_at` is the prompt for the question,
+not the answer to it — **if it is today or yesterday, somebody was creating
+patients after the last time anyone confirmed this set.**
+
+**THEN, AND ONLY THEN, write that count into `app.expected_patients` at the top
+of `cleanup-test-patients.sql` STEP 2.** There is no default: unset, STEP 2
+raises and deletes nothing. Set to a number that disagrees with the live count
+at transaction time, STEP 2 raises and deletes nothing. The guard re-counts
+**inside** the transaction, so a row created between this SELECT and that
+transaction stops the delete instead of being swept into it.
+
+> **RECORDED FROM 2026-08-27, AND IT IS NOT THE NUMBER TO USE ON SUNDAY.**
+>
+> | | |
+> |---|---|
+> | `patients` | **35** |
+> | numbers | **1 and 3–36** |
+> | `newest_created_at` | **2026-08-26** — the day before |
+>
+> Owner ruling, 2026-08-27: all 35 are training data and are deletable. **But
+> patient 36 was created on 2026-08-26**, which is exactly the pattern this step
+> exists to catch: the set grew by one the day before it was confirmed, and it
+> can grow again before Sunday. **This file used to hardcode `33`.** By
+> 2026-08-27 that was two behind — and a stale expectation reads as a verified
+> fact right up to the moment it authorises deleting a row nobody meant to
+> delete.
+
+### 1.3c-bis Re-run the number preflight — this is what decides the flag
 
 Run [`scripts/import/preflight-patient-numbers.sql`](../../scripts/import/preflight-patient-numbers.sql)
 again, now that the tenant has no patients.
@@ -373,16 +420,23 @@ carrying the label**, so it is worth an answer even though it is not a gate.
 **Two deliveries, two configs**, because `location.locationKey` differs and the
 clinic is in the *filename*, not in any column (vendor confirmed 2026-08-25).
 
+**BOTH FILES ALREADY EXIST AND ARE ALREADY FILLED**: copied from
+[`scripts/import/mapping-config.template.json`](../../scripts/import/mapping-config.template.json)
+and filled from `rehearsal-uuids.sql` run against production on 2026-08-27.
+**Do not copy the template again**, or you will create a second, empty pair
+beside the real ones and have no way to tell from a command line which pair a
+run used.
+
 ```
-cp "$REPO/scripts/import/mapping-config.template.json" "$WORK/mapping-lv.json"
-cp "$REPO/scripts/import/mapping-config.template.json" "$WORK/mapping-cb.json"
+export LVCFG=/Users/ivan/osteojp-migration/prod/mapping-config.LV.json
+export CBCFG=/Users/ivan/osteojp-migration/prod/mapping-config.CB.json
 ```
 
-Fill both from [`scripts/import/rehearsal-uuids.sql`](../../scripts/import/rehearsal-uuids.sql)
-run against **production**. Everything is identical between the two files
-**except one line**:
+They live **outside the repository** and are never committed: they carry live
+production identifiers. Everything is identical between the two files **except
+one line**:
 
-| Slot | `mapping-lv.json` | `mapping-cb.json` |
+| Slot | `mapping-config.LV.json` | `mapping-config.CB.json` |
 |---|---|---|
 | `location.locationKey` | `"linda-a-velha"` | `"castelo-branco"` |
 | `tenantId` | same | same |
@@ -394,22 +448,35 @@ run against **production**. Everything is identical between the two files
 clinic**, and PL-09 scopes who can read a patient by their location. Nothing
 downstream catches it — it is a valid uuid either way.
 
-**Verify the only difference is that line:**
+**Verify the only difference is that line.** Plain `diff`, not
+`python3 -m json.tool` — the files are already canonically formatted, and
+normalising them before comparing would hide a difference in formatting that is
+worth seeing:
 
 ```
-diff <(python3 -m json.tool "$WORK/mapping-lv.json") <(python3 -m json.tool "$WORK/mapping-cb.json")
+diff "$LVCFG" "$CBCFG"
 ```
 
-**Expected:** exactly one changed `locationKey` line. **STOP on any other
-difference.**
+**Expected, exactly this and nothing more:**
+
+```
+34c34
+<     "locationKey": "linda-a-velha",
+---
+>     "locationKey": "castelo-branco",
+```
+
+**STOP on any other difference**, and on a `34c34` that is not this line.
+`diff` exits `1` when files differ — that `1` is the expected result here, not a
+failure.
 
 ### 1.5 Dry-run both, days early
 
 ```
 pnpm --filter @osteojp/db exec tsx scripts/prod-import.ts \
-  --delivery "$LV" --config "$WORK/mapping-lv.json" --dry-run
+  --delivery "$LV" --config "$LVCFG" --dry-run
 pnpm --filter @osteojp/db exec tsx scripts/prod-import.ts \
-  --delivery "$CB" --config "$WORK/mapping-cb.json" --dry-run
+  --delivery "$CB" --config "$CBCFG" --dry-run
 ```
 
 `--dry-run` opens no database and needs no phrase, so it is safe to run any
@@ -505,7 +572,7 @@ entirely healthy.
 
 ```
 pnpm --filter @osteojp/db exec tsx scripts/prod-import.ts \
-  --delivery "$LV" --config "$WORK/mapping-lv.json" \
+  --delivery "$LV" --config "$LVCFG" \
   --emit-attachment-mapping "$WORK/attachment-mapping-lv.json"
 
 node "$REPO/scripts/import/copy-attachments.mjs" \
@@ -581,7 +648,7 @@ missing from the archive.
 
 ```
 pnpm --filter @osteojp/db exec tsx scripts/prod-import.ts \
-  --delivery "$LV" --config "$WORK/mapping-lv.json" \
+  --delivery "$LV" --config "$LVCFG" \
   --checkpoint "$WORK/checkpoint-lv.jsonl"
 ```
 
@@ -679,7 +746,7 @@ are the counts you get:
 
 ```
 pnpm --filter @osteojp/db exec tsx scripts/prod-import.ts \
-  --delivery "$LV" --config "$WORK/mapping-lv.json" \
+  --delivery "$LV" --config "$LVCFG" \
   --checkpoint "$WORK/checkpoint-lv.jsonl" \
   --reassign-conflicting-patient-numbers
 ```
@@ -724,7 +791,7 @@ back to §3.3** — the counts you authorise must be the counts you read.
 
 ```
 pnpm --filter @osteojp/db exec tsx scripts/prod-import.ts \
-  --delivery "$LV" --config "$WORK/mapping-lv.json" \
+  --delivery "$LV" --config "$LVCFG" \
   --checkpoint "$WORK/checkpoint-lv.jsonl" \
   --apply
 ```
@@ -745,7 +812,7 @@ re-usable.
 
 ## 4. Castelo Branco
 
-**Repeat §3.1 → §3.4 with `$CB` and `$WORK/mapping-cb.json`**, and the CB
+**Repeat §3.1 → §3.4 with `$CB` and `$CBCFG`**, and the CB
 checkpoint and attachment-mapping filenames.
 
 ### 4.1 The one thing that is different, and it is not a step
@@ -887,5 +954,5 @@ step.
 **Every exit code, including the zeros.** A transcript with no exit codes proves
 the commands produced text, not that they succeeded.
 
-**Never paste:** `mapping-lv.json`, `mapping-cb.json`,
+**Never paste:** `mapping-config.LV.json`, `mapping-config.CB.json`,
 `attachment-mapping-*.json`, `checkpoint-*.jsonl`.
