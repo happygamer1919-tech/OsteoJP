@@ -3,9 +3,12 @@
 **Ivan executes this. No terminal may run any step of it.** Standing rules 1
 and 2 forbid a terminal pointing anything at `dfotoodqvmjhbdcxyaxf`.
 
-Derived from [`REHEARSAL.md`](./REHEARSAL.md), and **REHEARSED 2026-08-26 at
-`76dd93a2`. Evidence:
-[`docs/import/evidence/REHEARSAL-2026-08-26.md`](./evidence/REHEARSAL-2026-08-26.md).**
+Derived from [`REHEARSAL.md`](./REHEARSAL.md), and **REHEARSED TWICE. Most
+recently 2026-08-27 at `5ebbacf3`, on the batched writer. Evidence:
+[`docs/import/evidence/REHEARSAL-2026-08-27.md`](./evidence/REHEARSAL-2026-08-27.md)**
+(the first run, 2026-08-26 at `76dd93a2`, is
+[`REHEARSAL-2026-08-26.md`](./evidence/REHEARSAL-2026-08-26.md) and is what
+closed `MIG-02`, `MIG-03` and `MIG-04`).
 
 That precondition is now met and this file no longer waits on it. The byte copy
 has met a live bucket (22 objects, read back), the runner has met a database
@@ -15,11 +18,21 @@ identical command. **Read the evidence file before the window opens** - seven
 PRs came out of that rehearsal and every one of them was a defect no test could
 have caught.
 
-**What it does NOT license.** The rehearsal ran ~1,000 patients at **1.7 rows/s**
-and took 19m30s. This delivery is 8,000-10,000 with tens of gigabytes of
-attachments, so **budget hours, not minutes**, until `MIG-08-batch-import-writes`
-lands. Scale, the two-clinic sequence and real `patient_number` collisions are
-the three things the rehearsal explicitly did not prove.
+**THE IMPORT IS 14.7x FASTER THAN THE FIRST REHEARSAL, and the budget still is
+not "minutes".** `MIG-08` batched the writes: 2001 rows imported in **78.3s**
+where the per-row writer took **19m10s**. But two things do not scale from that
+table, and both decide the window:
+
+- **UNNUMBERED PATIENTS DO NOT BATCH.** A patient with no vendor
+  `numero_paciente` must let 0029's trigger assign one, one statement per row.
+  They were 118 of 1000 in the amostra and cost ~59s of the 71.2s the patient
+  phase took. **Read the real proportion off the production run, not off this.**
+- **STAGING AND VALIDATION WERE NOT TOUCHED** and are now the larger half: the
+  apply command's 401s total was 78s of import and ~5m20s of everything before
+  it.
+
+Scale, the two-clinic sequence and real `patient_number` collisions remain the
+three things neither rehearsal proved.
 
 ---
 
