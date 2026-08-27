@@ -25,6 +25,33 @@ export interface AppShellNavItem {
   label: string;
   icon: LucideIcon;
   active?: boolean;
+  /**
+   * A colour utility applied to THIS ITEM'S ICON ONLY, e.g. `"text-v2-blue-700"`.
+   *
+   * ==========================================================================
+   * WHY THE ICON AND NOT THE ROW, WHICH IS THE WHOLE REASON THIS IS A SEPARATE
+   * FIELD RATHER THAN AN ADDITION TO A ROW CLASS.
+   * ==========================================================================
+   * The row's colour is not decoration: it is the label's contrast, and it is
+   * the ACTIVE-STATE cue. `navItemClass` sets `text-v2-green-800` on the active
+   * item because green-700 fails AA on the active tint at that size — a tuning
+   * this project measured and enforces in `contrast-aa.test.ts`. Letting a
+   * caller colour the row would put a per-destination hue in front of that
+   * measurement.
+   *
+   * So the label keeps the accessible grey / active-green it has always had, the
+   * ACTIVE state keeps its tint and its darker label, and the hue lives on the
+   * 20px graphic beside them.
+   *
+   * COLOUR IS NEVER THE ONLY CUE. Every item carries its label, `aria-current`
+   * marks the active one, and the icon is `aria-hidden`. A viewer who cannot
+   * distinguish the hues loses nothing.
+   *
+   * Optional. Omitted, the icon inherits the row's colour exactly as before,
+   * which is what keeps this additive for the v1 shells and every existing
+   * caller.
+   */
+  iconClassName?: string;
 }
 
 const cx = (...c: Array<string | false | null | undefined>): string =>

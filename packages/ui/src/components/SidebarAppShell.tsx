@@ -28,9 +28,15 @@ import { type AppShellNavItem } from "./AppShell";
  * client-side routing (defaults to <a>). On narrow viewports the panel collapses
  * behind a menu button into an off-canvas drawer.
  *
- * Active item: Wellness Green on the `v2-glass-active-bg` tint (label/icon use
+ * Active item: Wellness Green on the `v2-glass-active-bg` tint (label uses
  * green-800 — green-700 fails AA on that tint at this size). Inactive items are
  * `v2-text-secondary` with a neutral hover.
+ *
+ * Per-destination icon colour: an item may carry `iconClassName`, which is
+ * applied to its ICON and never to the row. The row owns the label's contrast
+ * and the active-state cue, both of which are measured; the hue is decoration on
+ * an `aria-hidden` graphic beside them. An item without it looks exactly as it
+ * did.
  */
 
 const cx = (...c: Array<string | false | null | undefined>): string =>
@@ -72,7 +78,18 @@ function NavList({
           className={navItemClass(item.active)}
           prefetch={false}
         >
-          <item.icon size={20} strokeWidth={1.75} aria-hidden="true" />
+          <item.icon
+            size={20}
+            strokeWidth={1.75}
+            aria-hidden="true"
+            /**
+             * The per-destination hue, on the ICON alone. See
+             * `AppShellNavItem.iconClassName` for why it may not reach the row.
+             * `shrink-0` because the label wraps on a narrow drawer and a
+             * flex-shrunk icon renders as a squashed ellipse.
+             */
+            className={cx("shrink-0", item.iconClassName)}
+          />
           {item.label}
         </Link>
       ))}
