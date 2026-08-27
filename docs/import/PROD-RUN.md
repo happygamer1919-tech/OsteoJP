@@ -3,9 +3,23 @@
 **Ivan executes this. No terminal may run any step of it.** Standing rules 1
 and 2 forbid a terminal pointing anything at `dfotoodqvmjhbdcxyaxf`.
 
-Derived from [`REHEARSAL.md`](./REHEARSAL.md). **Do not run this before the
-rehearsal transcript exists.** The rehearsal is what proves the byte copy has
-met a live bucket and the runner has met a database; this document assumes both.
+Derived from [`REHEARSAL.md`](./REHEARSAL.md), and **REHEARSED 2026-08-26 at
+`76dd93a2`. Evidence:
+[`docs/import/evidence/REHEARSAL-2026-08-26.md`](./evidence/REHEARSAL-2026-08-26.md).**
+
+That precondition is now met and this file no longer waits on it. The byte copy
+has met a live bucket (22 objects, read back), the runner has met a database
+(2001 rows imported, referential integrity OK, 882 vendor numbers verbatim), the
+second apply wrote nothing, and a half-imported run recovered on the
+identical command. **Read the evidence file before the window opens** - seven
+PRs came out of that rehearsal and every one of them was a defect no test could
+have caught.
+
+**What it does NOT license.** The rehearsal ran ~1,000 patients at **1.7 rows/s**
+and took 19m30s. This delivery is 8,000-10,000 with tens of gigabytes of
+attachments, so **budget hours, not minutes**, until `MIG-08-batch-import-writes`
+lands. Scale, the two-clinic sequence and real `patient_number` collisions are
+the three things the rehearsal explicitly did not prove.
 
 ---
 
