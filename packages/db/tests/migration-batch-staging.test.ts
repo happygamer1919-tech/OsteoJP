@@ -233,9 +233,15 @@ describe.skipIf(!live)("MIG-09 — chunked staging + validation writes (live DB)
       ),
     );
 
+    // `order by status::text`, NOT `order by status`. `status` is the
+    // `migration_staging_status` ENUM, and Postgres orders an enum by its
+    // DECLARATION order (pending, validated, imported, failed) rather than
+    // alphabetically - so `validated` sorts before `failed` and an assertion
+    // written against alphabetical order fails on correct data. Casting to text
+    // makes the order the one the assertion reads.
     const counts = await sql<{ status: string; n: number }[]>`
-      select status, count(*)::int as n from migration_staging_rows
-       where tenant_id = ${t.tenantId} group by status order by status`;
+      select status::text as status, count(*)::int as n from migration_staging_rows
+       where tenant_id = ${t.tenantId} group by status order by status::text`;
     expect(counts).toEqual([
       { status: "failed", n: 1 },
       { status: "validated", n: N - 1 },
