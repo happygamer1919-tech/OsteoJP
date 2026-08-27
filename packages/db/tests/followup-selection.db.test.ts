@@ -223,7 +223,39 @@ afterAll(async () => {
  */
 async function selected(predicate: string, therapist: string | null = null): Promise<string[]> {
   const rows = await sql.unsafe(
-    `select full_name from patients
+    /**
+     * THE `(select $4::uuid) t` CROSS JOIN IS A TYPE ANCHOR, NOT A FILTER, and
+     * it is here because leaving it out reddened this suite on its first CI run
+     * with `could not determine data type of parameter $4`.
+     *
+     * WHY, MEASURED RATHER THAN GUESSED. Five parameters are always bound, but
+     * `$4` appears in the SQL TEXT only when the predicate is the
+     * therapist-scoped one. That alone is not fatal: `$3` has ALWAYS been
+     * unreferenced by the clause-1-only cases and they passed for months,
+     * because `postgres` declares a type for a `Date` in Parse and the server
+     * never has to infer one.
+     *
+     * A `null` CARRIES NO TYPE. For the unscoped arms `$4` is null, so it is
+     * sent unspecified, the server must infer it from a use that is not there,
+     * and it refuses the statement. Reproduced directly against Postgres 17: the
+     * same query with an unreferenced Date parameter parses, with an
+     * unreferenced null it returns `could not determine data type of parameter
+     * $n`. Which is why every UNSCOPED case failed and every scoped one passed.
+     *
+     * IT IS A DEFECT IN THIS HARNESS AND NOT IN THE PRODUCT, which is worth
+     * stating because the failure looked like the opposite.
+     * `bindFollowupClause` in `apps/web/lib/followup/queries.ts` SPLITS the
+     * clause text and emits a value only for a placeholder it actually finds, so
+     * an unscoped query contains no `$4` and binds none. It cannot reach this
+     * state.
+     *
+     * A cross join to a one-row subquery multiplies nothing and filters nothing;
+     * it exists so `$4` has a typed reference in every arm. The alternative -
+     * varying the parameter list per predicate - would move the tenant between
+     * `$4` and `$5` and put this file back to guessing positions, which is the
+     * drift the shared clause module exists to end.
+     */
+    `select full_name from patients, (select $4::uuid) t
       where tenant_id = $5 and (${predicate})
       order by full_name`,
     [WINDOW_FROM, WINDOW_TO, NOW, therapist, tenant],
