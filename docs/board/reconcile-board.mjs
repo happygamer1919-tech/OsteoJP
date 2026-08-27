@@ -193,6 +193,81 @@ export function acknowledgement(card) {
   return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
 }
 
+/**
+ * ============================================================================
+ * RULINGS RECONCILE SEPARATELY, BECAUSE THEY CANNOT GO STALE THE WAY A CARD DOES
+ * ============================================================================
+ * Every rule above asks the same underlying question: does this card's STATUS
+ * still match what the repository shows? A ruling has no status. It cannot ship,
+ * cannot go stale, and cannot be caught by rules A through F - which is exactly
+ * why the WF-* family survived three weeks as `todo` while rule E was written
+ * specifically to catch that family and could only ever see the two of them that
+ * happened to name a consumer.
+ *
+ * So the rulings get the two questions that CAN be false about them, and only
+ * those two. Both are local; neither needs a network.
+ *
+ *   RULE G - a `governs` entry naming a card id that no longer exists. The
+ *     ruling then binds nothing a reader can look up, and the cards it was
+ *     written to constrain are unfindable from it. Only entries that LOOK like
+ *     card ids are checked: `governs` also carries file paths and prose
+ *     ("every patient-visible card on this board"), and a rule that demanded
+ *     every entry resolve to a card would either forbid those or fire on all of
+ *     them.
+ *
+ *   RULE H - a supersession chain that loops. `superseded_by` is the only
+ *     record of why a ruling stopped applying, and a cycle makes "which one is
+ *     in force" unanswerable. The validator already refuses a `superseded_by`
+ *     pointing at no ruling and one pointing at itself; a two-step cycle is the
+ *     case neither of those sees.
+ *
+ * WHAT IS DELIBERATELY NOT A RULE HERE: "a ruling nobody has cited in N days".
+ * Rulings are meant to sit unread until something touches what they govern. An
+ * age check on one would manufacture work out of a healthy state, which is the
+ * failure mode this whole section exists to remove.
+ */
+const CARD_ID_SHAPE = /^[A-Z][A-Za-z0-9]*-[A-Za-z0-9-]+$/;
+
+export function reconcileRulings(board) {
+  const rulings = board?.rulings ?? [];
+  const cardIds = new Set((board?.cards ?? []).map((c) => c.id));
+  const rulingIds = new Set(rulings.map((r) => r.id));
+  const findings = [];
+
+  for (const r of rulings) {
+    // RULE G - governs pointing at a card that is gone.
+    for (const g of r.governs ?? []) {
+      if (typeof g !== "string") continue;
+      // A file path or a sentence is not a card id, and neither is a ruling id.
+      if (g.includes("/") || g.includes(" ") || !CARD_ID_SHAPE.test(g)) continue;
+      if (cardIds.has(g) || rulingIds.has(g)) continue;
+      findings.push({
+        id: r.id,
+        rule: "governs-ghost",
+        message: `governs "${g}", which is neither a card nor a ruling on this board`,
+      });
+    }
+
+    // RULE H - a supersession cycle.
+    const seen = new Set([r.id]);
+    let cur = r.superseded_by ?? null;
+    while (cur) {
+      if (seen.has(cur)) {
+        findings.push({
+          id: r.id,
+          rule: "supersede-cycle",
+          message: `its superseded_by chain returns to ${cur} - which ruling is in force is then unanswerable`,
+        });
+        break;
+      }
+      seen.add(cur);
+      cur = rulings.find((x) => x.id === cur)?.superseded_by ?? null;
+    }
+  }
+
+  return findings;
+}
+
 const FINISHED = "shipped";
 
 /**
@@ -441,9 +516,17 @@ function main() {
   }
 
   const { mismatches, acknowledged } = reconcile(board, prState);
+  // RULINGS RECONCILE SEPARATELY and their findings join the same exit code. A
+  // second list with its own quiet exit would be a check nobody reads.
+  const rulingFindings = reconcileRulings(board);
 
   console.log(`BOARD RECONCILE  ${boardPath}`);
   console.log(`  cards: ${(board.cards ?? []).length}`);
+  if ((board.rulings ?? []).length > 0) {
+    console.log(
+      `  rulings: ${(board.rulings ?? []).length} (reconciled separately - a ruling has no status, so rules A-F cannot see it)`,
+    );
+  }
   console.log(
     `  rules run: gate-claim (local)${prState ? `, pr-state over ${prState.size} cited PRs` : " ONLY - PR rules skipped (--offline)"}`,
   );
@@ -458,6 +541,11 @@ function main() {
     }
   }
 
+  if (rulingFindings.length > 0) {
+    console.error(`\nRULINGS OUT OF SYNC - ${rulingFindings.length} finding(s):`);
+    for (const f of rulingFindings) console.error(`  - [${f.rule}] ${f.id}: ${f.message}`);
+  }
+
   if (mismatches.length > 0) {
     console.error(`\nBOARD OUT OF SYNC - ${mismatches.length} mismatch(es):`);
     for (const m of mismatches) console.error(`  - [${m.rule}] ${m.id}: ${m.message}`);
@@ -466,8 +554,9 @@ function main() {
         'that needs an explicit `open_on_purpose: "<reason>"` on the card. Do not\n' +
         "delete the citation to quiet it.",
     );
-    process.exit(1);
   }
+
+  if (mismatches.length > 0 || rulingFindings.length > 0) process.exit(1);
 
   console.log(`\n  no mismatches.`);
   process.exit(0);

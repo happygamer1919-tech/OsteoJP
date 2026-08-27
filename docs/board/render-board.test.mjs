@@ -178,3 +178,136 @@ describe("the exclusion decides what is DISPLAYED, never what is VERIFIED", () =
     assert.match(r.err, /RENDER BLOCKED/);
   });
 });
+
+/**
+ * ============================================================================
+ * RULINGS - THEIR OWN VIEW, NEVER THE TASK LIST, NEVER A COUNT
+ * ============================================================================
+ * The three ways this can go wrong are the same three the external-agenda block
+ * above names, pointed at a different section, plus one that is specific to it:
+ * a ruling reaching the CARD list would be a decision rendered as a task, which
+ * is the entire thing the section was created to stop.
+ */
+function rulingIds(html) {
+  const m = html.match(/<script type="application\/json" id="board-data">([\s\S]*?)<\/script>/);
+  assert.ok(m, "no board-data island in the rendered html");
+  const data = JSON.parse(m[1].replace(/\\u003c/g, "<"));
+  return (data.rulings ?? []).map((r) => r.id);
+}
+function cardIds(html) {
+  return renderedIds(html);
+}
+const RULING = {
+  id: "R-TEST",
+  ruling: "the decision",
+  date: "2026-08-27",
+  ruled_by: "owner",
+  superseded_by: null,
+  governs: ["SOMETHING"],
+};
+
+describe("rulings reach the page, and reach it as rulings", () => {
+  test("a ruling is in the rulings island", () => {
+    const r = render((b) => {
+      b.rulings = [RULING];
+    });
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual(rulingIds(r.html), ["R-TEST"]);
+  });
+
+  // THE RULE THE SECTION EXISTS FOR. A ruling in cards[] would render in a lane
+  // and be counted as work.
+  test("a ruling is NEVER in the card island", () => {
+    const r = render((b) => {
+      b.rulings = [RULING];
+    });
+    assert.ok(!cardIds(r.html).includes("R-TEST"), "a ruling reached the card list");
+  });
+
+  test("the reported card total does NOT include the rulings", () => {
+    const r = render((b) => {
+      b.rulings = [RULING, { ...RULING, id: "R-TEST-2" }];
+    });
+    const cards = cardIds(r.html).length;
+    assert.match(r.out, new RegExp(`rendered ${cards} cards`));
+  });
+
+  test("the render SAYS how many rulings it carried, rather than carrying them silently", () => {
+    const r = render((b) => {
+      b.rulings = [RULING];
+    });
+    assert.match(r.out, /rulings: 1 in their own view, NOT cards and NOT in any count above/);
+  });
+
+  // THE ADJACENT STATE, and the additive arm: a board with no rulings key must
+  // render exactly as it did before the section existed.
+  test("and says nothing about rulings when a board has none", () => {
+    const r = render((b) => {
+      delete b.rulings;
+    });
+    assert.equal(r.code, 0, r.err);
+    assert.doesNotMatch(r.out, /rulings:/);
+    assert.deepEqual(rulingIds(r.html), []);
+  });
+});
+
+describe("external_agenda hides a ruling exactly as it hides a card", () => {
+  test("a flagged ruling is NOT in the rendered island", () => {
+    const r = render((b) => {
+      b.rulings = [RULING, { ...RULING, id: "R-HIDDEN", external_agenda: true }];
+    });
+    assert.deepEqual(rulingIds(r.html), ["R-TEST"]);
+  });
+
+  test("the render says how many it dropped", () => {
+    const r = render((b) => {
+      b.rulings = [RULING, { ...RULING, id: "R-HIDDEN", external_agenda: true }];
+    });
+    assert.match(r.out, /1 on the external agenda and not rendered/);
+  });
+
+  test("an UNFLAGGED ruling is still rendered - the negative arm", () => {
+    const r = render((b) => {
+      b.rulings = [RULING, { ...RULING, id: "R-SHOWN" }];
+    });
+    assert.deepEqual(rulingIds(r.html).sort(), ["R-SHOWN", "R-TEST"]);
+  });
+});
+
+describe("the fingerprint follows what the viewer can see, rulings included", () => {
+  test("it MOVES when a visible ruling changes", () => {
+    const a = fingerprintOf(render((b) => { b.rulings = [RULING]; }).html);
+    const c = fingerprintOf(render((b) => { b.rulings = [{ ...RULING, ruling: "a different decision" }]; }).html);
+    assert.notEqual(a, c);
+  });
+
+  test("it does NOT move when only a HIDDEN ruling changes", () => {
+    const a = fingerprintOf(
+      render((b) => { b.rulings = [RULING, { ...RULING, id: "R-H", external_agenda: true }]; }).html,
+    );
+    const c = fingerprintOf(
+      render((b) => {
+        b.rulings = [RULING, { ...RULING, id: "R-H", external_agenda: true, ruling: "changed" }];
+      }).html,
+    );
+    assert.equal(a, c);
+  });
+});
+
+describe("the app carries a rulings view, and it is not a lane", () => {
+  const app = readFileSync(join(HERE, "board-app.js"), "utf8");
+
+  test("Rulings is a registered view", () => {
+    assert.match(app, /\{ id: "rulings", label: "Rulings" \}/);
+  });
+
+  test("rulings are NOT in the lane set the Board view iterates", () => {
+    const m = app.match(/var ALL_LANES = \[([^\]]*)\]/);
+    assert.ok(m, "ALL_LANES not found");
+    assert.ok(!m[1].includes("ruling"), "rulings leaked into the lane set");
+  });
+
+  test("the cockpit counts come from board.cards, which no ruling is in", () => {
+    assert.match(app, /function cockpitHTML\(\) \{\s*\n\s*var all = board\.cards \|\| \[\];/);
+  });
+});

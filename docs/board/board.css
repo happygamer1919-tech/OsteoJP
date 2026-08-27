@@ -560,6 +560,46 @@ body {
 .gaterow .gnotes.clip { max-height: 76px; overflow: hidden; }
 .gaterow .gmore { align-self: flex-start; font: inherit; font-size: 11px; font-weight: 600; color: var(--brand); background: none; border: 0; padding: 0; cursor: pointer; }
 
+/* ------------------------------------------------------------- rulings -- */
+/* Recorded decisions, and the styling says so: no status chip, no evidence
+   chip, nothing to click that would "close" one. The left rail is the GATE
+   colour rather than a status colour, because a ruling is standing ground under
+   the work and not a state of it. */
+.rulings { display: flex; flex-direction: column; gap: 12px; }
+.ruling {
+  background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--gate);
+  border-radius: var(--r-md); padding: 13px 15px; display: flex; flex-direction: column; gap: 8px;
+  box-shadow: var(--shadow-1);
+}
+.ruling .r1 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ruling .rid { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--gate); }
+.ruling .rdate { font-size: 11px; color: var(--ink-3); }
+.ruling .rby { font-size: 11px; color: var(--ink-3); }
+.ruling .rsup {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 99px; background: var(--todo-soft); color: var(--todo); margin-left: auto;
+}
+.ruling .rtitle { font-size: 13px; font-weight: 600; line-height: 1.35; text-wrap: pretty; }
+.ruling .rtext {
+  margin: 0; padding: 9px 12px; border-left: 2px solid var(--line-2); background: var(--card-2);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0; font-size: 12.5px; line-height: 1.6; color: var(--ink);
+  white-space: pre-wrap; text-wrap: pretty;
+}
+.ruling .rgoverns { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.ruling .rgoverns .lbl {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3);
+}
+.ruling .rgoverns code {
+  font-family: var(--mono); font-size: 10.5px; padding: 2px 7px; border-radius: 99px;
+  background: var(--paper-2); color: var(--ink-2);
+}
+.ruling .rnotes { font-size: 11.5px; color: var(--ink-2); line-height: 1.55; white-space: pre-wrap; }
+.ruling .rnotes.clip { max-height: 76px; overflow: hidden; }
+/* A superseded ruling is dimmed and struck, never hidden: the chain is the only
+   record of why a decision stopped applying. */
+.ruling.superseded { border-left-color: var(--ink-3); opacity: 0.72; }
+.ruling.superseded .rtitle { text-decoration: line-through; text-decoration-thickness: 1px; }
+
 /* ----------------------------------------------------------------- table -- */
 .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--card); }
 table.board { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 780px; }

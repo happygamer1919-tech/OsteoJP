@@ -47,13 +47,35 @@ const ledger = readFileSync(LEDGER, "utf8");
  *  deliberately NOT here" section names three cards that must stay on the board,
  *  and a looser match would read those as ledger entries and invert the check. */
 const rows = [...ledger.matchAll(/^\| `([^`]+)` \|/gm)].map((m) => m[1]);
-const flagged = board.cards.filter((c) => c.external_agenda === true).map((c) => c.id);
+
+/**
+ * BOTH SECTIONS, AND THAT IS THE POINT OF READING IT THIS WAY.
+ *
+ * `external_agenda` means the same thing on a ruling as on a card: the owner
+ * tracks the subject somewhere else, so this board does not render it and does
+ * not count it. When the WF-* family moved from `cards[]` to `rulings[]` on
+ * 2026-08-27, WF-13 (credential rotation) and WF-15 (legal leaves engineering)
+ * went with it carrying the flag.
+ *
+ * READING ONLY `cards` WOULD HAVE INVERTED THIS GUARD SILENTLY, and in the worst
+ * of its two directions: the two ledger rows would have looked like rows naming
+ * nothing, so the fix that suggests itself is to DELETE them - which is exactly
+ * the "disappears completely, not from the ledger but from the project" outcome
+ * the header calls the worst thing this field can produce. The section a record
+ * lives in is not what decides whether it is tracked elsewhere.
+ */
+const entries = [...board.cards, ...(board.rulings ?? [])];
+const flagged = entries.filter((c) => c.external_agenda === true).map((c) => c.id);
 
 test("the scan is not vacuous", () => {
   // LEARNINGS entry 5. Two empty lists agree perfectly, and this file would go
   // green over a board where the field had been stripped and a ledger that had
   // been emptied - reporting harmony between two absences.
   assert.ok(board.cards.length >= 100, `board parsed to ${board.cards.length} cards`);
+  assert.ok(
+    entries.length > board.cards.length,
+    "the board has no rulings section - either it was dropped or this guard is reading only half the file",
+  );
   assert.ok(flagged.length > 0, "no card carries external_agenda - either the field was dropped or this guard is checking nothing");
   assert.ok(rows.length > 0, `${LEDGER} parsed to no table rows - the table shape changed and this guard is checking nothing`);
 });
@@ -81,12 +103,14 @@ test("every ledger row names a card that EXISTS", () => {
   // The third drift, and the quietest: a row for an id nobody can look up. It
   // passes both checks above the moment the card is deleted, because a deleted
   // card is not flagged and is not rendered either.
-  const ids = new Set(board.cards.map((c) => c.id));
+  const ids = new Set(entries.map((c) => c.id));
   const ghosts = rows.filter((id) => !ids.has(id));
   assert.deepEqual(ghosts, [], `ledger rows naming no card on the board:\n  ${ghosts.join("\n  ")}`);
 });
 
 test("no flagged card is left in a lane the render would have shown", () => {
+  // CARDS ONLY. A ruling carries no `lane` at all - the validator rejects one
+  // that does - so there is no lane for it to return to and nothing to check.
   // Not a display rule - a bookkeeping one. `lane` is DERIVED and the validator
   // recomputes it, so a flagged card still carries a real lane and must: if the
   // flag is ever removed, the card has to come back to the right column rather
@@ -94,6 +118,7 @@ test("no flagged card is left in a lane the render would have shown", () => {
   const LANES = ["shipped", "blocked_on_people", "in_flight", "rodica_batch", "incidents", "loose_ends"];
   for (const id of flagged) {
     const card = board.cards.find((c) => c.id === id);
+    if (!card) continue;
     assert.ok(
       LANES.includes(card.lane),
       `${id} is flagged external_agenda and carries lane "${card.lane}", which is not a lane it could return to`,

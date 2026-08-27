@@ -9,6 +9,7 @@ import {
   completionClaims,
   consumedBy,
   reconcile,
+  reconcileRulings,
 } from "./reconcile-board.mjs";
 
 /**
@@ -536,5 +537,105 @@ describe("fetchPrStates - transient failure is retried, a 404 is not", () => {
       throw ghErr("unexpected end of JSON input");
     };
     assert.throws(() => fetchPrStates([764], readOne, noPause), /could not read PR #764/);
+  });
+});
+
+/**
+ * ============================================================================
+ * RULINGS - THE TWO THINGS THAT CAN BE FALSE ABOUT A DECISION
+ * ============================================================================
+ * Every rule above asks whether a card's STATUS still matches the repository. A
+ * ruling has none, which is precisely how the WF-* family sat `todo` for three
+ * weeks while rule E - written for that family - could only see the two of them
+ * that happened to name a consumer. So the rulings get their own pass, with the
+ * only two questions that have an answer, and both arms of each.
+ */
+const ruling = (over = {}) => ({
+  id: "R-1",
+  ruling: "the decision",
+  date: "2026-08-27",
+  ruled_by: "owner",
+  superseded_by: null,
+  governs: ["CARD-1"],
+  ...over,
+});
+
+describe("rule G - a ruling governing a card that is gone", () => {
+  test("FLAGS a governs entry naming no card and no ruling", () => {
+    const out = reconcileRulings({ cards: [card({ id: "CARD-1" })], rulings: [ruling({ governs: ["CARD-9"] })] });
+    assert.equal(out.length, 1);
+    assert.equal(out[0].rule, "governs-ghost");
+    assert.match(out[0].message, /governs "CARD-9"/);
+  });
+
+  test("SILENT when the card exists - the adjacent state", () => {
+    const out = reconcileRulings({ cards: [card({ id: "CARD-1" })], rulings: [ruling()] });
+    assert.deepEqual(out, []);
+  });
+
+  test("SILENT when it governs another RULING", () => {
+    const out = reconcileRulings({
+      cards: [],
+      rulings: [ruling({ governs: ["R-2"] }), ruling({ id: "R-2", governs: ["CARD-1"] })],
+    });
+    // R-2 governs CARD-1, which does not exist, so exactly one finding - and it
+    // is NOT the one about R-2 being unknown.
+    assert.equal(out.length, 1);
+    assert.equal(out[0].id, "R-2");
+  });
+
+  // THE FALSE POSITIVE THIS RULE WOULD OTHERWISE HAVE ON DAY ONE. `governs`
+  // carries file paths and prose as well as ids, and a rule demanding every
+  // entry resolve to a card would fire on every ruling on the real board.
+  test("SILENT on a file path", () => {
+    const out = reconcileRulings({ cards: [], rulings: [ruling({ governs: ["apps/web/lib/reminders/templates.ts"] })] });
+    assert.deepEqual(out, []);
+  });
+
+  test("SILENT on a sentence", () => {
+    const out = reconcileRulings({
+      cards: [],
+      rulings: [ruling({ governs: ["every patient-visible card on this board"] })],
+    });
+    assert.deepEqual(out, []);
+  });
+});
+
+describe("rule H - a supersession chain that loops", () => {
+  test("FLAGS a two-step cycle, which the validator cannot see", () => {
+    const out = reconcileRulings({
+      cards: [card({ id: "CARD-1" })],
+      rulings: [ruling({ id: "R-1", superseded_by: "R-2" }), ruling({ id: "R-2", superseded_by: "R-1" })],
+    });
+    assert.equal(out.filter((f) => f.rule === "supersede-cycle").length, 2);
+  });
+
+  test("SILENT on a straight chain - the adjacent state", () => {
+    const out = reconcileRulings({
+      cards: [card({ id: "CARD-1" })],
+      rulings: [
+        ruling({ id: "R-1", superseded_by: "R-2" }),
+        ruling({ id: "R-2", superseded_by: "R-3" }),
+        ruling({ id: "R-3" }),
+      ],
+    });
+    assert.deepEqual(out, []);
+  });
+});
+
+describe("the counterweight: the real board's rulings reconcile clean", () => {
+  test("a board with no rulings key produces nothing, and does not throw", () => {
+    assert.deepEqual(reconcileRulings({ cards: [card()] }), []);
+  });
+
+  test("the card rules never see a ruling - it is not in cards[]", () => {
+    // The structural half of the fix. Even a ruling shaped like the stalest card
+    // this project has produced cannot reach rules A-F, because they iterate
+    // board.cards and a ruling is not there.
+    const out = reconcile(
+      { cards: [], rulings: [ruling({ notes: "WHAT SHIPPED: everything. closes PG1" })], launch_gate: { conditions: [{ id: "PG1", state: "pass" }] } },
+      null,
+    );
+    assert.deepEqual(out.mismatches, []);
   });
 });
