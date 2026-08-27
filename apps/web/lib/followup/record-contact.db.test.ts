@@ -111,11 +111,26 @@ d("recordFollowupContactFor against a real database", () => {
     // is what makes the scope arm below a real refusal rather than a missing row.
     const appt = async (patient: string, practitioner: string) => {
       const startsAt = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      /**
+       * ISO STRING + AN EXPLICIT ::timestamptz, NEVER A BARE Date. INC-12's
+       * third defect, and this suite reproduced it on its first CI run:
+       * `ERR_INVALID_ARG_TYPE` out of the driver, in `beforeAll`, which skipped
+       * all seven tests and reported as a suite failure rather than as a
+       * fixture failure.
+       *
+       * WHY IT HAPPENS HERE AND NOT IN ORDINARY DRIZZLE CODE: inside a `raw`
+       * fragment there is NO COLUMN for the driver to encode against - unlike
+       * `gt(table.column, now)`, where the column carries the type. With no
+       * hint it is handed a Date it cannot serialise. `apps/web/lib/followup/
+       * queries.ts` carries the same note over the same fix.
+       */
+      const ends = new Date(startsAt.getTime() + 36e5);
       await sql.execute(raw`insert into appointments
                 (id, tenant_id, patient_id, practitioner_id, location_id, service_id,
                  starts_at, ends_at, status)
               values (${randomUUID()}, ${tenantId}, ${patient}, ${practitioner}, ${locationId},
-                      ${serviceId}, ${startsAt}, ${new Date(startsAt.getTime() + 36e5)}, 'completed')`);
+                      ${serviceId}, ${startsAt.toISOString()}::timestamptz,
+                      ${ends.toISOString()}::timestamptz, 'completed')`);
     };
     await appt(patientId, therapistId);
     await appt(otherPatientId, otherTherapistId);

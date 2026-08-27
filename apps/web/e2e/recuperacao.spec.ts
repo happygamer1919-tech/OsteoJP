@@ -139,56 +139,83 @@ test("pressing a channel RECORDS a mark - counted, not matched", async ({ page, 
   const row = page.locator("li").filter({ hasText: NAMES.mobile }).first();
   await expect(row).toBeVisible();
 
-  // The seeded row already carries one whatsapp mark, so the count is the
-  // measurement and the starting value is not assumed.
-  const marks = row.locator("li", { hasText: /Contactado/ });
-  const before = await marks.count();
+  // The seeded row already carries one whatsapp mark, so the COUNT is the
+  // measurement and its starting value is read rather than assumed.
+  const before = await row.locator("li", { hasText: /Contactado/ }).count();
   expect(before).toBeGreaterThan(0);
 
-  // EMAIL, not WhatsApp. `mailto:` hands off to an external application without
-  // opening a page Playwright must then manage, and the channel label is what
-  // the new line is asserted on - a channel the seeded row does not already
-  // have, so the new row cannot be confused with the old one.
-  //
-  // The external handoff is swallowed: the browser has no mail client, and the
-  // point of the test is what the SERVER recorded, not where the click went.
-  await context.route("mailto:**", (r) => r.abort());
-  await row.getByRole("link", { name: "Email", exact: true }).click();
+  /**
+   * WHATSAPP, NOT EMAIL, AND THE FIRST VERSION OF THIS TEST GOT IT WRONG.
+   *
+   * It clicked the Email link and tried to neutralise the handoff with
+   * `context.route("mailto:**")`. PLAYWRIGHT ONLY ROUTES http(s): the pattern
+   * matched nothing, the `mailto:` click produced no request the test could
+   * see, and the count stayed where it started. The test failed for a reason
+   * that had nothing to do with the code under test.
+   *
+   * `https://wa.me/...` IS routable, so the outbound navigation is aborted at
+   * the network and the click still exercises the real path - an anchor with a
+   * real href and `target="_blank"`, which is the exact shape the defect turned
+   * on.
+   */
+  await context.route("https://wa.me/**", (r) => r.abort());
 
-  // The handler refreshes the router on success. Reload anyway: a genuine
-  // reload is how the owner observed the defect, and it is the only check that
-  // cannot pass on optimistic client state.
+  /**
+   * WAIT FOR THE RESPONSE, DO NOT SLEEP ON IT. The promise is armed BEFORE the
+   * click, so this cannot race; and it asserts the thing the card is about -
+   * that a request was actually made and answered - rather than inferring it
+   * from a screen that might be slow.
+   */
+  const recorded = page.waitForResponse(
+    (r) => r.url().includes("/api/followup/contact") && r.request().method() === "POST",
+  );
+  await row.getByRole("link", { name: "WhatsApp", exact: true }).click();
+  const res = await recorded;
+  expect(res.status()).toBe(200);
+
+  // A GENUINE RELOAD, which is how the owner observed the defect and the only
+  // check that cannot pass on optimistic client state.
   await page.reload();
   const after = page.locator("li").filter({ hasText: NAMES.mobile }).first();
   await expect(after.locator("li", { hasText: /Contactado/ })).toHaveCount(before + 1);
-  // And the new one is the channel that was pressed.
-  await expect(after.locator("li", { hasText: /Contactado/ }).filter({ hasText: "Email" })).toHaveCount(1);
+  // And the new one is the channel that was pressed: two whatsapp lines now,
+  // where the seed left one.
+  await expect(
+    after.locator("li", { hasText: /Contactado/ }).filter({ hasText: "WhatsApp" }),
+  ).toHaveCount(2);
 });
 
-test("a failed mark is VISIBLE, not swallowed", async ({ page }) => {
+test("a failed mark is VISIBLE, not swallowed", async ({ page, context }) => {
   // The other half of the defect. The old handler caught every rejection into
   // an empty block, so a write that never happened was indistinguishable from a
-  // patient nobody had contacted - on the exact row where a receptionist looks
-  // to answer that question.
+  // patient nobody had contacted - on the exact row a receptionist reads to
+  // answer that question.
   await page.goto("/recuperacao");
   const row = page.locator("li").filter({ hasText: NAMES.mobile }).first();
   await expect(row).toBeVisible();
+  const before = await row.locator("li", { hasText: /Contactado/ }).count();
 
-  // Refuse the write at the network, which is the one failure mode a test can
-  // manufacture honestly. A 500 stands for every non-401 refusal.
+  await context.route("https://wa.me/**", (r) => r.abort());
+  // Refuse the write at the network. A 500 stands for every non-401 refusal;
+  // the 401 branch is unit-tested, because manufacturing an expired session
+  // mid-spec would test the harness rather than the handler.
   await page.route("**/api/followup/contact", (r) =>
-    r.fulfill({ status: 500, contentType: "application/json", body: '{"ok":false,"code":"server_error"}' }),
+    r.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: '{"ok":false,"code":"server_error"}',
+    }),
   );
-  await page.route("mailto:**", (r) => r.abort());
-  await row.getByRole("link", { name: "Email", exact: true }).click();
 
+  await row.getByRole("link", { name: "WhatsApp", exact: true }).click();
   await expect(row.getByRole("alert")).toBeVisible();
-  // And it must NOT have added a contact line: a failure that also looked like a
+
+  // AND IT MUST NOT HAVE ADDED A LINE. A failure that also looked like a
   // success would be worse than the silence it replaced.
   await page.unroute("**/api/followup/contact");
   await page.reload();
   const after = page.locator("li").filter({ hasText: NAMES.mobile }).first();
-  await expect(after.locator("li", { hasText: /Contactado/ }).filter({ hasText: "Email" })).toHaveCount(0);
+  await expect(after.locator("li", { hasText: /Contactado/ })).toHaveCount(before);
 });
 
 test("a postponed patient is in Adiados and NOT in the main list", async ({ page }) => {
