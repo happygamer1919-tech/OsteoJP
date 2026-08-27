@@ -1,5 +1,7 @@
 import 'server-only'
 
+import { tenantId } from '@/lib/tenant'
+
 import { PORTAL_DEVICE_COOKIE } from './cookie-names'
 import {
   clearDeviceToken,
@@ -29,35 +31,6 @@ import { apiBase } from '@/lib/api/base'
  * refusal string, and the three degradation copies are shown as STANDING
  * GUIDANCE (see the login screen) rather than as a diagnosis of what went wrong.
  */
-
-/**
- * The tenant this portal deployment serves.
- *
- * WHY AN ENVIRONMENT VARIABLE AND NOT A LOOKUP. Both OTP routes take `tenantId`
- * in the body because they run BEFORE any authentication, so there is no
- * verified token to derive it from and no patient row to read it off — /otp/request
- * deliberately never touches the patient table at all, which is the property that
- * keeps it from leaking clinic membership. The alternatives are a host-to-tenant
- * mapping table (a migration, and the in-flight slot belongs to LOOP 5) or
- * hard-coding an id in source (forbidden, and wrong the first time this app is
- * deployed for a second clinic). A per-deployment variable is the honest shape:
- * one portal deployment serves one clinic.
- *
- * IT FAILS LOUD AND IT FAILS AT CALL TIME. Absent, this throws and the caller
- * turns it into `unavailable` — a screen that says the service is unavailable and
- * a server log naming the VARIABLE, never a value. Not at module scope: Next
- * imports modules during `next build` to collect page data, and a module-scope
- * throw fails the BUILD on every PR, which is the exact defect W13-03a had to
- * unpick on the API side. A build is not a boot.
- */
-function tenantId(): string {
-  const value = process.env.PORTAL_TENANT_ID
-  if (!value) {
-    throw new Error('PORTAL_TENANT_ID is not set; the patient login cannot name its tenant')
-  }
-  return value
-}
-
 
 /** Names only, never values, and never the phone or the code (PII rule #7). */
 function logUnavailable(where: string, e: unknown): void {

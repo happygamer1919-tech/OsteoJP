@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { apiBase } from '@/lib/api/base'
+import { tenantId } from '@/lib/tenant'
 
 /**
  * GUEST-04 — the portal's server-side half of the public booking form.
@@ -15,29 +16,6 @@ import { apiBase } from '@/lib/api/base'
  * has no record of; the whole flow ends with a row in `guest_booking_requests`
  * that a human converts.
  */
-
-/**
- * The tenant this portal deployment serves.
- *
- * A SECOND READ OF `PORTAL_TENANT_ID`, and the duplication is deliberate rather
- * than missed. `lib/auth/otp.ts` has the same eight lines and carries PG1: the
- * OTP login is the one patient-facing path with a launch gate on it, and the
- * rate-limiter extraction established the rule that a gate-bearing path does not
- * get touched to save an import. Consolidating the two is carded
- * (`LE-portal-tenant-id-two-readers`); doing it here would have put a PG1 path
- * in a commit about a public form.
- *
- * IT THROWS AT CALL TIME, NOT AT MODULE SCOPE. Next imports modules during
- * `next build` to collect page data, and a module-scope throw fails the build on
- * every PR - the defect W13-03a had to unpick. A build is not a boot.
- */
-function tenantId(): string {
-  const value = process.env.PORTAL_TENANT_ID
-  if (!value) {
-    throw new Error('PORTAL_TENANT_ID is not set; the guest booking form cannot name its tenant')
-  }
-  return value
-}
 
 /** Names only, never values, and never the name or the number (PII rule #7). */
 function logUnavailable(where: string, e: unknown): void {
