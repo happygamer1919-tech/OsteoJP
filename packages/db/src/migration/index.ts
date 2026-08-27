@@ -22,6 +22,7 @@ export {
   batchStatusCounts,
   markFailed,
   markImported,
+  markImportedMany,
   markValidated,
   MigrationStagingError,
   resolveImportedIds,
@@ -56,8 +57,10 @@ export {
 } from "./health";
 
 export {
+  IMPORT_CHUNK_SIZE,
   importRecords,
   mergeImportedPatient,
   type ImportAction,
+  type ImportOptions,
   type ImportSummary,
 } from "./upsert";
