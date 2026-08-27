@@ -407,7 +407,7 @@ async function ensureDeclaracaoAppointment(therapistUserId) {
  * every month - later than the window opens, earlier than it closes - which a
  * hardcoded date could not promise.
  */
-async function ensureRecuperacaoFixtures(therapistUserId) {
+async function ensureRecuperacaoFixtures(therapistUserId, otherTherapistUserId) {
   const day = 24 * 60 * 60 * 1000;
   const seen = new Date(Date.now() - 14 * day);
   const seenEnd = new Date(seen.getTime() + 60 * 60 * 1000);
@@ -441,6 +441,27 @@ async function ensureRecuperacaoFixtures(therapistUserId) {
       nif: null,
     },
   ];
+
+  /**
+   * OWNER RULING 2026-08-27 - THE PATIENT THE SIGNED-IN THERAPIST MUST NOT SEE.
+   *
+   * Identical to the three above in every respect that the selection predicate
+   * can observe: same window, same completed status, same location, a real
+   * mobile number. The ONLY difference is whose consultation it was.
+   *
+   * WITHOUT THIS ROW THE THERAPIST ARM OF THE E2E PROVES NOTHING. Every existing
+   * recuperacao fixture is seeded against `userIds.therapist`, so a therapist
+   * running the page would see all of them under a correct scope AND under no
+   * scope at all - the two states would look identical on screen, which is
+   * exactly the vacuous-guard shape this project keeps cataloguing.
+   */
+  const OTHER_THERAPISTS_PATIENT = {
+    id: "00000000-0000-0000-0000-00000000fec4",
+    full_name: "E2E Recuperar Outro Terapeuta",
+    phone: "+351 913 111 004",
+    email: "recuperar.outro@example.pt",
+    nif: null,
+  };
 
   for (const p of rows) {
     const { error } = await db.from("patients").upsert(
@@ -507,6 +528,28 @@ async function ensureRecuperacaoFixtures(therapistUserId) {
     { onConflict: "id" },
   );
   must(contactErr, "recuperacao contact");
+
+  // The other therapist's patient + their single completed attendance.
+  const { error: otherErr } = await db.from("patients").upsert(
+    { ...OTHER_THERAPISTS_PATIENT, tenant_id: TENANT_A, deleted_at: null },
+    { onConflict: "id" },
+  );
+  must(otherErr, "recuperacao other-therapist patient");
+  const { error: otherApptErr } = await db.from("appointments").upsert(
+    {
+      id: "00000000-0000-0000-0000-00000000fea4",
+      tenant_id: TENANT_A,
+      patient_id: OTHER_THERAPISTS_PATIENT.id,
+      practitioner_id: otherTherapistUserId,
+      location_id: LOCATION_A,
+      service_id: SERVICE_A,
+      starts_at: seen.toISOString(),
+      ends_at: seenEnd.toISOString(),
+      status: "completed",
+    },
+    { onConflict: "id" },
+  );
+  must(otherApptErr, "recuperacao other-therapist attendance");
 }
 
 async function ensureAvailability(therapistUserId, locationId, weekday) {
@@ -854,7 +897,7 @@ async function main() {
   await ensureBaseData(userIds);
   await ensureTherapistServices(userIds.therapist);
   await ensureDeclaracaoAppointment(userIds.therapist);
-  await ensureRecuperacaoFixtures(userIds.therapist);
+  await ensureRecuperacaoFixtures(userIds.therapist, userIds.therapist2);
   await ensureLocationFixtures(userIds);
   await ensurePortalPatient();
   await ensurePortalTrustedDevice();

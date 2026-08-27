@@ -161,9 +161,23 @@ describe("matrix lock — granted capabilities (escalation guard)", () => {
     // is not hypothetical: it is SEC-01, one card earlier, on the section
     // directly above this one.
     expect(can("therapist", "patients:read")).toBe(true);
-    expect(can("therapist", "followup:read")).toBe(false);
 
-    for (const role of ["owner", "admin", "reception"] as const) {
+    // ======================================================================
+    // AMENDED BY OWNER RULING 2026-08-27. This line read `.toBe(false)`.
+    // ======================================================================
+    // The therapist now HOLDS the capability, SCOPED to the patients whose most
+    // recent completed consultation was theirs.
+    //
+    // THE ASSERTION THAT REPLACES IT IS NOT THIS ONE. A capability check cannot
+    // express a scope - the matrix is target-blind by design, which is exactly
+    // the trap `permissions.ts` documents on both this grant and ITEM 3. What
+    // actually holds the ruling is
+    // `packages/db/tests/followup-selection.db.test.ts`, which proves against a
+    // real Postgres that therapist A sees their own patients and not therapist
+    // B's, and `apps/web/lib/followup/scope.test.ts` for the mutation guard.
+    // Flipping this line to `true` and stopping would be the SEC-01 shape all
+    // over again: a grant that reads as gated because a check exists somewhere.
+    for (const role of ["owner", "admin", "reception", "therapist"] as const) {
       expect(can(role, "followup:read")).toBe(true);
     }
 

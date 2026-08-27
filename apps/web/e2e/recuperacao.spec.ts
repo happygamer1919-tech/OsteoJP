@@ -22,6 +22,8 @@ const NAMES = {
   mobile: "E2E Recuperar Movel",
   landline: "E2E Recuperar Fixo",
   postponed: "E2E Recuperar Adiado",
+  /** Seeded against therapist2, whose consultation it was. */
+  otherTherapists: "E2E Recuperar Outro Terapeuta",
 } as const;
 
 test("recuperacao renders a NON-EMPTY list for an unscoped admin (INC-12)", async ({ page }) => {
@@ -125,13 +127,59 @@ test("a postponed patient is in Adiados and NOT in the main list", async ({ page
   await expect(list.getByText(NAMES.postponed)).toHaveCount(0);
 });
 
-test("a THERAPIST cannot reach the page at all", async ({ browser }) => {
-  // The security property, and the reason `followup:read` is its own capability.
-  // The list is every patient's telephone number in one place.
-  const ctx = await browser.newContext({ storageState: "e2e/.auth/therapist.json" });
-  const page = await ctx.newPage();
+/**
+ * ==========================================================================
+ * OWNER RULING 2026-08-27 - THE THERAPIST ARM, ON THE DEPLOYED PAGE.
+ * ==========================================================================
+ * This block REPLACES `a THERAPIST cannot reach the page at all`, which
+ * asserted the old exclusion. The security property it protected has not been
+ * dropped: a therapist still never sees the front desk's whole call list. What
+ * changed is where the boundary sits - from the route to the query.
+ *
+ * THE THREE ASSERTIONS ARE THE RULING'S THREE ACCEPTANCE LINES, and the middle
+ * one is the only one that can fail interestingly. A page that showed a
+ * therapist NOTHING would satisfy "does not see another therapist's patient"
+ * perfectly, so the first test pins what they DO see, by name.
+ */
+test.describe("owner ruling 2026-08-27 - the therapist's scoped list", () => {
+  test.use({ storageState: "e2e/.auth/therapist.json" });
+
+  test("a therapist REACHES the page and sees their own patients", async ({ page }) => {
+    await page.goto("/recuperacao");
+    await expect(page.getByRole("heading", { name: "Recuperação de utentes" })).toBeVisible();
+    await expect(page).toHaveURL(/\/recuperacao/);
+    // BY NAME, not by row count. A count passes against a list of the wrong
+    // people, which is the failure this scope exists to prevent.
+    await expect(page.getByText(NAMES.mobile)).toBeVisible();
+    await expect(page.getByText(NAMES.landline)).toBeVisible();
+  });
+
+  test("a therapist does NOT see another therapist's patient", async ({ page }) => {
+    // The seeded patient whose ONLY completed consultation was therapist2's,
+    // identical to the rows above in every respect the predicate can observe.
+    // The admin test below sees them; this session must not.
+    await page.goto("/recuperacao");
+    await expect(page.getByRole("heading", { name: "Recuperação de utentes" })).toBeVisible();
+    await expect(page.getByText(NAMES.otherTherapists)).toHaveCount(0);
+  });
+
+  test("the sidebar offers Recuperação to a therapist", async ({ page }) => {
+    // The nav half of the ruling. It needed no nav change - the entry has always
+    // been gated on `followup:read` - so this asserts the consequence rather
+    // than a line of code.
+    await page.goto("/dashboard");
+    await expect(
+      page.getByRole("navigation").getByRole("link", { name: "Recuperação" }),
+    ).toBeVisible();
+  });
+});
+
+test("an ADMIN still sees the patient the therapist could not - the scope is not global", async ({
+  page,
+}) => {
+  // THE COUNTERWEIGHT, and it runs on the default admin session. Without it the
+  // therapist tests above would pass against a page that had simply stopped
+  // showing that patient to everybody.
   await page.goto("/recuperacao");
-  await expect(page.getByRole("heading", { name: "Recuperação de utentes" })).toHaveCount(0);
-  await expect(page).not.toHaveURL(/\/recuperacao/);
-  await ctx.close();
+  await expect(page.getByText(NAMES.otherTherapists)).toBeVisible();
 });

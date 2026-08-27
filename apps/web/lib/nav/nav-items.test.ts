@@ -76,22 +76,31 @@ describe("navItemsForRole — role-aware nav gating", () => {
       "/agenda",
       "/patients",
       "/marcacoes",
+      // OWNER RULING 2026-08-27: Recuperação joins the therapist sidebar.
+      "/recuperacao",
       "/clinical/review",
       "/horarios",
     ]);
     expect(hrefs("therapist")).not.toContain("/invoicing");
     expect(hrefs("therapist")).not.toContain("/clinical");
     // ======================================================================
-    // RB-01, 2026-08-20: THE THERAPIST SIDEBAR IS UNCHANGED BY RECUPERAÇÃO.
+    // OWNER RULING 2026-08-27: THE ENTRY IS THERE, AND THE ENTRY IS NOT THE GATE.
     // ======================================================================
-    // The full list above already proves it, and this line is here anyway,
-    // because the full list will be edited again by the next feature and this
-    // assertion says WHY the absence matters rather than leaving it as one of
-    // six entries somebody could add a seventh to without thinking.
+    // This block used to assert `not.toContain("/recuperacao")`, on the grounds
+    // that the list is a tenant-wide set of patients with telephone numbers and
+    // that SEC-01 is what happens when that reaches a therapist.
     //
-    // The list is a tenant-wide set of patients with telephone numbers and
-    // email addresses. SEC-01 is what happens when that reaches a therapist.
-    expect(hrefs("therapist")).not.toContain("/recuperacao");
+    // BOTH SENTENCES ARE STILL TRUE, AND NEITHER IS AN ARGUMENT AGAINST THE
+    // ENTRY ANY MORE, because the list a therapist receives is not tenant-wide:
+    // it is scoped in the QUERY to the patients whose most recent completed
+    // consultation was theirs.
+    //
+    // NO NAV CHANGE WAS NEEDED TO PRODUCE THIS. The entry has always been gated
+    // on `followup:read`, so granting the capability moved it. That is the
+    // property NAV-01 was written to protect - one entry per destination, gated
+    // by whether the role may USE the page - and it is why this file records the
+    // change rather than implementing it.
+    expect(hrefs("therapist")).toContain("/recuperacao");
   });
 
   it("reception sees Marcações, Horários and Invoicing but NEITHER Clinical NOR Review NOR Admin", () => {

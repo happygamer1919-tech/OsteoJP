@@ -42,6 +42,7 @@ import {
   followupLastAttendanceClause,
   followupNoFutureBookingClause,
   followupNotPostponedClause,
+  followupOwnPatientClause,
   followupSelectionPredicate,
 } from "../src/followup-selection";
 import { connect, live } from "./rls-harness";
@@ -49,6 +50,15 @@ import { connect, live } from "./rls-harness";
 const tenant = randomUUID();
 const role = randomUUID();
 const user = randomUUID();
+/**
+ * TWO THERAPISTS. Owner ruling 2026-08-27 scopes /recuperacao for a therapist to
+ * the patients whose MOST RECENT COMPLETED CONSULTATION WAS THEIRS, and the only
+ * way to prove a scope is to have somebody it must exclude. One therapist plus
+ * "everybody else" would go green against a clause that matched every row.
+ */
+const therapistRole = randomUUID();
+const THERAPIST_A = randomUUID();
+const THERAPIST_B = randomUUID();
 const location = randomUUID();
 const service = randomUUID();
 
@@ -77,6 +87,22 @@ const POSTPONE_EXPIRED = mk("postponement expired");
 const POSTPONE_REVOKED = mk("postponement revoked");
 const NEVER_ATTENDED = mk("never attended");
 
+/* ---- Owner ruling 2026-08-27: the therapist scope's own fixtures ---- */
+/** Last completed visit was with A. A sees them; B must not. */
+const A_ONLY = mk("z-scope A only");
+/** Last completed visit was with B. B sees them; A must not. */
+const B_ONLY = mk("z-scope B only");
+/**
+ * Seen by A in the window, then by B LATER and still inside the window.
+ *
+ * THE CASE THAT SEPARATES "MOST RECENT" FROM "EVER", and the reason the clause
+ * is a LIMIT 1 subquery rather than an EXISTS. Under `EXISTS (... = $4)` this
+ * patient belongs to BOTH therapists, while the row's own practitioner column
+ * would name only B - so A would be shown a patient whose visible clinician is
+ * somebody else. Under the shipped clause the patient is B's alone.
+ */
+const A_THEN_B = mk("z-scope A then B");
+
 const ALL = [
   QUALIFIES,
   SEEN_TOO_RECENTLY,
@@ -87,6 +113,9 @@ const ALL = [
   POSTPONE_EXPIRED,
   POSTPONE_REVOKED,
   NEVER_ATTENDED,
+  A_ONLY,
+  B_ONLY,
+  A_THEN_B,
 ];
 
 let sql: Sql;
@@ -95,12 +124,13 @@ async function appointment(
   patient: string,
   startsAt: Date,
   status: string,
+  practitioner: string = user,
 ): Promise<void> {
   const ends = new Date(startsAt.getTime() + 60 * 60 * 1000);
   await sql`insert into appointments
               (id, tenant_id, patient_id, practitioner_id, location_id, service_id,
                starts_at, ends_at, status)
-            values (${randomUUID()}, ${tenant}, ${patient}, ${user}, ${location},
+            values (${randomUUID()}, ${tenant}, ${patient}, ${practitioner}, ${location},
                     ${service}, ${startsAt}, ${ends}, ${status}::appointment_status)`;
 }
 
@@ -113,6 +143,12 @@ beforeAll(async () => {
             values (${role}, ${tenant}, 'reception', 'Rececao')`;
   await sql`insert into users (id, tenant_id, role_id, email, full_name)
             values (${user}, ${tenant}, ${role}, ${`fs-${user}@example.pt`}, 'Seed Reception')`;
+  await sql`insert into roles (id, tenant_id, slug, name)
+            values (${therapistRole}, ${tenant}, 'therapist', 'Terapeuta')`;
+  await sql`insert into users (id, tenant_id, role_id, email, full_name)
+            values (${THERAPIST_A}, ${tenant}, ${therapistRole}, ${`ta-${THERAPIST_A}@example.pt`}, 'Terapeuta A')`;
+  await sql`insert into users (id, tenant_id, role_id, email, full_name)
+            values (${THERAPIST_B}, ${tenant}, ${therapistRole}, ${`tb-${THERAPIST_B}@example.pt`}, 'Terapeuta B')`;
   await sql`insert into locations (id, tenant_id, name)
             values (${location}, ${tenant}, 'Seed Clinic')`;
   await sql`insert into services (id, tenant_id, name, duration_min, price_cents)
@@ -141,6 +177,13 @@ beforeAll(async () => {
   await appointment(HAS_FUTURE_BOOKING.id, new Date("2026-09-01T09:00:00Z"), "scheduled");
   await appointment(FUTURE_CANCELLED.id, new Date("2026-09-01T09:00:00Z"), "cancelled");
 
+  // Owner ruling 2026-08-27 arms. All three QUALIFY on clauses 1-3, so the only
+  // thing that can separate them is the therapist clause.
+  await appointment(A_ONLY.id, IN_WINDOW, "completed", THERAPIST_A);
+  await appointment(B_ONLY.id, IN_WINDOW, "completed", THERAPIST_B);
+  await appointment(A_THEN_B.id, IN_WINDOW, "completed", THERAPIST_A);
+  await appointment(A_THEN_B.id, new Date("2026-08-01T09:00:00Z"), "completed", THERAPIST_B);
+
   // Clause 3 arms.
   const post = (patient: string, until: Date, revoked: boolean) =>
     sql`insert into patient_followup_postponements
@@ -165,13 +208,57 @@ afterAll(async () => {
   await sql.end();
 });
 
-/** Runs a predicate over this tenant's patients and returns the labels selected. */
-async function selected(predicate: string): Promise<string[]> {
+/**
+ * Runs a predicate over this tenant's patients and returns the labels selected.
+ *
+ * THE TENANT MOVED FROM `$4` TO `$5` on 2026-08-27, and it had to: `$4` is now
+ * `therapistUserId` in `FOLLOWUP_BINDINGS`, which is the positional contract the
+ * clause builders and `apps/web/lib/followup/queries.ts` both honour. A test
+ * binding its own meaning to `$4` would be asserting against a different
+ * predicate from the one the app runs - the exact drift this whole file exists
+ * to prevent.
+ *
+ * `therapist` is null for the unscoped roles. Nothing in the three original
+ * clauses references `$4`, so binding null there changes none of their results.
+ */
+async function selected(predicate: string, therapist: string | null = null): Promise<string[]> {
   const rows = await sql.unsafe(
-    `select full_name from patients
-      where tenant_id = $4 and (${predicate})
+    /**
+     * THE `(select $4::uuid) t` CROSS JOIN IS A TYPE ANCHOR, NOT A FILTER, and
+     * it is here because leaving it out reddened this suite on its first CI run
+     * with `could not determine data type of parameter $4`.
+     *
+     * WHY, MEASURED RATHER THAN GUESSED. Five parameters are always bound, but
+     * `$4` appears in the SQL TEXT only when the predicate is the
+     * therapist-scoped one. That alone is not fatal: `$3` has ALWAYS been
+     * unreferenced by the clause-1-only cases and they passed for months,
+     * because `postgres` declares a type for a `Date` in Parse and the server
+     * never has to infer one.
+     *
+     * A `null` CARRIES NO TYPE. For the unscoped arms `$4` is null, so it is
+     * sent unspecified, the server must infer it from a use that is not there,
+     * and it refuses the statement. Reproduced directly against Postgres 17: the
+     * same query with an unreferenced Date parameter parses, with an
+     * unreferenced null it returns `could not determine data type of parameter
+     * $n`. Which is why every UNSCOPED case failed and every scoped one passed.
+     *
+     * IT IS A DEFECT IN THIS HARNESS AND NOT IN THE PRODUCT, which is worth
+     * stating because the failure looked like the opposite.
+     * `bindFollowupClause` in `apps/web/lib/followup/queries.ts` SPLITS the
+     * clause text and emits a value only for a placeholder it actually finds, so
+     * an unscoped query contains no `$4` and binds none. It cannot reach this
+     * state.
+     *
+     * A cross join to a one-row subquery multiplies nothing and filters nothing;
+     * it exists so `$4` has a typed reference in every arm. The alternative -
+     * varying the parameter list per predicate - would move the tenant between
+     * `$4` and `$5` and put this file back to guessing positions, which is the
+     * drift the shared clause module exists to end.
+     */
+    `select full_name from patients, (select $4::uuid) t
+      where tenant_id = $5 and (${predicate})
       order by full_name`,
-    [WINDOW_FROM, WINDOW_TO, NOW, tenant],
+    [WINDOW_FROM, WINDOW_TO, NOW, therapist, tenant],
   );
   return rows.map((r) => r.full_name as string);
 }
@@ -253,8 +340,13 @@ describe.skipIf(!live)("RB-01 selection predicate (migration 0067)", () => {
      */
     const got = await selected(followupSelectionPredicate("patients.id"));
 
+    // THE THREE SCOPE FIXTURES ARE IN THIS LIST ON PURPOSE. They qualify on all
+    // three clauses - which is what makes them able to prove anything about the
+    // FOURTH. If the therapist clause ever leaked into
+    // `followupSelectionPredicate`, they would drop out here and this assertion
+    // is what would say so.
     expect(got).toEqual(
-      [QUALIFIES, FUTURE_CANCELLED, POSTPONE_EXPIRED, POSTPONE_REVOKED]
+      [QUALIFIES, FUTURE_CANCELLED, POSTPONE_EXPIRED, POSTPONE_REVOKED, A_ONLY, B_ONLY, A_THEN_B]
         .map((p) => p.label)
         .sort(),
     );
@@ -339,5 +431,80 @@ describe.skipIf(!live)("RB-01 selection predicate (migration 0067)", () => {
         POSTPONE_REVOKED.label,
       );
     });
+  });
+});
+
+/**
+ * ==========================================================================
+ * OWNER RULING 2026-08-27 - THE THERAPIST SCOPE, AGAINST A REAL POSTGRES
+ * ==========================================================================
+ * The ruling's three acceptance lines, one `it` each, plus the case that
+ * distinguishes this clause from the shorter one it could have been.
+ *
+ * WHY THIS BELONGS AT THE DATABASE AND NOT IN A UNIT TEST. The clause is a
+ * correlated `ORDER BY ... LIMIT 1` subquery, and every defect this page has
+ * shipped was a claim the runtime did not honour - a column that bound
+ * elsewhere, an alias that did not exist, a type that did not convert. A unit
+ * test over the SQL TEXT (which `followup-sql.test.ts` also does, and should)
+ * proves what was written. Only Postgres proves what it means.
+ */
+describe.skipIf(!live)("owner ruling 2026-08-27 - the therapist sees their own patients", () => {
+  /** The whole page predicate as a therapist runs it: the three clauses AND the scope. */
+  const scoped = (patientIdExpr: string) =>
+    `${followupSelectionPredicate(patientIdExpr)}\n  AND ${followupOwnPatientClause(patientIdExpr)}`;
+
+  it("a therapist sees ONLY their own patients", async () => {
+    const got = await selected(scoped("patients.id"), THERAPIST_A);
+    expect(got).toEqual([A_ONLY.label]);
+  });
+
+  it("a therapist does NOT see another therapist's patient", async () => {
+    // The negative arm of the test above, stated separately because it is the
+    // acceptance line the ruling exists for. Asserted by NAME, not by count: a
+    // clause that returned the wrong single row would satisfy a count.
+    const got = await selected(scoped("patients.id"), THERAPIST_A);
+    expect(got).not.toContain(B_ONLY.label);
+    expect(got).not.toContain(QUALIFIES.label);
+  });
+
+  it("the OTHER therapist sees theirs, so the clause is not simply empty", async () => {
+    // LEARNINGS entry 5. A clause that returned nothing for everybody would pass
+    // both assertions above and prove only that it selects no rows.
+    const got = await selected(scoped("patients.id"), THERAPIST_B);
+    expect(got).toEqual([A_THEN_B.label, B_ONLY.label].sort());
+  });
+
+  it("owner and reception still see all - the clause is not applied to them", async () => {
+    // THE REGRESSION ARM. The unscoped roles bind no `$4` and the clause is not
+    // appended, so their result is the full qualifying set - the same one the
+    // predicate test above pins. If the scope ever became unconditional, this is
+    // the assertion that turns red.
+    const got = await selected(followupSelectionPredicate("patients.id"));
+    expect(got).toContain(A_ONLY.label);
+    expect(got).toContain(B_ONLY.label);
+    expect(got).toContain(QUALIFIES.label);
+  });
+
+  it("'MOST RECENT', not 'ever': a patient A saw first and B saw last is B's alone", async () => {
+    // THE CASE THAT KILLS THE SHORTER IMPLEMENTATION. Under
+    // `EXISTS (... practitioner_id = $4)` this patient belongs to both, and A
+    // would be shown a row whose own practitioner column names B.
+    const a = await selected(scoped("patients.id"), THERAPIST_A);
+    const b = await selected(scoped("patients.id"), THERAPIST_B);
+    expect(a).not.toContain(A_THEN_B.label);
+    expect(b).toContain(A_THEN_B.label);
+  });
+
+  it("the scope row and the DISPLAYED practitioner are the same row", async () => {
+    // The property the clause was shaped for: same completed set, same
+    // ORDER BY starts_at DESC LIMIT 1. A therapist can never be shown a patient
+    // whose visible clinician is somebody else.
+    const rows = await sql.unsafe(
+      `select full_name, ${followupPractitionerSql("patients.id")} as who
+         from patients where tenant_id = $5 and (${scoped("patients.id")})`,
+      [WINDOW_FROM, WINDOW_TO, NOW, THERAPIST_B, tenant],
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(r.who).toBe("Terapeuta B");
   });
 });

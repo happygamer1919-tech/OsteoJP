@@ -78,7 +78,8 @@ export type Capability =
   // RB-01 (owner ruling 2026-08-20): read the RECUPERACAO DE UTENTES list - the
   // patients recently in treatment who have no future booking, with their
   // telephone number and email so reception can reach out. Owner, admin and
-  // reception. A THERAPIST GETS NOTHING.
+  // reception unscoped; a therapist SCOPED to their own patients since the
+  // amendment recorded at the end of this block.
   //
   // ITS OWN CAPABILITY, FOR THE REASON SEC-01 PAID FOR ONE CARD EARLIER. The
   // obvious host was `patients:read`, which every role holds because every role
@@ -87,11 +88,30 @@ export type Capability =
   // exactly how a therapist came to see the whole tenant's guest queue on
   // deployed production, and `guest_requests:read` exists because of it.
   //
-  // THERE IS NO THERAPIST-SHAPED SUBSET OF THIS LIST TO HAND OUT, which is the
-  // test for whether a capability should be separate. The list is a front-desk
-  // work queue: who to ring today. A therapist's own-data rules bound them by
-  // the patients they treat, and "the patients I treated who have not rebooked"
-  // is a clinically meaningless slice that nobody asked for.
+  // ======================================================================
+  // AMENDED BY OWNER RULING 2026-08-27: THERAPISTS GAIN IT, SCOPED.
+  // ======================================================================
+  // This block used to end: "THERE IS NO THERAPIST-SHAPED SUBSET OF THIS LIST TO
+  // HAND OUT... 'the patients I treated who have not rebooked' is a clinically
+  // meaningless slice that nobody asked for." The owner has now asked for it, so
+  // that sentence is wrong and is replaced rather than left standing beside a
+  // grant that contradicts it.
+  //
+  // THE REASONING ABOVE IS NOT OVERTURNED, IT IS SATISFIED. The exclusion existed
+  // because the page is every patient's telephone number IN ONE PLACE with no
+  // per-recipient rule for RLS to enforce. The scope is what preserves that: a
+  // therapist sees the patients whose MOST RECENT COMPLETED CONSULTATION WAS
+  // THEIRS - people they already know by name - and never the front desk's whole
+  // call list. Owner, admin and reception keep the unscoped list per PL-09.
+  //
+  // THE GRANT IS SCOPE-BLIND, LIKE EVERY OTHER ROW IN THIS MATRIX, and that
+  // separation is load-bearing here for the reason ITEM 3 spells out two blocks
+  // down: adding the capability without adding the scope in the same commit
+  // would hand every therapist the whole list. The scope is
+  // `followupOwnPatientClause` in `@osteojp/db`, applied server-side in the
+  // QUERY (`lib/followup/queries.ts`) and asserted on every mutation
+  // (`lib/followup/actions.ts`). It is never a client-side row filter: a row
+  // that reaches the browser has already been disclosed.
   | "followup:read";
 
 const ALL_CAPABILITIES: readonly Capability[] = [
@@ -209,6 +229,18 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // same commit for that reason.
     "schedule:read",
     "schedule:manage",
+    // OWNER RULING 2026-08-27: the recuperacao list, SCOPED TO THEIR OWN
+    // PATIENTS - those whose most recent completed consultation was with this
+    // therapist.
+    //
+    // READ THE ITEM 3 COMMENT DIRECTLY ABOVE BEFORE TOUCHING THIS LINE. It is
+    // the same shape and the same trap: the capability is TARGET-BLIND, so this
+    // grant alone would give a therapist the entire tenant's call list. What
+    // bounds it is `followupOwnPatientClause`, ANDed into the query in
+    // `apps/web/lib/followup/queries.ts` and asserted before every write in
+    // `apps/web/lib/followup/actions.ts`. Both shipped in the same commit as
+    // this line, for exactly the reason schedule:read's scope did.
+    "followup:read",
   ]),
 
   // Reception: front-desk scheduling + billing-issue. NO clinical_records at
