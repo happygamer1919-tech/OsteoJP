@@ -71,6 +71,26 @@ const visible = {
 };
 const hidden = (board.cards?.length ?? 0) - visible.cards.length;
 
+/**
+ * RULINGS — recorded decisions, rendered in their OWN view and never in a lane.
+ *
+ * They pass through the same external-agenda filter as the cards, for the same
+ * reason and by the same rule: WF-13 (credential rotation) and WF-15 (legal
+ * leaves engineering) are the owner's own agenda, and a ruling about work that
+ * left this board should not reappear on it merely because it changed section.
+ *
+ * THEY ARE NOT ADDED TO ANY CARD COUNT, here or on the page. That is the whole
+ * point of the section: a ruling is not open work and it is not shipped work, so
+ * folding it into either number restates the problem it exists to end. The count
+ * below is printed on its own line for the same reason the external-agenda one
+ * is — a render that quietly changed a total would be indistinguishable from a
+ * board that always had it.
+ */
+if (board.rulings !== undefined) {
+  visible.rulings = (board.rulings ?? []).filter((r) => r.external_agenda !== true);
+}
+const rulingsHidden = (board.rulings?.length ?? 0) - (visible.rulings?.length ?? 0);
+
 // --- guard: refuse to render a lie (mirrors validate-board.mjs's core rule) ---
 // DELIBERATELY OVER THE FULL BOARD, NOT OVER `visible`. A shipped card with no
 // evidence is a lie in the committed file whether or not this render shows it,
@@ -162,6 +182,12 @@ console.log(
 if (hidden > 0) {
   console.log(
     `  external agenda: ${hidden} card(s) NOT rendered and NOT counted - see docs/board/EXTERNAL-AGENDA.md`,
+  );
+}
+if ((visible.rulings?.length ?? 0) > 0 || rulingsHidden > 0) {
+  console.log(
+    `  rulings: ${visible.rulings?.length ?? 0} in their own view, NOT cards and NOT in any count above` +
+      (rulingsHidden > 0 ? `; ${rulingsHidden} on the external agenda and not rendered` : ""),
   );
 }
 console.log(`  fingerprint: ${fingerprint}`);
