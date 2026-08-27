@@ -428,7 +428,6 @@ export async function runImport({
   let imported = 0;
   let importSkipped = 0;
   let importFailed = 0;
-  let importRetried = 0;
   const perEntity = {};
   const perEntitySkipped = {};
   const perEntityFailed = {};
@@ -451,7 +450,6 @@ export async function runImport({
     imported += res.imported ?? 0;
     importSkipped += res.skipped ?? 0;
     importFailed += res.failed ?? 0;
-    importRetried += res.retried ?? 0;
     // B8: instrumentation only. The rate is the number that turns "the apply
     // took a while" into a window you can schedule.
     const rate = secs > 0 ? (batch.length / secs).toFixed(1) : "n/a";
@@ -465,9 +463,11 @@ export async function runImport({
   // THE IDEMPOTENCY NUMBER. On a second --apply every IMPORTED reads 0 and this
   // carries the first run's count: nothing was written and nothing was lost.
   log(`SKIPPED   ${importSkipped}`);
-  if (importRetried > 0) {
-    log(`RETRIED   ${importRetried} row(s) that had failed on an earlier run`);
-  }
+  // THERE IS NO `RETRIED` LINE, removed 2026-08-26 with the gate that fed it.
+  // A row that failed on an earlier run is re-staged to `pending` by THIS run,
+  // re-validated, and imported - so it lands in `IMPORTED`, indistinguishable
+  // from a first-time import because that is what it is. The evidence that it
+  // once failed is the previous run's transcript, which named it with its code.
 
   /* -- 6b. what the trigger actually assigned -- */
   // THE PAIR IS THE DELIVERABLE. A count of reassignments is useless to
@@ -546,7 +546,7 @@ export async function runImport({
     log(`IMPORT FAILED - ${failedCount} ledger row(s) failed`);
   }
   const clean = problems.length === 0;
-  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, perEntitySkipped, perEntityFailed, perEntitySecs, importSkipped, importFailed, importRetried, counts, reasons, coverage, effectiveConfig, validation, report, numberPairs };
+  return { exit: clean ? EXIT.OK : EXIT.FAILED, staged: staged.length, imported, perEntity, perEntitySkipped, perEntityFailed, perEntitySecs, importSkipped, importFailed, counts, reasons, coverage, effectiveConfig, validation, report, numberPairs };
 }
 
 /* ====================================================================== */

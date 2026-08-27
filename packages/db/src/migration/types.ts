@@ -236,9 +236,7 @@ export type MigrationErrorDetail = {
     | "validation_failed"
     | "unresolved_reference"
     | "import_failed"
-    | "invalid_transition"
-    /** NOT an error. Set on a row that imported on a retry - see markImported. */
-    | "retried";
+    | "invalid_transition";
   message: string;
   /** Offending intermediate field paths, when known. */
   fields?: string[];

@@ -709,10 +709,22 @@ SKIPPED   2001
 prints; `SKIPPED 2001` says every row was found, recognised as already imported,
 and left alone.
 
-**A row that failed AT IMPORT is retried on that re-run** (ruled 2026-08-26) and
-counted on a `RETRIED n row(s)` line. A row that failed VALIDATION is not: it
-stays excluded until it is re-staged. That property is what the rehearsal's
-idempotency step exists to prove, and it is why that step is not optional.
+**A row that failed AT IMPORT is imported by that re-run**, and there is no
+`RETRIED` line: it lands in `IMPORTED`, indistinguishable from a first-time
+import, because that is what it is. The mechanism is RE-STAGE PLUS RE-VALIDATE
+(ruled 2026-08-26, proven on the rehearsal's live data): the run stages every
+record before it imports any, staging resets a non-`imported` row to `pending`,
+validate moves it to `validated`, and the import loop writes it. All 105 rows
+lost to the 2026-08-26 apply — 61 appointments and 44 clinical_records — came
+back on the next identical command this way.
+
+**A row that failed VALIDATION comes back rejected.** Re-staging resets it to
+`pending` and validate rejects the identical record again, so nothing short of a
+CHANGED DELIVERY imports it. That is the correct answer: `validation_failed`
+means the record cannot be written as it stands.
+
+The difference between those two is what the rehearsal's idempotency step exists
+to prove, and it is why that step is not optional.
 
 **Only if the database itself must be rewound**: restore the §2.2 backup. That
 loses everything the clinic entered after it, so it is an owner decision, not a

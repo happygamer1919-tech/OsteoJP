@@ -329,68 +329,98 @@ describe.skipIf(!live)("migration pipeline — staging + idempotent upsert (live
   });
 
   /* ================================================================== *
-   * B7: A FAILED LEDGER ROW IS RETRIED ON THE NEXT RUN                  *
+   * A FAILED LEDGER ROW RECOVERS BY RE-STAGE, NOT BY IN-PLACE RETRY     *
    * ================================================================== *
-   * It used to be skipped outright, so a row that failed once was skipped by
-   * EVERY later run. PROD-RUN.md's "re-run the identical command" and the
-   * idempotency proof both quietly excluded it, permanently and silently. */
+   * Ruled 2026-08-26, after the rehearsal proved it on live data: 61
+   * appointments and 44 clinical_records that had failed at import all landed
+   * on the next identical command, and the RETRIED counter read 0 while they
+   * did it. The in-place retry gate could not fire, because a full run stages
+   * before it imports and staging resets a non-imported row to `pending`.
+   *
+   * The two halves are asserted separately because they must not be the same
+   * answer: an IMPORT failure recovers on the next run, and a VALIDATION
+   * failure does not. */
 
-  it("a FAILED row is retried on the next run, and records that it was retried", async () => {
+  it("a row that FAILED AT IMPORT is imported by the next full run, via re-stage", async () => {
     const tenantR = randomUUID();
     const batchR = randomUUID();
     const locR = randomUUID();
     const claimsR: TenantClaims = { tenant_id: tenantR, user_role: "owner" };
-    await sql`insert into tenants (id, name, slug) values (${tenantR}, 'Retry', ${`mig-retry-${tenantR}`})`;
+    await sql`insert into tenants (id, name, slug) values (${tenantR}, 'Restage', ${`mig-restage-${tenantR}`})`;
     await sql`insert into locations (id, tenant_id, name) values (${locR}, ${tenantR}, 'Linda-a-Velha')`;
     try {
       const rec: MigrationRecord = {
         entityType: "patient",
         data: {
-          sourceId: "retry-p1",
+          sourceId: "restage-p1",
           fullName: "Paciente Sintético",
           locationKeys: ["linda-a-velha"],
           primaryLocationKey: "linda-a-velha",
         },
       } as MigrationRecord;
       const res: MigrationResolvers = { locationIdByKey: { "linda-a-velha": locR }, practitionerIdByKey: {} };
+      const staged = [{ sourceSystem: SOURCE_SYSTEM, entityType: "patient" as const, sourceId: "restage-p1", raw: {} }];
 
-      await withTenantContext(claimsR, async (tx) => {
-        await stageRows(tx, tenantR, batchR, [
-          { sourceSystem: SOURCE_SYSTEM, entityType: "patient", sourceId: "retry-p1", raw: {} },
-        ]);
-      });
-      // Drive it to `failed` the way a real import failure would.
+      await withTenantContext(claimsR, (tx) => stageRows(tx, tenantR, batchR, staged));
       const [row] = await withTenantContext(claimsR, (tx) =>
         tx.select({ id: migrationStagingRows.id }).from(migrationStagingRows)
           .where(eq(migrationStagingRows.tenantId, tenantR)),
       );
       await withTenantContext(claimsR, (tx) => markValidated(tx, tenantR, row!.id));
+      // Drive it to `failed` the way a real IMPORT failure would - not a
+      // validation failure, which is the other half of this pair.
       await withTenantContext(claimsR, (tx) =>
         markFailed(tx, tenantR, row!.id, { code: "import_failed", message: "database error, sqlstate 23505" }),
       );
 
-      const summary = await withTenantContext(claimsR, (tx) =>
+      // WITHOUT re-staging, the row is left alone. This is the targeted-batch
+      // caller: the previous attempt's verdict stands and import does not
+      // quietly overturn it.
+      const untouched = await withTenantContext(claimsR, (tx) =>
         importRecords(tx, tenantR, SOURCE_SYSTEM, [rec], res),
       );
-      expect(summary.inserted).toBe(1);
-      expect(summary.retried).toBe(1);
-      expect(summary.skipped).toBe(0);
+      expect(untouched.inserted).toBe(0);
+      expect(untouched.skipped).toBe(1);
+      const [stillFailed] = await withTenantContext(claimsR, (tx) =>
+        tx.select({ status: migrationStagingRows.status }).from(migrationStagingRows)
+          .where(eq(migrationStagingRows.tenantId, tenantR)),
+      );
+      expect(stillFailed!.status).toBe("failed");
+
+      // THE FULL RUN: stage → validate → import, which is the only shape the
+      // runner ever executes. Staging resets `failed` to `pending`.
+      await withTenantContext(claimsR, (tx) => stageRows(tx, tenantR, batchR, staged));
+      const [reStaged] = await withTenantContext(claimsR, (tx) =>
+        tx.select({ status: migrationStagingRows.status, detail: migrationStagingRows.errorDetail })
+          .from(migrationStagingRows).where(eq(migrationStagingRows.tenantId, tenantR)),
+      );
+      expect(reStaged!.status).toBe("pending");
+      // The stale failure detail is cleared by the re-stage, not carried.
+      expect(reStaged!.detail).toBeNull();
+
+      await withTenantContext(claimsR, (tx) => markValidated(tx, tenantR, row!.id));
+      const recovered = await withTenantContext(claimsR, (tx) =>
+        importRecords(tx, tenantR, SOURCE_SYSTEM, [rec], res),
+      );
+      expect(recovered.inserted).toBe(1);
+      expect(recovered.skipped).toBe(0);
+      expect(recovered.failed).toBe(0);
 
       const [after] = await withTenantContext(claimsR, (tx) =>
         tx.select({ status: migrationStagingRows.status, detail: migrationStagingRows.errorDetail })
           .from(migrationStagingRows).where(eq(migrationStagingRows.tenantId, tenantR)),
       );
       expect(after!.status).toBe("imported");
-      // The retry is RECORDED, not silent.
-      expect((after!.detail as { code?: string } | null)?.code).toBe("retried");
+      // NO `retried` MARKER. The recovered row is indistinguishable from a
+      // first-time import because that is what it is - see markImported.
+      expect(after!.detail).toBeNull();
 
-      // ...and an already-imported row is NOT retried on the run after that.
+      // ...and the run after that writes nothing, for the row that recovered.
+      await withTenantContext(claimsR, (tx) => stageRows(tx, tenantR, batchR, staged));
       const again = await withTenantContext(claimsR, (tx) =>
         importRecords(tx, tenantR, SOURCE_SYSTEM, [rec], res),
       );
       expect(again.inserted).toBe(0);
-      // NOT retried: the row is `imported`, so the retry gate never opens.
-      expect(again.retried).toBe(0);
       // SKIPPED, ruled 2026-08-26. It used to take importPatient's UPDATE path
       // on `ledger.importedEntityId` and report `updated`, so a second --apply
       // re-wrote every target row while §7.3 promised zero writes.
@@ -401,6 +431,63 @@ describe.skipIf(!live)("migration pipeline — staging + idempotent upsert (live
       await sql`delete from patients where tenant_id = ${tenantR}`;
       await sql`delete from migration_staging_rows where tenant_id = ${tenantR}`;
       await sql`delete from tenants where id = ${tenantR}`;
+    }
+  });
+
+  it("a row REJECTED BY VALIDATION is rejected again by the next full run", async () => {
+    // The other half, and it must NOT be the same answer. `validation_failed`
+    // means the record cannot be written as it stands, so re-staging resets it
+    // to `pending`, validate rejects the identical record again, and it never
+    // reaches the import loop. Nothing short of a CHANGED DELIVERY imports it.
+    const tenantV = randomUUID();
+    const batchV = randomUUID();
+    const claimsV: TenantClaims = { tenant_id: tenantV, user_role: "owner" };
+    await sql`insert into tenants (id, name, slug) values (${tenantV}, 'Reject', ${`mig-reject-${tenantV}`})`;
+    try {
+      const staged = [{
+        sourceSystem: SOURCE_SYSTEM,
+        entityType: invalid.record.entityType,
+        sourceId: invalid.record.data.sourceId,
+        raw: invalid.raw,
+      }];
+      await withTenantContext(claimsV, (tx) => stageRows(tx, tenantV, batchV, staged));
+      const [row] = await withTenantContext(claimsV, (tx) =>
+        tx.select({ id: migrationStagingRows.id }).from(migrationStagingRows)
+          .where(eq(migrationStagingRows.tenantId, tenantV)),
+      );
+
+      // Run 1: validate rejects it and the ledger records why.
+      const first = validateMigrationRecord(invalid.record);
+      expect(first?.code).toBe("validation_failed");
+      await withTenantContext(claimsV, (tx) => markFailed(tx, tenantV, row!.id, first!));
+
+      // Run 2, the identical delivery: re-staged to `pending`, and the verdict
+      // is the same one, on the same record.
+      await withTenantContext(claimsV, (tx) => stageRows(tx, tenantV, batchV, staged));
+      const [reStaged] = await withTenantContext(claimsV, (tx) =>
+        tx.select({ status: migrationStagingRows.status }).from(migrationStagingRows)
+          .where(eq(migrationStagingRows.tenantId, tenantV)),
+      );
+      expect(reStaged!.status).toBe("pending");
+      const second = validateMigrationRecord(invalid.record);
+      expect(second).toEqual(first);
+      await withTenantContext(claimsV, (tx) => markFailed(tx, tenantV, row!.id, second!));
+
+      const [after] = await withTenantContext(claimsV, (tx) =>
+        tx.select({ status: migrationStagingRows.status, detail: migrationStagingRows.errorDetail })
+          .from(migrationStagingRows).where(eq(migrationStagingRows.tenantId, tenantV)),
+      );
+      expect(after!.status).toBe("failed");
+      expect((after!.detail as { code?: string } | null)?.code).toBe("validation_failed");
+
+      // And it never reached a target table.
+      const landed = await withTenantContext(claimsV, (tx) =>
+        tx.select({ id: patients.id }).from(patients).where(eq(patients.tenantId, tenantV)),
+      );
+      expect(landed).toHaveLength(0);
+    } finally {
+      await sql`delete from migration_staging_rows where tenant_id = ${tenantV}`;
+      await sql`delete from tenants where id = ${tenantV}`;
     }
   });
 
