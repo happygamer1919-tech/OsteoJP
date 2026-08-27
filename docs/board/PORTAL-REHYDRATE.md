@@ -404,6 +404,31 @@ and Ivan needs to know which.
    **You never send an apply block to Ivan directly, in any form, in any turn** -
    not as a quoted excerpt, not shortened, not as "an example of what it will
    look like". The path is draft -> strategy -> Ivan, always.
+
+   **THE EXCEPTION, RULED BY STRATEGY 2026-08-20, AND IT IS WRITTEN HERE RATHER
+   THAN CROSS-REFERENCED.** A DRAFT **may** transit Ivan's screen inside a report
+   body, provided the `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN`
+   line comes first. **Ivan runs only blocks ISSUED BY STRATEGY and marked
+   `VALIDATED`.**
+
+   THIS SHARPENS THE RULE, IT DOES NOT LOOSEN IT. The rule was never about which
+   screens a draft crosses; it is about **which artefact is executable**, and only
+   strategy's stamp makes one so. The WHY immediately below already says exactly
+   that.
+
+   WITHOUT THE EXCEPTION THE RULE CANNOT BE FOLLOWED BY THE PROCESS THAT DEPENDS
+   ON IT. Strategy reviews a draft by reading it in a report body. Taken
+   literally, the sentence above forbids printing one there - so a terminal that
+   obeys the rule cannot get a block reviewed, and a terminal that gets one
+   reviewed has broken the rule. A booting terminal hit exactly that on
+   2026-08-20, had to choose between an explicit dispatch and a committed rule,
+   and complied and flagged; the next one will have no dispatch to lean on.
+
+   IT IS IN §4.9 ITSELF AND NOT A POINTER TO ANOTHER SECTION, which is the lesson
+   §4.11 was committed for on the same day: **a rule whose exception lives
+   elsewhere is read without its exception by the terminal that only reads the
+   rule.**
+
    WHY, because the reason is not obvious and the rule looks like ceremony: an
    apply block is the one artefact here that is copied into a terminal pointed at
    PRODUCTION and run without further reading. Three blocks have already been
