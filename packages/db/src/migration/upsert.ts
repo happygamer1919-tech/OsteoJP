@@ -60,8 +60,6 @@ export type ImportSummary = {
   updated: number;
   skipped: number;
   failed: number;
-  /** Rows that had previously failed and were re-attempted this run. */
-  retried: number;
   /** Failures by (entityType, sourceId) — source ids are opaque, never PII. */
   failures: Array<{
     entityType: MigrationEntityType;
@@ -98,7 +96,6 @@ export async function importRecords(
     updated: 0,
     skipped: 0,
     failed: 0,
-    retried: 0,
     failures: [],
   };
 
@@ -136,22 +133,36 @@ export async function importRecords(
         continue;
       }
 
-      // A row that failed AT IMPORT is eligible again, ruled 2026-08-26. It
-      // used to be skipped outright, which meant a row that failed once was
-      // skipped by EVERY later run - so PROD-RUN.md's "re-run the identical
-      // command" and the idempotency proof both quietly excluded it,
-      // permanently, with nothing in any summary to say so. A retry is safe
-      // because the row never reached a target table: `markFailed` only fires
-      // when no write landed.
+      // A `failed` row is SKIPPED HERE, AND IT IS NOT THEREBY ABANDONED.
       //
-      // A VALIDATION FAILURE IS NOT RETRIED, and the difference is the whole
-      // point. `validation_failed` means the record cannot be written as it
-      // stands; re-attempting it just fails again, and treating the two alike
-      // would import rows the validate phase deliberately rejected. Those stay
-      // excluded until they are RE-STAGED, which resets them to `pending`.
-      const failureCode = (st.errorDetail as { code?: string } | null)?.code;
-      const retrying = st.status === "failed" && failureCode !== "validation_failed";
-      if (st.status === "failed" && !retrying) {
+      // RECOVERY IS RE-STAGE PLUS RE-VALIDATE, ruled 2026-08-26 after the
+      // rehearsal proved it on live data. A full run stages every record before
+      // it imports any, and `stageRows`' ON CONFLICT sets a row's status back to
+      // `pending` unless it is already `imported` (staging.ts). Validate then
+      // moves every `pending` row to `validated`, and this loop imports it. So
+      // by the time control reaches here in a full re-run, a row that failed on
+      // the previous run is `validated`, not `failed` - which is why the 61
+      // appointments and 44 clinical_records lost to the 2026-08-26 apply
+      // recovered on the next identical command, all 105 of them.
+      //
+      // THERE WAS A RETRY GATE HERE AND IT WAS DEAD CODE. It re-attempted a
+      // `failed` row in place and counted it on a `RETRIED n` line. Nothing
+      // could reach it: the only caller that reaches this loop is the runner,
+      // and the runner always stages first. Its RETRIED line printed `0` on the
+      // one run built to exercise it, which is how the deadness was found.
+      //
+      // WHAT THIS SKIP STILL COVERS is the caller that imports WITHOUT staging
+      // first - a targeted re-import of one batch. There, `failed` means the
+      // previous attempt's verdict stands and this loop will not quietly
+      // overturn it.
+      //
+      // A ROW REJECTED BY VALIDATION IS REJECTED AGAIN, and that is the same
+      // sentence in both worlds. Re-staging resets it to `pending`, validate
+      // rejects it on the identical record and marks it `failed` again, and it
+      // never reaches this loop. Nothing short of a CHANGED DELIVERY imports
+      // it, which is the correct answer: `validation_failed` means the record
+      // cannot be written as it stands.
+      if (st.status === "failed") {
         summary.skipped += 1;
         continue;
       }
@@ -184,26 +195,24 @@ export async function importRecords(
         continue;
       }
 
-      // st.status is 'validated' or 'failed' (retry path). An 'imported' row
-      // was skipped above, so the per-entity UPDATE path below is reached ONLY
-      // for a `validated` row that already carries an importedEntityId - the
-      // shape a re-staged, re-validated row takes after an earlier import.
+      // st.status is 'validated' - 'imported', 'failed' and 'pending' were all
+      // handled above. So the per-entity UPDATE path below is reached ONLY for a
+      // `validated` row that already carries an importedEntityId - the shape a
+      // re-staged, re-validated row takes after an earlier import.
       try {
         const action = await tx.transaction(async (sp) => {
           return importOne(sp, tenantId, sourceSystem, rec, resolvers, {
             stagingRowId: st.id,
             importedEntityId: st.importedEntityId,
-            retrying,
           });
         });
         summary[action] += 1;
-        if (retrying) summary.retried += 1;
       } catch (err) {
         const detail = sanitizeImportError(err);
         // markFailed transitions pending|validated|failed; on a re-run failure
         // of an already-imported row it stays 'imported' and the failure is
         // reported in the summary.
-        if (st.status === "validated" || st.status === "failed") {
+        if (st.status === "validated") {
           await markFailed(tx, tenantId, st.id, detail);
         }
         fail(detail);
@@ -221,8 +230,6 @@ export async function importRecords(
 type LedgerState = {
   stagingRowId: string;
   importedEntityId: string | null;
-  /** True when this row had previously failed. Recorded on the ledger row. */
-  retrying?: boolean;
 };
 
 async function importOne(
@@ -326,7 +333,7 @@ async function importPatient(
       .values({ tenantId, ...values })
       .returning({ id: patients.id });
     patientId = row!.id;
-    await markImported(tx, tenantId, ledger.stagingRowId, patientId, ledger.retrying);
+    await markImported(tx, tenantId, ledger.stagingRowId, patientId);
     action = "inserted";
   }
 
@@ -390,7 +397,7 @@ async function importAppointment(
     .insert(appointments)
     .values({ tenantId, ...values })
     .returning({ id: appointments.id });
-  await markImported(tx, tenantId, ledger.stagingRowId, row!.id, ledger.retrying);
+  await markImported(tx, tenantId, ledger.stagingRowId, row!.id);
   return "inserted";
 }
 
@@ -443,7 +450,7 @@ async function importEpisode(
     .insert(clinicalEpisodes)
     .values({ tenantId, ...values })
     .returning({ id: clinicalEpisodes.id });
-  await markImported(tx, tenantId, ledger.stagingRowId, row!.id, ledger.retrying);
+  await markImported(tx, tenantId, ledger.stagingRowId, row!.id);
   return "inserted";
 }
 
@@ -502,7 +509,7 @@ async function importClinicalRecord(
       ...(r.recordedAt ? { createdAt: new Date(r.recordedAt) } : {}),
     })
     .returning({ id: clinicalRecords.id });
-  await markImported(tx, tenantId, ledger.stagingRowId, row!.id, ledger.retrying);
+  await markImported(tx, tenantId, ledger.stagingRowId, row!.id);
   return "inserted";
 }
 
@@ -557,7 +564,7 @@ async function importAttachment(
     .insert(attachments)
     .values({ tenantId, ...values })
     .returning({ id: attachments.id });
-  await markImported(tx, tenantId, ledger.stagingRowId, row!.id, ledger.retrying);
+  await markImported(tx, tenantId, ledger.stagingRowId, row!.id);
   return "inserted";
 }
 
@@ -597,7 +604,7 @@ async function loadStagingRows(
   entityType: MigrationEntityType,
   sourceIds: string[],
 ): Promise<
-  Map<string, { id: string; status: string; importedEntityId: string | null; errorDetail: unknown }>
+  Map<string, { id: string; status: string; importedEntityId: string | null }>
 > {
   const rows = await tx
     .select({
@@ -605,9 +612,6 @@ async function loadStagingRows(
       sourceId: migrationStagingRows.sourceId,
       status: migrationStagingRows.status,
       importedEntityId: migrationStagingRows.importedEntityId,
-      // Carried so the import loop can tell a VALIDATION failure (never
-      // retried) from an IMPORT failure (retried). See the retry gate.
-      errorDetail: migrationStagingRows.errorDetail,
     })
     .from(migrationStagingRows)
     .where(

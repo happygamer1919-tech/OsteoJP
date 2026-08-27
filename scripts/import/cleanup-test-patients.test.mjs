@@ -59,15 +59,19 @@ test("the script exists and targets the confirmed tenant", () => {
 /* ---------------- data only ---------------- */
 
 test("DATA ONLY - no DDL, no schema change, no migration", () => {
-  // THE ONE PERMITTED EXCEPTION, ruled 2026-08-26: toggling the clinical-record
-  // immutability trigger around the delete. It is the only way the delete can
-  // complete - a finalized record can be neither deleted nor downgraded (STEP
-  // 1c) - and it changes no schema: no column, no type, no constraint, no
-  // function. The exception is spelled out here rather than by widening the
-  // guard, so any OTHER alter still fails this test.
-  const PERMITTED =
-    /alter\s+table\s+clinical_records\s+(disable|enable)\s+trigger\s+clinical_records_enforce_immutability/gi;
-  const rest = statements.replace(PERMITTED, "");
+  // THE TWO PERMITTED EXCEPTIONS, ruled 2026-08-26: toggling the clinical-record
+  // immutability trigger and the patient_audit_log append-only trigger around
+  // the delete. Each is the only way the delete can complete - a finalized
+  // record can be neither deleted nor downgraded (STEP 1c), and the append-only
+  // trigger is FOR EACH STATEMENT so it refuses a DELETE matching zero rows -
+  // and neither changes any schema: no column, no type, no constraint, no
+  // function. The exceptions are spelled out one by one rather than by widening
+  // the guard to "any disable trigger", so any OTHER alter still fails here.
+  const PERMITTED = [
+    /alter\s+table\s+clinical_records\s+(disable|enable)\s+trigger\s+clinical_records_enforce_immutability/gi,
+    /alter\s+table\s+patient_audit_log\s+(disable|enable)\s+trigger\s+patient_audit_log_append_only/gi,
+  ];
+  const rest = PERMITTED.reduce((acc, re) => acc.replace(re, ""), statements);
   for (const ddl of [
     /\bcreate\s+(table|index|type|function|trigger|schema|extension|temp)\b/i,
     /\balter\s+table\b/i,
@@ -78,25 +82,57 @@ test("DATA ONLY - no DDL, no schema change, no migration", () => {
   }
 });
 
-test("the trigger toggle is BALANCED and both halves are inside the transaction", () => {
+const TRIGGER_PAIRS = [
+  { table: "clinical_records", trigger: "clinical_records_enforce_immutability" },
+  { table: "patient_audit_log", trigger: "patient_audit_log_append_only" },
+];
+
+test("EVERY trigger toggle is BALANCED and both halves are inside the transaction", () => {
   // An unbalanced pair, or an `enable` after `commit`, would leave clinical
-  // records unprotected on a committed run.
-  const disable = [...statements.matchAll(/alter\s+table\s+clinical_records\s+disable\s+trigger/gi)];
-  const enable = [...statements.matchAll(/alter\s+table\s+clinical_records\s+enable\s+trigger/gi)];
-  assert.equal(disable.length, 1, "exactly one disable");
-  assert.equal(enable.length, 1, "exactly one enable");
+  // records unprotected - or the audit trail deletable - on a COMMITTED run.
+  //
+  // IT LOOPS OVER THE PAIRS rather than checking one, because the second pair
+  // was added a month after the first and a test that names only
+  // clinical_records would have passed over an unbalanced patient_audit_log
+  // exactly the way STEP 1's zero count passed over the abort it could not see.
   const begin = statements.search(/\bbegin\s*;/i);
   const commit = statements.search(/\bcommit\s*;/i);
   assert.ok(begin !== -1 && commit !== -1);
-  assert.ok(disable[0].index > begin, "disable must be AFTER begin");
-  assert.ok(enable[0].index < commit, "enable must be BEFORE commit");
-  assert.ok(disable[0].index < enable[0].index, "disable then enable");
+
+  for (const { table, trigger } of TRIGGER_PAIRS) {
+    const dis = [...statements.matchAll(new RegExp(`alter\\s+table\\s+${table}\\s+disable\\s+trigger\\s+${trigger}`, "gi"))];
+    const ena = [...statements.matchAll(new RegExp(`alter\\s+table\\s+${table}\\s+enable\\s+trigger\\s+${trigger}`, "gi"))];
+    assert.equal(dis.length, 1, `exactly one disable for ${trigger}`);
+    assert.equal(ena.length, 1, `exactly one enable for ${trigger}`);
+    assert.ok(dis[0].index > begin, `${trigger} disable must be AFTER begin`);
+    assert.ok(ena[0].index < commit, `${trigger} enable must be BEFORE commit`);
+    assert.ok(dis[0].index < ena[0].index, `${trigger}: disable then enable`);
+  }
 });
 
-test("STEP 3 verifies the trigger came back on", () => {
-  // A committed cleanup that left it off would be silent otherwise.
+test("the two pairs nest - re-enabled in the REVERSE order they were disabled", () => {
+  // Last off, first on. Not a correctness requirement in Postgres, which is
+  // exactly why it is pinned here: a reader checking the window needs the two
+  // pairs to read as nested rather than interleaved.
+  const idx = (re) => statements.search(re);
+  const disCR = idx(/alter\s+table\s+clinical_records\s+disable\s+trigger/i);
+  const disAL = idx(/alter\s+table\s+patient_audit_log\s+disable\s+trigger/i);
+  const enaAL = idx(/alter\s+table\s+patient_audit_log\s+enable\s+trigger/i);
+  const enaCR = idx(/alter\s+table\s+clinical_records\s+enable\s+trigger/i);
+  assert.ok(disCR < disAL, "clinical_records disabled first");
+  assert.ok(enaAL < enaCR, "patient_audit_log re-enabled first");
+});
+
+test("STEP 3 verifies BOTH triggers came back on", () => {
+  // A committed cleanup that left either off would be silent otherwise, and
+  // verifying one of two proves nothing about the other.
   assert.match(sql, /immutability_trigger/);
   assert.match(sql, /STOP IF `immutability_trigger` IS NOT 'O'/);
+  assert.match(sql, /audit_append_only_trigger/);
+  assert.match(sql, /STOP IF `audit_append_only_trigger` IS NOT 'O'/);
+  // Both are read from pg_trigger, not asserted in prose.
+  assert.match(sql, /tgname = 'clinical_records_enforce_immutability'/);
+  assert.match(sql, /tgname = 'patient_audit_log_append_only'/);
 });
 
 test("it never writes to the auth schema", () => {

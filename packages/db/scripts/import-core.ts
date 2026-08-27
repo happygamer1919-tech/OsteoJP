@@ -284,7 +284,7 @@ export type Pipeline = {
   importRecords(
     entityType: string,
     batch: SourceRecord[],
-  ): Promise<{ imported: number; skipped: number; failed: number; retried: number }>;
+  ): Promise<{ imported: number; skipped: number; failed: number }>;
   reconcile(): Promise<unknown>;
   /** Every patient_number already in use for this tenant. Read ONCE per run. */
   existingPatientNumbers(): Promise<number[]>;
@@ -433,14 +433,15 @@ export function livePipeline(
       // importedEntityId. So on a clean re-run this sum is 0 and `skipped`
       // carries the count, which is the number the idempotency step reads.
       //
-      // `failed` AND `retried` ARE CARRIED OUT TOO. They were dropped here, so
-      // the runner's exit expression could not see the import phase at all and
-      // 162 failures exited 0.
+      // `failed` IS CARRIED OUT TOO. It was dropped here, so the runner's exit
+      // expression could not see the import phase at all and 162 failures
+      // exited 0. `retried` went with the retry gate, removed 2026-08-26: it
+      // was unreachable in a full run, because staging resets a `failed` row to
+      // `pending` before this phase ever sees it.
       return {
         imported: summary.inserted + summary.updated,
         skipped: summary.skipped,
         failed: summary.failed,
-        retried: summary.retried,
       };
     },
 

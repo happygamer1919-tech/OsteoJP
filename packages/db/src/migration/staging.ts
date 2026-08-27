@@ -146,24 +146,26 @@ export async function markImported(
   tenantId: string,
   stagingRowId: string,
   importedEntityId: string,
-  /**
-   * True when this row was `failed` before this run. RECORDED, because a retry
-   * that leaves no trace makes "imported" mean two different things: landed
-   * first time, and landed only after an earlier attempt failed. The second is
-   * a fact somebody reconciling a production import will want.
-   *
-   * It rides in `error_detail` because that is the only free-form column on the
-   * ledger, and adding one would be a migration this change does not carry. The
-   * `retried` code is NOT an error - `reconcile()` counts it as imported.
-   */
-  retried = false,
 ) {
+  // `errorDetail: null` CLEARS an earlier failure rather than leaving it beside
+  // an `imported` status, which would read as a row that imported and failed.
+  //
+  // IT NO LONGER RECORDS "this one landed on a retry". It took a `retried` flag
+  // that wrote a `{ code: "retried" }` detail, for the in-place retry path
+  // removed 2026-08-26 - that path was unreachable, because the runner stages
+  // before it imports and staging resets a `failed` row to `pending` (see the
+  // comment at upsert.ts' failed-row skip). The recovered row is indistinguish-
+  // able from a first-time import because that is what it now is: re-staged,
+  // re-validated, imported. The evidence a reconciler wants is the PREVIOUS
+  // run's transcript, which reports the failure with its code.
+  //
+  // `failed` STAYS IN THE EXPECTED SET. `importRecords` no longer sends a
+  // `failed` row down this path, but a caller that marks one validated by hand
+  // still can, and narrowing it would be a behaviour change this does not need.
   await transition(tx, tenantId, stagingRowId, ["validated", "failed"], {
     status: "imported",
     importedEntityId,
-    errorDetail: retried
-      ? { code: "retried", message: "imported on a re-run after an earlier failure" }
-      : null,
+    errorDetail: null,
   });
 }
 

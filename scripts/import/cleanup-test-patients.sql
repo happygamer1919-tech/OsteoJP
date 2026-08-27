@@ -268,23 +268,38 @@ order  by status;
 -- STOP AND DO NOT COMMIT IF ANY COUNT DISAGREES WITH STEP 1. The `begin` is
 -- still open at that point; type `rollback;` instead of `commit;`.
 --
--- THE IMMUTABILITY TRIGGER IS OFF FOR THE LENGTH OF THIS TRANSACTION, and
--- nowhere else. See STEP 1c for why there is no alternative. Three properties
--- bound it:
+-- TWO TRIGGERS ARE OFF FOR THE LENGTH OF THIS TRANSACTION, and nowhere else.
+-- Both are OFF TOGETHER and BACK ON IN REVERSE ORDER before the commit.
+--
+--   clinical_records_enforce_immutability (0005). A finalized record can be
+--     neither deleted nor downgraded - see STEP 1c. Without this the delete
+--     aborts on the first `locked` row.
+--
+--   patient_audit_log_append_only (0054). FOUND ON THE 2026-08-26 REHEARSAL,
+--     on live data: this transaction aborted with
+--       42501 public.patient_audit_log is append-only; DELETE is refused
+--     while `patient_audit_log` held ZERO rows for the tenant. The trigger is
+--     `BEFORE UPDATE OR DELETE OR TRUNCATE ... FOR EACH STATEMENT`, so it fires
+--     on the STATEMENT and never looks at how many rows matched. A count of 0
+--     in STEP 1 is therefore no protection at all, and production would have
+--     hit the identical abort mid-window on import night.
+--
+-- Three properties bound the window, and they hold for both:
 --   * ALTER TABLE ... DISABLE TRIGGER is TRANSACTIONAL. On a rollback the
---     trigger comes back enabled on its own - verified: pg_trigger.tgenabled
+--     triggers come back enabled on their own - verified: pg_trigger.tgenabled
 --     reads 'O' after an aborted run. A failed cleanup cannot leave clinical
---     records unprotected.
---   * It takes a ShareRowExclusiveLock on clinical_records, so no other session
---     can write one while it is off. Reads are unaffected.
---   * It is re-enabled BEFORE commit, explicitly, so a committed cleanup can
---     never ship with it off.
--- IT IS TABLE-WIDE, because a trigger cannot be scoped to a row set. The DELETEs
--- are what is scoped to this tenant's patients; the lock is what makes the
--- table-wide window safe.
+--     records unprotected or the audit trail writable.
+--   * It takes a ShareRowExclusiveLock on each table, so no other session can
+--     write one while it is off. Reads are unaffected.
+--   * Both are re-enabled BEFORE commit, explicitly, so a committed cleanup can
+--     never ship with either off.
+-- THEY ARE TABLE-WIDE, because a trigger cannot be scoped to a row set. The
+-- DELETEs are what is scoped to this tenant's patients; the locks are what make
+-- the table-wide window safe.
 begin;
 
 alter table clinical_records disable trigger clinical_records_enforce_immutability;
+alter table patient_audit_log disable trigger patient_audit_log_append_only;
 
 -- depth 4 - through clinical_records
 delete from ai_ingestion_requests
@@ -378,8 +393,10 @@ update guest_booking_requests
 delete from patients
  where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560';
 
--- BEFORE COMMIT, ALWAYS. A rollback restores it too, but leaving it to the
--- rollback would mean a COMMITTED cleanup could ship with the trigger off.
+-- BEFORE COMMIT, ALWAYS. A rollback restores them too, but leaving it to the
+-- rollback would mean a COMMITTED cleanup could ship with a trigger off.
+-- REVERSE ORDER of the disables above: last off, first on.
+alter table patient_audit_log enable trigger patient_audit_log_append_only;
 alter table clinical_records enable trigger clinical_records_enforce_immutability;
 
 commit;
@@ -402,10 +419,18 @@ commit;
 --   turned it back on before committing. 'O' is enabled; anything else means
 --   clinical records are unprotected RIGHT NOW and it must be re-enabled by
 --   hand before any other work touches this database.
+-- STOP IF `audit_append_only_trigger` IS NOT 'O'. Same rule, same window, and
+--   BOTH are printed because verifying one of two proves nothing about the
+--   other: a cleanup that restored the immutability trigger and not this one
+--   leaves patient_audit_log writable and deletable, and no later statement in
+--   this file would notice.
 select
   (select tgenabled from pg_trigger
     where tgrelid = 'public.clinical_records'::regclass
       and tgname = 'clinical_records_enforce_immutability')                     as immutability_trigger,
+  (select tgenabled from pg_trigger
+    where tgrelid = 'public.patient_audit_log'::regclass
+      and tgname = 'patient_audit_log_append_only')                             as audit_append_only_trigger,
   (select count(*) from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560')          as patients,
   (select count(*) from appointments where patient_id not in (select id from patients))             as orphan_appointments,
   (select count(*) from clinical_records where patient_id not in (select id from patients))         as orphan_clinical_records,

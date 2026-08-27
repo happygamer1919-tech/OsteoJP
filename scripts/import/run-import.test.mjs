@@ -61,7 +61,7 @@ function fakePipeline(over = {}) {
     },
     async importRecords(entityType, batch) {
       calls.push(["importRecords", entityType, batch.length, batch.map((r) => r.sourceId)]);
-      return over.importResult?.(entityType, batch) ?? { imported: batch.length, failed: 0, retried: 0 };
+      return over.importResult?.(entityType, batch) ?? { imported: batch.length, failed: 0 };
     },
     async reconcile() {
       calls.push(["reconcile"]);

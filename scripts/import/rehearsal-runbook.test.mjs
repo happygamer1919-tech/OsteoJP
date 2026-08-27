@@ -210,18 +210,35 @@ test("the staging-ledger delete is scoped to non-prod AND says never on prod", (
   assert.match(flat, /There is no circumstance in which it is correct/i);
 });
 
-test("the cleanup deletes children before parents", () => {
+test("the cleanup DELEGATES its deletes and keeps NO list of its own", () => {
+  // It used to carry five deletes. Eighteen tables have an FK path to
+  // `patients`, so that list aborted on `patient_locations` on 2026-08-26 -
+  // a second, shorter, untested copy of a delete graph the repository already
+  // derives from the migrations. This asserts the copy is gone AND that the
+  // delegation names the file, because a runbook that dropped the list without
+  // naming a replacement would read as "the wipe is somebody else's problem".
   const cleanup = text.slice(text.indexOf("## 8."));
-  const order = ["attachments", "clinical_records", "clinical_episodes", "appointments", "patients"];
-  const positions = order.map((t) => cleanup.indexOf(`delete from ${t}`));
-  for (const p of positions) assert.ok(p > -1, "a cleanup delete is missing");
-  assert.deepEqual(positions, [...positions].sort((a, b) => a - b), "foreign keys would reject this order");
+  assert.match(cleanup, /cleanup-test-patients\.sql/, "the delegation must name the file");
+  assert.match(cleanup, /STEP 2/, "and the step within it");
+  for (const t of ["attachments", "clinical_records", "clinical_episodes", "appointments", "patients"]) {
+    assert.ok(
+      !new RegExp(`delete from\\s+${t}\\b`, "i").test(cleanup),
+      `§8 must not re-list \`delete from ${t}\` - cleanup-test-patients.sql owns the graph`,
+    );
+  }
+  // The ONE delete it does keep, which that file is asserted never to contain.
+  assert.match(cleanup, /delete from\s+migration_staging_rows/i);
 });
 
-test("the cleanup is transactional, so a partial wipe cannot survive", () => {
+test("the cleanup verifies BOTH triggers came back on", () => {
+  // clinical_records_enforce_immutability blocks the delete of a finalized
+  // record; patient_audit_log_append_only is FOR EACH STATEMENT and refused a
+  // DELETE matching zero rows. Checking one of the two proves nothing about
+  // the other, and a reset that left the audit trail writable would be silent.
   const cleanup = text.slice(text.indexOf("## 8."));
-  assert.match(cleanup, /^begin;$/m);
-  assert.match(cleanup, /^commit;$/m);
+  assert.match(cleanup, /clinical_records_enforce_immutability/);
+  assert.match(cleanup, /patient_audit_log_append_only/);
+  assert.match(cleanup, /Expected `O` on BOTH rows/i);
 });
 
 /* ---------------- the blind rule ---------------- */

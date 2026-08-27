@@ -973,92 +973,157 @@ pnpm --filter @osteojp/db exec tsx scripts/assert-not-prod.ts
 dashboard header **visually** before running anything in §8.3. Two independent
 confirmations, because the SQL editor has no guard at all.
 
-### 8.2b The immutability trigger, and why this step exists
+### 8.2b TWO triggers block the delete, and both are handled the same way
 
-**A finalized clinical record cannot be deleted, and it cannot be downgraded
-either.** `clinical_records_enforce_immutability` (migration 0005) raises
-`23514 check_violation` on a DELETE of any row whose `status` is `locked` or
-`signed`, and raises again on an UPDATE unless the change is a merge re-parent
-gated by `app.merge_reparent` with every other column byte-identical. Setting
-`status = 'draft'` fails that test, so **there is no in-band downgrade**:
+**Neither of these is a bug to route around.** Each is a safety property doing
+exactly what it was built to do, and each makes a plain `delete` impossible.
+
+**1. `clinical_records_enforce_immutability` (migration 0005).** A finalized
+clinical record cannot be deleted, and it cannot be downgraded either. The
+trigger raises `23514 check_violation` on a DELETE of any row whose `status` is
+`locked` or `signed`, and raises again on an UPDATE unless the change is a merge
+re-parent gated by `app.merge_reparent` with every other column byte-identical.
+Setting `status = 'draft'` fails that test, so **there is no in-band
+downgrade**:
 
 ```
 [0] code=23514 msg=clinical_records <id>: status=locked is finalized and
     immutable; create a new versioned record (addendum) instead
 ```
 
-That is not a bug to route around — it is CLAUDE.md rule 4 working. It does mean
-§8.3 as written can never complete: the dev seed leaves 45 finalized records of
+That is CLAUDE.md rule 4 working. The dev seed leaves 45 finalized records of
 60, and `fisiozero.ts` imports every migrated record as `locked`, so a wipe
-after any rehearsal hits the same wall.
+after any rehearsal hits this wall.
 
-**So the trigger is disabled for the duration of the reset transaction**, which
-is the narrowest form available, and three properties make it safe:
+**2. `patient_audit_log_append_only` (migration 0054).** Found on the
+2026-08-26 rehearsal, on live data, and this one is the more dangerous of the
+two because **the row count gives no warning**:
+
+```
+SQL FAILED: 42501 public.patient_audit_log is append-only; DELETE is refused
+```
+
+`patient_audit_log` held **zero** rows for the tenant when that fired. The
+trigger is `BEFORE UPDATE OR DELETE OR TRUNCATE ... FOR EACH STATEMENT`, so it
+fires on the STATEMENT and never looks at how many rows matched — a `0` in
+STEP 1 is not protection, and production would have aborted on the identical
+statement, mid-window, on import night.
+
+**So both triggers are disabled for the duration of the reset transaction**,
+which is the narrowest form available, and three properties make it safe. They
+hold for both:
 
 - **`ALTER TABLE ... DISABLE TRIGGER` is transactional.** On a rollback the
-  trigger comes back enabled — verified: `tgenabled` reads `O` after an aborted
-  reset. A failed wipe cannot leave clinical records unprotected.
-- **It takes a `ShareRowExclusiveLock`** on `clinical_records`, so no other
-  session can write one while the trigger is off. Reads are unaffected.
-- **It is re-enabled inside the same transaction**, before `commit`, so the
-  window is the wipe and nothing more.
+  triggers come back enabled — verified: `tgenabled` reads `O` after an aborted
+  reset, and that was confirmed again by the 2026-08-26 abort above. A failed
+  wipe cannot leave clinical records unprotected or the audit trail writable.
+- **It takes a `ShareRowExclusiveLock`** on each table, so no other session can
+  write one while the trigger is off. Reads are unaffected.
+- **Both are re-enabled inside the same transaction**, before `commit`, and in
+  the **reverse order** they were disabled, so the window is the wipe and
+  nothing more.
+
+**Both are verified after the commit, not one of them.** A reset that restored
+the immutability trigger and not the append-only one leaves the audit trail
+deletable, and nothing later in this runbook would notice.
 
 **REHEARSAL ONLY.** Production has no §8 at all (`PROD-RUN.md` §6), and nothing
 here authorises disabling a clinical-safety trigger there. The one place
-production disables it is `cleanup-test-patients.sql`, under its own guards, for
-the 33 training patients.
+production disables them is `cleanup-test-patients.sql`, under its own guards,
+for the 33 training patients — which is precisely why §8.3 now runs that file
+rather than a list of its own.
 
 ### 8.3 Wipe the imported rows
 
-In the Supabase SQL editor, **against the rehearsal project**, substituting the
-tenant uuid from query 0. Children before parents:
+**THIS STEP DELEGATES. It no longer carries a delete list of its own**, and the
+reason is a defect this runbook shipped: the five-table list that used to be
+here — `attachments`, `clinical_records`, `clinical_episodes`, `appointments`,
+`patients` — is not the graph. **Eighteen tables have an FK path to
+`patients`.** On the 2026-08-26 reset the list aborted on the thirteenth of them:
+
+```
+RESET FAILED: 23503 update or delete on table "patients" violates foreign key
+constraint "patient_locations_patient_id_patients_id_fk" on table "patient_locations"
+```
+
+`cleanup-test-patients.sql` already derives that graph from the committed
+migrations across all five DDL forms, is covered by its own test suite, and is
+the file production runs. **A second, shorter, untested copy of the same delete
+is exactly the shape of the mistake `SEC-seed-guard-prod-blocklist` was.** So
+this step runs that file and adds the one statement it deliberately does not
+carry.
+
+#### Before: the counts you are about to change
+
+Query 4 of `rehearsal-uuids.sql`. Record all four. They are the "before" half of
+the evidence, and §8.3's last step is the same query again.
+
+#### 1. `cleanup-test-patients.sql` STEP 2, VERBATIM
+
+Run it from the file. Do not retype it, do not trim it to what looks relevant.
+It is scoped by `tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560'` — the fixed
+seed constant, the same tenant in both projects — and it carries the two trigger
+windows §8.2b describes.
+
+**`patients` will read 1000-ish here, not 33 and not 50.** The file's own STEP 1
+header states the production figure. In this position it is counting the
+imported delivery, which is what you are wiping.
+
+**STEP 1, 1b and 1c first, as the file says.** STEP 1c is where the `locked`
+count comes from, and `locked + signed` is the number that would otherwise stop
+the delete.
+
+#### 2. The ledger, which that file will never touch
 
 ```sql
--- REHEARSAL PROJECT ONLY. NEVER production.
-begin;
-
--- §8.2b. Transactional, ShareRowExclusiveLock, re-enabled before commit.
-alter table clinical_records disable trigger clinical_records_enforce_immutability;
-
-delete from attachments        where tenant_id = ':tenant_id';
-delete from clinical_records   where tenant_id = ':tenant_id';
-delete from clinical_episodes  where tenant_id = ':tenant_id';
-delete from appointments       where tenant_id = ':tenant_id';
-delete from patients           where tenant_id = ':tenant_id';
-
 -- PERMITTED HERE AND ONLY HERE. See §8.1.
+-- cleanup-test-patients.sql asserts, in its own test suite, that the name
+-- `migration_staging_rows` appears in no delete or update of that file. That
+-- assertion is correct and must stay: the ledger is the import's audit trail
+-- and its idempotency key, and on production destroying it is never right.
+-- This one statement is the rehearsal's narrow exception, and it lives here
+-- rather than in that file so the production script stays unable to do it.
 delete from migration_staging_rows
  where tenant_id = ':tenant_id' and source_system = 'fisiozero';
-
--- BEFORE COMMIT, ALWAYS. A rollback restores it too, but leaving it to the
--- rollback would mean a committed reset could ship with the trigger off.
-alter table clinical_records enable trigger clinical_records_enforce_immutability;
-
-commit;
 ```
 
-**Confirm the trigger is back on** before you do anything else:
+#### 3. Confirm BOTH triggers are back on
+
+`cleanup-test-patients.sql` STEP 3 prints both, and this is the same check:
 
 ```sql
-select tgenabled from pg_trigger
- where tgrelid = 'public.clinical_records'::regclass
-   and tgname = 'clinical_records_enforce_immutability';
+select tgname, tgenabled from pg_trigger
+ where (tgrelid = 'public.clinical_records'::regclass
+        and tgname = 'clinical_records_enforce_immutability')
+    or (tgrelid = 'public.patient_audit_log'::regclass
+        and tgname = 'patient_audit_log_append_only')
+ order by tgname;
 ```
 
-**Expected `O`.** **STOP ON ANYTHING ELSE** and re-enable it by hand before any
-other work touches this project.
+**Expected `O` on BOTH rows.** **STOP ON ANYTHING ELSE** and re-enable by hand
+before any other work touches this project. Verifying one of the two proves
+nothing about the other.
 
-**`begin`/`commit` deliberately.** If one statement fails on a foreign key the
-whole reset rolls back, rather than leaving a half-wiped project that the next
-rehearsal would silently measure against.
+**STEP 2 is transactional and that is load-bearing.** If any statement fails on
+a foreign key the whole delete rolls back, rather than leaving a half-wiped
+project that the next rehearsal would silently measure against — which is what
+happened on 2026-08-26, and why the counts below are read rather than assumed.
+
+#### After: the counts again
+
+**Verify** with query 4 of `rehearsal-uuids.sql`: all four counts back to `0`.
+
+**A STEP 2 that rolls back leaves the ledger delete stranded.** Run the two in
+that order and read the outcome of the first before running the second: on
+2026-08-26 the ledger was emptied while the target tables were still full, and
+the next `--apply` against that state would have re-imported all 2001 rows on
+top of the ones already there.
 
 **There are no seeded dev patients left to delete** — §1.1's
 `cleanup-test-patients.sql` removed them before the import, so what this wipes is
 the imported delivery and nothing else. Re-run `seed:dev` from §1.1 before the
 next rehearsal anyway: it restores the reference data this wipe does not touch,
 and it is the step whose 50 patients §1.1's cleanup then removes again.
-
-**Verify** with query 4 of `rehearsal-uuids.sql`: all four counts back to `0`.
 
 ### 8.4 Empty the bucket
 
