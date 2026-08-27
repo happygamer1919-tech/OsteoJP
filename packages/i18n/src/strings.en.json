@@ -1407,6 +1407,8 @@
   "followup.contactedBy": "Contacted by {who} on {when}",
   "followup.contactedUnknown": "Contacted on {when}",
   "followup.contactNote": "The mark records that somebody opened the contact on this machine. It does not confirm the message was sent or delivered.",
+  "followup.contactFailed": "The contact could not be recorded. The message may still have opened; try again to record it.",
+  "followup.contactFailedSession": "Your session ended, so the contact was not recorded. Sign in again and record it once more.",
   "followup.postpone": "Postpone",
   "followup.postponeWeeks": "{n} weeks",
   "followup.postponeHint": "Removes the patient from the list until the chosen date. Reversible.",

@@ -1407,6 +1407,8 @@
   "followup.contactedBy": "Contactado por {who} em {when}",
   "followup.contactedUnknown": "Contactado em {when}",
   "followup.contactNote": "A marca regista que alguém abriu o contacto neste computador. Não confirma que a mensagem foi enviada nem entregue.",
+  "followup.contactFailed": "Não foi possível registar o contacto. A mensagem pode ter sido aberta na mesma; tente novamente para registar.",
+  "followup.contactFailedSession": "A sessão terminou, por isso o contacto não ficou registado. Inicie sessão outra vez e volte a registar.",
   "followup.postpone": "Adiar",
   "followup.postponeWeeks": "{n} semanas",
   "followup.postponeHint": "Retira o paciente da lista até à data escolhida. É reversível.",

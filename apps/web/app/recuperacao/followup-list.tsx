@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { s } from "@/lib/i18n";
-import { recordFollowupContact, postponeFollowup } from "@/lib/followup/actions";
+import { postponeFollowup } from "@/lib/followup/actions";
 import { whatsappLink, smsLink, mailtoLink, followupMessage } from "./deep-links";
 
 /**
@@ -80,6 +81,10 @@ export function FollowupList({ rows }: { rows: FollowupRow[] }) {
 function FollowupCard({ row }: { row: FollowupRow }) {
   const [pending, start] = useTransition();
   const [showPostpone, setShowPostpone] = useState(false);
+  /** null = nothing to report. Never a boolean: "the write failed" and "your
+   *  session ended" need different instructions from the receptionist. */
+  const [failed, setFailed] = useState<"failed" | "session" | null>(null);
+  const router = useRouter();
 
   const message = followupMessage(
     s["followup.messageTemplate"],
@@ -88,23 +93,77 @@ function FollowupCard({ row }: { row: FollowupRow }) {
   );
 
   /**
-   * THE RECORD IS FIRE-AND-FORGET AND THE NAVIGATION IS NOT BLOCKED ON IT.
-   * The link is an ordinary anchor with a real `href`, so it works with a
-   * middle click, a long press and with JavaScript broken; the click handler
-   * only adds the marker. If the marker write fails the receptionist still
-   * reaches WhatsApp, which is the outcome that matters — a failed audit row
-   * must never cost the patient their phone call.
+   * ==========================================================================
+   * THE MARK, AND THE TWO THINGS THE PREVIOUS VERSION GOT WRONG.
+   * ==========================================================================
+   * Observed by the owner on 2026-08-28: pressing WhatsApp opened WhatsApp and
+   * no "Contactado por … em …" line ever appeared, after a genuine reload.
+   *
+   * WRONG 1 — THE WRITE WAS NOT GUARANTEED TO SURVIVE THE CLICK. This handler
+   * runs on a click that ALSO navigates: `wa.me` into a new window, `sms:` and
+   * `mailto:` handed to an external application. The old version called a
+   * Server Action inside `startTransition`, which is dispatched by React's own
+   * transport and has no way to say "this request must outlive the document".
+   * The browser began the handoff in the same tick and whether the POST
+   * survived was left to chance.
+   *
+   *   `fetch(..., { keepalive: true })` IS SPECIFIED TO OUTLIVE ITS DOCUMENT.
+   *   That is the entire reason the transport changed. The RULE did not:
+   *   `recordFollowupContactFor` is still the one definition of this write and
+   *   the route handler is one of its callers.
+   *
+   * WRONG 2 — THE FAILURE WAS SWALLOWED. The old `catch {}` carried a reason
+   * that reads well and is false in the case that mattered: "there is nothing
+   * useful to tell the user". There is. **A mark that was never recorded is
+   * indistinguishable on screen from a patient nobody has contacted**, so the
+   * next receptionist rings somebody who was rung an hour ago, or does not ring
+   * somebody who was missed. That is a new failure case wearing the face of a
+   * harmless known one.
+   *
+   * WHAT IS UNCHANGED, AND MUST STAY UNCHANGED. The link is still an ordinary
+   * anchor with a real `href`: middle click, long press and a JavaScript
+   * failure all still reach WhatsApp. The navigation is still NOT blocked on
+   * the write — a failed audit row must never cost the patient their phone
+   * call. The request is merely ISSUED before the browser leaves, instead of
+   * being scheduled and hoped for.
    */
   const mark = (channel: FollowupChannel) => {
-    start(async () => {
-      try {
-        await recordFollowupContact(row.patientId, channel);
-      } catch {
-        // Swallowed on purpose, and this is the one place on this feature where
-        // that is right: the contact has already happened in another app. There
-        // is nothing to retry and nothing useful to tell the user.
-      }
-    });
+    setFailed(null);
+    /**
+     * NOT INSIDE `startTransition`. A transition SCHEDULES work; this needs the
+     * request on the wire before the click's default action proceeds, and
+     * `fetch` starts it synchronously. `pending` still guards the postpone
+     * controls, which are a different, non-navigating interaction.
+     */
+    void fetch("/api/followup/contact", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ patientId: row.patientId, channel }),
+      keepalive: true,
+      // The mark is per-session staff activity; a cached response would be a
+      // second mark that never happened.
+      cache: "no-store",
+    })
+      .then((res) => {
+        if (res.ok) {
+          // The row re-renders from the server, so the line the receptionist
+          // sees is the row that is in the database - never optimistic local
+          // state, which would show a mark for a write that failed.
+          router.refresh();
+          return;
+        }
+        /**
+         * A 401 IS THE ONE WORTH NAMING SEPARATELY. It means the session
+         * expired while the page was open, and the fix is to sign in again -
+         * which is a different instruction from "try again".
+         */
+        setFailed(res.status === 401 ? "session" : "failed");
+      })
+      .catch(() => {
+        // A network-level failure. The page may be unloading, in which case
+        // `keepalive` still delivers the request and this state is never seen.
+        setFailed("failed");
+      });
   };
 
   const canMessagePhone = row.phoneE164 !== null && row.smsCapable;
@@ -234,6 +293,23 @@ function FollowupCard({ row }: { row: FollowupRow }) {
             ))}
           </div>
         </div>
+      ) : null}
+
+      {/* ==================================================================
+          A FAILED MARK IS LOUD, AND IT IS LOUD *HERE*.
+          ==================================================================
+          It renders on the row it belongs to, immediately above the contact
+          history, because that is the exact place a receptionist looks to
+          answer "has anybody rung this person". An absent mark and a failed
+          mark look identical there unless one of them says so.
+
+          `role="alert"` so it is announced rather than only drawn: the
+          receptionist's attention is on the WhatsApp window that just opened,
+          not on this tab. */}
+      {failed ? (
+        <p role="alert" className="mt-3 text-xs font-medium text-error">
+          {failed === "session" ? s["followup.contactFailedSession"] : s["followup.contactFailed"]}
+        </p>
       ) : null}
 
       {row.contacts.length > 0 ? (

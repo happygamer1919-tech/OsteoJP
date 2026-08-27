@@ -76,6 +76,15 @@ const SUITES = [
   // DB-gated job would report green and LOOP 1's transactional DoD lines would
   // be proven by nothing at all.
   { file: "redeem.db.test.ts", hard: true },
+  // LE-followup-contact-mark-never-recorded, added 2026-08-28, and hard-required
+  // for the reason this whole card exists. The contact mark ALREADY had a green
+  // test - `a recorded contact renders with who and when` in
+  // apps/web/e2e/recuperacao.spec.ts - which proves the READ, because the row it
+  // renders is inserted by the SEED through the service-role client. The write
+  // path had nothing, and the gap was invisible from a green board because the
+  // spec was named after the visible outcome. This suite is the write path, and
+  // a silent skip would put it straight back where it was.
+  { file: "record-contact.db.test.ts", hard: true },
   // W13-03. The second DB-gated suite outside packages/db, in apps/api, for the
   // same structural reason: the OTP claim lives in an app. It proves the three
   // LOOP 3 DoD lines that are claims about the DATABASE rather than about the
