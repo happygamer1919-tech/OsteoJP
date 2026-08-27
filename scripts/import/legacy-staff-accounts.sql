@@ -2,15 +2,41 @@
 -- LEGACY STAFF ACCOUNTS. Owner ruling A, 2026-08-25.
 -- ===========================================================================
 --
--- Creates the two historical-only staff rows the Fisiozero import needs as
--- practitioner targets: "Clínica OsteoJP" and "NESA". Neither is a person and
--- neither may ever log in.
+-- Creates the historical-only staff rows the Fisiozero import needs as
+-- practitioner targets. None is a person and none may ever log in.
 --
 -- WHO RUNS THIS: Ivan, in the Supabase SQL editor. No terminal may (standing
 -- rule 1), which is why this is a committed .sql file rather than a script.
 --
--- DATA ONLY. No migration, no schema change, no DDL. It inserts two rows into
--- an existing table and nothing else.
+-- ---------------------------------------------------------------------------
+-- TWO PARTS, AND THE SECOND ONE IS WHY THIS FILE IS STILL OPEN
+-- ---------------------------------------------------------------------------
+--   PART A, STEPS 1-3.  The two accounts owner ruling A named: "Clínica
+--                       OsteoJP" and "NESA". *** EXECUTED ON PRODUCTION
+--                       2026-08-27. *** Both uuids came back on
+--                       rehearsal-uuids.sql query 2 against production, so the
+--                       rows exist and the mapping config already points at
+--                       them. Re-running STEP 2 is a safe no-op (ON CONFLICT DO
+--                       NOTHING) but there is nothing left to do.
+--
+--   PART B, STEPS 4-6.  ONE ROW PER VENDOR `terapeuta` THE PRODUCTION ROSTER
+--                       DOES NOT HAVE. Parameterised, because the amostra's
+--                       seven names are a 1,000-row sample and the real
+--                       delivery is a decade of a clinic's diary: it will carry
+--                       people who left years ago.
+--
+--                       AN UNMAPPED `terapeuta` REFUSES THE ENTIRE RUN -
+--                       `appointments.practitioner_id` is NOT NULL - so a name
+--                       discovered on import night is a stop with the old
+--                       system already retired. Get the list days earlier with
+--                       `node scripts/import/distinct-keys.mjs <delivery>` and
+--                       run PART B for every absent name BEFORE the mapping
+--                       config is filled.
+--
+--   STEP 7.             Wire every uuid, from both parts, into the config.
+--
+-- DATA ONLY. No migration, no schema change, no DDL. It inserts rows into an
+-- existing table and nothing else.
 --
 -- ---------------------------------------------------------------------------
 -- WHY THIS IS SQL AND NOT A CLICK PATH. VERIFIED, NOT ASSUMED.
@@ -115,6 +141,14 @@
 -- ===========================================================================
 
 
+-- ===========================================================================
+-- PART A. THE TWO RULED ACCOUNTS.  *** DONE ON PRODUCTION 2026-08-27. ***
+-- ===========================================================================
+-- Kept in full rather than deleted: STEP 3's output is what PROD-RUN.md 7 asks
+-- to be pasted back, and a step that has been run is still the step somebody
+-- re-reads to check what was run. Re-running STEP 1 is free and STEP 2 is a
+-- no-op.
+--
 -- ---------------------------------------------------------------------------
 -- STEP 1. PREVIEW. Read-only. Run this FIRST and read the numbers.
 -- ---------------------------------------------------------------------------
@@ -206,16 +240,162 @@ where  u.tenant_id = ':tenant_id'
 order  by u.full_name;
 
 
+-- ===========================================================================
+-- PART B. ONE LEGACY ROW PER VENDOR NAME THE ROSTER DOES NOT HAVE.
+-- ===========================================================================
+-- PARAMETERISED. You fill the VALUES list; nothing else in this part changes.
+--
+-- WHERE THE LIST COMES FROM, and it is not this file:
+--
+--     node scripts/import/distinct-keys.mjs <delivery-directory>
+--
+-- prints every distinct `terapeuta` in the delivery with a row count. Compare
+-- it against rehearsal-uuids.sql query 2 run on production. EVERY NAME THAT IS
+-- NOT ON THE ROSTER GOES IN THE LIST BELOW.
+--
+-- COPY EACH NAME BYTE FOR BYTE, ACCENTS INCLUDED. `users.full_name` here and
+-- `practitionerKeyByName` in the mapping config must be the SAME STRING as the
+-- vendor's, because the runner matches it exactly. "Clinica" without the í is
+-- how a whole career of appointments goes unmapped.
+--
+-- THE UUIDS CONTINUE THE SEQUENCE 0c1a0000-0000-4000-8000-00000000000N.
+-- ...0001 and ...0002 are taken by PART A. Start at ...0003 and go up by one.
+-- LITERAL AND FIXED, for the reason PART A gives: they are pasted into the
+-- mapping config, and a generated uuid would have to be read back and
+-- hand-copied under time pressure, where a typo is a foreign-key failure
+-- MID-IMPORT.
+--
+-- THE EMAIL IS A SLUG OF THE NAME UNDER .invalid, matching PART A: lower case,
+-- accents folded, spaces to hyphens. RFC 2606 guarantees .invalid never
+-- resolves, so no real mailbox can ever receive anything addressed here.
+--
 -- ---------------------------------------------------------------------------
--- STEP 4. WIRE THEM INTO THE MAPPING CONFIG. Not SQL - do this by hand.
+-- STEP 4. PREVIEW. Read-only. Fill the list, run this, READ EVERY ROW.
 -- ---------------------------------------------------------------------------
--- In scripts/import/mapping-config.local.json, replace the two
--- PENDING_OWNER_RULING markers with the uuids above:
+-- EXPECTED, for every row: name_exists f, uuid_exists f, email_exists f,
+-- still_placeholder f.
+--
+-- STOP IF `name_exists` IS TRUE FOR ANY ROW. That name ALREADY HAS A ROW in
+--   `users` - a real member of staff, or a legacy row from an earlier run.
+--   DO NOT create a second one: two rows with the same name means the import
+--   attributes a decade of history to whichever uuid you happened to paste, and
+--   nothing downstream can tell them apart. Take the EXISTING uuid from
+--   rehearsal-uuids.sql query 2 and put that in the mapping config instead.
+--
+-- STOP IF `uuid_exists` IS TRUE. The next number in the sequence is already
+--   used. Count again from PART A rather than guessing.
+--
+-- STOP IF `email_exists` IS TRUE. `users` has a unique index on
+--   (tenant_id, email); STEP 5 would fail on it.
+--
+-- STOP IF `still_placeholder` IS TRUE. The list was not filled in. This is the
+--   same discipline the mapping config's placeholder check enforces: a template
+--   left half-edited must refuse rather than insert something meaningless.
+with new_staff (id, full_name, email) as (
+  values
+    -- REPLACE THIS ROW. One line per absent name; add as many as needed.
+    ('0c1a0000-0000-4000-8000-000000000003'::uuid,
+     'REPLACE-ME',
+     'replace-me@osteojp.invalid')
+    -- , ('0c1a0000-0000-4000-8000-000000000004'::uuid,
+    --    '<vendor terapeuta name, accents included>',
+    --    '<slug>@osteojp.invalid')
+)
+select n.full_name,
+       n.id                                                          as practitioner_uuid,
+       n.email,
+       exists (select 1 from users u
+                where u.tenant_id = ':tenant_id' and u.full_name = n.full_name) as name_exists,
+       exists (select 1 from users u where u.id = n.id)                          as uuid_exists,
+       exists (select 1 from users u
+                where u.tenant_id = ':tenant_id' and u.email = n.email)          as email_exists,
+       n.full_name = 'REPLACE-ME'                                                as still_placeholder
+from   new_staff n
+order  by n.full_name;
+
+
+-- ---------------------------------------------------------------------------
+-- STEP 5. THE INSERT. Run only after STEP 4 shows f in every flag column.
+-- ---------------------------------------------------------------------------
+-- THE SAME VALUES LIST. Paste the identical block you just previewed - if the
+-- two disagree you will insert rows you did not look at.
+--
+-- SAME SHAPE AS PART A: role_id null, is_active false, is_bookable false,
+-- must_set_password false, and NO auth.users row, so no credential exists.
+--
+-- THE `where not exists` IS THE STOP, IN SQL. STEP 4 tells you before you run;
+-- this refuses even if you did not read it. A name that already has a row is
+-- SKIPPED, never duplicated - and the row count coming back smaller than your
+-- list is the signal that it happened.
+--
+-- EXPECTED RESULT: `INSERT 0 <the number of rows in your list>`.
+-- STOP IF THE NUMBER IS SMALLER. Something was skipped; re-run STEP 4 and read
+--   which flag is true.
+begin;
+
+with new_staff (id, full_name, email) as (
+  values
+    ('0c1a0000-0000-4000-8000-000000000003'::uuid,
+     'REPLACE-ME',
+     'replace-me@osteojp.invalid')
+)
+insert into users (id, tenant_id, role_id, email, full_name,
+                   is_active, is_bookable, must_set_password)
+select n.id, ':tenant_id', null, n.email, n.full_name,
+       false, false, false
+from   new_staff n
+where  n.full_name <> 'REPLACE-ME'
+  and  not exists (select 1 from users u
+                    where u.tenant_id = ':tenant_id' and u.full_name = n.full_name)
+on conflict (id) do nothing;
+
+commit;
+
+
+-- ---------------------------------------------------------------------------
+-- STEP 6. VERIFY. Read-only. Paste this output back.
+-- ---------------------------------------------------------------------------
+-- EXPECTED: one row per name in your list, every flag column exactly as below.
+--
+--   full_name    | role_id | is_active | is_bookable | has_auth_user
+--   -------------+---------+-----------+-------------+--------------
+--   <each name>  | (null)  | f         | f           | f
+--
+-- STOP IF `has_auth_user` IS TRUE FOR ANY ROW. A credential exists for an
+--   account that must never have one.
+-- STOP IF is_bookable IS TRUE. The account would appear in the Terapeuta
+--   dropdown and reception could book a live appointment against a name that
+--   belongs to a decade of history.
+-- STOP IF A NAME IS MISSING. STEP 5 skipped it; STEP 4 says why.
+select u.full_name,
+       u.role_id,
+       u.is_active,
+       u.is_bookable,
+       exists (select 1 from auth.users a where a.id = u.id) as has_auth_user,
+       u.id                                                  as practitioner_uuid
+from   users u
+where  u.tenant_id = ':tenant_id'
+  and  u.id >= '0c1a0000-0000-4000-8000-000000000003'
+  and  u.id <  '0c1a0000-0000-4000-8000-000000001000'
+order  by u.id;
+
+
+-- ---------------------------------------------------------------------------
+-- STEP 7. WIRE THEM INTO THE MAPPING CONFIG. Not SQL - do this by hand.
+-- ---------------------------------------------------------------------------
+-- EVERY UUID FROM BOTH PARTS GOES IN, and PART B's are the ones most easily
+-- forgotten: they were created days after PART A and nothing refuses a config
+-- that is merely INCOMPLETE for a name the delivery has not been read for yet.
+-- The runner's unmapped-key refusal is what catches it, at the cost of a run.
+--
+-- In the mapping config, replace the two PENDING_OWNER_RULING markers with
+-- PART A's uuids, and add one entry per PART B row:
 --
 --   "practitionerKeyByName": {
 --     ...
 --     "Clínica OsteoJP": "0c1a0000-0000-4000-8000-000000000001",
---     "NESA":            "0c1a0000-0000-4000-8000-000000000002"
+--     "NESA":            "0c1a0000-0000-4000-8000-000000000002",
+--     "<PART B name>":   "0c1a0000-0000-4000-8000-000000000003"
 --   }
 --
 -- THE KEYS ARE THE VENDOR'S STRINGS AND ARE MATCHED EXACTLY, accents included.
