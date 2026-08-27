@@ -58,6 +58,18 @@ const therapistColorTs = readFileSync(
   "utf8",
 );
 
+/**
+ * The staff sidebar's per-destination icon colours. Read as TEXT from `apps/web`
+ * for exactly the reason above: `packages/ui` does not depend on the app, and a
+ * moved file must throw here rather than silently check nothing.
+ */
+const staffShellTsx = readFileSync(
+  fileURLToPath(
+    new URL("../../../apps/web/components/staff-shell.client.tsx", import.meta.url),
+  ),
+  "utf8",
+);
+
 /** WCAG 2.x relative luminance. sRGB, the 0.03928 knee, Rec.709 coefficients. */
 function luminance(hex: string): number {
   const linear = (offset: number): number => {
@@ -264,6 +276,70 @@ describe("AA contrast floor for label tokens", () => {
         `${accent}: ${icon} on ${circle} is ${r.toFixed(2)}:1, below the ${GRAPHICAL}:1 floor for a graphical object`,
       ).toBeGreaterThanOrEqual(GRAPHICAL);
     }
+  });
+
+  /**
+   * ==========================================================================
+   * THE SIDEBAR ICON HUES, ON THE TWO SURFACES THEY ACTUALLY RENDER ON.
+   * ==========================================================================
+   * Each nav destination carries its own colour. Measuring those against WHITE
+   * would over-report every one of them, and the panel is not white: it is
+   * `v2-glass-nav-bg` (75% white) over `v2-bg`, and the ACTIVE row adds
+   * `v2-glass-active-bg` (15% Wellness Green) on top of that.
+   *
+   * BOTH SURFACES, BECAUSE THE ICON KEEPS ITS HUE IN BOTH STATES. The active tint
+   * is the darker of the two and is the one a resting-page scan would never
+   * photograph — the same blind spot the green-50 / green-100 rows in
+   * LIGHT_SURFACES were added for.
+   *
+   * `GRAPHICAL` (3:1, SC 1.4.11) and not `AA_NORMAL`: these are 20px glyphs,
+   * `aria-hidden`, beside a text label that carries the meaning and its own
+   * measured contrast. The floor for a graphical object is the honest one to
+   * hold them to, and holding them to 4.5 would rule out most of the palette for
+   * no accessibility gain.
+   */
+  it("every sidebar icon hue clears the 3:1 graphical floor on the nav panel AND the active row", () => {
+    const hues = [
+      ...staffShellTsx.matchAll(/className:\s*"text-(v2-[a-z]+-\d{2,3})"/g),
+    ].map((m) => m[1] ?? "");
+
+    // Without this the loop below iterates nothing and reports a clean sweep.
+    expect(
+      hues.length,
+      "NAV_ICON in staff-shell.client.tsx parsed to no colours - either the map changed shape or this guard is checking nothing",
+    ).toBeGreaterThanOrEqual(10);
+
+    // The panel: 75% white over the app background. Then the active row's tint
+    // over that panel, which is what an icon on the current page sits on.
+    const panel = composite(0.75, token("v2-surface"), token("v2-bg"));
+    const activeRow = composite(0.15, token("v2-green-500"), panel);
+
+    for (const hue of hues) {
+      for (const [surface, hex] of [
+        ["the nav panel", panel],
+        ["the active row", activeRow],
+      ] as const) {
+        const r = ratio(token(hue), hex);
+        expect(
+          r,
+          `${hue} on ${surface} (${hex}) is ${r.toFixed(2)}:1, below the ${GRAPHICAL}:1 floor for a graphical object`,
+        ).toBeGreaterThanOrEqual(GRAPHICAL);
+      }
+    }
+  });
+
+  it("the sidebar's own LABEL treatment is untouched by the icon hues", () => {
+    // The regression arm. The whole design rests on the hue landing on the icon
+    // and never on the row, because the row carries the label's measured
+    // contrast and the active-state cue. If a hue ever reached `navItemClass`,
+    // the AA guarantee above it would be silently replaced by a 3:1 one.
+    const sidebar = readFileSync(
+      fileURLToPath(new URL("./components/SidebarAppShell.tsx", import.meta.url)),
+      "utf8",
+    );
+    expect(sidebar).toContain('text-v2-green-800');
+    expect(sidebar).toContain('text-v2-text-secondary');
+    expect(sidebar).toMatch(/className=\{cx\("shrink-0", item\.iconClassName\)\}/);
   });
 
   it("every therapist hue clears 4.5:1 as TEXT on the composited glass card", () => {
