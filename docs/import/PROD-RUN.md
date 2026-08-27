@@ -706,6 +706,17 @@ and the clinic being able to use its history are different facts.
 record of what was imported, and the ledger is also what makes a re-run resume
 rather than duplicate.
 
+**THE WRITES ARE CHUNKED, AND A CHUNK FALLBACK IS INVISIBLE HERE (MIG-08).**
+Each entity imports in chunks of 200 rows — one multi-row `INSERT`, one bulk
+ledger `UPDATE`, one savepoint, with the parent-id lookups loaded once per
+entity rather than once per row. A chunk carrying **any** refused row rolls back
+to its savepoint and is re-imported **one row at a time**, so the failing row
+lands in the ledger with its own sqlstate and constraint and the other 199
+import normally. **You will not see a fallback in the transcript**: it shows up
+as ordinary per-row failures and as elapsed time, and the counts are the counts
+the per-row path would have produced. Unnumbered patients are never in a chunk —
+they stay one statement per row, after every numbered row.
+
 **A refusal before `--apply` has cost nothing.** Fix the cause and re-run the
 same command.
 

@@ -870,6 +870,19 @@ RECONCILIATION
 
 **Expected exit code: `0`.**
 
+**THE WRITES ARE CHUNKED, AND A CHUNK FALLBACK LOOKS LIKE NOTHING (MIG-08).**
+Each entity is imported in chunks of 200 rows: one multi-row `INSERT` and one
+bulk ledger `UPDATE` per chunk, inside one savepoint, with the parent-id lookups
+loaded once per entity instead of once per row. If **any** row in a chunk is
+refused, the savepoint rolls back and that chunk is re-imported **one row at a
+time** through the old path — so the failing row is recorded with its own
+sqlstate and constraint and the other 199 still land. **A fallback therefore
+does not appear in this transcript at all**, except as time: the counts, the
+`failed` lines and `error_detail` are exactly what the per-row path produced.
+Unnumbered patients are never chunked — 0029's `assign_patient_number` reads
+`MAX+1` per statement, so they stay one statement per row, after every numbered
+row, which is B5's ordering unchanged.
+
 **The import order is fixed and is not the adapter's emission order:**
 `patient → clinical_episode → appointment → clinical_record → attachment`.
 Parents before children, because every child resolves its parent through the

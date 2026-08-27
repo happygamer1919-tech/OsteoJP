@@ -169,6 +169,71 @@ export async function markImported(
   });
 }
 
+/**
+ * MANY ROWS, ONE STATEMENT. The bulk half of `markImported`, for the chunked
+ * import path (MIG-08).
+ *
+ * WHY IT EXISTS. `markImported` costs one round trip PER ROW, and at the
+ * rehearsal's measured 1.7 rows/s the round trips WERE the import: 2001 rows
+ * took 19m30s against a pooler in Frankfurt. A chunk of 200 rows that inserts
+ * in one statement and then marks 200 ledger rows in 200 statements has moved
+ * the bottleneck rather than removed it.
+ *
+ * THE TRANSITION GUARD IS KEPT, COLLECTIVELY. `transition` refuses a row that
+ * is not in the expected status set and throws; this refuses the whole CHUNK if
+ * ANY row was not in `validated|failed`, by comparing the updated count against
+ * the input count. That is deliberately stricter than per-row: the caller's
+ * answer to a throw here is to roll back to the chunk savepoint and re-import
+ * the chunk one row at a time, where each row gets `transition`'s own
+ * per-row verdict and its own error detail. So nothing is lost by refusing the
+ * batch - the precise reason is recovered by the fallback.
+ *
+ * `error_detail = null` for the same reason `markImported` clears it: an
+ * `imported` row carrying a stale failure detail reads as a row that imported
+ * and failed.
+ *
+ * RAW SQL, and it is the one place in this file that is. `UPDATE ... FROM
+ * (VALUES ...)` has no drizzle query-builder form, and the alternative - a
+ * CASE-expression update or N statements - is what this function exists to
+ * avoid. Every value is a BOUND PARAMETER; nothing is interpolated.
+ */
+export async function markImportedMany(
+  tx: DbTx,
+  tenantId: string,
+  pairs: Array<{ stagingRowId: string; importedEntityId: string }>,
+): Promise<void> {
+  if (pairs.length === 0) return;
+
+  const tuples = sql.join(
+    pairs.map((p) => sql`(${p.stagingRowId}::uuid, ${p.importedEntityId}::uuid)`),
+    sql`, `,
+  );
+  const result = await tx.execute(sql`
+    update migration_staging_rows as m
+       set status = 'imported'::migration_staging_status,
+           imported_entity_id = v.entity_id,
+           error_detail = null,
+           updated_at = now()
+      from (values ${tuples}) as v(staging_row_id, entity_id)
+     where m.id = v.staging_row_id
+       and m.tenant_id = ${tenantId}::uuid
+       and m.status in ('validated'::migration_staging_status,
+                        'failed'::migration_staging_status)
+    returning m.id
+  `);
+
+  // postgres-js returns an array-like of rows; drizzle passes it through.
+  const updated = Array.isArray(result)
+    ? result.length
+    : ((result as { length?: number }).length ?? 0);
+  if (updated !== pairs.length) {
+    const message =
+      `bulk transition to 'imported' updated ${updated} of ${pairs.length} staging row(s) — ` +
+      `at least one was missing, out of tenant scope, or not in [validated, failed]`;
+    throw new MigrationStagingError(message, { code: "invalid_transition", message });
+  }
+}
+
 async function transition(
   tx: DbTx,
   tenantId: string,
