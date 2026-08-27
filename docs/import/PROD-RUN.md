@@ -3,14 +3,17 @@
 **Ivan executes this. No terminal may run any step of it.** Standing rules 1
 and 2 forbid a terminal pointing anything at `dfotoodqvmjhbdcxyaxf`.
 
-Derived from [`REHEARSAL.md`](./REHEARSAL.md), and **REHEARSED THREE TIMES. Most
-recently 2026-08-27 at `6909bf0c`, on the batched ledger writer. Evidence:
-[`docs/import/evidence/REHEARSAL-2026-08-27b.md`](./evidence/REHEARSAL-2026-08-27b.md)**
-— the whole apply command, adapter to reconciliation, in **84 seconds**. The two
-earlier runs are [`REHEARSAL-2026-08-26.md`](./evidence/REHEARSAL-2026-08-26.md)
-(`76dd93a2`, which closed `MIG-02`, `MIG-03` and `MIG-04`) and
-[`REHEARSAL-2026-08-27.md`](./evidence/REHEARSAL-2026-08-27.md) (`5ebbacf3`,
-`MIG-08`).
+Derived from [`REHEARSAL.md`](./REHEARSAL.md), and **REHEARSED FOUR TIMES. Most
+recently 2026-08-27 at `b191dde2`, to prove the cleanup guard. Evidence:
+[`docs/import/evidence/REHEARSAL-2026-08-27c.md`](./evidence/REHEARSAL-2026-08-27c.md)**
+— §1.3b's STEP 2 refused twice on purpose, on live data, before the real run:
+once with `app.expected_patients` unset, once with a number the live count
+disagreed with, and the table was unchanged after each. The whole apply command
+ran in **82 seconds**. Earlier runs:
+[`2026-08-26`](./evidence/REHEARSAL-2026-08-26.md) (`76dd93a2` — `MIG-02`,
+`MIG-03`, `MIG-04`), [`2026-08-27`](./evidence/REHEARSAL-2026-08-27.md)
+(`5ebbacf3` — `MIG-08`),
+[`2026-08-27b`](./evidence/REHEARSAL-2026-08-27b.md) (`6909bf0c` — `MIG-09`).
 
 That precondition is now met and this file no longer waits on it. The byte copy
 has met a live bucket (22 objects, read back), the runner has met a database
