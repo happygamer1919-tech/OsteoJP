@@ -619,11 +619,33 @@ never by filename — filenames may carry patient names and a failure summary is
 precisely the output somebody pastes into a chat. Resolve them locally by
 looking up the line in `$WORK/checkpoint.jsonl`.
 
-**Verify in the Supabase dashboard**, Storage → `clinical-attachments`: the
-objects are under `<tenantId>/migration/fisiozero/`. Confirm the object count
-matches `uploaded`. **This visual confirmation is the actual close condition for
-`MIG-02`** — the exit code proves the job ran; the dashboard proves the bytes
-arrived.
+**THE CLOSE CONDITION FOR `MIG-02` IS THE OBJECT COUNT, READ BACK FROM THE
+BUCKET.** The exit code proves the job ran; the count proves the bytes arrived,
+and those are different facts. List the prefix
+`<tenantId>/migration/fisiozero/` through the Storage REST API and confirm the
+number of objects equals `uploaded`:
+
+```
+curl -s -X POST "$SUPABASE_URL/storage/v1/object/list/clinical-attachments" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"prefix":"<tenantId>/migration/fisiozero/","limit":100,"offset":0}' \
+  | python3 -c 'import json,sys; print("objects", len(json.load(sys.stdin)))'
+```
+
+**COUNT ONLY. NEVER PRINT THE NAMES** — an object name is an attachment
+filename, which may carry a patient name (§0.1). Page with `offset` when the
+count can exceed `limit`.
+
+**Ruled 2026-08-26**, and the reason is that the previous wording made a
+BROWSER the close condition for a storage integration. A terminal executing this
+runbook has none, so the card could not close on the run that actually proved it.
+The REST read asks the same question of the same API the upload used, and
+answers it in the transcript rather than in somebody's memory of a screen.
+
+**The dashboard view is OPTIONAL and it is still worth thirty seconds** if you
+have a browser open: Storage → `clinical-attachments` → the
+`<tenantId>/migration/fisiozero/` prefix. It shows the same number.
 
 ### 5.3 Re-run to prove resume and skip
 
@@ -1165,7 +1187,7 @@ it evidence rather than a report:
 | §7.1 | the `IMPORTED` lines, the `RECONCILIATION` block, exit code |
 | §7.2 | query 4's four numbers |
 | §7.3 | the `IMPORTED` lines of the **second** `--apply` — all zero — and exit code |
-| §5.2 | confirmation that the objects are visible in the dashboard under `<tenantId>/migration/fisiozero/` |
+| §5.2 | the object COUNT read back from the bucket under `<tenantId>/migration/fisiozero/`, equal to `uploaded` — never the names. **This is what closes `MIG-02`;** the dashboard view is optional |
 
 **Do not paste:** `$WORK/mapping-config.local.json` (live tenant uuids),
 `$WORK/attachment-mapping.json` or `$WORK/checkpoint.jsonl` (attachment
