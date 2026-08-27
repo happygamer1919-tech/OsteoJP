@@ -34,8 +34,15 @@
  * 3 = now.
  */
 
-/** What the three placeholders mean, so a caller binds them right. */
-export const FOLLOWUP_BINDINGS = ["windowFrom", "windowTo", "now"] as const;
+/**
+ * What the placeholders mean, so a caller binds them right.
+ *
+ * `therapistUserId` ($4) is used ONLY by `followupOwnPatientClause`. A caller
+ * building the three-clause predicate binds three; a caller adding the therapist
+ * scope binds four. It is listed here rather than documented separately so the
+ * positions cannot drift apart.
+ */
+export const FOLLOWUP_BINDINGS = ["windowFrom", "windowTo", "now", "therapistUserId"] as const;
 
 /**
  * Clause 1 — the patient's MOST RECENT completed attendance falls in the window.
@@ -87,6 +94,75 @@ export function followupNotPostponedClause(patientIdExpr: string): string {
        AND p.revoked_at IS NULL
        AND p.postponed_until > $3
   )`;
+}
+
+/**
+ * ====================================================================
+ * Clause 4 - THE THERAPIST SCOPE. Owner ruling 2026-08-27.
+ * ====================================================================
+ * The patient's MOST RECENT COMPLETED CONSULTATION was with `$4`.
+ *
+ * ==========================================================================
+ * WHY THIS RULING EXISTS AND WHAT IT PRESERVES
+ * ==========================================================================
+ * A therapist previously got nothing here, and the reason was never "therapists
+ * do not need it" - it was that **this page is every patient's telephone number
+ * in one place**, with no per-recipient rule for RLS to enforce. `permissions.ts`
+ * said so in as many words, and it said the test for a separate capability is
+ * whether a therapist-shaped subset exists.
+ *
+ * The owner has now named that subset: **their own patients**. So the reasoning
+ * is not overturned, it is satisfied - a therapist sees the people they treated,
+ * which is a set they already know by name, and never the front desk's whole
+ * call list.
+ *
+ * ==========================================================================
+ * "MOST RECENT", NOT "EVER" - AND THE DIFFERENCE IS THE WHOLE CLAUSE
+ * ==========================================================================
+ * `EXISTS (... practitioner_id = $4 ...)` would have been one line shorter and
+ * would mean something else entirely: every therapist who has EVER seen the
+ * patient, including one who saw them once in February. Two therapists would
+ * then both hold the same patient, and the row's own "practitioner" column -
+ * which names the clinician of the LAST visit - would contradict the scope that
+ * admitted it for one of them.
+ *
+ * So this is the same subquery shape as `followupPractitionerSql`: same
+ * completed set, same `ORDER BY starts_at DESC LIMIT 1`. **The row this clause
+ * tests is by construction the row whose practitioner the page displays**, which
+ * is a property worth more than the line it costs - the scope and the screen
+ * cannot disagree.
+ *
+ * ==========================================================================
+ * PRIMARY PRACTITIONER ONLY, AND THAT IS THE SCHEMA'S RULE, NOT A CHOICE
+ * ==========================================================================
+ * `appointments.practitioner_2_id` exists, and the schema is explicit about what
+ * it is: "PRIMARY-ONLY SEMANTICS everywhere - availability, the auto-selects,
+ * analytics money attribution, the AI-recording primary pair and the
+ * Estado/lifecycle axes ALL stay on the primary pair", with the secondary as
+ * de-emphasised linked display data. `followupPractitionerSql` reads the primary
+ * for the same reason.
+ *
+ * THE COST IS REAL AND IS NAMED RATHER THAN HIDDEN: a therapist who was the
+ * SECOND clinician on a dual-therapist session does not get that patient on
+ * their list. The alternative - scoping on either column while the screen names
+ * only the primary - would show a therapist a patient whose row says somebody
+ * else saw them, which is the more confusing of the two failures. If the owner
+ * wants dual-therapist sessions to count for both, that is a ruling and a
+ * one-line change here, and the display column has to change with it.
+ *
+ * THE PATIENT SIDE KEEPS BOTH COLUMNS (`patient_id OR patient_2_id`), matching
+ * the three clauses above. Those ask "is this appointment this patient's", which
+ * is a different question from "whose appointment is it".
+ */
+export function followupOwnPatientClause(patientIdExpr: string): string {
+  return `(
+    SELECT done.practitioner_id
+      FROM appointments done
+     WHERE (done.patient_id = ${patientIdExpr} OR done.patient_2_id = ${patientIdExpr})
+       AND done.status = 'completed'
+     ORDER BY done.starts_at DESC
+     LIMIT 1
+  ) = $4`;
 }
 
 /** The whole predicate, ANDed, for a caller that wants all three. */

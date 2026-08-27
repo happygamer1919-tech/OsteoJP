@@ -20,15 +20,30 @@ export const metadata = { title: s["followup.title"] };
  * ==========================================================================
  * `/notificacoes` deliberately has no route gate, because everything on it was
  * per-recipient and the rule there is "which person", not "which role". **That
- * reasoning does not transfer here and the difference is the whole point**: this
- * page is one tenant-wide list of patients with their telephone numbers, with no
- * recipient column and no per-person rule for RLS to enforce. A therapist
- * reaching it would see the front desk's whole call list.
+ * reasoning does not transfer here and the difference is the whole point**: for
+ * owner, admin and reception this page is one tenant-wide list of patients with
+ * their telephone numbers, with no recipient column and no per-person rule for
+ * RLS to enforce.
  *
  * So the check is at the top of the route, `listFollowupCandidates` throws
  * independently for a role that may not read it, and the two are not the same
  * check written twice: the redirect is the courtesy, the throw is the boundary.
  * SEC-01 is the card that paid for that distinction, one section over.
+ *
+ * ==========================================================================
+ * A THERAPIST NOW REACHES IT, SCOPED. Owner ruling 2026-08-27.
+ * ==========================================================================
+ * The exclusion above used to end "a therapist reaching it would see the front
+ * desk's whole call list", and that is exactly what the SCOPE prevents: a
+ * therapist's query is ANDed with `followupOwnPatientClause`, so the rows are
+ * the patients whose most recent completed consultation was theirs.
+ *
+ * NOTHING ON THIS PAGE IMPLEMENTS THAT, AND THAT IS DELIBERATE. There is no
+ * role check here beyond the capability, no `rows.filter(...)`, and no
+ * conditional column. The scope lives in the WHERE clause of both queries and
+ * in the guard on all three mutations, so a row this component receives is a row
+ * this viewer was entitled to. A page that filtered would be a page that had
+ * already been handed the data.
  *
  * A REDIRECT AND NOT A 403, matching every other gated route here. A staff
  * member who follows a stale link lands somewhere useful instead of on an error

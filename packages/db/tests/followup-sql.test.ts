@@ -6,6 +6,9 @@ import {
   followupLastAttendanceClause,
   followupNoFutureBookingClause,
   followupNotPostponedClause,
+  followupOwnPatientClause,
+  followupSelectionPredicate,
+  FOLLOWUP_BINDINGS,
 } from "../src/followup-selection";
 
 /**
@@ -75,5 +78,74 @@ describe("the WHERE clauses were never the broken part", () => {
     // and only their date was null. Pinning it stops a later "tidy-up" from
     // making the clauses match the broken selects instead of the other way round.
     expect(build(OUTER)).toContain(OUTER);
+  });
+});
+
+/**
+ * ==========================================================================
+ * OWNER RULING 2026-08-27 - THE THERAPIST SCOPE CLAUSE, PINNED AS TEXT
+ * ==========================================================================
+ * The DB-gated suite proves what this clause MEANS. This one proves what it
+ * SAYS, and the two failures it catches are ones a live database would report
+ * only as "the wrong patients", if at all.
+ */
+describe("followupOwnPatientClause", () => {
+  const OUT = '"patients"."id"';
+
+  it("correlates on the outer expression the caller names, in both patient columns", () => {
+    const sql = followupOwnPatientClause(OUT);
+    expect(sql).toContain(`done.patient_id = ${OUT}`);
+    expect(sql).toContain(`done.patient_2_id = ${OUT}`);
+  });
+
+  it("never emits the BARE column that caused the 2026-08-21 incident", () => {
+    const sql = followupOwnPatientClause(OUT);
+    expect(sql).not.toMatch(/done\.patient_id\s*=\s*"id"/);
+  });
+
+  it("compares the MOST RECENT completed visit, not any of them", () => {
+    // THE ASSERTION THAT DISTINGUISHES THIS CLAUSE FROM THE ONE-LINER IT COULD
+    // HAVE BEEN. `EXISTS (... = $4)` would satisfy every other test in this
+    // file and would mean "every therapist who ever saw them".
+    const sql = followupOwnPatientClause(OUT);
+    expect(sql).toContain("ORDER BY done.starts_at DESC");
+    expect(sql).toContain("LIMIT 1");
+    expect(sql).not.toContain("EXISTS");
+  });
+
+  it("selects the PRIMARY practitioner only, matching the schema's primary-only rule", () => {
+    const sql = followupOwnPatientClause(OUT);
+    expect(sql).toContain("SELECT done.practitioner_id");
+    expect(sql).not.toContain("practitioner_2_id");
+  });
+
+  it("only completed appointments count", () => {
+    expect(followupOwnPatientClause(OUT)).toContain("done.status = 'completed'");
+  });
+
+  it("binds $4, the position FOLLOWUP_BINDINGS reserves for it", () => {
+    // The positional contract, asserted rather than assumed. A caller binds by
+    // POSITION, so a clause that quietly moved to $5 would compare a patient's
+    // practitioner against a timestamp.
+    expect(FOLLOWUP_BINDINGS[3]).toBe("therapistUserId");
+    expect(followupOwnPatientClause(OUT)).toContain("= $4");
+  });
+
+  it("is NOT part of followupSelectionPredicate - the unscoped roles never get it", () => {
+    // THE REGRESSION ARM, and the one that protects owner/admin/reception. If
+    // the scope were ever folded into the shared predicate, every role would
+    // inherit it and the page would silently empty for the front desk.
+    expect(followupSelectionPredicate(OUT)).not.toContain("$4");
+    expect(followupSelectionPredicate(OUT)).not.toContain("SELECT done.practitioner_id");
+  });
+
+  it("the three original clauses still bind only $1-$3", () => {
+    for (const build of [
+      followupLastAttendanceClause,
+      followupNoFutureBookingClause,
+      followupNotPostponedClause,
+    ]) {
+      expect(build(OUT)).not.toContain("$4");
+    }
   });
 });

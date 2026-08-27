@@ -6,6 +6,7 @@ import { assertCan } from "@osteojp/auth";
 import { patientFollowupContacts, patientFollowupPostponements } from "@osteojp/db";
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
+import { assertFollowupPatientInScope, followupLocationScope, FollowupScopeError } from "./scope";
 
 /**
  * RB-01 — the three mutations behind the recuperacao list. There is no fourth.
@@ -14,6 +15,20 @@ import { requireRequestContext, runScoped } from "@/lib/auth/context";
  * user id from the caller. These are "use server" functions, so their arguments
  * are attacker-controlled by construction: anything the browser could supply is
  * treated as a request, not as a fact.
+ *
+ * ==========================================================================
+ * AND FROM 2026-08-27 EVERY ONE CHECKS THE PATIENT, NOT ONLY THE CAPABILITY.
+ * ==========================================================================
+ * They used to check `followup:read` and stop, which was sound only while every
+ * holder of that capability could see every patient. The owner ruling granting
+ * therapists a SCOPED list ends that: without a per-patient check, the
+ * capability would carry unscoped WRITE access behind a scoped READ, and the
+ * `patientId` argument is the thing the header above already says is
+ * attacker-controlled.
+ *
+ * `assertFollowupPatientInScope` (in `./scope`) is the one definition, and the
+ * rule it states is the one a reader expects: you may act on a patient exactly
+ * when you could have seen them on the list.
  *
  * NONE OF THEM SENDS A MESSAGE. `recordFollowupContact` records that a human
  * pressed a link on their own device. It is a marker, not a delivery receipt,
@@ -56,8 +71,10 @@ export async function postponeFollowup(patientId: string, weeks: number): Promis
   }
 
   const until = new Date(Date.now() + weeks * 7 * 24 * 60 * 60 * 1000);
+  const locationScope = await followupLocationScope(ctx);
 
   await runScoped(ctx, async (tx) => {
+    await assertFollowupPatientInScope(tx, ctx, patientId, locationScope);
     await tx.insert(patientFollowupPostponements).values({
       tenantId: ctx.tenantId,
       patientId,
@@ -81,12 +98,34 @@ export async function postponeFollowup(patientId: string, weeks: number): Promis
  * SCOPED TO ROWS THIS TENANT CAN SEE by RLS, and to ACTIVE rows by the WHERE.
  * Revoking an already-revoked postponement would otherwise overwrite the name
  * of whoever really reversed it.
+ *
+ * THE ARGUMENT IS A POSTPONEMENT ID, NOT A PATIENT ID, so the scope check needs
+ * one extra step: read whose postponement it is, then ask whether this viewer
+ * may act on that patient. The read happens INSIDE the same transaction and
+ * selects the patient id alone — it is a lookup for the guard, never a way to
+ * see a row the guard is about to refuse.
+ *
+ * A MISSING OR ALREADY-REVOKED ROW TAKES THE SAME BRANCH AS AN OUT-OF-SCOPE
+ * ONE. Distinguishing them would tell a caller that some postponement id exists
+ * at this clinic, which is the existence oracle `scope.ts` refuses to be.
  */
 export async function revokeFollowupPostponement(postponementId: string): Promise<void> {
   const ctx = await requireRequestContext();
   assertCan(ctx.role, "followup:read");
+  const locationScope = await followupLocationScope(ctx);
 
   await runScoped(ctx, async (tx) => {
+    const [row] = await tx
+      .select({ patientId: patientFollowupPostponements.patientId })
+      .from(patientFollowupPostponements)
+      .where(
+        sql`${patientFollowupPostponements.id} = ${postponementId}
+            AND ${patientFollowupPostponements.revokedAt} IS NULL`,
+      )
+      .limit(1);
+    if (!row) throw new FollowupScopeError();
+    await assertFollowupPatientInScope(tx, ctx, row.patientId, locationScope);
+
     await tx
       .update(patientFollowupPostponements)
       .set({ revokedBy: ctx.userId, revokedAt: new Date() })
@@ -130,7 +169,10 @@ export async function recordFollowupContact(
     throw new Error(`recordFollowupContact: unknown channel ${channel}`);
   }
 
+  const locationScope = await followupLocationScope(ctx);
+
   await runScoped(ctx, async (tx) => {
+    await assertFollowupPatientInScope(tx, ctx, patientId, locationScope);
     await tx.insert(patientFollowupContacts).values({
       tenantId: ctx.tenantId,
       patientId,

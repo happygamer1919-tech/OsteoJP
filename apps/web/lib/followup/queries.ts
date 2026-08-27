@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import {
   followupLastAttendanceSql,
@@ -7,6 +7,7 @@ import {
   followupLastAttendanceClause,
   followupNoFutureBookingClause,
   followupNotPostponedClause,
+  followupOwnPatientClause,
   patientFollowupContacts,
   patientFollowupPostponements,
   patients,
@@ -51,6 +52,93 @@ import { followupWindow } from "./window";
  * in `@osteojp/db`. One constant means the next one cannot be wrong differently.
  */
 const PATIENT_ID = '"patients"."id"';
+
+/**
+ * THE PLACEHOLDERS BECOME REAL BOUND PARAMETERS, never interpolated text.
+ *
+ * Interpolating the three instants would not be exploitable today - they are a
+ * server-computed window and a clock. But `now` IS a function parameter, so a
+ * future caller passing something from a request would turn a safe line into an
+ * injection without touching it. `$4` makes that concrete rather than
+ * hypothetical: it is a USER ID, and it is the value that decides which
+ * patients a therapist may see. Same reasoning `guest-requests.ts` gives for
+ * using `inArray` over a hand-built IN list.
+ *
+ * HOISTED TO MODULE SCOPE 2026-08-27, from inside `listFollowupCandidates`. Both
+ * queries in this file now bind the therapist clause, and a second copy of this
+ * function is how the two would come to bind `$4` differently - the same
+ * argument `followup-selection.ts` makes for living in `packages/db` at all.
+ *
+ * ISO STRING + AN EXPLICIT CAST, NOT A BARE Date. INC-12, third defect. These
+ * parameters sit inside a fragment assembled with `sql.raw`, so Drizzle has NO
+ * COLUMN TYPE to encode them against - unlike `gt(table.column, now)`, where the
+ * column tells it what to do. With no type hint the postgres driver is handed a
+ * Date it cannot serialise. `$4` carries `::uuid` for the same reason: the
+ * column it is compared against is `practitioner_id`, and the driver cannot see
+ * it through the raw fragment.
+ *
+ * STILL A BOUND PARAMETER in every case. The value is never interpolated into
+ * the text - it is `$n::type` with the value bound.
+ */
+function bindFollowupClause(
+  clause: string,
+  values: { from: Date; to: Date; now: Date; therapistUserId?: string },
+): SQL {
+  return sql.join(
+    clause
+      .split(/(\$[1234])/g)
+      .map((part) =>
+        part === "$1"
+          ? sql`${values.from.toISOString()}::timestamptz`
+          : part === "$2"
+            ? sql`${values.to.toISOString()}::timestamptz`
+            : part === "$3"
+              ? sql`${values.now.toISOString()}::timestamptz`
+              : part === "$4"
+                ? /**
+                   * A CLAUSE CARRYING `$4` WITH NOTHING TO BIND IS A BUG, NOT AN
+                   * EMPTY SCOPE, and it throws rather than rendering something.
+                   * The alternative - substituting NULL - makes `... = NULL`,
+                   * which is never true, so the query returns an EMPTY LIST. On
+                   * this screen an empty list reads as "nobody to call", which is
+                   * good news. A scope bug that presents as good news is the
+                   * exact failure shape this codebase keeps cataloguing.
+                   */
+                  (() => {
+                    if (!values.therapistUserId)
+                      throw new Error(
+                        "bindFollowupClause: the clause carries $4 but no therapistUserId was supplied",
+                      );
+                    return sql`${values.therapistUserId}::uuid`;
+                  })()
+                : sql.raw(part),
+      ),
+    sql``,
+  );
+}
+
+/**
+ * The therapist whose patients this viewer may see, or null for an unscoped role.
+ *
+ * OWNER RULING 2026-08-27: therapists gain /recuperacao, SCOPED to the patients
+ * whose most recent completed consultation was theirs. Owner, admin and
+ * reception keep the unscoped list per PL-09.
+ *
+ * A FUNCTION AND NOT AN INLINE `ctx.role === "therapist"` AT EACH CALL SITE,
+ * for the reason `resolveScheduleScope` gives for the same shape one directory
+ * over: there are now three call sites in this feature (two queries and the
+ * mutation guard) and the fourth is whatever gets added next. One definition
+ * means a caller can fail to APPLY the scope - a visible omission - but cannot
+ * express it incorrectly.
+ *
+ * `ctx.userId` IS the `users.id` this compares against: `users.id` is 1:1 with
+ * the Supabase auth user id and is not generated locally (see the column's own
+ * comment in `packages/db/src/schema.ts`), which is the same identity
+ * `resolveScheduleScope` relies on for `{kind:"self"}`.
+ */
+export function therapistScope(ctx: RequestContext): string | null {
+  return ctx.role === "therapist" ? ctx.userId : null;
+}
 
 export type FollowupChannelMark = {
   channel: "whatsapp" | "sms" | "email";
@@ -97,21 +185,35 @@ export type FollowupCandidate = {
  *    covers.
  *
  * ==========================================================================
- * WHO MAY READ IT
+ * WHO MAY READ IT, AND WITH WHAT SCOPE
  * ==========================================================================
- * `followup:read` — owner, admin, reception. **A therapist gets nothing**, and
- * this THROWS for one rather than returning an empty list. An empty list is a
- * valid answer a future caller would render as "nobody to call"; a throw is not
+ * `followup:read` — owner, admin, reception UNSCOPED; therapist SCOPED to their
+ * own patients by owner ruling 2026-08-27. A role holding NO capability still
+ * THROWS here rather than returning an empty list: an empty list is a valid
+ * answer a future caller would render as "nobody to call", and a throw is not
  * something a caller can mistake for data. The page hiding the route is the
- * courtesy; this is the boundary. Same reasoning as
- * `listPendingGuestRequests`, and for the same reason: that list shipped
- * readable by therapists on production.
+ * courtesy; this is the boundary. Same reasoning as `listPendingGuestRequests`,
+ * and for the same reason: that list shipped readable by therapists on
+ * production.
+ *
+ * THE TWO SCOPES COMPOSE RATHER THAN COMPETE, and they answer different
+ * questions. `patientLocationScope` asks WHICH CLINIC (PL-09);
+ * `followupOwnPatientClause` asks WHOSE PATIENT. A therapist assigned to a
+ * location gets both, ANDed, because a therapist is not exempt from PL-09 by
+ * gaining a second bound.
  *
  * LOCATION-SCOPED per PL-09, through the SAME `patientLocationScope` every other
  * located read uses rather than a second definition. A located receptionist or
  * admin sees their own clinic's patients; the owner sees all; an UNASSIGNED
  * reception or admin user is unrestricted, mirroring PL-09's documented
  * onboarding fallback so nobody is locked out on their first day.
+ *
+ * AN UNASSIGNED THERAPIST IS **NOT** UNRESTRICTED, and that is the one place
+ * this feature departs from PL-09's fallback. PL-09 opens up for an unassigned
+ * reception or admin so nobody is locked out on their first day; a therapist's
+ * own-patient bound is not an onboarding convenience, it is the whole reason
+ * they may see the page at all. An unassigned therapist with no completed
+ * consultations simply sees an empty list, which is the truth.
  */
 export async function listFollowupCandidates(
   ctx: RequestContext,
@@ -138,54 +240,31 @@ export async function listFollowupCandidates(
      * caller data, so nothing user-supplied reaches `raw`.
      */
     const pid = PATIENT_ID;
-    /**
-     * THE PLACEHOLDERS BECOME REAL BOUND PARAMETERS, never interpolated text.
-     *
-     * Interpolating the three instants would not be exploitable today - they are
-     * a server-computed window and a clock. But `now` IS a function parameter,
-     * so a future caller passing something from a request would turn a safe line
-     * into an injection without touching it. Same reasoning `guest-requests.ts`
-     * gives for using `inArray` over a hand-built IN list, and the same
-     * conclusion: a parameterised predicate cannot become exploitable later.
-     */
-    const bind = (clause: string) =>
-      sql.join(
-        clause
-          .split(/(\$[123])/g)
-          .map((part) =>
-            /**
-             * ISO STRING + AN EXPLICIT CAST, NOT A BARE Date. INC-12, third
-             * defect, and the new e2e caught it on its first run.
-             *
-             * These parameters sit inside a fragment assembled with sql.raw, so
-             * Drizzle has NO COLUMN TYPE to encode them against - unlike
-             * `gt(table.column, now)`, where the column tells it what to do.
-             * With no type hint the postgres driver is handed a Date it cannot
-             * serialise: "The string argument must be of type string... Received
-             * an instance of Date".
-             *
-             * STILL A BOUND PARAMETER. The value is not interpolated into the
-             * text - it is `$n::timestamptz` with the string bound - so the
-             * reasoning above about `now` being a function parameter still holds.
-             */
-            part === "$1"
-              ? sql`${from.toISOString()}::timestamptz`
-              : part === "$2"
-                ? sql`${to.toISOString()}::timestamptz`
-                : part === "$3"
-                  ? sql`${now.toISOString()}::timestamptz`
-                  : sql.raw(part),
-          ),
-        sql``,
-      );
 
     const conds = [
-      bind(followupLastAttendanceClause(pid)),
-      bind(followupNoFutureBookingClause(pid)),
-      bind(followupNotPostponedClause(pid)),
+      bindFollowupClause(followupLastAttendanceClause(pid), { from, to, now }),
+      bindFollowupClause(followupNoFutureBookingClause(pid), { from, to, now }),
+      bindFollowupClause(followupNotPostponedClause(pid), { from, to, now }),
     ];
 
     if (locationScope) conds.push(patientLocationScope(patients.id, locationScope));
+    /**
+     * THE THERAPIST SCOPE, ANDed INTO THE QUERY. Owner ruling 2026-08-27.
+     *
+     * IT IS A WHERE CLAUSE AND NOT A `.filter()` ON THE RESULT, and that is the
+     * ruling's own wording: "enforced server-side in the query, never by hiding
+     * rows client-side". A row that reaches the mapping below has already been
+     * SELECTED - its telephone number is in the process, in the payload, and in
+     * the browser's memory. Filtering it there hides it from the screen and
+     * discloses it anyway.
+     *
+     * THE OTHER THREE ROLES ARE UNTOUCHED. `ownPatientsOnly` is null for owner,
+     * admin and reception, so nothing is appended and their query renders byte
+     * for byte as it did - which is what "owner and reception still see all"
+     * means and what the suite asserts.
+     */
+    const ownScope = therapistScope(ctx);
+    if (ownScope) conds.push(bindFollowupClause(followupOwnPatientClause(pid), { from, to, now, therapistUserId: ownScope }));
 
     const rows = await tx
       .select({
@@ -325,6 +404,12 @@ export async function listActivePostponements(
 ): Promise<(ActivePostponement & { patientId: string; fullName: string })[]> {
   assertCan(ctx.role, "followup:read");
   const locationScope = await viewerLocationScope(ctx);
+  const ownScope = therapistScope(ctx);
+  // The window is not part of THIS query's own rule - a postponement is active
+  // or it is not, regardless of when the patient was last seen. It is computed
+  // because `followupOwnPatientClause` shares one binder with the candidates
+  // query, and one binder is what keeps `$4` meaning the same thing in both.
+  const { from, to } = followupWindow(now);
 
   return runScoped(ctx, async (tx) => {
     /**
@@ -345,6 +430,31 @@ export async function listActivePostponements(
       gt(patientFollowupPostponements.postponedUntil, now),
     ];
     if (locationScope) conds.push(patientLocationScope(patients.id, locationScope));
+    /**
+     * THE SAME THERAPIST SCOPE AS THE CANDIDATES QUERY, AND IT IS NOT OPTIONAL
+     * HERE JUST BECAUSE THIS SECTION LOOKS SMALLER.
+     *
+     * The Postponed section renders a patient's FULL NAME. Scoping the main list
+     * and leaving this one open would mean a therapist saw every patient in the
+     * tenant that reception had postponed - a smaller leak than the call list
+     * and the same KIND of leak, arriving through the section nobody was
+     * looking at. It is the shape SEC-01 shipped: a surface adjacent to the
+     * gated one, sharing its capability and not its scope.
+     *
+     * IT USES THE SAME CLAUSE, not a second predicate that means roughly the
+     * same thing. A therapist sees a postponement exactly when they would have
+     * seen the patient on the list it was made from.
+     */
+    if (ownScope) {
+      conds.push(
+        bindFollowupClause(followupOwnPatientClause(PATIENT_ID), {
+          from,
+          to,
+          now,
+          therapistUserId: ownScope,
+        }),
+      );
+    }
 
     return tx
       .select({
