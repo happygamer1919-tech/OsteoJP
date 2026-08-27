@@ -219,7 +219,7 @@ in the Supabase SQL editor against production, in order:
 | Step | What | Expected |
 |---|---|---|
 | **1** | preview counts, read-only | `patients` = **33**, `distinct_patient_numbers` = 33, min/max within 1–35 |
-| **1b** | storage paths, read-only | likely `path_count` 0; **run before step 2** or the paths are unrecoverable |
+| **1b** | storage paths, read-only | **EXPECT NON-ZERO** — see below; **run before step 2** or the paths are unrecoverable |
 | **2** | the delete, one transaction | a count per statement matching step 1, ending `DELETE 33` |
 | **3** | verify, read-only | **every column 0**, `staff_rows` unchanged at **30** |
 
@@ -236,6 +236,15 @@ import would write on top of it.
 
 **STOP IF `staff_rows` is not 30.** That is 28 real staff plus the two legacy
 accounts from §1.2. The script must not touch `users` at all.
+
+**`path_count` WILL BE NON-ZERO ON PRODUCTION, and the rehearsal's `0` is what
+would mislead you.** Query 4 against production on 2026-08-27 returned
+`attachments 3` for the 35 training patients — the clinic uploaded real files
+while practising the workflow, and `clinical-attachments` is not empty the way a
+fresh rehearsal bucket is. **Deleting the row does not delete the object**:
+nothing in this database reaches into Supabase Storage, so every path step 1b
+prints and step 2 then removes the row for is an object left orphaned in the
+bucket, belonging to a patient that no longer exists.
 
 **If `path_count` was non-zero:** after step 2, delete those objects in
 Supabase dashboard → Storage → `clinical-attachments`. Deleting the row does not
@@ -307,6 +316,57 @@ itself before the first byte and exits `1` with
 `bucket clinical-attachments does not exist in project <ref>`, having attempted
 nothing. On production an absent bucket means the shell is pointed somewhere
 unexpected, which is a bigger finding than the missing bucket.
+
+### 1.3e The two vocabularies the config has to cover — READ THE DELIVERY FIRST
+
+**THE CONFIG CANNOT BE FILLED FROM THE TEMPLATE.** The template lists five
+practitioner names and four service types; **those are the amostra's**, observed
+in a 1,000-row sample. This delivery is a decade of the clinic's diary and will
+carry names of people who left years ago and service labels nobody remembers
+choosing.
+
+```
+node "$REPO/scripts/import/distinct-keys.mjs" "$LV"
+node "$REPO/scripts/import/distinct-keys.mjs" "$CB"
+```
+
+It prints two columns of `marcacoes.csv` — `terapeuta` and `tipo_servico` —
+distinct values with a row count each, **and nothing else**: no `id_paciente`,
+no name, no date, no row. A therapist's professional name is operational
+metadata and is printable by the same ruling `check-delivery.mjs` prints the
+`estado` vocabulary under.
+
+**RUN IT ON BOTH DELIVERIES AND TAKE THE UNION.** A therapist who only ever
+worked at Castelo Branco appears in one file and not the other, and both configs
+carry the same `practitionerKeyByName`.
+
+#### What to do with each list, and the two halves are NOT symmetrical
+
+| | `terapeuta` | `tipo_servico` |
+|---|---|---|
+| Target column | `appointments.practitioner_id`, **NOT NULL** | `appointments.service_id`, **NULLABLE** |
+| An absent value | **REFUSES THE ENTIRE RUN** before anything is staged | imports **without a service**, runner notes it |
+| Who resolves it | you, with a legacy row | **the owner**, as a product decision |
+
+**EVERY `terapeuta` NOT ON THE PRODUCTION ROSTER GETS A LEGACY ROW FIRST.**
+Compare the list against `rehearsal-uuids.sql` query 2 run on production, then
+run **PART B** of
+[`scripts/import/legacy-staff-accounts.sql`](../../scripts/import/legacy-staff-accounts.sql)
+— steps 4, 5 and 6 — for every absent name, **before** §1.4. A name discovered
+during the window is a stop with the old system already retired.
+
+**A NAME THAT ALREADY HAS A ROW DOES NOT GET A SECOND ONE.** PART B's preview
+flags it and its INSERT skips it. Take the existing uuid from query 2 and map to
+that; two rows sharing a `full_name` means a decade of history is attributed to
+whichever uuid was pasted, and nothing downstream can tell them apart.
+
+**EVERY ABSENT `tipo_servico` GOES TO THE OWNER, and the run is not blocked on
+the answer.** Each one is either a real catalogue entry or a bucket, and the
+source cannot say which — `Diversos` is the worked example: mapping it to a
+service would assert something the vendor never said. Leave an undecided label
+as `TO_NORMALIZE`; the runner strips it, logs it, and those appointments import
+with a null `service_id`. **That is a fact quietly lost about every appointment
+carrying the label**, so it is worth an answer even though it is not a gate.
 
 ### 1.4 Fill both mapping configs
 

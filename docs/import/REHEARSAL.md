@@ -51,8 +51,13 @@ them first.** That is a design property of the scripts, not a promise about the
 data. Two places where it is deliberately not true, called out where they occur:
 
 - **§4's SQL reads the STAFF roster** (names, emails, job titles). It touches no
-  patient table. Safe from the rehearsal project; never run it against
-  production.
+  patient table. Safe from the rehearsal project; **never run it against
+  production from a terminal** — standing rules 1 and 2 are unchanged, and a
+  terminal has no business holding a shell that can reach production at all.
+  **The OWNER runs it against production**, and must: `PROD-RUN.md` §1.4 fills
+  both mapping configs from its output and §7.2 reads query 4 there. The file's
+  own header says the same. This bullet said "never run it against production"
+  full stop until 2026-08-27, which contradicted both.
 - **§5's checkpoint file contains storage paths, which contain attachment
   filenames, which may contain patient names.** The file stays on your disk.
   Paste the byte-copy job's *summary*, never the checkpoint.
