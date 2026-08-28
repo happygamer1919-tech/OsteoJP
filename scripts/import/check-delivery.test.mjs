@@ -256,3 +256,113 @@ test("zip entry names never reach stdout", () => {
     assert.equal(r.out.match(/ZZV\d{3}/g), null, "checker leaked an entry name");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+/* ==========================================================================
+ * MULTI-NAME FICHEIRO CELLS — the vendor's 2026-08-28 confirmation
+ * ==========================================================================
+ * The vendor confirmed in writing that the separator is a COMMA and that one
+ * ficha or episodio can carry SEVERAL filenames in one cell.
+ *
+ * WHAT WAS ALREADY COVERED, and it is more than the dispatch assumed: a
+ * comma-joined pair, and a semicolon-joined pair WITH a space. WHAT WAS NOT:
+ * a space after a COMMA (covered only on the semicolon path, so a change that
+ * dropped the trim from one branch would still have been green), more than two
+ * names in one cell (the vendor said "several"; every fixture and all 1,000
+ * amostra rows stop at two), the per-NAME rather than per-ROW count, and the
+ * dedup a Set gives for free and nothing asserted.
+ */
+
+const pacRow = (id, num, ficheiro) =>
+  `${id},${TOK(1)},${num},1980-05-04,F,${TOK(2)},${TOK(3)},${TOK(4)},"${TOK(5)}, 12",1000-001,${TOK(6)},Linda-a-Velha,,,${TOK(7)},2026-08-01 10:00:00,${ficheiro}`;
+
+test("a COMMA followed by a SPACE splits and trims, exactly as a semicolon does", () => {
+  // The vendor named the comma. The space-after-separator case was covered on
+  // the semicolon branch only, so `split(/[,;]/)` losing its `.trim()` for one
+  // separator would have passed.
+  const dir = fixture({ pacientes: `${PAC_H}\n${pacRow("FZ1", 4001, '"cA.pdf, cB.pdf"')}\n` });
+  try {
+    const zip = zipWith(dir, ["f1.pdf", "cA.pdf", "cB.pdf"]);
+    const r = run(dir, ["--zip", zip]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /zip: 3 file entr\(ies\), 3 referenced name\(s\)/);
+    // The untrimmed name must not be what was looked up.
+    assert.ok(!/ cB\.pdf/.test(r.out));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("SEVERAL names in one cell, not just two — the vendor said several", () => {
+  // Every earlier fixture, and all 1,000 rows of the August 2026 amostra, stop
+  // at two. A splitter that took only the first pair would be green on both.
+  const dir = fixture({
+    pacientes: `${PAC_H}\n${pacRow("FZ1", 4001, '"m1.pdf,m2.pdf, m3.pdf ,m4.pdf"')}\n`,
+  });
+  try {
+    const zip = zipWith(dir, ["f1.pdf", "m1.pdf", "m2.pdf", "m3.pdf", "m4.pdf"]);
+    const r = run(dir, ["--zip", zip]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /zip: 5 file entr\(ies\), 5 referenced name\(s\)/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the reference count is per NAME, not per ROW", () => {
+  // Two rows carrying two names each is FOUR references. Counting rows would
+  // report 2 and pass the correspondence check while two documents were
+  // unaccounted for.
+  const dir = fixture({
+    pacientes:
+      `${PAC_H}\n${pacRow("FZ1", 4001, '"r1a.pdf, r1b.pdf"')}\n` +
+      `${pacRow("FZ2", 4002, '"r2a.pdf, r2b.pdf"')}\n`,
+    marcacoes: `${MARC_H}\nFZ1,2026-07-15 09:00:00,2026-07-15 10:00:00,${TOK(8)},Linda-a-Velha,Osteopatia,realizada,\n`,
+  });
+  try {
+    const zip = zipWith(dir, ["f1.pdf", "r1a.pdf", "r1b.pdf", "r2a.pdf", "r2b.pdf"]);
+    const r = run(dir, ["--zip", zip]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /zip: 5 file entr\(ies\), 5 referenced name\(s\)/);
+    assert.match(r.out, /pacientes\.csv: 2 row\(s\)/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("ONE name in two different cells is ONE reference, not two", () => {
+  // ficheiroRefs is a Set and the archive holds one object per name. Counting
+  // occurrences would report an orphan that is not there.
+  const dir = fixture({
+    pacientes:
+      `${PAC_H}\n${pacRow("FZ1", 4001, '"shared.pdf, only1.pdf"')}\n` +
+      `${pacRow("FZ2", 4002, '"shared.pdf, only2.pdf"')}\n`,
+    marcacoes: `${MARC_H}\nFZ1,2026-07-15 09:00:00,2026-07-15 10:00:00,${TOK(8)},Linda-a-Velha,Osteopatia,realizada,\n`,
+  });
+  try {
+    const zip = zipWith(dir, ["f1.pdf", "shared.pdf", "only1.pdf", "only2.pdf"]);
+    const r = run(dir, ["--zip", zip]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /zip: 4 file entr\(ies\), 4 referenced name\(s\)/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a SECOND name missing from the archive is reported, not hidden by the first", () => {
+  // The failure the split exists to make visible: the cell's first name
+  // resolves, so a checker that stopped there would call the delivery clean
+  // while one document was gone.
+  const dir = fixture({ pacientes: `${PAC_H}\n${pacRow("FZ1", 4001, '"present.pdf, absent.pdf"')}\n` });
+  try {
+    const zip = zipWith(dir, ["f1.pdf", "present.pdf"]);
+    const r = run(dir, ["--zip", zip]);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /1 referenced file\(s\) are NOT in the archive/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("documentos.ficheiro is NOT split, so a comma there stays one name", () => {
+  // One row per document, with nome_original and tipo_mime pinned to a single
+  // name. Splitting it would pair one mime type with two files.
+  const dir = fixture({
+    documentos: `${DOC_H}\nD1,FZ1,"d1.pdf,d2.pdf",${TOK(9)}.pdf,application/pdf,${TOK(10)}\n`,
+  });
+  try {
+    const zip = zipWith(dir, ["d1.pdf,d2.pdf"]);
+    const r = run(dir, ["--zip", zip]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /zip: 1 file entr\(ies\), 1 referenced name\(s\)/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
