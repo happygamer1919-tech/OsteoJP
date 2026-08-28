@@ -83,8 +83,8 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**204 cards on the board. 169 shipped, 35 open. Launch readiness 9/9, every launch gate passes.**
-Plus **23 recorded rulings**, which are decisions and not work: they carry no
+**204 cards on the board. 170 shipped, 34 open. Launch readiness 9/9, every launch gate passes.**
+Plus **24 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above.
 
 *These are the numbers **on the board above**, which is the only place you count
@@ -328,6 +328,168 @@ this line and the board disagree.*
 >    to a member of the public, so it was the one piece of wording the build was
 >    not allowed to invent: it shipped **blank and unsendable** on 2026-08-14 and
 >    the form refused every submission until JP's words arrived on 2026-08-16.
+
+
+---
+
+# THE PLATFORM LANE IS HELD. READ THIS FIRST IF YOU ARE A COLD TERMINAL.
+
+**Written 2026-08-28 by BLUE at the close of its dispatch. Everything needed to
+resume is here; no chat history is required.**
+
+## Board head and counts
+
+    main               60f0f4a1, plus this commit
+    cards              207 in the file, 204 rendered
+    shipped            170
+    open               34
+    rulings            24  (15 owner WF-*, 9 strategy SR-*) - decisions, not work,
+                           in none of the counts above
+    launch gate        9 of 9
+    validator          exit 0
+    reconciler         exit 0, no mismatches
+    live board         the artifact URL at the top of this file
+
+Counts are RECOMPUTED from the committed file, never carried from a previous
+report. On a merge conflict in this file or in `portal-board.json`, recompute
+both the counts and `as_of` from the MERGED file and take the later `as_of` -
+strategy ruling SR-07. A locally correct count describes a board that no longer
+exists.
+
+## STATUS: HELD. NO WORK IS IN PROGRESS.
+
+No branch is open. Nothing is half-applied. There is no work in flight in the
+platform lane and none should be started without a dispatch.
+
+**PURPLE holds a separate lane and is active in it.** Do not touch `LAUNCH-*`
+cards, `MIG-*` cards, migration files, the import pipeline, or anything under the
+import lane. Two terminals share this repository: rebase on `origin/main` before
+every PR, never force-push a shared branch, and if the board artifact is ahead of
+your render, READ AND DIFF rather than republishing (SR-03).
+
+## SHIPPED AND NOT TO BE REOPENED
+
+These six are closed on evidence, and five of them closed on the owner's own
+observation of the deployed build. **Do not reopen them. Do not re-run their
+acceptance. Do not re-card them.**
+
+    RB-01-recuperacao-utentes                 shipped - owner screen, all steps
+    LE-followup-contact-mark-never-recorded   shipped - owner screen + #1063 #1068
+    LE-staff-delete-leaves-auth-user          shipped - owner screen, six steps
+    RB-04-therapist-scoped-recuperacao        shipped - owner screen, F1 to F4
+    NAV-02-sidebar-icon-identity              shipped - owner screen, H and I
+    SEC-web-surface-limiter-adoption          shipped - routes 1-4 and 6a limited,
+                                                        5, 6b and 7 reasoned refusals
+
+## THE OPEN-CARD INVENTORY, BY WHY IT IS NOT BEING WORKED
+
+Twenty-seven open cards sit in the platform lane. Not one of them is available to
+pick up without a dispatch, and the reason differs per group.
+
+**Awaiting Ivan's screen (2)**
+
+    VERIFY-QUEUE                     the batching mechanism itself; empty of items
+                                     now that RB-01 has closed
+
+    (the second slot is now empty: LE-staff-delete-leaves-auth-user closed
+     2026-08-28 on his six-step run)
+
+**Blocked on a person (6)**
+
+    LE-suppression-observation                  Ivan
+    LE-migration-patient-fields-not-persisted   Ivan
+    LE-portal-reminder-confirm-loop             JP
+    LE-terms-version-switch-on-jp-text          JP
+    LE-pedido-emit-best-effort                  infra
+    (LAUNCH-02-jp-packet-signoff is JP's and is PURPLE's lane)
+
+**owner_authorizo - not self-merge (4)**
+
+    LE-staff-assisted-activation
+    LE-inc08-survivor-still-confirmed
+    LE-no-show-notification-kind
+    LE-generated-documents-no-lifecycle
+
+**Deferred by ruling (4)**
+
+    POST-01-drizzle-kit-migrate-silent-exit-1     SR-01, post go-live
+    POST-02-e2e-shard2-intermittent-404           SR-01, post go-live
+    LE-followup-dual-therapist-secondary          SR-04, activates on a real report
+    LE-portal-multi-appointment-booking           deferred post-launch
+
+Each carries a `deferred` FIELD, not prose, so a sweep can see it mechanically.
+Do not build a deferred card because a dispatch names it - SR-01 settles that,
+and stopping to ask is the correct behaviour rather than a halt to avoid.
+
+**Dormant or observation-only (3)**
+
+    LE-env-absence-swallowed-by-dependency   dormant; activates on a SECOND member
+                                             of the class. Do not start it.
+    LE-portal-booking-pedido-spec-flaky      watch item; nothing diagnosed, nothing
+                                             to fix
+    LE-sandbox-suites-unskip-on-credentials  waits on vendor credentials. The card
+                                             considered and REJECTED the guard the
+                                             obvious fix would be
+
+**Open on purpose, waiting on an event (3)**
+
+    LE-auth-recovery-deadend          one real Gmail-aged link reaching set-password
+    LE-e2e-nif-edit-404               a third occurrence
+    AI-02-payload-structural-drift    an AI canary record carrying unmapped keys
+
+**Buildable, not started, each with its own reason (5)**
+
+    LE-guest-form-no-e2e                     needs a running stack; shipping an
+                                             unrun spec into a REQUIRED check is a
+                                             coin flip on the gate
+    LE-horarios-search-no-browser-coverage   same, and the card marks it low priority
+    LE-guest-convert-abandoned-booking       threads a request id through the one
+                                             path every appointment goes through;
+                                             needs a ruling
+    LE-apply-block-expectation-drift         no fix chosen; the card lists
+                                             candidates and settles on none
+    LE-primary-location-backfill             no inputs until LAUNCH-03, PURPLE's lane
+
+**Not in this lane:** 8 `LAUNCH-*` / `MIG-*` cards (PURPLE) and 3 external-agenda
+cards (counsel).
+
+## THE FINDING THIS LANE LEAVES BEHIND, AND WHY NO GUARD WAS BUILT
+
+**An `open_on_purpose` whose condition has been MET is an exemption that has
+EXPIRED, and nothing expires it.**
+
+Found on 2026-08-28. `SEC-web-surface-limiter-adoption` had been complete since
+2026-08-24 - every route in its ordering built or carrying a recorded refusal,
+which its own evidence field already said in its last line - and its status was
+still `in_flight` four days later.
+
+`reconcile-board.mjs` routes EVERY finding on a card carrying `open_on_purpose`
+into the ACKNOWLEDGED list rather than into mismatches. That is deliberate and
+correct: a legitimately-open card must not redden CI. But the acknowledgement is
+FREE TEXT, its exit condition is not machine-readable, and this one had gone
+stale - it still read "routes 3 and 4 are next; route 5 is analysed" long after
+all of them had landed. The card was printed in full on every reconciler run and
+read as healthy. That is the exemption-nobody-revisits shape the reconciler's own
+header warns about, met from the inside.
+
+**NO GUARD WAS BUILT, and the reason is not that it was overlooked.** Expiring an
+acknowledgement requires the exit condition to be machine-readable, which is a
+genuine design question - what shape can a condition take, who checks it, and
+what happens to the fifteen acknowledgements already written in prose. That is
+new work, and this dispatch ended in a hold. It is recorded on the card and here
+rather than half-built.
+
+## THE NEXT SESSION'S FIRST CANDIDATE
+
+**A machine-readable exit condition for `open_on_purpose` cards.** It is the
+finding above, and it is first for a reason: the failure it prevents is a card
+that is DONE and reads as OPEN, which costs a dispatch every time it happens and
+is invisible to every check the repository has.
+
+Start by reading `docs/board/reconcile-board.mjs` - the `acknowledgement()`
+function and the ACKNOWLEDGED IS NOT SILENCED section of its header - and the
+fifteen cards currently carrying the field, because whatever shape is chosen has
+to be expressible for all of them or it will be adopted by none.
 
 ---
 
