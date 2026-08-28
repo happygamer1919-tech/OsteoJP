@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/admin/audit";
 import { AdminError } from "@/lib/admin/errors";
 import type { RequestContext } from "./context";
+import { findReclaimableStaffAuthId } from "./reclaim";
 
 // Tenant onboarding (tenant + roles + audit) now lives in @osteojp/db so the
 // superadmin app can call the same implementation. Re-exported here to keep the
@@ -74,12 +75,65 @@ export async function provisionStaffUser(
     password: staff.password,
     email_confirm: true,
   });
+
+  let userId: string;
+  let reclaimed = false;
+
   if (error || !data.user) {
-    if (isAuthEmailTaken(error)) throw new AdminError("auth_email_taken");
-    // Never echo error.message: it is provider text and may carry the address.
-    throw new AdminError("provisioning_unavailable", "auth user creation failed");
+    if (!isAuthEmailTaken(error)) {
+      // Never echo error.message: it is provider text and may carry the address.
+      throw new AdminError("provisioning_unavailable", "auth user creation failed");
+    }
+
+    /**
+     * ==================================================================
+     * LE-staff-delete-leaves-auth-user — RECLAIM BEFORE REFUSING.
+     * ==================================================================
+     * The address is taken. Until now that was the end of it, permanently:
+     * `deleteStaffMember` never removes the auth user, so deleting a staff
+     * account and re-inviting the same address was refused forever with no
+     * path in the product to clear it — and a mistyped or wrong-role invite,
+     * the one case the delete exists for, is exactly the case it broke.
+     *
+     * THE CANDIDATE SET IS CLOSED: only identities THIS TENANT created as
+     * staff and then deleted, read from its own audit log. `reclaim.ts`
+     * carries the full argument, including why the obvious "no users row,
+     * therefore an orphan" predicate was rejected — it would classify every
+     * portal patient's login as reclaimable.
+     *
+     * A FAILURE TO RECLAIM IS THE OLD ANSWER, NOT A NEW ONE. If nothing
+     * matches, `auth_email_taken` is thrown exactly as before, so an address
+     * that genuinely belongs to somebody else behaves identically.
+     */
+    const reclaimable = await findReclaimableStaffAuthId(actor, staff.email, async (id) => {
+      const got = await admin.auth.admin.getUserById(id);
+      return got.data?.user ? { id: got.data.user.id, email: got.data.user.email ?? null } : null;
+    });
+    if (!reclaimable) throw new AdminError("auth_email_taken");
+
+    /**
+     * RESET THE PASSWORD ONTO THE RECLAIMED IDENTITY, which is what makes the
+     * invite work: the admin hands over a password they can read, exactly as
+     * for a fresh mint. Same call `attachAuthLogin` uses for a re-activation,
+     * and for the same reason — the caller must end up with a KNOWN, working
+     * password (PL-08).
+     *
+     * `email_confirm` is re-asserted because the identity may predate a
+     * confirmation policy change, and an unconfirmed staff login cannot sign
+     * in — which would trade a refused invite for a mystifying one.
+     */
+    const upd = await admin.auth.admin.updateUserById(reclaimable, {
+      password: staff.password,
+      email_confirm: true,
+    });
+    if (upd.error || !upd.data.user) {
+      throw new AdminError("provisioning_unavailable", "reclaim of an orphaned auth user failed");
+    }
+    userId = reclaimable;
+    reclaimed = true;
+  } else {
+    userId = data.user.id;
   }
-  const userId = data.user.id;
 
   try {
     await withTenantContext(toClaims(actor), async (tx) => {
@@ -103,12 +157,29 @@ export async function provisionStaffUser(
         action: "staff.invite",
         entityType: "user",
         entityId: userId,
-        // PII-free: role slug only, never the email/name.
-        metadata: { role: staff.roleSlug },
+        // PII-free: role slug only, never the email/name. `reclaimed` is a
+        // boolean and it matters in the ledger: a reclaimed invite re-uses an
+        // auth identity this tenant deleted earlier, so the audit trail should
+        // say which of the two happened rather than leaving a reader to infer
+        // it from an id that appears twice.
+        metadata: { role: staff.roleSlug, ...(reclaimed ? { reclaimed: true } : {}) },
       });
     });
   } catch (e) {
-    await admin.auth.admin.deleteUser(userId).catch(() => {});
+    /**
+     * THE ROLLBACK DOES NOT DELETE A RECLAIMED IDENTITY, and that asymmetry is
+     * deliberate. For a fresh mint, deleting the auth user undoes the only
+     * thing this function did. For a RECLAIM there is nothing to undo TO: the
+     * identity existed before this call, it was already orphaned, and deleting
+     * it would destroy a row this function did not create — turning a failed
+     * invite into the irreversible deletion the whole card is about.
+     *
+     * The password was changed and stays changed. That is the honest cost of
+     * the failure and it harms nobody: the identity had no staff row before
+     * this call and has none after, so nothing can sign in with either
+     * password. The next invite of that address reclaims it again.
+     */
+    if (!reclaimed) await admin.auth.admin.deleteUser(userId).catch(() => {});
     throw e;
   }
 
