@@ -85,6 +85,12 @@ const SUITES = [
   // spec was named after the visible outcome. This suite is the write path, and
   // a silent skip would put it straight back where it was.
   { file: "record-contact.db.test.ts", hard: true },
+  // LE-staff-delete-leaves-auth-user, added 2026-08-28. Hard-required because
+  // the property it proves is a REFUSAL: that a portal patient's auth identity
+  // is never reclaimable as a staff login. A silent skip would leave the safe
+  // half of an auth path unproven, and the failure it prevents is a patient
+  // locked out of their own clinical record.
+  { file: "reclaim.db.test.ts", hard: true },
   // W13-03. The second DB-gated suite outside packages/db, in apps/api, for the
   // same structural reason: the OTP claim lives in an app. It proves the three
   // LOOP 3 DoD lines that are claims about the DATABASE rather than about the
