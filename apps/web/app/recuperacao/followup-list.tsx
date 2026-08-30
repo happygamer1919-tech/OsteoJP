@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { s } from "@/lib/i18n";
 import { postponeFollowup } from "@/lib/followup/actions";
 import { whatsappLink, smsLink, mailtoLink, followupMessage } from "./deep-links";
+import { POSTPONE_WEEKS } from "@/lib/followup/postpone-weeks";
 
 /**
  * RB-01 — the recuperacao list.
@@ -48,7 +49,9 @@ export type FollowupRow = {
   contacts: { channel: FollowupChannel; when: string; who: string | null }[];
 };
 
-const POSTPONE_CHOICES = [2, 4, 8, 12] as const;
+// One definition, in a plain module both sides import (INC-13). The screen
+// can no longer offer a length the server rejects.
+const POSTPONE_CHOICES = POSTPONE_WEEKS;
 
 export function FollowupList({ rows }: { rows: FollowupRow[] }) {
   if (rows.length === 0) {

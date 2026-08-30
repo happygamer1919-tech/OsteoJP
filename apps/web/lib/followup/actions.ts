@@ -7,6 +7,7 @@ import { patientFollowupPostponements } from "@osteojp/db";
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { assertFollowupPatientInScope, followupLocationScope, FollowupScopeError } from "./scope";
+import { POSTPONE_WEEKS, isPostponeWeeks } from "./postpone-weeks";
 
 /**
  * RB-01 — the mutations behind the recuperacao list.
@@ -56,19 +57,17 @@ import { assertFollowupPatientInScope, followupLocationScope, FollowupScopeError
  * tick means" in `followup-list.tsx`.
  */
 
-/**
- * The postponement lengths reception may choose, in weeks.
+/*
+ * POSTPONE_WEEKS AND ITS GUARD MOVED OUT, and they must not come back. INC-13.
  *
- * A CLOSED SET, NOT A FREE NUMBER. A text field would admit 0 (a postponement
- * that does nothing), 5200 (a deletion wearing a postponement's clothes) and
- * every typo between. The card asks for "postpone N weeks"; these are the N.
+ * Every export of a "use server" module must be an async function - Next.js
+ * makes each one a callable server-action endpoint, and a plain value has none.
+ * `export const POSTPONE_WEEKS = [...]` right here is what raised E352 on
+ * POST /recuperacao (Sentry OSTEOJP-WEB-2). They now live in the plain module
+ * ./postpone-weeks, which the client component imports too.
+ *
+ * THIS FILE MAY EXPORT ASYNC FUNCTIONS AND NOTHING ELSE.
  */
-export const POSTPONE_WEEKS = [2, 4, 8, 12] as const;
-export type PostponeWeeks = (typeof POSTPONE_WEEKS)[number];
-
-function isPostponeWeeks(n: number): n is PostponeWeeks {
-  return (POSTPONE_WEEKS as readonly number[]).includes(n);
-}
 
 /**
  * Postpone a patient out of the list for N weeks.
