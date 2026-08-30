@@ -108,8 +108,8 @@ export function PatientsTable({
       empty={
         <EmptyState
           icon={Users}
-          title={filtered ? s["patients.noFilterResultsTitle"] : s["patients.emptyTitle"]}
-          description={filtered ? s["patients.noFilterResultsHelp"] : s["patients.emptyHelp"]}
+          title={filtered ? s["patients.noResultsTitle"] : s["patients.emptyTitle"]}
+          description={filtered ? s["patients.noResults"] : s["patients.emptyHelp"]}
         />
       }
     />

@@ -1448,8 +1448,6 @@
   "patients.pagePrev": "Anterior",
   "patients.pageNext": "Seguinte",
   "patients.pageOf": "de",
-  "patients.noFilterResultsTitle": "Sem resultados para estes filtros",
-  "patients.noFilterResultsHelp": "Limpe ou altere os filtros acima.",
   "patients.neverSeen": "Sem consultas",
   "patients.noneScheduled": "Sem marcação",
   "followup.filterPlaceholder": "Filtrar por nome ou telemóvel"

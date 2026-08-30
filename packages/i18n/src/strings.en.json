@@ -1448,8 +1448,6 @@
   "patients.pagePrev": "Previous",
   "patients.pageNext": "Next",
   "patients.pageOf": "of",
-  "patients.noFilterResultsTitle": "No results for these filters",
-  "patients.noFilterResultsHelp": "Clear or change the filters above.",
   "patients.neverSeen": "Never seen",
   "patients.noneScheduled": "None scheduled",
   "followup.filterPlaceholder": "Filter by name or phone"
