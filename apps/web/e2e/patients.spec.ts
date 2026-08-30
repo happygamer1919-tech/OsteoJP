@@ -48,12 +48,20 @@ test("search with no results shows the empty-state message", async ({ page }) =>
   await expect(page.getByText("Sem resultados para esta pesquisa")).toBeVisible();
 });
 
-test("search result row shows the patient NIF below the name (scenario 4.1)", async ({ page }) => {
+test("search result row shows the patient NIF (scenario 4.1)", async ({ page }) => {
   // Scope to <table> (desktop view) to avoid matching the hidden mobile <ul>
   // sibling, which also renders the NIF but is display:none at desktop viewport.
+  //
+  // UX-01 moved the NIF from a "NIF <value>" secondary line under the name into
+  // its own column, so the cell now holds the bare value under a "NIF" header.
+  // WHAT THIS TEST ASSERTS IS UNCHANGED - the NIF is shown on the row - and
+  // only the string it looks for moved with the redesign. `exact` keeps it from
+  // matching a longer number that merely contains this one.
   await searchPatients(page, PATIENTS.maria.name);
   await expect(page.getByRole("link", { name: new RegExp(PATIENTS.maria.name) })).toBeVisible();
-  await expect(page.locator("table").getByText(`NIF ${PATIENTS.maria.nif}`)).toBeVisible();
+  await expect(
+    page.locator("table").getByText(PATIENTS.maria.nif, { exact: true }),
+  ).toBeVisible();
 });
 
 test("search result row shows the patient phone in the phone column (scenario 4.1)", async ({ page }) => {
