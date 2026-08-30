@@ -151,7 +151,9 @@ test("patient search still finds a patient by NIF", async ({ page }) => {
   await createPatient(page, { fullName: name, nif });
 
   await goToPatients(page);
-  const box = page.getByPlaceholder(/Pesquisar por nome/i);
+  // UX-01: by field name, not by placeholder copy. See the note in
+  // e2e/helpers/index.ts searchPatients().
+  const box = page.locator('input[name="q"]');
   await box.pressSequentially(nif);
   await box.press("Enter");
   await expect(page.getByRole("link", { name: new RegExp(name) })).toBeVisible({

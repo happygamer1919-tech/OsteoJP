@@ -192,7 +192,11 @@ export async function createPatient(page: Page, f: PatientFields): Promise<strin
 /** Runs a patient search via the search box (fill + submit) and waits for nav. */
 export async function searchPatients(page: Page, query: string) {
   await goToPatients(page);
-  const box = page.getByPlaceholder(/Pesquisar por nome/i);
+  // UX-01: located by the field's NAME, not by its placeholder. The redesign
+  // widened the search to patient number and the placeholder changed with it;
+  // a helper pinned to marketing copy breaks on every rewording, and what this
+  // helper actually needs is "the q field on /patients".
+  const box = page.locator('input[name="q"]');
   // pressSequentially keeps WebKit's React synthetic event chain intact; fill()
   // alone does not update the controlled-input state in WebKit, so Enter submits
   // an empty query and the URL never gains the ?q= param.
