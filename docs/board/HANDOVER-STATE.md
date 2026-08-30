@@ -83,12 +83,12 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**204 cards on the board. 170 shipped, 34 open. Launch readiness 9/9, every launch gate passes.**
-Plus **24 recorded rulings**, which are decisions and not work: they carry no
+**220 cards on the board. 170 shipped, 50 open. Launch readiness 9/9, every launch gate passes.**
+Plus **26 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above.
 
 *These are the numbers **on the board above**, which is the only place you count
-them. The underlying file holds five more cards that the board deliberately does
+them. The underlying file holds three more cards that the board deliberately does
 not show — legal review, credential rotation and the staff password re-issue —
 because you track those on your own agenda. They are listed in
 `docs/board/EXTERNAL-AGENDA.md` and they are not work anybody owes you here. A
@@ -339,11 +339,11 @@ resume is here; no chat history is required.**
 
 ## Board head and counts
 
-    main               60f0f4a1, plus this commit
-    cards              207 in the file, 204 rendered
+    main               831a4772, plus this commit
+    cards              223 in the file, 220 rendered
     shipped            170
-    open               34
-    rulings            24  (15 owner WF-*, 9 strategy SR-*) - decisions, not work,
+    open               50
+    rulings            26  (15 owner WF-*, 11 strategy SR-*) - decisions, not work,
                            in none of the counts above
     launch gate        9 of 9
     validator          exit 0
