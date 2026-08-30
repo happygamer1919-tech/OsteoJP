@@ -115,6 +115,14 @@ export default async function PatientsPage({
   // /patients subtree (incl. /patients/[id]) in a Suspense boundary, turning
   // [id]'s notFound() 404 into a streamed 200 and breaking the cross-tenant
   // guardrail. The header + search render immediately; only the results stream.
+  //
+  // PROVEN AGAIN 2026-08-30, PERF-02, and left here as evidence rather than as
+  // a warning. A dispatch asked for a loading.tsx on this route; one was added,
+  // and the E2E suite went red on exactly the two assertions this paragraph
+  // predicts - patients.spec.ts:288 and isolation-therapist.spec.ts:44, both
+  // "expected 404, received 200". The file was removed. THIS COMMENT IS THE
+  // SPEC: /patients streams through the Suspense below and must never gain a
+  // segment-level loading.tsx.
   return (
     <main>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
