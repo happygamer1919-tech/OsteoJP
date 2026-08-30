@@ -5,6 +5,7 @@ import { isSmsCapablePT } from "@osteojp/notify";
 import { getRequestContext } from "@/lib/auth/context";
 import { normalizePhonePT } from "@osteojp/notify";
 import { listFollowupCandidates, listActivePostponements } from "@/lib/followup/queries";
+import { FollowupPager } from "./pager";
 import { s } from "@/lib/i18n";
 
 import { FollowupList, type FollowupRow } from "./followup-list";
@@ -101,17 +102,37 @@ function stamp(d: Date | null): string {
   return d.toLocaleString("pt-PT", DATETIME_FMT);
 }
 
-export default async function RecuperacaoPage() {
+function firstParam(v: string | string[] | undefined): string | null {
+  if (Array.isArray(v)) return v[0] ?? null;
+  return v ?? null;
+}
+
+export default async function RecuperacaoPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const ctx = await getRequestContext();
   if (!ctx) redirect("/login");
   if (!can(ctx.role, "followup:read")) redirect("/");
 
-  const [candidates, postponements] = await Promise.all([
-    listFollowupCandidates(ctx),
+  /**
+   * PERF-03 - page and filter come from the URL, so a view is a link and the
+   * back button works. The server reads them, which is what keeps the filtering
+   * on the server: a client-side filter over an unbounded list would put every
+   * candidate's telephone number in the browser to hide most of them.
+   */
+  const sp = await searchParams;
+  const q = (firstParam(sp.q) ?? "").trim();
+  const pageRaw = Number(firstParam(sp.page) ?? "1");
+  const requestedPage = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
+
+  const [candidatePage, postponements] = await Promise.all([
+    listFollowupCandidates(ctx, new Date(), { page: requestedPage, q }),
     listActivePostponements(ctx),
   ]);
 
-  const rows: FollowupRow[] = candidates.map((c) => {
+  const rows: FollowupRow[] = candidatePage.rows.map((c) => {
     /**
      * NORMALISED ONCE, ON THE SERVER, AND THE RESULT IS CARRIED AS DATA.
      * The deep link needs E.164 and the screen needs the number as stored, so
@@ -166,6 +187,13 @@ export default async function RecuperacaoPage() {
           </p>
         </div>
         <FollowupList rows={rows} />
+        <FollowupPager
+          initialQuery={q}
+          page={candidatePage.page}
+          pageCount={candidatePage.pageCount}
+          total={candidatePage.total}
+          shown={rows.length}
+        />
       </section>
 
       <section className="flex flex-col gap-3">

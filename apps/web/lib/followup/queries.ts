@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gt, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import {
   followupLastAttendanceSql,
@@ -215,10 +215,32 @@ export type FollowupCandidate = {
  * they may see the page at all. An unassigned therapist with no completed
  * consultations simply sees an empty list, which is the truth.
  */
+/** PERF-03. One page of the work queue, plus the total the header states. */
+export type FollowupPage = {
+  rows: FollowupCandidate[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+};
+
+/**
+ * PERF-03 - PAGE SIZE, AND WHY PAGING IS ONLY NOW CORRECT.
+ *
+ * The card carried a POST-LAUNCH tag until 2026-08-30 and the reason was not
+ * caution: paging a query that takes 127 seconds does not help, because EVERY
+ * page costs the same full-table churn and the receptionist pays it once per
+ * page instead of once. Migration 0068 made the query answer in ~171 ms on
+ * production, so paging is now a real reduction rather than a rearrangement,
+ * and the tag was superseded explicitly.
+ */
+export const FOLLOWUP_PAGE_SIZE = 50;
+
 export async function listFollowupCandidates(
   ctx: RequestContext,
   now: Date = new Date(),
-): Promise<FollowupCandidate[]> {
+  opts: { page?: number; q?: string } = {},
+): Promise<FollowupPage> {
   assertCan(ctx.role, "followup:read");
   const { from, to } = followupWindow(now);
   const locationScope = await viewerLocationScope(ctx);
@@ -265,6 +287,40 @@ export async function listFollowupCandidates(
      */
     const ownScope = therapistScope(ctx);
     if (ownScope) conds.push(bindFollowupClause(followupOwnPatientClause(pid), { from, to, now, therapistUserId: ownScope }));
+
+    /**
+     * PERF-03 - the name/phone filter, as a WHERE clause.
+     *
+     * A CLAUSE AND NOT A `.filter()` ON THE RESULT, for the same reason the
+     * therapist scope is: a row that reaches the mapping below has already been
+     * selected, and its telephone number is in the process, in the payload and
+     * in the browser's memory. Filtering there hides it from the screen and
+     * discloses it anyway.
+     *
+     * PHONE MATCHES ON `phone_digits`, the STORED generated column from
+     * migration 0015, so "912 345 678" and "912345678" are the same search. The
+     * name side is a plain ILIKE; reception types a fragment of a name.
+     */
+    const filterText = (opts.q ?? "").trim();
+    if (filterText.length > 0) {
+      const digits = filterText.replace(/\D/g, "");
+      const like = `%${filterText.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      const matchers = [sql`${patients.fullName} ilike ${like}`];
+      if (digits.length > 0) matchers.push(sql`"phone_digits" like ${`%${digits}%`}`);
+      conds.push(sql`(${sql.join(matchers, sql` OR `)})`);
+    }
+
+    // The count the header states, on the SAME predicate as the page below it.
+    // A header that counts one thing and a table that lists another is the
+    // shape a receptionist stops trusting after one disagreement.
+    const [countRow] = await tx
+      .select({ n: count() })
+      .from(patients)
+      .where(and(...conds));
+    const total = Number(countRow?.n ?? 0);
+    const pageSize = FOLLOWUP_PAGE_SIZE;
+    const pageCount = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(Math.max(1, Math.floor(opts.page ?? 1) || 1), pageCount);
 
     const rows = await tx
       .select({
@@ -315,9 +371,14 @@ export async function listFollowupCandidates(
       })
       .from(patients)
       .where(and(...conds))
-      .orderBy(sql`last_attendance_at ASC`);
+      // THE ORDERING IS UNCHANGED - oldest attendance first. The patient who
+      // has been quiet longest is the one most likely to be lost, and paging a
+      // work queue must not reorder it.
+      .orderBy(sql`last_attendance_at ASC`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
 
-    if (rows.length === 0) return [];
+    if (rows.length === 0) return { rows: [], total, page, pageSize, pageCount };
 
     /**
      * CONTACTS IN ONE QUERY, NOT ONE PER ROW. A list of forty patients would
@@ -366,7 +427,7 @@ export async function listFollowupCandidates(
       byPatient.set(m.patientId, list);
     }
 
-    return rows.map((r) => ({
+    const mapped = rows.map((r) => ({
       patientId: r.patientId,
       fullName: r.fullName,
       phone: r.phone,
@@ -378,6 +439,8 @@ export async function listFollowupCandidates(
       practitionerName: r.practitionerName,
       contacts: byPatient.get(r.patientId) ?? [],
     }));
+
+    return { rows: mapped, total, page, pageSize, pageCount };
   });
 }
 

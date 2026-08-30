@@ -1,300 +1,205 @@
-import { EmptyState, GlassPanel, SkeletonTable } from "@osteojp/ui";
-import { ChevronRight, Plus, Search, Users } from "lucide-react";
+import { GlassPanel } from "@osteojp/ui";
+import { Plus } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Suspense } from "react";
 
 import { getRequestContext } from "../../lib/auth/context";
 import { s } from "../../lib/i18n";
 import { formatPatientNumber } from "../../lib/patients/format";
-import { listActiveLocations } from "../../lib/invoices/queries";
-import { listPatients, searchPatients } from "../../lib/patients/queries";
-import type { Patient } from "../../lib/patients/types";
-import { SearchBox } from "./_components/search-box";
+import {
+  getPatientListStats,
+  listFilterLocations,
+  listPatientsPage,
+  type PatientListFilters,
+  type PatientSort,
+  type SortDirection,
+} from "../../lib/patients/list-queries";
+import { PatientsFilterBar } from "./_components/patients-filter-bar";
+import { PatientsTable, type PatientRowView } from "./_components/patients-table";
 
 export const dynamic = "force-dynamic";
 
-// Primary action: filled Wellness Green (SPEC-v2-patients §1.2). green-700 is the
-// shallowest step that clears AA for white label text (text-inverse on
-// v2-green-700 = 4.7:1); hover deepens to green-800. rounded-v2 + focus ring
-// match the shell's own buttons.
-const primaryLink =
-  "inline-flex h-10 items-center justify-center gap-2 rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition-colors duration-fast ease-standard hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+/**
+ * UX-01 - Utentes, the working list. Owner request, shape decided in dispatch.
+ *
+ * ==========================================================================
+ * A SERVER COMPONENT, AND THE TWO CLIENT PIECES ARE THE TWO THAT MUST BE
+ * ==========================================================================
+ * The filter bar owns controlled inputs; the table takes `onSortChange`. Every
+ * other thing on this screen - the four statistics, the seven columns, the
+ * ordering, the paging, the empty state - is computed on the server and arrives
+ * as text.
+ *
+ * NO SEGMENT-LEVEL loading.tsx ON THIS ROUTE, EVER. It would wrap the whole
+ * /patients subtree including /patients/[id] in a Suspense boundary, turning
+ * [id]'s notFound() 404 into a streamed 200 and breaking the cross-tenant
+ * guardrail. PROVEN 2026-08-30: one was added under PERF-02 and shard 2 went red
+ * on exactly patients.spec.ts:288 and isolation-therapist.spec.ts:44, both
+ * "expected 404, received 200". The file was removed. This paragraph is the
+ * spec, not a warning.
+ *
+ * ==========================================================================
+ * DENSITY IS TIGHT ON PURPOSE
+ * ==========================================================================
+ * 8,400 rows and a receptionist with a telephone in one hand. The stat strip is
+ * four numbers on one line, the filter bar is one row, and the table gets the
+ * rest. It is a working tool, not a brochure.
+ */
 
-// First + last initial, the patient-icon avatar (Wellness Green tint per the
-// palette role). green-800 on green-100 = 5.8:1, AA-safe even though the glyph is
-// decorative (the name sits right beside it).
-function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  const first = parts[0]?.charAt(0) ?? "";
-  const last =
-    parts.length > 1 ? (parts[parts.length - 1]?.charAt(0) ?? "") : "";
-  return (first + last).toUpperCase() || "?";
+const DATE_FMT: Intl.DateTimeFormatOptions = {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  timeZone: "Europe/Lisbon",
+};
+
+/**
+ * FORMATTED ON THE SERVER, IN Europe/Lisbon, and handed over as a string.
+ *
+ * A Date formatted in the browser renders in the BROWSER's timezone. For a
+ * clinic in Lisbon read on a laptop still set to another zone that is wrong by
+ * an hour twice a year and wrong by a day at the edges - silently, because a
+ * date is always plausible. /recuperacao settled this; the same rule applies.
+ */
+function day(d: Date | null, fallback: string): string {
+  if (!d) return fallback;
+  return d.toLocaleDateString("pt-PT", DATE_FMT);
 }
 
-function Avatar({ name }: { name: string }) {
+function firstParam(v: string | string[] | undefined): string | null {
+  if (Array.isArray(v)) return v[0] ?? null;
+  return v ?? null;
+}
+
+function parseFilters(sp: Record<string, string | string[] | undefined>): PatientListFilters {
+  const sortRaw = firstParam(sp.sort);
+  const dirRaw = firstParam(sp.dir);
+  // An unknown sort key falls back to name rather than reaching the query. The
+  // value comes from a URL, so it is user input even when the UI only ever
+  // writes two of them.
+  const sort: PatientSort = sortRaw === "lastVisit" ? "lastVisit" : "name";
+  const dir: SortDirection = dirRaw === "desc" ? "desc" : "asc";
+  const pageRaw = Number(firstParam(sp.page) ?? "1");
+  return {
+    q: (firstParam(sp.q) ?? "").trim(),
+    locationId: firstParam(sp.location),
+    upcomingOnly: firstParam(sp.upcoming) === "1",
+    sort,
+    dir,
+    page: Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1,
+  };
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <span
-      aria-hidden="true"
-      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-v2-green-100 text-xs font-semibold text-v2-green-800"
-    >
-      {initialsOf(name)}
-    </span>
-  );
-}
-
-// Avatar + name over a NIF/patient-number secondary line. Both are on the
-// existing list query (Patient = patients.$inferSelect); each part is
-// rendered only when present (NIF may be absent; patient_number is NOT NULL
-// post-backfill but still checked defensively), joined " · " like the
-// profile page's identityLine().
-function personSecondaryLine(
-  patient: Patient,
-  locationName?: string | null,
-): string | null {
-  const parts = [
-    patient.nif ? `${s["patients.fieldNif"]} ${patient.nif}` : null,
-    patient.patientNumber ? `${s["patients.patientNumber"]} ${formatPatientNumber(patient.patientNumber)}` : null,
-    // PL-15b: which clinic the patient belongs to. Absent for a patient whose
-    // location was never set - deliberately blank rather than guessed, and the
-    // one thing that makes them invisible to that clinic's staff.
-    locationName ?? null,
-  ].filter((p): p is string => p !== null);
-  return parts.length > 0 ? parts.join(" · ") : null;
-}
-
-function PersonCell({
-  patient,
-  locationName,
-}: {
-  patient: Patient;
-  locationName?: string | null;
-}) {
-  const secondaryLine = personSecondaryLine(patient, locationName);
-  return (
-    <div className="flex items-center gap-3">
-      <Avatar name={patient.fullName} />
-      <div className="flex min-w-0 flex-col">
-        <span className="truncate font-medium text-v2-text-primary">
-          {patient.fullName}
-        </span>
-        {secondaryLine ? (
-          <span className="text-xs text-v2-text-secondary">{secondaryLine}</span>
-        ) : null}
-      </div>
+    <div className="glass-card flex flex-col gap-0.5 px-4 py-3">
+      <span className="text-xs font-medium text-v2-text-secondary">{label}</span>
+      <span className="text-xl font-semibold tabular-nums text-v2-text-primary">
+        {new Intl.NumberFormat("pt-PT").format(value)}
+      </span>
     </div>
   );
 }
 
-/**
- * Patients list (SPEC-v2-patients): glass-system restyle of the staff patients
- * screen. Presentation only — the role-scoped listPatients / searchPatients
- * queries and the patients:read permission are unchanged, and the cross-tenant
- * Suspense guardrail below is preserved verbatim.
- *
- * HeritageFrame is supplied globally by the SidebarAppShell (V2-W0-05) at
- * density="restrained" behind the content area; this screen does not add its own.
- *
- * The "Última consulta" column (patients.colLastVisit) stays unrendered: it needs
- * a last-appointment join the read-side query does not provide, and a design wave
- * never adds query fields. The key is reserved for when the data layer supports it.
- */
+const primaryLink =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition-colors duration-fast ease-standard hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+
+const pageLink =
+  "inline-flex h-9 items-center rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring";
+
 export default async function PatientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  if (!(await getRequestContext())) redirect("/login");
+  const ctx = await getRequestContext();
+  if (!ctx) redirect("/login");
 
-  const { q } = await searchParams;
-  const query = (q ?? "").trim();
+  const sp = await searchParams;
+  const filters = parseFilters(sp);
 
-  // The skeleton lives in a LOCAL Suspense around the data fetch, not a
-  // segment-level loading.tsx: a loading.tsx here would wrap the whole
-  // /patients subtree (incl. /patients/[id]) in a Suspense boundary, turning
-  // [id]'s notFound() 404 into a streamed 200 and breaking the cross-tenant
-  // guardrail. The header + search render immediately; only the results stream.
-  //
-  // PROVEN AGAIN 2026-08-30, PERF-02, and left here as evidence rather than as
-  // a warning. A dispatch asked for a loading.tsx on this route; one was added,
-  // and the E2E suite went red on exactly the two assertions this paragraph
-  // predicts - patients.spec.ts:288 and isolation-therapist.spec.ts:44, both
-  // "expected 404, received 200". The file was removed. THIS COMMENT IS THE
-  // SPEC: /patients streams through the Suspense below and must never gain a
-  // segment-level loading.tsx.
+  // Three reads, one round trip each, in parallel. They are independent: the
+  // stats describe the viewer's whole scope and do not narrow with the search
+  // box, so a receptionist can see "42 in the recovery window" while looking at
+  // one of them.
+  const [page, stats, locations] = await Promise.all([
+    listPatientsPage(filters, ctx),
+    getPatientListStats(filters.locationId, ctx),
+    listFilterLocations(ctx),
+  ]);
+
+  const rows: PatientRowView[] = page.rows.map((r) => ({
+    id: r.id,
+    number: r.patientNumber ? formatPatientNumber(r.patientNumber) : "—",
+    fullName: r.fullName,
+    nif: r.nif ?? "—",
+    phone: r.phone ?? "—",
+    location: r.locationName ?? "—",
+    lastVisit: day(r.lastVisitAt, s["patients.neverSeen"]),
+    nextAppointment: day(r.nextAppointmentAt, s["patients.noneScheduled"]),
+    hasUpcoming: r.nextAppointmentAt !== null,
+  }));
+
+  const filtered = Boolean(filters.q || filters.locationId || filters.upcomingOnly);
+  const qs = (p: number) => {
+    const u = new URLSearchParams();
+    if (filters.q) u.set("q", filters.q);
+    if (filters.locationId) u.set("location", filters.locationId);
+    if (filters.upcomingOnly) u.set("upcoming", "1");
+    if (filters.sort !== "name") u.set("sort", filters.sort);
+    if (filters.dir !== "asc") u.set("dir", filters.dir);
+    if (p > 1) u.set("page", String(p));
+    return u.size ? `/patients?${u}` : "/patients";
+  };
+
   return (
-    <main>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <main className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-v2-text-primary">
-            {s["patients.title"]}
-          </h1>
-          <p className="mt-1 text-sm text-v2-text-secondary">
-            {s["patients.subtitle"]}
-          </p>
+          <h1 className="text-2xl font-semibold text-v2-text-primary">{s["patients.title"]}</h1>
+          <p className="mt-1 text-sm text-v2-text-secondary">{s["patients.subtitle"]}</p>
         </div>
         <Link href="/patients/new" className={primaryLink}>
-          <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
+          <Plus aria-hidden="true" className="size-4" />
           {s["patients.new"]}
         </Link>
       </div>
 
-      <div className="mb-4">
-        <SearchBox initialQuery={query} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat label={s["patients.statTotal"]} value={stats.total} />
+        <Stat label={s["patients.statSeenThisMonth"]} value={stats.seenThisMonth} />
+        <Stat label={s["patients.statWithUpcoming"]} value={stats.withUpcoming} />
+        <Stat label={s["patients.statInRecovery"]} value={stats.inRecoveryWindow} />
       </div>
 
-      <Suspense
-        key={query}
-        fallback={
-          <GlassPanel>
-            <SkeletonTable rows={8} cols={3} />
-          </GlassPanel>
-        }
-      >
-        <PatientsResults query={query} />
-      </Suspense>
-    </main>
-  );
-}
+      <PatientsFilterBar initialQuery={filters.q} locations={locations} />
 
-async function PatientsResults({ query }: { query: string }) {
-  const ctx = await getRequestContext();
-  // PL-15b: the clinic name for each row's secondary line. listActiveLocations is
-  // RLS-scoped and tiny (three rows), so this is a name lookup, not a join.
-  const [rows, locations]: [Patient[], { id: string; name: string }[]] = await Promise.all([
-    query ? searchPatients(query) : listPatients(),
-    ctx ? listActiveLocations(ctx) : Promise.resolve([]),
-  ]);
-  const locationName = new Map(locations.map((l) => [l.id, l.name]));
-  const nameOf = (patient: Patient) =>
-    patient.primaryLocationId ? (locationName.get(patient.primaryLocationId) ?? null) : null;
-
-  // Zero-patients: a first-run welcome with the create action. W7-03 removed the
-  // decorative motif band; the empty state is icon, title, subtitle, action.
-  if (rows.length === 0 && !query) {
-    return (
-      <EmptyState
-        icon={Users}
-        title={s["patients.emptyTitle"]}
-        description={s["patients.emptyHelp"]}
-        action={
-          <Link href="/patients/new" className={primaryLink}>
-            <Plus size={20} strokeWidth={1.75} aria-hidden="true" />
-            {s["patients.new"]}
-          </Link>
-        }
-      />
-    );
-  }
-
-  // Zero-results: stay on the list surface and invite refining the search; never
-  // offer "Novo Paciente" as the resolution (SPEC §3).
-  if (rows.length === 0) {
-    return (
       <GlassPanel>
-        <EmptyState
-          icon={Search}
-          title={s["patients.noResultsTitle"]}
-          description={s["patients.noResultsHelp"]}
-        />
+        <PatientsTable rows={rows} sort={filters.sort} dir={filters.dir} filtered={filtered} />
       </GlassPanel>
-    );
-  }
 
-  return (
-    <GlassPanel>
-      {/* Desktop: dense table. The whole row is the control (single tab stop via
-          the stretched link); the chevron is decorative. */}
-      <div className="hidden sm:block">
-        <table className="w-full border-collapse">
-          <caption className="sr-only">{s["patients.tableCaption"]}</caption>
-          <thead>
-            <tr className="border-b border-v2-border text-left">
-              <th
-                scope="col"
-                className="pb-3 text-xs font-medium text-v2-text-secondary"
-              >
-                {s["patients.colPatient"]}
-              </th>
-              <th
-                scope="col"
-                className="pb-3 text-xs font-medium text-v2-text-secondary"
-              >
-                {s["patients.colPhone"]}
-              </th>
-              <th scope="col" className="pb-3">
-                <span className="sr-only">{s["patients.openLabel"]}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((p) => (
-              <tr
-                key={p.id}
-                className="relative border-b border-v2-border transition-colors duration-fast ease-standard last:border-0 hover:bg-v2-green-50"
-              >
-                <td className="py-3 pr-4 align-middle">
-                  <PersonCell patient={p} locationName={nameOf(p)} />
-                  <Link
-                    href={`/patients/${p.id}`}
-                    aria-label={`${s["patients.openLabel"]}: ${p.fullName}`}
-                    className="absolute inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring"
-                  />
-                </td>
-                <td className="py-3 pr-4 align-middle text-sm text-v2-text-secondary">
-                  {p.phone ?? "—"}
-                </td>
-                <td className="py-3 align-middle text-right">
-                  <ChevronRight
-                    size={20}
-                    strokeWidth={1.75}
-                    aria-hidden="true"
-                    className="inline-block text-v2-text-secondary"
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Mobile: stacked rows, same single-tab-stop link semantics. */}
-      <ul className="divide-y divide-v2-border sm:hidden">
-        {rows.map((p) => {
-          const secondaryLine = personSecondaryLine(p, nameOf(p));
-          return (
-            <li key={p.id}>
-              <Link
-                href={`/patients/${p.id}`}
-                aria-label={`${s["patients.openLabel"]}: ${p.fullName}`}
-                className="flex items-center gap-3 rounded-v2 px-1 py-3 transition-colors duration-fast ease-standard hover:bg-v2-green-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-              >
-                <Avatar name={p.fullName} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-v2-text-primary">
-                    {p.fullName}
-                  </p>
-                  {secondaryLine ? (
-                    <p className="truncate text-xs text-v2-text-secondary">
-                      {secondaryLine}
-                    </p>
-                  ) : null}
-                  <p className="truncate text-xs text-v2-text-secondary">
-                    {p.phone ?? "—"}
-                  </p>
-                </div>
-                <ChevronRight
-                  size={20}
-                  strokeWidth={1.75}
-                  aria-hidden="true"
-                  className="shrink-0 text-v2-text-secondary"
-                />
+      <div className="flex items-center justify-between gap-3 text-sm text-v2-text-secondary">
+        <span className="tabular-nums">
+          {new Intl.NumberFormat("pt-PT").format(page.total)} {s["patients.resultsCount"]}
+        </span>
+        {page.pageCount > 1 ? (
+          <div className="flex items-center gap-2">
+            {page.page > 1 ? (
+              <Link href={qs(page.page - 1)} className={pageLink} rel="prev">
+                {s["patients.pagePrev"]}
               </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </GlassPanel>
+            ) : null}
+            <span className="tabular-nums">
+              {page.page} {s["patients.pageOf"]} {page.pageCount}
+            </span>
+            {page.page < page.pageCount ? (
+              <Link href={qs(page.page + 1)} className={pageLink} rel="next">
+                {s["patients.pageNext"]}
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </main>
   );
 }
