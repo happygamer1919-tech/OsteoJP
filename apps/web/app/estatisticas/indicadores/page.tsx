@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { can, type RequestContext } from "@osteojp/auth";
 
 import { requireRequestContext } from "@/lib/auth/context";
-import { getKpiReports, type KpiFilters } from "@/lib/statistics/kpi-queries";
+import { defaultKpiFrom, getKpiReports, type KpiFilters } from "@/lib/statistics/kpi-queries";
 import { s } from "@/lib/i18n";
 
 import { IndicadoresView } from "./indicadores-view";
@@ -32,7 +32,14 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
   if (!can(actor.role, "statistics:read")) redirect("/dashboard");
 
   const sp = await searchParams;
-  const filters: KpiFilters = { from: firstParam(sp.from), to: firstParam(sp.to) };
+  // PERF-06. The 12-month default is RESOLVED HERE, not left implicit, so the
+  // period picker renders the dates actually being queried. getKpiReports
+  // applies the same floor independently; this is the half that keeps the
+  // screen honest about which window it is showing.
+  const filters: KpiFilters = {
+    from: firstParam(sp.from) ?? defaultKpiFrom(new Date()),
+    to: firstParam(sp.to),
+  };
   const reports = await getKpiReports(actor, filters);
 
   return <IndicadoresView reports={reports} filters={filters} />;

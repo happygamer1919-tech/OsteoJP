@@ -43,8 +43,51 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const REVENUE_STATUSES = ["issued", "paid"] as const;
 const TOP_N = 10;
 
-function dayBounds(from?: string | null, to?: string | null): { start: Date | null; end: Date | null } {
-  const start = from && DATE_RE.test(from) ? new Date(`${from}T00:00:00.000Z`) : null;
+/**
+ * PERF-06 - THE DEFAULT WINDOW, AND WHY THERE HAS TO BE ONE.
+ *
+ * Sentry OSTEOJP-WEB-4: a statement timeout on /estatisticas/indicadores,
+ * confirmed in production on 2026-08-30 alongside the /recuperacao one.
+ *
+ * With no `from` in the URL this function used to return `start: null`, and
+ * `null` means NO DATE PREDICATE AT ALL. Ten aggregates then ran over every
+ * appointment and every invoice ever recorded - four of them grouping by
+ * patient - which at 8,400 patients and 41,429 appointments is the whole
+ * dataset, on every load of the landing view.
+ *
+ * TWELVE MONTHS, and it is a product decision as much as a performance one:
+ * every report on this page is a "how are we doing" question, and the answer to
+ * that is about the recent clinic, not about 2019. A longer view is still one
+ * URL away because the period picker writes `from`/`to` and an EXPLICIT bound
+ * always wins over this default.
+ *
+ * THE SCREEN IS NOT ALLOWED TO LIE ABOUT IT. `IndicadoresPage` resolves the
+ * same default into the `filters` it hands the view, so the period picker shows
+ * the dates actually being queried. A page reporting "all time" while querying
+ * twelve months would be the silent-degradation shape this codebase keeps
+ * cataloguing, and it would be worse than the timeout it fixed.
+ */
+export const DEFAULT_WINDOW_MONTHS = 12;
+
+/** The default `from`, as the ymd string the period picker and the URL use. */
+export function defaultKpiFrom(now: Date = new Date()): string {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  d.setUTCMonth(d.getUTCMonth() - DEFAULT_WINDOW_MONTHS);
+  return d.toISOString().slice(0, 10);
+}
+
+function dayBounds(
+  from?: string | null,
+  to?: string | null,
+  now: Date = new Date(),
+): { start: Date | null; end: Date | null } {
+  // An explicit, well-formed `from` wins. Otherwise the 12-month floor applies,
+  // so no caller of this module can produce an unbounded scan by omission -
+  // defence in depth behind the page, which passes the default explicitly.
+  const start =
+    from && DATE_RE.test(from)
+      ? new Date(`${from}T00:00:00.000Z`)
+      : new Date(`${defaultKpiFrom(now)}T00:00:00.000Z`);
   let end: Date | null = null;
   if (to && DATE_RE.test(to)) {
     end = new Date(`${to}T00:00:00.000Z`);
@@ -68,8 +111,8 @@ export async function getKpiReports(
   const ctx = actorInput ?? (await requireRequestContext());
   assertCan(ctx.role, "statistics:read");
 
-  const { start, end } = dayBounds(filters.from, filters.to);
   const now = new Date();
+  const { start, end } = dayBounds(filters.from, filters.to, now);
   // PL-09 Phase 3: admin KPIs are scoped to their location(s); owner is all-
   // locations (viewerLocationScope -> null). The aggregates read three base
   // tables, so each gets its own location condition below.
