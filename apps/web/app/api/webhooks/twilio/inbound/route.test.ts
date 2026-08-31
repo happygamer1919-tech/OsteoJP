@@ -321,33 +321,50 @@ describe("what it does once the signature passes", () => {
   });
 });
 
-describe("the three acknowledgement bodies are UNAPPROVED, and that is the point", () => {
-  it("every reply_ack template is registered approved:false", async () => {
+describe("the three acknowledgement bodies are APPROVED, and now actually send", () => {
+  it("every reply_ack template is registered approved by JP on 2026-09-01", async () => {
+    // They shipped `approved: false` on 2026-08-31 and the gate refused every
+    // send. WF-18 A approved them AS WRITTEN, so this assertion flipped without
+    // a single body changing - which is the property that makes the registry an
+    // approval ledger rather than a formality.
     const { REMINDER_TEMPLATES } = await import("@/lib/reminders/notification-registry");
     const acks = REMINDER_TEMPLATES.filter((t) => t.id.startsWith("reply_ack."));
     expect(acks).toHaveLength(3);
     for (const t of acks) {
-      expect(t.approved, t.id).toBe(false);
-      expect(t.approvedBy, t.id).toBeNull();
+      expect(t.approved, t.id).toBe(true);
+      expect(t.approvedBy, t.id).toBe("JP");
+      expect(t.approvedAt, t.id).toBe("2026-09-01");
     }
   });
 
-  it("the gate refuses them as template_unapproved even with live send armed", async () => {
-    const { createNotifier, buildRegistry } = await import("@osteojp/notify");
+  it("the gate now PASSES them when live send is armed", async () => {
+    const { createNotifier, buildRegistry, createTestSink } = await import("@osteojp/notify");
     const { REMINDER_TEMPLATES } = await import("@/lib/reminders/notification-registry");
+    // A SINK, not a throwing stub. These bodies are approved now, so the
+    // dispatch reaches the transport; a stub that threw would report an
+    // approval pass as a send failure and hide which gate answered.
+    const sink = createTestSink();
     const notifier = createNotifier({
       registry: buildRegistry([...REMINDER_TEMPLATES]),
-      transport: {
-        sendEmail: async () => {
-          throw new Error("must not send");
-        },
-        sendSms: async () => {
-          throw new Error("must not send");
-        },
-      },
+      transport: sink,
       transportConfigured: () => true,
       envFlags: ["REMINDERS_LIVE_SEND"],
-      env: { REMINDERS_LIVE_SEND: "true" },
+      // "ARMED" HAS TO MEAN "ARMED AND CORRECTLY CONFIGURED". Since INC-12 the
+      // env assertion runs inside dispatch, AFTER the approval gate - so while
+      // these bodies were unapproved this test never reached it, and the moment
+      // they were approved a bare env made the assertion throw instead of
+      // exercising the gate this test is about. Placeholders only; nothing here
+      // is a credential.
+      env: {
+        REMINDERS_LIVE_SEND: "true",
+        RESEND_API_KEY: "test",
+        REMINDERS_EMAIL_FROM: "test",
+        TWILIO_ACCOUNT_SID: "test",
+        TWILIO_AUTH_TOKEN: "test",
+        TWILIO_SMS_FROM: "test",
+        REMINDERS_RESCHEDULE_BASE_URL: "test",
+        REMINDERS_LINK_SECRET: "test",
+      },
       logger: { info: () => {}, error: () => {} },
     });
     for (const id of [
@@ -355,13 +372,41 @@ describe("the three acknowledgement bodies are UNAPPROVED, and that is the point
       "reply_ack.cancelled.sms",
       "reply_ack.review.sms",
     ]) {
+      // eslint-disable-next-line no-await-in-loop
       const out = await notifier.dispatch({
         templateId: id,
         channel: "sms",
         to: "+351912345678",
         body: "irrelevant",
       });
-      expect(out, id).toMatchObject({ sent: false, reason: "template_unapproved" });
+      expect(out, id).toMatchObject({ sent: true });
     }
+    expect(sink.records).toHaveLength(3);
+  });
+
+  it("THE KILL SWITCH IS NOW THE ONLY LOCK LEFT ON THEM", async () => {
+    // Approval removed one of the two gates, and REMINDERS_INBOUND is already
+    // armed in production - so this is the only thing between an
+    // acknowledgement and a real patient's phone. It must fail loudly if the
+    // kill switch ever stops holding.
+    const { createNotifier, buildRegistry, createTestSink } = await import("@osteojp/notify");
+    const { REMINDER_TEMPLATES } = await import("@/lib/reminders/notification-registry");
+    const sink = createTestSink();
+    const notifier = createNotifier({
+      registry: buildRegistry([...REMINDER_TEMPLATES]),
+      transport: sink,
+      transportConfigured: () => true,
+      envFlags: ["REMINDERS_LIVE_SEND"],
+      env: {}, // the flag is OFF
+      logger: { info: () => {}, error: () => {} },
+    });
+    const out = await notifier.dispatch({
+      templateId: "reply_ack.confirmed.sms",
+      channel: "sms",
+      to: "+351912345678",
+      body: "irrelevant",
+    });
+    expect(out).toMatchObject({ sent: false, reason: "live_send_disabled" });
+    expect(sink.records).toHaveLength(0);
   });
 });

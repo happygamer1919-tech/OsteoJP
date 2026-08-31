@@ -1364,7 +1364,24 @@ blocked. `RB-02b` can ship the control with the number typed by hand, which is
 what reception already does for every other repeating booking, and the pre-fill
 can be added later without touching anything else.
 
-## 2026-08-31 — Q-W14-01: the 48h email cannot reach a patient who has not opted in, and the default was JP's
+## 2026-08-31 — Q-W14-01: the 48h email cannot reach a patient who has not opted in, and the default was JP's (ANSWERED 2026-09-01)
+
+**ANSWERED — WF-18 C, JP 2026-09-01, relayed verbally to the owner:** the 48h
+reminder goes to every patient with a registered email, and the portal opt-out
+toggle remains. The recommended default was taken in full.
+
+Shipped as migration 0070 under SR-15 and applied to production: the column
+default flips to `true`, and the backfill enabled **1,930** patients (every one
+with a registered email). **6,474** patients without an email were left
+untouched.
+
+**JP RULED KNOWING WHAT COULD NOT BE PRESERVED.** The limitation this entry
+described is real and unchanged: `false` is the stored value for both "opted
+out" and "never chose", so any patient who had deliberately switched email off
+was re-enabled. That was put to him in those terms. The portal toggle is the
+mitigation, and the provenance gap itself is carded separately
+(`LE-reminder-pref-has-no-provenance`) rather than treated as closed. Original
+entry:
 
 **BLOCKING the owner's 48h-email workflow. Owner-confirmable: it reverses a
 recorded JP product decision and it is a consent question.**
@@ -1430,7 +1447,19 @@ true when it arrives and needs no new copy or approval.
 Alternative: a distinct *"pedido recebido"* body sent at request time — new
 patient-facing copy, so a JP approval.
 
-## 2026-08-31 — Q-W14-03: three new patient-facing bodies need JP's approval
+## 2026-08-31 — Q-W14-03: three new patient-facing bodies need JP's approval (ANSWERED 2026-09-01)
+
+**ANSWERED — WF-18 A and B, JP 2026-09-01.** All four items approved:
+sections 12 to 14 as written (not a word changed between registration and
+approval), and the 24h SMS amended to carry the reply instruction. Registry
+metadata records JP as approver on that date, on its own constant rather than
+the shared 2026-08-03 one.
+
+**ONE THING THE APPROVAL COST, reported rather than absorbed:** the amended 24h
+body is 148 characters, leaving 12 to the single-segment limit. The fee line is
+53. Variant B no longer fits one segment and `renderSms` now throws rather than
+splitting it. Nothing is at risk today, but the fee decision now carries that
+price. Original entry:
 
 **Owner/JP. Nothing sends until answered; the appointment transitions do not
 wait on it.**

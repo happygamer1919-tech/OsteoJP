@@ -90,25 +90,29 @@ const FEE_NOTICE_ID = "reminder.24h.sms.fee_notice";
 const APPROVED_TEMPLATES = REMINDER_TEMPLATES.filter((t) => t.approved);
 
 describe("registry contents", () => {
-  it("registers 14 patient-facing bodies: the 10 approved, plus 4 unapproved", () => {
-    // W14-04 moved this from 11 to 14: the three reply acknowledgements joined
-    // the fee notice on the unapproved side. The APPROVED count is UNCHANGED at
-    // ten, and that is the assertion doing the work - adding a capability must
-    // never enlarge the set of things JP has said yes to.
+  it("registers 14 patient-facing bodies: 13 approved, 1 still unapproved", () => {
+    // 10 -> 11 (W13-05, the fee line) -> 14 (W14-04, the three acks, all
+    // unapproved) -> 13 approved (WF-18, JP approved the three acks on
+    // 2026-09-01). The total has not moved since W14-04: approving copy adds
+    // no bodies, which is what distinguishes an approval from a change.
     expect(REMINDER_TEMPLATES).toHaveLength(14);
-    expect(APPROVED_TEMPLATES).toHaveLength(10);
+    expect(APPROVED_TEMPLATES).toHaveLength(13);
     expect(REMINDER_TEMPLATES.every((t) => t.audience === "patient")).toBe(true);
   });
 
-  it("pins the unapproved set to exactly the fee notice and the three acks", () => {
+  it("pins the unapproved set back to exactly the fee notice", () => {
     // The load-bearing half. If a future body registers unapproved without a
-    // decision, this fails - which is the whole reason the gate is worth having.
-    // It just did its job twice: once for the fee line, once for W14-04.
-    expect(REMINDER_TEMPLATES.filter((t) => !t.approved).map((t) => t.id).sort()).toEqual([
-      "reminder.24h.sms.fee_notice",
-      "reply_ack.cancelled.sms",
-      "reply_ack.confirmed.sms",
-      "reply_ack.review.sms",
+    // decision, this fails - which is the whole reason the gate is worth
+    // having. It has now done its job in BOTH directions: it caught the three
+    // acknowledgements arriving unapproved (W14-04), and it catches them
+    // leaving that set when JP approved them (WF-18).
+    //
+    // THE FEE NOTICE STAYS, and that boundary is the point of re-pinning
+    // rather than deleting this assertion. JP's 2026-09-01 approval was HIS
+    // alone; the fee line needs counsel as well, and an approval sitting that
+    // swept it along would be exactly the failure this gate exists to prevent.
+    expect(REMINDER_TEMPLATES.filter((t) => !t.approved).map((t) => t.id)).toEqual([
+      FEE_NOTICE_ID,
     ]);
     expect(FEE_NOTICE_ID).toBe("reminder.24h.sms.fee_notice");
   });
@@ -184,10 +188,25 @@ describe("registry contents", () => {
     // moves. Bumping the shared constant instead would have re-dated nine bodies
     // JP approved on 2026-08-03 and never looked at again, quietly destroying
     // the audit trail this field exists to keep.
-    const amended = new Set(["reminder.48h.email"]);
+    // Three dates now, and each belongs to the bodies it actually covers:
+    //   2026-08-03  the nine JP approved in the original packet
+    //   2026-08-05  the 48h email, amended to name confirming (WF-02)
+    //   2026-09-01  the three reply acknowledgements, plus the 24h SMS
+    //               amended to carry the reply instruction (WF-18)
+    const DATED: Record<string, string> = {
+      "reminder.48h.email": "2026-08-05",
+      "reminder.24h.sms": "2026-09-01",
+      "reply_ack.confirmed.sms": "2026-09-01",
+      "reply_ack.cancelled.sms": "2026-09-01",
+      "reply_ack.review.sms": "2026-09-01",
+    };
     for (const t of APPROVED_TEMPLATES) {
-      expect(t.approvedAt).toBe(amended.has(t.id) ? "2026-08-05" : "2026-08-03");
+      expect(t.approvedAt, t.id).toBe(DATED[t.id] ?? "2026-08-03");
     }
+    // The nine untouched bodies are still dated to the day JP read them.
+    expect(
+      APPROVED_TEMPLATES.filter((t) => t.approvedAt === "2026-08-03"),
+    ).toHaveLength(8);
     // The amendment is real and reached the registered body, not just the date.
     const t48 = REMINDER_TEMPLATES.find((t) => t.id === "reminder.48h.email");
     expect(t48?.body).toContain("Para confirmar, remarcar ou cancelar");
@@ -231,7 +250,7 @@ describe("registry contents", () => {
 });
 
 describe("the approval gate now passes, and the kill switch still holds", () => {
-  it("passes all 10 approved bodies through when live send is armed", async () => {
+  it("passes all 13 approved bodies through when live send is armed", async () => {
     const { notifier, sink } = harness(LIVE);
 
     const outcomes = await Promise.all(
@@ -247,14 +266,24 @@ describe("the approval gate now passes, and the kill switch still holds", () => 
       ),
     );
 
-    expect(outcomes.filter((o) => o.sent)).toHaveLength(10);
-    expect(sink.records).toHaveLength(10);
+    // 13 of the 14 registered bodies send; the fee notice is the one refused,
+    // and it is refused for its OWN reason (`template_unapproved`) rather than
+    // by the flag, which this asserts explicitly so the count cannot drift into
+    // meaning something else.
+    expect(outcomes.filter((o) => o.sent)).toHaveLength(13);
+    expect(sink.records).toHaveLength(13);
+    const refused = outcomes.filter((o) => !o.sent);
+    expect(refused).toHaveLength(1);
+    expect(refused[0]).toMatchObject({
+      templateId: FEE_NOTICE_ID,
+      reason: "template_unapproved",
+    });
   });
 
   // THE LOAD-BEARING TEST NOW. Approval removed one of the two gates; this is the
   // other, and it is the only thing standing between an approved body and a real
   // patient's phone. It must fail loudly if the kill switch ever stops holding.
-  it("sends NOTHING with live send off, even though all 10 are approved", async () => {
+  it("sends NOTHING with live send off, even though all 13 are approved", async () => {
     const { notifier, sink } = harness({});
 
     const outcomes = await Promise.all(
@@ -273,7 +302,11 @@ describe("the approval gate now passes, and the kill switch still holds", () => 
     const refused = outcomes.filter(
       (o) => !o.sent && "reason" in o && o.reason === "live_send_disabled",
     );
-    expect(refused).toHaveLength(10);
+    // The 13 approved bodies. The fourteenth never reaches the flag check: the
+    // approval gate is evaluated first, so the fee notice reads
+    // `template_unapproved` even with live send off - the deliberate ordering
+    // gate.ts's header describes.
+    expect(refused).toHaveLength(13);
     expect(sink.records).toHaveLength(0);
   });
 

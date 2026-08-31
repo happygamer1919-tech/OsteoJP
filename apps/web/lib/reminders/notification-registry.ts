@@ -113,6 +113,24 @@ function patientTemplate(
  */
 const JP_APPROVAL_48H_EMAIL = { approvedBy: "JP", approvedAt: "2026-08-05" } as const;
 
+/**
+ * WF-18, JP 2026-09-01, relayed verbally to the owner. FOUR bodies move on this
+ * date and each gets this constant rather than the shared one, for the reason
+ * JP_APPROVAL_48H_EMAIL exists: the 2026-08-03 date belongs to the nine bodies
+ * JP approved that day and never looked at again, and re-dating them would
+ * destroy the audit trail this field is for.
+ *
+ * WHAT IT COVERS:
+ *   A. the three reply acknowledgements, previously `approved: false` - packet
+ *      sections 12 to 14, approved as written;
+ *   B. the AMENDED 24h SMS, which gains the reply instruction line.
+ *
+ * WHAT IT DOES NOT COVER, and the boundary is the point: the fee-notice body
+ * (section 11) is untouched and stays `approved: false`. It needs counsel as
+ * well as JP, and this approval was JP's alone.
+ */
+const JP_APPROVAL_WF18 = { approvedBy: "JP", approvedAt: "2026-09-01" } as const;
+
 /** The ten patient-facing reminder bodies. Nine approved by JP 2026-08-03; the
  *  48h email re-approved 2026-08-05 for the WF-02 amendment above. */
 export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
@@ -122,7 +140,28 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
   },
   patientTemplate("reminder.48h.sms", "sms", EV_REMINDER_DUE, SMS["48h"].pt),
   patientTemplate("reminder.24h.email", "email", EV_REMINDER_DUE, EMAIL["24h"].pt.body),
-  patientTemplate("reminder.24h.sms", "sms", EV_REMINDER_DUE, SMS["24h"].pt),
+  {
+    /**
+     * WF-18 B: AMENDED, and it carries its own approval date.
+     *
+     * The body gained one line - "Responda SIM para confirmar ou NAO para
+     * cancelar" - and nothing else changed; templates.test.ts asserts the four
+     * original lines byte-for-byte alongside the fifth. The inbound reply
+     * capability shipped working on 2026-08-31 and this body never mentioned
+     * it, so a patient could be heard but was never told they could. Amending
+     * an approved body is a question rather than an edit, which is why it
+     * waited for JP.
+     *
+     * IT COSTS THE FEE VARIANT ITS SINGLE SEGMENT. See fee-notice.test.ts's
+     * segment budget: the composed fee-bearing body is now over 160 characters
+     * and renderSms throws rather than splitting it. Nothing is at risk today
+     * (the flag is unarmed and the entry below is unapproved), but variant B
+     * now needs either a shorter fee line or a two-segment message, and that is
+     * a JP-and-counsel choice.
+     */
+    ...patientTemplate("reminder.24h.sms", "sms", EV_REMINDER_DUE, SMS["24h"].pt),
+    ...JP_APPROVAL_WF18,
+  },
   patientTemplate("confirmation.email", "email", EV_SCHEDULED, CONFIRMATION_EMAIL.pt.body),
   patientTemplate("confirmation.sms", "sms", EV_SCHEDULED, CONFIRMATION_SMS.pt),
   patientTemplate("follow_up.email", "email", EV_COMPLETED, FOLLOW_UP_EMAIL.pt.body),
@@ -169,21 +208,26 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
    * TWELFTH, THIRTEENTH AND FOURTEENTH BODIES — the inbound reply
    * acknowledgements. W14-04, and all three are `approved: false`.
    *
-   * WHY THEY ARE HERE AT ALL IF THEY CANNOT SEND. Registering an unapproved
-   * body is what MAKES it unsendable: `resolveApproved` fails closed, so an id
-   * absent from this file and an id present with `approved: false` are refused
-   * identically. Writing them down turns "somebody must remember to ask JP"
-   * into a mechanical refusal with the reason `template_unapproved` in the
-   * log, and gives the approval sitting the exact strings to approve.
+   * ==================================================================
+   * APPROVED BY JP 2026-09-01 (WF-18 A), EXACTLY AS THEY WERE WRITTEN.
+   * ==================================================================
+   * They shipped `approved: false` on 2026-08-31 and every send was refused
+   * `template_unapproved` while JP had not seen the wording. He approved
+   * packet sections 12 to 14 as written - not a word of these three bodies
+   * changed between being registered unapproved and being approved, which is
+   * the property that makes the gate worth having rather than a formality.
    *
-   * THE STATUS CHANGE IS NOT GATED ON THEM. A patient who texts SIM has their
-   * appointment confirmed whether or not the acknowledgement is approved; the
-   * only thing withheld is the reply. That asymmetry is deliberate - the
-   * appointment state is the clinic's operational truth and JP's approval is
-   * about what OsteoJP says to a patient in its own voice.
+   * THE WITHHELD REPLIES START SENDING ON MERGE. REMINDERS_INBOUND is already
+   * armed in production, so this is the change that makes a patient's SIM
+   * answered rather than silently acted on. Stated here because approving copy
+   * is usually inert and this approval is not.
    *
-   * WHAT UNBLOCKS THEM: JP approves the three wordings. Nothing else. There is
-   * no counsel question here, unlike the fee line above.
+   * WHAT THE GATE DID WHILE THEY WERE FALSE, recorded so the mechanism is
+   * legible later: `resolveApproved` fails closed, so an id absent from this
+   * file and an id present with `approved: false` were refused identically.
+   * The appointment still changed on every reply - only the answer back to the
+   * patient was withheld, which is the asymmetry that let the capability work
+   * silently instead of not at all.
    *
    * `triggerEvent` names the webhook rather than an Inngest event, because
    * that is what actually triggers them. The field is documentation, and a
@@ -196,9 +240,8 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
     triggerEvent: EV_SMS_INBOUND,
     body: REPLY_ACK_CONFIRMED.pt,
     liveSendFlag: "REMINDERS_LIVE_SEND",
-    approved: false,
-    approvedBy: null,
-    approvedAt: null,
+    approved: true,
+    ...JP_APPROVAL_WF18,
   },
   {
     id: REPLY_ACK_TEMPLATE_IDS.cancelled,
@@ -207,9 +250,8 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
     triggerEvent: EV_SMS_INBOUND,
     body: REPLY_ACK_CANCELLED.pt,
     liveSendFlag: "REMINDERS_LIVE_SEND",
-    approved: false,
-    approvedBy: null,
-    approvedAt: null,
+    approved: true,
+    ...JP_APPROVAL_WF18,
   },
   {
     id: REPLY_ACK_TEMPLATE_IDS.review,
@@ -218,9 +260,8 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
     triggerEvent: EV_SMS_INBOUND,
     body: REPLY_ACK_REVIEW.pt,
     liveSendFlag: "REMINDERS_LIVE_SEND",
-    approved: false,
-    approvedBy: null,
-    approvedAt: null,
+    approved: true,
+    ...JP_APPROVAL_WF18,
   },
 ] as const;
 

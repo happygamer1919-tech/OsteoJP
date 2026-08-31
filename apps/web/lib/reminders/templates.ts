@@ -20,6 +20,10 @@ import type { Locale } from "@osteojp/i18n";
 // approved bodies and the one unapproved line are never editable in the same
 // breath. This file only knows how to APPEND it (W13-05).
 import { FEE_NOTICE_SMS } from "./fee-notice";
+// WF-18 B: the 24h SMS now tells the patient they may reply, and the words it
+// tells them to send are DERIVED from the classifier's own keyword config
+// rather than written here. See the 24h entry below.
+import { REMINDER_CONFIRM_INSTRUCTION } from "./reminder-copy";
 
 export type ReminderOffsetId = "48h" | "24h";
 
@@ -140,9 +144,34 @@ export const SMS: Record<ReminderOffsetId, Record<Locale, string>> = {
     pt: "OsteoJP - Lembrete\nConsulta: {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}",
     en: "OsteoJP - Reminder\nAppointment: {date} at {time}\nLocation: {clinic}\nReschedule: {phone}",
   },
+  /**
+   * ==================================================================
+   * WF-18 B (JP, approved verbally to the owner 2026-09-01): the 24h SMS
+   * GAINS THE REPLY INSTRUCTION. One appended line; nothing else changed.
+   * ==================================================================
+   *
+   * WHY THIS LINE HAD TO WAIT FOR JP. The inbound reply capability shipped
+   * on 2026-08-31 fully working, and this body never mentioned it - so a
+   * patient could reply SIM and be heard, but was never told they could.
+   * Amending a body JP approved on 2026-08-03 is a question, not an edit,
+   * and it was carried as Q-W14-03 until he answered it.
+   *
+   * THE WORDS ARE NOT WRITTEN HERE. `REMINDER_CONFIRM_INSTRUCTION` derives
+   * them from `INBOUND_KEYWORDS` - the same config the classifier matches
+   * against - so the words the reminder tells the patient to send can never
+   * drift from the words the platform actually recognises. That module was
+   * built for exactly this line and had no consumer until now.
+   *
+   * IT COSTS THE FEE VARIANT ITS SINGLE SEGMENT, and that is stated rather
+   * than discovered: see the note above `renderSms`.
+   */
   "24h": {
-    pt: "OsteoJP - Lembrete\nConsulta: amanha {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}",
-    en: "OsteoJP - Reminder\nAppointment: tomorrow {date} at {time}\nLocation: {clinic}\nReschedule: {phone}",
+    pt:
+      "OsteoJP - Lembrete\nConsulta: amanha {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}\n" +
+      REMINDER_CONFIRM_INSTRUCTION.pt,
+    en:
+      "OsteoJP - Reminder\nAppointment: tomorrow {date} at {time}\nLocation: {clinic}\nReschedule: {phone}\n" +
+      REMINDER_CONFIRM_INSTRUCTION.en,
   },
 };
 

@@ -46,17 +46,18 @@ export function reminderConfirmInstruction(locale: Locale): string {
  * email) re-approved on 2026-08-05. Nothing in that packet acknowledges a
  * reply, because when it was written the inbound path did not exist.
  *
- * They are therefore registered `approved: false` in notification-registry.ts,
- * exactly as the fee-notice line is. The consequence is concrete and is the
- * point: `resolveApproved` refuses them, the gate returns
- * `template_unapproved`, and the patient receives NOTHING until JP approves
- * the wording. The inbound path still confirms and cancels appointments - the
- * status change is not gated on the acknowledgement - so the capability works
+ * They were registered `approved: false` for a month of calendar time and a day
+ * of wall-clock, exactly as the fee-notice line still is. The gate refused every
+ * send with `template_unapproved` and the patient received nothing, while the
+ * inbound path went on confirming and cancelling appointments - the status
+ * change was never gated on the acknowledgement, so the capability worked
  * silently rather than not at all.
  *
- * They are written HERE rather than left for the approval sitting so that the
- * thing being approved is the exact string that will send, and so that the
- * GSM-7 / single-segment properties are already proven when it is asked.
+ * WRITING THEM BEFORE ASKING IS WHAT MADE THE APPROVAL CHEAP. The thing JP
+ * approved is the exact string that sends, with its GSM-7 and single-segment
+ * properties already proven, so "approved" required no follow-up work and no
+ * second reading. That is the argument for registering unapproved copy rather
+ * than leaving it unwritten until somebody has time to ask.
  *
  * pt-PT is the registered locale; the EN mirror travels with it, the same
  * convention notification-registry.ts documents for the other ten.

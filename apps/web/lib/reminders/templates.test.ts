@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+
+import { INBOUND_KEYWORDS } from "./inbound-classify";
 import {
   assertSmsCompliant,
   isGsm7,
@@ -114,7 +116,13 @@ describe("sms rendering", () => {
     );
   });
 
-  it("renders the PT 24h SMS with the 'amanha' framing (no tilde), multi-line", () => {
+  /**
+   * WF-18 B, JP 2026-09-01: the 24h SMS gained a FIFTH line telling the patient
+   * they may reply. The first four are byte-identical to what JP approved on
+   * 2026-08-03 and are still asserted verbatim here — an amendment that also
+   * quietly reworded the body would pass a "contains the new line" check.
+   */
+  it("renders the PT 24h SMS with the 'amanha' framing (no tilde), plus the reply line", () => {
     const msg = renderSms("24h", "pt", ctx);
     expect(msg).toBe(
       [
@@ -122,12 +130,13 @@ describe("sms rendering", () => {
         "Consulta: amanha 23/05 as 14:30",
         "Local: Linda-a-Velha",
         "Remarcar: +351 210 000 000",
+        "Responda SIM para confirmar ou NAO para cancelar",
       ].join("\n"),
     );
     expect(msg).not.toMatch(/amanhã/);
   });
 
-  it("renders the EN 24h SMS, multi-line", () => {
+  it("renders the EN 24h SMS, plus its reply line", () => {
     const msg = renderSms("24h", "en", ctx);
     expect(msg).toBe(
       [
@@ -135,16 +144,42 @@ describe("sms rendering", () => {
         "Appointment: tomorrow 23/05 at 14:30",
         "Location: Linda-a-Velha",
         "Reschedule: +351 210 000 000",
+        "Reply SIM to confirm or NAO to cancel",
       ].join("\n"),
     );
   });
 
-  it("lays the reminder body out as four scannable lines", () => {
-    for (const offset of ["48h", "24h"] as const) {
-      for (const locale of ["pt", "en"] as const) {
-        expect(renderSms(offset, locale, ctx).split("\n")).toHaveLength(4);
-      }
+  /**
+   * THE KEYWORDS IN THE COPY ARE THE CLASSIFIER'S OWN, not a second spelling of
+   * them. `REMINDER_CONFIRM_INSTRUCTION` derives the words from
+   * `INBOUND_KEYWORDS`, so a change to the keyword policy cannot leave the
+   * reminder telling patients to send a word the platform no longer recognises.
+   * Asserted on the RENDERED output, because a constant-only check would pass
+   * even if the line never reached the body.
+   */
+  it("tells the patient to send words the classifier actually recognises", () => {
+    const msg = renderSms("24h", "pt", ctx);
+    expect(msg).toContain(INBOUND_KEYWORDS.confirm[0]!.toUpperCase());
+    expect(msg).toContain(INBOUND_KEYWORDS.cancel[0]!.toUpperCase());
+    // The EN body keeps the PT keywords, because the classifier only knows
+    // the pt-PT set — reminder-copy.ts states that and this pins it.
+    expect(renderSms("24h", "en", ctx)).toContain("SIM");
+    expect(renderSms("24h", "en", ctx)).toContain("NAO");
+  });
+
+  it("lays the 48h body out as four scannable lines and the 24h as five", () => {
+    for (const locale of ["pt", "en"] as const) {
+      expect(renderSms("48h", locale, ctx).split("\n")).toHaveLength(4);
+      // The fifth line is the reply instruction. Only the 24h offset carries
+      // it: 24h is the SMS offset and therefore the only one a patient can
+      // answer (the 48h reminder routes to email).
+      expect(renderSms("24h", locale, ctx).split("\n")).toHaveLength(5);
     }
+  });
+
+  it("the 48h SMS body is UNTOUCHED — the amendment reached one body only", () => {
+    expect(renderSms("48h", "pt", ctx)).not.toContain("Responda");
+    expect(renderSms("48h", "en", ctx)).not.toContain("Reply SIM");
   });
 
   it("keeps every rendered SMS GSM-7 and within one segment", () => {

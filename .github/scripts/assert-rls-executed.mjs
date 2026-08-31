@@ -78,6 +78,14 @@ const SUITES = [
   // role is denied at the table gate. A silent skip would leave all three
   // proven by nothing.
   { file: "sms-inbound-events-rls.test.ts", hard: true },
+  // 0070, added 2026-09-01. Hard-required because the property it proves is a
+  // REVERSAL of a product ruling that reaches every patient in the clinic: the
+  // 48h email default flips to on and the backfill re-enables everyone with a
+  // registered email. Its load-bearing arms are the NEGATIVE ones - a patient
+  // with no address, or an empty-string one, must NOT be flipped - and it runs
+  // the UPDATE read out of the shipped migration file rather than a restated
+  // copy of it. A silent skip would leave the blast radius unproven.
+  { file: "patient-email-reminder-default.test.ts", hard: true },
   { file: "migration-upsert-idempotency.test.ts", hard: true },
   // W13-01a. Lives in apps/web, runs against the same Supabase stack from its
   // own vitest invocation. Hard-required for the same reason as every suite

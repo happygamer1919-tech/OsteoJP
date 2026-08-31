@@ -249,7 +249,7 @@ Ou contacte: +351 272 000 000
 
 - **Identificador:** `reminder.24h.sms`
 - **Quando:** 24 horas antes da consulta.
-- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
+- **Estado:** aprovado (`approved: true`) — JP, **2026-09-01** (redaccao alterada nesta data: acrescentada a linha "Responda SIM para confirmar ou NAO para cancelar"; as quatro linhas originais estao inalteradas). **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 - **Nota:** a clinica forneceu redaccao propria para o lembrete de 24h. Ver a seccao das variantes.
 - **Codificacao:** GSM-7 (sim) — **99 caracteres, 1 segmento**
 
@@ -466,25 +466,26 @@ estao intactas e esta linha e conteudo adicional novo.
 
 ## NOVO — as tres respostas automaticas ao SMS do doente
 
-> **TRES MENSAGENS NOVAS, NENHUMA APROVADA.** Sao as seccoes 12, 13 e 14 abaixo.
-> Nao estavam neste documento quando aprovou as dez, porque na altura o doente
-> nao podia responder a nada.
+> **APROVADAS POR JP EM 2026-09-01.** Sao as seccoes 12, 13 e 14 abaixo. Nao
+> estavam neste documento quando aprovou as dez, porque na altura o doente nao
+> podia responder a nada. Ficaram bloqueadas desde 2026-08-31 ate esta data, e
+> **nem uma palavra mudou entre serem escritas e serem aprovadas**.
 
 **O que mudou.** O lembrete de 24 horas passa a ser respondivel. O doente
 responde `SIM` e a consulta fica confirmada; responde `NAO` e fica cancelada.
 Qualquer outra coisa nao mexe em nada e vai para a recepcao ler.
 
-**O que precisa de decidir.** Se, depois de o doente responder, a clinica lhe
-devolve uma mensagem a dizer o que aconteceu — e com que palavras. Enquanto
-nao aprovar, **a consulta muda na mesma** (o SIM confirma, o NAO cancela); o
-que nao acontece e a resposta de volta. O doente fica sem confirmacao escrita
-de que a sua mensagem foi recebida.
+**O que estava em causa, e ja esta decidido.** Se, depois de o doente
+responder, a clinica lhe devolve uma mensagem a dizer o que aconteceu — e com
+que palavras. Enquanto esteve por aprovar, **a consulta mudava na mesma** (o
+SIM confirma, o NAO cancela); o que nao acontecia era a resposta de volta.
+Desde 2026-09-01 a resposta e enviada.
 
 ### 12. Resposta automatica — consulta confirmada — SMS
 
 - **Identificador:** `reply_ack.confirmed.sms`
 - **Quando:** logo apos o doente responder `SIM` e a consulta passar a confirmada.
-- **Estado:** bloqueado (`approved: false`) — **ninguem aprovou esta redaccao.**
+- **Estado:** aprovado (`approved: true`) — JP, **2026-09-01**, tal como esta escrito abaixo (nem uma palavra mudou). **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 - **Codificacao:** GSM-7 (sem acentos), 1 segmento.
 
 **Texto tal como esta programado:**
@@ -499,7 +500,7 @@ OsteoJP - Consulta confirmada. Obrigado.
 
 - **Identificador:** `reply_ack.cancelled.sms`
 - **Quando:** logo apos o doente responder `NAO` e a consulta passar a cancelada.
-- **Estado:** bloqueado (`approved: false`) — **ninguem aprovou esta redaccao.**
+- **Estado:** aprovado (`approved: true`) — JP, **2026-09-01**, tal como esta escrito abaixo (nem uma palavra mudou). **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 - **Codificacao:** GSM-7 (sem acentos), 1 segmento.
 
 **Texto tal como esta programado:**
@@ -516,7 +517,7 @@ OsteoJP - Consulta cancelada. Para remarcar contacte a clinica.
 - **Quando:** o doente respondeu alguma coisa que **nao** e um `SIM` nem um
   `NAO` claros, ou respondeu fora do prazo, ou o numero nao corresponde a
   nenhum doente. Em todos estes casos **nada muda na agenda**.
-- **Estado:** bloqueado (`approved: false`) — **ninguem aprovou esta redaccao.**
+- **Estado:** aprovado (`approved: true`) — JP, **2026-09-01**, tal como esta escrito abaixo (nem uma palavra mudou). **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
 - **Codificacao:** GSM-7 (sem acentos), 1 segmento.
 
 **Texto tal como esta programado:**
@@ -550,7 +551,16 @@ foi feito. A linha que existe programada, pronta a acrescentar se aprovar, e:
 Responda SIM para confirmar ou NAO para cancelar
 ```
 
-**Aprova acrescentar esta linha ao lembrete de 24 horas? [ ] sim  [ ] nao**
+**APROVADO — JP, 2026-09-01.** A linha foi acrescentada ao lembrete de 24
+horas (seccao 6 acima). As quatro linhas originais estao inalteradas.
+
+> **Um custo desta aprovacao, registado para que nao seja uma surpresa
+> depois.** A mensagem de 24 horas passou de 99 para 148 caracteres, o que
+> deixa **12 caracteres** ate ao limite de um segmento. A linha da taxa
+> (variante B, seccao 11) tem **53**. **Ja nao cabe.** Se o advogado vier a
+> aprovar a taxa, sera preciso ou uma redaccao muito mais curta, ou aceitar
+> que essa mensagem passe a custar dois segmentos. Nada foi cortado para
+> abrir espaco: a margem foi gasta por esta aprovacao, nao por um corte.
 
 ---
 ## A redaccao de 24h fornecida pela clinica
