@@ -1394,7 +1394,14 @@ itself blocked on SR-11 (see Q-W14-05).
 Alternative if JP's default stands: the 48h email is for opted-in patients only,
 and the clinic accepts that most patients receive the 24h SMS alone.
 
-## 2026-08-31 — Q-W14-02: decision A collides with request-mode booking
+## 2026-08-31 — Q-W14-02: decision A collides with request-mode booking (ANSWERED 2026-08-31)
+
+**ANSWERED, owner ruling 2026-08-31:** *"the booking confirmation sends for
+portal-originated appointments only, and only at the moment reception ACCEPTS
+the pedido, never at request time."* The recommended default was taken.
+Implemented in `confirmAppointmentRequest`, which now emits
+`appointment/scheduled` post-commit; W14-confirmation-on-accept and
+W14-portal-bookings-emit-no-reminder-events both close on it. Original entry:
 
 **Owner-confirmable. Affects what a patient is told after booking.**
 
@@ -1462,7 +1469,17 @@ booking confirmation SMS and the follow-up/no-show SMS would move to the same
 sender. Recommendation: **move them all**, so a patient sees one identity from
 the clinic rather than two.
 
-## 2026-08-31 — Q-W14-05: migration 0069 is needed and BLUE may not author it
+## 2026-08-31 — Q-W14-05: migration 0069 is needed and BLUE may not author it (PARTLY ANSWERED 2026-08-31)
+
+**PARTLY ANSWERED — strategy ruling SR-14, 2026-08-31:** migration authorship
+opened to BLUE for **0069 only**, the reminders inbound review queue table.
+Authored, applied to production under apply-before-merge, journal proof 68 → 69,
+and authorship froze again on merge.
+
+**ITEM 1 IS CLOSED. ITEM 2 IS NOT.** SR-14 named one table. The
+`reminder_email_enabled` default flip (Q-W14-01) is a different migration and a
+different question — it needs BOTH a JP product decision AND a further strategy
+release. It remains blocked. Original entry:
 
 **Strategy decision (SR-11), not an owner one. Recorded here because it bounds
 two of the questions above.**

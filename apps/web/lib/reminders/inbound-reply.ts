@@ -66,11 +66,23 @@ export type ReviewReason =
   /** The confirm would have violated appointments_no_double_confirmed. */
   | "double_confirmed_refused";
 
-export type InboundReplyResult =
-  | { outcome: "confirmed"; appointmentId: string }
-  | { outcome: "cancelled"; appointmentId: string }
-  | { outcome: "opt_out"; patientId: string }
-  | { outcome: "review"; reason: ReviewReason; intent: InboundIntent };
+/**
+ * WHAT THE REPLY MATCHED, carried on every outcome so the caller can file the
+ * queue row without asking the database the same questions again. Both are null
+ * on a reply that matched nothing, which is the common review case.
+ */
+export type InboundReplyMatch = {
+  patientId: string | null;
+  appointmentId: string | null;
+};
+
+export type InboundReplyResult = InboundReplyMatch &
+  (
+    | { outcome: "confirmed"; appointmentId: string }
+    | { outcome: "cancelled"; appointmentId: string }
+    | { outcome: "opt_out"; patientId: string }
+    | { outcome: "review"; reason: ReviewReason; intent: InboundIntent }
+  );
 
 /**
  * Postgres 23P01 exclusion_violation, however the driver surfaces it.
@@ -173,7 +185,13 @@ export async function applyInboundReply(args: {
         outcome: "review",
         reason: "no_patient_match",
       });
-      return { outcome: "review", reason: "no_patient_match", intent: classification.intent } as const;
+      return {
+        outcome: "review",
+        reason: "no_patient_match",
+        intent: classification.intent,
+        patientId: null,
+        appointmentId: null,
+      } as const;
     }
 
     // EXACTLY ONE, or nothing happens. `limit(2)` rather than `limit(1)` is
@@ -197,7 +215,13 @@ export async function applyInboundReply(args: {
         outcome: "review",
         reason: "no_patient_match",
       });
-      return { outcome: "review", reason: "no_patient_match", intent: classification.intent } as const;
+      return {
+        outcome: "review",
+        reason: "no_patient_match",
+        intent: classification.intent,
+        patientId: null,
+        appointmentId: null,
+      } as const;
     }
     const patientId = candidates[0]!.id;
 
@@ -217,7 +241,7 @@ export async function applyInboundReply(args: {
         outcome: "opt_out",
         reason: null,
       });
-      return { outcome: "opt_out", patientId } as const;
+      return { outcome: "opt_out", patientId, appointmentId: null } as const;
     }
 
     // The patient's NEXT scheduled appointment. `for update` holds it for the
@@ -251,7 +275,13 @@ export async function applyInboundReply(args: {
         outcome: "review",
         reason,
       });
-      return { outcome: "review", reason, intent: classification.intent } as const;
+      return {
+        outcome: "review",
+        reason,
+        intent: classification.intent,
+        patientId,
+        appointmentId: appt?.id ?? null,
+      } as const;
     };
 
     if (!appt) return review("no_appointment");
@@ -285,7 +315,7 @@ export async function applyInboundReply(args: {
         outcome: "cancelled",
         reason: null,
       });
-      return { outcome: "cancelled", appointmentId: appt.id } as const;
+      return { outcome: "cancelled", appointmentId: appt.id, patientId } as const;
     }
 
     // ================================================================== //
@@ -342,7 +372,7 @@ export async function applyInboundReply(args: {
       outcome: "confirmed",
       reason: null,
     });
-    return { outcome: "confirmed", appointmentId: appt.id } as const;
+    return { outcome: "confirmed", appointmentId: appt.id, patientId } as const;
   }).catch(async (err: unknown) => {
     if (err instanceof DoubleConfirmedRefusal) {
       await withReminderTenantContext(tenantId, (tx) =>
@@ -359,6 +389,8 @@ export async function applyInboundReply(args: {
         outcome: "review",
         reason: "double_confirmed_refused",
         intent: err.intent,
+        patientId: err.patientId,
+        appointmentId: err.appointmentId,
       } as const;
     }
     throw err;

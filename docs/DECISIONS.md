@@ -3369,3 +3369,97 @@ the 2026-07-11 proof ran with `TWILIO_SMS_FROM` set and the fallback branch has
 never sent a message. It now resolves to `MessagingServiceSid` when the value is
 an `MG`-prefixed SID. **Nothing changes for the current production config**, which
 `twilio-proof.test.ts` pins.
+
+## 2026-08-31 — W14-06: the reception reply queue, and why a second table
+
+`audit_log` already receives a row for every inbound reply, so the first
+question a reader will ask is why 0069 exists at all. Two reasons, and either
+alone is sufficient:
+
+**THE BODY.** Reception cannot resolve "the patient wrote something we could not
+read" without reading what they wrote. That is patient-authored free text, and
+CLAUDE.md rule 7 keeps patient content out of logs — `audit_log.metadata`'s own
+contract says "IDs, status and ISO timestamps only, never patient PII".
+
+**NO RESOLUTION STATE.** `audit_log` is append-only by RLS (SELECT and INSERT
+policies only). A queue that cannot be marked done is not a queue, it is a list
+that grows forever.
+
+The audit row **stays**, and is still written for every reply including the ones
+this table never queues. It is the permanent trail; 0069 is the working copy.
+
+### The sender's number is hashed, and that is not caution for its own sake
+
+A queue row does not need a dialable number: it carries `patient_id` whenever
+the sender matched, and a staff session entitled to that patient reads the real
+number from the ficha. When the sender did **not** match — which is the common
+review case — an unmatched phone number is the one piece of PII the clinic has
+no relationship to and no lawful reason to keep. The hash still does a hash's
+work: two replies from the same stranger group together.
+
+### The page's capability changed, and that is the point of its review
+
+It shipped gated on `appointments:read`. **Every role holds that**, because
+every role works the calendar — so the check passed for a therapist and gated
+nothing. This is not a hypothetical: `guest_requests:read` exists in this repo
+because exactly that mistake showed a therapist the whole tenant's guest queue
+on deployed production, and `followup:read` exists because the same trap was
+spotted one card later.
+
+Two new capabilities, `sms_replies:read` and `sms_replies:resolve` — two rather
+than one because *seeing* a queue and *moving a real appointment from it* are
+different acts. 0069's policies carry the same role set, so the application
+check is the first gate and not the only one.
+
+**OWNER IS GRANTED ALONGSIDE ADMIN AND RECEPTION**, and the ruling's words were
+"reception and admin read and resolve, nobody else". Owner is admin's superset
+in this matrix and holds `guest_requests:read` for the same reason: excluding it
+would refuse the clinic's own account a page its admins can open. The role the
+ruling excludes is THERAPIST, and it is excluded at both gates.
+
+### The three buttons now do what they say
+
+"Marcar como confirmada" moves the matched appointment. Leaving it as a filing
+action would have been a button that reads as a decision and performs a tidy-up.
+
+**Reception has no time window, and that is deliberate.** The automatic path
+refuses a reply outside `[reminder sent, appointment start)` because a reply is
+only an answer to the message that asked. A person reading that message and
+deciding **is** the authority the window defers to. What is kept is the guard
+about the DATA rather than about authority: only a `scheduled` appointment may
+move, because confirming a completed visit is meaningless whoever asks.
+
+The confirm can still lose to 0061's exclusion constraint. When it does,
+**nothing** is written — not the appointment and not the resolution — so the
+item stays in the queue, which is where a decision that could not be carried out
+belongs.
+
+## 2026-08-31 — W14-07: the confirmation fires at ACCEPTANCE, and two defects close on one line
+
+Owner ruling: *"the booking confirmation sends for portal-originated
+appointments only, and only at the moment reception ACCEPTS the pedido, never at
+request time."*
+
+`confirmAppointmentRequest` now calls `enqueueRemindersAfterCommit`. That single
+line closes two things worth separating:
+
+**1. THE CONFIRMATION HAD NO CORRECT MOMENT.** Decision A scopes it to
+portal-originated appointments; JP ruled every portal booking is a pedido the
+clinic has not accepted. Sending at request time would say "A sua marcação está
+confirmada" about a request nobody had looked at. At acceptance the status is
+`confirmed`, so both dispatch gates pass and the approved body is **true when it
+arrives** — no new copy, no new approval.
+
+**2. A PORTAL BOOKING RECEIVED NO REMINDERS AT ALL, EVER.** The wider defect, and
+it was never about copy. `apps/api` emits no background event of any kind: no
+Inngest client, and `store.createBooking` sends nothing. The three staff paths in
+`lib/scheduling/actions.ts` were the only emitters in the repo, so a portal
+patient was never scheduled a 48h email or a 24h SMS **even after reception
+accepted them**.
+
+**WHY NOT FIX IT IN apps/api.** Emitting at booking time would have needed the
+Inngest client there, an event key in the portal project's environment, and a
+second place that knows the reminder contract — and it would still have been the
+WRONG MOMENT under the ruling. The event belongs where the appointment becomes
+real. The proof carries a source-level arm asserting `apps/api` still emits
+nothing, so a future booking-time emit goes red rather than shipping.

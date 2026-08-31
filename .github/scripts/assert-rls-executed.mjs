@@ -69,6 +69,15 @@ const SUITES = [
   { file: "patient-form-intake-rls.test.ts", hard: true },
   { file: "review-finalize-rls.test.ts", hard: true },
   { file: "migration-staging-rls.test.ts", hard: true },
+  // 0069, added 2026-08-31. The mandatory isolation proof for
+  // sms_inbound_events, and hard-required because the table holds
+  // PATIENT-AUTHORED MESSAGE TEXT - the only place it lives. Its arms are
+  // refusals: a foreign tenant reads nothing, a THERAPIST of the owning tenant
+  // reads nothing (the owner's ruling excludes them, and this repo has twice
+  // shipped a queue gated on a capability every role holds), and the patient
+  // role is denied at the table gate. A silent skip would leave all three
+  // proven by nothing.
+  { file: "sms-inbound-events-rls.test.ts", hard: true },
   { file: "migration-upsert-idempotency.test.ts", hard: true },
   // W13-01a. Lives in apps/web, runs against the same Supabase stack from its
   // own vitest invocation. Hard-required for the same reason as every suite
@@ -85,6 +94,13 @@ const SUITES = [
   // believed, which is the belief under test. A silent skip would leave an
   // unauthenticated webhook that changes appointment status proven by nothing.
   { file: "inbound-reply.db.test.ts", hard: true },
+  // W14-06, added 2026-08-31. The reception queue against real Postgres. Hard-
+  // required because its load-bearing arms are DATABASE facts: a Twilio
+  // redelivery is refused by a unique index, a resolve that would create a
+  // second confirmed overlap loses to the 0061 EXCLUDE constraint and writes
+  // NOTHING, and the sender's number is never stored in clear. A mock has no
+  // index to violate and no constraint to lose to.
+  { file: "inbound-store.db.test.ts", hard: true },
   // LE-followup-contact-mark-never-recorded, added 2026-08-28, and hard-required
   // for the reason this whole card exists. The contact mark ALREADY had a green
   // test - `a recorded contact renders with who and when` in

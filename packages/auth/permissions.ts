@@ -75,6 +75,29 @@ export type Capability =
   // exactly how a therapist came to see the whole tenant's guest queue on
   // deployed production.
   | "guest_requests:read"
+  // W14-06 (owner ruling 2026-08-31): read and RESOLVE the inbound SMS reply
+  // review queue - patient replies to the 24h reminder that the classifier
+  // could not act on. Owner, admin and reception only. The ruling's words were
+  // "reception and admin read and resolve, nobody else"; owner is admin's
+  // superset in this matrix and is granted for the same reason it holds
+  // `guest_requests:read`, so the clinic's own account is not refused a page
+  // its admins can open. The excluded roles are THERAPIST and PATIENT, which is
+  // the substance of the ruling.
+  //
+  // ITS OWN CAPABILITY, AND THE REPO HAS PAID FOR THIS LESSON TWICE. The page
+  // shipped gated on `appointments:read`, which EVERY role holds because every
+  // role works the calendar - the exact defect `guest_requests:read` exists
+  // because of, where a therapist saw the whole tenant's guest queue on
+  // deployed production. A reply queue carries other patients' message text and
+  // their appointment ids; riding a universal capability would have been the
+  // third instance.
+  //
+  // TWO CAPABILITIES, NOT ONE. Reading the queue and CHANGING AN APPOINTMENT
+  // from it are different acts - resolving a reply as "confirmada" moves a real
+  // booking - so a future role that should see the queue without acting on it
+  // can be expressed without a code change.
+  | "sms_replies:read"
+  | "sms_replies:resolve"
   // RB-01 (owner ruling 2026-08-20): read the RECUPERACAO DE UTENTES list - the
   // patients recently in treatment who have no future booking, with their
   // telephone number and email so reception can reach out. Owner, admin and
@@ -145,6 +168,8 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   "statistics:read",
   "guest_requests:read",
   "followup:read",
+  "sms_replies:read",
+  "sms_replies:resolve",
 ];
 
 export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
@@ -194,6 +219,9 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // always; the SCOPE is applied in lib/followup/queries.ts via
     // viewerLocationScope + patientLocationScope.
     "followup:read",
+    // W14-06 (owner 2026-08-31): the inbound SMS reply queue, read and resolve.
+    "sms_replies:read",
+    "sms_replies:resolve",
   ]),
 
   // Therapist (clinician): patient + appointment work, full clinical-record
@@ -270,6 +298,11 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // patient who has not rebooked is front-desk work, and every action on the
     // list opens on the receptionist's own device.
     "followup:read",
+    // W14-06 (owner 2026-08-31): reception WORKS the reply queue. A patient who
+    // texted something the classifier could not read is a person the front desk
+    // rings back, which is the same shape as the guest queue above.
+    "sms_replies:read",
+    "sms_replies:resolve",
   ]),
 };
 

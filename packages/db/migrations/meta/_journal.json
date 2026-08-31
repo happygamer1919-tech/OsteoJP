@@ -477,6 +477,13 @@
       "when": 1787300300000,
       "tag": "0068_appointments_patient_2_index",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1787300400000,
+      "tag": "0069_sms_inbound_events",
+      "breakpoints": true
     }
   ]
 }

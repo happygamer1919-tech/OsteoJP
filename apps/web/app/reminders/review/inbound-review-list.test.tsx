@@ -12,8 +12,12 @@ function item(over: Partial<InboundReviewItem> = {}): InboundReviewItem {
     id: "in-1",
     receivedAt: "2026-07-20T08:00:00Z",
     body: "Pode ser mais tarde?",
+    classification: "review",
+    reviewReason: "ambiguous",
     patientName: "Maria Silva",
     appointmentId: "appt-1",
+    appointmentStartsAt: "2026-07-21T09:00:00Z",
+    appointmentStatus: "scheduled",
     ...over,
   };
 }
@@ -41,6 +45,32 @@ describe("InboundReviewList", () => {
     const html = renderToStaticMarkup(
       <InboundReviewList items={[item({ patientName: null })]} />,
     );
+    expect(html).toContain("Paciente não identificado");
+  });
+});
+
+describe("the matched appointment is shown, because reception has to know which one", () => {
+  it("renders the appointment instant when the reply matched one", () => {
+    const html = renderToStaticMarkup(<InboundReviewList items={[item()]} />);
+    // 21/07/2026 10:00 in Europe/Lisbon (WEST, UTC+1) for the 09:00Z fixture.
+    expect(html).toContain("21/07/2026");
+    expect(html).toContain("scheduled");
+  });
+
+  it("says so plainly when the reply matched NO appointment", () => {
+    // The commonest review case and the one a queue must not render as a blank.
+    // Reception cannot press "confirmada" on nothing, and the row has to say
+    // why rather than showing an empty line where an appointment would be.
+    const html = renderToStaticMarkup(
+      <InboundReviewList
+        items={[item({ appointmentId: null, appointmentStartsAt: null, appointmentStatus: null })]}
+      />,
+    );
+    expect(html).toContain("Sem consulta associada");
+  });
+
+  it("says the patient is unidentified rather than rendering an empty name", () => {
+    const html = renderToStaticMarkup(<InboundReviewList items={[item({ patientName: null })]} />);
     expect(html).toContain("Paciente não identificado");
   });
 });
