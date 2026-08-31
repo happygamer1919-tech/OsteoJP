@@ -65,13 +65,35 @@ d("the reception reply queue against a real database", () => {
     ctx = { tenantId, role: "reception", userId: receptionist };
   });
 
+  // ==================================================================
+  // THE USERS ARE NOT DELETED, AND THE DATABASE IS RIGHT TO REFUSE.
+  // ==================================================================
+  // This teardown originally ended `delete from users where tenant_id = ...`,
+  // copied from redeem.db.test.ts where it is correct. It is NOT correct here,
+  // and the difference is which audit table the code under test writes to.
+  //
+  // redeem.ts writes `patient_audit_log`, whose actor is a PATIENT and which
+  // therefore has no FK to `users`. resolveReviewItem writes `audit_log`, whose
+  // `actor_user_id` DOES reference `users` - ON DELETE NO ACTION, deliberately,
+  // because an audit trail that loses its actor when a staff member leaves is
+  // not an audit trail. So the delete raises 23503 and the whole suite errors.
+  //
+  // THE FIX IS NOT TO REMOVE THE ROWS THAT REFERENCE THEM. That would be the
+  // "disable the guarantee to tidy up" move INC-db-gated-trigger-race was
+  // opened for, and it would delete audit rows this test just asserted exist.
+  // The fixture users are left behind, exactly as redeem.db.test.ts leaves its
+  // tenant row behind for the same reason (0054: "Deleting a tenant that still
+  // holds a patient audit trail is refused, which is the correct answer for an
+  // audit trail"). CI recreates the database every run; a local run accumulates
+  // a handful of tiny rows, which is the honest price of an append-only trail.
+  //
+  // Every read in this file is scoped to a freshly-minted id, so leftovers from
+  // a previous run are invisible to a later one.
   afterAll(async () => {
     if (!sql) return;
-    // sms_inbound_events.tenant_id cascades, so the events go with the tenant.
     await sql.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from patients where tenant_id = ${tenantId}`);
     await sql.execute(raw`delete from locations where tenant_id = ${tenantId}`);
-    await sql.execute(raw`delete from users where tenant_id = ${tenantId}`);
   });
 
   type Row = Record<string, unknown>;
