@@ -138,11 +138,48 @@ export async function pickFirstDayWithSlots(
   // `:not([aria-disabled])` is right and `[aria-disabled='false']` finds nothing.
   const day = page.getByRole("gridcell").and(page.locator(":not([aria-disabled])"));
   await day.first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
-  const dayCount = await day.count();
+  let dayCount = await day.count();
+
+  /**
+   * THE CALENDAR OPENS ON THE CURRENT MONTH, AND AVAILABILITY IS SEEDED ON ONE
+   * WEEKDAY. Those two facts collide on a predictable day.
+   *
+   * seed-e2e.mjs seeds `therapistLocOne` at LOCATION_A for weekday 1 ONLY -
+   * Monday, 09:00-13:00. Run the suite on a Monday afternoon and the only
+   * Monday left in the current month is today, whose slots are already past, so
+   * the month view offers nothing and the helper reported `empty-calendar`. In
+   * CI that is a hard failure by design, and on 2026-08-31 - a Monday - it took
+   * shard 3 red on every PR open at the time, including two whose diffs touched
+   * neither booking nor the portal.
+   *
+   * THE CALENDAR WAS NEVER EMPTY. The next selectable Monday was one month
+   * click away. So the helper now pages forward before concluding anything: an
+   * absence of days in ONE month view is a statement about that view, not about
+   * availability.
+   *
+   * Bounded, and deliberately small. Two clicks reach ~8 weeks ahead, which is
+   * far enough for any weekly-recurring seed and short enough that a genuinely
+   * empty calendar still fails fast instead of walking the calendar forever.
+   */
+  const MAX_MONTHS_FORWARD = 2;
+  for (let m = 0; dayCount === 0 && m < MAX_MONTHS_FORWARD; m++) {
+    const nextMonth = page.getByRole("button", { name: /mês seguinte/i });
+    if ((await nextMonth.count()) === 0) break;
+    await nextMonth.first().click();
+    await day
+      .first()
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .catch(() => {});
+    dayCount = await day.count();
+  }
 
   // ONLY NOW is an absence of selectable days a statement about the calendar.
   if (dayCount === 0) {
-    return { ok: false, why: "empty-calendar", detail: "date picker offered no selectable day" };
+    return {
+      ok: false,
+      why: "empty-calendar",
+      detail: `date picker offered no selectable day in this month or the next ${MAX_MONTHS_FORWARD}`,
+    };
   }
 
   // ROLE `radio`, NOT `button`. SlotPicker renders each slot as
