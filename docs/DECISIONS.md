@@ -3463,3 +3463,64 @@ second place that knows the reminder contract — and it would still have been t
 WRONG MOMENT under the ruling. The event belongs where the appointment becomes
 real. The proof carries a source-level arm asserting `apps/api` still emits
 nothing, so a future booking-time emit goes red rather than shipping.
+
+## 2026-09-01 — WF-18: JP approves the acknowledgements, the reply line, and the email default
+
+Three decisions, relayed verbally to the owner, recorded as one ruling.
+
+### A — the three acknowledgements, approved as written
+
+They shipped `approved: false` on 2026-08-31 and the gate refused every send.
+**Not a word changed between being registered unapproved and being approved.**
+
+That is the argument for writing unapproved copy down rather than leaving it
+unwritten until somebody has time to ask: the thing JP approved was the exact
+string that sends, with its GSM-7 and single-segment properties already proven,
+so "approved" required no follow-up work and no second reading.
+
+### B — the 24h SMS gains the reply instruction
+
+One appended line. The four approved lines are byte-identical and asserted as
+such, so an amendment that also reworded the body would fail.
+
+**The words are not written in the template.** `REMINDER_CONFIRM_INSTRUCTION`
+derives them from `INBOUND_KEYWORDS` — the same config the classifier matches
+against — so what the reminder tells a patient to send can never drift from what
+the platform actually recognises. That module was built for exactly this line in
+July and had no consumer until now.
+
+**IT SPENDS THE FEE VARIANT'S SEGMENT MARGIN, AND THAT IS THE COST OF THE
+APPROVAL RATHER THAN A DEFECT.** The 24h body goes from 99 to 148 characters,
+leaving 12 to the 160-character limit. The fee line is 53. It no longer fits,
+and `renderSms` **throws** rather than splitting — the loud failure
+`fee-notice.ts` always said it wanted, now load-bearing instead of theoretical.
+Nothing is at risk today: the flag is unarmed, the entry is `approved: false`,
+and counsel has not signed. But variant B now needs either a much shorter line
+or acceptance of a two-segment message, and that is a JP-and-counsel choice.
+**Nothing approved was trimmed to make room** — the margin was spent by an
+approval, not by a cut.
+
+### C — the 48h email default is reversed
+
+Migration 0070. It reverses 0019's `DEFAULT false`, which was JP's own decision
+and which made the 48h reminder reach **nobody** for the entire life of the
+pipeline: the offset routes to email only, and no patient had ever switched the
+flag on.
+
+**THE BACKFILL CANNOT PRESERVE AN OPT-OUT AND DOES NOT PRETEND TO.** `false` is
+the stored value for both "opted out" and "never chose"; the portal PATCH writes
+no audit row; SR-08 forbids building a set from the absence of a record. So a
+patient who had deliberately switched email off was re-enabled, and no predicate
+could have spared them. JP ruled knowing that. The portal toggle is the
+mitigation that actually works, and the provenance gap is carded rather than
+called closed — anyone who switches it off now leaves the column in the same
+ambiguous state.
+
+**Two statements, and the order matters.** The default governs patients created
+after the apply; the UPDATE governs the ones that already exist. Doing only the
+first would have looked successful while leaving the 48h email unreachable for
+exactly the people the clinic has.
+
+**Applied to production and read back:** 1,930 rows changed (every patient with
+a registered email), 6,474 left untouched (no email), 0 patients with an email
+left off, and the SMS default untouched.
