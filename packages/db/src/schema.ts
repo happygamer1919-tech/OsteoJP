@@ -764,7 +764,17 @@ export const patients = pgTable(
     // Stream A — patient merge: the losing record points at the survivor.
     mergedIntoId: uuid("merged_into_id"),
     reminderSmsEnabled: boolean("reminder_sms_enabled").notNull().default(true),
-    reminderEmailEnabled: boolean("reminder_email_enabled").notNull().default(false),
+    /**
+     * 0070 / WF-18 C (JP, 2026-09-01): DEFAULT TRUE, reversing 0019's false.
+     *
+     * The old default made the 48h email reminder unreachable - it routes to
+     * email only, and no patient had ever switched the flag on. A `false` here
+     * still cannot distinguish "opted out" from "never chose" (the portal
+     * PATCH writes no audit row), which is why 0070's backfill re-enabled
+     * every patient with a registered email rather than guessing. The portal
+     * toggle is the opt-out.
+     */
+    reminderEmailEnabled: boolean("reminder_email_enabled").notNull().default(true),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

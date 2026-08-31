@@ -6,6 +6,8 @@
  * are named so a reader can find them without reading the file.
  */
 import { describe, it, expect } from "vitest";
+
+import { REMINDER_CONFIRM_INSTRUCTION } from "./reminder-copy";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -59,12 +61,17 @@ describe("the double gate — the three combinations", () => {
     ).toBe(false);
   });
 
-  it("BOTH -> and only both -> the fee line renders", () => {
+  it("BOTH -> and only both -> the fee line is what would be sent", () => {
     expect(
       shouldRenderFeeNotice({ flagEnabled: true, patientHasAcceptedTerms: true }),
     ).toBe(true);
 
-    const message = renderSms("24h", "pt", CTX, true);
+    // ASSERTED ON THE COMPOSED BODY, NOT ON renderSms. Since WF-18 B the
+    // fee-bearing 24h message exceeds one segment and renderSms throws by
+    // design (see "segment budget"). The gate's ANSWER is what this test is
+    // about, and the body that answer selects is still the right thing to
+    // check - it is the one the registry holds and the one JP would approve.
+    const message = `${SMS["24h"].pt}\n${FEE_NOTICE_SMS.pt}`;
     expect(message).toContain("50%");
     expect(message).toContain(FEE_NOTICE_ACCEPTANCE_CLAUSE);
   });
@@ -161,10 +168,16 @@ describe("the wording JP ruled", () => {
     expect(FEE_NOTICE_SMS.pt).toContain("nos termos aceites na marcacao");
   });
 
-  it("renders that clause verbatim in the message a patient would receive", () => {
-    // Asserted on the RENDERED output, not just the constant: a fill step that
-    // mangled the clause would pass a constant-only check.
-    expect(renderSms("24h", "pt", CTX, true)).toContain("nos termos aceites na marcacao");
+  it("carries that clause into the body the registry composes", () => {
+    // WF-18 B MOVED THIS ASSERTION OFF renderSms, and the move is the finding
+    // rather than a workaround: with the reply instruction appended, the
+    // fee-bearing 24h body no longer FITS ONE SEGMENT and renderSms now throws
+    // (see "segment budget" below). The clause is therefore asserted on the
+    // composed body - which is exactly what notification-registry.ts registers
+    // and what JP and counsel would be approving.
+    expect(`${SMS["24h"].pt}\n${FEE_NOTICE_SMS.pt}`).toContain(
+      "nos termos aceites na marcacao",
+    );
   });
 
   it("is accent-free, because an accent forces UCS-2 and halves the limit", () => {
@@ -176,38 +189,76 @@ describe("the wording JP ruled", () => {
 /**
  * THE SEGMENT BUDGET. Measured, not assumed.
  *
- * `assertSmsCompliant` throws above 160, so an overlong fee line fails the render
- * rather than costing a silent second segment. These numbers are the ones
- * reported to JP; the margin is 7 characters and this suite is what stops it
- * being spent without anyone noticing.
+ * ==========================================================================
+ * WF-18 B SPENT THE MARGIN, AND THE FEE VARIANT NO LONGER FITS ONE SEGMENT.
+ * ==========================================================================
+ * The 7 characters this suite existed to protect are gone, and they were not
+ * lost silently - they were spent by an APPROVED amendment. JP approved the
+ * reply instruction on 2026-09-01; it adds 48 characters to the 24h body, which
+ * had 61 of headroom, leaving 13. The fee line is 53. It does not fit.
+ *
+ * WHAT ACTUALLY HAPPENS NOW, and it is the behaviour this file always said it
+ * wanted: `renderSms("24h", …, feeNotice = true)` THROWS. `assertSmsCompliant`
+ * runs after the append precisely so an overlong body fails loudly instead of
+ * costing a silent second segment. That guarantee is intact; it is now load
+ * bearing rather than theoretical.
+ *
+ * NOTHING IS AT RISK TODAY. The fee line is gated three ways over: the flag is
+ * unarmed, the template is `approved: false`, and counsel has not signed the
+ * fee rule. The throw is only reachable by arming a flag that nobody may arm.
+ *
+ * WHAT IT COSTS WHEN COUNSEL DOES SIGN, stated so it is a decision and not a
+ * surprise: variant B needs either a shorter fee line (13 characters, which no
+ * usable wording fits) or acceptance of a two-segment 24h SMS. That is a JP and
+ * counsel choice, carded, not one this lane may take by trimming approved copy.
  */
 describe("segment budget", () => {
   const base = renderSms("24h", "pt", CTX);
-  const withFee = renderSms("24h", "pt", CTX, true);
+  /** The body the REGISTRY composes. renderSms can no longer produce it. */
+  const composedFee = `${SMS["24h"].pt}\n${FEE_NOTICE_SMS.pt}`;
 
-  it("the shipped 24h body is 99 chars, leaving 61 to the limit", () => {
-    expect(base.length).toBe(99);
-    expect(SMS_SEGMENT_LIMIT - base.length).toBe(61);
+  it("the amended 24h body is 148 chars, leaving 12 to the limit", () => {
+    // Was 99 chars with 61 of headroom before WF-18 B. The reply instruction
+    // is 48 characters plus its joining newline = 49, and 99 + 49 = 148,
+    // leaving 12. The arithmetic is spelled out only so a reader can follow
+    // it; the assertions are what actually hold.
+    expect(REMINDER_CONFIRM_INSTRUCTION.pt.length).toBe(48);
+    expect(base.length).toBe(148);
+    expect(SMS_SEGMENT_LIMIT - base.length).toBe(12);
+    // 12 < 53: the fee line cannot fit, and THAT is the finding.
+    expect(SMS_SEGMENT_LIMIT - base.length).toBeLessThan(FEE_NOTICE_SMS.pt.length);
   });
 
-  it("with the fee line it is 153 chars — ONE segment, 7 to spare", () => {
-    expect(withFee.length).toBe(153);
-    expect(withFee.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
-    expect(SMS_SEGMENT_LIMIT - withFee.length).toBe(7);
-    expect(isGsm7(withFee)).toBe(true);
+  it("the amended body is still ONE segment and still GSM-7", () => {
+    expect(base.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
+    expect(isGsm7(base)).toBe(true);
+  });
+
+  it("THE FEE VARIANT NO LONGER FITS, and the render THROWS rather than splitting", () => {
+    // The whole point of the ordering: an overlong body fails loudly. This is
+    // the assertion that turns "we think it would throw" into "it does".
+    expect(() => renderSms("24h", "pt", CTX, true)).toThrow(
+      /exceeds 160-char single segment/,
+    );
+    expect(composedFee.length).toBeGreaterThan(SMS_SEGMENT_LIMIT);
+  });
+
+  it("the fee line is unchanged — WF-18 B amended the reminder, not the fee copy", () => {
+    // The margin was spent by the OTHER body. Nothing approved by counsel or
+    // pending their signature was trimmed to make room, which is the rule
+    // LOOP 5 section 6 states.
+    expect(FEE_NOTICE_SMS.pt).toBe(`Falta sem aviso: 50%, ${FEE_NOTICE_ACCEPTANCE_CLAUSE}.`);
+    expect(FEE_NOTICE_SMS.pt.length).toBe(53);
   });
 
   /**
-   * THE MEASUREMENT THAT MADE THIS A REPORTED FINDING rather than a quiet
-   * choice. The natural full-sentence phrasing of counsel's revision costs a
-   * second segment. LOOP 5 section 6 says to report the count rather than trim
-   * approved copy — nothing approved was trimmed, the ten bodies are untouched,
-   * and this pins the number so the report cannot drift from the code.
+   * KEPT, because the number is quoted in the approval packet and in the report
+   * to JP. It was already a second segment before the amendment and it is a
+   * larger one now; the reason it is recorded is unchanged.
    */
-  it("the natural full-sentence phrasing would cost a SECOND segment", () => {
+  it("the natural full-sentence phrasing costs a SECOND segment too", () => {
     const naturalPhrasing = `Falta sem aviso 24h: cobranca de 50%, ${FEE_NOTICE_ACCEPTANCE_CLAUSE}.`;
     expect(naturalPhrasing.length).toBe(69);
-    expect(base.length + 1 + naturalPhrasing.length).toBe(169);
     expect(base.length + 1 + naturalPhrasing.length).toBeGreaterThan(SMS_SEGMENT_LIMIT);
   });
 
@@ -228,17 +279,22 @@ describe("the ten approved bodies are untouched", () => {
    * that the source constant is byte-identical whichever way the gate answers.
    */
   it("the 24h body constant is not re-authored, branched on, or mutated", () => {
+    // The FOUR APPROVED LINES are byte-identical to 2026-08-03. The fifth is
+    // WF-18 B, approved 2026-09-01, and it is asserted as a separate line so
+    // an amendment that also reworded the original four would fail here.
     expect(SMS["24h"].pt).toBe(
-      "OsteoJP - Lembrete\nConsulta: amanha {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}",
+      "OsteoJP - Lembrete\nConsulta: amanha {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}\n" +
+        "Responda SIM para confirmar ou NAO para cancelar",
     );
-    expect(renderSms("24h", "pt", CTX, true).startsWith(renderSms("24h", "pt", CTX))).toBe(
-      true,
-    );
+    // The strict-prefix property still holds on the COMPOSED body; renderSms
+    // can no longer produce the fee variant at all (see the segment budget).
+    expect(`${SMS["24h"].pt}\n${FEE_NOTICE_SMS.pt}`.startsWith(SMS["24h"].pt)).toBe(true);
   });
 
   it("the fee line is APPENDED, so the approved text is a strict prefix", () => {
-    const base = renderSms("24h", "pt", CTX);
-    const withFee = renderSms("24h", "pt", CTX, true);
+    // On the COMPOSED body: renderSms refuses to produce this one now.
+    const base = SMS["24h"].pt;
+    const withFee = `${base}\n${FEE_NOTICE_SMS.pt}`;
     expect(withFee.slice(0, base.length)).toBe(base);
     expect(withFee.slice(base.length)).toBe(`\n${FEE_NOTICE_SMS.pt}`);
   });
@@ -263,7 +319,7 @@ describe("registry gating", () => {
     expect(entry!.approvedAt).toBeNull();
   });
 
-  it("the TEN APPROVED bodies are untouched by this entry — it changes nothing else", () => {
+  it("the APPROVED bodies are untouched by this entry — it changes nothing else", () => {
     // W14-04 narrowed this from "every other body" to "the approved ten". The
     // old spelling asserted that the fee notice was the registry's ONLY
     // unapproved entry, which is a claim about the registry as a whole and not
@@ -272,8 +328,13 @@ describe("registry gating", () => {
     // opinion about them. The property this file owns is that adding the fee
     // line did not disturb the approved set; notification-registry.test.ts owns
     // the pin on which ids are unapproved.
+    // The count moved 10 -> 13 on 2026-09-01 when JP approved the three reply
+    // acknowledgements (WF-18). It is asserted as a NUMBER rather than left
+    // loose so that this file still notices if the fee line is ever swept into
+    // an approval sitting alongside other copy - which is the only thing this
+    // assertion has ever been about.
     const approved = REMINDER_TEMPLATES.filter((t) => t.approved);
-    expect(approved).toHaveLength(10);
+    expect(approved).toHaveLength(13);
     expect(approved.some((t) => t.id === FEE_NOTICE_TEMPLATE_ID)).toBe(false);
   });
 
