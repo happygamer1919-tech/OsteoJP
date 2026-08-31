@@ -20,7 +20,7 @@ import {
   type DbTx,
 } from "@osteojp/db";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
-import { requireRequestContext, runScoped } from "@/lib/auth/context";
+import { getRequestContext, runScoped } from "@/lib/auth/context";
 import { clientIp } from "./actor";
 import { batchSchedule, type BatchScheduleInput, type BatchScheduleResult, PackBatchRefused } from "./batch";
 import { writeAppointmentStatusChangedEvent } from "./analytics";
@@ -99,12 +99,22 @@ type Denied = Extract<ActionResult<never>, { ok: false }>;
 async function authorize(
   capability: Capability,
 ): Promise<Authorized | Denied> {
-  let actor: RequestContext;
-  try {
-    actor = await requireRequestContext();
-  } catch {
-    return { ok: false, error: "unauthenticated" };
-  }
+  /**
+   * OSTEOJP-WEB-8: `getRequestContext()` AND NOT `requireRequestContext()`, and
+   * the difference is deliberate rather than incidental.
+   *
+   * This is a SERVER ACTION invoked from a client component, and its contract
+   * is a result object its caller renders - "unauthenticated" becomes a
+   * session-expired message beside the form, with whatever the user typed still
+   * on screen. That is better than a navigation, and it is the behaviour this
+   * function already had.
+   *
+   * The guard now NAVIGATES, so keeping the old `try/catch` would have meant a
+   * `catch` swallowing NEXT_REDIRECT to produce the same result by accident.
+   * Asking the non-navigating helper says what this code means.
+   */
+  const actor = await getRequestContext();
+  if (!actor) return { ok: false, error: "unauthenticated" };
   try {
     assertCan(actor.role, capability);
   } catch (e) {
