@@ -29,7 +29,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@/lib/reminders/inbound-reply", () => ({ applyInboundReply: h.applyInboundReply }));
 vi.mock("@/lib/reminders/clients", () => ({ sendSms: h.sendSms }));
-vi.mock("@/lib/reminders/inbound-store", () => ({ recordForReview: h.recordForReview }));
+vi.mock("@/lib/reminders/inbound-store", () => ({ recordInboundReply: h.recordForReview }));
 
 import { computeTwilioSignature } from "@/lib/reminders/inbound-signature";
 import { POST } from "./route";
@@ -75,7 +75,11 @@ beforeEach(() => {
   h.applyInboundReply.mockReset();
   h.sendSms.mockClear();
   h.recordForReview.mockClear();
-  h.applyInboundReply.mockResolvedValue({ outcome: "confirmed", appointmentId: "a1" });
+  h.applyInboundReply.mockResolvedValue({
+    outcome: "confirmed",
+    appointmentId: "a1",
+    patientId: "p1",
+  });
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
   arm();
@@ -193,7 +197,11 @@ describe("what it does once the signature passes", () => {
   });
 
   it("picks the acknowledgement that matches the outcome", async () => {
-    h.applyInboundReply.mockResolvedValue({ outcome: "cancelled", appointmentId: "a1" });
+    h.applyInboundReply.mockResolvedValue({
+      outcome: "cancelled",
+      appointmentId: "a1",
+      patientId: "p1",
+    });
     await POST(twilioPost({ ...REPLY, Body: "Nao" }) as never);
     expect(h.sendSms).toHaveBeenCalledWith(
       expect.objectContaining({ templateId: "reply_ack.cancelled.sms" }),
@@ -204,6 +212,8 @@ describe("what it does once the signature passes", () => {
       outcome: "review",
       reason: "ambiguous",
       intent: "review",
+      patientId: null,
+      appointmentId: null,
     });
     await POST(twilioPost({ ...REPLY, Body: "talvez" }) as never);
     expect(h.sendSms).toHaveBeenCalledWith(
@@ -214,22 +224,69 @@ describe("what it does once the signature passes", () => {
   it("NEVER answers a STOP with an SMS", async () => {
     // Replying to an opt-out is the one message that contradicts the
     // instruction it is answering.
-    h.applyInboundReply.mockResolvedValue({ outcome: "opt_out", patientId: "p1" });
+    h.applyInboundReply.mockResolvedValue({
+      outcome: "opt_out",
+      patientId: "p1",
+      appointmentId: null,
+    });
     const res = await POST(twilioPost({ ...REPLY, Body: "STOP" }) as never);
     expect(res.status).toBe(200);
     expect(h.sendSms).not.toHaveBeenCalled();
   });
 
-  it("hands a review outcome to the reception queue seam", async () => {
+  it("files a REVIEW outcome unresolved, so it enters reception's queue", async () => {
     h.applyInboundReply.mockResolvedValue({
       outcome: "review",
       reason: "no_patient_match",
       intent: "review",
+      patientId: null,
+      appointmentId: null,
     });
-    await POST(twilioPost(REPLY) as never);
+    await POST(twilioPost({ ...REPLY, MessageSid: "SM-fixture-review" }) as never);
     expect(h.recordForReview).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: TENANT, reason: "no_patient_match" }),
+      expect.objectContaining({
+        tenantId: TENANT,
+        classification: "review",
+        reviewReason: "no_patient_match",
+        providerMessageSid: "SM-fixture-review",
+        resolved: false,
+      }),
     );
+  });
+
+  it("files an ACTED-ON reply already resolved, so it never enters the queue", async () => {
+    // W14-06: every reply is stored, because "what did the patient actually
+    // write" is a question about a confirmed reply too - but only the ones
+    // needing a human are queued.
+    h.applyInboundReply.mockResolvedValue({
+      outcome: "confirmed",
+      appointmentId: "a1",
+      patientId: "p1",
+    });
+    await POST(twilioPost({ ...REPLY, MessageSid: "SM-fixture-confirmed" }) as never);
+    expect(h.recordForReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        classification: "confirmada",
+        reviewReason: null,
+        patientId: "p1",
+        appointmentId: "a1",
+        resolved: true,
+      }),
+    );
+  });
+
+  it("a failure to FILE the reply never turns a handled reply into a retry", async () => {
+    // The appointment has already moved and the audit row is already written.
+    // A non-2xx here would make Twilio redeliver and take the same decision
+    // again, so the filing is best-effort and the reply is still acknowledged.
+    h.recordForReview.mockRejectedValueOnce(new Error("store down"));
+    h.applyInboundReply.mockResolvedValue({
+      outcome: "confirmed",
+      appointmentId: "a1",
+      patientId: "p1",
+    });
+    const res = await POST(twilioPost(REPLY) as never);
+    expect(res.status).toBe(200);
   });
 
   it("200s even when the reply changed nothing — a handled reply is not a failure", async () => {
@@ -239,6 +296,8 @@ describe("what it does once the signature passes", () => {
       outcome: "review",
       reason: "outside_window",
       intent: "confirmada",
+      patientId: "p1",
+      appointmentId: "a1",
     });
     const res = await POST(twilioPost(REPLY) as never);
     expect(res.status).toBe(200);
@@ -249,6 +308,8 @@ describe("what it does once the signature passes", () => {
       outcome: "review",
       reason: "no_patient_match",
       intent: "review",
+      patientId: null,
+      appointmentId: null,
     });
     const res = await POST(twilioPost({ To: "+351210000000" }) as never);
     expect(res.status).toBe(200);

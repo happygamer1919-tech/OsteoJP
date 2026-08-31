@@ -1359,6 +1359,66 @@ export const aiIngestionRequests = pgTable(
 /* ================================================================== */
 
 // Append-only. No updated_at, no deletes — RLS will allow INSERT + SELECT only.
+/* ================================================================== */
+/* Inbound SMS replies (0069, W14-06)                                 */
+/* ================================================================== */
+
+/**
+ * The reception working queue for patient replies to appointment reminders.
+ *
+ * TWO RECORDS EXIST FOR ONE REPLY AND THEY ARE NOT REDUNDANT. `audit_log`
+ * receives an `appointment.patient_sms_reply` row for EVERY reply, carrying ids,
+ * intent, outcome and `source: patient-sms-reply` - it is the permanent trail
+ * and it is append-only. THIS table is the working copy: it is the only place
+ * the message BODY lives (audit metadata is contractually ids-and-instants only,
+ * CLAUDE.md rule 7) and the only place a resolution can be recorded, because an
+ * append-only table cannot be marked done.
+ *
+ * The sender's number is stored HASHED. See the migration header for why a
+ * dialable number is not needed here and why an unmatched one must not be kept.
+ */
+export const smsInboundEvents = pgTable(
+  "sms_inbound_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    /** Twilio's MessageSid — the reply's reference, and the dedupe key. */
+    providerMessageSid: text("provider_message_sid").notNull(),
+    /** sha256 hex of the E.164 sender. Never the number. */
+    fromPhoneHash: text("from_phone_hash").notNull(),
+    /** What the patient wrote. The one reason this table exists. */
+    body: text("body").notNull(),
+    /** The classifier's verdict. CHECK-pinned in 0069. */
+    classification: text("classification").notNull(),
+    /** Why it needs a human; null when the reply was acted on automatically. */
+    reviewReason: text("review_reason"),
+    /**
+     * What the reply matched, when it matched anything. NO FK, deliberately —
+     * the ids are DATA about the match at the moment it arrived, and a cascade
+     * would delete the record of a reply along with the appointment.
+     */
+    patientId: uuid("patient_id"),
+    appointmentId: uuid("appointment_id"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    /** NULL = still in the queue. This column IS the queue. */
+    resolution: text("resolution"),
+    resolvedBy: uuid("resolved_by").references(() => users.id, { onDelete: "set null" }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("sms_inbound_events_queue_idx")
+      .on(t.tenantId, t.receivedAt)
+      .where(sql`${t.resolution} is null`),
+    uniqueIndex("sms_inbound_events_provider_sid_uq").on(t.tenantId, t.providerMessageSid),
+    index("sms_inbound_events_appointment_idx")
+      .on(t.tenantId, t.appointmentId)
+      .where(sql`${t.appointmentId} is not null`),
+  ],
+);
+
 export const auditLog = pgTable(
   "audit_log",
   {

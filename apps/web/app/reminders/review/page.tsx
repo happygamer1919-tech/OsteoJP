@@ -9,6 +9,7 @@ import { remindersInboundEnabled } from "@/lib/reminders/inbound-config";
 import {
   listReviewQueue,
   resolveReviewItem,
+  type ResolveOutcome,
   type ReviewResolution,
 } from "@/lib/reminders/inbound-store";
 
@@ -17,22 +18,31 @@ import { InboundReviewList } from "./inbound-review-list";
 export const metadata = { title: s["remindersReview.title"] };
 
 /**
- * Reception review list for inbound-SMS replies flagged "resposta por rever"
- * (R11 unmatched tier). Gated behind REMINDERS_INBOUND (OFF by default): the
- * inbound store + the review flag require a migration that is DEFERRED, so with
- * the flag OFF this shows a disabled state, and even with it ON the store is an
- * empty stub. The UI + the resolve actions are fully built for when the
- * migration lands.
+ * Reception review list for inbound patient SMS replies (W14-06).
+ *
+ * ==========================================================================
+ * THE PERMISSION CHANGED AND IT IS THE POINT OF THIS FILE'S REVIEW.
+ * ==========================================================================
+ * It was `appointments:read`, which EVERY role holds because every role works
+ * the calendar - so the check passed for a therapist and gated nothing. That is
+ * not a hypothetical failure mode: `guest_requests:read` exists in this repo
+ * because exactly that mistake showed a therapist the whole tenant's guest
+ * queue on deployed production. This page lists other patients' message text,
+ * so it gets its own capability, `sms_replies:read`, and the resolve action
+ * gets `sms_replies:resolve`.
+ *
+ * THE CAPABILITY IS THE FIRST GATE, NOT THE ONLY ONE. 0069's policies carry the
+ * same role set, so a future page that forgets the check reads an empty queue
+ * rather than someone else's correspondence.
+ *
+ * Still gated behind REMINDERS_INBOUND, which is OFF: the webhook that fills
+ * this table is not armed and no Twilio number points at it yet.
  */
 export default async function InboundReviewPage() {
-  // OSTEOJP-WEB-8: the guard redirects on its own now, so the wrapper is
-  // gone. It was not merely redundant - a bare `catch {}` here swallowed
-  // NEXT_REDIRECT AND would have turned a real Auth outage into a silent
-  // bounce to /login, reporting our failure as this person's logout.
   const actor = await requireRequestContext();
 
   try {
-    assertCan(actor.role, "appointments:read");
+    assertCan(actor.role, "sms_replies:read");
   } catch (e) {
     if (e instanceof ForbiddenError) {
       return (
@@ -66,14 +76,20 @@ export default async function InboundReviewPage() {
     );
   }
 
-  const items = await listReviewQueue(actor.tenantId);
+  const items = await listReviewQueue(actor);
 
-  async function onResolve(itemId: string, resolution: ReviewResolution) {
+  async function onResolve(
+    itemId: string,
+    resolution: ReviewResolution,
+  ): Promise<ResolveOutcome> {
     "use server";
-    // Re-verify the actor server-side; never trust a client-supplied tenant.
+    // Re-verify server-side. The context is re-derived from the session and
+    // never taken from the client, so a caller cannot supply a tenant or a
+    // role — and the RESOLVE capability is checked separately from the read,
+    // because moving a real appointment is a different act from seeing a list.
     const a = await requireRequestContext();
-    assertCan(a.role, "appointments:write");
-    await resolveReviewItem({ tenantId: a.tenantId, itemId, resolution });
+    assertCan(a.role, "sms_replies:resolve");
+    return resolveReviewItem({ ctx: a, itemId, resolution });
   }
 
   return (

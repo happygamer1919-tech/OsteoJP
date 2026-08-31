@@ -1547,6 +1547,9 @@ export async function confirmAppointmentRequest(
     practitionerIds: string[];
     startsAt: Date;
   } | null = null;
+  // W14-07. Captured inside the tx, enqueued AFTER commit (a network call must
+  // never run inside an open Postgres transaction).
+  let reminderTargets: ReminderEnqueueTarget[] = [];
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -1650,6 +1653,7 @@ export async function confirmAppointmentRequest(
           ),
           startsAt: pedido.startsAt,
         };
+        reminderTargets = [{ appointmentId: pedido.id, startsAt: pedido.startsAt }];
         return { ok: true, data: { id: pedido.id } };
       },
     );
@@ -1657,6 +1661,46 @@ export async function confirmAppointmentRequest(
       await afterCommit("confirmRequest", async () => {
         revalidatePath(AGENDA_PATH);
         revalidatePath("/notificacoes");
+        // ================================================================== //
+        // THE PORTAL PATIENT'S REMINDERS AND CONFIRMATION START HERE, AND
+        // NOWHERE ELSE. Owner ruling 2026-08-31.
+        // ================================================================== //
+        // TWO DEFECTS CLOSE ON THIS ONE LINE, and they are worth separating.
+        //
+        // 1. THE CONFIRMATION HAD NO CORRECT MOMENT. Decision A scopes it to
+        //    portal-originated appointments, and JP ruled 2026-08-06 that every
+        //    portal booking is a PEDIDO the clinic has not accepted. So sending
+        //    it at request time would say "A sua marcacao esta confirmada"
+        //    about a request nobody had looked at. The owner ruled the moment
+        //    is ACCEPTANCE, which is this function, and by the time this runs
+        //    the status is `confirmed` - so dispatchConfirmation's two gates
+        //    (origin = patient_portal, and not an unaccepted pedido) both pass
+        //    and the approved body is TRUE when it arrives.
+        //
+        // 2. A PORTAL BOOKING RECEIVED NO REMINDERS AT ALL, EVER. This is the
+        //    wider one and it was not about copy. apps/api - the portal API -
+        //    emits no background event of any kind: it has no Inngest client
+        //    and store.createBooking sends nothing. The three staff paths in
+        //    this file were the ONLY emitters in the repo, so a patient who
+        //    booked through the portal was never scheduled a 48h email or a
+        //    24h SMS even after reception accepted them. This call fixes that
+        //    with no new dependency and no new environment variable: one
+        //    `appointment/scheduled` event fans out the confirmation AND both
+        //    reminder offsets, exactly as a staff-created booking does.
+        //
+        // WHY HERE AND NOT IN apps/api. Emitting at booking time would have
+        // needed the Inngest client, an event key in the portal project's
+        // environment, and a second place that knows the reminder contract -
+        // and it would still have been the WRONG MOMENT under the ruling above.
+        // The event belongs where the appointment becomes real.
+        //
+        // `confirmationEligible` is true for this single target by construction
+        // (confirmationEligibleIndex over a one-element list), so the
+        // confirmation fires exactly once. Best-effort and post-commit, the
+        // same contract every other emit on this path already has: the pedido
+        // really is accepted, so a failed enqueue must never be reported as a
+        // failed acceptance.
+        await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
         // ITEM 20 / PG4. Until 0061 the staff app emitted NOTHING, so a
         // therapist accepting a pedido made it vanish from reception's queue
         // (listPendingRequests filters `status = 'scheduled'`) with no record

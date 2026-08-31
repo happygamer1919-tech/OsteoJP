@@ -171,7 +171,9 @@ d("applyInboundReply against a real database", () => {
     const apptId = await seedAppointment({ patientId, hoursFromNow: 20 });
 
     const out = await reply("Sim", "+351" + n);
-    expect(out).toEqual({ outcome: "confirmed", appointmentId: apptId });
+    // `patientId` rides on every outcome since W14-06: the route files the queue
+    // row from it rather than asking the database the same questions again.
+    expect(out).toEqual({ outcome: "confirmed", appointmentId: apptId, patientId });
 
     const row = await apptRow(apptId);
     expect(row.status).toBe("confirmed");
@@ -189,7 +191,7 @@ d("applyInboundReply against a real database", () => {
 
     // With the accent, as a Portuguese handset sends it.
     const out = await reply("Não", "+351" + n);
-    expect(out).toEqual({ outcome: "cancelled", appointmentId: apptId });
+    expect(out).toEqual({ outcome: "cancelled", appointmentId: apptId, patientId });
     expect((await apptRow(apptId)).status).toBe("cancelled");
   });
 
@@ -251,6 +253,7 @@ d("applyInboundReply against a real database", () => {
     expect(await reply("sim", "+351" + inN)).toEqual({
       outcome: "confirmed",
       appointmentId: inside,
+      patientId: inPatient,
     });
 
     // 25h out: outside. An off-by-one in REPLY_WINDOW_MINUTES cannot pass both.
@@ -382,7 +385,7 @@ d("applyInboundReply against a real database", () => {
     const apptId = await seedAppointment({ patientId, hoursFromNow: 20 });
 
     const out = await reply("STOP", "+351" + n);
-    expect(out).toEqual({ outcome: "opt_out", patientId });
+    expect(out).toEqual({ outcome: "opt_out", patientId, appointmentId: null });
 
     const p = await rows(raw`select reminder_sms_enabled from patients where id = ${patientId}`);
     expect(p[0]!.reminder_sms_enabled).toBe(false);
@@ -410,6 +413,7 @@ d("applyInboundReply against a real database", () => {
       expect(await reply("sim", "+351" + n), `stored as ${JSON.stringify(stored)}`).toEqual({
         outcome: "confirmed",
         appointmentId: apptId,
+        patientId,
       });
     }
   });

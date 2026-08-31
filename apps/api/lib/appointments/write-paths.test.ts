@@ -213,6 +213,35 @@ const ALLOWED: Record<
       "is backstopped by the 0061 appointments_no_double_confirmed EXCLUDE " +
       "constraint, and the row is SELECT ... FOR UPDATE'd for the transaction.",
   },
+  "apps/web/lib/reminders/inbound-store.ts": {
+    // The RECEPTION half of the inbound reply path, and exempt for the same
+    // reason its automatic sibling is: neither of its two writes OCCUPIES a
+    // slot. Resolving a reply as "confirmada" sets status + the 0024 axis on an
+    // appointment that already holds its slot; "cancelada" only releases one.
+    //
+    // IT DIFFERS FROM inbound-reply.ts IN WHO IS DECIDING, not in what is
+    // written. There a patient's SMS moved the appointment inside a time
+    // window; here a receptionist read that message and decided, so the window
+    // is deliberately absent (a person IS the authority the window defers to)
+    // and `confirmation_channel` records `sms_review` rather than `sms`.
+    //
+    // SAME DATABASE BACKSTOP. The confirm can lose to
+    // `appointments_no_double_confirmed` (0061); the transaction rolls back,
+    // the resolution is NOT recorded either, and the item stays in the queue.
+    // lib/reminders/inbound-store.db.test.ts proves that against real Postgres.
+    //
+    // The row is SELECT ... FOR UPDATE'd and the resolve is confined to rows
+    // with `resolution IS NULL`, so two receptionists pressing at once
+    // serialise and the second is a no-op rather than a second move.
+    needsLock: false,
+    locked: false,
+    reason:
+      "Reception resolving an inbound SMS reply. Confirm sets status/confirmation " +
+      "axis on an appointment that already holds its slot; cancel only releases " +
+      "one. Neither occupies a slot. Backstopped by the 0061 " +
+      "appointments_no_double_confirmed EXCLUDE constraint; the queue row is " +
+      "SELECT ... FOR UPDATE'd inside the same transaction.",
+  },
   "apps/web/lib/scheduling/batch.ts": {
     needsLock: true,
     locked: true,
@@ -299,6 +328,8 @@ describe("appointments write paths (PRIMARY guard for 2.9)", () => {
       .map(([f]) => f)
       .sort();
 
+    // The list is SORTED, so it is spelled sorted. Grouping the two inbound
+    // entries by topic instead would read better and fail on ordering alone.
     expect(exempt).toEqual([
       // Inbound patient SMS reply: confirm sets status + the 0024 axis on an
       // appointment that already holds its slot; cancel only releases one.
@@ -306,6 +337,9 @@ describe("appointments write paths (PRIMARY guard for 2.9)", () => {
       // 0061 EXCLUDE constraint, which is proven against real Postgres rather
       // than assumed. Added deliberately, W14-04.
       "apps/web/lib/reminders/inbound-reply.ts",
+      // Reception resolving that same reply by hand. Same slot reasoning; the
+      // difference is who decided. Added deliberately, W14-06.
+      "apps/web/lib/reminders/inbound-store.ts",
       // Token redemption: confirm touches only the 0024 confirmation axis,
       // cancel only releases a slot. Neither occupies one, so the slot lock has
       // nothing to protect here. Added deliberately, W13-01.

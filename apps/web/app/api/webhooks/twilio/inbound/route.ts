@@ -6,7 +6,7 @@ import { sendSms } from "@/lib/reminders/clients";
 import { remindersInboundEnabled } from "@/lib/reminders/inbound-config";
 import { applyInboundReply } from "@/lib/reminders/inbound-reply";
 import { signedRequestUrl, verifyTwilioSignature } from "@/lib/reminders/inbound-signature";
-import { recordForReview } from "@/lib/reminders/inbound-store";
+import { recordInboundReply } from "@/lib/reminders/inbound-store";
 import {
   REPLY_ACK_CANCELLED,
   REPLY_ACK_CONFIRMED,
@@ -45,6 +45,17 @@ import { DEFAULT_LOCALE } from "@osteojp/i18n";
 
 export const runtime = "nodejs"; // node:crypto for the HMAC
 export const dynamic = "force-dynamic"; // signed, per-request; never cached
+
+/**
+ * The classifier verdict as 0069's CHECK spells it. The route does not
+ * re-derive it from the body: the outcome already IS the verdict, and a second
+ * derivation is a second thing that can disagree with the first.
+ */
+function classificationOf(result: { outcome: string }): string {
+  if (result.outcome === "confirmed") return "confirmada";
+  if (result.outcome === "cancelled") return "cancelada";
+  return "opt_out";
+}
 
 /** Twilio treats any non-2xx as a delivery failure and retries. */
 function refuse(status: number, error: string): Response {
@@ -129,22 +140,48 @@ export async function POST(request: NextRequest): Promise<Response> {
     now: new Date(),
   });
 
-  if (result.outcome === "review") {
-    await recordForReview({
+  // ================================================================== //
+  // EVERY REPLY IS FILED, NOT ONLY THE ONES NEEDING REVIEW.
+  // ================================================================== //
+  // The stub this replaces was called on the review outcome alone, which was
+  // right while there was no table: a queue of things to do. With 0069 the row
+  // is also the only place the MESSAGE TEXT lives, and "what did the patient
+  // actually write" is a question reception asks about a reply that confirmed
+  // an appointment just as often as about one that confused the classifier.
+  // A confirmed reply is filed already-resolved, so it never enters the queue.
+  //
+  // BEST EFFORT, AND AFTER THE TRANSITION. The appointment has already moved
+  // and the audit row is already written; a failure to file the working copy
+  // must not turn a handled reply into a 500 that makes Twilio redeliver it
+  // and take the same decision again.
+  const normalizedFrom = normalizePhonePT(fromPhone);
+  try {
+    await recordInboundReply({
       tenantId,
+      providerMessageSid: params.MessageSid ?? `no-sid:${crypto.randomUUID()}`,
+      // Hashed inside the store; never stored or logged in clear. An
+      // unnormalizable sender is filed under its raw form's hash so two
+      // messages from the same bad number still group.
+      fromPhone: normalizedFrom ?? fromPhone,
       body,
-      fromPhone,
-      appointmentId: null,
-      patientId: null,
-      reason: result.reason,
+      classification: result.outcome === "review" ? "review" : classificationOf(result),
+      reviewReason: result.outcome === "review" ? result.reason : null,
+      patientId: result.patientId,
+      appointmentId: result.appointmentId,
+      resolved: result.outcome !== "review",
     });
+  } catch (e) {
+    console.error(
+      "[reminders/inbound] failed to file the reply for reception:",
+      e instanceof Error ? e.name : "unknown",
+    );
   }
 
   // The acknowledgement. A normalized sender is required - the same E.164
   // guard every other send passes through - and an opt-out gets NOTHING back,
   // because answering a STOP with an SMS is the one reply that contradicts the
   // instruction it is answering.
-  const to = normalizePhonePT(fromPhone);
+  const to = normalizedFrom;
   if (to && result.outcome !== "opt_out") {
     const [templateId, copy] =
       result.outcome === "confirmed"
