@@ -21,6 +21,8 @@
  * version - it is not remembered and not transcribed. It exists so the suite
  * still fails if BOTH implementations are changed together.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { getExpectedTwilioSignature } from "twilio/lib/webhooks/webhooks";
 
@@ -179,11 +181,8 @@ describe("the route does not trust forwarded headers for the signed URL", () => 
   });
 });
 
+/** Source with comments stripped, so prose cannot satisfy a source assertion. */
 function readFileSyncStripped(name: string): string {
-  /* eslint-disable @typescript-eslint/no-require-imports */
-  const { readFileSync } = require("node:fs") as typeof import("node:fs");
-  const { join } = require("node:path") as typeof import("node:path");
-  /* eslint-enable @typescript-eslint/no-require-imports */
   return readFileSync(join(__dirname, name), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");

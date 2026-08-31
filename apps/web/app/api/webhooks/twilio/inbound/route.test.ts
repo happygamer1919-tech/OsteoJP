@@ -94,7 +94,6 @@ describe("the capability flag", () => {
     for (const v of [undefined, "false", "1", "TRUE", "yes", " true "]) {
       if (v === undefined) delete process.env.REMINDERS_INBOUND;
       else process.env.REMINDERS_INBOUND = v;
-      // eslint-disable-next-line no-await-in-loop
       const res = await POST(twilioPost(REPLY) as never);
       expect(res.status, `flag=${String(v)}`).toBe(404);
     }
@@ -295,7 +294,6 @@ describe("the three acknowledgement bodies are UNAPPROVED, and that is the point
       "reply_ack.cancelled.sms",
       "reply_ack.review.sms",
     ]) {
-      // eslint-disable-next-line no-await-in-loop
       const out = await notifier.dispatch({
         templateId: id,
         channel: "sms",
