@@ -171,6 +171,48 @@ const ALLOWED: Record<
       "so the slot lock does not apply. Single use is enforced by the " +
       "action_token_consumptions primary key inside the same transaction.",
   },
+  "apps/web/lib/reminders/inbound-reply.ts": {
+    // NOT a concurrent writer, for the same reason redeem.ts is not, and the
+    // decision was taken rather than inherited. This path does exactly two
+    // things to an appointment and neither moves it in time nor changes its
+    // therapist:
+    //   confirm - sets status='confirmed' plus the 0024 confirmation axis on an
+    //             appointment that ALREADY holds its slot. It occupies nothing
+    //             new.
+    //   cancel  - sets status='cancelled', which only RELEASES a slot.
+    // Vacating a slot cannot double-book; occupying one can. Taking the lock
+    // here would be the "comfortable inaccuracy" this file warns about.
+    //
+    // THE CONFIRM HAS A REAL DATABASE BACKSTOP, AND IT IS NOT THE ONE THIS
+    // FILE'S HEADER SAYS WAS CANCELLED. That was a PARTIAL EXCLUDE keyed on
+    // `created_by`, dropped because created_by cannot identify portal rows.
+    // Migration 0061 later shipped a DIFFERENT one -
+    // `appointments_no_double_confirmed`, keyed on
+    // (practitioner_id, tstzrange) WHERE status = 'confirmed' - after INC-08
+    // put two confirmed overlapping appointments into production through three
+    // code paths in ninety seconds. It is live, and this path RELIES on it:
+    // a confirm that would create the second confirmed overlap raises 23P01,
+    // the transaction rolls back, the appointment is unchanged and the reply
+    // goes to reception. lib/reminders/inbound-reply.db.test.ts proves that arm
+    // against real Postgres rather than asserting it.
+    //
+    // 0061 is explicit that two SCHEDULED rows on one window remain legal at
+    // the database layer, so it is a backstop for the confirmed state only and
+    // the application check this file guards is still load-bearing. Nothing
+    // here weakens that.
+    //
+    // Concurrency within this path is handled by SELECT ... FOR UPDATE on the
+    // matched appointment, so two replies arriving together serialise instead
+    // of racing the status read.
+    needsLock: false,
+    locked: false,
+    reason:
+      "Inbound patient SMS reply. Confirm sets status/confirmation axis on an " +
+      "appointment that already holds its slot; cancel only releases one. " +
+      "Neither occupies a slot, so the slot lock does not apply. The confirm " +
+      "is backstopped by the 0061 appointments_no_double_confirmed EXCLUDE " +
+      "constraint, and the row is SELECT ... FOR UPDATE'd for the transaction.",
+  },
   "apps/web/lib/scheduling/batch.ts": {
     needsLock: true,
     locked: true,
@@ -258,6 +300,12 @@ describe("appointments write paths (PRIMARY guard for 2.9)", () => {
       .sort();
 
     expect(exempt).toEqual([
+      // Inbound patient SMS reply: confirm sets status + the 0024 axis on an
+      // appointment that already holds its slot; cancel only releases one.
+      // Neither occupies a slot. Backstopped for the confirmed state by the
+      // 0061 EXCLUDE constraint, which is proven against real Postgres rather
+      // than assumed. Added deliberately, W14-04.
+      "apps/web/lib/reminders/inbound-reply.ts",
       // Token redemption: confirm touches only the 0024 confirmation axis,
       // cancel only releases a slot. Neither occupies one, so the slot lock has
       // nothing to protect here. Added deliberately, W13-01.

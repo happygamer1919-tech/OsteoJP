@@ -131,6 +131,45 @@ function twilioSender(): string | undefined {
   return process.env.TWILIO_SMS_FROM ?? process.env.TWILIO_MESSAGING_SERVICE_SID;
 }
 
+/**
+ * A Messaging Service SID is `MG` + 32 hex. Twilio's own id scheme, and the
+ * only thing that distinguishes it from the other two forms this variable can
+ * hold (an E.164 number, an alphanumeric sender id).
+ */
+const MESSAGING_SERVICE_SID = /^MG[0-9a-f]{32}$/i;
+
+/**
+ * Which Twilio parameter carries the sender.
+ *
+ * ==========================================================================
+ * A MESSAGING SERVICE SID IS NOT A `From`. IT IS A `MessagingServiceSid`.
+ * ==========================================================================
+ * Every send in this file went out as `messages.create({ to, from, body })`
+ * with `from` set to whatever `twilioSender()` returned - and that fallback
+ * returns `TWILIO_MESSAGING_SERVICE_SID` when `TWILIO_SMS_FROM` is unset.
+ * `From` takes a phone number, an alphanumeric sender id or a short code;
+ * routing through a Messaging Service is a DIFFERENT parameter, and the
+ * service is what owns the sender pool, the sticky sender and - the reason
+ * this matters now - the inbound webhook that a two-way number replies to.
+ *
+ * docs/qa/twilio-proof.md asserts the old behaviour "(which Twilio accepts)".
+ * That claim was never exercised: the 2026-07-11 delivery proof ran with
+ * `TWILIO_SMS_FROM=OsteoJP` set, so the fallback branch has never sent a
+ * message. It is untested, not proven, and this makes it correct rather than
+ * leaving it to be discovered by a patient who gets nothing.
+ *
+ * NOTHING CHANGES FOR THE CURRENT PRODUCTION CONFIG. With
+ * `TWILIO_SMS_FROM=OsteoJP` this still resolves to `from: "OsteoJP"`,
+ * byte-identical to before; twilio-proof.test.ts pins that.
+ */
+export function twilioSenderParam(
+  sender: string,
+): { from: string } | { messagingServiceSid: string } {
+  return MESSAGING_SERVICE_SID.test(sender)
+    ? { messagingServiceSid: sender }
+    : { from: sender };
+}
+
 /** Credential presence only. Never constructs a client, never logs a value. */
 function transportConfigured(channel: Channel, templateId?: string): boolean {
   if (channel === "email") {
@@ -167,7 +206,7 @@ const providerTransport: Transport = {
     const client = twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!);
     const result = await client.messages.create({
       to: msg.to,
-      from: twilioSender()!,
+      ...twilioSenderParam(twilioSender()!),
       body: msg.body,
     });
     return { id: result.sid };

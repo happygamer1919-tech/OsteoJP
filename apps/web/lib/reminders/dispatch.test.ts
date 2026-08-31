@@ -53,38 +53,85 @@ function cfg(overrides: Partial<ReminderConfig> = {}): ReminderConfig {
 
 /* ------------------------------- pure plan ------------------------------- */
 
+/**
+ * OWNER ROUTING RULE, 2026-08-31 — ONE CHANNEL PER OFFSET, AND THE PLAN IS
+ * WHERE IT IS DECIDED.
+ *
+ * WHAT THESE ASSERTIONS USED TO SAY. Every case below was written against
+ * "24h" and expected `email: true, sms: true` — the plan happily produced BOTH
+ * channels for one offset, and the reason the patient never got two messages
+ * was that the SCHEDULER only ever fanned out one of them. The rule lived in a
+ * fan-out detail, not in a rule, so a caller passing a different pair, or a
+ * second call site, would have sent the twin with nothing refusing it.
+ *
+ * WHAT THEY SAY NOW. The plan itself routes: 48h can only ever produce email,
+ * 24h can only ever produce SMS, whatever the tenant config and the patient
+ * preferences say. Everything else about the plan is UNCHANGED and is
+ * re-asserted here rather than deleted — lead_time_off still wins over
+ * everything, no_contact still precedes channels_off, and a patient opt-out
+ * still suppresses its own channel.
+ */
 describe("planReminderChannels", () => {
   const both = { email: true, phone: true };
 
-  it("sends both channels on the default config with both contacts on file", () => {
-    expect(planReminderChannels(cfg(), "24h", both)).toEqual({
+  it("48h routes to EMAIL ONLY — there is no SMS twin, even with both on", () => {
+    expect(planReminderChannels(cfg(), "48h", both)).toEqual({
       send: true,
       email: true,
-      sms: true,
+      sms: false,
     });
   });
 
-  it("drops the email channel when email is disabled (SMS still sends)", () => {
-    expect(planReminderChannels(cfg({ emailEnabled: false }), "24h", both)).toEqual({
+  it("24h routes to SMS ONLY — there is no email twin, even with both on", () => {
+    expect(planReminderChannels(cfg(), "24h", both)).toEqual({
       send: true,
       email: false,
       sms: true,
     });
   });
 
-  it("drops the SMS channel when SMS is disabled (email still sends)", () => {
-    expect(planReminderChannels(cfg({ smsEnabled: false }), "24h", both)).toEqual({
+  it("the routing does NOT depend on the patient having toggled preferences", () => {
+    // The production default for a patient row: SMS on, email OFF (0019).
+    const prodDefaults = { smsEnabled: true, emailEnabled: false };
+    // 24h still routes to SMS...
+    expect(planReminderChannels(cfg(), "24h", both, prodDefaults)).toEqual({
       send: true,
-      email: true,
-      sms: false,
+      email: false,
+      sms: true,
+    });
+    // ...and 48h still routes to email and nowhere else. It does not fall back
+    // to SMS because the patient never switched email on: a suppressed channel
+    // is a suppressed message, never a message on the other channel.
+    expect(planReminderChannels(cfg(), "48h", both, prodDefaults)).toEqual({
+      send: false,
+      reason: "channels_off",
     });
   });
 
-  it("does not send a channel the patient lacks contact for, even when enabled", () => {
+  it("drops the email channel when the tenant disabled email (48h then sends nothing)", () => {
+    expect(planReminderChannels(cfg({ emailEnabled: false }), "48h", both)).toEqual({
+      send: false,
+      reason: "channels_off",
+    });
+  });
+
+  it("drops the SMS channel when the tenant disabled SMS (24h then sends nothing)", () => {
+    expect(planReminderChannels(cfg({ smsEnabled: false }), "24h", both)).toEqual({
+      send: false,
+      reason: "channels_off",
+    });
+  });
+
+  it("does not send a channel the patient lacks contact for", () => {
+    // 48h with no email on file: skipped, and NOT re-routed to the phone.
+    expect(planReminderChannels(cfg(), "48h", { email: false, phone: true })).toEqual({
+      send: false,
+      reason: "channels_off",
+    });
+    // 24h with no phone on file: same shape on the other axis.
     expect(planReminderChannels(cfg(), "24h", { email: true, phone: false })).toEqual({
-      send: true,
-      email: true,
-      sms: false,
+      send: false,
+      reason: "channels_off",
     });
   });
 
@@ -98,63 +145,54 @@ describe("planReminderChannels", () => {
     expect(planReminderChannels(subset, "24h", both)).toMatchObject({ send: true });
   });
 
-  it("reports channels_off when contact exists but every reachable channel is disabled", () => {
-    // Email-only patient, email disabled → nothing reachable.
-    expect(
-      planReminderChannels(cfg({ emailEnabled: false }), "24h", { email: true, phone: false }),
-    ).toEqual({ send: false, reason: "channels_off" });
-    // Both channels off, both contacts present.
-    expect(
-      planReminderChannels(cfg({ emailEnabled: false, smsEnabled: false }), "24h", both),
-    ).toEqual({ send: false, reason: "channels_off" });
-  });
-
   it("reports no_contact when the patient has neither email nor phone", () => {
+    // Precedence: no_contact beats channels_off and beats the routing rule.
     expect(planReminderChannels(cfg(), "24h", { email: false, phone: false })).toEqual({
       send: false,
       reason: "no_contact",
     });
   });
 
-  it("suppresses SMS when the patient has opted out of SMS reminders", () => {
+  it("A PATIENT WHO DISABLED SMS GETS NO SMS AT 24h — and no email instead", () => {
     const prefs = { smsEnabled: false, emailEnabled: true };
+    // The opt-out survives the routing rule: routing chooses WHICH channel the
+    // offset may use, the preference decides whether it may be used at all.
     expect(planReminderChannels(cfg(), "24h", both, prefs)).toEqual({
+      send: false,
+      reason: "channels_off",
+    });
+    // Their 48h email is untouched — the opt-out was about SMS.
+    expect(planReminderChannels(cfg(), "48h", both, prefs)).toEqual({
       send: true,
       email: true,
       sms: false,
     });
   });
 
-  it("suppresses email when the patient has opted out of email reminders", () => {
-    const prefs = { smsEnabled: true, emailEnabled: false };
-    expect(planReminderChannels(cfg(), "24h", both, prefs)).toEqual({
-      send: true,
-      email: false,
-      sms: true,
-    });
-  });
-
-  it("returns channels_off when patient has opted out of all channels", () => {
-    const prefs = { smsEnabled: false, emailEnabled: false };
-    expect(planReminderChannels(cfg(), "24h", both, prefs)).toEqual({
+  it("patient opt-out of SMS takes precedence over tenant SMS being enabled", () => {
+    const prefs = { smsEnabled: false, emailEnabled: true };
+    expect(planReminderChannels(cfg({ smsEnabled: true }), "24h", both, prefs)).toEqual({
       send: false,
       reason: "channels_off",
     });
   });
 
-  it("patient opt-out of SMS takes precedence over tenant SMS being enabled", () => {
-    const prefs = { smsEnabled: false, emailEnabled: true };
-    const result = planReminderChannels(cfg({ smsEnabled: true }), "24h", both, prefs);
-    expect(result).toMatchObject({ send: true });
-    if (!result.send) throw new Error("expected send:true");
-    expect(result.sms).toBe(false);
-    expect(result.email).toBe(true);
+  it("returns channels_off when the patient has opted out of every channel", () => {
+    const prefs = { smsEnabled: false, emailEnabled: false };
+    expect(planReminderChannels(cfg(), "24h", both, prefs)).toEqual({
+      send: false,
+      reason: "channels_off",
+    });
+    expect(planReminderChannels(cfg(), "48h", both, prefs)).toEqual({
+      send: false,
+      reason: "channels_off",
+    });
   });
 
-  it("omitting patientPrefs defaults to both-enabled (preserves prior behavior)", () => {
+  it("omitting patientPrefs defaults to both-enabled, and routing still holds", () => {
     expect(planReminderChannels(cfg(), "24h", both)).toEqual({
       send: true,
-      email: true,
+      email: false,
       sms: true,
     });
   });

@@ -463,6 +463,96 @@ estao intactas e esta linha e conteudo adicional novo.
 **Aprovado? [ ] sim  [ ] com alteracoes  [ ] nao** — alteracoes:
 
 ---
+
+## NOVO — as tres respostas automaticas ao SMS do doente
+
+> **TRES MENSAGENS NOVAS, NENHUMA APROVADA.** Sao as seccoes 12, 13 e 14 abaixo.
+> Nao estavam neste documento quando aprovou as dez, porque na altura o doente
+> nao podia responder a nada.
+
+**O que mudou.** O lembrete de 24 horas passa a ser respondivel. O doente
+responde `SIM` e a consulta fica confirmada; responde `NAO` e fica cancelada.
+Qualquer outra coisa nao mexe em nada e vai para a recepcao ler.
+
+**O que precisa de decidir.** Se, depois de o doente responder, a clinica lhe
+devolve uma mensagem a dizer o que aconteceu — e com que palavras. Enquanto
+nao aprovar, **a consulta muda na mesma** (o SIM confirma, o NAO cancela); o
+que nao acontece e a resposta de volta. O doente fica sem confirmacao escrita
+de que a sua mensagem foi recebida.
+
+### 12. Resposta automatica — consulta confirmada — SMS
+
+- **Identificador:** `reply_ack.confirmed.sms`
+- **Quando:** logo apos o doente responder `SIM` e a consulta passar a confirmada.
+- **Estado:** bloqueado (`approved: false`) — **ninguem aprovou esta redaccao.**
+- **Codificacao:** GSM-7 (sem acentos), 1 segmento.
+
+**Texto tal como esta programado:**
+
+```
+OsteoJP - Consulta confirmada. Obrigado.
+```
+
+**Aprova? [ ] sim  [ ] nao  [ ] outra redaccao:**
+
+### 13. Resposta automatica — consulta cancelada — SMS
+
+- **Identificador:** `reply_ack.cancelled.sms`
+- **Quando:** logo apos o doente responder `NAO` e a consulta passar a cancelada.
+- **Estado:** bloqueado (`approved: false`) — **ninguem aprovou esta redaccao.**
+- **Codificacao:** GSM-7 (sem acentos), 1 segmento.
+
+**Texto tal como esta programado:**
+
+```
+OsteoJP - Consulta cancelada. Para remarcar contacte a clinica.
+```
+
+**Aprova? [ ] sim  [ ] nao  [ ] outra redaccao:**
+
+### 14. Resposta automatica — vamos ver — SMS
+
+- **Identificador:** `reply_ack.review.sms`
+- **Quando:** o doente respondeu alguma coisa que **nao** e um `SIM` nem um
+  `NAO` claros, ou respondeu fora do prazo, ou o numero nao corresponde a
+  nenhum doente. Em todos estes casos **nada muda na agenda**.
+- **Estado:** bloqueado (`approved: false`) — **ninguem aprovou esta redaccao.**
+- **Codificacao:** GSM-7 (sem acentos), 1 segmento.
+
+**Texto tal como esta programado:**
+
+```
+OsteoJP - Recebemos a sua mensagem. A recepcao vai confirmar consigo.
+```
+
+> **Uma so mensagem para todos estes casos, de proposito.** Dizer ao remetente
+> qual dos casos foi contaria a quem enviou a mensagem se aquele numero tem ou
+> nao consulta marcada nesta clinica — e qualquer pessoa pode enviar uma
+> mensagem para o nosso numero. Esta redaccao diz o que e verdade em todos os
+> casos: alguem vai olhar.
+
+**Aprova? [ ] sim  [ ] nao  [ ] outra redaccao:**
+
+### O lembrete de 24 horas ainda NAO diz ao doente que pode responder
+
+Isto e uma pergunta separada e tambem e sua. A mensagem das 24 horas que
+aprovou a 3 de Agosto **nao contem nenhuma instrucao para responder**. O texto
+esta na seccao 6 e mantem-se **exactamente como aprovou** — nao lhe foi
+acrescentada uma palavra.
+
+Ou seja: quem responder `SIM` por iniciativa propria e atendido; quem nao
+souber que pode responder, nao responde.
+
+Acrescentar a linha significa alterar uma mensagem ja aprovada, e por isso nao
+foi feito. A linha que existe programada, pronta a acrescentar se aprovar, e:
+
+```
+Responda SIM para confirmar ou NAO para cancelar
+```
+
+**Aprova acrescentar esta linha ao lembrete de 24 horas? [ ] sim  [ ] nao**
+
+---
 ## A redaccao de 24h fornecida pela clinica
 
 Recebemos esta redaccao para o lembrete de 24 horas. Fica aqui registada

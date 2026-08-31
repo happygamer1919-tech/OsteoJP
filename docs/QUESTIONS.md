@@ -1363,3 +1363,117 @@ books ten" behaviour without the system committing anyone to a Tuesday.
 blocked. `RB-02b` can ship the control with the number typed by hand, which is
 what reception already does for every other repeating booking, and the pre-fill
 can be added later without touching anything else.
+
+## 2026-08-31 — Q-W14-01: the 48h email cannot reach a patient who has not opted in, and the default was JP's
+
+**BLOCKING the owner's 48h-email workflow. Owner-confirmable: it reverses a
+recorded JP product decision and it is a consent question.**
+
+Context. Migration 0019 added `patients.reminder_email_enabled` with **DEFAULT
+false**, and its header records why: *"SMS on, email off by default, per Joao
+Pedro's product decision"*. `dispatchReminder` honours it, so the 48h email
+reaches **only** patients who have gone into the portal and switched Email on.
+Nobody has. The owner's stated workflow is that the 48h email goes to every
+patient who has an email address.
+
+These cannot both be true. The routing half is now enforced server-side
+(48h = email, no SMS twin); the **reach** half is this question.
+
+What was deliberately NOT done. The application could treat email as on unless
+the patient turned it off — but `false` is what BOTH "never chose" and "opted
+out" look like in this column, and SR-08 forbids building a set from the absence
+of a record. There is no provenance to distinguish them: the portal profile
+PATCH (`apps/api/lib/patient/profile.ts`) writes no audit row.
+
+Recommended default: **flip the column default to `true` and backfill existing
+rows**, in a migration, and leave the portal toggle exactly as it is so a
+patient can still opt out. The portal already promises this behaviour — the
+toggle's own hint reads *"Email — Enviado 48h antes da consulta."* Note this is
+itself blocked on SR-11 (see Q-W14-05).
+
+Alternative if JP's default stands: the 48h email is for opted-in patients only,
+and the clinic accepts that most patients receive the 24h SMS alone.
+
+## 2026-08-31 — Q-W14-02: decision A collides with request-mode booking
+
+**Owner-confirmable. Affects what a patient is told after booking.**
+
+Context. The 2026-08-31 dispatch ruled decision A: the booking confirmation
+sends only for portal patient-initiated bookings, and staff-created
+appointments send none. The authorship half is implemented
+(`appointments.origin = 'patient_portal'`).
+
+The collision. JP ruled on 2026-08-06 (*"certo"*) that all twelve
+patient-bookable services are **request mode, zero auto-confirmed** — every
+portal booking is a pedido de marcacao awaiting reception. The approved
+confirmation body opens *"A sua marcacao esta confirmada"*. Sending it at
+booking time would tell the patient the clinic accepted a request it has not
+seen. That is the R10 failure with the assertion moved into the first sentence.
+
+What shipped. `dispatchConfirmation` now requires `origin = 'patient_portal'`
+**and** that the appointment is not an unaccepted pedido. Both halves are
+enforced, so today the confirmation sends for nothing — staff bookings are out
+of scope by decision A, and portal bookings are pedidos.
+
+Recommended default: **send the confirmation when reception ACCEPTS the pedido**,
+not when the patient makes it. That needs the accept path to emit
+`appointment/scheduled` (carded, `W14-confirmation-on-accept`). The body is then
+true when it arrives and needs no new copy or approval.
+
+Alternative: a distinct *"pedido recebido"* body sent at request time — new
+patient-facing copy, so a JP approval.
+
+## 2026-08-31 — Q-W14-03: three new patient-facing bodies need JP's approval
+
+**Owner/JP. Nothing sends until answered; the appointment transitions do not
+wait on it.**
+
+The inbound reply capability answers the patient after they text SIM or NAO.
+That wording did not exist when JP approved the packet on 2026-08-03, so it is
+registered `approved: false` and every send is refused `template_unapproved`.
+Sections 12, 13 and 14 of `docs/notifications-approval-packet.md` carry the
+exact strings for the sitting.
+
+A fourth item is in the same section: **the approved 24h SMS does not tell the
+patient they can reply.** It has NOT been changed — amending an approved body is
+not ours — so today only a patient who replies unprompted is answered. The line
+that would be appended is `Responda SIM para confirmar ou NAO para cancelar`
+(already built as a config value in `reminder-copy.ts`, already GSM-7 and
+single-segment with it).
+
+## 2026-08-31 — Q-W14-04: the production SMS sender is alphanumeric, so no reply can arrive
+
+**Owner console action. The inbound capability cannot function until it is done.**
+
+`TWILIO_SMS_FROM=OsteoJP` — the PT alphanumeric sender ID approved 2026-06-11
+and confirmed on the handset in the 2026-07-11 delivery proof. **Alphanumeric
+sender IDs are one-way.** A patient's SIM has nowhere to go, so the whole
+inbound path is inert regardless of the code.
+
+Recommended default: provision a Portuguese mobile long code in Twilio, put it
+in the Messaging Service that already holds the alphanumeric sender, and point
+its inbound webhook at the route. Then either set `TWILIO_SMS_FROM` to that
+E.164 number, or clear it and set `TWILIO_MESSAGING_SERVICE_SID` (the code now
+passes a service SID as `MessagingServiceSid`, which is the correct Twilio
+parameter — it was previously passed as `From`, which is not).
+
+Consistency question inside it: the 48h path is email and unaffected, but the
+booking confirmation SMS and the follow-up/no-show SMS would move to the same
+sender. Recommendation: **move them all**, so a patient sees one identity from
+the clinic rather than two.
+
+## 2026-08-31 — Q-W14-05: migration 0069 is needed and BLUE may not author it
+
+**Strategy decision (SR-11), not an owner one. Recorded here because it bounds
+two of the questions above.**
+
+Two things need a migration and neither was written:
+
+1. `sms_inbound_events` — the reception review queue's store. Reception cannot
+   read a reply body without somewhere to keep it, and `audit_log` is the wrong
+   home (PII rule #7, and it has no resolution state). The wiring is complete up
+   to `recordForReview`, which is a no-op until the table exists.
+2. The `reminder_email_enabled` default flip in Q-W14-01.
+
+SR-11 released migration authorship to BLUE for 0068 only and re-froze it on
+merge, *"until strategy releases it"*. Next free number is 0069.

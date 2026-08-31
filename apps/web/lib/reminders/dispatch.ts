@@ -30,7 +30,7 @@ import {
   rescheduleTokenExpiry,
   type TokenScope,
 } from "./link-token";
-import { REMINDER_OFFSETS } from "./offsets";
+import { REMINDER_OFFSETS, channelForOffset } from "./offsets";
 
 // Reminder dispatch: load (tenant-scoped) → resolve locale → render PT/EN →
 // send (sandbox-gated). One function, called from the Inngest step. Kept thin
@@ -41,33 +41,65 @@ import { REMINDER_OFFSETS } from "./offsets";
 const REMINDABLE_STATUSES = new Set(["scheduled", "confirmed"]);
 
 /**
- * The pedido gate. An appointment whose `confirmation_state` is `pending` is a
- * PEDIDO DE MARCACAO that reception has not confirmed, and it must not produce a
- * reminder.
+ * The pedido gate. An appointment that is a PEDIDO DE MARCACAO reception has not
+ * accepted must not produce a reminder (R10).
  *
- * WHY THIS IS NOT COVERED BY THE STATUS CHECK ABOVE, which is the whole reason
- * this constant exists separately. A pedido is `status = 'scheduled'` with
- * `confirmation_state = 'pending'`, so `REMINDABLE_STATUSES` admits it. The two
- * columns answer different questions: status is "does this appointment still
- * exist", confirmation_state is "has the clinic agreed to it". Reminding on the
- * first without the second tells a patient their appointment is tomorrow when
- * the clinic has not accepted it.
+ * ==========================================================================
+ * IT KEYS ON `origin`, NOT ON `confirmation_state`, AND THAT CHANGE IS A
+ * DEFECT FIX, NOT A REFINEMENT. R10's reasoning is untouched; the column it
+ * was implemented against was the wrong one.
+ * ==========================================================================
  *
- * WHAT MADE IT NECESSARY, and it was a ruling rather than a bug report. JP ruled
- * on D1 that unconfirmed pedidos stack on one slot with NO CAP, confirming
- * migration 0059's header. With no cap, N patients can hold a pending pedido on
- * the same therapist and the same slot, and without this gate every one of them
- * receives a 24h reminder for an appointment only ONE of them can hold. The
- * no-cap ruling is defensible precisely because a pedido is a request; a
- * reminder would restate it as a commitment. Full reasoning:
- * docs/rulings/R10-reminders-skip-unconfirmed-pedidos.md.
+ * WHAT THE OLD GATE DID. It was `confirmation_state = 'pending'`. That column
+ * is NOT NULL DEFAULT 'pending' (migration 0024), and the staff creation path
+ * leaves it unset ON PURPOSE so the default applies - actions.ts says so in as
+ * many words: "`confirmation_state` is left unset so its DB default
+ * (`pending`) applies; the two axes stay orthogonal". So EVERY appointment in
+ * the system, staff-booked and portal alike, is born `pending`, and this gate
+ * refused EVERY ONE OF THEM. No reminder of any kind could be dispatched. The
+ * only writer that ever clears `pending` is redeem.ts, reached by clicking the
+ * confirm link in the 48h email - a reminder this same gate had already
+ * refused to send. The pipeline could not reach its own unlock.
  *
- * A SET RATHER THAN A `!== "pending"` COMPARISON, deliberately: the enum can
- * grow, and a future state that also means "not agreed yet" must be added HERE
- * rather than discovered as a second reminder defect. Null is remindable because
- * rows predating the column carry no pedido semantics.
+ * WHY THE TEST SUITE DID NOT CATCH IT, recorded because the shape recurs.
+ * pedido-not-remindable.test.ts has exactly the right negative arm - "a gate
+ * that skipped every `scheduled` row would silently kill reminders for
+ * ordinary staff-booked appointments" - and its fixture spells that arm with
+ * `confirmationState: null`. Null is what rows PREDATING 0024 carry. Nothing
+ * the product writes today is null. The arm guarded a state production no
+ * longer produces, so it passed while the property it names was false.
+ *
+ * WHAT A PEDIDO ACTUALLY IS, taken from the database rather than re-derived
+ * here. `public.is_unconfirmed_pedido` (0059, rewritten by 0067) is
+ * `status = 'scheduled' AND (origin = 'patient_portal' OR an
+ * appointment_request notification exists)`, and 0067's header states the
+ * property that makes it safe: "a staff booking has neither marker". It does
+ * not consult `confirmation_state` at all. This gate now agrees with it on the
+ * arm the dispatcher can see in its own scoped read.
+ *
+ * THE NOTIFICATION ARM IS DELIBERATELY NOT MIRRORED. It exists in the SQL for
+ * legacy rows the 0067 backfill could not reach and for the deploy window; on
+ * the send path it would buy a second query per reminder to catch rows whose
+ * `origin` the same backfill already set. If a legacy pedido slips through, a
+ * patient receives one reminder for a request - the pre-R10 behaviour for that
+ * row only. That is a stated cost, not an oversight.
+ *
+ * A SET RATHER THAN AN EQUALITY, kept from the original for the original
+ * reason: a future provenance that also means "not agreed yet" must be added
+ * HERE rather than discovered as a second reminder defect.
  */
-const UNREMINDABLE_CONFIRMATION_STATES = new Set(["pending"]);
+const PEDIDO_ORIGINS = new Set(["patient_portal"]);
+
+/**
+ * A pedido is only unaccepted while it is still `scheduled`. Reception
+ * accepting one moves it to `confirmed` (migration 0061 part 2 records the
+ * therapist-confirm path doing exactly that), and `REMINDABLE_STATUSES`
+ * already admits `confirmed` - so an accepted pedido becomes remindable with
+ * no further state to write.
+ */
+function isUnacceptedPedido(data: { status: string; origin: string }): boolean {
+  return data.status === "scheduled" && PEDIDO_ORIGINS.has(data.origin);
+}
 
 export type DispatchOutcome =
   | {
@@ -81,7 +113,15 @@ export type DispatchOutcome =
         | "unconfirmed"
         | "no_contact"
         | "lead_time_off"
-        | "channels_off";
+        | "channels_off"
+        /** The run's channel is not the channel this offset routes to (W14-01).
+         *  Distinct from `channels_off`, which means the channel was routed
+         *  correctly and then switched off; this means it was never this
+         *  offset's channel at all. */
+        | "channel_not_for_offset"
+        /** Booking confirmation only: the appointment was not created by the
+         *  patient through the portal. Decision A, owner 2026-08-31. */
+        | "origin";
     }
   | { dispatched: true; channels: SendResult[] };
 
@@ -132,8 +172,30 @@ export function planReminderChannels(
   if (!contact.email && !contact.phone) {
     return { send: false, reason: "no_contact" };
   }
-  const email = reminders.emailEnabled && patientPrefs.emailEnabled && contact.email;
-  const sms = reminders.smsEnabled && patientPrefs.smsEnabled && contact.phone;
+  // ================================================================== //
+  // OWNER ROUTING RULE, 2026-08-31: ONE CHANNEL PER OFFSET, SERVER-SIDE.
+  // 48h is EMAIL ONLY with no SMS twin. 24h is SMS ONLY with no email twin.
+  // ================================================================== //
+  // It is applied HERE, in the plan, rather than left to the caller passing
+  // the right channel. Before this the rule was true only by construction:
+  // `REMINDER_OFFSETS` carries one channel per offset and the scheduler fans
+  // out that one, so the pair was always right AS LONG AS the scheduler was
+  // the only caller. Nothing refused a wrong pair, and the tenant config can
+  // independently switch both channels on - so "48h email only" rested on a
+  // fan-out detail rather than on a rule. Now the plan cannot produce a twin
+  // even when every toggle above it says yes.
+  //
+  // The patient's own opt-out survives it, and that is the point of applying
+  // the routing FIRST and the preference SECOND rather than replacing one with
+  // the other: routing decides WHICH channel this offset may use, the
+  // preference decides whether that channel may be used AT ALL for this
+  // patient. A patient who switched SMS off gets no 24h SMS, and gets no email
+  // in its place, because 24h does not route to email.
+  const routed = channelForOffset(offsetId);
+  const email =
+    routed === "email" && reminders.emailEnabled && patientPrefs.emailEnabled && contact.email;
+  const sms =
+    routed === "sms" && reminders.smsEnabled && patientPrefs.smsEnabled && contact.phone;
   if (!email && !sms) return { send: false, reason: "channels_off" };
   return { send: true, email, sms };
 }
@@ -321,11 +383,21 @@ export async function dispatchReminder(
   if (!REMINDABLE_STATUSES.has(data.status)) {
     return { dispatched: false, reason: "status" };
   }
-  // The pedido gate. Checked AFTER status so an unconfirmed pedido that was also
+  // The pedido gate. Checked AFTER status so an unaccepted pedido that was also
   // cancelled reports the more specific reason it already reported, keeping the
   // existing outcome stable for callers that count skip reasons.
-  if (UNREMINDABLE_CONFIRMATION_STATES.has(data.confirmationState ?? "")) {
+  if (isUnacceptedPedido(data)) {
     return { dispatched: false, reason: "unconfirmed" };
+  }
+
+  // THE ROUTING GUARD. A run whose channel is not this offset's channel is
+  // refused before any config is read, so a mis-addressed event - a stale
+  // queued run from before a routing change, a hand-fired event, a future
+  // caller - cannot deliver a 48h SMS or a 24h email no matter what the tenant
+  // config and the patient preferences say. `planReminderChannels` enforces the
+  // same rule on the plan; this is the arm that names it in the outcome.
+  if (channelForOffset(offsetId) !== channel) {
+    return { dispatched: false, reason: "channel_not_for_offset" };
   }
 
   const config = parseTenantConfig(data.tenantSettings).reminders;
@@ -396,6 +468,29 @@ export async function dispatchReminder(
 const CONFIRMABLE_STATUSES = new Set(["scheduled", "confirmed"]);
 
 /**
+ * DECISION A (owner, 2026-08-31): the booking confirmation is sent ONLY for a
+ * booking the PATIENT made through the portal. A staff-created appointment
+ * sends none - the patient was on the phone or at the desk when it was made,
+ * and reception already told them.
+ *
+ * THE PREDICATE IS `appointments.origin = 'patient_portal'`, which is the
+ * authorship the system already records (migration 0067) and the same column
+ * `public.is_unconfirmed_pedido` keys on. It is not re-derived from
+ * `created_by IS NULL`: 0067's own header records that
+ * appointments-created-by-provenance.test.ts proves 7/7 against live Postgres
+ * that 0049's WITH CHECK is a DISJUNCTION, so a STAFF principal may legally
+ * insert a null creator. Absence of a creator is not evidence of a patient
+ * (SR-08).
+ *
+ * WHY IT IS ENFORCED IN THE DISPATCH AND NOT AT THE THREE ENQUEUE SITES. The
+ * staff paths in lib/scheduling/actions.ts are what emit
+ * `appointment/scheduled` today, and each of them could be taught to pass a
+ * flag. A fourth call site would then inherit nothing. The row itself says who
+ * made it, so the rule is asked of the row.
+ */
+const CONFIRMATION_ORIGINS = new Set(["patient_portal"]);
+
+/**
  * Send the immediate booking confirmation for an appointment. Fires right after
  * appointment creation or reschedule; reuses the same ReminderContext so the
  * email body can include the reschedule link. Channel toggles from the tenant's
@@ -410,6 +505,39 @@ export async function dispatchConfirmation(
   if (!data) return { dispatched: false, reason: "not_found" };
   if (!CONFIRMABLE_STATUSES.has(data.status)) {
     return { dispatched: false, reason: "status" };
+  }
+  // Decision A. Checked before contact and channels so the log says the reason
+  // that actually applies: a staff booking is not "a patient we could not
+  // reach", it is a booking that was never in scope for this message.
+  if (!CONFIRMATION_ORIGINS.has(data.origin)) {
+    return { dispatched: false, reason: "origin" };
+  }
+  // ================================================================== //
+  // AND IT MUST NOT BE AN UNACCEPTED PEDIDO. The same gate the reminders
+  // use, for a stronger reason.
+  // ================================================================== //
+  // Every portal booking IS a pedido: JP ruled 2026-08-06 ("certo") that all
+  // twelve patient-bookable services are request-mode with ZERO
+  // auto-confirmed, which apps/api/lib/appointments/booking.ts records at the
+  // site that emits the `appointment_request` notification. The row says so
+  // too - `confirmation_state` defaults to pending and the portal tells the
+  // patient "a aguardar confirmacao pela recepcao".
+  //
+  // So decision A's predicate, applied alone, would send the body whose PT
+  // subject is "Marcacao confirmada" for a request the clinic has not
+  // accepted. That is the R10 failure exactly - a message restating a request
+  // as a commitment - and it would be worse here than in the reminder case,
+  // because this one asserts the confirmation in its first three words.
+  //
+  // WHAT THIS MEANS IN PRACTICE, stated so it is not discovered later: with
+  // request-mode on every bookable service, this gate suppresses the
+  // confirmation at BOOKING time for every portal booking. The message becomes
+  // deliverable when reception accepts the pedido and the status leaves
+  // `scheduled` - at which point the appointment is genuinely confirmed and
+  // the approved body is true. Nothing currently re-emits
+  // `appointment/scheduled` on acceptance; that is carded, not assumed.
+  if (isUnacceptedPedido(data)) {
+    return { dispatched: false, reason: "unconfirmed" };
   }
   if (!data.patientEmail && !data.patientPhone) {
     return { dispatched: false, reason: "no_contact" };

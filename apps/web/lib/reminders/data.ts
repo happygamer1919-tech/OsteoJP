@@ -33,6 +33,12 @@ export type ReminderAppointmentData = {
    * agreed to it".
    */
   confirmationState: string | null;
+  /**
+   * 0067 provenance: `staff` or `patient_portal`. THE axis that says whether a
+   * row is a pedido de marcacao, and it is loaded here because the reminder
+   * gate was keying on the wrong column - see the pedido gate in dispatch.ts.
+   */
+  origin: string;
   /** For structured skip logs only (ids are not PII) — never rendered. */
   patientId: string;
   patientName: string;
@@ -71,6 +77,7 @@ export async function loadReminderData(
         startsAt: appointments.startsAt,
         status: appointments.status,
         confirmationState: appointments.confirmationState,
+        origin: appointments.origin,
         patientId: patients.id,
         patientName: patients.fullName,
         patientEmail: patients.email,
