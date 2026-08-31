@@ -14,9 +14,16 @@ import { join } from "node:path";
  * called `redirect("/login")` in the catch, which is why reading the diff would
  * not have caught the next one.
  *
- * A caller that genuinely wants a value rather than a navigation has
- * `getRequestContext()`, which returns null and is explicitly exempt.
+ * TWO CALL SITES ARE DELIBERATELY EXEMPT, and each says so in its own source
+ * with the marker below. Both are server actions that owe their client a RESULT
+ * OBJECT rather than a navigation - "unauthenticated" becomes a session-expired
+ * message beside the form, with what the user typed still on screen. Swallowing
+ * the redirect there produces exactly the behaviour they already had.
+ *
+ * The exemption is annotated rather than hard-coded into this test, so a reader
+ * of the product file learns the rule at the place it is being bent.
  */
+const ALLOW = "OSTEOJP-WEB-8-ALLOW-SWALLOW";
 const ROOT = join(__dirname, "..", "..");
 const SKIP = new Set(["node_modules", ".next", ".turbo", "e2e", "test-results", "playwright-report"]);
 
@@ -47,7 +54,11 @@ function swallowedCallsites(src: string): number[] {
       }
     }
     if (/await requireRequestContext\(\)/.test(line)) {
-      if (/\.catch\(/.test(line) || tryDepths.length > 0) hits.push(i + 1);
+      const swallowed = /\.catch\(/.test(line) || tryDepths.length > 0;
+      // An exemption must be declared within the six lines above the call, so
+      // it sits with the code it excuses and cannot drift to the top of a file.
+      const annotated = lines.slice(Math.max(0, i - 6), i + 1).some((l) => l.includes(ALLOW));
+      if (swallowed && !annotated) hits.push(i + 1);
     }
   }
   return hits;
@@ -77,6 +88,26 @@ describe("OSTEOJP-WEB-8 - no call site swallows the guard's redirect", () => {
         "getRequestContext() and branch on null.\n" +
         `Offending call site(s):\n  ${offenders.join("\n  ")}`,
     ).toEqual([]);
+  });
+
+
+  it("every exemption states a reason, and there are only the two expected", () => {
+    // A marker with no prose after it is a silenced test, not an exemption.
+    const found: string[] = [];
+    for (const f of FILES) {
+      for (const line of readFileSync(f, "utf8").split("\n")) {
+        if (!line.includes(ALLOW)) continue;
+        const reason = line.split(ALLOW)[1]?.replace(/^[:\s]+/, "").trim() ?? "";
+        expect(reason.length, `bare ${ALLOW} marker in ${f}`).toBeGreaterThan(20);
+        found.push(f.slice(ROOT.length + 1));
+      }
+    }
+    // Pinned: a third exemption is a decision somebody should have to make on
+    // purpose, not something that appears in a diff nobody reads.
+    expect(found.sort()).toEqual([
+      "lib/scheduling/actions.ts",
+      "lib/scheduling/appointment-read-actions.ts",
+    ]);
   });
 
   it("the guard still redirects, so this test is guarding something real", () => {

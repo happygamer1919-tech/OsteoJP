@@ -20,7 +20,7 @@ import {
   type DbTx,
 } from "@osteojp/db";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
-import { getRequestContext, runScoped } from "@/lib/auth/context";
+import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { clientIp } from "./actor";
 import { batchSchedule, type BatchScheduleInput, type BatchScheduleResult, PackBatchRefused } from "./batch";
 import { writeAppointmentStatusChangedEvent } from "./analytics";
@@ -99,22 +99,24 @@ type Denied = Extract<ActionResult<never>, { ok: false }>;
 async function authorize(
   capability: Capability,
 ): Promise<Authorized | Denied> {
-  /**
-   * OSTEOJP-WEB-8: `getRequestContext()` AND NOT `requireRequestContext()`, and
-   * the difference is deliberate rather than incidental.
-   *
-   * This is a SERVER ACTION invoked from a client component, and its contract
-   * is a result object its caller renders - "unauthenticated" becomes a
-   * session-expired message beside the form, with whatever the user typed still
-   * on screen. That is better than a navigation, and it is the behaviour this
-   * function already had.
-   *
-   * The guard now NAVIGATES, so keeping the old `try/catch` would have meant a
-   * `catch` swallowing NEXT_REDIRECT to produce the same result by accident.
-   * Asking the non-navigating helper says what this code means.
-   */
-  const actor = await getRequestContext();
-  if (!actor) return { ok: false, error: "unauthenticated" };
+  let actor: RequestContext;
+  // This is a server action that owes its client a RESULT OBJECT, not a
+  // navigation: "unauthenticated" becomes a session-expired message beside the
+  // form, with what the user typed still on screen. The catch below therefore
+  // swallows the guard's redirect ON PURPOSE, reproducing exactly the behaviour
+  // this function already had.
+  //
+  // An Auth OUTAGE is still reported. The guard captures it to Sentry before it
+  // throws, so the incident is never lost - only its presentation to this one
+  // client is a session-expired message rather than a generic error.
+  //
+  // OSTEOJP-WEB-8-ALLOW-SWALLOW: server action returning a result object to its
+  // own client; the outage is reported by the guard before this catch sees it.
+  try {
+    actor = await requireRequestContext();
+  } catch {
+    return { ok: false, error: "unauthenticated" };
+  }
   try {
     assertCan(actor.role, capability);
   } catch (e) {

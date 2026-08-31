@@ -27,19 +27,10 @@ import { join } from "node:path";
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-// OSTEOJP-WEB-8: `authorize()` in lib/scheduling/actions.ts now asks
-// `getRequestContext()` rather than `requireRequestContext()`, because the
-// guard NAVIGATES and this action owes its client a result object instead.
-// The mock delegates so every existing `mockResolvedValue` on the require-
-// mock below still drives both, and no assertion in this file changes.
-vi.mock("@/lib/auth/context", () => {
-  const requireRequestContext = vi.fn();
-  return {
-    requireRequestContext,
-    getRequestContext: vi.fn(() => requireRequestContext()),
+vi.mock("@/lib/auth/context", () => ({
+  requireRequestContext: vi.fn(),
   runScoped: vi.fn(),
-  };
-});
+}));
 vi.mock("@osteojp/auth", () => ({
   assertCan: vi.fn(),
   ForbiddenError: class ForbiddenError extends Error {},

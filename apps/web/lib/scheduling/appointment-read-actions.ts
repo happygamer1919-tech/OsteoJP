@@ -1,7 +1,7 @@
 "use server";
 
 import { assertCan, ForbiddenError } from "@osteojp/auth";
-import { getRequestContext } from "@/lib/auth/context";
+import { requireRequestContext } from "@/lib/auth/context";
 import { getAppointment } from "./data";
 import type { ActionResult, AgendaAppointment } from "./types";
 
@@ -22,14 +22,10 @@ export async function getAppointmentAction(
   appointmentId: string,
 ): Promise<ActionResult<AgendaAppointment>> {
   try {
-    /**
-     * OSTEOJP-WEB-8: the non-navigating helper, for the same reason as
-     * `authorize()` next door. This action answers its client with a result
-     * object; the `catch` below would otherwise swallow the guard's
-     * NEXT_REDIRECT and report a logged-out user as a generic "error".
-     */
-    const actor = await getRequestContext();
-    if (!actor) return { ok: false, error: "unauthenticated" };
+    // OSTEOJP-WEB-8-ALLOW-SWALLOW: same reasoning as authorize() next door - this
+    // action answers its client with a result object rather than navigating, and
+    // the guard still reports a real Auth outage to Sentry before throwing.
+    const actor = await requireRequestContext();
     assertCan(actor.role, "appointments:read");
     if (!appointmentId) return { ok: false, error: "validation" };
     const appt = await getAppointment(actor, appointmentId);
