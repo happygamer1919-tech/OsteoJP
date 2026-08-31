@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { can, type RequestContext } from "@osteojp/auth";
+import { can } from "@osteojp/auth";
 
 import { requireRequestContext } from "@/lib/auth/context";
 import { scopedLocationId } from "@/lib/auth/location-choice";
@@ -26,12 +26,11 @@ function firstParam(v: string | string[] | undefined): string | null {
  * guard (statistics:read), never nav-hiding alone. Migration-free.
  */
 export default async function EstatisticasPainelPage({ searchParams }: { searchParams: SearchParams }) {
-  let actor: RequestContext;
-  try {
-    actor = await requireRequestContext();
-  } catch {
-    redirect("/login");
-  }
+  // OSTEOJP-WEB-8: the guard redirects on its own now, so the wrapper is
+  // gone. It was not merely redundant - a bare `catch {}` here swallowed
+  // NEXT_REDIRECT AND would have turned a real Auth outage into a silent
+  // bounce to /login, reporting our failure as this person's logout.
+  const actor = await requireRequestContext();
   if (!can(actor.role, "statistics:read")) redirect("/dashboard");
 
   const sp = await searchParams;

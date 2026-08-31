@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { can, type RequestContext } from "@osteojp/auth";
+import { can } from "@osteojp/auth";
 import { ChevronRight } from "lucide-react";
 
 import { requireRequestContext } from "@/lib/auth/context";
@@ -16,12 +16,11 @@ export const metadata = { title: s["statistics.title"] };
  * section (/estatisticas/indicadores).
  */
 export default async function EstatisticasPage() {
-  let actor: RequestContext;
-  try {
-    actor = await requireRequestContext();
-  } catch {
-    redirect("/login");
-  }
+  // OSTEOJP-WEB-8: the guard redirects on its own now, so the wrapper is
+  // gone. It was not merely redundant - a bare `catch {}` here swallowed
+  // NEXT_REDIRECT AND would have turned a real Auth outage into a silent
+  // bounce to /login, reporting our failure as this person's logout.
+  const actor = await requireRequestContext();
   if (!can(actor.role, "statistics:read")) redirect("/dashboard");
 
   return (

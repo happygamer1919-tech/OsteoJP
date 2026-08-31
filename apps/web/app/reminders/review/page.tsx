@@ -1,8 +1,7 @@
 import { EmptyState } from "@osteojp/ui";
 import { MailWarning } from "lucide-react";
-import { redirect } from "next/navigation";
 
-import { assertCan, ForbiddenError, type RequestContext } from "@osteojp/auth";
+import { assertCan, ForbiddenError } from "@osteojp/auth";
 
 import { requireRequestContext } from "@/lib/auth/context";
 import { s } from "@/lib/i18n";
@@ -26,12 +25,11 @@ export const metadata = { title: s["remindersReview.title"] };
  * migration lands.
  */
 export default async function InboundReviewPage() {
-  let actor: RequestContext;
-  try {
-    actor = await requireRequestContext();
-  } catch {
-    redirect("/login");
-  }
+  // OSTEOJP-WEB-8: the guard redirects on its own now, so the wrapper is
+  // gone. It was not merely redundant - a bare `catch {}` here swallowed
+  // NEXT_REDIRECT AND would have turned a real Auth outage into a silent
+  // bounce to /login, reporting our failure as this person's logout.
+  const actor = await requireRequestContext();
 
   try {
     assertCan(actor.role, "appointments:read");

@@ -22,6 +22,9 @@ export async function getAppointmentAction(
   appointmentId: string,
 ): Promise<ActionResult<AgendaAppointment>> {
   try {
+    // OSTEOJP-WEB-8-ALLOW-SWALLOW: same reasoning as authorize() next door - this
+    // action answers its client with a result object rather than navigating, and
+    // the guard still reports a real Auth outage to Sentry before throwing.
     const actor = await requireRequestContext();
     assertCan(actor.role, "appointments:read");
     if (!appointmentId) return { ok: false, error: "validation" };

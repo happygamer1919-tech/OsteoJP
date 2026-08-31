@@ -100,6 +100,18 @@ async function authorize(
   capability: Capability,
 ): Promise<Authorized | Denied> {
   let actor: RequestContext;
+  // This is a server action that owes its client a RESULT OBJECT, not a
+  // navigation: "unauthenticated" becomes a session-expired message beside the
+  // form, with what the user typed still on screen. The catch below therefore
+  // swallows the guard's redirect ON PURPOSE, reproducing exactly the behaviour
+  // this function already had.
+  //
+  // An Auth OUTAGE is still reported. The guard captures it to Sentry before it
+  // throws, so the incident is never lost - only its presentation to this one
+  // client is a session-expired message rather than a generic error.
+  //
+  // OSTEOJP-WEB-8-ALLOW-SWALLOW: server action returning a result object to its
+  // own client; the outage is reported by the guard before this catch sees it.
   try {
     actor = await requireRequestContext();
   } catch {

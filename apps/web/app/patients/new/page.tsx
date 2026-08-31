@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
@@ -18,7 +17,9 @@ export default async function NewPatientPage() {
   // multi-clinic one picks from their OWN clinics, the owner from all of them.
   // Without this the column stayed NULL and the patient was invisible to
   // everyone but the owner and whoever created them.
-  const actor = await requireRequestContext().catch(() => redirect("/login"));
+  // OSTEOJP-WEB-8: the guard redirects on its own now. The .catch() also
+  // swallowed a real Auth outage into a login bounce.
+  const actor = await requireRequestContext();
   const [scope, locations] = await Promise.all([
     viewerLocationScope(actor),
     listActiveLocations(actor),
