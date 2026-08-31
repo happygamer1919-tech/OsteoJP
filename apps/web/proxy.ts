@@ -1,9 +1,29 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
+import { canonicalHostRedirect } from "@/lib/proxy/canonical-host";
 
 // Next 16 renamed the `middleware` file convention to `proxy`. The exported
 // function is `proxy`; the matcher config is unchanged.
 export async function proxy(request: NextRequest) {
+  /**
+   * OSTEOJP-WEB-7 - CANONICAL HOST, AND IT RUNS FIRST.
+   *
+   * Before the session work and before the flight-request short circuit,
+   * because a flight request on the wrong host is precisely the deploy-skew
+   * case this removes: a tab left open on osteojp-platform.vercel.app posting
+   * a server action whose id belongs to an older deployment.
+   *
+   * 308 and not 301: a permanent redirect that PRESERVES THE METHOD AND BODY.
+   * A 301 turns a POST into a GET, which would silently discard a form
+   * submission instead of moving it to the host that can answer it.
+   */
+  const canonical = canonicalHostRedirect(
+    new URL(request.url),
+    request.headers.get("host"),
+    process.env.VERCEL_ENV,
+  );
+  if (canonical) return NextResponse.redirect(canonical, 308);
+
   // FIX (issue #353): running updateSession (Supabase SSR getUser + response
   // handling) on React Server Component flight requests interferes with React 19's
   // streamed-Suspense client completion — interactive components never hydrate and
