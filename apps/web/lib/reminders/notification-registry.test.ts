@@ -75,21 +75,42 @@ const LIVE = { REMINDERS_LIVE_SEND: "true", INVITES_LIVE_SEND: "true" };
  * twelfth unapproved body cannot appear without failing here.
  */
 const FEE_NOTICE_ID = "reminder.24h.sms.fee_notice";
-const APPROVED_TEMPLATES = REMINDER_TEMPLATES.filter((t) => t.id !== FEE_NOTICE_ID);
+
+/**
+ * W14-04 REDEFINED THIS FROM AN ID EXCLUSION TO THE FLAG ITSELF, and that is
+ * not a tidy-up.
+ *
+ * It used to be `filter(t => t.id !== FEE_NOTICE_ID)` - "approved" spelled as
+ * "everything except the one we know about". A twelfth body registered
+ * `approved: false` would have landed INSIDE this set, and the two assertions
+ * below (named approver, real date) would have failed with a confusing message
+ * about a missing date rather than the true one: a new body nobody approved.
+ * Reading the flag makes the set mean what it is called.
+ */
+const APPROVED_TEMPLATES = REMINDER_TEMPLATES.filter((t) => t.approved);
 
 describe("registry contents", () => {
-  it("registers 11 patient-facing bodies: the 10 approved, plus the fee notice", () => {
-    expect(REMINDER_TEMPLATES).toHaveLength(11);
+  it("registers 14 patient-facing bodies: the 10 approved, plus 4 unapproved", () => {
+    // W14-04 moved this from 11 to 14: the three reply acknowledgements joined
+    // the fee notice on the unapproved side. The APPROVED count is UNCHANGED at
+    // ten, and that is the assertion doing the work - adding a capability must
+    // never enlarge the set of things JP has said yes to.
+    expect(REMINDER_TEMPLATES).toHaveLength(14);
     expect(APPROVED_TEMPLATES).toHaveLength(10);
     expect(REMINDER_TEMPLATES.every((t) => t.audience === "patient")).toBe(true);
   });
 
-  it("pins the unapproved set to exactly the fee notice", () => {
+  it("pins the unapproved set to exactly the fee notice and the three acks", () => {
     // The load-bearing half. If a future body registers unapproved without a
     // decision, this fails - which is the whole reason the gate is worth having.
-    expect(REMINDER_TEMPLATES.filter((t) => !t.approved).map((t) => t.id)).toEqual([
-      FEE_NOTICE_ID,
+    // It just did its job twice: once for the fee line, once for W14-04.
+    expect(REMINDER_TEMPLATES.filter((t) => !t.approved).map((t) => t.id).sort()).toEqual([
+      "reminder.24h.sms.fee_notice",
+      "reply_ack.cancelled.sms",
+      "reply_ack.confirmed.sms",
+      "reply_ack.review.sms",
     ]);
+    expect(FEE_NOTICE_ID).toBe("reminder.24h.sms.fee_notice");
   });
 
   // The platform-wide reconciliation, asserted rather than asserted-in-a-comment.
@@ -106,21 +127,21 @@ describe("registry contents", () => {
   // The reconciliation is kept rather than deleted with the entries it counted:
   // its value was never the number, it is that a body cannot appear in either
   // app without this count changing and someone noticing.
-  it("totals 11 entries over 11 bodies across both apps", async () => {
+  it("totals 14 entries over 14 bodies across both apps", async () => {
     const { API_TEMPLATES } = await import("../../../../apps/api/lib/notify/registry");
 
     // W13-05 moved this from 10 to 11. The reconciliation's value was never the
     // number - it is that a body cannot appear in either app without this count
     // changing and someone noticing. It just noticed.
-    expect(REMINDER_TEMPLATES).toHaveLength(11);
+    expect(REMINDER_TEMPLATES).toHaveLength(14);
     expect(API_TEMPLATES).toHaveLength(0);
-    expect(REMINDER_TEMPLATES.length + API_TEMPLATES.length).toBe(11);
+    expect(REMINDER_TEMPLATES.length + API_TEMPLATES.length).toBe(14);
 
     // One body per entry. The fee-notice entry is a DISTINCT body (the 24h body
     // plus the fee line), not a duplicate of the approved one - which is exactly
     // why it needs its own id and its own approval.
     const bodies = new Set(REMINDER_TEMPLATES.map((t) => t.body));
-    expect(bodies.size).toBe(11);
+    expect(bodies.size).toBe(14);
   });
 
   it("apps/api can send nothing at all, which is the fail-closed state", async () => {
@@ -146,13 +167,15 @@ describe("registry contents", () => {
     }
   });
 
-  it("and the UNAPPROVED body names no approver, because nobody approved it", () => {
+  it("and EVERY unapproved body names no approver, because nobody approved it", () => {
     // The mirror of the rule above. An unapproved entry carrying an approver
-    // would read, to anyone scanning, as approved-with-a-typo.
-    const fee = REMINDER_TEMPLATES.find((t) => t.id === FEE_NOTICE_ID)!;
-    expect(fee.approved).toBe(false);
-    expect(fee.approvedBy).toBeNull();
-    expect(fee.approvedAt).toBeNull();
+    // would read, to anyone scanning, as approved-with-a-typo. Widened from the
+    // fee notice alone to the whole unapproved set, so the next unapproved body
+    // inherits the rule instead of needing its own assertion.
+    for (const t of REMINDER_TEMPLATES.filter((x) => !x.approved)) {
+      expect(t.approvedBy).toBeNull();
+      expect(t.approvedAt).toBeNull();
+    }
   });
 
   it("dates each body to the approval that actually covers it, not to a blanket", () => {
@@ -188,6 +211,9 @@ describe("registry contents", () => {
       "reminder.24h.sms.fee_notice",
       "reminder.48h.email",
       "reminder.48h.sms",
+      "reply_ack.cancelled.sms",
+      "reply_ack.confirmed.sms",
+      "reply_ack.review.sms",
     ]);
   });
 

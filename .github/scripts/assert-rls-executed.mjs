@@ -76,6 +76,15 @@ const SUITES = [
   // DB-gated job would report green and LOOP 1's transactional DoD lines would
   // be proven by nothing at all.
   { file: "redeem.db.test.ts", hard: true },
+  // W14-04, added 2026-08-31. Hard-required because the properties it proves
+  // are properties of the DATABASE and of a REFUSAL: that an SMS reply moves a
+  // status inside one transaction with its audit row, and that
+  // `appointments_no_double_confirmed` (an EXCLUDE constraint) refuses the
+  // second confirmed overlap and leaves the appointment untouched. A mock
+  // cannot fail an exclusion constraint - it agrees with whatever the code
+  // believed, which is the belief under test. A silent skip would leave an
+  // unauthenticated webhook that changes appointment status proven by nothing.
+  { file: "inbound-reply.db.test.ts", hard: true },
   // LE-followup-contact-mark-never-recorded, added 2026-08-28, and hard-required
   // for the reason this whole card exists. The contact mark ALREADY had a green
   // test - `a recorded contact renders with who and when` in

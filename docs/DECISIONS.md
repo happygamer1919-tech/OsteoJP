@@ -3235,3 +3235,137 @@ picker surface the ruling says is unchanged.
 differs (it names a window), and folding it into the conflict list would render
 *"conflicts with:"* followed by nothing, because there is no conflicting
 appointment. The candidate window IS the problem.
+
+## 2026-08-31 — W14: the reminder pipeline could not send anything, and why the tests said otherwise
+
+### The defect
+
+**No reminder of any kind could be dispatched in production.** Both offsets were
+dead, for two independent reasons:
+
+- **24h SMS.** `dispatchReminder`'s pedido gate was
+  `confirmation_state = 'pending'`. That column is `NOT NULL DEFAULT 'pending'`
+  (0024) and the staff creation path leaves it unset **on purpose** — `actions.ts`
+  says so: *"`confirmation_state` is left unset so its DB default (`pending`)
+  applies; the two axes stay orthogonal."* So every appointment in the system is
+  born `pending` and the gate refused every one of them.
+- **48h email.** `patients.reminder_email_enabled` is `DEFAULT false` (0019, JP's
+  decision), so the email channel was off for every patient who had not opted in.
+
+The two failures compounded into a closed loop: the ONLY writer that ever cleared
+`pending` was `redeem.ts`, reached by clicking the confirm link **in the 48h
+email** — a message the other half of the defect prevented. The pipeline could
+not reach its own unlock.
+
+### Why the suite was green
+
+`pedido-not-remindable.test.ts` had the correct negative arm and named it
+precisely — *"a gate that skipped every `scheduled` row would silently kill
+reminders for ordinary staff-booked appointments"* — and then spelled that arm
+`confirmationState: null`. **Null is what rows predating 0024 carry.** Nothing the
+product writes today is null. The arm guarded a state production no longer
+produces, so it passed while the property it names was false.
+
+Recorded as a shape, because it recurs: **a negative arm is only worth its
+fixture.** Every arm in that file now uses the values the product actually
+writes, and the new arm — an ordinary staff booking, `pending`, must dispatch —
+is the one whose absence cost the launch its reminders.
+
+### The gate now
+
+`origin = 'patient_portal'` while still `scheduled`, which is the **database's
+own** definition of an unconfirmed pedido (`public.is_unconfirmed_pedido`,
+0059/0067). 0067's header states the property that makes it safe: *"a staff
+booking has neither marker."* R10's reasoning is untouched; it was implemented
+against the wrong column.
+
+**The notification arm of the SQL disjunction is deliberately not mirrored.** It
+exists for legacy rows the 0067 backfill could not reach; on the send path it
+would buy a query per reminder to catch rows whose `origin` that backfill already
+set. A legacy pedido slipping through receives one reminder — the pre-R10
+behaviour for that row only. Stated as a cost, not overlooked.
+
+## 2026-08-31 — W14: channel routing is a rule now, not a fan-out detail
+
+Owner ruling: 48h is **email only, no SMS twin**; 24h is **SMS only, no email
+twin**; enforced server-side so it does not depend on per-patient toggles.
+
+**It was already true and it was not enforced.** `REMINDER_OFFSETS` carries one
+channel per offset and the scheduler fans out that one, so the pair was always
+right *as long as the scheduler was the only caller*. Nothing refused a wrong
+pair, and the tenant config can switch both channels on independently. The rule
+lived in a fan-out detail.
+
+Two places now hold it: `planReminderChannels` cannot produce a twin whatever the
+toggles say, and `dispatchReminder` refuses a `(offset, channel)` mismatch
+outright with its own outcome reason, `channel_not_for_offset` — so a stale
+queued run from before a routing change cannot deliver a 48h SMS.
+
+**Routing first, preference second, and the order is the design.** Routing decides
+WHICH channel an offset may use; the patient's preference decides whether that
+channel may be used at all for them. A patient who disabled SMS gets **no 24h
+message at all** — not an email in its place. A suppressed channel is a
+suppressed message, never a message on the other channel.
+
+## 2026-08-31 — W14: the inbound reply path, and the four guard rails
+
+`app/api/webhooks/twilio/inbound` is wired to `inbound-classify.ts`. The
+signature check is the **only** authentication on the route (it is excluded from
+the session proxy, like the IfThenPay and Stripe webhooks) and its effect is a
+status change on a real appointment, so:
+
+- **X-Twilio-Signature** is verified as HMAC-SHA1 over the configured URL plus
+  the key-sorted POST params, compared in constant time. The URL comes from
+  `REMINDERS_INBOUND_BASE_URL`, **never** from `request.url` or the
+  `x-forwarded-*` headers — trusting those on an open route lets a forger choose
+  the string their own signature was computed over. Proven by a differential test
+  against Twilio's own SDK rather than a constant copied out of a doc.
+- **The tenant comes from `REMINDERS_INBOUND_TENANT_ID`**, not the payload. There
+  is no Twilio-number-to-tenant table and authoring one is frozen (SR-11); an env
+  var is explicit, unset by default, and cannot be influenced from outside.
+
+Guard rails, all four proven against real Postgres: the appointment must be
+`scheduled`; the reply must fall between the 24h reminder's send instant and the
+appointment's start (the window is **derived from `REMINDER_OFFSETS`**, so it
+moves if the offset does); exactly one live patient must carry the replying
+number (`limit(2)`, not `limit(1)` — WF-07's refusal applied to this path); and
+the stored-phone predicate matches exactly the four forms `normalizePhonePT`
+accepts, not a nine-digit suffix.
+
+**The confirm can lose to the database, and that is the correct outcome.**
+`appointments_no_double_confirmed` (0061) is an EXCLUDE constraint. Two
+`scheduled` rows on one window stay legal — 0061 says so — so a patient's SIM can
+ask for a second confirmed row the constraint forbids. It raises 23P01, the
+transaction rolls back, the appointment stays `scheduled`, the audit row is
+written in its own transaction afterwards, and reception gets the one thing that
+resolves it: a human choosing which of two overlapping appointments is real.
+
+**Every status change writes `audit_log` with `metadata.source =
+"patient-sms-reply"`** and `actor_user_id = null`, because a patient has no
+`users` row. It is not `patient_audit_log`: that table's `auth_means` is under a
+DB CHECK admitting only `signed_token` and `otp_session`, and widening it is a
+migration.
+
+## 2026-08-31 — W14: three acknowledgement bodies, registered and refused
+
+The reply acknowledgements are new wording JP has never seen, so they are
+registered `approved: false` and every send is refused `template_unapproved` —
+the same mechanism the fee line uses. **The status change is not gated on them:**
+a patient who texts SIM has their appointment confirmed whether or not the
+acknowledgement is approved; only the reply is withheld.
+
+**The approved 24h SMS was not amended.** It still does not tell the patient they
+may reply. Adding that line changes a body JP approved, which is a question and
+not an edit — logged as Q-W14-03 with the exact line ready.
+
+## 2026-08-31 — W14: a Messaging Service SID is not a `From`
+
+`clients.ts` sent every message as `messages.create({ to, from, body })` with
+`from` set to `TWILIO_SMS_FROM ?? TWILIO_MESSAGING_SERVICE_SID`. `From` takes a
+phone number, an alphanumeric sender id or a short code; routing through a
+Messaging Service is a **different parameter**. `docs/qa/twilio-proof.md` asserted
+the old behaviour *"(which Twilio accepts)"* — a claim never exercised, because
+the 2026-07-11 proof ran with `TWILIO_SMS_FROM` set and the fallback branch has
+never sent a message. It now resolves to `MessagingServiceSid` when the value is
+an `MG`-prefixed SID. **Nothing changes for the current production config**, which
+`twilio-proof.test.ts` pins.

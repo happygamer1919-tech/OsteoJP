@@ -19,8 +19,32 @@ export const INBOUND_KEYWORDS: {
   readonly cancel: readonly string[];
   readonly optOut: readonly string[];
 } = {
-  confirm: ["sim", "confirmo", "confirmar"],
-  cancel: ["nao", "cancelo", "cancelar"],
+  // ================================================================== //
+  // THE OWNER NAMED THESE WORDS ON 2026-08-31. The set grew; the RULE did
+  // not change, and that distinction is what keeps it inside R11.
+  // ================================================================== //
+  // R11 permits exactly this: "the keyword sets are a CONFIG VALUE... Tune the
+  // sets here to change the policy", and it is still EXACT match on the
+  // normalized reply - no stemming, no substring search, no free-text
+  // interpretation. A reply that is not one of these strings, in full, is
+  // still unmatched and still goes to a human.
+  //
+  // "sim" AND "nao" MUST STAY FIRST. reminder-copy.ts derives the words the
+  // reminder tells the patient to send from `confirm[0]` and `cancel[0]`, so
+  // reordering this array silently rewrites patient-facing copy that JP
+  // approved. The new words are APPENDED for that reason.
+  //
+  // MULTI-WORD ENTRIES WORK BECAUSE OF THE NORMALIZER, not despite it:
+  // `normalizeReply` collapses whitespace, so "Pode ser." becomes "pode ser"
+  // and matches exactly. It is still one exact comparison.
+  //
+  // "s" AND "n" ARE ONE KEYSTROKE FROM EACH OTHER AND FROM A CANCELLATION,
+  // recorded rather than glossed: a patient who thumbs a stray "n" cancels
+  // their appointment. The owner named them, the transition is audited with
+  // `source: patient-sms-reply`, and reception sees the cancelled slot. Stated
+  // here so that if it goes wrong the cause is already written down.
+  confirm: ["sim", "confirmo", "confirmar", "si", "s", "ok", "claro", "pode ser"],
+  cancel: ["nao", "cancelo", "cancelar", "n", "cancela", "nao posso"],
   // STOP is the standard carrier opt-out keyword (R11). Kept as config so a
   // future consent ruling can extend it (e.g. "sair") without a code change.
   optOut: ["stop"],

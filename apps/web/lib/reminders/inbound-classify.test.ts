@@ -56,9 +56,12 @@ describe("classifyInboundReply — opt-out tier", () => {
 });
 
 describe("classifyInboundReply — unmatched free text is flagged for review, never guessed", () => {
+  // "pode ser" LEFT THIS LIST ON 2026-08-31. It was an unmatched example when
+  // the confirm set was three words; the owner named it a positive, so it is
+  // now an exact keyword and is asserted as one in the table above. Moving it
+  // rather than deleting it keeps the record of which words the set gained.
   it.each([
     "sim confirmo",
-    "pode ser",
     "talvez",
     "quero remarcar",
     "obrigado",

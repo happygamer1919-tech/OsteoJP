@@ -48,3 +48,53 @@ export async function resolveReviewItem(_args: {
   // Deferred to the inbound-store migration (service-role write, tenant_id
   // explicit, idempotent). Intentionally does nothing until then.
 }
+
+/* ================================================================== */
+/* Recording a reply for reception — W14-04                            */
+/* ================================================================== */
+
+/**
+ * Hand one inbound reply to the reception review queue.
+ *
+ * ==========================================================================
+ * THIS IS A NO-OP TODAY AND IT IS THE ONE PART OF THE INBOUND PATH THAT
+ * CANNOT BE FINISHED WITHOUT A MIGRATION.
+ * ==========================================================================
+ * The queue needs somewhere to keep the reply BODY - reception has to read
+ * what the patient actually wrote in order to resolve it - and there is no
+ * table that may hold it. `audit_log.metadata` is the wrong home twice over:
+ * CLAUDE.md rule 7 keeps patient content out of logs, and audit_log has no
+ * resolution state, so a queue built on it could never be worked. The real
+ * store is `sms_inbound_events` (tenant_id + RLS + an isolation test in the
+ * same PR, per CLAUDE.md), and authoring that migration is FROZEN: SR-11
+ * released migration authorship to BLUE for 0068 only and re-froze it on
+ * merge, pending a strategy release.
+ *
+ * WHAT IS AND IS NOT LOST. The transitions, the guard rails, the audit trail
+ * and the signature check are all live and need no table - see
+ * inbound-reply.ts, which writes an `audit_log` row (ids, intent, outcome,
+ * reason, `source: patient-sms-reply`) for EVERY reply including the ones that
+ * change nothing. So a reply is never silently dropped and reception's
+ * question "did anything come in for this appointment" is answerable today.
+ * What is missing is the WORKED QUEUE: the body on screen and the three
+ * resolve buttons.
+ *
+ * WHY THE CALL SITE EXISTS ANYWAY. The route calls this for every
+ * review-outcome reply. When 0069 lands, this function grows a body and the
+ * queue fills with no change at the call site - which is the difference
+ * between a deferred feature and an unwired one.
+ */
+export async function recordForReview(_args: {
+  tenantId: string;
+  /** Never logged by this function. Persisted by the migration-backed store. */
+  body: string;
+  fromPhone: string;
+  appointmentId: string | null;
+  patientId: string | null;
+  reason: string;
+}): Promise<void> {
+  // Deferred to the sms_inbound_events migration. Deliberately silent: the
+  // audit row written by applyInboundReply is the record that exists today,
+  // and a second log line carrying the body here would breach PII rule #7 to
+  // stand in for a table.
+}

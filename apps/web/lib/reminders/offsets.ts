@@ -33,6 +33,25 @@ export const REMINDER_OFFSETS: readonly ReminderOffset[] = [
   { id: "24h", minutesBefore: 24 * 60, channel: "sms" },
 ] as const;
 
+/**
+ * The ONE channel an offset goes out on. Derived from REMINDER_OFFSETS so the
+ * scheduler, the dispatcher and the server-side routing guard cannot disagree.
+ *
+ * WHY AN ACCESSOR RATHER THAN THREE READS OF THE ARRAY. Before this, "48h is
+ * email" was a fact the scheduler asserted (it fans out `offset.channel`) and
+ * the dispatcher merely INHERITED, by being handed the channel the scheduler
+ * chose. Nothing refused a `(48h, sms)` pair, so the owner's routing rule held
+ * only as long as every caller kept passing the right pair. The rule is now
+ * enforced where the send happens - see `dispatchReminder` - and this is the
+ * single definition both sides ask.
+ *
+ * Returns undefined for an unknown id rather than defaulting to a channel: a
+ * routing question with no answer must refuse the send, never guess one.
+ */
+export function channelForOffset(offsetId: ReminderOffsetId): Channel | undefined {
+  return REMINDER_OFFSETS.find((o) => o.id === offsetId)?.channel;
+}
+
 export type DueReminder = {
   offsetId: ReminderOffsetId;
   channel: Channel;

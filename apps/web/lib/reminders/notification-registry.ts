@@ -48,6 +48,12 @@ import {
   NO_SHOW_SMS,
 } from "./templates";
 import { FEE_NOTICE_SMS, FEE_NOTICE_TEMPLATE_ID } from "./fee-notice";
+import {
+  REPLY_ACK_CANCELLED,
+  REPLY_ACK_CONFIRMED,
+  REPLY_ACK_REVIEW,
+  REPLY_ACK_TEMPLATE_IDS,
+} from "./reminder-copy";
 
 // Trigger events, mirrored from lib/reminders/inngest/client.ts. Duplicated as
 // literals rather than imported so this module stays free of the Inngest client
@@ -57,6 +63,8 @@ const EV_SCHEDULED = "appointment/scheduled";
 const EV_REMINDER_DUE = "appointment/reminder.due";
 const EV_COMPLETED = "appointment/completed";
 const EV_NOSHOW = "appointment/noshow";
+/** Not an Inngest event: the inbound webhook itself. See the ack entries. */
+const EV_SMS_INBOUND = "webhook/twilio.inbound";
 
 /** JP's blanket approval of the packet, 2026-08-03. One date, one approver. */
 const JP_APPROVAL = { approvedBy: "JP", approvedAt: "2026-08-03" } as const;
@@ -153,6 +161,64 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
     // Explicitly null, not omitted. TemplateEntry requires both fields, which is
     // the stricter shape: an unapproved entry has to SAY that nobody approved it
     // rather than leave the question unanswered.
+    approvedBy: null,
+    approvedAt: null,
+  },
+
+  /**
+   * TWELFTH, THIRTEENTH AND FOURTEENTH BODIES — the inbound reply
+   * acknowledgements. W14-04, and all three are `approved: false`.
+   *
+   * WHY THEY ARE HERE AT ALL IF THEY CANNOT SEND. Registering an unapproved
+   * body is what MAKES it unsendable: `resolveApproved` fails closed, so an id
+   * absent from this file and an id present with `approved: false` are refused
+   * identically. Writing them down turns "somebody must remember to ask JP"
+   * into a mechanical refusal with the reason `template_unapproved` in the
+   * log, and gives the approval sitting the exact strings to approve.
+   *
+   * THE STATUS CHANGE IS NOT GATED ON THEM. A patient who texts SIM has their
+   * appointment confirmed whether or not the acknowledgement is approved; the
+   * only thing withheld is the reply. That asymmetry is deliberate - the
+   * appointment state is the clinic's operational truth and JP's approval is
+   * about what OsteoJP says to a patient in its own voice.
+   *
+   * WHAT UNBLOCKS THEM: JP approves the three wordings. Nothing else. There is
+   * no counsel question here, unlike the fee line above.
+   *
+   * `triggerEvent` names the webhook rather than an Inngest event, because
+   * that is what actually triggers them. The field is documentation, and a
+   * fictional event name would be worse than an honest non-event one.
+   */
+  {
+    id: REPLY_ACK_TEMPLATE_IDS.confirmed,
+    channel: "sms",
+    audience: "patient",
+    triggerEvent: EV_SMS_INBOUND,
+    body: REPLY_ACK_CONFIRMED.pt,
+    liveSendFlag: "REMINDERS_LIVE_SEND",
+    approved: false,
+    approvedBy: null,
+    approvedAt: null,
+  },
+  {
+    id: REPLY_ACK_TEMPLATE_IDS.cancelled,
+    channel: "sms",
+    audience: "patient",
+    triggerEvent: EV_SMS_INBOUND,
+    body: REPLY_ACK_CANCELLED.pt,
+    liveSendFlag: "REMINDERS_LIVE_SEND",
+    approved: false,
+    approvedBy: null,
+    approvedAt: null,
+  },
+  {
+    id: REPLY_ACK_TEMPLATE_IDS.review,
+    channel: "sms",
+    audience: "patient",
+    triggerEvent: EV_SMS_INBOUND,
+    body: REPLY_ACK_REVIEW.pt,
+    liveSendFlag: "REMINDERS_LIVE_SEND",
+    approved: false,
     approvedBy: null,
     approvedAt: null,
   },

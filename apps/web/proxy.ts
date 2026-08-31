@@ -65,9 +65,19 @@ export const config = {
     //                             signature over the raw body inside the handler
     //                             (app/api/v1/integrations/stripe/webhook/route.ts),
     //                             not by a Supabase session.
+    //   - `/api/webhooks/twilio/inbound`
+    //                           — Twilio inbound SMS (the patient's reply to the
+    //                             24h reminder). Authenticated by the
+    //                             X-Twilio-Signature HMAC over the URL + sorted
+    //                             POST params inside the handler
+    //                             (app/api/webhooks/twilio/inbound/route.ts),
+    //                             not by a Supabase session. Without this
+    //                             exclusion the session proxy 302s Twilio to
+    //                             /login and every reply is lost with a 200 that
+    //                             looks healthy to Twilio.
     // Each exclusion is path-scoped (covers its own subpaths only). Every other
     // route — app pages and all other /api/* routes, including the rest of
     // /api/v1 and any non-webhook integration routes — stays session-gated.
-    "/((?!_next/static|_next/image|favicon.ico|api/inngest(?:/.*)?|api/v1/ingestion|api/webhooks/ifthenpay|api/v1/integrations/stripe/webhook|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/inngest(?:/.*)?|api/v1/ingestion|api/webhooks/ifthenpay|api/webhooks/twilio/inbound|api/v1/integrations/stripe/webhook|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

@@ -263,10 +263,18 @@ describe("registry gating", () => {
     expect(entry!.approvedAt).toBeNull();
   });
 
-  it("every OTHER registry body is still approved — this changes nothing else", () => {
-    const others = REMINDER_TEMPLATES.filter((t) => t.id !== FEE_NOTICE_TEMPLATE_ID);
-    expect(others).toHaveLength(10);
-    expect(others.every((t) => t.approved)).toBe(true);
+  it("the TEN APPROVED bodies are untouched by this entry — it changes nothing else", () => {
+    // W14-04 narrowed this from "every other body" to "the approved ten". The
+    // old spelling asserted that the fee notice was the registry's ONLY
+    // unapproved entry, which is a claim about the registry as a whole and not
+    // about the fee notice - so registering the three reply acknowledgements
+    // (also unapproved, also deliberate) broke a fee-notice test that has no
+    // opinion about them. The property this file owns is that adding the fee
+    // line did not disturb the approved set; notification-registry.test.ts owns
+    // the pin on which ids are unapproved.
+    const approved = REMINDER_TEMPLATES.filter((t) => t.approved);
+    expect(approved).toHaveLength(10);
+    expect(approved.some((t) => t.id === FEE_NOTICE_TEMPLATE_ID)).toBe(false);
   });
 
   /**
