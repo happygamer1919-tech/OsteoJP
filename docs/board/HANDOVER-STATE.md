@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**245 cards on the board. 203 shipped, 42 open. Launch readiness 9/9, every launch gate passes.**
+**249 cards on the board. 203 shipped, 46 open. Launch readiness 9/9, every launch gate passes.**
 Plus **30 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above.
 
@@ -339,10 +339,10 @@ resume is here; no chat history is required.**
 
 ## Board head and counts
 
-    main               f30bada2 (#1095 merged), plus this commit
-    cards              248 in the file, 245 rendered
+    main               29cf0d4f (#1096 merged), plus this commit
+    cards              252 in the file, 249 rendered
     shipped            203
-    open               42
+    open               46
     rulings            33  (17 owner WF-*, 16 strategy SR-*) - decisions, not work,
                            in none of the counts above
     launch gate        9 of 9
@@ -367,9 +367,13 @@ request: ~2.6x at thirty concurrent sessions with the pool untouched, behind a
 23-test isolation suite that did not exist before. #1094 (`5cb1b0b3`) documented 44
 undocumented variables and added a test that keeps it true.
 
-**POOL TUNING REMAINS BLOCKED** on the owner's Pool Size and 24h peak-connection
-readings. The knee measured at 8; nothing may change until those two numbers are
-pasted back.
+**POOL TUNING REMAINS BLOCKED, ON A DIFFERENT NUMBER THAN BEFORE.** PERF-03 put a
+real transaction-mode pooler in the harness at the console's own settings
+(pool size 15, max client 400), which spends the original reason for the block.
+The new one is stronger: app pool `max` only matters while `N x max < 15`, where
+N is the WARM SERVERLESS INSTANCE COUNT, and N has not been read. At N=1-2 the
+change is a 2.4x win; at N>=8 it is a no-op. One Vercel dashboard read separates
+them. See `PERF-09` and `docs/audit/PERF-03-POOLER.md`.
 
 **PURPLE holds a separate lane and is active in it.** Do not touch `LAUNCH-*`
 cards, `MIG-*` cards, migration files, the import pipeline, or anything under the
