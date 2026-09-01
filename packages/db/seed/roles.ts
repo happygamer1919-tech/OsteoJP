@@ -21,6 +21,8 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { roles } from "../src/schema";
 
+import { confirmSeedTargetOrExit } from "./target-confirmation";
+
 /* ------------------------------------------------------------------ */
 /* Canonical role set                                                 */
 /* ------------------------------------------------------------------ */
@@ -131,6 +133,20 @@ async function main(): Promise<void> {
       "DATABASE_URL is required (Supabase service-role connection string)",
     );
   }
+
+  // THE TARGET GATE. Runs BEFORE the driver is even imported, so a refusal
+  // opens no connection at all.
+  //
+  // Like seed:form-templates, this CLI is MEANT to be able to reach production,
+  // so the dev seeds' `assertLocalTarget` is the wrong guard: it would refuse
+  // the run the script exists for. What is asked instead is that the operator
+  // affirm THIS host, every time, on every target. See target-confirmation.ts
+  // for why there is no "is this production?" branch (SR-08).
+  await confirmSeedTargetOrExit({
+    url: databaseUrl,
+    what: "DATABASE_URL",
+    script: "seed:roles",
+  });
 
   // Lazy-load the driver so importing this module as a library does not
   // trigger a connection.
