@@ -21,6 +21,7 @@ import {
   shouldRenderFeeNotice,
   smsTemplateIdFor,
 } from "./fee-notice";
+import { senderCanReceiveReplies } from "./reply-capability";
 import { sendEmail, sendSms, type SendResult } from "./clients";
 import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "@osteojp/notify";
@@ -445,7 +446,14 @@ export async function dispatchReminder(
       flagEnabled: feeNoticeFlagEnabled(),
       patientHasAcceptedTerms: data.patientHasAcceptedTerms,
     });
-    const sms = renderSms(offsetId, locale, ctx, feeNotice);
+    // THE SECOND ANSWER, computed here beside the first for the same reason:
+    // the render site may not know what a Twilio sender looks like. With the
+    // live alphanumeric sender this is FALSE and the body is byte-identical to
+    // JP's 2026-08-03 approval; it becomes true the moment the sender is a
+    // real number (or the messaging-service declaration is set), with no code
+    // change and no redeploy beyond the one the env change already needs.
+    const replyInstruction = senderCanReceiveReplies();
+    const sms = renderSms(offsetId, locale, ctx, { feeNotice, replyInstruction });
     const sent = await sendPatientSms({
       tenantId,
       appointmentId,

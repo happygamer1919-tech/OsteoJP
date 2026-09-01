@@ -249,7 +249,7 @@ Ou contacte: +351 272 000 000
 
 - **Identificador:** `reminder.24h.sms`
 - **Quando:** 24 horas antes da consulta.
-- **Estado:** aprovado (`approved: true`) — JP, **2026-09-01** (redaccao alterada nesta data: acrescentada a linha "Responda SIM para confirmar ou NAO para cancelar"; as quatro linhas originais estao inalteradas). **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
+- **Estado:** aprovado (`approved: true`) — JP, **2026-09-01** (redaccao alterada nesta data: acrescentada a linha "Responda SIM para confirmar ou NAO para cancelar"; as quatro linhas originais estao inalteradas). **A linha so e enviada quando o remetente puder receber a resposta** — hoje nao pode, por isso a mensagem sai na forma aprovada a 3 de Agosto. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`.
 - **Nota:** a clinica forneceu redaccao propria para o lembrete de 24h. Ver a seccao das variantes.
 - **Codificacao:** GSM-7 (sim) — **99 caracteres, 1 segmento**
 
@@ -553,6 +553,19 @@ Responda SIM para confirmar ou NAO para cancelar
 
 **APROVADO — JP, 2026-09-01.** A linha foi acrescentada ao lembrete de 24
 horas (seccao 6 acima). As quatro linhas originais estao inalteradas.
+
+> **A linha so aparece quando o numero puder receber a resposta.** Correccao do
+> mesmo dia. O remetente actual e `OsteoJP` — um NOME, nao um numero — e um
+> nome **nao recebe respostas**: o telemovel do doente desactiva ou recusa a
+> resposta. Pedir uma confirmacao que nao chega e **pior do que nao pedir**: o
+> doente escreve SIM, fica convencido de que confirmou, e a agenda continua a
+> dizer "agendada" ate a recepcao telefonar.
+>
+> Enquanto o remetente for um nome, a mensagem sai **exactamente como a aprovou
+> a 3 de Agosto**, sem esta linha. Assim que o numero portugues estiver
+> configurado, a linha passa a aparecer sozinha, sem nova aprovacao — porque as
+> duas versoes ja estao aprovadas: a curta e a sua de 3 de Agosto, e a longa e
+> esta de 1 de Setembro.
 
 > **Um custo desta aprovacao, registado para que nao seja uma surpresa
 > depois.** A mensagem de 24 horas passou de 99 para 148 caracteres, o que

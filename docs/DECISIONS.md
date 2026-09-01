@@ -3524,3 +3524,70 @@ exactly the people the clinic has.
 **Applied to production and read back:** 1,930 rows changed (every patient with
 a registered email), 6,474 left untouched (no email), 0 patients with an email
 left off, and the SMS default untouched.
+
+## 2026-09-01 — the reply instruction is gated on the SENDER, not on the copy
+
+Same-day correction to WF-18 B, and the defect is worth stating as behaviour.
+
+The amended 24h SMS told patients to reply `SIM`. **The live sender is the
+alphanumeric `OsteoJP`, which cannot receive one** — a handset shown an
+alphanumeric sender disables the reply field or fails the send.
+
+**THE FAILURE IS SILENT AT THE PATIENT'S END, WHICH IS WHAT MAKES IT WORSE THAN
+NOT ASKING.** Someone who types `SIM` believes they have confirmed. The agenda
+still reads `agendada`, reception rings them, and the patient is certain they
+already answered. Asking and not hearing damages trust in a way that never
+asking does not.
+
+**The message adapts to the sender rather than waiting for it.** The Portuguese
+number is delayed on Twilio inventory and the clinic is sending reminders today.
+
+### What counts as replyable, and why the flag covers exactly one case
+
+| configured sender | line |
+|---|---|
+| `TWILIO_SMS_FROM` is E.164 | **on** |
+| `TWILIO_SMS_FROM` is anything else | **off** |
+| messaging service only, `REMINDERS_REPLY_CAPABLE` not exactly `"true"` | **off** |
+| messaging service only, flag exactly `"true"` | **on** |
+| nothing configured | **off** |
+
+**THE FLAG CANNOT OVERRIDE AN ALPHANUMERIC SENDER**, and that is the
+load-bearing rule rather than a detail. The code can *see* that `OsteoJP`
+is one-way; an operator declaration must not be able to contradict a fact the
+code already has, or a well-meaning "we set the number up, tick the box" puts
+the instruction back on a one-way message. The flag exists only for the one case
+that is genuinely unknowable from here: a messaging service whose sender pool
+this code cannot inspect and from which Twilio picks at send time.
+
+**Default off in every ambiguous case.** A wrong "yes" costs a patient who
+thinks they confirmed; a wrong "no" costs a patient who telephones, which is
+what they do today. Those are not symmetric.
+
+### One approval covers both renderings, mechanically
+
+With the gate off the body is a **strict prefix** of the approved amendment and
+**byte-identical** to JP's 2026-08-03 approval. Neither rendering is copy nobody
+has seen, and `templates.test.ts` asserts the prefix property in both locales
+rather than leaving it as an argument.
+
+The reply instruction is therefore **conditional additional content**, exactly
+as the fee line is — appended by `renderSms`, never edited into the constant.
+That is the same rule LOOP 5 section 5 states, now applied twice.
+
+### It corrects something my last report told you
+
+I reported that the amendment had permanently cost the fee variant its single
+segment. With the gate, **that is only true when the line is armed**: today the
+fee-bearing body is 153 characters and fits with 7 to spare, exactly as before.
+The conflict did not disappear, it became conditional — when the Portuguese
+number arrives *and* counsel signs, both lines want the same segment and
+together they overflow. `renderSms` throws rather than splitting, and a test
+pins that arm so the day it matters is not the day it is discovered.
+
+### The classifier, the webhook and the review queue are untouched
+
+An unprompted reply — someone who knows to answer, or a future patient whose
+message reaches a number we later own — is still classified, still moves the
+appointment under the same guard rails, and still lands in reception's queue.
+The gate changed what the clinic **says**, not what it **hears**.

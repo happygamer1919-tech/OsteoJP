@@ -117,13 +117,33 @@ describe("sms rendering", () => {
   });
 
   /**
-   * WF-18 B, JP 2026-09-01: the 24h SMS gained a FIFTH line telling the patient
-   * they may reply. The first four are byte-identical to what JP approved on
-   * 2026-08-03 and are still asserted verbatim here — an amendment that also
-   * quietly reworded the body would pass a "contains the new line" check.
+   * ==================================================================
+   * TWO RENDERINGS, EACH PINNED TO ITS TRIGGER. Both are approved copy.
+   * ==================================================================
+   * WF-18 B added the reply instruction; the same-day gate makes it appear
+   * only when the sender can actually receive a reply. So there are exactly
+   * two bodies this id can produce and each is asserted VERBATIM against the
+   * condition that produces it - not "contains the line" and "does not
+   * contain the line", which would pass even if the other four lines had been
+   * reworded underneath.
    */
-  it("renders the PT 24h SMS with the 'amanha' framing (no tilde), plus the reply line", () => {
+  it("GATE OFF: renders JP's 2026-08-03 body, byte-identical, no reply line", () => {
     const msg = renderSms("24h", "pt", ctx);
+    expect(msg).toBe(
+      [
+        "OsteoJP - Lembrete",
+        "Consulta: amanha 23/05 as 14:30",
+        "Local: Linda-a-Velha",
+        "Remarcar: +351 210 000 000",
+      ].join("\n"),
+    );
+    expect(msg).not.toMatch(/amanhã/);
+    // The reply window is not advertised in ANY form when it cannot be used.
+    expect(msg).not.toMatch(/Responda|SIM|NAO/);
+  });
+
+  it("GATE ON: renders that same body plus the reply line", () => {
+    const msg = renderSms("24h", "pt", ctx, { replyInstruction: true });
     expect(msg).toBe(
       [
         "OsteoJP - Lembrete",
@@ -133,12 +153,25 @@ describe("sms rendering", () => {
         "Responda SIM para confirmar ou NAO para cancelar",
       ].join("\n"),
     );
-    expect(msg).not.toMatch(/amanhã/);
   });
 
-  it("renders the EN 24h SMS, plus its reply line", () => {
-    const msg = renderSms("24h", "en", ctx);
-    expect(msg).toBe(
+  it("the gated-off body is a STRICT PREFIX of the gated-on one", () => {
+    // THE PROPERTY THAT MAKES ONE APPROVAL COVER BOTH. If the gate ever
+    // changed the base body rather than appending to it, the off rendering
+    // would be copy nobody approved - and this is the assertion that would
+    // catch it, in both locales.
+    for (const locale of ["pt", "en"] as const) {
+      const off = renderSms("24h", locale, ctx);
+      const on = renderSms("24h", locale, ctx, { replyInstruction: true });
+      expect(on.startsWith(off), locale).toBe(true);
+      expect(on.slice(off.length), locale).toBe(
+        `\n${locale === "pt" ? "Responda SIM para confirmar ou NAO para cancelar" : "Reply SIM to confirm or NAO to cancel"}`,
+      );
+    }
+  });
+
+  it("GATE ON, EN: the same shape on the other locale", () => {
+    expect(renderSms("24h", "en", ctx, { replyInstruction: true })).toBe(
       [
         "OsteoJP - Reminder",
         "Appointment: tomorrow 23/05 at 14:30",
@@ -150,36 +183,45 @@ describe("sms rendering", () => {
   });
 
   /**
-   * THE KEYWORDS IN THE COPY ARE THE CLASSIFIER'S OWN, not a second spelling of
-   * them. `REMINDER_CONFIRM_INSTRUCTION` derives the words from
+   * THE KEYWORDS IN THE COPY ARE THE CLASSIFIER'S OWN, not a second spelling
+   * of them. `REMINDER_CONFIRM_INSTRUCTION` derives the words from
    * `INBOUND_KEYWORDS`, so a change to the keyword policy cannot leave the
-   * reminder telling patients to send a word the platform no longer recognises.
-   * Asserted on the RENDERED output, because a constant-only check would pass
-   * even if the line never reached the body.
+   * reminder telling patients to send a word the platform no longer
+   * recognises. Asserted on the RENDERED output: a constant-only check would
+   * pass even if the line never reached the body.
    */
   it("tells the patient to send words the classifier actually recognises", () => {
-    const msg = renderSms("24h", "pt", ctx);
+    const msg = renderSms("24h", "pt", ctx, { replyInstruction: true });
     expect(msg).toContain(INBOUND_KEYWORDS.confirm[0]!.toUpperCase());
     expect(msg).toContain(INBOUND_KEYWORDS.cancel[0]!.toUpperCase());
-    // The EN body keeps the PT keywords, because the classifier only knows
-    // the pt-PT set — reminder-copy.ts states that and this pins it.
-    expect(renderSms("24h", "en", ctx)).toContain("SIM");
-    expect(renderSms("24h", "en", ctx)).toContain("NAO");
+    // The EN body keeps the PT keywords, because the classifier only knows the
+    // pt-PT set — reminder-copy.ts states that and this pins it.
+    const en = renderSms("24h", "en", ctx, { replyInstruction: true });
+    expect(en).toContain("SIM");
+    expect(en).toContain("NAO");
   });
 
-  it("lays the 48h body out as four scannable lines and the 24h as five", () => {
+  it("the 48h SMS NEVER gains the line, even when the gate is on", () => {
+    // The instruction is an answer to the message that ASKED, and 24h is the
+    // offset that goes by SMS. The 48h offset routes to email so this render
+    // never runs in production - which is exactly why a future 48h SMS must
+    // not inherit the line by accident.
     for (const locale of ["pt", "en"] as const) {
-      expect(renderSms("48h", locale, ctx).split("\n")).toHaveLength(4);
-      // The fifth line is the reply instruction. Only the 24h offset carries
-      // it: 24h is the SMS offset and therefore the only one a patient can
-      // answer (the 48h reminder routes to email).
-      expect(renderSms("24h", locale, ctx).split("\n")).toHaveLength(5);
+      const off = renderSms("48h", locale, ctx);
+      const on = renderSms("48h", locale, ctx, { replyInstruction: true });
+      expect(on, locale).toBe(off);
+      expect(on, locale).not.toMatch(/Responda|Reply SIM/);
     }
   });
 
-  it("the 48h SMS body is UNTOUCHED — the amendment reached one body only", () => {
-    expect(renderSms("48h", "pt", ctx)).not.toContain("Responda");
-    expect(renderSms("48h", "en", ctx)).not.toContain("Reply SIM");
+  it("lays both bodies out as four scannable lines, five when the gate is on", () => {
+    for (const locale of ["pt", "en"] as const) {
+      expect(renderSms("48h", locale, ctx).split("\n")).toHaveLength(4);
+      expect(renderSms("24h", locale, ctx).split("\n")).toHaveLength(4);
+      expect(
+        renderSms("24h", locale, ctx, { replyInstruction: true }).split("\n"),
+      ).toHaveLength(5);
+    }
   });
 
   it("keeps every rendered SMS GSM-7 and within one segment", () => {

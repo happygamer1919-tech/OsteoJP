@@ -145,34 +145,15 @@ export const SMS: Record<ReminderOffsetId, Record<Locale, string>> = {
     en: "OsteoJP - Reminder\nAppointment: {date} at {time}\nLocation: {clinic}\nReschedule: {phone}",
   },
   /**
-   * ==================================================================
-   * WF-18 B (JP, approved verbally to the owner 2026-09-01): the 24h SMS
-   * GAINS THE REPLY INSTRUCTION. One appended line; nothing else changed.
-   * ==================================================================
-   *
-   * WHY THIS LINE HAD TO WAIT FOR JP. The inbound reply capability shipped
-   * on 2026-08-31 fully working, and this body never mentioned it - so a
-   * patient could reply SIM and be heard, but was never told they could.
-   * Amending a body JP approved on 2026-08-03 is a question, not an edit,
-   * and it was carried as Q-W14-03 until he answered it.
-   *
-   * THE WORDS ARE NOT WRITTEN HERE. `REMINDER_CONFIRM_INSTRUCTION` derives
-   * them from `INBOUND_KEYWORDS` - the same config the classifier matches
-   * against - so the words the reminder tells the patient to send can never
-   * drift from the words the platform actually recognises. That module was
-   * built for exactly this line and had no consumer until now.
-   *
-   * IT COSTS THE FEE VARIANT ITS SINGLE SEGMENT, and that is stated rather
-   * than discovered: see the note above `renderSms`.
+   * THE 3 AUGUST BODY, BYTE-IDENTICAL. The reply instruction JP approved on
+   * 2026-09-01 is NOT here: it is conditional additional content appended by
+   * `renderSms` only when the sender can actually receive a reply. See the
+   * note on that function.
    */
   "24h": {
-    pt:
-      "OsteoJP - Lembrete\nConsulta: amanha {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}\n" +
-      REMINDER_CONFIRM_INSTRUCTION.pt,
-    en:
-      "OsteoJP - Reminder\nAppointment: tomorrow {date} at {time}\nLocation: {clinic}\nReschedule: {phone}\n" +
-      REMINDER_CONFIRM_INSTRUCTION.en,
-  },
+    pt: "OsteoJP - Lembrete\nConsulta: amanha {date} as {time}\nLocal: {clinic}\nRemarcar: {phone}",
+    en: "OsteoJP - Reminder\nAppointment: tomorrow {date} at {time}\nLocation: {clinic}\nReschedule: {phone}",
+    },
 };
 
 /* ================================================================== */
@@ -221,25 +202,64 @@ export function renderEmail(
 }
 
 /**
- * `feeNotice` is THE ANSWER from `fee-notice.ts` `shouldRenderFeeNotice`, never
- * its inputs. This function does not know what the flag is called and cannot see
- * whether the patient accepted, which is what keeps the double gate at exactly
- * one site (W13-05).
+ * Conditional additions to a reminder SMS. BOTH ARE ANSWERS, NEVER INPUTS -
+ * the render site is not allowed to know what a flag is called or what a
+ * sender looks like, which is what keeps each decision at exactly one place.
  *
- * The line is APPENDED. `SMS[offset][locale]` is not read differently, not
- * re-authored and not branched on: the ten approved bodies are byte-identical
- * whether the fee notice renders or not, which `templates.test.ts` asserts. The
- * fee line is conditional ADDITIONAL content, per LOOP 5 section 5.
+ * AN OBJECT RATHER THAN TWO POSITIONAL BOOLEANS, and that is not style. The
+ * two are independent, they are both `boolean`, and `renderSms(o, l, c, true,
+ * false)` and `renderSms(o, l, c, false, true)` are both well-typed and mean
+ * opposite things - one appends an unapproved fee line, the other a reply
+ * instruction. A transposition would compile, pass typecheck, and be found by
+ * a patient.
+ */
+export type SmsAdditions = {
+  /**
+   * THE ANSWER from `fee-notice.ts` `shouldRenderFeeNotice`, never its inputs.
+   * This function does not know what the flag is called and cannot see whether
+   * the patient accepted, which is what keeps the double gate at one site.
+   */
+  feeNotice?: boolean;
+  /**
+   * THE ANSWER from `reply-capability.ts` `senderCanReceiveReplies`, never its
+   * inputs. This function does not know what a Twilio sender looks like.
+   */
+  replyInstruction?: boolean;
+};
+
+/**
+ * ==================================================================
+ * THE REPLY INSTRUCTION IS GATED ON THE SENDER, NOT ON THE COPY.
+ * ==================================================================
+ * JP approved the line on 2026-09-01 and it is still approved. What changed on
+ * the same day is that it must only be SAID when it is TRUE: the live sender is
+ * the alphanumeric `OsteoJP`, which cannot receive a reply, so the message was
+ * asking a question the patient could not answer. Worse, the failure is silent
+ * at their end - they type SIM, believe they confirmed, and the agenda still
+ * reads `agendada`.
  *
- * `assertSmsCompliant` runs AFTER the append, so an overlong fee line fails the
- * render loudly instead of costing a silent second segment. See the segment
- * budget in fee-notice.ts - the margin is 7 characters and a test measures it.
+ * THE APPROVAL COVERS BOTH RENDERINGS, and that is mechanical rather than
+ * generous: with the gate off the body is a STRICT PREFIX of the approved
+ * amendment and byte-identical to what JP approved on 2026-08-03. Neither
+ * rendering is copy nobody has seen. `templates.test.ts` asserts the prefix
+ * property in both directions.
+ *
+ * ONLY THE 24h OFFSET, and the check is here rather than at the caller. The
+ * instruction is an answer to the message that asked, and 24h is the offset
+ * that goes by SMS. The 48h offset routes to email so `renderSms("48h", …)`
+ * never runs in production - which is exactly why a future 48h SMS must not
+ * inherit the line by accident.
+ *
+ * `assertSmsCompliant` RUNS AFTER BOTH APPENDS, so an overlong result fails
+ * the render loudly instead of costing a silent second segment. That ordering
+ * is load-bearing: the fee line and the reply instruction TOGETHER exceed one
+ * segment, and fee-notice.test.ts pins it.
  */
 export function renderSms(
   offset: ReminderOffsetId,
   locale: Locale,
   ctx: ReminderContext,
-  feeNotice = false,
+  additions: SmsAdditions = {},
 ): string {
   const tpl = SMS[offset][locale];
   const base = fill(tpl, {
@@ -248,7 +268,13 @@ export function renderSms(
     clinic: ctx.clinicLocation,
     phone: ctx.clinicPhone,
   });
-  const message = feeNotice ? `${base}\n${FEE_NOTICE_SMS[locale]}` : base;
+  const withReply =
+    additions.replyInstruction && offset === "24h"
+      ? `${base}\n${REMINDER_CONFIRM_INSTRUCTION[locale]}`
+      : base;
+  const message = additions.feeNotice
+    ? `${withReply}\n${FEE_NOTICE_SMS[locale]}`
+    : withReply;
   assertNoUnfilledPlaceholders("sms", message);
   assertSmsCompliant(message);
   return message;

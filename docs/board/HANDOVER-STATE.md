@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**239 cards on the board. 193 shipped, 46 open. Launch readiness 9/9, every launch gate passes.**
+**240 cards on the board. 194 shipped, 46 open. Launch readiness 9/9, every launch gate passes.**
 Plus **30 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above.
 
@@ -339,9 +339,9 @@ resume is here; no chat history is required.**
 
 ## Board head and counts
 
-    main               e48f2327 (#1087 merged), plus this commit
-    cards              242 in the file, 239 rendered
-    shipped            193
+    main               d81ecb16 (#1087 + #1088 merged), plus this commit
+    cards              243 in the file, 240 rendered
+    shipped            194
     open               46
     rulings            30  (17 owner WF-*, 13 strategy SR-*) - decisions, not work,
                            in none of the counts above

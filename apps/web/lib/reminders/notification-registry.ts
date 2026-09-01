@@ -49,6 +49,7 @@ import {
 } from "./templates";
 import { FEE_NOTICE_SMS, FEE_NOTICE_TEMPLATE_ID } from "./fee-notice";
 import {
+  REMINDER_CONFIRM_INSTRUCTION,
   REPLY_ACK_CANCELLED,
   REPLY_ACK_CONFIRMED,
   REPLY_ACK_REVIEW,
@@ -152,14 +153,45 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
      * an approved body is a question rather than an edit, which is why it
      * waited for JP.
      *
-     * IT COSTS THE FEE VARIANT ITS SINGLE SEGMENT. See fee-notice.test.ts's
-     * segment budget: the composed fee-bearing body is now over 160 characters
-     * and renderSms throws rather than splitting it. Nothing is at risk today
-     * (the flag is unarmed and the entry below is unapproved), but variant B
-     * now needs either a shorter fee line or a two-segment message, and that is
-     * a JP-and-counsel choice.
+     * ==================================================================
+     * THE LINE IS CAPABILITY-GATED, AND THE APPROVAL COVERS BOTH RENDERINGS.
+     * ==================================================================
+     * Same-day correction: the live sender is the alphanumeric `OsteoJP`,
+     * which cannot receive a reply, so the amended body asked a question the
+     * patient could not answer - and the failure is silent at their end. The
+     * line now appends only when `senderCanReceiveReplies()` says the sender
+     * can hear the answer.
+     *
+     * BOTH RENDERINGS ARE APPROVED COPY, mechanically and not by generosity:
+     *   gate OFF -> `SMS["24h"].pt`, BYTE-IDENTICAL to JP 2026-08-03
+     *   gate ON  -> that body plus the line, JP 2026-09-01
+     * The first is a strict prefix of the second, which is what the body
+     * registered here composes and what templates.test.ts asserts. There is no
+     * rendering under this id that nobody has approved.
+     *
+     * IT ARMS ITSELF. Nothing here changes when the Portuguese number arrives:
+     * the moment TWILIO_SMS_FROM is an E.164 number - or, for a messaging
+     * service whose routing this code cannot inspect, REMINDERS_REPLY_CAPABLE
+     * is exactly "true" - the line appends.
+     *
+     * IT COSTS THE FEE VARIANT ITS SINGLE SEGMENT, BUT ONLY WHEN ARMED. With
+     * the gate off the fee-bearing body is 153 chars and fits, exactly as
+     * before. With both on it is over 160 and renderSms throws rather than
+     * splitting. Nothing is at risk today on either count (the fee flag is
+     * unarmed and its entry is unapproved), but the combination is a
+     * JP-and-counsel choice when counsel signs.
      */
-    ...patientTemplate("reminder.24h.sms", "sms", EV_REMINDER_DUE, SMS["24h"].pt),
+    ...patientTemplate(
+      "reminder.24h.sms",
+      "sms",
+      EV_REMINDER_DUE,
+      // THE MAXIMAL RENDERING. `SMS["24h"].pt` is JP's 2026-08-03 body,
+      // byte-identical; the instruction is appended by renderSms only when the
+      // sender can receive a reply. Registering the LONGER form is the safe
+      // direction: the registered body is then the most this id can ever send,
+      // and the gated-off rendering is a strict prefix of it.
+      `${SMS["24h"].pt}\n${REMINDER_CONFIRM_INSTRUCTION.pt}`,
+    ),
     ...JP_APPROVAL_WF18,
   },
   patientTemplate("confirmation.email", "email", EV_SCHEDULED, CONFIRMATION_EMAIL.pt.body),
