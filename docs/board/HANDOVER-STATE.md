@@ -339,7 +339,7 @@ resume is here; no chat history is required.**
 
 ## Board head and counts
 
-    main               b7e48c3f (#1085 + #1086 merged), plus this commit
+    main               e48f2327 (#1087 merged), plus this commit
     cards              242 in the file, 239 rendered
     shipped            193
     open               46
