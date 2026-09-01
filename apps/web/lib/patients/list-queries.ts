@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { and, asc, count, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { locations, patients } from "@osteojp/db";
@@ -8,6 +9,7 @@ import { patientLocationScope, therapistPatientScope } from "@/lib/patients/scop
 import { activePatientsOnly } from "@/lib/patients/filters";
 import { escapeLike, parseSearch } from "@/lib/patients/validation";
 import { followupWindow } from "@/lib/followup/window";
+import { PATIENT_STATS_TAG } from "./cache-tags";
 
 /**
  * UX-01 - the /patients working list, read side.
@@ -380,6 +382,104 @@ export async function getPatientListStats(
       inRecoveryWindow: Number(row?.inRecoveryWindow ?? 0),
     };
   });
+}
+
+/* ================================================================== */
+/* The stat strip, cached. SR-25.                                      */
+/* ================================================================== */
+
+/**
+ * The invalidation tag lives in `./cache-tags`, which has no imports and no
+ * top-level calls. See that file for why: a constant must not drag this
+ * module's `unstable_cache` side effect into everything that names the tag.
+ */
+
+/**
+ * ==========================================================================
+ * WHY A SEPARATE FUNCTION AND NOT A FLAG ON `getPatientListStats`
+ * ==========================================================================
+ * `getPatientListStats` takes an injectable `now`, and eleven DB-gated
+ * assertions pass a fixed one so their windows are deterministic. A cache keyed
+ * without the clock CANNOT serve a caller who pinned the clock, so a single
+ * function would have needed a branch on "was `now` supplied", and that branch
+ * is the shape PORTAL-REHYDRATE 1.3 catalogues: two different questions
+ * answered by one code path, distinguished by whether an optional argument
+ * happened to be present.
+ *
+ * So the cached read is its OWN export, the uncached one is untouched, and
+ * every existing caller and test keeps the function it already had. The page is
+ * the only caller that wants a cache and it asks for one by name.
+ *
+ * ==========================================================================
+ * WHY THIS IS CACHED AND THE LIST IS NOT
+ * ==========================================================================
+ * Measured under PERF-06 TASK 2, RLS enforced, at the shipped pool size: the
+ * stat strip is the most expensive thing on the page and the least read. Not
+ * running it takes 20 concurrent renders from 4,815 ms to 1,481 ms and 60 from
+ * 17,492 ms to 4,634 ms.
+ *
+ * STREAMING IT WAS MEASURED AND REFUSED (SR-25). A Suspense island leaves the
+ * query running and competing for the same connections, so it moves the wait
+ * rather than removing it: 13% WORSE at 20 concurrent and only 19% better at
+ * 60. That is SR-20's finding one layer up.
+ *
+ * A SEGMENT `loading.tsx` IS STILL REFUSED and this does not revisit it. See
+ * `app/patients/page.tsx`: one was added under PERF-02 and turned
+ * `/patients/[id]`'s `notFound()` into a streamed 200.
+ *
+ * ==========================================================================
+ * KEYED ON FOUR PRIMITIVES, NOT ON THE CONTEXT OBJECT
+ * ==========================================================================
+ * The same reasoning `viewer-locations.ts` records: `unstable_cache` serialises
+ * its arguments, and a caller that builds a fresh `RequestContext` must still
+ * hit. `RequestContext` is exactly three strings, so all three are passed
+ * flat, plus the location filter, which changes the answer.
+ *
+ * THE ROLE IS IN THE KEY BECAUSE IT IS IN THE ANSWER. `scopeConditions` branches
+ * on it and RLS narrows on it, so two roles see different totals. A key without
+ * the role would serve one role's numbers to another.
+ *
+ * ==========================================================================
+ * WHAT IS STALE, AND FOR HOW LONG
+ * ==========================================================================
+ * Sixty seconds, and the tag is dropped by every patient mutation
+ * (`revalidatePatient`), so a receptionist who adds or removes a patient sees
+ * `total` move immediately.
+ *
+ * APPOINTMENT MUTATIONS ARE NOT INVALIDATED AND THAT IS A KNOWN WINDOW, stated
+ * here rather than discovered later: `seenThisMonth`, `withUpcoming` and
+ * `inRecoveryWindow` all move on appointment events, so booking or cancelling
+ * can leave those three up to 60 seconds behind. SR-25 named patient create and
+ * delete; widening it to the appointment paths is a separate ruling, and the
+ * three numbers concerned describe the whole clinic rather than the viewer's own
+ * last action, so nobody is watching one of them change.
+ */
+const fetchPatientListStats = unstable_cache(
+  async (
+    tenantId: string,
+    role: RequestContext["role"],
+    userId: string,
+    locationId: string | null,
+  ): Promise<PatientListStats> =>
+    getPatientListStats(locationId, { tenantId, role, userId }),
+  ["patients-stat-strip-v1"],
+  { revalidate: 60, tags: [PATIENT_STATS_TAG] },
+);
+
+/**
+ * The stat strip for the page, served from a 60-second cache.
+ *
+ * `assertCan` runs HERE, before the cache is consulted, and that ordering is
+ * load-bearing: a cache hit does not execute the function it cached, so a
+ * capability check living inside would be skipped for every hit after the first.
+ * Authorization outside, data inside.
+ */
+export async function getCachedPatientListStats(
+  locationId: string | null,
+  ctx: RequestContext,
+): Promise<PatientListStats> {
+  assertCan(ctx.role, "patients:read");
+  return fetchPatientListStats(ctx.tenantId, ctx.role, ctx.userId, locationId);
 }
 
 /** Locations for the filter select, restricted to the viewer's own scope. */

@@ -8,7 +8,10 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // → deny, no update). Owner/admin/reception are unscoped.
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// `updateTag` joined the mock when SR-25 gave revalidatePatient the stat-strip
+// tag. Every patient mutation goes through that helper, so every suite that
+// exercises one needs the export.
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), updateTag: vi.fn() }));
 vi.mock("../auth/context", () => ({
   requireRequestContext: vi.fn(),
   runScoped: vi.fn(),

@@ -11,7 +11,7 @@
 // server-verified scrypt password gate, and REFUSED whenever clinical records
 // (or any other domain rows) still reference the patient.
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { and, count, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { assertCan, can } from "@osteojp/auth";
 import {
@@ -46,13 +46,43 @@ import {
   type MergePatientsInput,
   type UpdatePatientInput,
 } from "./validation";
+import { PATIENT_STATS_TAG } from "./cache-tags";
 import { getPatient, searchPatients } from "./queries";
 import { listAppointmentNotes, type PatientNoteRevision } from "./note-revisions";
 import type { Patient } from "./types";
 
+/**
+ * SR-25: the stat strip's tag is dropped HERE, in the one helper every patient
+ * mutation already calls, rather than at the individual create and delete sites.
+ *
+ * WHY THE SHARED HELPER AND NOT THE TWO SITES THE RULING NAMES. There are nine
+ * call sites (create, update, soft delete, restore, hard delete, merge, notes),
+ * and a tag invalidated at two of them is a tag that goes stale the first time
+ * somebody adds a tenth. This is the same argument the codebase makes about
+ * `revalidatePath` itself, which is why that helper exists at all.
+ *
+ * IT IS ALSO CORRECT RATHER THAN MERELY CONSERVATIVE. An update can move
+ * `primary_location_id`, which changes which patients are in a location-scoped
+ * set and therefore changes `total` for that location. Restore and merge move a
+ * patient in and out of `deleted_at`. Every one of these is a real input to the
+ * four numbers.
+ *
+ * WHAT IT DOES NOT COVER, said here so it is not discovered later: APPOINTMENT
+ * mutations. Three of the four statistics move on appointment events, and those
+ * paths do not call this helper, so they stay up to 60 seconds behind. SR-25
+ * named patient create and delete; widening it is a separate ruling.
+ *
+ * `updateTag`, NOT `revalidateTag`. The repo already learned this one at
+ * `app/admin/services/actions.ts`: the `revalidateTag(tag, "max")` form DEFERS
+ * invalidation, and it left newly created packs invisible in the booking drawer.
+ * `updateTag` invalidates immediately, which is the whole point here - the
+ * receptionist who just added a patient must see `total` move on the next load,
+ * not after the 60-second TTL expires.
+ */
 function revalidatePatient(id: string): void {
   revalidatePath("/patients");
   revalidatePath(`/patients/${id}`);
+  updateTag(PATIENT_STATS_TAG);
 }
 
 export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
