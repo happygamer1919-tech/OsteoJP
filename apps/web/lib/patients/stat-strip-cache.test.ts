@@ -184,3 +184,69 @@ describe("the write paths drop the tag", () => {
     expect(hits).toHaveLength(1);
   });
 });
+
+/* ================================================================== */
+/* APPOINTMENT mutations drop the tag too. CONFIRM-01 TASK 1.          */
+/* ================================================================== */
+
+describe("appointment mutations drop the stat-strip tag", () => {
+  /**
+   * THREE OF THE FOUR NUMBERS ARE COMPUTED FROM `appointments`, NOT `patients`.
+   * `seenThisMonth` counts completed appointments this month, `withUpcoming`
+   * asks whether a future non-cancelled one exists, and `inRecoveryWindow` is a
+   * last-completed date with no future booking. None of those paths goes through
+   * `revalidatePatient`, so SR-25's original invalidation left all three up to
+   * sixty seconds behind.
+   *
+   * Comment-stripped, for the reason the block above this one records: the first
+   * version of a guard here matched the prose explaining the rule.
+   */
+  const stripComments = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+
+  const read = async (rel: string) =>
+    stripComments(
+      await (await import("node:fs/promises")).readFile(new URL(rel, import.meta.url), "utf8"),
+    );
+
+  it("scheduling/actions.ts revalidates the agenda in exactly ONE place", async () => {
+    const src = await read("../scheduling/actions.ts");
+    // Eight scattered calls before CONFIRM-01. One now, inside the helper, so a
+    // ninth mutation site cannot be added that refreshes the agenda and leaves
+    // the four numbers stale.
+    const hits = src.match(/revalidatePath\(AGENDA_PATH\)/g) ?? [];
+    expect(hits).toHaveLength(1);
+  });
+
+  it("that one place also drops PATIENT_STATS_TAG", async () => {
+    const src = await read("../scheduling/actions.ts");
+    const fn = src.slice(src.indexOf("function revalidateAppointmentSurfaces("));
+    const body = fn.slice(0, fn.indexOf("\n}"));
+    expect(body).toContain("revalidatePath(AGENDA_PATH)");
+    expect(body).toContain("updateTag(PATIENT_STATS_TAG)");
+  });
+
+  it("every mutation site goes through the helper", async () => {
+    const src = await read("../scheduling/actions.ts");
+    // The eight sites that used to call revalidatePath directly.
+    const viaHelper = src.match(/revalidateAppointmentSurfaces\(\)/g) ?? [];
+    expect(viaHelper.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("the public token redemption does NOT invalidate, and that is deliberate", async () => {
+    const src = await read("../../app/r/[token]/actions.ts");
+    // TRIED AND REVERTED. Next refuses updateTag outside a Server Action, and a
+    // throwing invalidation there would sit AFTER the appointment was written -
+    // turning a successful cancellation into an error page for a patient. It
+    // also buys nothing for CONFIRM, which moves none of the four numbers:
+    // withUpcoming counts future appointments NOT IN ('cancelled','no_show'),
+    // and both `scheduled` and `confirmed` qualify.
+    //
+    // Asserted so a future edit that adds one has to read this first.
+    expect(src).not.toContain("PATIENT_STATS_TAG");
+  });
+
+  it("the scheduling actions do not use the DEFERRING revalidateTag form", async () => {
+    expect(await read("../scheduling/actions.ts")).not.toMatch(/revalidateTag\s*\(/);
+  });
+});

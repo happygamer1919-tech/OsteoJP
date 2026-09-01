@@ -6,7 +6,9 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // are mocked.
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// `updateTag` joined the mock when every appointment mutation started dropping
+// the stat-strip tag through revalidateAppointmentSurfaces().
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), updateTag: vi.fn() }));
 vi.mock("@/lib/auth/context", () => ({
   requireRequestContext: vi.fn(),
   runScoped: vi.fn(),

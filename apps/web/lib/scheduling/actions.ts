@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { and, count, eq, inArray, or, sql } from "drizzle-orm";
 import {
   assertCan,
@@ -21,6 +21,7 @@ import {
 } from "@osteojp/db";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
+import { PATIENT_STATS_TAG } from "@/lib/patients/cache-tags";
 import { clientIp } from "./actor";
 import { batchSchedule, type BatchScheduleInput, type BatchScheduleResult, PackBatchRefused } from "./batch";
 import { writeAppointmentStatusChangedEvent } from "./analytics";
@@ -61,6 +62,68 @@ import type {
 import { acquireSlotLocks, acquireSlotLocksForMany } from "./slot-lock";
 
 const AGENDA_PATH = "/agenda";
+
+/**
+ * EVERY APPOINTMENT MUTATION INVALIDATES THE AGENDA *AND* THE PATIENT STAT
+ * STRIP. SR-25 as amended by the CONFIRM-01 dispatch.
+ *
+ * ==========================================================================
+ * WHY THE STAT STRIP, WHICH IS ON A DIFFERENT PAGE
+ * ==========================================================================
+ * Three of its four numbers are computed from `appointments`, not from
+ * `patients`: `seenThisMonth` counts completed appointments this month,
+ * `withUpcoming` asks whether a future non-cancelled one exists, and
+ * `inRecoveryWindow` is a last-completed date with no future booking. So
+ * booking, cancelling, rescheduling or COMPLETING an appointment moves them,
+ * and none of those paths goes through `revalidatePatient`.
+ *
+ * SR-25 named patient create and delete only, which left those three up to
+ * sixty seconds behind. The dispatch that noticed it said the ruling
+ * under-specified the invalidation rather than that the cache was wrong.
+ *
+ * ==========================================================================
+ * A HELPER, BECAUSE EIGHT SCATTERED CALLS ARE EIGHT PLACES TO FORGET
+ * ==========================================================================
+ * `revalidatePath(AGENDA_PATH)` appeared at eight sites in this file and the
+ * ninth was going to be added without the tag. This is the same argument
+ * `revalidatePatient` in `lib/patients/actions.ts` already makes, and it is why
+ * that helper exists at all.
+ *
+ * `updateTag`, NOT `revalidateTag`: the `revalidateTag(tag, "max")` form DEFERS,
+ * and `app/admin/services/actions.ts` records what that cost - a just-created
+ * pack stayed invisible in the booking drawer. A receptionist who completes a
+ * consultation must see the count move on the next load.
+ *
+ * ==========================================================================
+ * WHAT THIS CANNOT REACH, AND IT IS NOT A DEFECT IN THIS FILE
+ * ==========================================================================
+ * TWO PATHS ARE DELIBERATELY NOT COVERED, and neither is an oversight.
+ *
+ * 1. `apps/api` is a SEPARATE Vercel deployment with its OWN Next data cache, so
+ *    a PORTAL booking cannot invalidate this app's tag - there is no shared
+ *    channel to do it through. Closing that needs a cross-deployment
+ *    invalidation mechanism, which is a decision rather than a line of code.
+ *
+ * 2. THE PUBLIC TOKEN REDEMPTION at `app/r/[token]/actions.ts` does NOT drop the
+ *    tag, and this was tried and REVERTED rather than skipped. Next refuses
+ *    `updateTag` outside a Server Action - "updateTag can only be called from
+ *    within a Server Action" - and while `redeemAction` IS one in production, a
+ *    throwing invalidation would sit AFTER the appointment had already been
+ *    written. That turns a successful cancellation into an error page for a
+ *    patient, on the one path in this codebase that must never fail loudly at
+ *    them. Cache freshness is not worth that trade.
+ *
+ *    IT ALSO BUYS ALMOST NOTHING, which is what settles it. CONFIRM does not
+ *    move any of the four numbers: `withUpcoming` counts future appointments
+ *    NOT IN ('cancelled','no_show'), and both `scheduled` and `confirmed`
+ *    qualify, so `agendada -> confirmada` changes nothing. Only CANCEL moves
+ *    them, and only by up to sixty seconds, on numbers that describe the whole
+ *    clinic rather than the viewer's own last action.
+ */
+function revalidateAppointmentSurfaces(): void {
+  revalidatePath(AGENDA_PATH);
+  updateTag(PATIENT_STATS_TAG);
+}
 const CONFLICT_CAP = 10; // cap aggregated conflict lists across a series
 
 /**
@@ -771,7 +834,7 @@ export async function createAppointment(
       // Stream E: schedule reminders for the new appointment(s). Best-effort,
       // post-commit; safe with REMINDERS_LIVE_SEND off (sandbox downstream).
       await afterCommit("create", async () => {
-        revalidatePath(AGENDA_PATH);
+        revalidateAppointmentSurfaces();
         await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
       });
     }
@@ -820,7 +883,7 @@ export async function batchScheduleAppointments(
   }
   try {
     const result = await batchSchedule(actor, input);
-    revalidatePath(AGENDA_PATH);
+    revalidateAppointmentSurfaces();
     return { ok: true, data: result };
   } catch (e) {
     /**
@@ -963,7 +1026,7 @@ export async function cloneAppointment(
       // A clone is a real new appointment: schedule its reminders like any other
       // creation. Best-effort, post-commit; safe with REMINDERS_LIVE_SEND off.
       await afterCommit("clone", async () => {
-        revalidatePath(AGENDA_PATH);
+        revalidateAppointmentSurfaces();
         await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
       });
     }
@@ -1273,7 +1336,7 @@ export async function updateAppointment(
     );
     if (result.ok) {
       await afterCommit("update", async () => {
-        revalidatePath(AGENDA_PATH);
+        revalidateAppointmentSurfaces();
         if (
           (patch.status === "completed" || patch.status === "no_show") &&
           statusTargets.length > 0
@@ -1468,7 +1531,7 @@ export async function rescheduleAppointment(
       // supersedes the prior sleeping run (cancelOn on appointment id), so the old
       // time never fires. Best-effort, post-commit.
       await afterCommit("reschedule", async () => {
-        revalidatePath(AGENDA_PATH);
+        revalidateAppointmentSurfaces();
         revalidatePath("/notificacoes");
         await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
         // LE-staff-transitions-emit-nothing. Best-effort and post-commit: the
@@ -1659,7 +1722,7 @@ export async function confirmAppointmentRequest(
     );
     if (result.ok) {
       await afterCommit("confirmRequest", async () => {
-        revalidatePath(AGENDA_PATH);
+        revalidateAppointmentSurfaces();
         revalidatePath("/notificacoes");
         // ================================================================== //
         // THE PORTAL PATIENT'S REMINDERS AND CONFIRMATION START HERE, AND
@@ -1791,7 +1854,7 @@ export async function cancelAppointment(
       },
     );
     if (result.ok) {
-      revalidatePath(AGENDA_PATH);
+      revalidateAppointmentSurfaces();
       await afterCommit("cancel", async () => {
         revalidatePath("/notificacoes");
         // POST-COMMIT and best-effort, the same contract the confirm path set:
@@ -1917,7 +1980,7 @@ export async function hardDeleteAppointment(
 
       return { ok: true, data: { id } };
     });
-    if (result.ok) revalidatePath(AGENDA_PATH);
+    if (result.ok) revalidateAppointmentSurfaces();
     return result;
   } catch (e) {
     return fail("hardDelete", e);
