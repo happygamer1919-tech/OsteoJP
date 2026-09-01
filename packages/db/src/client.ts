@@ -41,7 +41,38 @@ function getDb(): Db {
         "set DATABASE_URL before the first query.",
     );
   }
-  _client = postgres(url, { prepare: false, max: 2, idle_timeout: 20, connect_timeout: 10 });
+  // ==================================================================
+  // `max: 6`, AND THE NUMBER IS DERIVED RATHER THAN CHOSEN. PERF-05/06.
+  // ==================================================================
+  // THIS POOL IS PER *INSTANCE*, NOT PER REQUEST, AND THAT IS WHAT CHANGED.
+  // `max: 2` was correct for per-invocation serverless, where one invocation
+  // owns its instance and two connections are two connections. Under FLUID
+  // COMPUTE one instance serves MANY CONCURRENT INVOCATIONS, and every one of
+  // them shares this singleton. Two connections then serve the whole instance,
+  // so concurrency queues here rather than at the pooler - and the queue is
+  // invisible, because it is inside the process.
+  //
+  // MEASURED, not argued. /patients with the shipped RLS policies transcribed
+  // into a disposable shim, one instance, `max: 2`: p75 1.5 s at 1 concurrent
+  // render, 9.6 s at 10, 19.8 s at 20, 54.1 s at 60. Linear in concurrency,
+  // zero errors. Production reported a p75 of 59 s on this route.
+  //
+  // THE BOUND, and both halves bind:
+  //   N x max <= 15   N is the warm instance count, derived at 1-2 from
+  //                   1.9K invocations / 12h at 0.27 mean concurrency and
+  //                   0.25% CPU utilisation (docs/audit/PERF-06-RLS.md S2).
+  //   max    <= 15    Supavisor's own pool size, per user+db pair.
+  // At N = 2, `max: 6` puts 12 clients on 15 slots. At N = 1 it puts 6, which
+  // leaves room for a second instance to appear without oversubscribing.
+  //
+  // WHY NOT HIGHER. At 20 concurrent renders: max 2 -> 19.8 s, max 4 -> 10.0 s,
+  // max 8 -> 7.5 s, max 15 -> 7.1 s. The curve flattens above 8 because the
+  // DATABASE CPU becomes the limit, which is SR-20's finding one layer down.
+  // Six is on the steep part of the curve and inside the bound.
+  //
+  // SR-20 IS UNTOUCHED. That ruling governs Supavisor's `pool_size`, a console
+  // setting. This is the application's own client pool and is a different knob.
+  _client = postgres(url, { prepare: false, max: 6, idle_timeout: 20, connect_timeout: 10 });
   _db = drizzle(_client, { schema });
   return _db;
 }

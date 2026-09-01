@@ -21,7 +21,7 @@ import {
   filterRosterByViewerScope,
   filterTherapistsByLocation,
 } from "./therapist-location-filter";
-import { listTherapistLocationAssignments } from "./therapist-locations";
+import { readTherapistLocationAssignments } from "./therapist-locations";
 import type {
   AgendaAppointment,
   AgendaFilters,
@@ -252,58 +252,88 @@ export async function listPatientAppointments(
   });
 }
 
-// Therapists, locations, and services are stable reference data — they change
-// only when an admin makes a configuration change, at most a few times a year.
-// Cache per-tenant for 60 seconds to avoid 3 DB round-trips on every agenda load.
-// The cache key includes tenantId + userId so RLS-filtered results are never
-// shared across tenants or roles. Tagged `agenda-reference-data` for targeted
-// invalidation when admin makes config changes.
-const fetchStableAgendaRef = unstable_cache(
+// Therapists, locations, services, packs AND the therapist-to-location map:
+// stable reference data that changes only when an admin makes a configuration
+// change, at most a few times a year. Cached 60s and tagged
+// `agenda-reference-data` for targeted invalidation.
+//
+// ==========================================================================
+// ONE CACHE ENTRY AND ONE TRANSACTION. PERF-06, the approved batching hybrid.
+// ==========================================================================
+// This was TWO `unstable_cache` entries opening TWO `runScoped` transactions
+// back to back. Both were keyed on the same `ctx`, both revalidated at 60s and
+// both carried the same tag, so they expired together, missed together and hit
+// together - two transactions that were never independent in practice.
+//
+// WHAT THE SPLIT COST, and it is a count rather than an estimate: a second
+// `runScoped` is BEGIN + `set local role` + `set_config` + COMMIT, four
+// statements and four network round trips on production, wrapped around two
+// `selectDistinct`s. PERF-03 measured that ceremony at ~78% of the server slot
+// on reads this small.
+//
+// WHAT IT DID NOT COST, stated because the old comment's reasoning was sound
+// and is preserved: the ref data is location-independent, so nothing here is
+// keyed per location and no cached list is multiplied to narrow one of them.
+// Merging changes the transaction count, not the cache key.
+//
+// THE CACHE IS THE REASON THIS IS SMALLER THAN IT LOOKS, and the honest number
+// is on the card: on a WARM cache these reads cost nothing at all, so the win
+// is on the cold path. At 197 agenda renders per 12 hours across several staff,
+// a 60-second entry is usually cold by the next render - which is why the cold
+// path is the common one here and not the exception.
+//
+// KEY PART CHANGED to `agenda-reference-v2` deliberately: the cached VALUE now
+// has a different shape, and reusing `agenda-stable-ref` would let a deploy
+// read an old entry back into the new destructure.
+const fetchAgendaReferenceData = unstable_cache(
   async (ctx: RequestContext) =>
     runScoped(ctx, async (tx) => {
-      const [rawTherapistRows, locationRows, serviceRows, packRows] = await Promise.all([
-        // PL-06b: the Terapeuta source is BOOKABLE practitioners, decided by the
-        // explicit is_bookable flag (migration 0046) — NOT derived from role or
-        // service-mapping count (the PL-05 derivation that dropped JP). Fetch each
-        // active user's flag and apply the rule in ./therapist-bookable.ts. No
-        // roles/therapist_services join is needed any more.
-        tx
-          .select({
-            id: users.id,
-            label: users.fullName,
-            isBookable: users.isBookable,
-          })
-          .from(users)
-          .where(eq(users.isActive, true))
-          .orderBy(asc(users.fullName)),
-        tx
-          .select({ id: locations.id, label: locations.name })
-          .from(locations)
-          .where(eq(locations.isActive, true))
-          .orderBy(asc(locations.name)),
-        tx
-          .select({
-            id: services.id,
-            label: services.name,
-            durationMin: services.durationMin,
-            contraindicationSensitive: services.contraindicationSensitive,
-          })
-          .from(services)
-          .where(eq(services.isActive, true))
-          .orderBy(asc(services.name)),
-        // W8-01c — ACTIVE packs as bookable types (creation-active-only, W6-01b).
-        tx
-          .select({
-            id: servicePacks.id,
-            label: servicePacks.name,
-            baseServiceId: servicePacks.baseServiceId,
-            locationId: servicePacks.locationId,
-            sessionCount: servicePacks.sessionCount,
-          })
-          .from(servicePacks)
-          .where(eq(servicePacks.isActive, true))
-          .orderBy(asc(servicePacks.name)),
-      ]);
+      const [rawTherapistRows, locationRows, serviceRows, packRows, assignments] =
+        await Promise.all([
+          // PL-06b: the Terapeuta source is BOOKABLE practitioners, decided by the
+          // explicit is_bookable flag (migration 0046) — NOT derived from role or
+          // service-mapping count (the PL-05 derivation that dropped JP). Fetch each
+          // active user's flag and apply the rule in ./therapist-bookable.ts. No
+          // roles/therapist_services join is needed any more.
+          tx
+            .select({
+              id: users.id,
+              label: users.fullName,
+              isBookable: users.isBookable,
+            })
+            .from(users)
+            .where(eq(users.isActive, true))
+            .orderBy(asc(users.fullName)),
+          tx
+            .select({ id: locations.id, label: locations.name })
+            .from(locations)
+            .where(eq(locations.isActive, true))
+            .orderBy(asc(locations.name)),
+          tx
+            .select({
+              id: services.id,
+              label: services.name,
+              durationMin: services.durationMin,
+              contraindicationSensitive: services.contraindicationSensitive,
+            })
+            .from(services)
+            .where(eq(services.isActive, true))
+            .orderBy(asc(services.name)),
+          // W8-01c — ACTIVE packs as bookable types (creation-active-only, W6-01b).
+          tx
+            .select({
+              id: servicePacks.id,
+              label: servicePacks.name,
+              baseServiceId: servicePacks.baseServiceId,
+              locationId: servicePacks.locationId,
+              sessionCount: servicePacks.sessionCount,
+            })
+            .from(servicePacks)
+            .where(eq(servicePacks.isActive, true))
+            .orderBy(asc(servicePacks.name)),
+          // W9-02 / PL-14 — therapist-to-location assignments, on THIS transaction.
+          readTherapistLocationAssignments(tx),
+        ]);
       // Bookable-practitioner rule (is_bookable flag) applied here so
       // `therapistRows` (and thus both `therapists` and `allTherapists`
       // downstream) never carries a non-bookable staff row. Map back to the
@@ -312,26 +342,17 @@ const fetchStableAgendaRef = unstable_cache(
         id,
         label,
       }));
-      return { therapistRows, locationRows, serviceRows, packRows };
+      // unstable_cache serializes its return value - a Map does not survive the
+      // round-trip, so store entries and rebuild on read.
+      return {
+        therapistRows,
+        locationRows,
+        serviceRows,
+        packRows,
+        assignmentEntries: [...assignments.entries()],
+      };
     }),
-  ["agenda-stable-ref"],
-  { revalidate: 60, tags: ["agenda-reference-data"] },
-);
-
-// W9-02 - therapist-to-location assignment map, derived from
-// availability_templates. Reference data on the same cadence as the rows above
-// (it changes only when an admin edits a therapist's working hours), so it gets
-// the same 60s cache and the same invalidation tag. Cached SEPARATELY from
-// `fetchStableAgendaRef` on purpose: the ref data is location-independent, so
-// keying it per location would multiply four cached lists to narrow only one.
-const fetchTherapistLocationAssignments = unstable_cache(
-  async (ctx: RequestContext) => {
-    const assignments = await listTherapistLocationAssignments(ctx);
-    // unstable_cache serializes its return value - a Map does not survive the
-    // round-trip, so store entries and rebuild on read.
-    return [...assignments.entries()];
-  },
-  ["agenda-therapist-locations"],
+  ["agenda-reference-v2"],
   { revalidate: 60, tags: ["agenda-reference-data"] },
 );
 
@@ -354,12 +375,11 @@ export async function getAgendaOptions(
   // booking drawer can scope its therapist dropdown to the form-selected location
   // regardless of the W9-02 toolbar location. The `therapists` field keeps its
   // W9-02 page/toolbar scoping unchanged.
-  const [{ therapistRows, locationRows, serviceRows, packRows }, assignmentEntries, locationScope] =
-    await Promise.all([
-      fetchStableAgendaRef(ctx),
-      fetchTherapistLocationAssignments(ctx),
-      viewerLocationScope(ctx),
-    ]);
+  // TWO awaits, not three. `viewerLocationScope` is React-cache()d per request
+  // and is already resolved by app/agenda/page.tsx:70 before this runs, so it
+  // costs no transaction here; the reference read is the only one that can.
+  const [{ therapistRows, locationRows, serviceRows, packRows, assignmentEntries }, locationScope] =
+    await Promise.all([fetchAgendaReferenceData(ctx), viewerLocationScope(ctx)]);
 
   const assignmentMap = new Map(assignmentEntries);
 

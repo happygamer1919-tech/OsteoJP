@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
 import type { RequestContext } from "@osteojp/auth";
-import { availabilityTemplates, locations, staffLocations } from "@osteojp/db";
+import { availabilityTemplates, locations, staffLocations, type DbTx } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 
 /**
@@ -57,7 +57,28 @@ export async function getTherapistLocationIds(
 export async function listTherapistLocationAssignments(
   ctx: RequestContext,
 ): Promise<Map<string, string[]>> {
-  return runScoped(ctx, async (tx) => {
+  return runScoped(ctx, readTherapistLocationAssignments);
+}
+
+/**
+ * The same read, ON A TRANSACTION THE CALLER ALREADY HOLDS.
+ *
+ * SPLIT OUT UNDER PERF-06 SO THE AGENDA CAN PAY ONE TRANSACTION INSTEAD OF TWO.
+ * `runScoped` is not free: every call is BEGIN + `set local role` + `set_config`
+ * + COMMIT, four statements and four round trips, and PERF-03 measured that
+ * ceremony at ~80% of the slot on a read this small. The agenda opened one
+ * transaction for the reference data and a SECOND for this map, back to back,
+ * for no reason other than that they lived in different functions.
+ *
+ * THE WRAPPER ABOVE IS KEPT AND IS NOT A COURTESY. It is the only shape a
+ * caller outside a transaction can use, and collapsing the two would push
+ * `runScoped` into every future call site - which is how a scoped read ends up
+ * unwrapped, and SR-19 is what that costs.
+ */
+export async function readTherapistLocationAssignments(
+  tx: DbTx,
+): Promise<Map<string, string[]>> {
+  {
     const [hourRows, memberRows] = await Promise.all([
       tx
         .selectDistinct({
@@ -93,5 +114,5 @@ export async function listTherapistLocationAssignments(
       else if (!existing.includes(row.locationId)) existing.push(row.locationId);
     }
     return byTherapist;
-  });
+  }
 }
