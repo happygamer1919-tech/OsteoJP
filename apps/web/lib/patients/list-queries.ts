@@ -1,12 +1,7 @@
 import "server-only";
-import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import {
-  followupLastAttendanceClause,
-  followupNoFutureBookingClause,
-  locations,
-  patients,
-} from "@osteojp/db";
+import { locations, patients } from "@osteojp/db";
 import { runScoped, requireRequestContext, type RequestContext } from "@/lib/auth/context";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { patientLocationScope, therapistPatientScope } from "@/lib/patients/scope";
@@ -235,18 +230,78 @@ export async function listPatientsPage(
 }
 
 /**
- * The four numbers above the filter bar.
+ * The four numbers above the filter bar. ONE PASS OVER `appointments`, not one
+ * correlated subquery per patient per statistic.
  *
- * FOUR COUNTS IN ONE ROUND TRIP, not four queries: every one is a scalar
- * subquery in a single SELECT, so the page pays one transaction rather than
- * four. All four are scoped by the same role/location rules as the list, so the
- * strip can never report a number the table below it cannot account for.
+ * ==========================================================================
+ * WHAT THIS REPLACED, AND WHY "ONE ROUND TRIP" WAS THE WRONG THING TO COUNT
+ * ==========================================================================
+ * The previous version wrote each statistic as a scalar subquery inside
+ * `count(*) filter (where ...)`, and its comment said: "FOUR COUNTS IN ONE ROUND
+ * TRIP, not four queries: so the page pays one transaction rather than four."
  *
- * "IN THE RECOVERY WINDOW" REUSES THE RECUPERACAO PREDICATE ITSELF -
- * `followupLastAttendanceClause` and `followupNoFutureBookingClause` from
- * @osteojp/db, the exact clauses /recuperacao selects on. A second definition
- * here would be a number that drifts from the page it claims to summarise, and
- * that package exists precisely so there is one.
+ * One round trip, and SIX CORRELATED SUBQUERIES PER PATIENT ROW inside it - two
+ * for `patientLocationScope`, one for `seenThisMonth`, one for `hasUpcoming` and
+ * two for `inRecoveryWindow`. `EXPLAIN ANALYZE` put the location-scope subplan at
+ * `loops=8400`: it ran for every patient in the tenant before anything narrowed,
+ * and reported `Buffers: shared hit=151158` for a single render of four numbers.
+ *
+ * The transaction count was true and it was not the cost. It is the same shape
+ * PORTAL-REHYDRATE §1.3 warns about, one layer out: a sentence that reports
+ * something reasonable about a path whose real expense sits somewhere else.
+ *
+ * ==========================================================================
+ * MEASURED, AT PRODUCTION SCALE
+ * ==========================================================================
+ * Disposable postgres:16 seeded to the shape the PERF-01 card recorded from
+ * production - 8,400 patients, 41,429 appointments, 36,309 completed, dual = 0 -
+ * with the index set transcribed from packages/db/migrations including 0068,
+ * ANALYZEd, warm, three runs each:
+ *
+ *     as shipped   163.976 / 170.457 / 187.834 ms
+ *     this version  11.036 /  11.206 /  31.255 ms
+ *
+ * At thirty concurrent staff sessions against the unchanged `max: 2` pool, the
+ * whole /patients path moved from p50 1330 ms / p95 1523 ms to p50 408 / p95 475.
+ *
+ * ==========================================================================
+ * THE PREDICATES ARE UNCHANGED AND THAT IS PROVEN, NOT ASSERTED
+ * ==========================================================================
+ * `list-queries.db.test.ts` fixes every one of these four numbers by
+ * construction against a real database, through these functions, with RLS
+ * enforced - and pins `patientLocationScope` separately with RLS out of the way,
+ * because RLS is the ceiling and would otherwise carry the visible set on its
+ * own. Five negative controls redden it, including one patient that exists
+ * solely so `followupNoFutureBookingClause` has an assertion.
+ *
+ * ==========================================================================
+ * ONE PROPERTY IS LOST HERE, AND IT IS REPLACED RATHER THAN DROPPED
+ * ==========================================================================
+ * The previous version IMPORTED `followupLastAttendanceClause` and
+ * `followupNoFutureBookingClause` from @osteojp/db and bound them directly, so
+ * "in the recovery window" could not drift from what /recuperacao selects on.
+ * Its comment said exactly that, and it was the right instinct: "a second
+ * definition here would be a number that drifts from the page it claims to
+ * summarise".
+ *
+ * THIS VERSION CANNOT BIND THEM. Both clauses are correlated subqueries over
+ * `appointments` - re-scanning per patient row is precisely what they are, and
+ * precisely what cost 164-188 ms. Evaluating them against the aggregate means
+ * expressing the same rule a second time, which is the drift the old comment
+ * warned about.
+ *
+ * SO THE GUARANTEE MOVES FROM A SHARED EXPRESSION TO A MECHANICAL TEST.
+ * `list-queries.db.test.ts` computes `inRecoveryWindow` BOTH ways on the same
+ * fixture - once through this aggregate, once through the imported clauses
+ * verbatim - and asserts they agree. If /recuperacao's definition changes, that
+ * test reddens and names this function. A comment asking the next person to keep
+ * two definitions in step would not have; this is the same reasoning
+ * `scripts/local-target.mjs` uses for reading its allowlist from source rather
+ * than copying it.
+ *
+ * THE UNNEST IS OVER BOTH PATIENT COLUMNS. `patient_2_id` is the arm every one
+ * of these expressions carried and the one a rewrite drops silently; the suite
+ * has a patient reachable ONLY through it, in the scope and in the window.
  */
 export async function getPatientListStats(
   locationId: string | null,
@@ -259,48 +314,63 @@ export async function getPatientListStats(
   const base = and(activePatientsOnly, roleScope, chosen);
   const { from, to } = followupWindow(now);
 
-  const bind = (clause: string): SQL =>
-    sql.join(
-      clause
-        .split(/(\$[123])/g)
-        .map((part) =>
-          part === "$1"
-            ? sql`${from.toISOString()}::timestamptz`
-            : part === "$2"
-              ? sql`${to.toISOString()}::timestamptz`
-              : part === "$3"
-                ? sql`${now.toISOString()}::timestamptz`
-                : sql.raw(part),
-        ),
-      sql``,
-    );
-
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
   return runScoped(ctx, async (tx) => {
-    const seenThisMonth = sql<number>`(
-      SELECT count(*) FROM appointments m
-       WHERE (m.patient_id = ${sql.raw(PATIENT_ID)} OR m.patient_2_id = ${sql.raw(PATIENT_ID)})
-         AND m.status = 'completed'
-         AND m.starts_at >= ${monthStart.toISOString()}::timestamptz) > 0`;
+    /**
+     * Every per-patient fact the four statistics need, computed in ONE pass.
+     *
+     * The UNION ALL unnests `appointments` over both participant columns, so a
+     * row where the patient is the SECOND participant contributes to their own
+     * aggregates exactly as a primary row does. `patient_2_id IS NOT NULL` on the
+     * second arm is what migration 0068's partial index answers.
+     *
+     * RLS APPLIES INSIDE THIS CTE. It runs in the same transaction, under the
+     * same `authenticated` role and claims as everything else in `runScoped`, so
+     * `appointments_rls` scopes it exactly as it scoped the correlated subqueries
+     * this replaced.
+     */
+    const perPatient = sql`
+      SELECT pid,
+             max(starts_at) FILTER (WHERE status = 'completed')                     AS last_completed,
+             count(*)       FILTER (WHERE status = 'completed'
+                                      AND starts_at >= ${monthStart.toISOString()}::timestamptz)
+                                                                                     AS completed_this_month,
+             bool_or(starts_at > ${now.toISOString()}::timestamptz
+                     AND status NOT IN ('cancelled', 'no_show'))                     AS has_future
+        FROM ( SELECT patient_id   AS pid, starts_at, status FROM appointments
+               UNION ALL
+               SELECT patient_2_id AS pid, starts_at, status FROM appointments
+                WHERE patient_2_id IS NOT NULL ) participations
+       GROUP BY pid`;
 
-    const hasUpcoming = sql<number>`EXISTS (
-      SELECT 1 FROM appointments u
-       WHERE (u.patient_id = ${sql.raw(PATIENT_ID)} OR u.patient_2_id = ${sql.raw(PATIENT_ID)})
-         AND u.starts_at > ${now.toISOString()}::timestamptz
-         AND u.status NOT IN ('cancelled', 'no_show'))`;
-
-    const inWindow = sql<number>`(${bind(followupLastAttendanceClause(PATIENT_ID))}
-      AND ${bind(followupNoFutureBookingClause(PATIENT_ID))})`;
+    /**
+     * The recovery window, from the SAME shared clauses /recuperacao selects on.
+     *
+     * `followupLastAttendanceClause` is a subquery yielding the patient's latest
+     * completed attendance, compared BETWEEN two bounds; `agg.last_completed` is
+     * that same value, already computed above. `followupNoFutureBookingClause` is
+     * a `NOT EXISTS` over future non-cancelled appointments, which is exactly
+     * `NOT has_future`.
+     *
+     * THIS IS A SECOND EXPRESSION OF THE SAME RULE, said plainly rather than
+     * implied. The equivalence is held by the drift test named in the header, not
+     * by this comment.
+     */
+    const inWindow = sql<number>`(
+      agg.last_completed BETWEEN ${from.toISOString()}::timestamptz AND ${to.toISOString()}::timestamptz
+      AND NOT coalesce(agg.has_future, false)
+    )`;
 
     const [row] = await tx
       .select({
         total: count(),
-        seenThisMonth: sql<number>`count(*) filter (where ${seenThisMonth})`,
-        withUpcoming: sql<number>`count(*) filter (where ${hasUpcoming})`,
+        seenThisMonth: sql<number>`count(*) filter (where coalesce(agg.completed_this_month, 0) > 0)`,
+        withUpcoming: sql<number>`count(*) filter (where coalesce(agg.has_future, false))`,
         inRecoveryWindow: sql<number>`count(*) filter (where ${inWindow})`,
       })
       .from(patients)
+      .leftJoin(sql`(${perPatient}) agg`, sql`agg.pid = ${patients.id}`)
       .where(base);
 
     return {
