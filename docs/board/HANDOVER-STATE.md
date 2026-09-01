@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**249 cards on the board. 203 shipped, 46 open. Launch readiness 9/9, every launch gate passes.**
+**251 cards on the board. 205 shipped, 46 open. Launch readiness 9/9, every launch gate passes.**
 Plus **30 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above.
 

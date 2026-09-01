@@ -83,6 +83,43 @@ pnpm --filter @osteojp/db run seed:form-templates
 Both env vars are required; the script exits non-zero if either is missing.
 Idempotent — safe to re-run.
 
+**IT WILL STOP AND ASK YOU TO NAME THE TARGET.** Before any connection is
+opened, the script prints the host it is about to write to and waits for you to
+type a line that contains that host:
+
+```
+[seed:form-templates] TARGET HOST: aws-0-eu-west-2.pooler.supabase.com
+[seed:form-templates] This will WRITE configuration rows to that database.
+
+Type the following line exactly, then press Enter:
+  SEED CONFIG INTO aws-0-eu-west-2.pooler.supabase.com
+> 
+```
+
+Anything else refuses with **exit 2** (`BAD_INVOCATION`) and writes nothing.
+The same prompt appears for `seed:roles`.
+
+Three things about it that are deliberate and will otherwise look like bugs:
+
+- **It asks on EVERY target, local included.** It never decides whether a host
+  "is production", because that decision is a blocklist and SR-08 rules against
+  building a verdict from what is *absent* from a list — an unrecognised host,
+  including a brand-new production project, is exactly the case a blocklist
+  calls safe. There is no classification here, so there is no case that falls
+  through to "allowed".
+- **It cannot be pre-armed from the shell.** No `SEED_..._CONFIRM` variable, no
+  flag: the line is read from stdin, because "whatever the shell happened to
+  hold" is the failure this gate exists to close. A non-interactive stdin is a
+  refusal — a pipe is not a person.
+- **The line names the host**, so a confirmation typed for a local run does not
+  authorise a production run. If the connection string's password contains an
+  unescaped `/` or `@` the two parsers disagree about the host, and the script
+  refuses rather than naming one of them; percent-encode the password (`%2F`,
+  `%40`) and re-run.
+
+The dev-seed chain (`seed:dev`, `dev-reference.ts`) is unaffected — it calls
+these as library functions and keeps its own `assertLocalTarget` gate.
+
 To install templates into a new tenant, run the same command again with
 that tenant's UUID. The loader has no `--all-tenants` mode (yet) to keep
 the blast radius explicit.
