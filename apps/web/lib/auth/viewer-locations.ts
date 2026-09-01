@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { eq } from "drizzle-orm";
 import { staffLocations } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
@@ -18,14 +19,59 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
  * primitive that callers apply INSIDE their own already-authorized queries, never
  * a user-facing read on its own.
  */
+/**
+ * ==========================================================================
+ * MEMOISED PER REQUEST. PERF-02.
+ * ==========================================================================
+ * This ran ONCE PER CALLER, and it opens its OWN `runScoped` transaction each
+ * time. One `/patients` render called it THREE TIMES for the same user in the
+ * same request: `app/patients/page.tsx` runs `listPatientsPage`,
+ * `getPatientListStats` and `listFilterLocations` in a `Promise.all`, and each
+ * resolves the viewer's scope independently. The agenda page reaches five or six.
+ * React `cache()` was used nowhere in `apps/web` - zero imports before this.
+ *
+ * Six transactions per `/patients` load became four; nineteen statements became
+ * thirteen. Under a `postgres.js` pool of `max: 2`, each removed transaction is
+ * also one fewer connection acquisition against two slots.
+ *
+ * ==========================================================================
+ * DO NOT QUOTE THE LOCAL MEASUREMENT AS THE BENEFIT
+ * ==========================================================================
+ * Against a local harness this moved p50 by about 2%, and that number is
+ * MEANINGLESS for production: a `staff_locations` read on a database in the same
+ * kernel is 0.083 ms, so removing the round trip removes almost nothing. On
+ * production every one of those statements crosses the Supabase transaction
+ * pooler. THE HARNESS CANNOT MEASURE THAT because it has no network latency, and
+ * this comment says so rather than promoting the 2% into a claim about the
+ * clinic. What is measured is the COUNT - six transactions to four, nineteen
+ * statements to thirteen - and that count is exact.
+ *
+ * ==========================================================================
+ * KEYED ON THE PRIMITIVES, NOT ON THE CONTEXT OBJECT
+ * ==========================================================================
+ * `cache()` compares arguments by identity for objects. A caller that builds a
+ * fresh `RequestContext` - which `requireRequestContext()` does whenever a
+ * function is called without one - would miss a cache keyed on `ctx`, silently,
+ * and the memo would look present while doing nothing. `RequestContext` is
+ * exactly three strings (`packages/auth/guard.ts:33`), so keying on all three is
+ * both complete and value-compared.
+ *
+ * The cache is per REQUEST, which is the correct lifetime: a staff member's
+ * location assignment can change in Equipa, and the next request must see it.
+ */
+const resolveForPrincipal = cache(
+  async (tenantId: string, role: RequestContext["role"], userId: string): Promise<string[]> =>
+    runScoped({ tenantId, role, userId }, (tx) =>
+      tx
+        .select({ locationId: staffLocations.locationId })
+        .from(staffLocations)
+        .where(eq(staffLocations.userId, userId))
+        .then((rows) => rows.map((r) => r.locationId)),
+    ),
+);
+
 export async function resolveViewerLocationIds(ctx: RequestContext): Promise<string[]> {
-  return runScoped(ctx, (tx) =>
-    tx
-      .select({ locationId: staffLocations.locationId })
-      .from(staffLocations)
-      .where(eq(staffLocations.userId, ctx.userId))
-      .then((rows) => rows.map((r) => r.locationId)),
-  );
+  return resolveForPrincipal(ctx.tenantId, ctx.role, ctx.userId);
 }
 
 /**
