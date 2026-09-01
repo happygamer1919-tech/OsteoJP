@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**245 cards on the board. 201 shipped, 44 open. Launch readiness 9/9, every launch gate passes.**
+**245 cards on the board. 202 shipped, 43 open. Launch readiness 9/9, every launch gate passes.**
 Plus **30 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above.
 
@@ -339,10 +339,10 @@ resume is here; no chat history is required.**
 
 ## Board head and counts
 
-    main               ca970a9a (#1092 merged), plus this commit
+    main               3e0f3780 (#1093 merged), plus this commit
     cards              248 in the file, 245 rendered
-    shipped            201
-    open               44
+    shipped            202
+    open               43
     rulings            33  (17 owner WF-*, 16 strategy SR-*) - decisions, not work,
                            in none of the counts above
     launch gate        9 of 9
@@ -358,12 +358,18 @@ exists.
 
 ## STATUS: PERF-02 IN PROGRESS.
 
-**2026-09-01.** PERF-08 merged as #1092 (`ca970a9a`): every seeding and load-test
-script now identifies its target POSITIVELY, and the load-test seeder no longer
-reaches production. `INC-16` is closed by SR-17 (dispatched as SR-14) and five
-cards that carried a false status are corrected. The `/patients` stat-strip
-rewrite is released and in progress; pool tuning stays blocked on the owner's
-Pool Size and 24h peak-connection readings.
+**2026-09-01, PERF-02 complete.** Four PRs. #1092 (`ca970a9a`) made every seeding
+and load-test script identify its target positively, so the load-test seeder no
+longer reaches production. #1091 (`f6752c70`) closed `INC-16` under SR-17 and
+corrected five cards that carried a false status. #1093 (`3e0f3780`) put the
+`/patients` stat strip in one pass and resolved the viewer scope once per
+request: ~2.6x at thirty concurrent sessions with the pool untouched, behind a
+23-test isolation suite that did not exist before. #1094 (`.env.example`, 44
+undocumented variables plus a test that keeps it true) is OPEN.
+
+**POOL TUNING REMAINS BLOCKED** on the owner's Pool Size and 24h peak-connection
+readings. The knee measured at 8; nothing may change until those two numbers are
+pasted back.
 
 **PURPLE holds a separate lane and is active in it.** Do not touch `LAUNCH-*`
 cards, `MIG-*` cards, migration files, the import pipeline, or anything under the
