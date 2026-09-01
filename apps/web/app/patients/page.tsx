@@ -7,7 +7,7 @@ import { getRequestContext } from "../../lib/auth/context";
 import { s } from "../../lib/i18n";
 import { formatPatientNumber } from "../../lib/patients/format";
 import {
-  getPatientListStats,
+  getCachedPatientListStats,
   listFilterLocations,
   listPatientsPage,
   type PatientListFilters,
@@ -124,7 +124,7 @@ export default async function PatientsPage({
   // one of them.
   const [page, stats, locations] = await Promise.all([
     listPatientsPage(filters, ctx),
-    getPatientListStats(filters.locationId, ctx),
+    getCachedPatientListStats(filters.locationId, ctx),
     listFilterLocations(ctx),
   ]);
 
