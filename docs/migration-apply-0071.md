@@ -1,6 +1,6 @@
 # Apply receipt — migration 0071, the nullary RLS helper wrap
 
-**VALIDATED - STRATEGY APPROVED - SR-22 - safe to run**
+**VALIDATED - STRATEGY APPROVED - SR-22. APPLIED TO PRODUCTION 2026-09-02.**
 
 > Stamped by STRATEGY on 2026-09-02, replacing the executor's
 > `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN`
@@ -229,3 +229,70 @@ cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 git checkout --detach origin/main
 git log -1 --oneline
 ```
+
+---
+
+## 10. THE RECEIPT. Applied 2026-09-02. No stop condition fired.
+
+| | |
+|---|---|
+| **Applied from sha** | `e2b3c90c6339dcbd04de0d07cb3279a0361812c0` |
+| **Migration blob** | `075cb46fe47d6ea605f410ba6cc5a4eda143817a` |
+| **File sha256** | `00abb8c54bde141b3163a22759ec618b97dff434a9c7cc671021ea2d8c99f52f` |
+| **Target** | `dfotoodqvmjhbdcxyaxf`, `aws-0-eu-central-1.pooler.supabase.com:5432` |
+| **Journal** | 70 rows -> **71**. New row id 71, `when` 1787300600000 |
+
+### 10.1 THE HASH IS THE TIE, AND IT IS BETTER THAN THE SHA
+
+`drizzle.__drizzle_migrations` row 71 records
+`hash = 00abb8c54bde141b3163a22759ec618b97dff434a9c7cc671021ea2d8c99f52f`, and
+that is **byte-for-byte the sha256 of
+`packages/db/migrations/0071_wrap_nullary_viewer_helper.sql` as committed**.
+
+That matters because the pinned sha `e2b3c90c` is **orphaned by the squash
+merge** and will not exist on `main`. The hash will. So the thing that ties this
+receipt to production is not a commit id that stops resolving, it is the content
+of the file itself, recorded independently by production and reproducible from
+`main` with one `shasum -a 256`.
+
+### 10.2 Every check, against what was expected
+
+| check | expected | observed |
+|---|---|---|
+| checkout sha | `e2b3c90c...` | `HEAD is now at e2b3c90c` |
+| worktree state | detached | `## HEAD (no branch)` |
+| migration file present | yes | 6,273 bytes |
+| project ref | `dfotoodqvmjhbdcxyaxf` | matched, `target verified` |
+| port | `5432` | `5432` |
+| pre-check pending | exactly 1 | `pending: 1`, the 0071 tag |
+| post-check pending | exactly 0 | `pending: 0` |
+| `journal_rows` | 71 | **71** |
+| `nullary_is_wrapped` x2 | `t`, `t` | **`t`, `t`** |
+| `check_half_wrapped` | `t` | **`t`** |
+| `correlated_{a,b,c}_wrapped` | `f`, `f`, `f` | **`f`, `f`, `f`** |
+| `relrowsecurity` x2 | `t`, `t` | **`t`, `t`** |
+| policies + roles | `ALL`/`SELECT`, `{authenticated}` | matched |
+
+### 10.3 The two NOTICEs are not findings
+
+`schema "drizzle" already exists, skipping` and
+`relation "__drizzle_migrations" already exists, skipping` are drizzle's own
+bookkeeping DDL running `IF NOT EXISTS` against a database that has been migrated
+seventy times before. They appear on every apply and say nothing about 0071.
+
+### 10.4 What the `f, f, f` row proves, and it is the half that is easy to skip
+
+`correlated_a/b/c_wrapped` all FALSE is not a null result. It is the assertion
+that this migration wrapped **only** the nullary helper and left
+`patient_appt_at_viewer_location(id)`, `location_in_viewer_scope(location_id)`
+and `patient_appt_treated_by_viewer(id)` evaluating per row, where they must stay.
+Wrapping one of those would have made the whole page faster still and would have
+applied one row's visibility answer to every row. A receipt that only checked the
+`t`s would have passed that.
+
+### 10.5 The region, noted because a fabricated fixture said otherwise
+
+The target verification printed `aws-0-eu-central-1`. The four-arm guard test in
+§4a used `aws-0-eu-west-2` in its **fabricated** strings; the guard matches on the
+project ref and the port and never on the region, so nothing depended on it. Noted
+so nobody reads the earlier fixture as a claim about where production lives.
