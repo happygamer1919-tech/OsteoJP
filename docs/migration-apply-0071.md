@@ -1,15 +1,27 @@
 # Apply receipt — migration 0071, the nullary RLS helper wrap
 
-**NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN**
+**VALIDATED - STRATEGY APPROVED - SR-22 - safe to run**
 
-> That line is the first line of this document by rule (`docs/runbook-prod-migrations.md`,
-> "EVERY APPLY BLOCK IS UNVALIDATED UNTIL STRATEGY SAYS OTHERWISE"). Strategy
-> replaces it with `VALIDATED` before this reaches Ivan. The executor never
-> removes its own.
+> Stamped by STRATEGY on 2026-09-02, replacing the executor's
+> `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN`
+> (`docs/runbook-prod-migrations.md`, "EVERY APPLY BLOCK IS UNVALIDATED UNTIL
+> STRATEGY SAYS OTHERWISE"). The executor never removes its own line; this
+> replacement was instructed.
+>
+> EVIDENCE STRATEGY ACCEPTED: negative arm RED against the pre-0071 schema
+> (2 failed / 13 passed), positive arm 15/15, set equality by ORDERED ID LIST
+> plus md5 for five principals on both tables, anti-vacuity checks present, the
+> scope guard asserting the three correlated helpers remain unwrapped, and the
+> full DB-gated suite at 1,057 tests exit 0 both locally and in CI.
 
 **Migration:** `0071_wrap_nullary_viewer_helper.sql`
 **Branch:** `perf/PERF-06-0071-wrap-nullary-helper`
-**Expected HEAD sha:** `e2b3c90c6339dcbd04de0d07cb3279a0361812c0`
+**Apply from commit:** `e2b3c90c6339dcbd04de0d07cb3279a0361812c0` - the commit that
+INTRODUCES the migration, NOT the branch head.
+**Why that commit and not the branch head:** the head also carries this document,
+and a commit cannot contain a document that quotes its own sha. The apply needs a
+tree that CONTAINS `0071_wrap_nullary_viewer_helper.sql`; this is the first one
+that does, and nothing above it touches the migration.
 **PR:** #1101
 **Ruling:** SR-22 — released, named and bounded to two policies.
 
@@ -51,102 +63,121 @@ untouched, and `rls-nullary-wrap.db.test.ts` asserts they stay unwrapped.
 
 ## 4. The apply
 
-### 4a. Pre-flight. Its own paste, BEFORE any credential is sourced.
+### 4a. The apply, as ONE paste
+
+Every step is chained with `&&`, so nothing downstream runs if anything upstream
+fails. That is deliberate: the two incidents this runbook records (0049 and 0058)
+both had a human step that was supposed to be noticed and was not.
 
 ```
-cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-git fetch origin --prune
-git cat-file -e e2b3c90c6339dcbd04de0d07cb3279a0361812c0^{commit} && echo "sha exists"
-git checkout --detach e2b3c90c6339dcbd04de0d07cb3279a0361812c0
-git log -1 --oneline
-git status -sb
-ls -l packages/db/migrations/0071_wrap_nullary_viewer_helper.sql
+cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply && \
+git fetch origin --prune && \
+git cat-file -e "e2b3c90c6339dcbd04de0d07cb3279a0361812c0^{commit}" && \
+git checkout --detach e2b3c90c6339dcbd04de0d07cb3279a0361812c0 && \
+git log -1 --oneline && \
+git status -sb && \
+ls -l /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply/packages/db/migrations/0071_wrap_nullary_viewer_helper.sql && \
+set -o allexport && \
+source /Users/ivan/osteojp-secrets/new-prod.env && \
+set +o allexport && \
+node -e 'const u=new URL(process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL); const ref=u.username.split(".").pop(); console.log("host:       " + u.hostname); console.log("port:       " + u.port); console.log("project ref:" + " " + ref); if (ref !== "dfotoodqvmjhbdcxyaxf") { console.error("REFUSING: project ref is not production"); process.exit(2); } if (u.port !== "5432") { console.error("REFUSING: port is not the 5432 session pooler"); process.exit(2); } console.log("target verified"); ' && \
+pnpm --filter @osteojp/db exec node /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply/packages/db/scripts/check-pending-migrations.mjs 1 && \
+pnpm db:migrate && \
+pnpm --filter @osteojp/db exec node /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply/packages/db/scripts/check-pending-migrations.mjs 0
 ```
 
-**Paste that output before going on.** `git log -1` must print
-`e2b3c90c6339dcbd04de0d07cb3279a0361812c0`, and the `ls` must find the file. If either is wrong, STOP:
-every line below would run against a tree that does not contain this migration,
-which is exactly how 0049 produced a silent no-op.
+**What each link is for, in order:**
 
-**`git checkout --detach <SHA>` takes the SHA, not the branch.** A plain
-`git checkout <branch>` is rejected in that worktree when the branch is checked
-out elsewhere, and the rejection is easy to miss — the tree then stays on `main`,
-`db:migrate` finds nothing pending, and prints success.
+- `git cat-file -e` proves the sha exists before anything checks it out. The rev
+  is QUOTED because `^` and `{` are shell metacharacters in zsh.
+- `git checkout --detach <SHA>` takes the SHA, **not** the branch. A plain
+  `git checkout <branch>` is rejected in this worktree when the branch is checked
+  out elsewhere, and the rejection is easy to miss: the tree then stays on `main`,
+  `db:migrate` finds nothing pending, and prints success. That is 0049.
+- `ls -l` proves the migration file is in the tree that was just checked out.
+- `set -o allexport`, **never `set -a`**, and no tilde paths.
+- The `node -e` **prints host, port and project ref before anything writes, and
+  then REFUSES mechanically** if the ref is not `dfotoodqvmjhbdcxyaxf` or the port
+  is not `5432`. It is positive identification, not absence of a warning: an
+  unrecognised target exits 2 rather than continuing. It never prints the
+  connection string or the password. Port 6543 is the transaction pooler and
+  `drizzle-kit migrate` holds a session-level advisory lock it does not support.
+- `check-pending-migrations.mjs 1` proves exactly one migration is pending. **The
+  `&&` is what makes this binding**: `drizzle-kit migrate` prints
+  `migrations applied successfully` when it applies nothing, so its own output is
+  never evidence that the schema changed.
+- `pnpm db:migrate` is the root script for `drizzle-kit migrate` in
+  `packages/db`, which is the runbook's single sanctioned path.
+- `check-pending-migrations.mjs 0` proves nothing is left pending.
 
-### 4b. The apply.
+**Paste the whole output.** If it stops early, paste what you have and stop; the
+last line printed says which link refused.
+
+**THE GUARD WAS TESTED IN ALL FOUR ARMS before this block was stamped**, with
+fabricated connection strings on a local shell, never against production:
+
+| target | result |
+|---|---|
+| a different project ref, port 5432 | `REFUSING: project ref is not production`, exit 2 |
+| `dfotoodqvmjhbdcxyaxf`, port **6543** | `REFUSING: port is not the 5432 session pooler`, exit 2 |
+| `dfotoodqvmjhbdcxyaxf`, port 5432 | `target verified`, exit 0 |
+| neither variable set | throws, exit 1 - the chain stops rather than continuing |
+
+The block also parses clean under both `zsh -n` and `bash -n`, which execute
+nothing. A paste-ready block that does not parse costs the owner his window.
+
+## 5. Post-checks - the apply is not proven until these are pasted
+
+Run as one paste. `psql` never prints the connection string.
 
 ```
-cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
-set -o allexport
-source /Users/ivan/osteojp-secrets/new-prod.env
-set +o allexport
-
-# TARGET REF VERIFICATION, BEFORE ANYTHING WRITES. Prints the host and the
-# project ref only — never the connection string, never the password.
-node -e 'const u=new URL(process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL); console.log("host:", u.hostname); console.log("port:", u.port); console.log("project ref:", u.username.split(".").pop());'
-
-# MANDATORY PRE-CHECK. Exactly one migration must be pending.
-pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs 1
-
-pnpm db:migrate
-
-# MANDATORY POST-CHECK. Nothing may be pending afterwards.
-pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs 0
-```
-
-**`set -o allexport`, never `set -a`.** No tilde paths.
-
-**The target ref must read `dfotoodqvmjhbdcxyaxf` and the port must be `5432`.**
-Port 6543 is the transaction pooler and `drizzle-kit migrate` holds a
-session-level advisory lock it does not support. **If the ref is anything else,
-STOP and report before running another line.**
-
-**STOP IF `check-pending-migrations.mjs 1` FAILS AND DO NOT RUN `db:migrate`.**
-`drizzle-kit migrate` prints `migrations applied successfully` when it applies
-nothing, so its output is not evidence that the schema changed. That has cost
-two applies already (0049 and 0058).
-
-## 5. Post-checks — the apply is not proven until these are pasted
-
-```sql
+psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 <<'SQL'
 -- V1. The journal advanced by exactly one, and to this tag. 70 rows before, 71 after.
-select id, hash, created_at from drizzle.__drizzle_migrations order by id desc limit 3;
 select count(*) as journal_rows from drizzle.__drizzle_migrations;
+select id, hash, created_at from drizzle.__drizzle_migrations order by id desc limit 3;
 
 -- V2. THE PROPERTY ITSELF, read from the database rather than inferred from the
---     journal. Both must be TRUE.
+--     journal. Both rows must be TRUE.
 select polname,
-       pg_get_expr(polqual, polrelid) ~* 'SELECT\s+viewer_has_location_assignment'
+       pg_get_expr(polqual, polrelid) like '%SELECT viewer_has_location_assignment%'
          as nullary_is_wrapped
   from pg_policy
  where polname in ('patients_select', 'appointments_rls')
  order by polname;
 
 -- V3. The WITH CHECK half of appointments_rls too. Must be TRUE.
-select pg_get_expr(polwithcheck, polrelid) ~* 'SELECT\s+viewer_has_location_assignment'
+select pg_get_expr(polwithcheck, polrelid) like '%SELECT viewer_has_location_assignment%'
          as check_half_wrapped
   from pg_policy where polname = 'appointments_rls';
 
 -- V4. THE SCOPE GUARD. The three CORRELATED helpers must still be UNWRAPPED.
---     All three must be FALSE. A TRUE here means the migration over-reached and
---     one row's answer is now being applied to every row.
-select pg_get_expr(polqual, polrelid) ~* 'SELECT\s+patient_appt_at_viewer_location' as a,
-       pg_get_expr(polqual, polrelid) ~* 'SELECT\s+location_in_viewer_scope'        as b,
-       pg_get_expr(polqual, polrelid) ~* 'SELECT\s+patient_appt_treated_by_viewer'  as c
+--     All three must be FALSE. A TRUE means the migration over-reached and one
+--     row's answer is now applied to every row.
+select pg_get_expr(polqual, polrelid) like '%SELECT patient_appt_at_viewer_location%' as a,
+       pg_get_expr(polqual, polrelid) like '%SELECT location_in_viewer_scope%'        as b,
+       pg_get_expr(polqual, polrelid) like '%SELECT patient_appt_treated_by_viewer%'  as c
   from pg_policy where polname = 'patients_select';
 
--- V5. RLS is still ENABLED on both tables, and the policies still exist with the
---     same commands. Two rows, both relrowsecurity = true.
+-- V5. RLS still ENABLED on both tables and both policies still present.
 select relname, relrowsecurity from pg_class
- where relname in ('patients', 'appointments');
+ where relname in ('patients', 'appointments') order by relname;
 select tablename, policyname, cmd, roles from pg_policies
  where policyname in ('patients_select', 'appointments_rls')
  order by policyname;
+SQL
 ```
 
-**V2, V3 and V5 are the proof the apply happened. V4 is the proof it did not do
-anything else.** A journal row alone is not evidence: it says a file was recorded,
-not that the policy in the database now reads differently.
+`like` rather than a regex, deliberately: a wrapped call renders as
+`( SELECT viewer_has_location_assignment() AS viewer_has_location_assignment)`
+and an unwrapped one as a bare `viewer_has_location_assignment()`, so a literal
+substring is sufficient and has no escaping semantics to get wrong.
+
+**If `psql` is not installed**, the same SQL pastes into the Supabase SQL editor.
+Both are sanctioned reads for the owner by the runbook.
+
+**V2, V3 and V5 prove the apply happened. V4 proves it did nothing else.** A
+journal row alone is not evidence: it records that a file was applied, not that
+the policy now reads differently.
 
 ## 6. Stop conditions
 
