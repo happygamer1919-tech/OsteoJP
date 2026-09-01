@@ -3,7 +3,9 @@
 **BLUE, platform terminal, 2026-09-01. Base `origin/main@950c5c09`.**
 
 **PHASE 1 WAS NOT COMPLETED AND PHASE 2 WAS NOT ENTERED.** The dispatch halts on
-"any Phase 1 finding that contradicts the board" and that condition fired. What
+"any Phase 1 finding that contradicts the board" and that condition fired. It was
+ruled on the next day and the halt was upheld on both counts; see the box in §1
+and, for the reads that were refused, §3. What
 follows is what could be measured without touching production, what could not,
 and the exact text of every read the owner has to run himself.
 
@@ -25,6 +27,23 @@ shipped card and a merged audit say production carries the imported data.
 | `LAUNCH-01`, `todo` | `PHASE-2-PERF.md` TASK 4: *"It matters only during the import, which is complete."* |
 
 8,400 patients do not accumulate in two days of organic use. Carded `INC-16`.
+
+> ### RESOLVED 2026-09-01, AGAINST THE RIGHT-HAND COLUMN. SR-17 (dispatched as SR-14).
+>
+> **The import ran.** The owner confirms go-live and reports a production
+> dashboard showing a **153.3 MB** database; 33 staff-training patients do not
+> produce 153.3 MB. The five cards in the left column carried a false status and
+> are corrected to shipped by evidence.
+>
+> **Nothing measured here has to be re-run.** The shim below was seeded to the
+> shape the `PERF-01` card had recorded *from production*, so this ruling
+> confirms the premise the numbers already assumed. The ranking stands.
+>
+> **The evidence is a relayed owner reading, not a terminal proof, and it can
+> never be anything else**: standing rule 1 means no terminal may read
+> production, and SR-18 (dispatched as SR-15) makes that explicit for
+> observability. Recording an owner reading *as* an owner reading is the honest
+> form; recording it as a proof would be this incident's own error, inverted.
 
 **`pnpm board:reconcile` exits 0 on this.** Its stale-card rule keys on the PRs a
 card CITES and its gate-claim rule on the gate a card CLAIMS; a card whose PROSE
@@ -179,7 +198,14 @@ session report and are the owner's to run.
 
 ## 4. A SEPARATE HAZARD FOUND ON THE WAY
 
-`scripts/perf-seed-loadtest.mjs:23` aborts on `jaxmkwoxjcgzkwxgbayx` — the
+**FIXED 2026-09-01 in #1092 (`ca970a9a`); the description below is what was
+found.** The guard is now positive — an allowed local host is identified
+affirmatively and every remote target is refused, including a production project
+nobody has blocklisted. Removing it as a negative control makes the seeder reach
+the production pooler and return `FATAL: password authentication failed`, so the
+defect is demonstrated rather than argued.
+
+`scripts/perf-seed-loadtest.mjs:23` aborted on `jaxmkwoxjcgzkwxgbayx` — the
 **retired** project. `packages/db/seed/seed-guard.ts:31` is the canonical list and
 holds both refs, with `dfotoodqvmjhbdcxyaxf` commented as *"PRODUCTION (Central EU
 / Frankfurt), the live clinic"*. Pointed at the current `DATABASE_URL` the script

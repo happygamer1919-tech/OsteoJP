@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**240 cards on the board. 194 shipped, 46 open. Launch readiness 9/9, every launch gate passes.**
+**245 cards on the board. 201 shipped, 44 open. Launch readiness 9/9, every launch gate passes.**
 Plus **30 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above.
 
@@ -339,11 +339,11 @@ resume is here; no chat history is required.**
 
 ## Board head and counts
 
-    main               c76d53ff (#1089 merged), plus this commit
-    cards              243 in the file, 240 rendered
-    shipped            194
-    open               46
-    rulings            30  (17 owner WF-*, 13 strategy SR-*) - decisions, not work,
+    main               ca970a9a (#1092 merged), plus this commit
+    cards              248 in the file, 245 rendered
+    shipped            201
+    open               44
+    rulings            33  (17 owner WF-*, 16 strategy SR-*) - decisions, not work,
                            in none of the counts above
     launch gate        9 of 9
     validator          exit 0
@@ -356,10 +356,14 @@ both the counts and `as_of` from the MERGED file and take the later `as_of` -
 strategy ruling SR-07. A locally correct count describes a board that no longer
 exists.
 
-## STATUS: HELD. NO WORK IS IN PROGRESS.
+## STATUS: PERF-02 IN PROGRESS.
 
-No branch is open. Nothing is half-applied. There is no work in flight in the
-platform lane and none should be started without a dispatch.
+**2026-09-01.** PERF-08 merged as #1092 (`ca970a9a`): every seeding and load-test
+script now identifies its target POSITIVELY, and the load-test seeder no longer
+reaches production. `INC-16` is closed by SR-17 (dispatched as SR-14) and five
+cards that carried a false status are corrected. The `/patients` stat-strip
+rewrite is released and in progress; pool tuning stays blocked on the owner's
+Pool Size and 24h peak-connection readings.
 
 **PURPLE holds a separate lane and is active in it.** Do not touch `LAUNCH-*`
 cards, `MIG-*` cards, migration files, the import pipeline, or anything under the
