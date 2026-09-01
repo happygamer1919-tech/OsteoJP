@@ -19,10 +19,36 @@
  * The parse cases are here because a blocklist that cannot recognise a real
  * production connection string does not block anything: both the pooler and
  * the direct URL forms must resolve to the same ref.
+ *
+ * ==========================================================================
+ * THE CONTRACT CHANGED ON 2026-09-01 AND THESE CASES CHANGED WITH IT (PERF-02)
+ * ==========================================================================
+ * `resolveSeedDatabaseUrl` now runs `assertLocalTarget` FIRST, so a REMOTE
+ * target is refused whether or not its ref is blocklisted. The case this file
+ * used to assert — "returns the URL for a non-blocklisted, confirmed ref",
+ * driven through a remote pooler URL — no longer describes the product, and it
+ * is REPLACED rather than deleted: the same shape is now asserted to REFUSE,
+ * and the accepting case moved to a local URL.
+ *
+ * That is a real behaviour change and it removes the ability to seed a remote
+ * Supabase project. It costs nothing, because there is no such project:
+ * `docs/QUESTIONS.md:518` records the owner's verification that
+ * `ufbkzbyghvxtosyrkgjq` "DOES NOT EXIST and never did", and the only other
+ * non-production project is the retired one on the blocklist below.
+ *
+ * The blocklist tests below are KEPT even though gate 1 now refuses those URLs
+ * before the blocklist is consulted. They pin gate 2 against the day somebody
+ * widens the allowlist; a test deleted because the code above it currently
+ * makes it unreachable is a test missing when that code changes.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PROD_REFS, parseProjectRef, resolveSeedDatabaseUrl } from "../seed/seed-guard";
+import {
+  PROD_REFS,
+  blocklistedRef,
+  parseProjectRef,
+  resolveSeedDatabaseUrl,
+} from "../seed/seed-guard";
 
 /** CLAUDE.md "Supabase setup" — the live clinic database (Central EU). */
 const PROD_REF = "dfotoodqvmjhbdcxyaxf";
@@ -45,6 +71,8 @@ const poolerUrl = (ref: string) =>
   `postgresql://postgres.${ref}:redacted@aws-0-eu-central-1.pooler.supabase.com:6543/postgres`;
 const directUrl = (ref: string) =>
   `postgresql://postgres:redacted@db.${ref}.supabase.co:5432/postgres`;
+/** The CI database, .github/workflows/db-tests.yml:54 — the one shape that passes. */
+const LOCAL_URL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
 /**
  * Run resolveSeedDatabaseUrl with a controlled env, capturing whether it exited.
@@ -128,34 +156,77 @@ describe("parseProjectRef", () => {
   });
 });
 
+/**
+ * GATE 2, PINNED DIRECTLY. Gate 1 makes every production URL unreachable here,
+ * so without this block the blocklist would have no test at all from the day
+ * the allowlist landed — and nobody would notice until somebody widened
+ * `ALLOWED_LOCAL_HOSTS` and found the second gate had rotted underneath.
+ */
+describe("blocklistedRef — the second gate, tested independently of the first", () => {
+  it.each(BLOCKED_REFS)("identifies the %s ref in a pooler URL", (_label, ref) => {
+    expect(blocklistedRef(poolerUrl(ref))).toBe(ref);
+  });
+
+  it.each(BLOCKED_REFS)("identifies the %s ref in a direct URL", (_label, ref) => {
+    expect(blocklistedRef(directUrl(ref))).toBe(ref);
+  });
+
+  it("returns null for a ref that is not blocklisted", () => {
+    expect(blocklistedRef(poolerUrl(DEV_REF))).toBeNull();
+  });
+
+  it("returns null for a local URL, which carries no ref at all", () => {
+    expect(blocklistedRef(LOCAL_URL)).toBeNull();
+  });
+});
+
 describe("resolveSeedDatabaseUrl", () => {
+  /**
+   * REFUSAL IS THE ASSERTION, AND THE GATE THAT PRODUCES IT IS NOW GATE 1.
+   * These URLs are remote, so `assertLocalTarget` refuses them before the
+   * blocklist is consulted. The message therefore names the host rather than
+   * the blocklist, and asserting the old string would only prove which gate
+   * fired, not that the target was refused.
+   */
   it.each(BLOCKED_REFS)(
     "refuses the %s ref even when SEED_DEV_CONFIRM matches it",
     (_label, ref) => {
       const result = runGuard({ databaseUrl: poolerUrl(ref), confirm: ref });
       expect(result.exited).toBe(true);
       expect(result.returned).toBeNull();
-      expect(result.stderr).toContain("blocklisted");
+      expect(result.stderr).toContain("not one of the allowed local targets");
     },
   );
 
   it.each(BLOCKED_REFS)("refuses the %s ref given as a direct URL", (_label, ref) => {
     const result = runGuard({ databaseUrl: directUrl(ref), confirm: ref });
     expect(result.exited).toBe(true);
-    expect(result.stderr).toContain("blocklisted");
+    expect(result.returned).toBeNull();
   });
 
-  it("still requires SEED_DEV_CONFIRM for a non-blocklisted ref", () => {
-    const result = runGuard({ databaseUrl: poolerUrl(DEV_REF) });
+  /**
+   * THE CASE THE PERF-02 RULING EXISTS FOR. `DEV_REF` is shape-accurate and NOT
+   * on the blocklist, so the old guard returned this URL. It is a remote host,
+   * so the new one refuses it — and it would refuse a real production project
+   * provisioned tomorrow for exactly the same reason.
+   */
+  it("REFUSES a remote target even when its ref is not blocklisted and IS confirmed", () => {
+    const result = runGuard({ databaseUrl: poolerUrl(DEV_REF), confirm: DEV_REF });
+    expect(result.exited).toBe(true);
+    expect(result.returned).toBeNull();
+    expect(result.stderr).toContain("not one of the allowed local targets");
+  });
+
+  it("still requires SEED_DEV_CONFIRM once the target IS local", () => {
+    const result = runGuard({ databaseUrl: LOCAL_URL });
     expect(result.exited).toBe(true);
     expect(result.stderr).toContain("not confirmed");
   });
 
-  it("returns the URL for a non-blocklisted, confirmed ref", () => {
-    const url = poolerUrl(DEV_REF);
-    const result = runGuard({ databaseUrl: url, confirm: DEV_REF });
+  it("returns the URL for a confirmed LOCAL target", () => {
+    const result = runGuard({ databaseUrl: LOCAL_URL, confirm: "127.0.0.1" });
     expect(result.exited).toBe(false);
-    expect(result.returned).toBe(url);
+    expect(result.returned).toBe(LOCAL_URL);
   });
 
   it("refuses when DATABASE_URL is absent", () => {
