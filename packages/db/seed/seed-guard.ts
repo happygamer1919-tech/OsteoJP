@@ -1,23 +1,44 @@
 /**
  * Shared safety guard for the dev-data seed scripts.
  *
- * A dedicated production Supabase project now exists (CLAUDE.md "Supabase
- * setup": `dfotoodqvmjhbdcxyaxf`, Central EU), so the seeds protect the target
- * two ways:
+ * ==========================================================================
+ * THE PRIMARY GATE IS NOW POSITIVE, AND THE BLOCKLIST IS BEHIND IT
+ * ==========================================================================
+ * PERF-02 Task 1. `assertLocalTarget` (./local-target) runs FIRST and admits a
+ * target only by affirmatively recognising an allowed local host. Everything
+ * else is refused — including a production project nobody has listed yet, which
+ * is the case a blocklist cannot see and calls safe. The reasoning, and the
+ * three recorded fail-open incidents behind it, are in `local-target.ts`.
  *
- *   1. PROD_REFS blocklist — refs that must never be seeded, refused before
- *      the confirmation step and with no opt-in that can override them.
- *   2. SEED_DEV_CONFIRM opt-in — the operator must set SEED_DEV_CONFIRM to the
- *      exact project ref parsed from DATABASE_URL. This forces a deliberate
- *      "I verified this target in the Supabase dashboard" step before any write,
- *      and makes an accidental run (wrong env, wrong shell) refuse by default.
+ * THREE GATES NOW, IN THIS ORDER:
  *
- * The blocklist is the stronger of the two: SEED_DEV_CONFIRM is a guard against
- * an ACCIDENT (a stale shell, the wrong env file), while PROD_REFS is a guard
- * against a DELIBERATE run aimed at the wrong database — setting
- * SEED_DEV_CONFIRM to a blocklisted ref still refuses. Add a ref here whenever a
- * project must never receive dev data.
+ *   1. assertLocalTarget — the target host must BE one of the allowed local
+ *      hosts. Positive identification. Nothing else reaches step 2.
+ *   2. PROD_REFS blocklist — kept, and it is not redundant. It is unreachable
+ *      while the allowlist holds, and that is exactly why it stays: the day
+ *      somebody widens `ALLOWED_LOCAL_HOSTS`, the blocklist is the thing that
+ *      still refuses the live clinic. A guard removed because it is currently
+ *      unreachable is a guard missing the day the code above it changes.
+ *   3. SEED_DEV_CONFIRM opt-in — the operator must name the target. This is a
+ *      guard against an ACCIDENT (a stale shell, the wrong env file) rather
+ *      than against a wrong target, which step 1 already settled.
+ *
+ * WHY LOCAL-ONLY IS NOT A RESTRICTION. `docs/QUESTIONS.md` line 518 records the
+ * owner's verification that `ufbkzbyghvxtosyrkgjq` "DOES NOT EXIST and never
+ * did", and the comment below records that the one remaining non-production
+ * project is retired. There is no remote database left for a dev seed to write
+ * to. `.github/workflows/db-tests.yml:54` already runs the whole DB-gated suite
+ * against `127.0.0.1:54322`.
+ *
+ * NOT WIRED HERE, AND IT IS A DELIBERATE EXCLUSION: `seed/form-templates.ts` and
+ * `seed/roles.ts` do not call this function. They are CONFIGURATION seeds the
+ * owner runs against production on purpose (the template catalogue and the
+ * permission roles), so a local-only gate would break a documented owner
+ * workflow. They carry no target guard of their own; that gap is carded rather
+ * than closed by breaking the workflow.
  */
+
+import { assertLocalTarget } from "./local-target";
 
 // Refs that must never be seeded. Seed refuses any ref listed here, ahead of
 // (and unaffected by) the SEED_DEV_CONFIRM opt-in.
@@ -46,10 +67,27 @@ export function parseProjectRef(databaseUrl: string): string | null {
 }
 
 /**
+ * GATE 2 AS A PURE FUNCTION, so it is testable independently of the gate above
+ * it. Returns the blocklisted ref this URL names, or null.
+ *
+ * IT IS EXPORTED FOR EXACTLY THAT REASON. Gate 1 refuses every production URL
+ * before gate 2 is reached, so a test that drives a production URL through
+ * `resolveSeedDatabaseUrl` proves gate 1 and says nothing about gate 2. The
+ * blocklist would then be untested from the day the allowlist landed, and the
+ * first sign of that would be somebody widening `ALLOWED_LOCAL_HOSTS` and
+ * discovering the second gate had rotted. This keeps it pinned.
+ */
+export function blocklistedRef(databaseUrl: string): string | null {
+  const ref = parseProjectRef(databaseUrl);
+  return ref && PROD_REFS.includes(ref) ? ref : null;
+}
+
+/**
  * Resolve and validate the seed target connection string. Reads
  * DATABASE_URL_DEV ?? DATABASE_URL. Exits the process with a nonzero code
- * (never returns) if the target is missing, unparseable, blocklisted, or not
- * confirmed via SEED_DEV_CONFIRM. Returns the validated URL on success.
+ * (never returns) if the target is missing, NOT AFFIRMATIVELY LOCAL,
+ * blocklisted, or not confirmed via SEED_DEV_CONFIRM. Returns the validated URL
+ * on success.
  */
 export function resolveSeedDatabaseUrl(): string {
   const databaseUrl = process.env.DATABASE_URL_DEV ?? process.env.DATABASE_URL;
@@ -58,25 +96,30 @@ export function resolveSeedDatabaseUrl(): string {
     process.exit(1);
   }
 
+  // GATE 1, POSITIVE. Exits 1 unless the host IS an allowed local target. A ref
+  // that cannot be parsed is no longer a refusal on its own, because a local
+  // connection string has no Supabase ref to parse — this gate is what makes
+  // that safe.
+  assertLocalTarget(databaseUrl, process.env.DATABASE_URL_DEV ? "DATABASE_URL_DEV" : "DATABASE_URL");
+
+  // GATE 2, the blocklist. Unreachable while gate 1 holds, kept deliberately —
+  // see the header. It never depends on gate 1 having run.
+  const blocked = blocklistedRef(databaseUrl);
+  if (blocked) {
+    console.error(`SAFETY: refusing to seed into blocklisted project ref (${blocked}).`);
+    process.exit(1);
+  }
   const ref = parseProjectRef(databaseUrl);
-  if (!ref) {
-    console.error(
-      "SAFETY: could not parse a Supabase project ref from DATABASE_URL.\n" +
-        "Verify the target in the Supabase dashboard and point DATABASE_URL at it.",
-    );
-    process.exit(1);
-  }
 
-  if (PROD_REFS.includes(ref)) {
-    console.error(`SAFETY: refusing to seed into blocklisted project ref (${ref}).`);
-    process.exit(1);
-  }
-
-  if (process.env.SEED_DEV_CONFIRM !== ref) {
+  // GATE 3, the opt-in. The token is the project ref when the URL has one and
+  // the HOST otherwise, so a local target is confirmable at all. The message
+  // below always prints the exact value to set, so it is never a guess.
+  const token = ref ?? new URL(databaseUrl).hostname.replace(/^\[|\]$/g, "");
+  if (process.env.SEED_DEV_CONFIRM !== token) {
     console.error(
-      `SAFETY: seed target not confirmed. DATABASE_URL points at project "${ref}".\n` +
-        "Verify this is the intended target in the Supabase dashboard, then re-run with\n" +
-        `  SEED_DEV_CONFIRM=${ref}`,
+      `SAFETY: seed target not confirmed. DATABASE_URL points at "${token}".\n` +
+        "Verify this is the intended target, then re-run with\n" +
+        `  SEED_DEV_CONFIRM=${token}`,
     );
     process.exit(1);
   }

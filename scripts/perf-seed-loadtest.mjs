@@ -1,31 +1,71 @@
 /**
  * scripts/perf-seed-loadtest.mjs
  *
- * Phase 6 perf validation: seed ~2 000 patients + ~20 000 appointments into
- * DEV Supabase (ref ufbkzbyghvxtosyrkgjq), then EXPLAIN ANALYZE each key query.
+ * Seeds ~2 000 patients + ~20 000 appointments and EXPLAIN ANALYZEs the key
+ * queries, so a plan change can be measured at scale.
  *
- * SAFETY:   Aborts if DATABASE_URL_DIRECT/DATABASE_URL contains the PROD ref.
- * IDEMPOTENT: Detects sentinel NIF 100001001; skips seeding if already present.
- *             Re-runs measurements unconditionally.
+ * ==========================================================================
+ * THE TARGET GUARD WAS BROKEN AND IT IS NOW POSITIVE. PERF-08.
+ * ==========================================================================
+ * This file used to read:
  *
- * Usage:
- *   DATABASE_URL_DIRECT="postgresql://postgres.ufbkzbyghvxtosyrkgjq:…@…:5432/postgres" \
+ *     if (DB_URL.includes("jaxmkwoxjcgzkwxgbayx")) { ...abort... }
+ *
+ * `jaxmkwoxjcgzkwxgbayx` is the RETIRED project. The live clinic is
+ * `dfotoodqvmjhbdcxyaxf`, so pointed at the current DATABASE_URL this script
+ * DID NOT ABORT — it inserted 2 000 patients and 20 000 appointments into the
+ * production database — while the header above went on advertising a working
+ * safety check. What actually stopped it was an `import` hardcoded to an
+ * absolute path on another developer's machine. That is an accident, not a
+ * safety property, and it is fixed below too.
+ *
+ * The guard now identifies an ALLOWED LOCAL TARGET positively; every remote
+ * host is refused, including a production project nobody has blocklisted yet.
+ * The rule lives in `packages/db/seed/local-target.ts` and is read from there
+ * at runtime, never copied.
+ *
+ * IDEMPOTENT: detects sentinel NIF 100001001 and skips seeding if present;
+ * re-runs the measurements unconditionally.
+ *
+ * Usage (a disposable local Postgres, never a hosted project):
+ *   DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
  *     node scripts/perf-seed-loadtest.mjs
  */
 
-import postgres from "/Users/sm33xy/Projects/OsteoJP/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/index.js";
-import crypto   from "node:crypto";
+import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import { performance } from "node:perf_hooks";
+import { dirname, join } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
+import { assertLocalTarget } from "./local-target.mjs";
 
 // ── Safety ─────────────────────────────────────────────────────────────────────
-const DB_URL = process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL;
-if (!DB_URL) { console.error("Set DATABASE_URL_DIRECT or DATABASE_URL"); process.exit(1); }
-if (DB_URL.includes("jaxmkwoxjcgzkwxgbayx")) {
-  console.error("SAFETY ABORT: URL contains prod ref jaxmkwoxjcgzkwxgbayx. Refusing to seed.");
-  process.exit(1);
-}
+// POSITIVE IDENTIFICATION, AND IT RUNS BEFORE THE DRIVER IS EVEN LOADED. Exits 1
+// unless the host IS an allowed local target. Not "is this a ref we denied" — an
+// unlisted production project passes that question, and this script is the
+// reason we know it.
+const DB_URL = process.env.DATABASE_URL_DIRECT || process.env.DATABASE_URL;
+assertLocalTarget(DB_URL, process.env.DATABASE_URL_DIRECT ? "DATABASE_URL_DIRECT" : "DATABASE_URL");
 
-const sql = postgres(DB_URL, { ssl: "require", max: 4, idle_timeout: 20, connect_timeout: 15 });
+// ── Driver ─────────────────────────────────────────────────────────────────────
+// `postgres` is a dependency of `packages/db`, not of the root, so a bare
+// `import "postgres"` from `scripts/` does not resolve. The file this replaced
+// worked around that with an absolute path into ANOTHER DEVELOPER'S HOME
+// DIRECTORY, which is what actually stopped it running — its safety check was
+// broken, and a hardcoded path was doing the work everyone believed the guard
+// was doing.
+//
+// Resolved from `packages/db`, relative to THIS FILE rather than the cwd, and
+// imported dynamically so it loads AFTER the guard. A module-not-found at import
+// time would exit non-zero too, and an abort for the wrong reason is not an
+// abort you can rely on.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const requireFromDb = createRequire(join(HERE, "..", "packages", "db", "package.json"));
+const { default: postgres } = await import(pathToFileURL(requireFromDb.resolve("postgres")).href);
+
+// `ssl: "require"` is gone with the remote target it existed for: a local
+// Postgres does not serve TLS, and demanding it would fail every allowed run.
+const sql = postgres(DB_URL, { max: 4, idle_timeout: 20, connect_timeout: 15 });
 
 // ── Constants ───────────────────────────────────────────────────────────────────
 const TENANT    = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
