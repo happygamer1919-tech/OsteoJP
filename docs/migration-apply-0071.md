@@ -175,6 +175,20 @@ substring is sufficient and has no escaping semantics to get wrong.
 **If `psql` is not installed**, the same SQL pastes into the Supabase SQL editor.
 Both are sanctioned reads for the owner by the runbook.
 
+**THE POST-CHECKS WERE RUN IN BOTH DIRECTIONS BEFORE THIS BLOCK WAS STAMPED**, on
+a disposable local Postgres carrying these two policies, by applying the actual
+`0071_wrap_nullary_viewer_helper.sql` between the two runs:
+
+| | pre-0071 | post-0071 |
+|---|---|---|
+| V2 `nullary_is_wrapped`, both policies | `f`, `f` | `t`, `t` |
+| V3 `check_half_wrapped` | `f` | `t` |
+| V4 the three correlated helpers | `f`, `f`, `f` | `f`, `f`, `f` |
+| V5 `relrowsecurity`, both tables | `t`, `t` | `t`, `t` |
+
+V4 not moving is the point of V4: the migration wrapped what it was scoped to
+wrap and nothing else.
+
 **V2, V3 and V5 prove the apply happened. V4 proves it did nothing else.** A
 journal row alone is not evidence: it records that a file was applied, not that
 the policy now reads differently.
