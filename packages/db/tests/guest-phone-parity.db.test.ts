@@ -31,11 +31,31 @@ import { connect, live } from "./rls-harness";
  * pass while the sibling failed, which is worse than having no test.
  */
 
-const T = "00000000-0000-0000-0000-0000000a6001";
-const ROLE = "00000000-0000-0000-0000-0000000a6002";
-const USER = "00000000-0000-0000-0000-0000000a6003";
-const LOC = "00000000-0000-0000-0000-0000000a6004";
-const SVC = "00000000-0000-0000-0000-0000000a6005";
+/**
+ * FIXTURE IDS ARE FIXED, SO THEY MUST BE UNIQUE ACROSS FILES. Renumbered from
+ * the `a600x` block to `a700x` on 2026-09-02.
+ *
+ * WHY, because "it passed yesterday" is the whole point: `day-by-day-portal.db.test.ts`
+ * held the IDENTICAL five ids, copied wholesale. Vitest runs test FILES in
+ * parallel, so whichever suite seeded second hit `duplicate key value violates
+ * unique constraint "tenants_pkey"` in its beforeAll, and then its afterAll
+ * failed on the foreign key it had not created. Both files passed alone and the
+ * whole suite passed for as long as the scheduler happened to keep them apart.
+ *
+ * IT SURFACED BY ADDING AN UNRELATED FILE. `rls-nullary-wrap.db.test.ts` shares
+ * no id with either of these; it changed the worker scheduling, and the latent
+ * collision became a red suite. That is the failure mode worth naming: the
+ * defect was never in the file that exposed it.
+ *
+ * The systemic fix - deriving fixture ids from the file path so a collision is
+ * impossible rather than merely absent - is carded separately as
+ * LE-db-test-fixture-ids-collide. This renumbering closes the instance.
+ */
+const T = "00000000-0000-0000-0000-0000000a7001";
+const ROLE = "00000000-0000-0000-0000-0000000a7002";
+const USER = "00000000-0000-0000-0000-0000000a7003";
+const LOC = "00000000-0000-0000-0000-0000000a7004";
+const SVC = "00000000-0000-0000-0000-0000000a7005";
 
 const CORPUS: Array<{ input: string; why: string }> = [
   { input: "+351912345678", why: "already E.164, passthrough" },
