@@ -1,10 +1,16 @@
 # Apply receipt — migration 0074, the write doors and the therapist set
 
-**NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN**
+**VALIDATED - STRATEGY APPROVED - SR-35 - safe to run**
 
-> Drafted by the executor. `docs/runbook-prod-migrations.md` binds: the first
-> line of any apply block an executor writes is the one above, verbatim, and the
-> executor never removes its own. **Strategy replaces it with `VALIDATED`.**
+> Stamped by STRATEGY on 2026-09-02, replacing the executor's
+> `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN`
+> (`docs/runbook-prod-migrations.md`). The executor never removes its own line;
+> this replacement was instructed.
+>
+> EVIDENCE STRATEGY ACCEPTED: both arms on both parts - part A 15 red against a
+> 0073 schema, part B 5 red with ALL SIX md5 equalities still green - the
+> packages/db suite at 81 files / 1,132 tests exit 0, and part C dropped on a
+> live measurement rather than on judgement, carded for 0075 with the audit.
 
 **Migration:** `0074_confirm_writers_and_therapist_set.sql`
 **Apply from commit:** `d357d0d009109b9ffee703eae6507e112e36fc3c` — the commit
