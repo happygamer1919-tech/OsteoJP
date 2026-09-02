@@ -55,6 +55,50 @@ const todayIso = (): string => {
   const t = new Date();
   return toIso(t.getFullYear(), t.getMonth(), t.getDate());
 };
+
+/** "YYYY-MM-DD" and nothing else. */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The value, but ONLY when it is a date this component can stand on. Anything
+ * else - "", a half-typed "2026-9-3", undefined - is UNKNOWN, and unknown is
+ * not a date.
+ *
+ * IT EXISTS BECAUSE `parseIso` ANSWERS EVERY INPUT. Give it "" and
+ * `"".split("-").map(Number)` is `[0]`, so `y ?? 1970` keeps the 0 (0 is not
+ * nullish), and the caller gets `{y: 0, m: 0, d: 1}` - a real-looking date that
+ * came from nowhere. That is the §1.3 shape exactly: an unknown case mapped
+ * onto a known one, which is then read as the known one.
+ */
+const asIsoDate = (value: string | null | undefined): string | null =>
+  value != null && ISO_DATE.test(value) ? value : null;
+
+/**
+ * The date the calendar opens on: the field's own value when it has a usable
+ * one, TODAY when it does not.
+ *
+ * ==========================================================================
+ * EXPORTED AND PURE BECAUSE IT IS THE LINE THAT WAS WRONG, and the regression
+ * test has to be able to reach it. The calendar's month header only exists
+ * while the popover is open, and this repo's unit tests render through
+ * `react-dom/server` with no DOM to click - so a test that could only see the
+ * header could not see this at all.
+ * ==========================================================================
+ *
+ * THE DEFECT IT CLOSES. The line was `value ?? todayIso()`. `??` admits the
+ * EMPTY STRING, and every caller here holds its date in form state where "not
+ * picked yet" is `""` rather than `null`. "" reached `parseIso`, came back as
+ * year 0, and `new Date(0, 0, 1)` is 1 January 1900 - JavaScript maps years
+ * 0-99 onto 1900-1999. A pacote row the user had not filled in yet opened its
+ * calendar on "janeiro de 1900" (Nova marcacao, second package session).
+ *
+ * `||` would also have fixed the empty string and would have left the
+ * half-typed value fabricating a date, so the test is the SHAPE of the value,
+ * not its truthiness.
+ */
+export function datePickerAnchor(value: string | null | undefined, today: string = todayIso()): string {
+  return asIsoDate(value) ?? today;
+}
 const addDays = (iso: string, delta: number): string => {
   const { y, m, d } = parseIso(iso);
   const dt = new Date(y, m, d);
@@ -83,7 +127,7 @@ export function DatePicker({
   const reactId = useId();
   const gridId = `${reactId}-grid`;
   const [open, setOpen] = useState(false);
-  const initial = value ?? todayIso();
+  const initial = datePickerAnchor(value);
   const [view, setView] = useState(() => {
     const { y, m } = parseIso(initial);
     return { y, m };
@@ -105,7 +149,7 @@ export function DatePicker({
 
   const openMenu = () => {
     if (disabled) return;
-    const base = value ?? todayIso();
+    const base = datePickerAnchor(value);
     const { y, m } = parseIso(base);
     setView({ y, m });
     setFocused(base);
@@ -138,6 +182,8 @@ export function DatePicker({
   };
 
   const today = todayIso();
+  /** The value only if it is a real date - see datePickerAnchor. */
+  const picked = asIsoDate(value);
   const offset = mondayOffset(view.y, view.m);
   const count = daysInMonth(view.y, view.m);
   const cells: Array<string | null> = [
@@ -163,8 +209,11 @@ export function DatePicker({
         onClick={() => (open ? setOpen(false) : openMenu())}
         className={cx(fieldSkin(invalid), "flex h-10 items-center justify-between gap-2 pl-3 pr-3 text-left")}
       >
-        <span className={value ? "text-text-primary" : "text-text-muted"}>
-          {value ? triggerFmt.format(new Date(parseIso(value).y, parseIso(value).m, parseIso(value).d)) : placeholder}
+        {/* `picked`, not `value`: a value the calendar refuses to stand on must
+            not be formatted into a date on the trigger either, or the field
+            would READ as set while the calendar sat on today. */}
+        <span className={picked ? "text-text-primary" : "text-text-muted"}>
+          {picked ? triggerFmt.format(new Date(parseIso(picked).y, parseIso(picked).m, parseIso(picked).d)) : placeholder}
         </span>
         <Calendar size={16} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-text-muted" />
       </button>
@@ -220,7 +269,7 @@ export function DatePicker({
             {cells.map((iso, i) => {
               if (iso == null) return <span key={`b-${i}`} />;
               const { d } = parseIso(iso);
-              const selected = iso === value;
+              const selected = iso === picked;
               const isToday = iso === today;
               const enabled = inRange(iso);
               return (
