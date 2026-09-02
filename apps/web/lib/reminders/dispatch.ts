@@ -22,6 +22,8 @@ import {
   smsTemplateIdFor,
 } from "./fee-notice";
 import { senderCanReceiveReplies } from "./reply-capability";
+import { confirmLinkEnabled, confirmLinkLine } from "./confirm-code";
+import { issueConfirmCode, withdrawConfirmCode } from "./confirm-code-store";
 import { sendEmail, sendSms, type SendResult } from "./clients";
 import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "@osteojp/notify";
@@ -453,7 +455,24 @@ export async function dispatchReminder(
     // real number (or the messaging-service declaration is set), with no code
     // change and no redeploy beyond the one the env change already needs.
     const replyInstruction = senderCanReceiveReplies();
-    const sms = renderSms(offsetId, locale, ctx, { feeNotice, replyInstruction });
+
+    // THE THIRD ANSWER, and the only one that WRITES before the render.
+    //
+    // The link cannot be rendered without a code, and the code cannot exist
+    // without a row, so issuance happens here — gated, and only for 24h.
+    // `issueConfirmCode` returns null when a live code already exists for this
+    // appointment (0072's partial unique index), and the reminder then goes out
+    // WITHOUT the line rather than not going out: we store an HMAC, so the
+    // existing code's plaintext is unrecoverable and there is nothing to send.
+    const issued =
+      offsetId === "24h" && confirmLinkEnabled()
+        ? await issueConfirmCode({ tenantId, appointmentId })
+        : null;
+    const sms = renderSms(offsetId, locale, ctx, {
+      feeNotice,
+      replyInstruction,
+      confirmLink: issued ? confirmLinkLine(issued.code) : undefined,
+    });
     const sent = await sendPatientSms({
       tenantId,
       appointmentId,
@@ -462,6 +481,22 @@ export async function dispatchReminder(
       body: sms,
       templateId: smsTemplateIdFor(offsetId, feeNotice),
     });
+    // A CODE THAT WAS NEVER SENT IS WITHDRAWN, and this is not tidiness. The
+    // partial unique index means a stranded live code BLOCKS the retry from
+    // minting a fresh one, so the patient's second reminder would arrive
+    // without a link and nothing would say why. Withdrawing by the exact hash
+    // this call minted means it can never remove a code somebody is holding.
+    if (issued && !sent) {
+      const withdrawn = await withdrawConfirmCode({ tenantId, codeHash: issued.codeHash });
+      if (!withdrawn) {
+        // Loud, and it names the consequence rather than the operation: the
+        // next reminder for this appointment will carry no confirm link.
+        console.error(
+          "[reminders] confirm code was minted, the SMS did not send, and the code could not be withdrawn; the retry for this appointment will carry no confirm link",
+          { tenantId, appointmentId, offsetId },
+        );
+      }
+    }
     if (sent) channels.push(sent);
   }
 

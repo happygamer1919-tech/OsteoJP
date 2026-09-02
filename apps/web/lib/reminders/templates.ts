@@ -225,6 +225,18 @@ export type SmsAdditions = {
    * inputs. This function does not know what a Twilio sender looks like.
    */
   replyInstruction?: boolean;
+  /**
+   * THE LINE, ALREADY BUILT, or absent. Not a boolean and not a code: a code
+   * would make this function build JP's approved sentence, which would put the
+   * copy in two places and let the two drift. `confirm-code.ts`
+   * `confirmLinkLine()` is the one home for it, and this function appends what
+   * it is handed.
+   *
+   * The gate that decides whether a line exists at all is
+   * `confirmLinkEnabled()`, and it is evaluated at the dispatch site beside the
+   * other two answers — the same reason those are answers rather than inputs.
+   */
+  confirmLink?: string;
 };
 
 /**
@@ -250,10 +262,25 @@ export type SmsAdditions = {
  * never runs in production - which is exactly why a future 48h SMS must not
  * inherit the line by accident.
  *
- * `assertSmsCompliant` RUNS AFTER BOTH APPENDS, so an overlong result fails
- * the render loudly instead of costing a silent second segment. That ordering
- * is load-bearing: the fee line and the reply instruction TOGETHER exceed one
- * segment, and fee-notice.test.ts pins it.
+ * `assertSmsCompliant` RUNS AFTER ALL THREE APPENDS, so an overlong result
+ * fails the render loudly instead of costing a silent second segment. That
+ * ordering is load-bearing: the fee line and the reply instruction TOGETHER
+ * exceed one segment, and fee-notice.test.ts pins it.
+ *
+ * ==================================================================
+ * THE CONFIRM LINK IS THE THIRD ADDITION, AND THE BUDGET IS TIGHT.
+ * ==================================================================
+ * `Confirmar: osteojp.pt/c/XXXXXXXX` is 32 characters, 33 with its LF. Against
+ * the worst-case 24h pt body of 99 that leaves 28 of the 160-character GSM-7
+ * segment spare — enough for the link and NOTHING ELSE. The fee line (53 + LF)
+ * does not fit beside it, which is the arithmetic that moved the fee sentence
+ * to the page in the first place (owner ruling 2026-09-02), and the reply
+ * instruction does not fit beside it either.
+ *
+ * THAT IS A THROW, NOT A SPLIT, and it is the right behaviour: a two-segment
+ * SMS doubles the cost of every reminder silently. `templates.test.ts` asserts
+ * the exact segment count for the link alone and asserts that the combinations
+ * which do not fit throw rather than send.
  */
 export function renderSms(
   offset: ReminderOffsetId,
@@ -272,9 +299,16 @@ export function renderSms(
     additions.replyInstruction && offset === "24h"
       ? `${base}\n${REMINDER_CONFIRM_INSTRUCTION[locale]}`
       : base;
+  // ONLY THE 24h OFFSET, for the same reason the reply instruction is: the link
+  // confirms tomorrow's appointment, and 48h routes to email. The check is here
+  // rather than at the caller so a future 48h SMS cannot inherit it by accident.
+  const withConfirmLink =
+    additions.confirmLink && offset === "24h"
+      ? `${withReply}\n${additions.confirmLink}`
+      : withReply;
   const message = additions.feeNotice
-    ? `${withReply}\n${FEE_NOTICE_SMS[locale]}`
-    : withReply;
+    ? `${withConfirmLink}\n${FEE_NOTICE_SMS[locale]}`
+    : withConfirmLink;
   assertNoUnfilledPlaceholders("sms", message);
   assertSmsCompliant(message);
   return message;
