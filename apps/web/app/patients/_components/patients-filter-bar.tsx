@@ -6,8 +6,10 @@ import { Input, Select } from "@osteojp/ui";
 import { Search } from "lucide-react";
 
 import { s } from "@/lib/i18n";
+import { DEBOUNCE_MS, nextSearchTarget } from "./search-rule";
 
-const DEBOUNCE_MS = 300;
+// DEBOUNCE_MS, MIN_SEARCH_LENGTH and the decision itself live in ./search-rule,
+// which is a plain module a test can import without a DOM harness.
 
 /**
  * UX-01 - the filter bar. CLIENT ONLY BECAUSE CONTROLLED INPUTS DEMAND IT.
@@ -74,7 +76,9 @@ export function PatientsFilterBar({
     const value = e.target.value;
     setQ(value);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => navigate({ q: value.trim() || null }, "replace"), DEBOUNCE_MS);
+    const target = nextSearchTarget(value, params.get("q"));
+    if (!target.navigate) return;
+    timer.current = setTimeout(() => navigate({ q: target.q }, "replace"), DEBOUNCE_MS);
   }
 
   const locationId = params.get("location") ?? "";
