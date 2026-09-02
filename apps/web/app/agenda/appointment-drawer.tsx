@@ -37,7 +37,12 @@ import {
 } from "@/lib/scheduling/actions";
 import { pickAutoFillLocation } from "@/lib/scheduling/location-auto-fill";
 import { therapistOptionsForBooking } from "@/lib/scheduling/therapist-location-filter";
-import { getPatientPackBalanceAction } from "@/lib/packs/actions";
+import {
+  getPatientPackBalanceAction,
+  linkAppointmentToPackAction,
+  listLinkablePacksAction,
+} from "@/lib/packs/actions";
+import type { LinkablePacksView } from "@/lib/packs/link";
 import type { BatchFailure } from "@/lib/scheduling/batch-core";
 import type { RebookOutcome } from "@/lib/scheduling/batch-failure-core";
 import { BatchFailureDialog } from "./batch-failure-dialog";
@@ -63,6 +68,7 @@ import { AppointmentNotesBoard } from "./appointment-notes-board";
 import { AvailabilityPanel } from "./availability-panel";
 
 import { ConfirmationIndicator } from "./confirmation-indicator";
+import { PackLinkPanel } from "./pack-link-panel";
 
 export type ModalState =
   | {
@@ -427,6 +433,66 @@ export function AppointmentDrawer({
       ? packBalanceResult.balance
       : null;
   const selectedPack = options.packs.find((p) => p.id === form.packId) ?? null;
+
+  /**
+   * PACK-01 — the pacotes an EXISTING appointment can be attached to.
+   *
+   * SAME SHAPE AS THE BALANCE FETCH ABOVE: stored WITH the appointment id it
+   * belongs to, so the derived value reads null the instant the drawer moves to
+   * a different appointment, rather than showing the previous one's pacotes for
+   * a frame. `packLinkTick` re-runs it after a successful link, because the
+   * balance the panel prints has just moved.
+   */
+  const editingId = editing?.id ?? null;
+  const [packLinkTick, setPackLinkTick] = useState(0);
+  const [packLinkResult, setPackLinkResult] = useState<{
+    appointmentId: string;
+    view: LinkablePacksView;
+  } | null>(null);
+  const [packLinkBusy, setPackLinkBusy] = useState<string | null>(null);
+  const [packLinkError, setPackLinkError] = useState<StringKey | null>(null);
+  useEffect(() => {
+    if (!editingId) return;
+    let cancelled = false;
+    listLinkablePacksAction(editingId).then((view) => {
+      if (!cancelled) setPackLinkResult({ appointmentId: editingId, view });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [editingId, packLinkTick]);
+  const packLink =
+    packLinkResult && packLinkResult.appointmentId === editingId ? packLinkResult.view : null;
+
+  async function linkPack(instanceId: string) {
+    if (!editingId) return;
+    setPackLinkBusy(instanceId);
+    setPackLinkError(null);
+    try {
+      const res = await linkAppointmentToPackAction(editingId, instanceId);
+      if (res.ok) {
+        toast({ tone: "success", message: s["appointment.packLinkDone"] });
+        // REFETCH RATHER THAN PATCH THE LOCAL LIST. The balance is derived on
+        // the server from the appointments table; recomputing it here would be
+        // a second definition of "available" that can disagree with the first.
+        //
+        // AND IT DOES NOT CALL `onDone()`. That closes the drawer, which is
+        // right after a SAVE and wrong here: linking is one discrete act and the
+        // person may well be mid-edit. The panel re-reads itself instead, and
+        // the agenda grid shows nothing pacote-related to go stale.
+        setPackLinkTick((n) => n + 1);
+      } else {
+        setPackLinkError(
+          res.reason === "no_sessions_left" || res.reason === "already_linked"
+            ? "appointment.packLinkTaken"
+            : "appointment.packLinkFailed",
+        );
+        setPackLinkTick((n) => n + 1);
+      }
+    } finally {
+      setPackLinkBusy(null);
+    }
+  }
 
   // RB-02b — how many sessions this booking may take. Null until the balance
   // lands; a fresh pacote registers on save, so its ceiling is the pack size.
@@ -1477,6 +1543,20 @@ export function AppointmentDrawer({
               </p>
             )}
           </div>
+        )}
+
+        {/* PACK-01 — attach an EXISTING appointment to a pacote the patient
+            already holds. Edit-only: on create the pacote is chosen up front
+            and `bookPackSessionTx` attaches it inside the booking transaction.
+            The panel is a PURE component (pack-link-panel.tsx) so its three
+            outcomes can be render-tested; this file only fetches and links. */}
+        {editing && packLink && (
+          <PackLinkPanel
+            view={packLink}
+            busyInstanceId={packLinkBusy}
+            error={packLinkError}
+            onLink={(id) => void linkPack(id)}
+          />
         )}
 
         {/* No-note indicator (W2-04): a completed visit with no per-visit note.
