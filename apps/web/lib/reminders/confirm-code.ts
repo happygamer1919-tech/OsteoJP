@@ -40,14 +40,56 @@ export const CONFIRM_LINK_FLAG = "REMINDERS_CONFIRM_LINK_ENABLED" as const;
 export const CONFIRM_CODE_SECRET_VAR = "REMINDERS_CONFIRM_CODE_SECRET" as const;
 
 /**
- * The public host in the SMS line, exactly as JP approved it: bare host, no
- * scheme, no `www`. Eight characters after `/c/`.
+ * ==========================================================================
+ * THE HOST COMES FROM DEPLOYMENT, NOT FROM THE COPY. READ THIS BEFORE
+ * RESTORING A LITERAL.
+ * ==========================================================================
+ * JP approved the line as `Confirmar: osteojp.pt/c/XXXXXXXX`, and
+ * `osteojp.pt` IS NOT A HOST THAT CAN SERVE THIS PAGE. The apex resolves to
+ * 62.233.41.48 (nv7.serverhs.org), the clinic's existing website on shared
+ * hosting; the page is served by this app at `app.osteojp.pt/c/<code>`. A
+ * patient tapping the approved line reaches the marketing site and a 404.
+ *
+ * THIS PROJECT HAS ALREADY PAID FOR THIS ONCE, ONE CHANNEL OVER.
+ * `dispatch.ts` `requiredRescheduleBase` exists because the EMAIL reschedule
+ * link defaulted to `https://osteojp.pt` and "unset in prod meant every
+ * reminder and no-show email carried a /r/<token> link that 404s, with nothing
+ * failing anywhere: the send succeeded, the patient hit a dead page, and the
+ * clinic learned about it from a phone call". The first draft of this file
+ * reintroduced exactly that, as a constant instead of a default.
+ *
+ * So the host is read from the SAME env var the email link uses. The two
+ * cannot disagree about which origin serves patient-facing links, because
+ * there is only one answer and one place it lives.
+ *
+ * THE SHAPE JP APPROVED IS PRESERVED: `Confirmar: <host>/c/<8 chars>`, bare
+ * host, no scheme. Only the host follows deployment reality.
  */
-export const CONFIRM_LINK_PREFIX = "osteojp.pt/c/" as const;
+export const CONFIRM_LINK_BASE_VAR = "REMINDERS_RESCHEDULE_BASE_URL" as const;
 
-/** JP's line, with the code filled in. Kept here so the copy has ONE home. */
-export function confirmLinkLine(code: string): string {
-  return `Confirmar: ${CONFIRM_LINK_PREFIX}${code}`;
+/**
+ * The bare host for the SMS line: scheme and any trailing slash removed,
+ * because JP's line carries neither.
+ *
+ * THROWS WHEN UNSET, and does not fall back. A fallback here is the defect
+ * described above, and the email path in dispatch.ts already made this
+ * variable required for the same reason: failing at render is strictly better
+ * than shipping a dead link to a patient.
+ */
+export function confirmLinkHost(env: EnvSource = process.env): string {
+  const base = env[CONFIRM_LINK_BASE_VAR]?.trim();
+  if (!base) {
+    throw new Error(
+      `reminders/confirm-code: ${CONFIRM_LINK_BASE_VAR} is required and has no default. ` +
+        "Set it to the deployed app origin (the host that serves /c/<code>), not the marketing site.",
+    );
+  }
+  return base.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+}
+
+/** JP's line, with the real host and the code filled in. ONE home for the copy. */
+export function confirmLinkLine(code: string, env: EnvSource = process.env): string {
+  return `Confirmar: ${confirmLinkHost(env)}/c/${code}`;
 }
 
 /**

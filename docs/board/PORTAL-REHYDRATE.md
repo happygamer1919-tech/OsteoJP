@@ -237,8 +237,30 @@ rather than being counted.
 6. **Definition of done is a number, a file, or an exit code.** "It works",
    "looks right" and "should be fine" are not done. Cite the passing command,
    the created path, or the exit status. Repo gates, run from the root in this
-   order: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, and
-   `pnpm test:e2e` for anything touching a user-facing flow.
+   order: `pnpm lint`, `pnpm typecheck`, `pnpm test`, **`pnpm test:scripts`**,
+   `pnpm build`, and **`pnpm test:e2e`**.
+
+   **SIX GATES, AND THE TWO IN BOLD WERE ADDED BY SR-36 ON 2026-09-02 BECAUSE
+   THIS LIST WAS WRONG.** It named four and a conditional, and a terminal that
+   followed it exactly shipped red twice in one session:
+   `scripts/env-example-covers-the-code.test.mjs` caught two new environment
+   variables missing from `.env.example`, and
+   `scripts/handover-counts-match-the-render.test.mjs` caught a stale card count
+   after a board edit. **Both live in `pnpm test:scripts`, which is part of the
+   REQUIRED "Lint + typecheck + test" CI job and was absent from this list**, so
+   the four listed gates were green while CI was red.
+
+   **`test:scripts` is a root-level `node --test` over `scripts/**` and
+   `docs/board/**`.** No package task runs it, so a green `pnpm test` says
+   nothing about it - and it fires on ORDINARY feature work, not only on board
+   dispatches: any new env var trips it.
+
+   **`test:e2e` is no longer conditional.** "For anything touching a user-facing
+   flow" is a judgement made by the person least able to make it - the author,
+   before the run. SR-36 makes it unconditional so the judgement is not required.
+
+   Check the EXIT CODE, never the summary line: a teardown error prints
+   "Tests N passed" and still exits non-zero.
 7. **Migrations: you author, Ivan applies, apply happens BEFORE merge.** You
    write the migration and open the PR. Ivan applies it from the
    `osteojp-prod-apply` worktree and pastes the journal output back. Only then

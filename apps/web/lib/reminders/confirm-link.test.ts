@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   CONFIRM_CODE_LENGTH,
   CONFIRM_CODE_SECRET_VAR,
+  CONFIRM_LINK_BASE_VAR,
   CONFIRM_LINK_FLAG,
-  CONFIRM_LINK_PREFIX,
+  confirmLinkHost,
   confirmLinkEnabled,
   confirmLinkLine,
   confirmLinkReason,
@@ -47,17 +48,39 @@ const ctx: ReminderContext = {
 };
 
 const CODE = "aB3-_xY9".slice(0, CONFIRM_CODE_LENGTH);
-const LINE = confirmLinkLine(CODE);
+
+/**
+ * THE PRODUCTION HOST, not the one in JP's approved line. `osteojp.pt` is the
+ * clinic's marketing site on shared hosting and cannot serve /c/<code>; this
+ * app is served at app.osteojp.pt. The budget below is therefore measured
+ * against the host a patient will actually receive.
+ */
+const HOST_ENV = { [CONFIRM_LINK_BASE_VAR]: "https://app.osteojp.pt" };
+const LINE = confirmLinkLine(CODE, HOST_ENV);
 
 describe("JP's approved line", () => {
-  it("is exactly the approved shape: bare host, /c/, eight characters", () => {
-    expect(LINE).toBe(`Confirmar: ${CONFIRM_LINK_PREFIX}${CODE}`);
-    expect(LINE).toBe("Confirmar: osteojp.pt/c/aB3-_xY9");
+  it("keeps the approved SHAPE, with the host deployment actually serves", () => {
+    expect(LINE).toBe("Confirmar: app.osteojp.pt/c/aB3-_xY9");
+    expect(LINE).toMatch(/^Confirmar: [a-z0-9.-]+\/c\/[A-Za-z0-9_-]{8}$/);
   });
 
-  it("is 32 characters, which is the figure the whole budget was computed from", () => {
-    // docs/audit/PERF-06-RLS.md §6: body 99 + LF + 32 = 132, margin 28.
-    expect(LINE.length).toBe(32);
+  it("takes the host from the env var, with the scheme and any slash stripped", () => {
+    for (const base of ["https://app.osteojp.pt", "http://app.osteojp.pt/", "app.osteojp.pt"]) {
+      expect(confirmLinkHost({ [CONFIRM_LINK_BASE_VAR]: base })).toBe("app.osteojp.pt");
+    }
+  });
+
+  it("REFUSES to render a link when the origin is unset, rather than guessing", () => {
+    // The defect this replaces: a hardcoded `osteojp.pt` sent every patient to
+    // the marketing site, and nothing failed anywhere. dispatch.ts made the same
+    // variable required for the email link after exactly that.
+    expect(() => confirmLinkLine(CODE, {})).toThrow(new RegExp(CONFIRM_LINK_BASE_VAR));
+  });
+
+  it("is 36 characters on the production host, and the budget still holds", () => {
+    // JP's line on the marketing host was 32 and the body is 99, so the four
+    // characters `app.` spend four of the 28 spare. 136 of 160.
+    expect(LINE.length).toBe(36);
   });
 
   it("is GSM-7, including the two base64url symbols a code can contain", () => {
@@ -65,7 +88,7 @@ describe("JP's approved line", () => {
     // carrying a code with one would silently become UCS-2 and halve the limit
     // from 160 to 70 — a cost doubling nothing would report.
     expect(isGsm7(LINE)).toBe(true);
-    expect(isGsm7(confirmLinkLine("--______"))).toBe(true);
+    expect(isGsm7(confirmLinkLine("--______", HOST_ENV))).toBe(true);
   });
 });
 
@@ -76,12 +99,14 @@ describe("the segment budget, on the real 24h body", () => {
 
     expect(isGsm7(withLink)).toBe(true);
     expect(withLink.length).toBeLessThanOrEqual(SMS_SEGMENT_LIMIT);
-    // THE NUMBERS, PINNED, and they are the card's own budget confirmed by
-    // execution rather than by arithmetic: body 99 + LF + line 32 = 132 of 160,
-    // margin 28. docs/audit/PERF-06-RLS.md §6 predicted exactly these.
+    // THE NUMBERS, PINNED. The card's budget was computed on the marketing
+    // host (99 + LF + 32 = 132, margin 28); the host that can actually serve
+    // the page is four characters longer, so the shipped message is 136 of 160
+    // with 24 to spare. Still one segment, and the four characters are the
+    // price of the link resolving at all.
     expect(withoutLink.length).toBe(99);
-    expect(withLink.length).toBe(132);
-    expect(SMS_SEGMENT_LIMIT - withLink.length).toBe(28);
+    expect(withLink.length).toBe(136);
+    expect(SMS_SEGMENT_LIMIT - withLink.length).toBe(24);
   });
 
   it("the link is the LAST line and the approved body is a strict prefix", () => {
