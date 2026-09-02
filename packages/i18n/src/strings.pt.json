@@ -476,6 +476,7 @@
   "admin.workingHours.period2": "2.º período",
   "admin.workingHours.period2AfterFirst": "O 2.º período tem de começar depois do fim do 1.º.",
   "admin.workingHours.period2EndAfterStart": "O fim do 2.º período tem de ser depois do início.",
+  "admin.workingHours.saveBlocked": "Guardar indisponível:",
   "admin.workingHours.block": "Bloquear horário",
   "admin.workingHours.blocksFor": "Bloqueios de",
   "admin.workingHours.blocksNone": "Sem bloqueios",

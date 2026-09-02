@@ -5,7 +5,11 @@ import { Button } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { TimeFieldInput } from "@/components/time-field-input";
 import { adminInputInline, adminLabel } from "@/app/admin/admin-ui";
-import { scheduleDayError, type ScheduleDayRow } from "@/lib/admin/schedule-days";
+import {
+  defaultSecondPeriod,
+  scheduleDayError,
+  type ScheduleDayRow,
+} from "@/lib/admin/schedule-days";
 
 /**
  * W13-A — the seven weekday rows of the schedule editor, with an OPTIONAL second
@@ -92,7 +96,19 @@ export function ScheduleWeekFields({
     return reason ? s[ERROR_KEY[reason]] : null;
   };
 
-  const blocked = days.some((d) => errorFor(d.weekday) != null);
+  /**
+   * SCHED-08 - the days that are blocking the save, named.
+   *
+   * The per-day message alone was not enough. It sits inside the offending
+   * day's fieldset, which on a seven-day editor can be scrolled well off
+   * screen, so what the person actually sees is a Guardar button that is simply
+   * dead with no reason anywhere near it. A disabled control that does not say
+   * why is indistinguishable from a broken one.
+   */
+  const blockingDays = days
+    .map((d) => ({ label: d.label, error: errorFor(d.weekday) }))
+    .filter((d): d is { label: string; error: string } => d.error != null);
+  const blocked = blockingDays.length > 0;
 
   return (
     <>
@@ -171,7 +187,14 @@ export function ScheduleWeekFields({
               {day.on && !day.p2On && (
                 <button
                   type="button"
-                  onClick={() => patch(d.weekday, { p2On: true })}
+                  // SCHED-08 - derived from the FIRST PERIOD AS IT STANDS RIGHT
+                  // NOW, not from what the row loaded with. The admin may have
+                  // just moved the morning; opening a second period that starts
+                  // before the end they can see on screen is the defect this
+                  // card exists for.
+                  onClick={() =>
+                    patch(d.weekday, { p2On: true, ...defaultSecondPeriod(day.end) })
+                  }
                   className="min-h-11 rounded px-2 text-sm text-v2-text-secondary underline-offset-2 transition hover:text-v2-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                 >
                   {`+ ${s["admin.workingHours.period2Add"]}`}
@@ -222,7 +245,14 @@ export function ScheduleWeekFields({
           </fieldset>
         );
       })}
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {blocked && (
+          <p role="alert" className="text-sm text-v2-danger-text">
+            {`${s["admin.workingHours.saveBlocked"]} ${blockingDays
+              .map((d) => `${d.label}: ${d.error}`)
+              .join(" ")}`}
+          </p>
+        )}
         <Button type="submit" variant="primary" disabled={blocked}>
           {s["common.save"]}
         </Button>
