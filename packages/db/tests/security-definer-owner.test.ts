@@ -17,8 +17,14 @@ import {
   evaluate,
 } from "../scripts/check-security-definer-owner.mjs";
 
-/** The thirteen, exactly as production returned them on 2026-08-07. */
-const THIRTEEN = [
+/**
+ * Every public SECURITY DEFINER function, by name.
+ *
+ * EXPECTED_FUNCTIONS as production returned them on 2026-08-07, plus
+ * `resolve_confirm_code` from migration 0072 (SR-29) - the single door to
+ * `appointment_confirm_codes`, which is granted to nobody.
+ */
+const EXPECTED_FUNCTIONS = [
   "appointment_conflicts",
   "assign_patient_number",
   "clinical_admin_sees_patient",
@@ -31,17 +37,18 @@ const THIRTEEN = [
   "merge_patients",
   "patient_appt_at_viewer_location",
   "patient_appt_treated_by_viewer",
+  "resolve_confirm_code",
   "viewer_has_location_assignment",
 ].map((name) => ({ name, owner: "postgres" }));
 
 describe("POSITIVE ARM — production as it actually is", () => {
-  it("passes on the real thirteen, all owned by postgres", () => {
-    expect(evaluate(THIRTEEN)).toEqual([]);
+  it("passes on the real set, all owned by postgres", () => {
+    expect(evaluate(EXPECTED_FUNCTIONS)).toEqual([]);
   });
 
   it("the declared count matches the declared list", () => {
     // If these drift, the count assertion below is asserting the wrong number.
-    expect(THIRTEEN).toHaveLength(EXPECTED_COUNT);
+    expect(EXPECTED_FUNCTIONS).toHaveLength(EXPECTED_COUNT);
     expect(EXPECTED_OWNER).toBe("postgres");
   });
 
@@ -57,7 +64,7 @@ describe("POSITIVE ARM — production as it actually is", () => {
  */
 describe("NEGATIVE ARM — a wrong owner FAILS", () => {
   it("fails when ONE function has a fabricated wrong owner", () => {
-    const split = THIRTEEN.map((r) =>
+    const split = EXPECTED_FUNCTIONS.map((r) =>
       r.name === "appointment_conflicts" ? { ...r, owner: "migrator" } : r,
     );
     const problems = evaluate(split);
@@ -69,7 +76,7 @@ describe("NEGATIVE ARM — a wrong owner FAILS", () => {
   it("fails on a REALISTIC split, where the newest functions have a new owner", () => {
     // The actual shape of the failure: the applying principal changed partway,
     // so functions created after that point differ. Nothing else detects this.
-    const split = THIRTEEN.map((r) =>
+    const split = EXPECTED_FUNCTIONS.map((r) =>
       ["is_unconfirmed_pedido", "appointment_conflicts"].includes(r.name)
         ? { ...r, owner: "svc_migrations" }
         : r,
@@ -80,30 +87,37 @@ describe("NEGATIVE ARM — a wrong owner FAILS", () => {
 
 describe("NEGATIVE ARM — a count of TWELVE fails", () => {
   it("fails when a function is missing, even if every owner is correct", () => {
-    // This is the case an owner-only check passes: twelve correctly-owned
-    // functions look perfect one at a time.
-    const twelve = THIRTEEN.filter((r) => r.name !== "appointment_conflicts");
-    const problems = evaluate(twelve);
+    // This is the case an owner-only check passes: correctly-owned functions
+    // look perfect one at a time.
+    //
+    // COUNT-RELATIVE, NOT HARD-CODED. This asserted "found 12" and broke the day
+    // a fourteenth function landed - which is a test failing for arithmetic
+    // rather than for the property it names. The property is "one fewer than
+    // expected is reported as missing", and that is what it says now.
+    const oneShort = EXPECTED_FUNCTIONS.filter((r) => r.name !== "appointment_conflicts");
+    const problems = evaluate(oneShort);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain("found 12");
+    expect(problems[0]).toContain(`found ${EXPECTED_COUNT - 1}`);
     expect(problems[0]).toContain("missing");
     // Every remaining owner is right, so this failure comes only from the count.
-    expect(twelve.every((r) => r.owner === EXPECTED_OWNER)).toBe(true);
+    expect(oneShort.every((r) => r.owner === EXPECTED_OWNER)).toBe(true);
   });
 
-  it("fails on a FOURTEENTH that arrived correctly owned", () => {
+  it("fails on ONE MORE than expected, even if it arrived correctly owned", () => {
     // The other direction, and the one the count assertion exists for: a new
     // SECURITY DEFINER function entering the schema unreviewed.
-    const fourteen = [...THIRTEEN, { name: "some_new_helper", owner: "postgres" }];
-    const problems = evaluate(fourteen);
+    const oneOver = [...EXPECTED_FUNCTIONS, { name: "some_new_helper", owner: "postgres" }];
+    const problems = evaluate(oneOver);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain("found 14");
+    expect(problems[0]).toContain(`found ${EXPECTED_COUNT + 1}`);
     expect(problems[0]).toContain("without being added to 0060");
   });
 
   it("reports BOTH problems when owner and count are wrong together", () => {
     const bad = [
-      ...THIRTEEN.slice(0, 12),
+      // One short of the expected set, then a wrongly-owned one and an
+      // unreviewed one - so the total is one OVER and one owner is wrong.
+      ...EXPECTED_FUNCTIONS.filter((r) => r.name !== "appointment_conflicts"),
       { name: "appointment_conflicts", owner: "migrator" },
       { name: "some_new_helper", owner: "postgres" },
     ];
@@ -111,35 +125,49 @@ describe("NEGATIVE ARM — a count of TWELVE fails", () => {
   });
 });
 
-describe("0060 declares exactly the functions the checker counts", () => {
-  it("the migration has one ALTER per expected function, and no more", async () => {
-    // The pairing that makes EXPECTED_COUNT meaningful: if these drift, the
-    // number is asserting something the migration does not pin.
-    const { readFileSync } = await import("node:fs");
+/**
+ * THE PAIRING, GENERALISED FROM 0060 TO THE WHOLE MIGRATION SET.
+ *
+ * This used to read 0060 alone, because 0060 was where all thirteen owner-pins
+ * lived. Migration 0072 adds a fourteenth function AND its own
+ * `ALTER FUNCTION ... OWNER TO postgres` in the same file, which is exactly what
+ * the pairing is supposed to require - and the 0060-only version would have
+ * failed it for being in the right place.
+ *
+ * So the invariant is stated as what it always meant: EVERY SECURITY DEFINER
+ * function the checker counts has an owner-pin SOMEWHERE in the migrations, and
+ * there are no pins for functions nobody counts. Which file carries it is not
+ * the property; that it exists is.
+ */
+describe("the migrations declare exactly the functions the checker counts", () => {
+  const altersAcrossMigrations = async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
-    const sql = readFileSync(
-      join(__dirname, "..", "migrations", "0060_pin_security_definer_owner.sql"),
-      "utf8",
-    );
-    const live = sql.replace(/\/\*[\s\S]*?\*\//g, " ");
-    const alters = live.match(/^ALTER FUNCTION public\.([a-z_]+)\(/gm) ?? [];
-    expect(alters).toHaveLength(EXPECTED_COUNT);
+    const dir = join(__dirname, "..", "migrations");
+    const out: { name: string; owner: string }[] = [];
+    for (const f of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
+      const live = readFileSync(join(dir, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, " ");
+      for (const m of live.matchAll(
+        /^ALTER FUNCTION public\.([a-z_]+)\([^)]*\)\s+OWNER TO ([a-z_]+);/gm,
+      )) {
+        out.push({ name: m[1]!, owner: m[2]! });
+      }
+    }
+    return out;
+  };
 
-    const named = alters.map((a) => /public\.([a-z_]+)\(/.exec(a)![1]).sort();
-    expect(named).toEqual(THIRTEEN.map((r) => r.name).sort());
+  it("one owner-pin per expected function, and no more", async () => {
+    const alters = await altersAcrossMigrations();
+    expect(alters).toHaveLength(EXPECTED_COUNT);
+    expect(alters.map((a) => a.name).sort()).toEqual(
+      EXPECTED_FUNCTIONS.map((r) => r.name).sort(),
+    );
   });
 
-  it("every ALTER pins to the expected owner, not to something else", () => {
+  it("every pin names the expected owner, not something else", async () => {
     // A migration that pinned to the wrong role would pass the count check and
     // then MOVE ownership away from the role everything depends on.
-    const { readFileSync } = require("node:fs") as typeof import("node:fs");
-    const { join } = require("node:path") as typeof import("node:path");
-    const sql = readFileSync(
-      join(__dirname, "..", "migrations", "0060_pin_security_definer_owner.sql"),
-      "utf8",
-    );
-    const owners = [...sql.matchAll(/^ALTER FUNCTION .* OWNER TO ([a-z_]+);/gm)].map((m) => m[1]);
-    expect(owners).toHaveLength(EXPECTED_COUNT);
-    expect(new Set(owners)).toEqual(new Set([EXPECTED_OWNER]));
+    const alters = await altersAcrossMigrations();
+    expect(new Set(alters.map((a) => a.owner))).toEqual(new Set([EXPECTED_OWNER]));
   });
 });

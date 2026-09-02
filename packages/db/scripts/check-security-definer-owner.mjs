@@ -45,8 +45,15 @@ export const EXPECTED_OWNER = "postgres";
 /**
  * The declared count. It matches 0060's statement list one for one, and both
  * must move together — that pairing is the point of asserting a number at all.
+ *
+ * 13 -> 14 on 2026-09-02: migration 0072 adds `public.resolve_confirm_code(text)`,
+ * the single SECURITY DEFINER door to `appointment_confirm_codes`. It carries its
+ * own `ALTER FUNCTION ... OWNER TO postgres` in the same migration, which is the
+ * pairing this constant exists to enforce - a function created without it would
+ * inherit the applying principal's ownership and this count would still be right
+ * while the OWNER check caught it.
  */
-export const EXPECTED_COUNT = 13;
+export const EXPECTED_COUNT = 14;
 
 /**
  * The verdict, as a pure function of the catalog rows.
