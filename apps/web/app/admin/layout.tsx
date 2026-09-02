@@ -36,8 +36,16 @@ export default async function AdminLayout({
   // every tab; the HeritageFrame wraps the content area via the SidebarAppShell.
   // W6-04: the Pacientes eliminados recovery tab is OWNER-ONLY (patients:recover);
   // the route itself also redirects any non-owner (not just nav hiding).
+  // CONFIRM-02: the delivery test is OWNER-ONLY and sends a real SMS, so it is
+  // gated on the ROLE rather than on a capability that happens to be
+  // owner-only. The route and its server action both re-check; this only
+  // decides whether the tab is shown.
+  const ownerTabs: AdminNavItem[] =
+    actor.role === "owner"
+      ? [{ href: "/admin/messaging-check", label: s["admin.messagingCheck.title"] }]
+      : [];
   const nav: AdminNavItem[] = can(actor.role, "patients:recover")
-    ? [...NAV, { href: "/admin/pacientes-eliminados", label: s["admin.nav.deletedPatients"] }]
+    ? [...NAV, { href: "/admin/pacientes-eliminados", label: s["admin.nav.deletedPatients"] }, ...ownerTabs]
     : NAV;
 
   return (

@@ -585,6 +585,32 @@ export const RULES = {
    */
   otpGlobalHour: { limit: 60, windowMs: 60 * 60_000 },
   otpGlobalDay: { limit: 300, windowMs: 24 * 60 * 60_000 },
+
+  /**
+   * THE OWNER'S OWN DELIVERY TEST — /admin/messaging-check. CONFIRM-02 task 2.
+   *
+   * ==================================================================
+   * IT IS AUTHENTICATED, OWNER-ONLY, AND STILL LIMITED. THAT IS THE POINT.
+   * ==================================================================
+   * Every other limit in this file bounds an anonymous stranger. This one
+   * bounds the owner, and the reason is not distrust: the page SENDS A REAL SMS
+   * THROUGH THE PRODUCTION PATH, so every press costs money at PT SMS pricing
+   * and lands on a real handset. A page that sends on every submit, with a
+   * reload button and no ceiling, is one held-down key away from a bill and a
+   * pumped number — and the person holding the key is authorised, so nothing
+   * else in the system would refuse them.
+   *
+   * FIVE A DAY, which is "a handful" as the dispatch put it. A delivery test is
+   * something you do once, look at your phone, and maybe repeat after changing
+   * a variable. Nothing legitimate approaches five, and a sixth is far more
+   * likely to be a stuck form than a decision.
+   *
+   * KEYED PER SOURCE, like every other rule here. The owner is one person at
+   * one address; keying on the phone number instead would let a mistyped digit
+   * buy a fresh budget for each typo, which is exactly the traffic worth
+   * refusing.
+   */
+  messagingCheck: { limit: 5, windowMs: 24 * 60 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /**
