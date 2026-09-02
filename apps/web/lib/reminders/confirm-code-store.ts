@@ -1,6 +1,5 @@
 import "server-only";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { appointmentConfirmCodes, appointments, getDbAdmin } from "@osteojp/db";
+import { sql } from "drizzle-orm";
 import { withReminderTenantContext } from "./context";
 import {
   generateConfirmCode,
@@ -11,72 +10,40 @@ import {
 // ISSUING AND WITHDRAWING A CONFIRM CODE. The database half of confirm-code.ts.
 //
 // ==========================================================================
-// WHO WRITES THIS TABLE, AND WHY IT IS NOT THE ROLE EVERYTHING ELSE USES
+// WHO WRITES THIS TABLE: THREE SECURITY DEFINER DOORS, ONE PER VERB
 // ==========================================================================
-// READ THIS BEFORE CHANGING `withConfirmCodeWriter`. Migration 0072 REVOKEs
-// `appointment_confirm_codes` from PUBLIC, anon, authenticated AND patient
-// (SR-29: "no table grants"), leaving `postgres` and `service_role` as the only
-// roles that can touch it. Reminder jobs run through `withReminderTenantContext`
-// as `authenticated`, so EVERY WRITE FROM THAT SEAM ANSWERS
-// `permission denied for table appointment_confirm_codes`. That is not a bug in
-// 0072: it is 0072 working, and it is the shape INC-11 and 0064 both record.
+// Migration 0072 REVOKEs `appointment_confirm_codes` from PUBLIC, anon,
+// authenticated AND patient (SR-29, "no table grants"), so no application role
+// can write it at all. 0072 built the READ door - `resolve_confirm_code` - and
+// not the write door, because when it was authored nothing wrote the table.
 //
-// 0072 BUILT THE READ DOOR AND NOT THE WRITE DOOR. `resolve_confirm_code` is a
-// SECURITY DEFINER function granted to `authenticated`; there is no equivalent
-// for INSERT, UPDATE or DELETE, because when 0072 was authored nothing wrote
-// the table yet.
+// CONFIRM-02 shipped through the service_role handle as the only non-migration
+// path available, and said so at the top of this file rather than reconciling
+// it quietly. SR-35 released 0074, and this file now calls the doors 0074
+// added: issue, withdraw and consume, each SECURITY DEFINER, each owned by
+// postgres, each granted to `authenticated` alone.
 //
-// SO THERE ARE EXACTLY TWO WAYS TO WRITE IT, and both are named here rather
-// than one being chosen silently:
-//   A. the `service_role` handle, which 0072's own comment says "already holds
-//      the table outright, so removing it would be theatre";
-//   B. migration 0074, adding SECURITY DEFINER writers to match the reader —
-//      the shape SR-29 would have chosen had a writer existed.
+// THE TENANT IS PROVEN INSIDE THE FUNCTION, not asserted by this file. Every
+// door takes the tenant as an argument and matches it in the same statement, so
+// a caller that paired the wrong appointment with the wrong tenant writes
+// nothing. That is the check RLS would have made if the app role could reach
+// the table, and it is why these are narrow functions rather than a GRANT: a
+// grant would let any authenticated session write any row.
 //
-// THIS FILE TAKES A, AND IT CONTRADICTS A RULE STATED IN context.ts — "we never
-// use getDbAdmin (which would bypass RLS)". The contradiction is reported
-// rather than reconciled. Two things make A defensible until B is ruled: this
-// job may not author a migration, and "bypassing RLS" has no meaning on a table
-// with no grants to the app role — there is no policy that would have admitted
-// the write, so nothing is being stepped around. Every write below still names
-// its tenant explicitly (hard architecture rule 3) and the insert PROVES the
-// appointment belongs to that tenant in the same statement.
-//
-// B IS THE BETTER SHAPE and this seam exists so adopting it is one function.
-//
-// ==========================================================================
-// ONE LIVE CODE PER APPOINTMENT, AND WHAT THAT COSTS ON A RETRY
-// ==========================================================================
-// 0072's partial unique index — `(appointment_id) WHERE consumed_at IS NULL` —
-// means a retried reminder CANNOT mint a second live code. That is the property
-// the design wants, and it has a consequence the caller must handle rather than
-// discover: we store an HMAC, so when a live code already exists WE CANNOT
-// RECOVER ITS PLAINTEXT. There is no way to put the existing code back in an
-// SMS.
-//
-// So `issueConfirmCode` returns null on a collision, and the reminder is sent
-// WITHOUT the link line. A reminder that goes out is worth more than a link
-// that cannot be minted, and the alternative — deleting a live code somebody may
-// already be holding — would break a link already in a patient's hand.
-//
-// ==========================================================================
-// AND WHY THERE IS A WITHDRAW
-// ==========================================================================
-// The code must exist BEFORE the body that contains it can be rendered, so a
-// send that then fails would strand a live code nobody holds — and the partial
-// index would let that stranded row block the retry from minting a fresh one.
-// `withdrawConfirmCode` deletes the row THIS process just created, by its exact
-// hash, so a retry starts clean. It can only ever delete a code it minted; it
-// takes the hash rather than the appointment id for exactly that reason.
-
+// The service-role seam is gone, and with it the contradiction of
+// context.ts's "we never use getDbAdmin".
 /**
- * The one place this module reaches the table for a WRITE.
+ * Call one of 0074's SECURITY DEFINER doors and read its boolean back.
  *
- * Named, and used by all three writers, so switching to migration 0074's
- * SECURITY DEFINER writers is a change here and nowhere else.
+ * Runs through `withReminderTenantContext`, the same RLS-enforced seam every
+ * other reminder read uses: the function is SECURITY DEFINER, so it does the
+ * privileged work, and nothing here bypasses a policy to reach it.
  */
-function withConfirmCodeWriter<T>(fn: (db: ReturnType<typeof getDbAdmin>) => Promise<T>): Promise<T> {
-  return fn(getDbAdmin());
+async function callWriter(tenantId: string, statement: ReturnType<typeof sql>): Promise<boolean> {
+  const rows = await withReminderTenantContext(tenantId, async (tx) => tx.execute(statement));
+  const list = Array.isArray(rows) ? rows : ((rows as { rows?: unknown[] }).rows ?? []);
+  const first = list[0] as Record<string, unknown> | undefined;
+  return first ? Boolean(Object.values(first)[0]) : false;
 }
 
 /**
@@ -98,37 +65,12 @@ export async function issueConfirmCode(args: {
   // is a programming error and must be loud.
   const codeHash = hashConfirmCode(code, args.env ?? process.env);
 
-  const inserted = await withConfirmCodeWriter(async (db) =>
-    db
-      .insert(appointmentConfirmCodes)
-      // THE TENANT IS PROVEN, NOT PASSED. The row is inserted from a SELECT over
-      // `appointments` that matches BOTH the id and the tenant, so a caller that
-      // paired the wrong two values inserts nothing at all rather than writing a
-      // code into another tenant. This is the check RLS would have made if the
-      // app role could reach the table.
-      // All five columns, in the table's own order: drizzle's insert-select
-      // requires the projection to match the table definition exactly.
-      .select(
-        db
-          .select({
-            codeHash: sql<string>`${codeHash}`.as("code_hash"),
-            tenantId: appointments.tenantId,
-            appointmentId: appointments.id,
-            consumedAt: sql<null>`null::timestamptz`.as("consumed_at"),
-            createdAt: sql<Date>`now()`.as("created_at"),
-          })
-          .from(appointments)
-          .where(and(eq(appointments.id, appointmentId), eq(appointments.tenantId, tenantId))),
-      )
-      // The partial unique index is the arbiter. DO NOTHING rather than a
-      // pre-flight SELECT: two reminder runs racing on the same appointment
-      // would both pass a check-then-insert, and one would get a unique
-      // violation anyway. Let the index decide once.
-      .onConflictDoNothing()
-      .returning({ codeHash: appointmentConfirmCodes.codeHash }),
+  const inserted = await callWriter(
+    tenantId,
+    sql`select public.issue_confirm_code(${codeHash}, ${tenantId}::uuid, ${appointmentId}::uuid)`,
   );
 
-  if (inserted.length === 0) return null;
+  if (!inserted) return null;
   return { code, codeHash };
 }
 
@@ -142,19 +84,10 @@ export async function withdrawConfirmCode(args: {
   tenantId: string;
   codeHash: string;
 }): Promise<boolean> {
-  const rows = await withConfirmCodeWriter(async (db) =>
-    db
-      .delete(appointmentConfirmCodes)
-      .where(
-        and(
-          eq(appointmentConfirmCodes.codeHash, args.codeHash),
-          eq(appointmentConfirmCodes.tenantId, args.tenantId),
-          isNull(appointmentConfirmCodes.consumedAt),
-        ),
-      )
-      .returning({ codeHash: appointmentConfirmCodes.codeHash }),
+  return callWriter(
+    args.tenantId,
+    sql`select public.withdraw_confirm_code(${args.codeHash}, ${args.tenantId}::uuid)`,
   );
-  return rows.length > 0;
 }
 
 /**
@@ -229,21 +162,8 @@ export async function consumeConfirmCode(args: {
   env?: NodeJS.ProcessEnv;
 }): Promise<boolean> {
   const codeHash = hashConfirmCode(args.code, args.env ?? process.env);
-  const rows = await withConfirmCodeWriter(async (db) =>
-    db
-      .update(appointmentConfirmCodes)
-      .set({ consumedAt: args.now })
-      .where(
-        and(
-          eq(appointmentConfirmCodes.codeHash, codeHash),
-          eq(appointmentConfirmCodes.tenantId, args.tenantId),
-          // The predicate is the lock: a second press whose UPDATE matches no
-          // row is a refusal, decided by the database rather than by a read
-          // this code did earlier and might be racing.
-          isNull(appointmentConfirmCodes.consumedAt),
-        ),
-      )
-      .returning({ codeHash: appointmentConfirmCodes.codeHash }),
+  return callWriter(
+    args.tenantId,
+    sql`select public.consume_confirm_code(${codeHash}, ${args.tenantId}::uuid, ${args.now.toISOString()}::timestamptz)`,
   );
-  return rows.length > 0;
 }
