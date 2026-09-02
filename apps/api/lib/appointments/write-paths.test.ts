@@ -171,6 +171,30 @@ const ALLOWED: Record<
       "so the slot lock does not apply. Single use is enforced by the " +
       "action_token_consumptions primary key inside the same transaction.",
   },
+  "apps/web/lib/reminders/confirm-redeem.ts": {
+    // NOT a concurrent writer, and the decision was taken rather than inherited
+    // from the neighbouring reminder paths. This path does exactly ONE thing to
+    // an appointment: `scheduled -> confirmed`, on a row that ALREADY holds its
+    // slot. It never moves an appointment in time, never changes its
+    // practitioner, and never occupies a slot that was free. Occupying can
+    // double-book; confirming what is already held cannot.
+    //
+    // AND THE WRITE IS GUARDED IN ITS OWN WHERE CLAUSE: the UPDATE matches on
+    // `status = 'scheduled'`, so two presses racing produce one move and one
+    // no-op, decided by the database rather than by a read this code did
+    // earlier. The 0061 EXCLUDE constraint is the backstop for the confirmed
+    // state, and confirm-redeem.db.test.ts exercises it against real Postgres.
+    //
+    // Taking the slot lock here would be the "comfortable inaccuracy" this file
+    // warns about: a locked path protecting nothing, inflating the count.
+    needsLock: false,
+    locked: false,
+    reason:
+      "24h SMS confirm code. Confirm moves scheduled -> confirmed on an " +
+      "appointment that already holds its slot; nothing occupies a slot, so " +
+      "the lock has nothing to protect. Single use for the pedido action is " +
+      "enforced by the consumed_at predicate in the UPDATE itself.",
+  },
   "apps/web/lib/reminders/inbound-reply.ts": {
     // NOT a concurrent writer, for the same reason redeem.ts is not, and the
     // decision was taken rather than inherited. This path does exactly two
@@ -331,6 +355,11 @@ describe("appointments write paths (PRIMARY guard for 2.9)", () => {
     // The list is SORTED, so it is spelled sorted. Grouping the two inbound
     // entries by topic instead would read better and fail on ordering alone.
     expect(exempt).toEqual([
+      // The 24h SMS confirm code: confirm moves an appointment that already
+      // holds its slot from scheduled to confirmed, guarded by its own WHERE
+      // clause and backstopped by the 0061 EXCLUDE constraint. Nothing here
+      // occupies a slot. Added deliberately, CONFIRM-02.
+      "apps/web/lib/reminders/confirm-redeem.ts",
       // Inbound patient SMS reply: confirm sets status + the 0024 axis on an
       // appointment that already holds its slot; cancel only releases one.
       // Neither occupies a slot. Backstopped for the confirmed state by the
