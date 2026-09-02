@@ -24,7 +24,14 @@ import type { ConflictInfo } from "@/lib/scheduling/types";
  */
 
 export type PendingRequestView = {
-  notificationId: string;
+  /**
+   * KEYED ON THE APPOINTMENT, NOT ON THE NOTIFICATION. SR-31.
+   *
+   * The notification used to be the row's identity because the queue was derived
+   * from it. It is now a LEFT JOIN that may be absent - a pedido whose
+   * best-effort emit was lost still belongs in this queue - so keying on it
+   * would give a null key for exactly the rows that matter most.
+   */
   appointmentId: string;
   patientName: string | null;
   /** Preformatted in Europe/Lisbon by the server — see page.tsx `stamp`. */
@@ -125,7 +132,7 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
         const busy = pending && busyId === r.appointmentId;
         return (
           <li
-            key={r.notificationId}
+            key={r.appointmentId}
             className="rounded-v2 border border-v2-border bg-surface-base p-4"
           >
             <div className="flex flex-wrap items-baseline justify-between gap-2">

@@ -85,14 +85,19 @@ type Tx = Parameters<Parameters<typeof asRole>[3]>[0];
 
 /** One appointment in a given lifecycle status. Owner-seeded (setup, never an
  *  assertion), so it survives the rolled-back assertion transactions. */
-async function seedAppointment(sql: Sql, x: Ids, status: string): Promise<string> {
+async function seedAppointment(
+  sql: Sql,
+  x: Ids,
+  status: string,
+  origin: "staff" | "patient_portal" = "patient_portal",
+): Promise<string> {
   const rows = await sql`
     insert into appointments
       (tenant_id, patient_id, practitioner_id, location_id, service_id,
-       starts_at, ends_at, status)
+       starts_at, ends_at, status, origin)
     values
       (${x.tenant}, ${x.patient}, ${x.therapist}, ${x.location}, ${x.service},
-       ${START}, ${END}, ${status})
+       ${START}, ${END}, ${status}, ${origin})
     returning id`;
   const id = rows[0]?.id as string | undefined;
   if (!id) throw new Error("seed: appointment insert returned no id");
@@ -113,8 +118,35 @@ async function seedRequestFanout(sql: Sql, x: Ids, appointmentId: string): Promi
   }
 }
 
-/** The queue, as the database answers it for whoever the claims name. */
+/**
+ * The queue, as the database answers it for whoever the claims name.
+ *
+ * SR-31: FROM `appointments`, selected on `origin`, with the notification LEFT
+ * joined for its instant. Transcribed from `apps/web/lib/notifications/centre.ts`
+ * `listPendingRequests`.
+ */
 async function queue(tx: Tx): Promise<string[]> {
+  const rows = await tx`
+    select a.id
+    from appointments a
+    left join patients p on p.id = a.patient_id
+    left join staff_notifications n
+      on n.appointment_id = a.id and n.kind = 'appointment_request'
+    where a.origin = 'patient_portal'
+      and a.status = 'scheduled'
+    order by a.starts_at asc`;
+  return [...new Set(rows.map((r) => r.id as string))];
+}
+
+/**
+ * THE PRE-SR-31 QUEUE, kept verbatim so the change can be measured as a DELTA
+ * rather than asserted.
+ *
+ * A test that only checked the new query would prove the new query. What has to
+ * be shown is that the visible set grew by EXACTLY the pedidos whose
+ * best-effort notification emit was lost, and shrank by nothing.
+ */
+async function queueBeforeSR31(tx: Tx): Promise<string[]> {
   const rows = await tx`
     select a.id
     from staff_notifications n
@@ -123,7 +155,7 @@ async function queue(tx: Tx): Promise<string[]> {
     where n.kind = 'appointment_request'
       and a.status = 'scheduled'
     order by a.starts_at asc`;
-  return rows.map((r) => r.id as string);
+  return [...new Set(rows.map((r) => r.id as string))];
 }
 
 describe.skipIf(!live)("W13-04 — the reception confirm queue", () => {
@@ -132,6 +164,7 @@ describe.skipIf(!live)("W13-04 — the reception confirm queue", () => {
   let confirmed = "";
   let cancelled = "";
   let staffRow = "";
+  let lostEmit = "";
 
   beforeAll(async () => {
     sql = connect();
@@ -141,11 +174,19 @@ describe.skipIf(!live)("W13-04 — the reception confirm queue", () => {
     confirmed = await seedAppointment(sql, T, "confirmed");
     cancelled = await seedAppointment(sql, T, "cancelled");
     // A staff-created appointment with NO appointment_request notification.
-    staffRow = await seedAppointment(sql, T, "scheduled");
+    // origin 'staff' now, which is what actually keeps it out of the queue.
+    staffRow = await seedAppointment(sql, T, "scheduled", "staff");
+
+    // THE ROW THIS WHOLE CARD IS ABOUT: a portal pedido whose best-effort
+    // notification emit was LOST. The appointment exists, is marked
+    // patient_portal, is still awaiting a decision - and before SR-31 nobody was
+    // ever told about it, while the patient had been shown "pedido recebido".
+    lostEmit = await seedAppointment(sql, T, "scheduled");
 
     await seedRequestFanout(sql, T, pending);
     await seedRequestFanout(sql, T, confirmed);
     await seedRequestFanout(sql, T, cancelled);
+    // Deliberately NO fan-out for lostEmit.
   });
 
   afterAll(async () => {
@@ -162,18 +203,87 @@ describe.skipIf(!live)("W13-04 — the reception confirm queue", () => {
     await sql.end();
   });
 
-  it("NEGATIVE CONTROL: RLS is in force — a foreign recipient sees nothing", async () => {
-    // A well-formed staff principal of this tenant whose auth.uid() matches no
-    // notification recipient. If this returns rows, RLS is off and every
-    // assertion below is meaningless.
-    const stranger = randomUUID();
-    const rows = await asRole(sql, "authenticated", claimsFor(T.tenant, "admin", stranger), queue);
+  it("NEGATIVE CONTROL: RLS is in force — ANOTHER TENANT sees nothing", async () => {
+    // If this returns rows, RLS is off and every assertion below is meaningless.
+    //
+    // THE CONTROL MOVED FROM "a non-recipient" TO "another tenant", AND THE
+    // REASON IS A REAL BEHAVIOUR CHANGE RECORDED BELOW - not a test bent to fit.
+    const rows = await asRole(
+      sql,
+      "authenticated",
+      claimsFor(randomUUID(), "admin", randomUUID()),
+      queue,
+    );
     expect(rows).toEqual([]);
+  });
+
+  it("SR-31 WIDENS the queue to an UNASSIGNED admin, and this is the change to read", async () => {
+    // BEFORE: the queue was FROM staff_notifications, whose 0055 policy pins
+    // SELECT to recipient_user_id = auth.uid(). An admin who was not a fan-out
+    // recipient saw nothing, whatever their location scope.
+    //
+    // AFTER: the queue is FROM appointments, so `appointments_rls` governs. For
+    // an admin with NO staff_locations rows that predicate is
+    // `NOT viewer_has_location_assignment()`, which is TRUE - PL-09's documented
+    // NO-LOCKOUT fallback, the same one that already gives them every
+    // appointment on the agenda and every row in /patients.
+    //
+    // SO IT IS NOT NEW DATA. It is the same appointment, by another door, and
+    // the pedido queue was the one surface that hid it - incidentally, because
+    // they happened not to be a recipient. What the change costs is that the
+    // queue's audience is now the appointment scope rather than the fan-out
+    // list, and that is worth a WF-03 sitting rather than a silent deploy.
+    const unassignedAdmin = randomUUID();
+    const rows = await asRole(
+      sql,
+      "authenticated",
+      claimsFor(T.tenant, "admin", unassignedAdmin),
+      queue,
+    );
+    expect(rows).toContain(pending);
+
+    // And the pre-SR-31 query, on the same fixture, showed them nothing.
+    const before = await asRole(
+      sql,
+      "authenticated",
+      claimsFor(T.tenant, "admin", unassignedAdmin),
+      queueBeforeSR31,
+    );
+    expect(before).toEqual([]);
   });
 
   it("lists the pedido that is still awaiting a decision", async () => {
     const rows = await asRole(sql, "authenticated", claimsFor(T.tenant, "reception", T.reception), queue);
     expect(rows).toContain(pending);
+  });
+
+  it("THE DELTA: the queue grows by EXACTLY the lost-emit pedido, and shrinks by nothing", async () => {
+    // A test that only checked the new query would prove the new query. What has
+    // to be shown is that the visible set grew by exactly the pedidos whose
+    // notification was lost - and lost NOTHING that was visible before.
+    const claims = claimsFor(T.tenant, "reception", T.reception);
+    const before = new Set(await asRole(sql, "authenticated", claims, queueBeforeSR31));
+    const after = new Set(await asRole(sql, "authenticated", claims, queue));
+
+    const gained = [...after].filter((id) => !before.has(id));
+    const lost = [...before].filter((id) => !after.has(id));
+
+    expect(gained).toEqual([lostEmit]);
+    expect(lost).toEqual([]);
+  });
+
+  it("the lost-emit pedido was INVISIBLE before and is visible now", async () => {
+    const claims = claimsFor(T.tenant, "reception", T.reception);
+    expect(await asRole(sql, "authenticated", claims, queueBeforeSR31)).not.toContain(lostEmit);
+    expect(await asRole(sql, "authenticated", claims, queue)).toContain(lostEmit);
+  });
+
+  it("a STAFF appointment with no notification still stays out - origin is the gate", async () => {
+    // The obvious wrong version of this change would surface every appointment
+    // that happens to lack a notification. `origin` is what separates a portal
+    // pedido whose emit was lost from a staff booking that never had one.
+    const claims = claimsFor(T.tenant, "reception", T.reception);
+    expect(await asRole(sql, "authenticated", claims, queue)).not.toContain(staffRow);
   });
 
   it("EXCLUDES a confirmed pedido — reception already decided", async () => {
