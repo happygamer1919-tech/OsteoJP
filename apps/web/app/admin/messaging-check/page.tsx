@@ -19,13 +19,13 @@ export const metadata = { title: s["admin.messagingCheck.title"] };
 export default async function MessagingCheckPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string; len?: string; live?: string }>;
+  searchParams: Promise<{ m?: string; len?: string; live?: string; d?: string }>;
 }) {
   const actor = await getRequestContext();
   if (!actor) redirect("/login");
   if (actor.role !== "owner") redirect("/dashboard");
 
-  const { m, len, live } = await searchParams;
+  const { m, len, live, d } = await searchParams;
   const armed = confirmLinkEnabled();
 
   const banner =
@@ -40,11 +40,19 @@ export default async function MessagingCheckPage({
         ? { ok: false, text: s["admin.messagingCheck.limited"] }
         : m === "invalid_phone"
           ? { ok: false, text: s["admin.messagingCheck.invalidPhone"] }
-          : m === "no_link"
-            ? { ok: false, text: s["admin.messagingCheck.noLink"] }
-            : m
-              ? { ok: false, text: s["admin.messagingCheck.failed"] }
-              : null;
+          : m === "landline"
+            ? { ok: false, text: s["admin.messagingCheck.landline"] }
+            : m === "no_link"
+              ? { ok: false, text: s["admin.messagingCheck.noLink"] }
+              : m
+                ? {
+                    ok: false,
+                    // THE PROVIDER'S REASON, SHOWN. A diagnostic page that says
+                    // only "not sent" sends the reader to a dashboard; this one
+                    // exists to answer why.
+                    text: d ? `${s["admin.messagingCheck.failed"]} ${d}` : s["admin.messagingCheck.failed"],
+                  }
+                : null;
 
   return (
     <section className="flex flex-col gap-6">
