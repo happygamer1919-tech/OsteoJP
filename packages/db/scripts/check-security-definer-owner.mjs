@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Every public SECURITY DEFINER function is owned by `postgres`, and there are
-// exactly thirteen of them. READ ONLY.
+// exactly sixteen of them. READ ONLY.
 //
 // WHY THIS EXISTS. Postgres runs a SECURITY DEFINER function with its OWNER's
 // privileges, and RLS on all 37 policy-bearing tables is ENABLE and NOT FORCE
@@ -19,8 +19,8 @@
 //
 // TWO ASSERTIONS, AND THE SECOND IS THE ONE PEOPLE FORGET.
 //   1. OWNER — every function's owner is `postgres`.
-//   2. COUNT — there are exactly thirteen. An owner check alone passes happily
-//      on a FOURTEENTH function that arrived correctly owned, which is fine
+//   2. COUNT — there are exactly sixteen. An owner check alone passes happily
+//      on a SEVENTEENTH function that arrived correctly owned, which is fine
 //      today and is exactly how an unreviewed SECURITY DEFINER function enters
 //      the schema unnoticed. Adding one is a deliberate act; it must move this
 //      number and 0060's statement list together.
@@ -39,7 +39,7 @@
 
 import { pathToFileURL } from "node:url";
 
-/** The declared owner. Read from production 2026-08-07 for all thirteen. */
+/** The declared owner. Read from production 2026-08-07 for the first thirteen. */
 export const EXPECTED_OWNER = "postgres";
 
 /**
@@ -52,8 +52,15 @@ export const EXPECTED_OWNER = "postgres";
  * pairing this constant exists to enforce - a function created without it would
  * inherit the applying principal's ownership and this count would still be right
  * while the OWNER check caught it.
+ *
+ * 14 -> 16 on 2026-09-02: migration 0073 adds `public.viewer_location_ids()` and
+ * `public.viewer_visible_patient_ids()`, the two nullary helpers `patients_select`
+ * evaluates once per statement. Both are SECURITY DEFINER for the same reason
+ * every viewer helper since 0047 has been - they read `staff_locations`, which
+ * carries its own policy - and both carry their own `ALTER FUNCTION ... OWNER TO
+ * postgres` in the same migration.
  */
-export const EXPECTED_COUNT = 14;
+export const EXPECTED_COUNT = 16;
 
 /**
  * The verdict, as a pure function of the catalog rows.

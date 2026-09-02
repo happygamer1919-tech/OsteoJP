@@ -22,7 +22,10 @@ import {
  *
  * EXPECTED_FUNCTIONS as production returned them on 2026-08-07, plus
  * `resolve_confirm_code` from migration 0072 (SR-29) - the single door to
- * `appointment_confirm_codes`, which is granted to nobody.
+ * `appointment_confirm_codes`, which is granted to nobody - plus
+ * `viewer_location_ids` and `viewer_visible_patient_ids` from migration 0073
+ * (SR-33), the two nullary helpers `patients_select` evaluates once per
+ * statement instead of once per row.
  */
 const EXPECTED_FUNCTIONS = [
   "appointment_conflicts",
@@ -39,6 +42,8 @@ const EXPECTED_FUNCTIONS = [
   "patient_appt_treated_by_viewer",
   "resolve_confirm_code",
   "viewer_has_location_assignment",
+  "viewer_location_ids",
+  "viewer_visible_patient_ids",
 ].map((name) => ({ name, owner: "postgres" }));
 
 describe("POSITIVE ARM — production as it actually is", () => {
@@ -91,7 +96,7 @@ describe("NEGATIVE ARM — a count of TWELVE fails", () => {
     // look perfect one at a time.
     //
     // COUNT-RELATIVE, NOT HARD-CODED. This asserted "found 12" and broke the day
-    // a fourteenth function landed - which is a test failing for arithmetic
+    // a further function landed - which is a test failing for arithmetic
     // rather than for the property it names. The property is "one fewer than
     // expected is reported as missing", and that is what it says now.
     const oneShort = EXPECTED_FUNCTIONS.filter((r) => r.name !== "appointment_conflicts");
@@ -130,9 +135,10 @@ describe("NEGATIVE ARM — a count of TWELVE fails", () => {
  *
  * This used to read 0060 alone, because 0060 was where all thirteen owner-pins
  * lived. Migration 0072 adds a fourteenth function AND its own
- * `ALTER FUNCTION ... OWNER TO postgres` in the same file, which is exactly what
- * the pairing is supposed to require - and the 0060-only version would have
- * failed it for being in the right place.
+ * `ALTER FUNCTION ... OWNER TO postgres` in the same file, and 0073 adds a
+ * fifteenth and a sixteenth the same way, which is exactly what the pairing is
+ * supposed to require - and the 0060-only version would have failed it for
+ * being in the right place.
  *
  * So the invariant is stated as what it always meant: EVERY SECURITY DEFINER
  * function the checker counts has an owner-pin SOMEWHERE in the migrations, and
