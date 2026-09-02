@@ -115,10 +115,48 @@ const toHhmm = (mins: number): string => {
  * says so beside a disabled Guardar. Inventing a window that fits would be a
  * fallback on a path that decides whether something is TRUE.
  */
-export function defaultSecondPeriod(p1End: string): { start: string; end: string } {
-  const start = p1End;
-  const end = DEFAULT_P2_END > start ? DEFAULT_P2_END : toHhmm(toMinutes(start) + 60);
-  return { start, end };
+export function defaultSecondPeriod(p1End: string): { p2Start: string; p2End: string } {
+  const p2Start = p1End;
+  const p2End = DEFAULT_P2_END > p2Start ? DEFAULT_P2_END : toHhmm(toMinutes(p2Start) + 60);
+  return { p2Start, p2End };
+}
+
+/**
+ * The state patch the editor's "+ 2.º período" button applies.
+ *
+ * ==========================================================================
+ * SCHED-11. IT EXISTS BECAUSE THE OBVIOUS SPELLING SHIPPED A DEFECT TO
+ * PRODUCTION, AND TYPESCRIPT COULD NOT SEE IT.
+ * ==========================================================================
+ * `defaultSecondPeriod` first returned `{ start, end }`, and the button spread
+ * it into the day's state:
+ *
+ *     patch(weekday, { p2On: true, ...defaultSecondPeriod(day.end) })
+ *
+ * `start` and `end` are the FIRST period's fields. So pressing the button
+ * overwrote period one with the suggestion meant for period two: a day set to
+ * 08:00-13:00 became 13:00-19:00, and the second period then started before it
+ * ended - which the day's own validation refused, exactly as it should. The
+ * feature that made this findable was the blocking reason beside Guardar,
+ * shipped in the same PR; without it the button silently rewrote the morning.
+ *
+ * IT TYPE-CHECKED because `{ start, end }` is a perfectly valid
+ * `Partial<DayState>`. The shape was right and the MEANING was wrong, which no
+ * signature can catch. So the field names are the fix: the return is now keyed
+ * `p2Start` / `p2End`, and a patch built from it cannot name period one's
+ * fields even by accident.
+ *
+ * AND IT IS A FUNCTION RATHER THAN AN INLINE OBJECT so a test can assert what
+ * the patch does NOT contain. The unit tests that existed all passed through
+ * the defect: they tested the pure suggestion and the loader, and the only
+ * thing that touched the button was a static render, which never clicks.
+ */
+export function secondPeriodPatch(p1End: string): {
+  p2On: true;
+  p2Start: string;
+  p2End: string;
+} {
+  return { p2On: true, ...defaultSecondPeriod(p1End) };
 }
 
 /**
@@ -182,8 +220,8 @@ export function buildScheduleDays(
       // derived from its own first period. One function decides that here and
       // in the editor's "+" button, so the value the row loads with and the
       // value the button produces cannot drift apart.
-      p2Start: p2?.startTime ?? defaultSecondPeriod(p1?.endTime ?? DEFAULT_END).start,
-      p2End: p2?.endTime ?? defaultSecondPeriod(p1?.endTime ?? DEFAULT_END).end,
+      p2Start: p2?.startTime ?? defaultSecondPeriod(p1?.endTime ?? DEFAULT_END).p2Start,
+      p2End: p2?.endTime ?? defaultSecondPeriod(p1?.endTime ?? DEFAULT_END).p2End,
     };
   });
 }
