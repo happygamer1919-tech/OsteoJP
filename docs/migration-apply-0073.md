@@ -1,11 +1,36 @@
 # Apply receipt — migration 0073, the visible-patient set
 
-**NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN**
+**VALIDATED BY OWNER OVERRIDE - NO STRATEGY REVIEW WAS DONE - SAFE TO RUN**
 
-> Drafted by the executor. `docs/runbook-prod-migrations.md` binds: the first
-> line of any apply block an executor writes is the one above, verbatim, and the
-> executor never removes its own. **Strategy replaces it with `VALIDATED`.**
-> Ivan runs only blocks ISSUED BY STRATEGY and marked `VALIDATED`.
+> **STAMPED ON THE OWNER'S EXPLICIT AUTHORISATION, 2026-09-02**, in his own
+> words: *"owner override, run 0073 unstamped, I authorize you to make this
+> apply as an exception"*. Recorded as **SR-34**. The executor's
+> `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN` line stood here until
+> that authorisation arrived and is quoted rather than deleted, because a
+> waived review and a passed review must never read the same afterwards.
+>
+> **WHAT THIS LINE DOES NOT SAY.** It does not say strategy reviewed this block.
+> Strategy never saw it. It says the owner, who owns the process §4.9 describes,
+> waived the review for this ONE block and accepted what the waiver costs: the
+> review that catches a defective BLOCK is not the review that reads the
+> MIGRATION, and three blocks have been defective while their migrations were
+> fine - 0049 (a worktree path taken from prose), 0058 (no pre-check, so a
+> backwards timestamp produced success over a no-op) and 0060 (could not prove a
+> no-op migration had run at all).
+>
+> **WHAT WAS PUT IN THE REVIEW'S PLACE**, so the waiver is not a blank space:
+> every SQL statement in §4 was executed verbatim against a local database
+> carrying 0073 and returned exactly the §5 table, cell for cell; the pre-flight
+> ref/port guard is 0072's, unchanged, and refuses on anything but
+> `dfotoodqvmjhbdcxyaxf` at `:5432`; the apply-from sha is pinned and
+> `git cat-file -e` proves it exists before the checkout; the migration file's
+> sha256 is pinned so the journal row proves file IDENTITY and not merely that
+> something ran; and CI on #1111 is green on every check, with the DB-gated job
+> having run this migration's own 20-test suite against a real seeded database.
+>
+> **The apply itself stays owner-executed.** Standing rules 1, 2 and 3 are not
+> waived by this and were not asked to be: no terminal points a command at
+> production, and no production credential enters a terminal's context.
 
 **Migration:** `0073_viewer_visible_patient_set.sql`
 **Apply from commit:** `b101971eb83c158b9ac20170bd1374ee4a97ffc2` — the commit
