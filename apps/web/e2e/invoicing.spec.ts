@@ -52,13 +52,15 @@ test.describe("/invoicing — admin", () => {
   test("filter bar: date range triggers and status select are present", async ({ page }) => {
     await page.goto("/invoicing");
 
-    // The DatePicker component renders the triggerLabel as aria-label on its
-    // trigger button (not as visible text). Use getByRole to target it.
+    // SCHED-07 / SR-38 — THE PICKER IS A TEXT FIELD NOW, not a button. Its
+    // triggerLabel is the input's aria-label; the button beside it opens the
+    // calendar and is named "Abrir calendário". A `getByRole("button")` here
+    // matched nothing and this test was the second one to catch the change.
     await expect(
-      page.getByRole("button", { name: /Data de início/i }),
+      page.getByRole("textbox", { name: /Data de início/i }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /Data de fim/i }),
+      page.getByRole("textbox", { name: /Data de fim/i }),
     ).toBeVisible();
 
     // Status filter: a <select> element with aria-label "Estado".
