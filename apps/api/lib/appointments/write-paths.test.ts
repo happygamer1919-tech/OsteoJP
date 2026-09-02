@@ -146,6 +146,38 @@ const ALLOWED: Record<
       "only frees a slot. This entry is file-granular, so a NEW insert or move " +
       "added to this file would not be flagged; that is the guard's known limit.",
   },
+  "apps/web/lib/packs/link.ts": {
+    // PACK-01 — retroactive pacote assignment. NOT a concurrent writer in the
+    // sense this lock protects, for exactly the reason that exempts cancelOwn
+    // and redeem.ts above: it never OCCUPIES a slot, and it never moves one.
+    //
+    // The UPDATE sets ONE column, `pack_instance_id`, and the `set` object is
+    // written inline at the call site rather than assembled from a patch, so
+    // there is no shape it can grow into without this entry being re-read. It
+    // touches no starts_at, no ends_at, no practitioner_id, no location_id and
+    // no status: the appointment is in exactly the same slot, with the same
+    // therapist, before and after. Nothing about it can double-book.
+    //
+    // THE RACE IT DOES HAVE IS A DIFFERENT ONE, AND IT IS GUARDED WHERE IT
+    // LIVES. Two receptionists can spend the same last pacote session at once.
+    // The advisory slot lock would not help - it is keyed on the slot, and
+    // these are two DIFFERENT appointments contending for one balance. It is
+    // closed instead by re-deciding every guard inside the transaction and by
+    // `pack_instance_id IS NULL` in this UPDATE's own WHERE clause, so the
+    // second writer loses in the database rather than on a stale read.
+    // Taking the slot lock here would be the "comfortable inaccuracy" this file
+    // warns about: a locked path that protects nothing, inflating the count.
+    needsLock: false,
+    locked: false,
+    reason:
+      "Retroactive pacote link. Sets pack_instance_id ONLY - no time, no " +
+      "therapist, no location, no status - so the appointment cannot move and " +
+      "cannot double-book. Its own race (two links spending one balance) is " +
+      "closed by re-deciding the guards inside the tx plus a " +
+      "`pack_instance_id IS NULL` predicate on the UPDATE, which the slot lock " +
+      "could not do: those are two different appointments, not two writers on " +
+      "one slot.",
+  },
   "apps/web/lib/reminders/redeem.ts": {
     // NOT a concurrent writer in the sense the lock protects, and the reason is
     // the same one that exempts cancelOwn above: this path never OCCUPIES a
@@ -355,6 +387,14 @@ describe("appointments write paths (PRIMARY guard for 2.9)", () => {
     // The list is SORTED, so it is spelled sorted. Grouping the two inbound
     // entries by topic instead would read better and fail on ordering alone.
     expect(exempt).toEqual([
+      // Retroactive pacote link: sets pack_instance_id and nothing else, so the
+      // appointment does not move and cannot double-book. Its own race - two
+      // links spending one pacote balance - is between two DIFFERENT
+      // appointments, which the slot lock is not keyed to and could not close;
+      // it is closed by re-deciding inside the tx plus a
+      // `pack_instance_id IS NULL` predicate on the UPDATE. Added
+      // deliberately, PACK-01.
+      "apps/web/lib/packs/link.ts",
       // The 24h SMS confirm code: confirm moves an appointment that already
       // holds its slot from scheduled to confirmed, guarded by its own WHERE
       // clause and backstopped by the 0061 EXCLUDE constraint. Nothing here
