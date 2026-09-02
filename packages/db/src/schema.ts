@@ -1429,6 +1429,55 @@ export const smsInboundEvents = pgTable(
   ],
 );
 
+/**
+ * The 24h SMS confirm-link codes. Migration 0072 (SR-26/28/29/30) created this
+ * table and it is transcribed here, not designed here — the DDL is already on
+ * production and this declaration must MATCH it rather than describe an
+ * intention. Drifting from 0072 is the only thing this entry can get wrong, and
+ * NOTHING IN CI WOULD CATCH IT: this repository hand-authors migrations and
+ * abandoned `drizzle-kit generate` at 0014, so the snapshots under `meta/` are
+ * 59 migrations stale and no diff is ever computed. Read the two side by side
+ * when changing either.
+ *
+ * TWO PROPERTIES CARRY THE DESIGN AND ARE EASY TO MISREAD:
+ *
+ *   `codeHash` IS AN HMAC, NOT A HASH. Eight base64url characters is 48 bits;
+ *   a bare sha256 of 48 bits is exhaustible offline by anyone holding a copy of
+ *   this table. Keyed on a server secret, the table alone is useless. The
+ *   column stores the hex form and 0072 CHECKs it as `^[0-9a-f]{64}$`.
+ *
+ *   `consumedAt` IS THE WHOLE CONSUMPTION MODEL. Only *pedir remarcação*
+ *   consumes; *confirmar* is idempotent (`agendada → confirmada`, re-pressing
+ *   changes nothing) and leaves it NULL. The partial unique index below is what
+ *   makes a retried reminder unable to mint a second live code, while a spent
+ *   code still permits a fresh one.
+ *
+ * NO RLS POLICY AND NO GRANT, deliberately: 0072 REVOKEs the table from every
+ * role and `public.resolve_confirm_code(text)` is the single SECURITY DEFINER
+ * door to it. Reaching it any other way is the defect that design prevents.
+ */
+export const appointmentConfirmCodes = pgTable(
+  "appointment_confirm_codes",
+  {
+    /** HMAC-SHA256 of the code, hex. Never the code. */
+    codeHash: text("code_hash").primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    appointmentId: uuid("appointment_id")
+      .notNull()
+      .references(() => appointments.id, { onDelete: "cascade" }),
+    /** NULL = live. Set only by *pedir remarcação*. */
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("appointment_confirm_codes_one_live_per_appointment")
+      .on(t.appointmentId)
+      .where(sql`${t.consumedAt} is null`),
+  ],
+);
+
 export const auditLog = pgTable(
   "audit_log",
   {

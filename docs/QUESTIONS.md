@@ -1523,3 +1523,46 @@ Two things need a migration and neither was written:
 
 SR-11 released migration authorship to BLUE for 0068 only and re-froze it on
 merge, *"until strategy releases it"*. Next free number is 0069.
+
+## 2026-09-02 — Q-CONFIRM-COPY-1: JP's five approved state messages for /c/<code> are NOT in this repository
+
+**OWNER/JP. It blocks the PAGE only; the SMS line, the code, the gate and the
+issuance are built and green without it.**
+
+The board card records *"JP HAS APPROVED THE FEATURE SHAPE AND ALL WORDING
+(2026-09-02)"* and closes Q3 as *"JP approved all wording"*. **The wording
+itself was never committed.** Every search of `docs/`, `apps/` and `packages/`
+returns nothing: the only fragments anywhere are JP's SMS line
+(`Confirmar: osteojp.pt/c/XXXXXXXX`, on the card) and a paraphrase of one state,
+*"Esta consulta ja foi confirmada"*, quoted inside a paragraph about SR-30.
+
+**This is the §4.11 shape exactly**: a decision carried from dispatch to
+dispatch in prose, which a stateless terminal cannot derive. The dispatch that
+commissioned the page says *"the five state messages exactly as ruled"* — and
+there is no ruled text to be exact against.
+
+**What is needed, verbatim, in Portuguese with accents:**
+
+| # | state | what the patient did |
+|---|---|---|
+| 1 | landing | opened a live code; sees heading + date/time/location + two buttons |
+| 2 | confirmed | pressed **Confirmar consulta** and it worked |
+| 3 | already confirmed | pressed it on an appointment already `confirmada` |
+| 4 | pedido sent | pressed **Pedir remarcação**; the request reached reception |
+| 5 | generic refusal | unknown, expired or already-spent code — **one message for all three**, SR-30 |
+
+**Two of the five already exist and are approved**, and reusing them is the
+recommended default rather than a new decision: state 5 is exactly
+`reschedule.invalidTitle` / `reschedule.invalidBody` ("Ligação inválida ou
+expirada" / "Esta ligação já não é válida…"), which counsel approved for this
+precise purpose on `/r/[token]`, and state 1's heading is `reschedule.title`
+("A sua consulta"). **States 2, 3 and 4 have no approved text.**
+
+**Recommended default if JP is unavailable**, in the established voice, so the
+page is not blocked on a sentence: 2 → "Consulta confirmada. Obrigado — a equipa
+da clínica já a vê."; 3 → "Esta consulta já foi confirmada. Não é preciso fazer
+mais nada."; 4 → "Pedido recebido. A equipa da clínica entra em contacto para
+remarcar." **Not written to the page until ruled.**
+
+**The button labels are NOT in question** — the dispatch gives them verbatim:
+**Confirmar consulta** and **Pedir remarcação**.
