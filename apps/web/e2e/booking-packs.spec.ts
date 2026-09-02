@@ -13,6 +13,21 @@
  * complete replacement of the mechanism is the point of them**, and it is the
  * strongest evidence available that existing balances read the same.
  *
+ * ==========================================================================
+ * PACK-02 CHANGED THE PRESENTATION, NOT THE MECHANISM, AND STEP 4 MOVED WITH
+ * IT. THE PARAGRAPH ABOVE STILL STANDS AS A STATEMENT ABOUT RB-02.
+ * ==========================================================================
+ * The profile chip used to read "8/10 sessões". The owner asked for USED and
+ * REMAINING, so it now reads "8 restantes" with "2 de 10 usadas" beneath it,
+ * and step 4 asserts BOTH numbers where it used to assert one and infer the
+ * other. The balance itself is untouched: same derivation, same rows, same
+ * arithmetic - only the words around it changed.
+ *
+ * SAID PLAINLY SO THE CLAIM ABOVE IS NOT READ AS STILL LITERALLY TRUE OF EVERY
+ * LINE: one assertion in this file did NOT survive PACK-02 verbatim. It was
+ * strengthened rather than relaxed, and that distinction is the only thing
+ * that makes editing a gate-bearing assertion acceptable at all.
+ *
  * THE MANUAL ADJUST STEPS ARE GONE, replaced by an assertion that the controls
  * are ABSENT. "Consumir" and "Restaurar" burned a session with no appointment
  * row; a no-show is now an appointment with `status = 'no_show'` and the
@@ -87,11 +102,19 @@ test("book a pacote: register, derived balance, surfacing, and NO manual adjust 
   await dialog.getByRole("button", { name: SAVE }).click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 
-  // 4. Surfacing: the patient profile shows the pack at 8/10 after two bookings.
+  // 4. Surfacing: after two bookings the patient profile reads 8 REMAINING and
+  //    2 OF 10 USED.
+  //
+  //    PACK-02 REPLACED THE SINGLE "8/10" CHIP WITH TWO NUMBERS, so the old
+  //    assertion could not survive verbatim. It is replaced by a STRICTLY
+  //    STRONGER pair: the remaining count, and the used count beside the total.
+  //    The old form asserted one number and inferred the other; this asserts
+  //    both, which is the whole reason the owner asked for the second one.
   await page.goto(`/patients/${PATIENTS.ana.id}?tab=consultas`);
   const packRow = page.locator("li").filter({ hasText: packName }).first();
   await expect(packRow).toBeVisible();
-  await expect(packRow.getByText(/8\/10/)).toBeVisible();
+  await expect(packRow.getByText(/8\s+restantes/i)).toBeVisible();
+  await expect(packRow.getByText(/2 de 10 usadas/i)).toBeVisible();
 
   // 5. RB-02 — THE MANUAL ADJUST CONTROLS ARE GONE.
   //
