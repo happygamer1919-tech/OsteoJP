@@ -1,10 +1,15 @@
 # Apply receipt — migration 0072, appointment_confirm_codes
 
-**NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN**
+**VALIDATED - STRATEGY APPROVED - SR-26 - safe to run**
 
-> First line by rule (`docs/runbook-prod-migrations.md`, "EVERY APPLY BLOCK IS
-> UNVALIDATED UNTIL STRATEGY SAYS OTHERWISE"). Strategy replaces it with
-> `VALIDATED`; the executor never removes its own.
+> Stamped by STRATEGY on 2026-09-02, replacing the executor's
+> `NOT VALIDATED - STRATEGY REVIEW REQUIRED - DO NOT RUN`
+> (`docs/runbook-prod-migrations.md`). The executor never removes its own line;
+> this replacement was instructed.
+>
+> EVIDENCE STRATEGY ACCEPTED: 19 checks RED against a 0071 schema, the security
+> suite at 78 files / 1,078 tests exit 0, and the `anon` EXECUTE grant found and
+> revoked by this receipt's own post-check.
 
 **Migration:** `0072_appointment_confirm_codes.sql`
 **Apply from commit:** `672004add4a0525826ebfe081006147d404beaf3` — the commit
