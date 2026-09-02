@@ -29,6 +29,20 @@ import type { PackInstanceView } from "@/lib/packs/instances";
  * deliberately not called `sessionsRemaining`; that name belongs to the frozen
  * pre-0067 column, and reusing it for a different number is the conflation this
  * codebase keeps finding in its own instruments.
+ *
+ * ==========================================================================
+ * PACK-02 — USED IS PRINTED BESIDE REMAINING, AND IT IS `sessionsConsumed`
+ * RATHER THAN `total - available`.
+ * ==========================================================================
+ * The two differ, and they differ exactly when it matters. `packSessionsAvailable`
+ * is CLAMPED AT ZERO, because a balance of "minus one" is not something the
+ * clinic can act on; `packSessionsConsumed` is not clamped, because what has
+ * been spent is a fact. On an overdrawn instance — reachable when a cancelled
+ * appointment is marked attended again — `total - available` would read "10 de
+ * 10 usadas" while eleven sessions have actually been booked. Deriving used
+ * from the clamped number would make the display agree with itself and disagree
+ * with the diary, which is the whole family of defect the stored counter was
+ * removed for.
  */
 export function PatientPacks({ instances }: { instances: PackInstanceView[] }) {
   if (instances.length === 0) return null;
@@ -45,9 +59,16 @@ export function PatientPacks({ instances }: { instances: PackInstanceView[] }) {
               <span className="text-sm font-medium text-text-primary">{inst.packName}</span>
               <span className="text-xs text-text-secondary">{inst.baseServiceName}</span>
             </div>
-            <StatusChip tone={inst.active ? "success" : "neutral"}>
-              {inst.sessionsAvailable}/{inst.sessionsTotal} {s["packs.sessions"]}
-            </StatusChip>
+            <div className="flex flex-col items-end gap-1">
+              <StatusChip tone={inst.active ? "success" : "neutral"}>
+                {inst.sessionsAvailable} {s["packs.remaining"]}
+              </StatusChip>
+              <span className="text-xs text-text-secondary">
+                {s["packs.usedOfTotal"]
+                  .replace("{used}", String(inst.sessionsConsumed))
+                  .replace("{total}", String(inst.sessionsTotal))}
+              </span>
+            </div>
           </li>
         ))}
       </ul>

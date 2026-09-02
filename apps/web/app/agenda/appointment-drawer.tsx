@@ -40,6 +40,7 @@ import { therapistOptionsForBooking } from "@/lib/scheduling/therapist-location-
 import {
   getPatientPackBalanceAction,
   linkAppointmentToPackAction,
+  listAvailablePacksForPatientAction,
   listLinkablePacksAction,
 } from "@/lib/packs/actions";
 import type { LinkablePacksView } from "@/lib/packs/link";
@@ -69,6 +70,7 @@ import { AvailabilityPanel } from "./availability-panel";
 
 import { ConfirmationIndicator } from "./confirmation-indicator";
 import { PackLinkPanel } from "./pack-link-panel";
+import { PackAvailableNotice, type AvailablePack } from "./pack-available-notice";
 
 export type ModalState =
   | {
@@ -443,6 +445,34 @@ export function AppointmentDrawer({
    * a frame. `packLinkTick` re-runs it after a successful link, because the
    * balance the panel prints has just moved.
    */
+  /**
+   * PACK-02 — the selected patient's pacotes that still have sessions.
+   *
+   * CREATE ONLY, and keyed on the patient the same way the balance fetch above
+   * is: the derived value reads empty the instant the patient changes, rather
+   * than showing the previous patient's pacotes for a frame. On EDIT the
+   * question is a different one and PackLinkPanel answers it.
+   */
+  const [availablePacksResult, setAvailablePacksResult] = useState<{
+    patientId: string;
+    packs: AvailablePack[];
+  } | null>(null);
+  useEffect(() => {
+    const pid = form.patientId;
+    if (editing || !pid) return;
+    let cancelled = false;
+    listAvailablePacksForPatientAction(pid).then((packs) => {
+      if (!cancelled) setAvailablePacksResult({ patientId: pid, packs });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [editing, form.patientId]);
+  const availablePacks =
+    availablePacksResult && availablePacksResult.patientId === form.patientId
+      ? availablePacksResult.packs
+      : [];
+
   const editingId = editing?.id ?? null;
   const [packLinkTick, setPackLinkTick] = useState(0);
   const [packLinkResult, setPackLinkResult] = useState<{
@@ -1107,6 +1137,16 @@ export function AppointmentDrawer({
             ))}
           </Select>
         </Field>
+
+        {/* PACK-02 — the unprompted half. The Select below answers a question
+            reception has to think to ask; this says the answer before anybody
+            asks, because the cost of not asking lands on the patient, who pays
+            twice for a session they already own. Hidden once a pacote IS
+            chosen: at that point the balance Banner below is the live number
+            and two counts on one screen invite the one that is stale. */}
+        {!editing && !form.packId && (
+          <PackAvailableNotice packs={availablePacks} onUse={onPackChange} />
+        )}
 
         {/* Pacote (W8-01c) — create-only bookable type. Selecting a pack forces
             its base service (above) and registers/decrements a patient session at

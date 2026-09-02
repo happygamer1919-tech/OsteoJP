@@ -1,6 +1,6 @@
 "use server";
 import { requireRequestContext } from "@/lib/auth/context";
-import { getActivePackBalance } from "./instances";
+import { getActivePackBalance, listPatientPackInstances } from "./instances";
 import {
   linkAppointmentToPack,
   listLinkablePacks,
@@ -60,4 +60,31 @@ export async function linkAppointmentToPackAction(
   const actor = await requireRequestContext();
   if (!appointmentId || !instanceId) return { ok: false, reason: "not_found" };
   return linkAppointmentToPack(actor, appointmentId, instanceId);
+}
+
+/**
+ * PACK-02 — the patient's pacotes that still have sessions, for the Nova
+ * marcacao notice.
+ *
+ * IT IS THE SAME READ THE PATIENT PROFILE USES, filtered. `packIsActive` is the
+ * derived balance and not the frozen `status` column, so a pacote appears here
+ * on exactly the same rule that makes it appear with sessions left on the
+ * profile. Two definitions of "has sessions" would eventually disagree, and the
+ * one on the booking screen is the one that would be wrong in front of a
+ * patient.
+ */
+export async function listAvailablePacksForPatientAction(
+  patientId: string,
+): Promise<{ packId: string; packName: string; sessionsTotal: number; sessionsAvailable: number }[]> {
+  const actor = await requireRequestContext();
+  if (!patientId) return [];
+  const instances = await listPatientPackInstances(actor, patientId);
+  return instances
+    .filter((i) => i.active)
+    .map((i) => ({
+      packId: i.packId,
+      packName: i.packName,
+      sessionsTotal: i.sessionsTotal,
+      sessionsAvailable: i.sessionsAvailable,
+    }));
 }
