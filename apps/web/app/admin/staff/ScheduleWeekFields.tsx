@@ -6,8 +6,8 @@ import { s } from "@/lib/i18n";
 import { TimeFieldInput } from "@/components/time-field-input";
 import { adminInputInline, adminLabel } from "@/app/admin/admin-ui";
 import {
-  defaultSecondPeriod,
   scheduleDayError,
+  secondPeriodPatch,
   type ScheduleDayRow,
 } from "@/lib/admin/schedule-days";
 
@@ -193,7 +193,10 @@ export function ScheduleWeekFields({
                   // before the end they can see on screen is the defect this
                   // card exists for.
                   onClick={() =>
-                    patch(d.weekday, { p2On: true, ...defaultSecondPeriod(day.end) })
+                    // SCHED-11: the patch is BUILT BY A NAMED FUNCTION that
+                    // returns p2 keys. Spreading a `{ start, end }` here
+                    // type-checked and overwrote PERIOD ONE.
+                    patch(d.weekday, secondPeriodPatch(day.end))
                   }
                   className="min-h-11 rounded px-2 text-sm text-v2-text-secondary underline-offset-2 transition hover:text-v2-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                 >

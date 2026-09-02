@@ -12,6 +12,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildScheduleDays,
   defaultSecondPeriod,
+  secondPeriodPatch,
   indexScheduleTemplates,
   scheduleDayError,
   type ScheduleTemplate,
@@ -165,29 +166,29 @@ describe("SCHED-08 — the offered second period is always a legal one", () => {
   it("EVERY first period the editor can offer accepts its own suggested second period", () => {
     for (const [start, end] of FIRST_PERIODS) {
       const p2 = defaultSecondPeriod(end);
-      expect(scheduleDayError(start, end, p2.start, p2.end)).toBeNull();
+      expect(scheduleDayError(start, end, p2.p2Start, p2.p2End)).toBeNull();
     }
   });
 
   it("the second period starts exactly where the first ends", () => {
-    for (const [, end] of FIRST_PERIODS) expect(defaultSecondPeriod(end).start).toBe(end);
+    for (const [, end] of FIRST_PERIODS) expect(defaultSecondPeriod(end).p2Start).toBe(end);
   });
 
   it("keeps 19:00 as the end while 19:00 is still after the start", () => {
     // A clinic whose morning ends at 13:00 gets the same afternoon it always
     // got. The fix must not move a default that was already right.
-    expect(defaultSecondPeriod("13:00")).toEqual({ start: "13:00", end: "19:00" });
-    expect(defaultSecondPeriod("18:59")).toEqual({ start: "18:59", end: "19:00" });
+    expect(defaultSecondPeriod("13:00")).toEqual({ p2Start: "13:00", p2End: "19:00" });
+    expect(defaultSecondPeriod("18:59")).toEqual({ p2Start: "18:59", p2End: "19:00" });
   });
 
   it("moves the end on by an hour only when the first period already runs past 19:00", () => {
-    expect(defaultSecondPeriod("19:00")).toEqual({ start: "19:00", end: "20:00" });
-    expect(defaultSecondPeriod("20:00")).toEqual({ start: "20:00", end: "21:00" });
+    expect(defaultSecondPeriod("19:00")).toEqual({ p2Start: "19:00", p2End: "20:00" });
+    expect(defaultSecondPeriod("20:00")).toEqual({ p2Start: "20:00", p2End: "21:00" });
   });
 
   it("clamps at 23:59 instead of wrapping into the next day", () => {
-    expect(defaultSecondPeriod("23:00")).toEqual({ start: "23:00", end: "23:59" });
-    expect(defaultSecondPeriod("23:30")).toEqual({ start: "23:30", end: "23:59" });
+    expect(defaultSecondPeriod("23:00")).toEqual({ p2Start: "23:00", p2End: "23:59" });
+    expect(defaultSecondPeriod("23:30")).toEqual({ p2Start: "23:30", p2End: "23:59" });
   });
 
   it("a day with NO ROOM LEFT gets a pair the validator refuses, and that is deliberate", () => {
@@ -195,8 +196,8 @@ describe("SCHED-08 — the offered second period is always a legal one", () => {
     // fits would be a fallback on a path that decides whether something is
     // true; the screen says so beside a disabled Guardar instead.
     const p2 = defaultSecondPeriod("23:59");
-    expect(p2).toEqual({ start: "23:59", end: "23:59" });
-    expect(scheduleDayError("09:00", "23:59", p2.start, p2.end)).toBe("p2_end_before_start");
+    expect(p2).toEqual({ p2Start: "23:59", p2End: "23:59" });
+    expect(scheduleDayError("09:00", "23:59", p2.p2Start, p2.p2End)).toBe("p2_end_before_start");
   });
 
   it("THE OLD FIXED DEFAULT IS WHAT THIS REPLACES — it fails on the same days", () => {
@@ -239,5 +240,60 @@ describe("SCHED-08 — the loader seeds the same pair the button would produce",
       U, ORDER, label,
     );
     expect(dayOf(rows, 1)).toMatchObject({ p2On: true, p2Id: "pm", p2Start: "15:00", p2End: "18:00" });
+  });
+});
+
+/**
+ * SCHED-11 — the button's patch must not name PERIOD ONE's fields.
+ *
+ * ==========================================================================
+ * THIS IS THE TEST THE ORIGINAL SHIP DID NOT HAVE, AND ITS ABSENCE IS THE
+ * WHOLE STORY.
+ * ==========================================================================
+ * `defaultSecondPeriod` first returned `{ start, end }` and the button spread
+ * it straight into the day's state. `start` and `end` are period ONE's fields,
+ * so pressing "+ 2.º período" REWROTE THE MORNING with the afternoon's
+ * suggestion: 08:00-13:00 became 13:00-19:00. It type-checked, because
+ * `{ start, end }` is a perfectly good `Partial<DayState>` - the shape was
+ * right and the meaning was wrong.
+ *
+ * Everything that existed passed through it. The suggestion was tested pure,
+ * the loader was tested pure, and the only thing that touched the BUTTON was a
+ * static render, which never clicks. What caught it was the e2e round trip -
+ * and what made the e2e failure legible in one read was the blocking reason
+ * beside Guardar, shipped in the same PR.
+ *
+ * So the assertion below is negative on purpose: it is not enough that the
+ * patch carries the right p2 values, it must carry NOTHING ELSE.
+ */
+describe("SCHED-11 — the '+ 2.º período' patch touches period TWO only", () => {
+  it("carries exactly p2On, p2Start and p2End", () => {
+    expect(Object.keys(secondPeriodPatch("13:00")).sort()).toEqual(["p2End", "p2On", "p2Start"]);
+  });
+
+  it("NEVER names `start` or `end` - the exact defect that shipped", () => {
+    for (const p1End of ["08:00", "13:00", "17:00", "20:00", "23:59"]) {
+      const patch = secondPeriodPatch(p1End) as Record<string, unknown>;
+      expect(patch).not.toHaveProperty("start");
+      expect(patch).not.toHaveProperty("end");
+    }
+  });
+
+  it("turns the period on and puts it after the first one", () => {
+    expect(secondPeriodPatch("13:00")).toEqual({ p2On: true, p2Start: "13:00", p2End: "19:00" });
+    expect(secondPeriodPatch("20:00")).toEqual({ p2On: true, p2Start: "20:00", p2End: "21:00" });
+  });
+
+  it("APPLIED TO A DAY, leaves the first period exactly as it was", () => {
+    // The regression, spelled as the screen experiences it: a day set to
+    // 08:00-13:00 must still read 08:00-13:00 after the button is pressed.
+    const day = { on: true, start: "08:00", end: "13:00", p2On: false, p2Start: "", p2End: "" };
+    const after = { ...day, ...secondPeriodPatch(day.end) };
+    expect(after.start).toBe("08:00");
+    expect(after.end).toBe("13:00");
+    expect(after.p2Start).toBe("13:00");
+    expect(after.p2End).toBe("19:00");
+    // And the day the e2e sets up is therefore SAVEABLE, which it was not.
+    expect(scheduleDayError(after.start, after.end, "14:00", "19:00")).toBeNull();
   });
 });
