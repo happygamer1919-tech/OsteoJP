@@ -60,11 +60,66 @@ export type ScheduleDayRow = {
 const DEFAULT_START = "09:00";
 const DEFAULT_END = "17:00";
 
-/** Suggested afternoon window when an admin adds a second period to a day that
- * has none. Never persisted until they save; it exists so the two time fields
- * do not open empty. */
-const DEFAULT_P2_START = "14:00";
+/** Suggested afternoon END when an admin adds a second period to a day that has
+ * none. Never persisted until they save; it exists so the two time fields do
+ * not open empty. */
 const DEFAULT_P2_END = "19:00";
+
+/** The latest time a period can end. `time` columns go to 23:59:59; the editor
+ *  works in whole minutes. */
+const LAST_MINUTE = "23:59";
+
+const toMinutes = (hhmm: string): number => {
+  const [h, m] = hhmm.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+};
+const toHhmm = (mins: number): string => {
+  const clamped = Math.min(mins, toMinutes(LAST_MINUTE));
+  return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}`;
+};
+
+/**
+ * SCHED-08 - the second period a day OPENS WITH, derived from the first period
+ * rather than fixed.
+ *
+ * ==========================================================================
+ * THE DEFECT IT CLOSES, and it was not an edge case: pressing "Adicionar 2.º
+ * período" produced a period that was ALREADY INVALID, so Guardar went dead on
+ * the first click.
+ * ==========================================================================
+ * The old default was a fixed 14:00-19:00. `scheduleDayError` refuses a second
+ * period that starts before the first one ENDS - correctly; two overlapping
+ * windows are a contradiction, not a warning. So the fixed default was refused
+ * for every day ending after 14:00, which is nearly every real clinic day AND
+ * the editor's own default for a brand-new day (09:00-17:00). Reproduced before
+ * it was changed:
+ *
+ *   p1 09:00-17:00 (a new day's own default) + p2 14:00-19:00 -> REFUSED
+ *   p1 09:00-20:00 (the owner's day)         + p2 14:00-19:00 -> REFUSED
+ *   p1 09:00-13:00                           + p2 14:00-19:00 -> ok
+ *
+ * Only a day ending at or before 14:00 worked.
+ *
+ * THE RULE: the second period STARTS WHERE THE FIRST ENDS, which is the one
+ * start that can never overlap it - `scheduleDayError` admits touching windows
+ * (13:00-13:00) deliberately, as a continuous day expressed as two rows.
+ *
+ * THE END KEEPS 19:00 WHENEVER 19:00 IS STILL AFTER THE START, so a clinic
+ * whose morning ends at 13:00 gets exactly the afternoon it got before. Only
+ * when the first period already runs past 19:00 does the end move, to one hour
+ * on - and it is clamped at 23:59 rather than wrapping into the next day.
+ *
+ * A DAY WITH NO ROOM LEFT GETS AN INVALID PAIR AND THAT IS DELIBERATE. If the
+ * first period ends at 23:59 there is no second period to have, so this returns
+ * start === end, `scheduleDayError` says p2_end_before_start, and the screen
+ * says so beside a disabled Guardar. Inventing a window that fits would be a
+ * fallback on a path that decides whether something is TRUE.
+ */
+export function defaultSecondPeriod(p1End: string): { start: string; end: string } {
+  const start = p1End;
+  const end = DEFAULT_P2_END > start ? DEFAULT_P2_END : toHhmm(toMinutes(start) + 60);
+  return { start, end };
+}
 
 /**
  * Index active templates by member and weekday, keeping AT MOST TWO per day.
@@ -123,8 +178,12 @@ export function buildScheduleDays(
       locationId: p1?.locationId ?? "",
       p2On: p2 != null,
       p2Id: p2?.id ?? "",
-      p2Start: p2?.startTime ?? DEFAULT_P2_START,
-      p2End: p2?.endTime ?? DEFAULT_P2_END,
+      // A day with no second period still carries the pair it WOULD open with,
+      // derived from its own first period. One function decides that here and
+      // in the editor's "+" button, so the value the row loads with and the
+      // value the button produces cannot drift apart.
+      p2Start: p2?.startTime ?? defaultSecondPeriod(p1?.endTime ?? DEFAULT_END).start,
+      p2End: p2?.endTime ?? defaultSecondPeriod(p1?.endTime ?? DEFAULT_END).end,
     };
   });
 }
