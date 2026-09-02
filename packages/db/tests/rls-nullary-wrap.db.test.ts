@@ -226,26 +226,47 @@ describe.skipIf(!live)("0071 wraps the nullary helper and changes no row's visib
     expect(row!.check_expr).toMatch(/SELECT\s+viewer_has_location_assignment/i);
   });
 
-  it("SCOPE GUARD: the three CORRELATED helpers are still unwrapped", async () => {
+  it("SCOPE GUARD: every CORRELATED helper that is still called is still unwrapped", async () => {
     // Wrapping one of these would evaluate it once for the whole statement and
     // apply one row's answer to every row. 0071 must not have touched them, and
     // a future migration must not either.
-    const [p] = (await sql`
-      select pg_get_expr(polqual, polrelid) as expr
-        from pg_policy where polname = 'patients_select'`) as { expr: string }[];
-    const [a] = (await sql`
-      select pg_get_expr(polqual, polrelid) as expr
-        from pg_policy where polname = 'appointments_rls'`) as { expr: string }[];
-    for (const fn of [
-      "patient_appt_at_viewer_location",
-      "location_in_viewer_scope",
-      "patient_appt_treated_by_viewer",
-    ]) {
-      expect(p!.expr).toContain(fn);
-      expect(p!.expr).not.toMatch(new RegExp(`SELECT\\s+${fn}`, "i"));
+    //
+    // AMENDED BY 0073 (SR-33), AND THE AMENDMENT IS NARROW. This assertion used
+    // to require all THREE names to appear in patients_select. Two of them -
+    // patient_appt_at_viewer_location(id) and location_in_viewer_scope(
+    // primary_location_id) - were REMOVED from that policy by 0073, which
+    // replaced them with one membership test against a set computed once per
+    // statement. They are still called, unwrapped, in patients_update,
+    // patients_delete and appointments_rls, and that is where this now asserts
+    // it. The PROPERTY is unchanged: no correlated helper is ever wrapped. What
+    // changed is WHERE each one lives, and asserting the old location would be
+    // asserting the absence of 0073 rather than the presence of the property.
+    // 0073's own equality proof is in rls-visible-patient-set.db.test.ts.
+    const exprOf = async (name: string) => {
+      const [row] = (await sql`
+        select pg_get_expr(polqual, polrelid) as expr
+          from pg_policy where polname = ${name}`) as { expr: string }[];
+      expect(row, `no policy named ${name}`).toBeDefined();
+      return row!.expr;
+    };
+    const unwrappedIn = (expr: string, fn: string) => {
+      expect(expr).toContain(fn);
+      expect(expr).not.toMatch(new RegExp(`SELECT\\s+${fn}`, "i"));
+    };
+
+    // patients_select keeps ONE correlated call, in the therapist branch.
+    const select = await exprOf("patients_select");
+    unwrappedIn(select, "patient_appt_treated_by_viewer");
+
+    // The two 0073 took out of the read path are untouched on the WRITE path.
+    for (const name of ["patients_update", "patients_delete"]) {
+      const expr = await exprOf(name);
+      unwrappedIn(expr, "patient_appt_at_viewer_location");
+      unwrappedIn(expr, "location_in_viewer_scope");
+      unwrappedIn(expr, "patient_appt_treated_by_viewer");
     }
-    expect(a!.expr).toContain("location_in_viewer_scope");
-    expect(a!.expr).not.toMatch(/SELECT\s+location_in_viewer_scope/i);
+
+    unwrappedIn(await exprOf("appointments_rls"), "location_in_viewer_scope");
   });
 
   /* ================================================================== */
