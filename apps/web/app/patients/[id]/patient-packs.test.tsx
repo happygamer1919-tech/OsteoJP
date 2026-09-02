@@ -96,3 +96,38 @@ describe("PACK-02 — used and remaining", () => {
     expect(render([view()])).toContain(s["packs.derivedNote"]);
   });
 });
+
+/**
+ * PACK-02 — the exact strings booking-packs.spec.ts greps for.
+ *
+ * ==========================================================================
+ * THIS EXISTS BECAUSE CHANGING THIS COMPONENT BROKE AN E2E AND NOTHING LOCAL
+ * SAID SO.
+ * ==========================================================================
+ * The profile chip used to read "8/10 sessões" and `booking-packs.spec.ts`
+ * asserted exactly that. PACK-02 replaced it with two numbers, every unit test
+ * here went green, `pnpm test` went green, and the break only surfaced on CI
+ * twenty minutes later — because `pnpm test` does not run Playwright and no
+ * unit test pinned the rendered WORDS.
+ *
+ * So these assert the literal strings the e2e greps for. They are deliberately
+ * redundant with the tests above, which check the NUMBERS through the real
+ * formulas; these check the SENTENCE. A future edit to the wording now fails in
+ * one second locally instead of one CI cycle later, and whoever makes it is
+ * told, in the failure, which e2e to update with it.
+ */
+describe("PACK-02 — the rendered wording booking-packs.spec.ts depends on", () => {
+  it('renders "<n> restantes" and "<used> de <total> usadas" verbatim', () => {
+    // The exact fixture of booking-packs.spec.ts step 4: a pacote of ten with
+    // two sessions booked.
+    const html = render([view({ linkedAppointments: 2 })]);
+    expect(html).toMatch(/8\s+restantes/i);
+    expect(html).toMatch(/2 de 10 usadas/i);
+  });
+
+  it("no longer renders the old 8/10 chip, so the e2e could not have kept passing", () => {
+    // The negative half. Without it this file would pass on a component that
+    // rendered BOTH forms, and the e2e's failure would still be a surprise.
+    expect(render([view({ linkedAppointments: 2 })])).not.toContain("8/10");
+  });
+});
