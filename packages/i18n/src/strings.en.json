@@ -1455,5 +1455,14 @@
   "patients.pageOf": "of",
   "patients.neverSeen": "Never seen",
   "patients.noneScheduled": "None scheduled",
-  "followup.filterPlaceholder": "Filter by name or phone"
+  "followup.filterPlaceholder": "Filter by name or phone",
+  "confirm.title": "Your appointment",
+  "confirm.confirmCta": "Confirm appointment",
+  "confirm.rescheduleCta": "Request a new time",
+  "confirm.confirmedTitle": "Appointment confirmed",
+  "confirm.confirmedBody": "Thank you. The clinic team can already see it.",
+  "confirm.alreadyTitle": "Already confirmed",
+  "confirm.alreadyBody": "This appointment has already been confirmed. There is nothing else to do.",
+  "confirm.pedidoTitle": "Request received",
+  "confirm.pedidoBody": "The clinic team will be in touch to rebook."
 }

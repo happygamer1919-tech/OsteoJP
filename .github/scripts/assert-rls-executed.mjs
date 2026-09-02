@@ -102,6 +102,16 @@ const SUITES = [
   // believed, which is the belief under test. A silent skip would leave an
   // unauthenticated webhook that changes appointment status proven by nothing.
   { file: "inbound-reply.db.test.ts", hard: true },
+  // CONFIRM-02, added 2026-09-02. Hard-required because the property it proves
+  // is SR-30's, and SR-30 is a property of BEHAVIOUR rather than of a return
+  // value: unknown, expired and already-spent codes must be indistinguishable
+  // in OUTPUT and in TIME. The timing half cannot be proven anywhere but
+  // against a real database - a mock answers instantly for all three and would
+  // prove it trivially while the shipped code leaked the shape check through
+  // response time. It also holds the single-use arm, which is decided by an
+  // UPDATE's own predicate and by nothing this code could assert about itself.
+  // A silent skip would leave an unauthenticated write path proven by nothing.
+  { file: "confirm-redeem.db.test.ts", hard: true },
   // W14-06, added 2026-08-31. The reception queue against real Postgres. Hard-
   // required because its load-bearing arms are DATABASE facts: a Twilio
   // redelivery is refused by a unique index, a resolve that would create a

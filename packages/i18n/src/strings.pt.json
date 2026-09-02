@@ -1455,5 +1455,14 @@
   "patients.pageOf": "de",
   "patients.neverSeen": "Sem consultas",
   "patients.noneScheduled": "Sem marcação",
-  "followup.filterPlaceholder": "Filtrar por nome ou telemóvel"
+  "followup.filterPlaceholder": "Filtrar por nome ou telemóvel",
+  "confirm.title": "A sua consulta",
+  "confirm.confirmCta": "Confirmar consulta",
+  "confirm.rescheduleCta": "Pedir remarcação",
+  "confirm.confirmedTitle": "Consulta confirmada",
+  "confirm.confirmedBody": "Obrigado. A equipa da clínica já a vê.",
+  "confirm.alreadyTitle": "Consulta já confirmada",
+  "confirm.alreadyBody": "Esta consulta já foi confirmada. Não é preciso fazer mais nada.",
+  "confirm.pedidoTitle": "Pedido recebido",
+  "confirm.pedidoBody": "A equipa da clínica entra em contacto para remarcar."
 }
