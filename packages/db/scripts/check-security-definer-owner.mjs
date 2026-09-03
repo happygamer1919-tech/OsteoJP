@@ -69,7 +69,7 @@ export const EXPECTED_OWNER = "postgres";
  * only shape that writes it without a GRANT that would let any authenticated
  * session write any row.
  */
-export const EXPECTED_COUNT = 20;
+export const EXPECTED_COUNT = 21;
 
 /**
  * The verdict, as a pure function of the catalog rows.

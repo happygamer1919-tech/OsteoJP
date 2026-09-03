@@ -1478,6 +1478,73 @@ export const appointmentConfirmCodes = pgTable(
   ],
 );
 
+/**
+ * OBS-04 (0075) - one row per ATTEMPT to hand a patient message to a provider,
+ * INCLUDING attempts deliberately suppressed.
+ *
+ * A LEDGER, NOT A STATE MACHINE: a retry writes a second row, because two
+ * attempts are two facts. The only mutation is the status callback filling in
+ * what the provider later said.
+ *
+ * NO RECIPIENT COLUMN AND NOT EVEN A HASH. `sms_inbound_events.from_phone_hash`
+ * exists because an inbound message has no appointment to hang off; this table
+ * has `appointmentId`, so the recipient is one join away and storing it again
+ * would be storing PII for no question it answers (rule 7).
+ */
+export const reminderDispatches = pgTable(
+  "reminder_dispatches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    appointmentId: uuid("appointment_id")
+      .notNull()
+      .references(() => appointments.id, { onDelete: "cascade" }),
+    /** CHECK-pinned to sms | email in 0075. */
+    channel: text("channel").notNull(),
+    /**
+     * `reminder.24h.sms`, `confirmation.email`, ... as the registry spells them.
+     * The notification KIND is derived from this and deliberately not stored
+     * beside it: two columns meaning one thing are two things that can disagree.
+     */
+    templateId: text("template_id").notNull(),
+    /** CHECK-pinned to sent | suppressed | provider_error in 0075. */
+    outcome: text("outcome").notNull(),
+    /**
+     * The DispatchOutcome reason. 0075 ties it to `outcome` as an EQUIVALENCE:
+     * present exactly when the outcome is `suppressed`, so a reason without a
+     * suppression and a suppression without a reason are both refused.
+     */
+    suppressionReason: text("suppression_reason"),
+    /** SMS only; NULL for email, which has no segments and is not billed by length. */
+    bodyLength: integer("body_length"),
+    /** Stored rather than derived: the segment RULE can change, and a historical
+     *  row must say what was true when it was sent. */
+    segments: smallint("segments"),
+    /** Twilio SID or Resend id. NULL when suppressed - nothing was handed over. */
+    providerMessageId: text("provider_message_id"),
+    /** queued | sent | delivered | undelivered | failed. Not CHECK-pinned: the
+     *  vocabulary is the provider's to change. */
+    providerStatus: text("provider_status"),
+    /** Twilio's codes are numeric and Resend's are not; text holds both honestly. */
+    providerErrorCode: text("provider_error_code"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** NULL until a callback arrives, which is how "handed over and never heard
+     *  about again" stays distinguishable from "delivered". */
+    statusAt: timestamp("status_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("reminder_dispatches_tenant_time_idx").on(t.tenantId, t.createdAt),
+    index("reminder_dispatches_appointment_idx").on(t.appointmentId),
+    /** PARTIAL: a suppressed row has no provider id and there are many of them,
+     *  so a plain unique index would collapse every suppression into one. */
+    uniqueIndex("reminder_dispatches_provider_message_id_key")
+      .on(t.providerMessageId)
+      .where(sql`${t.providerMessageId} is not null`),
+  ],
+);
+
 export const auditLog = pgTable(
   "audit_log",
   {
