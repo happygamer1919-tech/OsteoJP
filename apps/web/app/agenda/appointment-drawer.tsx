@@ -23,6 +23,7 @@ import type { Role } from "@osteojp/auth";
 
 import { s } from "@/lib/i18n";
 import { isTherapistSelfLocked, shouldPreselectPrimaryService } from "@/lib/scheduling/self-lock-core";
+import { patientLabel } from "@/lib/scheduling/patient-label";
 import { getPatientContraindications, searchPatientsAction } from "@/lib/patients/actions";
 import { matchedContraindications, type PatientContraindications } from "@/lib/scheduling/nesa";
 import {
@@ -321,8 +322,13 @@ export function AppointmentDrawer({
   // date/time). `presetPatient` unifies both preset sources for the combobox.
   const lockedPatient = state.mode === "create" ? state.lockedPatient ?? null : null;
   const patientLocked = lockedPatient !== null;
+  // SEC-appointment-vanishes-with-patient-scope: on a withheld patient the
+  // combobox shows the same "reserved" label the grid does. It is NOT a
+  // searchable option - `patientSearchResults` comes from a scoped search that
+  // cannot return this patient - so the editor can move the slot's time or
+  // therapist without ever naming whose it is.
   const editingPatient = editing
-    ? { value: editing.patientId, label: editing.patientName }
+    ? { value: editing.patientId, label: patientLabel(editing.patientName) }
     : null;
   const presetPatient = editingPatient ?? lockedPatient;
   const [patientQuery, setPatientQuery] = useState(presetPatient?.label ?? "");

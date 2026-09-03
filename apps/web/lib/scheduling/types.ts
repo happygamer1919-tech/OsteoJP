@@ -28,7 +28,23 @@ export type AppointmentConfirmationStateValue =
 export type AgendaAppointment = {
   id: string;
   patientId: string;
-  patientName: string;
+  /**
+   * NULL MEANS WITHHELD, and it is the only thing it can mean.
+   *
+   * SEC-appointment-vanishes-with-patient-scope: `baseAppointmentQuery` LEFT
+   * JOINs `patients`, so a row the APPOINTMENTS policy admits survives even
+   * when the PATIENTS policy does not admit its patient - the slot renders as
+   * occupied and the identity is not disclosed. Before that it was an inner
+   * join and the whole appointment disappeared, so reception saw a free slot
+   * and would book over it.
+   *
+   * It is nullable rather than a substituted label so that every consumer has
+   * to SAY what it does about the case. A label pushed in here would have been
+   * indistinguishable from a patient actually called that, which is exactly the
+   * conflation PORTAL-REHYDRATE 1.3 is about; and `patient_id` is NOT NULL with
+   * an FK, so there is no second reading of a null.
+   */
+  patientName: string | null;
   practitionerId: string;
   practitionerName: string;
   // W12-40-T2: the practitioner's assigned agenda colour — a W12-21 palette key

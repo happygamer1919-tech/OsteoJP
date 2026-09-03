@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { Clock, Info, MapPin, Stethoscope, StickyNote, User } from "lucide-react";
 
 import { s } from "@/lib/i18n";
+import { patientLabel } from "@/lib/scheduling/patient-label";
 import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
 import { formatCreatedAt, formatTimeOfDay } from "@/lib/scheduling/time";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
@@ -89,7 +90,7 @@ export function AppointmentHoverPanel({ appt }: { appt: AgendaAppointment }) {
         className={`flex items-center gap-1 text-sm font-semibold ${nameClass}`}
       >
         <User size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-v2-text-secondary" />
-        <span className="truncate">{appt.patientName}</span>
+        <span className="truncate">{patientLabel(appt.patientName)}</span>
       </span>
 
       {/* Time + duration. */}

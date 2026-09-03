@@ -20,6 +20,7 @@ import type { Role } from "@osteojp/auth";
 
 import { s } from "@/lib/i18n";
 import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
+import { patientLabel } from "@/lib/scheduling/patient-label";
 import { matchesSearch } from "@/lib/search/text-filter";
 import { intervalsOverlap } from "@/lib/scheduling/overlap";
 import {
@@ -274,8 +275,13 @@ function AppointmentRow({
             {/* `break-words`, not `truncate`. A name too long for the line WRAPS
                 rather than being cut - the one behaviour that guarantees it is
                 always fully readable, whatever it is. */}
+            {/* SEC-appointment-vanishes-with-patient-scope: `patientName` is
+                NULL when the viewer may not see this patient, and the row is
+                here at all only because of that change - it used to vanish and
+                the slot read as free. `patientLabel` says the slot is TAKEN
+                rather than leaving a blank where the name goes. */}
             <span data-testid="marcacoes-patient-name" className="break-words">
-              {appt.patientName}
+              {patientLabel(appt.patientName)}
             </span>
           </span>
 
@@ -325,7 +331,7 @@ function AppointmentRow({
           <button
             type="button"
             onClick={() => onOpenNotes(appt)}
-            aria-label={`${s["marcacoes.notes"]}: ${appt.patientName}`}
+            aria-label={`${s["marcacoes.notes"]}: ${patientLabel(appt.patientName)}`}
             data-testid="marcacoes-notes-button"
             className="inline-flex h-9 shrink-0 items-center gap-1 rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
@@ -336,7 +342,7 @@ function AppointmentRow({
           <button
             type="button"
             onClick={() => onOpen(appt)}
-            aria-label={`${s["marcacoes.openAppointment"]}: ${appt.patientName}`}
+            aria-label={`${s["marcacoes.openAppointment"]}: ${patientLabel(appt.patientName)}`}
             className="inline-flex h-9 shrink-0 items-center rounded-v2 border border-v2-border px-3 text-sm font-medium text-v2-text-primary transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           >
             {s["marcacoes.openAppointment"]}
@@ -467,7 +473,9 @@ export function MarcacoesView({
 
   // Presentation-only filters (Search / Status / Serviço) over the fetched window.
   const visible = appointments.filter((a) => {
-    if (!matchesSearch(search, a.patientName)) return false;
+    // Searched by the LABEL, so a withheld row is findable as what it shows
+    // and never by a name this viewer was not given.
+    if (!matchesSearch(search, patientLabel(a.patientName))) return false;
     if (filters.status && a.status !== filters.status) return false;
     // W6-01b: filter by the actual tenant service id (data-driven), not a
     // hardcoded colour category. The tint below stays name-keyed for display.
@@ -693,7 +701,7 @@ export function MarcacoesView({
       <Dialog
         open
         onClose={() => setNotesFor(null)}
-        title={`${s["marcacoes.notes"]} · ${notesFor.patientName}`}
+        title={`${s["marcacoes.notes"]} · ${patientLabel(notesFor.patientName)}`}
         cancelLabel={s["common.close"]}
       >
         <AppointmentNotesBoard appointmentId={notesFor.id} />
