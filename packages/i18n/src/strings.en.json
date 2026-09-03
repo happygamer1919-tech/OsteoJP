@@ -1502,5 +1502,22 @@
   "admin.messagingCheck.replyDisarmed": "The reply line is off: the message asks for no reply.",
   "admin.messagingCheck.senderWarning": "The sender is a NUMBER. The approved sender is the name OsteoJP. A number Twilio does not own fails at send and arms the reply line.",
   "admin.messagingCheck.landline": "That number is a landline and cannot receive SMS. Use a mobile.",
-  "admin.messagingCheck.bodyRefused": "Nothing was sent: the message does not fit one segment and is never split. Fix the configuration and try again."
+  "admin.messagingCheck.bodyRefused": "Nothing was sent: the message does not fit one segment and is never split. Fix the configuration and try again.",
+  "inspector.title": "Schedule inspector",
+  "inspector.subtitle": "What the agenda resolves, day by day, per therapist.",
+  "inspector.therapist": "Therapist",
+  "inspector.period": "Period",
+  "inspector.periodWeek": "This week",
+  "inspector.periodFortnight": "Two weeks",
+  "inspector.periodMonth": "This month",
+  "inspector.noWork": "Not working",
+  "inspector.ruleBase": "Base",
+  "inspector.ruleDiaDefinido": "Defined day",
+  "inspector.ruleExcecao": "Exception",
+  "inspector.ruleBaseHint": "The usual weekly schedule.",
+  "inspector.ruleDiaDefinidoHint": "A day with its own hours (alternating weeks or day-by-day — indistinguishable).",
+  "inspector.ruleExcecaoHint": "An absence recorded in Bloquear horário.",
+  "inspector.showSchedules": "Edit schedules",
+  "inspector.hideSchedules": "Hide schedules",
+  "inspector.empty": "No therapists to show."
 }
