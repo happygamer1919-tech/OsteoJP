@@ -234,6 +234,11 @@ export default async function HorariosPage({
               id: t.id,
               name: t.label,
               card: (
+                // SCHED-09: a stable marker for "one schedule card". The e2e
+                // used to count every <h2> in main, which the inspector's own
+                // heading would have broken - and counting headings was always
+                // a proxy for the property rather than the property.
+                <div data-testid="schedule-card">
                 <GlassPanel className="flex flex-col gap-1 p-5">
                   <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
                   <p className="text-sm font-medium text-v2-text-primary">
@@ -243,6 +248,7 @@ export default async function HorariosPage({
                     {s["schedule.unmanagedBody"]}
                   </p>
                 </GlassPanel>
+                </div>
               ),
             };
           }
@@ -250,6 +256,7 @@ export default async function HorariosPage({
             id: t.id,
             name: t.label,
             card: (
+              <div data-testid="schedule-card">
               <GlassPanel className="flex flex-col gap-3 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
@@ -286,7 +293,10 @@ export default async function HorariosPage({
                     Collapsed by default, native <details> so it needs no state,
                     no JS and keeps keyboard and screen-reader behaviour. */}
                 <details className="group">
-                  <summary className="cursor-pointer list-none rounded px-1 py-1 text-sm text-v2-text-secondary hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring">
+                  <summary
+                    data-testid="edit-schedule-toggle"
+                    className="cursor-pointer list-none rounded px-1 py-1 text-sm text-v2-text-secondary hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  >
                     <span className="group-open:hidden">{s["inspector.showSchedules"]}</span>
                     <span className="hidden group-open:inline">{s["inspector.hideSchedules"]}</span>
                   </summary>
@@ -299,6 +309,7 @@ export default async function HorariosPage({
                   </div>
                 </details>
               </GlassPanel>
+              </div>
             ),
           };
           })}
