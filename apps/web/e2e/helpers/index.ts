@@ -341,3 +341,185 @@ export async function gotoPatientEdit(page: Page, id: string): Promise<void> {
 
   throw new Error(report);
 }
+
+/* ------------------------------------------------------------------ */
+/* ACC-marcacoes-row-vanished-between-tests                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A row that should be on /marcacoes is not. Say WHICH KIND of loss it is,
+ * before the runner throws the artefact away.
+ *
+ * ==========================================================================
+ * WHY A PRE-COMPUTED VERDICT AND NOT A RE-RUN
+ * ==========================================================================
+ * On 2026-09-03 `scheduling.spec.ts:406` failed three times in a row on E2E
+ * shard 3 of #1107: the Maria Silva row was absent from
+ * /marcacoes?from=<+13>&to=<+13>. The page snapshot showed every filter at its
+ * default and exactly ONE row on the page, so she was absent from the RESULT
+ * SET rather than filtered out of a correct one. A re-run of the same commit
+ * went green, which let the PR merge and explained nothing.
+ *
+ * Reading that out of the artefact by hand took an afternoon and produced a
+ * hypothesis, not an answer. This runs the three cheap reads that separate the
+ * candidates AT THE MOMENT OF THE FAILURE, on the same session and the same
+ * data, and attaches the verdict - so the next occurrence arrives diagnosed
+ * instead of re-investigated. Same shape as `gotoPatientEdit` above, which
+ * exists for the same reason one card over.
+ *
+ * ==========================================================================
+ * THE FOUR VERDICTS, AND WHAT EACH ONE MEANS FOR THE CARD
+ * ==========================================================================
+ *   row_present_after_all      The row IS there when asked again. The failure
+ *                              is a TIMING problem in the assertion, not a
+ *                              loss, and the card is about the wrong thing.
+ *
+ *   on_agenda_not_on_marcacoes The agenda shows it and /marcacoes does not.
+ *                              Both call `listAppointments`, so the loss is in
+ *                              the marcacoes WINDOW or FILTER path and not in
+ *                              the shared query.
+ *
+ *   patient_not_visible        Neither surface shows it AND the patient is not
+ *                              findable on /patients. The appointment is
+ *                              invisible because the PATIENT is, which is
+ *                              SEC-appointment-vanishes-with-patient-scope in a
+ *                              test rather than at a desk.
+ *
+ *                              IT DOES NOT SAY *WHY* THE PATIENT IS INVISIBLE,
+ *                              and it must not: "the viewer's scope narrowed"
+ *                              and "no such patient" reach this branch by the
+ *                              same road, and a verdict that picked one would
+ *                              be the §1.3 conflation this file exists to
+ *                              avoid - written into the instrument. The report
+ *                              therefore carries a CONTROL read of a second
+ *                              seeded patient, which is what separates them:
+ *                              control visible + subject not = the scope moved
+ *                              per row; NEITHER visible = the viewer lost the
+ *                              whole set; and a subject that is not a seeded
+ *                              fixture may simply never have existed.
+ *
+ *   row_is_gone                Neither surface shows it and the patient IS
+ *                              findable. So the appointment row itself is
+ *                              missing: the write this suite believed it made
+ *                              did not survive, and the test that made it
+ *                              passed anyway.
+ *
+ * IT NEVER DECIDES THE TEST. It is called only after the assertion has already
+ * failed, and it always throws. A diagnostic that could return quietly would
+ * be one more thing that turns an unknown case into a passing one.
+ */
+export type MissingRowVerdict =
+  | "row_present_after_all"
+  | "on_agenda_not_on_marcacoes"
+  | "patient_not_visible"
+  | "row_is_gone";
+
+/**
+ * The control subject for the visibility read. A SEEDED patient, so "not
+ * findable" cannot mean "never existed" for this one - which is exactly the
+ * distinction the subject alone cannot make.
+ */
+const CONTROL_PATIENT = "Ana Costa";
+
+/** Every appointment row rendered on the current page, id and shown name. */
+async function rowsOnPage(page: Page): Promise<Array<{ id: string; text: string }>> {
+  return page.locator("[data-appointment-id]").evaluateAll((nodes) =>
+    nodes.map((n) => ({
+      id: n.getAttribute("data-appointment-id") ?? "",
+      // The card's own name element where there is one, else the row's text.
+      text: (n.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 120),
+    })),
+  );
+}
+
+export async function diagnoseMissingMarcacaoRow(
+  page: Page,
+  args: { date: string; patientName: string },
+): Promise<never> {
+  const { date, patientName } = args;
+  const named = (rows: Array<{ id: string; text: string }>) =>
+    rows.filter((r) => r.text.includes(patientName));
+
+  // 1. Ask the failing page again, from scratch. A row that is there now was a
+  //    timing problem and nothing else.
+  await page.goto(`/marcacoes?from=${date}&to=${date}`);
+  const marcacoes = await rowsOnPage(page);
+
+  // 2. The agenda for the same day. Same query, same viewer, different route.
+  await page.goto(`/agenda?view=day&date=${date}`);
+  const agenda = await rowsOnPage(page);
+
+  // 3. Can this viewer see the PATIENT at all? This is the read that separates
+  //    "the appointment is gone" from "the patient is out of scope", and it is
+  //    the one nobody could make from the artefact.
+  await page.goto(`/patients?q=${encodeURIComponent(patientName)}`);
+  const patientFindable =
+    (await page.getByRole("link", { name: new RegExp(patientName) }).count()) > 0;
+
+  // THE CONTROL. A second seeded patient, asked the same question in the same
+  // session. Without it "the patient is not findable" has two readings and the
+  // verdict would have to guess between them.
+  await page.goto(`/patients?q=${encodeURIComponent(CONTROL_PATIENT)}`);
+  const controlFindable =
+    (await page.getByRole("link", { name: new RegExp(CONTROL_PATIENT) }).count()) > 0;
+
+  const verdict: MissingRowVerdict =
+    named(marcacoes).length > 0
+      ? "row_present_after_all"
+      : named(agenda).length > 0
+        ? "on_agenda_not_on_marcacoes"
+        : patientFindable
+          ? "row_is_gone"
+          : "patient_not_visible";
+
+  const meaning: Record<MissingRowVerdict, string> = {
+    row_present_after_all:
+      "THE ROW IS THERE ON A SECOND ASK. The failure is a TIMING problem in the " +
+      "assertion, not a loss. ACC-marcacoes-row-vanished-between-tests is about " +
+      "the wrong thing and should be re-scoped.",
+    on_agenda_not_on_marcacoes:
+      "THE AGENDA HAS IT AND /marcacoes DOES NOT. Both call listAppointments, so " +
+      "the loss is in the MARCACOES window or filter path - not in the shared query.",
+    patient_not_visible:
+      "NEITHER SURFACE HAS IT AND THE PATIENT IS NOT FINDABLE. The appointment is " +
+      "invisible because the PATIENT is - SEC-appointment-vanishes-with-patient-scope, " +
+      "reproduced in a test. READ THE CONTROL LINE ABOVE for which kind: a control " +
+      "that IS findable means the scope moved per row (a staff_locations or " +
+      "patient_locations write by an intervening test is the candidate); a control " +
+      "that is NOT findable means this viewer lost the whole set; and a subject that " +
+      "is not a seeded fixture may never have existed at all.",
+    row_is_gone:
+      "THE PATIENT IS FINDABLE AND THE APPOINTMENT IS NOT. The appointment row itself " +
+      "is missing: a write this suite believed it made did not survive, and the test " +
+      "that made it passed anyway.",
+  };
+
+  const list = (rows: Array<{ id: string; text: string }>) =>
+    rows.length === 0 ? "    (none)" : rows.map((r) => `    ${r.id}  ${r.text}`).join("\n");
+
+  const report = [
+    "ACC-marcacoes-row-vanished-between-tests - captured at the moment of failure.",
+    "",
+    `looking for:           ${patientName}`,
+    `day:                   ${date}`,
+    "",
+    `/marcacoes?from=${date}&to=${date} rows:`,
+    list(marcacoes),
+    `/agenda?view=day&date=${date} rows:`,
+    list(agenda),
+    `/patients?q=${patientName} finds the patient: ${patientFindable ? "YES" : "NO"}`,
+    `/patients?q=${CONTROL_PATIENT} finds the CONTROL:  ${controlFindable ? "YES" : "NO"}`,
+    "",
+    `VERDICT: ${verdict}`,
+    meaning[verdict],
+    "",
+    "Do NOT re-run to see if it passes. Record this block on the card.",
+  ].join("\n");
+
+  await test.info().attach("marcacoes-missing-row-diagnostic", {
+    body: report,
+    contentType: "text/plain",
+  });
+
+  throw new Error(report);
+}
