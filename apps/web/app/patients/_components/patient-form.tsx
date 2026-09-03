@@ -544,14 +544,18 @@ function Field({
   }, [seq]);
 
   return (
-    <label ref={box} className="flex flex-col gap-1">
+    <label ref={box} className="relative flex flex-col gap-1">
       <span className="text-xs font-medium text-text-secondary">
         {label}
         {required ? " *" : ""}
       </span>
       {children}
       {mine && (
-        <span role="alert" data-testid={`field-error-${errorFor}`} className="text-sm text-error">
+        <span
+          role="alert"
+          data-testid={`field-error-${errorFor}`}
+          className="absolute left-0 top-full z-10 mt-1 w-full rounded border border-error bg-surface px-2 py-1 text-sm text-error shadow-md"
+        >
           {mine.message}
         </span>
       )}

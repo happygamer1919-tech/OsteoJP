@@ -70,6 +70,15 @@ test("a malformed NIF is rejected by the server, not silently stored", async ({ 
   // reaches the server: this asserts the CHECKSUM is enforced, which is the
   // half that stops the field filling up with plausible junk. 123456789 is a
   // real NIF; 123456780 is the same digits with the control digit broken.
+  //
+  // IT CANNOT TELL THE SERVER'S ANSWER FROM THE CLIENT'S, and that is worth
+  // knowing rather than fixing here. Since the blur check exists, this exact
+  // sentence is also produced in the browser - by design, both call
+  // `nifMessage` - so this case stays green even when the submit never reaches
+  // the server at all. That is not hypothetical: it is what happened while the
+  // message was a flow element (see the layout case below), and this test
+  // passed throughout. The two cases below carry the server-path proof, by
+  // asserting the focus only a submit refusal moves.
   await submitWithNif(page, "123456780");
 
   await expect(page).toHaveURL(/\/patients\/new/);
@@ -110,6 +119,55 @@ test("a refused NIF lands on the NIF field, focuses it, and is said exactly once
   // Said once. Two copies would fail Playwright's strict mode on the plain
   // getByText locators the cases above use, for a reason that reads unrelated.
   await expect(page.getByText(/d[ií]gito de controlo/i)).toHaveCount(1);
+});
+
+/**
+ * THE BLUR MESSAGE MUST NOT MOVE THE PAGE, and this case exists because the
+ * first version of it did.
+ *
+ * WHAT HAPPENED, found by this file on CI and reproduced locally. The inline
+ * message was rendered as an ordinary flow element, so showing it made the NIF
+ * field TALLER and pushed everything below it down - including "Criar
+ * paciente". Clicking that button straight from the NIF box therefore did this:
+ *
+ *   mousedown on the button -> the input blurs -> the check runs -> React
+ *   re-renders -> the button moves down ~40px -> mouseup lands somewhere else
+ *   -> Chromium delivers the click to the common ancestor, NOT the button.
+ *
+ * So `onSubmit` never fired, the server was never asked, and the message on the
+ * screen was the CLIENT'S. It looked exactly like a working refusal. The only
+ * assertion that could tell the difference was focus, because only a submit
+ * refusal moves the cursor - which is how the failure surfaced at all.
+ *
+ * IT IS A REAL DEFECT AND NOT A TEST ARTEFACT. A person clicking Guardar
+ * straight after typing a NIF would have had their first click swallowed, on
+ * every attempt, and nothing would have said why. That is worse than the
+ * incident this card is about.
+ *
+ * THE FIX IS THAT THE MESSAGE IS AN OVERLAY: absolutely positioned under its
+ * field, so it takes no space in the flow. This case pins the property that
+ * matters - the button does not move - rather than the mechanism, so a future
+ * redesign of the message is free as long as it does not move the page.
+ */
+test("showing the blur message moves nothing, so the click that caused it still lands", async ({
+  page,
+}) => {
+  await page.goto("/patients/new");
+  await fillPatientForm(page, { fullName: `Layout ${uniq()}` });
+
+  const button = page.getByRole("button", { name: "Criar Paciente" });
+  const before = await button.boundingBox();
+
+  const nif = page.getByLabel(/^NIF/i);
+  await nif.click();
+  await nif.press("ControlOrMeta+a");
+  await nif.pressSequentially("123456780");
+  await page.getByLabel(/Telem[oó]vel/i).click();
+  await expect(page.getByTestId("field-error-nif")).toBeVisible();
+
+  const after = await button.boundingBox();
+  expect(before).not.toBeNull();
+  expect(after?.y).toBe(before?.y);
 });
 
 /**
