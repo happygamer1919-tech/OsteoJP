@@ -379,3 +379,47 @@ export const PORTAL_OTP_PATIENT = {
   /** What a patient actually types on the login screen. */
   phoneTyped: "916000005",
 } as const;
+
+// ---------------------------------------------------------------------------
+// The 24h SMS confirm page (apps/web, /c/<code>)
+// ---------------------------------------------------------------------------
+
+/**
+ * The HMAC key the confirm codes are minted under, for the E2E stack only.
+ *
+ * A HARNESS FIXTURE, NAMED SO IT CANNOT BE MISTAKEN FOR ANYTHING ELSE, exactly
+ * like `PATIENT_SESSION_SECRET` and the `AUDIO_S3_*` values in
+ * playwright.config.ts. It is only ever valid against rows this suite writes
+ * into a local test database.
+ *
+ * IT LIVES HERE AND IS IMPORTED BY `playwright.config.ts`, WHICH IS THE WHOLE
+ * POINT. The spec computes the HMAC of a code and the WEB DEV SERVER resolves
+ * it, in two different processes, and they must agree exactly - a code minted
+ * under a different key resolves to nothing and the page renders the SAME
+ * generic refusal a forged code gets. One constant, read by both, so there is
+ * no second copy to drift; `confirm-code.spec.ts` asserts the agreement as its
+ * first act rather than discovering it as a mystery refusal ten lines later.
+ */
+export const CONFIRM_CODE_SECRET = "e2e-confirm-code-hmac-key-not-a-secret";
+
+/**
+ * The confirm page's OWN patient, and it has one for the reason SCHED-12 and
+ * SCHED-10 each have their own therapist: this spec WRITES appointments, and a
+ * spec that writes must not share a fixture with a spec that reads.
+ *
+ * It writes them in the PAST as well as the future - an expired code is a live
+ * code on an appointment whose `starts_at` has gone by, because 0072 stores no
+ * `expires_at` and expiry is read from the appointment. A past appointment on a
+ * shared patient would appear in that patient's own Marcações and Consultas
+ * lists, where several specs assert exactly what is there.
+ *
+ * Created by the spec rather than by the seed, idempotently and by fixed id, so
+ * re-runs reuse one row instead of growing the list. The APPOINTMENTS and the
+ * CODES are run-scoped (fresh uuids, `RUN_DAY_BASE`-derived days); only the
+ * container is fixed. PORTAL-REHYDRATE 1.3, criterion F.
+ */
+export const CONFIRM_PATIENT = {
+  id: "00000000-0000-0000-0000-00000000a3c0",
+  name: "Confirmacao Sms Teste",
+  nif: "999000555",
+} as const;

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { CONFIRM_CODE_SECRET } from "./e2e/fixtures";
 
 /**
  * OsteoJP — Playwright E2E configuration
@@ -128,6 +129,10 @@ export default defineConfig({
         // W7-02: profile-reachability changes real passwords — Chromium-only, so
         // three browsers never race on the same account's password.
         "**/profile-reachability.spec.ts",
+        // LE-confirm-page-no-browser-coverage: confirm-code WRITES appointments
+        // and confirm codes, and the cross-browser job runs against ONE shared,
+        // non-reset database. Chromium-only, like the write-heavy specs above.
+        "**/confirm-code.spec.ts",
       ],
     },
     {
@@ -157,6 +162,10 @@ export default defineConfig({
         // W7-02: profile-reachability changes real passwords — Chromium-only, so
         // three browsers never race on the same account's password.
         "**/profile-reachability.spec.ts",
+        // LE-confirm-page-no-browser-coverage: confirm-code WRITES appointments
+        // and confirm codes, and the cross-browser job runs against ONE shared,
+        // non-reset database. Chromium-only, like the write-heavy specs above.
+        "**/confirm-code.spec.ts",
       ],
     },
   ],
@@ -179,6 +188,22 @@ export default defineConfig({
             AUDIO_S3_BUCKET: "osteojp-audio-intake-e2e",
             AUDIO_S3_ACCESS_KEY_ID: "e2e-test-access-key",
             AUDIO_S3_SECRET_ACCESS_KEY: "e2e-test-secret-key",
+            // THE CONFIRM-CODE HMAC KEY, for the same reason and with the same
+            // status as the four values above: a harness fixture, valid only
+            // against rows this suite writes into a local test database.
+            //
+            // WITHOUT IT THE PAGE CANNOT FAIL LOUDLY, WHICH IS WHY IT IS SET
+            // HERE RATHER THAN LEFT TO THE ENVIRONMENT. `hashConfirmCode`
+            // throws on a missing key - correctly, per confirm-code.ts - and
+            // both `/c/[code]/page.tsx` and `confirm-redeem.ts` wrap the
+            // resolve in `.catch(() => null)`, which is right for a public page
+            // and means an absent key renders the ORDINARY generic refusal. So
+            // an unconfigured server would not report a configuration problem;
+            // it would report "invalid link" for every valid code, and the
+            // suite would read a passing SR-30 test where it should read a red
+            // one. One constant in e2e/fixtures.ts, injected here, asserted by
+            // confirm-code.spec.ts before it asserts anything else.
+            REMINDERS_CONFIRM_CODE_SECRET: CONFIRM_CODE_SECRET,
           },
         },
         // apps/api — required by portal server actions (PATCH /api/v1/patient/profile).
