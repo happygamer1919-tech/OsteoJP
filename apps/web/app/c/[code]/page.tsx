@@ -165,9 +165,10 @@ export default async function ConfirmCodePage({
           {s["confirm.confirmCta"]}
         </button>
 
-        {/* Hidden until #1107 makes reception's queue durable. The ACTION
-            refuses too — see actions.ts — because hiding a control removes
-            nothing from anybody holding the URL. */}
+        {/* Armed now that reception's queue is derived from
+            `appointments.origin` rather than from a best-effort notification.
+            The ACTION reads the same gate — see actions.ts — because hiding a
+            control removes nothing from anybody holding the URL. */}
         {rescheduleButtonEnabled() ? (
           <button
             type="submit"

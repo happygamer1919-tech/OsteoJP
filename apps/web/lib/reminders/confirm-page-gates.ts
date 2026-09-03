@@ -12,25 +12,35 @@ import { webRegistry } from "./notification-registry";
 
 /**
  * ==========================================================================
- * GATE ONE — THE RESCHEDULE BUTTON, HIDDEN UNTIL #1107 MERGES
+ * GATE ONE — THE RESCHEDULE BUTTON. ARMED IN THIS PR, WITH THE QUEUE.
  * ==========================================================================
- * *Pedir remarcação* emits a request into reception's queue. Until #1107, that
- * queue is derived from the NOTIFICATION rather than from the appointment, and
- * the notification emit is BEST-EFFORT: when it is lost, the request exists,
- * nobody is told, and the patient has already been shown "pedido recebido".
+ * *Pedir remarcação* emits a request into reception's queue. The gate existed
+ * because that queue was derived from the NOTIFICATION rather than from the
+ * appointment, and the notification emit is BEST-EFFORT: when it was lost, the
+ * request existed, nobody was told, and the patient had already been shown
+ * "pedido recebido".
  *
  * A patient in that state will not telephone — they believe they have asked —
- * so the request is lost in a way that is worse than the button not existing.
+ * so the request was lost in a way that is worse than the button not existing.
  * INC-06 is the precedent: portal pedidos reached a stub consumer in
  * production, invisible to reception AND blocking the slot.
  *
- * SO THE BUTTON IS GATED IN CODE, NOT DESCRIBED IN A COMMENT. A comment saying
- * "do not ship this yet" is not a control; this constant is. Flip it in the
- * same commit that observes #1107 on main, and `confirm-page-gates.test.ts`
- * asserts BOTH arms so flipping it is a decision somebody makes rather than a
- * default nobody revisits.
+ * WHAT CHANGED IS THE DERIVATION, WHICH IS THE PREMISE THE GATE RESTED ON.
+ * The other half of this same PR derives reception's pending-request queue from
+ * `appointments.origin` — the row the patient's press writes — so the queue no
+ * longer depends on a notification arriving. The condition the gate names is
+ * met, so the gate opens.
+ *
+ * IT IS FLIPPED IN THE SAME COMMIT-RANGE AS THE DERIVATION, NOT AFTER IT, and
+ * that is deliberate rather than convenient: shipping the queue first and the
+ * button later leaves a window in which the durable queue exists and nothing
+ * feeds it, and shipping the button first is exactly the defect above. One
+ * merge moves both, so neither arm is ever live alone.
+ *
+ * THE CONSTANT STAYS. It is still the one control both the render and the
+ * action read, and `confirm-page-gates.test.ts` still asserts both arms.
  */
-export const PEDIDO_QUEUE_IS_DURABLE = false;
+export const PEDIDO_QUEUE_IS_DURABLE = true;
 
 /** Whether the page may offer *Pedir remarcação*. */
 export function rescheduleButtonEnabled(): boolean {
