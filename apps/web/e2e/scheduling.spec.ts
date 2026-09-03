@@ -9,7 +9,12 @@
  * seed creates no appointments) so parallel tests and re-runs never collide.
  */
 import { test, expect } from "@playwright/test";
-import { openNewAppointment, fillAppointment, fillTime } from "./helpers";
+import {
+  diagnoseMissingMarcacaoRow,
+  fillAppointment,
+  fillTime,
+  openNewAppointment,
+} from "./helpers";
 import { PATIENTS, LOCATION, LOCATION_ARCHIVED, SERVICE, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
 
 const SAVE = "Guardar";
@@ -43,10 +48,45 @@ test("a newly created appointment persists as scheduled / pendente (W3-01)", asy
   await dialog.getByRole("button", { name: SAVE }).click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 
-  // Reopen the created appointment (edit mode) and assert both axes.
-  await page.getByRole("button", { name: new RegExp(PATIENTS.maria.name) }).click();
+  // ======================================================================
+  // ACC-marcacoes-row-vanished-between-tests - THE ROW IT REOPENS IS THE
+  // ROW IT WROTE, and before this it was not asserted to be.
+  // ======================================================================
+  // This reopened by `getByRole("button", { name: /Maria Silva/ })`, which asks
+  // "is there a card for Maria Silva on this day" and can be satisfied by
+  // SOMEBODY ELSE'S ROW. `portal-booking-request-mode.spec.ts` runs earlier in
+  // the same shard and uses Maria as its portal patient, so Maria rows exist
+  // that this test did not create. If the save above had silently failed, a
+  // foreign row could have answered both assertions below and this test would
+  // have reported a pass - which is the compensating error that would explain
+  // how the row was missing from /marcacoes at :406 while the test that wrote
+  // it was green. ACC-vacuous-guard-sweep criterion F.
+  //
+  // THE SLOT IS THE IDENTITY, and it is exact: day view of RUN_DAY_BASE + 13
+  // (this test's own day) and the 14:00 start group, which the grid labels
+  // `data-start-min="840"`. Exactly one card may be there, and the id it
+  // carries is the id the drawer must show. A silent write failure now fails
+  // HERE, at the site of the defect, instead of somewhere downstream.
+  const slot = page.locator(
+    '[data-testid="agenda-start-group"][data-start-min="840"] [data-appointment-id]',
+  );
+  await expect(slot).toHaveCount(1, { timeout: 8_000 });
+  const writtenId = await slot.getAttribute("data-appointment-id");
+  expect(writtenId).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  );
+  await expect(slot.getByTestId("agenda-card-patient")).toHaveText(
+    new RegExp(PATIENTS.maria.name),
+  );
+
+  // Reopen THAT card - not a card with that name - and assert both axes.
+  await slot.click();
   const edit = page.getByRole("dialog");
   await expect(edit).toBeVisible({ timeout: 8_000 });
+  // The drawer prints its own appointment id (#1129). Matching it against the
+  // id read off the card is what makes "the row it reopened" a fact rather
+  // than an inference from a name.
+  await expect(edit.getByTestId("drawer-appointment-id")).toHaveText(writtenId!);
   await expect(edit.getByLabel(/^Estado/i)).toHaveValue("scheduled"); // lifecycle
   await expect(edit.getByText(/Confirmação pendente/i)).toBeVisible(); // confirmation = pending
 });
@@ -472,7 +512,22 @@ test("completed appointment with no note shows the 'Sem nota' indicator (W2-04)"
   // is PER ROW, so maria's row on this same list must NOT carry it. Without this
   // the fix would only narrow the locator; with it, the test states the rule it
   // was previously borrowing from marcacoes-view.tsx.
+  //
+  // ACC-marcacoes-row-vanished-between-tests: THIS IS THE ASSERTION THAT
+  // FAILED, three times in a row, on E2E shard 3 of #1107 - "element(s) not
+  // found", with every filter at its default and exactly one row on the page.
+  // A re-run went green and explained nothing.
+  //
+  // A MISSING ROW IS NOT REPORTED AS ABSENT ANY MORE, it is DIAGNOSED. The
+  // helper runs the three reads that separate the candidates at the moment of
+  // the failure - the same page again, the agenda for the same day, and
+  // whether this viewer can still find the patient at all - and attaches the
+  // verdict to the Playwright report before throwing. The next occurrence
+  // arrives answered instead of re-investigated.
   const mariaRow = rowFor(PATIENTS.maria.name);
+  if ((await mariaRow.count()) === 0) {
+    await diagnoseMissingMarcacaoRow(page, { date, patientName: PATIENTS.maria.name });
+  }
   await expect(mariaRow).toBeVisible({ timeout: 8_000 });
   await expect(mariaRow.getByText("Sem nota")).toHaveCount(0);
 });
