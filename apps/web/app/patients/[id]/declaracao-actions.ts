@@ -65,7 +65,15 @@ export async function generateDeclaracaoUrlAction(
       try {
         const patient = await getPatient(input.patientId);
         if (patient && shouldPersistCapturedValue(patient.nif, input.nif)) {
-          await updatePatient(input.patientId, { nif: input.nif });
+          // INC-nif-validationerror-at-the-desk: `updatePatient` now RETURNS a
+          // refusal instead of throwing one, so a NIF typed on the declaration
+          // that the server will not store arrives here as `ok: false` rather
+          // than as an exception the catch below absorbed. The outcome is
+          // unchanged and deliberately so - the document is what the user asked
+          // for, and a failed convenience write must never cost them it - but
+          // the result is now discarded EXPLICITLY rather than by a catch that
+          // also covered the read.
+          void (await updatePatient(input.patientId, { nif: input.nif }));
         }
       } catch {
         // Non-fatal by design - see above.

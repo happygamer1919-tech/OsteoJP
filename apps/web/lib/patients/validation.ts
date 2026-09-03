@@ -4,10 +4,45 @@
 
 import { checkNif, type NifProblem } from "./nif";
 
+/**
+ * Which INPUT a refusal belongs to.
+ *
+ * INC-nif-validationerror-at-the-desk. Every `ValidationError` names one, and
+ * the constructor REQUIRES it: the field is what lets the caller put the
+ * sentence beside the box the operator has to fix, and a default would have
+ * made "we do not know which box" indistinguishable from "the form as a whole",
+ * which is PORTAL-REHYDRATE 1.3 exactly. There is no default, so the compiler
+ * refuses a refusal that does not say where it belongs.
+ *
+ * `form` is a REAL value and not a fallback: `parseMergeInput`'s self-merge
+ * refusal is about the PAIR, not about either box, and the danger zone renders
+ * it as such.
+ */
+export type PatientField =
+  | "fullName"
+  | "dateOfBirth"
+  | "sex"
+  | "nif"
+  | "nifExemptReason"
+  | "healthInsuranceNumbers"
+  | "email"
+  | "phone"
+  | "address"
+  | "postalCode"
+  | "city"
+  | "profession"
+  | "referralSource"
+  | "contraindicationOtherNote"
+  | "primaryLocationId"
+  | "survivorId"
+  | "form";
+
 export class ValidationError extends Error {
   override readonly name = "ValidationError";
-  constructor(message: string) {
+  readonly field: PatientField;
+  constructor(message: string, field: PatientField) {
     super(message);
+    this.field = field;
   }
 }
 
@@ -28,8 +63,21 @@ const NIF_MESSAGES: Record<NifProblem, string> = {
     "999999990 é o NIF de consumidor final, não identifica o paciente. Se o paciente não tem NIF português, marque \"Estrangeiro / sem NIF\" e indique o motivo.",
 };
 
+/**
+ * The sentence for a NIF problem, so the FORM and the SERVER say the same thing.
+ *
+ * Exported for the client-side blur check (INC-nif-validationerror-at-the-desk),
+ * which is UX only: it tells the operator at the moment they leave the box, and
+ * it decides nothing. The server re-runs `checkNif` on every write and its
+ * answer is the one that binds - a browser with JavaScript off, a stale bundle
+ * or a hand-posted payload all reach the same refusal.
+ */
+export function nifMessage(problem: NifProblem): string {
+  return NIF_MESSAGES[problem];
+}
+
 function nifError(problem: NifProblem): ValidationError {
-  return new ValidationError(NIF_MESSAGES[problem]);
+  return new ValidationError(nifMessage(problem), "nif");
 }
 
 /** Raw form input. Optional fields may arrive as "", which normalizes to null. */
@@ -114,28 +162,39 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Trim, cap length, and normalize "" → null for an optional free-text field.
-function optionalText(v: unknown, field: string, max: number): string | null {
+//
+// `field` is the PatientField the refusal belongs to; `label` is the wording
+// that goes in the message. They are separate because the two insurance inputs
+// are worded "insurance number" and "insurer" while both belong to the ONE
+// field the form renders them under - and because splitting them keeps every
+// existing message byte-for-byte what it was.
+function optionalText(
+  v: unknown,
+  field: PatientField,
+  max: number,
+  label: string = field,
+): string | null {
   if (v === undefined || v === null) return null;
-  if (typeof v !== "string") throw new ValidationError(`${field} must be text`);
+  if (typeof v !== "string") throw new ValidationError(`${label} must be text`, field);
   const t = v.trim();
   if (t.length === 0) return null;
-  if (t.length > max) throw new ValidationError(`${field} is too long`);
+  if (t.length > max) throw new ValidationError(`${label} is too long`, field);
   return t;
 }
 
 function requiredName(v: unknown): string {
   if (typeof v !== "string" || v.trim().length === 0) {
-    throw new ValidationError("fullName is required");
+    throw new ValidationError("fullName is required", "fullName");
   }
   const t = v.trim();
-  if (t.length > 200) throw new ValidationError("fullName is too long");
+  if (t.length > 200) throw new ValidationError("fullName is too long", "fullName");
   return t;
 }
 
 function optionalEmail(v: unknown): string | null {
   const t = optionalText(v, "email", 320);
   if (t === null) return null;
-  if (!EMAIL_RE.test(t)) throw new ValidationError("Invalid email");
+  if (!EMAIL_RE.test(t)) throw new ValidationError("Invalid email", "email");
   return t;
 }
 
@@ -143,7 +202,7 @@ function optionalDate(v: unknown): string | null {
   const t = optionalText(v, "dateOfBirth", 10);
   if (t === null) return null;
   if (!ISO_DATE_RE.test(t)) {
-    throw new ValidationError("Invalid date (expected YYYY-MM-DD)");
+    throw new ValidationError("Invalid date (expected YYYY-MM-DD)", "dateOfBirth");
   }
   return t;
 }
@@ -163,7 +222,7 @@ const SEX_VALUES = new Set(["male", "female"]);
 function optionalSex(v: unknown): string | null {
   const t = optionalText(v, "sex", 16);
   if (t === null) return null;
-  if (!SEX_VALUES.has(t)) throw new ValidationError("Invalid sex");
+  if (!SEX_VALUES.has(t)) throw new ValidationError("Invalid sex", "sex");
   return t;
 }
 
@@ -178,19 +237,26 @@ function optionalSex(v: unknown): string | null {
  */
 function optionalInsuranceList(v: unknown): HealthInsuranceEntry[] | null {
   if (v === undefined || v === null) return null;
-  if (!Array.isArray(v)) throw new ValidationError("healthInsuranceNumbers must be a list");
+  if (!Array.isArray(v))
+    throw new ValidationError("healthInsuranceNumbers must be a list", "healthInsuranceNumbers");
   if (v.length > MAX_HEALTH_INSURANCE_ENTRIES) {
-    throw new ValidationError("too many health insurance entries");
+    throw new ValidationError("too many health insurance entries", "healthInsuranceNumbers");
   }
   const out: HealthInsuranceEntry[] = [];
   for (const raw of v) {
     if (typeof raw !== "object" || raw === null) {
-      throw new ValidationError("healthInsuranceNumbers entries must be objects");
+      throw new ValidationError(
+        "healthInsuranceNumbers entries must be objects",
+        "healthInsuranceNumbers",
+      );
     }
     const entry = raw as Record<string, unknown>;
-    const number = optionalText(entry.number, "insurance number", 60);
+    const number = optionalText(entry.number, "healthInsuranceNumbers", 60, "insurance number");
     if (number === null) continue;
-    out.push({ insurer: optionalText(entry.insurer, "insurer", 120), number });
+    out.push({
+      insurer: optionalText(entry.insurer, "healthInsuranceNumbers", 120, "insurer"),
+      number,
+    });
   }
   return out;
 }
@@ -224,6 +290,7 @@ function resolveNif(
     if (reason === null) {
       throw new ValidationError(
         "Indique o motivo pelo qual o paciente não tem NIF (ex.: estrangeiro, passaporte).",
+        "nifExemptReason",
       );
     }
     // An exemption AND a NIF is a contradiction, and silently keeping one of
@@ -246,12 +313,12 @@ function resolveNif(
   return { nif: rawNif.replace(/[\s.\-]/g, ""), nifExempt: false, nifExemptReason: null };
 }
 
-function optionalUuid(v: unknown, field: string): string | null {
+function optionalUuid(v: unknown, field: PatientField): string | null {
   if (v === undefined || v === null) return null;
-  if (typeof v !== "string") throw new ValidationError(`${field} must be a UUID`);
+  if (typeof v !== "string") throw new ValidationError(`${field} must be a UUID`, field);
   const t = v.trim();
   if (t.length === 0) return null;
-  if (!UUID_RE.test(t)) throw new ValidationError(`Invalid ${field}`);
+  if (!UUID_RE.test(t)) throw new ValidationError(`Invalid ${field}`, field);
   return t;
 }
 
@@ -346,10 +413,10 @@ export function parseMergeInput(raw: MergePatientsInput): MergePatientsInput {
   const survivorId = typeof r.survivorId === "string" ? r.survivorId : "";
   const loserId = typeof r.loserId === "string" ? r.loserId : "";
   if (!UUID_RE.test(survivorId) || !UUID_RE.test(loserId)) {
-    throw new ValidationError("Invalid patient id");
+    throw new ValidationError("Invalid patient id", "survivorId");
   }
   if (survivorId === loserId) {
-    throw new ValidationError("Cannot merge a patient into itself");
+    throw new ValidationError("Cannot merge a patient into itself", "form");
   }
   return { survivorId, loserId };
 }

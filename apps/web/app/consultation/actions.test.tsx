@@ -110,17 +110,46 @@ describe("startConsultationAction — server-enforced consent gate", () => {
 
 describe("createStubPatientAction", () => {
   it("creates a stub via createStubPatient (name required, phone optional) and returns the id", async () => {
-    mockCreatePatient.mockResolvedValue({ id: "new-pat" } as never);
+    mockCreatePatient.mockResolvedValue({ ok: true, patient: { id: "new-pat" } } as never);
     const r = await createStubPatientAction({ fullName: "Ana", phone: null });
     expect(r).toEqual({ ok: true, patientId: "new-pat" });
     expect(mockCreatePatient).toHaveBeenCalledWith({ fullName: "Ana", phone: null });
   });
 
-  it("surfaces a validation error when the name is empty (createStubPatient throws)", async () => {
-    const err = Object.assign(new Error("fullName is required"), { name: "ValidationError" });
-    mockCreatePatient.mockRejectedValue(err);
+  // INC-nif-validationerror-at-the-desk: the empty name is now RETURNED by
+  // createStubPatient, not thrown out of it. The action's job changed with it -
+  // it reads a result instead of catching an exception.
+  it("surfaces a validation error when the name is empty (createStubPatient REFUSES)", async () => {
+    mockCreatePatient.mockResolvedValue({
+      ok: false,
+      error: { field: "fullName", message: "fullName is required" },
+    } as never);
     const r = await createStubPatientAction({ fullName: "  " });
-    expect(r).toEqual({ ok: false, error: "validation" });
+    expect(r).toEqual({ ok: false, error: "validation", message: "fullName is required" });
+  });
+
+  // THE SENTENCE IS CARRIED, and this is the assertion that says why the shape
+  // changed at all: the caller has one box and needs the words, not a code.
+  it("carries the refusal MESSAGE through, rather than collapsing it to a code", async () => {
+    mockCreatePatient.mockResolvedValue({
+      ok: false,
+      error: { field: "nif", message: "NIF inválido: o dígito de controlo não confere." },
+    } as never);
+    const r = await createStubPatientAction({ fullName: "Ana" });
+    expect(r).toEqual({
+      ok: false,
+      error: "validation",
+      message: "NIF inválido: o dígito de controlo não confere.",
+    });
+  });
+
+  // THE THROWING ARM IS KEPT AND STILL MEANS WHAT IT MEANT. A role failure, or
+  // any exception from a path that has not been converted, must not be reported
+  // to the therapist as something they typed wrong.
+  it("a THROWN non-validation failure is still forbidden, not validation", async () => {
+    mockCreatePatient.mockRejectedValue(new Error("permission denied"));
+    const r = await createStubPatientAction({ fullName: "Ana" });
+    expect(r).toEqual({ ok: false, error: "forbidden" });
   });
 });
 

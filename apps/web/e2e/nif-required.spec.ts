@@ -76,6 +76,74 @@ test("a malformed NIF is rejected by the server, not silently stored", async ({ 
   await expect(page.getByText(/d[ií]gito de controlo/i)).toBeVisible({ timeout: 8_000 });
 });
 
+/**
+ * INC-nif-validationerror-at-the-desk — THIS IS THE CASE THAT PROVES THE FIX.
+ *
+ * Everything above passed before the change too, because a thrown message
+ * happened to render in the form's single error paragraph. What could not be
+ * proven from a unit test is the MECHANISM: a server action that throws in
+ * production hands the client an opaque digest, so the operator saw a save that
+ * failed with no cause and Sentry recorded an unhandled error for a typo.
+ *
+ * The three assertions map one-to-one onto the three halves of the fix:
+ *   - the sentence is in the NIF FIELD'S own slot, not at the bottom of a long
+ *     form (the refusal carries its field);
+ *   - the NIF box has FOCUS, so the cursor is already where the correction goes
+ *     (the submit refusal moves it, and re-pressing Guardar moves it again); and
+ *   - the sentence appears EXACTLY ONCE anywhere on the page, which is what the
+ *     plain getByText assertions above quietly depend on.
+ */
+test("a refused NIF lands on the NIF field, focuses it, and is said exactly once", async ({
+  page,
+}) => {
+  await submitWithNif(page, "123456780");
+
+  await expect(page).toHaveURL(/\/patients\/new/);
+
+  const slot = page.getByTestId("field-error-nif");
+  await expect(slot).toBeVisible({ timeout: 8_000 });
+  await expect(slot).toHaveText(/d[ií]gito de controlo/i);
+
+  // The cursor is in the box the operator has to fix.
+  await expect(page.getByLabel(/^NIF/i)).toBeFocused();
+
+  // Said once. Two copies would fail Playwright's strict mode on the plain
+  // getByText locators the cases above use, for a reason that reads unrelated.
+  await expect(page.getByText(/d[ií]gito de controlo/i)).toHaveCount(1);
+});
+
+/**
+ * The client-side blur check, and the two things it must NOT do.
+ *
+ * It is UX ONLY: it decides nothing, the server re-runs the same `checkNif` on
+ * every write, and the case above is what proves the server still refuses. What
+ * this case pins is that adding it did not make the form hostile to type in.
+ */
+test("the blur check warns on leaving the NIF box, and does not trap the cursor", async ({
+  page,
+}) => {
+  await page.goto("/patients/new");
+
+  const nif = page.getByLabel(/^NIF/i);
+  await nif.click();
+  await nif.pressSequentially("123456780");
+  // Leave the box the way a person does: onward to the next field.
+  await page.getByLabel(/Telem[oó]vel/i).click();
+
+  await expect(page.getByTestId("field-error-nif")).toBeVisible();
+  // AND THE CURSOR STAYED WHERE THE OPERATOR PUT IT. A blur check that focuses
+  // the box it is complaining about makes the form impossible to tab through,
+  // and it is one line away from doing exactly that.
+  await expect(nif).not.toBeFocused();
+
+  // Correcting it clears the warning without a round trip.
+  await nif.click();
+  await nif.press("ControlOrMeta+a");
+  await nif.pressSequentially("123456789");
+  await page.getByLabel(/Telem[oó]vel/i).click();
+  await expect(page.getByTestId("field-error-nif")).toHaveCount(0);
+});
+
 test("999999990 is refused and the message points at the exemption", async ({ page }) => {
   await submitWithNif(page, "999999990");
 
@@ -143,6 +211,14 @@ test("an existing NIF cannot be edited back to empty", async ({ page }) => {
   await expect(page.getByText(/N[ãa]o é possível remover um NIF já registado/i)).toBeVisible({
     timeout: 8_000,
   });
+  // INC-nif-validationerror-at-the-desk: this refusal is raised INSIDE the
+  // transaction, not by the parser, and it must reach the desk the same way -
+  // on the NIF field, once. It is the case that proves the wrapper catches the
+  // whole write and not only the parse.
+  await expect(page.getByTestId("field-error-nif")).toHaveText(
+    /N[ãa]o é possível remover um NIF já registado/i,
+  );
+  await expect(page.getByText(/N[ãa]o é possível remover um NIF já registado/i)).toHaveCount(1);
 });
 
 test("patient search still finds a patient by NIF", async ({ page }) => {

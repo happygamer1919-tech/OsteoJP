@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ErrorEvent } from "@sentry/nextjs";
 
-import { stripFrameVars } from "./sentry-scrub";
+import { downgradeValidationError, scrubEvent, stripFrameVars } from "./sentry-scrub";
 
 /**
  * The synthetic event is shaped like what the LocalVariables integration
@@ -128,5 +128,106 @@ describe("stripFrameVars — the Sentry beforeSend clinical-payload scrubber", (
     const event = eventWithFrameVars();
 
     expect(stripFrameVars(event)).toBe(event);
+  });
+});
+
+
+/**
+ * INC-nif-validationerror-at-the-desk — the severity downgrade.
+ *
+ * A `ValidationError` reaching Sentry is a typo at the desk, not an outage. The
+ * cases below pin the three things that make the downgrade safe: it lowers
+ * rather than drops, it matches on the class and not on the wording, and it
+ * runs BESIDE the scrub instead of in place of it.
+ */
+function validationEvent(type = "ValidationError"): ErrorEvent {
+  return {
+    type: undefined,
+    level: "error",
+    exception: {
+      values: [
+        {
+          type,
+          value: "NIF inválido: o dígito de controlo não confere. Verifique os 9 dígitos.",
+          stacktrace: {
+            frames: [
+              {
+                filename: "app:///lib/patients/validation.ts",
+                function: "resolveNif",
+                in_app: true,
+                vars: { rawNif: "123456780", fullName: "Maria Silva" },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  };
+}
+
+describe("downgradeValidationError — a typo at the desk is not an ERROR", () => {
+  it("lowers a ValidationError to warning and tags it", () => {
+    const out = downgradeValidationError(validationEvent());
+    expect(out.level).toBe("warning");
+    expect(out.tags?.operator_input).toBe("true");
+  });
+
+  it("DOES NOT DROP IT, so a path that starts throwing operator input again is visible", () => {
+    // The fix is that createPatient and updatePatient RETURN their refusals. If
+    // a future path throws one instead, this event is how anyone finds out - and
+    // a dropped event and a fixed path look identical from the dashboard.
+    expect(downgradeValidationError(validationEvent())).not.toBeNull();
+  });
+
+  it("leaves every other error at the level it arrived with", () => {
+    const clinical = eventWithFrameVars();
+    clinical.level = "error";
+    const out = downgradeValidationError(clinical);
+    expect(out.level).toBe("error");
+    expect(out.tags?.operator_input).toBeUndefined();
+  });
+
+  it("matches on the CLASS, not on the message, so a copy change cannot unmatch it", () => {
+    const e = validationEvent();
+    e.exception!.values![0]!.value = "qualquer outra frase";
+    expect(downgradeValidationError(e).level).toBe("warning");
+  });
+
+  it("does not match a different class that happens to mention validation", () => {
+    expect(downgradeValidationError(validationEvent("ValidationErrorish")).level).toBe("error");
+  });
+
+  it("handles events with no exception and no values", () => {
+    expect(() => downgradeValidationError({ type: undefined })).not.toThrow();
+    expect(() =>
+      downgradeValidationError({ type: undefined, exception: { values: [] } }),
+    ).not.toThrow();
+  });
+});
+
+describe("scrubEvent — the composed beforeSend: BOTH layers, never one", () => {
+  it("strips frame vars from a ValidationError as well as downgrading it", () => {
+    // The trap this test exists for: `beforeSend` takes ONE function, so adding
+    // the downgrade to the config directly would have REPLACED the scrub, and
+    // events would have kept arriving - unscrubbed, with nothing saying so.
+    const out = scrubEvent(validationEvent());
+    const frame = out.exception?.values?.[0]?.stacktrace?.frames?.[0];
+
+    expect(frame).not.toHaveProperty("vars");
+    expect(out.level).toBe("warning");
+  });
+
+  it("still strips frame vars on an event it does not downgrade", () => {
+    const out = scrubEvent(eventWithFrameVars());
+    const serialised = JSON.stringify(out);
+
+    expect(serialised).not.toContain("_aiIngestionRaw");
+    expect(serialised).not.toContain("Maria Silva");
+    expect(out.level).toBeUndefined();
+  });
+
+  it("returns the event so it can be used directly as beforeSend", () => {
+    const event = validationEvent();
+    expect(scrubEvent(event)).toBe(event);
   });
 });
