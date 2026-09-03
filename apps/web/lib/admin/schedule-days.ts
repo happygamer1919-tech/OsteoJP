@@ -17,6 +17,8 @@
 // saves a split shift, admin's loader drops it, and the row is archived on the
 // next admin save. One loader cannot drift from itself.
 //
+import { isWithinValidity } from "@/lib/scheduling/availability";
+
 // THE W4-14 MULTI-SHIFT SAFETY PROPERTY IS PRESERVED EXACTLY, and it is the
 // subtle part. `saveTherapistScheduleAction` documents it: "the modal tracks
 // exactly ONE template id per weekday, so a reconcile only ever archives/updates
@@ -34,6 +36,11 @@ export type ScheduleTemplate = {
   weekday: number;
   startTime: string; // "HH:mm"
   endTime: string; // "HH:mm"
+  /** SCHED-13. NOT optional: a loader that can silently receive `undefined`
+   *  here is a loader that silently stops filtering, which is the exact defect
+   *  these fields were added to end. */
+  validFrom: string | null;
+  validUntil: string | null;
 };
 
 /** One weekday's row in the schedule editor. Mirrors the W4-14 reconcile shape,
@@ -50,6 +57,16 @@ export type ScheduleDayRow = {
   locationId: string;
   /** True when a second period exists for this weekday at the same location. */
   p2On: boolean;
+  /**
+   * SCHED-13. The earliest date on which this weekday has hours that are NOT in
+   * force today, or null. Set when a day's only rows are dated ahead.
+   *
+   * IT IS SHOWN RATHER THAN SILENTLY DROPPED. Filtering a future row out and
+   * saying nothing would swap one lie for another: the day would read "off"
+   * while the database holds hours for it, and the next person to set that day
+   * would create a second row the coverage invariant then refuses.
+   */
+  datedAhead: string | null;
   /** The active template id period 2 manages, or "" when there is none. */
   p2Id: string;
   p2Start: string; // "HH:mm"
@@ -171,9 +188,29 @@ export function secondPeriodPatch(p1End: string): {
  */
 export function indexScheduleTemplates(
   templates: readonly ScheduleTemplate[],
+  today: string,
 ): Map<string, ScheduleTemplate[]> {
   const byKey = new Map<string, ScheduleTemplate[]>();
   for (const tpl of templates) {
+    // ==================================================================
+    // SCHED-13 — THE WEEKLY EDITOR EDITS THE WEEK THAT IS IN FORCE.
+    // ==================================================================
+    // REPORTED as a Saturday that would not book. The audit showed weekday-6
+    // rows at the right clinic with the right hours - and the agenda was RIGHT
+    // to refuse, because those rows carry `valid_from = 2026-09-21`: they start
+    // in three weeks. The only row that covered 2026-09-05 was ARCHIVED.
+    //
+    // The resolver applies `isWithinValidity`. THE EDITOR NEVER HAD: its loader
+    // filtered on `is_active` alone and its view type did not even carry the
+    // validity columns. So it rendered a schedule that begins later as the
+    // therapist's standing Saturday, the owner read it as today's truth, and
+    // the two screens disagreed with the editor as the liar.
+    //
+    // IT IS WORSE THAN A WRONG LABEL: at most TWO rows are kept per weekday, so
+    // a dated row can DISPLACE the row actually in force, and the next Guardar
+    // reconciles against the dated row's id - rewriting a future schedule as
+    // though it were the current one.
+    if (!isWithinValidity(today, tpl.validFrom, tpl.validUntil)) continue;
     const key = `${tpl.userId}:${tpl.weekday}`;
     const held = byKey.get(key);
     if (!held) {
@@ -191,6 +228,36 @@ export function indexScheduleTemplates(
 }
 
 /**
+ * SCHED-13 — for each (member, weekday), the earliest date on which hours exist
+ * that are NOT in force today.
+ *
+ * PAIRED WITH `indexScheduleTemplates`'s filter ON PURPOSE. That filter removes
+ * a row from the editor; this says out loud that it was removed and when it
+ * starts. Removing without saying is how the original defect would simply have
+ * changed shape - the day would read "off" while the database held hours for
+ * it, and the next person to set that day would create a second row the
+ * coverage invariant then refuses, for reasons the screen never showed them.
+ *
+ * ONLY FUTURE STARTS ARE REPORTED. A row whose validity has EXPIRED is genuinely
+ * over, and telling somebody a Saturday "starts 2026-08-01" when that date is
+ * past would be noise, not information.
+ */
+export function datedAheadByKey(
+  templates: readonly ScheduleTemplate[],
+  today: string,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const t of templates) {
+    if (isWithinValidity(today, t.validFrom, t.validUntil)) continue;
+    if (!t.validFrom || t.validFrom <= today) continue; // expired, not upcoming
+    const key = `${t.userId}:${t.weekday}`;
+    const held = out.get(key);
+    if (!held || t.validFrom < held) out.set(key, t.validFrom);
+  }
+  return out;
+}
+
+/**
  * Build the seven editor rows for one member.
  *
  * `labels[weekday]` supplies the pt-PT day name; `order` is the weekday order the
@@ -201,6 +268,8 @@ export function buildScheduleDays(
   memberId: string,
   order: readonly number[],
   labels: (weekday: number) => string,
+  /** SCHED-13: rows excluded as not-yet-in-force, so a day can say so. */
+  aheadByKey: Map<string, string> = new Map(),
 ): ScheduleDayRow[] {
   return order.map((wd) => {
     const held = byKey.get(`${memberId}:${wd}`) ?? [];
@@ -222,6 +291,7 @@ export function buildScheduleDays(
       // value the button produces cannot drift apart.
       p2Start: p2?.startTime ?? defaultSecondPeriod(p1?.endTime ?? DEFAULT_END).p2Start,
       p2End: p2?.endTime ?? defaultSecondPeriod(p1?.endTime ?? DEFAULT_END).p2End,
+      datedAhead: aheadByKey.get(`${memberId}:${wd}`) ?? null,
     };
   });
 }

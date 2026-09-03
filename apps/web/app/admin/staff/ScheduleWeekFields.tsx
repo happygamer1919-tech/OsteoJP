@@ -239,6 +239,15 @@ export function ScheduleWeekFields({
               </div>
             )}
 
+            {/* SCHED-13: a day whose hours start LATER says so. Without this the
+                filter that keeps the editor honest would itself mislead - the
+                day would read "off" while the database holds hours for it. */}
+            {d.datedAhead && (
+              <p className="text-sm text-v2-text-secondary" data-testid={`dated-ahead-${d.weekday}`}>
+                {s["admin.workingHours.datedAhead"].replace("{date}", d.datedAhead)}
+              </p>
+            )}
+
             {/* Named by the field it describes, and not colour-only. */}
             {error && (
               <p role="alert" className="text-sm text-v2-danger-text">

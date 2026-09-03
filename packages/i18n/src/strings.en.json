@@ -1519,5 +1519,6 @@
   "inspector.ruleExcecaoHint": "An absence recorded in Bloquear horário.",
   "inspector.showSchedules": "Edit schedules",
   "inspector.hideSchedules": "Hide schedules",
-  "inspector.empty": "No therapists to show."
+  "inspector.empty": "No therapists to show.",
+  "admin.workingHours.datedAhead": "This day has hours defined from {date}. What is below is what is in force today."
 }

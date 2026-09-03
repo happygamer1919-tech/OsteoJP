@@ -1519,5 +1519,6 @@
   "inspector.ruleExcecaoHint": "Ausência registada em Bloquear horário.",
   "inspector.showSchedules": "Editar horários",
   "inspector.hideSchedules": "Ocultar horários",
-  "inspector.empty": "Sem terapeutas para mostrar."
+  "inspector.empty": "Sem terapeutas para mostrar.",
+  "admin.workingHours.datedAhead": "Este dia tem horário definido a partir de {date}. O horário abaixo é o que está em vigor hoje."
 }

@@ -17,6 +17,11 @@ export type AvailabilityTemplateView = {
   weekday: number;
   startTime: string; // "HH:MM"
   endTime: string; // "HH:MM"
+  /** SCHED-13. Carried so a consumer can tell a schedule IN FORCE from one that
+   *  is dated. The weekly editor was structurally blind to this: the view did
+   *  not have the columns, so it could not have filtered on them. */
+  validFrom: string | null;
+  validUntil: string | null;
 };
 
 export type AvailabilityTemplateInput = {
@@ -68,6 +73,8 @@ export async function listAvailabilityTemplates(
         weekday: availabilityTemplates.weekday,
         startTime: availabilityTemplates.startTime,
         endTime: availabilityTemplates.endTime,
+        validFrom: availabilityTemplates.validFrom,
+        validUntil: availabilityTemplates.validUntil,
       })
       .from(availabilityTemplates)
       .innerJoin(users, eq(users.id, availabilityTemplates.userId))
