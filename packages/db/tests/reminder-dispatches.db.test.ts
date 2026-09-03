@@ -231,16 +231,36 @@ d("0075 reminder_dispatches: a row cannot lie, and the desk alone can read it", 
       expect(r[0]!.owner).toBe("postgres");
     });
 
-    it("is EXECUTE-able by authenticated only - not anon, not patient, not PUBLIC", async () => {
+    it("is EXECUTE-able by authenticated only - and proacl is read, not inferred", async () => {
+      // ==================================================================
+      // READ proacl OUT OF pg_proc DIRECTLY. NOT information_schema, and
+      // NOT an inference from the REVOKE statements in the migration.
+      // ==================================================================
+      // PURPLE measured on CI that Supabase's ALTER DEFAULT PRIVILEGES
+      // grants `service_role` EXECUTE at CREATE FUNCTION time ON SOME
+      // DATABASES AND NOT OTHERS, and that `REVOKE ... FROM PUBLIC` does
+      // not remove a privilege a named role holds in its own right.
+      //
+      // THIS FILE'S FIRST DRAFT PROVED THE POINT. It asserted anon,
+      // patient and PUBLIC were absent, all three passed, and
+      // service_role held EXECUTE the whole time - because nothing had
+      // revoked it and nothing had looked. A revoke that reads as
+      // sufficient is not; only the catalogue is.
+      //
+      // `information_schema.role_routine_grants` is deliberately not the
+      // source here either: it reports what the CURRENT user can see, so
+      // it is one more thing between the question and the answer.
       const r = (await sql`
-        select coalesce(string_agg(grantee, ',' order by grantee), '') as g
-          from information_schema.role_routine_grants
-         where routine_name = 'reminder_dispatch_tenant'`) as { g: string }[];
-      const grantees = r[0]!.g.split(",").filter(Boolean);
-      expect(grantees).toContain("authenticated");
-      expect(grantees).not.toContain("anon");
-      expect(grantees).not.toContain("patient");
-      expect(grantees).not.toContain("PUBLIC");
+        select coalesce(array_to_string(proacl, ' '), '') as acl
+          from pg_proc where proname = 'reminder_dispatch_tenant'`) as { acl: string }[];
+      const acl = r[0]!.acl;
+
+      expect(acl).toMatch(/\bauthenticated=X/);
+      expect(acl).not.toMatch(/\bservice_role=/);
+      expect(acl).not.toMatch(/\banon=/);
+      expect(acl).not.toMatch(/\bpatient=/);
+      // An empty grantee before `=` is PUBLIC in an aclitem.
+      expect(acl).not.toMatch(/(^|\s)=X/);
     });
   });
 

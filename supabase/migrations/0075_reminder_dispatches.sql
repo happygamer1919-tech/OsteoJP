@@ -284,13 +284,35 @@ $$;--> statement-breakpoint
  * different applying principal would silently change the answer. */
 ALTER FUNCTION public.reminder_dispatch_tenant(text) OWNER TO postgres;--> statement-breakpoint
 
-/* REVOKE FROM THE NAMED ROLES AND NOT ONLY FROM PUBLIC. Supabase grants
- * EXECUTE on new functions to PUBLIC, and `REVOKE ... FROM PUBLIC` does
- * NOT remove a privilege a role holds in its own right - 0072 wrote this
- * out for the same reason. */
+/* ================================================================== */
+/* REVOKE FROM EVERY NAMED ROLE, service_role INCLUDED.                */
+/*                                                                     */
+/* `REVOKE ... FROM PUBLIC` DOES NOT REMOVE A PRIVILEGE A NAMED ROLE   */
+/* HOLDS IN ITS OWN RIGHT. 0072 wrote that out for anon and patient.   */
+/* What 0072 did NOT name is `service_role`, and PURPLE measured on CI */
+/* that Supabase's ALTER DEFAULT PRIVILEGES grants it EXECUTE at       */
+/* CREATE FUNCTION time ON SOME DATABASES AND NOT OTHERS.              */
+/*                                                                     */
+/* SO A REVOKE THAT READS AS SUFFICIENT IS NOT. This migration's first */
+/* draft revoked PUBLIC, anon and patient, and a catalogue read of the */
+/* result showed service_role holding EXECUTE anyway - on the lane     */
+/* database, from the default privilege and not from any statement     */
+/* here. The list below is therefore exhaustive by NAME rather than by */
+/* the assumption that PUBLIC covers them.                             */
+/*                                                                     */
+/* WHY service_role MATTERS ON THIS PARTICULAR FUNCTION: it is the     */
+/* Supabase key that bypasses RLS entirely, and this function exists   */
+/* to cross a tenant boundary. A role that already bypasses RLS does   */
+/* not need a tenant lookup, and handing it one widens the only        */
+/* deliberate crossing in the file for no caller that exists.          */
+/*                                                                     */
+/* PROVEN BY READING proacl BACK OUT OF pg_proc, not by trusting these */
+/* statements - see reminder-dispatches.db.test.ts and the post-check. */
+/* ================================================================== */
 REVOKE ALL ON FUNCTION public.reminder_dispatch_tenant(text) FROM PUBLIC;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.reminder_dispatch_tenant(text) FROM anon;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.reminder_dispatch_tenant(text) FROM patient;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.reminder_dispatch_tenant(text) FROM service_role;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.reminder_dispatch_tenant(text) TO authenticated;--> statement-breakpoint
 
 COMMENT ON FUNCTION public.reminder_dispatch_tenant(text) IS
