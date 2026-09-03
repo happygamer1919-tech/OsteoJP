@@ -654,13 +654,47 @@ Before your context is cleared, in this order:
 
 ## 7. Copy-paste reference
 
-**Working directories, one per lane. Do not build in the other lane's tree.**
+**Working directories. Do not build in another terminal's tree.**
 
-| Lane | Absolute path |
-|---|---|
-| **PURPLE** | `/Users/ivan/Documents/Projects/GitHub/OsteoJP` |
-| **AMBER** | `/Users/ivan/Documents/Projects/GitHub/osteojp-amber` - **STOOD DOWN**, writes nothing |
-| migration apply, **NEVER build** | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` |
+**THIS TABLE WAS REWRITTEN 2026-09-03 BECAUSE IT DESCRIBED A WORLD THAT NO
+LONGER EXISTS.** It named THREE trees and enforced, through §7.0, that every tree
+`git worktree list` prints must appear in it. The census that day printed
+**FIFTEEN**. Nothing had gone wrong: the project moved to one worktree per
+terminal SESSION, and each new session correctly created its own. A rule every
+booting terminal violates on its first command is not a rule, it is noise - and
+noise is worse than nothing here, because the census exists to make ONE specific
+anomaly visible and a report that always fires hides it.
+
+So the census is now in two parts, and only the first is enumerated.
+
+**PART ONE - THE PERMANENT TREES. Named, exact, and a tree here that you did not
+expect is still the thing §7.0 was written to catch.**
+
+| Tree | Absolute path | State |
+|---|---|---|
+| **the shared clone** | `/Users/ivan/Documents/Projects/GitHub/OsteoJP` | owns `main`. Any session may read it; **do not build in it** - another session runs `checkout`/`pull` there mid-task |
+| migration apply, **NEVER build** | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` | the owner's apply worktree, rule 7 |
+| **AMBER** | `/Users/ivan/Documents/Projects/GitHub/osteojp-amber` | **STOOD DOWN**, writes nothing. Clean, detached at `7fdff939` (#867), reachable from `origin/main` |
+| dormant | `/Users/ivan/Documents/Projects/GitHub/osteojp-purple-mig04` | **PRESENT AND UNEXPLAINED.** Clean, detached at `1ad91673` (#1069), reachable from `origin/main`, so it holds no unmerged work. Left in place; see `LE-worktree-census-describes-a-dead-world` |
+| dormant | `/Users/ivan/Documents/Projects/GitHub/osteojp-sess1` | **PRESENT AND UNEXPLAINED.** Clean, detached at `831a4772` (#1071), reachable from `origin/main`, so it holds no unmerged work. Left in place; same card |
+
+**PART TWO - THE SESSION TREES. A SHAPE, not a list, because they are created
+and destroyed faster than this document can be edited.**
+
+> `/private/tmp/claude-501/-Users-ivan/<session-id>/scratchpad/<lane><suffix>`
+
+One per live terminal, created by that terminal at boot, gitignored, and gone
+when the session's scratchpad is cleared. On 2026-09-03 there were TEN, split
+`purple-*` and `blue-*`. **A session tree that is not yours belongs to a live
+terminal in another lane: do not build in it, do not check out its branch, and
+do not remove it.** Your own is the only one you write.
+
+**WHY A SHAPE AND NOT A LIST.** Sibling worktrees are what make concurrent lanes
+safe at all - one branch cannot be checked out twice, so a same-branch collision
+is impossible by construction, and `gh pr merge --delete-branch` parking a tree
+on `main` (§7.1) cannot block a lane that never checks `main` out. Enumerating
+them would make this document stale within the hour and would train readers to
+skip the census, which is the one thing it must not become.
 
 ### 7.0a ONE LOCAL SUPABASE PER LANE. Binding from 2026-09-03, SR-39.
 
@@ -704,11 +738,15 @@ service-role keys from `supabase status` and inject them straight into the child
 process. Standing rule 3 is about values reaching a terminal's context, and this
 keeps them out of one even though the local keys are the Supabase demo JWTs.
 
-**THE CENSUS IS THREE TREES AS OF 2026-08-18.** `osteojp-cyan` was removed when
-that lane was stood down and its chat retired: its branch had merged as #916
-(0064 applied first, per rule 7), the tree was clean, and its last commit was
-reachable through the squash. `osteojp-purple` was removed on the same day - a
-duplicate terminal the owner had started by accident (see §7.0).
+**THE CENSUS WAS THREE TREES ON 2026-08-18 AND IS FIVE PERMANENT PLUS N SESSION
+TREES NOW.** `osteojp-cyan` was removed when that lane was stood down and its
+chat retired: its branch had merged as #916 (0064 applied first, per rule 7), the
+tree was clean, and its last commit was reachable through the squash.
+`osteojp-purple` was removed on the same day - a duplicate terminal the owner had
+started by accident (see §7.0). The two dormant trees now in §7's table,
+`osteojp-purple-mig04` and `osteojp-sess1`, were NOT removed: both are clean and
+fully reachable from `origin/main`, so they lose nothing by staying and removing
+another terminal's tree is not this lane's call.
 
 **PURPLE OWNS EVERY LANE NOW.** AMBER and CYAN both exist in this document as
 history, because their rules explain why the boundaries are drawn where they are,
@@ -717,10 +755,25 @@ for either, §7.0 applies: report it before doing anything with it.
 
 ### 7.0 THE CENSUS RULE. Binding from 2026-08-17, and it has already paid for itself.
 
-**`git worktree list` is part of the mandatory boot report, and EVERY TREE IT PRINTS
-MUST APPEAR IN THE TABLE ABOVE. A tree that does not is reported before any work
-starts.** Not investigated, not tidied away, not worked in: named in the first
-output, and the session continues on its own card while the owner answers.
+**`git worktree list` is part of the mandatory boot report. AMENDED 2026-09-03,
+because the original form - "EVERY TREE IT PRINTS MUST APPEAR IN THE TABLE ABOVE"
+- now fires on every boot and therefore says nothing.**
+
+Read the census against §7's two parts and report a tree that is in NEITHER:
+
+  1. it is one of the PERMANENT trees named in §7's table; or
+  2. it matches the SESSION SHAPE
+     `/private/tmp/claude-501/-Users-ivan/<session-id>/scratchpad/<lane><suffix>`.
+
+**Anything else is reported before any work starts.** Not investigated, not tidied
+away, not worked in: named in the first output, and the session continues on its
+own card while the owner answers.
+
+**A PERMANENT TREE YOU DID NOT EXPECT STILL COUNTS**, and that is the case the
+rule was written for - it is a tree somebody made deliberately, outside the
+per-session pattern, which is exactly what a duplicate terminal looks like. A
+session tree in another lane's prefix does NOT count: it is a live terminal doing
+its job, and reporting it every boot is the noise this amendment removes.
 
 WHY, because the failure it catches does not look like a failure. On 2026-08-17 the
 boot census printed a fifth tree, `osteojp-purple`, on a branch nobody in this lane
