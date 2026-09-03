@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, Dialog, Select } from "@osteojp/ui";
+import { Button, DatePicker, Dialog, Select } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { TimeFieldInput } from "@/components/time-field-input";
 import { alternatingBlockingReasons, defaultAlternatingWindow } from "@/lib/scheduling/alternating-form";
@@ -184,22 +184,18 @@ export function AlternatingWeeksPanel({
             <div className="flex flex-wrap gap-3">
               <label className="flex flex-col gap-1 text-sm">
                 <span className="font-medium">{s["schedule.altFrom"]}</span>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  data-testid="alt-weeks-from"
-                  className="rounded-v2 border border-v2-border px-2 py-1"
+                <DatePicker
+                  value={startDate === "" ? null : startDate}
+                  onChange={setStartDate}
+                  triggerLabel={s["schedule.altFrom"]}
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
                 <span className="font-medium">{s["schedule.altTo"]}</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  data-testid="alt-weeks-to"
-                  className="rounded-v2 border border-v2-border px-2 py-1"
+                <DatePicker
+                  value={endDate === "" ? null : endDate}
+                  onChange={setEndDate}
+                  triggerLabel={s["schedule.altTo"]}
                 />
               </label>
             </div>
