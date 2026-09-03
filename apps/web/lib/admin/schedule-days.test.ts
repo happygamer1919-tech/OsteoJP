@@ -11,6 +11,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   buildScheduleDays,
+  datedAheadByKey,
   defaultSecondPeriod,
   secondPeriodPatch,
   indexScheduleTemplates,
@@ -19,12 +20,16 @@ import {
 } from "./schedule-days";
 
 const U = "user-1";
+const TODAY = "2026-09-05";
 const LOC_A = "loc-a";
 const LOC_B = "loc-b";
 const ORDER = [1, 2, 3, 4, 5, 6, 0];
 const label = (wd: number) => `dia-${wd}`;
 
+/** SCHED-13: validity defaults to open-ended, i.e. the ordinary week. */
 const tpl = (over: Partial<ScheduleTemplate> = {}): ScheduleTemplate => ({
+  validFrom: null,
+  validUntil: null,
   id: "t1",
   userId: U,
   locationId: LOC_A,
@@ -39,7 +44,7 @@ const dayOf = (rows: ReturnType<typeof buildScheduleDays>, weekday: number) =>
 
 describe("a day with one period behaves exactly as before", () => {
   it("keeps the single template as period 1 and offers no period 2", () => {
-    const rows = buildScheduleDays(indexScheduleTemplates([tpl()]), U, ORDER, label);
+    const rows = buildScheduleDays(indexScheduleTemplates([tpl()], TODAY), U, ORDER, label);
     const mon = dayOf(rows, 1);
     expect(mon).toMatchObject({
       on: true, id: "t1", start: "09:00", end: "17:00", locationId: LOC_A, p2On: false, p2Id: "",
@@ -47,14 +52,14 @@ describe("a day with one period behaves exactly as before", () => {
   });
 
   it("leaves an unworked day off, with the untouched defaults", () => {
-    const rows = buildScheduleDays(indexScheduleTemplates([]), U, ORDER, label);
+    const rows = buildScheduleDays(indexScheduleTemplates([], TODAY), U, ORDER, label);
     expect(dayOf(rows, 3)).toMatchObject({
       on: false, id: "", start: "09:00", end: "17:00", p2On: false, p2Id: "",
     });
   });
 
   it("returns the seven weekdays in the order it was given", () => {
-    const rows = buildScheduleDays(indexScheduleTemplates([]), U, ORDER, label);
+    const rows = buildScheduleDays(indexScheduleTemplates([], TODAY), U, ORDER, label);
     expect(rows.map((r) => r.weekday)).toEqual(ORDER);
     expect(rows.map((r) => r.label)).toEqual(ORDER.map(label));
   });
@@ -65,7 +70,7 @@ describe("a split shift", () => {
   const afternoon = tpl({ id: "pm", startTime: "14:00", endTime: "19:00" });
 
   it("loads BOTH periods, morning first", () => {
-    const rows = buildScheduleDays(indexScheduleTemplates([morning, afternoon]), U, ORDER, label);
+    const rows = buildScheduleDays(indexScheduleTemplates([morning, afternoon], TODAY), U, ORDER, label);
     expect(dayOf(rows, 1)).toMatchObject({
       on: true, id: "am", start: "08:00", end: "13:00",
       p2On: true, p2Id: "pm", p2Start: "14:00", p2End: "19:00",
@@ -76,13 +81,13 @@ describe("a split shift", () => {
     // The callers order by start_time in SQL, so this sort is a no-op there. It
     // is here because a loader that trusted arrival order would silently label
     // the afternoon as the morning the day that query changed.
-    const rows = buildScheduleDays(indexScheduleTemplates([afternoon, morning]), U, ORDER, label);
+    const rows = buildScheduleDays(indexScheduleTemplates([afternoon, morning], TODAY), U, ORDER, label);
     expect(dayOf(rows, 1)).toMatchObject({ id: "am", p2Id: "pm" });
   });
 
   it("keeps periods on the right weekday", () => {
     const rows = buildScheduleDays(
-      indexScheduleTemplates([morning, afternoon, tpl({ id: "tue", weekday: 2 })]),
+      indexScheduleTemplates([morning, afternoon, tpl({ id: "tue", weekday: 2 })], TODAY),
       U, ORDER, label,
     );
     expect(dayOf(rows, 1)).toMatchObject({ id: "am", p2Id: "pm" });
@@ -91,7 +96,7 @@ describe("a split shift", () => {
 
   it("keeps periods on the right member", () => {
     const other = tpl({ id: "other", userId: "user-2", startTime: "14:00", endTime: "19:00" });
-    const rows = buildScheduleDays(indexScheduleTemplates([morning, other]), U, ORDER, label);
+    const rows = buildScheduleDays(indexScheduleTemplates([morning, other], TODAY), U, ORDER, label);
     expect(dayOf(rows, 1)).toMatchObject({ id: "am", p2On: false });
   });
 });
@@ -105,7 +110,7 @@ describe("THE W4-14 MULTI-SHIFT SAFETY PROPERTY, which this must not break", () 
     const here = tpl({ id: "here", startTime: "08:00", endTime: "13:00" });
     const elsewhere = tpl({ id: "elsewhere", locationId: LOC_B, startTime: "14:00", endTime: "19:00" });
 
-    const rows = buildScheduleDays(indexScheduleTemplates([here, elsewhere]), U, ORDER, label);
+    const rows = buildScheduleDays(indexScheduleTemplates([here, elsewhere], TODAY), U, ORDER, label);
     expect(dayOf(rows, 1)).toMatchObject({ id: "here", p2On: false, p2Id: "" });
   });
 
@@ -114,7 +119,7 @@ describe("THE W4-14 MULTI-SHIFT SAFETY PROPERTY, which this must not break", () 
     const other = tpl({ id: "other-loc", locationId: LOC_B, startTime: "09:00", endTime: "12:00" });
     const pm = tpl({ id: "pm", startTime: "14:00", endTime: "19:00" });
 
-    const rows = buildScheduleDays(indexScheduleTemplates([am, other, pm]), U, ORDER, label);
+    const rows = buildScheduleDays(indexScheduleTemplates([am, other, pm], TODAY), U, ORDER, label);
     expect(dayOf(rows, 1)).toMatchObject({ id: "am", p2Id: "pm" });
   });
 
@@ -124,7 +129,7 @@ describe("THE W4-14 MULTI-SHIFT SAFETY PROPERTY, which this must not break", () 
         tpl({ id: "a", startTime: "08:00", endTime: "10:00" }),
         tpl({ id: "b", startTime: "11:00", endTime: "13:00" }),
         tpl({ id: "c", startTime: "14:00", endTime: "19:00" }),
-      ]),
+      ], TODAY),
       U, ORDER, label,
     );
     const mon = dayOf(rows, 1);
@@ -221,13 +226,13 @@ describe("SCHED-08 — the offered second period is always a legal one", () => {
 describe("SCHED-08 — the loader seeds the same pair the button would produce", () => {
   it("an unworked day carries a second period derived from its own first period", () => {
     // Not the old fixed 14:00, which the day's own 09:00-17:00 default refuses.
-    const rows = buildScheduleDays(indexScheduleTemplates([]), U, ORDER, label);
+    const rows = buildScheduleDays(indexScheduleTemplates([], TODAY), U, ORDER, label);
     expect(dayOf(rows, 3)).toMatchObject({ start: "09:00", end: "17:00", p2Start: "17:00", p2End: "19:00" });
   });
 
   it("a worked day with one period derives from THAT period, not from the default", () => {
     const rows = buildScheduleDays(
-      indexScheduleTemplates([tpl({ startTime: "08:00", endTime: "20:00" })]),
+      indexScheduleTemplates([tpl({ startTime: "08:00", endTime: "20:00" })], TODAY),
       U, ORDER, label,
     );
     expect(dayOf(rows, 1)).toMatchObject({ p2On: false, p2Start: "20:00", p2End: "21:00" });
@@ -236,7 +241,7 @@ describe("SCHED-08 — the loader seeds the same pair the button would produce",
   it("a day that already HAS a second period keeps its saved times untouched", () => {
     const rows = buildScheduleDays(
       indexScheduleTemplates([tpl({ id: "am", startTime: "08:00", endTime: "13:00" }),
-                              tpl({ id: "pm", startTime: "15:00", endTime: "18:00" })]),
+                              tpl({ id: "pm", startTime: "15:00", endTime: "18:00" })], TODAY),
       U, ORDER, label,
     );
     expect(dayOf(rows, 1)).toMatchObject({ p2On: true, p2Id: "pm", p2Start: "15:00", p2End: "18:00" });
@@ -295,5 +300,94 @@ describe("SCHED-11 — the '+ 2.º período' patch touches period TWO only", () 
     expect(after.p2End).toBe("19:00");
     // And the day the e2e sets up is therefore SAVEABLE, which it was not.
     expect(scheduleDayError(after.start, after.end, "14:00", "19:00")).toBeNull();
+  });
+});
+
+/**
+ * SCHED-13 — THE EDITOR SHOWS THE WEEK THAT IS IN FORCE, and says when a day's
+ * hours start later.
+ *
+ * ==========================================================================
+ * BUILT FROM THE OWNER'S REAL ROWS, not from an invented shape.
+ * ==========================================================================
+ * ZZ TESTE THERAPIST at OsteoJP (LV), read from production on 2026-09-03. The
+ * report was "Sábado 08:00-13:00 plus 14:00-19:00 is set, and 05/09 will not
+ * book". The agenda was RIGHT to refuse and the editor was wrong to show it:
+ *
+ *   weekday 6  08:00-13:00  from 2026-09-21   ACTIVE   <- starts in 18 days
+ *   weekday 6  14:00-19:00  from 2026-09-21   ACTIVE   <- starts in 18 days
+ *   weekday 6  08:00-17:00  2026-09-05 only   archived <- the only 05/09 cover
+ *   weekday 5  08:00-17:00  until 2026-09-04  ACTIVE   <- why Friday booked
+ *
+ * The two ACTIVE Saturday rows are what the owner saw. They are not dated to a
+ * single day, so a "skip single-day overrides" rule would NOT have caught this
+ * - the rule has to be "is it in force TODAY".
+ */
+describe("SCHED-13 — the owner's real Saturday, as the editor should have shown it", () => {
+  const TODAY_REPORTED = "2026-09-05";
+  const LV = "loc-lv";
+  const zz = (over: Partial<ScheduleTemplate>): ScheduleTemplate => ({
+    id: "x", userId: U, locationId: LV, weekday: 6,
+    startTime: "08:00", endTime: "13:00", validFrom: null, validUntil: null, ...over,
+  });
+
+  // Exactly the two ACTIVE weekday-6 rows from the audit.
+  const saturdayAhead = [
+    zz({ id: "38268a3c", startTime: "08:00", endTime: "13:00", validFrom: "2026-09-21" }),
+    zz({ id: "24e11268", startTime: "14:00", endTime: "19:00", validFrom: "2026-09-21" }),
+  ];
+
+  it("does NOT show a Saturday whose hours begin on 21/09 as the standing week", () => {
+    const rows = buildScheduleDays(
+      indexScheduleTemplates(saturdayAhead, TODAY_REPORTED), U, ORDER, label,
+    );
+    // This is the assertion that would have caught the report: before the fix
+    // the day read `on` with 08:00-13:00, which is what the owner acted on.
+    expect(dayOf(rows, 6)).toMatchObject({ on: false, id: "", p2On: false });
+  });
+
+  it("SAYS the hours start on 21/09, so the day is not silently blanked", () => {
+    const ahead = datedAheadByKey(saturdayAhead, TODAY_REPORTED);
+    expect(ahead.get(`${U}:6`)).toBe("2026-09-21");
+    const rows = buildScheduleDays(
+      indexScheduleTemplates(saturdayAhead, TODAY_REPORTED), U, ORDER, label, ahead,
+    );
+    expect(dayOf(rows, 6).datedAhead).toBe("2026-09-21");
+  });
+
+  it("SHOWS the same rows once 21/09 arrives - the filter is about TODAY, not about dates", () => {
+    const rows = buildScheduleDays(
+      indexScheduleTemplates(saturdayAhead, "2026-09-21"), U, ORDER, label,
+    );
+    expect(dayOf(rows, 6)).toMatchObject({
+      on: true, start: "08:00", end: "13:00", p2On: true, p2Start: "14:00", p2End: "19:00",
+    });
+  });
+
+  it("still shows FRIDAY on 04/09 - the control that proves this is not 'hide everything dated'", () => {
+    // valid_until 2026-09-04, and 04/09 is inside it. This is the row that made
+    // Friday book while Saturday refused, and it must survive the filter.
+    const friday = [zz({ id: "7a1d781b", weekday: 5, startTime: "08:00", endTime: "17:00", validUntil: "2026-09-04" })];
+    expect(dayOf(buildScheduleDays(indexScheduleTemplates(friday, "2026-09-04"), U, ORDER, label), 5))
+      .toMatchObject({ on: true, start: "08:00", end: "17:00" });
+    // ...and is correctly gone the day after it expires.
+    expect(dayOf(buildScheduleDays(indexScheduleTemplates(friday, "2026-09-05"), U, ORDER, label), 5))
+      .toMatchObject({ on: false });
+  });
+
+  it("an EXPIRED row is not reported as upcoming - that would be noise, not information", () => {
+    const expired = [zz({ weekday: 5, validUntil: "2026-09-04" })];
+    expect(datedAheadByKey(expired, "2026-09-05").get(`${U}:5`)).toBeUndefined();
+  });
+
+  it("a dated row can no longer DISPLACE the row actually in force", () => {
+    // At most two rows are kept per weekday. Before the fix a future row could
+    // take one of those slots and push out the standing one - and the next
+    // Guardar would then reconcile against the future row's id.
+    const inForce = zz({ id: "now", startTime: "09:00", endTime: "17:00" });
+    const rows = buildScheduleDays(
+      indexScheduleTemplates([...saturdayAhead, inForce], TODAY_REPORTED), U, ORDER, label,
+    );
+    expect(dayOf(rows, 6)).toMatchObject({ on: true, id: "now", start: "09:00", end: "17:00" });
   });
 });

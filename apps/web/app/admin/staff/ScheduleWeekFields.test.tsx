@@ -30,7 +30,7 @@ const LOCATIONS = [{ id: "loc-a", name: "Castelo Branco" }];
 const day = (over: Partial<Parameters<typeof ScheduleWeekFields>[0]["days"][number]> = {}) => ({
   weekday: 1, label: "Segunda", on: true, id: "t1",
   start: "09:00", end: "17:00", locationId: "loc-a",
-  p2On: false, p2Id: "", p2Start: "17:00", p2End: "19:00",
+  p2On: false, p2Id: "", p2Start: "17:00", p2End: "19:00", datedAhead: null,
   ...over,
 });
 

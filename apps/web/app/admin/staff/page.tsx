@@ -14,7 +14,7 @@ import { listLocations } from "@/lib/admin/locations";
 import { listStaffLocations } from "@/lib/admin/staff-locations";
 import { seesEveryLocation } from "@/lib/admin/location-scope-warning";
 import { listTimeOffBlocksForRoster } from "@/lib/admin/time-off";
-import { buildScheduleDays, indexScheduleTemplates } from "@/lib/admin/schedule-days";
+import { buildScheduleDays, datedAheadByKey, indexScheduleTemplates } from "@/lib/admin/schedule-days";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import { EquipaLocationFilter } from "./EquipaLocationFilter";
 import { StaffInviteForm } from "./StaffInviteForm";
@@ -103,9 +103,12 @@ export default async function StaffPage({
   // second period on the next save. Both surfaces share this loader for that
   // reason — see lib/admin/schedule-days.ts, which also explains why a second
   // template at a DIFFERENT location is still never surfaced.
-  const templateIndex = indexScheduleTemplates(availability);
+  // SCHED-13: the editor shows the week IN FORCE TODAY. Lisbon calendar date.
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Lisbon" });
+  const templateIndex = indexScheduleTemplates(availability, today);
+  const aheadByKey = datedAheadByKey(availability, today);
   const buildDays = (memberId: string): ScheduleDay[] =>
-    buildScheduleDays(templateIndex, memberId, WEEKDAY_ORDER, (wd) => s[WEEKDAY_KEYS[wd]]);
+    buildScheduleDays(templateIndex, memberId, WEEKDAY_ORDER, (wd) => s[WEEKDAY_KEYS[wd]], aheadByKey);
 
   // W12-40: time-off blocks per NON-reception member (they alone hold a schedule
   // + blocks). One query each, scoped to the shown set; reception is skipped.

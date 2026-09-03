@@ -7,7 +7,7 @@ import { getAgendaOptions } from "@/lib/scheduling/data";
 import { listAvailabilityTemplates } from "@/lib/admin/availability";
 import { listTimeOffBlocksForRoster } from "@/lib/admin/time-off";
 import { resolveScheduleScope } from "@/lib/admin/schedule-scope";
-import { buildScheduleDays, indexScheduleTemplates } from "@/lib/admin/schedule-days";
+import { buildScheduleDays, datedAheadByKey, indexScheduleTemplates } from "@/lib/admin/schedule-days";
 import {
   TherapistBlocks,
   type BlockLabels,
@@ -110,9 +110,12 @@ export default async function HorariosPage({
       })
     : [];
 
-  const templateIndex = indexScheduleTemplates(availability);
+  // SCHED-13: the editor shows the week IN FORCE TODAY. Lisbon calendar date.
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Lisbon" });
+  const templateIndex = indexScheduleTemplates(availability, today);
+  const aheadByKey = datedAheadByKey(availability, today);
   const buildDays = (userId: string): ScheduleDay[] =>
-    buildScheduleDays(templateIndex, userId, WEEKDAY_ORDER, (wd) => s[WEEKDAY_KEYS[wd]]);
+    buildScheduleDays(templateIndex, userId, WEEKDAY_ORDER, (wd) => s[WEEKDAY_KEYS[wd]], aheadByKey);
 
   // Time-off blocks for the whole roster, in two queries.
   //
