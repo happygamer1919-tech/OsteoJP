@@ -1,14 +1,19 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
 import { Button } from "@osteojp/ui";
 import { createPatient, updatePatient } from "../../../lib/patients/actions";
+import type { PatientWriteError } from "../../../lib/patients/actions";
 import type { Patient } from "../../../lib/patients/types";
+import { errorSlot } from "../../../lib/patients/form-error";
+import { checkNif } from "../../../lib/patients/nif";
 import {
   MAX_HEALTH_INSURANCE_ENTRIES,
+  nifMessage,
   type HealthInsuranceEntry,
+  type PatientField,
 } from "../../../lib/patients/validation";
 
 const s = getStrings(DEFAULT_LOCALE);
@@ -103,6 +108,19 @@ function resolveReferralSource(fields: Fields): string {
   return fields.referralChoice;
 }
 
+/**
+ * INC-nif-validationerror-at-the-desk — the refusal being shown right now.
+ *
+ * `seq` increments on every SUBMIT that is refused, and never on a blur check.
+ * It is what re-focuses the box when the operator presses Guardar twice and is
+ * refused for the same reason twice: without it React sees no state change and
+ * the second refusal moves nothing on the screen, which reads as the button
+ * doing nothing at all - the exact complaint this card started from.
+ */
+type FormError = PatientWriteError & { seq: number };
+
+const FieldErrorContext = createContext<FormError | null>(null);
+
 /** PL-15b — the clinics this viewer may file a patient under (already narrowed
  *  to their own; see lib/auth/location-choice). One entry = no choice to make. */
 export type PatientLocationOption = { id: string; name: string };
@@ -125,13 +143,30 @@ export function PatientForm({
     }
     return base;
   });
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormError | null>(null);
   const [pending, startTransition] = useTransition();
+  const refusals = useRef(0);
 
   const isEdit = Boolean(patient);
 
   function set<K extends keyof Fields>(key: K, value: Fields[K]) {
     setFields((f) => ({ ...f, [key]: value }));
+  }
+
+  // INC-nif-validationerror-at-the-desk: one place sets a refusal, so the
+  // focus rule ("a submit refusal moves the cursor, a blur check does not")
+  // is expressed once instead of at each call site.
+  function refuse(e: PatientWriteError, focus: boolean) {
+    // A blur check is seq 0 FOREVER, not "the current count". Handing it the
+    // count would move the cursor into the NIF box while somebody was tabbing
+    // past it to the next field - which is the failure mode that makes
+    // validate-on-blur hated, and it is one line away from either behaviour.
+    if (!focus) {
+      setError({ ...e, seq: 0 });
+      return;
+    }
+    refusals.current += 1;
+    setError({ ...e, seq: refusals.current });
   }
 
   function onSubmit(e: React.FormEvent) {
@@ -149,17 +184,54 @@ export function PatientForm({
           isEdit && patient
             ? await updatePatient(patient.id, payload)
             : await createPatient(payload);
-        router.push(`/patients/${saved.id}`);
+        // THE REFUSAL IS A VALUE NOW, not an exception. The catch below is kept
+        // and still means what it always meant - something nobody at this
+        // screen can act on - but a mistyped NIF no longer takes that path.
+        if (!saved.ok) {
+          refuse(saved.error, true);
+          return;
+        }
+        router.push(`/patients/${saved.patient.id}`);
         router.refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : s["errors.generic"]);
+        refuse(
+          { field: "form", message: err instanceof Error ? err.message : s["errors.generic"] },
+          true,
+        );
       }
     });
   }
 
+  /**
+   * UX ONLY, and the comment is load-bearing: this decides NOTHING. The server
+   * re-runs `checkNif` on every write and its answer is the one that binds. All
+   * this does is say it a few seconds earlier, at the moment the operator
+   * leaves the box, instead of after they have filled in ten more fields and
+   * pressed Guardar.
+   *
+   * It does not fire on an EMPTY box. "empty" is a legitimate in-progress state
+   * while somebody is still filling the form in, and on edit it is a legitimate
+   * FINAL state for a patient registered before the rule; either way, telling
+   * them off for a box they have not typed in yet is noise.
+   */
+  function onNifBlur() {
+    if (fields.nifExempt) return;
+    const raw = fields.nif.trim();
+    if (raw === "") return;
+    const problem = checkNif(raw);
+    if (problem === null) {
+      // Only clear what THIS check set. A refusal about another field, or the
+      // server's own, is not this check's to discard.
+      setError((cur) => (cur?.field === "nif" ? null : cur));
+      return;
+    }
+    refuse({ field: "nif", message: nifMessage(problem) }, false);
+  }
+
   return (
+    <FieldErrorContext.Provider value={error}>
     <form onSubmit={onSubmit} className="flex flex-col gap-4 max-w-xl">
-      <Field label={s["patients.fieldFullName"]} required>
+      <Field label={s["patients.fieldFullName"]} required errorFor="fullName">
         <input
           required
           value={fields.fullName}
@@ -168,7 +240,7 @@ export function PatientForm({
         />
       </Field>
       <div className="grid grid-cols-2 gap-4">
-        <Field label={s["patients.fieldDateOfBirth"]}>
+        <Field label={s["patients.fieldDateOfBirth"]} errorFor="dateOfBirth">
           {/* BUG-08 fix: lang="pt-PT" ensures browser date picker uses
               dd/mm/yyyy format on all machines, not the tester's OS locale */}
           <input
@@ -179,7 +251,7 @@ export function PatientForm({
             className={inputCls}
           />
         </Field>
-        <Field label={s["patients.fieldSex"]}>
+        <Field label={s["patients.fieldSex"]} errorFor="sex">
           {/* BUG-07 fix: was a plain <input type="text">; now a <select> */}
           <select
             value={fields.sex}
@@ -205,6 +277,7 @@ export function PatientForm({
         <Field
           label={s["patients.fieldNif"]}
           required={!isEdit && !fields.nifExempt}
+          errorFor="nif"
         >
           <input
             required={!isEdit && !fields.nifExempt}
@@ -213,6 +286,7 @@ export function PatientForm({
             autoComplete="off"
             value={fields.nif}
             onChange={(e) => set("nif", e.target.value)}
+            onBlur={onNifBlur}
             className={inputCls}
           />
           <span className="text-xs text-text-secondary">
@@ -242,7 +316,7 @@ export function PatientForm({
             <span>{s["patients.nifExemptLabel"]}</span>
           </label>
           {fields.nifExempt && (
-            <Field label={s["patients.nifExemptReasonLabel"]} required>
+            <Field label={s["patients.nifExemptReasonLabel"]} required errorFor="nifExemptReason">
               <input
                 required
                 value={fields.nifExemptReason}
@@ -258,14 +332,14 @@ export function PatientForm({
           onChange={(next) => set("healthInsuranceNumbers", next)}
           inputCls={inputCls}
         />
-        <Field label={s["patients.fieldPhone"]}>
+        <Field label={s["patients.fieldPhone"]} errorFor="phone">
           <input
             value={fields.phone}
             onChange={(e) => set("phone", e.target.value)}
             className={inputCls}
           />
         </Field>
-        <Field label={s["patients.fieldEmail"]}>
+        <Field label={s["patients.fieldEmail"]} errorFor="email">
           <input
             type="email"
             value={fields.email}
@@ -273,21 +347,21 @@ export function PatientForm({
             className={inputCls}
           />
         </Field>
-        <Field label={s["patients.fieldCity"]}>
+        <Field label={s["patients.fieldCity"]} errorFor="city">
           <input
             value={fields.city}
             onChange={(e) => set("city", e.target.value)}
             className={inputCls}
           />
         </Field>
-        <Field label={s["patients.fieldPostalCode"]}>
+        <Field label={s["patients.fieldPostalCode"]} errorFor="postalCode">
           <input
             value={fields.postalCode}
             onChange={(e) => set("postalCode", e.target.value)}
             className={inputCls}
           />
         </Field>
-        <Field label={s["patients.fieldProfession"]}>
+        <Field label={s["patients.fieldProfession"]} errorFor="profession">
           <input
             value={fields.profession}
             onChange={(e) => set("profession", e.target.value)}
@@ -400,7 +474,17 @@ export function PatientForm({
       {/* Patient notes moved to the append-only Notas tab (W2-11): the edit form
           no longer reads or writes patients.notes. */}
 
-      {error && <p role="alert" className="text-sm text-error">{error}</p>}
+      {/* The refusals with no box to point at: `healthInsuranceNumbers`, the
+          conditional "Outro" fields, the clinic picker, and anything thrown
+          rather than returned. `errorSlot` is the ONE place that decides, so
+          the message renders here or inline and never in both - which is what
+          keeps the plain getByText assertions in nif-required.spec.ts out of
+          Playwright's strict-mode failure. */}
+      {error && errorSlot(error.field) === "form" && (
+        <p role="alert" className="text-sm text-error">
+          {error.message}
+        </p>
+      )}
 
       <div className="flex gap-3">
         <Button type="submit" loading={pending} variant="primary">
@@ -411,28 +495,70 @@ export function PatientForm({
         </Button>
       </div>
     </form>
+    </FieldErrorContext.Provider>
   );
 }
 
 const inputCls =
   "w-full rounded border border-border-strong px-3 py-2 text-sm focus:border-brand-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
+/**
+ * INC-nif-validationerror-at-the-desk — a field that can carry its own refusal.
+ *
+ * `errorFor` is the PatientField this box owns, and it is deliberately an
+ * UNUSUAL prop name: `form-error.test.ts` reads this file's source with a plain
+ * regex and asserts the set of `errorFor` values equals `INLINE_ERROR_FIELDS`,
+ * so the placement rule and the markup cannot drift apart. A prop called `name`
+ * would have matched every input on the page.
+ *
+ * THE FOCUS IS AN EFFECT ON `seq`, NOT ON THE MESSAGE. Pressing Guardar twice
+ * with the same bad NIF produces the same field and the same sentence both
+ * times; only `seq` differs, and without it the second press would move
+ * nothing on the screen.
+ *
+ * THE CONTROL IS FOUND BY QUERY RATHER THAN BY REF, because `children` is
+ * arbitrary JSX - an input here, a select there, a static <p> for the
+ * one-clinic line - and threading a ref through every call site would put the
+ * burden on the fifteen places that must not forget it. The query is scoped to
+ * this label, so it cannot reach another field's box.
+ */
 function Field({
   label,
   required,
+  errorFor,
   children,
 }: {
   label: string;
   required?: boolean;
+  errorFor?: PatientField;
   children: React.ReactNode;
 }) {
+  const error = useContext(FieldErrorContext);
+  const mine = errorFor !== undefined && error?.field === errorFor ? error : null;
+  const box = useRef<HTMLLabelElement>(null);
+  const seq = mine?.seq ?? 0;
+
+  useEffect(() => {
+    if (seq === 0) return;
+    box.current?.querySelector<HTMLElement>("input, select, textarea")?.focus();
+  }, [seq]);
+
   return (
-    <label className="flex flex-col gap-1">
+    <label ref={box} className="relative flex flex-col gap-1">
       <span className="text-xs font-medium text-text-secondary">
         {label}
         {required ? " *" : ""}
       </span>
       {children}
+      {mine && (
+        <span
+          role="alert"
+          data-testid={`field-error-${errorFor}`}
+          className="absolute left-0 top-full z-10 mt-1 w-full rounded border border-error bg-surface px-2 py-1 text-sm text-error shadow-md"
+        >
+          {mine.message}
+        </span>
+      )}
     </label>
   );
 }

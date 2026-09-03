@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 
 import { serverSentryDsn } from "./lib/observability/sentry-dsn";
 
-import { stripFrameVars } from "./lib/observability/sentry-scrub";
+import { scrubEvent } from "./lib/observability/sentry-scrub";
 
 Sentry.init({
   // Read through the accessor so an ABSENT dsn is LOUD instead of a silent
@@ -27,5 +27,10 @@ Sentry.init({
   // Layer 2, independent of layer 1: whatever integrations are loaded, no
   // frame leaves this process carrying captured locals. See sentry-scrub.ts for
   // why the clinical claim path makes this load-bearing.
-  beforeSend: stripFrameVars,
+  //
+  // `scrubEvent` is that scrub PLUS the INC-nif-validationerror-at-the-desk
+  // severity downgrade, composed in one function because `beforeSend` takes
+  // one - assigning a second concern here directly would have replaced the
+  // scrub rather than joined it, and nothing would have said so.
+  beforeSend: scrubEvent,
 });

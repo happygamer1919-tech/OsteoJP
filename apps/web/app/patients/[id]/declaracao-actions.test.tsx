@@ -142,6 +142,23 @@ describe("PL-20 — a captured NIF is written back only when the record had none
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
+  // INC-nif-validationerror-at-the-desk: `updatePatient` now RETURNS a refusal
+  // instead of throwing one. The write-back is a CONVENIENCE and the document is
+  // what the user asked for, so a refused write must still not cost them the
+  // declaration - the same outcome as before, now reached without an exception.
+  it("still hands back the declaration when the write-back is REFUSED", async () => {
+    mockGetPatient.mockResolvedValue({ id: "p1", nif: null } as never);
+    mockUpdate.mockResolvedValue({
+      ok: false,
+      error: { field: "nif", message: "NIF inválido: o dígito de controlo não confere." },
+    } as never);
+
+    const result = await generateDeclaracaoUrlAction({ ...req, nif: "123456780" });
+
+    expect(result.url).toBe("https://storage.example/signed?token=abc");
+    expect(mockUpdate).toHaveBeenCalledWith("p1", { nif: "123456780" });
+  });
+
   it("does not even read the patient when no NIF was supplied", async () => {
     await generateDeclaracaoUrlAction({ ...req });
     expect(mockGetPatient).not.toHaveBeenCalled();

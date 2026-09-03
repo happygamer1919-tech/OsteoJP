@@ -70,10 +70,136 @@ test("a malformed NIF is rejected by the server, not silently stored", async ({ 
   // reaches the server: this asserts the CHECKSUM is enforced, which is the
   // half that stops the field filling up with plausible junk. 123456789 is a
   // real NIF; 123456780 is the same digits with the control digit broken.
+  //
+  // IT CANNOT TELL THE SERVER'S ANSWER FROM THE CLIENT'S, and that is worth
+  // knowing rather than fixing here. Since the blur check exists, this exact
+  // sentence is also produced in the browser - by design, both call
+  // `nifMessage` - so this case stays green even when the submit never reaches
+  // the server at all. That is not hypothetical: it is what happened while the
+  // message was a flow element (see the layout case below), and this test
+  // passed throughout. The two cases below carry the server-path proof, by
+  // asserting the focus only a submit refusal moves.
   await submitWithNif(page, "123456780");
 
   await expect(page).toHaveURL(/\/patients\/new/);
   await expect(page.getByText(/d[ií]gito de controlo/i)).toBeVisible({ timeout: 8_000 });
+});
+
+/**
+ * INC-nif-validationerror-at-the-desk — THIS IS THE CASE THAT PROVES THE FIX.
+ *
+ * Everything above passed before the change too, because a thrown message
+ * happened to render in the form's single error paragraph. What could not be
+ * proven from a unit test is the MECHANISM: a server action that throws in
+ * production hands the client an opaque digest, so the operator saw a save that
+ * failed with no cause and Sentry recorded an unhandled error for a typo.
+ *
+ * The three assertions map one-to-one onto the three halves of the fix:
+ *   - the sentence is in the NIF FIELD'S own slot, not at the bottom of a long
+ *     form (the refusal carries its field);
+ *   - the NIF box has FOCUS, so the cursor is already where the correction goes
+ *     (the submit refusal moves it, and re-pressing Guardar moves it again); and
+ *   - the sentence appears EXACTLY ONCE anywhere on the page, which is what the
+ *     plain getByText assertions above quietly depend on.
+ */
+test("a refused NIF lands on the NIF field, focuses it, and is said exactly once", async ({
+  page,
+}) => {
+  await submitWithNif(page, "123456780");
+
+  await expect(page).toHaveURL(/\/patients\/new/);
+
+  const slot = page.getByTestId("field-error-nif");
+  await expect(slot).toBeVisible({ timeout: 8_000 });
+  await expect(slot).toHaveText(/d[ií]gito de controlo/i);
+
+  // The cursor is in the box the operator has to fix.
+  await expect(page.getByLabel(/^NIF/i)).toBeFocused();
+
+  // Said once. Two copies would fail Playwright's strict mode on the plain
+  // getByText locators the cases above use, for a reason that reads unrelated.
+  await expect(page.getByText(/d[ií]gito de controlo/i)).toHaveCount(1);
+});
+
+/**
+ * THE BLUR MESSAGE MUST NOT MOVE THE PAGE, and this case exists because the
+ * first version of it did.
+ *
+ * WHAT HAPPENED, found by this file on CI and reproduced locally. The inline
+ * message was rendered as an ordinary flow element, so showing it made the NIF
+ * field TALLER and pushed everything below it down - including "Criar
+ * paciente". Clicking that button straight from the NIF box therefore did this:
+ *
+ *   mousedown on the button -> the input blurs -> the check runs -> React
+ *   re-renders -> the button moves down ~40px -> mouseup lands somewhere else
+ *   -> Chromium delivers the click to the common ancestor, NOT the button.
+ *
+ * So `onSubmit` never fired, the server was never asked, and the message on the
+ * screen was the CLIENT'S. It looked exactly like a working refusal. The only
+ * assertion that could tell the difference was focus, because only a submit
+ * refusal moves the cursor - which is how the failure surfaced at all.
+ *
+ * IT IS A REAL DEFECT AND NOT A TEST ARTEFACT. A person clicking Guardar
+ * straight after typing a NIF would have had their first click swallowed, on
+ * every attempt, and nothing would have said why. That is worse than the
+ * incident this card is about.
+ *
+ * THE FIX IS THAT THE MESSAGE IS AN OVERLAY: absolutely positioned under its
+ * field, so it takes no space in the flow. This case pins the property that
+ * matters - the button does not move - rather than the mechanism, so a future
+ * redesign of the message is free as long as it does not move the page.
+ */
+test("showing the blur message moves nothing, so the click that caused it still lands", async ({
+  page,
+}) => {
+  await page.goto("/patients/new");
+  await fillPatientForm(page, { fullName: `Layout ${uniq()}` });
+
+  const button = page.getByRole("button", { name: "Criar Paciente" });
+  const before = await button.boundingBox();
+
+  const nif = page.getByLabel(/^NIF/i);
+  await nif.click();
+  await nif.press("ControlOrMeta+a");
+  await nif.pressSequentially("123456780");
+  await page.getByLabel(/Telem[oó]vel/i).click();
+  await expect(page.getByTestId("field-error-nif")).toBeVisible();
+
+  const after = await button.boundingBox();
+  expect(before).not.toBeNull();
+  expect(after?.y).toBe(before?.y);
+});
+
+/**
+ * The client-side blur check, and the two things it must NOT do.
+ *
+ * It is UX ONLY: it decides nothing, the server re-runs the same `checkNif` on
+ * every write, and the case above is what proves the server still refuses. What
+ * this case pins is that adding it did not make the form hostile to type in.
+ */
+test("the blur check warns on leaving the NIF box, and does not trap the cursor", async ({
+  page,
+}) => {
+  await page.goto("/patients/new");
+
+  const nif = page.getByLabel(/^NIF/i);
+  await nif.click();
+  await nif.pressSequentially("123456780");
+  // Leave the box the way a person does: onward to the next field.
+  await page.getByLabel(/Telem[oó]vel/i).click();
+
+  await expect(page.getByTestId("field-error-nif")).toBeVisible();
+  // AND THE CURSOR STAYED WHERE THE OPERATOR PUT IT. A blur check that focuses
+  // the box it is complaining about makes the form impossible to tab through,
+  // and it is one line away from doing exactly that.
+  await expect(nif).not.toBeFocused();
+
+  // Correcting it clears the warning without a round trip.
+  await nif.click();
+  await nif.press("ControlOrMeta+a");
+  await nif.pressSequentially("123456789");
+  await page.getByLabel(/Telem[oó]vel/i).click();
+  await expect(page.getByTestId("field-error-nif")).toHaveCount(0);
 });
 
 test("999999990 is refused and the message points at the exemption", async ({ page }) => {
@@ -143,6 +269,14 @@ test("an existing NIF cannot be edited back to empty", async ({ page }) => {
   await expect(page.getByText(/N[ãa]o é possível remover um NIF já registado/i)).toBeVisible({
     timeout: 8_000,
   });
+  // INC-nif-validationerror-at-the-desk: this refusal is raised INSIDE the
+  // transaction, not by the parser, and it must reach the desk the same way -
+  // on the NIF field, once. It is the case that proves the wrapper catches the
+  // whole write and not only the parse.
+  await expect(page.getByTestId("field-error-nif")).toHaveText(
+    /N[ãa]o é possível remover um NIF já registado/i,
+  );
+  await expect(page.getByText(/N[ãa]o é possível remover um NIF já registado/i)).toHaveCount(1);
 });
 
 test("patient search still finds a patient by NIF", async ({ page }) => {

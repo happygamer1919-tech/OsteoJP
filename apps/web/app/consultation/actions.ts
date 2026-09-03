@@ -23,7 +23,7 @@ import { persistConsultation } from "@/lib/consultation/consultation-store";
 
 export type StubResult =
   | { ok: true; patientId: string }
-  | { ok: false; error: "validation" | "forbidden" };
+  | { ok: false; error: "validation" | "forbidden"; message?: string };
 
 /**
  * Quick-create a stub patient at record time. Name required, phone optional.
@@ -40,10 +40,22 @@ export async function createStubPatientAction(input: {
   phone?: string | null;
 }): Promise<StubResult> {
   try {
-    const p = await createStubPatient({ fullName: input.fullName, phone: input.phone ?? null });
-    return { ok: true, patientId: p.id };
+    // INC-nif-validationerror-at-the-desk: `createStubPatient` no longer THROWS
+    // on operator input, it returns the refusal. The catch below is kept, and
+    // kept meaning what it always meant - a role failure, or anything else the
+    // person at the screen cannot act on. It is no longer the path an empty
+    // name takes.
+    //
+    // THE MESSAGE IS CARRIED THROUGH rather than collapsed into "validation".
+    // The caller (StartConsultation) has one box, so the field adds nothing
+    // there; the sentence does, and it is the sentence the desk could not see.
+    const r = await createStubPatient({ fullName: input.fullName, phone: input.phone ?? null });
+    if (!r.ok) return { ok: false, error: "validation", message: r.error.message };
+    return { ok: true, patientId: r.patient.id };
   } catch (e) {
-    // createStubPatient throws ValidationError on an empty name; forbidden on role.
+    // A ValidationError can still arrive here if some future path throws one
+    // outside the action's own parse - it is reported as validation rather than
+    // as forbidden, because that is what it is.
     const name = (e as { name?: string })?.name ?? "";
     if (name === "ValidationError") return { ok: false, error: "validation" };
     return { ok: false, error: "forbidden" };

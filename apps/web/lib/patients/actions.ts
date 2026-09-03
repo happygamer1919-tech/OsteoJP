@@ -44,6 +44,7 @@ import {
   ValidationError,
   type CreatePatientInput,
   type MergePatientsInput,
+  type PatientField,
   type UpdatePatientInput,
 } from "./validation";
 import { PATIENT_STATS_TAG } from "./cache-tags";
@@ -85,8 +86,58 @@ function revalidatePatient(id: string): void {
   updateTag(PATIENT_STATS_TAG);
 }
 
-export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
-  return createPatientImpl(raw, true);
+/**
+ * What a patient write can refuse for, when the refusal is the OPERATOR'S to fix.
+ *
+ * ======================================================================
+ * INC-nif-validationerror-at-the-desk. THE OPERATOR TYPED THIS.
+ * ======================================================================
+ * Sentry 144696143, POST /patients/new: `ValidationError` thrown out of
+ * `createPatient` for a NIF that did not pass the checksum. Nothing on the path
+ * caught it, and a server action that throws in production shows the client an
+ * OPAQUE DIGEST rather than the sentence - so reception saw a save that failed
+ * with no cause, and Sentry recorded an unhandled error for a typo.
+ *
+ * It is the same defect as INC-CONFIRM-07b one surface over, so it takes the
+ * same shape: the refusals an operator can CAUSE are returned as values, and
+ * everything else - a database error, a missing row, a permission failure -
+ * still throws, because those are not conditions anybody at the screen can act
+ * on and reporting them as a form error would tell the operator to fix input
+ * that was fine (PORTAL-REHYDRATE 1.3).
+ *
+ * IT CARRIES THE FIELD, WHICH IS THE HALF THE MERGE RESULT DID NOT NEED. The
+ * danger zone has one box; this form has fifteen, and "NIF inválido: o dígito de
+ * controlo não confere" at the bottom of a long form is a sentence the reader
+ * still has to go looking for a home for. `ValidationError.field` is required at
+ * the throw site, so the answer travels with the message rather than being
+ * re-derived from its wording here.
+ */
+export type PatientWriteError = { field: PatientField; message: string };
+
+export type PatientWriteResult =
+  | { ok: true; patient: Patient }
+  | { ok: false; error: PatientWriteError };
+
+/**
+ * The ONE place a thrown `ValidationError` becomes a returned refusal.
+ *
+ * Everything else rethrows, unchanged and unswallowed. Written as a wrapper
+ * rather than as three try/catch blocks so the rule is stated once: a second
+ * copy is what lets one of the three drift into catching more than it should.
+ */
+async function asWriteResult(run: () => Promise<Patient>): Promise<PatientWriteResult> {
+  try {
+    return { ok: true, patient: await run() };
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return { ok: false, error: { field: err.field, message: err.message } };
+    }
+    throw err;
+  }
+}
+
+export async function createPatient(raw: CreatePatientInput): Promise<PatientWriteResult> {
+  return asWriteResult(() => createPatientImpl(raw, true));
 }
 
 /**
@@ -103,8 +154,8 @@ export async function createPatient(raw: CreatePatientInput): Promise<Patient> {
  * incompleta (derived: no NIF and no exemption) and cannot have a declaração
  * issued until the NIF is filled in.
  */
-export async function createStubPatient(raw: CreatePatientInput): Promise<Patient> {
-  return createPatientImpl(raw, false);
+export async function createStubPatient(raw: CreatePatientInput): Promise<PatientWriteResult> {
+  return asWriteResult(() => createPatientImpl(raw, false));
 }
 
 // Not exported: in a "use server" module an export IS a server action, and this
@@ -142,7 +193,7 @@ async function createPatientImpl(
         .from(locations)
         .where(eq(locations.id, input.primaryLocationId))
         .limit(1);
-      if (!loc) throw new ValidationError("Invalid primaryLocationId");
+      if (!loc) throw new ValidationError("Invalid primaryLocationId", "primaryLocationId");
       primaryLocationId = loc.id;
     }
 
@@ -183,6 +234,15 @@ async function createPatientImpl(
 }
 
 export async function updatePatient(
+  id: string,
+  raw: UpdatePatientInput,
+): Promise<PatientWriteResult> {
+  return asWriteResult(() => updatePatientImpl(id, raw));
+}
+
+// Not exported: in a "use server" module an export IS a server action, and the
+// throwing shape is the one thing this file no longer offers the browser.
+async function updatePatientImpl(
   id: string,
   raw: UpdatePatientInput,
 ): Promise<Patient> {
@@ -246,7 +306,8 @@ export async function updatePatient(
           .from(locations)
           .where(eq(locations.id, input.primaryLocationId))
           .limit(1);
-        if (!loc) throw new ValidationError("Invalid primaryLocationId");
+        if (!loc)
+          throw new ValidationError("Invalid primaryLocationId", "primaryLocationId");
         patch.primaryLocationId = loc.id;
       }
     }
@@ -269,6 +330,7 @@ export async function updatePatient(
       if (current.nif !== null && current.nif !== "") {
         throw new ValidationError(
           "Não é possível remover um NIF já registado. Corrija-o, ou marque \"Estrangeiro / sem NIF\" com o motivo.",
+          "nif",
         );
       }
     }
