@@ -4,6 +4,52 @@
  * Specs import these constants instead of hardcoding strings/ids, so the seed
  * and the assertions can never drift. Keep in sync with seed-e2e.mjs.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+/**
+ * LE-seed-not-idempotent: ONE fixture is not a constant, and it cannot be.
+ *
+ * The AI review draft is CONSUMED by revisao-consulta.spec.ts, which signs it,
+ * and a signed clinical_record can never be reset or deleted (the 0001/0005
+ * immutability trigger). So the seed retires a consumed row and mints a new one,
+ * and writes the id it is currently offering to `seed/seed-state.json`. This
+ * reads the same file, so the spec addresses the row that is actually
+ * reviewable rather than one a previous run already signed.
+ *
+ * IT THROWS WHEN THE FILE IS ABSENT INSTEAD OF FALLING BACK TO THE CANONICAL ID
+ * (PORTAL-REHYDRATE 1.3). A fallback would point the spec at a row that may be
+ * signed, and the failure would arrive 120 seconds later as an "Assumir" button
+ * that never becomes clickable - which is exactly the shape of failure that has
+ * already cost this suite three wrong diagnoses. "Run the seed" is the answer,
+ * so the error says so.
+ *
+ * The read is LAZY: a getter, not a module-level read, so a spec that never
+ * touches this fixture is unaffected by a missing seed state.
+ */
+// `__dirname`, not `import.meta.url`: Playwright transpiles specs to CommonJS,
+// where `import.meta` is a syntax error that surfaces as the useless
+// "ReferenceError: exports is not defined in ES module scope" at the top of this
+// file. Resolving from the FILE and not from `process.cwd()` also keeps the path
+// right whichever directory the suite is launched from.
+const SEED_STATE_PATH = join(__dirname, "seed/seed-state.json");
+
+function seedState(): { aiReviewDraftId?: string } {
+  try {
+    return JSON.parse(readFileSync(SEED_STATE_PATH, "utf8")) as { aiReviewDraftId?: string };
+  } catch (e) {
+    throw new Error(
+      `e2e seed state missing or unreadable at ${SEED_STATE_PATH} ` +
+        `(${(e as NodeJS.ErrnoException)?.code ?? "error"}). Run: node apps/web/e2e/seed/seed-e2e.mjs`,
+    );
+  }
+}
+
+function seededId(key: "aiReviewDraftId"): string {
+  const id = seedState()[key];
+  if (!id) throw new Error(`e2e seed state has no ${key}. Re-run: node apps/web/e2e/seed/seed-e2e.mjs`);
+  return id;
+}
 
 export const TENANT_A = "00000000-0000-0000-0000-0000000000a1";
 export const TENANT_B = "00000000-0000-0000-0000-0000000000b2";
@@ -57,7 +103,13 @@ export const PATIENTS = {
  * values visible + editable. Fixed id so the spec targets it deterministically.
  */
 export const AI_REVIEW_DRAFT = {
-  id: "00000000-0000-0000-0000-00000000ad17",
+  /**
+   * RUN-SCOPED, read from the seed's state file. It is `...ad17` on a fresh
+   * database and a new uuid once a run has signed the previous one.
+   */
+  get id(): string {
+    return seededId("aiReviewDraftId");
+  },
   patientId: PATIENTS.joao.id,
   patientName: PATIENTS.joao.name,
   /** Sentinel values seeded under _aiIngestionRaw — asserted visible + editable. */
@@ -125,6 +177,14 @@ export const THERAPIST_NAME = "E2E Therapist";
 // has availability at two active locations and must NOT auto-fill Localização.
 export const THERAPIST_ONE_LOCATION = "E2E Terapeuta Clinica Unica";
 export const THERAPIST_MULTI_LOCATION = "E2E Terapeuta Varias Clinicas";
+/**
+ * SCHED-12's own therapist. The weekend round trip WRITES a two-period Saturday
+ * and Sunday through the editor, so it cannot share one with working-hours.spec,
+ * which writes the weekday that RUN_DAY_BASE + 20 happens to land on - a
+ * collision that depends on the calendar and therefore appears at random.
+ * Seeded with a service and NO availability rows.
+ */
+export const THERAPIST_WEEKEND = "E2E Terapeuta Fim de Semana";
 
 /**
  * The single template the "Modelo" picker offers on record CREATION (W5-13,
@@ -198,8 +258,21 @@ export const RUN_DAY_BASE = 60 + (Date.now() % 300);
  * Base URL for the portal app. Override with PORTAL_BASE_URL env var when
  * pointing at a Vercel preview instead of a local dev server.
  */
+/**
+ * Base URL for the STAFF app. It exists because one spec opens a second browser
+ * context with its own baseURL (sync-portal-agenda drives the portal and the
+ * staff agenda side by side), and a hardcoded 3000 there sent it to whatever was
+ * listening on another lane's port - or to nothing at all.
+ */
+export const WEB_BASE_URL =
+  process.env.BASE_URL ?? `http://localhost:${process.env.WEB_PORT ?? "3000"}`;
+
 export const PORTAL_BASE_URL =
-  process.env.PORTAL_BASE_URL ?? "http://localhost:3001";
+  // PORTAL_PORT is the per-lane wiring (LE-local-supabase-per-lane): the runner
+  // starts the portal on the lane's own port, and a hardcoded 3001 here sent the
+  // setup to a port nothing was listening on - ERR_CONNECTION_REFUSED, which
+  // reads as "the portal is broken" rather than "the URL is stale".
+  process.env.PORTAL_BASE_URL ?? `http://localhost:${process.env.PORTAL_PORT ?? "3001"}`;
 
 /** Portal patient test credential (seeded by seed-e2e.mjs → ensurePortalPatient). */
 export const E2E_PORTAL_PATIENT_EMAIL = "e2e-patient@osteojp.test";

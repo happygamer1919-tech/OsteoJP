@@ -26,7 +26,8 @@
  * Usage:
  *   node apps/web/e2e/seed/seed-e2e.mjs
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -80,6 +81,22 @@ const USERS = [
     roleSlug: "therapist",
     email: "e2e-therapist-loc-multi@osteojp.test",
     fullName: "E2E Terapeuta Varias Clinicas",
+  },
+  // SCHED-12's OWN therapist, and the reason it has one is the failure that
+  // deleted the spec in the first place. The weekend round trip SAVES a
+  // two-period Saturday and Sunday through the real editor; run against the
+  // shared "E2E Therapist" it left those days behind, and working-hours.spec.ts
+  // - a spec it never touches - went red whenever RUN_DAY_BASE + 20 happened to
+  // land on a weekend. A shared fixture two specs both write is not a fixture;
+  // it is a race with a calendar in it (PORTAL-REHYDRATE 1.3, criterion F).
+  //
+  // ZERO availability rows on purpose: the weekend schedule is what the spec
+  // WRITES, so seeding one would prove the reader rather than the round trip.
+  {
+    slug: "therapistWeekend",
+    roleSlug: "therapist",
+    email: "e2e-therapist-weekend@osteojp.test",
+    fullName: "E2E Terapeuta Fim de Semana",
   },
   // Per-project DISPOSABLE therapists for the destructive password-gated delete
   // test (equipa-primary-service.spec W4-01). The cross-browser CI job runs
@@ -572,6 +589,42 @@ async function ensureAvailability(therapistUserId, locationId, weekday) {
 }
 
 /**
+ * THE SCHEDULE FIXTURE IS RESET, NOT UPSERTED, AND THAT IS THE WHOLE OF THE FIX
+ * FOR THE ORDER-DEPENDENT FAILURES (LE-seed-not-idempotent, item 4 of the
+ * SCHED-PACK-08 dispatch).
+ *
+ * WHAT THE SUITE ASSUMES, written down in two specs' own headers:
+ * booking-therapist-location.spec.ts and agenda-location-filter.spec.ts both
+ * declare `"E2E Therapist" -> unassigned (no availability rows)`, and both narrow
+ * a dropdown to a location's team on the strength of it.
+ *
+ * WHAT ACTUALLY HAPPENS. working-hours.spec.ts GIVES that therapist working hours
+ * at Consultório B - that is the feature it tests - and its in-section delete
+ * archives ONE weekday of them. So after one run the "unassigned" therapist is
+ * assigned, and the two location specs fail on a premise the seed never restored.
+ * Measured on this lane: after three working-hours runs the therapist carried six
+ * availability rows, four of them archived, none written by any seed.
+ *
+ * THE ROWS ARE DELETED RATHER THAN DEACTIVATED. is_active=false is not the same
+ * state as absent: the editor loads archived rows to decide whether a save is a
+ * create or a revive, so a fixture left archived is a different starting position
+ * from a fixture that was never there - which is exactly the drift being removed.
+ *
+ * SCOPE: `tenant_id = TENANT_A` and the seeded user ids only. It cannot touch a
+ * row belonging to anything but this fixture, and the target guard upstream
+ * refuses any host that is not local.
+ */
+async function resetAvailabilityFixtures(idBySlug) {
+  const seededUserIds = Object.values(idBySlug);
+  const { error } = await db
+    .from("availability_templates")
+    .delete()
+    .eq("tenant_id", TENANT_A)
+    .in("user_id", seededUserIds);
+  must(error, "reset availability_templates");
+}
+
+/**
  * W4-12 location auto-fill fixtures: one therapist assigned to exactly ONE active
  * location (+ a service, so selecting them auto-fills BOTH on one event), and one
  * assigned to TWO active locations (must not auto-fill).
@@ -585,6 +638,9 @@ async function ensureLocationFixtures(idBySlug) {
   // signal (Serviço auto-fills) proving the therapist-selection effect ran while
   // Localização was deliberately left untouched.
   await ensureTherapistServices(idBySlug.therapistLocMulti);
+  // SCHED-12's therapist needs a service so the booking drawer offers slots at
+  // all; it deliberately gets NO availability (see the USERS entry).
+  await ensureTherapistServices(idBySlug.therapistWeekend);
 }
 
 async function ensureBaseData(userIds) {
@@ -729,6 +785,64 @@ async function ensureFormTemplates() {
 const AI_REVIEW_DRAFT_ID = "00000000-0000-0000-0000-00000000ad17";
 const AI_REVIEW_DRAFT_PATIENT = "00000000-0000-0000-0000-00000000a302"; // João Pereira
 
+/**
+ * LE-seed-not-idempotent. THE SEED USED TO DIE ON ITS SECOND RUN, and the reason
+ * is a property of the product rather than a bug in the seed:
+ * revisao-consulta.spec.ts SIGNS this record, and a signed clinical_record is
+ * IMMUTABLE - `enforce_clinical_record_immutability` (0001/0005) refuses both the
+ * UPDATE this upsert performs and the DELETE that would clear the way for a fresh
+ * insert. So the row cannot be reset, by anyone, once a suite has run:
+ *   [seed-e2e] FAILED: ai review draft: clinical_records ...ad17:
+ *   status=signed is finalized and immutable
+ *
+ * WHY THAT COST MORE THAN A FAILED SCRIPT. SR-36 makes `pnpm test:e2e` required
+ * before every commit, so a seed that works once per database means the SECOND
+ * commit of a session runs against drifted data, and the failures it produces
+ * belong to the DATA rather than to the diff. On 2026-09-02 that was 220 passed /
+ * 9 failed with eight of the nine carrying no locator related to the change.
+ *
+ * THE FIX IS TO STOP REUSING A CONSUMED ROW, not to reset it. The seed keeps a
+ * small state file naming the draft it is currently offering; on each run it
+ * reads that id, and:
+ *   - absent, or still a DRAFT  -> upsert it, exactly as before (so two seeds in
+ *     a row with no suite between them reuse one row and nothing accumulates);
+ *   - FINALIZED (signed/locked) -> mint a NEW id, insert, and record it.
+ * `e2e/fixtures.ts` reads the same file, so the spec always addresses the row
+ * that is actually reviewable.
+ *
+ * IT DOES NOT FALL BACK WHEN IT CANNOT READ THE ROW (PORTAL-REHYDRATE 1.3): a
+ * read error throws. Only the two states above are handled, because only those
+ * two are known.
+ *
+ * WHAT ACCUMULATES, stated rather than discovered later: one signed record per
+ * suite run stays on João Pereira for ever, because nothing can delete it. They
+ * are inert - every spec addresses a record by id, none counts them - and they
+ * leave the "Por rever" queue on signing (ai_review_state becomes approved).
+ */
+const SEED_STATE_PATH = join(HERE, "seed-state.json");
+
+function readSeedState() {
+  try {
+    return JSON.parse(readFileSync(SEED_STATE_PATH, "utf8"));
+  } catch (e) {
+    if (e?.code === "ENOENT") return {};
+    throw new Error(`seed state unreadable at ${SEED_STATE_PATH}: ${e.message ?? e}`);
+  }
+}
+
+function writeSeedState(next) {
+  writeFileSync(SEED_STATE_PATH, `${JSON.stringify({ ...readSeedState(), ...next }, null, 2)}\n`);
+}
+
+/** The status of one clinical_record, or null when the row does not exist. */
+async function clinicalRecordStatus(id) {
+  const { data, error } = await db.from("clinical_records").select("status").eq("id", id).maybeSingle();
+  must(error, `read clinical_record ${id}`);
+  return data?.status ?? null;
+}
+
+const FINALIZED = new Set(["signed", "locked"]);
+
 async function ensureAiReviewDraft() {
   const rawPayload = {
     template: "osteopathy",
@@ -747,11 +861,17 @@ async function ensureAiReviewDraft() {
     treatment_plan: "AI Plano",
     observations: "AI Observacoes iniciais",
   };
+  // The row this run will offer: whatever the last run recorded, else the
+  // canonical id. A finalized one is retired and replaced.
+  const recorded = readSeedState().aiReviewDraftId ?? AI_REVIEW_DRAFT_ID;
+  const status = await clinicalRecordStatus(recorded);
+  const id = FINALIZED.has(status) ? randomUUID() : recorded;
+
   // Upsert resets the row to a fresh pending_review draft on every run, so the
   // claim + sign flow always starts from the same state (idempotent, re-runnable).
   const { error } = await db.from("clinical_records").upsert(
     {
-      id: AI_REVIEW_DRAFT_ID,
+      id,
       tenant_id: TENANT_A,
       patient_id: AI_REVIEW_DRAFT_PATIENT,
       source: "ai_ingested",
@@ -767,6 +887,8 @@ async function ensureAiReviewDraft() {
     { onConflict: "id" },
   );
   must(error, "ai review draft");
+  writeSeedState({ aiReviewDraftId: id });
+  return id;
 }
 
 // ---------------------------------------------------------------------------
@@ -898,13 +1020,15 @@ async function main() {
   await ensureTherapistServices(userIds.therapist);
   await ensureDeclaracaoAppointment(userIds.therapist);
   await ensureRecuperacaoFixtures(userIds.therapist, userIds.therapist2);
+  // BEFORE the location fixtures, because it clears the table they write into.
+  await resetAvailabilityFixtures(userIds);
   await ensureLocationFixtures(userIds);
   await ensurePortalPatient();
   await ensurePortalTrustedDevice();
   const templates = await ensureFormTemplates();
   // AI review draft depends on templates existing (the editor resolves the Ficha
   // Médica template by key when the record's form_template_id is null).
-  await ensureAiReviewDraft();
+  const aiReviewDraftId = await ensureAiReviewDraft();
   // W6-01a: an AI-ingested draft with an ai_ingestion_requests back-pointer.
   await ensureAiDeleteDraft();
 
@@ -912,10 +1036,17 @@ async function main() {
   console.log("[seed-e2e] tenant B:", TENANT_B);
   console.log("[seed-e2e] users:", USERS.map((u) => `${u.email} (${u.slug})`).join(", "));
   console.log("[seed-e2e] patients A:", PATIENTS_A.length + 2, "(1 soft-deleted, +1 other-therapist, +1 otp-login)");
+  console.log("[seed-e2e] availability: reset for every seeded user, then the two location fixtures");
   console.log("[seed-e2e] portal patient:", E2E_PORTAL_PATIENT_EMAIL, "→", MARIA_SILVA_ID);
   console.log("[seed-e2e] otp-login patient:", PATIENT_OTP_LOGIN_A.phone, "→", PATIENT_OTP_LOGIN_A.id, "(auth_user_id null, first-login eligible)");
   console.log("[seed-e2e] portal trusted device:", `${PORTAL_DEVICE_HASH.slice(0, 12)}… (30d)`);
-  console.log("[seed-e2e] ai review draft:", AI_REVIEW_DRAFT_ID, "→", AI_REVIEW_DRAFT_PATIENT);
+  console.log(
+    "[seed-e2e] ai review draft:",
+    aiReviewDraftId,
+    "→",
+    AI_REVIEW_DRAFT_PATIENT,
+    aiReviewDraftId === AI_REVIEW_DRAFT_ID ? "" : "(replaced: the canonical draft was signed by an earlier run)",
+  );
   console.log("[seed-e2e] ai delete draft:", AI_DELETE_DRAFT_ID, "(+ ingestion back-pointer)");
   console.log("[seed-e2e] templates:", templates.join(", "));
   console.log("[seed-e2e] done.");

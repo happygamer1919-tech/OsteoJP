@@ -42,6 +42,7 @@ import {
   PORTAL_PATIENT,
   PORTAL_STORAGE,
   STORAGE,
+  WEB_BASE_URL,
 } from "./fixtures";
 import { becameVisible } from "./helpers";
 import { pickFirstDayWithSlots } from "./helpers/booking-picker";
@@ -98,7 +99,9 @@ async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> {
 async function receptionPage(browser: Browser): Promise<Page> {
   const ctx = await browser.newContext({
     storageState: STORAGE.reception,
-    baseURL: process.env.BASE_URL ?? "http://localhost:3000",
+    // WEB_BASE_URL, not a literal: this context is the STAFF app, and the lane
+    // runner puts it on the lane's own port (LE-local-supabase-per-lane).
+    baseURL: WEB_BASE_URL,
   });
   return ctx.newPage();
 }

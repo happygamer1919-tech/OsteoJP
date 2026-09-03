@@ -74,3 +74,13 @@ fisiozero-archive/
 **/fisiozero-archive/
 *.storageState.json
 **/*.storageState.json
+
+# LE-seed-not-idempotent: the id of the AI review draft the seed is currently
+# offering. Written by seed-e2e.mjs, read by e2e/fixtures.ts; per-machine state,
+# never source.
+apps/web/e2e/seed/seed-state.json
+
+# LE-local-supabase-per-lane: generated per-lane Supabase projects
+# (scripts/lane-stack.mjs). Config is RENDERED from supabase/config.toml and the
+# migrations are symlinks to it, so nothing here is source.
+.lane/
