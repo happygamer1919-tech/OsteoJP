@@ -187,6 +187,13 @@ export const THERAPIST_MULTI_LOCATION = "E2E Terapeuta Varias Clinicas";
 export const THERAPIST_WEEKEND = "E2E Terapeuta Fim de Semana";
 
 /**
+ * SCHED-10's own therapist: the inspector's inline edit WRITES a day, and the
+ * location specs assert the rest of the roster's availability exactly. Seeded
+ * with a service and no availability rows.
+ */
+export const THERAPIST_INSPECTOR = "E2E Terapeuta Inspetor";
+
+/**
  * The single template the "Modelo" picker offers on record CREATION (W5-13,
  * SPEC-ficha-medica.md sec 1): Ficha Médica = the osteopathy lineage evolved to
  * v3, the current active version. The version resolver (PR #96) collapses

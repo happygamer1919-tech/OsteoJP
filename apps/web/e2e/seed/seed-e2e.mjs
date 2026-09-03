@@ -98,6 +98,17 @@ const USERS = [
     email: "e2e-therapist-weekend@osteojp.test",
     fullName: "E2E Terapeuta Fim de Semana",
   },
+  // SCHED-10's OWN therapist, for the same reason SCHED-12 has one: the
+  // inspector's inline edit WRITES a day, and a spec that writes must not share
+  // a therapist with a spec that reads. The location specs assert this roster's
+  // availability set exactly, so borrowing one of theirs would fail a spec that
+  // never changed.
+  {
+    slug: "therapistInspector",
+    roleSlug: "therapist",
+    email: "e2e-therapist-inspector@osteojp.test",
+    fullName: "E2E Terapeuta Inspetor",
+  },
   // Per-project DISPOSABLE therapists for the destructive password-gated delete
   // test (equipa-primary-service.spec W4-01). The cross-browser CI job runs
   // firefox + webkit against ONE shared, non-reset seed DB, so a delete of a
@@ -641,6 +652,9 @@ async function ensureLocationFixtures(idBySlug) {
   // SCHED-12's therapist needs a service so the booking drawer offers slots at
   // all; it deliberately gets NO availability (see the USERS entry).
   await ensureTherapistServices(idBySlug.therapistWeekend);
+  // SCHED-10's therapist: a service, and NO availability - the inspector edit is
+  // what puts hours on a day, so seeding them would prove the reader.
+  await ensureTherapistServices(idBySlug.therapistInspector);
 }
 
 async function ensureBaseData(userIds) {

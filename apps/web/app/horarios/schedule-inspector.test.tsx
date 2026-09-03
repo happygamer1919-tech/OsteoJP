@@ -18,6 +18,9 @@ vi.mock("@osteojp/ui", () => ({
   Select: ({ children, value }: { children?: ReactNode; value?: string }) =>
     createElement("select", { "data-value": value }, children),
   StatusChip: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
+  // SCHED-10: the inline editor's controls.
+  Button: ({ children }: { children?: ReactNode }) => createElement("button", null, children),
+  TimeField: () => createElement("div"),
 }));
 
 const { ScheduleInspector } = await import("./ScheduleInspector");
@@ -99,5 +102,80 @@ describe("SCHED-09 — the inspector renders the resolver's answer", () => {
       }),
     );
     expect(html).toContain(s["inspector.empty"]);
+  });
+});
+
+/**
+ * SCHED-10 - the inline edit, and specifically what the READ-ONLY inspector must
+ * keep looking like when nobody can edit.
+ *
+ * THE AFFORDANCE IS OPT-IN, on purpose: the component takes `onSaveDay` and
+ * `locations`, and renders no edit control without BOTH. A surface that mounted
+ * the inspector to answer a question (a future therapist self-view, which
+ * SCHED-09's header says this shape exists for) would otherwise grow an editor
+ * nobody asked it for.
+ */
+describe("SCHED-10 - the edit affordance", () => {
+  const withEdit = (days: InspectedDay[]) =>
+    renderToStaticMarkup(
+      createElement(ScheduleInspector, {
+        days,
+        therapists: THERAPISTS,
+        therapistId: "t1",
+        period: "week",
+        locations: [{ id: "loc-1", name: "Linda-a-Velha" }],
+        onTherapistChange: vi.fn(),
+        onPeriodChange: vi.fn(),
+        onSaveDay: vi.fn(async () => ({ ok: true })),
+      }),
+    );
+
+  it("renders NO edit control without a save handler", () => {
+    expect(render([day()])).not.toContain("inspector-edit-");
+  });
+
+  it("renders no edit control when there is no clinic to move a day to", () => {
+    const html = renderToStaticMarkup(
+      createElement(ScheduleInspector, {
+        days: [day()],
+        therapists: THERAPISTS,
+        therapistId: "t1",
+        period: "week",
+        locations: [],
+        onTherapistChange: vi.fn(),
+        onPeriodChange: vi.fn(),
+        onSaveDay: vi.fn(async () => ({ ok: true })),
+      }),
+    );
+    expect(html).not.toContain("inspector-edit-");
+  });
+
+  it("renders ONE edit control per day, on the day's first line", () => {
+    const html = withEdit([
+      day({
+        windows: [
+          { start: "08:00", end: "13:00", locationId: "loc-1", locationName: "LV", rule: "base" },
+          { start: "14:00", end: "19:00", locationId: "loc-1", locationName: "LV", rule: "base" },
+        ],
+      }),
+    ]);
+    const matches = html.match(/data-testid="inspector-edit-2026-09-07"/g) ?? [];
+    expect(matches).toHaveLength(1);
+  });
+
+  it("offers the edit on a day the therapist does NOT work, which is the day most worth editing", () => {
+    expect(withEdit([day({ windows: [] })])).toContain('data-testid="inspector-edit-2026-09-07"');
+  });
+
+  it("does not open an editor before anybody clicks", () => {
+    expect(withEdit([day()])).not.toContain('data-testid="inspector-editor"');
+  });
+
+  it("offers no clear-the-day control anywhere, because the write path refuses one", () => {
+    // applyDayByDaySchedule refuses an empty window and names blocked time as
+    // the tool for an absence. A checkbox here would put that refusal behind a
+    // control, which is how the first draft of this editor failed at the server
+    // with a generic error.
+    expect(withEdit([day()])).not.toContain("inspector-edit-working");
   });
 });
