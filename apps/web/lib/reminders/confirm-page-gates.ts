@@ -12,35 +12,60 @@ import { webRegistry } from "./notification-registry";
 
 /**
  * ==========================================================================
- * GATE ONE — THE RESCHEDULE BUTTON. ARMED IN THIS PR, WITH THE QUEUE.
+ * GATE ONE - THE RESCHEDULE BUTTON. CLOSED AGAIN, 2026-09-04.
+ * INC-CONFIRM-10-pedido-reached-nobody.
  * ==========================================================================
- * *Pedir remarcação* emits a request into reception's queue. The gate existed
- * because that queue was derived from the NOTIFICATION rather than from the
- * appointment, and the notification emit is BEST-EFFORT: when it was lost, the
- * request existed, nobody was told, and the patient had already been shown
- * "pedido recebido".
+ * THE OWNER PRESSED IT ON A REAL LINK AND IT REACHED NOBODY. He was shown
+ * "Pedido recebido"; neither reception nor the therapist received anything.
  *
- * A patient in that state will not telephone — they believe they have asked —
- * so the request was lost in a way that is worse than the button not existing.
- * INC-06 is the precedent: portal pedidos reached a stub consumer in
- * production, invisible to reception AND blocking the slot.
+ * WHAT THE PRESS ACTUALLY WRITES, read from `confirm-redeem.ts` rather than
+ * inferred from the symptom. Exactly two things:
+ *   1. `consumed_at` on the appointment_confirm_codes row; and
+ *   2. one `audit_log` row, `appointment.reschedule_request.sms_code`.
+ * It sets no `origin`, changes no `status`, writes no `staff_notifications`
+ * row and calls no emitter. `audit_log` is not a screen.
  *
- * WHAT CHANGED IS THE DERIVATION, WHICH IS THE PREMISE THE GATE RESTED ON.
- * The other half of this same PR derives reception's pending-request queue from
- * `appointments.origin` — the row the patient's press writes — so the queue no
- * longer depends on a notification arriving. The condition the gate names is
- * met, so the gate opens.
+ * ==========================================================================
+ * THE COMMENT THAT USED TO BE HERE WAS FALSE, AND IT IS WHY THIS WAS ARMED
+ * ==========================================================================
+ * It said reception's queue is derived from "`appointments.origin` - THE ROW
+ * THE PATIENT'S PRESS WRITES - so the queue no longer depends on a
+ * notification arriving. The condition the gate names is met, so the gate
+ * opens."
  *
- * IT IS FLIPPED IN THE SAME COMMIT-RANGE AS THE DERIVATION, NOT AFTER IT, and
- * that is deliberate rather than convenient: shipping the queue first and the
- * button later leaves a window in which the durable queue exists and nothing
- * feeds it, and shipping the button first is exactly the defect above. One
- * merge moves both, so neither arm is ever live alone.
+ * THE PRESS WRITES NO SUCH ROW. SR-31 and #1107 derived reception's queue from
+ * `appointments.origin`, and that work was real and is untouched - but it
+ * answers "which portal BOOKINGS is reception yet to accept". The gate was
+ * opened as though it also covered RESCHEDULE REQUESTS against appointments
+ * that already exist. It never did.
  *
- * THE CONSTANT STAYS. It is still the one control both the render and the
- * action read, and `confirm-page-gates.test.ts` still asserts both arms.
+ * AND THE STAFF-CREATED APPOINTMENT IS NOT THE REASON, though it is the first
+ * thing the symptom suggests. `listPendingRequests` selects
+ * `origin = 'patient_portal' AND status = 'scheduled'`, so a PORTAL-created
+ * appointment would already have been in that queue before the patient pressed
+ * anything, and pressing would have changed nothing about how it renders. The
+ * failure is not a mis-set column. There is no row anywhere in the schema that
+ * represents "this patient asked to move an existing appointment".
+ *
+ * ==========================================================================
+ * WHAT REOPENING IT REQUIRES, so the next terminal does not flip it back on a
+ * comment the way the last one did
+ * ==========================================================================
+ * THREE THINGS, and the third is not optional:
+ *   1. a DURABLE row that represents the request itself, written in the
+ *      patient's own transaction so it cannot be lost, and INDEPENDENT OF
+ *      `origin` - a staff-created appointment must produce one too;
+ *   2. that row rendered in reception's queue, and a staff notification to the
+ *      TREATING THERAPIST; and
+ *   3. the OWNER re-testing it on the deployed app. Not green CI: what failed
+ *      here is a fact about which screens exist, and CI asserted the button
+ *      worked while nothing displayed its output.
+ *
+ * A GATE CLOSED IN THE SAME COMMIT AS THE DIAGNOSIS, not after it. Hiding the
+ * control is the smaller half; the constant gates the ACTION too, so anybody
+ * holding the URL is refused as well.
  */
-export const PEDIDO_QUEUE_IS_DURABLE = true;
+export const PEDIDO_QUEUE_IS_DURABLE = false;
 
 /** Whether the page may offer *Pedir remarcação*. */
 export function rescheduleButtonEnabled(): boolean {
