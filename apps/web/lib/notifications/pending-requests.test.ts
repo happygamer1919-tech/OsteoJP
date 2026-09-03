@@ -44,6 +44,9 @@ vi.mock("@osteojp/db", () => ({
     status: "a.status",
     practitionerId: "a.practitioner_id",
     locationId: "a.location_id",
+    patientId: "a.patient_id",
+    origin: "a.origin",
+    createdAt: "a.created_at",
   },
   patients: { id: "p.id", fullName: "p.full_name" },
 }));
@@ -117,22 +120,46 @@ beforeEach(() => {
 });
 
 describe("the queue is derived from the appointment_request notification", () => {
-  it("filters on kind = appointment_request", async () => {
+  it("selects on appointments.origin, NOT on the notification kind. SR-31", async () => {
+    // THE SOURCE MOVED. The queue used to ask the notification whether a pedido
+    // existed, so a lost best-effort emit made one invisible. It now asks the
+    // appointment, which is written inside the patient's own transaction.
     await listPendingRequests(ctx);
-    expect(flat(H.predicates)).toContain("appointment_request");
-    expect(flat(H.predicates)).toContain("n.kind");
+    expect(flat(H.predicates)).toContain("a.origin");
+    expect(flat(H.predicates)).toContain("patient_portal");
   });
 
-  it("INNER joins appointments — a pedido without its appointment is not a queue item", async () => {
+  it("still narrows the NOTIFICATION join by kind, so an unrelated one cannot attach", async () => {
+    // The notification is still joined for its instant; the kind predicate moved
+    // from the WHERE into the join condition, where it now belongs.
     await listPendingRequests(ctx);
-    const inner = H.joins.filter(([k]) => k === "inner");
-    expect(inner).toHaveLength(1);
-    expect(flat(inner[0][1])).toContain("n.appointment_id");
+    const left = H.joins.filter(([k]) => k === "left");
+    expect(flat(left)).toContain("appointment_request");
+    expect(flat(left)).toContain("n.kind");
+  });
+
+  it("has NO inner join at all - appointments is the FROM table now", async () => {
+    // A pedido without its appointment is not a thing that can exist any more:
+    // the appointment IS the row. There is nothing left to inner join.
+    await listPendingRequests(ctx);
+    expect(H.joins.filter(([k]) => k === "inner")).toHaveLength(0);
+  });
+
+  it("LEFT joins the notification, and that single letter is the whole change", async () => {
+    // INNER before SR-31: a pedido whose emit was lost had no notification row,
+    // so the join dropped it and reception was never told. LEFT keeps it.
+    await listPendingRequests(ctx);
+    const left = H.joins.filter(([k]) => k === "left");
+    expect(flat(left)).toContain("n.appointment_id");
   });
 
   it("LEFT joins patients, so a removed patient does not drop the pedido", async () => {
     await listPendingRequests(ctx);
-    expect(H.joins.filter(([k]) => k === "left")).toHaveLength(1);
+    // TWO left joins now: patients, and the notification that is no longer
+    // load-bearing. Both must be LEFT, and neither may be INNER.
+    const left = H.joins.filter(([k]) => k === "left");
+    expect(left).toHaveLength(2);
+    expect(flat(left)).toContain("p.id");
   });
 });
 

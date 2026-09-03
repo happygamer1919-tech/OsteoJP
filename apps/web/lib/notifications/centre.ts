@@ -78,8 +78,13 @@ export async function listNotifications(
  * confirm the appointment as it stands NOW, so the queue reads the appointment.
  */
 export type PendingRequestEntry = {
-  /** The notification row that proves this appointment is a portal pedido. */
-  notificationId: string;
+  /**
+   * The notification row, WHEN THERE IS ONE. It is no longer the proof that this
+   * is a portal pedido - `appointments.origin` is - so it may be null for a
+   * pedido whose best-effort emit was lost. Kept because the centre list keys
+   * off it and because its absence is itself worth seeing.
+   */
+  notificationId: string | null;
   appointmentId: string;
   patientId: string;
   /** Joined at read time, exactly as in listNotifications. */
@@ -88,24 +93,63 @@ export type PendingRequestEntry = {
   endsAt: Date;
   practitionerId: string;
   locationId: string;
-  /** When the PATIENT submitted the pedido. */
+  /**
+   * When the PATIENT submitted the pedido: the notification's instant when one
+   * exists, and the appointment's own `created_at` when it does not. Both are
+   * "when the row was made", and for a portal booking they are the same moment
+   * to within the emit.
+   */
   requestedAt: Date;
+  /**
+   * TRUE when this pedido has NO notification row - the emit was lost.
+   *
+   * Surfaced rather than hidden. Before SR-31 these rows were invisible: the
+   * queue was derived FROM the notification, so a lost emit meant a request
+   * nobody was ever told about, and the patient had been told it was received.
+   */
+  notificationLost: boolean;
 };
 
 /** Lifecycle status a pedido sits in until reception acts. */
 const PENDING_STATUS = "scheduled";
 
 /**
+ * The provenance value migration 0067 writes for a portal booking. Named rather
+ * than inlined so the queue and `is_unconfirmed_pedido` cannot drift on a
+ * string literal.
+ */
+const PORTAL_ORIGIN = "patient_portal";
+
+/**
  * The reception confirm queue: portal pedidos still awaiting a decision.
  *
- * WHY THE NOTIFICATION IS THE SOURCE, and not a column on `appointments`. There
- * is no provenance column, and `created_by IS NULL` is NOT a reliable portal
- * marker — packages/db/tests/appointments-created-by-provenance.test.ts proves
- * (7/7 against live Postgres) that migration 0049's WITH CHECK is a disjunction,
- * so a staff principal satisfying a different branch may insert a row with a
- * null `created_by` and the database accepts it. The `appointment_request`
- * notification row is the ONLY record that a given appointment arrived as a
- * portal pedido, which is why it is joined rather than a status being read.
+ * THE SOURCE IS `appointments.origin`, NOT THE NOTIFICATION. SR-31.
+ *
+ * THIS COMMENT USED TO SAY THE OPPOSITE, and it was true when it was written:
+ * "there is no provenance column, and `created_by IS NULL` is NOT a reliable
+ * portal marker". Migration 0067 added `appointments.origin` on 2026-08-20,
+ * citing Q-PEDIDO-EMIT-1 by name, backfilling from the notification rows and
+ * rekeying `is_unconfirmed_pedido` onto it. The column existed for thirteen days
+ * before anything read it here.
+ *
+ * WHAT THAT COST, and it is the whole reason for this change. `emitPatientChange`
+ * is best-effort and never throws. A failed emit therefore produced an
+ * appointment row that EXISTED, was correctly marked `patient_portal`, no longer
+ * blocked its slot after 0067 — and that reception was never told about, because
+ * this query asked the notification whether the pedido existed. The patient had
+ * already been shown "pedido recebido".
+ *
+ * DERIVING FROM THE APPOINTMENT MAKES THE NOTIFICATION NON-LOAD-BEARING. The
+ * durable write is the appointment row itself, written inside the patient's own
+ * transaction, so it cannot be lost. Losing the notification now costs a
+ * notification-centre entry and nothing else, and the row still appears here —
+ * flagged, via `notificationLost`.
+ *
+ * `created_by IS NULL` is still NOT a portal marker and is still not used:
+ * packages/db/tests/appointments-created-by-provenance.test.ts proves 7/7 that
+ * 0049's WITH CHECK is a disjunction, so a staff principal may insert a null
+ * `created_by` and the database accepts it. That reasoning was right and is
+ * untouched; only the premise about there being no column has changed.
  *
  * WHY status = 'scheduled' AND NOT appointment_confirmation_state. The two axes
  * are orthogonal by design (apps/web/lib/scheduling/estado.ts:8-20): the
@@ -120,13 +164,19 @@ const PENDING_STATUS = "scheduled";
  * this queue by the same predicate that removes a confirmed one. There is no
  * 'declined' lifecycle status and none is invented here.
  *
- * RLS IS THE GATE, TWICE OVER. staff_notifications SELECT is pinned to
- * `recipient_user_id = auth.uid()` (0055), so this is the CALLER'S queue: a
- * therapist sees pedidos for their own appointments, reception sees the tenant's
- * because the fan-out addresses every active reception user. The inner join to
- * `appointments` is then filtered by the caller's own appointment policy (0048
- * location scope), so a pedido a caller may not act on cannot appear here even
- * though they hold the notification.
+ * RLS IS STILL THE GATE, AND THE VISIBLE SET DOES NOT WIDEN. It used to be two
+ * filters: `staff_notifications` pinned to `recipient_user_id = auth.uid()`
+ * (0055), INNER JOINed to `appointments` and therefore also filtered by the
+ * caller's own appointment policy (0048 location scope). The appointment policy
+ * was the narrower of the two in practice — a receptionist only ever received
+ * notifications for appointments they could already see — so removing the
+ * notification from the FROM clause removes a filter that was not selecting
+ * anything the appointment policy did not already select.
+ *
+ * WHAT DOES CHANGE is that a pedido with NO notification row is now visible,
+ * which is the entire point. Proven as a DELTA in the DB-gated suite rather than
+ * asserted here: same principals, same fixture, the set differs by exactly the
+ * rows whose emit was lost.
  */
 export async function listPendingRequests(
   ctx: RequestContext,
@@ -137,20 +187,33 @@ export async function listPendingRequests(
       .select({
         notificationId: staffNotifications.id,
         appointmentId: appointments.id,
-        patientId: staffNotifications.patientId,
+        patientId: appointments.patientId,
         patientName: patients.fullName,
         startsAt: appointments.startsAt,
         endsAt: appointments.endsAt,
         practitionerId: appointments.practitionerId,
         locationId: appointments.locationId,
-        requestedAt: staffNotifications.occurredAt,
+        // The notification's instant when there is one; the appointment's own
+        // creation instant when the emit was lost. Both answer "when did the
+        // patient ask".
+        requestedAt: sql<Date>`coalesce(${staffNotifications.occurredAt}, ${appointments.createdAt})`,
       })
-      .from(staffNotifications)
-      .innerJoin(appointments, eq(appointments.id, staffNotifications.appointmentId))
-      .leftJoin(patients, eq(patients.id, staffNotifications.patientId))
+      .from(appointments)
+      // The PATIENT comes from the appointment now, not from the notification.
+      // It is the same person and one fewer thing that can disagree.
+      .leftJoin(patients, eq(patients.id, appointments.patientId))
+      // LEFT, and that single letter is the change. The notification adds detail
+      // when it exists and its absence no longer hides the pedido.
+      .leftJoin(
+        staffNotifications,
+        and(
+          eq(staffNotifications.appointmentId, appointments.id),
+          eq(staffNotifications.kind, "appointment_request"),
+        ),
+      )
       .where(
         and(
-          eq(staffNotifications.kind, "appointment_request"),
+          eq(appointments.origin, PORTAL_ORIGIN),
           eq(appointments.status, PENDING_STATUS),
         ),
       )
@@ -167,10 +230,19 @@ export async function listPendingRequests(
   // buttons, the second of which fails on an appointment that is no longer
   // 'scheduled'. Collapsing here keeps the queue a list of DECISIONS rather than
   // a list of messages. The earliest survives: it is when the patient asked.
+  //
+  // THE LEFT JOIN MAKES THIS MORE NECESSARY, NOT LESS: one appointment with two
+  // notification rows now yields two rows here just as it did before, and one
+  // with none yields exactly one.
   const first = new Map<string, PendingRequestEntry>();
   for (const r of rows) {
-    const seen = first.get(r.appointmentId);
-    if (!seen || r.requestedAt < seen.requestedAt) first.set(r.appointmentId, r);
+    const entry: PendingRequestEntry = {
+      ...r,
+      requestedAt: new Date(r.requestedAt as unknown as string | Date),
+      notificationLost: r.notificationId === null,
+    };
+    const seen = first.get(entry.appointmentId);
+    if (!seen || entry.requestedAt < seen.requestedAt) first.set(entry.appointmentId, entry);
   }
   return [...first.values()].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 }

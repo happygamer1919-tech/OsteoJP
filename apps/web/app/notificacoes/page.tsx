@@ -172,7 +172,6 @@ export default async function NotificacoesPage() {
   // it read the same instant the same way. A client-side format would use the
   // browser's zone and quietly disagree with the agenda.
   const requestViews: PendingRequestView[] = requests.map((r) => ({
-    notificationId: r.notificationId,
     appointmentId: r.appointmentId,
     patientName: r.patientName,
     when: stamp(r.startsAt),

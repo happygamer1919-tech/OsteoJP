@@ -13,10 +13,14 @@ import { FEE_NOTICE_FLAG } from "./fee-notice";
  * executed is a gate nobody has tested.
  */
 
-describe("the reschedule button, gated on #1107", () => {
-  it("is OFF today, and the constant says so rather than a comment saying so", () => {
-    expect(PEDIDO_QUEUE_IS_DURABLE).toBe(false);
-    expect(rescheduleButtonEnabled()).toBe(false);
+describe("the reschedule button, armed with the durable queue", () => {
+  it("is ON, and the constant says so rather than a comment saying so", () => {
+    // The condition the gate named is met in this same PR: reception's pending
+    // queue is derived from `appointments.origin`, not from a notification that
+    // may never arrive. Both halves move in one merge, so the button is never
+    // live against the old derivation.
+    expect(PEDIDO_QUEUE_IS_DURABLE).toBe(true);
+    expect(rescheduleButtonEnabled()).toBe(true);
   });
 
   it("the render gate and the action gate read the SAME constant", () => {
@@ -26,13 +30,13 @@ describe("the reschedule button, gated on #1107", () => {
     expect(rescheduleButtonEnabled()).toBe(PEDIDO_QUEUE_IS_DURABLE);
   });
 
-  it("THE OTHER ARM: flipping the constant is all that is needed to offer it", () => {
+  it("THE OTHER ARM: turning it off again hides the control AND refuses the write", () => {
     // Proven by construction rather than by mutating a const: the exported
-    // function is a pure read of the constant, so the arm is reachable and the
-    // day #1107 merges is a one-line change plus this expectation flipping.
+    // function is a pure read of the constant, so the closed arm stays reachable
+    // if the queue derivation is ever reverted.
     const flipped = (durable: boolean) => durable;
-    expect(flipped(true)).toBe(true);
     expect(flipped(false)).toBe(false);
+    expect(flipped(true)).toBe(true);
   });
 });
 
