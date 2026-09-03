@@ -234,7 +234,7 @@ Backend integrations complete. UI + payment go-live blocked on João Pedro.
 - Protocol-discount invoicing decision
 - Protocol label visibility decision
 - `ai_extractable` Group A/B final sign-off
-- Sender display name (Resend/Twilio) — ✅ Twilio PT alphanumeric sender "OsteoJP" registered and approved 2026-06-11. Ivan to update `TWILIO_SENDER_ID` env var in Vercel from the test number to `OsteoJP`.
+- Sender display name (Resend/Twilio) — ✅ Twilio PT alphanumeric sender "OsteoJP" registered and approved 2026-06-11. Ivan to set **`TWILIO_SMS_FROM`** in Vercel to `OsteoJP`. NOT `TWILIO_SENDER_ID`, which the application never reads (SR-43): the send wrappers resolve the sender through `apps/web/lib/reminders/sender.ts`, which reads `TWILIO_SMS_FROM` and falls back to `TWILIO_MESSAGING_SERVICE_SID`.
 
 **Waiting on Andrei:**
 - Fisiozero Tier-1 per-field mapping spec — gates Stream D per-field mapping. Ingestion is proven (PR #262); payload stored verbatim until spec arrives.

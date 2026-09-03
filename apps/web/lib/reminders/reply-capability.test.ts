@@ -97,13 +97,16 @@ describe("a messaging service is UNKNOWABLE from here, so the operator declares"
   });
 });
 
-describe("precedence mirrors twilioSender() in clients.ts", () => {
+describe("precedence comes from ONE resolver, which both files call", () => {
   /**
    * If these two ever disagreed about WHICH sender is in play, this function
-   * would be answering about a sender that is not the one sending. clients.ts
-   * reads `TWILIO_SMS_FROM ?? TWILIO_MESSAGING_SERVICE_SID`, so an explicit
-   * from-address wins — and when that address is alphanumeric, the service's
-   * declaration is irrelevant because the service is not what sends.
+   * would be answering about a sender that is not the one sending. They DID
+   * disagree, on one input: an empty-string `TWILIO_SMS_FROM` was a value to
+   * clients.ts's `??` and falsy to the `?.trim()` here.
+   *
+   * SR-43 removed the duplication instead of re-pinning it. An explicit
+   * from-address still wins - and when that address is alphanumeric, the
+   * service's declaration is irrelevant because the service is not what sends.
    */
   it("an explicit alphanumeric from-address beats a declared messaging service", () => {
     expect(
@@ -124,15 +127,33 @@ describe("precedence mirrors twilioSender() in clients.ts", () => {
     ).toBe(true);
   });
 
-  it("the precedence is the SAME ORDER clients.ts resolves the sender in", () => {
-    // Source-level, because the two functions are in different files and the
-    // rule is duplicated by necessity: clients.ts must not import a policy
-    // module and this must not construct a Twilio client. Comments stripped so
-    // prose about the order cannot satisfy the assertion.
-    const src = readStripped("clients.ts");
-    expect(src).toMatch(
-      /process\.env\.TWILIO_SMS_FROM\s*\?\?\s*process\.env\.TWILIO_MESSAGING_SERVICE_SID/,
-    );
+  it("NEITHER FILE READS THE TWO VARIABLES ITSELF - sender.ts is the only reader", () => {
+    // THIS ASSERTION REPLACED ONE THAT PINNED THE DUPLICATION. It used to
+    // require clients.ts to contain
+    // `process.env.TWILIO_SMS_FROM ?? process.env.TWILIO_MESSAGING_SERVICE_SID`
+    // and called the copy "duplicated by necessity". It was not necessary, and
+    // the necessity was doing the arguing: the two copies differed on the empty
+    // string and nothing noticed for as long as both files agreed with the
+    // test rather than with each other.
+    //
+    // Source-level, comments stripped, so prose about the rule cannot satisfy
+    // it. A direct read reappearing in either file is the regression.
+    for (const file of ["clients.ts", "reply-capability.ts"]) {
+      const src = readStripped(file);
+      expect(src, `${file} must not read TWILIO_SMS_FROM directly`).not.toMatch(
+        /(?:process\.)?env(?:\.|\[\s*["'])TWILIO_SMS_FROM/,
+      );
+      expect(src, `${file} must not read TWILIO_MESSAGING_SERVICE_SID directly`).not.toMatch(
+        /(?:process\.)?env(?:\.|\[\s*["'])TWILIO_MESSAGING_SERVICE_SID/,
+      );
+    }
+  });
+
+  it("and BOTH of them call the resolver, so the property above is not vacuous", () => {
+    // Without this, deleting the sender logic from both files entirely would
+    // satisfy the negative assertion above and prove nothing.
+    expect(readStripped("clients.ts")).toMatch(/outboundSenderValue|resolveOutboundSender/);
+    expect(readStripped("reply-capability.ts")).toMatch(/resolveOutboundSender/);
   });
 });
 

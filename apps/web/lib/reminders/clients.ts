@@ -28,6 +28,7 @@ import {
 } from "@osteojp/notify";
 import { INVITE_TEMPLATE, webRegistry } from "./notification-registry";
 import { normalizePhonePT } from "@osteojp/notify";
+import { outboundSenderValue, resolveOutboundSender } from "./sender";
 
 /**
  * Every live-send flag apps/web can arm. BOTH, because either one arms an email
@@ -127,16 +128,26 @@ function emailFromVarFor(templateId?: string): string {
     : "REMINDERS_EMAIL_FROM";
 }
 
-function twilioSender(): string | undefined {
-  return process.env.TWILIO_SMS_FROM ?? process.env.TWILIO_MESSAGING_SERVICE_SID;
-}
-
 /**
- * A Messaging Service SID is `MG` + 32 hex. Twilio's own id scheme, and the
- * only thing that distinguishes it from the other two forms this variable can
- * hold (an E.164 number, an alphanumeric sender id).
+ * The configured sender, or undefined.
+ *
+ * ==========================================================================
+ * IT USED TO BE `TWILIO_SMS_FROM ?? TWILIO_MESSAGING_SERVICE_SID`, AND THE
+ * OPERATOR MATTERED. (SR-43)
+ * ==========================================================================
+ * `??` is NULLISH, so an empty-string `TWILIO_SMS_FROM` was a VALUE: the sender
+ * resolved to "", `transportConfigured` answered false, and the send was
+ * suppressed as missing_provider_config. reply-capability.ts trimmed the same
+ * variable, saw falsy, and answered about the MESSAGING SERVICE instead - a
+ * different sender from the one this file would have used. One input, two
+ * answers, in the two files that must agree.
+ *
+ * Both now call `resolveOutboundSender`, where blank is not a sender. Nothing
+ * else about the precedence changes: TWILIO_SMS_FROM still wins.
  */
-const MESSAGING_SERVICE_SID = /^MG[0-9a-f]{32}$/i;
+function twilioSender(): string | undefined {
+  return outboundSenderValue();
+}
 
 /**
  * Which Twilio parameter carries the sender.
@@ -165,7 +176,10 @@ const MESSAGING_SERVICE_SID = /^MG[0-9a-f]{32}$/i;
 export function twilioSenderParam(
   sender: string,
 ): { from: string } | { messagingServiceSid: string } {
-  return MESSAGING_SERVICE_SID.test(sender)
+  // THE CLASSIFICATION IS THE RESOLVER'S, not a second regex here. A `MG`
+  // pattern maintained in two files is two patterns, and this is the one place
+  // where getting it wrong sends the request under the wrong parameter.
+  return resolveOutboundSender({ TWILIO_SMS_FROM: sender }).kind === "messaging_service"
     ? { messagingServiceSid: sender }
     : { from: sender };
 }
