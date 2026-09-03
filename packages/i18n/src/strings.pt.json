@@ -1493,5 +1493,6 @@
   "admin.messagingCheck.noLink": "A ligação de confirmação está desarmada, por isso não há nada para testar.",
   "admin.messagingCheck.sampleCode": "Código de amostra: a ligação mostra a página genérica.",
   "admin.messagingCheck.liveCode": "Código REAL: a ligação confirma a consulta indicada.",
-  "admin.messagingCheck.landline": "Esse número é uma linha fixa e não recebe SMS. Use um telemóvel."
+  "admin.messagingCheck.landline": "Esse número é uma linha fixa e não recebe SMS. Use um telemóvel.",
+  "admin.messagingCheck.bodyRefused": "Nada foi enviado: a mensagem não cabe num só segmento e não é dividida. Corrija a configuração e volte a tentar."
 }

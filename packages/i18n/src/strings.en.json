@@ -1493,5 +1493,6 @@
   "admin.messagingCheck.noLink": "The confirm link is disarmed, so there is nothing to test.",
   "admin.messagingCheck.sampleCode": "Sample code: the link shows the generic page.",
   "admin.messagingCheck.liveCode": "REAL code: the link confirms the appointment you named.",
-  "admin.messagingCheck.landline": "That number is a landline and cannot receive SMS. Use a mobile."
+  "admin.messagingCheck.landline": "That number is a landline and cannot receive SMS. Use a mobile.",
+  "admin.messagingCheck.bodyRefused": "Nothing was sent: the message does not fit one segment and is never split. Fix the configuration and try again."
 }

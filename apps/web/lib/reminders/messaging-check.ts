@@ -3,14 +3,10 @@ import { createHash } from "node:crypto";
 import { auditLog, getDbAdmin } from "@osteojp/db";
 import { isSmsCapablePT, normalizePhonePT } from "@osteojp/notify";
 import { sendSms } from "./clients";
-import { renderSms, type ReminderContext } from "./templates";
-import {
-  confirmLinkEnabled,
-  confirmLinkLine,
-  generateConfirmCode,
-} from "./confirm-code";
+import type { ReminderContext } from "./templates";
+import { confirmLinkEnabled, generateConfirmCode } from "./confirm-code";
 import { issueConfirmCode, withdrawConfirmCode } from "./confirm-code-store";
-import { senderCanReceiveReplies } from "./reply-capability";
+import { renderReminderSmsBody } from "./sms-body";
 
 // THE OWNER'S DELIVERY TEST. One real 24h reminder body, to one number he types.
 //
@@ -49,7 +45,22 @@ export type MessagingCheckResult =
   | { ok: true; segments: number; length: number; codeWasLive: boolean; body: string }
   | {
       ok: false;
-      reason: "invalid_phone" | "landline" | "rate_limited" | "send_failed" | "no_link";
+      reason:
+        | "invalid_phone"
+        | "landline"
+        | "rate_limited"
+        | "send_failed"
+        | "no_link"
+        /**
+         * THE RENDERER REFUSED THE BODY, and nothing was sent or written.
+         *
+         * This is the outcome the owner hit on 2026-09-02 as a 500. The body
+         * came to 185 characters - the 136 of the approved 24h body plus the
+         * confirm link, plus 49 for a reply instruction the environment had
+         * armed - and the single-segment rule refused it. The refusal is
+         * correct; a diagnostic page reporting it as a crash is not.
+         */
+        | "body_refused";
       /**
        * What the provider said, for the OWNER'S OWN SCREEN only. A diagnostic
        * page whose only output is "not sent" sends the person who ran it to a
@@ -104,16 +115,41 @@ export async function sendMessagingCheck(args: {
   // not exercise the feature.
   if (!confirmLinkEnabled()) return { ok: false, reason: "no_link" };
 
-  // A LIVE code only when the owner named an appointment to spend one on.
-  const issued = args.appointmentId
-    ? await issueConfirmCode({ tenantId: args.tenantId, appointmentId: args.appointmentId })
-    : null;
-  const code = issued?.code ?? generateConfirmCode();
-
-  const body = renderSms("24h", "pt", sampleContext(), {
-    confirmLink: confirmLinkLine(code),
-    replyInstruction: senderCanReceiveReplies(),
+  // ==========================================================================
+  // RENDER FIRST, MINT SECOND. THE ORDER IS THE FIX (INC-CONFIRM-07).
+  // ==========================================================================
+  // The code is a VALUE here and a ROW below. Generating one touches nothing,
+  // so a body that the single-segment rule refuses costs no write at all - and
+  // the refusal comes back as a sentence for the page rather than as a 500.
+  //
+  // THE BODY IS BUILT BY THE SAME FUNCTION THE REMINDER JOB CALLS, which is
+  // what makes this page a delivery test rather than a lookalike: the two
+  // cannot drift, and `sms-body.test.ts` asserts the equality.
+  const code = generateConfirmCode();
+  const rendered = renderReminderSmsBody({
+    offset: "24h",
+    locale: "pt",
+    ctx: sampleContext(),
+    confirmCode: code,
   });
+  if (!rendered.ok) {
+    return { ok: false, reason: "body_refused", detail: rendered.refusal };
+  }
+  const body = rendered.body;
+
+  // A LIVE code only when the owner named an appointment to spend one on, and
+  // only now that there is a body worth sending. `issueConfirmCode` returns null
+  // when a live code already exists for that appointment (0072's partial unique
+  // index); the message then carries a code that names no row, which resolves to
+  // the generic page exactly as the sample code does. `codeWasLive` reports
+  // which of the two happened rather than leaving the owner to guess.
+  const issued = args.appointmentId
+    ? await issueConfirmCode({
+        tenantId: args.tenantId,
+        appointmentId: args.appointmentId,
+        code,
+      })
+    : null;
 
   // ==========================================================================
   // THE TRANSPORT IS AWAITED INSIDE A CATCH, AND THAT IS THE WHOLE P0 FIX.

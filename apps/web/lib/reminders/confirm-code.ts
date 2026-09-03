@@ -77,19 +77,44 @@ export const CONFIRM_LINK_BASE_VAR = "REMINDERS_RESCHEDULE_BASE_URL" as const;
  * than shipping a dead link to a patient.
  */
 export function confirmLinkHost(env: EnvSource = process.env): string {
-  const base = env[CONFIRM_LINK_BASE_VAR]?.trim();
-  if (!base) {
+  const host = confirmLinkHostOrNull(env);
+  if (!host) {
     throw new Error(
       `reminders/confirm-code: ${CONFIRM_LINK_BASE_VAR} is required and has no default. ` +
         "Set it to the deployed app origin (the host that serves /c/<code>), not the marketing site.",
     );
   }
+  return host;
+}
+
+/**
+ * The same host, ANSWERED rather than thrown, for the two callers that must
+ * report an unconfigured origin as a sentence instead of a stack trace.
+ *
+ * `null` HERE MEANS EXACTLY ONE THING and that is what makes it safe under
+ * PORTAL-REHYDRATE 1.3: the variable is absent or blank. There is no second
+ * failure being folded into the same value - a set-but-wrong origin is not
+ * detectable from here and is not what this reports.
+ */
+export function confirmLinkHostOrNull(env: EnvSource = process.env): string | null {
+  const base = env[CONFIRM_LINK_BASE_VAR]?.trim();
+  if (!base) return null;
   return base.replace(/^https?:\/\//, "").replace(/\/+$/, "");
 }
 
 /** JP's line, with the real host and the code filled in. ONE home for the copy. */
 export function confirmLinkLine(code: string, env: EnvSource = process.env): string {
   return `Confirmar: ${confirmLinkHost(env)}/c/${code}`;
+}
+
+/**
+ * JP's line, or null when the origin is not configured. Same copy, same single
+ * home - this is `confirmLinkLine` with the host question asked rather than
+ * assumed, so no caller ever assembles the sentence itself.
+ */
+export function confirmLinkLineOrNull(code: string, env: EnvSource = process.env): string | null {
+  const host = confirmLinkHostOrNull(env);
+  return host === null ? null : `Confirmar: ${host}/c/${code}`;
 }
 
 /**

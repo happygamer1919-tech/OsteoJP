@@ -44,15 +44,30 @@ export default async function MessagingCheckPage({
             ? { ok: false, text: s["admin.messagingCheck.landline"] }
             : m === "no_link"
               ? { ok: false, text: s["admin.messagingCheck.noLink"] }
-              : m
+              : m === "body_refused"
                 ? {
                     ok: false,
-                    // THE PROVIDER'S REASON, SHOWN. A diagnostic page that says
-                    // only "not sent" sends the reader to a dashboard; this one
-                    // exists to answer why.
-                    text: d ? `${s["admin.messagingCheck.failed"]} ${d}` : s["admin.messagingCheck.failed"],
+                    // A REFUSAL, NOT A FAILURE, AND THE SENTENCE SAYS SO. This
+                    // is the outcome that used to be a 500 on this page: the
+                    // body came to 185 characters and the single-segment rule
+                    // refused it. Nothing was sent, nothing was written, and no
+                    // code was spent - so "Não foi enviada" would have been the
+                    // wrong sentence, implying an attempt that never happened.
+                    // The rule's own words follow, with the length, because the
+                    // reader of this page is the person who fixes it.
+                    text: d
+                      ? `${s["admin.messagingCheck.bodyRefused"]} ${d}`
+                      : s["admin.messagingCheck.bodyRefused"],
                   }
-                : null;
+                : m
+                  ? {
+                      ok: false,
+                      // THE PROVIDER'S REASON, SHOWN. A diagnostic page that says
+                      // only "not sent" sends the reader to a dashboard; this one
+                      // exists to answer why.
+                      text: d ? `${s["admin.messagingCheck.failed"]} ${d}` : s["admin.messagingCheck.failed"],
+                    }
+                  : null;
 
   return (
     <section className="flex flex-col gap-6">
