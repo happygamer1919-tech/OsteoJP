@@ -4,7 +4,6 @@ import { loadReminderData } from "./data";
 import { resolveLocale, formatTime, formatDateLong, formatDateShort } from "./locale";
 import {
   renderEmail,
-  renderSms,
   renderConfirmationEmail,
   renderConfirmationSms,
   renderFollowUpEmail,
@@ -21,9 +20,9 @@ import {
   shouldRenderFeeNotice,
   smsTemplateIdFor,
 } from "./fee-notice";
-import { senderCanReceiveReplies } from "./reply-capability";
-import { confirmLinkEnabled, confirmLinkLine } from "./confirm-code";
+import { confirmLinkEnabled, generateConfirmCode } from "./confirm-code";
 import { issueConfirmCode, withdrawConfirmCode } from "./confirm-code-store";
+import { renderReminderSmsBody } from "./sms-body";
 import { sendEmail, sendSms, type SendResult } from "./clients";
 import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "@osteojp/notify";
@@ -124,7 +123,28 @@ export type DispatchOutcome =
         | "channel_not_for_offset"
         /** Booking confirmation only: the appointment was not created by the
          *  patient through the portal. Decision A, owner 2026-08-31. */
-        | "origin";
+        | "origin"
+        /**
+         * THE RENDERER REFUSED THE BODY, and this run wrote nothing.
+         *
+         * A body that would leave GSM-7 or spill into a second segment is not
+         * sent, because the split is silent and doubles the cost of every
+         * reminder. Before INC-CONFIRM-07 that refusal was a THROW, raised
+         * after a confirm code had been minted: Inngest recorded a retryable
+         * job failure, the stranded code blocked the retry from minting a fresh
+         * one, and the retry then sent the SHORTER body - no link - with
+         * nothing anywhere saying the link had been dropped.
+         *
+         * It is an OUTCOME now, so the run completes, the reason reaches
+         * Inngest's own output beside the other skip reasons, and no row is
+         * written in front of it.
+         */
+        | "body_refused";
+      /**
+       * The refusing sentence, for `body_refused`. Operator-facing and safe:
+       * a length and a rule, never a recipient, a patient field or a code.
+       */
+      detail?: string;
     }
   | { dispatched: true; channels: SendResult[] };
 
@@ -448,31 +468,78 @@ export async function dispatchReminder(
       flagEnabled: feeNoticeFlagEnabled(),
       patientHasAcceptedTerms: data.patientHasAcceptedTerms,
     });
-    // THE SECOND ANSWER, computed here beside the first for the same reason:
-    // the render site may not know what a Twilio sender looks like. With the
-    // live alphanumeric sender this is FALSE and the body is byte-identical to
-    // JP's 2026-08-03 approval; it becomes true the moment the sender is a
-    // real number (or the messaging-service declaration is set), with no code
-    // change and no redeploy beyond the one the env change already needs.
-    const replyInstruction = senderCanReceiveReplies();
+    // THE SECOND AND THIRD ANSWERS - the reply instruction and the confirm line
+    // - ARE NO LONGER COMPUTED HERE. They moved into `renderReminderSmsBody`,
+    // which is the one place either is read, so this path and the owner's
+    // delivery test cannot answer the same question differently. The fee notice
+    // stays: it is the only addition whose input (`patientHasAcceptedTerms`) is
+    // a fact about the patient rather than about the environment.
 
-    // THE THIRD ANSWER, and the only one that WRITES before the render.
+    // THE THIRD ANSWER. IT NO LONGER WRITES BEFORE THE RENDER.
     //
-    // The link cannot be rendered without a code, and the code cannot exist
-    // without a row, so issuance happens here — gated, and only for 24h.
-    // `issueConfirmCode` returns null when a live code already exists for this
-    // appointment (0072's partial unique index), and the reminder then goes out
-    // WITHOUT the line rather than not going out: we store an HMAC, so the
-    // existing code's plaintext is unrecoverable and there is nothing to send.
-    const issued =
-      offsetId === "24h" && confirmLinkEnabled()
-        ? await issueConfirmCode({ tenantId, appointmentId })
-        : null;
-    const sms = renderSms(offsetId, locale, ctx, {
+    // ====================================================================
+    // A CODE IS A VALUE FIRST AND A ROW SECOND, AND THE ORDER IS THE FIX.
+    // ====================================================================
+    // `generateConfirmCode` touches nothing, so the body that carries the code
+    // can be rendered - and REFUSED - before anything is written. Issuance is
+    // below, once a sendable body is in hand.
+    //
+    // Until INC-CONFIRM-07 the row came first and `renderSms` threw straight
+    // past the withdraw that would have removed it: the code was stranded live,
+    // 0072's partial unique index blocked the retry from minting another, and
+    // the retry sent the shorter body with no link and no error anywhere.
+    const wantsConfirmLink = offsetId === "24h" && confirmLinkEnabled();
+    const candidateCode = wantsConfirmLink ? generateConfirmCode() : null;
+
+    let rendered = renderReminderSmsBody({
+      offset: offsetId,
+      locale,
+      ctx,
+      confirmCode: candidateCode,
       feeNotice,
-      replyInstruction,
-      confirmLink: issued ? confirmLinkLine(issued.code) : undefined,
     });
+    if (!rendered.ok) {
+      // LOUD, AND IT NAMES THE CONSEQUENCE. The patient gets no reminder for
+      // this run; the operator gets the rule that refused and the length.
+      console.error(
+        `[reminders] dispatch refused: the ${offsetId} sms body was not sendable, so no message went and no confirm code was minted. ${rendered.refusal}`,
+        { tenantId, appointmentId, offsetId, kind: rendered.kind },
+      );
+      return { dispatched: false, reason: "body_refused", detail: rendered.refusal };
+    }
+
+    // THE ROW, NOW. `issueConfirmCode` returns null when a live code already
+    // exists for this appointment (0072's partial unique index): we store an
+    // HMAC, so the existing code's plaintext is unrecoverable and the code in
+    // the body we just rendered names no row.
+    const issued = candidateCode
+      ? await issueConfirmCode({ tenantId, appointmentId, code: candidateCode })
+      : null;
+
+    // A COLLISION MEANS THE BODY IN HAND CARRIES A DEAD LINK, so it is rendered
+    // again without one. That is the behaviour this path always had - a reminder
+    // that goes out is worth more than a link that cannot be minted - reached in
+    // the new order. The second render is strictly shorter, so it can only
+    // refuse if the first would have; the arm is handled rather than assumed.
+    if (candidateCode !== null && issued === null) {
+      const withoutLink = renderReminderSmsBody({
+        offset: offsetId,
+        locale,
+        ctx,
+        confirmCode: null,
+        feeNotice,
+      });
+      if (!withoutLink.ok) {
+        console.error(
+          `[reminders] dispatch refused: a live confirm code already exists for this appointment and the link-less ${offsetId} body is not sendable either. ${withoutLink.refusal}`,
+          { tenantId, appointmentId, offsetId, kind: withoutLink.kind },
+        );
+        return { dispatched: false, reason: "body_refused", detail: withoutLink.refusal };
+      }
+      rendered = withoutLink;
+    }
+
+    const sms = rendered.body;
     const sent = await sendPatientSms({
       tenantId,
       appointmentId,

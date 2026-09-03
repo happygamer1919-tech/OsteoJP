@@ -288,6 +288,32 @@ export function renderSms(
   ctx: ReminderContext,
   additions: SmsAdditions = {},
 ): string {
+  const message = assembleSms(offset, locale, ctx, additions);
+  assertSmsCompliant(message);
+  return message;
+}
+
+/**
+ * THE ASSEMBLY, WITHOUT THE CARRIER VERDICT.
+ *
+ * Split out so the compliance rule has exactly one implementation and two
+ * presentations: `renderSms` throws it, and `smsCompliance` answers it for the
+ * two callers that must show a refusal as a sentence rather than as a stack
+ * trace. Anything that assembles a body assembles it HERE, so the throwing and
+ * the answering forms can never be rendering different strings.
+ *
+ * AN UNFILLED PLACEHOLDER STILL THROWS FROM HERE, and that is the line between
+ * the two: a `{clinic}` that survived the fill is a PROGRAMMING error and there
+ * is no operator action that resolves it, so it must not be presentable as an
+ * operating condition. Being too long or leaving GSM-7 are facts about the
+ * configured copy, which an operator can and must act on.
+ */
+export function assembleSms(
+  offset: ReminderOffsetId,
+  locale: Locale,
+  ctx: ReminderContext,
+  additions: SmsAdditions = {},
+): string {
   const tpl = SMS[offset][locale];
   const base = fill(tpl, {
     date: ctx.appointmentDateShort,
@@ -310,7 +336,6 @@ export function renderSms(
     ? `${withConfirmLink}\n${FEE_NOTICE_SMS[locale]}`
     : withConfirmLink;
   assertNoUnfilledPlaceholders("sms", message);
-  assertSmsCompliant(message);
   return message;
 }
 
@@ -340,23 +365,59 @@ export function isGsm7(text: string): boolean {
 }
 
 /**
+ * WOULD THIS BODY GO OUT AS ONE GSM-7 SEGMENT? The rule, as an ANSWER.
+ *
+ * ==========================================================================
+ * ONE RULE, TWO PRESENTATIONS, AND THE SECOND ONE IS WHY THIS EXISTS.
+ * ==========================================================================
+ * `assertSmsCompliant` is this function plus a throw, so the two can never
+ * disagree about what compliant means. The throwing form is right in a test and
+ * at a call site that has nowhere to put an answer; it is WRONG on the owner's
+ * diagnostic page, where it became a 500, and wrong in the reminder job, where
+ * it became a retryable failure AFTER a confirm code had been written.
+ *
+ * The refusal itself is correct and stays: a two-segment SMS doubles the cost of
+ * every reminder silently, and a body that leaves GSM-7 halves the limit to 70.
+ * What changes is that a caller can now RECEIVE the refusal instead of being
+ * unwound by it.
+ *
+ * `message` carries the same sentence the throw carried, byte for byte, so the
+ * Sentry events already recorded against the old shape stay greppable.
+ */
+export type SmsCompliance =
+  | { ok: true }
+  | { ok: false; kind: "not_gsm7" | "too_long"; message: string; length: number };
+
+export function smsCompliance(message: string): SmsCompliance {
+  if (!isGsm7(message)) {
+    const bad = [...message].find((ch) => !GSM7_SET.has(ch));
+    return {
+      ok: false,
+      kind: "not_gsm7",
+      message: `reminders/sms: non-GSM-7 character ${JSON.stringify(bad)} would force UCS-2 encoding`,
+      length: message.length,
+    };
+  }
+  if (message.length > SMS_SEGMENT_LIMIT) {
+    return {
+      ok: false,
+      kind: "too_long",
+      message: `reminders/sms: message is ${message.length} chars, exceeds ${SMS_SEGMENT_LIMIT}-char single segment`,
+      length: message.length,
+    };
+  }
+  return { ok: true };
+}
+
+/**
  * Throws if a rendered SMS would not fit one GSM-7 segment — either too long or
  * containing a non-GSM-7 character (which would silently halve the limit and
  * double cost). Called at render time so a bad fill fails loud in tests/dev,
  * never silently at send.
  */
 export function assertSmsCompliant(message: string): void {
-  if (!isGsm7(message)) {
-    const bad = [...message].find((ch) => !GSM7_SET.has(ch));
-    throw new Error(
-      `reminders/sms: non-GSM-7 character ${JSON.stringify(bad)} would force UCS-2 encoding`,
-    );
-  }
-  if (message.length > SMS_SEGMENT_LIMIT) {
-    throw new Error(
-      `reminders/sms: message is ${message.length} chars, exceeds ${SMS_SEGMENT_LIMIT}-char single segment`,
-    );
-  }
+  const verdict = smsCompliance(message);
+  if (!verdict.ok) throw new Error(verdict.message);
 }
 
 /* ================================================================== */

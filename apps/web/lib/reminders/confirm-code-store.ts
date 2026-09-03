@@ -52,14 +52,29 @@ async function callWriter(tenantId: string, statement: ReturnType<typeof sql>): 
  * Returns the PLAINTEXT code and its hash, or null when a live code already
  * exists for this appointment. The plaintext exists only in the returned value
  * and in the SMS; it is never stored and never logged.
+ *
+ * ==========================================================================
+ * `code` IS AN ARGUMENT SO THE ROW CAN BE WRITTEN AFTER THE BODY IS RENDERED.
+ * ==========================================================================
+ * Generating a code touches nothing - `generateConfirmCode` is CSPRNG bytes and
+ * an alphabet - and the ROW is the only irreversible half. Callers that must
+ * render before they write now generate the value themselves, render the body
+ * that carries it, and call this only once they hold a body worth sending. A
+ * render that refuses then costs no row, which is the whole of INC-CONFIRM-07:
+ * a code minted in front of a throw is stranded live, and 0072's partial unique
+ * index lets that stranded row block the retry from minting a fresh one.
+ *
+ * Absent, it generates one, so callers with nothing to render are unchanged.
  */
 export async function issueConfirmCode(args: {
   tenantId: string;
   appointmentId: string;
+  /** The plaintext to mint. Generated here when the caller has no opinion. */
+  code?: string;
   env?: NodeJS.ProcessEnv;
 }): Promise<{ code: string; codeHash: string } | null> {
   const { tenantId, appointmentId } = args;
-  const code = generateConfirmCode();
+  const code = args.code ?? generateConfirmCode();
   // Throws when the HMAC key is absent — see confirm-code.ts. Callers gate on
   // `confirmLinkEnabled`, which requires the key, so reaching this without one
   // is a programming error and must be loud.
