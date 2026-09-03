@@ -165,10 +165,12 @@ export default async function ConfirmCodePage({
           {s["confirm.confirmCta"]}
         </button>
 
-        {/* Armed now that reception's queue is derived from
-            `appointments.origin` rather than from a best-effort notification.
-            The ACTION reads the same gate — see actions.ts — because hiding a
-            control removes nothing from anybody holding the URL. */}
+        {/* CLOSED since INC-CONFIRM-10: the press wrote a consumed_at and one
+            audit_log row and nothing that any screen renders, so a patient was
+            told "Pedido recebido" and nobody was told anything. The ACTION
+            reads the same gate — see actions.ts — because hiding a control
+            removes nothing from anybody holding the URL. What reopening it
+            requires is listed on the constant. */}
         {rescheduleButtonEnabled() ? (
           <button
             type="submit"

@@ -13,14 +13,21 @@ import { FEE_NOTICE_FLAG } from "./fee-notice";
  * executed is a gate nobody has tested.
  */
 
-describe("the reschedule button, armed with the durable queue", () => {
-  it("is ON, and the constant says so rather than a comment saying so", () => {
-    // The condition the gate named is met in this same PR: reception's pending
-    // queue is derived from `appointments.origin`, not from a notification that
-    // may never arrive. Both halves move in one merge, so the button is never
-    // live against the old derivation.
-    expect(PEDIDO_QUEUE_IS_DURABLE).toBe(true);
-    expect(rescheduleButtonEnabled()).toBe(true);
+describe("the reschedule button, CLOSED again after INC-CONFIRM-10", () => {
+  it("is OFF, and the constant says so rather than a comment saying so", () => {
+    // IT WAS ON, AND IT WAS ON BECAUSE OF A COMMENT. The gate was opened on the
+    // claim that reception's queue derives from "`appointments.origin` - the row
+    // the patient's press writes". The press writes no such row: it writes a
+    // `consumed_at` and one audit_log line, and audit_log is not a screen. A
+    // patient pressed it, was told "Pedido recebido", and nobody was told
+    // anything.
+    //
+    // THE ASSERTION IS THE POINT OF THIS FILE. Its own header says a gate whose
+    // other arm has never executed is a gate nobody has tested - and this arm
+    // had never executed, so the closed state was never the tested one. It is
+    // now, and reopening it means changing this line deliberately.
+    expect(PEDIDO_QUEUE_IS_DURABLE).toBe(false);
+    expect(rescheduleButtonEnabled()).toBe(false);
   });
 
   it("the render gate and the action gate read the SAME constant", () => {
@@ -30,13 +37,14 @@ describe("the reschedule button, armed with the durable queue", () => {
     expect(rescheduleButtonEnabled()).toBe(PEDIDO_QUEUE_IS_DURABLE);
   });
 
-  it("THE OTHER ARM: turning it off again hides the control AND refuses the write", () => {
-    // Proven by construction rather than by mutating a const: the exported
-    // function is a pure read of the constant, so the closed arm stays reachable
-    // if the queue derivation is ever reverted.
+  it("THE OTHER ARM: turning it on again shows the control AND admits the write", () => {
+    // The arms have swapped. What was the untested arm is now the live one, and
+    // this stands in for the open state the same way it used to stand in for
+    // the closed one: the exported function is a pure read of the constant, so
+    // both states stay reachable whichever way it is set.
     const flipped = (durable: boolean) => durable;
-    expect(flipped(false)).toBe(false);
     expect(flipped(true)).toBe(true);
+    expect(flipped(false)).toBe(false);
   });
 });
 
