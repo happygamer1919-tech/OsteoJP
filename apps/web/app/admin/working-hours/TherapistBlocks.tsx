@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button, StatusBadge, useAnimatedDialog } from "@osteojp/ui";
 import { TimeFieldInput } from "@/components/time-field-input";
+import { DateFieldInput } from "@/components/date-field-input";
 import { adminInputInline, adminLabel } from "../admin-ui";
 import {
   createTimeOffBlockAction,
@@ -262,13 +263,7 @@ export function TherapistBlocks({
                 <div className="flex flex-wrap items-end gap-3">
                   <label className="flex flex-col gap-1">
                     <span className={adminLabel}>{labels.fromDate}</span>
-                    <input
-                      type="date"
-                      name="startDate"
-                      required
-                      aria-label={labels.fromDate}
-                      className={adminInputInline}
-                    />
+                    <DateFieldInput name="startDate" required label={labels.fromDate} />
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className={adminLabel}>{labels.start}</span>
@@ -321,13 +316,7 @@ export function TherapistBlocks({
                   ) : (
                     <label className="flex flex-col gap-1">
                       <span className={adminLabel}>{labels.until}</span>
-                      <input
-                        type="date"
-                        name="until"
-                        required
-                        aria-label={labels.until}
-                        className={adminInputInline}
-                      />
+                      <DateFieldInput name="until" required label={labels.until} />
                     </label>
                   )}
                 </div>
@@ -336,13 +325,11 @@ export function TherapistBlocks({
               <div className="flex flex-wrap items-end gap-3">
                 <label className="flex flex-col gap-1">
                   <span className={adminLabel}>{labels.date}</span>
-                  <input
-                    type="date"
+                  <DateFieldInput
                     name="startDate"
                     defaultValue={f?.startDate ?? ""}
                     required
-                    aria-label={labels.date}
-                    className={adminInputInline}
+                    label={labels.date}
                   />
                 </label>
                 <label className="flex flex-col gap-1">
@@ -360,24 +347,20 @@ export function TherapistBlocks({
               <div className="flex flex-wrap items-end gap-3">
                 <label className="flex flex-col gap-1">
                   <span className={adminLabel}>{labels.fromDate}</span>
-                  <input
-                    type="date"
+                  <DateFieldInput
                     name="startDate"
                     defaultValue={f?.startDate ?? ""}
                     required
-                    aria-label={labels.fromDate}
-                    className={adminInputInline}
+                    label={labels.fromDate}
                   />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className={adminLabel}>{labels.toDate}</span>
-                  <input
-                    type="date"
+                  <DateFieldInput
                     name="endDate"
                     defaultValue={f?.endDate ?? ""}
                     required
-                    aria-label={labels.toDate}
-                    className={adminInputInline}
+                    label={labels.toDate}
                   />
                 </label>
               </div>

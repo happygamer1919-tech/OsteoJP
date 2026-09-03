@@ -10,8 +10,10 @@
  */
 import { test, expect } from "@playwright/test";
 import {
+  dateField,
   diagnoseMissingMarcacaoRow,
   fillAppointment,
+  fillDate,
   fillTime,
   openNewAppointment,
 } from "./helpers";
@@ -143,7 +145,7 @@ test("Nova marcação: Terapeuta first, Serviço auto-fills from the therapist, 
   await patient.fill(PATIENTS.maria.name);
   await dialog.getByRole("option", { name: PATIENTS.maria.name }).click();
   await dialog.getByLabel(/Localização/i).selectOption({ label: LOCATION.name });
-  await dialog.locator('input[type="date"]').fill(date);
+  await fillDate(dateField(dialog), date);
   await fillTime(dialog, "09:30");
   await dialog.getByRole("button", { name: SAVE }).click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
@@ -342,7 +344,13 @@ test("Agendar lote: a row's DATE is editable per-row and the EDITED set reaches 
   // The CALENDAR path is kept deliberately: typing is the new door and this test
   // guards the old one, which must keep working. Row 2's calendar is opened via
   // its own toggle button, which now sits beside the text field.
-  await dialog.getByRole("button", { name: "Abrir calendário" }).nth(1).click();
+  // THE ROW'S OWN TOGGLE, found from the row's text field rather than by index.
+  // SCHED-07 converted the drawer's main Data field to the same picker, so it
+  // now contributes an "Abrir calendário" button too and every index in this
+  // dialog shifted by one. An index that silently means a different control is
+  // the failure this locator removes: the previous run edited row 1 and asserted
+  // row 2, which reads as "the edit did not save".
+  await triggers.nth(1).locator("xpath=following-sibling::button").click();
   if (edited.slice(0, 7) !== seeded[1]!.slice(0, 7)) {
     await page.getByRole("button", { name: "Mês seguinte" }).click();
   }
@@ -426,7 +434,7 @@ test("NESA contraindication warning shows on booking (both paths) and never bloc
   await dialog.getByLabel(/Terapeuta/i).selectOption({ label: THERAPIST_NAME });
   await dialog.getByLabel(/Localização/i).selectOption({ label: LOCATION.name });
   await dialog.getByLabel(/Serviço/i).selectOption({ label: "NESA (sensível)" });
-  await dialog.locator('input[type="date"]').fill(date);
+  await fillDate(dateField(dialog), date);
   await fillTime(dialog, "17:00");
 
   // Soft warning appears, naming the matched contraindication.

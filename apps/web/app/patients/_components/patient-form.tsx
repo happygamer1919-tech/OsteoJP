@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
-import { Button } from "@osteojp/ui";
+import { Button, DatePicker } from "@osteojp/ui";
 import { createPatient, updatePatient } from "../../../lib/patients/actions";
 import type { PatientWriteError } from "../../../lib/patients/actions";
 import type { Patient } from "../../../lib/patients/types";
@@ -241,14 +241,14 @@ export function PatientForm({
       </Field>
       <div className="grid grid-cols-2 gap-4">
         <Field label={s["patients.fieldDateOfBirth"]} errorFor="dateOfBirth">
-          {/* BUG-08 fix: lang="pt-PT" ensures browser date picker uses
-              dd/mm/yyyy format on all machines, not the tester's OS locale */}
-          <input
-            type="date"
-            lang="pt-PT"
-            value={fields.dateOfBirth}
-            onChange={(e) => set("dateOfBirth", e.target.value)}
-            className={inputCls}
+          {/* SCHED-07: the shared picker, which TAKES A TYPED DATE. A date of
+              birth is the field the conversion was held for - forty years back
+              is ~480 clicks on a month-at-a-time calendar - and it converts only
+              because the trigger is a text field with a year jump behind it. */}
+          <DatePicker
+            value={fields.dateOfBirth === "" ? null : fields.dateOfBirth}
+            onChange={(v) => set("dateOfBirth", v)}
+            triggerLabel={s["patients.fieldDateOfBirth"]}
           />
         </Field>
         <Field label={s["patients.fieldSex"]} errorFor="sex">

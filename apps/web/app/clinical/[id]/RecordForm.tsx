@@ -1,5 +1,5 @@
 "use client";
-import { Banner, Button, Card, Checkbox, Field, Input, Textarea } from "@osteojp/ui";
+import { Banner, Button, Card, Checkbox, DatePicker, Field, Input, Textarea } from "@osteojp/ui";
 import { Lock } from "lucide-react";
 import { type ReactNode, useActionState, useState } from "react";
 
@@ -336,7 +336,11 @@ function FieldWidget({
       );
     case "date":
       return (
-        <Input type="date" disabled={readOnly} value={asString(value)} onChange={(e) => onChange(e.target.value)} />
+        <DatePicker
+          value={asString(value) === "" ? null : asString(value)}
+          disabled={readOnly}
+          onChange={(v) => onChange(v)}
+        />
       );
     case "string_list": {
       const arr = Array.isArray(value) ? (value as string[]) : [];

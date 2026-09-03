@@ -7,6 +7,7 @@ import {
   Dialog,
   Drawer,
   EmptyState,
+  DatePicker,
   Field,
   Input,
   Select,
@@ -448,7 +449,11 @@ function RescheduleDrawer({
     >
       <div className="flex flex-col gap-4">
         <Field label={s["appointment.date"]} required>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <DatePicker
+            value={date === "" ? null : date}
+            onChange={setDate}
+            triggerLabel={s["appointment.date"]}
+          />
         </Field>
         <Field label={s["appointment.time"]} required>
           <TimeField value={time} onChange={setTime} />
@@ -588,7 +593,11 @@ function ScheduleAgainDrawer({
     >
       <div className="flex flex-col gap-4">
         <Field label={s["appointment.date"]} required>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <DatePicker
+            value={date === "" ? null : date}
+            onChange={setDate}
+            triggerLabel={s["appointment.date"]}
+          />
         </Field>
         <Field label={s["appointment.time"]} required>
           <TimeField value={time} onChange={setTime} />

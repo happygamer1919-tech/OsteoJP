@@ -1,5 +1,6 @@
 "use client";
 
+import { DatePicker } from "@osteojp/ui";
 import { useRouter } from "next/navigation";
 
 /**
@@ -14,14 +15,12 @@ import { useRouter } from "next/navigation";
 export function DateJump({ date, label }: { date: string; label: string }) {
   const router = useRouter();
   return (
-    <input
-      type="date"
-      value={date}
-      aria-label={label}
-      onChange={(e) => {
-        if (e.target.value) router.push(`/dashboard?date=${e.target.value}`);
+    <DatePicker
+      value={date === "" ? null : date}
+      triggerLabel={label}
+      onChange={(v) => {
+        if (v) router.push(`/dashboard?date=${v}`);
       }}
-      className="h-10 rounded-v2 border border-v2-border bg-v2-surface px-3 text-sm text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
     />
   );
 }

@@ -17,7 +17,7 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
-import { fillTime } from "./helpers";
+import { fillDate, fillTime } from "./helpers";
 
 const SAVE = "Guardar";
 const BLOCK_DATE = futureDate(RUN_DAY_BASE + 26); // no other spec books this day
@@ -71,7 +71,8 @@ async function createBlock(page: Page) {
   await modal.getByLabel("Tipo").selectOption("pontual");
   // The mode switch re-renders the form; wait for the fields to mount.
   await expect(modal.getByLabel("Data")).toBeVisible();
-  await modal.getByLabel("Data").fill(BLOCK_DATE);
+  // SCHED-07: the block date is the shared picker now, so it takes dd/mm/aaaa.
+  await fillDate(modal.getByLabel("Data"), BLOCK_DATE);
   // W12-31: pontual block times are 24h TimeFields (select-based), driven via fillTime.
   await fillTime(modal.locator("label").filter({ hasText: "Início" }), "09:00");
   await fillTime(modal.locator("label").filter({ hasText: "Fim" }), "11:00");

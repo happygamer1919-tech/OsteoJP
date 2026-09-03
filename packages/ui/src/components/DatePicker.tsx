@@ -39,6 +39,27 @@ export interface DatePickerProps {
   placeholder?: string;
   /** Accessible name for the trigger (e.g. "Escolher data"). */
   triggerLabel?: string;
+  /**
+   * SCHED-07 conversion: post the ISO value under this NAME, for the forms that
+   * read FormData by field name. Without it this component posts NOTHING, which
+   * is why the conversion of the native date inputs waited for it.
+   */
+  name?: string;
+  /**
+   * Native constraint validation, on the VISIBLE field so the browser can focus
+   * and message it. Two cases are refused: an empty required field, and text
+   * that is not a date - the second through setCustomValidity, because the field
+   * is a text input and the browser has no opinion about what a date looks like.
+   */
+  required?: boolean;
+  /** Message for text that is not a date. Shown by the browser, so it is copy. */
+  invalidTypedMessage?: string;
+  /**
+   * `data-testid` for the text field. The converted native inputs carried them
+   * and the specs address them; dropping one would have turned a locator into a
+   * silent no-match rather than a failure anybody could read.
+   */
+  testId?: string;
   prevMonthLabel?: string;
   nextMonthLabel?: string;
   /** SCHED-07: accessible names for the year jump. */
@@ -172,6 +193,10 @@ export function DatePicker({
   id,
   placeholder,
   triggerLabel,
+  name,
+  required = false,
+  invalidTypedMessage = "Data inválida. Use dd/mm/aaaa.",
+  testId,
   prevMonthLabel = "Mês anterior",
   nextMonthLabel = "Mês seguinte",
   prevYearLabel = "Ano anterior",
@@ -282,11 +307,20 @@ export function DatePicker({
       <div className={cx(fieldSkin(invalid), "flex h-10 items-center gap-1 pl-3 pr-1")}>
         <input
           id={id}
+          data-testid={testId}
           type="text"
           inputMode="numeric"
           autoComplete="off"
           value={typed}
           disabled={disabled}
+          required={required}
+          // The browser validates THIS field, not the hidden one below: a hidden
+          // input is skipped by constraint validation, so a required date could
+          // be posted empty with nothing named on screen.
+          ref={(el) => {
+            if (!el) return;
+            el.setCustomValidity(typed !== "" && parseTypedDate(typed) === null ? invalidTypedMessage : "");
+          }}
           aria-label={triggerLabel}
           aria-invalid={invalid || (typed !== "" && parseTypedDate(typed) === null) || undefined}
           placeholder={placeholder ?? "dd/mm/aaaa"}
@@ -318,6 +352,10 @@ export function DatePicker({
           }}
           className="h-full min-w-0 flex-1 bg-transparent text-text-primary outline-none placeholder:text-text-muted"
         />
+        {/* The ISO value, under the caller's field name. Empty string when there
+            is no date, which is what every server action already reads as "not
+            set" - never a half-typed string. */}
+        {name != null && <input type="hidden" name={name} value={asIsoDate(value) ?? ""} />}
         <button
           type="button"
           aria-haspopup="dialog"

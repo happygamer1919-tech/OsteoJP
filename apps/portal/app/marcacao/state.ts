@@ -83,3 +83,29 @@ export const INITIAL_GUEST_STATE: GuestFormState = {
   error: null,
   received: false,
 }
+
+/**
+ * The services offered at a chosen clinic.
+ *
+ * A SERVICE NAMES THE CLINICS THAT OFFER IT, and the list is never empty: the
+ * catalog endpoint drops a service offered at no active clinic before the
+ * response is built ("A service offered at NO active clinic is not listed at
+ * all"), because it would be an unpickable row - every clinic choice would
+ * filter it away and the visitor would see a name they can never reach.
+ *
+ * THAT IS THE GUEST-08 RULING, 2026-08-19: offered-only-where-priced. An empty
+ * list here is therefore not "every clinic"; it is a service the clinic has
+ * turned off everywhere, and offering it would contradict the screen the clinic
+ * maintains (Administracao > Servicos shows it as "Nao oferecido aqui").
+ *
+ * It is a function rather than an inline filter so the rule can be TESTED: this
+ * app has no React testing library, so a predicate inside a component is a
+ * predicate nobody can ask a question of.
+ */
+export function servicesForClinic<T extends { locationIds: string[] }>(
+  services: readonly T[],
+  locationId: string,
+): T[] {
+  if (!locationId) return [...services]
+  return services.filter((sv) => sv.locationIds.includes(locationId))
+}

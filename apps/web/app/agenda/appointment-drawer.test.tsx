@@ -53,6 +53,10 @@ vi.mock("@osteojp/ui", () => {
       createElement("label", null, label as ReactNode, children as ReactNode),
     Select: ({ children }: { children?: ReactNode }) =>
       createElement("select", null, children as ReactNode),
+    // SCHED-07: the date field is the shared picker now. Rendered as a text
+    // input so a test that asks "is there a date control here" still sees one.
+    DatePicker: ({ testId }: { testId?: string }) =>
+      createElement("input", { type: "text", placeholder: "dd/mm/aaaa", "data-testid": testId }),
     Input: () => createElement("input"),
     TimeField: () => createElement("div"),
     Textarea: () => createElement("textarea"),

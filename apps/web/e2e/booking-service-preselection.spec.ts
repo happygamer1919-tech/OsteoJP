@@ -19,7 +19,7 @@
  * creates no appointments, so re-runs never collide.
  */
 import { test, expect } from "@playwright/test";
-import { openNewAppointment, fillTime } from "./helpers";
+import { dateField, fillDate, fillTime, openNewAppointment } from "./helpers";
 import {
   PATIENTS,
   LOCATION,
@@ -64,7 +64,7 @@ test("PL-06a: the Serviço Select offers every active service (preselection, not
   await patient.fill(PATIENTS.joao.name);
   await dialog.getByRole("option", { name: PATIENTS.joao.name }).click();
   await dialog.getByLabel(/Localização/i).selectOption({ label: LOCATION.name });
-  await dialog.locator('input[type="date"]').fill(date);
+  await fillDate(dateField(dialog), date);
   await fillTime(dialog, "11:00");
   await dialog.getByRole("button", { name: SAVE }).click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });

@@ -7,7 +7,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { PATIENTS, STORAGE } from "./fixtures";
-import { fillTime, expectTime, expectTimeEmpty } from "./helpers";
+import { expectTime, expectTimeEmpty, fillDate, fillTime } from "./helpers";
 
 // The far-past marcação seeded for Maria (seed-e2e.mjs ensureDeclaracaoAppointment):
 // 2022-03-15 09:30–10:30 (UTC == Lisbon, pre-DST) at Linda-a-Velha.
@@ -48,7 +48,10 @@ test.describe("Declaração de Presença (therapist)", () => {
 
     // Select the seeded marcação → date + hora início + hora fim prefill from it.
     await page.getByTestId("declaracao-marcacao").selectOption(SEEDED_APPT_ID);
-    await expect(date).toHaveValue("2022-03-15");
+    // SCHED-07: the field is the shared picker now, which SHOWS dd/mm/aaaa. The
+    // value it posts is still the ISO date - what changed is the rendering, and
+    // asserting the rendering is asserting what the clinician actually reads.
+    await expect(date).toHaveValue("15/03/2022");
     await expectTime(start, "09:30");
     await expectTime(end, "10:30");
 
@@ -68,12 +71,12 @@ test.describe("Declaração de Presença (therapist)", () => {
 
     // Manual-entry path. W12-31: setting Início auto-defaults Fim to one hour
     // later (same day), so Fim can never sit before Início.
-    await date.fill("2026-07-12");
+    await fillDate(date, "2026-07-12");
     await fillTime(start, "14:00");
     await expectTime(end, "15:00"); // defaulted from start + 1h
     // ...and Fim stays freely editable to a later time.
     await fillTime(end, "15:30");
-    await expect(date).toHaveValue("2026-07-12");
+    await expect(date).toHaveValue("12/07/2026");
     await expectTime(start, "14:00");
     await expectTime(end, "15:30");
   });
