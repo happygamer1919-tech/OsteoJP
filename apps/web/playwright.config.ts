@@ -32,6 +32,21 @@ import { defineConfig, devices } from "@playwright/test";
  * The portal tests additionally require apps/api (port 3002) and apps/portal
  * (port 3001) to be running; both are declared as webServers below.
  */
+/**
+ * LE-local-supabase-per-lane: the three dev ports are ENV-DRIVEN, defaulting to
+ * the values they were hardcoded at. Two executor lanes running the suite at the
+ * same time cannot share port 3000, and the shared local Supabase they used to
+ * share is what SR-39 split; leaving the app ports fixed would have moved the
+ * collision one layer up rather than removing it.
+ *
+ * CI is unaffected BY CONSTRUCTION: every default below is the literal the file
+ * carried before, and e2e.yml sets none of these variables.
+ */
+const WEB_PORT = process.env.WEB_PORT ?? "3000";
+const PORTAL_PORT = process.env.PORTAL_PORT ?? "3001";
+const API_PORT = process.env.API_PORT ?? "3002";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? `http://localhost:${API_PORT}`;
+
 export default defineConfig({
   testDir: "./e2e",
   // Serial: the suite drives ONE dev server talking to a local Supabase. Running
@@ -60,7 +75,7 @@ export default defineConfig({
   ],
 
   use: {
-    baseURL: process.env.BASE_URL ?? "http://localhost:3000",
+    baseURL: process.env.BASE_URL ?? `http://localhost:${WEB_PORT}`,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -151,7 +166,7 @@ export default defineConfig({
     : [
         {
           command: "pnpm dev",
-          url: "http://localhost:3000",
+          url: `http://localhost:${WEB_PORT}`,
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,
           // W4-08: TEST-ONLY scoped-audio-bucket env so the presigned signer
@@ -171,7 +186,7 @@ export default defineConfig({
         // (set via env var or NEXT_PUBLIC_API_URL=http://localhost:3002 prefix).
         {
           command: "pnpm --filter api dev",
-          url: "http://localhost:3002",
+          url: `http://localhost:${API_PORT}`,
           stdout: "pipe",
           stderr: "pipe",
           reuseExistingServer: !process.env.CI,
@@ -193,8 +208,8 @@ export default defineConfig({
         // from the inherited env when using pnpm --filter). Without this prefix the
         // portal's apiBase() returns '' and all server-action API calls fail silently.
         {
-          command: "NEXT_PUBLIC_API_URL=http://localhost:3002 pnpm --filter portal dev",
-          url: "http://localhost:3001",
+          command: `NEXT_PUBLIC_API_URL=${API_URL} pnpm --filter portal dev`,
+          url: `http://localhost:${PORTAL_PORT}`,
           stdout: "pipe",
           stderr: "pipe",
           reuseExistingServer: !process.env.CI,

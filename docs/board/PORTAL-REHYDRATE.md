@@ -662,6 +662,48 @@ Before your context is cleared, in this order:
 | **AMBER** | `/Users/ivan/Documents/Projects/GitHub/osteojp-amber` - **STOOD DOWN**, writes nothing |
 | migration apply, **NEVER build** | `/Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply` |
 
+### 7.0a ONE LOCAL SUPABASE PER LANE. Binding from 2026-09-03, SR-39.
+
+**TWO COMMANDS. Run the first once per session, the second instead of
+`pnpm --filter web e2e`.**
+
+```bash
+node scripts/lane-stack.mjs up   --lane purple   # start the lane's stack, migrate it, seed it
+node scripts/lane-stack.mjs e2e  --lane purple   # re-seed and run the suite against it
+```
+
+`--lane` is one of `shared`, `purple`, `blue`, `amber`, and an unknown name is
+REFUSED rather than defaulted - a typo that landed on another lane's ports would
+reproduce the exact failure this replaces. `status` prints the lane's ports and
+`down` stops it. The generated project lives in `.lane/<lane>/` (gitignored); its
+`config.toml` is rendered from the committed `supabase/config.toml` and its
+migrations are SYMLINKS to the committed ones, so a lane can never run a stale
+schema.
+
+**PURPLE is `54521/54522` with the apps on `3020/3021/3022`; BLUE is
+`54621/54622` and `3030/3031/3032`.** The offsets are a table in
+`scripts/lane-stack.mjs` and `scripts/lane-stack.test.mjs` proves every pair of
+lanes is port-disjoint, which is the property that matters and the one nobody can
+check by reading.
+
+**WHY, and it is measured rather than asserted.** Both lanes ran against ONE
+local stack, so either lane's `supabase db reset` deleted the other's e2e
+fixtures MID-RUN. On 2026-09-02 that presented as four Playwright logins failing
+with "Nao foi possivel iniciar sessao" - a REJECTED login, which reads as a broken
+login page or a broken auth config. It is neither, and it cost THREE wrong
+diagnoses before the failure snapshot named it.
+
+**THE THREE NEXT DEV PORTS ARE ENV-DRIVEN NOW** (`WEB_PORT`, `PORTAL_PORT`,
+`API_PORT`), because `apps/api` and `apps/portal` hardcoded theirs in their own
+package scripts and `PORT=` is ignored by `next dev`. Every default is the value
+the file carried before, and `.github/workflows/e2e.yml` sets none of them, so CI
+is unchanged.
+
+**THE KEYS ARE NEVER PRINTED.** `up` and `e2e` read the local anon and
+service-role keys from `supabase status` and inject them straight into the child
+process. Standing rule 3 is about values reaching a terminal's context, and this
+keeps them out of one even though the local keys are the Supabase demo JWTs.
+
 **THE CENSUS IS THREE TREES AS OF 2026-08-18.** `osteojp-cyan` was removed when
 that lane was stood down and its chat retired: its branch had merged as #916
 (0064 applied first, per rule 7), the tree was clean, and its last commit was
