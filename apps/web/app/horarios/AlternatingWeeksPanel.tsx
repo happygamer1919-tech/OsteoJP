@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Button, Dialog, Select } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { TimeFieldInput } from "@/components/time-field-input";
+import { alternatingBlockingReasons, defaultAlternatingWindow } from "@/lib/scheduling/alternating-form";
 import { applyAlternatingWeeksAction } from "./actions";
 
 /**
@@ -48,8 +49,20 @@ export function AlternatingWeeksPanel({
   const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [weekdays, setWeekdays] = useState<number[]>([1, 2, 3, 4, 5]);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // BOTH DATES ARRIVE FILLED IN, at the next Monday and eight whole weeks later.
+  // Two empty date fields on a form whose Guardar is disabled is the same
+  // non-answer the blocking list below exists to end - and the window a human
+  // types here is nearly always "from next week, for a couple of months".
+  //
+  // The Lisbon calendar date, computed the same way the weekly editor computes
+  // it, so a session open across midnight UTC does not disagree with the screen
+  // beside it. It is deterministic on the server and in the browser, which is
+  // what keeps this out of hydration.
+  const initialWindow = defaultAlternatingWindow(
+    new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Lisbon" }),
+  );
+  const [startDate, setStartDate] = useState(initialWindow.startDate);
+  const [endDate, setEndDate] = useState(initialWindow.endDate);
   const [locationAId, setLocationAId] = useState(locations[0]?.id ?? "");
   const [locationBId, setLocationBId] = useState(locations[1]?.id ?? "");
   const [startTime, setStartTime] = useState("09:00");
@@ -79,16 +92,19 @@ export function AlternatingWeeksPanel({
   const toggle = (d: number) =>
     setWeekdays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
 
-  const canSave =
-    !busy &&
-    weekdays.length > 0 &&
-    startDate !== "" &&
-    endDate !== "" &&
-    endDate >= startDate &&
-    locationAId !== "" &&
-    locationBId !== "" &&
-    locationAId !== locationBId &&
-    endTime > startTime;
+  // EVERY reason at once, and the button's disabled state is DERIVED from the
+  // same list rather than computed beside it - a second conjunction is a second
+  // thing to keep in step, and the two would disagree the first time one moved.
+  const blocking = alternatingBlockingReasons({
+    weekdays,
+    startDate,
+    endDate,
+    locationAId,
+    locationBId,
+    startTime,
+    endTime,
+  });
+  const canSave = !busy && blocking.length === 0;
 
   const submit = async (replace: boolean) => {
     setBusy(true);
@@ -217,9 +233,34 @@ export function AlternatingWeeksPanel({
               </label>
             </div>
 
-            <Button onClick={() => submit(false)} disabled={!canSave} data-testid="alt-weeks-save">
-              {s["common.save"]}
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button
+                onClick={() => submit(false)}
+                disabled={!canSave}
+                data-testid="alt-weeks-save"
+                aria-describedby={blocking.length > 0 ? "alt-weeks-blocked" : undefined}
+              >
+                {s["common.save"]}
+              </Button>
+
+              {/* BESIDE THE BUTTON, not at the top of the dialog: the question
+                  being answered is "why can I not press this", and an answer
+                  that has scrolled out of view answers nobody. */}
+              {blocking.length > 0 && (
+                <div
+                  id="alt-weeks-blocked"
+                  data-testid="alt-weeks-blocked"
+                  className="rounded-v2 border border-v2-border bg-v2-surface px-3 py-2 text-sm text-v2-text-secondary"
+                >
+                  <p className="text-v2-text-primary">{s["schedule.altBlockHeading"]}</p>
+                  <ul className="list-disc pl-5">
+                    {blocking.map((key) => (
+                      <li key={key}>{s[key as keyof typeof s]}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
 
             {status && (
               <p
