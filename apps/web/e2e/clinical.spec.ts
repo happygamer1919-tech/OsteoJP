@@ -289,7 +289,12 @@ test.describe("authoring (therapist)", () => {
     // W5-19 ruling B: NO manual created-date picker anywhere — there is no
     // date input and no "Data do Episódio" label in the form. The created
     // instant shows read-only in the header strip ("Criado em") only.
+    // SCHED-07: BOTH controls, because the sweep converted every native date
+    // input to the shared picker. Asserting only the native one would have gone
+    // on passing for a reason that has nothing to do with the ruling - the
+    // vacuous shape ACC-vacuous-guard-sweep counts.
     await expect(form.locator('input[type="date"]')).toHaveCount(0);
+    await expect(form.getByPlaceholder("dd/mm/aaaa")).toHaveCount(0);
     await expect(form.getByText("Data do Episódio", { exact: false })).toHaveCount(0);
   });
 

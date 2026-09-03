@@ -25,7 +25,7 @@
  *   - Serviço is preselected to the PRIMARY on open with no manual change.
  */
 import { test, expect } from "@playwright/test";
-import { openNewAppointment, fillTime } from "./helpers";
+import { dateField, fillDate, fillTime, openNewAppointment } from "./helpers";
 import {
   PATIENTS,
   LOCATION,
@@ -77,7 +77,7 @@ test.describe("therapist self-lock on the create form (PL-10)", () => {
     await patient.fill(PATIENTS.joao.name);
     await dialog.getByRole("option", { name: PATIENTS.joao.name }).click();
     await dialog.getByLabel(/Localização/i).selectOption({ label: LOCATION.name });
-    await dialog.locator('input[type="date"]').fill(date);
+    await fillDate(dateField(dialog), date);
     await fillTime(dialog, "11:00");
     await dialog.getByRole("button", { name: SAVE }).click();
     await expect(dialog).toBeHidden({ timeout: 12_000 });

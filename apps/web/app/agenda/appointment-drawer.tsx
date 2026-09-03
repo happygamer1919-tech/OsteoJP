@@ -1369,7 +1369,11 @@ export function AppointmentDrawer({
 
         <div className="flex flex-wrap gap-3">
           <Field label={s["appointment.date"]} required>
-            <Input type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
+            <DatePicker
+              value={form.date === "" ? null : form.date}
+              onChange={(v) => set("date", v)}
+              triggerLabel={s["appointment.date"]}
+            />
           </Field>
           <Field label={s["appointment.time"]} required>
             <TimeField value={form.time} onChange={(v) => set("time", v)} />
@@ -1477,11 +1481,11 @@ export function AppointmentDrawer({
                     </Field>
                   ) : (
                     <Field label={s["lote.until"]}>
-                      <Input
-                        type="date"
-                        value={loteUntil}
-                        data-testid="lote-until"
-                        onChange={(e) => setLoteUntil(e.target.value)}
+                      <DatePicker
+                        value={loteUntil === "" ? null : loteUntil}
+                        onChange={setLoteUntil}
+                        triggerLabel={s["lote.until"]}
+                        testId="lote-until"
                       />
                     </Field>
                   )}

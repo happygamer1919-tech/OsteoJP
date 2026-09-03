@@ -1,7 +1,7 @@
 "use client";
 
 import { type MouseEvent, useState } from "react";
-import { Button, Input, TimeField, useAnimatedDialog } from "@osteojp/ui";
+import { Button, DatePicker, Input, TimeField, useAnimatedDialog } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import type { BatchFailure } from "@/lib/scheduling/batch-core";
 import {
@@ -112,10 +112,10 @@ export function BatchFailureDialog({
                   <div className="mt-2 flex flex-wrap items-end gap-2">
                     <label className="flex flex-col gap-1 text-xs text-text-secondary">
                       {s["appointment.date"]}
-                      <Input
-                        type="date"
-                        value={row.date}
-                        onChange={(e) => setRows((rs) => editRow(rs, row.key, { date: e.target.value }))}
+                      <DatePicker
+                        value={row.date === "" ? null : row.date}
+                        onChange={(v) => setRows((rs) => editRow(rs, row.key, { date: v }))}
+                        triggerLabel={s["appointment.date"]}
                       />
                     </label>
                     <label className="flex flex-col gap-1 text-xs text-text-secondary">

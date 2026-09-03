@@ -199,3 +199,40 @@ describe("formatTypedDate — the round trip", () => {
     }
   });
 });
+
+/**
+ * SCHED-07 CONVERSION: the two props the sweep needed, and what each is for.
+ *
+ * The picker had to post a value before a single `<input type="date" name=…>`
+ * could be converted, and it had to refuse an empty required field on the
+ * VISIBLE control - a hidden input is skipped by constraint validation, so a
+ * required date could otherwise be submitted blank with nothing named on screen.
+ */
+describe("posting and validation", () => {
+  const html = (props: Record<string, unknown>): string =>
+    renderToStaticMarkup(createElement(DatePicker, { value: null, onChange: () => {}, ...props } as never));
+
+  it("posts NOTHING when no name is given, exactly as before", () => {
+    expect(html({})).not.toContain('type="hidden"');
+  });
+
+  it("posts the ISO value under the given name", () => {
+    const out = html({ name: "startDate", value: "2026-09-07" });
+    expect(out).toContain('type="hidden"');
+    expect(out).toContain('name="startDate"');
+    expect(out).toContain('value="2026-09-07"');
+  });
+
+  it("posts an EMPTY string rather than a half-typed one when there is no date", () => {
+    // The caller reads "" as "not set"; anything else would be a value nobody
+    // chose reaching a server action.
+    const out = html({ name: "startDate", value: null });
+    expect(out).toContain('name="startDate" value=""');
+  });
+
+  it("puts required on the visible text field, not on the hidden one", () => {
+    const out = html({ name: "startDate", required: true });
+    expect(out).toMatch(/<input[^>]*type="text"[^>]*required/);
+    expect(out).not.toMatch(/<input type="hidden"[^>]*required/);
+  });
+});

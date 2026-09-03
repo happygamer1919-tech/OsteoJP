@@ -11,6 +11,7 @@ import { guestBookingAction } from './actions'
 import {
   GUEST_TOTAL_STEPS,
   INITIAL_GUEST_STATE,
+  servicesForClinic,
   type GuestValues,
 } from './state'
 
@@ -85,9 +86,9 @@ export function GuestBookingForm({
   const { values, step } = state
   const location = catalog.locations.find((l) => l.id === values.locationId) ?? null
   const service = catalog.services.find((sv) => sv.id === values.serviceId) ?? null
-  const servicesHere = catalog.services.filter((sv) =>
-    values.locationId ? sv.locationIds.includes(values.locationId) : true,
-  )
+  // EMPTY locationIds MEANS EVERY CLINIC; this used to read it as NONE. See
+  // servicesForClinic in state.ts, where the rule now lives and is tested.
+  const servicesHere = servicesForClinic(catalog.services, values.locationId)
 
   /* ---------------------------------------------------------------- */
   /* THE CONFIRMATION. Reached only by an accepted submit.             */

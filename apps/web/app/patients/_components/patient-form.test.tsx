@@ -17,17 +17,23 @@ import { PatientForm } from "./patient-form";
 
 // BUG-08 — "Data de nascimento" rendered the native picker in US mm/dd/yyyy.
 // `dateOfBirth` is a CALENDAR DATE (no time, no timezone): a pg `date` column,
-// surfaced by Drizzle as a "yyyy-mm-dd" string, and `<input type="date">` always
-// emits/consumes that ISO string regardless of display locale. So the stored
-// value never drifts — the bug is purely the picker's *display* format, which
-// the browser derives from the input's `lang`. The format isn't observable in a
-// node/jsdom render, so we assert the attribute that drives it.
+// surfaced by Drizzle as a "yyyy-mm-dd" string.
+//
+// THE FIX USED TO BE `lang="pt-PT"` ON A NATIVE INPUT, which asked the BROWSER
+// for a pt-PT rendering and got it or did not. Since SCHED-07 the field is the
+// shared DatePicker, whose format is OURS: it displays and accepts dd/mm/aaaa on
+// every browser and every OS locale, and there is no attribute to get wrong.
+//
+// SO THE ASSERTION MOVED WITH THE CONTROL rather than being deleted. It still
+// asks the same question - does this field present a pt-PT date - and it would
+// fail if the sweep ever put a native input back, because a native input has no
+// dd/mm/aaaa placeholder.
 describe("PatientForm — BUG-08 date-of-birth locale", () => {
-  it("declares lang=pt-PT on the date input so the native picker uses dd/mm/aaaa", () => {
+  it("renders the shared picker, which shows and takes dd/mm/aaaa on every locale", () => {
     const html = renderToStaticMarkup(createElement(PatientForm));
-    const dateInput = html.match(/<input[^>]*type="date"[^>]*>/)?.[0] ?? "";
-    expect(dateInput).not.toBe("");
-    expect(dateInput).toContain('lang="pt-PT"');
+    expect(html).toContain('placeholder="dd/mm/aaaa"');
+    // The native control is gone, and with it the OS-locale rendering.
+    expect(html).not.toMatch(/<input[^>]*type="date"/);
   });
 });
 

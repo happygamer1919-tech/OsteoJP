@@ -17,7 +17,7 @@
  * accrue state.
  */
 import { test, expect, type Page } from "@playwright/test";
-import { openNewAppointment, fillAppointment, fillTime } from "./helpers";
+import { fillAppointment, fillDate, fillTime, openNewAppointment } from "./helpers";
 import { LOCATION_B, THERAPIST_NAME, futureDate, RUN_DAY_BASE, PATIENTS } from "./fixtures";
 
 const SAVE = "Guardar";
@@ -272,8 +272,9 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   let modal = blocksModal(page);
   await modal.getByLabel("Tipo").selectOption("prolongada");
   await expect(modal.getByLabel("De")).toBeVisible();
-  await modal.getByLabel("De").fill(futureDate(RUN_DAY_BASE + 40));
-  await modal.getByLabel("Até").fill(futureDate(RUN_DAY_BASE + 42));
+  // SCHED-07: the block dates are the shared picker now (dd/mm/aaaa).
+  await fillDate(modal.getByLabel("De"), futureDate(RUN_DAY_BASE + 40));
+  await fillDate(modal.getByLabel("Até"), futureDate(RUN_DAY_BASE + 42));
   await modal.getByRole("button", { name: SAVE }).click();
   await settleAfterWrite(page);
   await expect(modal).toBeHidden();
@@ -283,7 +284,7 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   modal = blocksModal(page);
   await modal.getByLabel("Tipo").selectOption("pontual");
   await expect(modal.getByLabel("Data")).toBeVisible();
-  await modal.getByLabel("Data").fill(date);
+  await fillDate(modal.getByLabel("Data"), date);
   // W12-31: pontual block times are 24h TimeFields (select-based), driven via fillTime.
   await fillTime(modal.locator("label").filter({ hasText: "Início" }), "09:00");
   await fillTime(modal.locator("label").filter({ hasText: "Fim" }), "13:00");

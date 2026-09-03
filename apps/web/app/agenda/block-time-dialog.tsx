@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Dialog, Field, Select, TimeField, useToast } from "@osteojp/ui";
+import { DatePicker, Dialog, Field, Select, TimeField, useToast } from "@osteojp/ui";
 
 import { s } from "@/lib/i18n";
 import type { Option } from "@/lib/scheduling/types";
@@ -129,7 +129,12 @@ export function BlockTimeDialog({
         </Field>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">{s["appointment.date"]}</span>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} data-testid="block-date" />
+          <DatePicker
+            value={date === "" ? null : date}
+            onChange={setDate}
+            triggerLabel={s["appointment.date"]}
+            testId="block-date"
+          />
         </label>
         <div className="flex gap-3">
           <label className="flex flex-1 flex-col gap-1 text-sm">
@@ -229,12 +234,11 @@ export function BlockTimeDialog({
               ) : (
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="font-medium">{s["lote.until"]}</span>
-                  <input
-                    type="date"
-                    value={until}
-                    onChange={(e) => setUntil(e.target.value)}
-                    className={field}
-                    data-testid="block-until"
+                  <DatePicker
+                    value={until === "" ? null : until}
+                    onChange={setUntil}
+                    triggerLabel={s["lote.until"]}
+                    testId="block-until"
                   />
                 </label>
               )}

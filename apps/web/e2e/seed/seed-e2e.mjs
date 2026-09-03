@@ -699,6 +699,39 @@ async function ensureBaseData(userIds) {
     "service-unmapped",
   );
 
+  // GUEST-08: THE PUBLIC CATALOG IS OFFERED-ONLY-WHERE-PRICED, so a service with
+  // no ACTIVE service_location_prices row is dropped from the public response
+  // entirely - and the seed wrote no price rows at all. The public form was
+  // therefore structurally empty on step 2: a "Servico" group with no options
+  // and a Continuar button that could not advance. Nothing caught it, because
+  // nothing had ever walked the flow in a browser (LE-guest-form-no-e2e).
+  //
+  // PRICED AT LINDA-A-VELHA ONLY, and that is forced rather than chosen:
+  // `services.location_id` is a CEILING the route intersects with the price
+  // grid, and both seeded bookable services are scoped to LOCATION_A. A price
+  // row at Consultorio B would be ignored, so writing one would be a fixture
+  // that lies about what the catalog does.
+  //
+  // The VALUE is irrelevant to every assertion - what the route reads is the
+  // row's EXISTENCE - so it is a round number that cannot be mistaken for real
+  // clinic pricing.
+  for (const serviceId of [SERVICE_A, SERVICE_UNMAPPED]) {
+    must(
+      (await db.from("service_location_prices").upsert(
+        {
+          tenant_id: TENANT_A,
+          service_id: serviceId,
+          location_id: LOCATION_A,
+          price_cents: 5000,
+          currency: "EUR",
+          is_active: true,
+        },
+        { onConflict: "tenant_id,service_id,location_id" },
+      )).error,
+      `service_location_prices ${serviceId}`,
+    );
+  }
+
   // W10-04 isolation: the three ACTIVE tenant-A patients (Maria/João/Ana) are
   // created_by the E2E therapist, so under per-therapist scoping the therapist
   // still sees them and every existing therapist-role spec keeps working.

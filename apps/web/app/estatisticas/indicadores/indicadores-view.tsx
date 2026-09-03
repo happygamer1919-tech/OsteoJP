@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
+import { DatePicker } from "@osteojp/ui";
 
 import { s } from "@/lib/i18n";
 import type { KpiFilters, KpiReports } from "@/lib/statistics/kpi-queries";
@@ -212,22 +213,20 @@ export function IndicadoresView({ reports, filters }: { reports: KpiReports; fil
         </div>
         <label className="flex flex-col gap-1 text-xs text-v2-text-secondary">
           {s["statistics.dateFrom"]}
-          <input
-            type="date"
-            value={customFrom}
+          <DatePicker
+            value={customFrom === "" ? null : customFrom}
             max={customTo || undefined}
-            onChange={(e) => setCustomFrom(e.target.value)}
-            className="rounded border border-border-strong px-3 py-1.5 text-sm text-v2-text-primary"
+            onChange={setCustomFrom}
+            triggerLabel={s["statistics.dateFrom"]}
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-v2-text-secondary">
           {s["statistics.dateTo"]}
-          <input
-            type="date"
-            value={customTo}
+          <DatePicker
+            value={customTo === "" ? null : customTo}
             min={customFrom || undefined}
-            onChange={(e) => setCustomTo(e.target.value)}
-            className="rounded border border-border-strong px-3 py-1.5 text-sm text-v2-text-primary"
+            onChange={setCustomTo}
+            triggerLabel={s["statistics.dateTo"]}
           />
         </label>
         <button

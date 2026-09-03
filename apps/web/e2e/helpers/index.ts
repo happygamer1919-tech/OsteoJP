@@ -122,7 +122,8 @@ export async function fillPatientForm(page: Page, f: PatientFields) {
   // event which WebKit's automation layer does not propagate to React's onChange,
   // leaving controlled-input state empty and causing server-side validation errors.
   await page.getByLabel(/Nome completo/i).pressSequentially(f.fullName);
-  if (f.dateOfBirth) await page.getByLabel(/Data de nascimento/i).fill(f.dateOfBirth);
+  // SCHED-07: the DOB field is the shared picker now, so it takes dd/mm/aaaa.
+  if (f.dateOfBirth) await fillDate(page.getByLabel(/Data de nascimento/i), f.dateOfBirth);
   if (f.sex) await page.getByLabel(/Sexo/i).selectOption(f.sex); // <select>, not text
   // PL-31 — `/^NIF/i`, anchored, because the exemption checkbox is labelled
   // "Estrangeiro / sem NIF" and an unanchored /NIF/i now matches BOTH controls
@@ -242,7 +243,7 @@ export async function fillAppointment(
   await dialog.getByRole("option", { name: opts.patient }).click();
   await dialog.getByLabel(/Terapeuta/i).selectOption({ label: opts.therapist });
   await dialog.getByLabel(/Localização/i).selectOption({ label: opts.location });
-  await dialog.locator('input[type="date"]').fill(opts.date);
+  await fillDate(dateField(dialog), opts.date);
   await fillTime(dialog, opts.time);
 }
 
@@ -251,6 +252,30 @@ export async function fillAppointment(
  * native time input. `scope` must contain exactly one TimeField (a field wrapper
  * or a row). Value stays "HH:mm".
  */
+/**
+ * Set a date on the shared DatePicker (SCHED-07), from an ISO "yyyy-mm-dd".
+ *
+ * THE CONTROL IS A TEXT FIELD NOW, not `<input type="date">`, and it takes what
+ * a person types: dd/mm/aaaa. Filling it with the ISO string does nothing at all
+ * - `parseTypedDate` refuses a four-digit leading year, correctly - and the
+ * failure would be a form that looks filled and posts nothing.
+ *
+ * `pressSequentially`, not `fill`, for the reason the patient-form helper
+ * already gives: fill() fires a single input event that WebKit's automation
+ * layer does not propagate to React's onChange, leaving a controlled field
+ * empty.
+ */
+export async function fillDate(field: Locator, iso: string) {
+  const [y, m, d] = iso.split("-");
+  await field.fill("");
+  await field.pressSequentially(`${d}/${m}/${y}`);
+}
+
+/** The date field inside `scope`: the picker's text input. */
+export function dateField(scope: Locator | Page): Locator {
+  return scope.getByPlaceholder("dd/mm/aaaa").first();
+}
+
 export async function fillTime(scope: Locator, hhmm: string) {
   const [h, m] = hhmm.split(":");
   await scope.getByLabel("Horas").selectOption(String(Number(h)));

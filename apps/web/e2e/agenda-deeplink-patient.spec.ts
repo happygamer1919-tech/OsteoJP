@@ -7,7 +7,7 @@
  * books a fresh empty day (same pattern as marcacoes-tab-edit.spec.ts).
  */
 import { test, expect, type Locator } from "@playwright/test";
-import { fillTime } from "./helpers";
+import { dateField, fillDate, fillTime } from "./helpers";
 import { PATIENTS, LOCATION, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./fixtures";
 
 const SAVE = "Guardar";
@@ -23,7 +23,7 @@ async function fillNonPatient(
 ) {
   await dialog.getByLabel(/Terapeuta/i).selectOption({ label: opts.therapist });
   await dialog.getByLabel(/Localização/i).selectOption({ label: opts.location });
-  await dialog.locator('input[type="date"]').fill(opts.date);
+  await fillDate(dateField(dialog), opts.date);
   await fillTime(dialog, opts.time);
 }
 

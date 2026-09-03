@@ -53,7 +53,13 @@ export type PublicBookingCatalog = {
   services: {
     id: string;
     name: string;
-    /** Which clinics offer it. Empty means every clinic in `locations`. */
+    /**
+     * Which clinics offer it. NEVER EMPTY: a service offered at no active
+     * clinic is dropped from the response entirely (see the filter below), so a
+     * consumer must not read an empty list as "every clinic". It used to mean
+     * exactly that, before the GUEST-08 ruling of 2026-08-19 made the price grid
+     * the authority, and the sentence outlived the rule.
+     */
     locationIds: string[];
   }[];
 };

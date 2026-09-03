@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Select } from "@osteojp/ui";
+import { DatePicker, Select } from "@osteojp/ui";
 
 import { s } from "@/lib/i18n";
 import type { AgendaOptions } from "@/lib/scheduling/types";
@@ -65,22 +65,20 @@ export function EstatisticasView({
       <div className="glass-nav flex flex-wrap items-end gap-3 rounded-v2 px-4 py-3 shadow-v2-float">
         <label className="flex flex-col gap-1 text-xs text-v2-text-secondary">
           {s["statistics.dateFrom"]}
-          <input
-            type="date"
-            value={filters.from ?? ""}
+          <DatePicker
+            value={filters.from ?? null}
             max={filters.to ?? undefined}
-            onChange={(e) => navigate({ from: e.target.value || null })}
-            className="rounded border border-border-strong px-3 py-1.5 text-sm text-v2-text-primary"
+            onChange={(v) => navigate({ from: v || null })}
+            triggerLabel={s["statistics.dateFrom"]}
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-v2-text-secondary">
           {s["statistics.dateTo"]}
-          <input
-            type="date"
-            value={filters.to ?? ""}
+          <DatePicker
+            value={filters.to ?? null}
             min={filters.from ?? undefined}
-            onChange={(e) => navigate({ to: e.target.value || null })}
-            className="rounded border border-border-strong px-3 py-1.5 text-sm text-v2-text-primary"
+            onChange={(v) => navigate({ to: v || null })}
+            triggerLabel={s["statistics.dateTo"]}
           />
         </label>
         <div className="w-48">

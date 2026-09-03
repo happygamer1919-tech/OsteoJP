@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { knownField } from "@/lib/patients/known-field";
-import { Button, Dialog, TimeField } from "@osteojp/ui";
+import { Button, DatePicker, Dialog, TimeField } from "@osteojp/ui";
 import { s } from "@/lib/i18n";
 import { generateDeclaracaoUrlAction } from "./declaracao-actions";
 
@@ -173,7 +173,12 @@ export function DeclaracaoDialog({
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">{s["documents.declaracao.dateLabel"]}</span>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} data-testid="declaracao-date" />
+            <DatePicker
+              value={date === "" ? null : date}
+              onChange={setDate}
+              triggerLabel={s["documents.declaracao.dateLabel"]}
+              testId="declaracao-date"
+            />
           </label>
           <div className="flex gap-3">
             <label className="flex flex-1 flex-col gap-1 text-sm">

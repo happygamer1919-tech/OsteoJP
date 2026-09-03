@@ -89,7 +89,7 @@ test("create patient with all fields persists and displays them", async ({ page 
   const name = `Completo ${uniq()}`;
   const phone = "+351 912 000 111";
   const profession = "Fisioterapeuta E2E";
-  await createPatient(page, {
+  const id = await createPatient(page, {
     fullName: name,
     dateOfBirth: "1980-06-15",
     sex: "male",
@@ -104,6 +104,17 @@ test("create patient with all fields persists and displays them", async ({ page 
     profession,
   });
   await expect(page.getByRole("heading", { name })).toBeVisible();
+
+  // SCHED-07: THE DATE OF BIRTH ROUND-TRIPS THROUGH THE TYPED PICKER. The field
+  // is no longer a native date input - it is the shared DatePicker, typed as
+  // 15/06/1980 - and this is the field the whole conversion was held for, since
+  // a birth date forty years back is unreachable by clicking. Asserting the
+  // value on the EDIT form proves the ISO value reached the database and came
+  // back, which a screenshot of the create form cannot.
+  await page.goto(`/patients/${id}/edit`);
+  await expect(page.getByLabel(/Data de nascimento/i)).toHaveValue("15/06/1980");
+  await page.goto(`/patients/${id}`);
+
   // Contactos folded into Dados pessoais (W2-02 item 4): phone shows on the profile.
   await expect(page.getByText(phone).first()).toBeVisible();
   // Profession is surfaced (W2-02 item 5).
