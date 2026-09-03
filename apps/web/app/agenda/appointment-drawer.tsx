@@ -1618,6 +1618,37 @@ export function AppointmentDrawer({
           </p>
         )}
 
+        {/* THE APPOINTMENT ID, READABLE AND SELECTABLE.
+            ============================================================
+            WHY IT IS ON THE SCREEN AT ALL, since nothing on this drawer reads
+            it back. /admin/messaging-check takes an OPTIONAL appointment id,
+            and with one the confirm code it sends is REAL and the link confirms
+            that appointment - which is the only way to exercise the whole round
+            trip on a handset. There was nowhere in the product to obtain one:
+            the id exists in the agenda card's `data-appointment-id` attribute,
+            which is a test handle, so the owner's own delivery test could only
+            ever be run in its sample mode.
+
+            IT IS NOT SECRET AND IT IS INERT. This drawer already renders the
+            patient's name, the practitioner and the times to the same viewer,
+            and RLS decides what reaches the page at all; nothing reads this
+            value back, so no behaviour depends on it being displayed. Same
+            reasoning the agenda card's attribute carries.
+
+            `select-all` and `font-mono` are the whole of the affordance: one
+            click selects the id, and a monospace run makes a mistyped character
+            visible. No copy BUTTON, because a clipboard write is a permission
+            prompt and a failure path for a line that is read far more often
+            than it is copied. */}
+        {editing && (
+          <p className="text-xs text-text-secondary">
+            {s["appointment.idLabel"]}{": "}
+            <span data-testid="drawer-appointment-id" className="select-all font-mono">
+              {editing.id}
+            </span>
+          </p>
+        )}
+
         {/* PL-16 — notes are a THREAD, not one overwritable box. On an existing
             marcacao the board renders every note with its author + timestamp and
             an "Adicionar nota" button above them: this is the reception <-> therapist
