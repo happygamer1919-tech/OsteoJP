@@ -322,6 +322,7 @@
   "appointment.confirmationConfirmed": "Confirmation received",
   "appointment.confirmationDeclined": "Confirmation declined",
   "appointment.confirmationReceivedAt": "Received on",
+  "appointment.idLabel": "Appointment ID",
   "appointment.createdBy": "Created by",
   "appointment.createdByPortal": "Online booking (portal)",
   "appointment.createdAt": "Created on",

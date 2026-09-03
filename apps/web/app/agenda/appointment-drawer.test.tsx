@@ -240,6 +240,38 @@ describe("AppointmentDrawer - created-by / created-at provenance (W9-06 item 10)
   });
 });
 
+/**
+ * THE APPOINTMENT ID, ON THE SCREEN, BECAUSE THE DELIVERY TEST NEEDS ONE.
+ *
+ * /admin/messaging-check takes an optional appointment id, and with one the
+ * confirm code it sends is REAL and the link confirms that appointment - the
+ * only way to exercise the whole round trip on a handset. Before this the id
+ * lived exclusively in the agenda card's `data-appointment-id` attribute, which
+ * is a test handle, so the owner's own delivery test could only run in sample
+ * mode. Nothing reads this value back; it is displayed, not wired.
+ */
+describe("AppointmentDrawer - the appointment id is readable in edit mode", () => {
+  it("renders the id, labelled, on an existing marcacao", () => {
+    const html = render({ mode: "edit", appt: editAppt });
+    expect(html).toContain("ID da consulta");
+    expect(html).toContain(editAppt.id);
+  });
+
+  it("is selectable in one click and monospaced, which is the whole affordance", () => {
+    // No copy BUTTON: a clipboard write is a permission prompt and a failure
+    // path, for a line read far more often than it is copied. `select-all` and
+    // a monospace run cost nothing and cannot fail.
+    const html = render({ mode: "edit", appt: editAppt });
+    expect(html).toMatch(/data-testid="drawer-appointment-id"[^>]*class="[^"]*select-all[^"]*font-mono/);
+  });
+
+  it("is ABSENT on create, because there is no row yet to have an id", () => {
+    const html = render({ mode: "create" });
+    expect(html).not.toContain("ID da consulta");
+    expect(html).not.toContain('data-testid="drawer-appointment-id"');
+  });
+});
+
 // PL-10 — therapist self-booking self-lock on the CREATE form. A therapist's
 // practitioner is forced to themselves and the Terapeuta selector is hidden
 // (replaced by a static label of their OWN name); the FULL active service list

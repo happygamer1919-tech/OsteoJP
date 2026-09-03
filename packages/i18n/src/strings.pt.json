@@ -322,6 +322,7 @@
   "appointment.confirmationConfirmed": "Confirmação recebida",
   "appointment.confirmationDeclined": "Confirmação recusada",
   "appointment.confirmationReceivedAt": "Recebida em",
+  "appointment.idLabel": "ID da consulta",
   "appointment.createdBy": "Criado por",
   "appointment.createdByPortal": "Reserva online (portal)",
   "appointment.createdAt": "Criado em",
