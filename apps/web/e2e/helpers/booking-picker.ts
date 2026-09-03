@@ -121,7 +121,19 @@ export async function pickFirstDayWithSlots(
   // nothing, no gridcells existed, and the helper returned `empty-calendar` - a
   // BROKEN FLOW degrading silently into the outcome that SKIPS instead of
   // failing.
-  const trigger = page.getByRole("button", { name: /escolh|data/i });
+  // SCHED-07 / SR-38 — THE TRIGGER IS NO LONGER THE WHOLE CONTROL. The picker
+  // used to be a single button whose accessible name was the field label
+  // ("Escolher data"). It is now a TEXT FIELD you can type into, plus a small
+  // button beside it that opens the calendar, named "Abrir calendário" - which
+  // matches neither /escolh/ nor /data/, so this helper reported the flow as
+  // broken. The old names are kept in the alternation: this helper is shared,
+  // and a picker that has not been converted yet still presents the old shape.
+  //
+  // THE CALENDAR PATH IS KEPT RATHER THAN REPLACED BY TYPING, deliberately.
+  // This helper's job is to pick a day that is actually FREE, which it can only
+  // learn by reading the enabled gridcells - typing a date would have to guess
+  // one, and guessing is what its own header says cost 2.1 minutes a time.
+  const trigger = page.getByRole("button", { name: /escolh|data|abrir calend/i });
   if ((await trigger.count()) === 0) {
     return { ok: false, why: "flow-broken", detail: "date/time step has no date-picker trigger" };
   }

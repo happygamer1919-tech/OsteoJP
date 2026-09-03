@@ -243,7 +243,14 @@ function addIsoDays(iso: string, days: number): string {
   return new Date(Date.UTC(y!, m! - 1, d! + days)).toISOString().slice(0, 10);
 }
 
-/** pt-PT trigger text of the lote row DatePicker for an ISO date (dd/mm/yyyy). */
+/**
+ * pt-PT VALUE of the lote row DatePicker for an ISO date (dd/mm/aaaa).
+ *
+ * SCHED-07 CHANGED WHAT THIS IS READ FROM, and the rename says so. The picker
+ * used to be a BUTTON whose TEXT was the date; SR-38 made it a text field you
+ * can type into, so the date is now the field's VALUE. Same string, different
+ * DOM, and a `toHaveText` on a textbox silently matches "" forever.
+ */
 function ptTriggerDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Intl.DateTimeFormat("pt-PT").format(new Date(y!, m! - 1, d!));
@@ -284,21 +291,25 @@ test("Agendar lote: a row's DATE is editable per-row and the EDITED set reaches 
   const edited = addIsoDays(seeded[1]!, 1); // move row 2 one day later
 
   // Each row now carries its own DatePicker, seeded with the recurrence date.
-  const triggers = dialog.getByRole("button", { name: "Data da marcação" });
+  // SCHED-07: a TEXTBOX, not a button - see ptTriggerDate's note.
+  const triggers = dialog.getByRole("textbox", { name: "Data da marcação" });
   await expect(triggers).toHaveCount(2);
-  await expect(triggers.nth(0)).toHaveText(ptTriggerDate(seeded[0]!));
-  await expect(triggers.nth(1)).toHaveText(ptTriggerDate(seeded[1]!));
+  await expect(triggers.nth(0)).toHaveValue(ptTriggerDate(seeded[0]!));
+  await expect(triggers.nth(1)).toHaveValue(ptTriggerDate(seeded[1]!));
 
   // Edit ONLY row 2's date via the calendar popover. (While the popover is
   // open there are two role=dialog nodes, so target the day cell via page.)
-  await triggers.nth(1).click();
+  // The CALENDAR path is kept deliberately: typing is the new door and this test
+  // guards the old one, which must keep working. Row 2's calendar is opened via
+  // its own toggle button, which now sits beside the text field.
+  await dialog.getByRole("button", { name: "Abrir calendário" }).nth(1).click();
   if (edited.slice(0, 7) !== seeded[1]!.slice(0, 7)) {
     await page.getByRole("button", { name: "Mês seguinte" }).click();
   }
   await page.getByRole("gridcell", { name: ptDayLabel(edited) }).click();
-  await expect(triggers.nth(1)).toHaveText(ptTriggerDate(edited));
+  await expect(triggers.nth(1)).toHaveValue(ptTriggerDate(edited));
   // The sibling row keeps its recurrence date: the edit is per-row.
-  await expect(triggers.nth(0)).toHaveText(ptTriggerDate(seeded[0]!));
+  await expect(triggers.nth(0)).toHaveValue(ptTriggerDate(seeded[0]!));
 
   // Submit → the EDITED explicit slot list goes to batchSchedule. The E2E
   // therapist has no availability template, so every slot is busy → the

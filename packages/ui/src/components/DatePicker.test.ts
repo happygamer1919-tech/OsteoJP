@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect } from "vitest";
 
-import { DatePicker, datePickerAnchor } from "./DatePicker";
+import { DatePicker, datePickerAnchor, formatTypedDate, parseTypedDate } from "./DatePicker";
 
 /**
  * SCHED-06 - an empty date field opens its calendar on TODAY, never on 1900.
@@ -108,5 +108,94 @@ describe("DatePicker - the trigger agrees with the calendar (SCHED-06)", () => {
 
   it("still formats a real value", () => {
     expect(render("2026-09-15")).toContain("15/09/2026");
+  });
+});
+
+/**
+ * SCHED-07 / SR-38 — typed entry, and the validation that makes it safe.
+ *
+ * The ruling is that typed entry is never removed from a field this component
+ * replaces. That makes the PARSER the load-bearing part: a picker that accepts
+ * a typo as a real date is worse than one that cannot be typed into at all,
+ * because the wrong date is silent and the missing keyboard is obvious.
+ */
+describe("parseTypedDate — what a person can type", () => {
+  it("accepts dd/mm/aaaa, the pt-PT form", () => {
+    expect(parseTypedDate("15/09/2026")).toBe("2026-09-15");
+    expect(parseTypedDate("01/01/1998")).toBe("1998-01-01");
+  });
+
+  it("accepts - and . as separators, which keyboards and habits both produce", () => {
+    expect(parseTypedDate("15-09-2026")).toBe("2026-09-15");
+    expect(parseTypedDate("15.09.2026")).toBe("2026-09-15");
+  });
+
+  it("accepts single-digit day and month", () => {
+    expect(parseTypedDate("1/2/2026")).toBe("2026-02-01");
+    expect(parseTypedDate("9/9/2026")).toBe("2026-09-09");
+  });
+
+  it("accepts a bare 8-digit ddmmaaaa, which is how fast typists enter dates", () => {
+    expect(parseTypedDate("15092026")).toBe("2026-09-15");
+    expect(parseTypedDate("01011998")).toBe("1998-01-01");
+  });
+
+  it("tolerates surrounding and inner whitespace", () => {
+    expect(parseTypedDate("  15 / 09 / 2026 ")).toBe("2026-09-15");
+  });
+});
+
+describe("parseTypedDate — what it REFUSES, which is the point", () => {
+  it("REFUSES 31/02, instead of rolling it over to 3 March", () => {
+    // `new Date(2026, 1, 31)` is 3 March. A Date constructor turns a typo into a
+    // real date nobody typed, and nothing downstream can tell. This is the one
+    // assertion this parser exists for.
+    expect(parseTypedDate("31/02/2026")).toBeNull();
+    expect(parseTypedDate("30/02/2024")).toBeNull();
+    expect(parseTypedDate("31/04/2026")).toBeNull();
+  });
+
+  it("knows leap years both ways", () => {
+    expect(parseTypedDate("29/02/2024")).toBe("2024-02-29");
+    expect(parseTypedDate("29/02/2026")).toBeNull();
+  });
+
+  it("REFUSES a two-digit year, because it is ambiguous exactly where it hurts", () => {
+    // On a birth date "50" is a coin flip between 1950 and 2050. Refusing is the
+    // only answer that cannot be silently wrong.
+    expect(parseTypedDate("15/09/26")).toBeNull();
+    expect(parseTypedDate("01/01/98")).toBeNull();
+  });
+
+  it("refuses impossible components and plain rubbish", () => {
+    for (const bad of ["00/09/2026", "15/00/2026", "15/13/2026", "32/09/2026",
+                       "", "   ", "hoje", "2026-09-15", "15/09", "15/09/20267", "abc/de/fghi"]) {
+      expect(parseTypedDate(bad)).toBeNull();
+    }
+  });
+
+  it("refuses an ISO string, so the two input shapes cannot be confused", () => {
+    // The component's VALUE is ISO; what a person TYPES is dd/mm/aaaa. Accepting
+    // both here would make the field's contract depend on which one arrived.
+    expect(parseTypedDate("2026-09-15")).toBeNull();
+  });
+});
+
+describe("formatTypedDate — the round trip", () => {
+  it("renders an ISO value as dd/mm/aaaa", () => {
+    expect(formatTypedDate("2026-09-15")).toBe("15/09/2026");
+    expect(formatTypedDate("1998-01-01")).toBe("01/01/1998");
+  });
+
+  it("is empty for every value the calendar refuses to stand on", () => {
+    for (const v of ["", null, undefined, "2026-9-3", "hoje"]) {
+      expect(formatTypedDate(v)).toBe("");
+    }
+  });
+
+  it("ROUND-TRIPS with parseTypedDate for every date it can produce", () => {
+    for (const iso of ["2026-09-15", "1998-01-01", "2024-02-29", "2000-12-31", "1950-06-07"]) {
+      expect(parseTypedDate(formatTypedDate(iso))).toBe(iso);
+    }
   });
 });
