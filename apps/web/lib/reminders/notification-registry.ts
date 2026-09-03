@@ -196,10 +196,99 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
   },
   patientTemplate("confirmation.email", "email", EV_SCHEDULED, CONFIRMATION_EMAIL.pt.body),
   patientTemplate("confirmation.sms", "sms", EV_SCHEDULED, CONFIRMATION_SMS.pt),
-  patientTemplate("follow_up.email", "email", EV_COMPLETED, FOLLOW_UP_EMAIL.pt.body),
-  patientTemplate("follow_up.sms", "sms", EV_COMPLETED, FOLLOW_UP_SMS.pt),
-  patientTemplate("no_show.email", "email", EV_NOSHOW, NO_SHOW_EMAIL.pt.body),
-  patientTemplate("no_show.sms", "sms", EV_NOSHOW, NO_SHOW_SMS.pt),
+
+  /**
+   * ==================================================================
+   * FOUR BODIES DARKENED, 2026-09-04. OWNER RULING B.
+   * INC-followup-ignores-a-future-booking.
+   * ==================================================================
+   * THE POST-VISIT SMS WENT TO A PATIENT WHO ALREADY HAD AN
+   * APPOINTMENT THE NEXT DAY. It said "Marcar proxima consulta" while
+   * the booking she had was made by staff two days earlier. It behaved
+   * exactly as written, which is the defect: `dispatchFollowUp` has
+   * four guards and none of them mentions another appointment, and
+   * `loadReminderData` selects ONE row by id, so there is no cohort to
+   * exclude anybody from.
+   *
+   * THE FLAG COULD NOT STOP IT. `patientTemplate` gives every patient
+   * body `REMINDERS_LIVE_SEND`, so turning that off would have stopped
+   * the 24h reminder and the booking confirmation too. Approval is the
+   * ONLY per-body control this registry has, so approval is what is
+   * used - and the owner ruled B rather than adding a per-class flag.
+   *
+   * NO_SHOW IS DARKENED TOO, AND IT WAS NOT WHAT MISFIRED. Three
+   * reasons, and the third is the owner's: JP HAS NEVER SEEN THIS COPY;
+   * it is armed on the same shared flag, so it is one completed status
+   * change away from sending; and a message to a patient who did not
+   * attend is FEE-ADJACENT, which is precisely JP's gate. The fee body
+   * one entry down is unapproved for that reason and this is the same
+   * question wearing different words.
+   *
+   * DARKENING NEEDS NO APPROVAL; ARMING DOES. That asymmetry is the
+   * whole reason this is a safe change to make quickly: setting
+   * `approved: false` can only ever REFUSE a send, and `resolveApproved`
+   * fails closed, so the worst case of being wrong here is a message
+   * that does not go out. Setting it true is the direction that needs
+   * JP, and it is not taken here.
+   *
+   * WHAT STILL HAPPENS WHILE THEY ARE FALSE, recorded because the
+   * reply-ack entries below learned it the expensive way: the gate
+   * withholds the MESSAGE and nothing else. The Inngest functions still
+   * run, the appointment still changes, and `dispatchFollowUp` still
+   * returns `dispatched: true` with a suppressed channel - so a reader
+   * of the run output sees a dispatch that "worked". 0075's
+   * `reminder_dispatches` is what makes that legible, with
+   * `outcome = 'suppressed'` and the reason recorded.
+   *
+   * WHAT UNBLOCKS THEM: JP approves the copy AND, for follow-up, the
+   * cohort learns about future appointments. Approving the wording
+   * alone would re-arm a message that is still wrong for the patient
+   * it misfired on.
+   */
+  {
+    id: "follow_up.email",
+    channel: "email",
+    audience: "patient",
+    triggerEvent: EV_COMPLETED,
+    body: FOLLOW_UP_EMAIL.pt.body,
+    liveSendFlag: "REMINDERS_LIVE_SEND",
+    approved: false,
+    approvedBy: null,
+    approvedAt: null,
+  },
+  {
+    id: "follow_up.sms",
+    channel: "sms",
+    audience: "patient",
+    triggerEvent: EV_COMPLETED,
+    body: FOLLOW_UP_SMS.pt,
+    liveSendFlag: "REMINDERS_LIVE_SEND",
+    approved: false,
+    approvedBy: null,
+    approvedAt: null,
+  },
+  {
+    id: "no_show.email",
+    channel: "email",
+    audience: "patient",
+    triggerEvent: EV_NOSHOW,
+    body: NO_SHOW_EMAIL.pt.body,
+    liveSendFlag: "REMINDERS_LIVE_SEND",
+    approved: false,
+    approvedBy: null,
+    approvedAt: null,
+  },
+  {
+    id: "no_show.sms",
+    channel: "sms",
+    audience: "patient",
+    triggerEvent: EV_NOSHOW,
+    body: NO_SHOW_SMS.pt,
+    liveSendFlag: "REMINDERS_LIVE_SEND",
+    approved: false,
+    approvedBy: null,
+    approvedAt: null,
+  },
 
   /**
    * ELEVENTH BODY — the 24h SMS carrying the 50% fee line. W13-05.

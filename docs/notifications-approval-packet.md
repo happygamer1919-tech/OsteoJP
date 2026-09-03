@@ -279,7 +279,7 @@ Remarcar: +351 272 000 000
 
 - **Identificador:** `follow_up.email`
 - **Quando:** 24 horas depois de a consulta terminar, se marcada como realizada.
-- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
+- **Estado:** DESLIGADO (`approved: false`) — decisao do proprietario, 2026-09-04. Enviava a um doente que ja tinha marcacao no dia seguinte. Foi aprovado por JP em 2026-08-03 e a aprovacao NAO foi apagada: o texto continua aprovado, o envio e que esta desligado. Para voltar a ligar e precisa uma decisao nova.
 
 **Texto tal como esta programado:**
 
@@ -315,7 +315,7 @@ Para marcar a próxima consulta contacte: +351 272 000 000
 
 - **Identificador:** `follow_up.sms`
 - **Quando:** 24 horas depois de a consulta terminar, se marcada como realizada.
-- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
+- **Estado:** DESLIGADO (`approved: false`) — decisao do proprietario, 2026-09-04. Enviava a um doente que ja tinha marcacao no dia seguinte. Foi aprovado por JP em 2026-08-03 e a aprovacao NAO foi apagada: o texto continua aprovado, o envio e que esta desligado. Para voltar a ligar e precisa uma decisao nova.
 - **Codificacao:** GSM-7 (sim) — **90 caracteres, 1 segmento**
 
 **Texto tal como esta programado:**
@@ -342,7 +342,7 @@ Marcar proxima consulta: +351 272 000 000
 
 - **Identificador:** `no_show.email`
 - **Quando:** Quando a rececao marca a consulta como falta.
-- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
+- **Estado:** DESLIGADO (`approved: false`) — decisao do proprietario, 2026-09-04. JP nunca viu este texto e a mensagem e adjacente a taxa. Foi aprovado por JP em 2026-08-03 e a aprovacao NAO foi apagada: o texto continua aprovado, o envio e que esta desligado. Para voltar a ligar e precisa uma decisao nova.
 
 **Texto tal como esta programado:**
 
@@ -380,7 +380,7 @@ Ou contacte: +351 272 000 000
 
 - **Identificador:** `no_show.sms`
 - **Quando:** Quando a rececao marca a consulta como falta.
-- **Estado:** aprovado (`approved: true`) — JP, 2026-08-03. **O envio continua bloqueado** por `REMINDERS_LIVE_SEND`, que e o unico travao restante.
+- **Estado:** DESLIGADO (`approved: false`) — decisao do proprietario, 2026-09-04. JP nunca viu este texto e a mensagem e adjacente a taxa. Foi aprovado por JP em 2026-08-03 e a aprovacao NAO foi apagada: o texto continua aprovado, o envio e que esta desligado. Para voltar a ligar e precisa uma decisao nova.
 - **Codificacao:** GSM-7 (sim) — **84 caracteres, 1 segmento**
 
 **Texto tal como esta programado:**
