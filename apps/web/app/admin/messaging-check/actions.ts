@@ -54,7 +54,13 @@ export async function sendMessagingCheckAction(formData: FormData): Promise<void
     ip,
   });
 
-  if (!result.ok) redirect(`/admin/messaging-check?m=${result.reason}`);
+  if (!result.ok) {
+    // The provider's reason travels back on the URL so the owner reads it on
+    // the page rather than in a dashboard. Encoded, and capped, because it is
+    // provider text rather than ours.
+    const detail = result.detail ? `&d=${encodeURIComponent(result.detail.slice(0, 200))}` : "";
+    redirect(`/admin/messaging-check?m=${result.reason}${detail}`);
+  }
   // The outcome carries the two numbers worth reading on the way back: how long
   // the body was and whether the code was live.
   redirect(

@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { auditLog, getDbAdmin } from "@osteojp/db";
-import { normalizePhonePT } from "@osteojp/notify";
+import { isSmsCapablePT, normalizePhonePT } from "@osteojp/notify";
 import { sendSms } from "./clients";
 import { renderSms, type ReminderContext } from "./templates";
 import {
@@ -47,7 +47,18 @@ import { senderCanReceiveReplies } from "./reply-capability";
 
 export type MessagingCheckResult =
   | { ok: true; segments: number; length: number; codeWasLive: boolean; body: string }
-  | { ok: false; reason: "invalid_phone" | "rate_limited" | "send_failed" | "no_link" };
+  | {
+      ok: false;
+      reason: "invalid_phone" | "landline" | "rate_limited" | "send_failed" | "no_link";
+      /**
+       * What the provider said, for the OWNER'S OWN SCREEN only. A diagnostic
+       * page whose only output is "not sent" sends the person who ran it to a
+       * dashboard they may not have; the whole point of this page is to answer
+       * WHY. Never a phone number, never a patient field - the provider's
+       * message and code, which name a configuration problem.
+       */
+      detail?: string;
+    };
 
 /** The body a 24h reminder would carry today, for a fixed sample appointment. */
 function sampleContext(): ReminderContext {
@@ -81,6 +92,13 @@ export async function sendMessagingCheck(args: {
   const to = normalizePhonePT(args.phone);
   if (!to) return { ok: false, reason: "invalid_phone" };
 
+  // A LANDLINE IS REFUSED HERE, exactly as the reminder path refuses it before
+  // sending. `normalizePhonePT` admits the Portuguese `2` prefix, which is a
+  // perfectly good number that cannot receive SMS - so without this check the
+  // owner types a clinic landline, Twilio rejects it, and the page answers with
+  // a 500 instead of the one sentence that would have told him why.
+  if (!isSmsCapablePT(to)) return { ok: false, reason: "landline" };
+
   // The link is the thing under test. With the capability disarmed there is
   // nothing to look at, so this refuses rather than sending a body that does
   // not exercise the feature.
@@ -97,8 +115,36 @@ export async function sendMessagingCheck(args: {
     replyInstruction: senderCanReceiveReplies(),
   });
 
-  const sent = await sendSms({ to, body, templateId: "reminder.24h.sms" });
-  const delivered = !sent.id.startsWith("skipped:");
+  // ==========================================================================
+  // THE TRANSPORT IS AWAITED INSIDE A CATCH, AND THAT IS THE WHOLE P0 FIX.
+  // ==========================================================================
+  // packages/notify/src/gate.ts awaits the provider with no try/catch, so a
+  // Twilio rejection propagates out of dispatch. THE REMINDER PATH SURVIVES
+  // THAT because it runs inside an Inngest job, where a throw is a retryable
+  // job failure nobody sees. THIS PAGE IS A USER-FACING SERVER ACTION: the same
+  // throw is a 500 on the owner's screen, with the reason only in Sentry.
+  //
+  // A DIAGNOSTIC PAGE MUST NEVER 500. Its entire job is to report what
+  // happened, so an unhandled provider error is the one outcome it cannot be
+  // allowed to produce - and it is exactly the outcome the owner hit.
+  let sent: Awaited<ReturnType<typeof sendSms>> | null = null;
+  let failure: string | undefined;
+  try {
+    sent = await sendSms({ to, body, templateId: "reminder.24h.sms" });
+  } catch (err) {
+    // The provider's own words, trimmed. Twilio's errors name the
+    // configuration problem ("is not a valid phone number", "is not currently
+    // reachable", an alphanumeric-sender restriction), which is what the owner
+    // needs. No phone number and no patient field can appear here: the only
+    // interpolated value is the provider's message.
+    failure = err instanceof Error ? err.message.slice(0, 300) : "unknown transport error";
+  }
+  const delivered = sent !== null && !sent.id.startsWith("skipped:");
+  // A SUPPRESSION IS NOT A FAILURE AND MUST NOT READ AS ONE. `skipped:` means a
+  // gate refused - live send off, template unapproved, no provider configured -
+  // and the marker names which, so the owner reads a sentence rather than
+  // guessing at a silent no-op.
+  if (!failure && sent && !delivered) failure = sent.id;
 
   // Same compensation the dispatcher uses: a code that never went cannot be
   // allowed to block the appointment's real reminder from minting one.
@@ -120,13 +166,14 @@ export async function sendMessagingCheck(args: {
         toHash: createHash("sha256").update(to).digest("hex"),
         segmentLength: body.length,
         codeWasLive: Boolean(issued),
-        sandbox: sent.sandbox,
-        result: sent.id,
+        sandbox: sent?.sandbox ?? null,
+        result: sent?.id ?? "threw",
+        failure: failure ?? null,
       },
       ip: args.ip,
     });
 
-  if (!delivered) return { ok: false, reason: "send_failed" };
+  if (!delivered) return { ok: false, reason: "send_failed", detail: failure };
   return {
     ok: true,
     segments: Math.ceil(body.length / 160),
