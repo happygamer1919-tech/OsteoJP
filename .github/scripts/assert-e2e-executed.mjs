@@ -67,6 +67,18 @@ const HARD_REQUIRED = [
       "test noticed. A silent skip here returns it to exactly that state, and PG1 closed on a " +
       "point-in-time owner observation with nothing in CI defending it.",
   },
+  {
+    file: "apps/web/e2e/confirm-code.spec.ts",
+    titleContains: "flips agendada to confirmada",
+    why:
+      "PG3 APPOINTMENTS - the confirm half. The 24h SMS link is the ONLY surface on which a " +
+      "patient changes an appointment's state, and until 2026-09-03 no test had ever opened " +
+      "/c/<code>: a grep for it over apps/web/e2e returned nothing. The unit suites were all " +
+      "green while `Pedir remarcacao` shipped as a button that wrote no row any screen renders " +
+      "(INC-CONFIRM-10). This is the one test that reads the OUTPUT - the appointment row and " +
+      "its audit row - after the press, so a skip here restores the exact configuration in " +
+      "which that defect reached the owner's phone.",
+  },
 ];
 
 const reportPath = process.argv[2];
