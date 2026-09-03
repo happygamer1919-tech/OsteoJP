@@ -1497,6 +1497,10 @@
   "admin.messagingCheck.noLink": "The confirm link is disarmed, so there is nothing to test.",
   "admin.messagingCheck.sampleCode": "Sample code: the link shows the generic page.",
   "admin.messagingCheck.liveCode": "REAL code: the link confirms the appointment you named.",
+  "admin.messagingCheck.senderLabel": "Sender in use",
+  "admin.messagingCheck.replyArmed": "The reply line IS armed: the message asks the patient to reply SIM or NAO.",
+  "admin.messagingCheck.replyDisarmed": "The reply line is off: the message asks for no reply.",
+  "admin.messagingCheck.senderWarning": "The sender is a NUMBER. The approved sender is the name OsteoJP. A number Twilio does not own fails at send and arms the reply line.",
   "admin.messagingCheck.landline": "That number is a landline and cannot receive SMS. Use a mobile.",
   "admin.messagingCheck.bodyRefused": "Nothing was sent: the message does not fit one segment and is never split. Fix the configuration and try again."
 }

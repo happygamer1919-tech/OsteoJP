@@ -47,6 +47,8 @@
 
 import type { EnvSource } from "@osteojp/notify";
 
+import { resolveOutboundSender } from "./sender";
+
 /**
  * The flag, for the messaging-service case only. Exact string "true" arms it -
  * the same fail-safe rule REMINDERS_LIVE_SEND and REMINDERS_FEE_NOTICE_ENABLED
@@ -56,34 +58,43 @@ import type { EnvSource } from "@osteojp/notify";
 export const REPLY_CAPABLE_FLAG = "REMINDERS_REPLY_CAPABLE" as const;
 
 /**
- * E.164: a leading `+`, a non-zero country digit, then 7 to 14 more digits.
- *
- * DELIBERATELY NARROWER THAN "CAN RECEIVE SMS". A numeric SHORT CODE (12345)
- * can receive replies and is not E.164, so this answers "no" for one. The
- * clinic has no short code and will not buy one; a false "no" costs a line of
- * copy, and being permissive here would cost a patient a reply nobody hears.
- */
-const E164 = /^\+[1-9]\d{6,14}$/;
-
-/**
  * Whether a reply to the outbound sender can reach us.
  *
- * MIRRORS `twilioSender()` IN clients.ts: TWILIO_SMS_FROM takes precedence and
- * the messaging service is the fallback. If those two ever disagree about which
- * sender is in play, this function would be answering about a sender that is
- * not the one sending - so the precedence is restated here rather than assumed,
- * and `reply-capability.test.ts` pins it against that function's behaviour.
+ * ==========================================================================
+ * IT NO LONGER MIRRORS `twilioSender()`. IT ASKS THE SAME FUNCTION. (SR-43)
+ * ==========================================================================
+ * This used to restate clients.ts's precedence rather than assume it, and said
+ * so - "if those two ever disagree about which sender is in play, this function
+ * would be answering about a sender that is not the one sending". They did
+ * disagree, on exactly one input: a `TWILIO_SMS_FROM` set to the EMPTY STRING
+ * was a VALUE to clients.ts's `??` and FALSY to the `?.trim()` here, so this
+ * answered about the messaging service while clients.ts suppressed the send.
+ *
+ * A restated rule is a second rule. `resolveOutboundSender` is now the only
+ * rule, and both files read its answer.
+ *
+ * THE MAPPING FROM KIND TO ANSWER IS THE WHOLE OF THE POLICY, and it is here
+ * rather than in the resolver because it is a JUDGEMENT about replies, not a
+ * fact about the sender: an E.164 number receives SMS, an alphanumeric id is
+ * one-way, and a messaging service is genuinely unknowable from here.
  */
 export function senderCanReceiveReplies(env: EnvSource = process.env): boolean {
-  const from = env.TWILIO_SMS_FROM?.trim();
-  if (from) return E164.test(from);
-
-  const service = env.TWILIO_MESSAGING_SERVICE_SID?.trim();
-  if (service) return env[REPLY_CAPABLE_FLAG] === "true";
-
-  // No sender at all. The send itself is suppressed as
-  // `missing_provider_config` downstream; there is nothing to reply to.
-  return false;
+  const sender = resolveOutboundSender(env);
+  switch (sender.kind) {
+    case "number":
+      return true;
+    case "alphanumeric":
+      // THE FLAG CANNOT OVERRIDE THIS. The code KNOWS this sender cannot
+      // receive, and an operator declaration must not contradict a fact the
+      // code has.
+      return false;
+    case "messaging_service":
+      return env[REPLY_CAPABLE_FLAG] === "true";
+    case "none":
+      // The send itself is suppressed as `missing_provider_config` downstream;
+      // there is nothing to reply to.
+      return false;
+  }
 }
 
 /**
@@ -92,16 +103,17 @@ export function senderCanReceiveReplies(env: EnvSource = process.env): boolean {
  * above.
  */
 export function replyCapabilityReason(env: EnvSource = process.env): string {
-  const from = env.TWILIO_SMS_FROM?.trim();
-  if (from) {
-    return E164.test(from)
-      ? "TWILIO_SMS_FROM is an E.164 number"
-      : `TWILIO_SMS_FROM is set but is not an E.164 number (an alphanumeric sender id is one-way); ${REPLY_CAPABLE_FLAG} cannot override a sender the code can see`;
+  const sender = resolveOutboundSender(env);
+  switch (sender.kind) {
+    case "number":
+      return `${sender.source} is an E.164 number, so a reply can reach us`;
+    case "alphanumeric":
+      return `${sender.source} is set but is not an E.164 number (an alphanumeric sender id is one-way); ${REPLY_CAPABLE_FLAG} cannot override a sender the code can see`;
+    case "messaging_service":
+      return env[REPLY_CAPABLE_FLAG] === "true"
+        ? `${REPLY_CAPABLE_FLAG} is exactly "true", declaring the messaging service routes a replyable sender`
+        : `a messaging service is configured but ${REPLY_CAPABLE_FLAG} is not exactly "true"; the sender pool cannot be inspected from here`;
+    case "none":
+      return "no outbound SMS sender is configured";
   }
-  if (env.TWILIO_MESSAGING_SERVICE_SID?.trim()) {
-    return env[REPLY_CAPABLE_FLAG] === "true"
-      ? `${REPLY_CAPABLE_FLAG} is exactly "true", declaring the messaging service routes a replyable sender`
-      : `a messaging service is configured but ${REPLY_CAPABLE_FLAG} is not exactly "true"; the sender pool cannot be inspected from here`;
-  }
-  return "no outbound SMS sender is configured";
 }

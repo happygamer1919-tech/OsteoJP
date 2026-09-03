@@ -86,8 +86,12 @@ OsteoJP: Lembrete — tem consulta de Fisioterapia em 2 dias, 18 Jun às
 - Note the submission reference number here once confirmed.
 - Ping Ivan with the reference so he can add it to the Twilio account notes.
 - Expected approval: 3–10 business days.
-- Once approved, Ivan updates `TWILIO_SENDER_ID` env var in Vercel from the
-  test number to `OsteoJP`.
+- Once approved, Ivan sets **`TWILIO_SMS_FROM`** in Vercel to `OsteoJP`.
+  NOT `TWILIO_SENDER_ID`, which the application never reads (SR-43). Only
+  `scripts/twilio-smoke.mjs` reads that name, and it warns when it is set
+  without `TWILIO_SMS_FROM`. Following this line as it used to read left the
+  approved alphanumeric sender unused and the send falling back to the
+  messaging service, or suppressed as unconfigured.
 
 ---
 

@@ -1497,6 +1497,10 @@
   "admin.messagingCheck.noLink": "A ligação de confirmação está desarmada, por isso não há nada para testar.",
   "admin.messagingCheck.sampleCode": "Código de amostra: a ligação mostra a página genérica.",
   "admin.messagingCheck.liveCode": "Código REAL: a ligação confirma a consulta indicada.",
+  "admin.messagingCheck.senderLabel": "Remetente em uso",
+  "admin.messagingCheck.replyArmed": "A linha de resposta ESTÁ activa: a mensagem pede ao paciente que responda SIM ou NÃO.",
+  "admin.messagingCheck.replyDisarmed": "A linha de resposta está desactivada: a mensagem não pede resposta.",
+  "admin.messagingCheck.senderWarning": "O remetente é um NÚMERO. O remetente aprovado é o nome OsteoJP. Um número que a Twilio não fornece falha no envio e activa a linha de resposta.",
   "admin.messagingCheck.landline": "Esse número é uma linha fixa e não recebe SMS. Use um telemóvel.",
   "admin.messagingCheck.bodyRefused": "Nada foi enviado: a mensagem não cabe num só segmento e não é dividida. Corrija a configuração e volte a tentar."
 }

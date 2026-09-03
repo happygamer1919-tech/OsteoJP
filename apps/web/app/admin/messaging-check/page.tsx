@@ -2,6 +2,11 @@ import { redirect } from "next/navigation";
 import { getRequestContext } from "@/lib/auth/context";
 import { s } from "@/lib/i18n";
 import { confirmLinkEnabled, confirmLinkReason } from "@/lib/reminders/confirm-code";
+import { resolveOutboundSender, senderLabel } from "@/lib/reminders/sender";
+import {
+  replyCapabilityReason,
+  senderCanReceiveReplies,
+} from "@/lib/reminders/reply-capability";
 import { adminHelp, adminLabel } from "../admin-ui";
 import { sendMessagingCheckAction } from "./actions";
 
@@ -27,6 +32,32 @@ export default async function MessagingCheckPage({
 
   const { m, len, live, d } = await searchParams;
   const armed = confirmLinkEnabled();
+
+  // ==========================================================================
+  // THE SENDER AND THE REPLY LINE, IN WORDS, BECAUSE A TWILIO LOG IS NOT A UI.
+  // ==========================================================================
+  // CONFIRM-08 / SR-43. On 2026-09-02 `TWILIO_SMS_FROM` held an E.164 number
+  // Twilio does not own. That ONE variable produced BOTH symptoms: every
+  // outbound message failed at the provider, and the reply line armed, because
+  // an E.164 sender is exactly the condition the reply gate reads as replyable.
+  //
+  // It ran for two days. Nothing on any screen in this application said which
+  // sender was in play or whether the reply line was on - the only place either
+  // fact existed was a Twilio console the operator has to think to open. This
+  // page is where somebody looks when messaging is wrong, so both facts belong
+  // here, and the SECOND one has to be a sentence rather than a flag, because
+  // "armed" is meaningless without "and here is why".
+  //
+  // NEVER THE WHOLE VALUE. `senderLabel` prints an alphanumeric id in full - it
+  // is a brand name every patient already sees - and masks a number to its last
+  // four digits, which is enough to tell two candidates apart and not enough to
+  // be a contact detail on an admin screen.
+  const sender = resolveOutboundSender();
+  const replyArmed = senderCanReceiveReplies();
+  // The one combination that is always a misconfiguration here: the approved
+  // sender is the alphanumeric name, so a NUMBER means somebody set the wrong
+  // variable or the wrong value, and it is the shape that cost two days.
+  const senderIsNumber = sender.kind === "number";
 
   const banner =
     m === "sent"
@@ -91,6 +122,32 @@ export default async function MessagingCheckPage({
           armed it is the person reading this page. `confirmLinkReason` names
           which of the two variables is missing and never prints either value. */}
       <p className={adminHelp}>{confirmLinkReason()}</p>
+
+      {/* THE SENDER AND THE REPLY LINE. See the block above the return. */}
+      <dl className="rounded border border-border bg-bg p-3 text-body-sm">
+        <div className="flex flex-wrap gap-x-2">
+          <dt className="font-medium text-text-primary">
+            {s["admin.messagingCheck.senderLabel"]}:
+          </dt>
+          <dd data-testid="messaging-check-sender" className="text-text-primary">
+            {senderLabel()}
+          </dd>
+        </div>
+        <dd data-testid="messaging-check-reply-state" className="mt-2 text-text-secondary">
+          {replyArmed
+            ? s["admin.messagingCheck.replyArmed"]
+            : s["admin.messagingCheck.replyDisarmed"]}{" "}
+          {replyCapabilityReason()}
+        </dd>
+        {senderIsNumber && (
+          <dd
+            data-testid="messaging-check-sender-warning"
+            className="mt-2 font-medium text-error"
+          >
+            {s["admin.messagingCheck.senderWarning"]}
+          </dd>
+        )}
+      </dl>
 
       <form action={sendMessagingCheckAction} className="flex max-w-lg flex-col gap-4">
         <label className={adminLabel}>
