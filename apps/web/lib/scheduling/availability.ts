@@ -21,7 +21,51 @@ export type AvailabilityTemplate = {
   validFrom: string | null; // "yyyy-mm-dd" inclusive, null = open-ended
   validUntil: string | null; // "yyyy-mm-dd" inclusive, null = open-ended
   isActive: boolean;
+  /** SCHED-09. OPTIONAL so every existing caller compiles unchanged; only the
+   *  schedule inspector needs to know WHERE a window is worked. */
+  locationId?: string | null;
 };
+
+/**
+ * SCHED-09 / SR-37 — WHICH RULE PUT A WINDOW ON A DAY. Three labels, ruled by
+ * the owner, and the third is not a template at all.
+ *
+ * ==========================================================================
+ * WHY THREE AND NOT FOUR, WHICH IS THE WHOLE POINT OF THE RULING.
+ * ==========================================================================
+ * The inspector was asked for four: normal, semanas alternadas, dia a dia,
+ * excecao. TWO OF THOSE ARE THE SAME ROW. `alternating-weeks.ts` writes ONE ROW
+ * PER (WEEKDAY, DATE) bounded to that single day - "validFrom === validUntil ===
+ * the date", its own header says so - and `day-by-day.ts` writes the identical
+ * shape through the same schedule-window.ts helper. Nothing in
+ * availability_templates records which mode authored a row, and there is no
+ * schedule-pattern table anywhere in the schema.
+ *
+ * So a fourth label could only be a GUESS that looks authoritative on a screen
+ * whose entire purpose is to be believed - section 1.3, on an instrument. The
+ * owner ruled three: base / dia definido / excecao. `dia_definido` is the honest
+ * name for "a row bounded to one day", whichever editor wrote it.
+ */
+export type ScheduleRule = "base" | "dia_definido" | "excecao";
+
+/**
+ * Classify a template. A row bounded to exactly ONE day is a dated override; a
+ * row with an open validity, OR one merely BOUNDED to a multi-day window, is
+ * still the ordinary week.
+ *
+ * THE MULTI-DAY CASE IS `base` DELIBERATELY. Layer 2 CARVES layer 1 rather than
+ * deleting it (schedule-window.ts): the weekly row is bounded to end the day
+ * before a pattern starts and an identical row resumes after. Those carved rows
+ * are the ordinary week wearing a date range, and calling them overrides would
+ * label most of a normal year as exceptional.
+ */
+export function scheduleRuleFor(t: {
+  validFrom: string | null;
+  validUntil: string | null;
+}): Extract<ScheduleRule, "base" | "dia_definido"> {
+  if (t.validFrom !== null && t.validFrom === t.validUntil) return "dia_definido";
+  return "base";
+}
 
 /** One row of time_off (absolute instants). */
 export type AbsenceBlock = {

@@ -10,7 +10,13 @@
 // math is unit-testable in isolation, mirroring batch-core / availability.
 
 import { mergeIntervals, subtractIntervals, type TimeInterval } from "./intervals";
-import { isWithinValidity, lisbonWeekday, type AvailabilityTemplate } from "./availability";
+import {
+  isWithinValidity,
+  lisbonWeekday,
+  scheduleRuleFor,
+  type AvailabilityTemplate,
+  type ScheduleRule,
+} from "./availability";
 import { addDays, lisbonDateTimeToUtc, lisbonMidnightUtc } from "./time";
 import type { AppointmentStatusValue } from "./types";
 
@@ -30,6 +36,21 @@ export type BlockInterval = IsoInterval & {
   reason: string;
 };
 
+/**
+ * SCHED-09 — one working window BEFORE merging, with the rule that produced it.
+ *
+ * IT EXISTS BECAUSE `working` IS MERGED AND THEREFORE CANNOT BE ATTRIBUTED.
+ * `mergeIntervals` folds 08:00-13:00 and 13:00-19:00 into a single 08:00-19:00,
+ * so an index into `working` no longer corresponds to a template and a parallel
+ * array of sources would silently mis-attribute the moment two periods touch.
+ * The inspector reads THIS; every existing consumer keeps reading `working`.
+ */
+export type WorkingSource = IsoInterval & {
+  /** Where the window is worked, or null when the caller did not ask. */
+  locationId: string | null;
+  rule: ScheduleRule;
+};
+
 /** Availability for one Lisbon calendar day. */
 export type DayAvailability = {
   /** Lisbon calendar date, "yyyy-mm-dd". */
@@ -42,6 +63,9 @@ export type DayAvailability = {
   blocks: BlockInterval[];
   /** Working minus booked minus blocks - the bookable gaps (merged, sorted). */
   free: IsoInterval[];
+  /** SCHED-09: the UNMERGED windows with their rule. Additive; `working` is
+   *  unchanged and remains what the agenda and the batch engine read. */
+  sources: WorkingSource[];
 };
 
 export type BookedRow = {
@@ -79,12 +103,21 @@ export function buildDay(
 
   // Working windows: templates for this weekday, still inside their validity
   // window, converted from Lisbon wall-clock "time" columns to UTC instants.
-  const working: TimeInterval[] = templates
-    .filter((t) => t.weekday === weekday && isWithinValidity(date, t.validFrom, t.validUntil))
-    .map((t) => ({
-      start: lisbonDateTimeToUtc(date, t.startTime),
-      end: lisbonDateTimeToUtc(date, t.endTime),
-    }));
+  const applicable = templates.filter(
+    (t) => t.weekday === weekday && isWithinValidity(date, t.validFrom, t.validUntil),
+  );
+  const working: TimeInterval[] = applicable.map((t) => ({
+    start: lisbonDateTimeToUtc(date, t.startTime),
+    end: lisbonDateTimeToUtc(date, t.endTime),
+  }));
+  // SCHED-09: the same windows, unmerged, each carrying its rule. Derived from
+  // the SAME `applicable` list, so the inspector cannot drift from the agenda.
+  const sources: WorkingSource[] = applicable.map((t) => ({
+    start: lisbonDateTimeToUtc(date, t.startTime).toISOString(),
+    end: lisbonDateTimeToUtc(date, t.endTime).toISOString(),
+    locationId: t.locationId ?? null,
+    rule: scheduleRuleFor(t),
+  }));
 
   // Bookings overlapping this specific day (rows are pre-filtered to the range).
   const bookedForDay = bookedRows.filter(
@@ -123,5 +156,6 @@ export function buildDay(
       end: r.endsAt.toISOString(),
     })),
     free: free.map(iso),
+    sources,
   };
 }

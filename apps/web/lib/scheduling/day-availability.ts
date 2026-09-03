@@ -33,6 +33,7 @@ export type {
   BookedInterval,
   BlockInterval,
   DayAvailability,
+  WorkingSource,
 } from "./day-availability-core";
 
 export type AvailabilityQuery = {
@@ -83,6 +84,7 @@ export async function getTherapistAvailability(
       validFrom: r.validFrom,
       validUntil: r.validUntil,
       isActive: true, // query already filters is_active = true
+      locationId: r.locationId,
     }));
 
     return datesInRange(from, to).map((date) =>
@@ -196,6 +198,10 @@ function readTemplateRows(
       endTime: availabilityTemplates.endTime,
       validFrom: availabilityTemplates.validFrom,
       validUntil: availabilityTemplates.validUntil,
+      // SCHED-09: the inspector names WHERE each window is worked. Selected
+      // always rather than conditionally - a column that appears only for one
+      // caller is a column the other caller silently reads as null.
+      locationId: availabilityTemplates.locationId,
     })
     .from(availabilityTemplates)
     .where(and(...conds));

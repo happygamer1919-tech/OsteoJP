@@ -23,6 +23,15 @@ test.describe("Horários — reception schedule surface", () => {
     // A therapist card is rendered (E2E Therapist is a bookable, in-scope member).
     await expect(page.getByRole("heading", { name: "E2E Therapist" }).first()).toBeVisible();
 
+    // SCHED-09: the seven-day editor is COLLAPSED by default now, so the
+    // inspector has room and reception does not scroll past every colleague to
+    // reach one. Open the first therapist's disclosure before reaching for its
+    // Guardar - the button is real, it is simply not on screen until asked for.
+    // Targeted as a SUMMARY, not by role: Playwright does not reliably map
+    // <summary> to role=button across engines, and a role locator that finds
+    // nothing spends the whole 120s budget before saying so.
+    await page.locator("summary").filter({ hasText: "Editar horários" }).first().click();
+
     // The week editor's Guardar submits the reconcile through the schedule:manage
     // + own-location lib gates and redirects back to /horarios with a confirmation.
     const save = page.getByRole("button", { name: "Guardar" }).first();
@@ -113,7 +122,14 @@ test.describe("Horários — gate", () => {
     // which is the correct result). It reported a leak that was not there.
     // Counting cards inside main asserts the actual property and does not depend
     // on what anybody is called.
-    const scheduleOwners = await page.locator("main h2").allInnerTexts();
+    // SCHED-09: COUNT THE CARDS, NOT THE HEADINGS. `main h2` was a proxy for
+    // "one schedule card" and the inspector's own heading is an h2 inside main,
+    // so the proxy would now report a leak that does not exist - the same
+    // false-positive shape this assertion's own history records. The card
+    // marker asserts the property directly and survives future page furniture.
+    const scheduleOwners = await page
+      .locator('[data-testid="schedule-card"] h2')
+      .allInnerTexts();
     expect(
       scheduleOwners,
       `a therapist must see exactly their own schedule card, found: ${scheduleOwners.join(", ")}`,

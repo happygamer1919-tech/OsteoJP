@@ -17,6 +17,9 @@ import { WeekScheduleEditor } from "./WeekScheduleEditor";
 import { AlternatingWeeksPanel } from "./AlternatingWeeksPanel";
 import { DayByDayPanel } from "./DayByDayPanel";
 import { RosterSearch } from "./RosterSearch";
+import { ScheduleInspectorPanel } from "./ScheduleInspectorPanel";
+import { inspectSchedule } from "@/lib/scheduling/schedule-inspection";
+import { addDays } from "@/lib/scheduling/time";
 import {
   createTimeOffBlockAction,
   deleteTimeOffBlockAction,
@@ -47,12 +50,12 @@ const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 export default async function HorariosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string }>;
+  searchParams: Promise<{ m?: string; t?: string; p?: string }>;
 }) {
   const actor = await requireRequestContext();
   if (!can(actor.role, "schedule:read")) redirect("/dashboard");
 
-  const { m } = await searchParams;
+  const { m, t: inspectT, p: inspectP } = await searchParams;
   const [options, availability] = await Promise.all([
     getAgendaOptions(actor),
     listAvailabilityTemplates(actor),
@@ -82,6 +85,31 @@ export default async function HorariosPage({
   // two loaders were byte-identical, they feed editors that share one
   // ScheduleDay type, and one learning to load a second period without the other
   // would mean reception saves a split shift and admin archives it.
+  // ==========================================================================
+  // SCHED-09 — the inspector's data, resolved SERVER-SIDE from the agenda's own
+  // resolver. The filters are URL params so the view is linkable and so nothing
+  // has to be re-resolved in the browser.
+  // ==========================================================================
+  const inspectorTherapistId =
+    inspectT && therapists.some((t) => t.id === inspectT)
+      ? inspectT
+      : (therapists[0]?.id ?? "");
+  const period = inspectP === "fortnight" || inspectP === "month" ? inspectP : "week";
+  // PERIOD LENGTHS ARE SPANS FROM TODAY, not calendar weeks or months. Reception
+  // asks "what does this person do next" far more often than "what did the
+  // calendar month contain", and a span needs no boundary arithmetic to be right.
+  const spanDays = period === "month" ? 30 : period === "fortnight" ? 14 : 7;
+  const inspectFrom = new Date().toISOString().slice(0, 10);
+  const inspectTo = addDays(inspectFrom, spanDays - 1);
+  const inspectedDays = inspectorTherapistId
+    ? await inspectSchedule(actor, {
+        therapistId: inspectorTherapistId,
+        from: inspectFrom,
+        to: inspectTo,
+        locationNames: new Map(locations.map((l) => [l.id, l.name])),
+      })
+    : [];
+
   const templateIndex = indexScheduleTemplates(availability);
   const buildDays = (userId: string): ScheduleDay[] =>
     buildScheduleDays(templateIndex, userId, WEEKDAY_ORDER, (wd) => s[WEEKDAY_KEYS[wd]]);
@@ -175,6 +203,16 @@ export default async function HorariosPage({
         </p>
       )}
 
+      {/* SCHED-09: the inspector sits ABOVE the editors, because the question it
+          answers ("where is this person on Thursday, and why") is the one
+          reception arrives with; editing is what they do afterwards. */}
+      <ScheduleInspectorPanel
+        days={inspectedDays}
+        therapists={therapists.map((t) => ({ id: t.id, label: t.label }))}
+        therapistId={inspectorTherapistId}
+        period={period}
+      />
+
       {therapists.length === 0 ? (
         <GlassPanel className="p-6">
           <p className="text-sm text-v2-text-secondary">{s["schedule.empty"]}</p>
@@ -196,6 +234,11 @@ export default async function HorariosPage({
               id: t.id,
               name: t.label,
               card: (
+                // SCHED-09: a stable marker for "one schedule card". The e2e
+                // used to count every <h2> in main, which the inspector's own
+                // heading would have broken - and counting headings was always
+                // a proxy for the property rather than the property.
+                <div data-testid="schedule-card">
                 <GlassPanel className="flex flex-col gap-1 p-5">
                   <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
                   <p className="text-sm font-medium text-v2-text-primary">
@@ -205,6 +248,7 @@ export default async function HorariosPage({
                     {s["schedule.unmanagedBody"]}
                   </p>
                 </GlassPanel>
+                </div>
               ),
             };
           }
@@ -212,6 +256,7 @@ export default async function HorariosPage({
             id: t.id,
             name: t.label,
             card: (
+              <div data-testid="schedule-card">
               <GlassPanel className="flex flex-col gap-3 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
@@ -241,12 +286,30 @@ export default async function HorariosPage({
                     />
                   </div>
                 </div>
-                <WeekScheduleEditor
-                  userId={t.id}
-                  days={buildDays(t.id)}
-                  locations={locations}
-                />
+                {/* SCHED-09 "compact the therapist tables": the seven-day
+                    editor is now BEHIND A DISCLOSURE. Seven rows times N
+                    therapists filled the page, so the inspector had nowhere to
+                    sit and reception scrolled past every colleague to reach one.
+                    Collapsed by default, native <details> so it needs no state,
+                    no JS and keeps keyboard and screen-reader behaviour. */}
+                <details className="group">
+                  <summary
+                    data-testid="edit-schedule-toggle"
+                    className="cursor-pointer list-none rounded px-1 py-1 text-sm text-v2-text-secondary hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  >
+                    <span className="group-open:hidden">{s["inspector.showSchedules"]}</span>
+                    <span className="hidden group-open:inline">{s["inspector.hideSchedules"]}</span>
+                  </summary>
+                  <div className="pt-3">
+                    <WeekScheduleEditor
+                      userId={t.id}
+                      days={buildDays(t.id)}
+                      locations={locations}
+                    />
+                  </div>
+                </details>
               </GlassPanel>
+              </div>
             ),
           };
           })}
