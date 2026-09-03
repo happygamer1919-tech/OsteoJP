@@ -352,6 +352,23 @@ export type HardDeletePatientResult =
   | { ok: false; error: HardDeletePatientError };
 
 /**
+ * What a merge can refuse for, when the refusal is the OPERATOR'S to fix.
+ *
+ * Deliberately the same shape as `HardDeletePatientResult` above: both are
+ * destructive controls in the same danger zone, driven by the same component,
+ * and one of them reporting refusals as values while the other threw them is
+ * how INC-CONFIRM-07b reached production.
+ */
+export type MergePatientError =
+  | "invalid_id" // the survivor box does not hold a uuid (a number or a name)
+  | "self_merge" // survivor and loser are the same patient
+  | "not_found"; // a well-formed uuid that names nobody live in this tenant
+
+export type MergePatientsResult =
+  | { ok: true; patient: Patient }
+  | { ok: false; error: MergePatientError };
+
+/**
  * Hard-delete a patient behind the tenant delete-password gate (W5-08).
  * Replicates the W3-06 scrypt gate (verifyDeletePassword → tenants.settings
  * .secrets, shared "appointmentDeletePasswordHash" key) and the
@@ -695,12 +712,47 @@ export async function editAppointmentNoteAction(
  * path blocked merges whenever the loser had a finalized record. That divergent
  * behaviour is gone — the trigger handles finalized records correctly.
  */
-export async function mergePatients(raw: MergePatientsInput): Promise<Patient> {
+export async function mergePatients(raw: MergePatientsInput): Promise<MergePatientsResult> {
   const ctx = await requireRequestContext();
   assertCan(ctx.role, "patients:delete");
-  // survivor = target, loser = source. parseMergeInput rejects self-merge.
-  const { survivorId, loserId } = parseMergeInput(raw);
 
+  // ======================================================================
+  // THE OPERATOR TYPED THIS. IT IS A FORM ERROR, NOT AN EXCEPTION.
+  // ======================================================================
+  // INC-CONFIRM-07b. Two Sentry events on 2026-09-02, 20:12 and 20:16 UTC,
+  // both `ValidationError: Invalid patient id` on POST /patients/[id] with a
+  // WELL-FORMED uuid in the URL - which sent the first reader looking at the
+  // route parameter. The route parameter was fine. `loserId` IS that uuid; the
+  // id that failed is `survivorId`, which comes from a free-text box on the
+  // danger zone, and an operator who types a patient NUMBER or a name into it
+  // hits this on every attempt.
+  //
+  // `parseMergeInput` threw, nothing on this path caught it, and a server
+  // action that throws in production shows the client an opaque digest rather
+  // than the sentence - so the operator sees a failure with no cause, four
+  // minutes apart, and Sentry records an unhandled error for a typo.
+  //
+  // The three outcomes an operator can CAUSE are returned. Everything else -
+  // an unexpected database error, a missing survivor row - still throws,
+  // because those are not conditions anybody at the screen can act on and
+  // reporting them as a form error would tell the operator to fix their input
+  // when their input was fine (PORTAL-REHYDRATE 1.3).
+  let parsed: MergePatientsInput;
+  try {
+    // survivor = target, loser = source. parseMergeInput rejects self-merge.
+    parsed = parseMergeInput(raw);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return {
+        ok: false,
+        error: err.message === "Cannot merge a patient into itself" ? "self_merge" : "invalid_id",
+      };
+    }
+    throw err;
+  }
+  const { survivorId, loserId } = parsed;
+
+  let notFound = false;
   const survivor = await runScoped(ctx, async (tx) => {
     try {
       // Audit row is written inside the function, in THIS transaction.
@@ -710,9 +762,15 @@ export async function mergePatients(raw: MergePatientsInput): Promise<Patient> {
     } catch (err) {
       // The function raises no_data_found (P0002) when either patient is not a
       // live member of the caller's tenant — including cross-tenant input.
+      //
+      // ALSO AN OPERATOR ERROR, and the commonest one after a malformed id: a
+      // well-formed uuid that names nobody. It says the same thing to a
+      // cross-tenant id, deliberately - answering "that patient is not yours"
+      // would confirm the row exists somewhere.
       const code = (err as { code?: string } | null)?.code;
       if (code === "P0002") {
-        throw new InvalidMergeError("Patient not found, deleted, or in another tenant");
+        notFound = true;
+        return null;
       }
       if (code === "23514") {
         throw new InvalidMergeError("Cannot merge a patient into itself");
@@ -730,7 +788,9 @@ export async function mergePatients(raw: MergePatientsInput): Promise<Patient> {
     return survivorRowFull;
   });
 
+  if (notFound || !survivor) return { ok: false, error: "not_found" };
+
   revalidatePatient(survivorId);
   revalidatePatient(loserId);
-  return survivor;
+  return { ok: true, patient: survivor };
 }

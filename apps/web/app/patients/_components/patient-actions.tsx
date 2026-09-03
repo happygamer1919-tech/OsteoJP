@@ -11,6 +11,7 @@ import {
   restorePatient,
   softDeletePatient,
   type HardDeletePatientError,
+  type MergePatientError,
 } from "../../../lib/patients/actions";
 
 const s = getStrings(DEFAULT_LOCALE);
@@ -19,6 +20,22 @@ const HARD_DELETE_ERROR_TEXT: Partial<Record<HardDeletePatientError, string>> = 
   password: s["patients.hardDeleteWrongPassword"],
   has_clinical_records: s["patients.hardDeleteBlockedRecords"],
   has_references: s["patients.hardDeleteBlockedReferences"],
+};
+
+/**
+ * INC-CONFIRM-07b. The three ways an operator can get the survivor box wrong,
+ * each with the sentence that says what to do about it.
+ *
+ * A COMPLETE Record, not a Partial: every member of `MergePatientError` is a
+ * refusal the operator caused, so every one of them has an answer here and
+ * adding a fourth to the union will not compile until it has one. The
+ * hard-delete map above is Partial because two of ITS members - `forbidden` and
+ * `error` - are not operator input and fall through to the generic sentence.
+ */
+const MERGE_ERROR_TEXT: Record<MergePatientError, string> = {
+  invalid_id: s["patients.mergeInvalidId"],
+  self_merge: s["patients.mergeSelfMerge"],
+  not_found: s["patients.mergeNotFound"],
 };
 
 // Destructive controls (soft-delete / restore / merge / gated hard delete).
@@ -64,6 +81,25 @@ export function PatientActions({
         return;
       }
       setError(HARD_DELETE_ERROR_TEXT[result.error] ?? s["errors.generic"]);
+    });
+  }
+
+  function submitMerge() {
+    const survivor = survivorId.trim();
+    if (!survivor) return;
+    setError(null);
+    startTransition(async () => {
+      // NO try/catch AROUND THE OUTCOME. The three refusals an operator can
+      // cause come back as values now, so this reads a result instead of
+      // catching a ValidationError whose message never reached the screen in
+      // production - a thrown server action shows the client an opaque digest.
+      const result = await mergePatients({ survivorId: survivor, loserId: patientId });
+      if (result.ok) {
+        setSurvivorId("");
+        router.refresh();
+        return;
+      }
+      setError(MERGE_ERROR_TEXT[result.error]);
     });
   }
 
@@ -140,12 +176,7 @@ export function PatientActions({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            const survivor = survivorId.trim();
-            if (survivor) {
-              run(() =>
-                mergePatients({ survivorId: survivor, loserId: patientId }),
-              );
-            }
+            submitMerge();
           }}
           className="flex flex-col gap-1.5"
         >
