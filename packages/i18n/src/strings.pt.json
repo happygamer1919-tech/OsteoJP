@@ -116,6 +116,7 @@
   "agenda.viewWeek": "Semana",
   "agenda.filterTherapists": "Terapeutas",
   "agenda.filterRooms": "Salas",
+  "agenda.patientWithheld": "Marcação reservada",
   "agenda.newAppointment": "Nova marcação",
   "agenda.blockTime": "Bloquear horário",
   "agenda.block.confirm": "Bloquear",

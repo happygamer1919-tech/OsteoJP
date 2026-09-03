@@ -37,7 +37,8 @@ import type {
 function mapAppointment(r: {
   id: string;
   patientId: string;
-  patientName: string;
+  // NULL = WITHHELD, never "unnamed". See baseAppointmentQuery.
+  patientName: string | null;
   practitionerId: string;
   practitionerName: string;
   colorKey: string | null;
@@ -172,11 +173,56 @@ const appointmentSelection = {
   createdAt: appointments.createdAt,
 } as const;
 
+/**
+ * ==========================================================================
+ * SEC-appointment-vanishes-with-patient-scope - WHY `patients` IS A LEFT JOIN
+ * ==========================================================================
+ * IT WAS AN INNER JOIN, AND AN APPOINTMENT WHOSE PATIENT ROW THE VIEWER CANNOT
+ * SEE DISAPPEARED ENTIRELY. Not with the name withheld: gone from the result
+ * set, with nothing anywhere saying a row had been dropped. Every agenda
+ * surface reads through this query - /agenda, /marcacoes, the dashboard - so
+ * the slot showed as FREE and reception would book over it, or tell a patient
+ * their appointment does not exist. 0061's exclusion constraint would then
+ * refuse the write as `double_booked` for an appointment nobody could see.
+ *
+ * THE TWO SCOPES ARE DIFFERENT SCOPES AND CAN DISAGREE. `listAppointments`
+ * filters APPOINTMENTS by `viewerLocationScope` (the viewer's assigned
+ * locations); `patients_select` since 0073 admits a reception/admin viewer to
+ * `viewer_visible_patient_ids()`, and since 0074 a therapist to
+ * `viewer_treated_patient_ids()`. An appointment at a location the viewer can
+ * see, for a patient the viewer cannot, is exactly the shape that vanished.
+ * `getAppointment` and `listPatientAppointments` do not filter by location at
+ * all, so for them any disagreement is reachable.
+ *
+ * THE OWNER RULED IT (CONFIRM-09): left join, and render the slot as occupied
+ * with the name withheld. `patientName` is therefore `string | null` on
+ * `AgendaAppointment` and NULL MEANS WITHHELD - it is not a missing value and
+ * it is not a patient with no name. `appointments.patient_id` is NOT NULL and
+ * carries an FK, so a null name can mean nothing else, and the type change is
+ * what makes every consumer state what it does about it rather than rendering
+ * an empty string.
+ *
+ * ==========================================================================
+ * `users` AND `locations` STAY INNER, AND THAT IS CHECKED RATHER THAN ASSUMED
+ * ==========================================================================
+ * Both carry TENANT-ONLY isolation and nothing has ever narrowed them:
+ * `users_tenant_isolation` and `locations_tenant_isolation` (0001) are
+ * `USING (tenant_id = jwt_tenant_id())`, and the only later migrations naming
+ * them (0005, 0036) add columns and say in terms that no new isolation surface
+ * is created. Both columns are NOT NULL with an FK, so within a tenant the row
+ * always exists and is always visible, and the inner join cannot drop anything.
+ * `patients` is the ONE join on this query that is narrowed PER ROW.
+ *
+ * IF THAT EVER CHANGES, THIS COMMENT IS THE THING THAT IS NOW WRONG, and
+ * `scheduling-scope.test.ts` fails rather than the agenda quietly losing rows
+ * again: it reads the migrations and asserts those two policies are still
+ * tenant-only.
+ */
 function baseAppointmentQuery(tx: DbTx) {
   return tx
     .select(appointmentSelection)
     .from(appointments)
-    .innerJoin(patients, eq(patients.id, appointments.patientId))
+    .leftJoin(patients, eq(patients.id, appointments.patientId))
     .innerJoin(users, eq(users.id, appointments.practitionerId))
     .innerJoin(locations, eq(locations.id, appointments.locationId))
     .leftJoin(services, eq(services.id, appointments.serviceId))

@@ -34,6 +34,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { s } from "@/lib/i18n";
 import { activePatientsOnly } from "@/lib/patients/filters";
 import { listAppointments } from "@/lib/scheduling/data";
+import { patientLabel } from "@/lib/scheduling/patient-label";
 import {
   addDays,
   addMonths,
@@ -324,7 +325,15 @@ export default async function DashboardPage({
                   <span className="font-medium tabular-nums text-v2-text-primary">
                     {formatTimeOfDay(new Date(a.startsAt))}
                   </span>
-                  <span className="text-sm text-v2-text-primary">{a.patientName}</span>
+                  {/* SEC-appointment-vanishes-with-patient-scope: this list and
+                      the KPI above it are the surfaces where the inner join
+                      actually bit. The dashboard passes no practitioner and no
+                      location, and a therapist has no location scope, so an
+                      appointment they CREATED for a patient they have not
+                      treated was dropped and the count read low. */}
+                  <span className="text-sm text-v2-text-primary">
+                    {patientLabel(a.patientName)}
+                  </span>
                   <span className="text-sm text-v2-text-secondary">· {a.practitionerName}</span>
                 </li>
               ))}

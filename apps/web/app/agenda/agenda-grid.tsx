@@ -9,6 +9,7 @@ import {
   type BlockPlacement,
   type BlockSpan,
 } from "@/lib/scheduling/blocked-time-core";
+import { patientLabel } from "@/lib/scheduling/patient-label";
 import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import {
@@ -145,7 +146,11 @@ function groupByStart(appts: AgendaAppointment[]): [string, AgendaAppointment[]]
     .sort((x, y) => x[0].localeCompare(y[0]))
     .map(([startsAt, list]): [string, AgendaAppointment[]] => [
       startsAt,
-      [...list].sort((a, b) => a.patientName.localeCompare(b.patientName, "pt")),
+      // Sorted by the LABEL, so a withheld row takes a stable, predictable
+      // place in the column instead of throwing on a null.
+      [...list].sort((a, b) =>
+        patientLabel(a.patientName).localeCompare(patientLabel(b.patientName), "pt"),
+      ),
     ]);
 }
 
@@ -521,7 +526,7 @@ function AppointmentName({ appt, onClick }: { appt: AgendaAppointment; onClick: 
           data-testid="agenda-card-patient"
           className={`block min-w-0 break-words ${struck ? "line-through" : ""}`}
         >
-          {shortPatientName(appt.patientName)}
+          {shortPatientName(patientLabel(appt.patientName))}
         </span>
       </button>
     </HoverPopover>

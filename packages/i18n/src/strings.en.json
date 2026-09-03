@@ -116,6 +116,7 @@
   "agenda.viewWeek": "Week",
   "agenda.filterTherapists": "Therapists",
   "agenda.filterRooms": "Rooms",
+  "agenda.patientWithheld": "Reserved appointment",
   "agenda.newAppointment": "New Appointment",
   "agenda.blockTime": "Block time",
   "agenda.block.confirm": "Block",
