@@ -1528,6 +1528,12 @@
   "inspector.ruleExcecaoHint": "An absence recorded in Bloquear horário.",
   "inspector.showSchedules": "Edit schedules",
   "inspector.hideSchedules": "Hide schedules",
+  "inspector.editTitle": "Edit the day",
+  "inspector.editAbsenceHint": "For an absence use Bloquear horário: it removes availability without changing the schedule that resumes afterwards.",
+  "inspector.editError": "This day could not be saved.",
+  "inspector.editBlockNoClinic": "Choose the clinic.",
+  "inspector.editBlockEndNotAfterStart": "The end time must be after the start time.",
+  "inspector.editSaved": "Day saved.",
   "inspector.empty": "No therapists to show.",
   "admin.workingHours.datedAhead": "This day has hours defined from {date}. What is below is what is in force today."
 }

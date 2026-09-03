@@ -1528,6 +1528,12 @@
   "inspector.ruleExcecaoHint": "Ausência registada em Bloquear horário.",
   "inspector.showSchedules": "Editar horários",
   "inspector.hideSchedules": "Ocultar horários",
+  "inspector.editTitle": "Editar o dia",
+  "inspector.editAbsenceHint": "Para uma ausência use Bloquear horário: remove a disponibilidade sem alterar o horário que volta a seguir.",
+  "inspector.editError": "Não foi possível guardar este dia.",
+  "inspector.editBlockNoClinic": "Escolha a clínica.",
+  "inspector.editBlockEndNotAfterStart": "A hora de fim tem de ser depois da hora de início.",
+  "inspector.editSaved": "Dia guardado.",
   "inspector.empty": "Sem terapeutas para mostrar.",
   "admin.workingHours.datedAhead": "Este dia tem horário definido a partir de {date}. O horário abaixo é o que está em vigor hoje."
 }

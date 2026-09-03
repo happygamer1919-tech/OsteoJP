@@ -214,6 +214,7 @@ export default async function HorariosPage({
         therapists={therapists.map((t) => ({ id: t.id, label: t.label }))}
         therapistId={inspectorTherapistId}
         period={period}
+        locations={locations}
       />
 
       {therapists.length === 0 ? (
