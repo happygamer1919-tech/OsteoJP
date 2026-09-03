@@ -61,6 +61,7 @@ import { FEE_NOTICE_ACCEPTANCE_CLAUSE } from "@/lib/reminders/fee-notice";
 import {
   appointmentStatus,
   auditRows,
+  authenticatedClient,
   codeIsSpent,
   consumeCode,
   createAppointment,
@@ -83,11 +84,20 @@ test.use({ storageState: { cookies: [], origins: [] } });
  */
 let db: ReturnType<typeof serviceClient>;
 
+/**
+ * The SECOND client, signed in as the seeded admin so its statements run as
+ * `authenticated`. Every call to one of 0072/0074's confirm-code functions goes
+ * through it, because that is the only role they are granted to; the header of
+ * helpers/confirm-code.ts records the CI shard that proved it.
+ */
+let auth: Awaited<ReturnType<typeof authenticatedClient>>;
+
 /** Resolved once; the seeded therapist's users id is random per seed run. */
 let practitionerId: string;
 
 test.beforeAll(async () => {
   db = serviceClient();
+  auth = await authenticatedClient();
   await ensureConfirmPatient(db);
   practitionerId = await therapistUserId(db);
 });
@@ -186,7 +196,7 @@ test("a valid code renders date, time and location, and Confirmar flips agendada
 }) => {
   const startsAt = futureInstant(RUN_DAY_BASE + 120);
   const appointmentId = await createAppointment(db, { practitionerId, startsAt });
-  const { code, codeHash } = await issueCode(db, appointmentId);
+  const { code, codeHash } = await issueCode(auth, appointmentId);
 
   const expectedDate = formatDateLong(startsAt, "pt");
   const expectedTime = formatTime(startsAt, "pt");
@@ -223,7 +233,7 @@ test("a valid code renders date, time and location, and Confirmar flips agendada
 
   // Confirm is idempotent and does NOT consume: the code stays live so a second
   // press can answer `already_confirmed` rather than the generic refusal.
-  expect(await codeIsSpent(db, codeHash)).toBe(false);
+  expect(await codeIsSpent(auth, codeHash)).toBe(false);
 
   const audits = await auditRows(db, appointmentId, "appointment.confirm.sms_code");
   expect(audits).toHaveLength(1);
@@ -262,7 +272,7 @@ test("a forged, an expired and an already-consumed code are indistinguishable", 
   // appointment, never by ageing the row.
   const past = new Date(Date.now() - 2 * 24 * 60 * 60_000);
   const expiredAppt = await createAppointment(db, { practitionerId, startsAt: past });
-  const { code: expired } = await issueCode(db, expiredAppt);
+  const { code: expired } = await issueCode(auth, expiredAppt);
 
   // ALREADY CONSUMED: a live appointment whose code has been spent, through
   // 0074's own `consume_confirm_code` — the same door *pedir remarcação* uses.
@@ -270,8 +280,8 @@ test("a forged, an expired and an already-consumed code are indistinguishable", 
     practitionerId,
     startsAt: futureInstant(RUN_DAY_BASE + 121),
   });
-  const { code: spent, codeHash: spentHash } = await issueCode(db, spentAppt);
-  await consumeCode(db, spentHash);
+  const { code: spent, codeHash: spentHash } = await issueCode(auth, spentAppt);
+  await consumeCode(auth, spentHash);
 
   // MALFORMED: not eight base64url characters at all. It takes the same exit,
   // and `resolveConfirmCode` looks it up against a hash that cannot exist so it
@@ -304,7 +314,7 @@ test("a forged, an expired and an already-consumed code are indistinguishable", 
     practitionerId,
     startsAt: futureInstant(RUN_DAY_BASE + 122),
   });
-  const { code: live } = await issueCode(db, liveAppt);
+  const { code: live } = await issueCode(auth, liveAppt);
   await openValidCode(page, live);
   expect(await visibleText(page)).not.toBe(signatures.forged);
 });
@@ -320,7 +330,7 @@ test("Pedir remarcação is not rendered and the action refuses it while the gat
     practitionerId,
     startsAt: futureInstant(RUN_DAY_BASE + 123),
   });
-  const { code, codeHash } = await issueCode(db, appointmentId);
+  const { code, codeHash } = await issueCode(auth, appointmentId);
 
   await openValidCode(page, code);
 
@@ -358,7 +368,7 @@ test("Pedir remarcação is not rendered and the action refuses it while the gat
   // of the database, because "the page said no" and "nothing was written" are
   // different facts and only the second one is the gate.
   expect(await appointmentStatus(db, appointmentId)).toBe("scheduled");
-  expect(await codeIsSpent(db, codeHash)).toBe(false);
+  expect(await codeIsSpent(auth, codeHash)).toBe(false);
   expect(
     await auditRows(db, appointmentId, "appointment.reschedule_request.sms_code"),
   ).toHaveLength(0);
@@ -373,7 +383,7 @@ test("the fee sentence slot renders nothing while the capability is dark", async
     practitionerId,
     startsAt: futureInstant(RUN_DAY_BASE + 124),
   });
-  const { code } = await issueCode(db, appointmentId);
+  const { code } = await issueCode(auth, appointmentId);
 
   await openValidCode(page, code);
   const shown = await visibleText(page);

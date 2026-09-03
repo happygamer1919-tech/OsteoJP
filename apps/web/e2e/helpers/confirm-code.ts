@@ -20,6 +20,37 @@
  * page that refuses for a reason nobody can see.
  *
  * ==========================================================================
+ * TWO CLIENTS, AND WHICH ONE IS USED WHERE IS A FACT ABOUT THE MIGRATION
+ * ==========================================================================
+ * THE CONFIRM-CODE FUNCTIONS ARE CALLED AS `authenticated`, NEVER AS
+ * `service_role`, AND THIS COST A RED CI SHARD TO LEARN.
+ *
+ * The first version of this file called `issue_confirm_code` through the
+ * service-role handle. It worked on a local lane and failed on CI with
+ * `permission denied for function issue_confirm_code`. Both databases were
+ * built by `supabase db reset` from the same migrations.
+ *
+ * The cause is the drift 0072's own header describes, observed for the first
+ * time in this direction. 0074 REVOKEs its three writers from PUBLIC, anon and
+ * patient and GRANTs EXECUTE to `authenticated` ALONE - `service_role` is never
+ * named. On the local lane Supabase's ALTER DEFAULT PRIVILEGES had already
+ * granted it EXECUTE at CREATE FUNCTION time (`service_role=X/postgres` in
+ * `proacl`, verified), and `REVOKE ... FROM PUBLIC` does not touch a privilege
+ * held by a named role. On CI that default privilege was not applied, so the
+ * REVOKE left service_role with nothing.
+ *
+ * THE PRODUCT IS UNAFFECTED, and that is worth stating so nobody reads this as
+ * an incident: `withReminderTenantContext` does `set local role authenticated`,
+ * so the app has always called these functions as the role that is explicitly
+ * granted. What was environment-dependent was the TEST's shortcut.
+ *
+ * So the rule here is simple and drift-proof: anything 0072/0074 built a DOOR
+ * for is called through that door, as `authenticated`. The service-role handle
+ * is used only for ordinary tables no migration has revoked - `patients`,
+ * `appointments`, `audit_log` - which CI proves it can reach, because the
+ * appointment insert succeeded in the same run that the function call failed.
+ *
+ * ==========================================================================
  * EVERY FUNCTION HERE THROWS RATHER THAN RETURNING `null` OR `false`
  * ==========================================================================
  * PORTAL-REHYDRATE 1.3. A fixture builder that answered `null` would let a
@@ -81,6 +112,43 @@ export function serviceClient(): SupabaseClient {
     );
   }
   return createClient(url, key, { auth: { persistSession: false } });
+}
+
+/**
+ * A client signed in as the seeded admin, so PostgREST runs its statements as
+ * `authenticated` - the ONE role 0074 grants EXECUTE to. See the header.
+ *
+ * The credentials are the suite's own, already in the environment for
+ * `auth.setup.ts`, and it REFUSES rather than falling back to an anonymous
+ * client: an anon client would reach the same "permission denied" and report it
+ * as though the migration were wrong.
+ */
+export async function authenticatedClient(): Promise<SupabaseClient> {
+  const url = process.env.SUPABASE_URL ?? "http://127.0.0.1:54321";
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const email = process.env.E2E_ADMIN_EMAIL;
+  const password = process.env.E2E_ADMIN_PASSWORD;
+  const missing = [
+    ["NEXT_PUBLIC_SUPABASE_ANON_KEY", key],
+    ["E2E_ADMIN_EMAIL", email],
+    ["E2E_ADMIN_PASSWORD", password],
+  ]
+    .filter(([, v]) => !v)
+    .map(([n]) => n);
+  if (missing.length > 0) {
+    throw new Error(
+      `${missing.join(", ")} not set. confirm-code.spec.ts calls 0074's confirm-code ` +
+        "functions as `authenticated`, which is the only role they are granted to, so it " +
+        "needs a real sign-in. Run the suite through: node scripts/lane-stack.mjs e2e --lane <lane>",
+    );
+  }
+  const client = createClient(url, key!, { auth: { persistSession: false } });
+  const { error } = await client.auth.signInWithPassword({
+    email: email!,
+    password: password!,
+  });
+  if (error) throw new Error(`e2e admin sign-in failed: ${error.message}`);
+  return client;
 }
 
 /** The seeded therapist's `public.users` id. Auth ids are random per seed run. */
@@ -153,17 +221,24 @@ export async function createAppointment(
  * URL the browser opens, exactly as it exists only in the SMS in production.
  */
 export async function issueCode(
-  db: SupabaseClient,
+  auth: SupabaseClient,
   appointmentId: string,
 ): Promise<{ code: string; codeHash: string }> {
   const code = generateConfirmCode();
   const codeHash = confirmCodeHash(code);
-  const { data, error } = await db.rpc("issue_confirm_code", {
+  const { data, error } = await auth.rpc("issue_confirm_code", {
     p_code_hash: codeHash,
     p_tenant_id: TENANT_A,
     p_appointment_id: appointmentId,
   });
-  if (error) throw new Error(`issue_confirm_code failed: ${error.message}`);
+  if (error) {
+    throw new Error(
+      `issue_confirm_code failed: ${error.message}. If this says "permission denied", the ` +
+        "caller is not `authenticated` - 0074 grants EXECUTE to that role ALONE and the " +
+        "service-role handle only reaches it on a database where Supabase's default " +
+        "privileges happened to apply. See this file's header.",
+    );
+  }
   if (data !== true) {
     throw new Error(
       `issue_confirm_code inserted nothing for appointment ${appointmentId}. It inserts ` +
@@ -176,8 +251,8 @@ export async function issueCode(
 }
 
 /** Spend a code the way *pedir remarcação* spends one, through 0074's writer. */
-export async function consumeCode(db: SupabaseClient, codeHash: string): Promise<void> {
-  const { data, error } = await db.rpc("consume_confirm_code", {
+export async function consumeCode(auth: SupabaseClient, codeHash: string): Promise<void> {
+  const { data, error } = await auth.rpc("consume_confirm_code", {
     p_code_hash: codeHash,
     p_tenant_id: TENANT_A,
     p_now: new Date().toISOString(),
@@ -198,19 +273,22 @@ export async function appointmentStatus(db: SupabaseClient, id: string): Promise
 /**
  * `consumed_at` for one code row, as a boolean answer.
  *
+ * READ THROUGH `resolve_confirm_code`, WHICH IS THE ONLY DOOR 0072 BUILT. The
+ * table is REVOKEd from every application role, so a direct SELECT depends on
+ * whatever default privilege a given database happened to grant service_role -
+ * the exact thing that reddened CI once already. This asks the question the way
+ * the page asks it.
+ *
  * TWO NAMED FAILURES RATHER THAN ONE `null`: "the row is gone" and "the row is
  * live" are different facts about a table whose whole purpose is to record
  * which of the two is true.
  */
-export async function codeIsSpent(db: SupabaseClient, codeHash: string): Promise<boolean> {
-  const { data, error } = await db
-    .from("appointment_confirm_codes")
-    .select("consumed_at")
-    .eq("code_hash", codeHash)
-    .limit(1);
-  if (error) throw new Error(`confirm code read failed: ${error.message}`);
-  if (!data || data.length === 0) throw new Error("the confirm code row no longer exists");
-  return data[0]!.consumed_at !== null;
+export async function codeIsSpent(auth: SupabaseClient, codeHash: string): Promise<boolean> {
+  const { data, error } = await auth.rpc("resolve_confirm_code", { p_code_hash: codeHash });
+  if (error) throw new Error(`resolve_confirm_code failed: ${error.message}`);
+  const rows = (data ?? []) as Array<{ consumed_at: string | null }>;
+  if (rows.length === 0) throw new Error("the confirm code row no longer exists");
+  return rows[0]!.consumed_at !== null;
 }
 
 /** Every audit row this appointment carries for one action, newest last. */
