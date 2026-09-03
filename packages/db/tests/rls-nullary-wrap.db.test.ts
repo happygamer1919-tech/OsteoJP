@@ -254,9 +254,16 @@ describe.skipIf(!live)("0071 wraps the nullary helper and changes no row's visib
       expect(expr).not.toMatch(new RegExp(`SELECT\\s+${fn}`, "i"));
     };
 
-    // patients_select keeps ONE correlated call, in the therapist branch.
+    // AMENDED AGAIN BY 0074 (SR-35 part B), and for the same reason as 0073's
+    // amendment: patients_select now carries NO correlated call at all. The
+    // therapist branch took the visible-set shape too, so the last one moved to
+    // the write policies below. The property is unchanged - no correlated
+    // helper is ever wrapped - and pinning its old LOCATION would be pinning
+    // the absence of 0074 rather than the presence of the property.
     const select = await exprOf("patients_select");
-    unwrappedIn(select, "patient_appt_treated_by_viewer");
+    expect(select).not.toContain("patient_appt_at_viewer_location");
+    expect(select).not.toContain("location_in_viewer_scope");
+    expect(select).not.toContain("patient_appt_treated_by_viewer");
 
     // The two 0073 took out of the read path are untouched on the WRITE path.
     for (const name of ["patients_update", "patients_delete"]) {

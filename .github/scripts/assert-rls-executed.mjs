@@ -112,6 +112,20 @@ const SUITES = [
   // UPDATE's own predicate and by nothing this code could assert about itself.
   // A silent skip would leave an unauthenticated write path proven by nothing.
   { file: "confirm-redeem.db.test.ts", hard: true },
+  // 0074 part A, added 2026-09-02. Hard-required because it proves a PRIVILEGE
+  // property, and privilege failures are silent: the three SECURITY DEFINER
+  // write doors must be callable by `authenticated` and by nobody else, and
+  // each must refuse a tenant/appointment pair that does not belong together.
+  // A GRANT would have let any authenticated session write any row; these
+  // functions are the reason the table can stay revoked from every app role,
+  // and a silent skip would leave that unproven.
+  { file: "confirm-code-writers.db.test.ts", hard: true },
+  // 0074 part B, added 2026-09-02. Same shape as 0073's suite and hard-required
+  // for the same reason: the old and new predicates select the same rows by
+  // construction, so the six md5 equalities stay GREEN on a pre-0074 schema and
+  // only the evaluation-count assertions redden. Visibility alone cannot catch
+  // a revert here, so the file that can must never skip silently.
+  { file: "rls-therapist-treated-set.db.test.ts", hard: true },
   // W14-06, added 2026-08-31. The reception queue against real Postgres. Hard-
   // required because its load-bearing arms are DATABASE facts: a Twilio
   // redelivery is refused by a unique index, a resolve that would create a

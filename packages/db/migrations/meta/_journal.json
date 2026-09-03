@@ -512,6 +512,13 @@
       "when": 1787300800000,
       "tag": "0073_viewer_visible_patient_set",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1787300900000,
+      "tag": "0074_confirm_writers_and_therapist_set",
+      "breakpoints": true
     }
   ]
 }

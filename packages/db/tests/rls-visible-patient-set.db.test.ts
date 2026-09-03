@@ -271,11 +271,17 @@ describe.skipIf(!live)("0073 resolves the visible-patient set once, and changes 
     expect(expr).toMatch(/SELECT\s+viewer_visible_patient_ids/i);
     expect(expr).not.toContain("patient_appt_at_viewer_location");
     expect(expr).not.toContain("location_in_viewer_scope");
-    // The nullary wrap 0071 put in is still there, and the therapist branch
-    // still calls its correlated helper UNWRAPPED.
+    // The nullary wrap 0071 put in is still there.
     expect(expr).toMatch(/SELECT\s+viewer_has_location_assignment/i);
-    expect(expr).toContain("patient_appt_treated_by_viewer");
-    expect(expr).not.toMatch(/SELECT\s+patient_appt_treated_by_viewer/i);
+    // THE THERAPIST BRANCH USED TO BE ASSERTED HERE AS AN UNWRAPPED CORRELATED
+    // CALL, and 0074 (SR-35 part B) gave it the same visible-set shape this
+    // file proves for admin/reception. The correlated helper is not gone from
+    // the schema - it still serves patients_update and patients_delete, and
+    // rls-therapist-treated-set.db.test.ts asserts that. What changed is which
+    // policy calls it, so this file asserts the branch's NEW shape instead of
+    // the old one's location.
+    expect(expr).toMatch(/SELECT\s+viewer_treated_patient_ids/i);
+    expect(expr).not.toContain("patient_appt_treated_by_viewer");
   });
 
   it("THE TIMING ASSERTION: the set is computed ONCE per statement, not once per row", async () => {

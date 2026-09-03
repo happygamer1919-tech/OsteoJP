@@ -25,7 +25,10 @@ import {
  * `appointment_confirm_codes`, which is granted to nobody - plus
  * `viewer_location_ids` and `viewer_visible_patient_ids` from migration 0073
  * (SR-33), the two nullary helpers `patients_select` evaluates once per
- * statement instead of once per row.
+ * statement instead of once per row - plus the three WRITE doors and
+ * `viewer_treated_patient_ids` from migration 0074 (SR-35). The writers exist
+ * because 0072 revoked the table from every application role and built only the
+ * read door, so nothing in the application could mint a code at all.
  */
 const EXPECTED_FUNCTIONS = [
   "appointment_conflicts",
@@ -44,6 +47,10 @@ const EXPECTED_FUNCTIONS = [
   "viewer_has_location_assignment",
   "viewer_location_ids",
   "viewer_visible_patient_ids",
+  "consume_confirm_code",
+  "issue_confirm_code",
+  "withdraw_confirm_code",
+  "viewer_treated_patient_ids",
 ].map((name) => ({ name, owner: "postgres" }));
 
 describe("POSITIVE ARM — production as it actually is", () => {

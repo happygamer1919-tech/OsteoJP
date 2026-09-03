@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Every public SECURITY DEFINER function is owned by `postgres`, and there are
-// exactly sixteen of them. READ ONLY.
+// exactly twenty of them. READ ONLY.
 //
 // WHY THIS EXISTS. Postgres runs a SECURITY DEFINER function with its OWNER's
 // privileges, and RLS on all 37 policy-bearing tables is ENABLE and NOT FORCE
@@ -19,8 +19,8 @@
 //
 // TWO ASSERTIONS, AND THE SECOND IS THE ONE PEOPLE FORGET.
 //   1. OWNER — every function's owner is `postgres`.
-//   2. COUNT — there are exactly sixteen. An owner check alone passes happily
-//      on a SEVENTEENTH function that arrived correctly owned, which is fine
+//   2. COUNT — there are exactly twenty. An owner check alone passes happily
+//      on a TWENTY-FIRST function that arrived correctly owned, which is fine
 //      today and is exactly how an unreviewed SECURITY DEFINER function enters
 //      the schema unnoticed. Adding one is a deliberate act; it must move this
 //      number and 0060's statement list together.
@@ -59,8 +59,17 @@ export const EXPECTED_OWNER = "postgres";
  * every viewer helper since 0047 has been - they read `staff_locations`, which
  * carries its own policy - and both carry their own `ALTER FUNCTION ... OWNER TO
  * postgres` in the same migration.
+ *
+ * 16 -> 20 on 2026-09-02: migration 0074 adds the three SECURITY DEFINER WRITE
+ * doors for `appointment_confirm_codes` (issue, withdraw, consume) that 0072
+ * never built, plus `public.viewer_treated_patient_ids()` for PERF-12. The
+ * three writers are the reason the service-role seam in
+ * apps/web/lib/reminders/confirm-code-store.ts could be removed: SR-29 revokes
+ * the table from every application role, so a narrow function per verb is the
+ * only shape that writes it without a GRANT that would let any authenticated
+ * session write any row.
  */
-export const EXPECTED_COUNT = 16;
+export const EXPECTED_COUNT = 20;
 
 /**
  * The verdict, as a pure function of the catalog rows.
