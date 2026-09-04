@@ -238,7 +238,7 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
 
   /**
    * TWELFTH, THIRTEENTH AND FOURTEENTH BODIES — the inbound reply
-   * acknowledgements. W14-04, and all three are `approved: false`.
+   * acknowledgements. W14-04, and all three are `approved: true`.
    *
    * ==================================================================
    * APPROVED BY JP 2026-09-01 (WF-18 A), EXACTLY AS THEY WERE WRITTEN.
@@ -249,10 +249,39 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
    * changed between being registered unapproved and being approved, which is
    * the property that makes the gate worth having rather than a formality.
    *
-   * THE WITHHELD REPLIES START SENDING ON MERGE. REMINDERS_INBOUND is already
-   * armed in production, so this is the change that makes a patient's SIM
-   * answered rather than silently acted on. Stated here because approving copy
-   * is usually inert and this approval is not.
+   * THESE THREE BODIES ARE UNREACHABLE TODAY, AND THE HEADING ABOVE USED TO
+   * SAY THE OPPOSITE OF BOTH FACTS. It read `approved: false` while the
+   * entries below carry `approved: true`, and the paragraph here read "THE
+   * WITHHELD REPLIES START SENDING ON MERGE. REMINDERS_INBOUND is already
+   * armed in production". Neither was measured; both are replaced with what
+   * was.
+   *
+   * WHAT WAS MEASURED, 2026-09-04, and every line of it is re-derivable
+   * without asking anybody:
+   *   - the two readers of `remindersInboundEnabled()` are
+   *     `app/api/webhooks/twilio/inbound/route.ts` (404s while off) and
+   *     `app/reminders/review/page.tsx` (renders an empty state). Nothing else
+   *     calls it, so nothing else can deliver an inbound reply;
+   *   - `.env.example` ships `REMINDERS_INBOUND=` blank, and no default in the
+   *     code supplies one;
+   *   - `app/reminders/review/page.tsx`'s own header says the capability is
+   *     OFF and "no Twilio number points at it yet", which is the opposite of
+   *     what the sentence here claimed;
+   *   - the production environment is not readable from this repository
+   *     (standing rule 1), so "armed in production" was never a measurement
+   *     that could have been made here. That is what made it durable.
+   *
+   * AND UNDER SR-47 THE FLAG ALONE NO LONGER ARMS ANYTHING. Inbound needs
+   * `REMINDERS_INBOUND="true"` AND an E.164 `TWILIO_SMS_FROM`; the live sender
+   * is the alphanumeric id `OsteoJP`, which is one-way, so the capability is a
+   * hard refusal today whatever the flag holds - and the refusal is reported
+   * once per boot rather than returned quietly.
+   *
+   * SO THIS APPROVAL IS INERT FOR NOW, and it is left `approved: true`
+   * deliberately. JP approved this wording under WF-18 on 2026-09-01 and not a
+   * word of it changed; darkening it back to `approved: false` would buy
+   * nothing the sender shape does not already buy, and it would misrepresent
+   * his decision as something he had not made.
    *
    * WHAT THE GATE DID WHILE THEY WERE FALSE, recorded so the mechanism is
    * legible later: `resolveApproved` fails closed, so an id absent from this
