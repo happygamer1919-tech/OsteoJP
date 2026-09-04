@@ -442,8 +442,10 @@ const CLASS_SIZE = 50;
  * The first version selected the 100 patients with
  * `select id ... where notes = MARKER order by p.id limit 100`. `p.id` is a
  * RANDOM uuid, so that is a random draw from all 8,404 seeded patients, of which
- * 297 are in a bucket - about three and a half hits per run, differing every
- * run. MEASURED, not reasoned about: on 2026-09-06 it moved 1 `seen this month`
+ * 293 are in a statistic bucket - 56 seen + 153 upcoming + 84 recovery, the
+ * script's OWN insert counts, not the final 88 the recovery statistic reads,
+ * because four of those belong to the e2e fixture and carry no marker. About
+ * three and a half hits per run, differing every run. MEASURED, not reasoned about: on 2026-09-06 it moved 1 `seen this month`
  * and 3 `with upcoming` appointments out of the assignment, and
  * `perf-admin-stats.spec.ts` failed its premise with 55 and 150 against 56 and
  * 153 - after this script had printed "all four counts match the owner's
