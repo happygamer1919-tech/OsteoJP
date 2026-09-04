@@ -322,8 +322,13 @@ describe("registry gating", () => {
     // loose so that this file still notices if the fee line is ever swept into
     // an approval sitting alongside other copy - which is the only thing this
     // assertion has ever been about.
+    // 13 -> 9 on 2026-09-04, owner ruling B: the follow-up and no-show pairs
+    // were darkened. THIS FILE'S POINT IS UNCHANGED - it still notices if the
+    // fee line is ever swept into somebody else's approval sitting - and the
+    // fee entry is still unapproved for its own reasons, which are counsel's
+    // and not JP's alone.
     const approved = REMINDER_TEMPLATES.filter((t) => t.approved);
-    expect(approved).toHaveLength(13);
+    expect(approved).toHaveLength(9);
     expect(approved.some((t) => t.id === FEE_NOTICE_TEMPLATE_ID)).toBe(false);
   });
 
