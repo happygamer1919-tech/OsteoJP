@@ -65,7 +65,21 @@ import { test, expect, type Page } from "@playwright/test";
  */
 const OWNER_STATS = { total: 8409, seenThisMonth: 56, withUpcoming: 153, inRecovery: 88 };
 
-/** The seed assigns exactly this many locations; an unassigned admin sees every active one. */
+/**
+ * The seed assigns exactly this many locations; an unassigned admin is offered
+ * every ACTIVE one.
+ *
+ * THIS ASSERTION COULD NOT FAIL WHEN IT WAS FIRST WRITTEN, and that is worth
+ * recording rather than quietly fixing. Tenant A had exactly two ACTIVE
+ * locations - the third fixture location is archived - so an unassigned admin
+ * was offered two as well and the check discriminated nothing. It was found by
+ * counting them, not by reading the fixture. PERF-15 gives the seed a third
+ * active location that the admin is deliberately NOT assigned to, so the two
+ * principals separate again: assigned 2, unassigned 3.
+ *
+ * The `total` above is the stronger half and always was. This one is the visible
+ * half, and a reader can check it on the screen.
+ */
 const ASSIGNED_LOCATIONS = 2;
 
 type Reading = {
@@ -201,7 +215,9 @@ test("/patients as ADMIN: the seeded shape is the owner's, and the first click i
   // THE SECOND HALF OF THE PREMISE, and it is visible rather than inferred: a
   // location-assigned viewer's filter offers ONLY their own locations, so the
   // select carries exactly the two the seed granted. An unassigned admin would
-  // be offered every active location in the tenant.
+  // be offered every active location in the tenant, which the seed now makes
+  // THREE - see ASSIGNED_LOCATIONS for why that number had to change before
+  // this check meant anything.
   await expect(
     page.locator("select option[value]:not([value=''])"),
     "the filter offers a different number of locations than the seed assigned - this principal is " +
