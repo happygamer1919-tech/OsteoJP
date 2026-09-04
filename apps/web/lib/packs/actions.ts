@@ -72,10 +72,32 @@ export async function linkAppointmentToPackAction(
  * profile. Two definitions of "has sessions" would eventually disagree, and the
  * one on the booking screen is the one that would be wrong in front of a
  * patient.
+ *
+ * ==========================================================================
+ * PACK-03 — IT RETURNS THE SERVICE AND DOES NOT FILTER ON IT. DELIBERATE.
+ * ==========================================================================
+ * This read is keyed on the PATIENT and is fetched when the patient changes.
+ * The service is chosen afterwards, and changed again, without a refetch — so a
+ * filter applied HERE would answer for whichever service happened to be
+ * selected at fetch time and go stale the moment reception picked another one.
+ * That is the same shape as every other captured-at-load value this project has
+ * had to unpick.
+ *
+ * So the ELIGIBLE set is decided at RENDER, by `offerablePacks` in
+ * `app/agenda/pack-available-notice.tsx`, from the service the form is holding
+ * right now. This function's job is to say what the patient owns.
  */
 export async function listAvailablePacksForPatientAction(
   patientId: string,
-): Promise<{ packId: string; packName: string; sessionsTotal: number; sessionsAvailable: number }[]> {
+): Promise<
+  {
+    packId: string;
+    packName: string;
+    baseServiceId: string;
+    sessionsTotal: number;
+    sessionsAvailable: number;
+  }[]
+> {
   const actor = await requireRequestContext();
   if (!patientId) return [];
   const instances = await listPatientPackInstances(actor, patientId);
@@ -84,6 +106,7 @@ export async function listAvailablePacksForPatientAction(
     .map((i) => ({
       packId: i.packId,
       packName: i.packName,
+      baseServiceId: i.baseServiceId,
       sessionsTotal: i.sessionsTotal,
       sessionsAvailable: i.sessionsAvailable,
     }));

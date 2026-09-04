@@ -40,6 +40,7 @@ const view = (
     id: "inst-1",
     packId: "pack-1",
     packName: "Pacote 10 sessões",
+    baseServiceId: "svc-massagem",
     baseServiceName: "Massagem",
     sessionsTotal: inputs.sessionsTotal,
     sessionsAvailable: packSessionsAvailable(inputs),

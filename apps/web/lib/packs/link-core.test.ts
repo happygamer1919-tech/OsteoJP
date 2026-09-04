@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   linkablePacks,
   packLinkRefusal,
+  packServiceChangeRefusal,
   type LinkableAppointment,
   type LinkablePackInstance,
+  type PackedAppointment,
 } from "./link-core";
 
 /**
@@ -142,5 +144,75 @@ describe("PACK-01 — linkablePacks offers exactly the instances that pass", () 
     const a = inst({ id: "a" });
     const b = inst({ id: "b" });
     expect(linkablePacks(appt(), [b, a]).map((i) => i.id)).toEqual(["b", "a"]);
+  });
+});
+
+/**
+ * PACK-03 — THE SAME RULE, ASKED OF THE VALUE BEING WRITTEN.
+ *
+ * `packLinkRefusal` above stops a pacote being attached to an appointment of
+ * the wrong service. This stops the reverse, which was unguarded: an
+ * appointment ALREADY drawing a NESA session, edited to Fisioterapia and saved,
+ * kept its `pack_instance_id` — so the derived balance went on counting it and
+ * ten NESA sessions became spendable on anything, one edit at a time.
+ *
+ * BOTH ARMS ON EVERY CASE, as above. A guard tested only where it fires is a
+ * guard that has never been shown to let anything through.
+ */
+const linkedRow = (over: Partial<PackedAppointment> = {}): PackedAppointment => ({
+  id: "appt-1",
+  packInstanceId: "inst-1",
+  packBaseServiceId: SVC,
+  ...over,
+});
+
+describe("PACK-03 — a pacote session keeps its service", () => {
+  it("REFUSES a change to another service, and names the row and what it must be", () => {
+    expect(packServiceChangeRefusal(OTHER_SVC, [linkedRow()])).toEqual({
+      appointmentId: "appt-1",
+      requiredServiceId: SVC,
+    });
+  });
+
+  it("ALLOWS setting it back to the pacote's own service - the repair, not a loophole", () => {
+    expect(packServiceChangeRefusal(SVC, [linkedRow()])).toBeNull();
+  });
+
+  it("REFUSES clearing the service, because null is not the base service", () => {
+    expect(packServiceChangeRefusal(null, [linkedRow()])).not.toBeNull();
+  });
+
+  it("ALLOWS anything on a row with no pacote - the guard must let ordinary work through", () => {
+    const free = linkedRow({ packInstanceId: null, packBaseServiceId: null });
+    expect(packServiceChangeRefusal(OTHER_SVC, [free])).toBeNull();
+    expect(packServiceChangeRefusal(null, [free])).toBeNull();
+  });
+
+  it("ALLOWS an empty set - a series that resolved to nothing refuses nothing", () => {
+    expect(packServiceChangeRefusal(OTHER_SVC, [])).toBeNull();
+  });
+
+  /**
+   * A SERIES EDIT WRITES EVERY MEMBER, so one linked member is enough to refuse
+   * the whole write. Checking only the row that was clicked would let the rest
+   * through, which is the shape of defect this whole card is about.
+   */
+  it("REFUSES when ANY member of the set is linked, wherever it sits", () => {
+    const free = linkedRow({ id: "appt-0", packInstanceId: null, packBaseServiceId: null });
+    expect(packServiceChangeRefusal(OTHER_SVC, [free, linkedRow({ id: "appt-2" })]))
+      .toMatchObject({ appointmentId: "appt-2" });
+    expect(packServiceChangeRefusal(OTHER_SVC, [linkedRow({ id: "appt-2" }), free]))
+      .toMatchObject({ appointmentId: "appt-2" });
+  });
+
+  /**
+   * A HALF-RESOLVED ROW IS NOT A LINKED ROW. `packBaseServiceId` comes from a
+   * LEFT JOIN through service_packs; if that ever returns null while
+   * packInstanceId is set, there is no service to require and inventing one
+   * would refuse an edit on a rule nobody can state. It is skipped, and the
+   * skip is asserted rather than implied.
+   */
+  it("skips a row whose pack did not resolve to a base service", () => {
+    expect(packServiceChangeRefusal(OTHER_SVC, [linkedRow({ packBaseServiceId: null })])).toBeNull();
   });
 });

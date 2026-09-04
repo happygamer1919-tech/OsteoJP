@@ -1444,6 +1444,7 @@
   "nav.followup": "Follow-up",
   "packs.derivedNote": "Sessions are counted from the pacote's appointments. A cancelled appointment returns the session; a no-show does not.",
   "appointment.packInsufficient": "The pacote does not have enough sessions for this booking. Check the balance on the patient record and book fewer sessions, or register a new pacote.",
+  "appointment.packServiceLocked": "This appointment is a pacote session, so its service cannot be changed. A pacote is valid for one service only. To change the service, unlink the pacote first.",
   "pack.batchCount": "How many sessions to book now",
   "pack.batchHint": "The pacote has {n} sessions available. You can book fewer and leave the rest for later. Choose the date and time of each session.",
   "pack.batchIncomplete": "At least one session is missing its date or time. Fill in every row before saving.",

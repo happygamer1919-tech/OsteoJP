@@ -14,11 +14,14 @@ import {
   appointments,
   clinicalRecords,
   invoices,
+  patientPackInstances,
   patients,
+  servicePacks,
   staffNotifications,
   users,
   type DbTx,
 } from "@osteojp/db";
+import { packServiceChangeRefusal } from "@/lib/packs/link-core";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { PATIENT_STATS_TAG } from "@/lib/patients/cache-tags";
@@ -1111,6 +1114,51 @@ export async function updateAppointment(
           );
           if (illegal.length > 0) {
             return { ok: false, error: "illegal_transition" };
+          }
+        }
+
+        // ==============================================================
+        // PACK-03 — A PACOTE BINDS TO ONE SERVICE, AND THIS IS THE HALF
+        // THAT WAS MISSING. Owner ruling: ten NESA sessions are spendable
+        // on NESA only, no cross-service mixing.
+        //
+        // `link-core.ts` has refused `service_mismatch` since PACK-01, but
+        // only in the direction of attaching a pacote to an appointment.
+        // The reverse was unguarded: line 1053 below wrote `set.serviceId`
+        // from the patch with no reference to `pack_instance_id` at all. So
+        // an appointment already drawing a NESA session could be edited to
+        // Fisioterapia and saved, keeping its link — and the derived balance
+        // (sessionsTotal - legacyConsumed - linked appointments) went on
+        // counting it. Ten NESA sessions, spendable on anything, one edit at
+        // a time.
+        //
+        // IT IS ENFORCED HERE AND NOT ONLY IN THE DRAWER, for the same
+        // reason INC-08 moved the Estado map to the server: the drawer's
+        // disabled Select is a courtesy that arrives a fetch late and is
+        // absent entirely from a stale tab, and one caller guarding while
+        // another does not is indistinguishable, from the database's point
+        // of view, from nobody guarding.
+        //
+        // READ INSIDE THE TRANSACTION, so it cannot race a concurrent link.
+        // ==============================================================
+        if ("serviceId" in patch) {
+          const linked = await tx
+            .select({
+              id: appointments.id,
+              packInstanceId: appointments.packInstanceId,
+              packBaseServiceId: servicePacks.baseServiceId,
+            })
+            .from(appointments)
+            .leftJoin(
+              patientPackInstances,
+              eq(appointments.packInstanceId, patientPackInstances.id),
+            )
+            .leftJoin(servicePacks, eq(patientPackInstances.packId, servicePacks.id))
+            .where(inArray(appointments.id, ids));
+
+          const refusal = packServiceChangeRefusal(patch.serviceId ?? null, linked);
+          if (refusal) {
+            return { ok: false, error: "pack_service_locked" };
           }
         }
 

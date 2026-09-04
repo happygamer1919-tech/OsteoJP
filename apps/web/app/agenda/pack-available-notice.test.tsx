@@ -19,19 +19,31 @@ vi.mock("@osteojp/ui", () => ({
 
 import type { AvailablePack } from "./pack-available-notice";
 
-const { PackAvailableNotice } = await import("./pack-available-notice");
+const { PackAvailableNotice, offerablePacks } = await import("./pack-available-notice");
 const { s } = await import("@/lib/i18n");
+
+const NESA = "svc-nesa";
+const FISIO = "svc-fisioterapia";
 
 const pack = (over: Partial<AvailablePack> = {}): AvailablePack => ({
   packId: "pack-1",
   packName: "Pacote 10 sessões",
+  baseServiceId: NESA,
   sessionsTotal: 10,
   sessionsAvailable: 4,
   ...over,
 });
 
-const render = (packs: AvailablePack[]): string =>
-  renderToStaticMarkup(createElement(PackAvailableNotice, { packs, onUse: vi.fn() }));
+/**
+ * The PACK-02 cases below predate the service filter and pass `serviceId: ""`,
+ * which is the "no service chosen yet" arm the owner ruled on: everything the
+ * patient owns is shown. Their behaviour is unchanged, and that is asserted
+ * rather than assumed — the PACK-03 block below drives the filter directly.
+ */
+const render = (packs: AvailablePack[], serviceId = ""): string =>
+  renderToStaticMarkup(
+    createElement(PackAvailableNotice, { packs, serviceId, onUse: vi.fn() }),
+  );
 
 describe("PACK-02 — the notice appears only when it has something to say", () => {
   it("renders NOTHING for a patient with no pacote sessions left", () => {
@@ -75,5 +87,79 @@ describe("PACK-02 — what the notice carries", () => {
     const html = render([pack({ sessionsAvailable: 1 })]);
     expect(html).toContain(s["appointment.packAvailableNotice"]);
     expect(html).toContain("1");
+  });
+});
+
+/**
+ * PACK-03 — A PACOTE BINDS TO ONE SERVICE.
+ *
+ * The owner saw a NESA pacote offered against a Fisioterapia appointment. The
+ * offer was the defect: the schema has always bound a pacote to exactly one
+ * service (`service_packs.base_service_id`, NOT NULL) and the retroactive
+ * linker has always refused a mismatch — this one surface did not ask.
+ */
+describe("PACK-03 — the notice offers only pacotes for the service in hand", () => {
+  it("HIDES a NESA pacote when the form holds Fisioterapia — the reported defect", () => {
+    expect(render([pack({ baseServiceId: NESA })], FISIO)).toBe("");
+  });
+
+  it("shows a NESA pacote when the form holds NESA", () => {
+    const html = render([pack({ baseServiceId: NESA })], NESA);
+    expect(html).toContain(s["appointment.packAvailableNotice"]);
+    expect(html).toContain('data-testid="pack-use-pack-1"');
+  });
+
+  /**
+   * THE NEGATIVE ARM, and it is the one that would catch a filter written as
+   * "hide everything unless it matches". With no service chosen the notice must
+   * still speak, because saying "this patient has already paid" BEFORE anybody
+   * asks is the whole reason it exists — and pressing Use then SETS the service.
+   */
+  it("shows everything while NO service is chosen, and that is the ruling", () => {
+    const html = render([pack({ baseServiceId: NESA })], "");
+    expect(html).toContain('data-testid="pack-use-pack-1"');
+  });
+
+  it("filters a MIXED list down to the matching pacote only", () => {
+    const html = render(
+      [
+        pack({ packId: "nesa-1", packName: "Pacote NESA 10", baseServiceId: NESA }),
+        pack({ packId: "fisio-1", packName: "Pacote Fisio 5", baseServiceId: FISIO }),
+      ],
+      FISIO,
+    );
+    expect(html).toContain('data-testid="pack-use-fisio-1"');
+    expect(html).not.toContain('data-testid="pack-use-nesa-1"');
+    expect(html).not.toContain("Pacote NESA 10");
+  });
+
+  /**
+   * A NOTICE WITH NOTHING TO SAY SAYS NOTHING. An empty box under "sessões por
+   * usar" would read as "this patient has none", which is the opposite of true
+   * and is exactly the §1.3 conflation: the unknown case wearing the face of a
+   * known one.
+   */
+  it("renders NOTHING rather than an empty box when every pacote is a mismatch", () => {
+    expect(render([pack({ baseServiceId: NESA }), pack({ packId: "p2", baseServiceId: NESA })], FISIO)).toBe("");
+  });
+});
+
+describe("PACK-03 — offerablePacks, the rule on its own", () => {
+  it("is identity when no service is chosen", () => {
+    const packs = [pack({ baseServiceId: NESA }), pack({ packId: "p2", baseServiceId: FISIO })];
+    expect(offerablePacks(packs, "").map((p) => p.packId)).toEqual(["pack-1", "p2"]);
+  });
+
+  it("keeps only exact matches — never a prefix, never a case-fold", () => {
+    const packs = [pack({ baseServiceId: NESA })];
+    expect(offerablePacks(packs, NESA)).toHaveLength(1);
+    expect(offerablePacks(packs, NESA.toUpperCase())).toHaveLength(0);
+    expect(offerablePacks(packs, "svc")).toHaveLength(0);
+  });
+
+  it("does not mutate what it was given", () => {
+    const packs = [pack({ baseServiceId: NESA }), pack({ packId: "p2", baseServiceId: FISIO })];
+    offerablePacks(packs, NESA);
+    expect(packs).toHaveLength(2);
   });
 });
