@@ -19,13 +19,22 @@
  * and that the spans it claims exist do.
  *
  * ==========================================================================
- * ADMIN, RLS ON. SR-24, AND IT IS NOT A FORMALITY
+ * ADMIN, RLS ON, AND LOCATION-ASSIGNED. SR-24 ONE LEVEL DEEPER.
  * ==========================================================================
  * It runs on the `perf` project, whose storage state is the seeded ADMIN. Every
  * query therefore runs through `runScoped` as `authenticated`, with the admin's
  * claims and 0073's `viewer_visible_patient_ids()` in play. A reading taken as
  * the owner principal, or with RLS off, describes a different plan and has
  * misled this project twice.
+ *
+ * PERF-14: RLS ON IS NOT ENOUGH IF THE PRINCIPAL NEVER TRIGGERS THE EXPENSIVE
+ * HALF OF IT. Until 2026-09-05 the e2e admin held no `staff_locations` row, so
+ * `viewerLocationScope` returned null, `scopeConditions` added no predicate, and
+ * `viewer_has_location_assignment()` was false inside the policies. Every
+ * performance number this project has taken on a lane was taken by that cheap
+ * principal, and it is why the lane could not reproduce the production cost of
+ * the /patients list at all. The seed now assigns the admin two locations; the
+ * `total` below is what checks that it did.
  *
  * PREREQUISITE, and it fails loudly rather than measuring the wrong database:
  *   node scripts/perf-seed-admin-stats.mjs
@@ -34,8 +43,30 @@
 
 import { test, expect, type Page } from "@playwright/test";
 
-/** The four numbers on the owner's screen. The seed hits these exactly. */
-const OWNER_STATS = { total: 8413, seenThisMonth: 56, withUpcoming: 153, inRecovery: 88 };
+/**
+ * THE FOUR NUMBERS THIS PRINCIPAL SEES, AND `total` IS THE PREMISE ASSERTION.
+ *
+ * ==========================================================================
+ * PERF-14: THE MEASURING PRINCIPAL IS LOCATION-ASSIGNED, AND THAT IS THE POINT
+ * ==========================================================================
+ * The owner's screen shows 8,413, and `perf-seed-admin-stats.mjs` still hits
+ * that exactly for an UNASSIGNED viewer. This suite runs as an admin the seed
+ * gives TWO `staff_locations` rows, and such a viewer sees 8,409 - four fixture
+ * patients are reachable at neither of those locations.
+ *
+ * SO 8,409 IS A CHECK ON THE PRINCIPAL, not a weaker version of the owner's
+ * number. If this reads 8,413 the admin is UNASSIGNED, `viewerLocationScope`
+ * returned null, `patientLocationScope` added no predicate and
+ * `viewer_has_location_assignment()` was false inside the RLS policies - and
+ * every timing below would be the cheap principal's, which is the defect
+ * PERF-14 exists to end. Measured on this lane at production scale: the same
+ * stat strip costs 12.2 ms unassigned and 512.4 ms assigned, and the list count
+ * 2.4 ms against 178.1 ms, because the two correlated EXISTS run at loops=8409.
+ */
+const OWNER_STATS = { total: 8409, seenThisMonth: 56, withUpcoming: 153, inRecovery: 88 };
+
+/** The seed assigns exactly this many locations; an unassigned admin sees every active one. */
+const ASSIGNED_LOCATIONS = 2;
 
 type Reading = {
   route: string;
@@ -166,6 +197,16 @@ test("/patients as ADMIN: the seeded shape is the owner's, and the first click i
     OWNER_STATS.withUpcoming,
     OWNER_STATS.inRecovery,
   ]);
+
+  // THE SECOND HALF OF THE PREMISE, and it is visible rather than inferred: a
+  // location-assigned viewer's filter offers ONLY their own locations, so the
+  // select carries exactly the two the seed granted. An unassigned admin would
+  // be offered every active location in the tenant.
+  await expect(
+    page.locator("select option[value]:not([value=''])"),
+    "the filter offers a different number of locations than the seed assigned - this principal is " +
+      "not the assigned one, so every timing below would be the cheap principal's (PERF-14)",
+  ).toHaveCount(ASSIGNED_LOCATIONS);
 
   const first = await readPanel(page, "/patients (first click)");
   report("HYPOTHESIS 1+2: the first click after login", [first]);

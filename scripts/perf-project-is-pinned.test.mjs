@@ -141,6 +141,34 @@ test("CI names chromium and never names perf", () => {
   );
 });
 
+test("the measurement runs as a LOCATION-ASSIGNED principal, and says so", () => {
+  // PERF-14. The e2e admin held no staff_locations row, so every performance
+  // number taken on a lane was taken by a principal that skips
+  // `patientLocationScope`'s two correlated EXISTS and
+  // `viewer_has_location_assignment()` inside the RLS policies. On this lane the
+  // same stat strip costs 12.2 ms unassigned and 512.4 ms assigned.
+  //
+  // TWO SOURCE ARMS, because the seed and the spec have to agree and neither is
+  // meaningful alone: the seed must GRANT the assignment, and the spec must
+  // CHECK it. A seed that stopped granting would leave the spec asserting a
+  // number nothing produces; a spec that stopped checking would go back to
+  // measuring the cheap principal silently, which is the whole defect.
+  const seed = readFileSync("scripts/perf-seed-admin-stats.mjs", "utf8");
+  assert.match(
+    seed,
+    /insert into staff_locations/,
+    "scripts/perf-seed-admin-stats.mjs no longer assigns the measuring admin any location, so the " +
+      "perf suite is back to measuring a principal that skips the expensive half of RLS (PERF-14)",
+  );
+  const spec = readFileSync(`${E2E_DIR}/perf-admin-stats.spec.ts`, "utf8");
+  assert.match(
+    spec,
+    /ASSIGNED_LOCATIONS/,
+    "perf-admin-stats.spec.ts no longer checks how many locations the principal is assigned, so an " +
+      "unassigned admin would take the measurement and nothing would say so",
+  );
+});
+
 test("the audience arm is NOT named perf-*, so CI keeps running it", () => {
   const spec = `${E2E_DIR}/timing-panel-audience.spec.ts`;
   assert.ok(

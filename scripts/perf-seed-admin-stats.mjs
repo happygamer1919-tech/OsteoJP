@@ -140,7 +140,27 @@ if (!loc || !prac || !svc) {
  * whole tenant. Used TWICE - once as a baseline before inserting, once as the
  * verification after - so the two can never disagree about what is counted.
  */
-async function stats() {
+/**
+ * The four aggregates, optionally as a LOCATION-SCOPED principal sees them.
+ *
+ * `locIds` null reproduces an UNASSIGNED viewer - `viewerLocationScope` returns
+ * null for them and `scopeConditions` adds no predicate. A non-empty array
+ * reproduces `patientLocationScope`: reachable by an appointment at one of those
+ * locations, or by `primary_location_id`. It is restated here rather than
+ * imported because this script is plain node and the predicate lives in a
+ * server-only TypeScript module; the numbers it produces are checked against the
+ * ones the PAGE produces by the spec that reads them, which is the real oracle.
+ */
+async function stats(locIds = null) {
+  const scoped = locIds
+    ? sql`and (
+        exists (select 1 from appointments ap
+                 where (ap.patient_id = p.id or ap.patient_2_id = p.id)
+                   and ap.location_id in ${sql(locIds)})
+        or exists (select 1 from patients pl
+                    where pl.id = p.id and pl.primary_location_id in ${sql(locIds)})
+      )`
+    : sql``;
   return one(sql`
     with participations as (
       select patient_id as pid, starts_at, status from appointments where tenant_id = ${TENANT}
@@ -159,7 +179,7 @@ async function stats() {
            count(*) filter (where agg.last_completed between ${from.toISOString()}::timestamptz and ${to.toISOString()}::timestamptz
                               and not coalesce(agg.has_future,false))::int as in_recovery
       from patients p left join agg on agg.pid = p.id
-     where p.tenant_id = ${TENANT} and p.deleted_at is null`);
+     where p.tenant_id = ${TENANT} and p.deleted_at is null ${scoped}`);
 }
 
 console.log("[perf-seed] clearing any previous run of THIS script only (by marker)");
@@ -267,9 +287,77 @@ process.stdout.write("\n");
 await sql`analyze patients`;
 await sql`analyze appointments`;
 
+/* ------------------------------------------- the principal, and it is the point */
+/**
+ * PERF-14. THE MEASURING PRINCIPAL IS GIVEN A staff_locations ASSIGNMENT.
+ *
+ * ==========================================================================
+ * WHY, AND IT IS A DEFECT IN EVERY NUMBER THIS PROJECT HAS TAKEN LOCALLY
+ * ==========================================================================
+ * The e2e admin has no `staff_locations` row, so `viewerLocationScope` returns
+ * null, `scopeConditions` adds NO predicate, and `viewer_has_location_assignment()`
+ * is false inside the RLS policies. That principal is the CHEAP one: it skips
+ * `patientLocationScope`'s two correlated EXISTS entirely, and it skips
+ * `location_in_viewer_scope` inside `appointments_rls`.
+ *
+ * The owner's admin on production IS assigned. BLUE measured what that costs -
+ * `location_in_viewer_scope` evaluated once per row, and the two EXISTS at
+ * loops=8414 and 4184 - and a lane that measures as an unassigned admin CANNOT
+ * SEE THAT CLASS OF DEFECT AT ALL. Every number taken here was taken by the
+ * cheap principal, which is SR-24 one level deeper: it is not enough to run with
+ * RLS on if the principal never triggers the expensive half of it.
+ *
+ * TWO LOCATIONS, NOT ONE, AND NOT ALL. One would make
+ * `resolveLocationControl` return `fixed` and remove the filter select the
+ * measurement suite uses to force a cold cache key. All of them would be
+ * indistinguishable from unassigned on screen, so nothing could assert that the
+ * assignment exists. Two leaves a picker AND leaves a visible difference: the
+ * select offers 2 options where an unassigned admin sees every active location.
+ *
+ * IT IS PART OF THE SEED, not of seed-e2e.mjs, deliberately. This changes what
+ * the e2e admin IS, and the ordinary suite must not inherit it - a perf-seeded
+ * lane is already not a database the ordinary suite can pass on (see
+ * LE-recuperacao-spec-leaves-a-contact-row-per-run). `lane-stack up` resets.
+ */
+const locs = await sql`
+  select id from locations where tenant_id = ${TENANT} and is_active order by created_at limit 2`;
+if (locs.length < 2) {
+  console.error(
+    "[perf-seed] tenant A has fewer than two active locations, so an assigned principal cannot " +
+      "keep a location picker. Run: node apps/web/e2e/seed/seed-e2e.mjs",
+  );
+  process.exit(2);
+}
+const admin = await one(sql`
+  select u.id from users u join roles r on r.id = u.role_id
+   where u.tenant_id = ${TENANT} and u.email = ${"e2e-admin@osteojp.test"} and r.slug = 'admin'`);
+if (!admin) {
+  console.error("[perf-seed] no e2e admin in tenant A. Run: node apps/web/e2e/seed/seed-e2e.mjs");
+  process.exit(2);
+}
+await sql`delete from staff_locations where tenant_id = ${TENANT} and user_id = ${admin.id}`;
+for (const l of locs) {
+  await sql`insert into staff_locations (tenant_id, user_id, location_id)
+            values (${TENANT}, ${admin.id}, ${l.id})`;
+}
+const assigned = await one(sql`
+  select count(*)::int as n from staff_locations where tenant_id = ${TENANT} and user_id = ${admin.id}`);
+if (assigned.n !== 2) {
+  console.error(`[perf-seed] expected the admin to hold 2 location assignments, found ${assigned.n}`);
+  process.exit(1);
+}
+console.log(`[perf-seed] measuring principal e2e-admin@osteojp.test is assigned to ${assigned.n} locations`);
+
 /* --------------------------------------------------- verify the four counts */
 console.log("[perf-seed] verifying against the SAME four aggregates the page runs");
 const check = await stats();
+const scopedCheck = await stats(locs.map((l) => l.id));
+console.log("[perf-seed] the two principals, side by side:");
+for (const k of ["total", "seen_this_month", "with_upcoming", "in_recovery"]) {
+  console.log(
+    `  ${k.padEnd(16)} unassigned ${String(check[k]).padStart(5)}   assigned ${String(scopedCheck[k]).padStart(5)}`,
+  );
+}
 
 const want = { total: TOTAL, seen_this_month: SEEN_THIS_MONTH, with_upcoming: WITH_UPCOMING, in_recovery: IN_RECOVERY };
 let bad = false;
