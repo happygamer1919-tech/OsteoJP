@@ -82,9 +82,41 @@
 /* the other eight. supabase_auth_admin keeps custom_access_token_hook */
 /* by the grant 0002 made it by name.                                  */
 /*                                                                    */
-/* NO GRANT IS ISSUED HERE. Every role that should keep EXECUTE        */
-/* already holds it in its own right, so this migration only takes     */
-/* away - which is also what makes it safe to re-run.                  */
+/* ================================================================== */
+/* EVERY GRANT IS RE-ASSERTED, AND CI IS WHY.                          */
+/* ================================================================== */
+/* The first version of this file issued NO grants, on the reasoning   */
+/* that every role which should keep EXECUTE already held it in its    */
+/* own right. THAT IS TRUE ON A DATABASE WHERE SUPABASE'S ALTER        */
+/* DEFAULT PRIVILEGES FIRED, AND FALSE ON ONE WHERE IT DID NOT.        */
+/*                                                                    */
+/* CI caught it in 2m39s: `permission denied for function              */
+/* jwt_tenant_id`, from followup-rls.test.ts running as                */
+/* `authenticated`. On the lane, `authenticated=X/postgres` sits in    */
+/* jwt_tenant_id's proacl and the revoke below leaves it alone. On CI  */
+/* that aclitem does not exist - NO MIGRATION EVER GRANTED             */
+/* jwt_tenant_id TO authenticated; it is granted to `patient` only,    */
+/* and staff reached it through PUBLIC. Revoking PUBLIC therefore took */
+/* the claims helper away from every staff policy in the system.       */
+/*                                                                    */
+/* THE LESSON IS THE SAME ONE THIS FILE ALREADY TEACHES, APPLIED TO    */
+/* THE OTHER HALF OF THE STATEMENT. Reasoning about a REVOKE from a    */
+/* catalogue read is environment-dependent in BOTH directions: in what */
+/* it takes away, and in what it leaves behind. So this migration no   */
+/* longer reasons about what is there. IT STATES ITS OWN END STATE:    */
+/* revoke the three untrusted grantees, then GRANT to exactly the      */
+/* roles the design intends, so the database looks the same afterwards */
+/* on CI, on a lane and on production regardless of what it looked     */
+/* like before. That is the shape 0075 already uses.                   */
+/*                                                                    */
+/* NO ROLE GAINS A CAPABILITY. Every GRANT below names a role that     */
+/* could already execute that function everywhere - explicitly where   */
+/* its own migration said so, and through PUBLIC where it did not.     */
+/*                                                                    */
+/* assign_patient_number GETS NO GRANT AT ALL, and that is deliberate: */
+/* no migration ever granted it to anybody, because a TRIGGER function */
+/* needs no EXECUTE at fire time. Giving it one here to be tidy would  */
+/* be inventing a privilege nobody asked for.                          */
 /*                                                                    */
 /* ================================================================== */
 /* NOTHING CALLS THESE AS service_role. VERIFIED, NOT ASSUMED.        */
@@ -129,34 +161,68 @@
 
 /* --- 0002: the token hook that shapes every JWT this platform issues */
 REVOKE ALL ON FUNCTION public.custom_access_token_hook(event jsonb) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.custom_access_token_hook(event jsonb) TO supabase_auth_admin;--> statement-breakpoint
 
 /* --- claims helpers. `patient` and `authenticated` keep their own grants. */
 REVOKE ALL ON FUNCTION public.jwt_tenant_id() FROM PUBLIC, anon, service_role;--> statement-breakpoint
-REVOKE ALL ON FUNCTION public.jwt_patient_id() FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.jwt_tenant_id() TO authenticated, patient;--> statement-breakpoint
+/* jwt_patient_id is revoked from `authenticated` too. It is a PORTAL     */
+/* helper: the ONLY policies that call it are the patient self-scope      */
+/* ones, every one of them TO patient, and a policy scoped to `patient`   */
+/* is never evaluated for an `authenticated` session. It was granted to   */
+/* `patient` alone by its own migration; staff held it only through the   */
+/* CREATE-time default, which is exactly the inherited grant this file    */
+/* exists to stop relying on.                                             */
+REVOKE ALL ON FUNCTION public.jwt_patient_id() FROM PUBLIC, anon, authenticated, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.jwt_patient_id() TO patient;--> statement-breakpoint
 
 /* --- 0072 + 0074: the four confirm-code doors, one per verb */
 REVOKE ALL ON FUNCTION public.resolve_confirm_code(p_code_hash text) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.resolve_confirm_code(p_code_hash text) TO authenticated;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.issue_confirm_code(p_code_hash text, p_tenant_id uuid, p_appointment_id uuid) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.issue_confirm_code(p_code_hash text, p_tenant_id uuid, p_appointment_id uuid) TO authenticated;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.withdraw_confirm_code(p_code_hash text, p_tenant_id uuid) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.withdraw_confirm_code(p_code_hash text, p_tenant_id uuid) TO authenticated;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.consume_confirm_code(p_code_hash text, p_tenant_id uuid, p_now timestamp with time zone) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.consume_confirm_code(p_code_hash text, p_tenant_id uuid, p_now timestamp with time zone) TO authenticated;--> statement-breakpoint
 
 /* --- location and viewer scope helpers, called from inside policies */
 REVOKE ALL ON FUNCTION public.location_in_viewer_scope(p_location_id uuid) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.location_in_viewer_scope(p_location_id uuid) TO authenticated;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.viewer_has_location_assignment() FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.viewer_has_location_assignment() TO authenticated;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.viewer_location_ids() FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.viewer_location_ids() TO authenticated;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.viewer_treated_patient_ids() FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.viewer_treated_patient_ids() TO authenticated;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.viewer_visible_patient_ids() FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.viewer_visible_patient_ids() TO authenticated;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.patient_appt_at_viewer_location(p_patient_id uuid) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.patient_appt_at_viewer_location(p_patient_id uuid) TO authenticated;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.patient_appt_treated_by_viewer(p_patient_id uuid) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.patient_appt_treated_by_viewer(p_patient_id uuid) TO authenticated;--> statement-breakpoint
 
 /* --- clinical visibility helpers */
 REVOKE ALL ON FUNCTION public.clinical_admin_sees_patient(p_patient_id uuid) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.clinical_admin_sees_patient(p_patient_id uuid) TO authenticated;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.clinical_therapist_sees_patient(p_patient_id uuid) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.clinical_therapist_sees_patient(p_patient_id uuid) TO authenticated;--> statement-breakpoint
 
 /* --- scheduling */
 REVOKE ALL ON FUNCTION public.appointment_conflicts(p_practitioner uuid, p_location uuid, p_room text, p_starts timestamp with time zone, p_ends timestamp with time zone, p_exclude uuid[]) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.appointment_conflicts(p_practitioner uuid, p_location uuid, p_room text, p_starts timestamp with time zone, p_ends timestamp with time zone, p_exclude uuid[]) TO authenticated;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.is_unconfirmed_pedido(p_appointment uuid) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.is_unconfirmed_pedido(p_appointment uuid) TO authenticated, patient;--> statement-breakpoint
 
 /* --- patient record maintenance. merge_patients was anon-executable. */
-REVOKE ALL ON FUNCTION public.assign_patient_number() FROM PUBLIC, anon, service_role;--> statement-breakpoint
-REVOKE ALL ON FUNCTION public.merge_patients(p_source_id uuid, p_target_id uuid, p_actor_id uuid) FROM PUBLIC, anon, service_role;
+/* assign_patient_number is revoked from EVERY application role, not     */
+/* only the untrusted three, because it is the one function in the set  */
+/* that NO migration ever granted to anybody. Leaving `authenticated`    */
+/* alone here would leave the end state environment-dependent all over   */
+/* again: on a lane the default privilege put it there, on CI nothing    */
+/* did. A TRIGGER function needs no EXECUTE at fire time - proven with   */
+/* an INSERT as `authenticated` and as `service_role`, both of which     */
+/* still returned an assigned patient_number with the grant gone.        */
+REVOKE ALL ON FUNCTION public.assign_patient_number() FROM PUBLIC, anon, authenticated, patient, service_role;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.merge_patients(p_source_id uuid, p_target_id uuid, p_actor_id uuid) FROM PUBLIC, anon, service_role;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.merge_patients(p_source_id uuid, p_target_id uuid, p_actor_id uuid) TO authenticated;

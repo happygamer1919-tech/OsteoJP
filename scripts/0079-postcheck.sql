@@ -78,14 +78,16 @@ SELECT 'anon can execute NONE',
 UNION ALL
 -- THE OTHER DIRECTION. A migration that revoked from everybody would pass both
 -- rows above and take the clinic's own application down with it.
-SELECT 'authenticated keeps the 20',
+SELECT 'authenticated keeps the rest',
        count(*) FILTER (WHERE has_function_privilege('authenticated', p.oid, 'EXECUTE'))::text,
-       '20',
-       CASE WHEN count(*) FILTER (WHERE has_function_privilege('authenticated', p.oid, 'EXECUTE')) = 20
+       '18',
+       CASE WHEN count(*) FILTER (WHERE has_function_privilege('authenticated', p.oid, 'EXECUTE')) = 18
             THEN 'OK' ELSE 'FAIL' END
   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
  WHERE n.nspname = 'public' AND p.prosecdef
-   AND p.proname <> 'custom_access_token_hook'
+   -- The two exceptions: 0002 revokes the hook from authenticated by name, and
+   -- assign_patient_number is a TRIGGER function that needs no EXECUTE at all.
+   AND p.proname NOT IN ('custom_access_token_hook', 'assign_patient_number', 'jwt_patient_id')
 
 UNION ALL
 SELECT 'auth admin keeps the token hook',

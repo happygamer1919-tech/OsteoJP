@@ -118,13 +118,33 @@ d("0079: no untrusted role can execute a SECURITY DEFINER function", () => {
     expect(rows.map((r) => r.name)).toEqual([]);
   });
 
-  it("authenticated keeps every one except the token hook", async () => {
+  it("authenticated keeps every one except the token hook and the trigger", async () => {
     const rows = await canExecute("authenticated");
-    const denied = rows.filter((r) => !r.allowed).map((r) => r.name);
-    // 0002 revokes the hook from authenticated by name; it is the ONE exception
-    // and it is asserted as an equality so a second exception cannot appear
-    // quietly.
-    expect(denied).toEqual(["custom_access_token_hook"]);
+    const denied = rows.filter((r) => !r.allowed).map((r) => r.name).sort();
+    /**
+     * The TWO exceptions, asserted as an equality so a third cannot appear
+     * quietly — and asserted at all because "no untrusted role can execute
+     * anything" is satisfied perfectly by a migration that takes the clinic's
+     * own application down with it.
+     *
+     *   custom_access_token_hook  0002 revokes it from authenticated by name.
+     *                             supabase_auth_admin is its only caller.
+     *   assign_patient_number     a TRIGGER function, which needs no EXECUTE at
+     *                             fire time. No migration ever granted it to
+     *                             anybody.
+     *   jwt_patient_id            a PORTAL helper. Every policy that calls it is
+     *                             scoped TO patient, and such a policy is never
+     *                             evaluated for an authenticated session.
+     *
+     * All three are revoked from `authenticated` by 0079 rather than left to
+     * whatever the CREATE-time default privilege happened to do, so this list is
+     * the same on CI, on a lane and on production.
+     */
+    expect(denied).toEqual([
+      "assign_patient_number",
+      "custom_access_token_hook",
+      "jwt_patient_id",
+    ]);
   });
 
   it("patient keeps the three the portal runs on", async () => {
