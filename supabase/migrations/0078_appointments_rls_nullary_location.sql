@@ -1,3 +1,7 @@
+-- AUTO-GENERATED — DO NOT EDIT.
+-- Mirror of packages/db/migrations/0078_appointments_rls_nullary_location.sql for Supabase branching.
+-- Edit the drizzle source, then run: node scripts/sync-supabase-migrations.mjs
+
 /* ================================================================== */
 /* 0078 - appointments_rls stops calling a function PER ROW.          */
 /* ================================================================== */
