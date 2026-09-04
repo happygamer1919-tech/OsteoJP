@@ -564,3 +564,108 @@ describe("STAFF-03 — the hour row expands to fit its appointments", () => {
     ).toBeGreaterThan(heightOf(quiet));
   });
 });
+
+// ---------------------------------------------------------------------------
+// LE-e2e-appointment-fixture-drift - EVERY DAY COLUMN SAYS WHICH DAY IT IS.
+// ---------------------------------------------------------------------------
+// WHY THIS IS PINNED HERE AND NOT LEFT TO THE E2E THAT USES IT.
+//
+// `data-day` is a test seam with no visual consequence, so removing it - in a
+// tidy-up, or by rewriting this div - changes NOTHING a person can see and
+// NOTHING that fails fast. What it breaks is one scoped locator in
+// agenda-cards.spec.ts, which then reverts to matching the whole page and goes
+// back to failing on 28% of runs, in the week view, at a distance, looking
+// exactly like flake. That is the shape this repository keeps paying for: the
+// only signal is an absence.
+//
+// The MEASUREMENT it comes from: agenda-cards.spec.ts:58 books Maria Silva on
+// RUN_DAY_BASE + 28 and CANCELS her (the cancelled line is that test's own
+// assertion, so it is meant to stay); :106 books three names on
+// RUN_DAY_BASE + 33 and asserts them in the WEEK view with a page-wide strict
+// locator. Five days apart under a SIX-day Mon-Sat grid means both render
+// together for 85 of the 300 values RUN_DAY_BASE can take, and the locator
+// resolved to 2. Both tests carried a comment claiming a dedicated DAY; both
+// were true, and the assertion was about the WEEK.
+describe("day columns carry their date (LE-e2e-appointment-fixture-drift)", () => {
+  const COLUMN_RE = /<div data-day="(\d{4}-\d{2}-\d{2})"/g;
+
+  /** The six Mon-Sat ISO dates of the week DAY (2026-07-20, a Monday) sits in. */
+  const WEEK = [
+    "2026-07-20",
+    "2026-07-21",
+    "2026-07-22",
+    "2026-07-23",
+    "2026-07-24",
+    "2026-07-25",
+  ];
+
+  /**
+   * The markup of one day's column, bounded by the NEXT column's opening tag.
+   *
+   * BOUNDED, AND THAT IS THE WHOLE POINT OF THE HELPER. Slicing to the end of
+   * the document would make every "this name is not in that column" assertion
+   * below vacuously fragile for the last column and, worse, would let a name
+   * that leaked into a LATER column read as if it belonged to this one.
+   */
+  function columnHtml(html: string, day: string): string {
+    const starts = [...html.matchAll(COLUMN_RE)];
+    const i = starts.findIndex((m) => m[1] === day);
+    if (i === -1) throw new Error(`no column for ${day}; found ${starts.map((m) => m[1]).join(", ")}`);
+    const from = starts[i]!.index!;
+    const to = i + 1 < starts.length ? starts[i + 1]!.index! : html.length;
+    return html.slice(from, to);
+  }
+
+  it("the week view renders one column per Mon-Sat day, each naming its own date", () => {
+    const days = [...render([appt()]).matchAll(COLUMN_RE)].map((m) => m[1]);
+    expect(days).toEqual(WEEK);
+  });
+
+  it("the day view renders exactly one column, and it is the anchor", () => {
+    const html = renderToStaticMarkup(
+      <AgendaGrid
+        view="day"
+        anchor={DAY}
+        appointments={[appt()]}
+        onSelectAppointment={() => {}}
+        onSelectSlot={() => {}}
+      />,
+    );
+    expect([...html.matchAll(COLUMN_RE)].map((m) => m[1])).toEqual([DAY]);
+  });
+
+  it("an appointment renders inside ITS OWN day's column and in no other", () => {
+    // THE PROPERTY THE E2E ACTUALLY RELIES ON, and the one an attribute alone
+    // does not give: scoping to `[data-day=...]` is only worth anything if the
+    // column really contains that day's cards and only those.
+    const html = render([
+      appt({ id: "mon", patientName: "Ana Costa", startsAt: `${WEEK[0]}T08:00:00Z`, endsAt: `${WEEK[0]}T09:00:00Z` }),
+      appt({ id: "tue", patientName: "Bruno Dias", startsAt: `${WEEK[1]}T08:00:00Z`, endsAt: `${WEEK[1]}T09:00:00Z` }),
+    ]);
+    const monday = columnHtml(html, WEEK[0]!);
+    const tuesday = columnHtml(html, WEEK[1]!);
+
+    expect(monday).toContain("Ana Costa");
+    expect(tuesday).toContain("Bruno Dias");
+    // The negative arm, which is the half that reproduces the defect: before
+    // the columns were addressable, a page-wide locator saw both of these at
+    // once and a strict matcher resolved to two elements.
+    expect(monday).not.toContain("Bruno Dias");
+    expect(tuesday).not.toContain("Ana Costa");
+  });
+
+  it("the SAME patient on two days of one week is two lines in two columns", () => {
+    // The exact shape of the e2e collision, in a unit test: one name, one week,
+    // two days. Page-wide the name matches twice and always will - that is
+    // correct rendering. Only a column-scoped locator can make a claim about
+    // one of them.
+    const html = render([
+      appt({ id: "a", patientName: "Maria Silva", startsAt: `${WEEK[0]}T08:00:00Z`, endsAt: `${WEEK[0]}T09:00:00Z` }),
+      appt({ id: "b", patientName: "Maria Silva", startsAt: `${WEEK[3]}T08:00:00Z`, endsAt: `${WEEK[3]}T09:00:00Z` }),
+    ]);
+    expect(faces(html)).toHaveLength(2);
+    expect(columnHtml(html, WEEK[0]!)).toContain("Maria Silva");
+    expect(columnHtml(html, WEEK[3]!)).toContain("Maria Silva");
+    expect(columnHtml(html, WEEK[1]!)).not.toContain("Maria Silva");
+  });
+});

@@ -32,7 +32,14 @@ import {
 const SAVE = "Guardar";
 // Sunday-safe on purpose: this file asserts against the agenda GRID, and the
 // week view is Mon-Sat, so a Sunday day is not rendered there at all.
-const DAY = futureWeekdayDate(RUN_DAY_BASE + 28); // no other spec books this day
+//
+// LE-e2e-appointment-fixture-drift: THIS TEST RUNS IN THE DAY VIEW
+// (openNewAppointment navigates to view=day), so only this date's cards are on
+// the page and a page-wide locator is safe HERE. The test below runs in the
+// WEEK view and that is a different situation entirely - see its own note. The
+// comment this line used to carry, "no other spec books this day", was TRUE and
+// said nothing about the WEEK, which is the axis that actually bit.
+const DAY = futureWeekdayDate(RUN_DAY_BASE + 28);
 const BOOK_TIME = "14:00";
 // The 7 therapist -700 hues (therapist-color.ts). The name line must carry one.
 const THERAPIST_TEXT_COLOR = /text-(accent-[12]|v2-(blue|burgundy|green|gold|lavender))-700/;
@@ -110,7 +117,23 @@ test("W11-00 v3: three same-slot appointments stack VERTICALLY (equal x, differe
   // Sunday-safe: this test asserts the three cards in BOTH Dia and Semana, and
   // the week grid is Mon-Sat. A Sunday date rendered the PRECEDING week, so the
   // cards were genuinely absent and this failed about one run in seven.
-  const date = futureWeekdayDate(RUN_DAY_BASE + 33); // dedicated day, no other spec books it
+  //
+  // LE-e2e-appointment-fixture-drift, MEASURED 2026-09-03 AND FIXED HERE.
+  // This line used to say "dedicated day, no other spec books it". That was
+  // TRUE about the DAY and irrelevant to the assertion, which is made in the
+  // WEEK view - and the Mon-Sat week grid renders SIX days. RUN_DAY_BASE + 28
+  // (the test above, which deliberately leaves a CANCELLED Maria Silva behind
+  // as its own assertion) and RUN_DAY_BASE + 33 are five days apart, so they
+  // share a Mon-Sat window for 85 of the 300 values RUN_DAY_BASE can take -
+  // 28% of runs. On those runs the page held TWO Maria Silva lines and a strict
+  // page-wide locator resolved to 2.
+  //
+  // THE FIX IS THE LOCATOR'S SCOPE, NOT THE CALENDAR. Moving the offsets apart
+  // would fix this pair by arithmetic that has to be redone every time an
+  // offset moves, and would do nothing about a third spec booking the same
+  // patient in the same week. The assertion is about ONE day's column; it now
+  // says so, in both views, through `dayColumn()`.
+  const date = futureWeekdayDate(RUN_DAY_BASE + 33);
   const names = [PATIENTS.maria.name, PATIENTS.joao.name, PATIENTS.ana.name];
 
   // Book three appointments at the SAME 14:00 slot (same therapist). In v3 they
@@ -134,16 +157,32 @@ test("W11-00 v3: three same-slot appointments stack VERTICALLY (equal x, differe
   for (const view of ["day", "week"] as const) {
     await page.goto(`/agenda?view=${view}&date=${date}`);
 
+    // EVERY LOCATOR BELOW IS SCOPED TO THIS DAY'S COLUMN. In `day` that is the
+    // only column and the scope is a no-op; in `week` it is one of six, and it
+    // is the difference between asserting about this test's fixtures and
+    // asserting about whatever else the week happens to hold.
+    const column = page.locator(`[data-day="${date}"]`);
+    await expect(
+      column,
+      `the week grid has no column for ${date} - the view did not land on the ` +
+        "expected week, so every assertion below would be about the wrong days",
+    ).toHaveCount(1);
+
     // Each line is a name-only, therapist-coloured line (no chrome).
     for (const name of names) {
-      await expectNameLine(page.getByRole("button", { name: new RegExp(name) }), name);
+      await expectNameLine(column.getByRole("button", { name: new RegExp(name) }), name);
     }
 
     // (9b) vertical-stack proof: same start slot -> equal left x, strictly
     // increasing y. Two overlapping appointments never share a row.
     const boxes: { name: string; x: number; y: number }[] = [];
     for (const name of names) {
-      const box = await page.getByRole("button", { name: new RegExp(name) }).boundingBox();
+      const line = column.getByRole("button", { name: new RegExp(name) });
+      // ONE line per name IN THIS COLUMN. Asserted rather than assumed: an x/y
+      // comparison over a locator that silently matched two elements would
+      // compare the wrong boxes and could still pass.
+      await expect(line, `exactly one ${name} line in ${view} on ${date}`).toHaveCount(1);
+      const box = await line.boundingBox();
       expect(box, `bounding box for ${name} in ${view}`).not.toBeNull();
       boxes.push({ name, x: box!.x, y: box!.y });
     }
