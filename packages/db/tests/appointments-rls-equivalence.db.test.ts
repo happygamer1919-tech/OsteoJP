@@ -134,8 +134,16 @@ d("0078: the visible appointment set is identical before and after", () => {
   const locB = randomUUID();
   const patient = randomUUID();
 
-  /** How many rows the fixture itself adds; the scan must exceed it. */
-  const fixtureRows = 4;
+  /**
+   * Every appointment row in the database, counted with RLS BYPASSED.
+   *
+   * The anti-vacuity guard compares the scan against THIS, not against a
+   * threshold: the first draft asserted `rows > 4` and passed on a lane with
+   * thousands of seeded rows while telling us nothing, then failed in CI where
+   * the seeded database holds fewer. What matters is not that the table is
+   * large - it is that the comparison saw the rows the principal CANNOT see.
+   */
+  let totalAppointments = 0;
 
   const owner = randomUUID();
   const adminWith = randomUUID();
@@ -202,6 +210,7 @@ d("0078: the visible appointment set is identical before and after", () => {
         ends_at: new Date("2027-01-04T10:00:00Z"),
         status: "scheduled",
       });
+      await tx`select 1`;
       const rows = [
         appt(locA, therapist, owner),
         appt(locB, therapist, owner),
@@ -210,6 +219,12 @@ d("0078: the visible appointment set is identical before and after", () => {
       ];
       for (const r of rows) await tx`insert into appointments ${tx(r)}`;
     });
+  });
+
+  beforeAll(async () => {
+    // The plain connection is the migration role, which bypasses RLS.
+    const [t] = await sql`select count(*)::int as n from public.appointments`;
+    totalAppointments = (t as { n: number }).n;
   });
 
   afterAll(async () => {
@@ -238,7 +253,7 @@ d("0078: the visible appointment set is identical before and after", () => {
         disagreements(tx, OLD_PREDICATE, NEW_PREDICATE),
       );
       // The scan must be the WHOLE table, not a slice RLS already narrowed.
-      expect(r.rows).toBeGreaterThan(fixtureRows);
+      expect(r.rows).toBe(totalAppointments);
       expect({ loosened: r.loosened, tightened: r.tightened }).toEqual({
         loosened: 0,
         tightened: 0,
