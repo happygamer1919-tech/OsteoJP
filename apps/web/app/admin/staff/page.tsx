@@ -20,6 +20,9 @@ import { EquipaLocationFilter } from "./EquipaLocationFilter";
 import { StaffInviteForm } from "./StaffInviteForm";
 import { StaffManageModal, type ScheduleDay } from "./StaffManageModal";
 import type { BlockView } from "../working-hours/TherapistBlocks";
+import { TimingPanel } from "@/app/_components/timing-panel";
+import { collectFor } from "@/lib/perf/request-timing";
+import { mayReadTimings } from "@/lib/perf/audience";
 
 const s = getStrings(DEFAULT_LOCALE);
 
@@ -50,33 +53,55 @@ export default async function StaffPage({
   searchParams: Promise<{ m?: string; q?: string; location?: string; t?: string }>;
 }) {
   const actor = await requireRequestContext();
-  const staff = await listStaff(actor);
-  const primaries = await listTherapistPrimaries(actor);
-  // ALL tenant services — the primary dropdown lists the active ones (so a
-  // therapist with ZERO mappings can still be assigned a first/primary service,
-  // W4-01); the full set is the name lookup for the card's primary label.
-  const allServices = await listServices(actor);
+  // ==========================================================================
+  // PERF-timing-admin-stats. MEASUREMENT ONLY - READ THIS BEFORE "TIDYING" IT.
+  // ==========================================================================
+  // `collectFor` opens a span store around these reads and changes NOTHING
+  // about them: same calls, SAME SEQUENTIAL ORDER, same awaits, same results.
+  // Every comment below is the one that was already here. For a principal who
+  // may not read timings no store is opened at all, so the reads run exactly as
+  // they did before this instrument existed.
+  //
+  // THESE SIX READS ARE SEQUENTIAL AND THIS INSTRUMENT DOES NOT MAKE THEM
+  // PARALLEL. Each is its own scoped transaction - a pooled connection, a
+  // `set local` of the claims, the statement, a commit - so six of them cost
+  // six round trips end to end. Whether that is where the owner's ten seconds
+  // went is precisely what the numbers are for, and turning them into a
+  // `Promise.all` would be a FIX. This card is explicitly not allowed to ship
+  // one, and doing it here would also destroy the measurement that justifies
+  // it.
+  const measured = await collectFor(mayReadTimings(actor), async () => {
+    const staff = await listStaff(actor);
+    const primaries = await listTherapistPrimaries(actor);
+    // ALL tenant services — the primary dropdown lists the active ones (so a
+    // therapist with ZERO mappings can still be assigned a first/primary service,
+    // W4-01); the full set is the name lookup for the card's primary label.
+    const allServices = await listServices(actor);
+    // Active working-hours templates — the "with hours set" summary count, the
+    // W5-32 team↔location assignment source, AND (W12-40) the per-member schedule
+    // editor rows now hosted inside the Gerir modal.
+    const availability = await listAvailabilityTemplates(actor);
+    // W5-32: active tenant locations for the filter, the location chips, and the
+    // per-day location select in the schedule editor.
+    const locations = (await listLocations(actor)).filter((l) => l.isActive);
+    // PL-14: the viewer's OWN locations decide the control. This select used to be
+    // handed `locations` (tenant-wide), which is how Lurdes - assigned to LV only -
+    // was offered Castelo Branco. One location => no control at all.
+    const locationScope = await viewerLocationScope(actor);
+    // W12-40-Q2: each member's staff_locations memberships (+colour) — seeds the
+    // Gerir modal's membership picker/colour pickers and the card colour.
+    const staffLocationsByUser = await listStaffLocations(actor);
+    return { staff, primaries, allServices, availability, locations, locationScope, staffLocationsByUser };
+  });
+  const { staff, primaries, allServices, availability, locations, locationScope, staffLocationsByUser } =
+    measured.value;
   const activeServices = allServices.filter((svc) => svc.isActive);
   const serviceName = new Map(allServices.map((svc) => [svc.id, svc.name]));
-  // Active working-hours templates — the "with hours set" summary count, the
-  // W5-32 team↔location assignment source, AND (W12-40) the per-member schedule
-  // editor rows now hosted inside the Gerir modal.
-  const availability = await listAvailabilityTemplates(actor);
-  // W5-32: active tenant locations for the filter, the location chips, and the
-  // per-day location select in the schedule editor.
-  const locations = (await listLocations(actor)).filter((l) => l.isActive);
   const locationName = new Map(locations.map((l) => [l.id, l.name]));
-  // PL-14: the viewer's OWN locations decide the control. This select used to be
-  // handed `locations` (tenant-wide), which is how Lurdes - assigned to LV only -
-  // was offered Castelo Branco. One location => no control at all.
-  const locationScope = await viewerLocationScope(actor);
   const locationControl = resolveLocationControl(
     locationScope,
     locations.map((l) => ({ id: l.id, label: l.name })),
   );
-  // W12-40-Q2: each member's staff_locations memberships (+colour) — seeds the
-  // Gerir modal's membership picker/colour pickers and the card colour.
-  const staffLocationsByUser = await listStaffLocations(actor);
   const { m, q, location, t: focusId } = await searchParams;
   const query = (q ?? "").trim();
   // PL-14: a fixed viewer's clinic is applied whatever the URL says; a picker
@@ -443,6 +468,10 @@ export default async function StaffPage({
           })}
         </ul>
       )}
+
+      {measured.measured ? (
+        <TimingPanel spans={measured.spans} serverMs={measured.totalMs} route="/admin/staff" />
+      ) : null}
     </section>
   );
 }

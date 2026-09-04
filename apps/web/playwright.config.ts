@@ -89,6 +89,32 @@ export default defineConfig({
     // Runs on Chromium; the resulting JSON files are reused by all three browser
     // projects below (Playwright storage state is browser-agnostic).
     { name: "setup", testMatch: /.*\.setup\.ts/ },
+    /**
+     * ==========================================================================
+     * THE MEASUREMENT PROJECT. NEVER RUNS IN CI, AND THAT IS THE POINT.
+     * ==========================================================================
+     * PERF-timing-admin-stats needs a browser driving a real admin session
+     * against a database seeded to PRODUCTION SCALE - 8,413 patients and ~24,600
+     * appointments. That is minutes of seeding and a database no CI shard has,
+     * so it must not be part of the suite branch protection reads.
+     *
+     * A SEPARATE PROJECT RATHER THAN `test.skip`, deliberately. A skipped test
+     * is invisible inside a green shard - the exact defect
+     * `assert-e2e-executed.mjs` exists for, which this repository has already
+     * paid for twice. A project CI never names cannot be silently skipped
+     * because it was never asked to run: `e2e.yml` passes `--project=chromium`
+     * and nothing else.
+     *
+     * Run it deliberately:
+     *   node scripts/perf-seed-admin-stats.mjs        # once, seeds the shape
+     *   node scripts/lane-stack.mjs e2e --lane purple -- --project=perf
+     */
+    {
+      name: "perf",
+      testMatch: /perf-.*\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], storageState: "e2e/.auth/admin.json" },
+      dependencies: ["setup"],
+    },
     {
       name: "chromium",
       use: {
@@ -99,7 +125,7 @@ export default defineConfig({
       dependencies: ["setup"],
       // Out of scope for this suite — Reminders is in flux and owned by its own
       // stream's spec. (Admin had no stable spec and was removed.)
-      testIgnore: ["**/reminders.spec.ts"],
+      testIgnore: ["**/reminders.spec.ts", "**/perf-*.spec.ts"],
     },
     {
       name: "firefox",
@@ -111,6 +137,8 @@ export default defineConfig({
       // New-feature specs are Chromium-only (see comment at top of file).
       testIgnore: [
         "**/reminders.spec.ts",
+        // The measurement project owns these; see the `perf` project above.
+        "**/perf-*.spec.ts",
         "**/quick-notes.spec.ts",
         "**/invoicing.spec.ts",
         "**/portal-reminders.spec.ts",
@@ -144,6 +172,8 @@ export default defineConfig({
       dependencies: ["setup"],
       testIgnore: [
         "**/reminders.spec.ts",
+        // The measurement project owns these; see the `perf` project above.
+        "**/perf-*.spec.ts",
         "**/quick-notes.spec.ts",
         "**/invoicing.spec.ts",
         "**/portal-reminders.spec.ts",
