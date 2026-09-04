@@ -269,6 +269,17 @@ export type ActionErrorCode =
   // them to look for a missing capability that is not the problem - they have
   // appointments:write, they simply do not work at that clinic.
   | "location_not_assigned"
+  // PACK-03: the caller tried to change `service_id` on an appointment that
+  // draws a session from a pacote, to something other than that pacote's own
+  // base service.
+  //
+  // ITS OWN CODE AND NOT `validation`, for the reason every code above is its
+  // own: the sentence differs and so does the next action. `validation` means
+  // "you left something blank"; this means "this visit is a NESA session and
+  // NESA is what it has to stay" — and the person reading it either leaves the
+  // service alone or unlinks the pacote first. A generic message would send
+  // them looking for a blank field that is not there.
+  | "pack_service_locked"
   | "error";
 
 export type ActionResult<T> =

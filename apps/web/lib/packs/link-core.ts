@@ -119,3 +119,59 @@ export function linkablePacks(
 ): LinkablePackInstance[] {
   return instances.filter((i) => packLinkRefusal(appt, i) === null);
 }
+
+/**
+ * PACK-03 — one appointment, reduced to what the SERVICE-CHANGE decision reads.
+ *
+ * `packBaseServiceId` is the base service of the pacote the row draws from,
+ * resolved through `patient_pack_instances -> service_packs`. It is null
+ * exactly when `packInstanceId` is null.
+ */
+export type PackedAppointment = {
+  id: string;
+  packInstanceId: string | null;
+  packBaseServiceId: string | null;
+};
+
+/**
+ * May this service change be written to these appointments?
+ *
+ * ==========================================================================
+ * THE OFFER WAS ONLY HALF THE RULE. THIS IS THE OTHER HALF.
+ * ==========================================================================
+ * `packLinkRefusal` above stops a pacote being attached to an appointment of
+ * the wrong service. Nothing stopped the reverse: take an appointment that is
+ * ALREADY drawing a NESA session, change Serviço to Fisioterapia, save. The row
+ * kept its `pack_instance_id`, so the derived balance kept counting it, and ten
+ * NESA sessions could be spent on anything at all — one edit at a time.
+ *
+ * SAME SHAPE AS `service_mismatch`, and deliberately the same comparison:
+ * `appt.serviceId !== inst.baseServiceId`. Asked here of the value being
+ * WRITTEN rather than the value already stored.
+ *
+ * SETTING IT BACK TO THE PACOTE'S OWN SERVICE IS ALLOWED, and that is not a
+ * loophole — it is the repair. A blanket "no service change on a linked row"
+ * would refuse the one edit that fixes a row somebody has already broken, and
+ * would refuse a no-op re-save of the correct value.
+ *
+ * CLEARING IT IS A CHANGE. `null` is not the base service, so it is refused
+ * like any other mismatch; an appointment with no service is exactly the
+ * `no_service` state `packLinkAppointmentBlock` refuses to link in the first
+ * place.
+ *
+ * Returns the FIRST offending row, with the service it is required to keep, so
+ * the caller can say which marcação and what it must be. Null when every row is
+ * allowed.
+ */
+export function packServiceChangeRefusal(
+  requestedServiceId: string | null,
+  rows: readonly PackedAppointment[],
+): { appointmentId: string; requiredServiceId: string } | null {
+  for (const r of rows) {
+    if (r.packInstanceId == null || r.packBaseServiceId == null) continue;
+    if (requestedServiceId !== r.packBaseServiceId) {
+      return { appointmentId: r.id, requiredServiceId: r.packBaseServiceId };
+    }
+  }
+  return null;
+}

@@ -1444,6 +1444,7 @@
   "nav.followup": "Recuperação",
   "packs.derivedNote": "As sessões são contadas a partir das marcações do pacote. Uma marcação cancelada devolve a sessão; uma falta não.",
   "appointment.packInsufficient": "O pacote não tem sessões suficientes para esta marcação. Veja o saldo do pacote na ficha do paciente e marque menos sessões, ou registe um novo pacote.",
+  "appointment.packServiceLocked": "Esta marcação é uma sessão de pacote e o serviço não pode ser alterado. Um pacote vale para um serviço apenas. Para mudar o serviço, desassocie primeiro o pacote.",
   "pack.batchCount": "Quantas sessões marcar agora",
   "pack.batchHint": "O pacote tem {n} sessões disponíveis. Pode marcar menos e deixar as restantes para depois. Escolha a data e a hora de cada sessão.",
   "pack.batchIncomplete": "Falta escolher a data ou a hora de pelo menos uma sessão. Preencha todas as linhas antes de guardar.",

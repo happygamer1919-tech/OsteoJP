@@ -68,6 +68,16 @@ export type PackInstanceView = {
   id: string;
   packId: string;
   packName: string;
+  /**
+   * PACK-03 - THE SERVICE EVERY SESSION OF THIS PACOTE IS, as an id.
+   *
+   * The NAME was already here and the ID was not, which is exactly why the
+   * create-path offer could not filter: a name is for a human to read and an id
+   * is what a predicate compares. `link-core.ts` has had `baseServiceId` on its
+   * own instance type since PACK-01 and matches on it; this read is the other
+   * half of the same rule and had nothing to match with.
+   */
+  baseServiceId: string;
   baseServiceName: string;
   sessionsTotal: number;
   /**
@@ -269,6 +279,7 @@ export async function listPatientPackInstances(
         id: patientPackInstances.id,
         packId: patientPackInstances.packId,
         packName: servicePacks.name,
+        baseServiceId: servicePacks.baseServiceId,
         baseServiceName: services.name,
         sessionsTotal: patientPackInstances.sessionsTotal,
         legacyConsumed: patientPackInstances.legacyConsumed,
@@ -290,6 +301,7 @@ export async function listPatientPackInstances(
         id: r.id,
         packId: r.packId,
         packName: r.packName,
+        baseServiceId: r.baseServiceId,
         baseServiceName: r.baseServiceName,
         sessionsTotal: r.sessionsTotal,
         sessionsAvailable: packSessionsAvailable(inputs),

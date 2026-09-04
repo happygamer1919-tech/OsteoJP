@@ -479,6 +479,11 @@ export function AppointmentDrawer({
       ? availablePacksResult.packs
       : [];
 
+  /**
+   * PACK-03 — does the marcação being edited already draw a session from a
+   * pacote? `linkedTo` is set only when `pack_instance_id` is non-null, so this
+   * is the appointment's own state and not an inference from the form.
+   */
   const editingId = editing?.id ?? null;
   const [packLinkTick, setPackLinkTick] = useState(0);
   const [packLinkResult, setPackLinkResult] = useState<{
@@ -499,6 +504,12 @@ export function AppointmentDrawer({
   }, [editingId, packLinkTick]);
   const packLink =
     packLinkResult && packLinkResult.appointmentId === editingId ? packLinkResult.view : null;
+  /**
+   * PACK-03 — the marcação being edited already draws a session from a pacote.
+   * `linkedTo` is set only when the row carries a `pack_instance_id`, so this
+   * is the appointment's own state rather than an inference from the form.
+   */
+  const packLinkedToPacote = !!editing && packLink?.linkedTo != null;
 
   async function linkPack(instanceId: string) {
     if (!editingId) return;
@@ -781,6 +792,12 @@ export function AppointmentDrawer({
     // another screen to find out how many there are.
     else if (r.error === "pack_insufficient")
       setError(s["appointment.packInsufficient"]);
+    // PACK-03: the service was changed on a marcação that draws a pacote
+    // session. The message says WHY it is locked and what to do instead, for
+    // the same reason pack_insufficient names both numbers: "não pode alterar"
+    // on its own reads as a permission problem, and it is not one.
+    else if (r.error === "pack_service_locked")
+      setError(s["appointment.packServiceLocked"]);
     else if (r.error === "validation") setError(s["appointment.requiredFields"]);
     else if (r.error === "unauthenticated") setError(s["errors.unauthenticated"]);
     else setError(s["errors.generic"]);
@@ -1131,10 +1148,30 @@ export function AppointmentDrawer({
         </Field>
 
         <Field label={s["appointment.service"]}>
-          {/* Locked to the pack's base service while a pack is selected (W8-01c). */}
+          {/* ==================================================================
+              Locked to the pack's base service while a pack is selected
+              (W8-01c) — AND, since PACK-03, while EDITING a marcação that
+              already draws from one.
+
+              `disabled={!!form.packId}` alone never fired on edit, because the
+              edit branch of `init` sets `packId: ""` unconditionally (the
+              Pacote select is create-only, so nothing ever populated it). The
+              control therefore looked locked and was not: reception could open
+              a NESA pacote session, change Serviço to Fisioterapia and save,
+              and the balance went on counting the row.
+
+              `packLink.linkedTo` is the honest signal on edit — it is set only
+              when the appointment carries a pack_instance_id.
+
+              THIS IS THE COURTESY HALF AND NOT THE GUARD. It is fetched, so
+              there is a frame before it arrives, and a stale tab has no such
+              frame at all. `updateAppointment` refuses the write server-side
+              with `pack_service_locked`; that is the rule. This only stops
+              somebody typing into a field whose value will be rejected.
+              ================================================================== */}
           <Select
             value={form.serviceId}
-            disabled={!!form.packId}
+            disabled={!!form.packId || packLinkedToPacote}
             onChange={(e) => onServiceChange(e.target.value)}
           >
             <option value="">{s["appointment.selectService"]}</option>
@@ -1151,7 +1188,11 @@ export function AppointmentDrawer({
             chosen: at that point the balance Banner below is the live number
             and two counts on one screen invite the one that is stale. */}
         {!editing && !form.packId && (
-          <PackAvailableNotice packs={availablePacks} onUse={onPackChange} />
+          <PackAvailableNotice
+            packs={availablePacks}
+            serviceId={form.serviceId}
+            onUse={onPackChange}
+          />
         )}
 
         {/* Pacote (W8-01c) — create-only bookable type. Selecting a pack forces

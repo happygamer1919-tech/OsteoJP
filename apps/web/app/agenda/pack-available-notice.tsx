@@ -7,9 +7,44 @@ import { s } from "@/lib/i18n";
 export type AvailablePack = {
   packId: string;
   packName: string;
+  /** The service every session of this pacote is. PACK-03. */
+  baseServiceId: string;
   sessionsTotal: number;
   sessionsAvailable: number;
 };
+
+/**
+ * PACK-03 — the pacotes this booking may actually be offered, given the service
+ * on the form RIGHT NOW.
+ *
+ * ==========================================================================
+ * THE OWNER'S RULE: A PACOTE BINDS TO ONE SERVICE. TEN NESA SESSIONS ARE
+ * SPENDABLE ON NESA ONLY.
+ * ==========================================================================
+ * The schema has always said so — `service_packs.base_service_id` is NOT NULL —
+ * and the retroactive linker has always enforced it (`link-core.ts`, refusal
+ * `service_mismatch`). The create path was the one place that did not: it
+ * offered a NESA pacote beside a Fisioterapia appointment, and pressing it
+ * would have silently rewritten the service to NESA.
+ *
+ * NO SERVICE CHOSEN YET SHOWS EVERYTHING, and that is not a loophole. On a
+ * fresh Nova marcação the service field is empty; the notice's whole purpose is
+ * to say "this patient has already paid for sessions" BEFORE anybody thinks to
+ * ask, and pressing Use then SETS the service to the pacote's own. Hiding it
+ * until a service is picked would put the fact behind the very question the
+ * notice exists to pre-empt. Once a service IS chosen the two are comparable,
+ * and a mismatched pacote is never shown.
+ *
+ * PURE, and exported, so the rule can be tested without a drawer, a patient or
+ * a database.
+ */
+export function offerablePacks(
+  packs: readonly AvailablePack[],
+  serviceId: string,
+): AvailablePack[] {
+  if (!serviceId) return [...packs];
+  return packs.filter((p) => p.baseServiceId === serviceId);
+}
 
 /**
  * PACK-02 — "this patient is holding sessions they have already paid for".
@@ -33,15 +68,24 @@ export type AvailablePack = {
  * the same path as choosing it from the dropdown. Booking straight from here
  * would skip the therapist, date and time the form still needs, and a control
  * that says "marcar" and then does not is worse than one more click.
+ *
+ * THE SERVICE FILTER IS APPLIED HERE, INSIDE THE COMPONENT, and not by the
+ * caller (PACK-03). A caller-side filter is one a future caller can forget, and
+ * the thing it would forget is the owner's rule. Taking `serviceId` as a prop
+ * means every render of this notice is filtered by construction.
  */
 export function PackAvailableNotice({
   packs,
+  serviceId,
   onUse,
 }: {
   packs: AvailablePack[];
+  /** The service the form holds right now. Empty string = none chosen yet. */
+  serviceId: string;
   onUse: (packId: string) => void;
 }) {
-  if (packs.length === 0) return null;
+  const offerable = offerablePacks(packs, serviceId);
+  if (offerable.length === 0) return null;
 
   return (
     <div
@@ -52,7 +96,7 @@ export function PackAvailableNotice({
         {s["appointment.packAvailableNotice"]}
       </span>
       <ul className="flex flex-col gap-2">
-        {packs.map((p) => (
+        {offerable.map((p) => (
           <li key={p.packId} className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm text-text-primary">
               {p.packName}
