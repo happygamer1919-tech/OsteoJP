@@ -270,6 +270,34 @@ rather than being counted.
    then silently no-ops on main; and a migration number is taken at BUILD time
    from whatever is free, never reserved in advance in a deferred card's notes,
    which is how the same number was double-booked twice.
+
+   **THIS REPO HAS TWO APPLIERS AND TWO JOURNALS. THE ONE YOU CAN SEE IS NOT
+   THE ONE PRODUCTION USES.** Added 2026-09-04 after a pre-check written
+   against the wrong table aborted on the owner's first line.
+
+   | applier | journal it writes | who uses it |
+   |---|---|---|
+   | `supabase db reset` | `supabase_migrations.schema_migrations`, column `version` holding `'0074'` | **every local lane** (`scripts/lane-stack.mjs`) |
+   | `pnpm db:migrate` -> `drizzle-kit migrate` | `drizzle.__drizzle_migrations`, columns `id`, `hash`, `created_at`, **no version column** | **production**, and the `osteojp-prod-apply` worktree |
+
+   So a terminal that opens its lane database to see "how migrations are
+   recorded here" learns the wrong answer, confidently, and the query it writes
+   from that will not even parse on production. **Any check you author for the
+   owner reads `drizzle.__drizzle_migrations`.**
+
+   **IDENTITY IS BY `hash`, WHICH IS THE sha256 OF THE MIGRATION FILE.** There
+   is no version string. This is measured, not assumed: a probe database
+   migrated by `drizzle-kit` itself reproduced production's journal exactly -
+   id 74 = `d6b9fc00...`, id 73 = `50a05c84...`, each equal to `shasum -a 256`
+   of its own file and to the values the 0073 and 0074 receipts recorded. Ask
+   "has 0075 been applied" as "does any row carry 0075's sha256", which no
+   renamed or edited file can satisfy.
+
+   **`pnpm --filter @osteojp/db exec` ALREADY RUNS INSIDE `packages/db`.** So
+   `node packages/db/scripts/x.mjs` resolves to `packages/db/packages/db/x.mjs`
+   and fails. Pass the path relative to `packages/db`, or an absolute one. This
+   broke three commands in one apply block; the `&&` chaining is the only
+   reason it did not become an unreviewed migration.
 8. **One migration in flight across the whole repo.** Not one per lane, not one
    per board. If another card anywhere holds an unapplied migration, yours
    waits.
