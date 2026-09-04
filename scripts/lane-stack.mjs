@@ -26,6 +26,20 @@
  * Supabase demo JWTs, identical on every local project, already committed in
  * seed-e2e.mjs - so a lane needs no key handling at all, only URLs.
  *
+ * THAT LAST CLAIM WAS FALSE FOR `status` UNTIL 2026-09-05, AND THIS IS WHY THE
+ * FIX IS IN THE CODE RATHER THAN IN THE SENTENCE.
+ * `status` used to end by handing control to `supabase status --workdir <dir>`
+ * with inherited stdio, and that command prints a table containing the project's
+ * Publishable key, its Secret key, and the storage S3 access key and secret. So
+ * a paragraph promising "prints no key", repeated in PORTAL-REHYDRATE 7.0a as
+ * "THE KEYS ARE NEVER PRINTED", was true of two subcommands out of three.
+ *
+ * Nothing needed rotating: those are the local values for 127.0.0.1, already
+ * committed in seed-e2e.mjs. What was wrong is that a document said "never" and
+ * meant "usually", which is the same defect class as a comment asserting a
+ * property nothing tests. `status` now reads the JSON form in-process and prints
+ * an ALLOW-LISTED projection of it; see `printableStatus`.
+ *
  * Usage (the two commands documented in PORTAL-REHYDRATE.md section 7):
  *   node scripts/lane-stack.mjs up   --lane purple      # start + migrate + seed
  *   node scripts/lane-stack.mjs e2e  --lane purple      # run the suite on it
@@ -209,6 +223,54 @@ function laneKeys(dir) {
   return keys;
 }
 
+/**
+ * A URL carrying userinfo, i.e. `scheme://user:password@host`. `DB_URL` is one
+ * (`postgresql://postgres:postgres@...`), and naming DB_URL instead would be a
+ * rule about today's field list rather than about what makes a value unsafe.
+ */
+const URL_WITH_CREDENTIALS = /\/\/[^/?#]*:[^/?#]*@/;
+
+/**
+ * The projection of `supabase status -o json` that `status` is allowed to print.
+ *
+ * ==========================================================================
+ * AN ALLOW-LIST, AND THE CLI ITSELF IS THE ARGUMENT FOR IT
+ * ==========================================================================
+ * The rule is: a field may be printed only if its NAME ends in `_URL` and its
+ * VALUE carries no userinfo. Everything else - every key, every secret, every
+ * field nobody has seen yet - is dropped without being examined.
+ *
+ * A deny-list would have been the obvious shape and would have leaked. When this
+ * script was written the secret-bearing fields were `ANON_KEY`,
+ * `SERVICE_ROLE_KEY` and `JWT_SECRET`. The CLI running on this machine on
+ * 2026-09-05 returns `PUBLISHABLE_KEY` and `SECRET_KEY` as well, plus
+ * `S3_PROTOCOL_ACCESS_KEY_ID` and `S3_PROTOCOL_ACCESS_KEY_SECRET`. A list of
+ * names not to print, written against the old set, would print the new ones -
+ * silently, in a table that looks the same as it always did.
+ *
+ * So this fails CLOSED: an unrecognised field is not printed. PORTAL-REHYDRATE
+ * 1.3 in its own words - on a path that decides whether something is safe, an
+ * unhandled case must refuse rather than fall back.
+ *
+ * THROWS on anything that is not a JSON object, rather than returning `[]`. An
+ * empty projection and an unparseable status would otherwise print the same
+ * thing: a lane that looks like it has no URLs.
+ */
+export function printableStatus(status) {
+  if (status === null || typeof status !== "object" || Array.isArray(status)) {
+    throw new TypeError("supabase status did not return a JSON object; refusing to print it");
+  }
+  const out = [];
+  for (const name of Object.keys(status).sort()) {
+    if (!/_URL$/.test(name)) continue;
+    const value = status[name];
+    if (typeof value !== "string" || value === "") continue;
+    if (URL_WITH_CREDENTIALS.test(value)) continue;
+    out.push([name, value]);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -258,7 +320,35 @@ async function main(argv) {
     console.log(`lane ${lane}: project OsteoJP-${lane} at ${dir}`);
     console.log(`  supabase api ${ports.api}  db ${ports.db}  studio ${ports.studio}`);
     console.log(`  next web ${ports.web}  portal ${ports.portal}  api ${ports.apiApp}`);
-    return run("supabase", ["status", "--workdir", dir]);
+    // PIPED, NEVER INHERITED. `run()` inherits stdio, which is what handed the
+    // CLI's key table straight to the terminal. The JSON is parsed in-process
+    // and only `printableStatus` reaches stdout.
+    const probe = spawnSync("supabase", ["status", "-o", "json", "--workdir", dir], {
+      encoding: "utf8",
+      cwd: REPO_ROOT,
+    });
+    if (probe.error) {
+      console.error(`  supabase CLI could not be run: ${probe.error.message}`);
+      return 1;
+    }
+    if (probe.status !== 0) {
+      // NOT RUNNING and COULD NOT ASK are told apart by the exit code being
+      // printed. The CLI's own stderr is deliberately not echoed: it is not this
+      // script's output and nothing here has checked it for values.
+      console.log(`  stack: NOT RUNNING (supabase status exited ${probe.status})`);
+      console.log(`  start it: node scripts/lane-stack.mjs up --lane ${lane}`);
+      return 1;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(probe.stdout);
+    } catch {
+      console.error("  supabase status returned output this script cannot parse; refusing to print it");
+      return 1;
+    }
+    console.log("  stack: RUNNING");
+    for (const [name, value] of printableStatus(parsed)) console.log(`  ${name} ${value}`);
+    return 0;
   }
 
   if (cmd === "down") {
