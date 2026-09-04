@@ -223,6 +223,22 @@ export default async function StaffPage({
 
   return (
     <section className="flex flex-col gap-6">
+      {/* PLACED FIRST, DIRECTLY UNDER THE TITLE, AND THE REASON IS MEASURED.
+          It used to sit at the bottom of the page. On /patients that is below
+          8,413 rows of table, and on 2026-09-05 the owner went looking for it
+          and did not find it. An instrument nobody can reach is the defect
+          AI-02 moved the drift banner onto the reviewer's screen for. It is one
+          collapsed line, admin and owner only, and it carries id="medicao" so
+          the URL /patients#medicao reaches it directly.
+
+          The audience check is already inside `measured`: `spans` exists only
+          on the measured arm, so this element cannot be created for a principal
+          who was not measured, and for them nothing is serialised into the RSC
+          payload at all. Not a hidden panel: an absent one. */}
+      {measured.measured ? (
+        <TimingPanel spans={measured.spans} serverMs={measured.totalMs} route="/admin/staff" />
+      ) : null}
+
       <h2 className="text-xl text-v2-text-primary">{s["admin.staff.title"]}</h2>
 
       {banner && (
@@ -468,10 +484,6 @@ export default async function StaffPage({
           })}
         </ul>
       )}
-
-      {measured.measured ? (
-        <TimingPanel spans={measured.spans} serverMs={measured.totalMs} route="/admin/staff" />
-      ) : null}
     </section>
   );
 }

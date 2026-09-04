@@ -35,31 +35,101 @@ import type { Span } from "@/lib/perf/request-timing";
  * layer over).
  */
 
-/** What the browser knows and the server cannot. */
-type ClientTiming = {
-  /** Navigation start to the first response byte. */
-  ttfbMs: number;
-  /** First byte to the response being fully received. */
-  downloadMs: number;
-  /** Response received to this component's first effect - hydration. */
-  hydrateMs: number;
-  /** Navigation start to that same effect. The number the owner actually felt. */
-  totalMs: number;
-};
+/**
+ * WHAT THE BROWSER KNOWS AND THE SERVER CANNOT - AND WHETHER IT KNOWS IT ABOUT
+ * THIS PAGE.
+ *
+ * ==========================================================================
+ * THE DEFECT THIS UNION EXISTS TO END, WHICH COST A REAL MEASUREMENT
+ * ==========================================================================
+ * The first version returned `ClientTiming | null` and its comment said null
+ * meant "a bfcache restore, or a soft client-side navigation". THE SECOND HALF
+ * WAS FALSE. After a soft navigation the browser still has a navigation entry -
+ * it belongs to the PREVIOUS document - so the function returned a complete,
+ * plausible-looking reading of the wrong event:
+ *
+ *   Primeiro byte (TTFB)  the previous page's
+ *   Hidratacao            now minus the PREVIOUS response end, so it grows for
+ *                         as long as the tab has been open
+ *   Total sentido         performance.now(), which is THE AGE OF THE TAB
+ *
+ * The staff shell navigates with next/link, so clicking *Pacientes* in the
+ * sidebar is a soft navigation. On 2026-09-05 the owner logged out, logged in,
+ * clicked Pacientes and felt about five seconds. Had he found the panel it would
+ * have shown him a number of roughly that size that meant something else
+ * entirely, and it would have CONFIRMED the hypothesis by accident.
+ *
+ * ==========================================================================
+ * THREE STATES, NAMED, BECAUSE THEY ARE THREE DIFFERENT FACTS
+ * ==========================================================================
+ * `document`   this document was loaded from the network and the entry is its
+ *              own. The only state in which a number may be shown.
+ * `soft-nav`   a navigation entry exists and belongs to another URL. REFUSED,
+ *              out loud, naming both URLs.
+ * `no-entry`   the browser has no navigation entry at all (a bfcache restore).
+ *
+ * A refusal the reader can act on is worth more than a number they cannot
+ * trust. PORTAL-REHYDRATE 1.3: on a path that produces a verdict, an unhandled
+ * case must fail rather than fall back to the harmless-looking one.
+ */
+type ClientReading =
+  | {
+      kind: "document";
+      /** Navigation start to the first response byte. */
+      ttfbMs: number;
+      /** First byte to the response being fully received. */
+      downloadMs: number;
+      /** Response received to this component's first effect - hydration. */
+      hydrateMs: number;
+      /** Navigation start to that same effect. The number the owner actually felt. */
+      totalMs: number;
+    }
+  | { kind: "soft-nav"; documentUrl: string; currentUrl: string }
+  | { kind: "no-entry" };
 
-function readClientTiming(): ClientTiming | null {
+/**
+ * Does the navigation entry describe the page we are looking at?
+ *
+ * COMPARED WITHOUT THE HASH, and that is not a detail: the panel carries an
+ * anchor (`#medicao`) so it can be linked to, and following that anchor changes
+ * `location.href` without changing the document. Comparing the raw strings would
+ * make the panel refuse to report on the very page it had just been scrolled to.
+ *
+ * Exported for the unit test; a browser is not needed to check a URL rule.
+ */
+export function classifyNavigation(entryUrl: string | null, currentUrl: string): "document" | "soft-nav" | "no-entry" {
+  if (entryUrl === null) return "no-entry";
+  const strip = (u: string): string | null => {
+    try {
+      const parsed = new URL(u);
+      return `${parsed.origin}${parsed.pathname}${parsed.search}`;
+    } catch {
+      return null;
+    }
+  };
+  const a = strip(entryUrl);
+  const b = strip(currentUrl);
+  // AN UNPARSEABLE URL IS NOT "the same page". It is a case nobody planned for,
+  // and the safe answer on a verdict path is to refuse rather than to report.
+  if (a === null || b === null) return "soft-nav";
+  return a === b ? "document" : "soft-nav";
+}
+
+function readClientTiming(): ClientReading {
   const nav = performance.getEntriesByType("navigation")[0] as
     | PerformanceNavigationTiming
     | undefined;
-  // NULL MEANS ONE THING: the browser has no navigation entry for this document
-  // (a bfcache restore, or a soft client-side navigation). It is NOT folded in
-  // with "the numbers were zero" - the panel says which it is.
-  if (!nav) return null;
+  const verdict = classifyNavigation(nav?.name ?? null, window.location.href);
+  if (verdict === "no-entry") return { kind: "no-entry" };
+  if (verdict === "soft-nav") {
+    return { kind: "soft-nav", documentUrl: nav!.name, currentUrl: window.location.href };
+  }
   const now = performance.now();
   return {
-    ttfbMs: round(nav.responseStart),
-    downloadMs: round(nav.responseEnd - nav.responseStart),
-    hydrateMs: round(now - nav.responseEnd),
+    kind: "document",
+    ttfbMs: round(nav!.responseStart),
+    downloadMs: round(nav!.responseEnd - nav!.responseStart),
+    hydrateMs: round(now - nav!.responseEnd),
     totalMs: round(now),
   };
 }
@@ -79,7 +149,10 @@ export function TimingPanel({
   serverMs: number;
   route: string;
 }) {
-  const [client, setClient] = useState<ClientTiming | null>(null);
+  // `null` is a FOURTH thing and it is not one of the three verdicts: the effect
+  // has not run yet (server render, first paint). The face says nothing about
+  // the navigation until it has an answer, rather than guessing one.
+  const [client, setClient] = useState<ClientReading | null>(null);
   const [open, setOpen] = useState(false);
 
   // ==========================================================================
@@ -104,10 +177,28 @@ export function TimingPanel({
     spans.filter((s) => s.name.startsWith("db:")).reduce((a, s) => a + s.ms, 0),
   );
 
+  /**
+   * THE NAVIGATION VERDICT ON THE FACE, not only inside the table.
+   *
+   * The owner should not have to remember HOW he reached this page in order to
+   * know whether the numbers on it mean anything. He reached /patients by
+   * clicking the sidebar once already and the rule did not survive the click.
+   * So the strip says which kind of load this was, before it is opened.
+   */
+  const badge =
+    client === null
+      ? null
+      : client.kind === "document"
+        ? { text: "carregamento completo", tone: "text-v2-green-700" }
+        : client.kind === "soft-nav"
+          ? { text: "NAVEGAÇÃO INTERNA · sem medição de cliente", tone: "text-v2-burgundy-700 font-semibold" }
+          : { text: "sem entrada de navegação", tone: "text-v2-burgundy-700" };
+
   return (
     <section
+      id="medicao"
       aria-label="Medição de desempenho"
-      className="rounded-v2 border border-v2-border bg-surface-muted/60 text-xs text-v2-text-secondary"
+      className="scroll-mt-4 rounded-v2 border border-v2-border bg-surface-muted/60 text-xs text-v2-text-secondary"
     >
       <button
         type="button"
@@ -118,7 +209,17 @@ export function TimingPanel({
         <span>
           Medição · {route} · servidor {serverMs} ms · BD {dbTotal} ms ·{" "}
           {miss ? "estatísticas CALCULADAS" : "estatísticas em cache"}
-          {client ? ` · total sentido ${client.totalMs} ms` : ""}
+          {badge ? (
+            <>
+              {" · "}
+              <span className={badge.tone}>{badge.text}</span>
+            </>
+          ) : null}
+          {/* THE FELT TOTAL IS PRINTED ONLY WHEN IT DESCRIBES THIS DOCUMENT.
+              On a soft navigation it is the age of the tab, which is exactly
+              the shape of the number we are hunting - so it is not shown at
+              all rather than shown with a caveat somebody has to notice. */}
+          {client?.kind === "document" ? ` · total sentido ${client.totalMs} ms` : ""}
         </span>
         <span aria-hidden="true">{open ? "−" : "+"}</span>
       </button>
@@ -147,7 +248,7 @@ export function TimingPanel({
                   number the owner actually experienced. A table that opened
                   with server spans would invite reading the server total as
                   "the wait", which is the confusion this card exists to end. */}
-              {client ? (
+              {client?.kind === "document" ? (
                 <>
                   <tr>
                     <td className={cell}>Primeiro byte (TTFB)</td>
@@ -170,14 +271,35 @@ export function TimingPanel({
                     <td className={cell}>o que a pessoa esperou</td>
                   </tr>
                 </>
-              ) : (
+              ) : null}
+
+              {/* THE REFUSAL. It names both URLs, because "this reading belongs
+                  to another page" is only actionable if you can see WHICH. */}
+              {client?.kind === "soft-nav" ? (
                 <tr>
-                  <td className={cell} colSpan={3}>
-                    Sem medição do cliente: este documento não tem entrada de navegação
-                    (restauro de cache ou navegação interna). Recarregue a página.
+                  <td className={cell} colSpan={3} data-testid="timing-panel-soft-nav">
+                    <strong className="text-v2-burgundy-700">
+                      Sem medição do cliente: chegou aqui por navegação interna.
+                    </strong>{" "}
+                    Os tempos do browser pertencem ao documento carregado em{" "}
+                    <code>{client.documentUrl}</code>, não a <code>{client.currentUrl}</code>, e seriam
+                    lidos como se fossem desta página.{" "}
+                    <strong>
+                      Recarregue esta página (ou escreva o endereço) para obter uma medição válida.
+                    </strong>{" "}
+                    Os tempos do servidor abaixo são desta página e continuam válidos.
                   </td>
                 </tr>
-              )}
+              ) : null}
+
+              {client?.kind === "no-entry" ? (
+                <tr>
+                  <td className={cell} colSpan={3}>
+                    Sem medição do cliente: este documento não tem entrada de navegação (restauro de
+                    cache). Recarregue a página.
+                  </td>
+                </tr>
+              ) : null}
 
               <tr className="font-medium text-v2-text-primary">
                 <td className={cell}>Função do servidor</td>
