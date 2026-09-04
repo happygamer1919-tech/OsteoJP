@@ -100,7 +100,13 @@ SELECT 'fn owner/secdef/volatile',
        coalesce((SELECT pg_get_userbyid(proowner)||'/'||prosecdef::text||'/'||provolatile::text
                    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                   WHERE n.nspname = 'public' AND p.proname = 'reminder_dispatch_tenant'), 'absent'),
-       'postgres/t/s',
+       -- The literal the CASE below compares against, character for character.
+       -- It read 'postgres/t/s' while the comparison used 'postgres/true/s', so
+       -- the row printed observed=postgres/true/s, expected=postgres/t/s, OK -
+       -- a verdict contradicting its own two columns. Nothing was wrong with the
+       -- check; the label was, and a reader who spots that stops trusting the
+       -- whole table.
+       'postgres/true/s',
        CASE WHEN (SELECT pg_get_userbyid(proowner)||'/'||prosecdef::text||'/'||provolatile::text
                     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                    WHERE n.nspname = 'public' AND p.proname = 'reminder_dispatch_tenant')
