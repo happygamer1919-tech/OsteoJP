@@ -44,14 +44,28 @@ const ENV = [
   "REMINDERS_INBOUND_TENANT_ID",
   "REMINDERS_INBOUND_BASE_URL",
   "TWILIO_AUTH_TOKEN",
+  "TWILIO_SMS_FROM",
+  "TWILIO_MESSAGING_SERVICE_SID",
 ] as const;
 const saved: Record<string, string | undefined> = {};
+
+/**
+ * The clinic's own number. SR-47 makes an E.164 `TWILIO_SMS_FROM` the SECOND
+ * arming condition, so `arm()` sets one: the flag alone no longer opens this
+ * route, and a suite that only set the flag would be testing the 404 branch
+ * while believing it tested the handler.
+ */
+const CLINIC_NUMBER = "+351210000000";
+/** The live production sender. One-way, so no reply can ever arrive at it. */
+const ALPHANUMERIC_SENDER = "OsteoJP";
 
 function arm() {
   process.env.REMINDERS_INBOUND = "true";
   process.env.REMINDERS_INBOUND_TENANT_ID = TENANT;
   process.env.REMINDERS_INBOUND_BASE_URL = BASE;
   process.env.TWILIO_AUTH_TOKEN = TOKEN;
+  process.env.TWILIO_SMS_FROM = CLINIC_NUMBER;
+  delete process.env.TWILIO_MESSAGING_SERVICE_SID;
 }
 
 /** A request Twilio would have made, correctly signed unless told otherwise. */
@@ -104,6 +118,45 @@ describe("the capability flag", () => {
     // Nothing was classified, nothing was sent, nothing touched the database.
     expect(h.applyInboundReply).not.toHaveBeenCalled();
     expect(h.sendSms).not.toHaveBeenCalled();
+  });
+
+  /**
+   * SR-47 AT THE READER, and this is the arm that had never executed: the flag
+   * is exactly "true" and the request is correctly signed, and the route still
+   * behaves as if it does not exist because the sender cannot receive a reply.
+   *
+   * IT IS ASSERTED HERE AND NOT ONLY IN `inbound-config.test.ts` because a
+   * pure test of the predicate proves nothing about the CALLER - the route
+   * could have read the flag directly, and until this test existed nothing
+   * would have said so.
+   */
+  it("404s while the flag is true but the sender is alphanumeric", async () => {
+    process.env.TWILIO_SMS_FROM = ALPHANUMERIC_SENDER;
+    const res = await POST(twilioPost(REPLY) as never);
+    expect(res.status).toBe(404);
+    expect(h.applyInboundReply).not.toHaveBeenCalled();
+    expect(h.sendSms).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A MESSAGING SERVICE IS REFUSED TOO, and `REMINDERS_REPLY_CAPABLE` cannot
+   * open it. That flag exists so an operator can declare a service's sender
+   * pool replyable for a line of SMS copy; the cost of a wrong "yes" HERE is an
+   * armed unauthenticated route that changes appointment status.
+   */
+  it("404s on a messaging service even with REMINDERS_REPLY_CAPABLE=true", async () => {
+    const savedCapable = process.env.REMINDERS_REPLY_CAPABLE;
+    try {
+      delete process.env.TWILIO_SMS_FROM;
+      process.env.TWILIO_MESSAGING_SERVICE_SID = `MG${"0".repeat(32)}`;
+      process.env.REMINDERS_REPLY_CAPABLE = "true";
+      const res = await POST(twilioPost(REPLY) as never);
+      expect(res.status).toBe(404);
+      expect(h.applyInboundReply).not.toHaveBeenCalled();
+    } finally {
+      if (savedCapable === undefined) delete process.env.REMINDERS_REPLY_CAPABLE;
+      else process.env.REMINDERS_REPLY_CAPABLE = savedCapable;
+    }
   });
 });
 
@@ -321,7 +374,7 @@ describe("what it does once the signature passes", () => {
   });
 });
 
-describe("the three acknowledgement bodies are APPROVED, and now actually send", () => {
+describe("the three acknowledgement bodies are APPROVED, and the capability is still shut", () => {
   it("every reply_ack template is registered approved by JP on 2026-09-01", async () => {
     // They shipped `approved: false` on 2026-08-31 and the gate refused every
     // send. WF-18 A approved them AS WRITTEN, so this assertion flipped without
@@ -384,11 +437,17 @@ describe("the three acknowledgement bodies are APPROVED, and now actually send",
     expect(sink.records).toHaveLength(3);
   });
 
-  it("THE KILL SWITCH IS NOW THE ONLY LOCK LEFT ON THEM", async () => {
-    // Approval removed one of the two gates, and REMINDERS_INBOUND is already
+  it("THE KILL SWITCH STILL HOLDS THEM, AND IT IS NOT THE ONLY LOCK", async () => {
+    // CORRECTED 2026-09-04. This comment read "REMINDERS_INBOUND is already
     // armed in production - so this is the only thing between an
-    // acknowledgement and a real patient's phone. It must fail loudly if the
-    // kill switch ever stops holding.
+    // acknowledgement and a real patient's phone". That was never measured:
+    // production env is not readable from this repository (standing rule 1),
+    // and the same false sentence sat in notification-registry.ts. There are
+    // TWO locks in front of these bodies today - the capability itself is a
+    // hard refusal while the live sender is the alphanumeric id `OsteoJP`
+    // (SR-47), so nothing ever reaches this gate. It must still fail loudly if
+    // the kill switch stops holding, because it is the lock that survives the
+    // day the clinic buys a number.
     const { createNotifier, buildRegistry, createTestSink } = await import("@osteojp/notify");
     const { REMINDER_TEMPLATES } = await import("@/lib/reminders/notification-registry");
     const sink = createTestSink();

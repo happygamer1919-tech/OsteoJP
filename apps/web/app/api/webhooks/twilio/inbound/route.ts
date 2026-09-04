@@ -25,12 +25,22 @@ import { DEFAULT_LOCALE } from "@osteojp/i18n";
 // changes appointment status, so that check is the difference between a
 // reminder reply and a stranger cancelling someone's appointment.
 //
-// ARMED BY TWO THINGS AND NEITHER IS SET HERE:
+// ARMED BY THREE THINGS AND NONE OF THEM IS SET HERE:
 //   REMINDERS_INBOUND=true                the capability flag (404 while off)
+//   TWILIO_SMS_FROM parses as E.164       a sender a reply can reach at all
 //   REMINDERS_INBOUND_TENANT_ID=<uuid>    whose clinic this Twilio number is
 // plus REMINDERS_INBOUND_BASE_URL for the signed URL and the existing
 // TWILIO_AUTH_TOKEN for the signature. Missing any of them refuses the
 // request; none of them is defaulted.
+//
+// THE FIRST TWO ARE ONE CALL AND TWO INDEPENDENT CONDITIONS (SR-47).
+// `remindersInboundEnabled()` is true only when the flag says the capability
+// is wanted AND the resolved sender is an E.164 number, because an
+// unauthenticated route that changes appointment status must not come up as a
+// side effect of somebody editing a variable about SENDING. An alphanumeric
+// sender - `OsteoJP`, the live one - is a hard refusal here that no flag
+// opens, and the mismatch is reported once per boot rather than returned
+// quietly. See lib/reminders/inbound-config.ts.
 //
 // WHY THE TENANT COMES FROM CONFIGURATION AND NOT FROM THE REQUEST. The
 // payload is attacker-controlled, so a tenant taken from it would let a forger
