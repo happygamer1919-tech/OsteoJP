@@ -6,6 +6,9 @@ import { defaultKpiFrom, getKpiReports, type KpiFilters } from "@/lib/statistics
 import { s } from "@/lib/i18n";
 
 import { IndicadoresView } from "./indicadores-view";
+import { TimingPanel } from "@/app/_components/timing-panel";
+import { collectFor } from "@/lib/perf/request-timing";
+import { mayReadTimings } from "@/lib/perf/audience";
 
 export const metadata = { title: s["statistics.cardKpi"] };
 
@@ -39,7 +42,25 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
     from: firstParam(sp.from) ?? defaultKpiFrom(new Date()),
     to: firstParam(sp.to),
   };
-  const reports = await getKpiReports(actor, filters);
+  // PERF-timing-admin-stats: `collectFor` opens a span store around the reads
+  // and changes NOTHING about them - same calls, same order, same concurrency.
+  // For a principal outside the audience no store is opened and `timed` awaits
+  // and returns. The panel element is created only on the measured arm, so the
+  // numbers are never serialised for anybody else. Measurement only: no compute
+  // change, no migration.
+  const measured = await collectFor(mayReadTimings(actor), async () => getKpiReports(actor, filters));
+  const reports = measured.value;
 
-  return <IndicadoresView reports={reports} filters={filters} />;
+  return (
+    <>
+      <IndicadoresView reports={reports} filters={filters} />
+      {measured.measured ? (
+        <TimingPanel
+          spans={measured.spans}
+          serverMs={measured.totalMs}
+          route="/estatisticas/indicadores"
+        />
+      ) : null}
+    </>
+  );
 }

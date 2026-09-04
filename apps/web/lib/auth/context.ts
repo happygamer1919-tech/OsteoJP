@@ -7,6 +7,7 @@ import {
 import { parseRole, toClaims, type RequestContext } from "@osteojp/auth";
 import { withTenantContext, type DbTx } from "@osteojp/db";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { timed } from "../perf/request-timing";
 
 // RequestContext is the single actor type across the app — it carries the
 // audit actor (userId). Re-exported here so handlers import it alongside the
@@ -229,10 +230,38 @@ export async function requireRequestContext(): Promise<RequestContext> {
   redirect(LOGIN_PATH);
 }
 
-/** Runs fn inside a tenant-scoped, RLS-enforced transaction for this context. */
+/**
+ * Runs fn inside a tenant-scoped, RLS-enforced transaction for this context.
+ *
+ * ==========================================================================
+ * EVERY SCOPED QUERY IS TIMED HERE, WHICH IS WHY THE LABEL IS OPTIONAL
+ * ==========================================================================
+ * PERF-timing-admin-stats needs "each query's time WITH RLS ON", and this is
+ * the one seam all of them already pass through - so one wrap measures the
+ * whole surface instead of a wrapper at every call site that somebody will
+ * forget to add to the next one.
+ *
+ * WHAT THE NUMBER INCLUDES, said plainly so the report is not read as narrower
+ * than it is: acquiring a pooled connection, `set local` of the claims, the
+ * statement itself, and the commit. That is deliberate. The question behind
+ * this card is where ten seconds went, and on a saturated pool the WAIT for a
+ * connection is the answer far more often than the statement is - PERF-06
+ * measured exactly that shape. A number that timed only the statement would
+ * exonerate the pool by construction.
+ *
+ * `label` NAMES THE CALLER, because a report of nine identical `db:scoped`
+ * rows is a list, not a breakdown. It is optional so that adding a query
+ * anywhere in the app cannot fail to compile, and unlabelled work still appears
+ * - as `db:scoped` - rather than vanishing from the total.
+ *
+ * WHEN NOTHING IS COLLECTING, `timed` awaits and returns. See
+ * `lib/perf/request-timing.ts`: this costs a `getStore()` and a branch for
+ * every other request in the system.
+ */
 export async function runScoped<T>(
   ctx: RequestContext,
   fn: (tx: DbTx) => Promise<T>,
+  label?: string,
 ): Promise<T> {
-  return withTenantContext(toClaims(ctx), fn);
+  return timed(label ?? "db:scoped", () => withTenantContext(toClaims(ctx), fn));
 }

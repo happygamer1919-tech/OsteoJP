@@ -16,6 +16,9 @@ import {
 } from "../../lib/patients/list-queries";
 import { PatientsFilterBar } from "./_components/patients-filter-bar";
 import { PatientsTable, type PatientRowView } from "./_components/patients-table";
+import { TimingPanel } from "../_components/timing-panel";
+import { collectFor } from "../../lib/perf/request-timing";
+import { mayReadTimings } from "../../lib/perf/audience";
 
 export const dynamic = "force-dynamic";
 
@@ -122,11 +125,20 @@ export default async function PatientsPage({
   // stats describe the viewer's whole scope and do not narrow with the search
   // box, so a receptionist can see "42 in the recovery window" while looking at
   // one of them.
-  const [page, stats, locations] = await Promise.all([
-    listPatientsPage(filters, ctx),
-    getCachedPatientListStats(filters.locationId, ctx),
-    listFilterLocations(ctx),
-  ]);
+  //
+  // PERF-timing-admin-stats: the three reads are UNCHANGED and still run in one
+  // `Promise.all`. `collectFor` opens a span store around them and nothing else,
+  // and ONLY for a principal who may read the result - for anybody else it is
+  // `await fn()` and no store exists, so `timed` awaits and returns and this is
+  // the same code it was. The measurement must not become the thing measured.
+  const measured = await collectFor(mayReadTimings(ctx), async () =>
+    Promise.all([
+      listPatientsPage(filters, ctx),
+      getCachedPatientListStats(filters.locationId, ctx),
+      listFilterLocations(ctx),
+    ]),
+  );
+  const [page, stats, locations] = measured.value;
 
   const rows: PatientRowView[] = page.rows.map((r) => ({
     id: r.id,
@@ -177,6 +189,15 @@ export default async function PatientsPage({
       <GlassPanel>
         <PatientsTable rows={rows} sort={filters.sort} dir={filters.dir} filtered={filtered} />
       </GlassPanel>
+
+      {/* Decided on the SERVER, and the audience check is already inside
+          `measured` - `spans` exists only on the measured arm, so this element
+          cannot be created for a principal who was not measured, and for that
+          principal nothing is serialised into the RSC payload at all. Not a
+          hidden panel: an absent one. */}
+      {measured.measured ? (
+        <TimingPanel spans={measured.spans} serverMs={measured.totalMs} route="/patients" />
+      ) : null}
 
       <div className="flex items-center justify-between gap-3 text-sm text-v2-text-secondary">
         <span className="tabular-nums">

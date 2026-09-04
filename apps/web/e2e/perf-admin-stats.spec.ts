@@ -1,0 +1,252 @@
+/**
+ * perf-admin-stats.spec.ts - THE MEASUREMENT for PERF-timing-admin-stats.
+ *
+ * ==========================================================================
+ * THE CONTRADICTION THIS EXISTS TO RESOLVE
+ * ==========================================================================
+ * The owner clicked *Pacientes* as an admin on production and waited about ten
+ * seconds. The last recorded `/patients` p75 is 184 ms. Both cannot describe the
+ * same path, and until now nothing in this application could say which part of
+ * one request took the time.
+ *
+ * ==========================================================================
+ * IT MEASURES, IT DOES NOT ASSERT A BUDGET
+ * ==========================================================================
+ * There is no `expect(ms).toBeLessThan(...)` anywhere below, on purpose. A
+ * threshold here would turn a slow machine into a red suite and would tempt the
+ * next person to "fix" the number rather than read it. Every test prints a
+ * table and asserts only that the INSTRUMENT worked - that the panel rendered
+ * and that the spans it claims exist do.
+ *
+ * ==========================================================================
+ * ADMIN, RLS ON. SR-24, AND IT IS NOT A FORMALITY
+ * ==========================================================================
+ * It runs on the `perf` project, whose storage state is the seeded ADMIN. Every
+ * query therefore runs through `runScoped` as `authenticated`, with the admin's
+ * claims and 0073's `viewer_visible_patient_ids()` in play. A reading taken as
+ * the owner principal, or with RLS off, describes a different plan and has
+ * misled this project twice.
+ *
+ * PREREQUISITE, and it fails loudly rather than measuring the wrong database:
+ *   node scripts/perf-seed-admin-stats.mjs
+ * The first test asserts the four counts on screen ARE the owner's four.
+ */
+
+import { test, expect, type Page } from "@playwright/test";
+
+/** The four numbers on the owner's screen. The seed hits these exactly. */
+const OWNER_STATS = { total: 8413, seenThisMonth: 56, withUpcoming: 153, inRecovery: 88 };
+
+type Reading = {
+  route: string;
+  serverMs: number;
+  statStrip: "MISS" | "HIT";
+  spans: { name: string; ms: number }[];
+  ttfbMs: number | null;
+  downloadMs: number | null;
+  hydrateMs: number | null;
+  totalFeltMs: number | null;
+};
+
+/**
+ * Read the panel the page rendered.
+ *
+ * THROWS RATHER THAN RETURNING NULLS when the panel is absent. An absent panel
+ * means the principal is not an admin, or the instrument is not wired on that
+ * route - two facts a caller given `null` would treat alike, and both of which
+ * make every number that follows meaningless.
+ */
+async function readPanel(page: Page, route: string): Promise<Reading> {
+  const panel = page.getByRole("region", { name: "Medição de desempenho" });
+
+  /**
+   * IT WAITS. IT DOES NOT SAMPLE, AND THE FIRST VERSION OF THIS FUNCTION DID.
+   *
+   * That version called `.count()` immediately after `goto` and threw "no timing
+   * panel" when it was zero. On `/estatisticas/painel` that produced a confident
+   * and WRONG finding - "the route rendered an EMPTY <main>" - which read as a
+   * blank page for an admin. The page was fine; the panel is the LAST element on
+   * it, so it is the last thing to arrive, and `goto` resolves on `load` rather
+   * than on the server component finishing.
+   *
+   * A measurement instrument that reads the page before the page exists reports
+   * the instrument's impatience as the product's failure. Waiting is not a
+   * convenience here, it is the difference between measuring and guessing.
+   */
+  try {
+    await panel.waitFor({ state: "attached", timeout: 60_000 });
+  } catch {
+    // NOT a swallow: the state is re-read and reported. The previous version of
+    // this diagnostic used `.catch(() => "")` around `innerText`, which turned a
+    // strict-mode violation ("resolved to 2 elements") into "0 chars" and made
+    // an unread page look like an empty one - for both principals, which is what
+    // made it look like a finding. PORTAL-REHYDRATE 1.3, in the instrument.
+    const landed = page.url();
+    const body = (await page.locator("body").innerText()).trim();
+    const headings = await page.getByRole("heading").allInnerTexts();
+    throw new Error(
+      `No timing panel on ${route} after 60s. Landed at ${landed}. Body holds ${body.length} ` +
+        `chars, headings ${JSON.stringify(headings.slice(0, 5))}. Either this principal is not ` +
+        "admin/owner (the panel is rendered for nobody else, so the data is never sent), or the " +
+        "route is not instrumented, or the page never finished.",
+    );
+  }
+
+  await panel.getByRole("button", { expanded: false }).click();
+
+  const rows = await panel.locator("tbody tr").all();
+  const spans: { name: string; ms: number }[] = [];
+  let serverMs = 0;
+  let ttfbMs: number | null = null;
+  let downloadMs: number | null = null;
+  let hydrateMs: number | null = null;
+  let totalFeltMs: number | null = null;
+
+  for (const r of rows) {
+    const cells = await r.locator("td").allInnerTexts();
+    if (cells.length < 2) continue;
+    const label = cells[0]!.trim();
+    const raw = cells[1]!.trim();
+    const ms = raw === "—" ? 0 : Number(raw);
+    if (label === "Primeiro byte (TTFB)") ttfbMs = ms;
+    else if (label === "Transferência") downloadMs = ms;
+    else if (label === "Hidratação") hydrateMs = ms;
+    else if (label === "Total sentido") totalFeltMs = ms;
+    else if (label === "Função do servidor") serverMs = ms;
+    else spans.push({ name: label, ms });
+  }
+
+  return {
+    route,
+    serverMs,
+    statStrip: spans.some((s) => s.name === "stat-strip:MISS") ? "MISS" : "HIT",
+    spans,
+    ttfbMs,
+    downloadMs,
+    hydrateMs,
+    totalFeltMs,
+  };
+}
+
+function report(title: string, readings: Reading[]): void {
+  const lines = [`\n===== ${title} =====`];
+  for (const [i, r] of readings.entries()) {
+    lines.push(
+      `  run ${i + 1}  ${r.route}  server ${r.serverMs} ms  stat-strip ${r.statStrip}  ` +
+        `TTFB ${r.ttfbMs} ms  hydrate ${r.hydrateMs} ms  felt ${r.totalFeltMs} ms`,
+    );
+    for (const s of r.spans) lines.push(`           ${s.name.padEnd(34)} ${s.ms} ms`);
+  }
+  console.log(lines.join("\n"));
+}
+
+test.describe.configure({ mode: "serial" });
+
+test("/patients as ADMIN: the seeded shape is the owner's, and the first click is measured", async ({
+  page,
+}) => {
+  await page.goto("/patients");
+
+  // THE PREMISE, ASSERTED BEFORE ANY NUMBER IS BELIEVED. A database with the
+  // right row count and the wrong distribution runs different filters over a
+  // different fraction of the scan, and would answer a question nobody asked.
+  // SCOPED TO THE STAT GRID, not to `.glass-card` anywhere in main. The table's
+  // own GlassPanel carries the same class, so the looser locator matched a
+  // fifth element whose concatenated digits overflowed to Infinity - the first
+  // run of this spec caught exactly that, which is what a premise assertion is
+  // for.
+  const strip = page.locator("main div.grid .glass-card");
+  const values = (await strip.allInnerTexts()).map((t) => Number(t.replace(/\D/g, "")));
+  expect(
+    values,
+    "the stat strip does not show the owner's four numbers - run scripts/perf-seed-admin-stats.mjs",
+  ).toEqual([
+    OWNER_STATS.total,
+    OWNER_STATS.seenThisMonth,
+    OWNER_STATS.withUpcoming,
+    OWNER_STATS.inRecovery,
+  ]);
+
+  const first = await readPanel(page, "/patients (first click)");
+  report("HYPOTHESIS 1+2: the first click after login", [first]);
+
+  // The instrument itself must have worked. Not a budget - a wiring check.
+  expect(first.serverMs).toBeGreaterThan(0);
+  expect(first.spans.some((s) => s.name.startsWith("db:"))).toBe(true);
+});
+
+test("/patients repeated: a stat-strip MISS against a HIT, same page, same principal", async ({
+  page,
+}) => {
+  /**
+   * A FRESH CACHE KEY IS FORCED, and the first version of this test is why.
+   *
+   * It loaded `/patients?probe=0..3` four times and demanded at least one MISS.
+   * Every load was a HIT and it failed - correctly, by its own rule, and for a
+   * reason that was about the TEST rather than the instrument: `probe` is not
+   * part of the cache key, the previous test had already warmed the default
+   * key, and the entry lives 60 seconds. Four loads inside one second can only
+   * ever be four hits.
+   *
+   * `locationId` IS part of the key (`fetchPatientListStats` is keyed on tenant,
+   * role, user and location), so filtering by a location nobody has queried
+   * yet is a guaranteed miss, and repeating it is a guaranteed hit. Both arms
+   * are now deterministic instead of depending on a clock.
+   */
+  await page.goto("/patients");
+  const locationId = await page
+    .locator("select option[value]:not([value=''])")
+    .first()
+    .getAttribute("value");
+  if (!locationId) {
+    throw new Error(
+      "no location option on the filter bar, so a fresh cache key cannot be forced - the " +
+        "MISS/HIT pair below would depend on a 60-second clock instead of on the key",
+    );
+  }
+
+  const readings: Reading[] = [];
+  for (let i = 0; i < 4; i++) {
+    await page.goto(`/patients?location=${locationId}`);
+    readings.push(await readPanel(page, `/patients?location=… load ${i + 1}`));
+  }
+  report("HYPOTHESIS 2: stat-strip cache miss vs hit", readings);
+
+  // THE INSTRUMENT'S OWN NEGATIVE CONTROL, and it is the one measurement that
+  // validates every other stat-strip number. `unstable_cache` must invoke its
+  // callback on the caller's async context or the MISS mark is lost and every
+  // miss reports as a hit. Across four consecutive loads at least one MISS and
+  // at least one HIT must appear; if every reading says HIT, the mark is not
+  // reaching the store and the instrument is lying in the safe-looking
+  // direction.
+  expect(
+    readings[0]!.statStrip,
+    "the FIRST load of a fresh cache key must be a MISS. If it reports HIT, the mark is not " +
+      "reaching the span store and every miss in this report is a lie in the safe-looking " +
+      "direction - see the note on the cached callback in list-queries.ts",
+  ).toBe("MISS");
+  expect(
+    readings.slice(1).map((r) => r.statStrip),
+    "loads 2-4 repeat the same key inside the 60s window and must all be HITs",
+  ).toEqual(["HIT", "HIT", "HIT"]);
+});
+
+test("/patients paged and filtered: the list query away from page one", async ({ page }) => {
+  const readings: Reading[] = [];
+  await page.goto("/patients?page=40");
+  readings.push(await readPanel(page, "/patients?page=40"));
+  await page.goto("/patients?q=Silva");
+  readings.push(await readPanel(page, "/patients?q=Silva"));
+  report("The list query under paging and search", readings);
+});
+
+test("/admin/staff and /estatisticas: the other two surfaces the owner named", async ({ page }) => {
+  const readings: Reading[] = [];
+  await page.goto("/admin/staff");
+  readings.push(await readPanel(page, "/admin/staff"));
+  await page.goto("/estatisticas/painel");
+  readings.push(await readPanel(page, "/estatisticas/painel"));
+  await page.goto("/estatisticas/indicadores");
+  readings.push(await readPanel(page, "/estatisticas/indicadores"));
+  report("Administracao and Estatisticas", readings);
+});

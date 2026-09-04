@@ -10,6 +10,7 @@ import { activePatientsOnly } from "@/lib/patients/filters";
 import { escapeLike, parseSearch } from "@/lib/patients/validation";
 import { followupWindow } from "@/lib/followup/window";
 import { PATIENT_STATS_TAG } from "./cache-tags";
+import { mark, timed } from "../perf/request-timing";
 
 /**
  * UX-01 - the /patients working list, read side.
@@ -228,7 +229,7 @@ export async function listPatientsPage(
       pageSize,
       pageCount,
     };
-  });
+  }, "db:patients-list");
 }
 
 /**
@@ -381,7 +382,7 @@ export async function getPatientListStats(
       withUpcoming: Number(row?.withUpcoming ?? 0),
       inRecoveryWindow: Number(row?.inRecoveryWindow ?? 0),
     };
-  });
+  }, "db:patients-stat-strip");
 }
 
 /* ================================================================== */
@@ -460,8 +461,24 @@ const fetchPatientListStats = unstable_cache(
     role: RequestContext["role"],
     userId: string,
     locationId: string | null,
-  ): Promise<PatientListStats> =>
-    getPatientListStats(locationId, { tenantId, role, userId }),
+  ): Promise<PatientListStats> => {
+    /**
+     * THE MISS IS MARKED FROM INSIDE THE CACHED FUNCTION, WHICH IS THE ONLY
+     * PLACE THAT KNOWS. A cache HIT does not execute this callback at all - the
+     * same property the `assertCan` note above depends on - so the presence of
+     * this mark IS the miss and its absence IS the hit. Nothing infers it from
+     * a duration.
+     *
+     * IT DEPENDS ON `unstable_cache` INVOKING THIS CALLBACK ON THE CALLER'S
+     * ASYNC CONTEXT, and that is a measured fact rather than an assumption: if
+     * the context were lost, the mark would vanish and every MISS would be
+     * reported as a HIT - the precise §1.3 conflation, aimed at the one
+     * question this instrument exists to answer. The report on
+     * PERF-timing-admin-stats records the cold/warm pair that proves it.
+     */
+    mark("stat-strip:MISS", "the cached function ran; all four counts computed");
+    return getPatientListStats(locationId, { tenantId, role, userId });
+  },
   ["patients-stat-strip-v1"],
   { revalidate: 60, tags: [PATIENT_STATS_TAG] },
 );
@@ -479,7 +496,12 @@ export async function getCachedPatientListStats(
   ctx: RequestContext,
 ): Promise<PatientListStats> {
   assertCan(ctx.role, "patients:read");
-  return fetchPatientListStats(ctx.tenantId, ctx.role, ctx.userId, locationId);
+  // Timed from OUTSIDE the cache, so the number is what the PAGE waited for -
+  // a hit and a miss are both real costs and the difference between them is
+  // the whole of hypothesis 2.
+  return timed("stat-strip:read", () =>
+    fetchPatientListStats(ctx.tenantId, ctx.role, ctx.userId, locationId),
+  );
 }
 
 /** Locations for the filter select, restricted to the viewer's own scope. */
@@ -499,6 +521,7 @@ export async function listFilterLocations(
           : eq(locations.isActive, true),
       )
       .orderBy(asc(locations.name)),
+    "db:patients-filter-locations",
   );
 }
 
