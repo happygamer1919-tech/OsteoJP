@@ -61,15 +61,30 @@ SELECT :patient_number                              AS asked_for,
  WHERE p.patient_number = :patient_number;
 
 \echo ''
-\echo '=== 1. EVERY service whose name looks like NESA ==='
-\echo 'More than one row here IS cause (A), and the ids are what differ.'
+\echo '=== 1. THE WHOLE SERVICE CATALOG. NOT a name search. ==='
+\echo 'The first draft of this section filtered on name ILIKE %nesa% and MISSED'
+\echo 'the answer: the pacote was bound to a service ARCHIVED by renaming it to'
+\echo '"-", so a search for the name it used to have could not find it. A script'
+\echo 'that looks for a row by the value that moved is a script that cannot see'
+\echo 'the thing that moved. Every row, with what points at it.'
 SELECT s.id,
-       s.name,
+       quote_literal(s.name) AS name_literal,
        s.is_active,
-       (SELECT count(*) FROM public.service_packs sp WHERE sp.base_service_id = s.id) AS packs_bound
+       (SELECT count(*) FROM public.service_packs sp WHERE sp.base_service_id = s.id) AS packs_bound,
+       (SELECT count(*) FROM public.appointments a WHERE a.service_id = s.id)         AS appointments
   FROM public.services s
- WHERE s.name ILIKE '%nesa%'
- ORDER BY s.name, s.id;
+ ORDER BY appointments DESC, s.name;
+
+\echo ''
+\echo '=== 1b. ARCHIVED SERVICES THAT STILL CARRY REFERENCES ==='
+\echo 'A service is archived by renaming it and clearing is_active; the pacote'
+\echo 'and appointment rows pointing at it survive that, and nothing warns.'
+SELECT s.id, quote_literal(s.name) AS name_literal,
+       (SELECT count(*) FROM public.service_packs sp WHERE sp.base_service_id = s.id) AS packs_bound,
+       (SELECT count(*) FROM public.appointments a WHERE a.service_id = s.id)         AS appointments
+  FROM public.services s
+ WHERE s.is_active = false
+ ORDER BY packs_bound DESC, appointments DESC;
 
 \echo ''
 \echo '=== 2. HIS PACOTES, and what each one is REALLY for ==='
