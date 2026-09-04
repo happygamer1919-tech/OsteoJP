@@ -301,7 +301,24 @@ export function AgendaGrid({
           // W9-04: this day's blocked spans, clipped to the visible window.
           const dayBlocks = placeBlocksOnDate(blocks, d, DAY_END_MIN);
           return (
-            <div key={d} className="relative border-r border-v2-border last:border-r-0" style={{ height: totalHeight }}>
+            <div
+              key={d}
+              // LE-e2e-appointment-fixture-drift: THE COLUMN SAYS WHICH DAY IT IS.
+              // Nothing in this grid did, so a test asserting about ONE day in the
+              // WEEK view could only reach for the whole page - and the Mon-Sat
+              // grid renders SIX days. agenda-cards.spec.ts:106 asserted
+              // getByRole(button, /Maria Silva/) page-wide and resolved to two
+              // elements whenever another spec's fixture landed in the same week,
+              // which is 85 of the 300 values RUN_DAY_BASE can take.
+              //
+              // The date is what a caller already holds, so the attribute is the
+              // ISO day and not an index: `[data-day="2027-02-15"]` reads as the
+              // claim being made, where `nth(2)` would silently follow the column
+              // order if the week ever started on a different day.
+              data-day={d}
+              className="relative border-r border-v2-border last:border-r-0"
+              style={{ height: totalHeight }}
+            >
               {/* Grid lines + clickable empty slots. A slot inside a blocked
                   span is DISABLED, not merely covered: an overlay alone would
                   still let a keyboard user tab to it and press Enter, which is
