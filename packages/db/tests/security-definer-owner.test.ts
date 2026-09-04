@@ -51,6 +51,11 @@ const EXPECTED_FUNCTIONS = [
   "issue_confirm_code",
   "withdraw_confirm_code",
   "viewer_treated_patient_ids",
+  // 0075 (SR-45/OBS-04): the Twilio status callback's ONE crossing. It has no
+  // session and knows only the SID, so the tenant cannot be scoped before this
+  // answers - the same problem `resolve_confirm_code` solves for the confirm
+  // page, bounded the same way: one argument, one column, no table grant.
+  "reminder_dispatch_tenant",
 ].map((name) => ({ name, owner: "postgres" }));
 
 describe("POSITIVE ARM — production as it actually is", () => {

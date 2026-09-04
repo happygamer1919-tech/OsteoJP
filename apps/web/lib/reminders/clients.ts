@@ -28,6 +28,7 @@ import {
 } from "@osteojp/notify";
 import { INVITE_TEMPLATE, webRegistry } from "./notification-registry";
 import { normalizePhonePT } from "@osteojp/notify";
+import { statusCallbackParam } from "./status-callback";
 import { outboundSenderValue, resolveOutboundSender } from "./sender";
 
 /**
@@ -221,6 +222,17 @@ const providerTransport: Transport = {
     const result = await client.messages.create({
       to: msg.to,
       ...twilioSenderParam(twilioSender()!),
+      // OBS-04: the delivery-status destination travels WITH THE MESSAGE, not
+      // as a Messaging Service setting in the console. A console setting is a
+      // click nobody can audit - not in the diff, not assertable, and knowable
+      // only by logging in and looking. That is the SR-43 shape exactly: the
+      // sender was configured somewhere invisible, it was wrong, and every
+      // message failed for two days while the system reported nothing.
+      //
+      // Spread rather than a nullable field: when the origin is unconfigured
+      // the parameter is ABSENT, and a missing variable then costs the STATUS
+      // and never the MESSAGE.
+      ...statusCallbackParam(),
       body: msg.body,
     });
     return { id: result.sid };
