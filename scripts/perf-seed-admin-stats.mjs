@@ -79,7 +79,7 @@ const TOTAL = 8413;
 const SEEN_THIS_MONTH = 56;
 const WITH_UPCOMING = 153;
 const IN_RECOVERY = 88;
-const BULK_APPTS_EACH = 3;
+const BULK_APPTS_EACH = 5;
 
 const TENANT = "00000000-0000-0000-0000-0000000000a1"; // TENANT_A, the e2e tenant
 const MARKER = "perf-admin-stats"; // notes field; identifies every row this writes
@@ -161,11 +161,20 @@ async function stats(locIds = null) {
                     where pl.id = p.id and pl.primary_location_id in ${sql(locIds)})
       )`
     : sql``;
+  /**
+   * THE APPOINTMENT SCAN IS BOUNDED THE WAY `appointments_rls` BOUNDS IT.
+   *
+   * Scoping the PATIENTS and not the APPOINTMENTS is what let this script print
+   * "all four counts match" over a screen showing 55 and 150. A location-scoped
+   * admin does not see an appointment at a clinic they are not assigned to, so a
+   * statistic derived from that appointment is not theirs to count either.
+   */
+  const visible = locIds ? sql`and location_id in ${sql(locIds)}` : sql``;
   return one(sql`
     with participations as (
-      select patient_id as pid, starts_at, status from appointments where tenant_id = ${TENANT}
+      select patient_id as pid, starts_at, status from appointments where tenant_id = ${TENANT} ${visible}
       union all
-      select patient_2_id as pid, starts_at, status from appointments where tenant_id = ${TENANT} and patient_2_id is not null
+      select patient_2_id as pid, starts_at, status from appointments where tenant_id = ${TENANT} and patient_2_id is not null ${visible}
     ), agg as (
       select pid,
              max(starts_at) filter (where status = 'completed') as last_completed,
@@ -419,14 +428,38 @@ await sql`
 await sql`delete from staff_locations where tenant_id = ${TENANT} and user_id = ${UNASSIGNED_ADMIN}`;
 
 const CLASS_SIZE = 50;
-const reshape = await sql`
-  select p.id from patients p
-   where p.tenant_id = ${TENANT} and p.deleted_at is null and p.notes = ${MARKER}
-   order by p.id limit ${CLASS_SIZE * 2}`;
-const primaryOnly = reshape.slice(0, CLASS_SIZE).map((r) => r.id);
-const both = reshape.slice(CLASS_SIZE).map((r) => r.id);
+/**
+ * ==========================================================================
+ * THE CLASSES ARE BUILT FROM `bulk`, AND THE FIRST VERSION DREW THEM AT RANDOM
+ * ==========================================================================
+ * This block MOVES a patient's appointments to a location the admin is not
+ * assigned to. For a patient in no statistic bucket that is invisible: their
+ * visits are ancient completed ones that no statistic counts. For a patient in
+ * the `seen`, `upcoming` or `recovery` bucket it is NOT: under
+ * `appointments_rls` the assigned admin no longer sees the appointment that put
+ * them in the bucket, so THE STAT STRIP DROPS BY ONE for that principal.
+ *
+ * The first version selected the 100 patients with
+ * `select id ... where notes = MARKER order by p.id limit 100`. `p.id` is a
+ * RANDOM uuid, so that is a random draw from all 8,404 seeded patients, of which
+ * 297 are in a bucket - about three and a half hits per run, differing every
+ * run. MEASURED, not reasoned about: on 2026-09-06 it moved 1 `seen this month`
+ * and 3 `with upcoming` appointments out of the assignment, and
+ * `perf-admin-stats.spec.ts` failed its premise with 55 and 150 against 56 and
+ * 153 - after this script had printed "all four counts match the owner's
+ * screen", because its own check both asserted the UNASSIGNED principal and
+ * counted appointments with RLS out of the way.
+ *
+ * `bulk` is exactly the patients in NO bucket, held in memory from the insert
+ * above, so drawing from it cannot move a statistic. The verification below now
+ * asserts the ASSIGNED principal too, and bounds the appointment scan the way
+ * the policy does, so a future change that reintroduces this fails HERE - in
+ * seconds, with a sentence - rather than twenty minutes later in a browser.
+ */
+const primaryOnly = bulk.slice(0, CLASS_SIZE);
+const both = bulk.slice(CLASS_SIZE, CLASS_SIZE * 2);
 if (primaryOnly.length < CLASS_SIZE || both.length < CLASS_SIZE) {
-  console.error("[perf-seed] not enough seeded patients to build the visibility classes");
+  console.error("[perf-seed] not enough bucket-free seeded patients to build the visibility classes");
   process.exit(1);
 }
 // PRIMARY ONLY: appointments out of the assignment, home clinic inside it.
@@ -486,13 +519,48 @@ for (const [k, v] of Object.entries(want)) {
   console.log(`  ${ok ? "OK " : "OFF"} ${k.padEnd(16)} want ${String(v).padStart(5)}  got ${String(got).padStart(5)}`);
 }
 
+/**
+ * ==========================================================================
+ * AND THE ASSIGNED PRINCIPAL, WHICH IS THE ONE THE MEASUREMENT RUNS AS
+ * ==========================================================================
+ * Until 2026-09-06 these four numbers were PRINTED and nothing compared them.
+ * The principal every timing on this lane is taken as is the assigned one, and
+ * `perf-admin-stats.spec.ts` asserts ITS stat strip - so an unasserted print was
+ * the difference between failing here in seconds and failing in a browser twenty
+ * minutes later, which is exactly what happened.
+ *
+ * `total` is DERIVED rather than pinned to a literal: it is the seeded total
+ * minus the patients no arm of the scope reaches, which is the sentence the
+ * board card makes about 8,409 against 8,413. The other three must be IDENTICAL
+ * to the unassigned principal's - the visibility classes are constructed out of
+ * bucket-free patients precisely so that moving their appointments cannot move a
+ * statistic, and this is the assertion that holds that promise.
+ */
+const wantAssigned = {
+  total: TOTAL - Number(classes.neither),
+  seen_this_month: SEEN_THIS_MONTH,
+  with_upcoming: WITH_UPCOMING,
+  in_recovery: IN_RECOVERY,
+};
+for (const [k, v] of Object.entries(wantAssigned)) {
+  const got = Number(scopedCheck[k]);
+  const ok = got === v;
+  if (!ok) bad = true;
+  console.log(
+    `  ${ok ? "OK " : "OFF"} assigned ${k.padEnd(16)} want ${String(v).padStart(5)}  got ${String(got).padStart(5)}`,
+  );
+}
+
 await sql.end();
 if (bad) {
   console.error(
     "[perf-seed] THE SEED DID NOT HIT THE OWNER'S NUMBERS. It exits non-zero rather than " +
-      "letting a measurement be taken against the wrong shape. The most likely cause is that " +
-      "the tenant already held patients or appointments this script did not write - it only " +
-      `deletes rows carrying its own marker (${MARKER}).`,
+      "letting a measurement be taken against the wrong shape.\n" +
+      "  An UNASSIGNED line is off: the tenant already held patients or appointments this script " +
+      `did not write - it only deletes rows carrying its own marker (${MARKER}).\n` +
+      "  An ASSIGNED line is off while the unassigned one matches: the visibility classes were " +
+      "built out of patients that ARE in a statistic bucket, so moving their appointments outside " +
+      "the assignment took the statistic with them. Draw them from `bulk` (PERF-15/16).",
   );
   process.exit(1);
 }
