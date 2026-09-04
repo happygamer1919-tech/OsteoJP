@@ -319,12 +319,35 @@ await sql`analyze appointments`;
  * lane is already not a database the ordinary suite can pass on (see
  * LE-recuperacao-spec-leaves-a-contact-row-per-run). `lane-stack up` resets.
  */
+/**
+ * A THIRD ACTIVE LOCATION, OWNED BY THIS SCRIPT, AND THE ASSIGNMENT EXCLUDES IT.
+ *
+ * PERF-14 shipped with the spec asserting "the filter offers exactly the two
+ * locations the seed assigned", on the reasoning that an unassigned admin is
+ * offered every ACTIVE location. THAT ASSERTION COULD NOT FAIL: tenant A has
+ * exactly two active locations (the third fixture location is archived), so an
+ * unassigned admin is offered two as well and the check discriminated nothing.
+ * Found by counting them here rather than by reading the fixture.
+ *
+ * With a third active location that the admin is NOT assigned to, the numbers
+ * separate again - assigned sees 2, unassigned sees 3 - and it is also what
+ * makes the `primary_location_id` class below possible at all, because that
+ * class needs somewhere OUTSIDE the assignment to put appointments.
+ */
+const PERF_LOCATION = "00000000-0000-0000-0000-00000000fe14";
+await sql`
+  insert into locations (id, tenant_id, name, is_active)
+  values (${PERF_LOCATION}, ${TENANT}, ${"Clinica de Medicao (PERF-14)"}, true)
+  on conflict (id) do update set is_active = true`;
+
 const locs = await sql`
-  select id from locations where tenant_id = ${TENANT} and is_active order by created_at limit 2`;
+  select id from locations
+   where tenant_id = ${TENANT} and is_active and id <> ${PERF_LOCATION}
+   order by created_at limit 2`;
 if (locs.length < 2) {
   console.error(
-    "[perf-seed] tenant A has fewer than two active locations, so an assigned principal cannot " +
-      "keep a location picker. Run: node apps/web/e2e/seed/seed-e2e.mjs",
+    "[perf-seed] tenant A has fewer than two active locations besides the measurement one, so an " +
+      "assigned principal cannot keep a location picker. Run: node apps/web/e2e/seed/seed-e2e.mjs",
   );
   process.exit(2);
 }
@@ -347,6 +370,101 @@ if (assigned.n !== 2) {
   process.exit(1);
 }
 console.log(`[perf-seed] measuring principal e2e-admin@osteojp.test is assigned to ${assigned.n} locations`);
+
+/**
+ * PERF-15. BOTH ARMS OF `patientLocationScope`, AND AN UNASSIGNED ADMIN.
+ *
+ * ==========================================================================
+ * THE FIXTURE COVERED ONE ARM OF TWO, AND IT WAS COUNTED, NOT ASSUMED
+ * ==========================================================================
+ * `patientLocationScope` is TWO correlated EXISTS: reachable by an APPOINTMENT
+ * at one of the viewer's locations, OR by `primary_location_id`. Before this,
+ * the seeded shape was appointment-only 8,409 / primary-only 0 / both 0 - so a
+ * rewrite that dropped the `primary_location_id` arm entirely would have passed
+ * on this lane and changed who can see whom on production.
+ *
+ * Three classes are now constructed, and the totals are unchanged by
+ * construction so the four statistics and the assigned total stay where the spec
+ * asserts them:
+ *
+ *   PRIMARY ONLY  their appointments move to the measurement location, which the
+ *                 admin is NOT assigned to, and their `primary_location_id` is
+ *                 set to one they ARE assigned to. Visible through the second
+ *                 arm alone. It is also a real shape: a patient whose visits are
+ *                 all at a site that has since closed, whose home clinic is a
+ *                 current one.
+ *   BOTH          `primary_location_id` set to an assigned location while their
+ *                 appointments stay there too.
+ *   APPOINTMENT   everyone else.
+ *   NEITHER       the fixture patients reachable by no assigned location. They
+ *                 are the reason the assigned total is 8,409 rather than 8,413.
+ *
+ * ==========================================================================
+ * AND AN ADMIN WITH NO ASSIGNMENT, WHICH PRODUCTION DOES NOT HAVE
+ * ==========================================================================
+ * PERF-14 made the only admin on this lane an assigned one, which removed the
+ * other class entirely. An equivalence gate for a rewrite of these predicates
+ * has to run BOTH: `viewer_has_location_assignment()` false is a distinct branch
+ * of both the app-layer scope and the RLS policy, and no principal on production
+ * exercises it. A `users` row is all it takes - the branch is decided by the
+ * ABSENCE of `staff_locations` rows, and a DB-gated test builds its own context.
+ */
+const UNASSIGNED_ADMIN = "00000000-0000-0000-0000-00000000fe15";
+const adminRole = await one(sql`select id from roles where slug = ${"admin"}`);
+await sql`
+  insert into users (id, tenant_id, email, full_name, role_id, is_active)
+  values (${UNASSIGNED_ADMIN}, ${TENANT}, ${"e2e-perf-admin-unassigned@osteojp.test"},
+          ${"Admin Sem Clinica (PERF-15)"}, ${adminRole.id}, true)
+  on conflict (id) do nothing`;
+await sql`delete from staff_locations where tenant_id = ${TENANT} and user_id = ${UNASSIGNED_ADMIN}`;
+
+const CLASS_SIZE = 50;
+const reshape = await sql`
+  select p.id from patients p
+   where p.tenant_id = ${TENANT} and p.deleted_at is null and p.notes = ${MARKER}
+   order by p.id limit ${CLASS_SIZE * 2}`;
+const primaryOnly = reshape.slice(0, CLASS_SIZE).map((r) => r.id);
+const both = reshape.slice(CLASS_SIZE).map((r) => r.id);
+if (primaryOnly.length < CLASS_SIZE || both.length < CLASS_SIZE) {
+  console.error("[perf-seed] not enough seeded patients to build the visibility classes");
+  process.exit(1);
+}
+// PRIMARY ONLY: appointments out of the assignment, home clinic inside it.
+await sql`update appointments set location_id = ${PERF_LOCATION}
+           where tenant_id = ${TENANT} and patient_id = any(${primaryOnly})`;
+await sql`update patients set primary_location_id = ${locs[0].id}
+           where tenant_id = ${TENANT} and id = any(${primaryOnly})`;
+// BOTH: home clinic inside the assignment, appointments already inside it.
+await sql`update patients set primary_location_id = ${locs[0].id}
+           where tenant_id = ${TENANT} and id = any(${both})`;
+await sql`analyze patients`;
+await sql`analyze appointments`;
+
+const classes = await one(sql`
+  select
+    count(*) filter (where appt and not prim)::int as appointment_only,
+    count(*) filter (where prim and not appt)::int as primary_only,
+    count(*) filter (where appt and prim)::int as both,
+    count(*) filter (where not appt and not prim)::int as neither
+  from (
+    select p.id,
+      exists (select 1 from appointments ap
+               where (ap.patient_id = p.id or ap.patient_2_id = p.id)
+                 and ap.location_id = any(${locs.map((l) => l.id)})) as appt,
+      (p.primary_location_id = any(${locs.map((l) => l.id)})) is true as prim
+      from patients p where p.tenant_id = ${TENANT} and p.deleted_at is null) x`);
+console.log("[perf-seed] how the ASSIGNED admin reaches each patient:");
+for (const [k, v] of Object.entries(classes)) console.log(`  ${k.padEnd(17)} ${String(v).padStart(5)}`);
+for (const k of ["appointment_only", "primary_only", "both", "neither"]) {
+  if (Number(classes[k]) < 1) {
+    console.error(
+      `[perf-seed] the "${k}" visibility class is EMPTY. A rewrite of patientLocationScope could ` +
+        "drop the arm that decides it and this lane would not notice. Refusing to leave the " +
+        "harness blind to a class it exists to cover (PERF-15).",
+    );
+    process.exit(1);
+  }
+}
 
 /* --------------------------------------------------- verify the four counts */
 console.log("[perf-seed] verifying against the SAME four aggregates the page runs");
