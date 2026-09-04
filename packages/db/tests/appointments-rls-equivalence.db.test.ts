@@ -33,9 +33,41 @@
  * covered there and is covered here with a fixture. It is the class where the
  * two expressions are most obviously equal (the OR short-circuits before either
  * form is reached) and therefore the one it would be easiest to skip.
+ *
+ * ==========================================================================
+ * INC-0078: EVERY ASSERTION HERE IS IMMUNE TO A CONCURRENT WRITER. IT WAS NOT.
+ * ==========================================================================
+ * Vitest runs test FILES in parallel processes against ONE database, and about
+ * a dozen sibling files in packages/db INSERT into public.appointments and
+ * COMMIT. The first version of this file failed roughly two runs in three, in
+ * two separate ways, and both were this file's fault:
+ *
+ *   1. It counted every appointment row once in a `beforeAll`, then asserted
+ *      that each principal's scan returned THAT number. Between the count and
+ *      the scan, siblings committed rows - `expected 12 to be 10`. The count
+ *      was a PROXY for the property that matters ("the scan was not narrowed by
+ *      RLS"), and a proxy measured at a different instant than the thing it
+ *      guards is a race by construction. It is now asserted directly, with
+ *      `row_security_active`, inside the very statement that does the scan; and
+ *      the anti-vacuity half is asserted against THIS FILE'S OWN rows, which no
+ *      other file can touch because the tenant is a fresh uuid.
+ *
+ *   2. It took its `users.role_id` from `select id from roles limit 1` - a role
+ *      row belonging to WHOEVER happened to be seeded. `roles` cascades from
+ *      `tenants` but `users.role_id` has no ON DELETE action, so this file's
+ *      users PINNED another file's role, and that file's teardown then died on
+ *      `users_role_id_roles_id_fk`. It reported as a failed SUITE in the
+ *      innocent file while the summary still said "1165 passed" and the run
+ *      exited non-zero. The fixture now creates its own role in its own tenant,
+ *      which is what every other file in this directory already did.
+ *
+ * The rule the two share: a shared-database test may only assert over rows it
+ * owns, and must assert the property it means rather than a number that
+ * happens to equal it.
  */
 import { randomUUID } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { Rollback, claimsFor, connect, live } from "./rls-harness";
@@ -107,43 +139,101 @@ async function asPrincipal<T>(
   throw new Error("unreachable");
 }
 
+type Comparison = {
+  /**
+   * Whether RLS is being applied to the scan below. MUST be false: it is the
+   * property the whole file rests on, asserted in the same statement as the
+   * scan rather than inferred from a row count taken at another moment.
+   */
+  rlsApplied: boolean;
+  /**
+   * Every row scanned, this file's and every other file's. REPORTED, NEVER
+   * ASSERTED ON: sibling suites commit appointment rows throughout the run, so
+   * this number is not stable and an equality on it is the INC-0078 race.
+   */
+  rows: number;
+  loosened: number;
+  tightened: number;
+  /** Rows scanned that belong to THIS file's two tenants. Deterministic. */
+  fixtureRows: number;
+  /** Of those, the ones the OLD predicate excludes for this principal. */
+  fixtureInvisible: number;
+};
+
 /**
  * Counts the rows on which two boolean expressions disagree, in each direction.
  * `IS TRUE` on both sides so a NULL is compared as "not visible", which is what
  * a policy does with it.
+ *
+ * `loosened` and `tightened` are computed over the WHOLE table on purpose and
+ * are immune to concurrent writers for a reason worth stating: a sibling file's
+ * row carries a different tenant_id, and the tenant guard is the same text on
+ * BOTH sides of the comparison, so such a row is false=false and cannot land in
+ * either counter. Concurrency changes how many rows are scanned; it cannot
+ * change what the scan concludes.
  */
 async function disagreements(
   tx: TransactionSql,
+  fixtureTenants: string[],
   left: string,
   right: string,
-): Promise<{ rows: number; loosened: number; tightened: number }> {
-  const [r] = await tx.unsafe(`
-    SELECT count(*)::int AS rows,
+): Promise<Comparison> {
+  const [r] = await tx.unsafe(
+    `
+    SELECT row_security_active('public.appointments') AS rls_applied,
+           count(*)::int AS rows,
            count(*) FILTER (WHERE r_ok AND NOT l_ok)::int AS loosened,
-           count(*) FILTER (WHERE l_ok AND NOT r_ok)::int AS tightened
-      FROM (SELECT (${left}) IS TRUE AS l_ok, (${right}) IS TRUE AS r_ok
-              FROM public.appointments a) t`);
-  return r as unknown as { rows: number; loosened: number; tightened: number };
+           count(*) FILTER (WHERE l_ok AND NOT r_ok)::int AS tightened,
+           count(*) FILTER (WHERE fixture)::int AS fixture_rows,
+           count(*) FILTER (WHERE fixture AND NOT l_ok)::int AS fixture_invisible
+      FROM (SELECT (${left}) IS TRUE AS l_ok,
+                   (${right}) IS TRUE AS r_ok,
+                   (a.tenant_id = ANY ($1::uuid[])) AS fixture
+              FROM public.appointments a) t`,
+    [fixtureTenants as unknown as string],
+  );
+  const row = r as unknown as {
+    rls_applied: boolean;
+    rows: number;
+    loosened: number;
+    tightened: number;
+    fixture_rows: number;
+    fixture_invisible: number;
+  };
+  return {
+    rlsApplied: row.rls_applied,
+    rows: row.rows,
+    loosened: row.loosened,
+    tightened: row.tightened,
+    fixtureRows: row.fixture_rows,
+    fixtureInvisible: row.fixture_invisible,
+  };
 }
 
 d("0078: the visible appointment set is identical before and after", () => {
   let sql: Sql;
 
   const tenant = randomUUID();
+  const role = randomUUID();
   const locA = randomUUID();
   const locB = randomUUID();
   const patient = randomUUID();
 
   /**
-   * Every appointment row in the database, counted with RLS BYPASSED.
+   * A SECOND tenant, holding exactly one appointment.
    *
-   * The anti-vacuity guard compares the scan against THIS, not against a
-   * threshold: the first draft asserted `rows > 4` and passed on a lane with
-   * thousands of seeded rows while telling us nothing, then failed in CI where
-   * the seeded database holds fewer. What matters is not that the table is
-   * large - it is that the comparison saw the rows the principal CANNOT see.
+   * It is what makes the anti-vacuity guard below deterministic for the two
+   * classes that can see everything in their own tenant - `owner`, and the
+   * admin with no location assignment. Without it those two would have no row
+   * in the fixture they cannot see, and their guard would have to lean on
+   * whatever other suites happened to have committed at that instant, which is
+   * the habit this rewrite exists to remove.
    */
-  let totalAppointments = 0;
+  const foreignTenant = randomUUID();
+  const foreignRole = randomUUID();
+  const foreignLoc = randomUUID();
+  const foreignUser = randomUUID();
+  const foreignPatient = randomUUID();
 
   const owner = randomUUID();
   const adminWith = randomUUID();
@@ -151,6 +241,20 @@ d("0078: the visible appointment set is identical before and after", () => {
   const reception = randomUUID();
   const therapist = randomUUID();
   const otherTherapist = randomUUID();
+
+  const fixtureTenants = [tenant, foreignTenant];
+
+  /**
+   * The fixture's exact size: five rows in `tenant`, one in `foreignTenant`.
+   *
+   * This is the ANTI-VACUITY GUARD, and it replaces an equality against a
+   * count of the whole table taken in a `beforeAll`. What the old guard was
+   * trying to say is "the comparison saw rows this principal CANNOT see" - it
+   * said it with a number that a sibling suite could move between the counting
+   * and the scanning. This says the same thing about rows no other file can
+   * reach, so it is exact on every run.
+   */
+  const FIXTURE_ROWS = 6;
 
   beforeAll(async () => {
     sql = connect();
@@ -165,14 +269,21 @@ d("0078: the visible appointment set is identical before and after", () => {
        * them, and a fixture that skipped it would fail at insert rather than
        * quietly test nothing - which is the good kind of failure and is why it
        * is worth saying that this is a FK and not decoration.
+       *
+       * The ROLE is this tenant's own, not `select id from roles limit 1`.
+       * That borrowed a row from another suite's tenant, and because
+       * `users.role_id` has no ON DELETE action while `roles` cascades from
+       * `tenants`, these users then blocked that suite's teardown with a
+       * foreign-key error attributed to ITS file. See INC-0078 in the header.
        */
-      const [role] = await tx`select id from roles limit 1`;
+      await tx`insert into roles (id, tenant_id, slug, name)
+               values (${role}, ${tenant}, 'admin', 'Admin') on conflict do nothing`;
       for (const [uid, label] of [
         [owner, "owner"], [adminWith, "admin-with"], [adminWithout, "admin-without"],
         [reception, "reception"], [therapist, "therapist"], [otherTherapist, "therapist-2"],
       ] as [string, string][]) {
         await tx`insert into users (id, tenant_id, role_id, email, full_name)
-                 values (${uid}, ${tenant}, ${role!.id}, ${`${label}-${uid.slice(0, 8)}@equiv.test`}, ${label})
+                 values (${uid}, ${tenant}, ${role}, ${`${label}-${uid.slice(0, 8)}@equiv.test`}, ${label})
                  on conflict do nothing`;
       }
 
@@ -189,8 +300,8 @@ d("0078: the visible appointment set is identical before and after", () => {
       /**
        * Rows chosen so every branch of the policy is exercised by at least one
        * row AND at least one row falls OUTSIDE it: appointments at the assigned
-       * location, at the unassigned one, and one belonging to a therapist who
-       * is not the viewer.
+       * location, at the unassigned one, one belonging to a therapist who is
+       * not the viewer, and one where the viewer is the SECOND practitioner.
        *
        * THERE IS NO NULL-LOCATION ROW BECAUSE THE COLUMN IS NOT NULL - checked,
        * not assumed. That makes the policy's `location_id IS NOT NULL` guard
@@ -199,61 +310,117 @@ d("0078: the visible appointment set is identical before and after", () => {
        * is ever relaxed, and removing it would be a change this migration is
        * not making.
        */
-      const appt = (loc: string, practitioner: string, creator: string) => ({
+      const appt = (
+        loc: string,
+        practitioner: string,
+        creator: string,
+        practitioner2: string | null = null,
+      ) => ({
         id: randomUUID(),
         tenant_id: tenant,
         patient_id: patient,
         practitioner_id: practitioner,
+        practitioner_2_id: practitioner2,
         location_id: loc,
         created_by: creator,
         starts_at: new Date("2027-01-04T09:00:00Z"),
         ends_at: new Date("2027-01-04T10:00:00Z"),
         status: "scheduled",
       });
-      await tx`select 1`;
       const rows = [
         appt(locA, therapist, owner),
         appt(locB, therapist, owner),
         appt(locA, otherTherapist, owner),
         appt(locB, otherTherapist, adminWithout),
+        /**
+         * The second-practitioner row. It is seeded HERE and not inside the
+         * `tightened` negative control that needs it: a test that grows the
+         * fixture makes every count in this file depend on the order vitest
+         * happens to run them in, which is the same class of defect as the
+         * stale total it replaced.
+         */
+        appt(locA, otherTherapist, owner, therapist),
       ];
       for (const r of rows) await tx`insert into appointments ${tx(r)}`;
-    });
-  });
 
-  beforeAll(async () => {
-    // The plain connection is the migration role, which bypasses RLS.
-    const [t] = await sql`select count(*)::int as n from public.appointments`;
-    totalAppointments = (t as { n: number }).n;
+      // The foreign tenant: one row nobody in `tenant` can ever see.
+      await tx`insert into tenants (id, name, slug) values (${foreignTenant}, 'rls-equiv-foreign', ${`rls-equiv-f-${foreignTenant.slice(0, 8)}`}) on conflict do nothing`;
+      await tx`insert into roles (id, tenant_id, slug, name)
+               values (${foreignRole}, ${foreignTenant}, 'admin', 'Admin') on conflict do nothing`;
+      await tx`insert into locations (id, tenant_id, name) values (${foreignLoc}, ${foreignTenant}, 'F') on conflict do nothing`;
+      await tx`insert into users (id, tenant_id, role_id, email, full_name)
+               values (${foreignUser}, ${foreignTenant}, ${foreignRole}, ${`foreign-${foreignUser.slice(0, 8)}@equiv.test`}, 'foreign')
+               on conflict do nothing`;
+      await tx`insert into patients (id, tenant_id, full_name, primary_location_id)
+               values (${foreignPatient}, ${foreignTenant}, 'Foreign Patient', ${foreignLoc}) on conflict do nothing`;
+      await tx`insert into appointments ${tx({
+        id: randomUUID(),
+        tenant_id: foreignTenant,
+        patient_id: foreignPatient,
+        practitioner_id: foreignUser,
+        location_id: foreignLoc,
+        created_by: foreignUser,
+        starts_at: new Date("2027-01-04T09:00:00Z"),
+        ends_at: new Date("2027-01-04T10:00:00Z"),
+        status: "scheduled",
+      })}`;
+    });
   });
 
   afterAll(async () => {
     await sql.begin(async (tx) => {
-      await tx`delete from appointments where tenant_id = ${tenant}`;
-      await tx`delete from staff_locations where tenant_id = ${tenant}`;
-      await tx`delete from users where tenant_id = ${tenant}`;
-      await tx`delete from patients where tenant_id = ${tenant}`;
-      await tx`delete from locations where tenant_id = ${tenant}`;
-      await tx`delete from tenants where id = ${tenant}`;
+      await tx`delete from appointments where tenant_id in (${tenant}, ${foreignTenant})`;
+      await tx`delete from staff_locations where tenant_id in (${tenant}, ${foreignTenant})`;
+      await tx`delete from users where tenant_id in (${tenant}, ${foreignTenant})`;
+      await tx`delete from patients where tenant_id in (${tenant}, ${foreignTenant})`;
+      await tx`delete from locations where tenant_id in (${tenant}, ${foreignTenant})`;
+      await tx`delete from roles where tenant_id in (${tenant}, ${foreignTenant})`;
+      await tx`delete from tenants where id in (${tenant}, ${foreignTenant})`;
     });
     await sql.end();
   });
 
-  const classes: [string, "owner" | "admin" | "reception" | "therapist", string][] = [
-    ["owner", "owner", owner],
-    ["admin WITH a location assignment", "admin", adminWith],
-    ["admin WITHOUT a location assignment", "admin", adminWithout],
-    ["reception", "reception", reception],
-    ["therapist", "therapist", therapist],
+  /**
+   * Asserted on EVERY comparison, the five classes and both negative controls:
+   * the scan was not subject to RLS, and it saw all six fixture rows.
+   */
+  function expectWholeTableScan(r: Comparison): void {
+    expect({ rlsApplied: r.rlsApplied, fixtureRows: r.fixtureRows }).toEqual({
+      rlsApplied: false,
+      fixtureRows: FIXTURE_ROWS,
+    });
+  }
+
+  /**
+   * The five classes, each with the number of FIXTURE rows the policy as it
+   * stands today hides from that principal. Every one is greater than zero,
+   * which is the anti-vacuity property; the exact value is carried because a
+   * fixture that stopped covering a class would otherwise still pass.
+   *
+   *   owner            1  the foreign row only - `owner` sees its whole tenant
+   *   admin WITH       3  the two locB rows, plus the foreign row
+   *   admin WITHOUT    1  the foreign row only - no assignment means no scoping
+   *   reception        3  same two locB rows as the assigned admin
+   *   therapist        3  the two rows they neither run nor assist on, plus the
+   *                       foreign row
+   */
+  const classes: [string, "owner" | "admin" | "reception" | "therapist", string, number][] = [
+    ["owner", "owner", owner, 1],
+    ["admin WITH a location assignment", "admin", adminWith, 3],
+    ["admin WITHOUT a location assignment", "admin", adminWithout, 1],
+    ["reception", "reception", reception, 3],
+    ["therapist", "therapist", therapist, 3],
   ];
 
-  for (const [label, role, userId] of classes) {
+  for (const [label, principalRole, userId, invisible] of classes) {
     it(`${label}: sees exactly the same rows`, async () => {
-      const r = await asPrincipal(sql, claimsFor(tenant, role, userId), (tx) =>
-        disagreements(tx, OLD_PREDICATE, NEW_PREDICATE),
+      const r = await asPrincipal(sql, claimsFor(tenant, principalRole, userId), (tx) =>
+        disagreements(tx, fixtureTenants, OLD_PREDICATE, NEW_PREDICATE),
       );
-      // The scan must be the WHOLE table, not a slice RLS already narrowed.
-      expect(r.rows).toBe(totalAppointments);
+      expectWholeTableScan(r);
+      // The comparison saw rows this principal CANNOT see. Without this the
+      // five cases could pass over a slice that excludes every disagreement.
+      expect(r.fixtureInvisible).toBe(invisible);
       expect({ loosened: r.loosened, tightened: r.tightened }).toEqual({
         loosened: 0,
         tightened: 0,
@@ -277,9 +444,12 @@ d("0078: the visible appointment set is identical before and after", () => {
     );
     expect(loosened).not.toBe(NEW_PREDICATE);
     const r = await asPrincipal(sql, claimsFor(tenant, "admin", adminWith), (tx) =>
-      disagreements(tx, OLD_PREDICATE, loosened),
+      disagreements(tx, fixtureTenants, OLD_PREDICATE, loosened),
     );
-    expect(r.loosened).toBeGreaterThan(0);
+    expectWholeTableScan(r);
+    // Exactly the two locB rows: the count is this file's own, so it is stated
+    // exactly rather than as "greater than zero".
+    expect(r.loosened).toBe(2);
   });
 
   it("CATCHES a tightened predicate - the one a one-sided test would pass", async () => {
@@ -291,22 +461,11 @@ d("0078: the visible appointment set is identical before and after", () => {
       "OR false",
     );
     expect(tightened).not.toBe(NEW_PREDICATE);
-    const withSecond = randomUUID();
-    await sql`insert into appointments ${sql({
-      id: withSecond,
-      tenant_id: tenant,
-      patient_id: patient,
-      practitioner_id: otherTherapist,
-      practitioner_2_id: therapist,
-      location_id: locA,
-      created_by: owner,
-      starts_at: new Date("2027-01-05T09:00:00Z"),
-      ends_at: new Date("2027-01-05T10:00:00Z"),
-      status: "scheduled",
-    })}`;
     const r = await asPrincipal(sql, claimsFor(tenant, "therapist", therapist), (tx) =>
-      disagreements(tx, OLD_PREDICATE, tightened),
+      disagreements(tx, fixtureTenants, OLD_PREDICATE, tightened),
     );
-    expect(r.tightened).toBeGreaterThan(0);
+    expectWholeTableScan(r);
+    // Exactly the seeded second-practitioner row.
+    expect(r.tightened).toBe(1);
   });
 });
