@@ -273,7 +273,21 @@ describe.skipIf(!live)("0071 wraps the nullary helper and changes no row's visib
       unwrappedIn(expr, "patient_appt_treated_by_viewer");
     }
 
-    unwrappedIn(await exprOf("appointments_rls"), "location_in_viewer_scope");
+    /**
+     * AMENDED BY 0078. appointments_rls no longer calls location_in_viewer_scope
+     * at all: the per-row call became set membership against the nullary
+     * viewer_location_ids(), which is 0071's own shape one layer down.
+     *
+     * THE PROPERTY THIS GUARD EXISTS FOR IS UNCHANGED and is still asserted -
+     * no CORRELATED helper is ever wrapped in `(SELECT ...)`, because wrapping
+     * one would compute a per-row answer once and apply it to every row. What
+     * changed is that this policy has no correlated helper left to check, so
+     * asserting the call is still PRESENT would pin the absence of 0078 rather
+     * than the presence of the property.
+     */
+    const appts = await exprOf("appointments_rls");
+    expect(appts).not.toContain("location_in_viewer_scope");
+    expect(appts).toMatch(/SELECT\s+viewer_location_ids/i);
   });
 
   /* ================================================================== */

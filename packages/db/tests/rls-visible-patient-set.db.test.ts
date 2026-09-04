@@ -314,12 +314,18 @@ describe.skipIf(!live)("0073 resolves the visible-patient set once, and changes 
   });
 
   it("SCOPE GUARD: everything SR-33 excluded is untouched", async () => {
-    // appointments_rls: 0071's shape, correlated helper still unwrapped, and no
-    // trace of 0073's set anywhere in it.
+    // appointments_rls: 0071's nullary wrap, and no trace of 0073's PATIENT set
+    // anywhere in it - which is the SR-33 boundary this guard was written for.
+    //
+    // AMENDED BY 0078: the correlated location_in_viewer_scope call is GONE
+    // from this policy, replaced by set membership against viewer_location_ids.
+    // SR-33's boundary is untouched by that - 0073's set is still absent, which
+    // is what this assertion is actually about - and pinning the old call would
+    // pin the absence of 0078 rather than the presence of the boundary.
     const appts = await policyExpr(sql, "appointments_rls");
     expect(appts).toMatch(/SELECT\s+viewer_has_location_assignment/i);
-    expect(appts).toContain("location_in_viewer_scope");
-    expect(appts).not.toMatch(/SELECT\s+location_in_viewer_scope/i);
+    expect(appts).not.toContain("location_in_viewer_scope");
+    expect(appts).toMatch(/SELECT\s+viewer_location_ids/i);
     expect(appts).not.toContain("viewer_visible_patient_ids");
 
     // The write policies keep BOTH correlated calls and the UNWRAPPED nullary
