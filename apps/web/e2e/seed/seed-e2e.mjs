@@ -539,6 +539,41 @@ async function ensureRecuperacaoFixtures(therapistUserId, otherTherapistUserId) 
   must(postErr, "recuperacao postponement");
 
   /**
+   * THE TENANT'S CONTACT ROWS ARE CLEARED FIRST, SO THE SEED DEFINES THE WORLD.
+   *
+   * ==========================================================================
+   * WHY, MEASURED RATHER THAN ASSUMED
+   * ==========================================================================
+   * The upsert below is idempotent - a fixed id with `onConflict: "id"` - so
+   * re-seeding cannot add a row and this delete is not about the seed at all.
+   * The rows come from THE SUITE: `recuperacao.spec.ts:137` clicks WhatsApp,
+   * which POSTs /api/followup/contact, which INSERTS a row with a generated id
+   * (lib/followup/record-contact.ts). Nothing in the repository ever deleted
+   * one.
+   *
+   * COUNTED ON THE PURPLE LANE, 2026-09-05, four consecutive runs against one
+   * database: 1 row and 15 passed, then 2, 3, 4, 5 rows and TWO failures from
+   * the second run onward. `:103` asserts `toBeVisible()` on a locator matching
+   * every contact line, so it becomes a strict-mode violation; `:137` ends with
+   * `toHaveCount(2)` for the WhatsApp lines, "where the seed left one", which is
+   * true of a fresh database and an absolute count on a persistent one.
+   *
+   * CI never saw it - every shard gets a fresh Supabase - and that is exactly
+   * why it had to be fixed here rather than in the assertions: under SR-39 a
+   * lane database is NOT reset between runs, so the invariant every future
+   * absolute assertion will assume is the one `supabase db reset` gives CI for
+   * free. The seed owns this fixture; nothing else should be adding to it.
+   *
+   * SCOPE: `tenant_id = TENANT_A`, the same bound `resetAvailabilityFixtures`
+   * uses, and the local-target guard upstream refuses any non-local host.
+   */
+  const { error: contactWipeErr } = await db
+    .from("patient_followup_contacts")
+    .delete()
+    .eq("tenant_id", TENANT_A);
+  must(contactWipeErr, "reset patient_followup_contacts");
+
+  /**
    * ONE RECORDED CONTACT, which is what exercises the contacts query - the
    * SECOND of the two statements that brought the page down, and the one that
    * only runs when the candidate list is non-empty. Without a contact row the

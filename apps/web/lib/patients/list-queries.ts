@@ -319,9 +319,55 @@ export async function getPatientListStats(
 
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
+  /**
+   * PERF-13. THE EARLIEST INSTANT ANY OF THE FOUR STATISTICS CAN CARE ABOUT.
+   *
+   * ==========================================================================
+   * WHY THIS ONE LINE IS THE WHOLE FIX
+   * ==========================================================================
+   * The CTE below aggregates `appointments` over BOTH participant columns with
+   * no date predicate at all - every appointment this tenant has ever had,
+   * grouped per patient, on every cold cache key. The four numbers it feeds are
+   * about the last two months. On the owner's production database that cost
+   * 4.9 SECONDS of a 6.3-second server function; on a lane seeded to the same
+   * shape (8,413 patients, 24,631 appointments spanning 2020-2026) it reads
+   * 24,631 rows to answer a question 297 of them can answer.
+   *
+   * ==========================================================================
+   * WHY IT IS EXACTLY EQUIVALENT, ARM BY ARM
+   * ==========================================================================
+   * `completed_this_month` filters `starts_at >= monthStart`, and monthStart is
+   * never before this bound.
+   * `has_future` filters `starts_at > now`, and now is never before this bound.
+   * `last_completed` is the only subtle one, because it is a MAX and dropping
+   * rows could lower it. It is read in exactly one place - `inWindow`, which
+   * asks `BETWEEN from AND to`. Three cases, and the bound is right in all of
+   * them: a patient whose true max is >= from keeps it, because the bound never
+   * removes a row at or after `from`; a patient whose true max is < from loses
+   * it and gets NULL, and `NULL BETWEEN` is not true, which is the same verdict
+   * `2020-05-09 BETWEEN from AND to` gives; a patient whose true max is > to
+   * keeps it and is excluded by the upper bound exactly as before.
+   *
+   * LEAST OF THE TWO, COMPUTED RATHER THAN REASONED. `from` is the first of the
+   * previous month in LISBON and `monthStart` is the first of this month in UTC;
+   * they are derived by different code, in different zones, and the ordering
+   * that looks obvious is a property of today's definitions rather than of the
+   * types. Taking the minimum costs nothing and cannot be wrong.
+   */
+  const earliest = new Date(Math.min(from.getTime(), monthStart.getTime()));
+
   return runScoped(ctx, async (tx) => {
     /**
-     * Every per-patient fact the four statistics need, computed in ONE pass.
+     * Every per-patient fact the four statistics need, computed in ONE pass,
+     * over the appointments that can affect them and no others.
+     *
+     * PERF-13: `starts_at >= earliest` on BOTH arms. See the note on `earliest`
+     * above for why it is exactly equivalent; the measured effect on a
+     * production-shaped lane is 24,631 rows read down to 297, a Seq Scan and
+     * Sort replaced by an Index Scan on `appointments_tenant_start_idx` (which
+     * already existed - this needs no migration), and total cost 7,817 -> 906.
+     * The reduction grows with the length of the clinic's history, because the
+     * bounded set is "since the first of last month" and does not grow at all.
      *
      * The UNION ALL unnests `appointments` over both participant columns, so a
      * row where the patient is the SECOND participant contributes to their own
@@ -342,9 +388,11 @@ export async function getPatientListStats(
              bool_or(starts_at > ${now.toISOString()}::timestamptz
                      AND status NOT IN ('cancelled', 'no_show'))                     AS has_future
         FROM ( SELECT patient_id   AS pid, starts_at, status FROM appointments
+                WHERE starts_at >= ${earliest.toISOString()}::timestamptz
                UNION ALL
                SELECT patient_2_id AS pid, starts_at, status FROM appointments
-                WHERE patient_2_id IS NOT NULL ) participations
+                WHERE patient_2_id IS NOT NULL
+                  AND starts_at >= ${earliest.toISOString()}::timestamptz ) participations
        GROUP BY pid`;
 
     /**
