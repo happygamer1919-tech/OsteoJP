@@ -230,6 +230,32 @@ test("/patients as ADMIN: the seeded shape is the owner's, and the first click i
   // The instrument itself must have worked. Not a budget - a wiring check.
   expect(first.serverMs).toBeGreaterThan(0);
   expect(first.spans.some((s) => s.name.startsWith("db:"))).toBe(true);
+
+  /**
+   * A HIT HERE MEANS THE FOUR NUMBERS ABOVE CAME OUT OF A CACHE, AND ON
+   * 2026-09-06 THEY CAME OUT OF THE PREVIOUS FIXTURE'S.
+   *
+   * `unstable_cache` in `next dev` persists to `.next/dev/cache/fetch-cache` ON
+   * DISK, so the entry survives the dev server that playwright starts and stops
+   * around this suite. After `perf-seed-admin-stats.mjs` was corrected and the
+   * database demonstrably held 56 and 153 - asserted by the seed, and read back
+   * under `role authenticated` with the admin's own claims - this spec kept
+   * failing its premise with 55 and 150, which were the numbers the PREVIOUS
+   * seed produced. Clearing that directory made it pass on the next run.
+   *
+   * So the premise assertion above is only as good as the strip being fresh, and
+   * this is the assertion that says so. It also matters for the TIMING: a cached
+   * strip costs 0.3 ms and does not contend for the connection pool, which moves
+   * `db:patients-list` on this lane from 722 ms to about 100.
+   *
+   *   rm -rf apps/web/.next/dev/cache/fetch-cache
+   */
+  expect(
+    first.statStrip,
+    "the stat strip was served from cache on the FIRST click, so both the four numbers asserted " +
+      "above and every timing below describe an earlier state. Clear the dev data cache before " +
+      "measuring: rm -rf apps/web/.next/dev/cache/fetch-cache",
+  ).toBe("MISS");
 });
 
 test("/patients repeated: a stat-strip MISS against a HIT, same page, same principal", async ({
@@ -295,6 +321,30 @@ test("/patients paged and filtered: the list query away from page one", async ({
   await page.goto("/patients?q=Silva");
   readings.push(await readPanel(page, "/patients?q=Silva"));
   report("The list query under paging and search", readings);
+});
+
+/**
+ * THE READING THE OWNER'S IS COMPARABLE TO, AND THE OTHER TESTS ARE NOT.
+ *
+ * His production readings are of `/patients` with NO query string, taken more
+ * than once: servidor 798.5 ms, `db:patients-list` 654.3 ms on the first load
+ * and 657.6 / 626.1 on reload. Test 2 above deliberately loads
+ * `/patients?location=…` to force a MISS then three HITs, and test 3 loads page
+ * 40 and a search - all three are different queries. Neither can be set beside
+ * his numbers without an asterisk, so this loads the default key, repeatedly,
+ * the way a person clicking Pacientes twice does.
+ *
+ * IT ASSERTS NOTHING ABOUT THE DURATION, like every other test in this file. It
+ * prints, and the reading goes on the card next to production's.
+ */
+test("/patients reloaded on the DEFAULT key: the shape the owner's reading has", async ({ page }) => {
+  const readings: Reading[] = [];
+  for (let i = 0; i < 4; i++) {
+    await page.goto("/patients");
+    readings.push(await readPanel(page, `/patients reload ${i + 1}`));
+  }
+  report("The owner's comparison: /patients, no query string, four loads", readings);
+  expect(readings.every((r) => r.serverMs > 0)).toBe(true);
 });
 
 test("/admin/staff and /estatisticas: the other two surfaces the owner named", async ({ page }) => {

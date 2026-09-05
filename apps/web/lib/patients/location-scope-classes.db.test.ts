@@ -33,12 +33,64 @@
  * the only thing that matters to a member of staff. It asserts SETS, never SQL.
  * Every expectation is derived from the fixture by construction and written as a
  * literal, and every patient exists for exactly one reason named in its constant.
+ *
+ * ALL FIVE PLACES `patientLocationScope` IS COMPOSED IN `lib/patients`, not one:
+ * `scopeConditions` (the data table and the stat strip), and `getPatient`,
+ * `listPatients` and `searchPatients`, each of which composes it again on its
+ * own. Before this file covered them, the only tests naming those three mocked
+ * them.
+ *
+ * ==========================================================================
+ * THE LIMIT OF A COMPOSITE ASSERTION, MEASURED RATHER THAN REASONED ABOUT
+ * ==========================================================================
+ * A composite cannot see the app-layer predicate DISAPPEAR. Removing `roleScope`
+ * from all four compositions on this path leaves every assertion below green,
+ * because 0073's `patients_select` narrows an admin to `viewer_visible_patient_
+ * ids()` and produces the identical set on its own. Run, not assumed:
+ * 10/10 passed with the app predicate gone.
+ *
+ * That is not a hole in the file, it is the shape of the system - the app
+ * predicate can only ever NARROW what RLS already returned, so its absence is
+ * invisible and its MUTILATION is not. Removing ONE ARM of it reddens 6 of these
+ * 10. What this file is a gate against is a rewrite that changes the SET; a
+ * rewrite that deletes the app-layer predicate outright is a defence-in-depth
+ * decision, and no test here will make it for you.
  */
 import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+
+/**
+ * THE ONE SEAM, AND WHY IT IS THE ONLY ONE.
+ *
+ * `listPatientsPage` and `getPatientListStats` TAKE a context. The other three
+ * patients-path readers - `getPatient`, `listPatients`, `searchPatients` - call
+ * `requireRequestContext()` themselves, which reads a Supabase session that does
+ * not exist in a vitest worker. Answering that ONE call is the whole difference
+ * between running them as a chosen principal and not running them at all.
+ *
+ * Everything else stays real, and that is the point: `runScoped` still sets
+ * `role authenticated` and the JWT claims (so `patients_select` applies),
+ * `viewerLocationScope` still reads `staff_locations`, `patientLocationScope`
+ * still builds the two correlated EXISTS, and `assertCan` is NOT stubbed - an
+ * admin genuinely holds `patients:read`, so stubbing it would only hide a
+ * capability regression this file would otherwise catch for free.
+ */
+const acting = vi.hoisted(() => ({
+  ctx: null as { tenantId: string; role: "admin"; userId: string } | null,
+}));
+vi.mock("../auth/context", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../auth/context")>();
+  return {
+    ...actual,
+    requireRequestContext: async () => {
+      if (!acting.ctx) throw new Error("no acting principal - use asPrincipal()");
+      return acting.ctx;
+    },
+  };
+});
 
 const live = Boolean(process.env.DATABASE_URL);
 const d = live ? describe : describe.skip;
@@ -50,6 +102,9 @@ d("the four visibility classes of a location-scoped viewer", () => {
   let db: ReturnType<typeof import("@osteojp/db").getDbAdmin>;
   let listPatientsPage: typeof import("./list-queries").listPatientsPage;
   let getPatientListStats: typeof import("./list-queries").getPatientListStats;
+  let getPatient: typeof import("./queries").getPatient;
+  let listPatients: typeof import("./queries").listPatients;
+  let searchPatients: typeof import("./queries").searchPatients;
 
   const tenant = randomUUID();
   const assignedOne = randomUUID(); // the admin IS assigned here
@@ -102,6 +157,7 @@ d("the four visibility classes of a location-scoped viewer", () => {
     const mod = await import("@osteojp/db");
     db = mod.getDbAdmin();
     ({ listPatientsPage, getPatientListStats } = await import("./list-queries"));
+    ({ getPatient, listPatients, searchPatients } = await import("./queries"));
 
     await db.execute(
       raw`insert into tenants (id, name, slug) values (${tenant}::uuid, 'perf15', ${"perf15-" + tenant.slice(0, 8)})`,
@@ -135,11 +191,11 @@ d("the four visibility classes of a location-scoped viewer", () => {
       );
     }
 
-    await db.execute(patient(byAppointmentOnly, "AAA appointment only", null));
-    await db.execute(patient(byPrimaryOnly, "BBB primary only", assignedOne));
-    await db.execute(patient(byBoth, "CCC both arms", assignedTwo));
-    await db.execute(patient(byNeither, "DDD neither arm", elsewhere));
-    await db.execute(patient(bySecondaryAppointmentOnly, "EEE secondary appointment only", null));
+    await db.execute(patient(byAppointmentOnly, "AAA appointment only PERFCLASSE", null));
+    await db.execute(patient(byPrimaryOnly, "BBB primary only PERFCLASSE", assignedOne));
+    await db.execute(patient(byBoth, "CCC both arms PERFCLASSE", assignedTwo));
+    await db.execute(patient(byNeither, "DDD neither arm PERFCLASSE", elsewhere));
+    await db.execute(patient(bySecondaryAppointmentOnly, "EEE secondary appointment only PERFCLASSE", null));
 
     await db.execute(appt(byAppointmentOnly, assignedOne));
     // Its visits are all OUTSIDE the assignment; only its home clinic reaches it.
@@ -211,5 +267,74 @@ d("the four visibility classes of a location-scoped viewer", () => {
     ]);
     expect(assigned.total).toBe(ASSIGNED_SEES.length);
     expect(unassigned.total).toBe(UNASSIGNED_SEES.length);
+  });
+
+  /**
+   * ==========================================================================
+   * THE OTHER THREE READERS ON THIS PATH, WHICH NOTHING EXERCISED FOR REAL
+   * ==========================================================================
+   * `patientLocationScope` is composed FIVE times in `lib/patients`, not once:
+   * `list-queries.ts` builds it in one shared `scopeConditions` that both the
+   * data table and the stat strip use (the tests above), and `queries.ts`
+   * composes it again, separately, in each of `getPatient`, `listPatients` and
+   * `searchPatients`.
+   *
+   * COUNTED, NOT ASSUMED: before this block, every test that named those three
+   * did so through `vi.mock("./queries")`. A mocked reader answers from a
+   * fixture, so a scope arm that stopped narrowing there would be invisible -
+   * the rows it should have removed were never in the fixture to remove. The
+   * rewrite 0079 is aimed at changes the SHARED helper, so it changes all five
+   * call sites at once, and an equivalence gate covering two of them is a gate
+   * with three holes.
+   *
+   * `getPatient` is the one that matters most and it is the one furthest from a
+   * list: it decides whether a member of staff opens a record or gets a 404.
+   */
+  async function asPrincipal<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    acting.ctx = { tenantId: tenant, role: "admin", userId };
+    try {
+      return await fn();
+    } finally {
+      acting.ctx = null;
+    }
+  }
+
+  it("getPatient: an ASSIGNED admin opens every class an arm reaches, and 404s on the one no arm reaches", async () => {
+    await asPrincipal(assignedAdmin, async () => {
+      for (const id of ASSIGNED_SEES) {
+        expect(await getPatient(id), `assigned admin cannot open ${id}`).not.toBeNull();
+      }
+      // The 404 half. Without it every assertion above passes on a predicate
+      // that stopped narrowing at all.
+      expect(await getPatient(byNeither)).toBeNull();
+    });
+  });
+
+  it("getPatient: an UNASSIGNED admin opens all five, including the one no assignment reaches", async () => {
+    await asPrincipal(unassignedAdmin, async () => {
+      for (const id of UNASSIGNED_SEES) {
+        expect(await getPatient(id), `unassigned admin cannot open ${id}`).not.toBeNull();
+      }
+    });
+  });
+
+  it("listPatients answers with the same set as the data table, for both principals", async () => {
+    const assigned = await asPrincipal(assignedAdmin, () => listPatients({ limit: 200 }));
+    const unassigned = await asPrincipal(unassignedAdmin, () => listPatients({ limit: 200 }));
+    expect(assigned.map((r) => r.id).sort()).toEqual(ASSIGNED_SEES);
+    expect(unassigned.map((r) => r.id).sort()).toEqual(UNASSIGNED_SEES);
+  });
+
+  it("searchPatients keeps the scope when a search term narrows the rows", async () => {
+    // The token is on all five names, so the SEARCH removes nobody and the only
+    // thing that can change the answer is the scope - which is the property
+    // under test. A term that also filtered would make a lost arm look like a
+    // search miss.
+    const assigned = await asPrincipal(assignedAdmin, () => searchPatients("PERFCLASSE", { limit: 200 }));
+    const unassigned = await asPrincipal(unassignedAdmin, () =>
+      searchPatients("PERFCLASSE", { limit: 200 }),
+    );
+    expect(assigned.map((r) => r.id).sort()).toEqual(ASSIGNED_SEES);
+    expect(unassigned.map((r) => r.id).sort()).toEqual(UNASSIGNED_SEES);
   });
 });
