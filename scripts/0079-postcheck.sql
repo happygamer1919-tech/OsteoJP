@@ -46,11 +46,42 @@ SELECT 'journal = before + 1'       AS check,
   FROM drizzle.__drizzle_migrations
 
 UNION ALL
-SELECT 'highest applied id',
-       coalesce(max(id)::text, 'none'),
-       '79',
-       CASE WHEN max(id) = 79 THEN 'OK' ELSE 'FAIL' END
-  FROM drizzle.__drizzle_migrations
+-- IDENTITY IS THE FILE HASH, NEVER `id`. `id` is a SERIAL - the count of
+-- migrations applied - and it stopped matching the tag at the 0076/0077 gap.
+-- On production there are 76 rows before this apply and 77 after, while the tag
+-- is 0079. An assertion of "max id = 79" would fail on a CORRECT apply, and the
+-- first draft of this file contained exactly that. Rehearsing against a journal
+-- seeded to production's real position is what caught it.
+SELECT '0079 is applied (by file hash)',
+       CASE WHEN EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations
+                          WHERE hash = 'eb3d48f08b5623a9826aacd43d4fd9173f0444f02ce0e9565e8eeed92df90ada')
+            THEN 'present' ELSE 'absent' END,
+       'present',
+       CASE WHEN EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations
+                          WHERE hash = 'eb3d48f08b5623a9826aacd43d4fd9173f0444f02ce0e9565e8eeed92df90ada')
+            THEN 'OK' ELSE 'FAIL' END
+
+UNION ALL
+-- 0078 UNCHANGED BENEATH IT, so a migration that rewrote history cannot pass a
+-- purely forward-looking check.
+SELECT '0078 still applied (by file hash)',
+       CASE WHEN EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations
+                          WHERE hash = '68334d6a822088f2ecb591a4f9ece426fe48c0cb7c1a1128057074ca79a71864')
+            THEN 'present' ELSE 'absent' END,
+       'present',
+       CASE WHEN EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations
+                          WHERE hash = '68334d6a822088f2ecb591a4f9ece426fe48c0cb7c1a1128057074ca79a71864')
+            THEN 'OK' ELSE 'FAIL' END
+
+UNION ALL
+SELECT '0075 still applied (by file hash)',
+       CASE WHEN EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations
+                          WHERE hash = 'e268bc0ddbaa72358e8b6d5fb47ce6087b9f7013ca804e48c30bd32f25360aaa')
+            THEN 'present' ELSE 'absent' END,
+       'present',
+       CASE WHEN EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations
+                          WHERE hash = 'e268bc0ddbaa72358e8b6d5fb47ce6087b9f7013ca804e48c30bd32f25360aaa')
+            THEN 'OK' ELSE 'FAIL' END
 
 UNION ALL
 -- ==================================================================
