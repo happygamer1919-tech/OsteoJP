@@ -14,6 +14,12 @@ export type AdminErrorCode =
   | "provisioning_unavailable" // the privileged auth path could not create the user (admin-client env absent, role missing, auth API failure)
   | "has_appointments" // location delete refused: appointments still reference it (W3-07)
   | "has_references" // service delete refused: appointments/mappings/prices/analytics reference it (W4-15)
+  // PACK-04: service ARCHIVE refused because a pacote is bound to it. Distinct
+  // from `has_references`, which is about DELETING: a service carrying a pacote
+  // was already delete-blocked, so the only door left open was the archive, and
+  // an admin told "cannot delete" while the archive silently succeeded would be
+  // told the opposite of what happened. The message names the pacotes.
+  | "has_packs"
   | "password" // wrong delete password (W4-01 staff delete)
   | "has_activity" // staff delete refused: therapist has appointments/records/audit (W4-01)
   | "has_clinical_records" // patient hard-delete refused: clinical records reference the patient (W5-08)

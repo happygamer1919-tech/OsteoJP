@@ -663,6 +663,8 @@
   "admin.services.deleteBlocked.analytics": "tem registos de estatística",
   "admin.services.deleteBlocked.pack": "está num pacote",
   "admin.services.deleteHasReferences": "Não é possível eliminar: o serviço tem marcações, associações ou preços por local. Arquive-o em alternativa.",
+  "admin.services.archiveHasPacks": "Não é possível arquivar: o serviço é a base de um ou mais pacotes. Altere o serviço base do pacote (ou arquive o pacote) primeiro.",
+  "admin.services.archiveBlockedBy": "Pacotes ligados a este serviço:",
   "admin.services.saved": "Serviço guardado.",
   "admin.services.error": "Não foi possível guardar o serviço.",
   "admin.services.locationPrices": "Preços por local",
