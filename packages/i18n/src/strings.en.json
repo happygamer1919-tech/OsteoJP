@@ -663,6 +663,8 @@
   "admin.services.deleteBlocked.analytics": "has analytics records",
   "admin.services.deleteBlocked.pack": "is used by a pack",
   "admin.services.deleteHasReferences": "Cannot delete: the service has appointments, associations or per-location prices. Archive it instead.",
+  "admin.services.archiveHasPacks": "Cannot archive: the service is the base of one or more packs. Change the pack's base service (or archive the pack) first.",
+  "admin.services.archiveBlockedBy": "Packs bound to this service:",
   "admin.services.saved": "Service saved.",
   "admin.services.error": "Could not save the service.",
   "admin.services.locationPrices": "Prices per location",

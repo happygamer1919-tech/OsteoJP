@@ -3,11 +3,14 @@ import { Button, GlassPanel, StatusBadge } from "@osteojp/ui";
 import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import {
+  archiveBlockedReason,
   effectivePriceCents,
   getServiceDeleteBlockers,
   listServiceLocationPrices,
   listServiceOfferings,
   listServices,
+  packsBoundToService,
+  type BlockingPack,
   type ServiceDeleteBlocker,
   type ServiceView,
 } from "@/lib/admin/services";
@@ -67,6 +70,14 @@ const SERVICE_BLOCKER_KEY: Record<ServiceDeleteBlocker, keyof typeof s> = {
 function serviceBlockedTooltip(blockers: ServiceDeleteBlocker[]): string {
   const reasons = blockers.map((b) => s[SERVICE_BLOCKER_KEY[b]]).join(", ");
   return `${s["admin.services.deleteBlockedPrefix"]} ${reasons}. ${s["admin.services.deleteBlockedSuffix"]}`;
+}
+
+// PACK-04. Why the ARCHIVE control is disabled, NAMING the pacotes rather than
+// counting them: an admin who reads "Pacote 10 - NESA" knows which row to
+// repoint, and this defect survived weeks because nothing anywhere said the
+// name of the thing that was broken.
+function serviceArchiveBlockedTooltip(blocking: BlockingPack[]): string {
+  return `${s["admin.services.archiveBlockedBy"]} ${archiveBlockedReason(blocking)}`;
 }
 
 export default async function ServicesPage({
@@ -129,6 +140,9 @@ export default async function ServicesPage({
   const banner =
     m === "ok" ? { ok: true, text: s["admin.services.saved"] }
     : m === "err:has_references" ? { ok: false, text: s["admin.services.deleteHasReferences"] }
+    // PACK-04. Its own message: it points at a different repair than the delete
+    // one, namely changing the pacote's base service.
+    : m === "err:has_packs" ? { ok: false, text: s["admin.services.archiveHasPacks"] }
     : m && m.startsWith("err") ? { ok: false, text: s["admin.services.error"] }
     : mp === "ok" ? { ok: true, text: s["admin.packs.saved"] }
     : mp === "err:has_references" ? { ok: false, text: s["admin.packs.deleteHasReferences"] }
@@ -185,6 +199,11 @@ export default async function ServicesPage({
                 // cleaned up in the delete tx). Empty => hard-deletable.
                 const blockers = serviceBlockers.get(svc.id) ?? [];
                 const referenced = blockers.length > 0;
+                // PACK-04: archiving a service a pacote is bound to is refused
+                // server-side; this only makes the refusal visible before the
+                // click. `packs` is already loaded for the pack section below,
+                // so naming them costs no extra query.
+                const archiveBlocking = packsBoundToService(packs, svc.id);
                 return (
                   <Fragment key={svc.id}>
                     <tr className={adminTrBorder}>
@@ -244,13 +263,27 @@ export default async function ServicesPage({
                                     : s["admin.services.patientBookableOn"]}
                                 </Button>
                               </form>
-                              <form action={setServiceActiveAction}>
-                                <input type="hidden" name="id" value={svc.id} />
-                                <input type="hidden" name="active" value={svc.isActive ? "false" : "true"} />
-                                <Button type="submit" variant="ghost" size="sm">
-                                  {svc.isActive ? s["admin.services.archive"] : s["admin.services.restore"]}
-                                </Button>
-                              </form>
+                              {/* PACK-04. Archive is disabled while a pacote is bound to
+                                  the service and the tooltip NAMES the pacotes. RESTORE
+                                  is never blocked - it can only repair a binding, and the
+                                  three services already in this state on production have
+                                  to be able to come back. The server refuses regardless;
+                                  this is the affordance. */}
+                              {svc.isActive && archiveBlocking.length > 0 ? (
+                                <span title={serviceArchiveBlockedTooltip(archiveBlocking)} className="inline-flex">
+                                  <Button type="button" variant="ghost" size="sm" disabled>
+                                    {s["admin.services.archive"]}
+                                  </Button>
+                                </span>
+                              ) : (
+                                <form action={setServiceActiveAction}>
+                                  <input type="hidden" name="id" value={svc.id} />
+                                  <input type="hidden" name="active" value={svc.isActive ? "false" : "true"} />
+                                  <Button type="submit" variant="ghost" size="sm">
+                                    {svc.isActive ? s["admin.services.archive"] : s["admin.services.restore"]}
+                                  </Button>
+                                </form>
+                              )}
                               {/* Reference-guarded delete (NO password, W4-15). Referenced
                                   service → disabled control + tooltip (archive-only);
                                   zero-reference → hard-delete. Server-enforced regardless. */}
