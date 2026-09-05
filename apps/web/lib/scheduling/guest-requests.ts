@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { guestBookingRequests, locations, patients, services } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
@@ -53,6 +53,17 @@ export type GuestRequestView = {
   createdAt: Date;
   /** How many existing patients share this number. 0 = genuinely new. */
   possiblePatientMatches: number;
+  /**
+   * LE-guest-convert-abandoned-booking, option B: reception created the person
+   * and the row STAYED HERE, because nothing has recorded a booking for them.
+   *
+   * It is derived from `converted_patient_id`, which is the only fact this
+   * table holds about it. It deliberately does NOT mean "has no appointment" -
+   * nothing writes `converted_appointment_id`, so the system cannot know that -
+   * it means "this queue has no booking recorded against this request", which
+   * is what the row says on screen and is true by construction.
+   */
+  converted: boolean;
 };
 
 /**
@@ -110,7 +121,14 @@ export async function listPendingGuestRequests(
   const locationScope = await viewerLocationScope(ctx);
 
   return runScoped(ctx, async (tx) => {
-    const conds = [eq(guestBookingRequests.status, "pending")];
+    // TWO CONDITIONS NOW, AND THE SECOND ONE IS THE FEATURE. Since the owner's
+    // option B ruling the convert no longer moves the status, so `pending`
+    // alone would keep a converted row here for ever. What takes a row out of
+    // reception's queue is `handled_at` - the dismiss - and nothing else.
+    const conds = [
+      eq(guestBookingRequests.status, "pending"),
+      isNull(guestBookingRequests.handledAt),
+    ];
     // `inArray`, NOT a hand-built IN list. These ids come from the database
     // rather than from a caller, so interpolating them would not be exploitable
     // today - but a parameterised predicate cannot become exploitable when
@@ -131,6 +149,7 @@ export async function listPendingGuestRequests(
         requestedStartsAt: guestBookingRequests.requestedStartsAt,
         requestedEndsAt: guestBookingRequests.requestedEndsAt,
         createdAt: guestBookingRequests.createdAt,
+        convertedPatientId: guestBookingRequests.convertedPatientId,
         // COUNTED IN THE SAME QUERY, as a correlated subquery, so the flag and
         // the row come from ONE snapshot. Two round trips could report a match
         // for a patient created between them, or miss one deleted between them.
@@ -172,6 +191,7 @@ export async function listPendingGuestRequests(
       requestedEndsAt: r.requestedEndsAt,
       createdAt: r.createdAt,
       possiblePatientMatches: Number(r.matches ?? 0),
+      converted: r.convertedPatientId !== null,
     }));
   });
 }
@@ -198,7 +218,15 @@ export async function countPendingGuestRequests(ctx: RequestContext): Promise<nu
   const locationScope = await viewerLocationScope(ctx);
 
   return runScoped(ctx, async (tx) => {
-    const conds = [eq(guestBookingRequests.status, "pending")];
+    // THE SAME TWO CONDITIONS AS THE LIST, and the paragraph above this function
+    // is why: a badge that disagrees with the list it describes is its own
+    // defect. Option B made the predicate two clauses instead of one, and a
+    // count still reading `status = 'pending'` alone would have counted every
+    // converted row this queue no longer shows once it is dismissed.
+    const conds = [
+      eq(guestBookingRequests.status, "pending"),
+      isNull(guestBookingRequests.handledAt),
+    ];
     if (locationScope) {
       conds.push(inArray(guestBookingRequests.locationId, locationScope));
     }

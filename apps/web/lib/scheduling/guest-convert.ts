@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { guestBookingRequests, patients } from "@osteojp/db";
 import { can, type Role } from "@osteojp/auth";
 
@@ -60,27 +60,38 @@ import { patientPhoneMatchConds } from "./guest-match";
  * caller cared to name, which is mis-linking with the flag still switched on.
  *
  * ===========================================================================
- * "converted" IS SPELLED `confirmed`, AND THAT IS A CONSTRAINT, NOT A CHOICE
+ * THE CONVERT NO LONGER MOVES THE STATUS. OWNER RULING 2026-09-06, OPTION B.
  * ===========================================================================
- * Migration 0063 pins the vocabulary:
- *   CONSTRAINT guest_booking_requests_status_check
- *     CHECK (status IN ('pending', 'confirmed', 'declined'))
- * There is no 'converted' member and adding one is a migration. So a converted
- * request is `status = 'confirmed'` WITH `converted_patient_id` set, which is
- * exactly the pair 0063 created those columns for. The queue reads
- * `status = 'pending'`, so the row leaves it either way; `converted_patient_id`
- * is what distinguishes a conversion from a decline after the fact.
+ * It used to write `status = 'confirmed'`, and the queue reads
+ * `status = 'pending'`, so the row left the queue the moment a patient was
+ * created. Reception could then be interrupted before booking, and the person
+ * who asked for an appointment had a record, no appointment, and nothing
+ * chasing them. That was carded as LE-guest-convert-abandoned-booking and the
+ * owner ruled option B: the request STAYS PENDING, the queue keeps showing it,
+ * and it says what it is - `Convertido - sem marcação`.
  *
- * `converted_appointment_id` IS LEFT NULL HERE ON PURPOSE. No appointment exists
- * yet — see the first section. It is the column that records the booking once the
- * staff path makes one, and writing an id into it now would be a claim that a
- * patient has an appointment when they have not.
+ * SO THE STATUS NOW MEANS WHAT 0063 SAYS IT MEANS. `confirmed` is reserved for
+ * a request that became a booking, which nothing writes yet, and a request that
+ * never became one is never labelled as though it did. That is a truer reading
+ * of the vocabulary than the one this file shipped with, not a workaround for
+ * it.
  *
- * THE GAP THAT LEAVES, STATED RATHER THAN HIDDEN: reception can convert and then
- * abandon the booking drawer, and the request has already left the queue. The
- * patient row survives that — it is created, audited, findable in Pacientes, and
- * "Nova marcação" from their profile (W6-03) resumes the flow — so nothing is
- * lost, but nothing chases it either. Carded as LE-guest-convert-abandoned-booking.
+ * WHAT LEAVES THE QUEUE IS `handled_at`, AND IT IS A DISMISS RATHER THAN A
+ * STATE. The owner's words: "the reception action is a dismiss on the queue
+ * row, not a status change on the request." `handled_at` / `handled_by` are the
+ * only columns 0063 gives that meaning to - "who finished with this, and when" -
+ * they are read by nothing else in the codebase, and using them costs no
+ * migration. `dismissGuestRequest` below is the only writer.
+ *
+ * THE CONSEQUENCE, STATED SO NOBODY READS IT AS A BUG: the happy path is now
+ * two actions. Convert, book, come back, dismiss. That is the cost the owner
+ * accepted, and it buys the case that has no other guard - the one where the
+ * second step never happens.
+ *
+ * `converted_appointment_id` IS STILL LEFT NULL, and nothing in the repository
+ * has ever written it. Filling it is the threading of a request id through
+ * `createAppointment` - the change this whole shape exists to avoid - and that
+ * was option A, which the owner declined.
  */
 
 /** Internal: the only way to abort the transaction after the patient insert. */
@@ -105,6 +116,10 @@ export type GuestConvertError =
   | "already_handled"
   /** STAFF-02: the request belongs to a clinic outside the actor's assignment. */
   | "location_not_assigned"
+  /** A dismiss was attempted on a request nobody has converted. The queue may
+   *  only be emptied by resolving a person, never by hiding the row - so this
+   *  is its own code rather than a silent no-op. */
+  | "not_converted"
   /** `existing_patient` named a patient this phone number does not match. The
    *  flag-never-link refusal, named separately so a test can assert exactly it
    *  and reception is told WHICH thing was refused. */
@@ -188,6 +203,8 @@ export async function listGuestRequestMatches(
     const [request] = await tx
       .select({
         status: guestBookingRequests.status,
+        convertedPatientId: guestBookingRequests.convertedPatientId,
+        handledAt: guestBookingRequests.handledAt,
         phoneE164: guestBookingRequests.phoneE164,
         locationId: guestBookingRequests.locationId,
       })
@@ -196,7 +213,16 @@ export async function listGuestRequestMatches(
       .limit(1);
 
     if (!request) return { ok: false as const, error: "not_found" as const };
-    if (request.status !== "pending") {
+    // THREE WAYS TO BE HANDLED NOW, NOT ONE. A declined request, a request
+    // somebody already converted, and a request somebody already dismissed. The
+    // status alone stopped being the whole answer when the convert stopped
+    // moving it, and a guard that still read only the status would offer the
+    // resolution dialog for a person who already has a record.
+    if (
+      request.status !== "pending" ||
+      request.convertedPatientId !== null ||
+      request.handledAt !== null
+    ) {
       return { ok: false as const, error: "already_handled" as const };
     }
     if (!isLocationBookable(await bookingLocationScope(ctx), request.locationId)) {
@@ -252,6 +278,8 @@ export async function convertGuestRequest(
       .select({
         id: guestBookingRequests.id,
         status: guestBookingRequests.status,
+        convertedPatientId: guestBookingRequests.convertedPatientId,
+        handledAt: guestBookingRequests.handledAt,
         fullName: guestBookingRequests.fullName,
         phone: guestBookingRequests.phone,
         phoneE164: guestBookingRequests.phoneE164,
@@ -264,7 +292,16 @@ export async function convertGuestRequest(
       .limit(1);
 
     if (!request) return { ok: false, error: "not_found" };
-    if (request.status !== "pending") return { ok: false, error: "already_handled" };
+    // SAME THREE-WAY GUARD AS THE DIALOG ABOVE, and it is the one that stops a
+    // second convert creating a SECOND patient for one request now that the
+    // status no longer moves out from under it.
+    if (
+      request.status !== "pending" ||
+      request.convertedPatientId !== null ||
+      request.handledAt !== null
+    ) {
+      return { ok: false, error: "already_handled" };
+    }
 
     // ================================================================= //
     // STAFF-02 - THE SERVER REFUSES A LOCATION OUTSIDE THE ACTOR'S SCOPE.
@@ -311,20 +348,28 @@ export async function convertGuestRequest(
       patientId = created.id;
     }
 
-    // CONDITIONAL ON `status = 'pending'` IN THE WRITE ITSELF, not only on the
-    // read above. Two receptionists converting the same row race between the
-    // SELECT and the UPDATE; the loser must not overwrite the winner's
-    // converted_patient_id. Zero rows updated means somebody got there first.
+    // CONDITIONAL IN THE WRITE ITSELF, not only on the read above. Two
+    // receptionists converting the same row race between the SELECT and the
+    // UPDATE; the loser must not overwrite the winner's converted_patient_id.
+    // Zero rows updated means somebody got there first.
+    //
+    // THE PREDICATE MOVED WITH THE SHAPE. It used to be `status = 'pending'`
+    // alone, which worked only because the winner's own write changed the
+    // status. It no longer does, so `converted_patient_id IS NULL` is what
+    // makes this write lose the race - and `handled_at IS NULL` refuses a
+    // convert on a row somebody dismissed while this transaction was open.
+    // Dropping either one would leave two receptionists creating two patients
+    // for one request, which is the duplicate the whole flow exists to avoid.
     const updated = await tx
       .update(guestBookingRequests)
-      .set({
-        status: "confirmed",
-        convertedPatientId: patientId,
-        handledAt: sql`now()`,
-        handledBy: ctx.userId,
-      })
+      .set({ convertedPatientId: patientId })
       .where(
-        and(eq(guestBookingRequests.id, request.id), eq(guestBookingRequests.status, "pending")),
+        and(
+          eq(guestBookingRequests.id, request.id),
+          eq(guestBookingRequests.status, "pending"),
+          isNull(guestBookingRequests.convertedPatientId),
+          isNull(guestBookingRequests.handledAt),
+        ),
       )
       .returning({ id: guestBookingRequests.id });
 
@@ -368,5 +413,102 @@ export async function convertGuestRequest(
     revalidatePath("/notificacoes");
     revalidatePath("/patients");
   }
+  return result;
+}
+
+/**
+ * LE-guest-convert-abandoned-booking, OPTION B. RECEPTION DISMISSES THE ROW.
+ *
+ * ===========================================================================
+ * WHAT IT IS, AND THE ONE THING IT IS NOT
+ * ===========================================================================
+ * It takes a CONVERTED request off reception's queue. It is not a decline, it
+ * is not a confirmation, and it does not touch `status` - the owner's ruling in
+ * his words: "a dismiss on the queue row, not a status change on the request."
+ * The request stays `pending` forever, which is the truth: nobody ever turned it
+ * into a booking, and `confirmed` would say somebody had.
+ *
+ * ===========================================================================
+ * IT REFUSES ON A REQUEST NOBODY HAS CONVERTED, AND THAT IS THE POINT OF IT
+ * ===========================================================================
+ * A dismiss that worked on any row would be a way to empty the queue without
+ * resolving a person - the same outcome as the defect this ruling closes, just
+ * reached deliberately. So `converted_patient_id IS NULL` is refused as
+ * `not_converted`, and the only way a stranger's request leaves this queue is
+ * with a patient record at the other end of it.
+ *
+ * ===========================================================================
+ * SAME GATE AND SAME SCOPE AS THE CONVERT, DERIVED THE SAME WAY
+ * ===========================================================================
+ * `isFrontDesk` and `bookingLocationScope`, not copies of the role list or the
+ * assignment set. A dismiss is the back half of the convert and a receptionist
+ * who may not convert an LV request may not clear it either - STAFF-02 applies
+ * to the whole pair or to neither.
+ */
+export async function dismissGuestRequest(
+  requestId: string,
+): Promise<{ ok: true } | { ok: false; error: GuestConvertError }> {
+  const ctx = await requireRequestContext();
+  if (!isFrontDesk(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!requestId) return { ok: false, error: "validation" };
+
+  const result = await runScoped<{ ok: true } | { ok: false; error: GuestConvertError }>(
+    ctx,
+    async (tx) => {
+      const [request] = await tx
+        .select({
+          id: guestBookingRequests.id,
+          status: guestBookingRequests.status,
+          convertedPatientId: guestBookingRequests.convertedPatientId,
+          handledAt: guestBookingRequests.handledAt,
+          locationId: guestBookingRequests.locationId,
+        })
+        .from(guestBookingRequests)
+        .where(eq(guestBookingRequests.id, requestId))
+        .limit(1);
+
+      if (!request) return { ok: false as const, error: "not_found" as const };
+      if (request.handledAt !== null) {
+        return { ok: false as const, error: "already_handled" as const };
+      }
+      if (!isLocationBookable(await bookingLocationScope(ctx), request.locationId)) {
+        return { ok: false as const, error: "location_not_assigned" as const };
+      }
+      // ORDERED AFTER THE SCOPE CHECK ON PURPOSE. A receptionist outside the
+      // clinic must be told they are outside it, not told about the state of a
+      // request they may not read.
+      if (request.convertedPatientId === null) {
+        return { ok: false as const, error: "not_converted" as const };
+      }
+
+      // `handled_at IS NULL` IN THE WRITE, for the same reason the convert
+      // carries its own predicate: two receptionists clearing the same row race
+      // between this SELECT and this UPDATE, and the second one must be told
+      // rather than silently overwrite who cleared it.
+      const updated = await tx
+        .update(guestBookingRequests)
+        .set({ handledAt: sql`now()`, handledBy: ctx.userId })
+        .where(
+          and(eq(guestBookingRequests.id, request.id), isNull(guestBookingRequests.handledAt)),
+        )
+        .returning({ id: guestBookingRequests.id });
+
+      if (updated.length === 0) {
+        return { ok: false as const, error: "already_handled" as const };
+      }
+
+      // THE PATIENT IS THE ENTITY, not the request, so this audit row sits with
+      // the other one on the same person. Ids and the action only - hard rule 7.
+      await writeAudit(tx, ctx, {
+        action: "patient.guest_request_dismissed",
+        entityId: request.convertedPatientId,
+        metadata: { guestRequestId: request.id },
+      });
+
+      return { ok: true as const };
+    },
+  );
+
+  if (result.ok) revalidatePath("/notificacoes");
   return result;
 }
