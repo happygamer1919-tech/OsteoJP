@@ -1542,5 +1542,19 @@
   "inspector.editBlockEndNotAfterStart": "A hora de fim tem de ser depois da hora de início.",
   "inspector.editSaved": "Dia guardado.",
   "inspector.empty": "Sem terapeutas para mostrar.",
-  "admin.workingHours.datedAhead": "Este dia tem horário definido a partir de {date}. O horário abaixo é o que está em vigor hoje."
+  "admin.workingHours.datedAhead": "Este dia tem horário definido a partir de {date}. O horário abaixo é o que está em vigor hoje.",
+  "reschedule.queue.heading": "Pedidos de remarcação",
+  "reschedule.queue.lede": "Pacientes que pediram para mudar uma marcação já existente, através da mensagem de confirmação.",
+  "reschedule.queue.empty": "Sem pedidos de remarcação.",
+  "reschedule.queue.emptyHint": "Quando um paciente pede para mudar uma marcação, o pedido aparece aqui até alguém o tratar.",
+  "reschedule.queue.requestedAt": "Pedido em",
+  "reschedule.queue.appointment": "Marcação",
+  "reschedule.queue.practitioner": "Terapeuta",
+  "reschedule.queue.unknownPatient": "Paciente não identificado",
+  "reschedule.queue.unknownPractitioner": "Sem terapeuta atribuído",
+  "reschedule.queue.via.sms_code": "Ligação da mensagem de confirmação",
+  "reschedule.queue.markHandled": "Marcar como tratado",
+  "reschedule.queue.marking": "A marcar…",
+  "reschedule.queue.markFailed": "Não foi possível marcar este pedido. Atualize a página.",
+  "reschedule.queue.note": "Marcar como tratado não altera a marcação. Remarque na agenda como habitualmente."
 }

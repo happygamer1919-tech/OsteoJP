@@ -1545,6 +1545,94 @@ export const reminderDispatches = pgTable(
   ],
 );
 
+/* ================================================================== */
+/* 0080 — A RESCHEDULE REQUEST IS A ROW.                              */
+/* SEC-reschedule-request-has-no-row, the fix half of INC-CONFIRM-10. */
+/* ================================================================== */
+
+/**
+ * "This patient asked to move this appointment."
+ *
+ * WHY IT IS NOT A `staff_notifications` ROW, which is the obvious place and was
+ * the first design. Two reasons, and the second decided it:
+ *
+ *  1. `staff_notifications.kind` is CHECK-pinned to five values and none of them
+ *     says this. `appointment_request` means a request for a NEW booking;
+ *     `rescheduled` ASSERTS THE APPOINTMENT HAS MOVED, which is false at the
+ *     moment a patient asks, in a clinical record.
+ *  2. THE TWO ROWS HAVE OPPOSITE DURABILITY DISCIPLINES. `staff_notifications`
+ *     is written post-commit and best-effort by `emitPatientChange`, which never
+ *     throws — SR-31 exists because a lost emit hid a pedido reception was never
+ *     told about. THIS row is written INSIDE THE PATIENT'S OWN TRANSACTION,
+ *     because losing it reproduces the incident it fixes.
+ *
+ * SO THE PRACTITIONER NOTIFICATION IS A READ, NOT A SECOND WRITE. One row per
+ * request; who must see it is derived from the APPOINTMENT at read time. "Both
+ * practitioners are notified when practitioner_2_id is set" (owner, 2026-09-04)
+ * is therefore true by construction and cannot half-fail, which two INSERTs
+ * could.
+ *
+ * THE APPOINTMENT IS NEVER TOUCHED (owner, 2026-09-04). A patient's press can
+ * never cancel or move a booking by itself; it asks, and reception decides.
+ */
+export const appointmentRescheduleRequests = pgTable(
+  "appointment_reschedule_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Rule 1. Denormalised ON PURPOSE and unlike a practitioner or location
+     *  would be: tenant_id is IMMUTABLE for an appointment, so this copy cannot
+     *  drift, and rule 2 needs it on the row to key the policy without a join. */
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    appointmentId: uuid("appointment_id")
+      .notNull()
+      .references(() => appointments.id, { onDelete: "cascade" }),
+    /** Also immutable: an appointment does not change patient. */
+    patientId: uuid("patient_id")
+      .notNull()
+      .references(() => patients.id, { onDelete: "cascade" }),
+    /** When the PATIENT pressed, not when the row was written — the same
+     *  distinction `staffNotifications.occurredAt` makes, for the same reason. */
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),
+    /** How they asked. CHECK-pinned to one value today so a second channel is a
+     *  deliberate migration and not a typo. */
+    via: text("via").notNull(),
+    /** NULL = still on reception's queue. A column and not a derived condition:
+     *  "the appointment moved" is not the same fact as "somebody dealt with
+     *  this", and a request reception DECLINED must still leave the queue. */
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+    /** SET NULL, not CASCADE: removing the staff member who handled a request
+     *  must not delete the record that it WAS handled. */
+    handledBy: uuid("handled_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** PARTIAL: the queue asks one question — what is unhandled, oldest first —
+     *  so the index holds the live set rather than every request ever made. */
+    index("appt_reschedule_req_open_idx")
+      .on(t.tenantId, t.requestedAt)
+      .where(sql`${t.handledAt} is null`),
+    index("appt_reschedule_req_appointment_idx").on(t.appointmentId),
+    /** ONE OPEN REQUEST PER APPOINTMENT, enforced by the database rather than by
+     *  the writer. The confirm code is consumed by the same press, so a second
+     *  press on the SAME code cannot reach here — but a second reminder carries
+     *  a second code, and reception should see one decision per appointment
+     *  rather than a press count. PARTIAL, so a handled request never blocks a
+     *  later genuine one. */
+    uniqueIndex("appt_reschedule_req_one_open_uq")
+      .on(t.appointmentId)
+      .where(sql`${t.handledAt} is null`),
+    check("appointment_reschedule_requests_via_check", sql`${t.via} in ('sms_code')`),
+    /** handled_by without handled_at, or the reverse, is a half-written state.
+     *  Refused here rather than tidied in a reader. */
+    check(
+      "appointment_reschedule_requests_handled_pair_check",
+      sql`(${t.handledAt} is null) = (${t.handledBy} is null)`,
+    ),
+  ],
+);
+
 export const auditLog = pgTable(
   "audit_log",
   {

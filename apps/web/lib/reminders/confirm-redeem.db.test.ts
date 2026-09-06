@@ -88,6 +88,37 @@ d("redeemConfirmCode against a real database", () => {
     return (list[0] as { n: number }).n;
   };
 
+  /**
+   * 0080 — the row the press must leave behind.
+   *
+   * THE INCIDENT WAS THAT THIS COUNT WAS ZERO. A patient pressed, was shown
+   * "Pedido recebido", and nothing existed anywhere that meant "this patient
+   * asked to move an appointment". `auditCount` above was 1 the whole time —
+   * audit_log is not a screen — which is why a separate helper is needed rather
+   * than a stronger assertion on that one.
+   */
+  const requestRows = async (
+    appointmentId: string,
+  ): Promise<{ patient_id: string; via: string; handled_at: string | null }[]> => {
+    const rows = (await sql.execute(
+      raw`select patient_id::text as patient_id, via, handled_at
+            from appointment_reschedule_requests
+           where appointment_id = ${appointmentId}`,
+    )) as unknown as { patient_id: string; via: string; handled_at: string | null }[];
+    return Array.isArray(rows) ? rows : ((rows as { rows?: unknown[] }).rows ?? []) as never;
+  };
+
+  /** The appointment's own state, to prove the request did not touch it. */
+  const appointmentState = async (
+    appointmentId: string,
+  ): Promise<{ status: string; starts_at: string }> => {
+    const rows = (await sql.execute(
+      raw`select status, starts_at::text as starts_at from appointments where id = ${appointmentId}`,
+    )) as unknown as { status: string; starts_at: string }[];
+    const list = Array.isArray(rows) ? rows : ((rows as { rows?: unknown[] }).rows ?? []);
+    return list[0] as { status: string; starts_at: string };
+  };
+
   beforeAll(async () => {
     process.env.REMINDERS_CONFIRM_CODE_SECRET ??= SECRET;
     const { getDbAdmin } = await import("@osteojp/db");
@@ -262,6 +293,49 @@ d("redeemConfirmCode against a real database", () => {
     // answer is the same one a forged code gets.
     expect(second).toEqual({ outcome: "generic" });
     expect(await auditCount(a.appointmentId)).toBe(1);
+  });
+
+  it("0080: THE PRESS LEAVES A DURABLE ROW, which is the whole of INC-CONFIRM-10", async () => {
+    // Before 0080 this assertion was the one nobody could write: the press
+    // produced a consumed_at and an audit row and nothing a screen could read.
+    const { redeemConfirmCode } = await import("./confirm-redeem");
+    const a = await freshAppointmentWithCode();
+    const before = await appointmentState(a.appointmentId);
+
+    expect(await requestRows(a.appointmentId)).toHaveLength(0);
+    const out = await redeemConfirmCode({
+      code: a.code,
+      action: "pedido",
+      now: new Date(),
+      ip: null,
+    });
+    expect(out).toEqual({ outcome: "pedido" });
+
+    const rows = await requestRows(a.appointmentId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.via).toBe("sms_code");
+    // Unhandled: it is ON reception's queue, which is what "durable row visible
+    // in reception's queue" means.
+    expect(rows[0]?.handled_at).toBeNull();
+
+    // THE ADDITIVE RULING (owner, 2026-09-04): the appointment is UNTOUCHED. A
+    // patient's press can never move or cancel a booking by itself.
+    const after = await appointmentState(a.appointmentId);
+    expect(after.status).toBe(before.status);
+    expect(after.starts_at).toBe(before.starts_at);
+  });
+
+  it("0080: a REFUSED code leaves NO request row, so the queue cannot be filled by guessing", async () => {
+    const { redeemConfirmCode } = await import("./confirm-redeem");
+    const past = await freshAppointmentWithCode({ startsInHours: -1 });
+    const out = await redeemConfirmCode({
+      code: past.code,
+      action: "pedido",
+      now: new Date(),
+      ip: null,
+    });
+    expect(out).toEqual({ outcome: "generic" });
+    expect(await requestRows(past.appointmentId)).toHaveLength(0);
   });
 
   it("TWO SIMULTANEOUS pedidos produce exactly ONE request", async () => {
