@@ -82,8 +82,45 @@ non-engineer needs.*
 
 ---
 
+## THE FIRST THING: ARMING `PEDIDO_QUEUE_IS_DURABLE`
+
+**It is `false` in `apps/web/lib/reminders/confirm-page-gates.ts`. The fix behind
+it is BUILT AND ON PRODUCTION. What is left is one line and the owner's screen.**
+
+```
+1. flip     PEDIDO_QUEUE_IS_DURABLE = false  ->  true      (one line, one PR)
+2. deploy   merge it and let it reach production
+3. press    "Pedir remarcacao" from a PHONE, on a real 24h confirm link
+4. watch    /notificacoes -> "Pedidos de remarcacao": the patient, the
+            appointment, both practitioners, a "Marcar como tratado" button
+5. revert   if it does not appear, revert the one line
+```
+
+**THE FLIP MUST COME BEFORE THE TEST, AND THAT IS NOT A CHOICE.** The constant
+gates the **render AND the action**, so anybody holding the URL is refused too.
+The control cannot be exercised while it is false — so flipping it is what makes
+the test possible, and the test is what justifies the flip. Do it in that order,
+deliberately, and revert on failure.
+
+**WHY IT IS STILL FALSE WITH THE FIX ALREADY SHIPPED — do not re-derive this.**
+This capability was armed once before **on a false comment**. A committed comment
+claimed reception's queue derived from "the row the patient's press writes". *The
+press wrote no such row.* Patients pressed it, were shown **"Pedido recebido"**,
+and nothing was written and nobody was told — not reception, not the therapist.
+The gate is closed **on purpose**, and it stays closed until the owner has seen
+the loop work on a deployed screen. It is not neglect and it is not a leftover.
+
+**What is already true:** migration `0080` is applied to production (journal 78);
+the request row is written **inside the patient's own transaction**, so it cannot
+be lost the way a best-effort notification emit can; `/notificacoes` renders it;
+and both practitioners see it through the same policy expression that lets them
+see the appointment, so it cannot half-fail. Card:
+`INC-CONFIRM-10-pedido-reached-nobody`, which carries the same sequence.
+
+---
+
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**311 cards on the board. 241 shipped, 70 open. Launch readiness 9/9, every launch gate passes.**
+**312 cards on the board. 241 shipped, 71 open. Launch readiness 9/9, every launch gate passes.**
 Plus **58 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
