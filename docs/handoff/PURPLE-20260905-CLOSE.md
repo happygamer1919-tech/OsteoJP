@@ -298,9 +298,8 @@ person to run it reads the limit before they read the ranking.
 
 **This is the artifact collision one layer down, and unlike the artifact it is
 not recoverable.** A stale render is repaired by the next render, because the
-JSON is truth and the artifact is a picture of it. A stale COMMIT is truth: it
-lands on `main` as a deliberate-looking change that removes work, and the only
-thing that undoes it is somebody noticing.
+JSON is truth and the artifact is a picture of it. A stale COMMIT is truth: what
+it drops is gone unless somebody notices.
 
 **It was nearly paid for on 2026-09-06 and the near-miss is the whole record.**
 BLUE's board worktree was created at `4e265efc`. PURPLE merged `#1199` after
@@ -312,23 +311,44 @@ their board against `origin/main` card by card before committing, rather than
 trusting the worktree's age**, and the committed diff then touched only the three
 things they meant to change.
 
-**Why the usual defences do not fire.** `git` reports no conflict: one side
-edited the file, the other side is simply older, and a rebase replays the newer
-commit cleanly over the older base only if you HAVE rebased. The board validator
-passes — a board missing a paragraph is still a valid board. `test:scripts`
-passes for the same reason. The reconciler passes. **Every gate this repo has is
-green on a board that has quietly lost a card's content**, because none of them
-knows what the board said an hour ago.
+> **A FIRST VERSION OF THIS FINDING SAID GIT WOULD HAVE MERGED IT SILENTLY.
+> THAT WAS WRONG, BLUE CAUGHT IT, AND THE TRUTH IS WORSE IN A MORE USEFUL WAY.**
+> Simulated here rather than taken on report: a commit built on `4e265efc`
+> carrying a new card, merged against `a7c69489`, gives
+> `merge-tree` **exit 1** and `CONFLICT (content): Merge conflict in
+> docs/board/portal-board.json`. Git does NOT merge it silently, and `main` is
+> `strict`, so the branch could not have merged without surfacing this.
 
-**So the rule is a diff, not a discipline.** `§1.2` already says to rebase
-immediately before a board commit; that is necessary and it is not sufficient,
-because it is a thing a person has to remember at the right moment. What
-actually catches this is comparing the object you are about to commit against
-`origin/main` FIELD BY FIELD and looking at what DISAPPEARS. `LE-board-artifact-
-has-no-merge-last-writer-wins` proposes exactly that check one layer up, for the
-renderer; the same argument applies to the commit, and nothing implements it
-there either. **Attention is not a mechanism.** It worked twice today; that is
-not evidence it will work a third time.
+**What git hands you instead is the hazard.** The conflict is **ONE HUNK**, and
+reproducing it locally gives exactly this shape:
+
+```
+<<<<<<< ours     SCHED-15's "notes" line, 4778 chars, FUSED with an entire
+                 unrelated new card that follows it
+||||||| base     the same 4778-char line
+=======
+>>>>>>> theirs   the same line, 6169 chars — the two owner rulings
+```
+
+**Taking THEIRS drops the new card. Taking OURS drops the rulings. The correct
+resolution is neither side**, and it is a hand-edit inside a 6,000-character
+JSON string. A resolver in a hurry picks a side, and both sides are valid JSON.
+
+**That is why no gate catches the loss.** `validate-board` passes either way — a
+board missing a card is still a valid board. `test:scripts` passes. The
+reconciler passes. **A dropped card is not a MISMATCH, it is an ABSENCE**, and
+nothing in this repo knows what the board said an hour ago.
+
+**So the rule is a predicate, not a discipline.** `§1.2`'s "rebase immediately
+before a board commit" is necessary and not sufficient: updating the branch is
+what PRODUCES this conflict. What catches the loss regardless of how it happened
+is a check in CI that **fails a board PR removing a card id or ruling id present
+on its merge base, unless the removal is declared** — one predicate, in a job
+that already runs. That is `LE-a-stale-worktree-drops-another-lanes-board-work-
+on-resolution`, carded by BLUE and deliberately not built, written to be found
+beside its artifact twin `LE-board-artifact-has-no-merge-last-writer-wins`.
+**Attention is not a mechanism.** It worked twice today; that is not evidence it
+will work a third time.
 
 ### 3.7 Explaining a mechanism is not applying it, and the gap can be one paragraph wide
 
@@ -398,8 +418,16 @@ and this document names them as the next harness work.
 
 **`PEDIDO_QUEUE_IS_DURABLE` is still `false`, on purpose, and flipping it is
 BLUE's to run.** It is one line —
-`apps/web/lib/reminders/confirm-page-gates.ts:94` — and it is recorded in BOTH
-handoffs so neither lane re-derives why it is still false.
+`apps/web/lib/reminders/confirm-page-gates.ts:94`.
+
+**THE LOAD-BEARING COPY IS ON THE CARD `INC-CONFIRM-10`, NOT HERE.** BLUE put it
+there deliberately and the reasoning is worth keeping: `PORTAL-REHYDRATE` §2
+sends a fresh session to the BOARD, and neither `HANDOVER-STATE.md` nor this
+handoff is in the load order. §3 then requires every `in_flight` card in the
+first output, and `INC-CONFIRM-10` is `in_flight` — so the boot procedure
+GUARANTEES the sequence is read. **A close written only into a handoff would not
+have been found.** This copy is the redundant one; if the two ever disagree, the
+card wins.
 
 **Conditions 1 and 2 of its own reopening list are MET.** Migration 0080 created
 `appointment_reschedule_requests`; `confirm-redeem.ts` writes the row INSIDE THE
