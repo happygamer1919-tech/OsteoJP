@@ -7,6 +7,22 @@ name: Auto-update PR branches
 # the PR's CI (GitHub anti-recursion), leaving the PR stuck on "expected" checks
 # forever. So this workflow uses a repo secret PAT (AUTO_UPDATE_TOKEN) for the
 # API calls, and no-ops safely if that secret is absent.
+#
+# A PASS THAT COULD NOT DO ITS JOB MUST NOT REPORT SUCCESS. Added 2026-09-06,
+# after this workflow spent at least two days failing EVERY update with HTTP 404
+# and showing three green ticks on the runs list. The update arm printed the
+# failure and continued, nothing set a non-zero exit, and the defect was found
+# only because a lane noticed three PRs sitting at BEHIND and went and read the
+# logs. That is the same shape as a pre-check whose output the pager ate: the
+# instrument answers, the answer is discarded, and the absence of an alarm is
+# read as an all-clear.
+#
+# WHAT THE FAILURE LOOKED LIKE, so the next reader recognises it: the
+# `behind main by N commit(s)` line printed correctly on every PR, which means
+# the LIST and COMPARE calls succeeded and only `PUT .../update-branch` 404'd.
+# A token that can read a repository and not write it. The remedy is the owner's
+# (reissue the PAT with contents: write and pull_requests: write); the remedy for
+# NOT NOTICING is this file.
 
 on:
   push:
@@ -31,6 +47,14 @@ jobs:
             echo "AUTO_UPDATE_TOKEN secret not set, skipping. This workflow no-ops safely until the owner adds the PAT."
             exit 0
           fi
+
+          # THE FAILURE MARKER IS A FILE, AND THAT IS NOT A STYLE CHOICE. The loop
+          # below is the right-hand side of a pipe, so it runs in a SUBSHELL and
+          # a shell variable set inside it does not survive to the end of the
+          # step. A `failed=1` assignment would look like a fix, pass review, and
+          # reproduce the exact defect it was written to remove.
+          failed_marker="${RUNNER_TEMP:-/tmp}/auto-update-failed"
+          rm -f "${failed_marker}"
 
           api() {
             curl -sS -w '\n%{http_code}' \
@@ -63,6 +87,14 @@ jobs:
                 cmp_body=$(printf '%s' "${cmp}" | sed '$d')
                 cmp_code=$(printf '%s' "${cmp}" | tail -n1)
                 if [ "${cmp_code}" != "200" ]; then
+                  # LEFT AS A SKIP DELIBERATELY, and named rather than fixed by
+                  # reflex. A token that has lost write but kept read - the state
+                  # this workflow was actually found in - still compares fine, and
+                  # a token that has lost read entirely already exits 1 at the LIST
+                  # call above. What is left here is the narrow case of one PR the
+                  # compare cannot see, where failing the pass would be a new red
+                  # for a benign reason. If that ever fires in practice, this is
+                  # the line to revisit.
                   echo "PR #${num} (${ref}): compare failed (HTTP ${cmp_code}) - skipping."
                   continue
                 fi
@@ -86,10 +118,20 @@ jobs:
                     printf '%s\n' "${upd_body}"
                     ;;
                   *)
-                    echo "PR #${num} (${ref}): update failed (HTTP ${upd_code}) - continuing with the rest."
+                    # 404 lands here, and so does every other unexpected code.
+                    # It still continues through the remaining PRs - one dead PR
+                    # must not hide the others - but the pass is now a FAILURE.
+                    echo "PR #${num} (${ref}): update failed (HTTP ${upd_code}) - continuing with the rest, but this pass FAILS."
                     printf '%s\n' "${upd_body}"
+                    : > "${failed_marker}"
                     ;;
                 esac
               done
+
+          if [ -e "${failed_marker}" ]; then
+            rm -f "${failed_marker}"
+            echo "::error::At least one branch update FAILED (see the HTTP code above). Every open PR behind main now needs a manual Update branch, and main is protected with strict status checks, so each one costs a full CI cycle. If the code is 404 the AUTO_UPDATE_TOKEN has lost its permissions - reissue it with contents: write and pull_requests: write."
+            exit 1
+          fi
 
           echo "Auto-update pass complete."
