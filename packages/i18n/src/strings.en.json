@@ -1542,5 +1542,19 @@
   "inspector.editBlockEndNotAfterStart": "The end time must be after the start time.",
   "inspector.editSaved": "Day saved.",
   "inspector.empty": "No therapists to show.",
-  "admin.workingHours.datedAhead": "This day has hours defined from {date}. What is below is what is in force today."
+  "admin.workingHours.datedAhead": "This day has hours defined from {date}. What is below is what is in force today.",
+  "reschedule.queue.heading": "Reschedule requests",
+  "reschedule.queue.lede": "Patients who asked to move an existing appointment, from the confirmation message.",
+  "reschedule.queue.empty": "No reschedule requests.",
+  "reschedule.queue.emptyHint": "When a patient asks to move an appointment, the request appears here until somebody deals with it.",
+  "reschedule.queue.requestedAt": "Requested",
+  "reschedule.queue.appointment": "Appointment",
+  "reschedule.queue.practitioner": "Practitioner",
+  "reschedule.queue.unknownPatient": "Patient not identified",
+  "reschedule.queue.unknownPractitioner": "No practitioner assigned",
+  "reschedule.queue.via.sms_code": "Link in the confirmation message",
+  "reschedule.queue.markHandled": "Mark as handled",
+  "reschedule.queue.marking": "Marking…",
+  "reschedule.queue.markFailed": "Could not mark this request. Refresh the page.",
+  "reschedule.queue.note": "Marking as handled does not change the appointment. Reschedule in the agenda as usual."
 }

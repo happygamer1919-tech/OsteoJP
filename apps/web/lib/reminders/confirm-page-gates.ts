@@ -64,6 +64,32 @@ import { webRegistry } from "./notification-registry";
  * A GATE CLOSED IN THE SAME COMMIT AS THE DIAGNOSIS, not after it. Hiding the
  * control is the smaller half; the constant gates the ACTION too, so anybody
  * holding the URL is refused as well.
+ *
+ * ==========================================================================
+ * 2026-09-06: CONDITIONS 1 AND 2 ARE NOW MET. THIS IS STILL false, ON PURPOSE.
+ * ==========================================================================
+ * Migration 0080 created `appointment_reschedule_requests`, and
+ * `confirm-redeem.ts` writes a row into it INSIDE THE PATIENT'S OWN
+ * TRANSACTION — the same transaction as the audit row, so if it does not commit
+ * the patient is not told the request was received. It is independent of
+ * `origin`: a staff-created appointment produces one exactly like a portal
+ * booking. `/notificacoes` renders the queue, and 0080's policy scopes it by
+ * EXISTS against `appointments`, so reception sees their locations' requests
+ * and BOTH practitioners see their own — the owner's 2026-09-04 ruling, true by
+ * construction rather than by a fan-out that could half-fail.
+ *
+ * CONDITION 3 IS THE OWNER'S AND IT HAS NOT HAPPENED. He re-tests the control
+ * on the deployed /c/<code> route. That is the whole of what is left, and it is
+ * why flipping this to `true` is a SEPARATE, ONE-LINE CHANGE rather than part of
+ * the commit that built the durable half.
+ *
+ * THE ORDERING IS AWKWARD AND IS NAMED RATHER THAN QUIETLY RESOLVED: this
+ * constant gates the ACTION as well as the render, so he cannot exercise the
+ * button while it is false. Flipping it is therefore what makes his test
+ * possible, and his test is what justifies the flip. The safe order is: flip,
+ * he presses, the row appears on /notificacoes — and if it does not, revert one
+ * line. What must NOT happen is this flipping as a side effect of shipping the
+ * durable half, which is exactly how it was armed on a false comment last time.
  */
 export const PEDIDO_QUEUE_IS_DURABLE = false;
 

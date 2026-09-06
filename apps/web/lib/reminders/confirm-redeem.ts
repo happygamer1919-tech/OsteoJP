@@ -1,6 +1,6 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
-import { appointments, auditLog } from "@osteojp/db";
+import { appointmentRescheduleRequests, appointments, auditLog } from "@osteojp/db";
 import { withReminderTenantContext } from "./context";
 import {
   consumeConfirmCode,
@@ -72,6 +72,10 @@ const ACTIONABLE = new Set(["scheduled", "confirmed"]);
 type LoadedAppointment = {
   id: string;
   tenantId: string;
+  /** 0080 — the reschedule request row denormalises it, and an appointment
+   *  never changes patient, so reading it here costs nothing and keeps the
+   *  insert from needing a second query inside the patient's transaction. */
+  patientId: string;
   status: string;
   startsAt: Date;
 } | null;
@@ -94,6 +98,7 @@ async function loadAppointment(
       .select({
         id: appointments.id,
         tenantId: appointments.tenantId,
+        patientId: appointments.patientId,
         status: appointments.status,
         startsAt: appointments.startsAt,
       })
@@ -178,6 +183,39 @@ export async function redeemConfirmCode(args: {
   if (!consumed) return GENERIC;
 
   await withReminderTenantContext(appointment.tenantId, async (tx) => {
+    // ==================================================================
+    // THE DURABLE ROW. 0080, and it is the whole of INC-CONFIRM-10's fix.
+    // ==================================================================
+    // Before this, the press wrote `consumed_at` and an audit row and
+    // nothing else, so the patient was shown "Pedido recebido" for a
+    // request that reached no screen and no person. audit_log is not a
+    // screen.
+    //
+    // IT IS IN THE SAME TRANSACTION AS THE AUDIT ROW, and that is the
+    // point rather than a tidiness preference. `emitPatientChange` is
+    // post-commit and best-effort and never throws — which is how SR-31's
+    // lost emit hid a pedido reception was never told about. This row
+    // cannot be lost that way: if it does not commit, neither does the
+    // audit row, and the patient is not told the request was received.
+    //
+    // THE APPOINTMENT IS NOT TOUCHED. Owner ruling 2026-09-04: a patient's
+    // press can never move or cancel a booking by itself. It asks.
+    //
+    // ON CONFLICT DO NOTHING against the partial unique index, so a second
+    // reminder's code pressed for the SAME appointment adds no second row
+    // to reception's queue. It is one decision, not a press count. The
+    // patient still sees "Pedido recebido", which is true — the clinic has
+    // their request.
+    await tx
+      .insert(appointmentRescheduleRequests)
+      .values({
+        tenantId: appointment.tenantId,
+        appointmentId: appointment.id,
+        patientId: appointment.patientId,
+        requestedAt: now,
+        via: "sms_code",
+      })
+      .onConflictDoNothing();
     await writeAudit(tx, {
       tenantId: appointment.tenantId,
       appointmentId: appointment.id,

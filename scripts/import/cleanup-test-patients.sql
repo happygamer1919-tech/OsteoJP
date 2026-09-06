@@ -430,6 +430,11 @@ delete from clinical_records
 delete from invoices
  where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
 
+-- 0080 - a reschedule request is a child of BOTH appointments and patients, so
+-- it goes before appointments for the same reason everything else here does.
+delete from appointment_reschedule_requests
+ where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
+
 -- depth 2 - appointments reference patient_pack_instances (migration 0067),
 -- so they MUST go before the pack instances below.
 delete from appointments

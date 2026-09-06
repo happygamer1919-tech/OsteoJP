@@ -17,6 +17,11 @@ import { PendingRequests, type PendingRequestView } from "./pending-requests";
 import { GuestRequestsQueue, type GuestRequestRow } from "./guest-requests-queue";
 import { listPendingGuestRequests } from "@/lib/scheduling/guest-requests";
 import { StuckConsultations, type StuckConsultationRow } from "./stuck-consultations";
+import {
+  RescheduleRequestsQueue,
+  type RescheduleRequestRow,
+} from "./reschedule-requests-queue";
+import { listOpenRescheduleRequests } from "@/lib/notifications/reschedule-requests";
 import { listStuckConsultations } from "@/lib/consultation/stuck-consultations";
 import { UnreachablePatients, type UnreachablePatientRow } from "./unreachable-patients";
 import { listPatientsUnreachableBySms } from "@/lib/reminders/unreachable-by-sms";
@@ -149,7 +154,7 @@ export default async function NotificacoesPage() {
   // and the data.
   const canReadGuestQueue = can(ctx.role, "guest_requests:read");
 
-  const [entries, requests, guestRequests, stuck, unreachable] = await Promise.all([
+  const [entries, requests, guestRequests, stuck, unreachable, reschedules] = await Promise.all([
     listNotifications(ctx),
     listPendingRequests(ctx),
     canReadGuestQueue ? listPendingGuestRequests(ctx) : Promise.resolve([]),
@@ -165,6 +170,15 @@ export default async function NotificacoesPage() {
     // row is about a PATIENT, so the two ratified patient scopes apply inside
     // the query and there is nothing to hide at this layer.
     listPatientsUnreachableBySms(ctx),
+    // SEC-reschedule-request-has-no-row. NO ROLE BRANCH, and for the STRONGEST
+    // of the three reasons on this page rather than the weakest. The guest
+    // queue is skipped for a therapist because it has no patient to scope by;
+    // the stuck list applies patient scope inside the query. This one is scoped
+    // by migration 0080's own POLICY, which is an EXISTS against `appointments`
+    // evaluated under `appointments_rls` - so each reader gets exactly the
+    // requests for appointments they can already see, decided in the database.
+    // A role branch here would be a second, weaker copy of that.
+    listOpenRescheduleRequests(ctx),
   ]);
   const unread = entries.filter((e) => e.readAt === null).length;
 
@@ -208,6 +222,27 @@ export default async function NotificacoesPage() {
   // reason. `stamp` on the CONSULTATION instant, not on the failure instant: a
   // clinician recognises the appointment by when it happened, and the note they
   // now have to write by hand is a note about that appointment.
+  // SEC-reschedule-request-has-no-row. `stamp` on BOTH instants, and they are
+  // different questions: `appointmentWhen` is the booking as it stands NOW (the
+  // thing reception has to move) and `requestedWhen` is when the patient
+  // pressed (the thing that decides who has waited longest). centre.ts already
+  // established that those two can disagree and that the queue must read the
+  // appointment rather than the request's frozen copy.
+  const rescheduleRows: RescheduleRequestRow[] = reschedules.map((r) => ({
+    id: r.id,
+    patientName: r.patientName,
+    appointmentWhen: stamp(r.startsAt),
+    requestedWhen: stamp(r.requestedAt),
+    practitionerName: r.practitionerName,
+    practitionerTwoName: r.practitionerTwoName,
+    // The channel is rendered through i18n rather than as the raw column, so a
+    // second `via` value is a string key and not a leaked enum on a screen.
+    viaLabel:
+      r.via === "sms_code"
+        ? s["reschedule.queue.via.sms_code"]
+        : s["reschedule.queue.via.sms_code"],
+  }));
+
   const stuckRows: StuckConsultationRow[] = stuck.map((c) => ({
     id: c.id,
     patientName: c.patientName,
@@ -243,6 +278,51 @@ export default async function NotificacoesPage() {
           `stuck-consultations.tsx`: a section that vanishes when the list is
           empty makes "nothing is lost" and "nobody is looking" the same
           screen. */}
+      {/* SEC-reschedule-request-has-no-row - THE SCREEN INC-CONFIRM-10 SAID DID
+          NOT EXIST. A patient pressed "Pedir remarcacao" on a real confirm
+          link, was shown "Pedido recebido", and it reached nobody: the press
+          wrote a consumed_at and an audit row, and audit_log is not a screen.
+
+          PLACED ABOVE THE STUCK LIST, which is a deliberate break from the
+          ordering argument written below it. That argument ranks the
+          IRREVERSIBLE above the merely undone, and it is right - but a patient
+          who has asked to move an appointment and heard nothing is the failure
+          this page was found to have, and the first thing the owner will look
+          for when he re-tests the link. It moves back down once the loop has
+          been confirmed on his screen.
+
+          ALWAYS RENDERED, empty or not, for the reason the two sections below
+          both give in their own words: a section that vanishes when the list is
+          empty makes "nobody has asked" and "the screen is broken" identical -
+          which is precisely the pair this incident was. */}
+      <section className="mb-10" aria-labelledby="reschedule-requests-heading">
+        <h2
+          id="reschedule-requests-heading"
+          className="text-xl font-semibold text-v2-text-primary"
+        >
+          {s["reschedule.queue.heading"]}
+        </h2>
+        <p className="mt-1 mb-4 text-sm text-v2-text-secondary">
+          {s["reschedule.queue.lede"]}
+        </p>
+        <RescheduleRequestsQueue
+          rows={rescheduleRows}
+          labels={{
+            empty: s["reschedule.queue.empty"],
+            emptyHint: s["reschedule.queue.emptyHint"],
+            requestedAt: s["reschedule.queue.requestedAt"],
+            appointment: s["reschedule.queue.appointment"],
+            practitioner: s["reschedule.queue.practitioner"],
+            unknownPatient: s["reschedule.queue.unknownPatient"],
+            unknownPractitioner: s["reschedule.queue.unknownPractitioner"],
+            markHandled: s["reschedule.queue.markHandled"],
+            marking: s["reschedule.queue.marking"],
+            markFailed: s["reschedule.queue.markFailed"],
+            note: s["reschedule.queue.note"],
+          }}
+        />
+      </section>
+
       <section className="mb-10" aria-labelledby="stuck-consultations-heading">
         <h2
           id="stuck-consultations-heading"

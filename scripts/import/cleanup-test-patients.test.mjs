@@ -35,6 +35,8 @@ const DELETE_ORDER = [
   "appointment_notes",
   "clinical_records",
   "invoices",
+  // 0080 — a child of BOTH appointments and patients, so it precedes appointments.
+  "appointment_reschedule_requests",
   "appointments",
   "analytics_events",
   "clinical_episodes",
