@@ -1,7 +1,8 @@
 # OsteoJP — PURPLE session close, 2026-09-05
 
-Written because the owner is closing out and BLUE has an unapplied migration in
-flight. **Nothing here replaces repo ground truth.** `origin/main`, the board
+Written because the owner is closing out and BLUE had an unapplied migration in
+flight. **That migration was applied on production on 2026-09-06 — see §2 and
+§6.** **Nothing here replaces repo ground truth.** `origin/main`, the board
 JSON and `docs/board/PORTAL-REHYDRATE.md` outrank this document; it exists to
 say what a fresh session would otherwise have to rediscover, and to carry three
 findings that are worth more than the code they came with.
@@ -21,11 +22,19 @@ Neither touches a migration. Neither contacts production.
 
 ## 2. What is in flight, and whose it is
 
-**BLUE holds an unapplied migration.** `#1175` — migration **0079**, revokes
-`EXECUTE` from `service_role` and `anon` on the twenty SECURITY DEFINER
-functions. Card `SEC-security-definer-service-role-execute`, gate
-`owner_merge`, **OPEN, NOT MERGED, NOT APPLIED**. It is the one thing on the
-board that changes production schema state, and it is the owner's to release.
+**BLUE's migration is APPLIED. Its PR is still OPEN.** `#1175` — migration
+**0079**, revokes `EXECUTE` from `service_role` and `anon` on the twenty
+SECURITY DEFINER functions. Card `SEC-security-definer-service-role-execute`,
+gate `owner_merge`. **APPLIED ON PRODUCTION 2026-09-06 by the owner. `#1175` is
+STILL OPEN, and `origin/main` does NOT contain 0079** — `main`'s journal is 76
+rows, production's is 77.
+
+**Production is one migration AHEAD of `main`, and that is the thing a fresh
+session is most likely to get backwards.** The applied file lives on the branch
+`fix/SEC-0079-revoke-service-role-execute`, not on `main`; a session that reads
+`packages/db/migrations` on `main` and concludes 0079 is pending will be wrong
+about production. What that run established is in §6.
+
 **0079 is that migration.** Older cards (PERF-15, RLS-01) use "0079" to mean the
 deferred patients-path predicate rewrite; that work is now carded as `RLS-02`
 and is a different thing. Do not apply a ruling about one to the other.
@@ -78,8 +87,10 @@ reading before touching #1175.
 
 These are not tasks. They are things that were measured, that cost something to
 find, and that are easy to lose. The first three came out of this lane's own
-work; 3.4 is BLUE's, re-derived here rather than transcribed, and the
-re-derivation changed the numbers.
+work; 3.4 and 3.5 are BLUE's. 3.4 was re-derived here rather than transcribed,
+and the re-derivation changed the numbers; 3.5 was added on 2026-09-06 from the
+production run in §6, and it is the only one of the five that has not yet cost
+anybody anything.
 
 ### 3.1 The control that did NOT fail is the most useful result of the week
 
@@ -199,6 +210,39 @@ matches the on-disk numeric order and never that the two numbers are equal — s
 the repository's own guard is already on the right side of this. Reports and
 apply blocks are what need to catch up.
 
+**It has now been exercised once.** 0079 was applied to production on 2026-09-06
+and is the first row numbered under this rule: tag `0079`, journal `idx` **76**,
+database row **77**. Three numbers, none of them equal, on the very first
+migration after the finding was written down. §6.1 has the run.
+
+### 3.5 Ranking repoint candidates by attendance cannot tell treatment from clicks
+
+BLUE's, and recorded here because the production run that would have exposed it
+could not — the only holder it found was the account least able to expose it.
+
+Section 3 of `scripts/pack04-orphan-identify.sql` is the part that decides where
+an orphaned pacote should be repointed. It deliberately refuses to match
+services by NAME — that was #1170's defect, and every one of these rows is
+named `-` — and instead asks what the patients WHO HOLD the pacote are actually
+booked for, ranking the live candidates by `count(*) DESC` over the holders'
+appointments.
+
+**That count cannot separate a patient's real treatment from an operator's
+diagnostic clicks.** An appointment booked to exercise a screen and an
+appointment booked to treat somebody are the same row in `appointments`, and the
+ranking weighs them identically. There is no column that distinguishes them and
+the script does not claim there is.
+
+It cost nothing this time, which is exactly why it needs writing down. The one
+holder on production is the owner's test account (§6.2) — the least trustworthy
+possible input to this heuristic — and the ruling it fed was "leave them alone"
+regardless of how the candidates ranked. **The first time an orphaned pacote
+belongs to a REAL patient, this ranking will be believed, and nothing in the
+script marks which of that patient's appointments were diagnostic.** Whoever
+runs it then needs a second question — who created each appointment, and when
+relative to a diagnosis run — before repointing somebody's paid sessions on the
+strength of a count.
+
 ---
 
 ## 4. Traps this session paid for, so the next one does not
@@ -228,3 +272,72 @@ apply blocks are what need to catch up.
 They need window and aggregate fixtures no class suite builds, and all four pass
 `patients.id`, which is the shape already pinned. That is the natural next piece
 of harness work and it is small enough to finish inside one session.
+
+**Not opened by this session, deliberately.** The owner's closing dispatch of
+2026-09-06 leaves all four unopened. This document was amended and nothing else
+was touched.
+
+---
+
+## 6. The production run of 2026-09-06
+
+Run by the owner, on production, after §3.4 was written. Reported here from that
+run — **no lane measured any of it**, and nothing below was re-derived from a
+database this session can reach. What IS re-derived, from the repository, is
+every claim about what the scripts assert; those are marked.
+
+### 6.1 0079 is applied
+
+- **Applied.** The journal is at **77 rows**, up from the 76 the pre-check
+  required (`-v expected_before=76`). `service_role` **0** and `anon` **0**
+  across **all 21** SECURITY DEFINER functions in `public`.
+- **The 21 is the whole set, not a list.** Verified in the script: both rows
+  count over `pg_proc … WHERE nspname='public' AND prosecdef`, with no name
+  filter, so they cannot drift out of step with the twenty the migration names.
+  The comment in `scripts/0079-postcheck.sql` says so outright — "over the whole
+  SECURITY DEFINER set - not a list of twenty names this file could get out of
+  step with."
+- **Why 21 when the migration touches twenty.** `reminder_dispatch_tenant` is
+  the twenty-first, and 0079 leaves it alone on purpose: 0075 already revoked
+  PUBLIC, `anon`, `patient` and `service_role` from it by name. The post-check's
+  own arithmetic agrees — `authenticated keeps the rest` expects **18** over the
+  set minus three named exclusions (`custom_access_token_hook`,
+  `assign_patient_number`, `jwt_patient_id`), and 18 + 3 = 21.
+- **Three numbers, none equal.** Tag `0079`, journal `idx` **76**, database row
+  **77**. §3.4 predicted exactly this and this is the row that demonstrates it.
+  The 77 is also the row COUNT, which is a second coincidence and not a second
+  proof: count equals max id only while nothing has ever been deleted.
+- **Identity was answered by sha256 and read correctly every time.** Four
+  row-identity answers across the pair — 0075 and 0078 in each script, 0079
+  asserted ABSENT by the pre-check and PRESENT by the post-check — on a journal
+  where no number matches its tag. **Three distinct hashes, not four**: each
+  script names the same three files (`0075` `e268bc0d…`, `0078` `68334d6a…`,
+  `0079` `eb3d48f0…`); it is the 0079 ROW that is asked about twice. Re-derived
+  from both files.
+
+**What is still owed on it: `#1175` is not merged.** Production has the schema
+change and `main` does not have the file. Until it merges, every reader of
+`packages/db/migrations` on `main` sees a database state that no longer exists.
+
+### 6.2 The orphaned pacotes: one holder in the whole database, and it is the test account
+
+`scripts/pack04-orphan-identify.sql` ran on production, against the three
+archived services that carry a pacote — `7e3359a7` (was "Tratamento NESA"),
+`a3c1ced1` (was "Tratamento Terapeutico") and `d75f251d`, which appears nowhere
+in this repo but the PACK-04 card.
+
+**Exactly one patient in the whole database holds an orphaned pacote, and it is
+the owner's test account. The other two archived services have ZERO patient
+instances.** Which of the three carries the holder was not reported into this
+document; the run itself prints it.
+
+What that settles: the repoint the owner's 2026-09-05 ruling authorised "if you
+can identify them" has essentially nothing to act on, and **no real patient's
+paid sessions are sitting on an archived service today**. PACK-04's guard
+(#1182, merged) is what keeps it that way — archiving a service that carries a
+pacote is refused and the refusal names it.
+
+What it does NOT settle is the method. See **§3.5**: the identification ranks
+candidates by the holders' appointment counts, and a test account's appointments
+are the input that heuristic is least able to read. It was not load-bearing
+here. It will be, the first time the holder is real.
