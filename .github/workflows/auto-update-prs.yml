@@ -20,9 +20,21 @@ name: Auto-update PR branches
 # WHAT THE FAILURE LOOKED LIKE, so the next reader recognises it: the
 # `behind main by N commit(s)` line printed correctly on every PR, which means
 # the LIST and COMPARE calls succeeded and only `PUT .../update-branch` 404'd.
-# A token that can read a repository and not write it. The remedy is the owner's
-# (reissue the PAT with contents: write and pull_requests: write); the remedy for
-# NOT NOTICING is this file.
+#
+# THE THREE CALLS MAP ONE-TO-ONE ONTO THREE PERMISSIONS, which is what turns that
+# symptom into a diagnosis instead of a guess:
+#     GET  /repos/{owner}/{repo}/pulls                    Pull requests  READ
+#     GET  /repos/{owner}/{repo}/compare/{basehead}       Contents       READ
+#     PUT  /repos/{owner}/{repo}/pulls/{n}/update-branch  Pull requests  WRITE
+# LIST 200 and COMPARE 200 with UPDATE-BRANCH 404 is a read/write asymmetry on
+# ONE permission - Pull requests - and NOT lost repository access, because a token
+# that could not see this repository would have 404'd the LIST as well.
+#
+# SO THE TOKEN NEEDS Pull requests: read and write, AND Contents: read-only, plus
+# the Metadata: read-only every fine-grained token carries. CONTENTS: WRITE IS NOT
+# NEEDED and must not be granted - nothing here writes a file. The first version
+# of this comment asked for it, which would have handed a branch-merging job write
+# access to the source of a clinical system.
 
 on:
   push:
@@ -130,7 +142,7 @@ jobs:
 
           if [ -e "${failed_marker}" ]; then
             rm -f "${failed_marker}"
-            echo "::error::At least one branch update FAILED (see the HTTP code above). Every open PR behind main now needs a manual Update branch, and main is protected with strict status checks, so each one costs a full CI cycle. If the code is 404 the AUTO_UPDATE_TOKEN has lost its permissions - reissue it with contents: write and pull_requests: write."
+            echo "::error::At least one branch update FAILED (see the HTTP code above). Every open PR behind main now needs a manual Update branch, and main is protected with strict status checks, so each one costs a full CI cycle. If the code is 404 the AUTO_UPDATE_TOKEN has lost its permissions - reissue it with Pull requests: read and write, plus Contents: read-only. Contents WRITE is not needed by anything here."
             exit 1
           fi
 
