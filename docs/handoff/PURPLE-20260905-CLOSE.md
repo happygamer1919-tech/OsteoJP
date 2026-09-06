@@ -86,10 +86,16 @@ card sits; the field is the fact.
 > `shipped`**: `STAFF-01-timefield-offstep-value`,
 > `STAFF-02-booking-location-unscoped`,
 > `STAFF-03-agenda-hour-row-expansion`, `STAFF-04-marcacoes-name-truncated`.
-> Whether a SHIPPED card carrying a `blocked_on` still counts as blocked is a
-> board question and it is **not settled here** — it is the difference between
-> 15 and 11 and somebody has to rule on it rather than pick. The method above
-> stands unchanged; only the figures are dated. **Re-derive before quoting.**
+> Whether a SHIPPED card carrying a `blocked_on` still counts as blocked was a
+> board question. **IT IS NOW RULED, AND IT IS A MECHANISM RATHER THAN A
+> CONVENTION.** The owner ruled `SR-55`: **quote 11, not 15** — a shipped card
+> carrying a `blocked_on` is a contradiction, so either it is not shipped or the
+> field is stale, and the quotable count EXCLUDES shipped. `STAFF-01` through
+> `STAFF-04` get audited and stripped or reopened, never counted. `#1200` then
+> put it in the validator: a SHIPPED card carrying a `blocked_on` is now
+> REFUSED, so the state that produced the ambiguity cannot recur. The method
+> above stands unchanged; only the figures are dated. **Re-derive before
+> quoting.**
 
 **Open lanes at close:** 23 in flight, 6 incidents, 30 loose ends, 10 blocked on
 people. `/admin/staff` stays deferred by owner ruling and nothing in this session
@@ -111,8 +117,11 @@ These are not tasks. They are things that were measured, that cost something to
 find, and that are easy to lose. The first three came out of this lane's own
 work; 3.4 and 3.5 are BLUE's. 3.4 was re-derived here rather than transcribed,
 and the re-derivation changed the numbers; 3.5 was added on 2026-09-06 from the
-production run in §6, and it is the only one of the five that has not yet cost
-anybody anything.
+production run in §6, and it is the only one of the seven that has not yet cost
+anybody anything. **3.6 and 3.7 were added at the session close.** 3.6 is a
+near-miss of BLUE's, recorded because nothing in the repo would have caught it;
+3.7 is this document's own error, generalised, and it is the only entry here
+whose instance is a paragraph of this file.
 
 ### 3.1 The control that did NOT fail is the most useful result of the week
 
@@ -285,6 +294,92 @@ authorisation, never inferred from the data.
 `scripts/pack04-orphan-identify.sql` rather than only on a card, so the next
 person to run it reads the limit before they read the ranking.
 
+### 3.6 A worktree is a snapshot of `main` at the moment it was created, and committing from a stale one SILENTLY REVERTS somebody's merge
+
+**This is the artifact collision one layer down, and unlike the artifact it is
+not recoverable.** A stale render is repaired by the next render, because the
+JSON is truth and the artifact is a picture of it. A stale COMMIT is truth: what
+it drops is gone unless somebody notices.
+
+**It was nearly paid for on 2026-09-06 and the near-miss is the whole record.**
+BLUE's board worktree was created at `4e265efc`. PURPLE merged `#1199` after
+that, which added two owner rulings to `SCHED-15`. Committing the worktree's own
+copy of `docs/board/portal-board.json` — a file BLUE had every right to edit, and
+was editing correctly — would have reverted both rulings, in a diff of a 400KB
+JSON file where a removed paragraph is invisible. BLUE caught it by **diffing
+their board against `origin/main` card by card before committing, rather than
+trusting the worktree's age**, and the committed diff then touched only the three
+things they meant to change.
+
+> **A FIRST VERSION OF THIS FINDING SAID GIT WOULD HAVE MERGED IT SILENTLY.
+> THAT WAS WRONG, BLUE CAUGHT IT, AND THE TRUTH IS WORSE IN A MORE USEFUL WAY.**
+> Simulated here rather than taken on report: a commit built on `4e265efc`
+> carrying a new card, merged against `a7c69489`, gives
+> `merge-tree` **exit 1** and `CONFLICT (content): Merge conflict in
+> docs/board/portal-board.json`. Git does NOT merge it silently, and `main` is
+> `strict`, so the branch could not have merged without surfacing this.
+
+**What git hands you instead is the hazard.** The conflict is **ONE HUNK**, and
+reproducing it locally gives exactly this shape:
+
+```
+<<<<<<< ours     SCHED-15's "notes" line, 4778 chars, FUSED with an entire
+                 unrelated new card that follows it
+||||||| base     the same 4778-char line
+=======
+>>>>>>> theirs   the same line, 6169 chars — the two owner rulings
+```
+
+**Taking THEIRS drops the new card. Taking OURS drops the rulings. The correct
+resolution is neither side**, and it is a hand-edit inside a 6,000-character
+JSON string. A resolver in a hurry picks a side, and both sides are valid JSON.
+
+**That is why no gate catches the loss.** `validate-board` passes either way — a
+board missing a card is still a valid board. `test:scripts` passes. The
+reconciler passes. **A dropped card is not a MISMATCH, it is an ABSENCE**, and
+nothing in this repo knows what the board said an hour ago.
+
+**So the rule is a predicate, not a discipline.** `§1.2`'s "rebase immediately
+before a board commit" is necessary and not sufficient: updating the branch is
+what PRODUCES this conflict. What catches the loss regardless of how it happened
+is a check in CI that **fails a board PR removing a card id or ruling id present
+on its merge base, unless the removal is declared** — one predicate, in a job
+that already runs. That is `LE-a-stale-worktree-drops-another-lanes-board-work-
+on-resolution`, carded by BLUE and deliberately not built, written to be found
+beside its artifact twin `LE-board-artifact-has-no-merge-last-writer-wins`.
+**Attention is not a mechanism.** It worked twice today; that is not evidence it
+will work a third time.
+
+### 3.7 Explaining a mechanism is not applying it, and the gap can be one paragraph wide
+
+**§6.3 explains that the repoint's AFTER table selects every pack bound to the
+TARGET, so a pre-existing correct binding is EXPECTED to appear there. The very
+next paragraph treated that second row as a finding and invented a question for
+JP.** Both paragraphs were written in the same sitting, by the same reader, into
+the same section.
+
+**The correction was inside the row that was already in hand.** The two pacotes
+differ by `location_id` — one Linda-a-Velha, one Castelo Branco. The name, the
+session count, the price and the id were all read. The clinic column was not. It
+took a separate production read by the other lane to catch it, and the answer had
+been sitting in the same result set the whole time.
+
+**The mechanism, since "read more carefully" is not one.** Having produced an
+explanation for why a result is not surprising, that explanation stops being a
+hypothesis and starts being a conclusion, and the reading moves on. It felt like
+the work was done because the hard part — knowing why two rows came back — WAS
+done.
+
+> **When a result surprises you and you can say why it should not have, name the
+> column that would DISCRIMINATE the rows and read it BEFORE writing either
+> sentence.** The explanation and the finding are two different claims and each
+> needs its own evidence. Writing the first is not permission to skip the
+> second.
+
+It cost a false sentence on a handoff for about an hour, and a question put to a
+stakeholder that did not exist. §6.3 carries the instance; this carries the
+shape.
+
 ---
 
 ## 4. Traps this session paid for, so the next one does not
@@ -315,17 +410,63 @@ They need window and aggregate fixtures no class suite builds, and all four pass
 `patients.id`, which is the shape already pinned. That is the natural next piece
 of harness work and it is small enough to finish inside one session.
 
-**Not opened by this session, deliberately.** The owner's closing dispatch of
-2026-09-06 left all four unopened, and the second dispatch the same day
-reaffirmed it and pointed here: they stay unopened and this document names them
-as the next harness work. Both amendments touched this file and nothing else.
+**Not opened by this session, deliberately.** Three dispatches on 2026-09-06
+left all four unopened and each reaffirmed it, pointing here: they stay unopened
+and this document names them as the next harness work.
+
+### What actually opens the next session, and it is not that
+
+**`PEDIDO_QUEUE_IS_DURABLE` is still `false`, on purpose, and flipping it is
+BLUE's to run.** It is one line —
+`apps/web/lib/reminders/confirm-page-gates.ts:94`.
+
+**THE LOAD-BEARING COPY IS ON THE CARD `INC-CONFIRM-10`, NOT HERE.** BLUE put it
+there deliberately and the reasoning is worth keeping: `PORTAL-REHYDRATE` §2
+sends a fresh session to the BOARD, and neither `HANDOVER-STATE.md` nor this
+handoff is in the load order. §3 then requires every `in_flight` card in the
+first output, and `INC-CONFIRM-10` is `in_flight` — so the boot procedure
+GUARANTEES the sequence is read. **A close written only into a handoff would not
+have been found.** This copy is the redundant one; if the two ever disagree, the
+card wins.
+
+**Conditions 1 and 2 of its own reopening list are MET.** Migration 0080 created
+`appointment_reschedule_requests`; `confirm-redeem.ts` writes the row INSIDE THE
+PATIENT'S OWN TRANSACTION, the same transaction as the audit row, so if it does
+not commit the patient is never told the request was received. It is independent
+of `origin`, so a staff-created appointment produces one exactly like a portal
+booking. `/notificacoes` renders the queue, scoped by an EXISTS against
+`appointments`, so reception sees their locations' requests and BOTH
+practitioners see their own — the owner's 2026-09-04 ruling, true by
+construction rather than by a fan-out that could half-fail.
+
+**CONDITION 3 IS THE OWNER'S AND HAS NOT HAPPENED**: he re-tests the control on
+the deployed `/c/<code>` route. Not green CI — what failed here was a fact about
+which screens exist, and CI asserted the button worked while nothing displayed
+its output.
+
+**THE ORDERING IS AWKWARD AND IS NAMED RATHER THAN QUIETLY RESOLVED.** The
+constant gates the ACTION as well as the render, so the owner cannot exercise
+the button while it is false. Flipping it is what makes his test possible, and
+his test is what justifies the flip. The safe order, in the constant's own
+words:
+
+> **flip, he presses, the row appears on `/notificacoes` — and if it does not,
+> revert one line.**
+
+**What must NOT happen is the flip arriving as a side effect of shipping the
+durable half, which is exactly how it was armed on a false comment last time**
+(INC-CONFIRM-10; `#1146` was the hide-half that put it back to `false`). That is
+why it is a separate one-line change and not part of 0080's commit. **Do not
+flip it to make a test pass, and do not flip it because conditions 1 and 2 read
+as done.** Condition 3 is a person looking at a screen.
 
 ---
 
 ## 6. The production runs of 2026-09-06
 
-Three owner-run steps on production, after §3.4 was written: the 0079 apply, the
-`pack04-orphan-identify` read, and the `pack04-repoint-apply` write. **No lane
+FOUR owner-run steps on production, after §3.4 was written: the 0079 apply, the
+`pack04-orphan-identify` read, the `pack04-repoint-apply` write, and — at the
+session close — the PACK-05 retirement. **No lane
 measured any of it**, and nothing reported below was re-derived from a database
 this session can reach — it is the owner's screen and his pasted output. What IS
 re-derived, from `origin/main`, is every claim about what the scripts assert and
@@ -394,8 +535,9 @@ two archived services have ZERO patient instances.
 What that settles: **no real patient's paid sessions are sitting on an archived
 service today**, and a pacote with no instance is a catalogue row nobody ever
 bought, so `a3c1ced1` and `d75f251d` were never a money decision and never
-blocked on one. They are catalogue hygiene, split out as **PACK-05**, blocked on
-JP at his leisure. PACK-04's guard (#1182, merged) is what stops the set
+blocked on one. They are catalogue hygiene, split out as **PACK-05** — which was
+`blocked_on: jp` when this was written and **shipped the same evening; see
+§6.4**. PACK-04's guard (#1182, merged) is what stops the set
 growing — archiving a service that is the base of a pacote is refused and the
 refusal names the pacotes.
 
@@ -466,4 +608,48 @@ explains as the query's SCOPE — and having explained it, the paragraph above
 then treated the second row as a finding anyway. **The clinic column was never
 looked at.** The correction cost one production read. PACK-05 stays what it
 always was: the two archived services nobody has bought, `a3c1ced1` and
-`d75f251d`, `blocked_on: jp`, and no third question was ever added to it.
+`d75f251d`, and no third question was ever added to it. It was `blocked_on: jp`
+at the time of writing and is **shipped as of §6.4**. **The
+general shape of that mistake is §3.7**, and it is worth more than this
+correction.
+
+### 6.4 PACK-05 is retired on production, and the stop condition was INSIDE the transaction
+
+The fourth owner-run step, and the one that closes the PACK family. Owner ruling
+2026-09-06: retire both products so neither can be sold while bound to a service
+archived to `-`. Applied the same day, `#1198`, merged as `f3818d57`.
+
+```
+be8ec147  Pacote 10 - Tratamento Terapeutico                      LV  45000  -> retired
+e291d05f  Pacote 5 - Pressoterapia / Drenagem Linfatica Mecanica   LV  15000  -> retired
+```
+
+Pre-check read 2 rows, both `pack_active=t`, both `base_active=f`, **both
+instance counts 0**. The apply moved 2 rows, both now `is_active=f`, active packs
+on archived services **0**, instances against the two still 0. Commit, exit 0.
+
+**THE STOP CONDITION IS IN THE TRANSACTION, NOT ONLY IN THE PRE-CHECK, and that
+is the part worth carrying.** The ruling says: if either row shows a patient
+instance, do not write — money has moved and the decision becomes JP's. It is
+checked at WRITE time, so a purchase landing between the read and the write
+cannot slip through. **A pre-check is a photograph; a guard inside the
+transaction is a rule.** The two commands are minutes apart in the owner's shell
+and the database is live in between. It did not fire, which is the outcome a
+guard is supposed to have.
+
+**Five arms rehearsed on a fixture built with the real production ids, and the
+production run was GATED on the rehearsal's exit code**: the success path, a
+patient instance existing, one already repointed to a live service, one already
+retired (refused — no half-ruling), and a SECOND run (refused loudly, 0 of 2
+active). `is_active` is the right lever and it was checked rather than assumed —
+`apps/web/lib/scheduling/data.ts:378` filters `servicePacks.isActive = true` for
+bookable types, so clearing it makes the product unsellable and changes nothing
+else. Deactivating is reversible; repointing the base services is not, and is
+JP's.
+
+**The services stay archived and orphaned BY DESIGN.** Nothing touched
+`services`. A service nobody sells is inert, and §3.5 already records that no
+script can identify a replacement for a pacote with no holders. **The family is
+closed**: all three archived services are accounted for and each differently —
+`7e3359a7` repointed, the other two with their products retired — and nothing
+sellable now sits on a dead service.
