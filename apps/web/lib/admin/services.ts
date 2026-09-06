@@ -13,10 +13,22 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import { effectivePriceCents } from "./pricing";
+import { archiveBlockedReason, packsBoundToService } from "./service-archive";
 import {
   serviceDeleteBlockers,
   type ServiceDeleteBlocker,
 } from "./service-delete";
+
+// Re-export the pure ARCHIVE-guard decision for the same reason as the delete one
+// below: the Admin > Services page must name the pacotes blocking an archive
+// without importing this server-only module's DB deps.
+export {
+  packsBoundToService,
+  canArchiveService,
+  archiveBlockedReason,
+  type PackBinding,
+  type BlockingPack,
+} from "./service-archive";
 
 // Re-export the pure delete-guard decision so callers (the Admin > Services page)
 // can name the blocker without importing this server-only module's DB deps.
@@ -185,7 +197,20 @@ export async function setServicePatientBookable(
 }
 
 /** Soft archive (is_active=false). Hard delete is avoided to preserve the FK
- *  references from appointments.service_id and clinical history. */
+ *  references from appointments.service_id and clinical history.
+ *
+ *  PACK-04 GUARD: archiving a service that carries a pacote is REFUSED, and the
+ *  refusal names the pacotes. See ./service-archive for why refuse rather than
+ *  repoint, and for the production damage that made it necessary - three
+ *  services archived by renaming them to `-`, all three carrying a pacote, one
+ *  of them holding a patient's 7 remaining NESA sessions out of reach.
+ *
+ *  SERVER-ENFORCED; THE DISABLED UI CONTROL IS ONLY AN AFFORDANCE, the same
+ *  split /admin/services already uses for the delete blocker. A disabled button
+ *  is a suggestion and a POST is not.
+ *
+ *  RESTORING IS NEVER GUARDED. `active === true` can only repair a binding, and
+ *  a guard on it would strand exactly the services already in this state. */
 export async function setServiceActive(
   actor: RequestContext,
   id: string,
@@ -193,6 +218,18 @@ export async function setServiceActive(
 ): Promise<void> {
   assertCan(actor.role, "services:write");
   await runScoped(actor, async (tx) => {
+    if (!active) {
+      const bound = await tx
+        .select({
+          id: servicePacks.id,
+          name: servicePacks.name,
+          baseServiceId: servicePacks.baseServiceId,
+        })
+        .from(servicePacks)
+        .where(eq(servicePacks.baseServiceId, id));
+      const blocking = packsBoundToService(bound, id);
+      if (blocking.length > 0) throw new AdminError("has_packs", archiveBlockedReason(blocking));
+    }
     const rows = await tx
       .update(services)
       .set({ isActive: active })

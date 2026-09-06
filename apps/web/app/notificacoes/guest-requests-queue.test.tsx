@@ -17,6 +17,7 @@ vi.mock("@osteojp/ui", () => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 vi.mock("@/lib/scheduling/guest-convert", () => ({
   convertGuestRequest: async () => ({ ok: false, error: "validation" }),
+  dismissGuestRequest: async () => ({ ok: false, error: "validation" }),
   listGuestRequestMatches: async () => ({ ok: true, data: [] }),
 }));
 
@@ -46,6 +47,7 @@ const row = (over: Partial<GuestRequestRow> = {}): GuestRequestRow => ({
   when: "07/09/2026, manhã",
   requestedAt: "14/08/2026 18:20",
   possiblePatientMatches: 0,
+  converted: false,
   ...over,
 });
 
@@ -83,7 +85,8 @@ describe("guest queue - the new-client mark", () => {
     ]);
     const marks =
       (html.match(/guest-new-client/g) ?? []).length +
-      (html.match(/guest-possible-match/g) ?? []).length;
+      (html.match(/guest-possible-match/g) ?? []).length +
+      (html.match(/guest-converted-no-booking/g) ?? []).length;
     const rows = (html.match(/guest-request-row/g) ?? []).length;
     expect(rows).toBe(3);
     expect(marks).toBe(3);
@@ -180,6 +183,59 @@ describe("guest queue - the convert control", () => {
     // The GUEST-03 invariant, re-asserted now that the row has an action on it:
     // convert is a decision reception makes, not a link the system followed.
     const html = render([row({ possiblePatientMatches: 1 })]);
+    expect(html).not.toContain("<a ");
+    expect(html).not.toContain("/patients/");
+  });
+});
+
+/**
+ * LE-guest-convert-abandoned-booking, OPTION B — the converted-but-unbooked row.
+ *
+ * THE ROW STAYING IS THE FEATURE. Before the owner's ruling the convert moved
+ * the request to `confirmed` and the queue lost it immediately, so a receptionist
+ * interrupted between creating the person and booking them left somebody with a
+ * record, no appointment and nothing chasing it. The queue now keeps the row and
+ * says what it is; these assert what that row offers and what it stops offering.
+ */
+describe("guest queue - converted but not booked", () => {
+  it("says CONVERTIDO - SEM MARCAÇÃO, in those words", () => {
+    const html = render([row({ converted: true })]);
+    expect(html).toContain("guest-converted-no-booking");
+    expect(html).toContain("Convertido - sem marcação");
+  });
+
+  it("REPLACES the who-is-this marks rather than joining them", () => {
+    // Both arms, because the two are reached by different branches: a converted
+    // row that matched nobody and a converted row that matched somebody must
+    // both drop the earlier mark. The question "who is this" has been answered
+    // on this row; what is left to show is what remains to be DONE.
+    const clean = render([row({ converted: true, possiblePatientMatches: 0 })]);
+    expect(clean).not.toContain("guest-new-client");
+    const flagged = render([row({ converted: true, possiblePatientMatches: 2 })]);
+    expect(flagged).not.toContain("guest-possible-match");
+  });
+
+  it("offers the DISMISS and NOT the convert, because a second convert can only fail", () => {
+    const html = render([row({ converted: true })]);
+    expect(html).toContain("guest-dismiss-button");
+    expect(html).toContain("Dispensar");
+    expect(html).not.toContain("guest-convert-button");
+    expect(html).not.toContain("Criar paciente e marcar");
+  });
+
+  it("NEGATIVE ARM: an UNconverted row still offers convert and NOT the dismiss", () => {
+    // The pair above is only meaningful against this one. Without it the suite
+    // would pass just as well if the component had stopped rendering the
+    // convert button altogether.
+    const html = render([row({ converted: false })]);
+    expect(html).toContain("guest-convert-button");
+    expect(html).not.toContain("guest-dismiss-button");
+  });
+
+  it("NEGATIVE ARM: a converted row still renders no link to the patient it created", () => {
+    // The GUEST-03 invariant survives the new state. The row now KNOWS a patient
+    // id exists, which is exactly when a link becomes tempting.
+    const html = render([row({ converted: true })]);
     expect(html).not.toContain("<a ");
     expect(html).not.toContain("/patients/");
   });

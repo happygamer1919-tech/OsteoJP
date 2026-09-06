@@ -6,6 +6,7 @@ import { GlassCard } from "@osteojp/ui";
 
 import {
   convertGuestRequest,
+  dismissGuestRequest,
   listGuestRequestMatches,
   type GuestConvertError,
   type GuestPatientMatch,
@@ -68,6 +69,17 @@ export type GuestRequestRow = {
   when: string;
   requestedAt: string;
   possiblePatientMatches: number;
+  /**
+   * OPTION B: reception created the person and this row stayed in the queue,
+   * because nothing has recorded a booking against the request. It renders as
+   * `Convertido - sem marcação` and its only action is the dismiss.
+   *
+   * IT REPLACES BOTH OTHER MARKS RATHER THAN JOINING THEM. "New client" and
+   * "may already be a patient" are questions about WHO this is, and once
+   * reception has answered that question on this row the answer is no longer
+   * the thing to show - what is left to do is.
+   */
+  converted: boolean;
 };
 
 function messageFor(err: GuestConvertError): string {
@@ -82,6 +94,8 @@ function messageFor(err: GuestConvertError): string {
       return s["guest.error.locationNotAssigned"];
     case "match_not_found":
       return s["guest.error.matchNotFound"];
+    case "not_converted":
+      return s["guest.error.notConverted"];
     case "validation":
       return s["guest.error.generic"];
   }
@@ -125,6 +139,26 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
       // filled in. Every booking guard lives on that path and none is duplicated
       // here. `push`, not `replace`: reception can come back to the queue.
       router.push(bookingDeepLink(result.data.patientId, result.data.prefill));
+    });
+  }
+
+  /**
+   * THE DISMISS. It takes a converted row off the queue and goes nowhere - no
+   * router push, because there is nothing to hand off to. `revalidatePath` on
+   * the server re-derives the list, exactly as the convert does, so this
+   * component still never splices a row out of an array it owns.
+   */
+  function dismiss(requestId: string) {
+    setBusyId(requestId);
+    clearError(requestId);
+    startTransition(async () => {
+      const result = await dismissGuestRequest(requestId);
+      setBusyId(null);
+      if (!result.ok) {
+        setErrors((prev) => ({ ...prev, [requestId]: result.error }));
+        return;
+      }
+      router.refresh();
     });
   }
 
@@ -176,10 +210,19 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
             <GlassCard className="flex flex-col gap-2 p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium text-v2-text-primary">{r.fullName}</span>
-                {/* The mark, and only ONE of the two ever shows: a row is either
-                    the ordinary new-client case or a possible match, and
-                    rendering both would leave reception to work out which. */}
-                {matchLabel ? (
+                {/* The mark, and only ONE of the three ever shows. A row is a
+                    converted-but-unbooked one, or the ordinary new-client case,
+                    or a possible match; rendering two would leave reception to
+                    work out which applies. CONVERTED WINS because it is the only
+                    one of the three that says what is left to DO. */}
+                {r.converted ? (
+                  <span
+                    data-testid="guest-converted-no-booking"
+                    className="rounded-full border border-warning px-2 py-0.5 text-xs text-v2-text-primary"
+                  >
+                    {s["guest.convertedNoBooking"]}
+                  </span>
+                ) : matchLabel ? (
                   <span
                     data-testid="guest-possible-match"
                     className="rounded-full border border-warning px-2 py-0.5 text-xs text-v2-text-primary"
@@ -231,23 +274,40 @@ export function GuestRequestsQueue({ rows }: { rows: GuestRequestRow[] }) {
               )}
 
               <div className="flex justify-end">
-                <button
-                  type="button"
-                  data-testid="guest-convert-button"
-                  disabled={busy}
-                  onClick={() =>
-                    // ZERO MATCHES CONVERTS DIRECTLY; ANYTHING ELSE ASKS FIRST.
-                    // The rule lives in `pressAction` so a suite can reach it —
-                    // this repo renders components without a DOM, so a rule
-                    // inside an onClick is a rule nothing can assert.
-                    pressAction(r.possiblePatientMatches).kind === "convert_new"
-                      ? convert(r.id, { kind: "new_patient" })
-                      : openResolve(r.id)
-                  }
-                  className="inline-flex h-11 items-center rounded-v2 bg-v2-green-700 px-4 text-sm font-medium text-text-inverse transition-colors hover:bg-v2-green-800 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-                >
-                  {busy ? s["guest.converting"] : s["guest.convert"]}
-                </button>
+                {/* ONE ACTION PER ROW, AND WHICH ONE IS DECIDED BY THE STATE
+                    RATHER THAN OFFERED AS A PAIR. A converted row cannot be
+                    converted again - the server refuses it as `already_handled`
+                    - so showing the convert button beside the dismiss would be
+                    offering a press that can only fail. */}
+                {r.converted ? (
+                  <button
+                    type="button"
+                    data-testid="guest-dismiss-button"
+                    disabled={busy}
+                    onClick={() => dismiss(r.id)}
+                    className="inline-flex h-11 items-center rounded-v2 border border-v2-border px-4 text-sm font-medium text-v2-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                  >
+                    {busy ? s["guest.dismissing"] : s["guest.dismiss"]}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    data-testid="guest-convert-button"
+                    disabled={busy}
+                    onClick={() =>
+                      // ZERO MATCHES CONVERTS DIRECTLY; ANYTHING ELSE ASKS FIRST.
+                      // The rule lives in `pressAction` so a suite can reach it —
+                      // this repo renders components without a DOM, so a rule
+                      // inside an onClick is a rule nothing can assert.
+                      pressAction(r.possiblePatientMatches).kind === "convert_new"
+                        ? convert(r.id, { kind: "new_patient" })
+                        : openResolve(r.id)
+                    }
+                    className="inline-flex h-11 items-center rounded-v2 bg-v2-green-700 px-4 text-sm font-medium text-text-inverse transition-colors hover:bg-v2-green-800 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                  >
+                    {busy ? s["guest.converting"] : s["guest.convert"]}
+                  </button>
+                )}
               </div>
 
               {dialogOpen && (

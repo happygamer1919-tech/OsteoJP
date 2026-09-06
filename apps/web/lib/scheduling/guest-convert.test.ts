@@ -42,6 +42,13 @@ const H = vi.hoisted(() => ({
   inserted: false,
   /** Set when the guest_booking_requests UPDATE actually ran. */
   updated: false,
+  /**
+   * EVERY PAYLOAD HANDED TO `.set()`, because option B is defined by a column
+   * this action must STOP writing. "Did not move the status" is not observable
+   * from an error code or from `updated`; it is only observable from the object
+   * itself, so the harness keeps it.
+   */
+  sets: [] as Record<string, unknown>[],
   /** Audit entries written. */
   audits: [] as { action: string; entityId: string; metadata?: unknown }[],
 }));
@@ -65,7 +72,10 @@ vi.mock("@/lib/auth/context", () => ({
       limit: () => chain,
       orderBy: () => chain,
       update: () => chain,
-      set: () => chain,
+      set: (payload: Record<string, unknown>) => {
+        H.sets.push(payload);
+        return chain;
+      },
       returning: () => {
         H.updated = true;
         return chain;
@@ -101,13 +111,20 @@ vi.mock("@/lib/patients/audit", () => ({
   },
 }));
 
-import { convertGuestRequest, listGuestRequestMatches } from "./guest-convert";
+import { convertGuestRequest, dismissGuestRequest, listGuestRequestMatches } from "./guest-convert";
 
 /** A pending request at LV, as the queue would be showing it. */
 function pendingRequest(over: Record<string, unknown> = {}) {
   return {
     id: REQUEST_ID,
     status: "pending",
+    // BOTH NULL, AND SPELLED OUT RATHER THAN OMITTED. The guards compare
+    // STRICTLY against null, so a fixture that left these undefined would refuse
+    // every convert - and it would refuse it for a reason that cannot happen
+    // against a real row, where a NULL column comes back as null. Strict is the
+    // right comparison here because the unknown case then fails CLOSED.
+    convertedPatientId: null,
+    handledAt: null,
     fullName: "Maria Silva",
     phone: "912345678",
     phoneE164: "+351912345678",
@@ -125,6 +142,7 @@ beforeEach(() => {
   H.script = [];
   H.inserted = false;
   H.updated = false;
+  H.sets = [];
   H.audits = [];
 });
 
@@ -138,7 +156,7 @@ describe("the happy path, so every refusal below is a refusal and not a broken f
     if (!result.ok) return;
     expect(result.data.patientId).toBe("p-new");
     expect(H.inserted, "the patient must actually be inserted").toBe(true);
-    expect(H.updated, "the request must actually be marked handled").toBe(true);
+    expect(H.updated, "the request must actually be written to").toBe(true);
     // The prefill is the whole point of the action: it is what carries the guest
     // request into the ordinary staff booking path.
     expect(result.data.prefill.serviceId).toBe(SERVICE);
@@ -360,5 +378,137 @@ describe("a request that is no longer pending", () => {
     const result = await convertGuestRequest(REQUEST_ID, { kind: "new_patient" });
 
     expect(result).toEqual({ ok: false, error: "already_handled" });
+  });
+});
+
+/**
+ * LE-guest-convert-abandoned-booking — OPTION B, ruled by the owner 2026-09-06.
+ *
+ * The convert used to write `status = 'confirmed'`, which took the row out of a
+ * queue that reads `status = 'pending'` before anybody had booked anything. The
+ * request now STAYS PENDING and reception clears it with a separate dismiss.
+ *
+ * WHAT MAKES THESE ASSERTIONS RATHER THAN RESTATEMENTS: the first one reads the
+ * payload handed to `.set()`, so it fails if a later edit reinstates the status
+ * write, which no error code and no `updated` flag would notice.
+ */
+describe("option B — the convert leaves the request in the queue", () => {
+  it("writes converted_patient_id and does NOT touch status, handled_at or handled_by", async () => {
+    H.script = [[pendingRequest()], [{ id: REQUEST_ID }]];
+
+    const result = await convertGuestRequest(REQUEST_ID, { kind: "new_patient" });
+
+    expect(result.ok).toBe(true);
+    expect(H.sets).toHaveLength(1);
+    expect(H.sets[0]).toEqual({ convertedPatientId: "p-new" });
+    // Spelled out as well as compared whole, so a failure names the column.
+    expect(Object.keys(H.sets[0]!)).not.toContain("status");
+    expect(Object.keys(H.sets[0]!)).not.toContain("handledAt");
+    expect(Object.keys(H.sets[0]!)).not.toContain("handledBy");
+  });
+
+  it("REFUSES a second convert on a row somebody already converted, and creates nobody", async () => {
+    // THE GUARD THAT REPLACED THE STATUS ONE. With the status no longer moving,
+    // `status = 'pending'` alone would let a second press create a SECOND
+    // patient for one request - the duplicate this whole flow exists to avoid.
+    H.script = [[pendingRequest({ convertedPatientId: "p-already" })], [{ id: REQUEST_ID }]];
+
+    const result = await convertGuestRequest(REQUEST_ID, { kind: "new_patient" });
+
+    expect(result).toEqual({ ok: false, error: "already_handled" });
+    expect(H.inserted).toBe(false);
+    expect(H.updated).toBe(false);
+  });
+
+  it("REFUSES a convert on a row somebody dismissed, and creates nobody", async () => {
+    H.script = [[pendingRequest({ handledAt: new Date() })], [{ id: REQUEST_ID }]];
+
+    const result = await convertGuestRequest(REQUEST_ID, { kind: "new_patient" });
+
+    expect(result).toEqual({ ok: false, error: "already_handled" });
+    expect(H.inserted).toBe(false);
+    expect(H.updated).toBe(false);
+  });
+});
+
+/**
+ * THE DISMISS. "A dismiss on the queue row, not a status change on the request"
+ * — the owner's words, and the first test is the one that holds him to them.
+ */
+describe("option B — the dismiss", () => {
+  it("stamps handled_at and handled_by, and touches NOTHING else", async () => {
+    H.script = [[pendingRequest({ convertedPatientId: "p-1" })], [{ id: REQUEST_ID }]];
+
+    const result = await dismissGuestRequest(REQUEST_ID);
+
+    expect(result).toEqual({ ok: true });
+    expect(H.sets).toHaveLength(1);
+    expect(Object.keys(H.sets[0]!).sort()).toEqual(["handledAt", "handledBy"]);
+    expect(H.sets[0]!.handledBy).toBe("u-carlos");
+    // The status stays `pending` for ever, which is the truth: this request
+    // never became a booking, and `confirmed` would say it had.
+    expect(Object.keys(H.sets[0]!)).not.toContain("status");
+  });
+
+  it("REFUSES a request nobody converted, so the queue cannot be emptied by hiding rows", async () => {
+    H.script = [[pendingRequest()], [{ id: REQUEST_ID }]];
+
+    const result = await dismissGuestRequest(REQUEST_ID);
+
+    expect(result).toEqual({ ok: false, error: "not_converted" });
+    expect(H.updated).toBe(false);
+    expect(H.sets).toHaveLength(0);
+  });
+
+  it("REFUSES a clinic outside the actor's assignment, and says THAT rather than the state", async () => {
+    // STAFF-02 applies to the back half of the convert too. The order matters:
+    // a receptionist who may not read this request must be told they may not,
+    // not told whether somebody has converted it.
+    H.scope = [CB];
+    H.script = [[pendingRequest({ convertedPatientId: "p-1" })], [{ id: REQUEST_ID }]];
+
+    const result = await dismissGuestRequest(REQUEST_ID);
+
+    expect(result).toEqual({ ok: false, error: "location_not_assigned" });
+    expect(H.updated).toBe(false);
+  });
+
+  it("REFUSES an already-dismissed row with already_handled", async () => {
+    H.script = [[pendingRequest({ convertedPatientId: "p-1", handledAt: new Date() })]];
+
+    const result = await dismissGuestRequest(REQUEST_ID);
+
+    expect(result).toEqual({ ok: false, error: "already_handled" });
+    expect(H.updated).toBe(false);
+  });
+
+  it("loses the RACE cleanly when another receptionist dismisses first", async () => {
+    // The conditional UPDATE matched no row: `handled_at` was written between
+    // this SELECT and this UPDATE.
+    H.script = [[pendingRequest({ convertedPatientId: "p-1" })], []];
+
+    const result = await dismissGuestRequest(REQUEST_ID);
+
+    expect(result).toEqual({ ok: false, error: "already_handled" });
+  });
+
+  it("REFUSES a therapist, who may not work the front desk", async () => {
+    H.role = "therapist";
+    const result = await dismissGuestRequest(REQUEST_ID);
+    expect(result).toEqual({ ok: false, error: "forbidden" });
+    expect(H.updated).toBe(false);
+  });
+
+  it("writes an audit row against the PATIENT, with no name or number in it", async () => {
+    H.script = [[pendingRequest({ convertedPatientId: "p-1" })], [{ id: REQUEST_ID }]];
+
+    await dismissGuestRequest(REQUEST_ID);
+
+    expect(H.audits).toHaveLength(1);
+    expect(H.audits[0]!.action).toBe("patient.guest_request_dismissed");
+    expect(H.audits[0]!.entityId).toBe("p-1");
+    const serialised = JSON.stringify(H.audits[0]);
+    expect(serialised).not.toContain("Maria");
+    expect(serialised).not.toContain("912345678");
   });
 });

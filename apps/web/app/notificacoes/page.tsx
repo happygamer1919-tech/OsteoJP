@@ -201,6 +201,7 @@ export default async function NotificacoesPage() {
     when: formatGuestPreferredWhen(g.requestedStartsAt, g.requestedEndsAt),
     requestedAt: stamp(g.createdAt),
     possiblePatientMatches: g.possiblePatientMatches,
+    converted: g.converted,
   }));
 
   // Same server-side Lisbon formatting as both queues above, for the same
