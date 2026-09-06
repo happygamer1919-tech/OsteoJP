@@ -30,17 +30,35 @@ board that changes production schema state, and it is the owner's to release.
 deferred patients-path predicate rewrite; that work is now carded as `RLS-02`
 and is a different thing. Do not apply a ruling about one to the other.
 
-**Blocked on people, and on whom** (re-derived from the board at close, not
-copied from earlier in the session — `PACK-04` moved out of this lane while this
-document was being written):
+**Blocked on people, and on whom.** Re-derived from the board at close and then
+**re-derived again on 2026-09-06 against `44760e2b`**, which is what found the
+gap below. `main` had not moved between the two, and the lists still matched —
+but the SECOND derivation asked a better question and got a longer answer.
 
-- **ivan (6)** — `LE-suppression-observation`,
+**DERIVE THIS FROM THE `blocked_on` FIELD, ACROSS EVERY LANE. NOT FROM THE
+`blocked_on_people` LANE.** The first version of this section listed that lane
+and then added, from memory, "two incidents are also blocked on ivan". Two is
+wrong: **four** cards outside that lane carry a `blocked_on`, and the two the
+memory supplied were the two that happened to be recent. The lane is a place a
+card sits; the field is the fact.
+
+- **ivan (6, in the lane)** — `LE-suppression-observation`,
   `LE-migration-patient-fields-not-persisted`, `LAUNCH-04-sunday-owner-packet`,
   `LE-48h-email-never-observed-sending`, `OBS-03-sentry-source-maps-never-uploaded`,
-  `PL-admin-clinical-access`. Two incidents are also blocked on him inside the
-  incidents lane: `SEC-supabase-anon-execute-segfault`, `INC-agenda-typeerror-m-id`.
-- **jp (4)** — `LAUNCH-02-jp-packet-signoff`, `LE-terms-version-switch-on-jp-text`,
-  `LE-24h-sms-tokenized-confirm-link`, `Q-PL-ADMIN-CLINICAL-1`.
+  `PL-admin-clinical-access`.
+- **jp (4, in the lane)** — `LAUNCH-02-jp-packet-signoff`,
+  `LE-terms-version-switch-on-jp-text`, `LE-24h-sms-tokenized-confirm-link`,
+  `Q-PL-ADMIN-CLINICAL-1`.
+- **Blocked, and NOT in that lane — the four the field finds and the lane hides:**
+  - ivan — `SEC-supabase-anon-execute-segfault` (incidents)
+  - ivan — `INC-agenda-typeerror-m-id` (incidents)
+  - ivan — `SEC-branch-protection-does-not-bind-the-owner-account` (loose ends).
+    Ruled UNCHANGED for the rest of this wave and on the board as a CONDITION so
+    it reaches the security review. **It is not work for a lane. Do not "fix" it.**
+  - jp — `LE-portal-reminder-confirm-loop` (loose ends), carded 2026-08-11 and
+    not built.
+
+  The count a report should quote is therefore **ivan 9, jp 5**, not 6 and 4.
 
 **Open lanes at close:** 23 in flight, 6 incidents, 30 loose ends, 10 blocked on
 people. `/admin/staff` stays deferred by owner ruling and nothing in this session
@@ -56,10 +74,12 @@ reading before touching #1175.
 
 ---
 
-## 3. The three findings the next session should inherit
+## 3. The findings the next session should inherit
 
 These are not tasks. They are things that were measured, that cost something to
-find, and that are easy to lose.
+find, and that are easy to lose. The first three came out of this lane's own
+work; 3.4 is BLUE's, re-derived here rather than transcribed, and the
+re-derivation changed the numbers.
 
 ### 3.1 The control that did NOT fail is the most useful result of the week
 
@@ -127,6 +147,57 @@ green, not by a gate:
 itself under test will report the last true thing it knew. Before believing a
 number from this harness, check that the reading is a MISS and that the seed
 asserted the principal you are measuring as.
+
+---
+
+### 3.4 A migration's identity is its sha256. Every number beside it is a counter, and they have already stopped agreeing
+
+BLUE's finding, re-derived here from the repository rather than transcribed —
+and the re-derivation moved it, so the numbers below are the ones to carry.
+
+**There are THREE numbers, and only one of them identifies anything.**
+
+| | what it is | where |
+|---|---|---|
+| `_journal.idx` | a **0-based row counter** | `packages/db/migrations/meta/_journal.json` |
+| `__drizzle_migrations.id` | a **1-based serial**, `idx + 1` | `drizzle` schema, in the database |
+| the tag | the **file number**, `0078_…` | the filename |
+
+**Where each coincidence ended, counted from the journal:**
+
+- `idx` equalled the tag for `0000` through `0042`. **`0043` does not exist**, so
+  from `idx 43 → 0044` the file's own counter has been one behind ever since.
+  Anyone reading "id" off `_journal.json` and expecting the tag has been wrong
+  since 0044, not since 0078.
+- The database `id` equalled the tag right up to **`0075` (id 75 = tag 0075)**,
+  which is why nobody noticed.
+- **`0076` and `0077` do not exist either** — 0076 was reserved for the admin
+  clinical branch and never released, 0077 was allocated and never landed. So the
+  next row is **`id 76`, carrying tag `0078`**, and the coincidence is gone
+  permanently. It does not resume: the gap does not close by itself.
+
+Three tags are absent from the journal altogether: **`0043`, `0076`, `0077`**.
+
+**IDENTITY IS THE FILE'S sha256**, stored in `__drizzle_migrations.hash`. The
+repo's own 0075 post-check labels that line **"THE ONE THAT DECIDES."** Both
+hashes reproduce from the files today, which is the whole point of the claim:
+
+```
+shasum -a 256 packages/db/migrations/0078_appointments_rls_nullary_location.sql
+  68334d6a822088f2…   = the hash RLS-01 recorded for id 76
+shasum -a 256 packages/db/migrations/0075_reminder_dispatches.sql
+  e268bc0ddbaa7235…   = the hash scripts/0075-postcheck.sql pins for id 75
+```
+
+**Why it matters at Castelo Branco.** A second database built from these files
+gets its own serial. Its `id` will not match this one's, and neither will match
+the tag. Anything that answers "is this migration applied there" by comparing a
+NUMBER is comparing two counters that were only ever equal by accident and are
+not equal now. **Compare the hash.** `scripts/check-journal.mjs` already treats
+`idx` as an ordinal rather than an identity — it asserts the journal's ORDER
+matches the on-disk numeric order and never that the two numbers are equal — so
+the repository's own guard is already on the right side of this. Reports and
+apply blocks are what need to catch up.
 
 ---
 
