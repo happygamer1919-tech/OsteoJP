@@ -774,6 +774,62 @@ on `main` (§7.1) cannot block a lane that never checks `main` out. Enumerating
 them would make this document stale within the hour and would train readers to
 skip the census, which is the one thing it must not become.
 
+### 7.0b A MIGRATION NUMBERED BELOW ONE ALREADY APPLIED IS SILENTLY SKIPPED.
+Binding from 2026-09-06. **Read this before taking a migration number.**
+
+**THE NUMBER IS TAKEN AT BUILD TIME FROM WHAT IS FREE. A RESERVED NUMBER THAT HAS
+BEEN OVERTAKEN IS NOT FREE, AND USING IT PRODUCES A MIGRATION THAT DOES NOTHING
+AND REPORTS SUCCESS.**
+
+SR-46 reserved `0077` for the reschedule fix. By the time it was built, `0078` and
+`0079` had shipped and been applied. The file was authored as `0077`, and the
+number had to be abandoned. Here is exactly why, verified in the vendored source
+rather than reasoned about:
+
+```js
+// node_modules/drizzle-orm/pg-core/dialect.js
+if (!lastDbMigration || Number(lastDbMigration.created_at) < migration.folderMillis) {
+```
+
+Drizzle applies a migration **only when its journal `when` is strictly greater
+than the newest `created_at` already in `drizzle.__drizzle_migrations`.** And
+`scripts/check-journal.mjs` separately requires journal `idx` order to match
+**filename** order, with `when` strictly increasing along it.
+
+Those two together are a trap. A file named `0077` sorts before `0078`, so the
+journal forces it a **lower** `when` — which is below production's newest
+`created_at` — so `drizzle-kit migrate` **skips it and prints
+`migrations applied successfully`**. Nothing fails. The pending count does not
+move. The table you asked for is simply not there.
+
+**THIS IS THE PAGER AND THE AUTO-UPDATE WORKFLOW AGAIN, IN THE APPLY PATH.** The
+same shape three times in one week: an instrument that cannot do its job and
+reports success. It is INC-07's mechanism, and check-journal's rule 3b comment
+already names it — but only for a backwards `when` somebody typed, not for the
+one the FILENAME forces on you.
+
+**SO EVERY PRE-CHECK CARRIES THIS ROW.** From `scripts/0080-precheck.sql`:
+
+```sql
+SELECT 'newest applied created_at < 0080 when',
+       (SELECT max(created_at)::text FROM drizzle.__drizzle_migrations),
+       '< 1787401200000',
+       CASE WHEN (SELECT max(created_at) FROM drizzle.__drizzle_migrations) < 1787401200000
+            THEN 'OK' ELSE 'FAIL' END
+```
+
+It is one row, it is cheap, and it is the only check that catches a skip **before**
+the apply rather than by noticing afterwards that nothing happened. A post-check
+asserting the object exists catches it too — but only after a run everybody has
+already been told succeeded.
+
+**WHAT TO DO WHEN YOUR RESERVED NUMBER IS OVERTAKEN:** take the next free one and
+say so loudly in the migration header, the PR and the card. The reservation was a
+plan; the journal is the fact. `0076` and `0077` are now permanent gaps, and
+`docs/handoff/PURPLE-20260905-CLOSE.md` §3.4 already records that the tag, the
+journal `idx` and the database row id are three different numbers that stopped
+agreeing at exactly this gap.
+
 ### 7.0a ONE LOCAL SUPABASE PER LANE. Binding from 2026-09-03, SR-39.
 
 **TWO COMMANDS. Run the first once per session, the second instead of
