@@ -513,6 +513,36 @@ for (const card of cards) {
   if (card.status === "shipped" && !hasEvidence)
     fail(id, `status=shipped but evidence is null - a shipped card MUST carry evidence`);
 
+  // ---- SR-55: a SHIPPED card carries no blocked_on. ---------------------
+  //
+  // A card in `shipped` naming somebody it waits on is a contradiction: the
+  // work is done, so there is nothing for them to unblock. In practice it is
+  // never a contradiction somebody wrote on purpose - it is a leftover. The
+  // field gets set while a card waits for an acceptance and nobody clears it
+  // when the acceptance lands.
+  //
+  // WHY IT IS WORTH A PREDICATE. On 2026-09-06 four cards sat in `shipped`
+  // carrying `blocked_on: ivan` - STAFF-01 through STAFF-04 - each of which
+  // has, ON ITS OWN EVIDENCE FIELD, the owner accepting it on the deployed
+  // build on 2026-08-17. Three weeks. Nothing was wrong with the work and
+  // nothing was waiting on anybody; the field was simply stale.
+  //
+  // THE COST IS NOT UNTIDINESS, IT IS A FALSE STATEMENT TO A NAMED PERSON.
+  // Reports derive "blocked on people" from this field, so those four inflated
+  // ivan's count from 11 to 15 - telling the owner he was holding up four
+  // things he had personally signed off. A stale blocked_on does not look
+  // wrong: it sits on a shipped card nobody re-reads.
+  //
+  // SR-55 RULED THE COUNT AND SAID OUT LOUD THAT UNTIL THIS PREDICATE EXISTED
+  // THE RULING FAILED OPEN - the next stale field would be found by a person or
+  // not at all. This is the predicate.
+  if (card.status === "shipped" && (card.blocked_on ?? null) !== null)
+    fail(
+      id,
+      `status=shipped but blocked_on is "${card.blocked_on}" - a shipped card waits on nobody (SR-55). ` +
+        `If the thing it waited for has happened, clear the field; if it genuinely still waits, it is not shipped.`,
+    );
+
   // A blocked card blocked on nothing is a defect - it hides who we wait on.
   if (card.status === "blocked" && (card.blocked_on ?? null) === null)
     fail(id, `status=blocked but blocked_on is null - name who/what it is blocked on`);
