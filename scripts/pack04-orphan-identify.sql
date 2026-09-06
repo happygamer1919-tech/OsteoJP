@@ -37,6 +37,48 @@
 -- pacote whose holders all attend one live service has an obvious equivalent; a
 -- pacote whose holders attend three does not, and must be left alone.
 --
+-- ===================================================================
+-- SR-54. WHAT SECTION 3 CANNOT SEPARATE. Learned from this script's
+-- FIRST PRODUCTION RUN, 2026-09-06, and binding on every later one.
+-- ===================================================================
+-- Section 3 ranks candidates by how many appointments the pacote's HOLDERS
+-- attend. On production it returned THREE candidates for 7e3359a7, not one:
+--
+--     NESA (270fb115)              2 appointments
+--     Osteopatia / Posturologia    1
+--     Fisioterapia                 1
+--
+-- By the rule three lines above, that is NOT an identification and the pacote is
+-- left alone. THE REPOINT WAS AUTHORISED ANYWAY, and the reason is outside this
+-- script and outside the data it reads: the only holder is the OWNER'S OWN TEST
+-- ACCOUNT, and the Osteopatia and Fisioterapia rows are the owner and the lane
+-- clicking through the defect on 02/09 and 04/09 while diagnosing it. The signal
+-- was diluted by our own testing, and nothing in the database says so.
+--
+-- SO THE RULE IS UNCHANGED FOR A REAL PATIENT, which is the whole reason it is
+-- written here rather than only on a card: AN IDENTIFICATION HEURISTIC THAT
+-- RANKS CANDIDATES BY ATTENDANCE CANNOT DISTINGUISH A PATIENT'S REAL TREATMENT
+-- FROM AN OPERATOR'S DIAGNOSTIC CLICKS. On a real patient's pacote, two or more
+-- candidates means ASK JP. It never means take the leader, and it never means
+-- assume the extra rows were testing - the account being a test account is a
+-- fact only a human holds, stated in the authorisation, never inferred here.
+--
+-- ===================================================================
+-- AND WHAT SECTION 3 COULD NEVER HAVE ANSWERED FOR THE OTHER TWO
+-- ===================================================================
+-- The same run showed a3c1ced1 and d75f251d each carry ONE pacote and ZERO
+-- patient instances. Section 3 asks what the HOLDERS attend, so with no holder
+-- it has no input and returns NOTHING for either. THAT IS A PROPERTY OF THE
+-- QUESTION, NOT A FAILURE OF THE SCRIPT, and it was true before the run as well:
+-- this file could never have identified those two. An empty section 3 for a
+-- holderless pacote is the CORRECT answer, and a reader who reads it as a broken
+-- query will go looking for a bug that is not there.
+--
+-- It also settles what those two are. A pacote with no patient instance is a
+-- catalogue row nobody has bought: no patient's money is stranded in either, so
+-- retiring them or repointing them is CATALOGUE HYGIENE for JP at his leisure,
+-- not a stranded-sessions decision and not a money decision.
+--
 -- PII: this one DOES print patient_number and full_name, unlike the other
 -- scripts in this directory, because the ruling asks for the patient to be named
 -- for each pacote - these may be real patients rather than the test account, and
@@ -108,6 +150,9 @@ SELECT sv.id                AS archived_service_id,
 \echo '--- Read one archived service at a time. ONE live service with a large'
 \echo '--- share is an identification. Two or more is NOT, and that pacote is'
 \echo '--- left alone per the ruling.'
+\echo '--- TWO OR MORE IS NOT AN IDENTIFICATION - ask JP; never take the leader'
+\echo '--- (SR-54). And a pacote with NO holder returns NOTHING here, which is'
+\echo '--- the correct answer to the question and not a failure of the query.'
 SELECT sv.id          AS archived_service_id,
        sp.name        AS pack_name,
        live.id        AS candidate_live_service_id,
