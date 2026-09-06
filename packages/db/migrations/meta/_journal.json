@@ -533,6 +533,13 @@
       "when": 1787301100000,
       "tag": "0078_appointments_rls_nullary_location",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1787301200000,
+      "tag": "0079_revoke_service_role_execute",
+      "breakpoints": true
     }
   ]
 }
