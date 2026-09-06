@@ -693,7 +693,10 @@ booting terminal violates on its first command is not a rule, it is noise - and
 noise is worse than nothing here, because the census exists to make ONE specific
 anomaly visible and a report that always fires hides it.
 
-So the census is now in two parts, and only the first is enumerated.
+So the census is now in three parts, and only the first and third are
+enumerated. **PART THREE was added 2026-09-06** and is the one that changes how
+the census is READ, not just what it lists: there is a SECOND CLONE, and which
+repository you run `git worktree list` in decides what it can possibly print.
 
 **PART ONE - THE PERMANENT TREES. Named, exact, and a tree here that you did not
 expect is still the thing §7.0 was written to catch.**
@@ -716,6 +719,53 @@ when the session's scratchpad is cleared. On 2026-09-03 there were TEN, split
 `purple-*` and `blue-*`. **A session tree that is not yours belongs to a live
 terminal in another lane: do not build in it, do not check out its branch, and
 do not remove it.** Your own is the only one you write.
+
+**PART THREE - THE SECOND CLONE. Added 2026-09-06, and it is the part that
+changes how the other two are read.**
+
+| Clone | Absolute path | State |
+|---|---|---|
+| the shared clone | `/Users/ivan/Documents/Projects/GitHub/OsteoJP` | the one PART ONE is about |
+| **the home clone** | `/Users/ivan/osteojp` | **A SEPARATE CLONE, not a worktree.** Its own `.git`, same `origin`. Sessions boot in it and build from it |
+
+**`git worktree list` ANSWERS ABOUT THE CLONE YOU RUN IT IN, AND NOTHING ELSE.**
+That is the whole reason this part exists. On 2026-09-06 the same census, taken
+minutes apart, printed **two** trees from `/Users/ivan/osteojp` and **seventeen**
+from the shared clone. Neither number was wrong and neither was the census. A
+session booting in the home clone and reading §7.0 as written would see an almost
+empty world, find nothing in PART ONE, and report its own tree as an anomaly - or
+worse, read the emptiness as "no other lane is live" and proceed as the only
+executor. That is the 2026-08-17 duplicate-terminal failure arriving through a
+different door.
+
+**SO THE CENSUS IS TWO COMMANDS, NOT ONE**, and a session that runs only the first
+has not taken it:
+
+```bash
+git worktree list                                                  # your own clone
+git -C /Users/ivan/Documents/Projects/GitHub/OsteoJP worktree list  # the shared clone
+```
+
+**A TREE IS AN ANOMALY ONLY IF IT IS IN NEITHER CLONE'S ANSWER** and matches
+neither PART ONE nor the PART TWO shape. The home clone itself is now named here,
+so it is no longer one; it was reported as one on 2026-09-06, correctly under the
+rule as it then stood, and the answer was to describe the world rather than to
+tidy the tree away.
+
+**BOTH CLONES ARE LIVE AND LANES SHARE THEM.** On 2026-09-06 a BLUE session and a
+PURPLE session were both working out of the home clone at the same time, PURPLE on
+`docs/PURPLE-close-0079-applied` in its own session worktree. Nothing collided,
+and the reason it could not is the same reason PART TWO gives: one branch cannot
+be checked out twice, and neither session builds in the clone's own working tree.
+The rule that follows is unchanged and now applies across both - **build in your
+own session tree, never in a clone's working directory.**
+
+**WHY NOT CONSOLIDATE THEM.** Not this lane's call, and not free: the owner's
+`osteojp-prod-apply` worktree hangs off the shared clone and holds the record of
+which sha each production migration ran from - `f0a59d5b` for 0079, read from its
+HEAD on 2026-09-06 rather than from anybody's report. Merging the clones would
+move or destroy that. Named here as the world that exists; whether it should is
+the owner's question.
 
 **WHY A SHAPE AND NOT A LIST.** Sibling worktrees are what make concurrent lanes
 safe at all - one branch cannot be checked out twice, so a same-branch collision
@@ -787,11 +837,17 @@ for either, §7.0 applies: report it before doing anything with it.
 because the original form - "EVERY TREE IT PRINTS MUST APPEAR IN THE TABLE ABOVE"
 - now fires on every boot and therefore says nothing.**
 
-Read the census against §7's two parts and report a tree that is in NEITHER:
+**AMENDED AGAIN 2026-09-06: THE CENSUS IS TWO COMMANDS.** `git worktree list`
+answers about the clone you run it in, and there are TWO clones (§7 PART THREE).
+Run it in your own and in the shared clone, or you have not taken the census - the
+same census minutes apart printed 2 trees from one and 17 from the other.
+
+Read BOTH answers against §7's three parts and report a tree that is in NONE:
 
   1. it is one of the PERMANENT trees named in §7's table; or
   2. it matches the SESSION SHAPE
-     `/private/tmp/claude-501/-Users-ivan/<session-id>/scratchpad/<lane><suffix>`.
+     `/private/tmp/claude-501/-Users-ivan/<session-id>/scratchpad/<lane><suffix>`; or
+  3. it is one of the two CLONES named in PART THREE.
 
 **Anything else is reported before any work starts.** Not investigated, not tidied
 away, not worked in: named in the first output, and the session continues on its
