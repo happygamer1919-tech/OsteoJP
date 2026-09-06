@@ -518,3 +518,61 @@ describe("external_agenda means the same thing on a ruling as on a card", () => 
     assert.match(r.err, /external_agenda must be exactly true/);
   });
 });
+
+describe("SR-55: a shipped card waits on nobody", () => {
+  /**
+   * THE STATE THIS PREVENTS IS ONE THIS BOARD WAS ACTUALLY IN.
+   *
+   * On 2026-09-06 four cards sat in `shipped` carrying `blocked_on: ivan` —
+   * STAFF-01 through STAFF-04 — each of which has, on its own evidence field,
+   * the owner accepting it on the deployed build on 2026-08-17. Three weeks
+   * stale, and nothing mechanical could see it.
+   *
+   * THE COST IS A FALSE STATEMENT TO A NAMED PERSON, not untidiness. Reports
+   * derive "blocked on people" from this field, so those four inflated ivan's
+   * count from 11 to 15 — telling the owner he was holding up four things he
+   * had personally signed off. SR-55 ruled the count AND said out loud that
+   * until this predicate existed the ruling failed open.
+   */
+  const shipped = (over = {}) => ({
+    ...ORDINARY,
+    id: "SHIP-1",
+    status: "shipped",
+    lane: "shipped",
+    evidence: { kind: "pr", ref: "#1", at: "2026-09-06" },
+    ...over,
+  });
+
+  test("REJECTS shipped + blocked_on, and NAMES the person so the fix is obvious", () => {
+    const r = validate([shipped({ blocked_on: "ivan" })]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /status=shipped but blocked_on is "ivan"/);
+    assert.match(r.err, /a shipped card waits on nobody \(SR-55\)/);
+  });
+
+  test("REJECTS it for every person the board knows, not only ivan", () => {
+    for (const who of ["jp", "lawyer", "infra"]) {
+      const r = validate([shipped({ blocked_on: who })]);
+      assert.equal(r.code, 1, `${who} should have been refused`);
+      assert.match(r.err, new RegExp(`blocked_on is "${who}"`));
+    }
+  });
+
+  test("ACCEPTS shipped with blocked_on null - the ordinary, correct case", () => {
+    assert.equal(validate([shipped({ blocked_on: null })]).code, 0);
+  });
+
+  test("ACCEPTS a NON-shipped card that genuinely waits - the rule is about shipped ONLY", () => {
+    // Blocking is legitimate right up until the work is done. A rule that fired
+    // on `blocked` would be the exact opposite of this one.
+    const waiting = { ...ORDINARY, status: "blocked", lane: "blocked_on_people", blocked_on: "ivan" };
+    assert.equal(validate([waiting]).code, 0);
+  });
+
+  test("BOTH committed boards pass it, which is what the STAFF-01..04 audit was for", () => {
+    for (const path of [REAL_PORTAL, REAL_PLATFORM]) {
+      const r = spawnSync(process.execPath, [VALIDATOR, path], { encoding: "utf8" });
+      assert.equal(r.status, 0, `${path} should be clean:\n${r.stderr}`);
+    }
+  });
+});
