@@ -429,12 +429,41 @@ appear there. `cc1a9b6f` was never in scope, was never touched, and a reader who
 takes it for something the repoint did, or for a second thing that went wrong,
 will be chasing nothing.
 
-**What it does raise is a product question, and it is JP's.** Two ACTIVE
-products now sell ten NESA sessions at Linda-a-Velha: `ce888bbb` "Pacote 10",
-the repointed one, and `cc1a9b6f` "NESA — 10 sessoes". Nothing in the data says
-which the clinic means to sell, or whether both. **The owner puts it on
-PACK-05**, alongside `a3c1ced1` and `d75f251d` — that card is the catalogue
-hygiene queue and it is already `blocked_on: jp`. Note for whoever reads the
-board next: PACK-05's card text as it stands on `main` covers only the two
-unbought rows; this third question was added by the closing dispatch of
-2026-09-06 and is recorded here.
+**It raises NO product question, and the sentence that said it did is struck.**
+
+> ~~"Two ACTIVE products now sell ten NESA sessions at Linda-a-Velha: `ce888bbb`
+> 'Pacote 10', the repointed one, and `cc1a9b6f` 'NESA — 10 sessoes'. Nothing in
+> the data says which the clinic means to sell, or whether both. The owner puts
+> it on PACK-05."~~ **THAT WAS FALSE. They are at DIFFERENT CLINICS.**
+
+Read from production under SR-50 by BLUE rather than reasoned about, and
+recorded on `PACK-05` (#1193):
+
+```
+ce888bbb-5519-4743-ac61-05248703fe7a  Pacote 10 - NESA    LV  10 sessions  39000  1 instance
+cc1a9b6f-e878-45c1-83ac-3516ff383dbd  NESA - 10 sessoes   CB  10 sessions  35000  0 instances
+```
+
+One Linda-a-Velha at 390.00 EUR, one Castelo Branco at 350.00 EUR, and
+`service_pack_location_prices` returns zero rows for both, so those base prices
+ARE the prices. **Not a duplicate: one product priced per clinic.**
+
+**And the pattern is the whole catalogue, not a coincidence of two rows.** All
+FOURTEEN active pacotes split by clinic on the naming convention itself — CB
+reads `<Service> - N sessoes`, LV reads `Pacote N - <Service>` — and every one
+of the fourteen conforms. **Both rows also carry `created_at
+2026-07-16 00:17:04.921+00`, the same millisecond**, so both came out of one
+catalogue seed five days BEFORE the 2026-07-21 reconciliation that still saw the
+NESA services live, and weeks before whatever renamed them to `-`. `cc1a9b6f`
+has never been updated since; `ce888bbb`'s `updated_at` is the repoint.
+**So it cannot have been created when the original broke, which was the specific
+worry.**
+
+**Where the error came from, since that is the part worth keeping.** The
+repoint's AFTER table returned two rows and this document read a two-row result
+as a two-product problem. Two rows bound to one service is what §6.3 already
+explains as the query's SCOPE — and having explained it, the paragraph above
+then treated the second row as a finding anyway. **The clinic column was never
+looked at.** The correction cost one production read. PACK-05 stays what it
+always was: the two archived services nobody has bought, `a3c1ced1` and
+`d75f251d`, `blocked_on: jp`, and no third question was ever added to it.
