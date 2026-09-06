@@ -79,6 +79,47 @@ describe("buildClonedAppointment", () => {
     expect(v.recurrenceParentId).toBeNull();
     expect(v.room).toBeNull();
     expect(v.notes).toBeNull(); // inline per-visit note, never copied
+    expect(v.packInstanceId).toBeNull(); // 0067 pacote link — SCHED-15 rule 2
+  });
+
+  // ================================================================= //
+  // SCHED-15 RULE 2 — THE PACOTE LINK IS NEVER COPIED.
+  // ================================================================= //
+  // The negative arm is the point. A clone that inherited pack_instance_id
+  // would spend one of the patient's ten sessions with nobody deciding to,
+  // because pack-balance.ts derives the balance from LINKED, non-cancelled
+  // appointments: the link is the consumption. The DB half — that the balance
+  // does not move — is asserted in packages/db/tests/appointment-clone-rls.test.ts.
+  describe("the 0067 pacote link", () => {
+    it("is null even when the source is linked to a pacote instance", () => {
+      const linked = {
+        ...source("2026-08-06T09:00:00Z", "2026-08-06T10:00:00Z"),
+        // Deliberately shaped like a source row that DOES carry a link. The
+        // field is not on CloneSource, so this is the caller trying to smuggle
+        // one through and being ignored.
+        packInstanceId: "aaaaaaaa-0000-0000-0000-00000000000f",
+      } as CloneSource;
+      const v = buildClonedAppointment(linked, new Date("2026-09-01T14:00:00Z"), ACTOR);
+      expect(v.packInstanceId).toBeNull();
+    });
+
+    it("is present on the values object, not merely absent (an omitted key would take the column default)", () => {
+      const v = buildClonedAppointment(
+        source("2026-08-06T09:00:00Z", "2026-08-06T10:00:00Z"),
+        new Date("2026-09-01T14:00:00Z"),
+        ACTOR,
+      );
+      // `in` distinguishes "explicitly null" from "not written at all". The
+      // second would still insert NULL today and would stop doing so the day a
+      // column default changed — the exact regression this file's header says
+      // the explicit nulls exist to prevent.
+      expect("packInstanceId" in v).toBe(true);
+    });
+
+    it("does not read the source's pacote link at all (CloneSource has no such field)", () => {
+      const s = source("2026-08-06T09:00:00Z", "2026-08-06T10:00:00Z");
+      expect("packInstanceId" in s).toBe(false);
+    });
   });
 
   it("derives tenantId and createdBy from the acting context, never the source", () => {

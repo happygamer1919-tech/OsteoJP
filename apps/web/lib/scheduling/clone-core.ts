@@ -10,7 +10,12 @@
 
 /** The source appointment fields the clone reads. Everything else on the source
  * row (grouping ids, series pointers, per-visit notes, lifecycle timestamps) is
- * deliberately NOT read, because a clone never copies it. */
+ * deliberately NOT read, because a clone never copies it.
+ *
+ * `packInstanceId` IS DELIBERATELY ABSENT FROM THIS TYPE, and that absence is
+ * the enforcement rather than a convention: the source's pacote link cannot be
+ * copied by a caller who never reads it. See the `packInstanceId: null` note on
+ * the values type below for why. */
 export type CloneSource = {
   patientId: string;
   practitionerId: string;
@@ -35,11 +40,22 @@ export type CloneActor = { tenantId: string; userId: string };
  *                          (derived), status="scheduled", confirmationState="pending".
  *   NOT COPIED → null    — everything a clone must not inherit: the confirmation
  *                          receipt, the recurrence series, the 0027 booking group,
- *                          the 0028 batch, the room, and the inline per-visit note.
+ *                          the 0028 batch, the room, the inline per-visit note, and
+ *                          the 0067 PACOTE LINK.
  *                          Set to null EXPLICITLY (not omitted) so the "not copied"
  *                          guarantee is legible and cannot silently regress if a
  *                          column default ever changes. createdAt/updatedAt are
  *                          omitted so they take fresh DB defaults.
+ *
+ * SCHED-15 — `packInstanceId` WAS THE ONE FIELD RELYING ON THE COLUMN DEFAULT,
+ * AND IT IS THE ONE WHERE THAT IS MOST EXPENSIVE. `pack_instance_id` arrived in
+ * 0067, AFTER this mapping was written, so the clone has always produced an
+ * unlinked row — by omission, which is exactly the thing the paragraph above
+ * says this type does not do. A copy that inherited the link would SPEND another
+ * of the patient's ten sessions with nobody deciding to: `pack-balance.ts`
+ * derives the balance from linked, non-cancelled appointments, so the link IS
+ * the consumption. It is now null EXPLICITLY, it is in the type, and
+ * clone-core.test.ts asserts it in both directions.
  * The appointment_notes relation (0026) is a separate table and is never written.
  */
 export type ClonedAppointmentValues = {
@@ -64,6 +80,8 @@ export type ClonedAppointmentValues = {
   batchId: null;
   room: null;
   notes: null;
+  /** 0067. Always null on a clone — never read from the source. */
+  packInstanceId: null;
   createdBy: string;
 };
 
@@ -105,5 +123,8 @@ export function buildClonedAppointment(
     batchId: null,
     room: null,
     notes: null,
+    // The pacote link is never inherited. Reception associates the new visit to a
+    // pacote deliberately, through the PACK-01 linker in the drawer, or not at all.
+    packInstanceId: null,
   };
 }

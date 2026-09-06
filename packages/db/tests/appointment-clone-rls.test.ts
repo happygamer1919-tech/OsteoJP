@@ -60,6 +60,8 @@ type Ids = {
   appointment: string;
   bookingGroup: string;
   batch: string;
+  pack: string;
+  packInstance: string;
 };
 
 const newIds = (): Ids => ({
@@ -73,6 +75,8 @@ const newIds = (): Ids => ({
   appointment: randomUUID(),
   bookingGroup: randomUUID(),
   batch: randomUUID(),
+  pack: randomUUID(),
+  packInstance: randomUUID(),
 });
 
 const A = newIds();
@@ -103,6 +107,15 @@ async function seedTenant(sql: Sql, x: Ids, withSource: boolean): Promise<void> 
             values (${x.episode}, ${x.tenant}, ${x.patient}, 'Ep')`;
 
   if (!withSource) return;
+  // SCHED-15 rule 2 fixture. A pacote of TEN with nothing consumed, and the
+  // source appointment LINKED to it. `sessions_remaining` is the frozen 0067
+  // column and is seeded to the same ten so a reader cannot mistake it for the
+  // balance; the balance is derived below and never read from here.
+  await sql`insert into service_packs (id, tenant_id, base_service_id, location_id, name, session_count, price_cents)
+            values (${x.pack}, ${x.tenant}, ${x.service}, ${x.location}, 'Pacote 10 - Consulta', 10, 39000)`;
+  await sql`insert into patient_pack_instances
+              (id, tenant_id, patient_id, pack_id, sessions_total, sessions_remaining, legacy_consumed)
+            values (${x.packInstance}, ${x.tenant}, ${x.patient}, ${x.pack}, 10, 10, 0)`;
   // The source appointment: every "not copied" field is set to a NON-NULL value
   // and the lifecycle is advanced (completed/confirmed) so the clone's reset is a
   // real reset. room + inline notes + booking group + batch + recurrence all set.
@@ -116,6 +129,9 @@ async function seedTenant(sql: Sql, x: Ids, withSource: boolean): Promise<void> 
        'Sala 1', ${SRC_START}, ${SRC_END}, 'completed', 'confirmed',
        ${SRC_START}, 'sms',
        'FREQ=WEEKLY;COUNT=3', ${x.bookingGroup}, ${x.batch}, 'source inline note', ${x.user})`;
+  // The source SPENDS one of the ten. This is what a clone must not repeat.
+  await sql`update appointments set pack_instance_id = ${x.packInstance}
+             where id = ${x.appointment}`;
   // A per-visit appointment_notes row on the SOURCE (0026) — must NOT be cloned.
   await sql`insert into appointment_notes
       (tenant_id, appointment_id, patient_id, episode_id, author_user_id, body)
@@ -253,6 +269,81 @@ describe.skipIf(!live)("schedule-again clone — DB-gated mapping + cross-tenant
       expect(clone.recurrence_parent_id).toBeNull();
       expect(clone.room).toBeNull();
       expect(clone.notes).toBeNull();
+    });
+  });
+
+  /* ================ SCHED-15 rule 2 — the pacote link =============== */
+  /**
+   * A CLONE MUST NOT SPEND A SESSION, AND THE ASSERTION IS THE BALANCE, NOT THE
+   * COLUMN.
+   *
+   * `pack_instance_id` IS the consumption: pack-balance.ts derives available as
+   * `sessions_total - legacy_consumed - linked appointments that are not
+   * cancelled`, so a clone that inherited the link would take one of the
+   * patient's ten with nobody deciding to. Asserting only that the column is
+   * null would prove the mapping and not the consequence; this asserts the
+   * number that ends up on the patient's screen, computed with the same
+   * arithmetic the application uses.
+   *
+   * THE POSITIVE CONTROL IS WHAT MAKES IT MEAN ANYTHING. It links the clone
+   * DELIBERATELY, in the same rolled-back transaction, and shows the balance
+   * DOES move to 8. Without it, a fixture whose pacote was never linked at all
+   * would satisfy every "unchanged" assertion here and prove nothing.
+   */
+  describe("the 0067 pacote link is never inherited (rule 2)", () => {
+    /** available = sessions_total - legacy_consumed - linked non-cancelled. */
+    const balanceSql = (tx: Sql) => tx<{ available: number }[]>`
+      select (i.sessions_total - i.legacy_consumed
+              - (select count(*) from appointments a
+                  where a.pack_instance_id = i.id and a.status <> 'cancelled'))::int as available
+        from patient_pack_instances i where i.id = ${A.packInstance}`;
+
+    it("NEGATIVE CONTROL: the SOURCE really is linked, and it has already spent one of the ten", async () => {
+      const [row] = await sql<{ pack_instance_id: string | null }[]>`
+        select pack_instance_id from appointments where id = ${A.appointment}`;
+      expect(row!.pack_instance_id).toBe(A.packInstance);
+      const [bal] = await balanceSql(sql);
+      expect(bal!.available).toBe(9);
+    });
+
+    it("the clone lands with pack_instance_id NULL and the balance does NOT move", async () => {
+      await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) => {
+        const [clone] = await tx<{ id: string; pack_instance_id: string | null }[]>`
+          insert into appointments
+            (tenant_id, patient_id, practitioner_id, location_id, service_id,
+             starts_at, ends_at, status, confirmation_state, created_by)
+          select
+            ${A.tenant}, patient_id, practitioner_id, location_id, service_id,
+            ${NEW_START}::timestamptz,
+            ${NEW_START}::timestamptz + (ends_at - starts_at),
+            'scheduled', 'pending', ${A.user}
+          from appointments
+          where id = ${A.appointment}
+          returning id, pack_instance_id`;
+        expect(clone!.pack_instance_id).toBeNull();
+        const [bal] = await balanceSql(tx as unknown as Sql);
+        // Still 9: the source's one session, and not a second.
+        expect(bal!.available).toBe(9);
+      });
+    });
+
+    it("POSITIVE CONTROL: linking the clone on purpose DOES move the balance to 8", async () => {
+      // Proves the balance query above can move at all. Rolled back with the tx.
+      await asRole(sql, "authenticated", claimsFor(A.tenant), async (tx) => {
+        await tx`
+          insert into appointments
+            (tenant_id, patient_id, practitioner_id, location_id, service_id,
+             starts_at, ends_at, status, confirmation_state, created_by, pack_instance_id)
+          select
+            ${A.tenant}, patient_id, practitioner_id, location_id, service_id,
+            ${NEW_START}::timestamptz,
+            ${NEW_START}::timestamptz + (ends_at - starts_at),
+            'scheduled', 'pending', ${A.user}, ${A.packInstance}
+          from appointments
+          where id = ${A.appointment}`;
+        const [bal] = await balanceSql(tx as unknown as Sql);
+        expect(bal!.available).toBe(8);
+      });
     });
   });
 

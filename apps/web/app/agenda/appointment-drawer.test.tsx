@@ -431,3 +431,56 @@ describe("AppointmentDrawer — notes thread (PL-16)", () => {
     expect(html).toContain("Notas");
   });
 });
+
+// ==================================================================== //
+// SCHED-15 — "Marcar novamente" IN THE EDIT DRAWER, AND ITS GATE.
+// ==================================================================== //
+// The control existed on the patient profile's Marcações tab and NOWHERE else,
+// so reception had to leave the agenda to copy a visit that had just finished.
+// The drawer's gate is deliberately NARROWER than the profile's: past AND in a
+// consuming state, so a cancelled visit is not offered here. Both halves of the
+// AND are pinned, in both directions, because a gate asserted only where it
+// passes is a gate that could be `true`.
+describe("AppointmentDrawer — Marcar novamente (SCHED-15)", () => {
+  const past = "2026-08-06T09:00:00.000Z"; // the fixture's own date, in the past
+  const future = "2099-01-05T09:00:00.000Z";
+  const appt = (over: Partial<AgendaAppointment>): AgendaAppointment => ({
+    ...editAppt,
+    ...over,
+  });
+
+  it("offers it on a PAST COMPLETED appointment — Rodica's case", () => {
+    const html = render({ mode: "edit", appt: appt({ startsAt: past, status: "completed" }) });
+    expect(html).toContain("Marcar novamente");
+  });
+
+  it("offers it on a PAST SCHEDULED appointment (consuming, and it happened)", () => {
+    const html = render({ mode: "edit", appt: appt({ startsAt: past, status: "scheduled" }) });
+    expect(html).toContain("Marcar novamente");
+  });
+
+  it("offers it on a PAST NO-SHOW appointment (no_show is a consuming status)", () => {
+    const html = render({ mode: "edit", appt: appt({ startsAt: past, status: "no_show" }) });
+    expect(html).toContain("Marcar novamente");
+  });
+
+  it("does NOT offer it on a past CANCELLED appointment — the non-consuming arm", () => {
+    // The one row where this gate and the profile's disagree, on purpose. If
+    // `isPastConsuming` lost its status half, this is the assertion that reddens.
+    const html = render({ mode: "edit", appt: appt({ startsAt: past, status: "cancelled" }) });
+    expect(html).not.toContain("Marcar novamente");
+  });
+
+  it("does NOT offer it on a FUTURE appointment — the past arm", () => {
+    // Copying a visit that has not happened is "book another one", which is what
+    // Nova marcação is for. If `isPastConsuming` lost its instant half, this is
+    // the assertion that reddens.
+    const html = render({ mode: "edit", appt: appt({ startsAt: future, status: "scheduled" }) });
+    expect(html).not.toContain("Marcar novamente");
+  });
+
+  it("does NOT offer it in CREATE mode — there is no source to copy", () => {
+    const html = render({ mode: "create" });
+    expect(html).not.toContain("Marcar novamente");
+  });
+});

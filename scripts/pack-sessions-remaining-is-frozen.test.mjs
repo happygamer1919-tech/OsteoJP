@@ -71,6 +71,17 @@ const ALLOWED = new Set([
   // This guard caught this file minutes after it was written, which is the
   // clearest evidence available that the guard is not decorative.
   "packages/db/tests/pack-derived-balance.db.test.ts",
+  // ======================================================================
+  // SCHED-15. Two fixtures that CREATE a pacote instance so a clone can be
+  // proven not to spend one of its sessions.
+  // ======================================================================
+  // Same case as the entry above and admitted for the same reason: the column
+  // is NOT NULL with no default, so the INSERT must name it. Both write the
+  // purchase-time value ONCE and never update it, and neither reads it - the
+  // balance both assert is DERIVED with pack-balance.ts's own arithmetic, which
+  // is what makes them evidence that a clone leaves the patient's ten intact.
+  "packages/db/tests/appointment-clone-rls.test.ts",
+  "apps/web/e2e/marcar-novamente.spec.ts",
 ]);
 
 function sources() {

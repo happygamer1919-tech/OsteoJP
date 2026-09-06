@@ -22,6 +22,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AppointmentNotesBoard } from "@/app/agenda/appointment-notes-board";
+import {
+  ScheduleAgainDrawer,
+  isEligibleForScheduleAgain,
+} from "@/app/agenda/schedule-again-drawer";
 import { s } from "@/lib/i18n";
 import {
   cancelAppointment,
@@ -63,16 +67,9 @@ const STATUS_KEY: Record<AppointmentStatusValue, StringKey> = {
 
 const dateFmt = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" });
 
-/**
- * "Marcar novamente" eligibility: "past or completed" appointments only. Past is
- * judged on the actual instant (startsAt), not appointment status, so a
- * cancelled or no-show visit is still offered — rebooking after exactly those
- * outcomes is the point of "schedule again". Future non-completed appointments
- * (the normal upcoming case) are excluded.
- */
-function isEligibleForScheduleAgain(a: AgendaAppointment): boolean {
-  return a.status === "completed" || new Date(a.startsAt).getTime() < Date.now();
-}
+// SCHED-15: `isEligibleForScheduleAgain` and the ScheduleAgain form both moved
+// to app/agenda/schedule-again-drawer.tsx so the agenda drawer shares them. The
+// eligibility rule and its reasoning travelled with the predicate.
 
 /**
  * An appointment is still open to per-row EDITS (reschedule / Estado change /
@@ -115,6 +112,7 @@ function AppointmentsListInner({
   canEdit: boolean;
   canCancel: boolean;
 }) {
+  const router = useRouter();
   const [action, setAction] = useState<RowAction | null>(null);
   // PL-19: the note thread is NOT a RowAction — those three open a Drawer that
   // mutates the appointment, and each closes on success. Notes are a popup over
@@ -166,7 +164,13 @@ function AppointmentsListInner({
       )}
 
       {action?.kind === "scheduleAgain" && (
-        <ScheduleAgainDrawer source={action.appt} onClose={() => setAction(null)} />
+        <ScheduleAgainDrawer
+          source={action.appt}
+          onClose={() => setAction(null)}
+          // cloneAppointment only revalidates /agenda; refresh this route so the
+          // new appointment appears in this list too.
+          onCreated={() => router.refresh()}
+        />
       )}
       {action?.kind === "reschedule" && (
         <RescheduleDrawer appt={action.appt} onClose={() => setAction(null)} />
@@ -537,71 +541,6 @@ function CancelDrawer({
             {error}
           </p>
         )}
-      </div>
-    </Drawer>
-  );
-}
-
-/**
- * Minimal schedule-again form: date + time only (Row 3 scope). Patient,
- * practitioner, service, location, and duration are copied server-side by
- * cloneAppointment from the source appointment — never re-asked or editable
- * here. Neither field is prefilled with the source's original date/time; the
- * clinic picks a genuinely new slot.
- */
-function ScheduleAgainDrawer({
-  source,
-  onClose,
-}: {
-  source: AgendaAppointment;
-  onClose: () => void;
-}) {
-  const router = useRouter();
-  const toast = useToast();
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function onConfirm() {
-    if (!date || !time) return;
-    setSubmitting(true);
-    const startsAt = lisbonDateTimeToUtc(date, time).toISOString();
-    const result = await cloneAppointment(source.id, startsAt);
-    setSubmitting(false);
-    if (result.ok) {
-      toast({ tone: "success", message: s["patients.scheduleAgainSuccess"] });
-      onClose();
-      // cloneAppointment only revalidates /agenda; refresh this route so the
-      // new appointment appears in this list too.
-      router.refresh();
-    } else {
-      toast({ tone: "error", message: s["patients.scheduleAgainError"] });
-    }
-  }
-
-  return (
-    <Drawer
-      open
-      onClose={onClose}
-      title={s["patients.scheduleAgain"]}
-      closeLabel={s["common.close"]}
-      cancelLabel={s["common.cancel"]}
-      confirmLabel={s["patients.scheduleAgainConfirm"]}
-      confirmDisabled={!date || !time}
-      confirmLoading={submitting}
-      onConfirm={onConfirm}
-    >
-      <div className="flex flex-col gap-4">
-        <Field label={s["appointment.date"]} required>
-          <DatePicker
-            value={date === "" ? null : date}
-            onChange={setDate}
-            triggerLabel={s["appointment.date"]}
-          />
-        </Field>
-        <Field label={s["appointment.time"]} required>
-          <TimeField value={time} onChange={setTime} />
-        </Field>
       </div>
     </Drawer>
   );

@@ -910,10 +910,31 @@ export async function batchScheduleAppointments(
  * lifecycle. The caller supplies ONLY the new `startsAt`; `endsAt` is derived
  * from the source duration. Unblocks Max's "schedule-again" UI action.
  *
- * Scope (loop-decided): this action does NOT enforce availability — the UI
- * surfaces availability and the clinic may deliberately book over a busy slot,
- * so the clone is created unconditionally at the requested start. Availability
- * lives in the read-only availability query the UI consumes, not here.
+ * SCHED-15 — THIS ACTION NOW PAYS AVAILABILITY AND CONFLICT CHECKING, AND THE
+ * PARAGRAPH IT REPLACES IS QUOTED BECAUSE THE DECISION IT RECORDED IS NOT BEING
+ * REVERSED, ONLY SPLIT IN TWO:
+ *
+ *   "this action does NOT enforce availability — the UI surfaces availability
+ *    and the clinic may deliberately book over a busy slot, so the clone is
+ *    created unconditionally at the requested start."
+ *
+ * The clinic MAY still deliberately book over a busy slot: `allowConflict` is
+ * the same override `createAppointment` gives the drawer's "Guardar mesmo
+ * assim", and pressing it books the clone exactly as before. What is no longer
+ * true is that the check is SKIPPED — the old shape did not offer the override,
+ * it simply never asked, so a clone landed on top of another patient's visit
+ * with nothing on screen. RB-03's split is the one this now follows:
+ *
+ *   AVAILABILITY is HARD. Outside the therapist's disponibilidade is refused
+ *   and `allowConflict` does not reach it, because a therapist who genuinely
+ *   works late is expressed by extending their hours, not by pressing past a
+ *   check. This is the defect RB-03 was written for, arriving through the one
+ *   create path that had no such check.
+ *
+ *   A DOUBLE BOOKING is ADVISORY. It is surfaced, and reception decides.
+ *
+ * Availability is still ALSO in the read-only query the UI consumes; that stays
+ * the courtesy and this is the deliverable (the STAFF-02 argument, same shape).
  *
  * Cross-tenant safety: the source is read INSIDE the tenant-scoped tx, so RLS
  * confines the lookup to the caller's tenant. A cross-tenant (or missing) source
@@ -924,6 +945,11 @@ export async function batchScheduleAppointments(
 export async function cloneAppointment(
   sourceId: string,
   startsAt: string, // ISO UTC — the new start; endsAt is derived from the source
+  /**
+   * SCHED-15. "Guardar mesmo assim" — the caller has SEEN the conflicts and is
+   * booking anyway. Never reaches the availability check (see the doc above).
+   */
+  allowConflict = false,
 ): Promise<ActionResult<{ id: string }>> {
   const auth = await authorize("appointments:write");
   if (isDenied(auth)) return auth;
@@ -986,6 +1012,49 @@ export async function cloneAppointment(
         // only trips on a corrupt source or a NaN start slipping the guard above.
         if (!isValidInterval(values.startsAt, values.endsAt)) {
           return { ok: false, error: "validation" };
+        }
+
+        // ============================================================= //
+        // SCHED-15 — THE SAME TWO CHECKS `createAppointment` PAYS, IN THE
+        // SAME ORDER, ON THE SAME HELPERS.
+        // ============================================================= //
+        // Deliberately AFTER buildClonedAppointment: the practitioner, the
+        // location and the derived window are the CLONE's, read from the
+        // source, and there is no door-side value to check them on — the same
+        // honest exception the STAFF-02 location guard states above.
+        //
+        // Availability first and outside the `allowConflict` gate, per RB-03.
+        const av = await checkAvailability(tx, {
+          practitionerId: values.practitionerId,
+          locationId: values.locationId,
+          startsAt: values.startsAt,
+          endsAt: values.endsAt,
+        });
+        if (!av.ok) {
+          return {
+            ok: false,
+            error: "outside_availability",
+            availabilityWindows: av.windows,
+          };
+        }
+
+        if (!allowConflict) {
+          // `room` is null on every clone (clone-core drops it), so a room
+          // conflict is unreachable here by construction — this finds the
+          // practitioner and patient collisions, which are the ones a
+          // schedule-again can actually cause.
+          const conflicts = await collectConflicts(
+            tx,
+            [{ startsAt: values.startsAt, endsAt: values.endsAt }],
+            {
+              practitionerId: values.practitionerId,
+              locationId: values.locationId,
+              room: values.room,
+            },
+          );
+          if (conflicts.length > 0) {
+            return { ok: false, error: "conflict", conflicts };
+          }
         }
 
         // 2.9 — same slot lock as the create path. A clone lands a real
