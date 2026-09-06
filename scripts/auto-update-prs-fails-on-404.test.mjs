@@ -137,6 +137,23 @@ test("a 404 on update-branch FAILS the pass", () => {
   assert.match(out, /AUTO_UPDATE_TOKEN has lost its permissions/);
 });
 
+test("the remedy it prints asks for Pull requests write and NOT Contents write", () => {
+  // The first version of this annotation asked for `contents: write`. No call this
+  // workflow makes needs it - LIST and UPDATE-BRANCH are Pull requests (read, then
+  // write) and COMPARE is Contents READ - so granting it would hand a job that only
+  // merges main into a PR branch write access to the source of a clinical system.
+  // The owner acts on this string, so the string is pinned.
+  const { out } = runPass({ updateCode: 404 });
+  assert.match(out, /Pull requests: read and write/);
+  assert.match(out, /Contents: read-only/);
+  assert.doesNotMatch(
+    out,
+    /contents: write/i,
+    "the annotation is asking for Contents: WRITE again. Nothing in this workflow " +
+      "writes a file; PUT .../update-branch needs Pull requests: write.",
+  );
+});
+
 test("a 202 on update-branch keeps the pass green", () => {
   const { status, out } = runPass({ updateCode: 202 });
   assert.equal(status, 0, `a queued update must not fail the pass:\n${out}`);
