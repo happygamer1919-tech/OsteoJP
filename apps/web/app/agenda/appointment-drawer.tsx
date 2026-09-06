@@ -67,6 +67,7 @@ import {
   type LoteRow,
 } from "@/lib/scheduling/lote";
 import { AppointmentNotesBoard } from "./appointment-notes-board";
+import { ScheduleAgainDrawer, isPastConsuming } from "./schedule-again-drawer";
 import { AvailabilityPanel } from "./availability-panel";
 
 import { ConfirmationIndicator } from "./confirmation-indicator";
@@ -249,6 +250,11 @@ export function AppointmentDrawer({
   const [form, setForm] = useState<FormState>(init);
   const [error, setError] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
+  // SCHED-15. Its own state, like `notesFor` on the profile list: it opens a
+  // different form over the SAME appointment and must never be confused with an
+  // edit in progress. The edit form's state lives in this component, so leaving
+  // for the schedule-again drawer and coming back preserves every field.
+  const [scheduleAgainOpen, setScheduleAgainOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // Password-gated hard delete (W3-06) — edit-only, admin-only.
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -1036,6 +1042,28 @@ export function AppointmentDrawer({
     pacemaker: "patients.fieldContraindicationPacemaker",
   };
 
+  // ================================================================= //
+  // SCHED-15 — "MARCAR NOVAMENTE", THE AGENDA ENTRY POINT.
+  // ================================================================= //
+  // RENDERED INSTEAD OF THE EDIT DRAWER, not on top of it. Two stacked <Drawer>s
+  // means two focus traps and two Escape handlers over one appointment, and the
+  // form underneath is still live and still dirty-guarded. Swapping keeps one
+  // dialog on screen; every edit-form field survives the round trip because its
+  // state is held here, not in the Drawer.
+  if (editing && scheduleAgainOpen) {
+    return (
+      <ScheduleAgainDrawer
+        source={editing}
+        onClose={() => setScheduleAgainOpen(false)}
+        // The copy is what reception came for, so a success ends the whole
+        // interaction the way saving does - `onDone` is the agenda's own
+        // refresh-and-close, already the success path for every other write
+        // here. The toast the form raises names the new marcação.
+        onCreated={onDone}
+      />
+    );
+  }
+
   return (
     <>
     <Drawer
@@ -1727,6 +1755,29 @@ export function AppointmentDrawer({
 
         {error && (
           <p role="alert" className="text-sm text-error">{error}</p>
+        )}
+
+        {/* SCHED-15: "Marcar novamente" — Rodica's request, and the entry point
+            she actually uses. The same control has existed on the patient
+            profile's Marcações tab since Row 3 and was reachable from nowhere
+            else, so reception had to leave the agenda, find the patient and
+            open a second screen to copy a visit that had just finished in front
+            of them.
+
+            THE GATE IS NARROWER THAN THE PROFILE'S, deliberately and by
+            instruction: past AND in a consuming state, so a cancelled visit is
+            not offered here. `isPastConsuming` carries the reasoning and the one
+            row the two gates disagree on. */}
+        {editing && isPastConsuming(editing) && (
+          <div className="mt-2 border-t border-border pt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setScheduleAgainOpen(true)}
+            >
+              {s["patients.scheduleAgain"]}
+            </Button>
+          </div>
         )}
 
         {/* W5-22: "Ficha do paciente" — read-only navigation from the marcação

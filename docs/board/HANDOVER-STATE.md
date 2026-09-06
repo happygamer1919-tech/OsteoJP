@@ -83,7 +83,7 @@ non-engineer needs.*
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**309 cards on the board. 240 shipped, 69 open. Launch readiness 9/9, every launch gate passes.**
+**310 cards on the board. 240 shipped, 70 open. Launch readiness 9/9, every launch gate passes.**
 Plus **58 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
