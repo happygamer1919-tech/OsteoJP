@@ -114,12 +114,14 @@ export async function readLatestPatientNotes(
 ): Promise<Map<string, LatestNote>> {
   if (patientIds.length === 0) return new Map();
   /**
-   * THE OUTER COLUMNS ARE NAMED IN FULL AND QUOTED. INC-12's lesson, applied
-   * before it can happen again: an unquoted bare `id` inside
-   * `FROM appointment_notes an` binds to `an.id`, and the predicate is then
-   * always false - `max()` returns NULL, every row loses its note, and nothing
-   * anywhere reports an error. `packLinkedCountSql` carries the full account of
-   * the same mistake one feature over.
+   * THE OUTER COLUMNS ARE NAMED IN FULL AND QUOTED, and that is not style.
+   *
+   * A bare `id` inside `FROM appointment_notes an` binds to `an.id`, so the
+   * correlation would compare a note's own id to itself, match nothing, and
+   * return NULL for every row - with no error anywhere and a screen that simply
+   * shows no notes. INC-12 cost a production incident to exactly that, and
+   * `packLinkedCountSql` carries the full account of the same mistake one
+   * feature over, where it silently counted ZERO linked appointments.
    */
   const P = '"patients"."id"';
   const T = '"patients"."tenant_id"';
@@ -167,9 +169,21 @@ export async function readLatestPatientNotes(
  *
  * It is not about the NOTE. A withheld name beside a readable clinical note
  * would disclose the more sensitive of the two while hiding the less, so here
- * the join is INNER: no patient row, no note row, no entry in the map. Changing
- * it to a LEFT join would silently re-open exactly that, which is why
- * `latest-notes.db.test.ts` asserts the withheld case by name.
+ * the join is INNER: no patient row, no note row, no entry in the map.
+ *
+ * ==========================================================================
+ * WHAT THE CONTROLS ACTUALLY SHOWED, RATHER THAN WHAT THIS COMMENT FIRST CLAIMED
+ * ==========================================================================
+ * This block used to end "changing it to a LEFT join would silently re-open
+ * exactly that". IT WAS RUN, AND IT IS FALSE: with the patient-id pin below in
+ * place, a LEFT join keeps every case green, because `patients.id` is NULL for a
+ * withheld patient and `NULL IN (…)` is not true, so the row is filtered anyway.
+ * What DOES redden the suite is deleting the `patients` participation entirely.
+ *
+ * So there are TWO independent gates over the same set, and the sentence is
+ * corrected rather than left standing beside a control that contradicts it -
+ * a comment asserting a property nothing tests is the defect class this
+ * codebase keeps finding in its own instruments.
  *
  * The legacy relation contributes nothing here: `patient_note_revisions` has no
  * appointment_id, so a legacy note belongs to a patient and never to a visit -

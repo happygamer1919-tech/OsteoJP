@@ -40,7 +40,27 @@ const REC_WITHOUT_NOTE = "E2E Recuperar Fixo";
 /** Seeded verbatim in seed-e2e.mjs. The clinic's own case. */
 const SEEDED_NOTE = "Ligou a cancelar. Disse que telefona ele proprio para remarcar";
 
-/** A future day unique per retry, so a retry never meets its own leftovers. */
+/**
+ * A future day unique per retry, so a retry never meets its own leftovers.
+ *
+ * ==========================================================================
+ * DAY 64 IS DEDICATED. THE FIRST DRAFT TOOK DAY 40 AND IT WAS ALREADY TAKEN.
+ * ==========================================================================
+ * `location-auto-select.spec.ts:28` books on `RUN_DAY_BASE + 40`, and
+ * `therapist-blocks.spec.ts` writes a therapist TIME-OFF BLOCK covering
+ * `+40`..`+42`. Booking there put a second marcação in the window this spec
+ * pins to exactly one row, and the visit-note assertion could not find its
+ * line.
+ *
+ * IT PASSED IN ISOLATION AND FAILED TWICE IN THE FULL SUITE, which is what an
+ * inter-spec collision looks like and is the reason a single green run proves
+ * nothing here. `agenda-blocked-time.spec.ts` and `agenda-hover.spec.ts` both
+ * carry the same comment on their own days - "no other spec books this day" -
+ * and this is that comment, earned.
+ *
+ * `+64` is unused by every `*.spec.ts` in this directory. Check before taking
+ * another: `grep -rn "RUN_DAY_BASE + <n>" apps/web/e2e/*.spec.ts`.
+ */
 function bandDay(base: number, retry: number): string {
   return futureDate(RUN_DAY_BASE + base + retry * 100);
 }
@@ -112,22 +132,27 @@ test("recuperacao: the Notas button opens the FULL history over the list", async
 test("marcacoes: both notes render, LABELLED, and the Notas button still works", async ({
   page,
 }, testInfo) => {
-  const date = bandDay(40, testInfo.retry);
+  const date = bandDay(64, testInfo.retry);
   const patient = PATIENTS.maria.name;
   await book(page, patient, date, "11:00");
 
-  // The window is pinned to the booked day, so exactly one row is in view.
+  // The window is pinned to the booked day, and day 64 is this spec's alone, so
+  // exactly one row is in view. Asserted rather than assumed: a second row here
+  // would make every locator below ambiguous, and "ambiguous" is what the first
+  // draft of this spec discovered the hard way.
   const url = `/marcacoes?from=${date}&to=${date}`;
   await page.goto(url);
 
-  const row = page.locator("li,div").filter({ hasText: patient }).first();
-  await expect(page.getByTestId("marcacoes-notes-button")).toBeVisible();
+  const notesButton = page.getByTestId("marcacoes-notes-button");
+  await expect(notesButton).toHaveCount(1);
+  await expect(notesButton).toBeVisible();
+  await expect(page.getByTestId("marcacoes-patient-name")).toHaveText(patient);
 
   /* ---- BEFORE: this visit has no note, so no visit line is drawn ---- */
   await expect(page.getByTestId("marcacoes-appointment-note")).toHaveCount(0);
 
   /* ---- WRITE ONE THROUGH THE PRODUCT'S OWN BOARD ---- */
-  await page.getByTestId("marcacoes-notes-button").click();
+  await notesButton.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByTestId("appointment-note-add").click();
@@ -179,6 +204,5 @@ test("marcacoes: both notes render, LABELLED, and the Notas button still works",
   await expect(visitLine).not.toContainText(PATIENT_NOTE);
 
   /* ---- AND THE BUTTON THEY ALREADY USE IS UNTOUCHED ---- */
-  await expect(page.getByTestId("marcacoes-notes-button")).toBeVisible();
-  await expect(row).toBeVisible();
+  await expect(page.getByTestId("marcacoes-notes-button")).toHaveCount(1);
 });
