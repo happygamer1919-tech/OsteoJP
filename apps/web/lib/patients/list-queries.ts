@@ -8,6 +8,7 @@ import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { patientLocationScope, therapistPatientScope } from "@/lib/patients/scope";
 import { activePatientsOnly } from "@/lib/patients/filters";
 import { escapeLike, parseSearch } from "@/lib/patients/validation";
+import { fullNameMatcher } from "@/lib/patients/name-search";
 import { followupWindow } from "@/lib/followup/window";
 import { PATIENT_STATS_TAG } from "./cache-tags";
 import { mark, timed } from "../perf/request-timing";
@@ -131,7 +132,14 @@ const nifDigits = sql`regexp_replace(coalesce(${patients.nif}, ''), '[^0-9]', ''
 function searchMatcher(raw: string): SQL | undefined {
   const { text, digits } = parseSearch(raw);
   if (text.length === 0) return undefined;
-  const matchers: SQL[] = [ilike(patients.fullName, `%${escapeLike(text)}%`)];
+  // EVERY WHITESPACE TOKEN MUST MATCH, IN ANY ORDER, ACCENT-INSENSITIVELY.
+  // This was `ilike(fullName, '%' + text + '%')` - ONE substring of the WHOLE
+  // typed string, in order - which is why "Antonio Galhofo" could not find
+  // "Antonio Armando Ribeiro Galhofo" and reception was told a patient did not
+  // exist. The rule lives in lib/patients/name-search.ts because the OTHER
+  // search surface had the identical line and the identical defect.
+  const nameMatch = fullNameMatcher(text);
+  const matchers: SQL[] = nameMatch ? [nameMatch] : [];
   if (digits.length > 0) {
     const like = `${escapeLike(digits)}%`;
     matchers.push(sql`${nifDigits} like ${like}`);
