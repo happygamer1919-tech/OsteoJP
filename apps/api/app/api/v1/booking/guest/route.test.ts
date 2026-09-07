@@ -28,6 +28,11 @@ const H = vi.hoisted(() => ({
   verdicts: new Map<string, boolean>(),
   /** One entry per ACTUAL insert. */
   inserted: [] as Record<string, unknown>[],
+  /** GUEST-08. Defaults to sellable, so every pre-existing assertion in this
+   *  file keeps the meaning it had. The tests in (d) set it false. */
+  sellable: true,
+  /** Every {serviceId, locationId} pair the route asked about. */
+  sellabilityAsks: [] as Array<{ serviceId: string; locationId: string }>,
 }));
 
 // THE REAL MODULE IS SPREAD IN, and only the database seam is replaced. The
@@ -49,6 +54,19 @@ vi.mock("@osteojp/db", async (importOriginal) => ({
     execute: async () => [{ n: 0 }],
   }),
   guestBookingRequests: {},
+}));
+
+// THE DATABASE SEAM FOR GUEST-08, MOCKED AT THE MODULE AND NOT AT THE DRIVER.
+// `isGuestSellable` runs a three-table join; reproducing that against the
+// hand-rolled `getDbAdmin` stub above would be a test of the stub. What this
+// file is responsible for is that the route CALLS the gate, ORDERS it correctly
+// and REFUSES on a false — which is what the (d) block asserts. The rule itself
+// is `apps/api/lib/booking/sellable.test.ts`.
+vi.mock("@/lib/booking/sellable", () => ({
+  isGuestSellable: async (a: { serviceId: string; locationId: string }) => {
+    H.sellabilityAsks.push({ serviceId: a.serviceId, locationId: a.locationId });
+    return H.sellable;
+  },
 }));
 
 vi.mock("@/lib/rate-limit/durable-store", () => ({
@@ -117,6 +135,8 @@ beforeEach(() => {
   H.keys = [];
   H.inserted = [];
   H.verdicts = new Map();
+  H.sellable = true;
+  H.sellabilityAsks = [];
 });
 
 describe("(a) no patient-list oracle", () => {
@@ -350,3 +370,100 @@ async function sha256(input: string): Promise<string> {
   const { createHash } = await import("node:crypto");
   return createHash("sha256").update(input).digest("hex");
 }
+
+/**
+ * (d) GUEST-08 ON THE WRITE PATH.
+ *
+ * THE CATALOGUE COULD HIDE A SERVICE WHILE THIS ENDPOINT ACCEPTED ITS ID.
+ * `GET .../guest/catalog` applies five conditions before showing a service at a
+ * clinic — active, not internal-only, patient-bookable, an ACTIVE
+ * `service_location_prices` row for that pair, and an active location. This
+ * route applied none of them: it checked that `serviceId` was a non-empty
+ * string and inserted. The foreign keys enforce that the row EXISTS; nothing
+ * enforced that the clinic SELLS it there.
+ *
+ * `Diversos` is the worked example — `store.ts` names it as the internal-only
+ * service that must never reach a patient wizard — and a Castelo Branco booking
+ * against it is what surfaced this.
+ *
+ * EVERY TEST HERE COUNTS `inserted`. A 400 with a row already written and a 202
+ * with nothing written are both a passing status assertion and a live defect,
+ * which is the rule this file's own header states.
+ */
+describe("(d) GUEST-08: a service the clinic cannot sell there is refused", () => {
+  it("refuses a hidden service id, and writes NOTHING", async () => {
+    H.sellable = false;
+    const res = await guestBooking(post(validBody({ serviceId: "44444444-4444-4444-4444-444444444444" })));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_input" });
+    expect(H.inserted).toHaveLength(0);
+  });
+
+  it("THE CONTROL: the same body with the same service is accepted when it IS sellable", async () => {
+    // Without this, the test above is green against a route that refuses
+    // everything — a 400 and an empty `inserted` is also what a broken endpoint
+    // produces. The two tests differ in ONE boolean.
+    H.sellable = true;
+    const res = await guestBooking(post(validBody({ serviceId: "44444444-4444-4444-4444-444444444444" })));
+    expect(res.status).toBe(202);
+    expect(H.inserted).toHaveLength(1);
+  });
+
+  it("asks about the PAIR the caller named, not about the service alone", async () => {
+    // A check that ignored `locationId` would pass every test above and would
+    // still admit a service that is sold at Linda-a-Velha into a Castelo Branco
+    // request, which is the exact cross-clinic case GUEST-08 was ruled for.
+    await guestBooking(
+      post(validBody({
+        serviceId: "55555555-5555-5555-5555-555555555555",
+        locationId: "66666666-6666-6666-6666-666666666666",
+      })),
+    );
+    expect(H.sellabilityAsks).toEqual([
+      {
+        serviceId: "55555555-5555-5555-5555-555555555555",
+        locationId: "66666666-6666-6666-6666-666666666666",
+      },
+    ]);
+  });
+
+  it("the refusal is INDISTINGUISHABLE from every other invalid_input", async () => {
+    // The endpoint is unauthenticated. A refusal that named its reason would let
+    // anyone enumerate the catalogue, the price grid and the location list from
+    // a surface built to answer nothing — SR-30's shape, and the reason
+    // /c/<code> answers one generic refusal to four different failures.
+    H.sellable = false;
+    const hidden = await guestBooking(post(validBody()));
+    H.sellable = true;
+    const malformed = await guestBooking(post(validBody({ preferredPeriod: "noite" })));
+
+    expect(hidden.status).toBe(malformed.status);
+    expect(await hidden.json()).toEqual(await malformed.json());
+    expect(H.inserted).toHaveLength(0);
+  });
+
+  it("is spent BEFORE the tenant-wide ceiling, so garbage cannot deny the form", async () => {
+    // THE ORDERING IS THE PROPERTY, and this file's header already says why: the
+    // tenant-wide budget is the whole clinic's daily allowance, and a request
+    // naming a service the clinic does not sell must not spend any of it.
+    H.sellable = false;
+    await guestBooking(post(validBody()));
+    expect(H.keys).not.toContain(GUEST_BOOKING_GLOBAL_HOUR_KEY);
+    expect(H.keys).not.toContain(GUEST_BOOKING_GLOBAL_DAY_KEY);
+  });
+
+  it("is spent AFTER the per-source caps, so it cannot be used as a free catalogue probe", async () => {
+    // The mirror of the test above. This gate costs a DATABASE ROUND TRIP, so it
+    // must sit behind the caps that bound an attacker: an unlimited oracle that
+    // answers 400-or-202 per (service, location) pair is a catalogue dump.
+    // The key shape is `${scope}:ip:${ip}` - `clientKeyFromHeaders` inserts the
+    // `ip` segment so an address can never collide with a subject id. Written as
+    // a literal on purpose: importing the builder here would make this test pass
+    // against whatever the builder does, including the wrong thing.
+    H.verdicts.set("guest-booking:hour:ip:203.0.113.9", false);
+    H.sellable = false;
+    const res = await guestBooking(post(validBody()));
+    expect(res.status).toBe(429);
+    expect(H.sellabilityAsks).toHaveLength(0);
+  });
+});

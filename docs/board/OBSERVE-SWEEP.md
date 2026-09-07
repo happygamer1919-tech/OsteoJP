@@ -48,12 +48,25 @@ this project's own rules forbid.
 `ZZ`-prefixed record carrying the owner's own mobile) and **`+351900000000`**,
 the number with no patient record and no assigned carrier block.
 
-> **THE PORTAL IS AT `https://osteojp-portal.vercel.app`, NOT
-> `patient.osteojp.pt`.** That custom domain **does not resolve**
-> (`docs/dns-records-pending.md:27`, still pending against a live dig on
-> 2026-08-02). `apps/portal/.env.example` names it, but that is the go-live
-> target rather than the deployment. The **staff platform IS** on its custom
-> domain, `https://app.osteojp.pt`. The two hosts do not follow the same pattern.
+> **THE PORTAL IS AT `https://portal.osteojp.pt`. CORRECTED 2026-09-07.**
+> The custom domain is LIVE on `cname.vercel-dns.com` and serves `/marcacao`
+> with a 200; measured by `dig` and `curl`, not read off a dashboard.
+>
+> **`https://osteojp-portal.vercel.app` IS THE SAME DEPLOYMENT** — byte-identical
+> HTML, `sha256 003a8d96…`, 2026-09-07 — so either host runs this sweep. It is
+> the production alias, not a preview; a preview url carries a deployment hash.
+>
+> **`patient.osteojp.pt` STILL DOES NOT RESOLVE and never became the portal.**
+> It was the planned name; the name that shipped is `portal.`. ~~That custom
+> domain does not resolve (`docs/dns-records-pending.md:27`, still pending
+> against a live dig on 2026-08-02); `apps/portal/.env.example` names it, but
+> that is the go-live target rather than the deployment.~~ The old warning stayed
+> literally true while its reason went stale, which read as "the portal has no
+> custom domain" long after it had one.
+>
+> The **staff platform** is `https://app.osteojp.pt`, unchanged. The two hosts
+> now DO follow the same pattern; earlier revisions of this file warned that they
+> did not.
 
 **Never a real staff account, never a real patient.** The reasons are on that
 file and they are not stylistic.

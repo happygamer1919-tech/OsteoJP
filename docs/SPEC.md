@@ -52,7 +52,7 @@
 - `[YOU]` ~~Drizzle migrations runner + first migration deployed to Supabase dev~~ ✅
 - `[YOU]` ~~CI/CD GitHub Actions: lint, typecheck, test on PR; deploy on merge~~ ✅ Three required gates: **Lint + typecheck + test**, **DB-gated tests (RLS isolation, seeded DB)**, **Playwright E2E (seeded DB)**. Vercel checks are informational only (rate-limited on Hobby tier).
 - `[YOU]` ~~Vercel deploy preview wired per branch; production wired to `main`~~ ✅
-- `[MAX]` ~~Vercel project for `apps/portal` created (2026-06-10)~~ ✅ project `osteojp-portal`, Node 22.x, analytics off, env vars set, live at `osteojp-portal.vercel.app`. Custom domain `patient.osteojp.pt` deferred to go-live.
+- `[MAX]` ~~Vercel project for `apps/portal` created (2026-06-10)~~ ✅ project `osteojp-portal`, Node 22.x, analytics off, env vars set. **Live at `portal.osteojp.pt` (custom domain, CORRECTED 2026-09-07)** and at `osteojp-portal.vercel.app`, which is the SAME deployment — both returned byte-identical HTML, `sha256 003a8d96…`, on 2026-09-07. ~~Custom domain `patient.osteojp.pt` deferred to go-live.~~ **The domain that shipped is `portal.`, not `patient.`; `patient.osteojp.pt` still does not resolve and never became the portal.**
 - `[YOU]` ~~Auth flow end-to-end (signup, login, JWT with `tenant_id` + role)~~ ✅
 - `[YOU]` ~~Sentry SDK installed in `apps/web`; sourcemaps uploading~~ ✅
 - `[YOU]` ~~Env var management via Vercel; `.env.example` committed~~ ✅
@@ -266,7 +266,7 @@ Phases 6 through 9 are explicitly out of scope for the current build cycle. No w
 2. Backup and restore drill.
 3. Fisiozero final extraction.
 4. Import to prod.
-5. DNS: `patient.osteojp.pt` (the only host still unresolved). `app.osteojp.pt` and `api.osteojp.pt` are live on `cname.vercel-dns.com`, and the Resend MX/SPF/DKIM are live and Verified on the **`send.osteojp.pt`** subdomain (not the root — the root MX is the spambusters staff-mail gateway and must not be touched). Verified by live `dig` 2026-08-02; see `docs/dns-records-pending.md`.
+5. DNS: ~~`patient.osteojp.pt` (the only host still unresolved)~~ **CORRECTED 2026-09-07: the portal shipped on `portal.osteojp.pt`, LIVE on `cname.vercel-dns.com` and re-verified by `dig` that day. `patient.osteojp.pt` was the planned name, still does not resolve, and is not needed. `docs/dns-records-pending.md` has NOT been corrected and still lists it.** `app.osteojp.pt` and `api.osteojp.pt` are live on `cname.vercel-dns.com`, and the Resend MX/SPF/DKIM are live and Verified on the **`send.osteojp.pt`** subdomain (not the root — the root MX is the spambusters staff-mail gateway and must not be touched). Verified by live `dig` 2026-08-02; see `docs/dns-records-pending.md`.
 6. Go live.
 
 **Supabase Pro precedes the cutover extraction.**
