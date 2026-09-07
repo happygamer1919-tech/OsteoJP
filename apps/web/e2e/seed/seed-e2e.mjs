@@ -592,6 +592,44 @@ async function ensureRecuperacaoFixtures(therapistUserId, otherTherapistUserId) 
   );
   must(contactErr, "recuperacao contact");
 
+  /**
+   * RB-NOTES — ONE PATIENT-LEVEL NOTE, ON EXACTLY ONE OF THESE PATIENTS.
+   *
+   * ==========================================================================
+   * IT IS THE CLINIC'S OWN CASE, IN THE CLINIC'S OWN WORDS
+   * ==========================================================================
+   * A patient rang, cancelled, and said he would call back himself to
+   * reschedule. Reception wrote it in the patient notes. Whoever works the
+   * recovery list cannot see it, so they either chase somebody who asked not to
+   * be chased or they postpone blind. That sentence is the fixture.
+   *
+   * ==========================================================================
+   * ONLY ONE OF THEM, AND THAT IS THE HALF THAT MATTERS
+   * ==========================================================================
+   * `E2E Recuperar Movel` gets a note; `E2E Recuperar Fixo` deliberately gets
+   * NONE. Without a patient who has none, "the preview renders" and "the
+   * preview renders on every row whatever the data" are the same observation -
+   * and the rule the dispatch actually set is about the empty case: no note
+   * means render nothing, not an empty affordance.
+   *
+   * `appointment_id` IS NULL, which is what makes it a note about the PERSON
+   * rather than about a visit (0042 made the column nullable for exactly this).
+   * A fixed id + onConflict keeps the seed idempotent on a persistent lane
+   * database, the same reason every fixture above carries one.
+   */
+  const { error: noteErr } = await db.from("appointment_notes").upsert(
+    {
+      id: "00000000-0000-0000-0000-00000000feca",
+      tenant_id: TENANT_A,
+      patient_id: rows[0].id,
+      appointment_id: null,
+      author_user_id: therapistUserId,
+      body: "Ligou a cancelar. Disse que telefona ele proprio para remarcar, nao contactar.",
+    },
+    { onConflict: "id" },
+  );
+  must(noteErr, "recuperacao patient note");
+
   // The other therapist's patient + their single completed attendance.
   const { error: otherErr } = await db.from("patients").upsert(
     { ...OTHER_THERAPISTS_PATIENT, tenant_id: TENANT_A, deleted_at: null },

@@ -3,8 +3,12 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Dialog } from "@osteojp/ui";
+import { FileText, StickyNote } from "lucide-react";
 
 import { s } from "@/lib/i18n";
+import type { NoteExcerpt } from "@/lib/notes/preview";
+import { PatientNotesBoard } from "@/app/patients/[id]/patient-notes-board";
 import { postponeFollowup } from "@/lib/followup/actions";
 import { whatsappLink, smsLink, mailtoLink, followupMessage } from "./deep-links";
 import { POSTPONE_WEEKS } from "@/lib/followup/postpone-weeks";
@@ -47,6 +51,15 @@ export type FollowupRow = {
   lastAttendance: string;
   practitionerName: string | null;
   contacts: { channel: FollowupChannel; when: string; who: string | null }[];
+  /**
+   * RB-NOTES — the latest PATIENT note, excerpted ON THE SERVER, or null.
+   *
+   * NULL IS THE ONLY ABSENCE AND IT HAS THREE CAUSES: no note, a blank note, and
+   * a note this viewer may not read. They are one case here on purpose — the row
+   * renders NOTHING for all three, so this component cannot leak the difference
+   * between "there is nothing" and "there is something you may not see".
+   */
+  latestNote: { excerpt: NoteExcerpt; total: number } | null;
 };
 
 // One definition, in a plain module both sides import (INC-13). The screen
@@ -84,6 +97,8 @@ export function FollowupList({ rows }: { rows: FollowupRow[] }) {
 function FollowupCard({ row }: { row: FollowupRow }) {
   const [pending, start] = useTransition();
   const [showPostpone, setShowPostpone] = useState(false);
+  /** RB-NOTES: true while the full note history is open over this row. */
+  const [showNotes, setShowNotes] = useState(false);
   /** null = nothing to report. Never a boolean: "the write failed" and "your
    *  session ended" need different instructions from the receptionist. */
   const [failed, setFailed] = useState<"failed" | "session" | null>(null);
@@ -201,6 +216,44 @@ function FollowupCard({ row }: { row: FollowupRow }) {
         </div>
       </dl>
 
+      {/* ==================================================================
+          THE LATEST PATIENT NOTE, AT FIRST SIGHT, ABOVE THE CONTACT BUTTONS.
+          ==================================================================
+          THE POSITION IS THE FEATURE. This screen exists to decide whether to
+          ring somebody, and the note is what decides it — "ligou a cancelar,
+          telefona ele para remarcar" means do NOT chase. Rendered under the
+          buttons it would be read after the press; rendered here it is read
+          before, which is the whole of the clinic's request.
+
+          NOTHING IS RENDERED WHEN THERE IS NO NOTE. No heading, no rule, no
+          empty box, and no "Notas" button — see the button's own comment.
+
+          `total > 1` SAYS SO. The excerpt is the LATEST note and the row must
+          never be mistaken for the whole conversation; PL-17 added exactly this
+          honesty to the agenda hover, and this reuses its two strings rather
+          than writing a third. */}
+      {row.latestNote && (
+        <div
+          data-testid="followup-note-preview"
+          className="mt-3 flex flex-col gap-0.5 border-t border-v2-border pt-2"
+        >
+          <span className="flex items-center gap-1 text-xs font-medium text-v2-text-secondary">
+            <StickyNote size={12} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />
+            {row.latestNote.total > 1
+              ? s["appointment.noteHoverLatest"].replace("{n}", String(row.latestNote.total))
+              : s["followup.notePreviewLabel"]}
+          </span>
+          {/* The EXCERPT, which the server already cut. The ellipsis is added
+              here and only when the server says it truncated — deriving it from
+              the string's length would put one on a note that happens to be
+              exactly the limit, which is a claim that there is more. */}
+          <p className="text-xs text-v2-text-primary">
+            {row.latestNote.excerpt.text}
+            {row.latestNote.excerpt.truncated ? "…" : ""}
+          </p>
+        </div>
+      )}
+
       <div className="mt-3 flex flex-wrap gap-2">
         {canMessagePhone ? (
           <>
@@ -239,6 +292,32 @@ function FollowupCard({ row }: { row: FollowupRow }) {
         >
           {s["followup.postpone"]}
         </button>
+        {/* ==================================================================
+            THE FULL HISTORY, ONE PRESS AWAY, MATCHING THE MARCACOES PATTERN.
+            ==================================================================
+            The same shape /marcacoes uses: a Dialog over the list holding the
+            notes board, so somebody working the recovery queue never leaves it.
+            The board is the patient-level twin of the appointment thread, so
+            the two screens look and behave alike.
+
+            IT IS SHOWN ONLY WHEN THERE IS A NOTE. "No notes means render
+            nothing, not an empty affordance" — a button that opens an empty
+            panel is a promise the row cannot keep, and on a list of fifty it is
+            fifty of them. Notes are still reachable for a patient with none:
+            "Abrir ficha" is on this row and the profile's Notas tab composes
+            them. */}
+        {row.latestNote && (
+          <button
+            type="button"
+            onClick={() => setShowNotes(true)}
+            aria-label={`${s["followup.notesLabel"]}: ${row.fullName}`}
+            data-testid="followup-notes-button"
+            className="inline-flex items-center gap-1 rounded-v2 border border-v2-border px-3 py-1.5 text-xs font-semibold"
+          >
+            <FileText size={14} strokeWidth={1.75} aria-hidden="true" />
+            {s["followup.notesLabel"]}
+          </button>
+        )}
       </div>
 
       {/* ==================================================================
@@ -327,6 +406,19 @@ function FollowupCard({ row }: { row: FollowupRow }) {
           ))}
         </ul>
       ) : null}
+
+      {/* MOUNTED ONLY WHILE OPEN, so the board's read is issued when somebody
+          asks for it rather than fifty times on every render of this page. */}
+      {showNotes && (
+        <Dialog
+          open
+          onClose={() => setShowNotes(false)}
+          title={`${s["followup.notesLabel"]} · ${row.fullName}`}
+          cancelLabel={s["common.close"]}
+        >
+          <PatientNotesBoard patientId={row.patientId} />
+        </Dialog>
+      )}
     </li>
   );
 }

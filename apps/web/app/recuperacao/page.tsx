@@ -163,6 +163,20 @@ export default async function RecuperacaoPage({
         when: stamp(m.contactedAt),
         who: m.contactedByName,
       })),
+      /**
+       * RB-NOTES - the latest PATIENT note, already excerpted on the server.
+       *
+       * THE ROW RECEIVES THE EXCERPT AND NOT THE NOTE. A component handed the
+       * full body and told to cut it would put the whole note in the RSC
+       * payload - every note of every patient on the page - to draw two lines
+       * of it. The full text is one press away through a server action that
+       * re-checks the patient, which is where it belongs.
+       *
+       * NULL IS THE ONLY ABSENCE. No note, a blank note and a note this viewer
+       * may not read all arrive here as null, and the row draws nothing at all
+       * rather than an empty affordance.
+       */
+      latestNote: c.latestNote,
     };
   });
 

@@ -49,7 +49,11 @@ import {
 } from "./validation";
 import { PATIENT_STATS_TAG } from "./cache-tags";
 import { getPatient, searchPatients } from "./queries";
-import { listAppointmentNotes, type PatientNoteRevision } from "./note-revisions";
+import {
+  listAppointmentNotes,
+  listPatientNotes,
+  type PatientNoteRevision,
+} from "./note-revisions";
 import type { Patient } from "./types";
 
 /**
@@ -659,6 +663,39 @@ export async function getAppointmentNotesAction(
   const patient = await getPatient(patientId, { includeDeleted: true });
   if (!patient) return { ok: false, notes: [] };
   return { ok: true, notes: await listAppointmentNotes(ctx, appointmentId) };
+}
+
+/**
+ * RB-NOTES — read ONE PATIENT's note history, for the surfaces that are not the
+ * profile page: the Recuperação row's "Notas" popup.
+ *
+ * ==========================================================================
+ * IT IS `getAppointmentNotesAction` ONE AXIS OVER, AND THE AUTHORITY IS THE SAME
+ * ==========================================================================
+ * `patients:read`, plus the W10-04 therapist own-patient narrowing and the PL-09
+ * location scope, both re-checked HERE through `getPatient` — because
+ * `listPatientNotes` is tenant-RLS only, exactly as `listAppointmentNotes` is,
+ * so a patient id posted from a browser must not be enough on its own. A
+ * therapist asking for someone else's patient gets `ok:false` and an empty
+ * history, never somebody else's notes.
+ *
+ * `includeDeleted` keeps the check to the SCOPE narrowing alone, matching the
+ * appointment path: a soft-deleted patient's notes stay readable to whoever
+ * could already see them, and the deletion state is not what this decides.
+ *
+ * IT IS THE SAME READ THE PROFILE'S Notas TAB PERFORMS (`listPatientNotes`), so
+ * the history in the popup and the history on the profile cannot disagree — and
+ * the row's excerpt is the first entry of both.
+ */
+export async function getPatientNotesAction(
+  patientId: string,
+): Promise<{ ok: boolean; notes: PatientNoteRevision[] }> {
+  const ctx = await requireRequestContext();
+  assertCan(ctx.role, "patients:read");
+  if (!patientId) return { ok: false, notes: [] };
+  const patient = await getPatient(patientId, { includeDeleted: true });
+  if (!patient) return { ok: false, notes: [] };
+  return { ok: true, notes: await listPatientNotes(ctx, patientId) };
 }
 
 /**

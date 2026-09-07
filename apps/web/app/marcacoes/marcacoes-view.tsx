@@ -13,12 +13,22 @@ import {
   ToastProvider,
 } from "@osteojp/ui";
 import type { AppointmentTone } from "@osteojp/ui";
-import { CalendarClock, FileText, MapPin, Repeat, Search, TriangleAlert, User } from "lucide-react";
+import {
+  CalendarClock,
+  FileText,
+  MapPin,
+  Repeat,
+  Search,
+  StickyNote,
+  TriangleAlert,
+  User,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import type { Role } from "@osteojp/auth";
 
 import { s } from "@/lib/i18n";
+import type { NoteExcerpt } from "@/lib/notes/preview";
 import { deriveEstado, estadoStrikesName } from "@/lib/scheduling/estado";
 import { patientLabel } from "@/lib/scheduling/patient-label";
 import { matchesSearch } from "@/lib/search/text-filter";
@@ -45,6 +55,25 @@ import { AppointmentDrawer, type ModalState } from "../agenda/appointment-drawer
 import { AppointmentNotesBoard } from "../agenda/appointment-notes-board";
 
 type StringKey = keyof typeof s;
+
+/**
+ * RB-NOTES — what one row shows without a press: the latest note ABOUT THE
+ * PERSON and the latest note ABOUT THIS VISIT, each already excerpted on the
+ * server.
+ *
+ * TWO FIELDS AND NOT ONE STRING, because they come from different places and
+ * mean different things — that is the whole reason the clinic asked for both.
+ * Collapsing them into "the latest note" would let a note about somebody's
+ * medication read as a note about today's appointment.
+ *
+ * EITHER MAY BE null INDEPENDENTLY. A visit with no note for a patient who has
+ * one shows one line; the reverse shows the other; a row with neither is absent
+ * from the map entirely and shows nothing.
+ */
+export type RowNotePreview = {
+  patient: { excerpt: NoteExcerpt; total: number } | null;
+  appointment: { excerpt: NoteExcerpt; total: number } | null;
+};
 
 export type MarcacoesFilters = {
   from: string;
@@ -178,10 +207,47 @@ function ServiceChip({ name, cancelled }: { name: string | null; cancelled: bool
   );
 }
 
+/**
+ * ONE LABELLED NOTE LINE. Both lines on a row render through this, so the two
+ * cannot come to look different from each other.
+ *
+ * THE LABEL IS TEXT AND IS THE AUTHORITY. The icon reinforces it and never
+ * carries the meaning alone — the same colour-not-only rule the hover panel and
+ * the estado marker follow, and here it is not only an accessibility rule: "a
+ * note about the person" and "a note about the visit" are indistinguishable as
+ * pictograms, and confusing them is the exact failure the clinic named.
+ */
+function NoteLine({
+  label,
+  excerpt,
+  testId,
+}: {
+  label: string;
+  excerpt: NoteExcerpt;
+  testId: string;
+}) {
+  return (
+    <p data-testid={testId} className="flex flex-wrap items-baseline gap-x-1.5 text-xs">
+      <span className="inline-flex shrink-0 items-center gap-1 font-medium text-v2-text-secondary">
+        <StickyNote size={12} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />
+        {label}
+      </span>
+      <span className="min-w-0 text-v2-text-primary">
+        {excerpt.text}
+        {/* The ellipsis comes from the SERVER's `truncated`, never from the
+            string's length: a note exactly at the limit is complete, and an
+            ellipsis on it would claim there is more to read. */}
+        {excerpt.truncated ? "…" : ""}
+      </span>
+    </p>
+  );
+}
+
 function AppointmentRow({
   appt,
   conflicting,
   highlighted = false,
+  notePreview,
   onOpen,
   onOpenNotes,
 }: {
@@ -189,6 +255,13 @@ function AppointmentRow({
   conflicting: boolean;
   /** ITEM 4: this row is the target of a ?appointment= deep link. */
   highlighted?: boolean;
+  /**
+   * RB-NOTES: the two excerpts this row shows without a press, or null when the
+   * row has neither — which also covers a patient this viewer may not read,
+   * because the server never put such a row in the map. See
+   * `lib/notes/latest-notes.ts`.
+   */
+  notePreview?: RowNotePreview | null;
   /** W12-00: opens this marcacao in the shared AppointmentDrawer (edit mode). */
   onOpen: (appt: AgendaAppointment) => void;
   /** PL-17: opens this marcacao's note thread in a popup. */
@@ -364,6 +437,62 @@ function AppointmentRow({
             {s["appointment.createdBy"]}: {appt.createdByName ?? s["appointment.createdByPortal"]}
           </span>
         </div>
+
+        {/* ==============================================================
+            LINE 3 - THE NOTES, AT FIRST SIGHT, LABELLED BY SOURCE.
+            ==============================================================
+            THE CLINIC'S STATED REASON IS SPEED: working the list without
+            opening anything. So both notes are here, on the row, and the
+            "Notas" button beside the row is untouched - it is what they use to
+            READ THE THREAD AND WRITE INTO IT, and an excerpt replaces neither.
+
+            TWO SOURCES, TWO LABELS, NEVER MERGED. "Nota do paciente" is about
+            the person and follows them between visits; "Nota da marcação" is
+            about this visit. Reading one as the other is a clinical error, so
+            the distinction is carried by words rather than by position.
+
+            NOTHING IS DRAWN WHEN THERE IS NOTHING. No labels, no rule, no empty
+            line - and `notePreview` is absent entirely for a row with neither,
+            so there is not even a container.
+
+            `total > 1` SAYS THE EXCERPT IS THE LATEST OF SEVERAL, per source. A
+            row must never read as the whole conversation; PL-17 added exactly
+            this to the hover for the same reason. */}
+        {notePreview && (
+          <div
+            data-testid="marcacoes-note-preview"
+            className="flex flex-col gap-0.5 border-t border-v2-border pt-2 sm:pl-28"
+          >
+            {notePreview.patient && (
+              <NoteLine
+                testId="marcacoes-patient-note"
+                label={
+                  notePreview.patient.total > 1
+                    ? s["marcacoes.patientNoteLatest"].replace(
+                        "{n}",
+                        String(notePreview.patient.total),
+                      )
+                    : s["marcacoes.patientNoteLabel"]
+                }
+                excerpt={notePreview.patient.excerpt}
+              />
+            )}
+            {notePreview.appointment && (
+              <NoteLine
+                testId="marcacoes-appointment-note"
+                label={
+                  notePreview.appointment.total > 1
+                    ? s["marcacoes.appointmentNoteLatest"].replace(
+                        "{n}",
+                        String(notePreview.appointment.total),
+                      )
+                    : s["marcacoes.appointmentNoteLabel"]
+                }
+                excerpt={notePreview.appointment.excerpt}
+              />
+            )}
+          </div>
+        )}
       </div>
     </GlassCard>
     </div>
@@ -377,6 +506,7 @@ export function MarcacoesView({
   options,
   serviceFilterOptions,
   appointments,
+  notePreviews = {},
   canHardDelete,
   focusAppointmentId = null,
   deepLinkMissing = false,
@@ -392,6 +522,17 @@ export function MarcacoesView({
   /** DB-sourced tenant services for the Serviço filter (W6-01b), inactive included. */
   serviceFilterOptions: ServiceFilterOption[];
   appointments: AgendaAppointment[];
+  /**
+   * RB-NOTES: appointment id -> the two excerpts that row shows without a
+   * press. A row with neither note is ABSENT from this object, so `undefined`
+   * and "nothing to show" are the same case and the row cannot draw an empty
+   * pair of labels.
+   *
+   * DEFAULTED TO `{}` so every existing mount of this view - and every unit
+   * test that renders it - keeps working with no note lines at all, which is
+   * the correct rendering for a caller that fetched none.
+   */
+  notePreviews?: Record<string, RowNotePreview>;
   /** W12-00: gates the drawer's admin-only password hard-delete, exactly as the
    *  agenda passes it (`can(role, "settings:manage")`). The reused drawer, not
    *  this view, enforces every action server-side. */
@@ -676,6 +817,7 @@ export function MarcacoesView({
                       appt={a}
                       highlighted={a.id === focusAppointmentId}
                       conflicting={conflicts.has(a.id)}
+                      notePreview={notePreviews[a.id] ?? null}
                       onOpen={(appt) => setModal({ mode: "edit", appt })}
                       onOpenNotes={(appt) => setNotesFor(appt)}
                     />

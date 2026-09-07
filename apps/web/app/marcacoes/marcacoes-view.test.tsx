@@ -451,3 +451,107 @@ describe("ITEM 4 - marcacoes deep link", () => {
     expect(html).not.toContain("ring-2 ring-v2-green-500");
   });
 });
+
+/**
+ * ==========================================================================
+ * RB-NOTES — THE TWO NOTE LINES ON THE ROW, READ OFF THE RENDERED MARKUP.
+ * ==========================================================================
+ * THE ASSERTIONS THAT MATTER HERE ARE THE ONES ABOUT ABSENCE AND ABOUT WORDS.
+ * The database suite (`lib/notes/latest-notes.db.test.ts`) proves who may be
+ * SENT a note; nothing there can say what the row DRAWS. Two things can only be
+ * checked on the markup:
+ *
+ *   1. a row with no preview draws NOTHING - no labels, no rule, no container.
+ *      "No notes means render nothing, not an empty affordance."
+ *   2. the two sources are LABELLED DIFFERENTLY, in words. That is the clinic's
+ *      actual requirement - "so nobody confuses a note about the person with a
+ *      note about the visit" - and it is a property of the copy, which no query
+ *      can hold.
+ */
+const EXCERPT = (text: string, truncated = false) => ({ text, truncated });
+
+describe("RB-NOTES: the note excerpts on a Marcações row", () => {
+  const APPT = mkAppt({ id: "n-1", patientName: "Joao Paulo", startsAt: "2026-07-20T09:00:00.000Z", endsAt: "2026-07-20T10:00:00.000Z" });
+
+  const renderRows = (previews: Record<string, unknown>) =>
+    render(
+      <MarcacoesView
+        filters={baseFilters}
+        lockTherapist={false}
+        viewer={VIEWER}
+        options={OPTIONS}
+        serviceFilterOptions={SERVICES}
+        canHardDelete={false}
+        appointments={[APPT]}
+        notePreviews={previews as never}
+      />,
+    );
+
+  it("draws NOTHING when the row has neither note", () => {
+    const html = renderRows({});
+    expect(html).not.toContain("marcacoes-note-preview");
+    expect(html).not.toContain("Nota do paciente");
+    expect(html).not.toContain("Nota da marcação");
+  });
+
+  it("draws BOTH, each with its own label, so the sources cannot be confused", () => {
+    const html = renderRows({
+      "n-1": {
+        patient: { excerpt: EXCERPT("ligou a cancelar, telefona ele"), total: 1 },
+        appointment: { excerpt: EXCERPT("trazer a ressonancia"), total: 1 },
+      },
+    });
+    expect(html).toContain("marcacoes-patient-note");
+    expect(html).toContain("marcacoes-appointment-note");
+    expect(html).toContain("ligou a cancelar, telefona ele");
+    expect(html).toContain("trazer a ressonancia");
+    // THE LABELS, VERBATIM. The whole request was that these two be told apart.
+    expect(html).toContain("Nota do paciente");
+    expect(html).toContain("Nota da marcação");
+  });
+
+  it("draws ONE line when only one source has a note", () => {
+    // The independent-absence case. A row whose patient has a note and whose
+    // visit does not must not print an empty second label.
+    const html = renderRows({
+      "n-1": { patient: { excerpt: EXCERPT("ligou a cancelar"), total: 1 }, appointment: null },
+    });
+    expect(html).toContain("marcacoes-patient-note");
+    expect(html).not.toContain("marcacoes-appointment-note");
+    expect(html).not.toContain("Nota da marcação");
+  });
+
+  it("says the excerpt is the LATEST OF SEVERAL, per source", () => {
+    const html = renderRows({
+      "n-1": {
+        patient: { excerpt: EXCERPT("a mais recente do paciente"), total: 3 },
+        appointment: { excerpt: EXCERPT("a mais recente da marcacao"), total: 2 },
+      },
+    });
+    // A row must never read as the whole conversation.
+    expect(html).toContain("Última nota do paciente (de 3)");
+    expect(html).toContain("Última nota da marcação (de 2)");
+  });
+
+  it("the ellipsis comes from `truncated`, not from the text's length", () => {
+    const cut = renderRows({
+      "n-1": { patient: { excerpt: EXCERPT("cortada", true), total: 1 }, appointment: null },
+    });
+    expect(cut).toContain("cortada…");
+
+    const whole = renderRows({
+      "n-1": { patient: { excerpt: EXCERPT("cortada", false), total: 1 }, appointment: null },
+    });
+    expect(whole).toContain("cortada");
+    expect(whole).not.toContain("cortada…");
+  });
+
+  it("the Notas button is UNTOUCHED - an excerpt replaces neither reading nor writing", () => {
+    // The clinic said the button serves them well. A preview beside it must not
+    // quietly become a substitute for the thread.
+    const html = renderRows({
+      "n-1": { patient: { excerpt: EXCERPT("qualquer"), total: 1 }, appointment: null },
+    });
+    expect(html).toContain("marcacoes-notes-button");
+  });
+});

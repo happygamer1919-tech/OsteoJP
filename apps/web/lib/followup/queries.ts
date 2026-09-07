@@ -16,6 +16,8 @@ import {
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { patientLocationScope } from "@/lib/patients/scope";
+import { mayReadNotePreviews } from "@/lib/notes/audience";
+import { readLatestPatientNotes, type LatestNote } from "@/lib/notes/latest-notes";
 import { followupWindow } from "./window";
 
 /**
@@ -163,6 +165,11 @@ export type FollowupCandidate = {
   practitionerName: string | null;
   /** Every recorded contact for this patient, most recent first. */
   contacts: FollowupChannelMark[];
+  /**
+   * RB-NOTES - the latest PATIENT note, or null when there is none THIS VIEWER
+   * MAY READ. The two cases collapse deliberately: see `readLatestPatientNotes`.
+   */
+  latestNote: LatestNote | null;
 };
 
 /**
@@ -401,7 +408,30 @@ export async function listFollowupCandidates(
      * the schema since 0067, and using it means the aliases are Drizzle's own
      * and cannot disagree with themselves.
      */
-    const marks = await tx
+    /**
+     * ==================================================================
+     * RB-NOTES - THE LATEST PATIENT NOTE, IN THE SAME TRANSACTION, ONE
+     * STATEMENT FOR THE WHOLE PAGE.
+     * ==================================================================
+     * WHY IT IS ON THIS SCREEN AT ALL. Reception records a cancellation in the
+     * patient notes - "telefona ele para remarcar" - and whoever works this list
+     * cannot see it. So they either chase a patient who asked not to be chased,
+     * or they postpone blind. The note is the difference between the two, and it
+     * is useless behind a click on a list of fifty.
+     *
+     * IT IS ISSUED BESIDE THE CONTACT MARKS, not after them, so the page pays ONE
+     * more statement rather than one more round trip in series. Both read ids
+     * this transaction has already selected.
+     *
+     * THE SCOPE IS NOT RE-STATED HERE AND MUST NOT BE. `readLatestPatientNotes`
+     * selects FROM `patients`, so `patients_select` decides - the same policy
+     * that decided which rows reached `ids` in the first place, and the same one
+     * `getPatient` applies for the full board. A second predicate written here
+     * would be a second definition of "may this person read this note", and the
+     * two would drift. See that file's header for why the note is correlated to
+     * the patient row instead of being looked up by id.
+     */
+    const marksQuery = tx
       .select({
         patientId: patientFollowupContacts.patientId,
         channel: patientFollowupContacts.channel,
@@ -412,6 +442,21 @@ export async function listFollowupCandidates(
       .leftJoin(users, eq(users.id, patientFollowupContacts.contactedBy))
       .where(inArray(patientFollowupContacts.patientId, ids))
       .orderBy(desc(patientFollowupContacts.contactedAt));
+
+    /**
+     * THE CAPABILITY IS ASKED BEFORE THE STATEMENT IS SENT, NOT AFTER IT
+     * ANSWERS. For a principal without `patients:read` the read is never
+     * issued, so no note text enters this process at all - the difference
+     * between not granting and not drawing, which is the whole of
+     * INC-CONFIRM-10 and of the timing panel's own note. It refuses nobody
+     * today; `lib/notes/audience.ts` says exactly why, and what asserts it.
+     */
+    const [marks, latestNotes] = await Promise.all([
+      marksQuery,
+      mayReadNotePreviews(ctx)
+        ? readLatestPatientNotes(tx, ids)
+        : Promise.resolve(new Map<string, LatestNote>()),
+    ]);
 
     const byPatient = new Map<string, FollowupChannelMark[]>();
     for (const m of marks) {
@@ -438,6 +483,10 @@ export async function listFollowupCandidates(
       lastAttendanceAt: r.lastAttendanceAt ? new Date(r.lastAttendanceAt) : null,
       practitionerName: r.practitionerName,
       contacts: byPatient.get(r.patientId) ?? [],
+      // ABSENT MEANS RENDER NOTHING. A patient with no note and a patient whose
+      // note this viewer may not read are the same answer here on purpose - the
+      // map cannot contain the second, so this cannot leak the difference.
+      latestNote: latestNotes.get(r.patientId) ?? null,
     }));
 
     return { rows: mapped, total, page, pageSize, pageCount };
