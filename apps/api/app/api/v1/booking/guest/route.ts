@@ -13,6 +13,7 @@ import {
 } from "@osteojp/db";
 
 import { hashPhone } from "@/lib/auth/otp";
+import { isGuestSellable } from "@/lib/booking/sellable";
 import { isSmsCapablePT } from "@osteojp/notify";
 import { normalizePhonePT } from "@osteojp/notify";
 import { createDurableRateLimitStore, checkDurableRateLimit } from "@/lib/rate-limit/durable-store";
@@ -213,6 +214,41 @@ export async function POST(req: Request): Promise<Response> {
   ] as const) {
     const verdict = await checkDurableRateLimit(key, rule, store);
     if (!verdict.ok) return tooManyRequests(verdict);
+  }
+
+  // ==========================================================================
+  // GUEST-08 ON THE WRITE PATH. The catalogue's five conditions, enforced here
+  // as well as where they are listed.
+  // ==========================================================================
+  // WHAT THIS CLOSES. Until now this route validated `serviceId` and
+  // `locationId` as non-empty strings and inserted. The foreign keys enforce
+  // that the rows EXIST; nothing enforced that the clinic SELLS the service at
+  // that clinic. So the public form could HIDE a service while this endpoint
+  // accepted its id — from an older page, a bookmarked request, or by trying
+  // ids the catalogue offers at a DIFFERENT clinic. `Diversos` is the worked
+  // example: internal-only by design, and one CB booking is what surfaced this.
+  //
+  // THE REFUSAL IS `invalid_input`, IDENTICAL TO EVERY OTHER ONE. Naming the
+  // reason would turn an unauthenticated endpoint into an oracle for the
+  // catalogue, the price grid and the location list. Same posture as the OTP
+  // route, and the same reason /c/<code> answers one generic refusal to four
+  // different failures.
+  //
+  // ORDERED HERE, AFTER THE PER-PHONE CAPS AND BEFORE THE TENANT-WIDE ONES,
+  // for the reason the block below states in its own words: this is the first
+  // gate that costs a DATABASE ROUND TRIP, so it must sit behind the caps that
+  // bound an attacker — and a request naming a service the clinic cannot sell
+  // is garbage, which must not spend the whole clinic's daily allowance.
+  if (!(await isGuestSellable({ tenantId, serviceId, locationId }))) {
+    // Operator-facing, and it names IDs only: no phone, no name, nothing about
+    // the person. Reception cannot act on this and is not meant to see it; it
+    // exists so a real misconfiguration in Servicos is findable.
+    console.warn(
+      `[guest-booking] refused: service ${serviceId} is not sellable at location ${locationId} ` +
+        `for tenant ${tenantId}. GUEST-08 requires active + not internal_only + patient_bookable, ` +
+        "an ACTIVE service_location_prices row at that location, and an active location.",
+    );
+    return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
   // THE TENANT-WIDE BACKSTOP, CHECKED LAST, for the reason the OTP route
