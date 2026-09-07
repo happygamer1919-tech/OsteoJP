@@ -84,3 +84,37 @@ apps/web/e2e/seed/seed-state.json
 # (scripts/lane-stack.mjs). Config is RENDERED from supabase/config.toml and the
 # migrations are symlinks to it, so nothing here is source.
 .lane/
+
+# --- AUDIT DI SICUREZZA (branch security_dev) ---
+# Dump ed export di dati: mai nel repo.
+*.sql
+*.dump
+*.sqlite
+*.sqlite3
+*.db
+*.csv
+*.tsv
+*.xls
+*.xlsx
+*.jsonl
+# ECCEZIONI: le migrazioni sono codice e restano tracciate.
+!packages/db/migrations/*.sql
+!supabase/migrations/*.sql
+!supabase/seed.sql
+# Archivi PII dell'extractor Fisiozero, ovunque si trovino.
+fisiozero-archive/
+**/fisiozero-archive/
+*storage-state*.json
+*storageState*.json
+# Env: tutto ignorato tranne gli esempi.
+.env.*
+!.env.example
+!**/.env.example
+# I documenti dell'audit NON vanno su GitHub: sono la mappa delle vulnerabilita'.
+AUDIT.md
+CONTEXT.md
+SECURITY_AUDIT.md
+AUDIT_STATE.md
+AUDIT_00_RECON.md
+*.bak-preaudit
+*.docx
