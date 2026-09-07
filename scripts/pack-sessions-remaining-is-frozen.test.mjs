@@ -82,6 +82,17 @@ const ALLOWED = new Set([
   // is what makes them evidence that a clone leaves the patient's ten intact.
   "packages/db/tests/appointment-clone-rls.test.ts",
   "apps/web/e2e/marcar-novamente.spec.ts",
+  // ======================================================================
+  // PACK-07. The fixture that proves an admin cannot change session_count on a
+  // pacote a patient already holds.
+  // ======================================================================
+  // Same case as the three entries above and admitted on the same terms: it
+  // INSERTS one brand-new instance so there is something to hold the pacote,
+  // the column is NOT NULL with no default, and nothing in the file UPDATEs or
+  // READS it. What that suite asserts is `service_packs.session_count`, which
+  // is a different column on a different table - and the whole point of the
+  // guard it is testing is that those two numbers are allowed to disagree.
+  "apps/web/lib/admin/pack-session-count.db.test.ts",
 ]);
 
 function sources() {

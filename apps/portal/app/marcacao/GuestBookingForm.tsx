@@ -2,8 +2,8 @@
 
 import { useActionState } from 'react'
 import { Banner, Button, Field, Input } from '@osteojp/ui'
+import type { PortalLocale, PortalStrings } from '@osteojp/i18n'
 
-import { s } from '@/lib/i18n'
 import { CLINIC_CONTACTS } from '@/lib/clinics'
 import type { PublicCatalog } from '@/lib/guest/api'
 
@@ -46,6 +46,18 @@ import {
  */
 
 export type GuestBookingFormProps = {
+  /**
+   * LANG-01 — THE DICTIONARY ARRIVES AS A PROP. It used to be imported from
+   * `@/lib/i18n`, which resolves the locale ONCE at module load; a component
+   * that imports its own strings cannot be rendered in two languages by the same
+   * server, whatever the page decides.
+   */
+  s: Readonly<PortalStrings>
+  /** The resolved locale, so the language links can mark the current one. */
+  locale: PortalLocale
+  /** One entry per supported locale, hrefs built on the server from the request's
+   *  own query string. Order is `PORTAL_LOCALES`' order. */
+  localeLinks: readonly { locale: PortalLocale; href: string }[]
   catalog: PublicCatalog
   /** YYYY-MM-DD bounds, computed in Lisbon ON THE SERVER. A browser in another
    *  time zone would compute a different "today" and could offer yesterday. */
@@ -71,6 +83,9 @@ function hidden(values: GuestValues, except: (keyof GuestValues)[] = []) {
 }
 
 export function GuestBookingForm({
+  s,
+  locale,
+  localeLinks,
   catalog,
   minDate,
   maxDate,
@@ -131,6 +146,60 @@ export function GuestBookingForm({
             .replace('{{current}}', String(step))
             .replace('{{total}}', String(GUEST_TOTAL_STEPS))}
         </p>
+
+        {/* ==============================================================
+            LANG-01 — THE LANGUAGE CHOICE, ON STEP 1 AND ONLY ON STEP 1.
+            ==============================================================
+            ORDINARY ANCHORS. A `<select>` would need JavaScript to act on a
+            change, or a second submit button inside a form whose two buttons
+            already mean "next" and "back". A link needs neither, and it makes
+            `/marcacao?lang=en` an address the clinic can put on an English page
+            of its website - which is the case that actually matters for a
+            foreign visitor, who then never sees a chooser at all.
+
+            STEP 1 ONLY, AND IT IS A CORRECTION TO THE FIRST DESIGN. That design
+            said the links should be visible on every step so nobody is stranded
+            at step 3. THEY CANNOT BE. A link is a NAVIGATION, and a navigation
+            resets `useActionState` to INITIAL_GUEST_STATE - step 1, every answer
+            gone. On step 1 that costs nothing, because nothing has been
+            answered. On step 3 it would silently discard a date and a period the
+            visitor had just chosen, and the switch would look like the form
+            crashing.
+
+            THE ANSWERS CANNOT BE CARRIED THROUGH IT EITHER, and that is worth
+            stating so the next person does not try. The locale has to be in the
+            URL, because the SERVER-RENDERED shell around this form - the
+            document language, the metadata, the RGPD text - is rendered by a
+            page that never sees this component's state. Putting the locale in
+            the form state instead would translate the form and leave the page
+            around it in the other language.
+
+            THE CURRENT LOCALE IS NOT A LINK. It is plain text, so a screen
+            reader announces ONE actionable choice rather than two, and the
+            current state is carried by more than styling. */}
+        {step === 1 && (
+        <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs" data-testid="guest-lang-links">
+          {localeLinks.map(({ locale: l, href }) =>
+            l === locale ? (
+              <span key={l} aria-current="true" className="font-semibold text-text-primary">
+                {l === 'pt' ? s.account.language_pt : s.account.language_en}
+              </span>
+            ) : (
+              <a
+                key={l}
+                href={href}
+                hrefLang={l}
+                data-testid={`guest-lang-${l}`}
+                /* min-h-11 is the 44px target size PG9 audits for; on a form
+                   read on a phone these two are the smallest things on screen. */
+                className="inline-flex min-h-11 items-center font-medium text-accent-2-700 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+              >
+                {l === 'pt' ? s.account.language_pt : s.account.language_en}
+              </a>
+            ),
+          )}
+        </p>
+        )}
       </div>
 
       {state.error && (

@@ -10,6 +10,10 @@ import {
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
+import {
+  canChangePackSessionCount,
+  sessionCountBlockedReason,
+} from "./pack-session-count";
 import { effectivePriceCents } from "./pricing";
 
 // Re-export so the packs admin surface can pull the pure override-then-base
@@ -132,6 +136,44 @@ export async function updatePack(actor: RequestContext, id: string, input: PackI
       .where(eq(services.id, v.baseServiceId))
       .limit(1);
     if (!svc[0]) throw new AdminError("not_found", "base service not found");
+
+    /**
+     * PACK-07 — THE SESSION COUNT MAY NOT MOVE ON A PACOTE PATIENTS HOLD.
+     *
+     * Read INSIDE the write transaction and not from anything the browser sent:
+     * the page disables the input, and a disabled input is a courtesy. The
+     * count could also change between the render and the save, which is the
+     * ordinary reason every guard in this file re-decides here.
+     *
+     * `pack-session-count.ts` carries the full reasoning. The short version is
+     * that `sessions_total` is a PURCHASE-TIME SNAPSHOT on the instance, so this
+     * edit cannot reach a single existing holder and silently re-prices the
+     * product for every future one.
+     */
+    const [existing] = await tx
+      .select({ sessionCount: servicePacks.sessionCount })
+      .from(servicePacks)
+      .where(eq(servicePacks.id, id))
+      .limit(1);
+    if (!existing) throw new AdminError("not_found");
+
+    if (existing.sessionCount !== v.sessionCount) {
+      // COUNTED ONLY WHEN THE NUMBER ACTUALLY MOVES. A save that leaves it alone
+      // is every other field on the row, and it must not pay for a query it
+      // cannot fail.
+      const held = await tx
+        .select({ id: patientPackInstances.id })
+        .from(patientPackInstances)
+        .where(eq(patientPackInstances.packId, id));
+      const change = {
+        current: existing.sessionCount,
+        requested: v.sessionCount,
+        heldBy: held.length,
+      };
+      if (!canChangePackSessionCount(change)) {
+        throw new AdminError("has_instances", sessionCountBlockedReason(change));
+      }
+    }
 
     const rows = await tx
       .update(servicePacks)

@@ -20,6 +20,12 @@ export type AdminErrorCode =
   // an admin told "cannot delete" while the archive silently succeeded would be
   // told the opposite of what happened. The message names the pacotes.
   | "has_packs"
+  // PACK-07: a pacote's SESSION COUNT change refused because patients already
+  // hold instances of it. Distinct from `has_references`, which is about
+  // DELETING the pacote, and from `has_packs`, which is about a SERVICE. The
+  // three refusals point at three different repairs and an admin told the wrong
+  // one goes and does the wrong thing.
+  | "has_instances"
   | "password" // wrong delete password (W4-01 staff delete)
   | "has_activity" // staff delete refused: therapist has appointments/records/audit (W4-01)
   | "has_clinical_records" // patient hard-delete refused: clinical records reference the patient (W5-08)

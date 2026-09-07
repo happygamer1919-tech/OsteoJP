@@ -1194,6 +1194,7 @@
   "admin.packs.delete": "Eliminar",
   "admin.packs.deleteBlockedTooltip": "Não é possível eliminar: este pacote tem instâncias de pacientes. Pode arquivá-lo.",
   "admin.packs.deleteHasReferences": "Não é possível eliminar: o pacote tem instâncias de pacientes. Arquive-o em alternativa.",
+  "admin.packs.sessionCountHasInstances": "Não é possível alterar o número de sessões de um pacote que já foi vendido: os pacientes que o compraram mantêm as sessões que pagaram e só os próximos compradores seriam afetados. Crie um pacote novo com o número de sessões pretendido.",
   "admin.packs.saved": "Pacote guardado.",
   "admin.packs.error": "Não foi possível guardar o pacote.",
   "admin.packs.none": "Ainda não há pacotes.",
