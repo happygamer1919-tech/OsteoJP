@@ -50,23 +50,33 @@ describe.skipIf(!live)("0081 patient locale", () => {
 
   beforeAll(async () => {
     sql = connect();
-    const [t] = await sql<{ id: string }[]>`
-      SELECT id FROM public.tenants ORDER BY created_at LIMIT 1`;
-    if (!t) throw new Error("no tenant in the database; run the seed first");
-    tenantId = t.id;
-
-    const [svc] = await sql<{ id: string }[]>`
-      SELECT id FROM public.services WHERE tenant_id = ${t.id} ORDER BY name LIMIT 1`;
-    const [loc] = await sql<{ id: string }[]>`
-      SELECT id FROM public.locations WHERE tenant_id = ${t.id} ORDER BY name LIMIT 1`;
-    if (!svc || !loc) {
+    // ==========================================================================
+    // THE TENANT IS DERIVED FROM A REAL (service, location) PAIR, NOT PICKED.
+    // ==========================================================================
+    // The first version took `tenants ORDER BY created_at LIMIT 1` and then went
+    // looking for a service and a location IN THAT TENANT. It passed on a lane,
+    // where the oldest tenant is the fully seeded one, and FAILED IN CI, where
+    // the oldest tenant has neither. The guard below did its job - it named the
+    // cause instead of letting the guest arm silently test a NOT NULL refusal -
+    // but the right fix is to stop guessing: ask for the pair FIRST and let the
+    // tenant fall out of it, so all three ids are consistent by construction and
+    // the test does not depend on which tenant happens to sort first.
+    const [seed] = await sql<{ tenant_id: string; service_id: string; location_id: string }[]>`
+      SELECT s.tenant_id, s.id AS service_id, l.id AS location_id
+        FROM public.services s
+        JOIN public.locations l ON l.tenant_id = s.tenant_id
+       ORDER BY s.tenant_id, s.name, l.name
+       LIMIT 1`;
+    if (!seed) {
       throw new Error(
-        "no seeded service or location; the guest arm needs both NOT NULL columns filled " +
-          "with real ids, or the INSERT is refused before the locale CHECK is ever reached",
+        "no tenant has both a service and a location. The guest arm needs both NOT NULL " +
+          "columns filled with real ids, or its INSERT is refused before the locale CHECK is " +
+          "ever reached - which would make that arm green while testing nothing.",
       );
     }
-    serviceId = svc.id;
-    locationId = loc.id;
+    tenantId = seed.tenant_id;
+    serviceId = seed.service_id;
+    locationId = seed.location_id;
   });
 
   afterAll(async () => {
