@@ -4,6 +4,7 @@ import { ChevronRight, LogOut } from 'lucide-react'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Dialog, Drawer, Field, Input } from '@osteojp/ui'
+import type { PortalLocale } from '@osteojp/i18n'
 import type { PatientProfile } from '@/lib/api/client'
 import { createBrowserClient } from '@/lib/supabase/client'
 import ReminderToggles from '@/components/account/ReminderToggles'
@@ -50,10 +51,15 @@ export function AccountView({
   profile,
   fullName,
   email,
+  locale,
 }: {
   profile: PatientProfile | null
   fullName: string
   email: string
+  /** LANG-02: the locale THIS RENDER resolved to, so the Idioma row states a
+   *  fact rather than a literal. Not a stored preference - that column is
+   *  BLUE's and does not exist yet. */
+  locale: PortalLocale
 }) {
   const router = useRouter()
   const supabase = createBrowserClient()
@@ -157,8 +163,13 @@ export function AccountView({
       <section className="flex flex-col gap-2">
         <h3 className="text-xs font-medium text-text-secondary">{s.account.section_preferences}</h3>
         <div className="divide-y divide-border rounded-lg border border-border bg-surface">
-          {/* Language: PT only until per-patient locale selection lands. */}
-          <Row label={s.account.field_language} value={s.account.language_pt} />
+          {/* LANG-02: the RESOLVED locale, never a literal. See page.tsx for
+              why this is a statement about the render and not yet a stored
+              preference - the patient language column is BLUE's. */}
+          <Row
+            label={s.account.field_language}
+            value={locale === 'en' ? s.account.language_en : s.account.language_pt}
+          />
         </div>
         <ReminderToggles
           initialSms={profile?.reminderSmsEnabled ?? true}

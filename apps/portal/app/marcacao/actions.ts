@@ -9,7 +9,12 @@ import {
 } from '@osteojp/db'
 
 import { submitGuestRequest } from '@/lib/guest/api'
-import { isGuestConfirmationCopyReady } from '@/lib/guest/commitment-copy'
+import {
+  guestCopySourceFor,
+  isGuestConfirmationCopyReady,
+  isGuestCopyApprovedFor,
+} from '@/lib/guest/commitment-copy'
+import { resolvePortalLocale } from '@/lib/locale-server'
 
 import {
   GUEST_FORM_HORIZON_DAYS,
@@ -113,19 +118,44 @@ export async function guestBookingAction(
   // THE COMMITMENT-COPY GATE, CHECKED BEFORE ANYTHING IS WRITTEN.
   //
   // The confirmation screen is where the clinic tells this person what happens
-  // next, and its copy is not written yet (JP words it; see
-  // lib/guest/commitment-copy.ts). Submitting first and discovering that second
-  // would put a real request in reception's queue and then show its sender
-  // either a blank screen or an error - the clinic holding somebody's telephone
-  // number without that person having any reason to think it arrived.
+  // next, and its copy is a promise the clinic is making (JP words it; see
+  // lib/guest/commitment-copy.ts). Submitting first and discovering a problem
+  // second would put a real request in reception's queue and then show its
+  // sender either a blank screen or an error - the clinic holding somebody's
+  // telephone number without that person having any reason to think it arrived.
   //
   // So the refusal happens BEFORE the write, and it is the ordinary
   // "unavailable" message, which promises nothing. The operator gets the reason
   // in the server log.
-  if (!isGuestConfirmationCopyReady()) {
+  //
+  // ==========================================================================
+  // LANG-01 — IT IS ASKED OF THE LOCALE THIS REQUEST WILL RENDER IN.
+  // ==========================================================================
+  // The gate used to ask about the `pt` dictionary because `pt` was the only
+  // thing anything rendered. `/marcacao?lang=en` changes that, and a gate that
+  // went on asking about Portuguese would clear an English submit on the
+  // strength of a Portuguese promise.
+  //
+  // TWO CONDITIONS, NOT ONE, because they are different facts:
+  //   READY     the strings exist. Guards an unfilled deployment.
+  //   APPROVED  the clinic ratified them IN THIS LANGUAGE. Guards a translation
+  //             nobody signed off - which is the English pair's exact status.
+  // A non-empty unratified promise passes the first and fails the second, and
+  // that is the whole reason the second exists.
+  const locale = await resolvePortalLocale()
+  if (!isGuestCopyApprovedFor(locale)) {
+    console.error(
+      `[guest] submit refused: the confirmation commitment is not ratified for locale ` +
+        `"${locale}". Only GUEST_COPY_APPROVED_LOCALES may be submitted; see ` +
+        `lib/guest/commitment-copy.ts and board card LANG-03.`,
+    )
+    return { step: 4, values, consent, error: 'unavailable', received: false }
+  }
+  if (!isGuestConfirmationCopyReady(guestCopySourceFor(locale))) {
     console.error(
       '[guest] submit refused: guest.confirmation_title / guest.confirmation_body ' +
-        'are empty. The confirmation copy is unwritten, so no request is accepted.',
+        `are empty for locale "${locale}". The confirmation copy is unwritten, so no ` +
+        'request is accepted.',
     )
     return { step: 4, values, consent, error: 'unavailable', received: false }
   }

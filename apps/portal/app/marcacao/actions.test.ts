@@ -22,6 +22,24 @@ const H = vi.hoisted(() => ({
   submits: [] as Record<string, unknown>[],
   outcome: 'received' as 'received' | 'invalid' | 'rate_limited' | 'unavailable',
   copyReady: true,
+  /** LANG-01: the locale the proxy resolved for this request. */
+  locale: 'pt' as 'pt' | 'en',
+  /** LANG-01: which locales the clinic has RATIFIED the commitment in. */
+  approved: ['pt'] as string[],
+}))
+
+/**
+ * LANG-01 — THE REQUEST HEADER THE PROXY STAMPS, mocked at `next/headers` so
+ * the REAL `resolvePortalLocale` still runs.
+ *
+ * Mocking `@/lib/locale-server` instead would have been shorter and would have
+ * taken the parse out of the test: the arms below then prove that the action
+ * branches on a value, not that it branches on the value the proxy actually
+ * sends. This way an unknown `?lang=` still travels through
+ * `parsePortalLocale` on its way here.
+ */
+vi.mock('next/headers', () => ({
+  headers: async () => new Headers({ 'x-portal-locale': H.locale }),
 }))
 
 vi.mock('@/lib/guest/api', () => ({
@@ -33,6 +51,11 @@ vi.mock('@/lib/guest/api', () => ({
 
 vi.mock('@/lib/guest/commitment-copy', () => ({
   isGuestConfirmationCopyReady: () => H.copyReady,
+  isGuestCopyApprovedFor: (locale: string) => H.approved.includes(locale),
+  guestCopySourceFor: (locale: string) => ({
+    confirmation_title: `title-${locale}`,
+    confirmation_body: `body-${locale}`,
+  }),
 }))
 
 import { guestBookingAction } from './actions'
@@ -78,6 +101,8 @@ const run = (fields: Record<string, string>, prev: GuestFormState = INITIAL_GUES
 beforeEach(() => {
   H.submits = []
   H.outcome = 'received'
+  H.locale = 'pt'
+  H.approved = ['pt']
   H.copyReady = true
 })
 
@@ -213,5 +238,79 @@ describe('§4 — what is sent, and what comes back', () => {
     const out = await run(complete())
     expect(out.received).toBe(true)
     expect(out.error).toBeNull()
+  })
+})
+
+/**
+ * ==========================================================================
+ * LANG-01 — THE SUBMIT GATE ASKS ABOUT THE LANGUAGE IT WILL ANSWER IN.
+ * ==========================================================================
+ * The confirmation screen is a PROMISE THE CLINIC MAKES. Before this the gate
+ * asked one question - are the strings there - and that was sufficient for
+ * exactly as long as Portuguese was the only thing rendered.
+ *
+ * IT NOW ASKS TWO, AND THEY ARE DIFFERENT FACTS. "Written" guards an unfilled
+ * deployment; "ratified in this language" guards a translation nobody signed
+ * off. The English pair is non-empty and unratified, so it passes the first and
+ * must fail the second - which is the only reason the second exists.
+ *
+ * EVERY ARM ASSERTS WHETHER THE API WAS CALLED, like every arm above it. A
+ * refusal that had already written the row would satisfy a status-only test and
+ * be the exact defect the whole file is about.
+ */
+describe('LANG-01 — the commitment gate is per locale', () => {
+  it('an APPROVED locale submits', async () => {
+    H.locale = 'pt'
+    H.approved = ['pt']
+    const out = await run(complete())
+    expect(out.received).toBe(true)
+    expect(H.submits).toHaveLength(1)
+  })
+
+  it('an UNRATIFIED locale is refused, and NOTHING is written', async () => {
+    // The English arm as it stands today: strings present, approval absent.
+    H.locale = 'en'
+    H.approved = ['pt']
+    H.copyReady = true
+    const out = await run(complete())
+    expect(out.received).toBe(false)
+    expect(out.error).toBe('unavailable')
+    // THE HALF THAT MATTERS. A refused submit that had already posted would
+    // leave the clinic holding a stranger's telephone number while the sender
+    // was told it was unavailable.
+    expect(H.submits).toHaveLength(0)
+  })
+
+  it('the refusal is about RATIFICATION, not emptiness - the strings were there', async () => {
+    // Both arms of the pair, distinguished. If this test could not tell them
+    // apart, "approved" would be an alias for "written" and would guard nothing.
+    H.locale = 'en'
+    H.approved = ['pt', 'en']
+    H.copyReady = true
+    expect((await run(complete())).received).toBe(true)
+
+    H.submits = []
+    H.approved = ['pt']
+    expect((await run(complete())).received).toBe(false)
+    expect(H.submits).toHaveLength(0)
+  })
+
+  it('ratifying a locale is the ONLY thing that opens it', async () => {
+    // The flip, exercised: one array entry is the whole difference between a
+    // refused English submit and an accepted one.
+    H.locale = 'en'
+    H.approved = ['pt', 'en']
+    const out = await run(complete())
+    expect(out.received).toBe(true)
+    expect(H.submits).toHaveLength(1)
+  })
+
+  it('an UNKNOWN locale header still lands on Portuguese and submits', async () => {
+    // `parsePortalLocale` is the real one here (only `next/headers` is mocked),
+    // so a crawler or a typo arrives as `pt` rather than as a third state.
+    H.locale = 'de' as 'pt'
+    H.approved = ['pt']
+    const out = await run(complete())
+    expect(out.received).toBe(true)
   })
 })

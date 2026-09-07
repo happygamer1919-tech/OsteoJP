@@ -146,6 +146,9 @@ export default async function ServicesPage({
     : m && m.startsWith("err") ? { ok: false, text: s["admin.services.error"] }
     : mp === "ok" ? { ok: true, text: s["admin.packs.saved"] }
     : mp === "err:has_references" ? { ok: false, text: s["admin.packs.deleteHasReferences"] }
+    // PACK-07. Its own message: it points at a different repair than the delete
+    // one - create a new pacote, rather than remove this one.
+    : mp === "err:has_instances" ? { ok: false, text: s["admin.packs.sessionCountHasInstances"] }
     : mp && mp.startsWith("err") ? { ok: false, text: s["admin.packs.error"] }
     : null;
 
@@ -571,6 +574,22 @@ function PacksSection({
                                   </option>
                                 ))}
                               </select>
+                              {/* PACK-07: READ-ONLY once a patient holds this
+                                  pacote. The server refuses the change anyway
+                                  (lib/admin/packs.ts); this is the half that
+                                  stops an admin typing a number, pressing save
+                                  and being told no - and the title says WHY,
+                                  because a control that is merely inert teaches
+                                  nothing.
+
+                                  `readOnly`, NOT `disabled`. A disabled input
+                                  posts NOTHING, so `sessionCount` would arrive
+                                  as an empty string and `parseSessionCount`
+                                  would reject an otherwise valid save of the
+                                  name or the price. Read-only still submits its
+                                  value, so every other field on the row stays
+                                  editable - which is the whole point of guarding
+                                  the CHANGE rather than the pacote. */}
                               <input
                                 name="sessionCount"
                                 type="number"
@@ -578,9 +597,32 @@ function PacksSection({
                                 step={1}
                                 defaultValue={pack.sessionCount}
                                 required
+                                readOnly={!deletable}
+                                aria-describedby={
+                                  !deletable ? `pack-sessions-held-${pack.id}` : undefined
+                                }
+                                title={
+                                  !deletable
+                                    ? s["admin.packs.sessionCountHasInstances"]
+                                    : undefined
+                                }
                                 aria-label={s["admin.packs.sessionCount"]}
-                                className={`w-20 ${adminInputInline}`}
+                                className={`w-20 ${adminInputInline} ${!deletable ? "cursor-not-allowed opacity-70" : ""}`}
                               />
+                              {!deletable && (
+                                /* The reason as TEXT, not only as a title
+                                   attribute: a tooltip is unreachable by
+                                   keyboard and invisible on a phone, and this
+                                   is the sentence that tells the admin what to
+                                   do instead. */
+                                <span
+                                  id={`pack-sessions-held-${pack.id}`}
+                                  data-testid="pack-session-count-held"
+                                  className="sr-only"
+                                >
+                                  {s["admin.packs.sessionCountHasInstances"]}
+                                </span>
+                              )}
                               <input
                                 name="price"
                                 type="text"

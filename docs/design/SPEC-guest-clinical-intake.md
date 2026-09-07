@@ -1,7 +1,10 @@
 # SPEC — the clinical intake form, once per patient, at first online booking
 
-**Status: DESIGN REPORT. NOTHING IS BUILT. The owner stamps before any code.**
+**Status: DESIGN REPORT. NOTHING IS BUILT. HELD UNTIL MIGRATION 0082 EXISTS.**
 Author: PURPLE, 2026-09-07. Re-derived from `origin/main` at `380e1023`.
+Amended 2026-09-07 to carry STRATEGY'S THREE RULINGS (§0.1). The build stays
+held: BLUE's storage is migration `0082` and this document is written against
+it, so building before it exists would be building against a shape nobody has.
 
 **Division of labour, from the dispatch:** BLUE owns STORAGE and RETENTION.
 This document owns the FORM and the FLOW, and it states precisely what it needs
@@ -24,9 +27,43 @@ a patient changes NOTHING the visitor sees** — that is the no-oracle property
 the endpoint was built with, and breaking it would turn a public form into a
 patient-list lookup for anyone with a phone book.
 
-Three things below are NOT decisions I can make and are flagged as such: the
-three-state columns (§5), what happens to the answers at conversion (§6), and
-the retention clock (§8).
+---
+
+## 0.1 THE THREE RULINGS, AND WHAT THEY CHANGED IN THIS DOCUMENT
+
+**Stamped by strategy 2026-09-07. They CLOSE the three questions this report
+opened. Each is recorded here with what it replaced, because two of them
+overturn a recommendation this document made and a reader who only saw the new
+text would not know that.**
+
+**RULING 1 — ASK EVERYONE, RESOLVE AT CONVERSION.** Closes `Q-INTAKE-2`. It is
+the recommendation §7 made and it is now the rule rather than a proposal. The
+form never varies by phone number, so the no-oracle property is preserved by
+construction. §7 is unchanged in substance and now states it as ruled.
+
+**RULING 2 — PACEMAKER AND PREGNANCY CARRY THREE STATES, NEVER-ASKED DISTINCT
+FROM NO, AND BOTH ARE REQUIRED ON THE FORM.** This is the one that CHANGES the
+design, and it changes it twice:
+
+  - it CONFIRMS §5's three-state storage, against the two-state boolean columns
+    that exist today; and
+  - it makes both questions **REQUIRED**, which §3 had them as optional.
+
+**THE SECOND HALF IS THE SUBTLE ONE AND IT IS WHY THE RULING IS BETTER THAN
+WHAT I PROPOSED.** Three states plus an optional field means a guest submission
+can WRITE never-asked - a clinical safety question left blank, stored, and
+carried into the ficha as a permanent unknown that nobody was ever prompted to
+resolve. Requiring both on the form means **never-asked is unreachable through
+this door**. The third state still exists in storage, and it must, for the rows
+that arrive by every other route: a patient created by reception at the desk, a
+migrated record, a submission from before this form existed. So the state is
+storable and the form cannot produce it, which is exactly the right split.
+
+**RULING 3 — RETENTION IS SEVEN DAYS, WITH ALL FOUR CONDITIONS, AND IT IS
+ALREADY JP'S.** Closes `Q-INTAKE-3`, which this report wrongly listed as open.
+§8 is corrected: it is not a question for BLUE and the owner, it is a ruling to
+implement, and the consent copy can be written against it now rather than
+waiting.
 
 ---
 
@@ -113,8 +150,8 @@ of these works with no JavaScript**, which is the constraint that picked them.
 | 4 | Medicação habitual | `<textarea>` | free text | no |
 | 5 | Quedas e acidentes | `<textarea>` | free text | no |
 | 6 | Cirurgias | `<textarea>` | free text | no |
-| 7 | Pacemaker | **three radios**: Sim / Não / (unanswered = no radio checked) | `"sim" \| "nao" \| ""` | **see §5** |
-| 8 | Gravidez | three radios, same | `"sim" \| "nao" \| ""` | **see §5** |
+| 7 | Pacemaker | **two radios**: Sim / Não, `required` | `"sim" \| "nao"` | **YES — RULING 2** |
+| 8 | Gravidez | two radios, same | `"sim" \| "nao"` | **YES — RULING 2** |
 | 9 | RGPD | `<input type="checkbox" name="consent">` | `"on"` or absent | yes, server-checked |
 
 **THE DATE OF BIRTH IS NATIVE, LIKE `preferredDate` AND FOR THE SAME REASON.**
@@ -130,22 +167,38 @@ work without it, so the dispatch's "say so rather than quietly converting the
 form" does not need to be exercised. **The one thing that would break it is a
 signature canvas, and the dispatch has already ruled that out.**
 
-**THE THREE-STATE CONTROL, CONCRETELY.** Two radios sharing a `name`, neither
-carrying `checked`, and no `required`:
+**THE CONTROL, CONCRETELY, AS RULING 2 SHAPES IT.** Two radios sharing a
+`name`, neither pre-checked, and `required`:
 
 ```html
 <fieldset>
   <legend>Portador de pacemaker</legend>
-  <label><input type="radio" name="pacemaker" value="sim"> Sim</label>
-  <label><input type="radio" name="pacemaker" value="nao"> Não</label>
+  <label><input type="radio" name="pacemaker" value="sim" required> Sim</label>
+  <label><input type="radio" name="pacemaker" value="nao" required> Não</label>
 </fieldset>
 ```
 
-An untouched fieldset posts NO `pacemaker` key at all — `form.get()` returns
-null, which is a third value distinct from both `"sim"` and `"nao"`. That is the
-whole mechanism, it needs no JavaScript, and it is why radios were chosen over a
-checkbox: **a checkbox has two states and cannot express "not answered", which
-is exactly the conflation the dispatch forbids.**
+**NEITHER IS PRE-CHECKED, AND THAT IS THE HALF A `required` DOES NOT COVER.** A
+default of "Não" would answer a clinical safety question on the visitor's behalf
+and post an affirmative denial they never made — the exact conflation the
+dispatch forbids, arriving through a convenience rather than through a blank.
+
+**AND THE SERVER CHECKS IT INDEPENDENTLY**, exactly as the RGPD tick already is:
+`required` is a hint to a browser and this form is built to work without one.
+`firstIncompleteStep` gains the two fields, so a post that omits either comes
+back to step 5 with `missing_field` rather than being stored as never-asked.
+
+**SO THREE STATES ARE STORABLE AND THIS FORM CANNOT PRODUCE THE THIRD.** That
+is the split Ruling 2 draws and it is worth restating because it looks like a
+contradiction: the never-asked state is real and must be storable, for rows that
+arrive by any other route — a patient created at the desk, a migrated record, a
+submission from before this form existed. What it must never be is something a
+GUEST SUBMISSION writes, because there is nobody to go back and ask.
+
+**A CHECKBOX WOULD STILL BE WRONG**, for the record, and not only because of the
+third state: a checkbox conflates "not ticked" with "no", so an unticked
+pacemaker box is an affirmative denial nobody made. Radios make "Não" a thing
+the visitor pressed.
 
 ---
 
@@ -226,21 +279,30 @@ That is `PORTAL-REHYDRATE §1.3` in its purest form — an unknown case written 
 the benign known one — and here the benign-looking value is what tells a
 therapist it is safe to proceed with NESA.
 
-**WHAT I RECOMMEND, and it is BLUE's and the owner's to rule on:**
+**RULED 2026-09-07 (RULING 2). This is no longer a question.**
 
-- intake storage keeps the three states verbatim (`'sim' | 'nao' | null`);
-- **conversion NEVER writes the boolean from an unanswered intake answer.** It
-  writes `true` for "sim", leaves the column alone for "nao" (which is what
-  `false` already means), and for unanswered leaves it alone AND leaves a
-  visible mark for the clinician;
-- the visible mark is the part I cannot design without a ruling: the ficha needs
-  somewhere that says "this was not answered", and today it has nowhere.
+- **intake storage keeps three states** (`'sim' | 'nao' | never-asked`), in
+  BLUE's `0082`, and NOT in the two-state boolean columns above;
+- **both questions are REQUIRED on the form**, so a guest submission can never
+  produce never-asked. See §3 for the control and for why neither radio is
+  pre-checked;
+- **conversion NEVER writes `contraindication_*` from an intake answer at all.**
+  Not for "sim", not for "nao", not for never-asked. Those columns are a
+  clinician's assertion about a patient, and an import is not a clinician.
 
-**Q-INTAKE-1, for the owner:** when a patient converts having not answered the
-pacemaker or pregnancy question, what does the clinician see? Recommended
-default: the intake answers render on the ficha as their own read-only block,
-verbatim including "não respondeu", and the boolean flags are untouched by
-conversion entirely — a clinician sets them, never an import.
+**WHY THAT LAST LINE IS STRONGER THAN WHAT THIS REPORT FIRST PROPOSED.** The
+first draft said conversion should write `true` for "sim" and leave the column
+alone otherwise. That is defensible and it is still a machine deciding a
+clinical flag from a form a stranger filled in on a phone. The intake answer and
+the contraindication flag are DIFFERENT CLAIMS — "the person said they have a
+pacemaker" and "this patient has a pacemaker, and a therapist has confirmed it"
+— and collapsing them is the same conflation one layer up.
+
+**SO THE ANSWERS RENDER AS THEIR OWN READ-ONLY BLOCK ON THE FICHA**, verbatim,
+attributed to the patient and dated, and a clinician sets the flags. The
+never-asked state still has to render there, in words, for the rows that carry
+it from other routes — a blank is not a "no" on a clinical safety question, and
+that is as true on the screen as it is in the column.
 
 ---
 
@@ -298,7 +360,8 @@ belongs in the same transaction, which is BLUE's call to shape.
    who read the guest queue — `guest_requests:read`, owner/admin/reception,
    location-scoped — and NOT therapists, because before conversion there is no
    patient and therefore no own-patient scope to bound them by;
-4. what conversion does with it (§5's Q-INTAKE-1).
+4. **nothing** — what conversion does with it is ruled (§5): the
+   `contraindication_*` columns are never written from an intake answer.
 
 ### 6.3 The Article 9 rules, and where each is enforced
 
@@ -348,12 +411,12 @@ TWO sets of answers of different ages for one person. The dispatch says the form
 is once per patient — but the form cannot know who is a patient without becoming
 the oracle it must not be.
 
-**Q-INTAKE-2, for the owner.** Recommended default: **ask everyone, and resolve
-it at conversion.** The visitor's experience is identical either way; reception
-already sees the match count; and when they convert a request onto an EXISTING
-patient, the new intake is attached to the patient as a dated submission rather
-than overwriting anything. Two dated answers to "medicação habitual" is a
-clinical record; one silently replaced is a lost one.
+**RULED 2026-09-07 (RULING 1): ASK EVERYONE, RESOLVE AT CONVERSION.** The
+visitor's experience is identical either way; reception already sees the match
+count; and when they convert a request onto an EXISTING patient, the new intake
+is attached as a DATED submission rather than overwriting anything. Two dated
+answers to "medicação habitual" is a clinical record; one silently replaced is a
+lost one.
 
 **REJECTED ALTERNATIVE, and the reason is the point:** skipping the intake step
 when the phone matches. It would leak, exactly. A visitor could type any number
@@ -363,22 +426,36 @@ oracle built out of the form's own navigation, which is precisely the shape the
 
 ---
 
-## 8. RETENTION — named, not designed
+## 8. RETENTION — RULED, NOT OPEN. SEVEN DAYS, JP's, WITH ALL FOUR CONDITIONS.
 
-BLUE's, and flagged because the form's copy depends on the answer.
+**THIS REPORT LISTED IT AS AN OPEN QUESTION AND THAT WAS WRONG.** It was already
+ruled by JP. `Q-INTAKE-3` is struck; what follows is an implementation
+requirement, and the consent copy can be written against it now rather than
+waiting on an answer that had already been given.
 
-A guest intake is health data about somebody who may never become a patient. If
-they never convert, it sits in a table forever unless something deletes it.
-`guest_booking_requests` has no retention rule today either — that is a
-pre-existing gap this change makes materially worse, because a name and a
-telephone number is not Article 9 data and this is.
+**SEVEN DAYS, AND ALL FOUR CONDITIONS HOLD TOGETHER.** A retention rule with
+three of four implemented is not a shorter rule, it is a different one, so the
+four are listed as a set that BLUE's `0082` and its deletion path must satisfy
+together rather than as a checklist to work through:
 
-**Q-INTAKE-3, for BLUE and the owner:** how long does an unconverted intake live?
-Recommended default: the intake row is deleted when its guest request is declined
-or after a fixed window (90 days is the same order as the booking horizon), and
-the request row survives as the audit trail. **The consent text must say whatever
-the answer is**, which is why this is on the critical path for the copy and not a
-follow-up.
+1. an unconverted intake is deleted seven days after it arrives;
+2. conversion ENDS the clock — once the person is a patient the submission is
+   part of their record and this rule stops applying to it;
+3. the deletion takes the ANSWERS, not the request: `guest_booking_requests`
+   survives as the audit trail of what was asked for, which carries no Article 9
+   data;
+4. the clock runs on arrival, not on last touch, so a request nobody works does
+   not live longer than one somebody looked at.
+
+**THE CONSENT TEXT MUST SAY SEVEN DAYS.** That is why this was on the critical
+path for the copy: a consent that describes an indefinite hold would be wrong
+about the clinic's own rule, and one that says nothing leaves the visitor unable
+to know.
+
+**WHAT IS STILL BLUE'S:** the mechanism. Whether it is a scheduled job, a
+partial index with a sweep, or a check on read is a storage decision, and the
+only thing this document requires of it is that the four conditions above are
+true of what it does.
 
 ---
 
@@ -409,16 +486,38 @@ the worked example) and it belongs here.
 
 ---
 
-## 10. THE THREE THINGS THE OWNER IS BEING ASKED
+## 10. NOTHING IS OPEN. WHAT THE BUILD WAITS ON IS A MIGRATION.
 
-- **Q-INTAKE-1** — an unanswered pacemaker/pregnancy question at conversion:
-  what does the clinician see? *Recommended: intake renders verbatim on the
-  ficha, including "não respondeu"; the boolean flags are never written by
-  conversion.*
-- **Q-INTAKE-2** — a phone number that already belongs to a patient: ask anyway,
-  or skip? *Recommended: ask everyone, resolve at conversion, never skip — the
-  skip is a patient-list oracle.*
-- **Q-INTAKE-3** — how long does an unconverted intake live? *Recommended: a
-  fixed window, and the consent text says it.*
+**ALL THREE QUESTIONS THIS REPORT RAISED ARE CLOSED** — see §0.1. They are kept
+here struck rather than deleted, because a reader who remembers the questions
+needs to find the answers in the place they were asked:
 
-**STOP. Nothing is built until these are answered and the design is stamped.**
+- ~~**Q-INTAKE-1** — an unanswered pacemaker/pregnancy question at conversion.~~
+  **RULED (2).** Three states in storage, both questions REQUIRED on the form so
+  a guest submission cannot write never-asked, and `contraindication_*` is never
+  written from an intake answer at all. §5.
+- ~~**Q-INTAKE-2** — a phone number that already belongs to a patient.~~
+  **RULED (1).** Ask everyone, resolve at conversion. §7.
+- ~~**Q-INTAKE-3** — how long does an unconverted intake live?~~ **IT WAS NEVER
+  OPEN.** JP had already ruled seven days with four conditions; this report was
+  wrong to list it. §8.
+
+## THE BUILD IS HELD ON `0082`, AND THAT IS A DIFFERENT KIND OF HOLD
+
+It is not waiting on a decision any more. It is waiting on BLUE's storage
+migration to EXIST, because every field shape in §3, the three-state
+representation in §5 and the retention clock in §8 are written against a table
+nobody has created yet.
+
+**BUILDING AGAINST A SHAPE THAT DOES NOT EXIST IS HOW THE TWO HALVES COME APART.**
+The form would post a body the write path cannot store, and the mismatch would
+surface as a runtime failure on a PUBLIC form with a stranger's health data in
+the request. So the order is: `0082` lands, this document is re-derived against
+what it actually created, and only then does the form get built.
+
+**WHAT PURPLE CAN DO BEFORE THEN: NOTHING IN THIS FLOW.** Stated so it is not
+mistaken for an invitation to start the parts that look independent — the fifth
+step, the radios and the validation all encode the storage contract, and writing
+them first only moves the re-derivation later.
+
+**STOP.**

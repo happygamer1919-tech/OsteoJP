@@ -1,11 +1,16 @@
+import type { Metadata } from 'next'
 import { DEFAULT_LOCALE, getStrings } from '@osteojp/i18n'
 import { formatCalendarDate, lisbonToday } from '@osteojp/db'
 
-import { s } from '@/lib/i18n'
+import { PORTAL_LOCALES, type PortalLocale } from '@osteojp/i18n'
+import { localeHref } from '@/lib/locale'
+import { resolvePortalStrings } from '@/lib/locale-server'
 import { fetchPublicCatalog } from '@/lib/guest/api'
 import {
   guestConfirmationCopy,
+  guestCopySourceFor,
   isGuestConfirmationCopyReady,
+  isGuestCopyApprovedFor,
 } from '@/lib/guest/commitment-copy'
 
 import { GuestBookingForm } from './GuestBookingForm'
@@ -52,7 +57,12 @@ import { GUEST_FORM_HORIZON_DAYS } from './state'
  * THE LINK IS STILL NOT PUBLISHED. Nothing links here yet; the owner's
  * acceptance comes first and the clinic is given the address after it.
  */
-export const metadata = { title: s.guest.title }
+export async function generateMetadata(): Promise<Metadata> {
+  // LANG-01: per request, off the resolved locale. It was a constant read from
+  // the frozen `pt` dictionary at module load.
+  const { s } = await resolvePortalStrings()
+  return { title: s.guest.title }
+}
 
 /**
  * DYNAMIC, AND IT WAS STATIC UNTIL THE BUILD SHOWED IT.
@@ -77,7 +87,24 @@ export const metadata = { title: s.guest.title }
  */
 export const dynamic = 'force-dynamic'
 
-export default async function GuestBookingPage() {
+export default async function GuestBookingPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  /**
+   * LANG-01 — THE LOCALE COMES FROM THE PROXY, THE HREFS FROM THE URL.
+   *
+   * The locale is NOT re-derived from `searchParams` here, deliberately: the
+   * proxy already resolved it for this request and the root layout is rendering
+   * `<html lang>` off that same answer. Re-parsing would be a second resolution
+   * point, and two of them disagree the day somebody edits one.
+   *
+   * `searchParams` IS read, for one thing only: building the two language hrefs
+   * so they preserve whatever else is on the URL. That is a different question
+   * from "which language is this" and it has a different answer source.
+   */
+  const [{ locale, s }, sp] = await Promise.all([resolvePortalStrings(), searchParams])
   const catalog = await fetchPublicCatalog()
 
   // LOADED-AND-FAILED GETS ITS OWN WORDS (INC-05). `fetchPublicCatalog` returns
@@ -108,11 +135,35 @@ export default async function GuestBookingPage() {
   // public bundle does not carry the whole flat string table. These are the same
   // two strings a patient signs on the ficha; nothing about them is adapted for
   // this screen.
+  /**
+   * THE RGPD TEXT STAYS pt-PT WHATEVER THE PAGE'S LANGUAGE, AND THAT IS A
+   * DELIBERATE REFUSAL RATHER THAN AN OMISSION.
+   *
+   * These two strings are the ratified `clinical.consent.rgpd` keys - the same
+   * wording a patient signs on the ficha - and this file's own header already
+   * says they are rendered UNCHANGED and are not authored here. A consent text
+   * is a legal instrument: translating it is counsel's act, not a terminal's,
+   * and an English rendering of it would be a NEW consent nobody approved.
+   *
+   * So an English visitor reads the form in English and the consent in
+   * Portuguese. That is stated on the card as a known gap for counsel rather
+   * than quietly machine-translated, which is the failure mode that would
+   * matter here.
+   */
   const staff = getStrings(DEFAULT_LOCALE)
 
   return (
     <main className="mx-auto w-full max-w-xl px-4 py-10">
       <GuestBookingForm
+        s={s}
+        locale={locale}
+        // Built HERE, from the request's own query string, so a parameter added
+        // to this URL later survives a language switch without anybody
+        // remembering to carry it.
+        localeLinks={PORTAL_LOCALES.map((l: PortalLocale) => ({
+          locale: l,
+          href: localeHref('/marcacao', l, sp),
+        }))}
         catalog={catalog}
         minDate={formatCalendarDate(today)}
         maxDate={formatCalendarDate({
@@ -122,10 +173,19 @@ export default async function GuestBookingPage() {
         })}
         rgpdLabel={staff['clinical.consent.rgpd.label']}
         rgpdBody={staff['clinical.consent.rgpd.body']}
-        // null while the commitment copy is unwritten. The submit is refused
-        // before that matters (actions.ts), so this is the second of two guards
-        // rather than the only one.
-        confirmationCopy={isGuestConfirmationCopyReady() ? guestConfirmationCopy() : null}
+        /**
+         * null while the commitment copy is unwritten OR UNRATIFIED for this
+         * language. The submit is refused before either matters (actions.ts),
+         * so this is the second of two guards rather than the only one - and it
+         * now asks both questions of the SAME locale the page is rendering, so
+         * the two guards cannot answer about different languages.
+         */
+        confirmationCopy={
+          isGuestCopyApprovedFor(locale) &&
+          isGuestConfirmationCopyReady(guestCopySourceFor(locale))
+            ? guestConfirmationCopy(guestCopySourceFor(locale))
+            : null
+        }
       />
     </main>
   )
