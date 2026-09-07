@@ -23,6 +23,7 @@ import { viewerLocationScope } from "../auth/viewer-locations";
 import { activePatientsOnly } from "./filters";
 import { patientLocationScope, therapistPatientScope } from "./scope";
 import { escapeLike, parseSearch } from "./validation";
+import { fullNameMatcher } from "./name-search";
 import type { Patient } from "./types";
 
 const DEFAULT_LIMIT = 50;
@@ -149,7 +150,7 @@ export async function searchPatients(
   if (text.length === 0) return [];
 
   const limit = clampLimit(opts.limit);
-  const nameLike = `%${escapeLike(text)}%`;
+
   // W10-04: therapist search is scoped to their own patients. PL-09 Phase 1:
   // reception + admin are scoped to their location's patients (fallback tenant-
   // wide when unassigned); owner tenant-wide.
@@ -159,7 +160,11 @@ export async function searchPatients(
     (locIds ? patientLocationScope(patients.id, locIds) : undefined);
 
   return runScoped(ctx, async (tx) => {
-    const matchers = [ilike(patients.fullName, nameLike)];
+    // THE SAME RULE AS THE LIST SURFACE, from the same module. Both files
+    // carried `ilike(fullName, '%<whole query>%')` and both told reception a
+    // patient did not exist when they typed a first name and a surname.
+    const nameMatch = fullNameMatcher(text);
+    const matchers = nameMatch ? [nameMatch] : [];
     if (digits.length > 0) {
       matchers.push(ilike(patients.nif, `${escapeLike(digits)}%`));
       matchers.push(
