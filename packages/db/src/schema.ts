@@ -758,6 +758,29 @@ export const patients = pgTable(
     // from the create action's location context (NOT inferred from
     // created_by.staff_locations). ON DELETE SET NULL (a removed clinic falls the
     // patient back to owner-only rather than blocking the delete).
+    /**
+     * 0081 - THE LANGUAGE THIS PATIENT CHOSE, AND NULL IS A THIRD STATE.
+     *
+     *   NULL  = nobody has asked this patient
+     *   'pt'  = they CHOSE Portuguese
+     *   'en'  = they CHOSE English
+     *
+     * NULL AND 'pt' RENDER IDENTICALLY, which is exactly why the difference has
+     * to be kept in the column. `resolveLocale(tenantSettings, patientLocale)`
+     * falls through NULL to the tenant default and then to the platform default,
+     * which is pt - so backfilling NULL to 'pt' would be invisible on every
+     * screen and would destroy the only way to find the patients who have never
+     * been offered the choice. Do not backfill it. 0081's post-check asserts
+     * every row is still NULL.
+     *
+     * IT IS NOT PATIENT-WRITABLE YET. `patients` carries COLUMN-LEVEL UPDATE
+     * grants for the `patient` role (0019, patched by 0020 for `updated_at`
+     * because Drizzle's $onUpdate appends it to every UPDATE). `locale` is not
+     * in that list, so a patient self-setting it gets 42501 - which reads like
+     * an RLS bug and is not one. The GRANT belongs to the migration that ships
+     * the account-screen control.
+     */
+    locale: text("locale"),
     primaryLocationId: uuid("primary_location_id").references(() => locations.id, {
       onDelete: "set null",
     }),
@@ -2273,6 +2296,19 @@ export const guestBookingRequests = pgTable(
     /** HASHED, never the address. An IP is personal data under RGPD and the
      *  clinic has no purpose for the raw value; this exists for abuse
      *  forensics only. */
+    /**
+     * 0081 - the language the visitor chose on the public booking form.
+     *
+     * IT EXISTS BECAUSE THE CHOICE HAS TO SURVIVE A GAP. A visitor choosing
+     * English at step 1 is not a patient yet, and reception converts the request
+     * later; this row is the only thing that exists in between. `guest-convert.ts`
+     * reads it and calls `insertPatientTx`, which is the single choke point where
+     * the patient row is created.
+     *
+     * NULL means the form did not ask, which is every row written before this
+     * column existed.
+     */
+    locale: text("locale"),
     sourceIpHash: text("source_ip_hash"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     handledAt: timestamp("handled_at", { withTimezone: true }),
