@@ -32,10 +32,12 @@
  *   2. A forged, an expired and an already-consumed code are INDISTINGUISHABLE
  *      (SR-30). Negative arm: a valid code's page differs from all three, so
  *      the comparison is proven able to see a difference.
- *   3. `Pedir remarcação` is not rendered while its gate is closed, AND the
- *      action refuses a forged press. Negative arm: the control the page DOES
- *      offer is found by the same locator, and the database is read back to
- *      prove the refused press wrote nothing.
+ *   3. `Pedir remarcação` renders while its gate is OPEN, and the press writes
+ *      the durable `appointment_reschedule_requests` row, the audit row and a
+ *      spent code. Negative arm: the appointment is read back and asserted
+ *      UNCHANGED, and the queue is read back BEFORE the press so the row proven
+ *      after it is this press's and not a leftover. A second reminder's code
+ *      for the same appointment adds no second queue row.
  *   4. The fee sentence slot renders nothing while it is capability-gated dark.
  *      Negative arm: a control sentence is asserted PRESENT by the same means.
  *
@@ -67,6 +69,7 @@ import {
   createAppointment,
   ensureConfirmPatient,
   issueCode,
+  rescheduleRequestRows,
   serviceClient,
   therapistUserId,
 } from "./helpers/confirm-code";
@@ -320,10 +323,11 @@ test("a forged, an expired and an already-consumed code are indistinguishable", 
 });
 
 // ---------------------------------------------------------------------------
-// 3. The closed gate — the render half AND the write half.
+// 3. The OPEN gate — the render half, the write half, and the row reception
+//    was never shown.
 // ---------------------------------------------------------------------------
 
-test("Pedir remarcação is not rendered and the action refuses it while the gate is closed", async ({
+test("Pedir remarcação renders, and the press writes the durable row while leaving the appointment alone", async ({
   page,
 }) => {
   const appointmentId = await createAppointment(db, {
@@ -334,44 +338,86 @@ test("Pedir remarcação is not rendered and the action refuses it while the gat
 
   await openValidCode(page, code);
 
-  // THE CONTROL COMES FIRST. `toHaveCount(0)` on a page that failed to render is
-  // green, so the absence assertion below is worth nothing until the same
-  // locator strategy has been shown to FIND a button on this page.
+  // THE CONTROL COMES FIRST, for the same reason it did when this test asserted
+  // the CLOSED gate: a locator that finds nothing on a page that failed to
+  // render looks identical to a locator that finds nothing on a working page.
+  // Proving the strategy FINDS the confirm button is what makes the next line
+  // an assertion about the reschedule button.
   await expect(page.getByRole("button", { name: "Confirmar consulta" })).toHaveCount(1);
-  await expect(page.getByRole("button", { name: /remarca/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Pedir remarcação" })).toHaveCount(1);
+
+  // NOTHING EXISTS BEFORE THE PRESS. Read back rather than assumed, so the row
+  // asserted after the press is one THIS press wrote and not a leftover — the
+  // lane database accumulates across runs and never deletes.
+  expect(await rescheduleRequestRows(auth, appointmentId)).toHaveLength(0);
+
+  await page.getByRole("button", { name: "Pedir remarcação" }).click();
+
+  // WHAT THE PATIENT SEES. "Pedido recebido" is the exact sentence the owner
+  // was shown by the broken version, so asserting it alone would have been
+  // green throughout INC-CONFIRM-10. It is asserted here only as the first of
+  // four facts, and the other three are read out of the database.
+  await expect(page).toHaveURL(/\?r=pedido$/);
+  await expect(page.getByRole("heading", { name: "Pedido recebido" })).toBeVisible();
 
   // ==========================================================================
-  // NOW THE HALF THAT HIDING A BUTTON DOES NOT COVER.
+  // THE THREE ROWS, AND THE ONE THAT MUST NOT HAVE MOVED.
   // ==========================================================================
-  // The form posts to a public endpoint. Anybody holding the URL can add the
-  // button back, which is precisely why `confirmCodeAction` checks the SAME
-  // constant the render checks. This appends a `pedido` submitter to the page's
-  // own form — the shipped server action, the shipped code, one extra button —
-  // and presses it.
-  await page.evaluate(() => {
-    const form = document.querySelector("form");
-    if (!form) throw new Error("the confirm page rendered no form to submit");
-    const button = document.createElement("button");
-    button.type = "submit";
-    button.name = "action";
-    button.value = "pedido";
-    button.dataset.e2e = "forged-pedido";
-    button.textContent = "forged pedido";
-    form.appendChild(button);
-  });
-  await page.locator("[data-e2e='forged-pedido']").click();
+  // 1. THE DURABLE ROW — the whole of INC-CONFIRM-10's fix, and the thing that
+  //    did not exist anywhere in the schema when a patient pressed this button.
+  const rows = await rescheduleRequestRows(auth, appointmentId);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.patient_id).toBe(CONFIRM_PATIENT.id);
+  expect(rows[0]!.via).toBe("sms_code");
+  // NULL handled_at is what puts it ON reception's queue. A row written already
+  // handled is a row nobody is shown, which is the failure in a different coat.
+  expect(rows[0]!.handled_at).toBeNull();
 
-  await expect(page).toHaveURL(/\?r=generic$/);
-  await expect(page.getByRole("heading", { name: "Ligação inválida ou expirada" })).toBeVisible();
-
-  // THE THREE THINGS A SUCCESSFUL PEDIDO WOULD HAVE LEFT BEHIND. Read back out
-  // of the database, because "the page said no" and "nothing was written" are
-  // different facts and only the second one is the gate.
-  expect(await appointmentStatus(db, appointmentId)).toBe("scheduled");
-  expect(await codeIsSpent(auth, codeHash)).toBe(false);
+  // 2. The audit row, in the SAME transaction as the durable row.
   expect(
     await auditRows(db, appointmentId, "appointment.reschedule_request.sms_code"),
-  ).toHaveLength(0);
+  ).toHaveLength(1);
+
+  // 3. The code is spent, so the link cannot be pressed twice.
+  expect(await codeIsSpent(auth, codeHash)).toBe(true);
+
+  // 4. THE APPOINTMENT IS UNTOUCHED. Owner ruling, 2026-09-04: a patient's press
+  //    can never move or cancel a booking by itself. It asks; reception decides.
+  //    This is the assertion that would catch a future "helpful" status change.
+  expect(await appointmentStatus(db, appointmentId)).toBe("scheduled");
+});
+
+test("a second reminder's code for the same appointment adds no second queue row", async ({
+  page,
+}) => {
+  // ONE DECISION FOR RECEPTION, NOT A PRESS COUNT. The confirm code is consumed
+  // by the press, so a second press on the SAME code cannot reach the insert —
+  // but a patient who gets a second reminder gets a second CODE, and pressing
+  // that would queue the same decision twice. 0080 refuses it with a partial
+  // unique index and `onConflictDoNothing`, and this is the only place that
+  // property is exercised through the page rather than asserted about SQL.
+  const appointmentId = await createAppointment(db, {
+    practitionerId,
+    startsAt: futureInstant(RUN_DAY_BASE + 125),
+  });
+
+  const first = await issueCode(auth, appointmentId);
+  await openValidCode(page, first.code);
+  await page.getByRole("button", { name: "Pedir remarcação" }).click();
+  await expect(page.getByRole("heading", { name: "Pedido recebido" })).toBeVisible();
+  expect(await rescheduleRequestRows(auth, appointmentId)).toHaveLength(1);
+
+  const second = await issueCode(auth, appointmentId);
+  await openValidCode(page, second.code);
+  await page.getByRole("button", { name: "Pedir remarcação" }).click();
+
+  // THE PATIENT IS STILL TOLD YES, and that is deliberate rather than sloppy:
+  // the clinic does hold their request. What must not double is the queue.
+  await expect(page.getByRole("heading", { name: "Pedido recebido" })).toBeVisible();
+  expect(await rescheduleRequestRows(auth, appointmentId)).toHaveLength(1);
+
+  // The second code is spent all the same, so the link is not left live.
+  expect(await codeIsSpent(auth, second.codeHash)).toBe(true);
 });
 
 // ---------------------------------------------------------------------------
