@@ -51,36 +51,62 @@ describe.skipIf(!live)("0081 patient locale", () => {
   beforeAll(async () => {
     sql = connect();
     // ==========================================================================
-    // THE TENANT IS DERIVED FROM A REAL (service, location) PAIR, NOT PICKED.
+    // THE FIXTURE IS BUILT, NOT BORROWED. THIRD VERSION, AND THE FIRST TWO
+    // FAILED FOR THE SAME UNDERLYING REASON.
     // ==========================================================================
-    // The first version took `tenants ORDER BY created_at LIMIT 1` and then went
-    // looking for a service and a location IN THAT TENANT. It passed on a lane,
-    // where the oldest tenant is the fully seeded one, and FAILED IN CI, where
-    // the oldest tenant has neither. The guard below did its job - it named the
-    // cause instead of letting the guest arm silently test a NOT NULL refusal -
-    // but the right fix is to stop guessing: ask for the pair FIRST and let the
-    // tenant fall out of it, so all three ids are consistent by construction and
-    // the test does not depend on which tenant happens to sort first.
-    const [seed] = await sql<{ tenant_id: string; service_id: string; location_id: string }[]>`
-      SELECT s.tenant_id, s.id AS service_id, l.id AS location_id
-        FROM public.services s
-        JOIN public.locations l ON l.tenant_id = s.tenant_id
-       ORDER BY s.tenant_id, s.name, l.name
-       LIMIT 1`;
-    if (!seed) {
-      throw new Error(
-        "no tenant has both a service and a location. The guest arm needs both NOT NULL " +
-          "columns filled with real ids, or its INSERT is refused before the locale CHECK is " +
-          "ever reached - which would make that arm green while testing nothing.",
-      );
+    // v1 took `tenants ORDER BY created_at LIMIT 1` and looked for a service and
+    // a location in THAT tenant. Green on a lane, red on CI: CI's oldest tenant
+    // has neither.
+    //
+    // v2 derived the tenant FROM a (service, location) pair, so all three ids
+    // would be consistent by construction. Also red on CI, and its error is the
+    // one worth keeping: "no tenant has both a service and a location". THE CI
+    // DB-GATED DATABASE IS `supabase db reset` PLUS `supabase/seed.sql` AND
+    // NOTHING ELSE. It never runs `seed-e2e.mjs`, so it has NO services and NO
+    // locations at all. A lane has them because `lane-stack up` seeds e2e too,
+    // and that difference is invisible from inside a test.
+    //
+    // v3 stops borrowing. It creates its own tenant, location and service, and
+    // drops the tenant in afterAll, which cascades. That is the convention every
+    // other DB-gated suite here already follows (reschedule-requests-rls does
+    // exactly this), and it makes the file independent of which seed ran.
+    //
+    // THE GUARD THAT FOUND ALL THIS STAYS BELOW. Without it the guest arm would
+    // have been GREEN in CI while testing a NOT NULL refusal instead of the
+    // locale CHECK - the same vacuous-refusal defect this file already caught in
+    // itself once. It failed loudly twice and named the cause both times.
+    const suffix = randomUUID().slice(0, 8);
+    const [t] = await sql<{ id: string }[]>`
+      INSERT INTO public.tenants (name, slug)
+      VALUES (${`0081 locale fixture ${suffix}`}, ${`t0081-${suffix}`})
+      RETURNING id`;
+    tenantId = t!.id;
+
+    const [loc] = await sql<{ id: string }[]>`
+      INSERT INTO public.locations (tenant_id, name)
+      VALUES (${tenantId}, ${`0081 loc ${suffix}`})
+      RETURNING id`;
+    locationId = loc!.id;
+
+    const [svc] = await sql<{ id: string }[]>`
+      INSERT INTO public.services (tenant_id, name)
+      VALUES (${tenantId}, ${`0081 svc ${suffix}`})
+      RETURNING id`;
+    serviceId = svc!.id;
+
+    if (!tenantId || !locationId || !serviceId) {
+      throw new Error("the 0081 fixture did not build; the arms below would test nothing");
     }
-    tenantId = seed.tenant_id;
-    serviceId = seed.service_id;
-    locationId = seed.location_id;
   });
 
   afterAll(async () => {
-    await sql?.end({ timeout: 5 });
+    // ONE DELETE, AND THE CASCADE DOES THE REST. Every row this file creates
+    // hangs off the fixture tenant, so removing it cannot leave an orphan and
+    // cannot touch anybody else's rows - which matters because vitest runs test
+    // FILES in parallel against ONE database.
+    if (!sql) return;
+    if (tenantId) await sql`DELETE FROM public.tenants WHERE id = ${tenantId}`;
+    await sql.end({ timeout: 5 });
   });
 
   /** A throwaway patient, always cleaned up, never reusing a seeded row. */
@@ -233,7 +259,7 @@ describe.skipIf(!live)("0081 patient locale", () => {
       SELECT count(*)::text AS n
         FROM public.patients
        WHERE locale IS NOT NULL
-         AND full_name NOT LIKE '0081 %'`;
+         AND tenant_id <> ${tenantId}`;
     expect(row!.n).toBe("0");
   });
 });
