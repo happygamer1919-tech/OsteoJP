@@ -16,6 +16,12 @@ import {
 } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { bookingLocationScope, viewerLocationScope } from "@/lib/auth/viewer-locations";
+import { mayReadNotePreviews } from "@/lib/notes/audience";
+import {
+  readLatestAppointmentNotes,
+  readLatestPatientNotes,
+  type LatestNote,
+} from "@/lib/notes/latest-notes";
 import { filterBookableTherapists } from "./therapist-bookable";
 import {
   filterRosterByViewerScope,
@@ -126,14 +132,41 @@ const appointmentSelection = {
   // note shows it; once a note is appended (or after backfill) the unified row
   // wins and the legacy fallback is dormant. Correlated + tenant-pinned; the
   // outer query runs under RLS.
-  notes: sql<string | null>`coalesce(
+  /**
+   * ==========================================================================
+   * WITHHELD WITH THE NAME. RB-NOTES, 2026-09-07.
+   * ==========================================================================
+   * `patients` is a LEFT JOIN (SEC-appointment-vanishes-with-patient-scope), so
+   * an appointment whose patient this viewer may not see still renders — as an
+   * occupied slot with the name withheld, which is the owner's ruling and is
+   * about the SLOT.
+   *
+   * IT WAS NOT ABOUT THE NOTE, AND THE NOTE CAME THROUGH ANYWAY. Both
+   * subqueries below correlate on `appointment_id`, and `appointment_notes` RLS
+   * is TENANT-ONLY (0026) — there is no location arm and no therapist arm. So
+   * `patientName` was withheld while the latest CLINICAL NOTE for that same
+   * visit was projected beside it, and rendered: on the agenda/Marcações hover
+   * (`appointment-hover-card.tsx`) and prefilled into the drawer's notes field.
+   * The name is the less sensitive of the two.
+   *
+   * `patients.id IS NOT NULL` IS EXACTLY "THE PATIENT ROW SURVIVED
+   * `patients_select`", computed by the join that is already here. It is the
+   * same question `getPatient` answers for the full notes view, asked of the
+   * row rather than of an id, so the preview and the board cannot come apart.
+   *
+   * WHAT IS DELIBERATELY *NOT* GATED: `hasNote` and `noteCount`. They carry no
+   * note text — one drives the "Sem nota" chip that tells reception a completed
+   * visit was never documented, the other says how many exist — and withholding
+   * them would take a scheduling signal away to protect nothing.
+   */
+  notes: sql<string | null>`case when ${patients.id} is not null then coalesce(
     (select ${appointmentNotes.body} from ${appointmentNotes}
       where ${appointmentNotes.appointmentId} = ${appointments.id}
         and ${appointmentNotes.tenantId} = ${appointments.tenantId}
       order by ${appointmentNotes.createdAt} desc
       limit 1),
     ${appointments.notes}
-  )`.as("notes"),
+  ) end`.as("notes"),
   recurrenceRule: appointments.recurrenceRule,
   recurrenceParentId: appointments.recurrenceParentId,
   // Confirmation axis (0024) — orthogonal to `status`, read-only here.
@@ -264,6 +297,69 @@ export async function listAppointments(
       .orderBy(asc(appointments.startsAt));
     return rows.map(mapAppointment);
   });
+}
+
+/**
+ * RB-NOTES — the two note excerpts a Marcações row shows without a click.
+ *
+ * ==========================================================================
+ * A SEPARATE READ, NOT TWO MORE COLUMNS ON `appointmentSelection`
+ * ==========================================================================
+ * That selection is shared by EVERY agenda surface — /agenda, the dashboard,
+ * `getAppointment`, `listPatientAppointments`. Adding the patient-note text
+ * there would make all of them pay for it and, worse, would serialise a
+ * clinical note into the RSC payload of screens that never draw one. That is
+ * the distinction the timing panel records and INC-CONFIRM-10 paid for:
+ * granting is not the same as drawing, and a component that receives data it
+ * declines to render has already shipped it.
+ *
+ * So the excerpts are fetched by the ONE page that renders them, in its own
+ * statement, and travel to the client as their own prop.
+ *
+ * ==========================================================================
+ * TWO STATEMENTS, NOT TWO PER ROW, AND BOTH INSIDE THE CALLER'S TRANSACTION
+ * ==========================================================================
+ * One for the appointment notes, keyed on the appointment ids; one for the
+ * patient notes, keyed on the DISTINCT patient ids — a patient with four
+ * marcações in the window is read once. They are issued together.
+ *
+ * ==========================================================================
+ * THE SCOPE IS `latest-notes.ts`'s AND IS NOT RESTATED HERE
+ * ==========================================================================
+ * Both reads go through `patients`, so `patients_select` decides. An
+ * appointment whose patient is withheld yields NO entry in either map — the
+ * same rule the `notes` column above now applies to the hover. Read that file's
+ * header before changing either.
+ */
+export async function listAppointmentNotePreviews(
+  ctx: RequestContext,
+  appts: readonly { id: string; patientId: string }[],
+): Promise<Map<string, { patient: LatestNote | null; appointment: LatestNote | null }>> {
+  assertCan(ctx.role, "appointments:read");
+  const out = new Map<string, { patient: LatestNote | null; appointment: LatestNote | null }>();
+  // ASKED BEFORE THE STATEMENT IS SENT. For a principal without the capability
+  // the reads are never issued and no note text enters the process.
+  if (appts.length === 0 || !mayReadNotePreviews(ctx)) return out;
+
+  // A patient with four marcações in the window is read ONCE.
+  const patientIds = [...new Set(appts.map((a) => a.patientId))];
+
+  const { byAppointment, byPatient } = await runScoped(ctx, async (tx) => {
+    const [byAppointment, byPatient] = await Promise.all([
+      readLatestAppointmentNotes(tx, appts),
+      readLatestPatientNotes(tx, patientIds),
+    ]);
+    return { byAppointment, byPatient };
+  });
+
+  for (const a of appts) {
+    const patient = byPatient.get(a.patientId) ?? null;
+    const appointment = byAppointment.get(a.id) ?? null;
+    // A row with neither gets NO entry at all, so the component has one absence
+    // to handle and cannot draw an empty pair of labels.
+    if (patient || appointment) out.set(a.id, { patient, appointment });
+  }
+  return out;
 }
 
 /** A single appointment by id, or null if not visible to this tenant. */

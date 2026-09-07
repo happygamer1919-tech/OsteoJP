@@ -4,7 +4,12 @@ import { requireRequestContext } from "@/lib/auth/context";
 import { listServices } from "@/lib/admin/services";
 import { scopedLocationId } from "@/lib/auth/location-choice";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
-import { getAgendaOptions, getAppointment, listAppointments } from "@/lib/scheduling/data";
+import {
+  getAgendaOptions,
+  getAppointment,
+  listAppointmentNotePreviews,
+  listAppointments,
+} from "@/lib/scheduling/data";
 import {
   addDays,
   lisbonMidnightUtc,
@@ -164,6 +169,26 @@ export default async function MarcacoesPage({
   // filter dropdown needs.
   const serviceFilterOptions = serviceRows.map((svc) => ({ id: svc.id, name: svc.name }));
 
+  /**
+   * RB-NOTES — the two note excerpts each row shows without a click.
+   *
+   * FETCHED AFTER the appointments and not beside them, because it is keyed on
+   * the ids they returned. Two statements for the whole page, never one per row.
+   *
+   * IT IS SCOPED TO THE WINDOW THIS PAGE ALREADY FETCHED, and that window is
+   * capped at MAX_WINDOW_DAYS above, so the read cannot be widened by a crafted
+   * URL beyond what the list itself already costs.
+   *
+   * ONLY THIS PAGE ASKS FOR IT. /agenda and the dashboard read the same
+   * appointments through the same query and are handed no note text at all —
+   * see `listAppointmentNotePreviews` for why that is a separate read rather
+   * than two more columns everyone pays for.
+   */
+  const notePreviews = await listAppointmentNotePreviews(
+    actor,
+    appointments.map((a) => ({ id: a.id, patientId: a.patientId })),
+  );
+
   const filters: MarcacoesFilters = {
     // ITEM 4: the window ACTUALLY queried, which a deep link may have widened.
     // Showing the requested range here instead would leave the date pickers
@@ -186,6 +211,9 @@ export default async function MarcacoesPage({
       options={options}
       serviceFilterOptions={serviceFilterOptions}
       appointments={appointments}
+      // PL-17 + RB-NOTES: a plain object rather than a Map, because a Map does
+      // not survive serialisation into a client component's props.
+      notePreviews={Object.fromEntries(notePreviews)}
       // ITEM 4: the row to scroll to and open, and the explicit "not found"
       // state. Kept as two props rather than one nullable id, because "no link
       // was followed" and "the link pointed at nothing" are different screens.
