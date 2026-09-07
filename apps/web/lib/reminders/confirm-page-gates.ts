@@ -66,7 +66,7 @@ import { webRegistry } from "./notification-registry";
  * holding the URL is refused as well.
  *
  * ==========================================================================
- * 2026-09-06: CONDITIONS 1 AND 2 ARE NOW MET. THIS IS STILL false, ON PURPOSE.
+ * 2026-09-06: CONDITIONS 1 AND 2 WERE MET. THE GATE STAYED false UNTIL 09-07.
  * ==========================================================================
  * Migration 0080 created `appointment_reschedule_requests`, and
  * `confirm-redeem.ts` writes a row into it INSIDE THE PATIENT'S OWN
@@ -78,20 +78,36 @@ import { webRegistry } from "./notification-registry";
  * and BOTH practitioners see their own — the owner's 2026-09-04 ruling, true by
  * construction rather than by a fan-out that could half-fail.
  *
- * CONDITION 3 IS THE OWNER'S AND IT HAS NOT HAPPENED. He re-tests the control
- * on the deployed /c/<code> route. That is the whole of what is left, and it is
- * why flipping this to `true` is a SEPARATE, ONE-LINE CHANGE rather than part of
- * the commit that built the durable half.
- *
+ * ==========================================================================
+ * 2026-09-07: ARMED. THIS IS `true`, AND CONDITION 3 IS THE OWNER'S TEST THAT
+ * THIS FLIP MAKES POSSIBLE.
+ * ==========================================================================
  * THE ORDERING IS AWKWARD AND IS NAMED RATHER THAN QUIETLY RESOLVED: this
- * constant gates the ACTION as well as the render, so he cannot exercise the
- * button while it is false. Flipping it is therefore what makes his test
- * possible, and his test is what justifies the flip. The safe order is: flip,
- * he presses, the row appears on /notificacoes — and if it does not, revert one
- * line. What must NOT happen is this flipping as a side effect of shipping the
- * durable half, which is exactly how it was armed on a false comment last time.
+ * constant gates the ACTION as well as the render, so the owner cannot exercise
+ * the button while it is false. Flipping it is therefore what makes his test
+ * possible, and his test is what justifies the flip. The order ruled by the
+ * owner and executed here is: flip, deploy, he presses on a real 24h link from
+ * a phone, the row appears on /notificacoes — AND IF IT DOES NOT, REVERT THIS
+ * ONE LINE IMMEDIATELY, without waiting for a dispatch.
+ *
+ * WHAT IS DIFFERENT FROM THE LAST TIME IT WAS ARMED, because "it was armed
+ * before and it was wrong" is the first thing a reader will think. Last time
+ * the arming rode along inside a commit that shipped other work, and it rested
+ * on a COMMENT claiming a row existed that did not. This time the row is
+ * migration 0080, applied to production as journal 78; `confirm-redeem.ts`
+ * writes it inside the patient's own transaction; `/notificacoes` renders it
+ * through `listOpenRescheduleRequests`; and the arming is its own one-line
+ * commit with nothing else in it, so reverting costs one revert and loses
+ * nothing else.
+ *
+ * THE OTHER ARM IS NOW THE TESTED ONE. `confirm-code.spec.ts` test 3 drives the
+ * OPEN gate end to end in a browser — the control renders, the press lands on
+ * `?r=pedido`, and the durable row, the audit row and the spent code are read
+ * back out of the database, with the appointment asserted UNTOUCHED. A gate
+ * whose other arm has never executed is a gate nobody has tested, and this file
+ * has said so since it was written.
  */
-export const PEDIDO_QUEUE_IS_DURABLE = false;
+export const PEDIDO_QUEUE_IS_DURABLE = true;
 
 /** Whether the page may offer *Pedir remarcação*. */
 export function rescheduleButtonEnabled(): boolean {

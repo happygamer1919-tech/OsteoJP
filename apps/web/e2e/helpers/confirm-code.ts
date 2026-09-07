@@ -308,3 +308,37 @@ export async function auditRows(
   if (error) throw new Error(`audit_log read failed: ${error.message}`);
   return (data ?? []) as Array<{ ip: string | null; metadata: unknown; actor_user_id: string | null }>;
 }
+
+/**
+ * Every reschedule request row this appointment carries, oldest first.
+ *
+ * READ THROUGH THE `authenticated` CLIENT, NOT THE SERVICE-ROLE ONE, and that
+ * is the same lesson this file's header records about 0074's writers. Migration
+ * 0080 states its grants as an END STATE — `REVOKE ALL` from PUBLIC, anon,
+ * patient and authenticated, then `GRANT SELECT, INSERT, UPDATE` to
+ * `authenticated` alone. `service_role` is never named, so whether it can read
+ * this table depends entirely on whether Supabase's ALTER DEFAULT PRIVILEGES
+ * fired at CREATE TABLE time on the database in front of you. That is exactly
+ * the environment-dependent inheritance that reddened a CI shard once already.
+ *
+ * The seeded admin sees these rows through 0080's policy, which scopes them by
+ * EXISTS against `appointments` under `appointments_rls` — so this read
+ * exercises the same expression reception's queue does.
+ */
+export async function rescheduleRequestRows(
+  auth: SupabaseClient,
+  appointmentId: string,
+): Promise<Array<{ id: string; patient_id: string; via: string; handled_at: string | null }>> {
+  const { data, error } = await auth
+    .from("appointment_reschedule_requests")
+    .select("id, patient_id, via, handled_at, requested_at")
+    .eq("appointment_id", appointmentId)
+    .order("requested_at", { ascending: true });
+  if (error) throw new Error(`appointment_reschedule_requests read failed: ${error.message}`);
+  return (data ?? []) as Array<{
+    id: string;
+    patient_id: string;
+    via: string;
+    handled_at: string | null;
+  }>;
+}

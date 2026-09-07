@@ -165,12 +165,12 @@ export default async function ConfirmCodePage({
           {s["confirm.confirmCta"]}
         </button>
 
-        {/* CLOSED since INC-CONFIRM-10: the press wrote a consumed_at and one
-            audit_log row and nothing that any screen renders, so a patient was
-            told "Pedido recebido" and nobody was told anything. The ACTION
-            reads the same gate — see actions.ts — because hiding a control
-            removes nothing from anybody holding the URL. What reopening it
-            requires is listed on the constant. */}
+        {/* ARMED 2026-09-07, after INC-CONFIRM-10 closed it. The press now
+            writes a durable `appointment_reschedule_requests` row (0080) in the
+            patient's own transaction, and `/notificacoes` renders it. The
+            ACTION reads the same gate — see actions.ts — because hiding a
+            control removes nothing from anybody holding the URL. Closing it
+            again is one line on the constant. */}
         {rescheduleButtonEnabled() ? (
           <button
             type="submit"

@@ -13,21 +13,26 @@ import { FEE_NOTICE_FLAG } from "./fee-notice";
  * executed is a gate nobody has tested.
  */
 
-describe("the reschedule button, CLOSED again after INC-CONFIRM-10", () => {
-  it("is OFF, and the constant says so rather than a comment saying so", () => {
-    // IT WAS ON, AND IT WAS ON BECAUSE OF A COMMENT. The gate was opened on the
-    // claim that reception's queue derives from "`appointments.origin` - the row
-    // the patient's press writes". The press writes no such row: it writes a
-    // `consumed_at` and one audit_log line, and audit_log is not a screen. A
-    // patient pressed it, was told "Pedido recebido", and nobody was told
-    // anything.
+describe("the reschedule button, ARMED 2026-09-07 on the durable row", () => {
+  it("is ON, and the constant says so rather than a comment saying so", () => {
+    // IT WAS ON ONCE BEFORE, AND IT WAS ON BECAUSE OF A COMMENT. That gate was
+    // opened on the claim that reception's queue derives from
+    // "`appointments.origin` - the row the patient's press writes". The press
+    // wrote no such row: it wrote a `consumed_at` and one audit_log line, and
+    // audit_log is not a screen. A patient pressed it, was told "Pedido
+    // recebido", and nobody was told anything.
     //
-    // THE ASSERTION IS THE POINT OF THIS FILE. Its own header says a gate whose
-    // other arm has never executed is a gate nobody has tested - and this arm
-    // had never executed, so the closed state was never the tested one. It is
-    // now, and reopening it means changing this line deliberately.
-    expect(PEDIDO_QUEUE_IS_DURABLE).toBe(false);
-    expect(rescheduleButtonEnabled()).toBe(false);
+    // WHAT MAKES THIS ARMING A DIFFERENT FACT: migration 0080 exists and is
+    // applied to production, `confirm-redeem.ts` writes
+    // `appointment_reschedule_requests` inside the patient's own transaction,
+    // and `/notificacoes` renders it. Those are rows and files, not a comment,
+    // and `confirm-code.spec.ts` test 3 drives the whole loop in a browser.
+    //
+    // THE ASSERTION IS THE POINT OF THIS FILE. Changing this line is how the
+    // gate closes again, deliberately - which is exactly what the owner is told
+    // to do if the row does not reach his screen.
+    expect(PEDIDO_QUEUE_IS_DURABLE).toBe(true);
+    expect(rescheduleButtonEnabled()).toBe(true);
   });
 
   it("the render gate and the action gate read the SAME constant", () => {
@@ -37,14 +42,15 @@ describe("the reschedule button, CLOSED again after INC-CONFIRM-10", () => {
     expect(rescheduleButtonEnabled()).toBe(PEDIDO_QUEUE_IS_DURABLE);
   });
 
-  it("THE OTHER ARM: turning it on again shows the control AND admits the write", () => {
-    // The arms have swapped. What was the untested arm is now the live one, and
-    // this stands in for the open state the same way it used to stand in for
-    // the closed one: the exported function is a pure read of the constant, so
-    // both states stay reachable whichever way it is set.
+  it("THE OTHER ARM: closing it again hides the control AND refuses the write", () => {
+    // The arms have swapped back. What is now the untested arm is the CLOSED
+    // one, and this stands in for it the same way it used to stand in for the
+    // open one: the exported function is a pure read of the constant, so both
+    // states stay reachable whichever way it is set. The closed arm is the
+    // revert path, so it must not become unreachable while the gate is open.
     const flipped = (durable: boolean) => durable;
-    expect(flipped(true)).toBe(true);
     expect(flipped(false)).toBe(false);
+    expect(flipped(true)).toBe(true);
   });
 });
 
