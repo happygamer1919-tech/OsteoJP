@@ -107,6 +107,9 @@ function fixture() {
     patientPhone: "+351 912 345 678",
     patientReminderSmsEnabled: true,
     patientReminderEmailEnabled: true,
+    // SEC-reminder-path-ignores-soft-delete: STATED, not omitted. A fixture that
+    // leaves this out asserts nothing about a live SMS gate.
+    patientDeletedAt: null,
     patientHasAcceptedTerms: false,
     origin: "staff",
     practitionerName: "Dr. João Pereira",

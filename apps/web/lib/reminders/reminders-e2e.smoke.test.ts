@@ -113,6 +113,9 @@ function makeData(locale: Locale) {
     patientPhone: LONGEST_PHONE,
     patientReminderSmsEnabled: true,
     patientReminderEmailEnabled: true,
+    // SEC-reminder-path-ignores-soft-delete: STATED, not omitted. A fixture that
+    // leaves this out asserts nothing about a live SMS gate.
+    patientDeletedAt: null,
     practitionerName: "Dr. João Pereira",
     locationName: LONGEST_LOCATION,
     locationPhone: LONGEST_PHONE,

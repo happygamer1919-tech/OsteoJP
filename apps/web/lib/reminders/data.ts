@@ -59,6 +59,21 @@ export type ReminderAppointmentData = {
    * having asked the question.
    */
   patientHasAcceptedTerms: boolean;
+  /**
+   * SEC-reminder-path-ignores-soft-delete. The patient's `deleted_at`, LOADED
+   * RATHER THAN FILTERED, and the distinction is the whole point.
+   *
+   * Filtering it out here would suppress the send - and would report the skip as
+   * `not_found`, which is ALSO what RLS returns for an appointment in another
+   * tenant. Two different facts would then share one outcome, and the one that
+   * matters ("we stopped a message to somebody reception deleted") would be
+   * indistinguishable from routine tenant scoping in the logs.
+   *
+   * So the column travels to the caller and `dispatch.ts` decides. NULL means
+   * live; a set value means somebody soft-deleted this patient after the
+   * reminder was already scheduled.
+   */
+  patientDeletedAt: Date | null;
 };
 
 /**
@@ -84,6 +99,7 @@ export async function loadReminderData(
         patientPhone: patients.phone,
         patientReminderSmsEnabled: patients.reminderSmsEnabled,
         patientReminderEmailEnabled: patients.reminderEmailEnabled,
+        patientDeletedAt: patients.deletedAt,
         practitionerName: users.fullName,
         locationName: locations.name,
         locationPhone: locations.phone,

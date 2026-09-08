@@ -200,3 +200,102 @@ test("every table it reads still exists in the schema", () => {
     );
   }
 });
+
+/* ========================================================================== */
+/* THE AUDIT VOCABULARY. SR-52 FAMILY.                                        */
+/* ========================================================================== */
+
+/**
+ * Every `action` string the product actually writes, DERIVED FROM THE WRITERS.
+ *
+ * Two writers, two languages, and both must be read or the set is wrong:
+ *   TypeScript  `writeAudit(..., { action: "patient.hard_delete" })`
+ *   SQL         merge_patients() in migration 0005 inserts 'patient.merge'
+ *               directly - it is a SECURITY DEFINER function, so its audit row
+ *               never passes through writeAudit and a TS-only scan misses it.
+ */
+function writerVocabulary() {
+  const actions = new Set();
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (e.name === "node_modules" || e.name === ".next") continue;
+        walk(full);
+      } else if (/\.(ts|tsx)$/.test(e.name)) {
+        const body = fs.readFileSync(full, "utf8");
+        for (const m of body.matchAll(/action:\s*"([a-z_]+\.[a-z_]+)"/g)) actions.add(m[1]);
+      }
+    }
+  };
+  walk(path.join(REPO, "apps"));
+  walk(path.join(REPO, "packages", "db", "src"));
+  // The SQL writer. 0005's merge_patients inserts into audit_log itself.
+  for (const f of fs.readdirSync(path.join(REPO, "packages/db/migrations"))) {
+    if (!f.endsWith(".sql")) continue;
+    const body = fs.readFileSync(path.join(REPO, "packages/db/migrations", f), "utf8");
+    for (const m of body.matchAll(/'(patient\.[a-z_]+)'/g)) actions.add(m[1]);
+  }
+  return actions;
+}
+
+test("the CONTROL: the writer scan finds the actions we know exist", () => {
+  // Without this the assertion below passes over an empty set, which is exactly
+  // the failure it exists to prevent - a name-based check that cannot see.
+  const vocab = writerVocabulary();
+  assert.ok(vocab.size > 10, `the writer scan found only ${vocab.size} actions; it is not reading the code`);
+  for (const known of ["patient.hard_delete", "patient.soft_delete", "patient.merge", "patient.create"]) {
+    assert.ok(vocab.has(known), `the writer scan missed ${known}, so it cannot police anything`);
+  }
+  assert.ok(
+    !vocab.has("patient.delete_hard"),
+    "the writer scan claims patient.delete_hard exists; it does not, and this test would then be useless",
+  );
+});
+
+test("EVERY action string this file tests for actually occurs in a writer", () => {
+  // ==========================================================================
+  // THE CORRECTION, MADE MECHANICAL. 2026-09-08.
+  // ==========================================================================
+  // Section 5 tested for `patient.delete_hard`, `patient.delete` and
+  // `patient.merge`. The real string is `patient.hard_delete` - the word order
+  // was reversed - and `patient.delete` does not exist at all. A wrong name does
+  // not error: the EXISTS returns false, and false printed "NEVER COMMITTED"
+  // for three patients whose hard-delete audit rows section 5c listed four lines
+  // below.
+  //
+  // THAT IS THE SR-52 FAMILY. A name-based check cannot see what it is checking
+  // for, so the name has to be policed from outside. This is that police.
+  const vocab = writerVocabulary();
+  const tested = new Set(
+    [...statements.matchAll(/'(patient\.[a-z_]+)'/g)].map((m) => m[1]),
+  );
+  assert.ok(tested.size > 0, "this file no longer tests for any patient action at all");
+  for (const action of tested) {
+    assert.ok(
+      vocab.has(action),
+      `cb-recovery-diagnostics.sql tests for the audit action '${action}', which NO WRITER in this ` +
+        `repo produces. A name the product never writes matches nothing, and section 5 reports that ` +
+        `as a verdict rather than as an error. Known patient actions: ${[...vocab].filter((a) => a.startsWith("patient.")).sort().join(", ")}`,
+    );
+  }
+});
+
+test("section 5 can SEE an action it does not know, instead of calling it NEVER COMMITTED", () => {
+  // The structural half of the fix. Correcting the three names fixes today; this
+  // is what makes the NEXT drift a sentence on the grid rather than a wrong
+  // answer. `NEVER` must now mean "no audit row of ANY kind", not "no known
+  // action matched".
+  assert.match(
+    sql,
+    /AUDITED but the action is NOT in this file/,
+    "section 5 lost the arm that reports an unrecognised action; a stale vocabulary is silent again",
+  );
+  assert.match(
+    sql,
+    /NEVER COMMITTED - no audit row of any kind for this id/,
+    "the NEVER verdict no longer states the condition it actually tests",
+  );
+  // And the struck record of the wrong names is kept, not deleted.
+  assert.match(sql, /~~"a hard delete writes `patient\.delete_hard`"~~/);
+});
