@@ -36,6 +36,13 @@ export type AdminErrorCode =
   // already knows their colleagues exist, so concealment would buy nothing and
   // cost them a comprehensible message.
   | "forbidden"
+  // P0 2026-09-08: the weekly editor refused because a DATE-SPECIFIC row already
+  // covers that weekday, which is a real conflict with a real repair - and
+  // `invalid` pointed at neither. The weekly editor cannot express "the ordinary
+  // week, except those dates"; only Definir dia a dia can, so the screen has to
+  // be able to say so. Distinct from `invalid`, which stays the answer for a
+  // malformed or self-overlapping day.
+  | "dated_conflict"
   | "invalid";
 
 export class AdminError extends Error {
