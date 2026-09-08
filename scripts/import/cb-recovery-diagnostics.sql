@@ -233,13 +233,41 @@ s4none AS (
 --      HARD       no row at all. deletePatientHard (patients/actions.ts) or
 --                 cleanup-test-patients.sql. THIS is a loss, and it is the only
 --                 one that needs a re-import.
---      NEVER      no row and no audit trace of a delete: the row was never
---                 committed, and the ledger was written by a path that did not
---                 verify it. See section 5b.
+--      NEVER      no row, and no audit row of ANY KIND for that id: nothing
+--                 ever recorded touching it. See section 5b.
 --
---    The audit log is joined because it is the only place that distinguishes
---    HARD from NEVER: a hard delete writes `patient.delete_hard`, a merge writes
---    `patient.merge`. No audit row and no patient row means nobody deleted it.
+--    ===================================================================
+--    CORRECTED 2026-09-08. THIS SECTION PRINTED A CONFIDENT WRONG ANSWER.
+--    ===================================================================
+--      ~~"a hard delete writes `patient.delete_hard`"~~
+--    IT WRITES `patient.hard_delete`. The word order was reversed, and the two
+--    other strings this section tested for - `patient.delete_hard` and
+--    `patient.delete` - DO NOT EXIST ANYWHERE IN THE PRODUCT. So the EXISTS
+--    returned false for every subject and all three printed
+--    "NEVER COMMITTED", while section 5c printed their hard-delete audit rows
+--    FOUR LINES BELOW. Three human hard deletes were reported as rows that had
+--    never existed.
+--
+--    IT IS THE SR-52 FAMILY: a NAME-BASED CHECK THAT CANNOT SEE WHAT IT IS
+--    CHECKING FOR. A wrong name does not error - it returns false, and false
+--    here reads as a stronger claim than the truth. Same shape as grepping
+--    `proacl` for a grantee that is spelled differently, and the same fix:
+--    ask the question a way that fails LOUDLY when the vocabulary drifts.
+--
+--    THE VOCABULARY IS NOW DERIVED FROM THE WRITERS, not written by hand:
+--      patient.hard_delete   apps/web/lib/patients/actions.ts (deletePatientHard)
+--      patient.soft_delete   apps/web/lib/patients/actions.ts
+--      patient.restore       apps/web/lib/patients/actions.ts
+--      patient.merge         migration 0005, inside merge_patients()
+--    scripts/import/cb-recovery-diagnostics.test.mjs asserts that EVERY action
+--    string this file tests for actually occurs in a writer. A name this file
+--    invents can no longer pass CI.
+--
+--    AND THE VERDICT CAN NOW SEE ITS OWN BLINDNESS. The `NEVER` arm no longer
+--    means "no KNOWN action matched"; it means "no audit row of any kind exists
+--    for this id". If a row exists whose action is not in the list above, the
+--    verdict says so and NAMES it, so the next vocabulary drift is a sentence
+--    on the grid rather than a wrong answer.
 -- ---------------------------------------------------------------------------
 s5 AS (
   SELECT 5 AS k, row_number() OVER (ORDER BY m.source_id) AS k2,
@@ -248,13 +276,34 @@ s5 AS (
          '  verdict=' ||
          CASE
            WHEN p.id IS NULL THEN
-             CASE WHEN EXISTS (
-                    SELECT 1 FROM public.audit_log al
-                     WHERE al.entity_id = m.imported_entity_id
-                       AND al.action IN ('patient.delete_hard','patient.delete','patient.merge')
-                  ) THEN 'HARD DELETED (audit row present)'
-                  ELSE 'NEVER COMMITTED or deleted with no audit row - see 5b'
-             END
+             COALESCE(
+               -- The KNOWN vocabulary, most specific first.
+               (SELECT CASE al.action
+                         WHEN 'patient.hard_delete' THEN 'HARD DELETED (patient.hard_delete at ' ||
+                              to_char(al.created_at AT TIME ZONE 'UTC','YYYY-MM-DD') || ')'
+                         WHEN 'patient.merge'       THEN 'MERGED then hard-deleted (patient.merge at ' ||
+                              to_char(al.created_at AT TIME ZONE 'UTC','YYYY-MM-DD') || ')'
+                         WHEN 'patient.soft_delete' THEN 'SOFT-DELETED then hard-deleted (patient.soft_delete at ' ||
+                              to_char(al.created_at AT TIME ZONE 'UTC','YYYY-MM-DD') || ')'
+                       END
+                  FROM public.audit_log al
+                 WHERE al.entity_id = m.imported_entity_id
+                   AND al.action IN ('patient.hard_delete','patient.merge','patient.soft_delete')
+                 ORDER BY CASE al.action WHEN 'patient.hard_delete' THEN 1
+                                         WHEN 'patient.merge' THEN 2 ELSE 3 END,
+                          al.created_at DESC
+                 LIMIT 1),
+               -- AN AUDIT ROW EXISTS AND ITS ACTION IS NOT ONE I KNOW. This arm
+               -- is the whole correction: it is what a wrong name produces NOW,
+               -- instead of the confident "NEVER COMMITTED" it produced before.
+               (SELECT 'AUDITED but the action is NOT in this file''s vocabulary: ''' ||
+                       al.action || ''' - the list is stale, fix it before reading this grid'
+                  FROM public.audit_log al
+                 WHERE al.entity_id = m.imported_entity_id
+                 ORDER BY al.created_at DESC LIMIT 1),
+               -- Only now, with NO audit row of any kind, is NEVER honest.
+               'NEVER COMMITTED - no audit row of any kind for this id'
+             )
            WHEN p.merged_into_id IS NOT NULL THEN 'MERGED into ' || p.merged_into_id::text || ' - NOT A LOSS'
            WHEN p.deleted_at IS NOT NULL THEN 'SOFT DELETED ' ||
                 to_char(p.deleted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') || ' - recoverable'

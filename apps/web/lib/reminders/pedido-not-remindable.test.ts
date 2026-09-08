@@ -61,6 +61,9 @@ function fixture(over: Record<string, unknown> = {}) {
     patientPhone: "+351 210 000 000",
     patientReminderSmsEnabled: true,
     patientReminderEmailEnabled: true,
+    // SEC-reminder-path-ignores-soft-delete: STATED, not omitted. A fixture that
+    // leaves this out asserts nothing about a live SMS gate.
+    patientDeletedAt: null,
     practitionerName: "Dr. Joao Pereira",
     locationName: "Linda-a-Velha",
     locationPhone: "+351 210 000 000",

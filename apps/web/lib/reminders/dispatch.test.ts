@@ -222,6 +222,9 @@ describe("dispatchReminder honors tenant reminder config", () => {
       // Default patient prefs: SMS on, email on (same as "both enabled" default).
       patientReminderSmsEnabled: patientPrefs?.smsEnabled ?? true,
       patientReminderEmailEnabled: patientPrefs?.emailEnabled ?? true,
+      // SEC-reminder-path-ignores-soft-delete: STATED, not omitted. A fixture that
+      // leaves this out asserts nothing about a live SMS gate.
+      patientDeletedAt: null,
       practitionerName: "Dr. João Pereira",
       locationName: "Linda-a-Velha",
       locationPhone: "+351 210 000 000",

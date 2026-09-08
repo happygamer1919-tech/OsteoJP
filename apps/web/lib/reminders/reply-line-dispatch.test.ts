@@ -52,6 +52,9 @@ function row() {
     patientPhone: "+351 912 345 678",
     patientReminderSmsEnabled: true,
     patientReminderEmailEnabled: true,
+    // SEC-reminder-path-ignores-soft-delete: STATED, not omitted. A fixture that
+    // leaves this out asserts nothing about a live SMS gate.
+    patientDeletedAt: null,
     practitionerName: "Dr. Joao Pereira",
     locationName: "Castelo Branco",
     locationPhone: "272 328 221",
