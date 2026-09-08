@@ -225,11 +225,87 @@ the migration's blob hash. Full reasoning at `docs/migration-apply-0063.md` §4.
 
 ---
 
-## The pre-check is mandatory — `drizzle-kit migrate` cannot report a no-op
+## `verified-migrate.mjs` REPLACES `pnpm db:migrate` in every apply block
 
-**Rule.** Every apply block runs `check-pending-migrations.mjs` with the
-**expected count** immediately before `drizzle-kit migrate`, and the block says
-in words that a failure means do not run `migrate` at all.
+**Rule, from 2026-09-08. This is compulsory, not advisory.** No production apply
+block invokes `pnpm db:migrate`, `drizzle-kit migrate` or
+`check-pending-migrations.mjs` directly any more. They are all reached through
+one command that refuses to report success it has not proved:
+
+```
+node packages/db/scripts/verified-migrate.mjs \
+     --tag <migration tag> \
+     --sha256 <sha256 of packages/db/migrations/<tag>.sql> \
+     --expect-pending <N>
+```
+
+**Why one command and not three chained with `&&`.** The three checks already
+existed and the apply blocks already chained them. That works exactly as long as
+the person pasting the block pastes all of it, at 7am, on the one morning it
+matters — and it is the same argument that failed on 0038, 0049 and 0058. A
+chain a human assembles by hand is a chain a human can assemble incompletely.
+
+### What it does, in order, stopping at the first failure
+
+| # | check | rule |
+|---|---|---|
+| 1 | the migration file is **on disk** and its sha256 is the approved one | **SR-58** |
+| 2 | the tag is in `meta/_journal.json` | a file drizzle cannot see is not a migration |
+| 3 | its sha256 is **not already** in `drizzle.__drizzle_migrations` | a re-run gets the right answer, not the 0058 message |
+| 4 | the pending count equals `--expect-pending` | this is `check-pending-migrations.mjs`, **called** rather than reimplemented |
+| 5 | run `drizzle-kit migrate`, printing stdout, stderr **and** the exit code — **including when they are empty** | POST-01's whole symptom is a run with no output |
+| 6 | the journal **delta** equals `--expect-pending`, and the approved sha256 is now in it | **the load-bearing assertion** |
+
+**Step 6 closes the whole class.** A no-op leaves the delta at 0 and fails there
+regardless of which of the four causes produced it — and steps 1 to 4 are what
+turn that failure into a sentence naming the cause instead of a mystery.
+
+### The exit codes, and 5 is the one it exists for
+
+| exit | meaning |
+|---|---|
+| `0` | the delta matched and the journal carries the approved sha256 |
+| `2` | bad invocation — never confused with a failure |
+| `3` | a precondition failed: file missing, hash mismatch, already applied, wrong pending count |
+| `4` | drizzle itself failed; its captured output is reprinted, **including when it is empty** |
+| `5` | **drizzle succeeded and the journal did not move.** THE SILENT NO-OP, NAMED |
+
+Before this, exit 5's state was indistinguishable from success. That is the state
+that cost 0038–0041, 0049 and 0058.
+
+### Proved before it was made compulsory
+
+Against a throwaway Postgres 17 seeded to production's **exact** journal position
+— 79 rows, 0081 applied, 0082 pending:
+
+| arm | result |
+|---|---|
+| happy path | journal 79 → 80, sha256 present, **exit 0** |
+| file not on disk | **exit 3**, naming SR-58 |
+| sha256 mismatch | **exit 3**, prints both hashes |
+| already applied | **exit 3**, and says *the journal `when` is NOT the problem* |
+| journal `when` lowered below the last applied (the 0058 cause) | **exit 3**, refused **before** drizzle ran |
+| no arguments | **exit 2** |
+
+**Exit 5 is proved over the exported `verdictFor`, not by integration**, and the
+reason is worth stating: every real cause of it is caught *earlier* by steps 1–4,
+which is the wrapper working as designed. Forcing it end to end would mean making
+drizzle lie. `scripts/verified-migrate.test.mjs` covers it, and the runner has no
+second copy of the arithmetic.
+
+### One defect the rehearsal found in the wrapper itself
+
+The already-applied check originally came **after** the pending check. Once a
+migration is applied its journal `when` **is** the last applied `when`, so
+`pending` computes to 0 and the pending branch fired with the 0058 message —
+telling an operator to go and fix a journal entry that was correct. Observed on
+the throwaway database; the order is now asserted by a test.
+
+---
+
+## The pre-check, underneath it
+
+`verified-migrate.mjs` calls this; do not invoke it separately in an apply block.
 
 ```
 pnpm --filter @osteojp/db exec node scripts/check-pending-migrations.mjs <N>
