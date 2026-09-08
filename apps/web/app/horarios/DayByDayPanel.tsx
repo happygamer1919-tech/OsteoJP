@@ -153,9 +153,14 @@ export function DayByDayPanel({
       return;
     }
     setCollisions(null);
+    // THE CONFIRMATION NAMES THE THERAPIST, 2026-09-08. The dialog header always
+    // has (`title` above), but a person who has just pressed Guardar is reading
+    // the line that appeared, not the one that was there before they started.
+    // On 2026-09-08 a window was applied to the wrong therapist and nothing on
+    // the way out said whose week had changed.
     setStatus({
       tone: "ok",
-      text: replace ? s["schedule.windowReplaced"] : s["schedule.gridSaved"],
+      text: `${replace ? s["schedule.windowReplaced"] : s["schedule.gridSaved"]} · ${therapistName}`,
     });
     // Kept on screen rather than toasted: a toast disappears, and these are
     // appointments somebody has to act on.
@@ -185,6 +190,49 @@ export function DayByDayPanel({
         >
           <div className="flex flex-col gap-3">
             <p className="text-xs text-v2-text-secondary">{s["schedule.gridHelp"]}</p>
+            {/* ==================================================================
+                THE COLLISION PANEL SITS FIRST, ABOVE THE DATE PICKERS AND THE
+                GRID. Moved here 2026-09-08 after reception read it as a refusal.
+
+                IT USED TO RENDER LAST, under the grid and the save button, so
+                pressing Guardar changed nothing anybody was looking at: the
+                message and the "Substituir esta janela" button that answers it
+                were both below the fold. What reception saw was a form that had
+                stopped responding, and what she reported was that it would not
+                let her pick days.
+
+                NOTHING ABOUT THE TWO PATHS CHANGED - the refusal still writes
+                nothing and replacing is still an explicit second action. This is
+                only about which of them is on screen when the answer arrives.
+                ================================================================== */}
+            {collisions && collisions.length > 0 && (
+              <div
+                role="status"
+                data-testid="day-grid-collision"
+                className="flex flex-col gap-2 rounded-v2 border border-v2-border bg-v2-surface p-3"
+              >
+                <p className="text-sm text-v2-text-primary">{s["schedule.windowCollision"]}</p>
+                {/* NAMED, NEVER COUNTED. "3 dates conflict" is not something a
+                    person can check; a list of dates is. */}
+                <ul className="list-disc pl-5 text-sm text-v2-text-secondary">
+                  {collisions.map((d) => (
+                    <li key={d}>{dayLabel(d)}</li>
+                  ))}
+                </ul>
+                <p className="text-xs text-v2-text-secondary">
+                  {s["schedule.windowReplaceHelp"]}
+                </p>
+                <Button
+                  variant="secondary"
+                  onClick={() => submit(true)}
+                  disabled={busy}
+                  data-testid="day-grid-replace"
+                >
+                  {s["schedule.windowReplace"]}
+                </Button>
+              </div>
+            )}
+
 
             <div className="flex flex-wrap gap-3">
               <label className="flex flex-col gap-1 text-sm">
@@ -295,34 +343,6 @@ export function DayByDayPanel({
               >
                 {status.text}
               </p>
-            )}
-
-            {collisions && collisions.length > 0 && (
-              <div
-                role="status"
-                data-testid="day-grid-collision"
-                className="flex flex-col gap-2 rounded-v2 border border-v2-border bg-v2-surface p-3"
-              >
-                <p className="text-sm text-v2-text-primary">{s["schedule.windowCollision"]}</p>
-                {/* NAMED, NEVER COUNTED. "3 dates conflict" is not something a
-                    person can check; a list of dates is. */}
-                <ul className="list-disc pl-5 text-sm text-v2-text-secondary">
-                  {collisions.map((d) => (
-                    <li key={d}>{dayLabel(d)}</li>
-                  ))}
-                </ul>
-                <p className="text-xs text-v2-text-secondary">
-                  {s["schedule.windowReplaceHelp"]}
-                </p>
-                <Button
-                  variant="secondary"
-                  onClick={() => submit(true)}
-                  disabled={busy}
-                  data-testid="day-grid-replace"
-                >
-                  {s["schedule.windowReplace"]}
-                </Button>
-              </div>
             )}
 
             {affected && affected.length > 0 && (

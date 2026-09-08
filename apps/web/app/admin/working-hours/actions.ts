@@ -17,7 +17,7 @@ import {
   type TimeOffBlockInput,
   type TimeOffMode,
 } from "@/lib/admin/time-off";
-import { reconcileWeek } from "@/lib/admin/schedule-reconcile";
+import { saveWeekSchedule } from "@/lib/admin/week-schedule";
 import { parseTimeOffBatchForm } from "@/lib/admin/time-off-batch-form";
 import { isAdminError } from "@/lib/admin/errors";
 
@@ -161,11 +161,8 @@ export async function archiveAvailabilityTemplateAction(fd: FormData): Promise<v
 export async function saveTherapistScheduleAction(fd: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const userId = String(fd.get("userId") ?? "");
-  await run(() =>
-    reconcileWeek(fd, userId, {
-      create: (input) => createAvailabilityTemplate(actor, input),
-      update: (id, input) => updateAvailabilityTemplate(actor, id, input),
-      archive: (id) => archiveAvailabilityTemplate(actor, id),
-    }),
-  );
+  // ONE TRANSACTION FOR THE WHOLE WEEK (P0, 2026-09-08). Shared with
+  // /horarios: two copies of this call is how one surface comes to be atomic
+  // and the other not.
+  await run(() => saveWeekSchedule(actor, userId, fd));
 }

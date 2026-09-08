@@ -8,7 +8,7 @@ import {
   createAvailabilityTemplate,
   updateAvailabilityTemplate,
 } from "@/lib/admin/availability";
-import { reconcileWeek } from "@/lib/admin/schedule-reconcile";
+import { saveWeekSchedule } from "@/lib/admin/week-schedule";
 import { applyAlternatingWeeks } from "@/lib/admin/alternating-schedule";
 import { applyDayByDaySchedule } from "@/lib/admin/day-by-day-schedule";
 // formatCreatedAt is the existing pt-PT Lisbon "dd/mm/yyyy HH:mm" formatter;
@@ -112,13 +112,10 @@ export async function deleteTimeOffBlockAction(fd: FormData): Promise<void> {
 export async function saveScheduleAction(fd: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const userId = String(fd.get("userId") ?? "");
-  await run(() =>
-    reconcileWeek(fd, userId, {
-      create: (input) => createAvailabilityTemplate(actor, input),
-      update: (id, input) => updateAvailabilityTemplate(actor, id, input),
-      archive: (id) => archiveAvailabilityTemplate(actor, id),
-    }),
-  );
+  // ONE TRANSACTION FOR THE WHOLE WEEK (P0, 2026-09-08). The three-write
+  // version committed each weekday separately, so a refusal on one left the
+  // earlier ones written under a message saying nothing had been saved.
+  await run(() => saveWeekSchedule(actor, userId, fd));
 }
 
 /**
