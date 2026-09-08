@@ -1,7 +1,11 @@
 # SPEC — pacote switching, 5 to 10, crediting the difference
 
-**Status: REPORT ONLY. NOTHING IS BUILT. No migration is authored.**
+**Status: Q-PACK-SWITCH-1 STAMPED 2026-09-08 (option B). NOTHING IS BUILT.**
 Author: PURPLE, 2026-09-07. Re-derived from `origin/main` at `380e1023`.
+The money ruling landed on 2026-09-08 and is in §6, §6b and §9. §0-§5 are
+unchanged: they are the derivation the ruling was taken against, and rewriting
+them to match the outcome would destroy the record of what was known when the
+decision was made.
 
 **The commercial half is ruled and is not in question.** JP: the patient pays
 the difference and consumed sessions carry across. This report answers the
@@ -202,10 +206,105 @@ must not RECORD it as a fact.** The amount actually charged is a human decision
 at the desk, and if it needs to be recorded, that is an invoice — a separate
 change with its own shape.
 
-**Q-PACK-SWITCH-1, for the owner/JP:** does the switch need to record the amount
-charged? *Recommended default: no. Show today's catalogue difference as a hint,
-record the switch as an audit entry naming both pacotes, and leave the money on
-the invoice where money already lives.*
+### Q-PACK-SWITCH-1 IS STAMPED, 2026-09-08: **OPTION B. RECORD WHAT WAS TYPED.**
+
+> **THE RULING.** Reception types the amount charged, with a reason, and the
+> screen records it. The screen may show today's catalogue difference as a
+> CLEARLY LABELLED SUGGESTION and must never record it as what the patient paid.
+> Nothing in the database knows what anyone paid.
+
+**IT OVERTURNS THE RECOMMENDATION ABOVE AND THE REASONING SURVIVES INTACT.** The
+recommendation was "do not record it", on the grounds that a computed difference
+is a claim about the present dressed as a settlement of the past. The ruling
+accepts that premise completely and draws the other conclusion from it: since
+nothing in the database knows, **the only honest record is what a human states**,
+and a human statement is exactly what an audit trail is for. A computed number
+would have been a fact the system invented. A typed number is a fact somebody
+took responsibility for.
+
+**THE THREE THINGS IT BINDS, and they are separable:**
+
+1. **THE AMOUNT IS AN INPUT, NEVER A DEFAULT THAT WAS ACCEPTED.** The field is
+   typed by a person. If the screen pre-fills it with the catalogue difference,
+   the record cannot afterwards distinguish "reception agreed with the
+   suggestion" from "reception did not look at it" - which is the recorded
+   equivalent of the same defect the ruling exists to prevent. **So the suggestion
+   is displayed BESIDE the field and does not populate it.**
+2. **THE SUGGESTION IS LABELLED AS TODAY'S CATALOGUE DIFFERENCE**, in those
+   words, because it is a subtraction of two current prices and one of them may
+   have moved since the purchase. §6 above is why.
+3. **A REASON IS REQUIRED, NOT OPTIONAL.** An amount with no reason is a number
+   nobody can audit later, and the ruling names the two together.
+
+---
+
+## 6b. WHERE THE TYPED AMOUNT LIVES. THE ONE THING THAT DECIDES WHO BUILDS THIS.
+
+**The ruling says "the screen records it". It does not say where, and the answer
+changes which lane owns the work.** Re-derived from the schema rather than
+assumed: `patient_pack_instances` is `id, tenant_id, patient_id, pack_id,
+sessions_total, sessions_remaining, legacy_consumed, status, purchased_at,
+created_at, updated_at`. **No price column, no reason column, no free-text column
+of any kind.** There is nowhere on the instance to put either value.
+
+That leaves exactly two homes, and they are not equivalent.
+
+### (i) `audit_log.metadata` — available TODAY, no migration
+
+`writeAudit` takes `metadata: Record<string, unknown>` into a `jsonb` column, and
+§7's step 7 already writes a `pack_instance.switch` entry. Adding
+`amount_charged_cents` and `reason` to that object is a few characters and needs
+nothing from anybody.
+
+**AND IT COLLIDES WITH THE CONTRACT THAT HELPER STATES ABOUT ITSELF.**
+`lib/admin/audit.ts` says, in its own header, *"metadata is PII-free by contract:
+store changed field NAMES, role slugs and …"*. An amount is a number and passes
+that easily. **A FREE-TEXT REASON TYPED AT A FRONT DESK DOES NOT** - it is
+unbounded prose about a specific patient's money, written by whoever is standing
+there.
+
+**THE CODEBASE ALREADY DISAGREES WITH ITSELF ABOUT THIS, AND THE DISAGREEMENT IS
+SHIPPED.** Both halves were read rather than recalled:
+
+- **THE STRICT SIDE.** `lib/clinical/records.ts:695` records
+  `metadata: { hadReason: Boolean(trimmed && trimmed.length > 0) }` - whether a
+  reason was given, never the reason. That is the contract honoured exactly.
+- **THE LOOSE SIDE.** `lib/scheduling/actions.ts:1958` writes
+  `reason: reason?.trim() || null` into the cancel audit, through
+  `writeAppointmentAudit`, whose OWN header says *"metadata carries IDs, status
+  and ISO timestamps only — never patient PII"*. A free-text reason is none of
+  those three. And the caller is not hypothetical: the agenda drawer passes
+  `form.notes` - **the appointment's own notes field** - as that reason
+  (`app/agenda/appointment-drawer.tsx:916`), and the patient profile passes a
+  typed one (`appointments-list.tsx:512`).
+
+So a build that puts the typed reason in audit metadata would be following a real
+precedent AND a real contradiction, and would deepen it. **That is worth saying
+out loud before it is chosen, not after.** It is carded separately; it stands on
+its own merits whether or not a switch is ever built.
+
+### (ii) Two columns on `patient_pack_instances` — a MIGRATION
+
+`amount_charged_cents integer` and `switch_reason text`, nullable, never
+back-filled. It puts the money beside the thing it is about, it survives a reader
+who never opens the audit log, and it is honest about being free text.
+
+**AND IT IS A MIGRATION, WHICH THIS LANE MAY NOT AUTHOR** (PORTAL-REHYDRATE
+§1.1). It is BLUE's, and it would be the second thing on their queue behind 0082.
+
+### THE RECOMMENDATION, AND IT IS NOT THE CHEAP ONE
+
+**(ii), the columns.** The ruling's whole content is that a human statement is
+the only truthful record; a statement worth ruling on is worth storing where the
+next person will find it. Audit metadata is where this project puts *what
+happened*, and the amount is not what happened - it is **a term of the
+transaction**. Routing it through the audit log would also make the switch the
+third caller in a contradiction two existing callers already disagree about.
+
+**IF THE OWNER WANTS IT SOONER THAN A MIGRATION**, (i) works, and the honest
+version of (i) is the strict one: record `amount_charged_cents` (a number, no
+contract problem) in the audit, and record the REASON as a bounded enum rather
+than prose - the free-text half is the only part that collides.
 
 ---
 
@@ -214,7 +313,10 @@ the invoice where money already lives.*
 Not a proposal to build. The answer to "what would this look like", so the
 stamp is informed.
 
-**ONE ACTION, `switchPackInstance(instanceId, newPackId)`, in ONE transaction:**
+**ONE ACTION, `switchPackInstance(instanceId, newPackId, { amountChargedCents,
+reason })`, in ONE transaction.** The two extra arguments are Q-PACK-SWITCH-1's
+ruling, and they are REQUIRED rather than optional: an amount with no reason is
+a number nobody can audit, and an optional amount is a field that gets skipped.
 
 1. **REFUSE** unless `newPack.baseServiceId === currentPack.baseServiceId` — §5.
 2. **REFUSE** unless `newPack.sessionCount > instance.sessionsTotal` — this is an
@@ -228,12 +330,21 @@ stamp is informed.
    is the pre-0067 record of a purchase that DID happen; a switch does not
    rewrite history. It stays ≤ the new, larger total, so no CHECK is violated.
 6. **`legacy_consumed` IS NOT TOUCHED.** Its meaning is fixed.
-7. **Audit** `pack_instance.switch` with both pack ids, both session counts and
+7. **REFUSE** a missing or non-positive `amountChargedCents`, and a blank
+   `reason`. Ruled 2026-09-08. A zero is a legitimate commercial act - a goodwill
+   upgrade - so zero is ACCEPTED and only a MISSING value is refused; the two are
+   different facts and the field must not collapse them.
+8. **RECORD** the amount and the reason, per §6b. Where they go is the open half.
+9. **Audit** `pack_instance.switch` with both pack ids, both session counts and
    the balance before and after.
 
-**NO MIGRATION.** Every column already exists; this writes two of them. Under
-`PORTAL-REHYDRATE §1.1` that matters — a lane that needs a migration stops before
-writing anything, and this does not.
+**~~NO MIGRATION.~~ THAT WAS TRUE UNTIL 2026-09-08 AND THE RULING CHANGED IT.**
+The struck sentence was correct about the SWITCH itself: `pack_id` and
+`sessions_total` both exist and the mechanical half still needs nothing. What
+needs a column now is the MONEY, which the ruling requires to be recorded and
+which has nowhere to live (§6b). Under `PORTAL-REHYDRATE §1.1` a lane that needs
+a migration stops before writing anything, so on the recommended route this lane
+stops - **and it stops on storage, not on a decision.**
 
 **WHAT IT COSTS ELSEWHERE, checked rather than assumed:**
 
@@ -254,18 +365,47 @@ writing anything, and this does not.
 
 ## 8. THE OPEN QUESTIONS
 
-- **Q-PACK-SWITCH-1** — record the amount charged? *Recommended: no; audit the
-  switch, leave money to invoices.*
+- **Q-PACK-SWITCH-1 — STAMPED 2026-09-08: RECORD IT, TYPED, WITH A REASON.**
+  Option B. The recommendation below it was the opposite and is left standing
+  rather than edited away, because the ruling accepts its premise and draws the
+  other conclusion - see §6. ~~*Recommended: no; audit the switch, leave money to
+  invoices.*~~ **What is still open is WHERE it is stored: §6b, and the answer
+  decides whether this is PURPLE's or BLUE's.**
 - **Q-PACK-SWITCH-2** — is a DOWNGRADE (10 → 5) ever wanted? *Recommended:
   refuse it. It is a refund, the consumed count may already exceed the new
   total, and nothing has ruled on it.*
-- **Q-PACK-SWITCH-3** — who may switch? *Recommended: `services:write` (owner and
-  admin), not reception. It moves money and it is not a front-desk act — the
-  same tier `updatePack` already sits at.*
+- **Q-PACK-SWITCH-3 — who may switch?** ~~*Recommended: `services:write` (owner
+  and admin), not reception.*~~ **THE 2026-09-08 RULING NAMES RECEPTION** - "*Reception
+  types the amount charged*" - which reverses that recommendation. It is recorded
+  here as the reading rather than as a separate stamp, because the ruling was
+  about the MONEY and named the actor in passing. **If the tier was meant to stay
+  owner/admin, it is one word back and one line of code; the spec is written for
+  reception until it is.** Worth noticing that the two readings are not far
+  apart: whoever takes the payment is the only person who can state what was
+  taken, which is an argument FOR reception rather than a concession.
 - **Q-PACK-SWITCH-4, and it stands on its own merits whether or not a switch is
   ever built** — should `updatePack` refuse a `session_count` change on a pack
   with live instances? *Recommended: yes, and name the holders, exactly as
   PACK-04's archive refusal names the pacotes.*
+
+---
+
+## 9. WHAT THE 2026-09-08 RULING LEFT, IN ONE LIST
+
+**ANSWERED:** whether to record the amount (yes, typed), whether the catalogue
+difference may be shown (yes, labelled as a suggestion), whether it may be
+recorded as what was paid (never), and - by naming reception - who is at the
+keyboard.
+
+**OPEN, AND IT IS ONE QUESTION:** where the typed amount and reason are stored.
+§6b sets it out with a recommendation. On the recommended route it is two
+nullable columns and therefore BLUE's; on the cheap route it is audit metadata
+today, at the cost of deepening a contradiction two shipped callers already
+disagree about.
+
+**NOT PART OF THIS AT ALL:** what anyone actually paid for the ORIGINAL pacote.
+Nothing in the database knows, nothing will, and no amount typed at a switch
+recovers it. The ruling's last sentence says so and the spec agrees.
 
 **STOP. Report only, per the dispatch. Nothing is built and no migration is
 authored.**
