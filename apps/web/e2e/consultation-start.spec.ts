@@ -4,7 +4,7 @@
  * on a valid patient, and a consent checkbox gates "Iniciar gravação".
  */
 import { test, expect } from "@playwright/test";
-import { PATIENTS, STORAGE } from "./fixtures";
+import { LOCATION, PATIENTS, STORAGE } from "./fixtures";
 
 test.describe("start-consultation (therapist)", () => {
   test.use({ storageState: STORAGE.therapist });
@@ -31,7 +31,7 @@ test.describe("start-consultation (therapist)", () => {
     await expect(page.getByRole("button", { name: "Gravar" })).toBeVisible();
   });
 
-  test("new stub → name required → create → consent → ready (W4-06)", async ({ page }) => {
+  test("new stub → name required → CLINIC required → create → consent → ready (W4-06, PL-34)", async ({ page }) => {
     await page.goto("/consultation");
     await page.getByRole("button", { name: "Novo paciente" }).click();
 
@@ -39,6 +39,29 @@ test.describe("start-consultation (therapist)", () => {
     const create = page.getByRole("button", { name: "Criar e iniciar gravação" });
     await expect(create).toBeDisabled();
     await page.getByLabel("Nome").fill("Paciente Sintético E2E");
+
+    // ======================================================================
+    // PL-34 — A NAME IS NO LONGER ENOUGH, AND THIS ASSERTION IS THE WHOLE
+    // REASON THE E2E CAUGHT WHAT THE LOCAL GATES COULD NOT.
+    // ======================================================================
+    // A walk-in filed at NO clinic lands with primary_location_id NULL, and
+    // with no appointment either it satisfies neither arm of PL-09's patient
+    // scope: invisible to every located reception and admin, while the
+    // therapist who created it still sees it through the created_by arm.
+    //
+    // THE E2E THERAPIST IS THE PICKER CASE BY CONSTRUCTION. The seed assigns no
+    // staff_locations to any test role (Q-PL-11-2), so bookingLocationScope
+    // returns null - unrestricted - and resolveLocationControl offers every
+    // active clinic. So this therapist MUST answer, and the button stays
+    // disabled until they do. A single-clinic therapist sees a static line and
+    // never reaches this control at all; that arm is covered against a real
+    // database in lib/patients/create-location-link.db.test.ts, where the
+    // assertion is a row rather than a button.
+    await expect(
+      create,
+      "a name alone must not create a patient at no clinic (PL-34)",
+    ).toBeDisabled();
+    await page.getByLabel("Localização").selectOption({ label: LOCATION.name });
     await expect(create).toBeEnabled();
     await create.click();
 

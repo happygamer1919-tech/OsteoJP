@@ -137,6 +137,9 @@ test("it reads the columns the partial-arrival sections depend on", () => {
     patient_number: "sections 8, 9, 10, 11 - the only id the owner can look up",
     error_detail: "section 4 - why a source row did not import",
     source_id: "sections 4, 5, 9 - the vendor key, to find the record in the Drive delivery",
+    primary_location_id: "section 8b - one of the TWO bases PL-09 actually scopes a patient by",
+    patient_2_id: "section 8b - the secondary-participant arm; a patient reachable ONLY as the second name on an appointment is NOT invisible",
+    created_by: "section 8b - a block of invisible patients sharing one creator IS the diagnosis",
   };
   for (const [col, why] of Object.entries(REQUIRED)) {
     assert.ok(
@@ -144,6 +147,53 @@ test("it reads the columns the partial-arrival sections depend on", () => {
       `cb-reconciliation.sql no longer reads ${col}; ${why}`,
     );
   }
+});
+
+test("section 8b negates BOTH arms of patientLocationScope, and section 8 no longer claims to", () => {
+  // ==========================================================================
+  // THE CORRECTION THIS TEST EXISTS TO HOLD, 2026-09-08
+  // ==========================================================================
+  // Section 8's header used to say "PL-09 scopes patient visibility by
+  // `patient_locations`". It does not, and that one sentence is why the missing
+  // link rows were read as a visibility incident for a day. The real predicate
+  // lives in apps/web/lib/patients/scope.ts and in 0047's policy, and it is
+  // appointments.location_id OR patients.primary_location_id.
+  //
+  // A COMMENT CANNOT HOLD A CORRECTION. The next author to read section 8 in a
+  // hurry will read the header, so this asserts BOTH halves mechanically: that
+  // the false claim is gone, and that the section which answers the question it
+  // was believed to answer is present and complete.
+  // THE STRUCK RECORD IS KEPT AND IS NOT WHAT THIS ASSERTS AGAINST. Deleting a
+  // wrong sentence is worse than striking it - the strike is why the next reader
+  // knows the section changed meaning. So the check is on the text with every
+  // `~~...~~` span removed: the claim may survive as a quotation of itself and
+  // nowhere else.
+  const unstruck = sql.replace(/~~[\s\S]*?~~/g, "");
+  assert.ok(
+    !/scopes patient visibility by/.test(unstruck),
+    "section 8 or 10 states, unstruck, that PL-09 scopes visibility by patient_locations; it does not - " +
+      "the predicate is appointments.location_id OR patients.primary_location_id",
+  );
+  assert.match(
+    sql,
+    /PL-09 DOES NOT SCOPE BY THIS TABLE/,
+    "the correction itself is gone; without it section 8 reads as the urgent section again",
+  );
+
+  const s8b = sql.slice(sql.indexOf("s8b AS ("), sql.indexOf("s8btot AS ("));
+  assert.ok(s8b.length > 0, "section 8b (the patients who really are invisible) is gone");
+  // ARM 2: no home clinic.
+  assert.match(s8b, /primary_location_id IS NULL/);
+  // ARM 1: no appointment ANYWHERE, as EITHER participant. Dropping the
+  // patient_2_id half would silently report visible patients as invisible.
+  assert.match(s8b, /a\.patient_id = p\.id OR a\.patient_2_id = p\.id/);
+  assert.match(s8b, /NOT EXISTS/);
+  // Soft-deleted patients are gone to reception anyway and must not be counted
+  // as a visibility defect.
+  assert.match(s8b, /deleted_at IS NULL/);
+  // And it must stay in the union, or it is 60 lines of SQL nobody runs.
+  assert.match(sql, /UNION ALL SELECT k, k2, line FROM s8b\n/);
+  assert.match(sql, /UNION ALL SELECT k, k2, line FROM s8btot\n/);
 });
 
 test("the guest-catalog rule is stated with ALL FOUR predicates plus the price grid", () => {

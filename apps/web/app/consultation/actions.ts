@@ -15,6 +15,8 @@ import { eq } from "drizzle-orm";
 import { can } from "@osteojp/auth";
 import { patients } from "@osteojp/db";
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
+import { scopedLocationId } from "@/lib/auth/location-choice";
+import { bookingLocationScope } from "@/lib/auth/viewer-locations";
 import { createStubPatient } from "@/lib/patients/actions";
 import { writeAudit } from "@/lib/patients/audit";
 import { AudioStorageConfigError, signAudioUpload } from "@/lib/consultation/audio-storage";
@@ -38,6 +40,9 @@ export type StubResult =
 export async function createStubPatientAction(input: {
   fullName: string;
   phone?: string | null;
+  /** PL-34 — the clinic this walk-in is being seen at. Honoured only when the
+   *  caller may book there; see `resolveStubLocationId`. */
+  locationId?: string | null;
 }): Promise<StubResult> {
   try {
     // INC-nif-validationerror-at-the-desk: `createStubPatient` no longer THROWS
@@ -49,7 +54,14 @@ export async function createStubPatientAction(input: {
     // THE MESSAGE IS CARRIED THROUGH rather than collapsed into "validation".
     // The caller (StartConsultation) has one box, so the field adds nothing
     // there; the sentence does, and it is the sentence the desk could not see.
-    const r = await createStubPatient({ fullName: input.fullName, phone: input.phone ?? null });
+    const r = await createStubPatient({
+      fullName: input.fullName,
+      phone: input.phone ?? null,
+      // PL-34 — RESOLVED ON THE SERVER, NOT TAKEN FROM THE CLIENT. This module
+      // is "use server", so `locationId` is a browser-supplied value on a path
+      // that decides which clinic can see the resulting patient.
+      primaryLocationId: await resolveStubLocationId(input.locationId ?? null),
+    });
     if (!r.ok) return { ok: false, error: "validation", message: r.error.message };
     return { ok: true, patientId: r.patient.id };
   } catch (e) {
@@ -60,6 +72,49 @@ export async function createStubPatientAction(input: {
     if (name === "ValidationError") return { ok: false, error: "validation" };
     return { ok: false, error: "forbidden" };
   }
+}
+
+/**
+ * PL-34 — the clinic a walk-in stub is filed at.
+ *
+ * ==========================================================================
+ * THE DEFECT THIS CLOSES
+ * ==========================================================================
+ * This action passed `fullName` and `phone` and nothing else, so every stub
+ * landed with `primary_location_id = NULL`. That column is one of the two things
+ * PL-09 scopes a patient by (the other is an appointment at the viewer's clinic,
+ * and a stub has neither yet), so a walk-in registered mid-consultation was
+ * invisible to every located reception and admin — the people who then have to
+ * find them to book the follow-up or issue the invoice. The therapist who
+ * created them could still see them, through `therapistPatientScope`'s
+ * `created_by` arm, which is exactly why nobody noticed at the desk that made it.
+ *
+ * `/patients/new` already resolves this (PL-15b, `app/patients/new/page.tsx`).
+ * This path was left behind because it is a two-field box on another screen.
+ *
+ * ==========================================================================
+ * THE SAME PL-14 DECISION, TAKEN ON THE SERVER
+ * ==========================================================================
+ * `bookingLocationScope` rather than `viewerLocationScope`: the read scope
+ * returns `null` for a therapist by design, and a therapist is the principal
+ * this action exists for. The write scope is the one that answers "which clinics
+ * is this person actually at".
+ *
+ * `scopedLocationId` then gives the three answers PL-14 already ruled:
+ *   one assigned clinic  -> that one, ALWAYS, whatever the browser sent;
+ *   several              -> the browser's choice, but only from that set;
+ *   unrestricted (owner) -> the browser's choice, re-checked against the tenant
+ *                           by `createPatientImpl`, which rejects an id that does
+ *                           not resolve under the caller's RLS.
+ *
+ * NULL IS STILL REACHABLE and is left reachable on purpose: a multi-clinic
+ * therapist who somehow submits without a choice gets the old behaviour rather
+ * than a refusal in the middle of a consultation. The screen makes the picker
+ * required, so the reachable case is a direct action call.
+ */
+async function resolveStubLocationId(requested: string | null): Promise<string | null> {
+  const ctx = await requireRequestContext();
+  return scopedLocationId(await bookingLocationScope(ctx), requested);
 }
 
 export type StartResult =

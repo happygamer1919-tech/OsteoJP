@@ -296,6 +296,23 @@ a reservation.
    (`git checkout origin/<branch>`). On `main`, `db:migrate` silently no-ops.
 5. **One migration in flight at a time, globally.** A second loop does not begin
    authoring a migration until the first is applied and merged.
+6. **SR-58 (2026-09-08) — the detached checkout in item 4 is per STAGE, not per
+   session, and it is not enough on its own.** Every apply block re-checkouts its
+   own ref *inside every stage*, and **asserts the migration files are present on
+   disk** before invoking drizzle. A stage that inherits a working tree from a
+   previous stage is not a valid apply. Two ordinary things move that tree
+   between stages: `gh pr merge --delete-branch` checks out the default branch in
+   the shared clone, and a second session running `git checkout`/`git pull` in the
+   same working copy moves it under you. `db:migrate` against a tree with no
+   migration file **reports success** — item 4's own "silently no-ops", one stage
+   later. The checkout makes the tree right; the file assertion is what makes a
+   wrong tree loud.
+7. **SR-59 (2026-09-08) — a post-check's carry values come from the SAME run's
+   pre-check transcript, never an earlier one.** 0081's post-check takes four
+   numbers by psql `-v` and three of its sixteen verdicts compare against them. A
+   carry pasted from a previous run produced a **false FAIL** on a correct
+   database. It can equally produce a **false OK**: a stale number that happens to
+   equal the live one passes while proving nothing about this run.
 
 ## 1.6 Standing rule — re-derive before building
 
