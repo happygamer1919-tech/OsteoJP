@@ -147,10 +147,12 @@ The walk, per entry, for a receptionist or admin:
   missing one. **If the two artefact patients' future appointments span both
   clinics, no single receptionist can do the whole job**, and the failure they
   see will read as "that therapist does not exist".
-- **No worklist.** Nothing in the product lists "future appointments of patient
-  X" as a work queue you can walk. `/patients/<id>` shows the patient's
-  appointments, which is the closest thing — and it disappears the moment the
-  patient is soft-deleted (§5).
+- **No worklist, only a history.** The closest thing is the patient's **Consultas**
+  tab, and it is exactly that: `listPatientAppointments`
+  (`apps/web/lib/scheduling/data.ts:384`) returns **every** appointment for the
+  patient, newest first, with no status filter, no future filter and no bulk
+  action. For `15875` that is 487 rows to find 61 in. It does **survive** a soft
+  delete (§5), so it is available either way.
 
 **One partial mitigation exists and is worth naming**: *bloquear lote*. The same
 dialog repeats a block across weekdays with an interval and an end
@@ -224,7 +226,7 @@ clinical-record patient scope, and guest matching.
 | Surface | What the owner would see | Why |
 |---|---|---|
 | **`/agenda`, `/marcacoes`, dashboard** | **All 73 entries still there, still showing "NAO MARCAR"** | `baseAppointmentQuery` LEFT-joins `patients` with no `deleted_at` predicate, and RLS never filters it. The name is only withheld when the *viewer's scope* excludes the patient (CONFIRM-09) — a soft delete is not a scope. |
-| **The patient behind them** | **404** | `getPatient` applies `activePatientsOnly` unless `includeDeleted`. So the agenda shows a name that leads nowhere: reception clicks through from a slot and is told the patient does not exist. |
+| **The patient behind them** | **Still opens, badged *Eliminado*** | `/patients/[id]` calls `getPatient(id, { includeDeleted: true })` and renders a `StatusChip`, and the Consultas tab still lists every appointment — so the worklist survives the soft delete. What DOES start refusing are the three callers that take the default: the agenda's *Nova marcação* deep-link prefill (`apps/web/app/agenda/page.tsx:98`), the *Iniciar consulta* prefill (`apps/web/app/clinical/new/page.tsx:34`) and declaration generation (`apps/web/app/patients/[id]/declaracao-actions.ts:66`). |
 | **`/recuperacao`** | **Still eligible** | `listFollowupCandidates` (`apps/web/lib/followup/queries.ts:246`) builds its predicate from the three clauses in `packages/db/src/followup-selection.ts` plus scope — **no `deleted_at` filter anywhere**. The card's own complaint that artefact rows "appear in the recuperacao list" is therefore *not* answered by soft-deleting them. Today the two with future bookings are excluded by clause 2 ("nothing on the books ahead of them") — **so converting the blocks is what makes them eligible.** Cleaning the agenda pushes them onto reception's call list. |
 | **Reminders** | **Still in the pipeline** | `loadReminderData` (`apps/web/lib/reminders/data.ts:93`) inner-joins `patients` with no `deleted_at` predicate. Only `status` gates it: `REMINDABLE_STATUSES = {scheduled, confirmed}` (`dispatch.ts:43`). A future artefact appointment left `scheduled` is remindable whether or not its patient is deleted. `REMINDERS_LIVE_SEND` is off, and an artefact row with no phone cannot receive one — but neither of those is the soft delete doing the work. |
 | **Statistics** | **Still counted** | `kpi-queries.ts:243` LEFT-joins `patients` for the appointment KPIs; only the patient-count query (`:268`) filters `deleted_at`. |
@@ -252,9 +254,16 @@ is 0 on all fourteen — so this is a property of the design, not a live hole.
 **The summary the disposition needs:** soft-delete closes the *booking* exposure
 and cleans the *patient* surfaces. It does nothing whatsoever to the agenda, the
 recuperação list, the reminder pipeline or the appointment statistics, and it
-turns every remaining artefact entry into a slot whose patient link 404s. **That
-is why the blocks must be converted first, and it is a stronger reason than the
-one the dispatch gives.**
+leaves every remaining artefact entry on the agenda under a name that is now a
+deleted record. **That is why the blocks must be converted first, and it is a
+stronger reason than the one the dispatch gives.**
+
+**A correction to an earlier draft of this section, kept because it is the kind of
+mistake this document exists to prevent.** It said the patient behind a slot would
+404 after the soft delete. It does not: the profile passes `includeDeleted: true`
+and renders with a badge. The error came from reading `getPatient`'s default and
+not its call sites, and it mattered — it would have made the cleanup look harder
+than it is, and it is the one finding here that pointed the wrong way.
 
 ---
 
