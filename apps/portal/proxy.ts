@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server'
 
 import { PORTAL_SESSION_COOKIE } from '@/lib/auth/cookie-names'
+import {
+  PORTAL_LOCALE_HEADER,
+  PORTAL_LOCALE_PARAM,
+  parsePortalLocale,
+} from '@/lib/locale'
 
 /**
  * W13-03 — who may see a portal page.
@@ -44,6 +49,44 @@ import { PORTAL_SESSION_COOKIE } from '@/lib/auth/cookie-names'
  */
 const PUBLIC_PATHS = ['/auth/login', '/portal/clinics', '/marcacao']
 
+/**
+ * LANG-01 — THE LOCALE IS RESOLVED HERE, ONCE, AND NOWHERE ELSE.
+ *
+ * ==========================================================================
+ * WHY THE MIDDLEWARE AND NOT THE PAGE
+ * ==========================================================================
+ * App Router LAYOUTS are never given `searchParams`, so `<html lang>` cannot be
+ * derived from `?lang=` inside the layout. Something upstream of both the layout
+ * and the page has to read the URL, and the proxy is the only thing that sees
+ * every request to both.
+ *
+ * ONE RESOLUTION POINT MEANS THE DOCUMENT AND ITS CONTENT CANNOT DISAGREE. A
+ * page reading `searchParams` while the layout read a header would be two
+ * answers to one question, and they would part company the first time somebody
+ * touched one of them.
+ *
+ * IT IS A REQUEST HEADER, NOT A COOKIE, and that is a privacy choice as much as
+ * a technical one: nothing is stored on the visitor's device, nothing outlives
+ * the request, and a language choice on a PUBLIC booking form leaves no trace
+ * on a person the clinic has no record of. A signed-in patient's stored language
+ * is a different thing living in a different place, and it is BLUE's column.
+ *
+ * THE HEADER IS SET ON EVERY REQUEST, INCLUDING THE DEFAULT ONE. Setting it
+ * only when `?lang=` is present would leave the reader unable to tell "the
+ * visitor asked for Portuguese" from "the proxy did not run", and those must
+ * not be the same value on a path that decides what language a person is
+ * spoken to in. `parsePortalLocale` collapses an absent or unknown value onto
+ * the default, so the header always carries a real locale.
+ */
+function withLocale(request: NextRequest) {
+  const locale = parsePortalLocale(request.nextUrl.searchParams.get(PORTAL_LOCALE_PARAM))
+  // A COPY of the incoming headers, mutated and handed forward. Mutating
+  // `request.headers` directly is not supported and silently does nothing.
+  const headers = new Headers(request.headers)
+  headers.set(PORTAL_LOCALE_HEADER, locale)
+  return NextResponse.next({ request: { headers } })
+}
+
 export async function proxy(request: NextRequest) {
   const hasSession = Boolean(request.cookies.get(PORTAL_SESSION_COOKIE)?.value)
   const { pathname } = request.nextUrl
@@ -58,7 +101,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/portal/dashboard', request.url))
   }
 
-  return NextResponse.next({ request })
+  // THE TWO REDIRECTS ABOVE RETURN FIRST AND CARRY NO LOCALE HEADER, correctly:
+  // a redirect renders nothing, and the request that follows it comes back
+  // through here and gets its own.
+  return withLocale(request)
 }
 
 export const config = {

@@ -37,36 +37,51 @@ getting lost.
 
 | What | Value |
 |---|---|
-| Portal URL | **`https://osteojp-portal.vercel.app`** — see the warning below |
+| Portal URL | **`https://portal.osteojp.pt`** — the custom domain, LIVE. See the note below |
+| Portal URL, same deployment | `https://osteojp-portal.vercel.app` — byte-identical, also fine |
 | Staff platform URL | **`https://app.osteojp.pt`** |
 | Supabase project (prod) | `dfotoodqvmjhbdcxyaxf` |
 
-> ### THE PORTAL IS NOT ON ITS CUSTOM DOMAIN. DO NOT TYPE `patient.osteojp.pt`.
+> ### THE PORTAL IS ON A CUSTOM DOMAIN, AND IT IS `portal.`, NOT `patient.`
 >
-> **`patient.osteojp.pt` DOES NOT RESOLVE.** `docs/dns-records-pending.md:27`
-> lists it as **PENDING**, and `:89` still has it in "Still pending", against a
-> live `dig` on 2026-08-02. The CNAME was added on the Vercel side, so the
-> project shows *"Invalid Configuration"* until the DNS record exists.
+> **CORRECTED 2026-09-07. Everything struck below was true when it was written
+> and is now wrong in a way that would send a reader to a dead hostname.**
 >
-> **The live portal is the Vercel default host.** `docs/SPEC.md:55`:
-> *"project `osteojp-portal`, Node 22.x, analytics off, env vars set, **live at
-> `osteojp-portal.vercel.app`**. Custom domain `patient.osteojp.pt` deferred to
-> go-live."*
+> **`https://portal.osteojp.pt` IS LIVE**, on `cname.vercel-dns.com`, serving
+> `/marcacao` with a 200. Measured by `dig` and `curl` on 2026-09-07, not
+> inferred from a dashboard.
 >
-> **`apps/portal/.env.example` says `NEXT_PUBLIC_APP_URL=https://patient.osteojp.pt`
-> and that is the GO-LIVE TARGET, not the current deployment.** Taking that file
-> at face value sends you to a dead hostname. It is the single most likely way to
-> lose the first ten minutes of a sitting.
+> **`https://osteojp-portal.vercel.app` IS THE SAME DEPLOYMENT, NOT A PREVIEW.**
+> Both hosts returned **byte-identical** HTML on 2026-09-07,
+> `sha256 003a8d9647f2e2b5f5edd85dbd6ec392ef2c112a553212bcb7a037ffef1697db`. It
+> is the Vercel project's production alias; a PREVIEW url carries a deployment
+> hash in the hostname. Either host is safe to type, and nobody is on a preview.
 >
-> **Confirm the exact host once against the Vercel dashboard** (project
-> `osteojp-portal`) before a sitting. A Vercel default host is stable, but the
-> repo's newest statement about it is dated 2026-06-10 and only the dashboard is
-> authoritative today.
+> **`patient.osteojp.pt` STILL DOES NOT RESOLVE, and it never became the portal.**
+> `curl` fails with *"Could not resolve host"* (2026-09-07). It was the planned
+> name and the name that shipped is `portal.`. **So the old warning below stayed
+> literally correct while its REASON went stale, which is the more dangerous
+> kind of stale**: a reader who trusted it concluded the portal had no custom
+> domain at all, and told the owner his own live URL was a preview deployment.
 >
-> **The staff platform is different and IS on its custom domain.**
-> `app.osteojp.pt` is **LIVE** on `cname.vercel-dns.com`
-> (`docs/dns-records-pending.md:25`, `docs/supabase-auth-redirect-urls.md:49`).
-> So do not assume the two hosts follow the same pattern; they do not.
+> ~~**THE PORTAL IS NOT ON ITS CUSTOM DOMAIN. DO NOT TYPE `patient.osteojp.pt`.**~~
+> ~~`patient.osteojp.pt` DOES NOT RESOLVE. `docs/dns-records-pending.md:27` lists
+> it as PENDING, and `:89` still has it in "Still pending", against a live `dig`
+> on 2026-08-02. The CNAME was added on the Vercel side, so the project shows
+> "Invalid Configuration" until the DNS record exists.~~
+> ~~The live portal is the Vercel default host.~~
+> ~~`apps/portal/.env.example` says `NEXT_PUBLIC_APP_URL=https://patient.osteojp.pt`
+> and that is the GO-LIVE TARGET, not the current deployment.~~ That file now
+> names `portal.osteojp.pt` and carries the same correction.
+>
+> **`docs/dns-records-pending.md` HAS NOT BEEN CORRECTED and still lists
+> `patient.osteojp.pt` as the portal's pending record.** It is outside the four
+> files this correction covered; treat it as stale until somebody re-derives it.
+>
+> **The staff platform is on its own custom domain, unchanged.**
+> `app.osteojp.pt` is **LIVE** on `cname.vercel-dns.com`, re-verified by `dig`
+> on 2026-09-07. The two hosts now follow the SAME pattern, which is itself a
+> change: earlier revisions of this file warned that they did not.
 
 ---
 

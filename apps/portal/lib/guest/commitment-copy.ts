@@ -1,4 +1,6 @@
-import { s } from '@/lib/i18n'
+import { getPortalStrings, type PortalLocale } from '@osteojp/i18n'
+
+import { DEFAULT_PORTAL_LOCALE } from '@/lib/locale'
 
 /**
  * GUEST-04 — THE CONFIRMATION SCREEN'S COPY IS A COMMITMENT, AND IT IS NOT
@@ -32,6 +34,44 @@ import { s } from '@/lib/i18n'
  * one-line convenience PORTAL-REHYDRATE §1.3 is about: it would ship a promise
  * nobody approved, on the screen where the clinic's word is the only thing the
  * person leaves with.
+ *
+ * ==========================================================================
+ * LANG-01, 2026-09-07 — "NOT EMPTY" AND "APPROVED" ARE DIFFERENT QUESTIONS,
+ * AND UNTIL NOW ONLY ONE OF THEM WAS ASKED.
+ * ==========================================================================
+ * THE GUARD ABOVE CHECKS EMPTINESS. That was sufficient for exactly as long as
+ * `pt` was the only locale anything rendered, because a non-empty `pt` string
+ * could only have got there through GUEST-05, where JP's words were landed
+ * character for character and pinned by equality.
+ *
+ * THE ENGLISH STRINGS ARE NON-EMPTY AND THEIR PROVENANCE IS NOT RECORDED. They
+ * arrived in the same commit (#915) whose message verifies only the `pt` pair
+ * against the dispatched text, and `commitment-copy.test.ts` says of them, in
+ * committed words: "EN is not patient-facing commitment copy in production; it
+ * mirrors the meaning so the dictionary has no holes."
+ *
+ * THAT SENTENCE WAS TRUE BECAUSE NOTHING RENDERED THE EN DICTIONARY. LANG-01
+ * makes it false: `/marcacao?lang=en` renders the guest flow in English, so the
+ * English confirmation would become patient-facing commitment copy on the
+ * clinic's public booking form - authored by nobody the delegation names.
+ *
+ * SO THE EMPTINESS GUARD WOULD HAVE PASSED IT. A non-empty unratified promise
+ * satisfies every assertion in this file, and the screen reports success. That
+ * is the exact shape §1.3 is about, one locale over: the cheap property is
+ * checked, the expensive one is assumed, and nothing says which was which.
+ *
+ * THE ANSWER IS AN EXPLICIT LIST, NOT AN INFERENCE. A locale is approved when
+ * it is named below and for no other reason. `pt` is named because GUEST-05
+ * landed it; `en` is not, because nothing records that anybody approved it.
+ * Flipping it is one array entry the day the owner says so - Q-LANG-COPY-1.
+ *
+ * WHAT AN UNAPPROVED LOCALE ACTUALLY DOES, and it is the behaviour this flow
+ * already had for EVERYBODY while JP's Portuguese was outstanding: the form is
+ * fully walkable in that language and only the FINAL SUBMIT refuses, with the
+ * ordinary `unavailable` message. So the commitment screen is never rendered in
+ * a language nobody ratified, the owner can still walk the whole English form
+ * on a deployed screen for WF-03, and no visitor is left holding a promise the
+ * clinic did not make.
  */
 
 export type GuestConfirmationCopy = { title: string; body: string }
@@ -39,14 +79,37 @@ export type GuestConfirmationCopy = { title: string; body: string }
 /** The dictionary slice this reads, injectable so tests can supply filled copy. */
 export type GuestCopySource = { confirmation_title: string; confirmation_body: string }
 
+/**
+ * The locales whose confirmation copy the clinic has RATIFIED.
+ *
+ * NOT "the locales that have a non-empty string". See the block above. Adding a
+ * locale here is a statement that the person who owns the clinic's word
+ * approved that text, and it is the only thing that makes the submit legal in
+ * that language.
+ */
+export const GUEST_COPY_APPROVED_LOCALES: readonly PortalLocale[] = ['pt']
+
+/** Whether the clinic's commitment has been ratified in this language. */
+export function isGuestCopyApprovedFor(locale: PortalLocale): boolean {
+  return GUEST_COPY_APPROVED_LOCALES.includes(locale)
+}
+
+/**
+ * The dictionary slice for a locale, so a caller never has to reach for a
+ * frozen module constant to get one.
+ */
+export function guestCopySourceFor(locale: PortalLocale): GuestCopySource {
+  return getPortalStrings(locale).guest
+}
+
 export function isGuestConfirmationCopyReady(
-  source: GuestCopySource = s.guest,
+  source: GuestCopySource = guestCopySourceFor(DEFAULT_PORTAL_LOCALE),
 ): boolean {
   return source.confirmation_title.trim() !== '' && source.confirmation_body.trim() !== ''
 }
 
 export function guestConfirmationCopy(
-  source: GuestCopySource = s.guest,
+  source: GuestCopySource = guestCopySourceFor(DEFAULT_PORTAL_LOCALE),
 ): GuestConfirmationCopy {
   if (!isGuestConfirmationCopyReady(source)) {
     throw new Error(

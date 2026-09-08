@@ -1194,6 +1194,7 @@
   "admin.packs.delete": "Delete",
   "admin.packs.deleteBlockedTooltip": "Cannot delete: this pack has patient instances. You can archive it.",
   "admin.packs.deleteHasReferences": "Cannot delete: the pack has patient instances. Archive it instead.",
+  "admin.packs.sessionCountHasInstances": "The session count of a pacote patients already hold cannot be changed: their paid sessions stay as bought and only future buyers would be affected. Create a new pacote with the session count you want.",
   "admin.packs.saved": "Pack saved.",
   "admin.packs.error": "Could not save the pack.",
   "admin.packs.none": "No packs yet.",
