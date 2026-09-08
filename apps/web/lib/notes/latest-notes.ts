@@ -156,6 +156,102 @@ export async function readLatestPatientNotes(
 }
 
 /**
+ * NOTES-01, REBUILT 2026-09-08 — the latest note of EITHER KIND for a patient.
+ *
+ * ==========================================================================
+ * WHY THE FIRST BUILD RENDERED NOTHING, AND WOULD ALWAYS HAVE
+ * ==========================================================================
+ * /recuperacao read `readLatestPatientNotes`, which is patient-LEVEL notes only:
+ * `appointment_notes` rows with `appointment_id IS NULL`, plus the legacy
+ * relation. PRODUCTION HOLDS ONE such note. It holds 43,403 APPOINTMENT notes.
+ * So the read was sound, its scope was sound, its tests were sound, and it was
+ * pointed at the one relation the clinic does not write to. The owner saw an
+ * empty note line on every row and there was nothing wrong with the query.
+ *
+ * THE RULING (strategy, 2026-09-08): show the latest note of EITHER kind, and
+ * LABEL it so the reader knows which - the way /marcacoes already labels its
+ * two lines. One line, because this is a call list and the row exists to be
+ * acted on, not read.
+ *
+ * ==========================================================================
+ * ONE UNION, NOT TWO READS, AND THE KIND COMES OUT OF THE SAME ROW
+ * ==========================================================================
+ * `appointment_id IS NULL` is the discriminator the unified store already
+ * carries (0042 made the column nullable for exactly this), so the kind is a
+ * CASE on the row that won, not a second query whose answer could disagree with
+ * the first. `patient_note_revisions` is patient-level by construction - it has
+ * no appointment_id at all - so its leg is labelled without a test.
+ *
+ * `total` COUNTS THE KIND THAT WON, not both. "Ultima nota da marcacao (de 3)"
+ * has to be true about appointment notes; a count spanning both kinds would put
+ * a number on the line that answers a question the line does not ask. It is the
+ * same meaning `marcacoes` gives its own per-source totals.
+ *
+ * THE SCOPE IS THE PATIENTS ROW, exactly as in `readLatestPatientNotes`: this
+ * selects FROM `patients` and correlates, so `patients_select` decides, and
+ * there is no second definition of who may read a note.
+ */
+export type LatestNoteOfKind = LatestNote & { kind: "patient" | "appointment" };
+
+const anyNoteUnion = (patientIdCol: string, tenantIdCol: string) => `
+  select an.body as content, an.created_at as at,
+         case when an.appointment_id is null then 'patient' else 'appointment' end as kind
+    from appointment_notes an
+   where an.patient_id = ${patientIdCol}
+     and an.tenant_id  = ${tenantIdCol}
+  union all
+  select r.content, r.created_at, 'patient' as kind
+    from patient_note_revisions r
+   where r.patient_id = ${patientIdCol}
+     and r.tenant_id  = ${tenantIdCol}
+`;
+
+export async function readLatestNoteEitherKind(
+  tx: DbTx,
+  patientIds: readonly string[],
+): Promise<Map<string, LatestNoteOfKind>> {
+  if (patientIds.length === 0) return new Map();
+  // The outer columns are named in full and quoted for the reason the block in
+  // `readLatestPatientNotes` gives: a bare `id` binds to the inner table and the
+  // correlation silently matches nothing.
+  const P = '"patients"."id"';
+  const T = '"patients"."tenant_id"';
+  const rows = await tx
+    .select({
+      patientId: patients.id,
+      body: sql<string | null>`(
+        select n.content from (${sql.raw(anyNoteUnion(P, T))}) n
+        order by n.at desc limit 1
+      )`.as("latest_any_body"),
+      kind: sql<string | null>`(
+        select n.kind from (${sql.raw(anyNoteUnion(P, T))}) n
+        order by n.at desc limit 1
+      )`.as("latest_any_kind"),
+      total: sql<number>`(
+        select count(distinct (n.content, n.at))::int
+          from (${sql.raw(anyNoteUnion(P, T))}) n
+         where n.kind = (
+           select n2.kind from (${sql.raw(anyNoteUnion(P, T))}) n2
+           order by n2.at desc limit 1
+         )
+      )`.as("latest_any_total"),
+    })
+    .from(patients)
+    .where(inArray(patients.id, [...patientIds]));
+
+  const out = new Map<string, LatestNoteOfKind>();
+  for (const r of rows) {
+    const excerpt = noteExcerpt(r.body);
+    // A row whose newest note is blank yields no excerpt and so no entry - the
+    // same rule `readLatestPatientNotes` applies, for the same reason.
+    if (!excerpt) continue;
+    const kind = r.kind === "appointment" ? "appointment" : "patient";
+    out.set(r.patientId, { excerpt, total: Number(r.total ?? 0), kind });
+  }
+  return out;
+}
+
+/**
  * The latest APPOINTMENT note for each of `appointmentIds`, keyed by appointment
  * id.
  *

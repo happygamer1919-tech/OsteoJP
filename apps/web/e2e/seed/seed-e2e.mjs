@@ -625,10 +625,52 @@ async function ensureRecuperacaoFixtures(therapistUserId, otherTherapistUserId) 
       appointment_id: null,
       author_user_id: therapistUserId,
       body: "Ligou a cancelar. Disse que telefona ele proprio para remarcar, nao contactar.",
+      // NOTES-01: the two notes below are ORDERED EXPLICITLY rather than left to
+      // insertion order. `upsert` on a fixed id keeps `created_at` from the FIRST
+      // run on a persistent lane database, so "the newest one wins" would be a
+      // property of when the seed happened to be run rather than of the seed.
+      created_at: new Date(Date.now() - 3 * day).toISOString(),
     },
     { onConflict: "id" },
   );
   must(noteErr, "recuperacao patient note");
+
+  /**
+   * NOTES-01 — AND A NOTE ON THE VISIT, NEWER THAN THE ONE ABOVE.
+   *
+   * ==========================================================================
+   * IT IS HERE BECAUSE THE SEED WITHOUT IT COULD NOT SEE THE DEFECT
+   * ==========================================================================
+   * /recuperacao read patient-LEVEL notes only, and this seed held nothing else,
+   * so the row rendered and every suite was green while PRODUCTION SHOWED
+   * NOTHING ON ANY ROW: it holds ONE patient-level note against 43,403
+   * appointment notes. A fixture that contains only the kind the code happened
+   * to read cannot distinguish "the read works" from "the read is aimed at the
+   * wrong relation".
+   *
+   * SO THIS PATIENT NOW HAS BOTH KINDS, and the newer of the two is the VISIT
+   * note - which is the shape production actually has. The row must show this
+   * one, labelled as a marcação note, and note-previews.spec.ts asserts both
+   * halves: that this sentence is on the row and that the patient-level one is
+   * not.
+   *
+   * `E2E Recuperar Outro Terapeuta` keeps the other branch: a patient-level note
+   * written through the product, labelled as one (recuperacao-note-roundtrip).
+   */
+  const { error: apptNoteErr } = await db.from("appointment_notes").upsert(
+    {
+      id: "00000000-0000-0000-0000-00000000fecb",
+      tenant_id: TENANT_A,
+      patient_id: rows[0].id,
+      // The COMPLETED attendance seeded above for rows[0].
+      appointment_id: "00000000-0000-0000-0000-00000000fea1",
+      author_user_id: therapistUserId,
+      body: "Sessao correu bem, queixa lombar a melhorar. Rever em duas semanas.",
+      created_at: new Date(Date.now() - day).toISOString(),
+    },
+    { onConflict: "id" },
+  );
+  must(apptNoteErr, "recuperacao appointment note");
 
   // The other therapist's patient + their single completed attendance.
   const { error: otherErr } = await db.from("patients").upsert(

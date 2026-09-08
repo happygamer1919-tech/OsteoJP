@@ -75,7 +75,10 @@ test.describe("INC-NOTES-PREVIEW — a note written through the product reaches 
     const after = page.locator("li").filter({ hasText: ON_THE_LIST }).first();
     await expect(after.getByTestId("followup-note-preview")).toBeVisible({ timeout: 15_000 });
     await expect(after).toContainText("Ligou a cancelar, telefona ele proprio");
-    await expect(after).toContainText("Última nota do paciente");
+    // NOTES-01: labelled by KIND. A note written through the profile is a
+    // PATIENT-level note, and this is the arm that keeps that branch covered
+    // now that note-previews.spec.ts exercises the appointment one.
+    await expect(after).toContainText("Nota do paciente");
     await expect(after.getByTestId("followup-notes-button")).toBeVisible();
 
     /* ---- 4. THE NEGATIVE ARM, ON THE SAME SCREEN ---- */
