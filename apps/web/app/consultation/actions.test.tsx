@@ -13,6 +13,11 @@ vi.mock("@osteojp/auth", () => ({ can: vi.fn() }));
 // walk-in quick-create through the normal path blocked start-consultation
 // entirely (caught by CI on the first PL-31 run).
 vi.mock("@/lib/patients/actions", () => ({ createStubPatient: vi.fn() }));
+// PL-34 — the stub now resolves the clinic it is filed at before it creates
+// anything. Mocked here because this file is unit-scoped and `runScoped` above
+// is a fake; the REAL resolution is asserted against a real database in
+// lib/patients/create-location-link.db.test.ts, where the answer is a row.
+vi.mock("@/lib/auth/viewer-locations", () => ({ bookingLocationScope: vi.fn() }));
 vi.mock("@/lib/patients/audit", () => ({ writeAudit: vi.fn() }));
 vi.mock("@osteojp/db", () => ({ patients: { id: "patients.id" } }));
 // actions.ts imports the W4-08 signer + W4-09 webhook; stub them so this test
@@ -42,6 +47,7 @@ vi.mock("@/lib/consultation/consultation-store", () => ({
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { can } from "@osteojp/auth";
 import { createStubPatient } from "@/lib/patients/actions";
+import { bookingLocationScope } from "@/lib/auth/viewer-locations";
 import { writeAudit } from "@/lib/patients/audit";
 import { signAudioDownload } from "@/lib/consultation/audio-storage";
 import { fireM1Webhook } from "@/lib/consultation/m1-webhook";
@@ -60,6 +66,7 @@ const mockCtx = vi.mocked(requireRequestContext);
 const mockRunScoped = vi.mocked(runScoped);
 const mockCan = vi.mocked(can);
 const mockCreatePatient = vi.mocked(createStubPatient);
+const mockBookingScope = vi.mocked(bookingLocationScope);
 const mockWriteAudit = vi.mocked(writeAudit);
 
 const ctx = { tenantId: "t1", role: "therapist" as const, userId: "u1" };
@@ -72,6 +79,9 @@ beforeEach(() => {
   mockCtx.mockResolvedValue(ctx);
   mockCan.mockReturnValue(true);
   mockRunScoped.mockImplementation(async (_c, fn) => fn(txReturning([{ id: "pat-1" }]) as never));
+  // The default principal is a therapist assigned to exactly one clinic — PL-14's
+  // "fixed" case, and the one every existing assertion below was written under.
+  mockBookingScope.mockResolvedValue(["loc-1"]);
 });
 
 describe("startConsultationAction — server-enforced consent gate", () => {
@@ -113,7 +123,40 @@ describe("createStubPatientAction", () => {
     mockCreatePatient.mockResolvedValue({ ok: true, patient: { id: "new-pat" } } as never);
     const r = await createStubPatientAction({ fullName: "Ana", phone: null });
     expect(r).toEqual({ ok: true, patientId: "new-pat" });
-    expect(mockCreatePatient).toHaveBeenCalledWith({ fullName: "Ana", phone: null });
+    // PL-34 — the clinic is part of the call now. A stub created without one
+    // lands with primary_location_id NULL and is invisible to every located
+    // reception and admin until an appointment exists.
+    expect(mockCreatePatient).toHaveBeenCalledWith({
+      fullName: "Ana",
+      phone: null,
+      primaryLocationId: "loc-1",
+    });
+  });
+
+  // PL-34 — the three answers `scopedLocationId` gives, at this seam. The
+  // database-level proof is in create-location-link.db.test.ts; these pin that
+  // the ACTION asks the write scope rather than trusting its input.
+  it("a single-clinic therapist's own clinic wins over anything the browser sends", async () => {
+    mockCreatePatient.mockResolvedValue({ ok: true, patient: { id: "new-pat" } } as never);
+    await createStubPatientAction({ fullName: "Ana", locationId: "loc-forged" });
+    expect(mockCreatePatient).toHaveBeenCalledWith(
+      expect.objectContaining({ primaryLocationId: "loc-1" }),
+    );
+  });
+
+  it("a multi-clinic therapist's answer is honoured only from their own set", async () => {
+    mockCreatePatient.mockResolvedValue({ ok: true, patient: { id: "new-pat" } } as never);
+    mockBookingScope.mockResolvedValue(["loc-1", "loc-2"]);
+
+    await createStubPatientAction({ fullName: "Ana", locationId: "loc-2" });
+    expect(mockCreatePatient).toHaveBeenLastCalledWith(
+      expect.objectContaining({ primaryLocationId: "loc-2" }),
+    );
+
+    await createStubPatientAction({ fullName: "Ana", locationId: "loc-elsewhere" });
+    expect(mockCreatePatient).toHaveBeenLastCalledWith(
+      expect.objectContaining({ primaryLocationId: null }),
+    );
   });
 
   // INC-nif-validationerror-at-the-desk: the empty name is now RETURNED by

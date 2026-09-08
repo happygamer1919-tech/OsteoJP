@@ -8,6 +8,10 @@ import { Recorder } from "./Recorder";
 
 type Mode = "existing" | "new";
 
+/** PL-34 — the clinics this viewer may file a walk-in at, already narrowed by
+ *  `resolveLocationControl` on the server. One entry = nothing to choose. */
+export type ConsultationLocationOption = { id: string; name: string };
+
 /**
  * W4-06 start-consultation screen. Two paths converge on a valid patientId
  * (existing-patient search OR new stub), then a consent checkbox gates the
@@ -16,7 +20,11 @@ type Mode = "existing" | "new";
  * gate cannot be bypassed. The MediaRecorder itself is W4-07 — here the ready
  * state marks the hand-off.
  */
-export function StartConsultation() {
+export function StartConsultation({
+  locations = [],
+}: {
+  locations?: ConsultationLocationOption[];
+}) {
   const [mode, setMode] = useState<Mode>("existing");
 
   // existing-patient search
@@ -34,6 +42,11 @@ export function StartConsultation() {
   // new stub
   const [stubName, setStubName] = useState("");
   const [stubPhone, setStubPhone] = useState("");
+  // PL-14 rule, the same one PatientForm applies: with exactly one reachable
+  // clinic there is nothing to choose, so it is pre-applied rather than offered.
+  const [stubLocationId, setStubLocationId] = useState(
+    locations.length === 1 ? locations[0]!.id : "",
+  );
   const [creating, setCreating] = useState(false);
   const [stubLabel, setStubLabel] = useState<string | null>(null);
 
@@ -69,6 +82,10 @@ export function StartConsultation() {
     const r = await createStubPatientAction({
       fullName: stubName,
       phone: stubPhone.trim() || null,
+      // PL-34. The server re-decides this — a single-clinic viewer's id is
+      // applied whatever is sent, and a value outside the viewer's clinics is
+      // dropped — so this is the operator's ANSWER, never the authority.
+      locationId: stubLocationId || null,
     });
     setCreating(false);
     if (!r.ok) {
@@ -176,8 +193,49 @@ export function StartConsultation() {
               disabled={!!patientId}
             />
           </Field>
+          {/* PL-34 — which clinic this walk-in is being seen at. Without it the
+              patient lands with primary_location_id NULL and is invisible to
+              every located reception and admin until an appointment exists.
+              PL-14 shape: one clinic -> a static line, several -> a required
+              picker over the viewer's OWN clinics. */}
+          {locations.length === 1 ? (
+            <Field label={s["header.location"]}>
+              <p data-testid="stub-fixed-location" className="py-2 text-sm text-text-primary">
+                {locations[0]!.name}
+              </p>
+            </Field>
+          ) : locations.length > 1 ? (
+            <Field label={s["header.location"]} required>
+              <select
+                required
+                aria-label={s["header.location"]}
+                value={stubLocationId}
+                onChange={(e) => setStubLocationId(e.target.value)}
+                disabled={!!patientId}
+                className="w-full rounded-md border border-border-subtle bg-surface px-3 py-2 text-sm"
+              >
+                <option value="">{s["appointment.selectLocation"]}</option>
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
           {!patientId && (
-            <Button type="button" size="sm" onClick={createStub} disabled={creating || !stubName.trim()}>
+            <Button
+              type="button"
+              size="sm"
+              onClick={createStub}
+              disabled={
+                creating ||
+                !stubName.trim() ||
+                // A required picker that has not been answered blocks the create
+                // rather than silently filing the patient at no clinic.
+                (locations.length > 1 && !stubLocationId)
+              }
+            >
               {creating ? s["consultation.creating"] : s["consultation.createStub"]}
             </Button>
           )}
