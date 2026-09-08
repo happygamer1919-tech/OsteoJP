@@ -135,9 +135,12 @@ export function AlternatingWeeksPanel({
       return;
     }
     setCollisions(null);
+    // Named for the same reason the day-by-day confirmation is: these two
+    // panels are twins, and a fix in one that skipped the other is how they come
+    // to disagree about whose week they just changed.
     setStatus({
       tone: "ok",
-      text: replace ? s["schedule.windowReplaced"] : s["schedule.altSaved"],
+      text: `${replace ? s["schedule.windowReplaced"] : s["schedule.altSaved"]} · ${therapistName}`,
     });
     // The list is kept on screen rather than toasted: a toast disappears, and
     // these are appointments somebody has to act on.

@@ -20,11 +20,22 @@
 // meant the reception surface archiving a split shift that the admin surface had
 // just saved.
 //
+// IT IS NOT ATOMIC BY ITSELF, AND THE CALLER IS WHAT MAKES IT SO. This loop
+// awaits seven weekdays in order; a refusal on one throws out of it with the
+// earlier ones already applied. Until 2026-09-08 each write opened its own
+// transaction, so that half-applied week was COMMITTED under a message saying
+// nothing had been saved - the P0 reception reported from Castelo Branco. Both
+// server actions now go through `lib/admin/week-schedule.ts`, which opens ONE
+// transaction and passes the `tx` in, so the throw rolls the whole week back.
+// A future caller that drives this loop with its own writes owes the same.
+//
 // WHAT IT DOES NOT DO: validate, and that is not a gap. Every rule that matters
 // is already refused inside the write paths this calls
 // (lib/admin/availability.ts): `validate` rejects end <= start, `assertNoOverlap`
-// rejects an overlapping active sibling for the same therapist + weekday +
-// location, and the capability plus own-location scope are checked there too. A
+// rejects an active sibling for the same therapist + weekday + location whose
+// VALIDITY WINDOW ALSO INTERSECTS - times alone were not enough, and reading
+// them alone is what made a carved weekly row permanently unsavable - and the
+// capability plus own-location scope are checked there too. A
 // period 2 that overlaps period 1 is exactly such a sibling, so a crafted POST
 // that skipped the browser is refused by the same check that has always guarded
 // this table. `scheduleDayError` (lib/admin/schedule-days.ts) exists to say so in
