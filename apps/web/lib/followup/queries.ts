@@ -17,7 +17,7 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { patientLocationScope } from "@/lib/patients/scope";
 import { mayReadNotePreviews } from "@/lib/notes/audience";
-import { readLatestPatientNotes, type LatestNote } from "@/lib/notes/latest-notes";
+import { readLatestNoteEitherKind, type LatestNoteOfKind } from "@/lib/notes/latest-notes";
 import { followupWindow } from "./window";
 
 /**
@@ -167,9 +167,12 @@ export type FollowupCandidate = {
   contacts: FollowupChannelMark[];
   /**
    * RB-NOTES - the latest PATIENT note, or null when there is none THIS VIEWER
-   * MAY READ. The two cases collapse deliberately: see `readLatestPatientNotes`.
+   * MAY READ. The two cases collapse deliberately: see `readLatestNoteEitherKind`.
    */
-  latestNote: LatestNote | null;
+  /** NOTES-01: the newest note of EITHER kind, carrying which kind it is. It
+   *  read patient-level notes only until 2026-09-08, and production holds ONE
+   *  of those against 43,403 appointment notes, so the line was always empty. */
+  latestNote: LatestNoteOfKind | null;
 };
 
 /**
@@ -423,7 +426,7 @@ export async function listFollowupCandidates(
      * more statement rather than one more round trip in series. Both read ids
      * this transaction has already selected.
      *
-     * THE SCOPE IS NOT RE-STATED HERE AND MUST NOT BE. `readLatestPatientNotes`
+     * THE SCOPE IS NOT RE-STATED HERE AND MUST NOT BE. `readLatestNoteEitherKind`
      * selects FROM `patients`, so `patients_select` decides - the same policy
      * that decided which rows reached `ids` in the first place, and the same one
      * `getPatient` applies for the full board. A second predicate written here
@@ -454,8 +457,8 @@ export async function listFollowupCandidates(
     const [marks, latestNotes] = await Promise.all([
       marksQuery,
       mayReadNotePreviews(ctx)
-        ? readLatestPatientNotes(tx, ids)
-        : Promise.resolve(new Map<string, LatestNote>()),
+        ? readLatestNoteEitherKind(tx, ids)
+        : Promise.resolve(new Map<string, LatestNoteOfKind>()),
     ]);
 
     const byPatient = new Map<string, FollowupChannelMark[]>();

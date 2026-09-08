@@ -1,7 +1,11 @@
 # SPEC — forcing a booking outside a therapist's hours
 
-**Status: DESIGN REPORT. NOTHING IS BUILT. STOPS FOR A STRATEGY STAMP.**
+**Status: STAMPED 2026-09-08. STILL NOTHING IS BUILT — it needs BLUE's columns.**
 Author: PURPLE, 2026-09-07. Re-derived from `origin/main` at `e19a5b09`.
+The four rulings landed on 2026-09-08 and are in §5, which is now answers rather
+than questions. §0-§4 are unchanged: they are the derivation the rulings were
+taken against, and rewriting them to match the outcome would destroy the record
+of what was known when the decision was made.
 
 ---
 
@@ -225,25 +229,85 @@ per-slot override dialog in the middle of one is worse than a list to review.
 
 ---
 
-## 5. THE QUESTIONS
+## 5. THE RULINGS — ALL FOUR STAMPED, 2026-09-08
 
-- **Q-FORCE-1 — the one that gates everything.** Does the owner reverse RB-03?
-  *Recommended: yes, ON THE CONDITION the dispatch already names — the force is
-  recorded on the appointment and visible there. Without the record it is PL-11
-  again and the Catarina defect returns unchanged.*
-- **Q-FORCE-2 — does the HARD path also get the record, and the three separate
-  sentences?** *Recommended: yes. Otherwise the new soft rule is better audited
-  than the hard one beside it, which inverts the severities.*
-- **Q-FORCE-3 — what does *Agendar lote* do?** *Recommended: keep skipping,
-  report skipped-for-hours distinctly.*
-- **Q-FORCE-4 — who may force?** Today `allowConflict` is available to anyone
-  with `appointments:write`, which is every role. *Recommended: leave it there
-  for the hard path; for the soft path it is worth asking whether a therapist
-  forcing their OWN hours is different from reception forcing someone else's.*
+Every recommendation in §5 was taken. They are restated here as decisions, with
+what each one binds, because a spec whose answers live in a chat log is the
+failure `docs/state/rulings-register.md` §1.6 exists to end.
 
-**AND ONE THING THAT IS NOT A QUESTION: THIS NEEDS A MIGRATION, SO PURPLE STOPS
-HERE EVEN IF IT IS STAMPED.** §1.1 forbids either lane authoring one. The record
-in §3.2 is the whole point of the reversal, so there is no useful subset to
-build without it.
+### Q-FORCE-1 — RB-03 IS REVERSED, ON ONE CONDITION. **STAMPED: yes.**
 
-**STOP.**
+Outside a therapist's *horário* becomes a SOFT rule: warn and allow.
+
+**The condition is not a preference and the build does not proceed without it:
+the force is RECORDED ON THE APPOINTMENT and VISIBLE THERE.** That is the entire
+difference between this and PL-11, which warned and forgot, and which was
+overturned because a manual entry booked Catarina at 17:00 when her hours end at
+13:00 and nothing afterwards could tell that booking from an ordinary one. A
+forced booking that carries its own record is a different object: findable,
+countable, answerable. Recording a decision does not make it correct; it makes it
+reviewable, and reviewable is what RB-03 said was missing.
+
+**AND THE ARGUMENT GOT STRONGER ON 2026-09-08, from a direction nobody planned.**
+Castelo Branco reception could not save the weekly schedule editor at all - the
+P0 of that morning - and while it was broken she could not book a patient into
+hours she knew the therapist worked. **When the schedule is wrong, a hard rule
+does not protect anybody: it stops the clinic working.** RB-03 assumed the
+schedule is right and the booking is suspect. That assumption failed in
+production, and a soft rule with a record is what survives it.
+
+### Q-FORCE-2 — THE HARD PATH GETS THE RECORD TOO. **STAMPED: yes.**
+
+The conflict override (therapist overlap / room taken / time-off block) also
+writes the record, **and it gets its own distinct sentence** rather than sharing
+the availability one.
+
+The reason is the one §5 gave: without it the NEW soft rule would be better
+audited than the harder rule beside it, which inverts the severities - a double
+booking would be less traceable than a late finish. It also settles the
+correction §2 made to the dispatch's premise: an occupied slot and an explicit
+time-off block already share one message, one code and one button today, and
+three distinct sentences is what stops `forced_reason` from being a boolean
+wearing a name.
+
+### Q-FORCE-3 — *AGENDAR LOTE* KEEPS SKIPPING. **STAMPED: keep skipping.**
+
+The batch does NOT gain an override. It continues to skip a slot it cannot
+fill - "partial success is expected behaviour, not an error" - **and it reports
+a skipped-for-hours distinctly** from a skipped-for-busy.
+
+That closes the fourth-path problem §4 raised without giving one rule four
+answers: refuse becomes warn on the three single-booking call sites, and the
+batch keeps its own honest third answer, which is now legible instead of silent.
+
+### Q-FORCE-4 — NO PERMISSION SPLIT. **STAMPED: no split.**
+
+Every role that can force today can force the soft path. `allowOutsideHours` is
+available wherever `allowConflict` is, **and the record names who did it.**
+
+The question §5 raised - whether a therapist forcing their OWN hours differs
+from reception forcing someone else's - is answered by the record rather than by
+a grant. A split would have created a second permission axis to maintain and a
+second thing for the screen to explain, to buy a distinction the `forced_by`
+column already draws on every row.
+
+---
+
+## 6. WHAT IS STILL BLOCKED, AND IT IS NOT A DECISION
+
+**THE BUILD NEEDS THREE COLUMNS THAT DO NOT EXIST**: `forced_reason`,
+`forced_by`, `forced_at` on `appointments`, nullable and never back-filled
+(`false` on an existing row would assert something nobody knows). Verified
+against the schema: `allowConflict` reaches `audit_log.metadata` as a boolean
+and goes nowhere else, so WHO and WHEN are recoverable from the audit log and
+VISIBLE ON THE APPOINTMENT is false today - for availability and for the
+conflicts that already have an override.
+
+**That is a migration, and §1.1 forbids either lane authoring one.** The record
+IS the reversal's justification per Q-FORCE-1, so there is no useful subset to
+build first: shipping the warn without the record would be PL-11 exactly, on
+purpose, with a ruling saying not to.
+
+**THE ORDER IS: BLUE authors the migration, it is applied, then this builds.**
+
+**STOP — on the columns, no longer on a decision.**

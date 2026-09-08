@@ -37,7 +37,11 @@ import { PATIENTS, LOCATION, THERAPIST_NAME, futureDate, RUN_DAY_BASE } from "./
 /** The seeded recuperação patients. One has a note; the other deliberately does not. */
 const REC_WITH_NOTE = "E2E Recuperar Movel";
 const REC_WITHOUT_NOTE = "E2E Recuperar Fixo";
-/** Seeded verbatim in seed-e2e.mjs. The clinic's own case. */
+/** The NEWER of this patient's two seeded notes - attached to the completed
+ *  visit, which is the shape production actually has. The row must show THIS. */
+const SEEDED_APPT_NOTE = "Sessao correu bem, queixa lombar a melhorar";
+/** Seeded verbatim in seed-e2e.mjs. The clinic's own case, and now the OLDER
+ *  of the two: it must NOT be the sentence the row shows. */
 const SEEDED_NOTE = "Ligou a cancelar. Disse que telefona ele proprio para remarcar";
 
 /**
@@ -90,10 +94,16 @@ test("recuperacao: the latest patient note is on the row, with no press", async 
 
   // THE NOTE ITSELF, ON THE ROW, BEFORE ANY INTERACTION. This is the request.
   await expect(withNote.getByTestId("followup-note-preview")).toBeVisible();
-  await expect(withNote).toContainText(SEEDED_NOTE);
+  await expect(withNote).toContainText(SEEDED_APPT_NOTE);
 
-  // AND IT IS LABELLED, so nobody reads it as something else on the row.
-  await expect(withNote).toContainText("Última nota do paciente");
+  // AND THE OLDER PATIENT-LEVEL NOTE IS NOT THE ONE ON THE ROW. This is the
+  // arm that would have failed on the day: /recuperacao read patient-level
+  // notes ONLY, so before NOTES-01 the row showed this sentence - and in
+  // production, where the clinic writes visit notes, it showed nothing at all.
+  await expect(withNote).not.toContainText(SEEDED_NOTE);
+
+  // AND IT IS LABELLED WITH ITS KIND, so nobody reads it as something else.
+  await expect(withNote).toContainText("Nota da marcação");
 });
 
 test("recuperacao: a patient with no note gets NO preview and NO Notas button", async ({

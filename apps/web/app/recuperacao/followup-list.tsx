@@ -59,7 +59,11 @@ export type FollowupRow = {
    * renders NOTHING for all three, so this component cannot leak the difference
    * between "there is nothing" and "there is something you may not see".
    */
-  latestNote: { excerpt: NoteExcerpt; total: number } | null;
+  /** NOTES-01: the newest note of EITHER kind. `kind` is what the label reads,
+   *  and it is not optional - a row that could arrive without it would render
+   *  an appointment note under the patient-note wording, which is the exact
+   *  mislabelling this rebuild exists to end. */
+  latestNote: { excerpt: NoteExcerpt; total: number; kind: "patient" | "appointment" } | null;
 };
 
 // One definition, in a plain module both sides import (INC-13). The screen
@@ -239,9 +243,26 @@ function FollowupCard({ row }: { row: FollowupRow }) {
         >
           <span className="flex items-center gap-1 text-xs font-medium text-v2-text-secondary">
             <StickyNote size={12} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />
-            {row.latestNote.total > 1
-              ? s["appointment.noteHoverLatest"].replace("{n}", String(row.latestNote.total))
-              : s["followup.notePreviewLabel"]}
+            {/* LABELLED BY KIND, 2026-09-08. The line used to say "Ultima nota
+                do paciente" whatever it was showing, because it could only ever
+                show that kind - and production holds ONE patient-level note
+                against 43,403 appointment notes, so it showed nothing at all.
+                Now the newest note of either kind reaches the row, and the label
+                is the one /marcacoes already uses for that kind rather than a
+                third wording invented here. */}
+            {row.latestNote.kind === "appointment"
+              ? row.latestNote.total > 1
+                ? s["marcacoes.appointmentNoteLatest"].replace(
+                    "{n}",
+                    String(row.latestNote.total),
+                  )
+                : s["marcacoes.appointmentNoteLabel"]
+              : row.latestNote.total > 1
+                ? s["marcacoes.patientNoteLatest"].replace(
+                    "{n}",
+                    String(row.latestNote.total),
+                  )
+                : s["marcacoes.patientNoteLabel"]}
           </span>
           {/* The EXCERPT, which the server already cut. The ellipsis is added
               here and only when the server says it truncated — deriving it from

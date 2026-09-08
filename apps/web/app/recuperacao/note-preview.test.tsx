@@ -64,17 +64,17 @@ const NOTE = "Ligou a cancelar. Disse que telefona ele proprio para remarcar.";
 
 describe("RB-NOTES: the latest patient note on a Recuperação row", () => {
   it("shows the note, at first sight, with no press", () => {
-    const html = render([mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1 } })]);
+    const html = render([mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1 , kind: "appointment" as const } })]);
     expect(html).toContain("followup-note-preview");
     expect(html).toContain(NOTE);
-    expect(html).toContain("Última nota do paciente");
+    expect(html).toContain("Nota da marcação");
   });
 
   it("puts it ABOVE the contact buttons, because that is what it is for", () => {
     // THE ORDER IS THE FEATURE. Rendered under WhatsApp, the note is read after
     // the press; rendered above it, before. Asserted by position in the markup
     // rather than by a class, so a restyle cannot silently move it.
-    const html = render([mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1 } })]);
+    const html = render([mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1 , kind: "appointment" as const } })]);
     expect(html.indexOf("followup-note-preview")).toBeGreaterThan(-1);
     expect(html.indexOf("followup-note-preview")).toBeLessThan(html.indexOf("WhatsApp"));
   });
@@ -83,40 +83,66 @@ describe("RB-NOTES: the latest patient note on a Recuperação row", () => {
     const html = render([mkRow({ latestNote: null })]);
     expect(html).not.toContain("followup-note-preview");
     expect(html).not.toContain("followup-notes-button");
-    expect(html).not.toContain("Última nota do paciente");
+    expect(html).not.toContain("Nota do paciente");
+    expect(html).not.toContain("Nota da marcação");
     // The row itself is still there and still workable.
     expect(html).toContain("Joao Paulo Baltazar Braz");
     expect(html).toContain("WhatsApp");
   });
 
   it("offers the full history beside it, and only when there IS one", () => {
-    const withNote = render([mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1 } })]);
+    const withNote = render([mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1 , kind: "appointment" as const } })]);
     expect(withNote).toContain("followup-notes-button");
     expect(withNote).toContain("Notas");
   });
 
   it("says the excerpt is the latest OF SEVERAL rather than the whole history", () => {
-    const html = render([mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 4 } })]);
-    expect(html).toContain("Última nota (de 4)");
+    const html = render([mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 4 , kind: "appointment" as const } })]);
+    expect(html).toContain("Última nota da marcação (de 4)");
+  });
+
+  /**
+   * NOTES-01, 2026-09-08. THE LABEL FOLLOWS THE KIND, AND THIS IS THE ARM THAT
+   * PROVES IT.
+   *
+   * The row read patient-level notes only, and production holds ONE of those
+   * against 43,403 appointment notes - so the line was empty on every row and
+   * every test above passed anyway, because they all supplied a note the product
+   * could never have found. That is why the fixtures now carry a `kind`: the
+   * suite has to be able to tell the two apart, or it goes on proving the
+   * wording of a line nobody sees.
+   */
+  it("labels an APPOINTMENT note as one, and a PATIENT note as one", () => {
+    const appt = render([
+      mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1, kind: "appointment" as const } }),
+    ]);
+    expect(appt).toContain("Nota da marcação");
+    expect(appt).not.toContain("Nota do paciente");
+
+    const pat = render([
+      mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1, kind: "patient" as const } }),
+    ]);
+    expect(pat).toContain("Nota do paciente");
+    expect(pat).not.toContain("Nota da marcação");
   });
 
   it("the ellipsis comes from `truncated`, never from the text's length", () => {
-    const cut = render([mkRow({ latestNote: { excerpt: { text: "cortada", truncated: true }, total: 1 } })]);
+    const cut = render([mkRow({ latestNote: { excerpt: { text: "cortada", truncated: true }, total: 1 , kind: "appointment" as const } })]);
     expect(cut).toContain("cortada…");
-    const whole = render([mkRow({ latestNote: { excerpt: { text: "cortada", truncated: false }, total: 1 } })]);
+    const whole = render([mkRow({ latestNote: { excerpt: { text: "cortada", truncated: false }, total: 1 , kind: "appointment" as const } })]);
     expect(whole).not.toContain("cortada…");
   });
 
   it("the note board is NOT mounted until the button is pressed", () => {
     // The board issues a read on mount. Fifty rows mounting fifty boards to draw
     // nothing is the shape this avoids, and it is asserted rather than assumed.
-    const html = render([mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1 } })]);
+    const html = render([mkRow({ latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1 , kind: "appointment" as const } })]);
     expect(html).not.toContain("patient-notes-board");
   });
 
   it("one row's note never bleeds onto another", () => {
     const html = render([
-      mkRow({ patientId: "p-1", fullName: "Com nota", latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1 } }),
+      mkRow({ patientId: "p-1", fullName: "Com nota", latestNote: { excerpt: { text: NOTE, truncated: false }, total: 1 , kind: "appointment" as const } }),
       mkRow({ patientId: "p-2", fullName: "Sem nota", latestNote: null }),
     ]);
     // Exactly one preview block and one Notas button across two rows.
