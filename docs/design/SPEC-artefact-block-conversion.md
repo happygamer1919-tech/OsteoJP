@@ -367,6 +367,69 @@ WHERE a.starts_at >= now()
 ORDER BY tg.patient_number, a.starts_at;
 ```
 
+### It was run before it was handed over (SR-49)
+
+**Run verbatim, unedited, against a NON-PRODUCTION database.** A stack was
+started for this lane alone — its own `project_id` (`OsteoJP-purple-art`) and its
+own port block (54721/54722/…), so it collides with nothing another lane is
+running — and all 78 committed migrations were applied to it. No production
+credential was read and no connection to production was made.
+
+**The two substitutions SR-49 requires to be named:** the **connection target**
+is that local stack, not production; and the **client** is `psql` rather than the
+Supabase SQL editor, which is where the owner will paste it. Nothing else was
+changed — the SQL above and the SQL run are the same bytes.
+
+**Run 1, empty database.** Proves it parses and that every column, table and join
+resolves against the real schema:
+
+```
+$ psql -h 127.0.0.1 -p 54722 -U postgres -d postgres -P pager=off -f artefact-worklist.sql
+ appointment_id | patient_number | starts_lisbon | ends_lisbon | weekday_0sun | location |
+ practitioner | practitioner_id | status | origin | room | service | in_a_series |
+ has_row_notes | notes | records | invoices | patient_is_claimed | patient_has_e164_phone
+----------------+----------------+---------------+ ...
+(0 rows)
+```
+
+**Run 2, against a synthetic fixture** — one tenant, one clinic, one therapist,
+two artefact patients numbered 15875 and 4995, one FUTURE appointment with a room
+and a row note, and one PAST appointment that must not appear. Exit code 0:
+
+```
+-[ RECORD 1 ]----------+-------------------------------------
+appointment_id         | 66666666-6666-6666-6666-666666666666
+patient_number         | 15875
+starts_lisbon          | 2026-09-11 13:24
+ends_lisbon            | 14:24
+weekday_0sun           | 5
+location               | Castelo Branco
+practitioner           | Terapeuta Um
+practitioner_id        | 33333333-3333-3333-3333-333333333333
+status                 | scheduled
+origin                 | staff
+room                   | Sala 2
+service                | (none)
+in_a_series            | f
+has_row_notes          | t
+notes                  | 0
+records                | 0
+invoices               | 0
+patient_is_claimed     | f
+patient_has_e164_phone | f
+```
+
+**One record, not two, and that is the assertion.** The past appointment for
+`4995` is correctly absent — `starts_at >= now()` is doing its job, which a query
+that returned everything would have hidden. `room` and `has_row_notes` both carry
+through, so the two lossy fields §1 and §4 are about are visible on the output
+rather than inferred.
+
+**What the run does NOT prove**, said plainly: the fixture is synthetic, so the
+numbers it returns are about the fixture. What is proven is that the statement
+executes, resolves and filters — the three things SR-49 exists to catch before a
+block reaches the owner.
+
 **What each column decides:**
 
 - `room` — non-`(none)` on any row means §1's lossy case is live and the owner
