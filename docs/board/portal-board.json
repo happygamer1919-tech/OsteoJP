@@ -7096,6 +7096,20 @@
       "last_checkpoint": "2026-09-08",
       "evidence": null,
       "notes": "FOUND WHILE ATTRIBUTING A FAILURE ON 2026-09-08 rather than by looking for it, which is the only reason it is carded: the two suites failed on a lane stack built from the migrations alone, and the honest check - stash the branch, re-run - showed they fail identically on origin/main. Not the P0's, and not anybody's change.\n\n  apps/web/lib/patients/create-location-link.db.test.ts   (PL-34)\n  apps/web/lib/scheduling/guest-queue-option-b.db.test.ts\n\nBOTH BORROW A SEEDED ROW: `select id from roles limit 1`, then read `.id` off it. On a database with no seeded roles that is undefined and beforeAll throws, taking every test in the file with it - 13 skipped, which reads as a skip rather than as a failure until you look.\n\nIT IS THE EXACT SHAPE create-location-link.db.test.ts's OWN HEADER WARNS ABOUT, four lines above the borrow: 'no seeded locations; a suite that reached for one would pass locally and'. It builds its own tenant and its own locations, and then borrows a role.\n\nWHY CI IS GREEN: the DB-gated job's database has roles. So the suites are correct about the environment they were written for and cannot run anywhere else - which is what makes a lane stack useless for them, and a lane stack is where a P0 gets reproduced.\n\nTHE FIX IS ONE INSERT EACH: create a role in the fixture like every other suite does. Not done here because these are not this lane's files and the P0 was."
+    },
+    {
+      "id": "LE-weekend-two-period-sunday-flaked-on-a-shared-lane",
+      "title": "WATCH ITEM: weekend-two-period SUNDAY failed once on #1219 and passed on a re-run of the same commit - the SATURDAY twin passed in the same run",
+      "lane": "loose_ends",
+      "home_lane": "loose_ends",
+      "status": "todo",
+      "priority": "medium",
+      "owner_terminal": "purple",
+      "gate": "green_self_merge",
+      "blocked_on": null,
+      "last_checkpoint": "2026-09-08",
+      "evidence": null,
+      "notes": "CARDED RATHER THAN CALLED FIXED, because a re-run passing proves nothing about a thing that can race (osteojp-e2e-debugging-doctrine). One green run is one green run.\n\nWHAT HAPPENED. On run 34242863236 of #1219, e2e/weekend-two-period.spec.ts SUNDAY failed three times and its SATURDAY twin - the same helper, the same therapist, the same location, one weekday apart - passed in the same shard seconds earlier. Re-running the failed shard on the IDENTICAL commit went green.\n\nTHE FIRST ATTEMPT IS THE ONE THAT MATTERS AND THE RETRIES ARE NOT EVIDENCE. Attempt 1 failed at expectBookable (line 135): the New Appointment panel did not offer 08:00 for that Sunday, although saveTwoPeriodDay had already asserted 'Horario guardado' AND re-read the two periods off a reloaded editor. Retries 1 and 2 then failed EARLIER, on a strict-mode violation - the Sunday fieldset resolved TWO 'Inicio' labels - which is attempt 1's own leftover second period being read as the starting state. THE RETRY CHANGED THE INPUT.\n\nWHY IT IS PROBABLY NOT THE 2026-09-08 P0 FIX, stated as a probability rather than a finding: #1218 carried the identical scheduling code and all three shards passed. #1219 adds nothing that touches availability - a note on a completed appointment and a label. But the P0 DID change when a week save commits (one transaction now, seven before), so it cannot be ruled out from the outside and is not being ruled out here.\n\nWHAT WOULD SETTLE IT: run the spec against a lane stack in both orders - SUNDAY alone, and SATURDAY then SUNDAY - and see whether the second is the one that fails. If order is the variable, the residue is the Saturday rows the first test leaves behind and the spec owes itself a reset, not the product a fix."
     }
   ]
 }
