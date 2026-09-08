@@ -18,7 +18,8 @@
     "db:check": "pnpm --filter @osteojp/db exec drizzle-kit check",
     "board:reconcile": "node docs/board/reconcile-board.mjs docs/board/portal-board.json",
     "db:check-journal": "node scripts/check-journal.mjs",
-    "db:migrate": "pnpm --filter @osteojp/db exec drizzle-kit migrate",
+    "db:migrate": "node -e \"console.error('db:migrate is not the production apply path. Use:\\n  node packages/db/scripts/verified-migrate.mjs --tag <tag> --sha256 <sha> --expect-pending <n>\\nIt reports success only when the journal actually moved (docs/runbook-prod-migrations.md). For a LOCAL lane, run drizzle-kit migrate directly.'); process.exit(2)\"",
+    "db:migrate:raw": "pnpm --filter @osteojp/db exec drizzle-kit migrate",
     "db:studio": "pnpm --filter @osteojp/db exec drizzle-kit studio",
     "db:sync-supabase": "node scripts/sync-supabase-migrations.mjs",
     "db:sync-supabase:check": "node scripts/sync-supabase-migrations.mjs --check"

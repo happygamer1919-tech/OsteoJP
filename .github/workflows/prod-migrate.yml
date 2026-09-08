@@ -152,8 +152,14 @@ jobs:
         working-directory: packages/db
         run: node migration-state.mjs | tee /tmp/pre-state.txt
 
+      # `db:migrate:raw`, not `db:migrate`. The `db:migrate` script now REFUSES
+      # and points at packages/db/scripts/verified-migrate.mjs, because the
+      # hand-pasted apply blocks are where the silent no-op has cost days. This
+      # workflow is a different shape - it knows no tag and no sha256, and it may
+      # apply several migrations - so it keeps the raw applier and gets the
+      # DELTA assertion below, which is the same idea in this file's vocabulary.
       - name: Apply pending migrations (drizzle-kit migrate)
-        run: pnpm db:migrate
+        run: pnpm db:migrate:raw
 
       - name: Post-flight — prod migration state after run
         working-directory: packages/db
@@ -168,3 +174,37 @@ jobs:
             exit 1
           fi
           echo "Prod is now fully migrated: no PENDING entries remain."
+
+      # ==================================================================
+      # THE DELTA. The check above cannot see a no-op, and this one can.
+      # ==================================================================
+      # "No PENDING entries remain" is satisfied by a run that applied
+      # everything AND by a run that applied nothing over a database that was
+      # already current - and by a run that applied nothing because the tree was
+      # wrong, which is 0038-0041 and 0049. All three print the same thing.
+      #
+      # So: count what was PENDING before, count what the database says is
+      # applied before and after, and require the applied count to have moved by
+      # exactly the pending count. Zero pending and zero movement is CORRECT and
+      # passes; N pending and zero movement is the silent no-op and fails here.
+      #
+      # Same assertion packages/db/scripts/verified-migrate.mjs makes for a
+      # hand-run apply, expressed over the two state files this workflow already
+      # writes rather than over a tag it does not have.
+      - name: Assert the applied count moved by exactly the pending count
+        run: |
+          pending_before=$(grep -cE '^  PENDING' /tmp/pre-state.txt || true)
+          applied_before=$(sed -n 's/^Applied in target DB: *//p' /tmp/pre-state.txt | tr -d ' ')
+          applied_after=$(sed -n 's/^Applied in target DB: *//p' /tmp/post-state.txt | tr -d ' ')
+          if [ -z "$applied_before" ] || [ -z "$applied_after" ]; then
+            echo "::error::Could not read the applied count from the state files. migration-state.mjs output format changed and this assertion is now blind - fix it rather than removing it."
+            exit 1
+          fi
+          delta=$(( applied_after - applied_before ))
+          echo "pending before: $pending_before"
+          echo "applied: $applied_before -> $applied_after (delta $delta)"
+          if [ "$delta" -ne "$pending_before" ]; then
+            echo "::error::THE JOURNAL DID NOT MOVE BY THE PENDING COUNT. $pending_before were pending and the applied count moved by $delta. A delta of 0 with a non-zero pending set is the SILENT NO-OP - drizzle reported success and applied nothing. See docs/runbook-prod-migrations.md."
+            exit 1
+          fi
+          echo "OK: the applied count moved by exactly the pending count."
