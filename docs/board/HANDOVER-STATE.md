@@ -120,11 +120,11 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**332 cards on the board. 243 shipped, 89 open. Launch readiness 9/9, every launch gate passes.**
-Plus **60 recorded rulings**, which are decisions and not work: they carry no
+**333 cards on the board. 245 shipped, 88 open. Launch readiness 9/9, every launch gate passes.**
+Plus **62 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
-62 and two are on the external agenda. Nothing mechanical checks this number - the
+64 and two are on the external agenda. Nothing mechanical checks this number - the
 guard next door pins the CARD headline only - and it was reading 51 while the
 board rendered 58, which is why it says where it comes from now. It read 58 against a
 rendered 60 on 2026-09-08 and was corrected again, by the same hand-count.
