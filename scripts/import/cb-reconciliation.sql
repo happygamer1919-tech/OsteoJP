@@ -44,7 +44,8 @@
 --
 --   * a source row that never became a target row   -> sections 3, 4
 --   * a source row whose target row is GONE          -> section 5
---   * a target row nobody can see                    -> sections 8, 10
+--   * a target row nobody can see                    -> section 8b
+--   * a target row the LINK TABLE has lost            -> sections 8, 10
 --   * a patient who landed with none of their history-> section 9
 --
 -- THE LEDGER IS SHARED BETWEEN THE TWO CLINICS. PROD-RUN.md section 4.1: both
@@ -340,10 +341,29 @@ s7y AS (
 ),
 
 -- ---------------------------------------------------------------------------
--- 8. PATIENTS WITH NO LOCATION LINK. PL-09 scopes patient visibility by
---    `patient_locations`, so a patient with no row there is a patient reception
---    at neither clinic can find. They are in the counts and on nobody's screen,
---    which is the exact shape of "arrived, but nobody goes looking".
+-- 8. PATIENTS WITH NO LOCATION LINK.
+--
+--    CORRECTED 2026-09-08. THIS SECTION'S HEADER SAID SOMETHING FALSE AND THE
+--    FALSE SENTENCE IS WHAT MADE IT LOOK LIKE THE URGENT ONE:
+--      ~~"PL-09 scopes patient visibility by `patient_locations`, so a patient
+--      with no row there is a patient reception at neither clinic can find."~~
+--    PL-09 DOES NOT SCOPE BY THIS TABLE. `patientLocationScope`
+--    (apps/web/lib/patients/scope.ts) and 0047's `patients_select` policy both
+--    scope a patient to a clinic by `appointments.location_id` OR
+--    `patients.primary_location_id`. NOTHING IN THE REPO READS
+--    `patient_locations`: no policy names it, no query selects from it, and the
+--    four application references are a hard delete, a location delete and
+--    `merge_patients`' re-point. A missing link row hides nobody.
+--
+--    SO WHAT DOES THIS SECTION FIND? THE APPLICATION'S OWN OUTPUT, and that is
+--    worth more than what it was believed to find. The importer ALWAYS writes
+--    the link - `importPatient`/`insertChunk` insert one row per resolved
+--    `locationKeys` entry, and the Fisiozero adapter always emits exactly one -
+--    so a live patient with no link row did not come from an import. Until
+--    PL-34 no application path wrote the table at all, which is how a defect in
+--    the CREATE path was found by an instrument pointed at the IMPORT.
+--
+--    THE QUESTION IT WAS BELIEVED TO ANSWER IS SECTION 8b, BELOW.
 -- ---------------------------------------------------------------------------
 s8 AS (
   SELECT 8 AS k, row_number() OVER (ORDER BY p.patient_number NULLS LAST, p.id) AS k2,
@@ -357,6 +377,59 @@ s8 AS (
      AND NOT EXISTS (SELECT 1 FROM patient_locations pl WHERE pl.patient_id = p.id)
    ORDER BY p.patient_number NULLS LAST, p.id
    LIMIT 300
+),
+
+-- ---------------------------------------------------------------------------
+-- 8b. THE PATIENTS WHO REALLY ARE ON NOBODY'S SCREEN. Added 2026-09-08 with
+--     the correction above, because the question section 8 was believed to
+--     answer is a real and urgent question and had no instrument.
+--
+--     THE PREDICATE IS THE NEGATION OF `patientLocationScope`, both arms:
+--     no appointment at any location (as primary OR secondary participant),
+--     AND `primary_location_id` IS NULL. Such a patient is returned by neither
+--     arm for ANY located reception or admin - not in the list, not in the
+--     search, and `getPatient` returns null so the detail page 404s.
+--
+--     WHO CAN STILL SEE THEM, which is why nobody reports it: the owner (not
+--     location-restricted), an UNASSIGNED reception/admin (scope null falls
+--     back to tenant-wide by design), and the therapist who created them
+--     (`therapistPatientScope`'s `created_by` arm). So the desk that produced
+--     the row is the one place it looks fine.
+--
+--     `created_by` IS PRINTED because it is the diagnosis, not decoration: a
+--     block of these sharing one creator is a screen that stopped asking for a
+--     clinic, which is exactly what PL-34 found on /consultation.
+-- ---------------------------------------------------------------------------
+s8b AS (
+  SELECT 8 AS k, 200000 + row_number() OVER (ORDER BY p.created_at, p.id) AS k2,
+         '8b. INVISIBLE  patient_number=' ||
+         coalesce(p.patient_number::text, '(none)') ||
+         '  id=' || p.id::text ||
+         '  created=' || to_char(p.created_at, 'YYYY-MM-DD') ||
+         '  created_by=' || coalesce(p.created_by::text, '(null)') AS line
+    FROM patients p, tenant t
+   WHERE p.tenant_id = t.tenant_id
+     AND p.deleted_at IS NULL
+     AND p.primary_location_id IS NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM appointments a
+        WHERE a.patient_id = p.id OR a.patient_2_id = p.id
+     )
+   ORDER BY p.created_at, p.id
+   LIMIT 300
+),
+s8btot AS (
+  SELECT 8 AS k, 299999 AS k2,
+         '8b. INVISIBLE  TOTAL ' || count(*)::text ||
+         '   (no appointment anywhere AND primary_location_id IS NULL)' AS line
+    FROM patients p, tenant t
+   WHERE p.tenant_id = t.tenant_id
+     AND p.deleted_at IS NULL
+     AND p.primary_location_id IS NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM appointments a
+        WHERE a.patient_id = p.id OR a.patient_2_id = p.id
+     )
 ),
 
 -- ---------------------------------------------------------------------------
@@ -399,10 +472,18 @@ s9tot AS (
 
 -- ---------------------------------------------------------------------------
 -- 10. A PATIENT WHOSE APPOINTMENTS ARE AT A CLINIC THEY ARE NOT LINKED TO.
---     The other half of section 8: the link table and the history disagree, so
---     the patient is invisible at exactly the clinic that treated them. This is
---     what BLOCK 22's backfill exists to prevent and what it looks like when it
---     did not cover a row.
+--     The other half of section 8: the link table and the history disagree.
+--     This is what BLOCK 22's backfill exists to prevent and what it looks like
+--     when it did not cover a row.
+--
+--     CORRECTED 2026-09-08, same correction as section 8:
+--       ~~"so the patient is invisible at exactly the clinic that treated them"~~
+--     THEY ARE NOT INVISIBLE. An appointment at that clinic is the FIRST arm of
+--     `patientLocationScope` and of 0047's policy, so a patient treated there is
+--     visible there BECAUSE of the appointment, link row or no link row. What
+--     this section finds is the link table falling behind the history - real
+--     drift, and the thing to fix before anything starts reading the table, but
+--     not a person nobody can find.
 -- ---------------------------------------------------------------------------
 s10 AS (
   SELECT 10 AS k, row_number() OVER (ORDER BY p.patient_number NULLS LAST, p.id, l.name) AS k2,
@@ -622,6 +703,8 @@ SELECT line
     UNION ALL SELECT k, k2, line FROM s7
     UNION ALL SELECT k, k2, line FROM s7y
     UNION ALL SELECT k, k2, line FROM s8
+    UNION ALL SELECT k, k2, line FROM s8b
+    UNION ALL SELECT k, k2, line FROM s8btot
     UNION ALL SELECT k, k2, line FROM s9
     UNION ALL SELECT k, k2, line FROM s9tot
     UNION ALL SELECT k, k2, line FROM s10
