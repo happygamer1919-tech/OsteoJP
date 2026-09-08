@@ -108,6 +108,22 @@ export type DispatchOutcome =
       dispatched: false;
       reason:
         | "not_found"
+        /**
+         * SEC-reminder-path-ignores-soft-delete. The patient was soft-deleted
+         * AFTER this message was scheduled, and the send was suppressed.
+         *
+         * ITS OWN REASON, NEVER FOLDED INTO `not_found`, and that is a ruling
+         * rather than a preference. `not_found` is also what RLS returns for an
+         * appointment outside the caller's tenant - routine, expected, and
+         * uninteresting. Collapsing the two would make the ONE outcome anybody
+         * needs to see ("we stopped an SMS to somebody reception deleted")
+         * indistinguishable from ordinary tenant scoping, in a pipeline where
+         * REMINDERS_LIVE_SEND is true and the message reaches a real phone.
+         *
+         * LE-suppression-observation is waiting to SEE a suppression happen.
+         * A suppression that cannot be told apart from a no-op is not one.
+         */
+        | "patient_deleted"
         | "status"
         /** W13-C: an unconfirmed pedido. Distinct from `status` on purpose - a
          *  pedido IS `scheduled`, so collapsing the two would hide which gate
@@ -394,6 +410,73 @@ export function buildReminderContext(
  * The scheduler still enqueues every offset (it has no per-tenant config); the
  * gate lives here so the scheduling math (#98/#99) stays untouched.
  */
+/* ================================================================== */
+/* THE ONE DOOR EVERY DISPATCH PATH GOES THROUGH.                       */
+/* ================================================================== */
+/**
+ * Load the appointment and apply the two gates that are true for EVERY message
+ * this file can send, whatever kind it is.
+ *
+ * ==========================================================================
+ * WHY IT IS ONE FUNCTION AND NOT A CLAUSE REPEATED FOUR TIMES
+ * ==========================================================================
+ * Four exported dispatchers - reminder, confirmation, follow-up, no-show - each
+ * opened with the identical two lines: load, then `not_found`. A soft-delete
+ * gate written four times is a gate a fifth dispatcher will not have, and the
+ * fifth dispatcher is the one that sends the message nobody expected. Same
+ * reasoning as `insertPatientTx` being the ONE place a patients row is written
+ * (PL-34): the invariant lives where it cannot be omitted, not where it has to
+ * be remembered.
+ *
+ * ==========================================================================
+ * WHY THE SOFT-DELETE CHECK IS HERE AND NOT IN THE QUERY
+ * ==========================================================================
+ * `loadReminderData` could have filtered `deleted_at IS NULL` and returned null.
+ * That suppresses the send and reports it as `not_found` - the same outcome RLS
+ * produces for an appointment in another tenant. The suppression would work and
+ * be invisible, which for a live SMS path is the failure mode, not the fix.
+ *
+ * ==========================================================================
+ * AND IT LOGS, BECAUSE A RETURN VALUE IS NOT AN OBSERVATION
+ * ==========================================================================
+ * The outcome reaches Inngest's run output, which is real but is a place nobody
+ * looks until they already suspect something. The `console.warn` is the same
+ * shape `sendSmsGuarded` already uses for its two skips - `[reminders] ...
+ * skipped: <reason> tenantId=... appointmentId=... patientId=...` - so this
+ * suppression lands in the same log stream, greppable by the same prefix, and
+ * carries IDS ONLY. No name, no phone number, no body. CLAUDE.md rule 7.
+ */
+type Dispatchable =
+  | { ok: true; data: NonNullable<Awaited<ReturnType<typeof loadReminderData>>> }
+  | { ok: false; outcome: DispatchOutcome };
+
+async function loadDispatchable(
+  tenantId: string,
+  appointmentId: string,
+  kind: "reminder" | "confirmation" | "followup" | "noshow",
+): Promise<Dispatchable> {
+  const data = await loadReminderData(tenantId, appointmentId);
+  if (!data) return { ok: false, outcome: { dispatched: false, reason: "not_found" } };
+
+  // TRUTHY, not `!== null`. A Date is truthy and both null and undefined are
+  // falsy, so a fixture that omits the field reads as LIVE rather than as
+  // deleted. The type makes the field required, so real code cannot omit it;
+  // what this shape avoids is a test fixture silently suppressing every send.
+  // The field's PRESENCE IN THE QUERY is asserted separately (data.test.ts) -
+  // if it were ever dropped from the select, this gate would go quiet and only
+  // that assertion would notice.
+  if (data.patientDeletedAt) {
+    console.warn(
+      `[reminders] ${kind} skipped: patient_deleted tenantId=${tenantId} ` +
+        `appointmentId=${appointmentId} patientId=${data.patientId}. ` +
+        `The patient was soft-deleted after this message was scheduled; nothing was sent.`,
+    );
+    return { ok: false, outcome: { dispatched: false, reason: "patient_deleted" } };
+  }
+
+  return { ok: true, data };
+}
+
 export async function dispatchReminder(
   tenantId: string,
   appointmentId: string,
@@ -401,8 +484,9 @@ export async function dispatchReminder(
   /** The single channel this run is for. One run, one channel, one key. */
   channel: Channel,
 ): Promise<DispatchOutcome> {
-  const data = await loadReminderData(tenantId, appointmentId);
-  if (!data) return { dispatched: false, reason: "not_found" };
+  const gate = await loadDispatchable(tenantId, appointmentId, "reminder");
+  if (!gate.ok) return gate.outcome;
+  const data = gate.data;
   if (!REMINDABLE_STATUSES.has(data.status)) {
     return { dispatched: false, reason: "status" };
   }
@@ -611,8 +695,9 @@ export async function dispatchConfirmation(
   tenantId: string,
   appointmentId: string,
 ): Promise<DispatchOutcome> {
-  const data = await loadReminderData(tenantId, appointmentId);
-  if (!data) return { dispatched: false, reason: "not_found" };
+  const gate = await loadDispatchable(tenantId, appointmentId, "confirmation");
+  if (!gate.ok) return gate.outcome;
+  const data = gate.data;
   if (!CONFIRMABLE_STATUSES.has(data.status)) {
     return { dispatched: false, reason: "status" };
   }
@@ -713,8 +798,9 @@ export async function dispatchFollowUp(
   tenantId: string,
   appointmentId: string,
 ): Promise<DispatchOutcome> {
-  const data = await loadReminderData(tenantId, appointmentId);
-  if (!data) return { dispatched: false, reason: "not_found" };
+  const gate = await loadDispatchable(tenantId, appointmentId, "followup");
+  if (!gate.ok) return gate.outcome;
+  const data = gate.data;
   if (data.status !== "completed") return { dispatched: false, reason: "status" };
   if (!data.patientEmail && !data.patientPhone) {
     return { dispatched: false, reason: "no_contact" };
@@ -788,8 +874,9 @@ export async function dispatchNoShow(
   tenantId: string,
   appointmentId: string,
 ): Promise<DispatchOutcome> {
-  const data = await loadReminderData(tenantId, appointmentId);
-  if (!data) return { dispatched: false, reason: "not_found" };
+  const gate = await loadDispatchable(tenantId, appointmentId, "noshow");
+  if (!gate.ok) return gate.outcome;
+  const data = gate.data;
   if (data.status !== "no_show") return { dispatched: false, reason: "status" };
   if (!data.patientEmail && !data.patientPhone) {
     return { dispatched: false, reason: "no_contact" };
