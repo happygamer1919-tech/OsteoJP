@@ -62,8 +62,27 @@ import { DEFAULT_PORTAL_LOCALE } from '@/lib/locale'
  *
  * THE ANSWER IS AN EXPLICIT LIST, NOT AN INFERENCE. A locale is approved when
  * it is named below and for no other reason. `pt` is named because GUEST-05
- * landed it; `en` is not, because nothing records that anybody approved it.
- * Flipping it is one array entry the day the owner says so - Q-LANG-COPY-1.
+ * landed it.
+ *
+ * ==========================================================================
+ * `en` WAS ADDED 2026-09-08. Q-LANG-COPY-1 IS CLOSED, AND BY WHOM MATTERS.
+ * ==========================================================================
+ * RATIFIED BY STRATEGY, UNDER JP'S STANDING MICROCOPY DELEGATION, ON
+ * 2026-09-08. The two Portuguese clauses and the two English ones were read
+ * side by side and found to say the same thing: the request has been received
+ * and is under review, the appointment is NOT yet confirmed, and the clinic
+ * will make contact once it is scheduled. Nothing is promised in one language
+ * that is not promised in the other, and nothing is softened.
+ *
+ * IT IS A RATIFICATION OF A TRANSLATION, NOT AN AUTHORSHIP. The promise is
+ * still JP's; what was approved is that the English renders his Portuguese
+ * faithfully. If his Portuguese changes, the English is unratified again and
+ * this entry comes back out - the list records a decision about a SPECIFIC
+ * pair of strings, which is why it names the date the decision was taken.
+ *
+ * WHAT FLIPPING IT DOES, exactly: `/marcacao?lang=en` can now COMPLETE. Until
+ * today the English form was fully walkable and only the final submit refused,
+ * so no visitor was ever left holding a promise nobody had made.
  *
  * WHAT AN UNAPPROVED LOCALE ACTUALLY DOES, and it is the behaviour this flow
  * already had for EVERYBODY while JP's Portuguese was outstanding: the form is
@@ -87,7 +106,7 @@ export type GuestCopySource = { confirmation_title: string; confirmation_body: s
  * approved that text, and it is the only thing that makes the submit legal in
  * that language.
  */
-export const GUEST_COPY_APPROVED_LOCALES: readonly PortalLocale[] = ['pt']
+export const GUEST_COPY_APPROVED_LOCALES: readonly PortalLocale[] = ['pt', 'en']
 
 /** Whether the clinic's commitment has been ratified in this language. */
 export function isGuestCopyApprovedFor(locale: PortalLocale): boolean {

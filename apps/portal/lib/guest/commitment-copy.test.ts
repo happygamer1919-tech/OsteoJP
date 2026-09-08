@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import pt from '../../../../packages/i18n/src/portal/strings.pt.json'
 import en from '../../../../packages/i18n/src/portal/strings.en.json'
-import { guestConfirmationCopy, isGuestConfirmationCopyReady } from './commitment-copy'
+import {
+  GUEST_COPY_APPROVED_LOCALES,
+  guestConfirmationCopy,
+  isGuestConfirmationCopyReady,
+  isGuestCopyApprovedFor,
+} from './commitment-copy'
 
 /**
  * GUEST-05 — the confirmation copy is a COMMITMENT. It is now WRITTEN, and §1
@@ -104,5 +109,30 @@ describe('§3 — NEGATIVE ARM: filled copy is accepted and returned unchanged',
       title: 'Pedido recebido',
       body: 'A clínica entrará em contacto.',
     })
+  })
+})
+
+/**
+ * §4 — THE RATIFIED LIST ITSELF, PINNED. Added 2026-09-08 with the `en` flip.
+ *
+ * NOTHING TESTED THIS LIST UNTIL NOW, which is the gap the flip made visible:
+ * `actions.test.ts` MOCKS `isGuestCopyApprovedFor`, correctly - it is testing
+ * the submit gate, not the roster - so the real array had no coverage at all. A
+ * locale could have been added or dropped in a refactor and every suite in this
+ * package would still have been green.
+ *
+ * IT IS A RECORD, NOT A RULE. The assertion is not "these are the right
+ * languages"; it is "these two were ratified, on the dates the file states, and
+ * a third has not been". Adding one is a one-line change to BOTH this list and
+ * this test, which is exactly the pause the change deserves.
+ */
+describe('§4 — the ratified locale list', () => {
+  it('is pt and en, and nothing else', () => {
+    expect([...GUEST_COPY_APPROVED_LOCALES]).toEqual(['pt', 'en'])
+  })
+
+  it('answers for each locale through the predicate the submit gate uses', () => {
+    expect(isGuestCopyApprovedFor('pt')).toBe(true)
+    expect(isGuestCopyApprovedFor('en')).toBe(true)
   })
 })
