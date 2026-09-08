@@ -179,12 +179,18 @@ export default async function HorariosPage({
     remove: deleteTimeOffBlockAction,
   };
 
+  // P0 2026-09-08: a refusal that names its own repair. `err:dated_conflict` is
+  // the ONE failure reception can act on herself - the weekday carries hours for
+  // specific dates, which only Definir dia a dia can edit - and it was reaching
+  // this banner as the same blank sentence as every other error.
   const banner =
     m === "ok"
       ? { tone: "ok" as const, text: s["schedule.saved"] }
-      : m && m.startsWith("err")
-        ? { tone: "err" as const, text: s["schedule.error"] }
-        : null;
+      : m === "err:dated_conflict"
+        ? { tone: "err" as const, text: s["schedule.errorDatedConflict"] }
+        : m && m.startsWith("err")
+          ? { tone: "err" as const, text: s["schedule.error"] }
+          : null;
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
