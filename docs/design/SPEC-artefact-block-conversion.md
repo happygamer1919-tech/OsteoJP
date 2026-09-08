@@ -228,8 +228,26 @@ clinical-record patient scope, and guest matching.
 | **`/agenda`, `/marcacoes`, dashboard** | **All 73 entries still there, still showing "NAO MARCAR"** | `baseAppointmentQuery` LEFT-joins `patients` with no `deleted_at` predicate, and RLS never filters it. The name is only withheld when the *viewer's scope* excludes the patient (CONFIRM-09) — a soft delete is not a scope. |
 | **The patient behind them** | **Still opens, badged *Eliminado*** | `/patients/[id]` calls `getPatient(id, { includeDeleted: true })` and renders a `StatusChip`, and the Consultas tab still lists every appointment — so the worklist survives the soft delete. What DOES start refusing are the three callers that take the default: the agenda's *Nova marcação* deep-link prefill (`apps/web/app/agenda/page.tsx:98`), the *Iniciar consulta* prefill (`apps/web/app/clinical/new/page.tsx:34`) and declaration generation (`apps/web/app/patients/[id]/declaracao-actions.ts:66`). |
 | **`/recuperacao`** | **Still eligible** | `listFollowupCandidates` (`apps/web/lib/followup/queries.ts:246`) builds its predicate from the three clauses in `packages/db/src/followup-selection.ts` plus scope — **no `deleted_at` filter anywhere**. The card's own complaint that artefact rows "appear in the recuperacao list" is therefore *not* answered by soft-deleting them. Today the two with future bookings are excluded by clause 2 ("nothing on the books ahead of them") — **so converting the blocks is what makes them eligible.** Cleaning the agenda pushes them onto reception's call list. |
-| **Reminders** | **Still in the pipeline** | `loadReminderData` (`apps/web/lib/reminders/data.ts:93`) inner-joins `patients` with no `deleted_at` predicate. Only `status` gates it: `REMINDABLE_STATUSES = {scheduled, confirmed}` (`dispatch.ts:43`). A future artefact appointment left `scheduled` is remindable whether or not its patient is deleted. `REMINDERS_LIVE_SEND` is off, and an artefact row with no phone cannot receive one — but neither of those is the soft delete doing the work. |
+| **Reminders** | **Still in the pipeline, and the pipeline is LIVE** | `loadReminderData` (`apps/web/lib/reminders/data.ts:93`) inner-joins `patients` with no `deleted_at` predicate. Only `status` gates it: `REMINDABLE_STATUSES = {scheduled, confirmed}` (`dispatch.ts:43`). So a future artefact appointment left `scheduled` is remindable whether or not its patient is deleted — and `REMINDERS_LIVE_SEND` is **not** off. See the note directly below this table. |
 | **Statistics** | **Still counted** | `kpi-queries.ts:243` LEFT-joins `patients` for the appointment KPIs; only the patient-count query (`:268`) filters `deleted_at`. |
+
+**A CORRECTION, AND THE BOARD CONTRADICTS ITSELF ON THIS ONE.** An earlier draft
+of this report said `REMINDERS_LIVE_SEND` is off. That is what
+`LAUNCH-01` and `LE-suppression-observation` say — "stays FALSE through all
+acceptance testing" — and it is **out of date**.
+`INC-followup-ignores-a-future-booking` (carded 2026-09-04, still open) records
+the opposite as a measured fact: *"REMINDERS_LIVE_SEND is demonstrably true in
+production because both messages arrived"*, and `INC-12` records the owner
+setting it to `true` on 2026-08-18. **Two committed cards disagree about a flag
+that decides whether a real telephone rings**, no lane may read the Vercel
+project to settle it, and this report is not the place it gets settled — but it
+must not be planned around in either direction.
+
+What follows for these rows: the only thing between a future artefact
+appointment and a real SMS is whether the artefact row carries a usable phone
+number. That is **the same column the booking exposure turns on**, and it is on
+section 11's output (`phone=set|none`) — which is one more reason the read in
+§8 is not optional.
 
 **And the exposure the card is actually about does close.** Both patient-facing
 doors filter soft-deleted rows explicitly:
@@ -398,7 +416,14 @@ window. *Recommended: fix the list rather than the data* — adding
 independently of this cleanup, and it is the only one of these questions that is
 an ordinary defect. **It is a code change and is deliberately not made here.**
 
-**Q-ARTEFACT-5 — the other 12.**
+**Q-ARTEFACT-5 — is the reminder pipeline armed, and does it matter here?**
+Two committed cards disagree (§5). *Recommended: settle it as a fact before the
+conversion runs, not after* — if `REMINDERS_LIVE_SEND` is true and any artefact
+row carries a usable phone, the 73 future entries are a live sending surface
+today, and that changes the urgency of this whole card. Nobody in a lane can
+read the Vercel project; the owner can, in a minute.
+
+**Q-ARTEFACT-6 — the other 12.**
 This report covers only the two rows with future appointments, as dispatched.
 The remaining 12 carry past appointments only and need no conversion — but they
 are the rows currently visible on `/recuperacao`, and Q-ARTEFACT-4 decides them
