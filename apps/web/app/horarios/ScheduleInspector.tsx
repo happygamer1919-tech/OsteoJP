@@ -102,6 +102,16 @@ export function ScheduleInspector({
   const [rowStatus, setRowStatus] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [collisions, setCollisions] = useState<string[] | null>(null);
   const canEdit = onSaveDay != null && (locations?.length ?? 0) > 0;
+  /**
+   * THE THERAPIST THIS PANEL IS SHOWING, RESOLVED AGAINST THE ROSTER - or null.
+   *
+   * Looked up rather than trusted: `therapistId` is a URL parameter, and a stale
+   * or hand-edited `?t=` naming somebody who is not on this roster must produce
+   * "nothing chosen" rather than a name printed over an empty table. The page
+   * already validates it the same way; agreeing here means the panel cannot
+   * render a name the rows below do not belong to.
+   */
+  const selected = therapists.find((t) => t.id === therapistId) ?? null;
 
   const openEditor = (day: InspectedDay) => {
     setEditing(day.date);
@@ -157,6 +167,13 @@ export function ScheduleInspector({
             data-testid="inspector-therapist"
             onChange={(e) => onTherapistChange(e.target.value)}
           >
+            {/* LE-inspector-and-editor-select-different-therapists: "nobody" is
+                a REAL, REACHABLE option, not a rendering accident. The page no
+                longer defaults to therapists[0], so a <Select> whose value is ""
+                with no matching <option> would show the first name while
+                holding none - a control lying about its own state, which is a
+                sharper version of the defect being fixed. */}
+            <option value="">{s["inspector.chooseTherapist"]}</option>
             {therapists.map((t) => (
               <option key={t.id} value={t.id}>{t.label}</option>
             ))}
@@ -178,8 +195,27 @@ export function ScheduleInspector({
 
       {therapists.length === 0 ? (
         <p className="text-sm text-v2-text-secondary">{s["inspector.empty"]}</p>
+      ) : selected === null ? (
+        /* NOTHING CHOSEN, NOTHING SHOWN, AND IT SAYS SO. An empty table would
+           read as "this person works no days"; a table for whoever happened to
+           be first in the roster is the defect this card exists to remove. */
+        <p data-testid="inspector-none-chosen" className="text-sm text-v2-text-secondary">
+          {s["inspector.noneChosen"]}
+        </p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="flex flex-col gap-2">
+          {/* WHOSE WEEK THIS IS, IN PROSE, BESIDE THE ANSWER ITSELF.
+              The <Select> above already carries the name, but a dropdown is a
+              CONTROL: it is read as "what you may choose", not as "what you are
+              looking at". The owner's ruling asks each surface to state whose
+              week it is showing at the moment of the action, and the moment of
+              the action is when somebody reads a row - not when they last
+              touched the filter. */}
+          <p data-testid="inspector-showing" className="text-sm text-v2-text-secondary">
+            {s["inspector.showing"]}{" "}
+            <span className="font-medium text-v2-text-primary">{selected.label}</span>
+          </p>
+          <div className="overflow-x-auto">
           <table className="w-full min-w-[34rem] border-collapse text-sm" data-testid="inspector-table">
             <thead>
               <tr className="border-b border-v2-border text-left text-xs text-v2-text-secondary">
@@ -383,6 +419,7 @@ export function ScheduleInspector({
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </GlassPanel>
