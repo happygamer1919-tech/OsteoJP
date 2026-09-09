@@ -179,3 +179,87 @@ describe("SCHED-10 - the edit affordance", () => {
     expect(withEdit([day()])).not.toContain("inspector-edit-working");
   });
 });
+
+/**
+ * LE-inspector-and-editor-select-different-therapists — THE PANEL NEVER SHOWS A
+ * WEEK NOBODY ASKED FOR, AND ALWAYS SAYS WHOSE WEEK IT IS SHOWING.
+ *
+ * ==========================================================================
+ * THE DEFECT, AND WHY IT LOOKED LIKE NOTHING
+ * ==========================================================================
+ * The page defaulted `?t=` to `therapists[0]` - the first of the ROSTER, not
+ * the card you scrolled to - while the editors below are one card PER
+ * therapist. So /horarios could be answering about Bernardo while somebody
+ * edited JP, and every element on screen was individually correct. The owner
+ * raised it on 2026-09-08 as the likely cause of that morning's outage.
+ *
+ * The half of the fix that lives in page.tsx (no default) is asserted there;
+ * these are the two halves that live in the panel, and neither is visible to a
+ * test that only feeds it a therapist:
+ *
+ *   1. WITH NOTHING CHOSEN it shows a sentence, not an empty table. An empty
+ *      table reads as "this person works no days" - a false statement about
+ *      somebody, produced by a page that has not been asked about anybody.
+ *   2. WITH SOMEBODY CHOSEN it names them in PROSE beside the rows. The
+ *      <Select> already carries the name, but a control is read as "what you
+ *      may choose", not as "what you are looking at".
+ */
+describe("the panel states whose week it is showing (LE-inspector-and-editor)", () => {
+  const ROSTER = [
+    { id: "t1", label: "JP" },
+    { id: "t2", label: "Bernardo Calmeiro" },
+  ];
+  /**
+   * The panel with its CONTROLS removed.
+   *
+   * Every therapist's name legitimately appears inside the <select> - that is
+   * the roster, and removing it would be a different bug. The claim being made
+   * is about the ANSWER: that no name is printed as a statement about the rows.
+   * So the dropdowns are stripped and the assertion is about what is left.
+   */
+  const answerOnly = (html: string) => html.replace(/<select[\s\S]*?<\/select>/g, "");
+  const panel = (therapistId: string) =>
+    renderToStaticMarkup(
+      createElement(ScheduleInspector, {
+        days: [day({ windows: [{ start: "09:00", end: "13:00", locationId: "cb", locationName: "Castelo Branco", rule: "base" }] })],
+        therapists: ROSTER,
+        therapistId,
+        period: "week",
+        onTherapistChange: vi.fn(),
+        onPeriodChange: vi.fn(),
+      }),
+    );
+
+  it("with nobody chosen: no table, a sentence, and the control admits it holds nothing", () => {
+    const html = panel("");
+    expect(html).toContain(s["inspector.noneChosen"]);
+    expect(html).not.toContain('data-testid="inspector-table"');
+    // THE NEGATIVE ARM THAT MATTERS: no name is printed as an answer. A panel
+    // showing nothing must not still be naming the first person in the roster.
+    expect(answerOnly(html)).not.toContain("JP");
+    expect(answerOnly(html)).not.toContain("Bernardo Calmeiro");
+    // And "nobody" is a real <option>, so the <select> is not silently
+    // displaying its first entry while holding "".
+    expect(html).toContain(s["inspector.chooseTherapist"]);
+  });
+
+  it("with somebody chosen: the rows are preceded by whose week they are", () => {
+    const html = panel("t2");
+    expect(html).toContain(s["inspector.showing"]);
+    expect(html).toContain("Bernardo Calmeiro");
+    expect(html).toContain('data-testid="inspector-showing"');
+    expect(html).toContain('data-testid="inspector-table"');
+    expect(html).not.toContain(s["inspector.noneChosen"]);
+  });
+
+  it("a ?t= naming somebody OFF this roster shows nothing, never a borrowed name", () => {
+    // A stale link, a hand-edited URL, or a therapist who left the location
+    // between one page load and the next. The rows would be somebody else's -
+    // or empty - and a name printed over them would be the defect restated.
+    const html = panel("t-gone");
+    expect(html).toContain(s["inspector.noneChosen"]);
+    expect(html).not.toContain('data-testid="inspector-table"');
+    expect(answerOnly(html)).not.toContain("JP");
+    expect(html).not.toContain('data-testid="inspector-showing"');
+  });
+});

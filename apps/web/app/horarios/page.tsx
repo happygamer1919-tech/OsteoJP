@@ -18,6 +18,7 @@ import { AlternatingWeeksPanel } from "./AlternatingWeeksPanel";
 import { DayByDayPanel } from "./DayByDayPanel";
 import { RosterSearch } from "./RosterSearch";
 import { ScheduleInspectorPanel } from "./ScheduleInspectorPanel";
+import { CardHeading } from "./CardHeading";
 import { inspectSchedule } from "@/lib/scheduling/schedule-inspection";
 import { addDays } from "@/lib/scheduling/time";
 import {
@@ -90,10 +91,33 @@ export default async function HorariosPage({
   // resolver. The filters are URL params so the view is linkable and so nothing
   // has to be re-resolved in the browser.
   // ==========================================================================
+  //
+  // LE-inspector-and-editor-select-different-therapists — THE INSPECTOR NO
+  // LONGER PICKS SOMEBODY FOR YOU.
+  //
+  // This defaulted to `therapists[0]` - the first of the roster, not the card
+  // you scrolled to - while the editors below are one card PER therapist. So the
+  // page could be answering about Bernardo while you edited JP, and nothing said
+  // so. The owner raised it on 2026-09-08 as the likely cause of that morning's
+  // outage, and ruled: the two selections must be one, or each must state whose
+  // week it is showing at the moment of the action.
+  //
+  // AN UNCHOSEN INSPECTOR SHOWS NOTHING. That is the half of the ruling this
+  // line carries: a week nobody asked for is the whole defect, and there is no
+  // safe first therapist to fall back to - "the first of the roster" is an
+  // ordering accident, and the more plausible it looks the more expensive it is.
+  //
+  // ONE THERAPIST IS THE EXCEPTION AND IT IS NOT A WEAKENING. Under the `self`
+  // schedule scope the roster is exactly one person - a therapist looking at
+  // their own schedule - so there is no second candidate to confuse it with, and
+  // making them press a dropdown that offers one name would be an obstacle
+  // rather than a safeguard.
   const inspectorTherapistId =
     inspectT && therapists.some((t) => t.id === inspectT)
       ? inspectT
-      : (therapists[0]?.id ?? "");
+      : therapists.length === 1
+        ? therapists[0]!.id
+        : "";
   const period = inspectP === "fortnight" || inspectP === "month" ? inspectP : "week";
   // PERIOD LENGTHS ARE SPANS FROM TODAY, not calendar weeks or months. Reception
   // asks "what does this person do next" far more often than "what did the
@@ -214,14 +238,20 @@ export default async function HorariosPage({
 
       {/* SCHED-09: the inspector sits ABOVE the editors, because the question it
           answers ("where is this person on Thursday, and why") is the one
-          reception arrives with; editing is what they do afterwards. */}
-      <ScheduleInspectorPanel
-        days={inspectedDays}
-        therapists={therapists.map((t) => ({ id: t.id, label: t.label }))}
-        therapistId={inspectorTherapistId}
-        period={period}
-        locations={locations}
-      />
+          reception arrives with; editing is what they do afterwards.
+
+          The `id` is the anchor every card's "Ver no inspetor" link points at,
+          so pressing it from a card far down the roster brings the panel into
+          view rather than changing an answer nobody can see. */}
+      <div id="inspetor" className="scroll-mt-6">
+        <ScheduleInspectorPanel
+          days={inspectedDays}
+          therapists={therapists.map((t) => ({ id: t.id, label: t.label }))}
+          therapistId={inspectorTherapistId}
+          period={period}
+          locations={locations}
+        />
+      </div>
 
       {therapists.length === 0 ? (
         <GlassPanel className="p-6">
@@ -248,9 +278,14 @@ export default async function HorariosPage({
                 // used to count every <h2> in main, which the inspector's own
                 // heading would have broken - and counting headings was always
                 // a proxy for the property rather than the property.
-                <div data-testid="schedule-card">
+                <div data-testid="schedule-card" data-therapist-id={t.id}>
                 <GlassPanel className="flex flex-col gap-1 p-5">
-                  <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
+                  <CardHeading
+                    id={t.id}
+                    label={t.label}
+                    period={period}
+                    inInspector={t.id === inspectorTherapistId}
+                  />
                   <p className="text-sm font-medium text-v2-text-primary">
                     {s["schedule.unmanagedTitle"]}
                   </p>
@@ -266,10 +301,15 @@ export default async function HorariosPage({
             id: t.id,
             name: t.label,
             card: (
-              <div data-testid="schedule-card">
+              <div data-testid="schedule-card" data-therapist-id={t.id}>
               <GlassPanel className="flex flex-col gap-3 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-lg font-medium text-v2-text-primary">{t.label}</h2>
+                  <CardHeading
+                    id={t.id}
+                    label={t.label}
+                    period={period}
+                    inInspector={t.id === inspectorTherapistId}
+                  />
                   <div className="flex items-center gap-2">
                     {/* ITEM 5: sits beside Bloquear horario because both are
                         "change this therapist's availability", and reception
