@@ -18,7 +18,7 @@
 //
 // AND A THIRD THAT IS SPECIFIC TO THIS FILE. The number it returns is only
 // meaningful because it is the number of rows the new guard in
-// `apps/web/lib/scheduling/audit.ts` would now reject. Two definitions that
+// `apps/web/lib/audit/metadata-contract.ts` would now reject. Two definitions that
 // drift apart produce two numbers that answer different questions, and nobody
 // would know which one they were reading. The coupling is asserted below.
 
@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SQL_PATH = path.join(REPO, "scripts/audit-free-text-count.sql");
-const GUARD_PATH = path.join(REPO, "apps/web/lib/scheduling/audit.ts");
+const GUARD_PATH = path.join(REPO, "apps/web/lib/audit/metadata-contract.ts");
 
 const sql = fs.readFileSync(SQL_PATH, "utf8");
 const guard = fs.readFileSync(GUARD_PATH, "utf8");
@@ -174,7 +174,7 @@ test("the CONTROL: the scan ACCEPTS the three safe shapes, so it is not just ref
 
 test("the guard exists and states the two questions in numbers this file can be checked against", () => {
   assert.match(guard, /AUDIT_STRING_MAX\s*=\s*64/,
-    "apps/web/lib/scheduling/audit.ts no longer defines AUDIT_STRING_MAX = 64");
+    "apps/web/lib/audit/metadata-contract.ts no longer defines AUDIT_STRING_MAX = 64");
   assert.match(guard, /\/\\s\/\.test\(value\)/,
     "the guard no longer refuses a string containing whitespace");
 });
@@ -188,7 +188,7 @@ test("the SQL asks the SAME two questions, with the SAME threshold", () => {
   for (const t of lengthTests) {
     assert.match(t, />\s*64$/,
       `audit-free-text-count.sql tests a length threshold that is not 64: ${t}. ` +
-        "The guard in apps/web/lib/scheduling/audit.ts uses 64.");
+        "The guard in apps/web/lib/audit/metadata-contract.ts uses 64.");
   }
   const whitespaceTests = statements.match(/~\s*'\\s'/g) ?? [];
   assert.ok(whitespaceTests.length >= 5,
