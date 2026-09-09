@@ -3735,3 +3735,31 @@ config.webServer` with no test ever running. `rm -rf apps/*/.next` fixes it.
 **Run the e2e gate BEFORE `pnpm build`, or clear `.next` between them.** The
 gate order in PORTAL-REHYDRATE §4.6 lists `build` before `test:e2e`, which is
 the order that triggers this.
+
+### Correction, same day: two staff-visible cards were marked `shipped` and should not have been
+
+PORTAL-REHYDRATE §1.4, second ruling, in the owner's words: *"a staff- or
+patient-visible card stays `in_flight` after its PR merges: the merge is the
+build half, and the sitting is the evidence half."* Build evidence is a PR and a
+sha; acceptance evidence is `kind: screenshot` with what was observed.
+
+**AGENDA-01 and LE-inspector-and-editor are both staff-visible**, and both were
+written into the board as `shipped` on green CI and a merged PR. They are now
+`in_flight`, each with an `open_on_purpose` naming the deployed screen the owner
+confirms, and both are on `VERIFY-QUEUE`.
+
+**NOTHING MECHANICAL WOULD HAVE CAUGHT IT, which is why it is written down
+rather than quietly fixed.** `validate-board.mjs` accepts `shipped` with PR
+evidence — that is the normal, correct case for a non-visible card. The
+reconciler's `shipped-unmerged` rule fires only when a cited PR has NOT merged,
+and here it had, so it went silent at exactly the moment the card became wrong.
+The rule is committed, it was read this session, and the cards were still written
+the other way round. The gap is between "the PR is merged" and "the owner has
+seen it", and only prose currently holds that line.
+
+**One thing the 2026-08-05 pruning of `VERIFY-QUEUE` does NOT cover**, stated
+because it reads as though it might: that ruling took the agenda grid OFF the
+queue *because it had been seen*. AGENDA-01 is not a re-check of that surface —
+it is a CHANGE to it, made afterwards. The pruning rule is "surfaces never seen
+on an owner screen", and a surface that changed after being seen is one of them
+again.
