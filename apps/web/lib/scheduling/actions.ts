@@ -1919,6 +1919,13 @@ export async function cancelAppointment(
   if (!id) return { ok: false, error: "validation" };
   const scope: SeriesScope = opts?.scope ?? "one";
 
+  // WHETHER a reason was given — the only thing about it that reaches the audit
+  // row. See the metadata block below for why the text does not, and
+  // LE-cancel-reason-is-not-retained for the consequence: with the log no longer
+  // carrying it, NOTHING persists a cancellation reason. That is a gap to close
+  // with a column, not by putting free text back into an append-only log.
+  const hadReason = Boolean(reason?.trim());
+
   const ip = await clientIp();
   // Captured inside the tx, emitted AFTER commit. LE-staff-transitions-emit-nothing:
   // until 2026-08-13 only the CONFIRM path was instrumented, so a staff
@@ -1955,7 +1962,34 @@ export async function cancelAppointment(
             action: "appointment.cancel",
             appointmentId: aid,
             metadata: {
-              reason: reason?.trim() || null,
+              // A BOOLEAN AND A REFERENCE, NEVER THE PROSE.
+              //
+              // This key used to be `reason: reason?.trim() || null` — the raw
+              // string, straight into an append-only log that this helper's own
+              // contract says carries ids, status and ISO timestamps only. And
+              // the string was not even a cancellation reason typed for the
+              // purpose: the agenda drawer passes `form.notes`, the
+              // appointment's OWN notes field, pre-filled from the row. So an
+              // existing clinical note about a named patient was copied verbatim
+              // into `audit_log` on every cancel taken from the agenda, and
+              // `audit_log` is not editable afterwards.
+              //
+              // `clinical/records.ts` annulRecord had the same decision and took
+              // this branch: `metadata: { hadReason: Boolean(trimmed) }`, with
+              // the prose in `record_annulments.reason`, a real domain column.
+              hadReason,
+              // THE REFERENCE, and it is the appointment this row is already
+              // about. Named explicitly rather than left implicit in
+              // `entity_id`, because a reader who filters on `hadReason` needs
+              // the next place to look without knowing this file.
+              //
+              // IT DOES NOT NAME A FIELD, and the omission is deliberate: the
+              // two callers source this argument differently — the agenda drawer
+              // from `appointments.notes`, the patient-profile cancel drawer
+              // from a box typed for the purpose — and naming one of them would
+              // put a false provenance in an audit row, which is the class of
+              // defect this change exists to remove.
+              reasonRef: hadReason ? { entityType: "appointment", entityId: aid } : null,
               scope,
               // A cancel IS a status patch. It carries no allowConflict because
               // this path never reads one - vacating a slot cannot create a
