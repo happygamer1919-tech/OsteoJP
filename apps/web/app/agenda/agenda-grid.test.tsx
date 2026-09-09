@@ -669,3 +669,77 @@ describe("day columns carry their date (LE-e2e-appointment-fixture-drift)", () =
     expect(columnHtml(html, WEEK[1]!)).not.toContain("Maria Silva");
   });
 });
+
+// ---------------------------------------------------------------------------
+// AGENDA-01 - THE WEEKDAY ROW IS PINNED, AND THE CARD DOES NOT SWALLOW THE PIN.
+// ---------------------------------------------------------------------------
+// WHAT A STATIC RENDER CAN AND CANNOT PROVE, said out loud so nobody reads more
+// into a green run here than is in it.
+//
+// It CANNOT prove the header stays on screen. Nothing in this file scrolls, has
+// a viewport, or resolves a CSS variable; `agenda-sticky-header.spec.ts` is what
+// scrolls a real production-density week and reads the box back.
+//
+// What it CAN prove is the two-part contract that makes the behaviour possible,
+// and both halves are invisible to every other test in the repository:
+//
+//   1. THE CARD IS `overflow-clip`, NOT `overflow-hidden`. These look
+//      interchangeable and clip identically. They are not: `overflow: hidden`
+//      makes the card a SCROLL CONTAINER, and a sticky descendant then resolves
+//      its offsets against a box that never scrolls - so the header silently
+//      stops sticking while still rendering, still passing every assertion
+//      about its contents, and looking exactly like it did before. A tidy-up
+//      that "normalises" the class back is the whole failure mode.
+//   2. THE OFFSET IS THE CUSTOM PROPERTY. A literal `top-0` would pin the row
+//      under the toolbar at 1280x800, where the toolbar wraps to two rows -
+//      present in the DOM, invisible on the page.
+describe("weekday header pinning contract (AGENDA-01)", () => {
+  // Re-declared rather than hoisted out of the block above: that block's
+  // constants are its own, and lifting them would couple two suites that share
+  // nothing but a week.
+  const HEADER_COLUMN_RE = /<div data-day="(\d{4}-\d{2}-\d{2})"/g;
+  const MON_TO_SAT = [
+    "2026-07-20",
+    "2026-07-21",
+    "2026-07-22",
+    "2026-07-23",
+    "2026-07-24",
+    "2026-07-25",
+  ];
+
+  it("the header row is sticky, offset by --agenda-header-top, above the grid layers", () => {
+    const html = render([appt()]);
+    const header = html.slice(html.indexOf('data-testid="agenda-weekday-header"'));
+    const openTag = header.slice(0, header.indexOf(">"));
+
+    expect(openTag).toContain("sticky");
+    // z-30 clears the body's z-10 name lines and z-20 now-line, which share the
+    // card's stacking context. A header painted under a name line is the defect
+    // with extra steps.
+    expect(openTag).toContain("z-30");
+    expect(openTag).toContain("top:var(--agenda-header-top, 0px)");
+    // Opaque, or the rows scroll visibly THROUGH the pinned row. v2-surface is
+    // #FFFFFF (packages/ui/theme.css); a translucent token here would read as a
+    // rendering glitch rather than as a wrong day.
+    expect(openTag).toContain("bg-v2-surface");
+  });
+
+  it("the grid card clips WITHOUT becoming a scroll container", () => {
+    const html = render([appt()]);
+    const root = html.slice(0, html.indexOf(">"));
+    expect(root).toContain("glass-card");
+    expect(root).toContain("overflow-clip");
+    // The negative arm is the point: `overflow-hidden` is the one value that
+    // clips the same and breaks the pin.
+    expect(root).not.toContain("overflow-hidden");
+  });
+
+  it("each header cell names its day WITHOUT answering to the column locator", () => {
+    // `data-day` is the COLUMN's identity and agenda-cards.spec.ts asserts it
+    // resolves to exactly one element per date. A header cell carrying the same
+    // attribute would double it, and would also double COLUMN_RE's count above.
+    const html = render([appt()]);
+    for (const day of MON_TO_SAT) expect(html).toContain(`data-header-day="${day}"`);
+    expect([...html.matchAll(HEADER_COLUMN_RE)].map((m) => m[1])).toEqual(MON_TO_SAT);
+  });
+});

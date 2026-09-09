@@ -3,7 +3,7 @@
 import { DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
 import { Ban, ChevronLeft, ChevronRight, MapPin, Plus, RotateCw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type CSSProperties } from "react";
 
 import type { Role } from "@osteojp/auth";
 
@@ -147,6 +147,54 @@ export function AgendaView({
   }, []);
   const effectiveView: View = isMobile ? "day" : view;
 
+  /* ==================================================================== */
+  /* AGENDA-01 - WHERE THE GRID'S WEEKDAY HEADER IS ALLOWED TO PIN.       */
+  /* ==================================================================== */
+  /*
+   * The grid header sticks (agenda-grid.tsx). It has to stop at the BOTTOM OF
+   * THIS TOOLBAR, which is itself sticky - and this toolbar's height is a
+   * runtime fact, not a constant, because it is `flex-wrap` and carries eight
+   * controls. At 1440px it is one row; at the 1280x800 laptop reception uses it
+   * wraps to two, and on the narrowest desktop to three. A hardcoded offset
+   * would therefore pin the weekday row UNDERNEATH the toolbar on exactly the
+   * screens the defect was reported from, which is worse than not pinning it:
+   * the row would be present in the DOM, invisible on the page, and every test
+   * asserting "it is still there" would pass.
+   *
+   * THE `top` IS READ FROM THE ELEMENT, NOT REDERIVED. The toolbar is
+   * `top-16 lg:top-0` - 64px on mobile, where the shell renders its own sticky
+   * h-16 header, and 0 on desktop where it does not. Recomputing that from
+   * `isMobile` would be a second copy of the breakpoint, free to drift from the
+   * class that actually positions the bar; `getComputedStyle().top` is the
+   * value the browser is really using.
+   *
+   * A ResizeObserver, because a wrap is a HEIGHT change with no resize event of
+   * its own - a control widening (a longer clinic name, a therapist filter
+   * appearing for one role and not another) can rewrap the bar at a fixed
+   * viewport width. The window listener catches the other half: `top` changes
+   * at the lg breakpoint without the height necessarily changing with it.
+   *
+   * IT RESERVES NO SPACE. This writes one custom property and renders nothing.
+   */
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [headerTop, setHeaderTop] = useState(0);
+  useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el) return;
+    const measure = () => {
+      const top = Number.parseFloat(window.getComputedStyle(el).top);
+      setHeaderTop((Number.isFinite(top) ? top : 0) + el.getBoundingClientRect().height);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
   function navigate(next: {
     view?: View;
     date?: string;
@@ -178,12 +226,20 @@ export function AgendaView({
 
   return (
     <ToastProvider regionLabel={s["toast.regionLabel"]}>
-    <main>
+    {/* AGENDA-01: `--agenda-header-top` is consumed by the grid's sticky
+        weekday row. Set on <main> rather than passed as a prop so the grid stays
+        a pure function of its data - it reads a CSS variable with a 0px
+        fallback and needs to know nothing about the toolbar. */}
+    <main style={{ "--agenda-header-top": `${headerTop}px` } as CSSProperties}>
       {/* Toolbar: full-bleed sticky glass bar. Under the v2 SidebarAppShell the
           desktop content area has no top bar (sticks to top-0); on mobile it
           sits below the shell's sticky h-16 header (top-16). z-10 keeps it under
           that header (z-20). */}
-      <div className="glass-nav sticky top-16 z-10 -mx-6 -mt-8 mb-6 flex flex-wrap items-center gap-3 px-6 py-3 lg:top-0">
+      <div
+        ref={toolbarRef}
+        data-testid="agenda-toolbar"
+        className="glass-nav sticky top-16 z-10 -mx-6 -mt-8 mb-6 flex flex-wrap items-center gap-3 px-6 py-3 lg:top-0"
+      >
         <h1 className="text-2xl text-v2-text-primary">{s["agenda.title"]}</h1>
 
         {/* Day/week toggle is desktop-only: mobile is always the Dia view (§4). */}

@@ -80,6 +80,11 @@ fisiozero-archive/
 # never source.
 apps/web/e2e/seed/seed-state.json
 
+# AGENDA-01: which week scripts/perf-seed-agenda-week.mjs seeded to production
+# density, so perf-agenda-density.spec.ts opens it instead of re-deriving a date.
+# Per-lane, per-run state; never source.
+apps/web/e2e/.perf-agenda-week.json
+
 # LE-local-supabase-per-lane: generated per-lane Supabase projects
 # (scripts/lane-stack.mjs). Config is RENDERED from supabase/config.toml and the
 # migrations are symlinks to it, so nothing here is source.

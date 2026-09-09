@@ -25,9 +25,11 @@ import { EstadoMarker } from "./estado-marker";
 // never imports this.
 //
 // W12-33 (defect loop): the popup was rendered as an in-grid absolutely
-// positioned sibling. The agenda grid root is `.glass-card` = overflow-hidden +
+// positioned sibling. The agenda grid root is `.glass-card` = a clip +
 // backdrop-filter(blur) (packages/ui/theme.css), and each start-slot group is a
-// `z-10` stacking context. A backdrop-filter ancestor is a containing block for
+// `z-10` stacking context. (AGENDA-01 changed that clip from `overflow-hidden`
+// to `overflow-clip` so the weekday header can stick - it clips identically, so
+// nothing below changes: the portal is still what escapes it.) A backdrop-filter ancestor is a containing block for
 // fixed descendants AND a paint boundary, so NO z-index or position:fixed on an
 // in-tree popup can escape it: the popup was clipped by the grid overflow and
 // painted UNDER neighbouring name lines. The fix renders the popup through a
