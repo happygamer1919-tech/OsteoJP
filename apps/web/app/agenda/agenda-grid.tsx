@@ -243,13 +243,77 @@ export function AgendaGrid({
   const gridCols = { gridTemplateColumns: `${GUTTER}px repeat(${dates.length}, minmax(0, 1fr))` };
 
   return (
-    <div className="glass-card overflow-hidden">
-      {/* Column headers */}
-      <div className="grid border-b border-v2-border bg-v2-surface" style={gridCols}>
+    // AGENDA-01: `overflow-clip`, NOT `overflow-hidden`, and the difference is
+    // the whole feature. `overflow: hidden` makes this card a SCROLL CONTAINER
+    // (one that happens never to scroll), and a `position: sticky` descendant
+    // resolves its offsets against the nearest scrollport - so the weekday
+    // header would have pinned to a box that never moves and never stuck to
+    // anything. `overflow: clip` clips identically, respects the 24px radius
+    // identically, and is NOT a scroll container, so the header below sticks to
+    // the page. The hover popup is still PORTALLED out of here for the same
+    // reason it always was (clip is still a clip, and backdrop-filter is still a
+    // paint boundary) - see appointment-hover-card.tsx.
+    <div className="glass-card overflow-clip">
+      {/* ================================================================== */}
+      {/* AGENDA-01 - THE WEEKDAY ROW STAYS ON SCREEN WHILE THE GRID SCROLLS. */}
+      {/* ================================================================== */}
+      {/*
+        REPORTED FROM RECEPTION (CB): on a week carrying ~310 appointments the
+        day-of-week row scrolls away, and by 11:00 the reader is looking at a
+        column of patient names with nothing on screen saying which day it is.
+        That is how an appointment gets read against the wrong day.
+
+        IT STEALS NO VERTICAL SPACE. `sticky` leaves the element in normal flow -
+        its row is the same height it always was, the grid below starts where it
+        always did, and nothing is reserved. At the top of the page the card
+        looks byte-identical to before; the header only detaches once it would
+        otherwise have left the viewport.
+
+        THE OFFSET IS MEASURED, NOT A CONSTANT. The agenda toolbar above is
+        itself `sticky` and `flex-wrap`, so on a 1280px laptop it wraps to two or
+        three rows and its height is a runtime fact. A hardcoded `top-16` would
+        pin this header UNDERNEATH the toolbar on exactly the screens the defect
+        was reported from. `--agenda-header-top` is written by AgendaView from
+        the toolbar's own resolved `top` + height (see the ResizeObserver there);
+        the 0px fallback is what the unit tests and a first paint render with,
+        and at scroll-top no offset is observable anyway.
+
+        THE HOUR GUTTER IS DELIBERATELY NOT PINNED, and this is the half of the
+        problem that looks like an omission. The gutter is the VERTICAL axis: its
+        labels mean "this row is 09:00", so they have to travel with their rows.
+        Freezing it would leave 09:00 printed beside whatever happens to be
+        scrolled level with it, which is the same class of lie as the weekday row
+        being absent - louder, because it would still look authoritative. A
+        gutter pin is only ever needed against HORIZONTAL scroll, and this grid
+        has none: the columns are `minmax(0, 1fr)` inside the card, and below the
+        lg breakpoint the view collapses to a single day. Alignment therefore
+        needs nothing done to it - the gutter and the day columns are cells of
+        ONE grid and move as one - and agenda-sticky-header.spec.ts asserts that
+        by comparing each header cell's box against its column's after a scroll.
+
+        z-30 over the body's z-10 (name lines) and z-20 (the now line), inside
+        `.glass-card`'s own stacking context. The toolbar still paints above this
+        (it is z-10 in the page's context, above the card entirely), which is
+        what makes the measured offset a boundary rather than a collision.
+      */}
+      <div
+        data-testid="agenda-weekday-header"
+        className="sticky z-30 grid border-b border-v2-border bg-v2-surface"
+        style={{ ...gridCols, top: "var(--agenda-header-top, 0px)" }}
+      >
         <div className="border-r border-v2-border" />
         {dates.map((d) => (
           <div
             key={d}
+            // A SEPARATE ATTRIBUTE FROM THE COLUMN'S `data-day`, deliberately.
+            // It carries the same value, so a test can pair a header cell with
+            // the column it must stay aligned with by IDENTITY rather than by
+            // index - but it must not ANSWER to `[data-day=...]`, which is the
+            // column locator: agenda-cards.spec.ts:164 asserts that selector
+            // resolves to exactly ONE element per date, and agenda-grid.test's
+            // COLUMN_RE counts the columns by matching `<div data-day="`.
+            // Reusing the name here would have doubled both.
+            data-header-day={d}
             className={`border-r border-v2-border px-2 py-2 text-center text-sm font-medium last:border-r-0 ${
               d === today ? "text-v2-green-700" : "text-v2-text-primary"
             }`}
