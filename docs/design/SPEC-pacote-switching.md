@@ -306,6 +306,117 @@ version of (i) is the strict one: record `amount_charged_cents` (a number, no
 contract problem) in the audit, and record the REASON as a bounded enum rather
 than prose - the free-text half is the only part that collides.
 
+## 6c. STAMPED 2026-09-09 — **(ii), THE TWO COLUMNS.** Q-PACK-SWITCH-1b.
+
+**The owner's words:** *"TWO NULLABLE COLUMNS on `patient_pack_instances`,
+authored by BLUE, queued behind 0082. Not audit metadata."*
+
+**THE DECIDING REASON IS THIS DOCUMENT'S OWN FINDING, NOT THE RECOMMENDATION
+ABOVE IT.** The owner named it: audit metadata is ALREADY carrying free text it
+should not, so adding a money statement to it would load a surface that is
+already broken. That is §6b's "loose side" - `lib/scheduling/actions.ts` writing a
+free-text `reason` through a helper whose own header forbids exactly that - and
+it decided the question by itself. The recommendation in §6b agreed, but it
+argued from *where the money belongs*; the ruling argues from *what the
+alternative is already doing wrong*, which is the stronger reason and the one
+that would still hold if the money argument were wrong.
+
+**ONE THING CHANGED UNDER IT ON THE SAME DAY, AND IT SHARPENS THE REASON RATHER
+THAN REOPENING THE QUESTION.** #1226 merged 2026-09-09 and made the contract
+REFUSE free text instead of asking callers not to write it:
+`lib/scheduling/audit.ts` now exports `assertPiiFreeAuditMetadata` and throws
+`AuditMetadataError` on a string containing whitespace - *"which makes it prose
+and not an identifier"*.
+
+**BUT IT LANDED ON ONE HELPER, NOT BOTH, AND A PACOTE SWITCH WOULD USE THE OTHER
+ONE.** Read rather than assumed: `writeAppointmentAudit` calls the assertion;
+`lib/admin/audit.ts`'s `writeAudit` - the helper §7's step 7 uses - still states
+*"metadata is PII-free by contract"* in its header and imports nothing that
+checks it. So route (i) would NOT have been rejected at runtime. It would have
+been accepted, silently, by the one helper whose contract is still only prose.
+
+**WHICH IS THE ARGUMENT AGAINST IT, NOT FOR IT.** A route that works because the
+guard has not reached that file yet is a route that breaks when it does. The
+ruling therefore stands unchanged and is now better supported than when it was
+taken.
+
+**THE COLUMNS ARE AUTHORED. `0083`, BLUE, PR #1227 - HELD FOR THE OWNER'S APPLY,
+AND `0082` GOES FIRST.** Read off the branch rather than proposed here, because
+the migration now exists and this document must describe IT and not a plan:
+
+```sql
+ALTER TABLE "patient_pack_instances"
+  ADD COLUMN "switch_amount_cents" integer
+  CHECK ("switch_amount_cents" IS NULL OR "switch_amount_cents" >= 0);
+ALTER TABLE "patient_pack_instances"
+  ADD COLUMN "switch_reason" text
+  CHECK ("switch_reason" IS NULL OR btrim("switch_reason") <> '');
+ALTER TABLE "patient_pack_instances"
+  CHECK (("switch_amount_cents" IS NULL) = ("switch_reason" IS NULL));
+```
+
+**THE NAME IS `switch_amount_cents`, NOT `amount_charged_cents`.** §6b proposed
+the second and BLUE authored the first. **The migration wins and this section is
+written against it**, because one of the two exists. The authored name is also
+the better one: it pairs with `switch_reason`, so the two columns read as one
+event rather than as a price that happens to sit beside a note.
+
+- **NULLABLE AND NEVER BACK-FILLED**, exactly as ruled. Every instance that
+  exists today was not switched, and a `0` or an empty string would say
+  "switched, free of charge" - a fact nobody stated - about every one of them.
+  NULL means *this instance was never switched*; it is not the same as an amount
+  of zero, which is §7's whole point about goodwill. The migration's own comment
+  says so.
+- **INTEGER CENTS**, per CLAUDE.md's money rule and consistent with
+  `services.price_cents`. No currency column: the estate is single-currency and
+  inventing a second convention here would be the drift, not the safeguard.
+- **AND IT ENFORCES SHAPE CONSTRAINT 3 AT THE DATABASE, WHICH THE SPEC HAD ONLY
+  ASKED THE FORM TO DO.** `(switch_amount_cents IS NULL) = (switch_reason IS
+  NULL)` makes "an amount with no reason" unrepresentable, rather than merely
+  refused by a screen. That is stronger than what was ruled and it is the right
+  direction: a constraint cannot be bypassed by a path nobody thought of, which
+  is 0061's own argument.
+- **SO THE UI MUST SEND BOTH OR NEITHER.** A form that posted an amount with an
+  empty reason would not be rejected politely - it would raise a check violation
+  from the database. §7's step must therefore validate the pair before it writes,
+  and the error a receptionist sees must be the form's sentence, not a constraint
+  name.
+
+**IT IS QUEUED BEHIND `0082`** (the LANG-02 locale grant, #1216) and the PR title
+says so: *"DO NOT MERGE UNTIL APPLIED; APPLY 0082 FIRST"*. Rule 8 - one migration
+in flight across the whole repo - is what orders them.
+
+### THE THREE SHAPE CONSTRAINTS, STAMPED AS WRITTEN
+
+The owner's stamp, 2026-09-09: *"Your three shape constraints are stamped as
+written."* They are §7's, restated here so a builder finds them beside the
+storage they constrain:
+
+1. **THE AMOUNT IS AN INPUT, NEVER A PRE-FILLED DEFAULT THAT WAS ACCEPTED.** A
+   pre-filled field cannot afterwards distinguish "reception agreed" from
+   "reception did not look" - the recorded version of the very defect the ruling
+   prevents. The suggestion sits BESIDE the field and does not populate it.
+2. **THE SUGGESTION IS LABELLED AS TODAY'S CATALOGUE DIFFERENCE, in those
+   words.** It is a claim about the present, and it is never written to
+   `switch_amount_cents`.
+3. **A REASON IS REQUIRED, NOT OPTIONAL.** An amount with no reason is a number
+   nobody can audit.
+
+**AND ZERO IS ACCEPTED WHILE MISSING IS REFUSED.** A goodwill upgrade is a real
+commercial act; collapsing "nothing was charged" into "nobody said" would lose
+the distinction the ruling is about. In storage that is the difference between
+`0` and `NULL`, which is why the columns are nullable and the FORM is not. `0083`
+allows `>= 0` on the amount and refuses a blank reason, so zero-with-a-reason is
+representable and zero-with-nothing is not - which is the ruling, at the database.
+
+**WHAT PURPLE MAY DO NOW: NOTHING IN THE WRITE PATH.** The UI is built against
+these columns WHEN THEY LAND, and re-derived against the migration as applied
+rather than against this table. A screen written first would encode a shape
+nobody has agreed to and would have to be reconciled by somebody who wrote
+neither half.
+
+---
+
 ---
 
 ## 7. THE SHAPE I WOULD RECOMMEND, IF IT IS BUILT
@@ -369,8 +480,10 @@ stops - **and it stops on storage, not on a decision.**
   Option B. The recommendation below it was the opposite and is left standing
   rather than edited away, because the ruling accepts its premise and draws the
   other conclusion - see §6. ~~*Recommended: no; audit the switch, leave money to
-  invoices.*~~ **What is still open is WHERE it is stored: §6b, and the answer
-  decides whether this is PURPLE's or BLUE's.**
+  invoices.*~~ ~~*What is still open is WHERE it is stored.*~~ **ALSO CLOSED,
+  2026-09-09: two nullable columns on `patient_pack_instances`, BLUE's to author,
+  queued behind `0082`. §6c.** So the split is settled: BLUE authors the
+  migration, PURPLE builds the screen against it once it lands.
 - **Q-PACK-SWITCH-2** — is a DOWNGRADE (10 → 5) ever wanted? *Recommended:
   refuse it. It is a refund, the consumed count may already exceed the new
   total, and nothing has ruled on it.*
@@ -397,15 +510,18 @@ difference may be shown (yes, labelled as a suggestion), whether it may be
 recorded as what was paid (never), and - by naming reception - who is at the
 keyboard.
 
-**OPEN, AND IT IS ONE QUESTION:** where the typed amount and reason are stored.
-§6b sets it out with a recommendation. On the recommended route it is two
-nullable columns and therefore BLUE's; on the cheap route it is audit metadata
-today, at the cost of deepening a contradiction two shipped callers already
-disagree about.
+**~~OPEN, AND IT IS ONE QUESTION:~~ CLOSED 2026-09-09.** Where the typed amount
+and reason are stored: **two nullable columns on `patient_pack_instances`,
+authored by BLUE, queued behind `0082`. Not audit metadata.** §6c carries the
+ruling, the deciding reason - which is this document's own finding that audit
+metadata already carries free text it should not - and the column contract. The
+question is struck rather than deleted because §6b's derivation is what the
+ruling was taken against.
 
 **NOT PART OF THIS AT ALL:** what anyone actually paid for the ORIGINAL pacote.
 Nothing in the database knows, nothing will, and no amount typed at a switch
 recovers it. The ruling's last sentence says so and the spec agrees.
 
-**STOP. Report only, per the dispatch. Nothing is built and no migration is
-authored.**
+**STOP. Report only. Nothing is built and no migration is authored by this lane.
+The next thing that moves this card is BLUE's migration existing; the screen is
+built against it afterwards, re-derived from what it actually created.**
