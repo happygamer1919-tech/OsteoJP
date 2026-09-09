@@ -3,10 +3,14 @@
 //
 // PII SAFETY: metadata must contain only ids, counts, and changed-field NAMES —
 // never field values, names, NIFs, contacts, or clinical content (hard rule 7).
+// ENFORCED by lib/audit/metadata-contract.ts, not merely stated here: the same
+// sentence sat above the scheduling helper while it wrote clinical notes into
+// the log for months.
 
 import { auditLog } from "@osteojp/db";
 import type { DbTx } from "@osteojp/db";
 import type { RequestContext } from "../auth/context";
+import { assertPiiFreeAuditMetadata } from "@/lib/audit/metadata-contract";
 
 export type PatientAuditEntry = {
   action: `patient.${string}`;
@@ -19,6 +23,7 @@ export async function writeAudit(
   ctx: RequestContext,
   entry: PatientAuditEntry,
 ): Promise<void> {
+  assertPiiFreeAuditMetadata(entry.metadata ?? {}, "patients/writeAudit");
   await tx.insert(auditLog).values({
     tenantId: ctx.tenantId,
     actorUserId: ctx.userId,
