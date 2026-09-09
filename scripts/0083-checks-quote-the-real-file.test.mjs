@@ -41,6 +41,7 @@ const MIGRATION = path.join(REPO, "packages/db/migrations/0083_pack_switch_amoun
 const PRE = path.join(REPO, "scripts/0083-precheck.sql");
 const POST = path.join(REPO, "scripts/0083-postcheck.sql");
 const JOURNAL = path.join(REPO, "packages/db/migrations/meta/_journal.json");
+const APPLY = path.join(REPO, "docs/migration-apply-0083.md");
 
 const sha256 = (p) => createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 
@@ -129,4 +130,63 @@ test("the CONTROL: the sha256 helper produces a different digest for a different
   // above pass.
   assert.notEqual(sha256(MIGRATION), sha256(PRE));
   assert.match(sha256(MIGRATION), /^[0-9a-f]{64}$/);
+});
+
+/* ---------------- THE APPLY DOCUMENT QUOTES THE SAME THREE HASHES -------- */
+
+test("the apply block quotes the REAL sha256 of all three files it runs", () => {
+  // THE APPLY BLOCK IS THE ONE DOCUMENT A PERSON PASTES INTO A PRODUCTION SHELL,
+  // and its hashes are assertions that HALT. A stale one does not fail safe: it
+  // halts a correct apply at the top of a sitting, which is how a block gets
+  // "fixed" by deleting the check.
+  //
+  // It pins CONTENT rather than a commit sha, deliberately: a commit sha cannot
+  // be written into the document that is part of that commit. See the document's
+  // own section on this.
+  const doc = fs.readFileSync(APPLY, "utf8");
+  for (const [label, file] of [
+    ["migration", MIGRATION],
+    ["pre-check", PRE],
+    ["post-check", POST],
+  ]) {
+    const h = sha256(file);
+    assert.ok(
+      doc.includes(h),
+      `docs/migration-apply-0083.md does not quote the ${label}'s sha256.\n` +
+        `  on disk: ${h}\n` +
+        `  recompute: shasum -a 256 ${path.relative(REPO, file)}`,
+    );
+  }
+});
+
+test("the apply block quotes no OTHER 64-hex string", () => {
+  const doc = fs.readFileSync(APPLY, "utf8");
+  const known = new Set([
+    sha256(MIGRATION),
+    sha256(PRE),
+    sha256(POST),
+    "b43423ae98ba631501473ca67ebdbabc1f7914340391301f22be7ef9c620a4b9", // 0082
+  ]);
+  const unknown = [...new Set(doc.match(/\b[0-9a-f]{64}\b/g) ?? [])].filter((h) => !known.has(h));
+  assert.deepEqual(unknown, [], `the apply block quotes an unrecognised sha256: ${unknown}`);
+});
+
+test("the apply block derives its pin instead of hard-coding one", () => {
+  // A hard-coded commit sha in this file is self-referential and goes stale on
+  // the commit that writes it. If one ever reappears, this says so.
+  const doc = fs.readFileSync(APPLY, "utf8");
+  assert.match(doc, /PIN=\$\(git rev-parse origin\/db\/0083-pack-switch-amount\)/);
+  const bare = doc.match(/PIN=[0-9a-f]{40}/g) ?? [];
+  assert.deepEqual(bare, [], "the apply block hard-codes a commit sha again");
+});
+
+test("both stages assert SR-58 and both carry the migration hash", () => {
+  const doc = fs.readFileSync(APPLY, "utf8");
+  assert.equal((doc.match(/git checkout -q --detach \$PIN/g) ?? []).length, 2,
+    "SR-58: each of the two stages must check out its own ref");
+  assert.equal((doc.match(/shasum -a 256 packages\/db\/migrations\/0083_pack_switch_amount\.sql/g) ?? []).length, 2,
+    "each stage must assert the migration's sha256 on disk");
+  // SR-59: the carries are parsed, never retyped.
+  assert.match(doc, /carry\(\) \{ awk -F'\|' -v k="\$1" 'index\(\$1,k\)>0/);
+  assert.match(doc, /-v journal_before="\$J" -v instances_before="\$I" -v checks_before="\$C"/);
 });

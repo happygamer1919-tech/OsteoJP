@@ -5,22 +5,25 @@ substitute. Any `STOP:` line, or any `FAIL` verdict, halts the sitting.
 
 | Fact | Value |
 |---|---|
-| Pinned sha | `e315177c99462452cafd63a397f239443f830997` (`db/0083-pack-switch-amount`) |
-| Migration | `packages/db/migrations/0083_pack_switch_amount.sql` |
-| Its sha256 | `12a756bd8fe934c01448b9cddd30c0fa02be9b27141b6c6cab7ed1f87a66e96d` |
+| Branch | `db/0083-pack-switch-amount` |
+| Migration | `packages/db/migrations/0083_pack_switch_amount.sql`, sha256 `12a756bd8fe934c01448b9cddd30c0fa02be9b27141b6c6cab7ed1f87a66e96d` |
+| Pre-check | `scripts/0083-precheck.sql`, sha256 `446203301a8a075bab13193a734c74a5b99e2070619b669cdb00e2d60181ca69` |
+| Post-check | `scripts/0083-postcheck.sql`, sha256 `9cca35278d6f718ace2854b9038ab75c9d3e717c3482a43d6aa09850895b2cb3` |
 | Journal | `idx 80`, tag `0083_pack_switch_amount`, `when 1787701200000` |
 | Depends on | 0082 applied (`b43423ae98ba631501473ca67ebdbabc1f7914340391301f22be7ef9c620a4b9`) |
 
-**Re-verify the pin as the LAST action before running anything** — a moved sha that
-still resolves is worse than one that errors, and both 0061 and 0062 proved it:
+### The pin is the CONTENT, not a commit sha, and that is deliberate
 
-```
-git -C /Users/ivan/osteojp fetch -q origin && \
-git -C /Users/ivan/osteojp rev-parse origin/db/0083-pack-switch-amount
-```
+The runbook pins a commit because a branch that keeps moving while a block sits in
+review silently stops being the tree that was reviewed — 0061 and 0062 both lost that
+way. **A commit sha cannot be written into the document that is part of that commit**;
+the moment this file is committed, the sha it names is the previous one.
 
-Expected, exactly: `e315177c99462452cafd63a397f239443f830997`. Anything else means the
-branch moved after this block was written; do not run it, and get it re-issued.
+So the block derives the head from the branch and then asserts **the sha256 of all
+three files it actually runs**. That is strictly stronger for the thing at risk: if the
+branch moves and the migration, pre-check or post-check differs by one byte, the stage
+halts. If it moves for an unrelated commit — a doc edit, a rebase onto main — it
+proceeds, which is correct, because none of the three files changed.
 
 ## Why two stages and why each re-checks out
 
@@ -38,8 +41,8 @@ file stage 1 wrote. A carry that cannot be retyped cannot be retyped wrongly.
 ```
 (
 set -e
-PIN=e315177c99462452cafd63a397f239443f830997
 SHA0083=12a756bd8fe934c01448b9cddd30c0fa02be9b27141b6c6cab7ed1f87a66e96d
+SHAPRE=446203301a8a075bab13193a734c74a5b99e2070619b669cdb00e2d60181ca69
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 
@@ -47,7 +50,9 @@ cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 STRAY=$(git status --short)
 [ -z "$STRAY" ] || { echo "STOP: the apply worktree is not clean:"; echo "$STRAY"; exit 1; }
 git fetch origin --prune
+PIN=$(git rev-parse origin/db/0083-pack-switch-amount)
 [ "$(git cat-file -t $PIN)" = commit ] || { echo "STOP: $PIN does not resolve to a commit"; exit 1; }
+echo "applying from $PIN"
 
 # --- SR-58: this stage checks out its own ref and proves the files ---------
 git checkout -q --detach $PIN
@@ -56,6 +61,8 @@ test -f scripts/0083-precheck.sql                          || { echo "STOP: the 
 test -f packages/db/scripts/verified-migrate.mjs           || { echo "STOP: verified-migrate is not on disk"; exit 1; }
 [ "$(shasum -a 256 packages/db/migrations/0083_pack_switch_amount.sql | cut -d' ' -f1)" = "$SHA0083" ] \
   || { echo "STOP: 0083 on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/0083-precheck.sql | cut -d' ' -f1)" = "$SHAPRE" ] \
+  || { echo "STOP: the pre-check on disk is not the approved file"; exit 1; }
 
 # --- the production target, asserted by the guard, not by the prompt -------
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport
@@ -82,18 +89,21 @@ move. That is the silent no-op, and it is the state that has cost this project d
 ```
 (
 set -e
-PIN=e315177c99462452cafd63a397f239443f830997
 SHA0083=12a756bd8fe934c01448b9cddd30c0fa02be9b27141b6c6cab7ed1f87a66e96d
+SHAPOST=9cca35278d6f718ace2854b9038ab75c9d3e717c3482a43d6aa09850895b2cb3
 
 cd /Users/ivan/Documents/Projects/GitHub/osteojp-prod-apply
 
 # --- SR-58 again. This stage inherits nothing from stage 1 -----------------
 git fetch origin --prune
+PIN=$(git rev-parse origin/db/0083-pack-switch-amount)
 [ "$(git cat-file -t $PIN)" = commit ] || { echo "STOP: $PIN does not resolve to a commit"; exit 1; }
 git checkout -q --detach $PIN
 test -f scripts/0083-postcheck.sql || { echo "STOP: the post-check is not on disk"; exit 1; }
 [ "$(shasum -a 256 packages/db/migrations/0083_pack_switch_amount.sql | cut -d' ' -f1)" = "$SHA0083" ] \
   || { echo "STOP: 0083 on disk is not the approved file"; exit 1; }
+[ "$(shasum -a 256 scripts/0083-postcheck.sql | cut -d' ' -f1)" = "$SHAPOST" ] \
+  || { echo "STOP: the post-check on disk is not the approved file"; exit 1; }
 
 # --- SR-59: the carries come out of THIS RUN's pre-check transcript --------
 test -f /tmp/0083-precheck.out || { echo "STOP: stage 1's transcript is missing; re-run stage 1"; exit 1; }
