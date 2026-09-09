@@ -3763,3 +3763,104 @@ queue *because it had been seen*. AGENDA-01 is not a re-check of that surface �
 it is a CHANGE to it, made afterwards. The pruning rule is "surfaces never seen
 on an owner screen", and a surface that changed after being seen is one of them
 again.
+
+## 2026-09-09 (second dispatch) — the toolbar carded, two owner rulings recorded, two stamps applied
+
+No code. One card, two rulings, three spec sections, and a question closed.
+
+### AGENDA-02 — the toolbar is carded, not built, and the measurement is the card
+
+Owner instruction, verbatim: *"CARD IT, DO NOT BUILD. 221px of an 800px screen
+before the first appointment is real and it is a redesign of the busiest surface
+in the product. It queues behind the intake."*
+
+**The measurement was taken across eleven widths in a real browser rather than
+quoted from the one number the last report carried.** `stack` is the toolbar plus
+the pinned weekday row (37px), which is what is gone before an appointment can be
+drawn:
+
+| width | toolbar | stack | share of an 800px screen | rows |
+|---|---|---|---|---|
+| 1024 | 232px | 269px | 34% | 3 |
+| 1152–1280 | 222px | 259px | 32% | 3 |
+| 1366–1440 | 170px | 207px | 26% | 2 |
+| 1536–3000 | 122px | 159px | 20% | 2 |
+
+**Three things the curve says that one number could not.**
+
+**1024 IS THE WORST CASE AND IT IS NOT AN EDGE CASE.** It is the `lg` breakpoint
+— the narrowest width at which the agenda renders the WEEK at all. So the surface
+is at its worst on the smallest screen that shows it.
+
+**IT NEVER COLLAPSES TO ONE ROW, AT ANY WIDTH.** 122px is a floor, reached by
+1536 and unchanged at 3000: two rows of 40px controls plus `py-3`. There is no
+monitor on which this toolbar is one row.
+
+**THE CAUSE IS ONE CHILD, read off the rendered boxes rather than the class
+list.** The toolbar is one `flex flex-wrap` with four children: the `Agenda` h1
+(90px), the Dia/Semana control (148px), the date group (669px), and an `ml-auto`
+ACTION GROUP carrying seven controls — 926px at 1280, 1095px at 1920. That fourth
+child never shares a row with the other three at any width tested, and at 1280 it
+also wraps internally to 88px of its own, which is what takes the bar from two
+rows to three.
+
+**And a correction to the number I gave you.** The last report said 221px. The
+height is **222px**; 221 was the boundary an assertion compared against
+(`toolbar.y + toolbar.height - 1`), not the height.
+
+**The card carries all of this and is deliberately NOT NEXT.** Its
+`open_on_purpose` says so in the owner's words, so a self-merge sweep reading
+statuses does not pick it up ahead of INTAKE-01.
+
+### WF-19 — the intake consent version reuses the terms mechanism
+
+Q-INTAKE-4 closed. **My observation was right and my conclusion was wrong**, and
+both are left standing in the spec because the difference is the lesson: there
+genuinely is no version identifier on the RGPD text, and it did not follow that
+this needed building. The question should have been *does the terms pattern apply
+here* rather than *what should we build*.
+
+Re-derived from the schema rather than from the dispatch:
+`patient_terms_acceptances` is `patient_id`, `accepted_at` (caller-supplied,
+never defaulted), `terms_version text NOT NULL` and `recorded_by`. No column
+holds the document text, and the column's own comment says that is deliberate —
+*"A DOCUMENT IDENTITY, NOT ITS TEXT."* The owner's description of it is exact.
+
+So the intake stores a LABEL on the intake row beside what was ticked and when:
+three values, one row, no second acceptance table, and nothing that has to happen
+before BLUE's migration. §11.3's step 2 is struck rather than renumbered.
+
+**One thing the ruling leaves to the build, and it is not a fourth question.**
+The terms code's TEXTLESS/TEXTED ledger guards a document that lives OUTSIDE this
+repository. `clinical.consent.rgpd.body` lives inside it, so the hazard is
+different in shape: not a label whose text is unavailable, but a label whose text
+is EDITED UNDER IT. The ledger's own lesson applies — a guard must watch the
+thing that actually changes, and here that is the body, not the constant.
+
+### WF-20 — the cancellation reason stays removed
+
+*"Leave it removed. Nothing ever read it, one of its two writers never sent one,
+and the audit log was the wrong home. If it is wanted later it goes on the
+appointment, never in the log. Not scheduled."*
+
+**The durable half is the second sentence.** It fixes the SHAPE of any future fix
+before anybody starts it, which is the part that would otherwise be re-argued
+from scratch: `appointments.cancellation_reason`, written by a box that means it,
+never `audit_log`.
+
+Recorded on the card as `deferred` rather than in prose, because that field is
+what `validate-board.mjs` and the self-merge sweep actually read. A card left at
+`todo` with the ruling only in its notes would be picked up by the next sweep.
+The card stays open because the gap is real; it is simply not scheduled.
+
+### Two stamps
+
+**PACK-06's UI contract is stamped as this lane read it**, so what was a reading
+of a database constraint is now the acceptance criteria: the form sends both or
+neither and validates the pair; a check violation never reaches the front desk as
+a database error; zero stays accepted. The trigger is now exactly one event — the
+apply. `0083` is written and held.
+
+**INTAKE-01's hold is stamped**, including the reason for not writing code: every
+apparently independent part encodes the shape of a table nobody has created.
+Section 11's acceptance table is the agreed artefact.

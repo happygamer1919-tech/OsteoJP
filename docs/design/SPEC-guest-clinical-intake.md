@@ -573,40 +573,78 @@ should not have to reassemble them from five sections.
 | 5 | **Consent stored with what was ticked, when, and which version of the RGPD text** | §6.3 | three values persisted, not one boolean |
 | 6 | **`contraindication_*` is never written from an intake answer** - not for `sim`, not for `nao` | §5 | conversion writes neither column; an import is not a clinician |
 
-### 11.2 THE ONE THING BLOCKING CONSTRAINT 5 THAT IS NOT THE MIGRATION
+### 11.2 CONSTRAINT 5 — RULED 2026-09-09 (WF-19). REUSE THE TERMS MECHANISM.
 
-**THERE IS NO VERSION STRING ON THE RGPD TEXT.** Re-derived rather than recalled:
-`clinical.consent.rgpd.body` carries no version anywhere in the repository, and
-`marcacao/actions.ts` refuses a submit without the tick and then writes the tick
-nowhere - `guest_booking_requests` has no consent column.
+**THE OWNER'S WORDS:** *"Reuse the terms mechanism. `patient_terms_acceptances`
+already stores a version string as the document's identity and never its text.
+The intake consent uses that same pattern. Not a new mechanism, not a blocker,
+and it does not need a table of its own."*
 
-So constraint 5 has two halves and only one of them is BLUE's. The COLUMN is
-storage; the VERSION IDENTIFIER is the form's, and it does not exist. **A consent
-record naming a version that nothing can produce is worse than no version at
-all**, because it reads as defensible and is not: consent to a text you cannot
-later reproduce is not consent you can defend.
+**~~THE ONE THING BLOCKING CONSTRAINT 5 THAT IS NOT THE MIGRATION.~~ IT WAS NOT
+A BLOCKER, AND THE HEADING THIS SECTION USED TO CARRY IS STRUCK RATHER THAN
+DELETED.** The observation underneath it was correct and is unchanged: there is
+no version identifier on the RGPD text anywhere in the repository. What was
+wrong was the conclusion drawn from it — that this was a second thing to solve.
+It is a solved thing to apply.
 
-**AND THE REPOSITORY ALREADY HAS THIS EXACT MECHANISM, so it should be reused
-rather than reinvented.** `apps/web/lib/clinical/terms-acceptance.ts` carries
-`TERMS_VERSION`, a `TEXTLESS_TERMS_VERSIONS` list for labels whose text nobody
-can produce, and a `TEXTED_TERMS_VERSIONS` list for labels that have one -
-precisely the distinction between "we recorded a version" and "we can show you
-what they agreed to". `TERMS_VERSION` still points at the textless `2026-08`
-today, and moving it to `condicoes-v1-2026` when JP's text lands is its own open
-card (`LE-terms-version-switch-on-jp-text`, blocked on JP).
+**THE MECHANISM, RE-DERIVED FROM THE SCHEMA RATHER THAN FROM THE RULING.**
+`patient_terms_acceptances` (`packages/db/src/schema.ts`) is:
 
-**RECOMMENDED, and logged in `docs/design/QUESTIONS.md` as Q-INTAKE-4 rather than
-decided here:** give the RGPD body the same treatment - an identifier beside the
-copy, pinned to the text by a test that fails when the body changes without the
-identifier changing. It is a few lines and it needs no table. It is only worth
-writing WITH the step that reads it, so it is named here and not built.
+| column | note |
+|---|---|
+| `patient_id` | no cascade — the row outlives a patient cleanup, for the dispute it exists to answer |
+| `accepted_at` | **supplied by the caller, never defaulted**, so a paper acceptance carries the date it happened |
+| `terms_version text NOT NULL` | the label. Free text, refused blank by a CHECK in 0058 |
+| `recorded_by` | pinned to `auth.uid()` by RLS on INSERT |
+
+**There is no column holding the document text**, and the column's own comment
+says why: *"A DOCUMENT IDENTITY, NOT ITS TEXT. The accepted wording lives in the
+versioned document the patient signs; copying it into every row would make each
+row a stale duplicate of it. The column is free text precisely so the versioning
+scheme can belong to the document rather than to this schema."*
+
+**WHAT THIS SETTLES, IN THREE LINES:**
+
+1. **Not a new mechanism.** The intake stores a LABEL, exactly as a terms row
+   does. `TERMS_VERSION`'s rule comes with it: *when the text changes, add a new
+   value, never edit this one* — old rows keep the label they were captured
+   under, which is the entire reason terms acceptance is a table with history.
+2. **Not a blocker.** The label does not have to exist before BLUE's migration.
+   It is written with the step that reads it, which is what §11.3 already said.
+3. **No table of its own.** The version rides on the intake row beside what was
+   ticked and when: **three values on one row**, not a second acceptance table.
+   Constraint 5 is therefore satisfied by BLUE's table plus one constant.
+
+**ONE THING THE RULING LEAVES TO THE BUILD, named here so it is not mistaken for
+a fourth question.** `terms-acceptance.ts` also carries a two-list ledger —
+`TEXTLESS_TERMS_VERSIONS` for labels recorded while no document text existed,
+`TEXTED_TERMS_VERSIONS` for labels whose text is fixed and identified — with the
+guard that they must never intersect. **That ledger exists because the terms
+document lives OUTSIDE this repository**, where a label could silently come to
+name text nobody here can produce.
+
+**THE RGPD BODY IS INSIDE THIS REPOSITORY**, so the same hazard takes a
+different shape: not a label whose text is unavailable, but a label whose text is
+EDITED UNDER IT. `clinical.consent.rgpd.body` is an i18n string and a one-word
+change to it would leave every prior row claiming acceptance of wording nobody
+agreed to. Whether that wants the same two-list ledger, or the simpler pin (a
+test asserting the body still hashes to what the current label was fixed
+against), is a **build decision for whoever writes step 3** — the ledger's own
+lesson is that a guard must watch the thing that actually changes, and here that
+is the body rather than the constant.
 
 ### 11.3 THE BUILD ORDER, ONCE THE TABLE EXISTS
 
 1. Re-derive §3, §5 and §8 against the migration as applied - column names,
    nullability, the enum's actual labels. **Not against this document.**
-2. Land the consent version identifier (11.2) with the copy it describes.
-3. The fifth step: the six controls of §3, no JavaScript, nothing pre-checked.
+2. ~~Land the consent version identifier with the copy it describes.~~ **NO
+   LONGER A STEP OF ITS OWN (WF-19).** The version is a label on the intake row,
+   written with the step below that reads it — see §11.2. It is struck rather
+   than renumbered so the two later corrections to this list stay findable by
+   the numbers they were written under.
+3. The fifth step: the six controls of §3, no JavaScript, nothing pre-checked,
+   **and the consent label captured alongside the tick and the timestamp**
+   (§11.2). Three values, one row.
 4. `firstIncompleteStep` gains the two required radios, server-side (§3).
 5. The nested field on the existing `POST /api/v1/booking/guest` (§6.2). One
    write, one transaction, no second call.

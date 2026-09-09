@@ -415,6 +415,32 @@ rather than against this table. A screen written first would encode a shape
 nobody has agreed to and would have to be reconciled by somebody who wrote
 neither half.
 
+### THE UI CONTRACT IS STAMPED, 2026-09-09
+
+**The owner's words:** *"build against BLUE's 0083 columns, `switch_amount_cents`
+and its reason, once the owner applies it. Their table-level check makes an
+amount without a reason unstorable, so the UI sends both or neither and validates
+the pair itself. Your reading of what that costs the UI is correct and stamped."*
+
+So the three paragraphs above are no longer this lane's reading of a constraint;
+they are the contract. Restated as the acceptance criteria a build is measured
+against:
+
+1. **THE FORM SENDS BOTH OR NEITHER**, and validates the pair before it writes.
+   `(switch_amount_cents IS NULL) = (switch_reason IS NULL)` is a table-level
+   CHECK, so an amount with nobody's reason is **unstorable**, not merely
+   refused by a screen.
+2. **A VIOLATION NEVER REACHES THE FRONT DESK AS A DATABASE ERROR.** The sentence
+   a receptionist reads is the form's. This is the register the feature would
+   fail worst in: money, at a counter, with a patient waiting.
+3. **ZERO STAYS ACCEPTED.** `>= 0`, never `> 0`; and `btrim(reason) <> ''`
+   refuses a blank. Zero-with-a-reason is representable, zero-with-nothing is
+   not — which is the goodwill case the money ruling exists to protect.
+
+**AND THE TRIGGER IS NOW EXACTLY ONE EVENT: THE APPLY.** Not a decision, not a
+design, not another lane's authoring. `0083` is written and held (#1227, behind
+`0082`). Nothing else stands between this spec and a screen.
+
 ---
 
 ---

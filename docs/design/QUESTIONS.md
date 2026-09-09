@@ -1012,7 +1012,36 @@ Rodica: "Continuamos a nao conseguir editar as marcacoes do utente, e nao e visi
 
 ## INTAKE-01 — the clinical intake form (PURPLE, 2026-09-09)
 
-### Q-INTAKE-4 — the RGPD text has no version identifier, and constraint 5 cannot be met without one
+### Q-INTAKE-4 — the RGPD text has no version identifier — **ANSWERED / CLOSED 2026-09-09 (WF-19)**
+
+> **RULED BY THE OWNER, 2026-09-09:** *"Reuse the terms mechanism.
+> `patient_terms_acceptances` already stores a version string as the document's
+> identity and never its text. The intake consent uses that same pattern. Not a
+> new mechanism, not a blocker, and it does not need a table of its own."*
+>
+> **THE OBSERVATION BELOW WAS RIGHT AND THE CONCLUSION WAS WRONG**, which is why
+> it is left standing rather than edited. There genuinely is no version
+> identifier on the RGPD text. What does not follow is that this needed solving:
+> the mechanism exists, in `patient_terms_acceptances` and
+> `apps/web/lib/clinical/terms-acceptance.ts`, and the question should have been
+> "does the terms pattern apply here" rather than "what should we build".
+>
+> **WHAT IT SETTLES:** the intake stores a LABEL, on the intake row, beside what
+> was ticked and when — three values on one row, no second acceptance table. The
+> label is written with the step that reads it, so nothing has to happen before
+> BLUE's migration. Constraint 5 is satisfied by that table plus one constant.
+>
+> **THE ONE THING LEFT IS A BUILD DECISION, NOT A QUESTION.** The terms code's
+> two-list ledger guards a document that lives OUTSIDE this repository. The RGPD
+> body lives inside it, so the hazard is an edit under an unchanged label rather
+> than a label with no text. Which guard fits is recorded in
+> `docs/design/SPEC-guest-clinical-intake.md` §11.2 for whoever writes the step.
+>
+> **~~The recommended default below asked for a decision.~~** None was needed.
+
+--- the question as it was raised, unchanged below ---
+
+### Q-INTAKE-4 (as raised) — the RGPD text has no version identifier, and constraint 5 cannot be met without one
 
 **RAISED 2026-09-09**, from the owner's dispatch: *"consent stored with what was
 ticked, when, and which version of the RGPD text."* Two of those three are
@@ -1054,3 +1083,11 @@ than discovering it at step 5.
 mechanic, not a product decision. The owner-confirmable half is whether the
 CURRENT text is the one to label `v1`, or whether JP's pending terms text
 supersedes it first (which would tie this to `LE-terms-version-switch-on-jp-text`).
+
+**ANSWERED 2026-09-09, and the answer went past the half this paragraph
+expected.** The owner did not rule on which text is `v1`; he ruled on the
+MECHANISM, and in doing so removed the coupling this paragraph proposed. The
+intake label is the intake document's identity and is independent of
+`TERMS_VERSION`: the terms switch card can move on JP's timetable without
+touching the intake, and vice versa. Nothing here waits on
+`LE-terms-version-switch-on-jp-text`.
