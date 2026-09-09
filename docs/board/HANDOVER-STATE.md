@@ -120,17 +120,21 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**344 cards on the board. 246 shipped, 98 open. Launch readiness 9/9, every launch gate passes.**
-Plus **63 recorded rulings**, which are decisions and not work: they carry no
+**349 cards on the board. 249 shipped, 100 open. Launch readiness 9/9, every launch gate passes.**
+Plus **64 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
-65 and two are on the external agenda. Nothing mechanical checks this number - the
-status, nothing finishes them, and they are in none of the numbers above. That is
-the RENDERED count, the same convention as the card line above it: the file holds
-65 and two are on the external agenda. Nothing mechanical checks this number - the
-guard next door pins the CARD headline only - and it was reading 51 while the
-board rendered 58, which is why it says where it comes from now. It read 58 against a
-rendered 60 on 2026-09-08 and was corrected again, by the same hand-count.
+66 and two are on the external agenda. Nothing mechanical checks this number - the
+guard next door pins the CARD headline only - and it has now been wrong four times
+(51 against a rendered 58, then 58 against 60, then 63 against 64 on 2026-09-09),
+each time found and corrected by hand-count. A number nothing checks is a number
+that drifts; the honest thing is to say which one it is rather than to imply the
+guard covers it.
+
+*Three of the previous version's lines were a DUPLICATED PARAGRAPH, corrected here
+on 2026-09-09. The same two sentences appeared twice in a row, which is what a
+half-applied edit to a prose block looks like and is invisible in a diff of a
+document nobody re-reads top to bottom.*
 
 *These are the numbers **on the board above**, which is the only place you count
 them. The underlying file holds three more cards that the board deliberately does
