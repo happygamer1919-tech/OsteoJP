@@ -3902,3 +3902,50 @@ than the attention that caught the first two, but it only works while some
 session holds a live watch, and the window it leaves open is however long that
 session takes to read the notification. The card stays open, priority raised to
 high on the third occurrence. Building it is still not authorised.
+
+### Fourth republish, twenty minutes later, was NOT a collision — and it corrects the fix I had just recommended
+
+Same notification, opposite diagnosis. BLUE had published main **plus** nine of
+their own unmerged card updates (`board/2026-09-09-blue-b`, #1235). Nothing on
+main was missing, every ruling was present, and all nine differing cards had
+notes that had GROWN with `last_checkpoint` moved FORWARD. That is the artifact
+LEADING a PR, which is the documented behaviour both lanes use.
+
+**Nothing was done to the artifact, and that is the finding.** Republishing from
+main would have reverted nine of their card updates and caused collision five.
+**The notification is not the signal; the diff is.** A lane that restores on
+every notification becomes the thing the card is about.
+
+### Fix (A) is wrong, and this repository already knew why
+
+Thirty minutes ago I committed, on that card, that fix (A) — *compare `as_of`,
+refuse when yours is older* — would have caught the third occurrence. True, and
+half the story:
+
+| | incoming `as_of` | live `as_of` | reality | (A) says |
+|---|---|---|---|---|
+| third | 16:51:35Z | 17:10:00Z | genuinely behind | refuse — **right** |
+| fourth | 17:09:02Z | 17:10:00Z | ahead in content, 58s behind by the field | refuse — **wrong** |
+
+`as_of` is a hand-set field. It cannot order two boards that both descend from
+the same main, so it cannot separate *behind* from *leading with unmerged work*.
+
+**And `board-app.js:728` already records this lesson from PL-28**: the portal's
+own staleness check used to compare `as_of` DATES and could not see a same-day
+republish — *"Every publish on 2026-07-31 carried as_of 2026-07-31 … the owner
+kept looking at"* a stale board for two days. It was replaced by a content
+fingerprint, which `render-board.mjs` already computes. **Fix (A) as written
+proposes the mechanism PL-28 removed.**
+
+### Candidate (C), which is what this lane would build
+
+The renderer fetches `origin/main`'s committed JSON — the declared source of
+truth — and refuses to render if any card id or ruling id on main is absent from
+the board about to be published, or is at an older `last_checkpoint`. Local, no
+network read of the artifact, fails closed. It permits exactly what BLUE did
+today and refuses exactly what happened at the third occurrence.
+
+**The set difference is the test**, and it is what both diagnoses actually used:
+`published − incoming` non-empty means data loss; `incoming − main` non-empty is
+a legitimate lead. Recommendation updated from (A) to (C). Still not built;
+building it is still not authorised.
