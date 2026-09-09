@@ -93,6 +93,16 @@ const ALLOWED = new Set([
   // is a different column on a different table - and the whole point of the
   // guard it is testing is that those two numbers are allowed to disagree.
   "apps/web/lib/admin/pack-session-count.db.test.ts",
+  // ======================================================================
+  // 0083 / PACK-06. The fixture for the two switch columns.
+  // ======================================================================
+  // Same case as the four entries above, admitted on the same terms and no
+  // wider: the suite INSERTS throwaway instances (its `withInstance` helper
+  // supplies the column because it is NOT NULL with no default), and it never
+  // UPDATEs it and never READS it. Every assertion in that file is about
+  // `switch_amount_cents` and `switch_reason` - columns that did not exist when
+  // this guard was written, on the same row, and unrelated to the balance.
+  "packages/db/tests/pack-switch-amount.db.test.ts",
 ]);
 
 function sources() {
