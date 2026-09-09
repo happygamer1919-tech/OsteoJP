@@ -3864,3 +3864,41 @@ apply. `0083` is written and held.
 **INTAKE-01's hold is stamped**, including the reason for not writing code: every
 apparently independent part encodes the shape of a table nobody has created.
 Section 11's acceptance table is the agreed artefact.
+
+### Third board-artifact collision, 2026-09-09, and the recommended fix now has a case
+
+Detected by the artifact watch rather than by anybody noticing: a republish
+notification arrived, this session re-read the artifact and diffed its board-data
+island against `origin/main` at `7029255a`.
+
+**The owner's board was showing the state before #1233 on five objects:** WF-19
+and WF-20 absent, `LE-cancel-reason-is-not-retained` with no `deferred` marker,
+and PACK-06 and INTAKE-01 with their pre-#1233 notes. **Two owner rulings taken
+that afternoon were not on the owner's only status surface**, and a card he had
+ruled out of the queue was showing as live work.
+
+**It would have been hard to see by eye**, which is the part that makes this
+occurrence different from the two on 2026-09-06. Those moved cards and statuses.
+This one left the card SET identical — 352 rendered on both sides, AGENDA-02
+present in both — and changed only the insides of five objects. No lane count and
+no lane colour would have moved.
+
+**The recovery was cheaper than the documented one, and that is worth knowing.**
+The set difference `published − main` was **empty**: the republish added no card
+and no ruling that main did not already have. So the fix was a plain re-render
+from `origin/main` and a republish, with nothing committed and nothing recovered
+out of the island. The 2026-09-06 procedure — read the other board out of the
+island, merge additively, publish the union — is the EXPENSIVE case. **Check the
+set difference first**; a lane that assumes the additive recovery is always
+required will do unnecessary work and risk reintroducing state.
+
+**Fix (A) would have refused this publish, and that is now measured rather than
+argued.** (A) is *the renderer reads the live island's `as_of` and refuses when
+its own is older*. The incoming publish carried `as_of 16:51:35Z` over a live
+board at `17:10:00Z` — eighteen minutes older — and published anyway.
+
+**Detection is not prevention.** The watch is a real mechanism and it is better
+than the attention that caught the first two, but it only works while some
+session holds a live watch, and the window it leaves open is however long that
+session takes to read the notification. The card stays open, priority raised to
+high on the third occurrence. Building it is still not authorised.
