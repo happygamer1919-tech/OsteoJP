@@ -3591,3 +3591,147 @@ An unprompted reply — someone who knows to answer, or a future patient whose
 message reaches a number we later own — is still classified, still moves the
 appointment under the same guard rails, and still lands in reception's queue.
 The gate changed what the clinic **says**, not what it **hears**.
+
+## 2026-09-09 — PURPLE dispatch: the agenda weekday header, the /horarios therapist selection, and two rulings recorded
+
+Four items from the owner's 2026-09-09 dispatch. Two were builds and merged as
+their own PRs; two were rulings to record against work this lane does not own.
+
+### AGENDA-01 — the weekday row is pinned (#1229)
+
+Reception (CB): a 310-appointment week scrolls its day-of-week row out of view,
+and by 11:00 the reader has a column of names with nothing saying which day.
+
+**`overflow-clip`, not `overflow-hidden`, on the grid card.** This is the whole
+change and it is the one a later tidy-up will undo. `overflow: hidden` makes the
+card a scroll container, so a `position: sticky` descendant resolves its offsets
+against a box that never scrolls — it renders, it never sticks, and every
+assertion about its CONTENTS still passes. **Measured, not argued:** with
+`sticky` present and `overflow-hidden` restored, the e2e still reports
+`viewport ratio 0`.
+
+**The sticky offset is measured at runtime, not a constant.** The agenda toolbar
+above is itself sticky and `flex-wrap`s; at 1280x800 it is **221px tall, three
+rows**. A literal `top: 0` pins the header at y=0, behind that bar — present to
+every locator, invisible to the reader. `AgendaView` writes
+`--agenda-header-top` from the toolbar's own resolved `top` plus its measured
+height, via a ResizeObserver (a wrap is a height change with no resize event of
+its own).
+
+**The hour gutter is deliberately NOT pinned, and the dispatch asked for this to
+be said rather than assumed.** The gutter is the VERTICAL axis: "09:00" means
+"this row is 09:00", so it must travel with its rows. Freezing it would print an
+hour beside whatever happened to scroll level with it — the same class of lie as
+the missing weekday, and louder because it would still look authoritative. A
+gutter pin is only ever needed against HORIZONTAL scroll, and this grid has none
+(columns are `minmax(0, 1fr)`; below `lg` the view collapses to one day). The
+e2e asserts the two behaviours differ: the header holds still while the hour
+label travels by exactly the scroll delta.
+
+**It reserves no vertical space.** Sticky leaves the row in flow; the e2e
+asserts the grid body still starts within 2px of the header's bottom at
+scroll-top.
+
+**Proven twice, on purpose.** The CI spec runs on the fixture database, where
+the 08:00–20:00 window is already taller than a laptop viewport, so the
+regression guard cannot be skipped. `perf-agenda-density.spec.ts` plus
+`scripts/perf-seed-agenda-week.mjs` run the real thing: **310 appointments,
+1408px of time grid, 993px of scroll on an 800px screen**, with the count read
+off the agenda's own range chip rather than off the seed's manifest, and
+`elementFromPoint` checking that the header is what is painted over the name
+lines passing under it — the one property no sparse fixture can test.
+
+**A measured correction to my own first seed.** A FLAT 310 — one appointment in
+each half-hour slot — renders a grid **exactly as tall as an empty week**
+(12 × 96px), because STAFF-03 only grows an hour when the lines starting in it
+need more than 96px, which takes five. "310 appointments" is not by itself a
+dense grid. The seed now shapes a clinic day (lunch hour, thin edges, concurrent
+starts through the middle) and the spec asserts the column is taller than
+`12 × 96` as its premise, so a future flat seed cannot pass while claiming
+production scale.
+
+### LE-inspector-and-editor-select-different-therapists (#1230)
+
+**One half of the reported premise stays refuted and was not quietly fixed.**
+The Definir dia a dia modal has named its therapist since SCHED-04.
+
+**The other half was the structure.** `/horarios` renders ONE inspector whose
+therapist came from `?t=`, defaulting to `therapists[0]` — the first of the
+roster, not the card you scrolled to — while the editors are one card per
+therapist.
+
+**The default is gone.** With a roster of more than one the inspector starts on
+nobody and says so. "The first of the roster" is an ordering accident and the
+more plausible a wrong answer looks the more it costs. **A roster of ONE still
+auto-selects** (the `self` scope: a therapist viewing their own schedule) — there
+is no second candidate, and a dropdown offering one name is an obstacle rather
+than a safeguard.
+
+**A `<Link>`, not a client button.** `?t=` is already the page's selection and
+already reached by a soft navigation from the inspector's own `<Select>`; a Link
+is that same navigation with no new client component and no second source of
+truth. `#inspetor` brings the panel into view, because a card at the bottom of a
+roster changing an answer at the top is a change nobody can see.
+
+**What this deliberately does NOT do: follow the card when an EDITOR opens.** A
+server round trip fired from a dialog's open handler re-renders the tree under a
+dialog that is mid-open, and a dialog that shuts as you press it is worse than
+the residual it removes — which the modal titles already cover.
+
+### PACK-06 — the storage question is closed, and the deciding reason was not the recommendation
+
+**Two nullable columns on `patient_pack_instances`, authored by BLUE, queued
+behind `0082`. Not audit metadata.** `SPEC-pacote-switching.md` §6c carries the
+stamp, the column contract and the three shape constraints.
+
+**The owner decided it on this document's own finding rather than on its
+recommendation**, and the difference matters: §6b recommended the columns because
+the money BELONGS beside the instance. The ruling took the other reason — audit
+metadata is already carrying free text it should not, so adding a money statement
+would load a surface that is already broken. That reason still holds if the first
+one is wrong.
+
+**And a correction to what I first wrote about #1226.** It made the audit
+metadata contract REFUSE free text — but on `writeAppointmentAudit` only.
+`lib/admin/audit.ts`'s `writeAudit`, the helper a pacote switch would use, still
+states the contract in its header and imports nothing that checks it. So route
+(i) would have been ACCEPTED at runtime, silently. That is an argument against
+it, not for it: a route that works because the guard has not reached that file
+yet breaks when it does.
+
+### INTAKE-01 — the migration number was wrong, and one blocker is not the migration
+
+**`0082` is the LANG-02 patient-locale GRANT (#1216), not the intake's storage.**
+The intake's table has **no number at all** and will be `0083` or later, taken at
+authoring time and never reserved (§7.0b). The hold is unchanged in substance;
+`SPEC-guest-clinical-intake.md` is corrected in five places that named `0082`.
+
+**Two stale claims in that spec were re-derived and corrected rather than
+repeated.** It said there is no `javaScriptEnabled: false` anywhere in
+`apps/web/e2e`. **There is now** — LANG-01 added
+`guest-language.spec.ts:41`, which walks all four guest steps with JavaScript
+off. So the instruction changes from "add the run" to "extend the run", and a
+second no-JS spec would leave two walks that can disagree about one form.
+
+**§11 is what "ready to build" means here, and it is deliberately not code.** The
+fifth step, the radios and the validation all ENCODE the storage contract; a
+validator written against a table nobody has created is a second design of that
+table, and the two would have to be reconciled by somebody who wrote neither.
+What is ready is the build ORDER and the acceptance criteria for the owner's six
+constraints, so the build is a transcription once the table lands.
+
+**Q-INTAKE-4 is logged:** the RGPD text carries no version identifier anywhere,
+so "which version of the RGPD text" cannot be satisfied by any table. The
+repository already has the mechanism (`TERMS_VERSION`,
+`TEXTLESS_TERMS_VERSIONS`, `TEXTED_TERMS_VERSIONS`); the recommendation is to
+reuse it, written WITH the step that reads it.
+
+### One operational finding, recorded because it cost two gate runs
+
+`pnpm build` before `pnpm test:e2e` leaves a production `.next` that `next dev`
+cannot compile inside Playwright's 120s `webServer` timeout — it hangs on
+`Compiling /` and the suite reports `Timed out waiting 120000ms from
+config.webServer` with no test ever running. `rm -rf apps/*/.next` fixes it.
+**Run the e2e gate BEFORE `pnpm build`, or clear `.next` between them.** The
+gate order in PORTAL-REHYDRATE §4.6 lists `build` before `test:e2e`, which is
+the order that triggers this.

@@ -1007,3 +1007,50 @@ Rodica keeps testing on prod (synthetic "Teste CB" + appts + a Declaracao on the
 **ANSWERED 2026-07-28 (owner):** Rodica does NOT need full service/therapist edit. The existing patient-tab Gerir marcação (Reagendar time / Estado / Cancelar) is sufficient, plus the new authorship line. No full-edit surface will be built. PL-02 is fully closed - no follow-up.
 
 Rodica: "Continuamos a nao conseguir editar as marcacoes do utente, e nao e visivel por quem nem quando foi feita a marcacao". **Two parts.** Part (b) the authorship line ("nao e visivel por quem nem quando") is SHIPPED in this loop: the patient Marcações row now shows "Criado por {staff} · Criado em {DD/MM/AAAA HH:mm}", reusing the agenda hover-card provenance. Part (a) "nao conseguir editar" - reproduction plus the existing green `marcacoes-tab-edit.spec.ts` (and a new save+reread e2e added here) show the patient Marcações tab ALREADY edits: "Gerir marcação" reaches Reagendar (date/time), Estado, and Cancelar on editable (scheduled/confirmed) rows; terminal rows (completed/cancelled/no_show) intentionally have NO "Gerir". The patient tab has NO full-edit surface (service / therapist / room / notes) - that lives only on the Agenda `appointment-drawer.tsx`. So "nao conseguir editar" is most likely (i) she tried a terminal row, or (ii) she wants to change the service/therapist, not just the time. **Recommended default:** add the missing fields (service, therapist) to the patient-tab manage surface - or open the existing Agenda appointment-drawer from the tab - reusing the existing `updateAppointment` server action (no new action, no schema, no migration); confirm with Rodica WHICH fields she needs to change and whether terminal rows need any action. This is a scope expansion beyond the reschedule/estado/cancel that already work, so it is owner/Rodica-gated per the loop's Field 6, not silently guessed.
+
+---
+
+## INTAKE-01 — the clinical intake form (PURPLE, 2026-09-09)
+
+### Q-INTAKE-4 — the RGPD text has no version identifier, and constraint 5 cannot be met without one
+
+**RAISED 2026-09-09**, from the owner's dispatch: *"consent stored with what was
+ticked, when, and which version of the RGPD text."* Two of those three are
+storage and are BLUE's. **The third does not exist anywhere.**
+
+Re-derived rather than recalled: `clinical.consent.rgpd.body` (both locales,
+`packages/i18n/src/strings.*.json:875`) carries **no version string of any
+kind**, and `apps/portal/app/marcacao/actions.ts` refuses a submit without the
+tick and then writes the tick nowhere — `guest_booking_requests` has no consent
+column. So today the guest form validates a consent it cannot afterwards
+describe.
+
+**WHY IT IS NOT A DETAIL.** A consent record naming a version nothing can
+produce is worse than no version at all: it reads as defensible and is not.
+Consent to a text you cannot later reproduce is not consent you can defend, and
+that is the whole reason the owner named the version as one of three.
+
+**THE REPOSITORY ALREADY HAS THE MECHANISM.**
+`apps/web/lib/clinical/terms-acceptance.ts` carries `TERMS_VERSION`, plus
+`TEXTLESS_TERMS_VERSIONS` (labels whose text nobody can produce) and
+`TEXTED_TERMS_VERSIONS` (labels that have one) — precisely the distinction
+between "a version was recorded" and "we can show what they agreed to".
+`TERMS_VERSION` still points at the textless `2026-08`; moving it to
+`condicoes-v1-2026` when JP's text lands is its own card,
+`LE-terms-version-switch-on-jp-text`, blocked on JP.
+
+**RECOMMENDED DEFAULT:** give the RGPD body the same treatment — an identifier
+beside the copy, pinned to the text by a test that fails when the body changes
+without the identifier changing — and write it **with** the fifth step that
+reads it, not before. It needs no table and no migration.
+
+**NOT BUILT, and deliberately so.** A version constant nothing reads is dead
+code until INTAKE-01 ships, and INTAKE-01 is held on a storage table that does
+not exist. This is logged so the build order in
+`docs/design/SPEC-guest-clinical-intake.md` §11.3 names it as step 2 rather
+than discovering it at step 5.
+
+**WHO DECIDES:** nobody, if the recommended default is taken — it is a
+mechanic, not a product decision. The owner-confirmable half is whether the
+CURRENT text is the one to label `v1`, or whether JP's pending terms text
+supersedes it first (which would tie this to `LE-terms-version-switch-on-jp-text`).

@@ -1,10 +1,16 @@
 # SPEC — the clinical intake form, once per patient, at first online booking
 
-**Status: DESIGN REPORT. NOTHING IS BUILT. HELD UNTIL MIGRATION 0082 EXISTS.**
+**Status: DESIGN REPORT. NOTHING IS BUILT. HELD UNTIL THE STORAGE TABLE EXISTS.**
 Author: PURPLE, 2026-09-07. Re-derived from `origin/main` at `380e1023`.
-Amended 2026-09-07 to carry STRATEGY'S THREE RULINGS (§0.1). The build stays
-held: BLUE's storage is migration `0082` and this document is written against
-it, so building before it exists would be building against a shape nobody has.
+Amended 2026-09-07 to carry STRATEGY'S THREE RULINGS (§0.1). Amended 2026-09-09
+with the owner's correction to the migration number and the build order (§11).
+The build stays held: **BLUE's storage migration does not exist and has no number
+yet** - it will be `0083` or later, taken at authoring time. This document is
+written against that table, so building before it exists would be building
+against a shape nobody has.
+
+**`0082` IS NOT THIS CARD'S MIGRATION**, and every reference below that says so
+is corrected in place. `0082` is the LANG-02 patient-locale GRANT (#1216).
 
 **Division of labour, from the dispatch:** BLUE owns STORAGE and RETENTION.
 This document owns the FORM and the FLOW, and it states precisely what it needs
@@ -94,13 +100,19 @@ dispatch says the four steps "POST WITHOUT JAVASCRIPT and you pinned that with
 an e2e deliberately." The e2e pins the CONTROL — that `preferredDate` is
 `input[type="date"]` and posts by name — and its header explains why the shared
 DatePicker was not used there. **It does not run with JavaScript disabled.**
-There is no `javaScriptEnabled: false` anywhere in `apps/web/e2e`. So the
-property is real (one form, hidden fields, native inputs, `action=""`, server
-validation) and it is pinned by SHAPE, not by execution. **If a fifth step is
-built, the honest thing is to add the run that was never there** — one
-`test.use({ javaScriptEnabled: false })` walk of all five steps — rather than
-inherit a claim nothing has ever executed. That is a small addition and it is
-listed in §9.
+
+**CORRECTED 2026-09-09: THE RUN NOW EXISTS, AND THIS PARAGRAPH SAID IT DID NOT.**
+When this was written there was no `javaScriptEnabled: false` anywhere in
+`apps/web/e2e`. LANG-01 added one: `guest-language.spec.ts:41` opens a context
+with JavaScript off and walks all four steps against the portal, anonymously,
+asserting `?lang=` survives each POST. The property is therefore EXECUTED now,
+not merely pinned by shape.
+
+**So the instruction changes from "add the run" to "extend the run".** A fifth
+step must appear inside that walk - the radios and the date input posting from a
+browser with no JavaScript - and adding a second, separate no-JS spec would leave
+two walks that can disagree about the same form. §9 item 7 is corrected to say
+so.
 
 ---
 
@@ -282,7 +294,8 @@ therapist it is safe to proceed with NESA.
 **RULED 2026-09-07 (RULING 2). This is no longer a question.**
 
 - **intake storage keeps three states** (`'sim' | 'nao' | never-asked`), in
-  BLUE's `0082`, and NOT in the two-state boolean columns above;
+  BLUE's storage table (`0083` or later - see the status note at the top), and
+  NOT in the two-state boolean columns above;
 - **both questions are REQUIRED on the form**, so a guest submission can never
   produce never-asked. See §3 for the control and for why neither radio is
   pre-checked;
@@ -435,8 +448,8 @@ waiting on an answer that had already been given.
 
 **SEVEN DAYS, AND ALL FOUR CONDITIONS HOLD TOGETHER.** A retention rule with
 three of four implemented is not a shorter rule, it is a different one, so the
-four are listed as a set that BLUE's `0082` and its deletion path must satisfy
-together rather than as a checklist to work through:
+four are listed as a set that BLUE's storage migration and its deletion path
+must satisfy together rather than as a checklist to work through:
 
 1. an unconverted intake is deleted seven days after it arrives;
 2. conversion ENDS the clock — once the person is a patient the submission is
@@ -471,7 +484,7 @@ Listed so the stamp is informed. Nothing here is started.
 | 4 | `intake` on the request body | `apps/portal/lib/guest/api.ts` |
 | 5 | Accept, validate and hand to BLUE's write | `apps/api/app/api/v1/booking/guest/route.ts` |
 | 6 | ~20 new keys, pt AND en (see the English report) | `packages/i18n/src/portal/strings.*.json` |
-| 7 | **The no-JS e2e that has never existed**, five steps, `javaScriptEnabled: false` | `apps/web/e2e/guest-booking-flow.spec.ts` |
+| 7 | **A fifth step inside the EXISTING no-JS walk** (corrected 2026-09-09: it exists, LANG-01 added it) | `apps/web/e2e/guest-language.spec.ts` |
 | 8 | The three-state unit suite: unanswered survives as a third value end to end | new |
 | 9 | The Article 9 guard: a suite asserting no answer reaches a URL, a log or an error string | new |
 | — | storage, RLS, retention, conversion | **BLUE** |
@@ -502,22 +515,109 @@ needs to find the answers in the place they were asked:
   OPEN.** JP had already ruled seven days with four conditions; this report was
   wrong to list it. §8.
 
-## THE BUILD IS HELD ON `0082`, AND THAT IS A DIFFERENT KIND OF HOLD
+## THE BUILD IS HELD ON A TABLE THAT HAS NO MIGRATION NUMBER YET
 
-It is not waiting on a decision any more. It is waiting on BLUE's storage
-migration to EXIST, because every field shape in §3, the three-state
-representation in §5 and the retention clock in §8 are written against a table
-nobody has created yet.
+**CORRECTED 2026-09-09, BY THE OWNER, AND THE NUMBER WAS THE ONLY THING WRONG.**
+This section said "held on `0082`" and named it as this card's storage migration.
+It is not. `0082` is `supabase/migrations/0082_patient_locale_grant.sql` -
+LANG-02's one-line `GRANT UPDATE (locale) ON public.patients TO patient`, merged
+as #1216 - and it has nothing to do with the intake.
+
+**THE INTAKE'S STORAGE HAS NO NUMBER AT ALL.** No table for guest clinical-intake
+answers exists, none is authored, and whatever creates it will be `0083` or
+later - **taken from the journal at authoring time, never reserved here**
+(PORTAL-REHYDRATE §7.0b, and the `0053` collision it records: a reserved number
+that has been overtaken is not free, and using it produces a migration that does
+nothing and reports success).
+
+**THE HOLD IS UNCHANGED IN SUBSTANCE.** It is not waiting on a decision any more.
+It is waiting on BLUE's storage migration to EXIST, because every field shape in
+§3, the three-state representation in §5 and the retention clock in §8 are
+written against a table nobody has created yet.
 
 **BUILDING AGAINST A SHAPE THAT DOES NOT EXIST IS HOW THE TWO HALVES COME APART.**
 The form would post a body the write path cannot store, and the mismatch would
 surface as a runtime failure on a PUBLIC form with a stranger's health data in
-the request. So the order is: `0082` lands, this document is re-derived against
-what it actually created, and only then does the form get built.
+the request. So the order is: the storage migration lands, this document is
+re-derived against what it actually created, and only then does the form get
+built.
 
-**WHAT PURPLE CAN DO BEFORE THEN: NOTHING IN THIS FLOW.** Stated so it is not
-mistaken for an invitation to start the parts that look independent — the fifth
-step, the radios and the validation all encode the storage contract, and writing
-them first only moves the re-derivation later.
+---
 
-**STOP.**
+## 11. READY TO BUILD. THE ORDER, AND THE SIX THINGS THE OWNER BOUND.
+
+**ADDED 2026-09-09 on the owner's instruction: "Have the form ready to build the
+moment the migration lands."** This section is what "ready" means here, and it is
+deliberately not code.
+
+**WHY NOT CODE, said plainly rather than left as an omission.** The parts that
+look independent - the fifth step, the radios, the validation - all ENCODE the
+storage contract. A validator written against a table nobody has created is a
+second design of that table, and when the real one lands the two have to be
+reconciled by somebody who did not write either. Writing them first does not
+bring the build forward; it moves the re-derivation later and hides it. So what
+is ready is the BUILD ORDER and the ACCEPTANCE CRITERIA, such that the moment the
+table exists the build is a transcription rather than a design.
+
+### 11.1 THE SIX CONSTRAINTS, AS THE OWNER STATED THEM 2026-09-09
+
+Each is already derived somewhere above; they are gathered here because a builder
+should not have to reassemble them from five sections.
+
+| # | The constraint | Where it is derived | Acceptance |
+|---|---|---|---|
+| 1 | **Three states** for pacemaker and pregnancy, **never-asked distinct from no** | §5 | storage holds three values; `nao` and never-asked are not the same row |
+| 2 | **Both REQUIRED on the form** | §3, §5 | a post omitting either returns to step 5 with `missing_field`, server-side, not only via the browser's `required` |
+| 3 | **Ask everyone, resolve at conversion** | §7 | the step renders identically for a phone number that already belongs to a patient - no oracle |
+| 4 | **Seven-day deletion on all four conditions, never on age alone** | §8 | the job's predicate names four conditions; a row failing any one of them survives regardless of age |
+| 5 | **Consent stored with what was ticked, when, and which version of the RGPD text** | §6.3 | three values persisted, not one boolean |
+| 6 | **`contraindication_*` is never written from an intake answer** - not for `sim`, not for `nao` | §5 | conversion writes neither column; an import is not a clinician |
+
+### 11.2 THE ONE THING BLOCKING CONSTRAINT 5 THAT IS NOT THE MIGRATION
+
+**THERE IS NO VERSION STRING ON THE RGPD TEXT.** Re-derived rather than recalled:
+`clinical.consent.rgpd.body` carries no version anywhere in the repository, and
+`marcacao/actions.ts` refuses a submit without the tick and then writes the tick
+nowhere - `guest_booking_requests` has no consent column.
+
+So constraint 5 has two halves and only one of them is BLUE's. The COLUMN is
+storage; the VERSION IDENTIFIER is the form's, and it does not exist. **A consent
+record naming a version that nothing can produce is worse than no version at
+all**, because it reads as defensible and is not: consent to a text you cannot
+later reproduce is not consent you can defend.
+
+**AND THE REPOSITORY ALREADY HAS THIS EXACT MECHANISM, so it should be reused
+rather than reinvented.** `apps/web/lib/clinical/terms-acceptance.ts` carries
+`TERMS_VERSION`, a `TEXTLESS_TERMS_VERSIONS` list for labels whose text nobody
+can produce, and a `TEXTED_TERMS_VERSIONS` list for labels that have one -
+precisely the distinction between "we recorded a version" and "we can show you
+what they agreed to". `TERMS_VERSION` still points at the textless `2026-08`
+today, and moving it to `condicoes-v1-2026` when JP's text lands is its own open
+card (`LE-terms-version-switch-on-jp-text`, blocked on JP).
+
+**RECOMMENDED, and logged in `docs/design/QUESTIONS.md` as Q-INTAKE-4 rather than
+decided here:** give the RGPD body the same treatment - an identifier beside the
+copy, pinned to the text by a test that fails when the body changes without the
+identifier changing. It is a few lines and it needs no table. It is only worth
+writing WITH the step that reads it, so it is named here and not built.
+
+### 11.3 THE BUILD ORDER, ONCE THE TABLE EXISTS
+
+1. Re-derive §3, §5 and §8 against the migration as applied - column names,
+   nullability, the enum's actual labels. **Not against this document.**
+2. Land the consent version identifier (11.2) with the copy it describes.
+3. The fifth step: the six controls of §3, no JavaScript, nothing pre-checked.
+4. `firstIncompleteStep` gains the two required radios, server-side (§3).
+5. The nested field on the existing `POST /api/v1/booking/guest` (§6.2). One
+   write, one transaction, no second call.
+6. The no-JavaScript run. **CORRECTED 2026-09-09: the run this report called
+   missing NOW EXISTS and the spec must not keep asking for it.**
+   `apps/web/e2e/guest-language.spec.ts:41` opens a context with
+   `javaScriptEnabled: false` and walks all four steps against the portal
+   anonymously - added by LANG-01 after this document was written. So the
+   correct instruction is not "add one", it is **extend that one to a fifth
+   step**: the radios and the date input must post from a browser with no
+   JavaScript, and the place that already proves the other four is where it
+   belongs.
+
+**STOP. Nothing above is built, and no migration is authored by this lane.**
