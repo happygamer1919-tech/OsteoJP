@@ -15,6 +15,7 @@ import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-co
 import {
   DAY_END_HOUR,
   DAY_START_HOUR,
+  SLOT_MINUTES,
   daySlots,
   formatDayHeader,
   lisbonMinutesFromMidnight,
@@ -67,10 +68,21 @@ const GROUP_PAD_PX = 4;
  * across. Per-column heights would misalign the week and make the gutter lie.
  */
 
-/** Every hour the grid renders, as minutes-from-midnight. */
-function dayHours(): number[] {
+/**
+ * Every hour the grid renders, as minutes-from-midnight.
+ *
+ * 0085: bounded by the CLINIC's hours rather than by two module constants.
+ *
+ * THE LAST ROW IS THE HOUR THAT CONTAINS THE CLOSING TIME, NOT THE CLOSING
+ * TIME. A clinic closing at 20:00 renders a 19:00 row, which is right - 19:30
+ * is genuinely the last slot anybody can be booked into. That is also why the
+ * clinic reported "the agenda ends at 19:00": the last LABEL said so. The
+ * closing time is drawn separately, on the gutter's bottom edge, further down
+ * in this file - see `agenda-closing-label`.
+ */
+function dayHours(startMin: number, endMin: number): number[] {
   const out: number[] = [];
-  for (let h = DAY_START_HOUR; h < DAY_END_HOUR; h += 1) out.push(h * 60);
+  for (let m = Math.floor(startMin / 60) * 60; m < endMin; m += 60) out.push(m);
   return out;
 }
 
@@ -83,9 +95,13 @@ function dayHours(): number[] {
  *
  * Pure and exported so the arithmetic is unit-testable without a DOM.
  */
-export function hourHeights(startCountsByDay: number[][]): number[] {
+export function hourHeights(
+  startCountsByDay: number[][],
+  startMin: number = DAY_START_MIN,
+  endMin: number = DAY_END_MIN,
+): number[] {
   const base = SLOT_HEIGHT * 2;
-  return dayHours().map((_, hourIndex) => {
+  return dayHours(startMin, endMin).map((_, hourIndex) => {
     let needed = base;
     for (const day of startCountsByDay) {
       const lines = day[hourIndex] ?? 0;
@@ -116,13 +132,22 @@ export function hourTops(heights: number[]): number[] {
  * Exported for the same reason `groupBandPx` was: the placement arithmetic is
  * the part most worth pinning, and a DOM is not needed to pin it.
  */
-export function makeMinToPx(heights: number[]): (min: number) => number {
+export function makeMinToPx(
+  heights: number[],
+  startMin: number = DAY_START_MIN,
+  endMin: number = DAY_END_MIN,
+): (min: number) => number {
   const tops = hourTops(heights);
+  // The scale's own origin is the first RENDERED hour, which is the hour
+  // containing opens_at rather than opens_at itself: a clinic opening at 08:30
+  // still draws an 08:00 row, and a mapping anchored on 08:30 would put every
+  // appointment half an hour high.
+  const originMin = Math.floor(startMin / 60) * 60;
   return (min: number) => {
-    const clamped = Math.max(DAY_START_MIN, Math.min(min, DAY_END_MIN));
-    const hourIndex = Math.floor((clamped - DAY_START_MIN) / 60);
+    const clamped = Math.max(originMin, Math.min(min, endMin));
+    const hourIndex = Math.floor((clamped - originMin) / 60);
     const idx = Math.min(hourIndex, heights.length - 1);
-    const within = clamped - (DAY_START_MIN + idx * 60);
+    const within = clamped - (originMin + idx * 60);
     return tops[idx]! + (within / 60) * heights[idx]!;
   };
 }
@@ -190,6 +215,8 @@ export function AgendaGrid({
   onSelectAppointment,
   onSelectSlot,
   onOpenBlock,
+  dayWindow,
+  closure,
 }: {
   view: AgendaView;
   anchor: string;
@@ -203,9 +230,43 @@ export function AgendaGrid({
   /** SCHED-22: open the block a band belongs to. Absent when the caller has
    *  nowhere to route (bands only render under a single-therapist filter). */
   onOpenBlock?: (blockId: string) => void;
+  /**
+   * 0085 - the visible window, in minutes from midnight, resolved by the page
+   * from the clinic's own hours. Defaults to the old constants so nothing that
+   * does not pass it changes.
+   */
+  dayWindow?: { startMin: number; endMin: number };
+  /**
+   * 0085 - the clinic's daily closure, as minutes from midnight, or null.
+   *
+   * ONLY SET WHEN ONE CLINIC IS SELECTED. Under "Todas as localizações" the
+   * band would be a claim about one clinic drawn across a grid showing two,
+   * which is the owner's ruling and the same reasoning that keeps the
+   * therapist block band off the unfiltered agenda.
+   */
+  closure?: { startMin: number; endMin: number; locationName: string } | null;
 }) {
   const dates = viewDates(view, anchor);
-  const slots = daySlots();
+  const win = dayWindow ?? { startMin: DAY_START_HOUR * 60, endMin: DAY_END_HOUR * 60 };
+  // The first RENDERED hour. A clinic opening at 08:30 still draws an 08:00
+  // row, so every index into the hour arrays counts from the hour boundary.
+  const originMin = Math.floor(win.startMin / 60) * 60;
+  const slots = daySlots(win.startMin, win.endMin);
+  /**
+   * 0085 - is the 30-minute slot starting at `m` inside the clinic's closure?
+   *
+   * ANY OVERLAP, like isSlotBlocked: a closure from 13:00 covers the 12:30 slot
+   * only if a booking there would run into it, which at 30 minutes it does not,
+   * but a 13:15 closure would. The rule is the same one so the two bands cannot
+   * disagree about which slots they cover.
+   *
+   * THE DISABLED BUTTON IS THE ENFORCEMENT ON THIS SCREEN, not the band above
+   * it - an overlay alone leaves the slot reachable by keyboard, which is the
+   * hole CB QA item 3 found in the block band. The real enforcement is the
+   * refusal on the write path; this only stops the click.
+   */
+  const closedAt = (m: number): boolean =>
+    closure != null && closure.startMin < m + SLOT_MINUTES && closure.endMin > m;
   const today = todayInLisbon();
 
   // Current-time line position (refreshed each minute). Rendered only on today.
@@ -228,21 +289,42 @@ export function AgendaGrid({
   // that day. `hourHeights` then takes the worst day per hour, so every column
   // shares one scale and a row still reads straight across the week.
   const startCountsByDay = dates.map((d) => {
-    const perHour = dayHours().map(() => 0);
+    const perHour = dayHours(win.startMin, win.endMin).map(() => 0);
     for (const a of byDate.get(d) ?? []) {
       const min = lisbonMinutesFromMidnight(new Date(a.startsAt));
-      const idx = Math.floor((min - DAY_START_MIN) / 60);
+      const idx = Math.floor((min - originMin) / 60);
       if (idx >= 0 && idx < perHour.length) perHour[idx] = (perHour[idx] ?? 0) + 1;
     }
     return perHour;
   });
-  const heights = hourHeights(startCountsByDay);
-  const minToPx = makeMinToPx(heights);
+  const heights = hourHeights(startCountsByDay, win.startMin, win.endMin);
+  const minToPx = makeMinToPx(heights, win.startMin, win.endMin);
   const tops = hourTops(heights);
   const totalHeight = tops[tops.length - 1]!;
 
   const nowTop = minToPx(nowMin);
-  const nowVisible = nowMin >= DAY_START_MIN && nowMin <= DAY_END_MIN;
+  const nowVisible = nowMin >= win.startMin && nowMin <= win.endMin;
+
+  /**
+   * 0085 - THE CLOSURE BAND, AND IT IS NOT A BLOCK BAND.
+   *
+   * Drawn once per day column, from the clinic's own hours, and clipped to the
+   * visible window like everything else. It is visually distinct from the
+   * therapist block band on purpose: a hatched grey band means "this person is
+   * away, and reception can remove it"; this one means "the building is shut",
+   * which nobody on this screen can change. Same colour for both would make the
+   * first thing reception tries the thing that cannot work.
+   */
+  const closureBand =
+    closure && closure.endMin > win.startMin && closure.startMin < win.endMin
+      ? {
+          top: minToPx(Math.max(closure.startMin, win.startMin)),
+          height:
+            minToPx(Math.min(closure.endMin, win.endMin)) -
+            minToPx(Math.max(closure.startMin, win.startMin)),
+          label: closure.locationName,
+        }
+      : null;
 
   const gridCols = { gridTemplateColumns: `${GUTTER}px repeat(${dates.length}, minmax(0, 1fr))` };
 
@@ -360,6 +442,26 @@ export function AgendaGrid({
               )}
             </div>
           ))}
+
+          {/* 0085 - THE CLOSING TIME, WHICH IS THE WHOLE REPORTED SYMPTOM.
+              "The agenda renders until 19:00 and the clinic works until 20:00."
+              The grid was already right: the last ROW is 19:00-20:00, because an
+              hour row is named for the hour it STARTS, and 19:30 really is the
+              last slot anybody can be booked into. But the last thing the eye
+              finds in the gutter was "19:00", so the day looked like it ended
+              an hour early - the clinic was reading the labels, and the labels
+              stopped one short of the close.
+
+              So the CLOSING time is drawn on the bottom edge, the way a clock
+              face ends rather than the way an hour row begins. It is the only
+              label that names a boundary instead of a row, which is why it is
+              rendered here and not inside the loop above. */}
+          <span
+            data-testid="agenda-closing-label"
+            className="absolute -bottom-2 right-2 bg-v2-surface px-0.5 text-xs text-v2-text-secondary"
+          >
+            {slotLabel(win.endMin)}
+          </span>
         </div>
 
         {/* Day columns */}
@@ -367,7 +469,7 @@ export function AgendaGrid({
           const dayAppts = byDate.get(d) ?? [];
           const isToday = d === today;
           // W9-04: this day's blocked spans, clipped to the visible window.
-          const dayBlocks = placeBlocksOnDate(blocks, d, DAY_END_MIN);
+          const dayBlocks = placeBlocksOnDate(blocks, d, win.endMin);
           return (
             <div
               key={d}
@@ -423,15 +525,24 @@ export function AgendaGrid({
                   <button
                     key={m}
                     type="button"
-                    disabled={blocked}
+                    disabled={blocked || closedAt(m)}
+                    // 0085: the two reasons are NAMED SEPARATELY, and a screen
+                    // reader gets the same distinction the band gives a sighted
+                    // reader. "Tempo bloqueado" sends somebody to a therapist's
+                    // blocks; "Clínica encerrada" sends them nowhere, because
+                    // there is nothing on this screen to remove.
                     aria-label={
-                      blocked
-                        ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.blockedTime"]}`
-                        : `${formatDayHeader(d, locale)} ${slotLabel(m)}`
+                      closedAt(m)
+                        ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.clinicClosed"]}`
+                        : blocked
+                          ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.blockedTime"]}`
+                          : `${formatDayHeader(d, locale)} ${slotLabel(m)}`
                     }
-                    onClick={blocked ? undefined : () => onSelectSlot(d, slotLabel(m))}
+                    onClick={
+                      blocked || closedAt(m) ? undefined : () => onSelectSlot(d, slotLabel(m))
+                    }
                     className={`absolute inset-x-0 transition duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
-                      blocked
+                      blocked || closedAt(m)
                         ? "cursor-not-allowed"
                         : "motion-safe:active:scale-[0.97] hover:bg-v2-green-50"
                     } ${rule}`}
@@ -456,6 +567,26 @@ export function AgendaGrid({
                   onOpenBlock={onOpenBlock}
                 />
               ))}
+
+              {/* 0085 - THE CLINIC CLOSURE BAND, DELIBERATELY UNLIKE THE BLOCK
+                  BAND ABOVE IT. The block band is a grey diagonal hatch with a
+                  white note chip and it is CLICKABLE, because reception can act
+                  on it. This is a flat neutral band with a solid top and bottom
+                  rule and no affordance at all, because nobody on this screen
+                  can open the building. Text carries the difference as well as
+                  colour: it names the clinic and says Clínica encerrada. */}
+              {closureBand && (
+                <div
+                  data-testid="agenda-closure-band"
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-x-0 z-10 overflow-hidden border-y-2 border-v2-border bg-v2-text-primary/[0.07]"
+                  style={{ top: closureBand.top, height: closureBand.height }}
+                >
+                  <span className="block truncate px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-v2-text-secondary">
+                    {s["agenda.clinicClosed"]}
+                  </span>
+                </div>
+              )}
 
               {/* W11-00 v3: appointment names as a Fisiozero-style vertical list.
                   Each start slot is a full-width column; same-slot appointments

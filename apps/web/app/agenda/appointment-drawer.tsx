@@ -748,6 +748,9 @@ export function AppointmentDrawer({
     error?: string;
     conflicts?: ConflictInfo[];
     availabilityWindows?: { startTime: string; endTime: string }[];
+    // 0085. Set only with error "clinic_closed"; carries the clinic's own name
+    // and shut hour so the sentence below can name the building, not a person.
+    clinicClosure?: { locationName: string; from: string; to: string };
   }): boolean {
     if (r.ok) return true;
     if (r.error === "conflict") setConflicts(r.conflicts ?? []);
@@ -785,6 +788,30 @@ export function AppointmentDrawer({
           : `${s["appointment.outsideAvailability"]} ${s["appointment.outsideAvailabilityWindows"]} ` +
             `${w.map((x) => `${x.startTime}-${x.endTime}`).join(", ")}. ` +
             `${s["appointment.outsideAvailabilityHint"]}`,
+      );
+    }
+    // 0085 - THE CLINIC IS SHUT, AND THE MESSAGE SAYS SO WITHOUT NAMING THE
+    // THERAPIST.
+    //
+    // That distinction is the whole card. "O terapeuta está ausente" sends
+    // reception to that person's blocks; there is nothing there, because the
+    // building is what is closed. The sentence names the CLINIC and the hour,
+    // and says explicitly that there is no block to remove - which is the step
+    // somebody would otherwise spend ten minutes looking for.
+    //
+    // AND THERE IS NO "Guardar mesmo assim" FOR IT. This refusal is raised
+    // outside the allowConflict gate on the server, so the override that clears
+    // a double-booking or an absence cannot reach it (owner: "not
+    // blockable-around").
+    else if (r.error === "clinic_closed") {
+      const c = r.clinicClosure;
+      setError(
+        c
+          ? `${s["appointment.clinicClosedTitle"]} ${s["appointment.clinicClosedBody"]
+              .replace("{clinica}", c.locationName)
+              .replace("{de}", c.from)
+              .replace("{ate}", c.to)}`
+          : s["appointment.clinicClosedTitle"],
       );
     }
     // STAFF-02. The form now offers only assigned locations, so reaching this is

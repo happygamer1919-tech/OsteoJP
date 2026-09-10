@@ -74,9 +74,15 @@ let inserted: Record<string, unknown> | null = null;
  */
 function fakeTx(templates: unknown[]) {
   return {
+    // 0085: the clinic-hours read on this path ends in `.limit(1)`, so the
+    // result has to be awaitable both with and without it. The rows themselves
+    // are unchanged - only the availability select ever matches.
     select: (cols?: Record<string, unknown>) => ({
       from: () => ({
-        where: async () => (cols && "weekday" in cols ? templates : []),
+        where: () => {
+          const rows = cols && "weekday" in cols ? templates : [];
+          return Object.assign(Promise.resolve(rows), { limit: async () => rows });
+        },
       }),
     }),
     execute: async () => [],

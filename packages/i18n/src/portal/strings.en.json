@@ -164,6 +164,7 @@
     "reschedule_too_late": "Appointments cannot be rescheduled less than 24 hours in advance. Please call the clinic.",
     "reschedule_min_notice": "Choose a time at least 24 hours from now.",
     "reschedule_slot_taken": "That time is no longer available. Please choose another.",
+    "reschedule_clinic_closed": "The clinic is closed at that time. This is not a therapist absence: choose another time or call the clinic.",
     "reschedule_error": "We could not reschedule your appointment. Please try again or call the clinic."
   },
   "forms": {

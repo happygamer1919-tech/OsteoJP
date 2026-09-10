@@ -42,6 +42,8 @@ export function AgendaView({
   options,
   appointments,
   blocks,
+  dayWindow,
+  closure,
   lockedPatient,
   prefill,
   canHardDelete,
@@ -63,6 +65,10 @@ export function AgendaView({
   /** W9-04: time_off spans for the visible range. Non-empty ONLY when the agenda
    *  is scoped to one therapist - see page.tsx for why. */
   blocks: BlockSpan[];
+  /** 0085: the grid's visible window, from the clinic's own opening hours. */
+  dayWindow: { startMin: number; endMin: number };
+  /** 0085: the selected clinic's daily closure, or null under "Todas". */
+  closure: { startMin: number; endMin: number; locationName: string } | null;
   /** W6-03: when deep-linked from a patient profile, the create drawer opens
    *  with this patient preselected + locked. Null on a normal agenda visit. */
   lockedPatient: { value: string; label: string } | null;
@@ -555,6 +561,8 @@ export function AgendaView({
         anchor={anchor}
         appointments={appointments}
         blocks={blocks}
+        dayWindow={dayWindow}
+        closure={closure}
         onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
         onSelectSlot={(date, time) => setModal({ mode: "create", slot: { date, time } })}
         /* SCHED-22 - THE BAND OPENS THE BLOCK THAT MADE IT.

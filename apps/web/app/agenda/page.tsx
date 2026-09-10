@@ -11,6 +11,7 @@ import {
   todayInLisbon,
   type AgendaView,
 } from "@/lib/scheduling/time";
+import { closureFor, gridWindow, toMinutes } from "@/lib/scheduling/clinic-hours";
 import { s } from "@/lib/i18n";
 import { AgendaView as AgendaViewClient } from "./agenda-view";
 
@@ -112,6 +113,41 @@ export default async function AgendaPage({
       : Promise.resolve([]),
   ]);
 
+  /* ==================================================================== */
+  /* 0085 - THE GRID'S WINDOW COMES FROM THE CLINIC NOW.                   */
+  /* ==================================================================== */
+  /* THE UNION UNDER "Todas as localizações", ruled by the owner: an       */
+  /* intersection would hide a real working hour of whichever clinic opens */
+  /* earlier or closes later, and the agenda would be lying about a day it */
+  /* is showing. `gridWindow` falls back to 08:00-20:00 for an empty list, */
+  /* which is what every surface assumed before this migration.            */
+  const dayWindow = gridWindow(
+    locationId
+      ? options.locations.filter((l) => l.id === locationId)
+      : options.locations,
+  );
+
+  /* THE CLOSURE BAND IS DRAWN ONLY WHEN ONE CLINIC IS SELECTED, and that  */
+  /* is the same ruling from the other direction. CB's lunch hour is not   */
+  /* true of LV, so a band drawn across an unfiltered grid would grey out  */
+  /* an hour LV is open. Same reasoning that keeps the therapist block     */
+  /* band off the unfiltered agenda (W9-04): a full-width band is only     */
+  /* truthful when the thing it describes covers everything on screen.     */
+  const selectedLocation = locationId
+    ? (options.locations.find((l) => l.id === locationId) ?? null)
+    : null;
+  const closureInterval = selectedLocation
+    ? closureFor(todayInLisbon(), selectedLocation)
+    : null;
+  const closure =
+    selectedLocation && closureInterval && selectedLocation.middayClosedFrom
+      ? {
+          startMin: toMinutes(selectedLocation.middayClosedFrom),
+          endMin: toMinutes(selectedLocation.middayClosedTo ?? selectedLocation.middayClosedFrom),
+          locationName: selectedLocation.label,
+        }
+      : null;
+
   const lockedPatient = lockedPatientRow
     ? {
         value: lockedPatientRow.id,
@@ -181,6 +217,8 @@ export default async function AgendaPage({
       options={options}
       appointments={appointments}
       blocks={blockSpans}
+      dayWindow={dayWindow}
+      closure={closure}
       lockedPatient={lockedPatient}
       prefill={prefill}
       canHardDelete={can(actor.role, "settings:manage")}
