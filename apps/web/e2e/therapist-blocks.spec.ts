@@ -275,8 +275,39 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   // SCHED-07: the block dates are the shared picker now (dd/mm/aaaa).
   await fillDate(modal.getByLabel("De"), futureDate(RUN_DAY_BASE + 40));
   await fillDate(modal.getByLabel("Até"), futureDate(RUN_DAY_BASE + 42));
+
+  // ---- SCHED-23: THE WARNING IS A STEP, AND GUARDAR NO LONGER SAVES -------
+  // Pressing Guardar on a prolongada shows the consequence first. Asserted
+  // BEFORE the confirm, because a warning that can be walked past by pressing
+  // the same button twice in the same place is the checkbox this replaced.
   await modal.getByRole("button", { name: SAVE }).click();
+  const warned = modal.getByTestId("prolongada-warning");
+  await expect(
+    warned,
+    "Guardar saved a multi-day absence with no warning - the September outage's exact path",
+  ).toBeVisible();
+  await expect(warned).toContainText("todas as clínicas");
+  // The paragraph that names the tool they were probably reaching for.
+  await expect(warned).toContainText("Definir dia a dia");
+  await expect(modal, "the block was written before it was confirmed").toBeVisible();
+
+  await modal.getByTestId("prolongada-confirm").click();
   await settleAfterWrite(page);
+  await expect(modal).toBeHidden();
+
+  // ---- EXACTLY ONE BLOCK, AND THIS ARM IS NOT DECORATION ------------------
+  // The first version of the warning wrote the block TWICE: both buttons
+  // reconciled onto one DOM node, so the click that opened the warning also
+  // performed the default action of a node that had just become type="submit".
+  // Two identical rows, 102ms apart, and the dialog closed looking correct.
+  // "A panel appeared" would have passed throughout.
+  await openBlocks(page);
+  modal = blocksModal(page);
+  await expect(
+    modal.getByTestId("blocks-list").locator("li").filter({ hasText: ptDate(futureDate(RUN_DAY_BASE + 40)) }),
+    "the confirmed absence was written more than once - the warning step is double-submitting",
+  ).toHaveCount(1);
+  await page.keyboard.press("Escape");
   await expect(modal).toBeHidden();
 
   // --- Create a Bloqueio pontual (date + hour range) OVER the booked 09:00 slot. ---
@@ -288,7 +319,11 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   // W12-31: pontual block times are 24h TimeFields (select-based), driven via fillTime.
   await fillTime(modal.locator("label").filter({ hasText: "Início" }), "09:00");
   await fillTime(modal.locator("label").filter({ hasText: "Fim" }), "13:00");
+  // SCHED-23 NEGATIVE ARM: a `pontual` block is an hour range on one day and
+  // does NOT get the warning. Warning about it would teach reception to click
+  // through the warning that matters.
   await modal.getByRole("button", { name: SAVE }).click();
+  await expect(modal.getByTestId("prolongada-warning")).toHaveCount(0);
   await settleAfterWrite(page);
   await expect(modal).toBeHidden();
 
