@@ -1091,3 +1091,79 @@ intake label is the intake document's identity and is independent of
 `TERMS_VERSION`: the terms switch card can move on JP's timetable without
 touching the intake, and vice versa. Nothing here waits on
 `LE-terms-version-switch-on-jp-text`.
+
+## Q-AGENDA-02-1 — the 1024 control row cannot be one line with every label on it
+
+**Opened** 2026-09-10 (PURPLE, client batch P1). **Blocks nothing**; AGENDA-02
+shipped the best result that satisfies every other condition.
+
+The dispatch asks for two things that do not both hold at 1024: "at most one row
+plus the header" and "all controls remain visible and labelled".
+
+Measured on the seeded lane, not estimated:
+
+| | 1280 | 1024 |
+|---|---|---|
+| Bar width | 928px | 672px |
+| Nine labelled controls, side by side | ~850px | ~850px |
+| Result | one control row | two control rows |
+| Toolbar height, before | 222px | 232px |
+| Toolbar height, now | **114px** | **162px** |
+| Height handed to the grid | 108px | 70px |
+
+The ~850px is already after every reduction that does not remove a label:
+the freshness stamp merged into the refresh button, the range chip's duplicate
+date dropped below xl, `Bloquear horário` shortened to `Bloquear`, and the date
+field narrowed from w-44 to w-40. The remaining 180px at 1024 can only come from
+taking a control's visible text away.
+
+**Options, for the owner:**
+
+- **(A) Leave it.** 1024 keeps a header line plus two control rows at 162px, down
+  from 232px. Everything stays labelled. *Recommended:* 1280 is the machine
+  reception actually uses (the sticky-header card names it as "the small laptop
+  reception uses"), and it already gets the one-row shape.
+- **(B) Icon-only `Bloquear` below xl**, keeping `aria-label` and a tooltip. Gets
+  1024 to ~118px. Costs one visible label on a destructive-ish control.
+- **(C) Drop the `Hoje` button below xl** and rely on the date picker's own
+  calendar. Gets 1024 to ~135px. Costs a control that reception presses often.
+
+**Recommendation: (A).** Reopen if reception reports the 1024 layout as a
+problem in use rather than in the abstract.
+
+---
+
+## Q-SCHED-16-1 — clinic working hours and the CB midday closure need a migration
+
+**Opened** 2026-09-10 (PURPLE, client batch P2). **BLOCKS SCHED-16 and
+SCHED-17.** Nothing was written; the dispatch's own rule is "Any schema change:
+STOP and send the migration proposal to strategy first."
+
+The full proposal, with SQL, the two options and the read-path changes each
+implies, is `docs/design/MIGRATION-PROPOSAL-clinic-hours.md`.
+
+**The four decisions needed:**
+
+1. **Option A (two nullable `time` pairs on `locations`) or Option B (a new
+   `location_closures` table).** Recommendation: **A**. The requirement as stated
+   is one band, one clinic, every day, permanent; A carries exactly that, adds no
+   RLS surface and no join on any read path, and can be superseded by B later
+   without a read-path rewrite.
+2. **Does the CB closure apply on Saturday?** A single `midday_closed_*` pair
+   applies to every open day. If Saturday is exempt, Option A is not sufficient
+   and B is required. *No default is safe here, which is why it is a question.*
+3. **Appointments already inside a closure band.** Proposal, following Q-W5-4:
+   they render, they are reported, nothing is cancelled. Confirm.
+4. **"Todas as localizações" on the agenda.** When no clinic is selected, does
+   the grid show the union of both clinics' hours (recommendation: yes, or a real
+   working hour is hidden) and does it draw the closure band at all
+   (recommendation: no, because it is only true of one clinic)?
+
+**Migration number:** 0085 or later. 0083 is PACK-06, 0084 is reserved for
+INTAKE-01.
+
+**The read half of P2 is already answered** and needs no decision: the agenda
+grid's window is `DAY_START_HOUR = 8` / `DAY_END_HOUR = 20`, two module constants
+in `apps/web/lib/scheduling/time.ts:18-19`, read by nothing else. The other two
+booking surfaces bound themselves by `availability_templates` instead. Three
+definitions of the working day, no clinic-level fact for any of them to agree on.

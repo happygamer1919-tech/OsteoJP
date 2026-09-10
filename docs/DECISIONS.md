@@ -3949,3 +3949,59 @@ today and refuses exactly what happened at the third occurrence.
 `published − incoming` non-empty means data loss; `incoming − main` non-empty is
 a legitimate lead. Recommendation updated from (A) to (C). Still not built;
 building it is still not authorised.
+
+---
+
+## 2026-09-10 — PURPLE, client batch (P1, P2)
+
+**AGENDA-02: the freshness stamp merged INTO the refresh button.** `Atualizado às
+HH:MM` (159px) and `Atualizar` (111px) were two toolbar controls describing one
+fact, and together they were 270px of a 672px bar at 1024. They are one button
+now: the timestamp is the visible label, the accessible name stays `Atualizar`
+(the verb, not the reading), and pressing it does what the chip was only
+describing. The freshness card's own note said "a screen that says 14:32 does not
+[read as live], and the button next to it is the prompt that was missing" - this
+makes them the same control.
+
+**When a label has to give, a SHORTER WORD beats an ICON.** `Bloquear horário`
+becomes `Bloquear` below 2xl rather than becoming a Ban glyph with a tooltip. The
+client's condition was "all controls remain visible and labelled"; an icon with
+an `aria-label` is labelled for a screen reader and unlabelled for the person
+reading the screen. `aria-label` pins the accessible name to the FULL label at
+every width, so the control is never announced under two different names
+depending on the viewport - which is what happens if you rely on the visible span
+alone, because accessible-name computation skips a `display:none` child.
+
+**A row that cannot wrap does not fit, it OVERLAPS.** The first draft used
+`lg:flex-nowrap` to guarantee `Nova marcação` never dropped to its own line. At
+1024 that produced `Bloquear` painted on top of the date field with `Hoje`
+underneath it, and the e2e went green, because `toBeVisible()` is true of an
+overlapped control. The guarantee is structural instead: the three actions are
+one `flex-none` group ordered last, so a wrap moves them TOGETHER and the primary
+action is never orphaned. The spec now compares every control's box against every
+other's, pairwise. Recorded because the class of mistake - a geometric claim
+tested by a visibility assertion - is the one this project keeps paying for.
+
+**AGENDA-02 does not deliver one row at 1024, and that is arithmetic.** Nine
+labelled controls measure ~850px after every reduction that keeps a label; the
+bar is 672px at 1024. The dispatch asked for "at most one row plus the header"
+AND "all controls remain visible and labelled" - at 1024 those are incompatible.
+Delivered: 232px -> 162px at 1024, 222px -> 114px at 1280. Owner decision is
+Q-AGENDA-02-1.
+
+**SCHED-16/17: the working day is three unrelated definitions and none of them is
+a clinic.** `DAY_START_HOUR`/`DAY_END_HOUR` (apps/web/lib/scheduling/time.ts:18)
+bound the agenda grid and nothing else; Nova marcação bounds itself by
+`availability_templates`; the portal bounds itself by the same templates
+expanded in SQL. Opening hours are not stored anywhere, so there is no fact for
+the three to agree on. The migration is NOT written: the dispatch's own rule is
+"STOP and send the migration proposal to strategy first". Proposal is
+`docs/design/MIGRATION-PROPOSAL-clinic-hours.md`, questions are Q-SCHED-16-1.
+
+**A CB midday closure must not be `time_off`, and not only for tidiness.**
+`time_off` is per THERAPIST with no location column, so a clinic closure would be
+one row per therapist per day forever, each individually deletable by reception,
+each rendering as a personal absence. It is also OVERRIDABLE: `time_off` is a
+blocking conflict that staff may push past with "Guardar mesmo assim"
+(conflict-core.ts:13). The dispatch says the closure is "not blockable-around",
+so it must be in neither the advisory set nor the `allowConflict` override.
