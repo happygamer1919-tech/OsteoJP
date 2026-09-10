@@ -499,6 +499,8 @@
   "admin.workingHours.block": "Bloquear horário",
   "admin.workingHours.blocksFor": "Bloqueios de",
   "admin.workingHours.blocksNone": "Sem bloqueios",
+  "admin.workingHours.blocksNoneUpcoming": "Sem bloqueios futuros.",
+  "admin.workingHours.blocksExpired": "Bloqueios passados",
   "admin.workingHours.addBlock": "Adicionar bloqueio",
   "admin.workingHours.blockLote": "Bloqueio repetido",
   "admin.workingHours.blockCount": "Nº de bloqueios",

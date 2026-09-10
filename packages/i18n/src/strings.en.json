@@ -499,6 +499,8 @@
   "admin.workingHours.block": "Block time",
   "admin.workingHours.blocksFor": "Blocks for",
   "admin.workingHours.blocksNone": "No blocks",
+  "admin.workingHours.blocksNoneUpcoming": "No upcoming blocks.",
+  "admin.workingHours.blocksExpired": "Past blocks",
   "admin.workingHours.addBlock": "Add block",
   "admin.workingHours.blockLote": "Repeating block",
   "admin.workingHours.blockCount": "Number of blocks",
