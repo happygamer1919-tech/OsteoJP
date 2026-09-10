@@ -128,6 +128,7 @@
   "agenda.patientWithheld": "Reserved appointment",
   "agenda.newAppointment": "New Appointment",
   "agenda.blockTime": "Block time",
+  "agenda.blockTimeShort": "Block",
   "agenda.block.confirm": "Block",
   "agenda.block.start": "Start",
   "agenda.block.end": "End",
