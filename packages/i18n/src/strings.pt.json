@@ -429,7 +429,7 @@
   "appointment.availabilityNoWorkingHours": "O terapeuta não tem horário de trabalho definido neste dia.",
   "appointment.availabilityFullyBooked": "Sem horários livres neste dia.",
   "appointment.availabilityBlocked": "Bloqueado:",
-  "appointment.clinicClosedTitle": "A clínica está encerrada nesta hora",
+  "appointment.clinicClosedTitle": "A clínica está encerrada nesta hora.",
   "appointment.clinicClosedBody": "{clinica} está encerrada das {de} às {ate}, todos os dias. Não é uma ausência do terapeuta: não há bloqueio para remover. Escolha outra hora.",
   "appointment.availabilityClosed": "Encerrado:",
   "appointment.availabilityClosedNoSlots": "Sem horários livres: a clínica está encerrada nesta parte do dia. Não é uma ausência do terapeuta e não há bloqueio para remover.",

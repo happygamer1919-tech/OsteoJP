@@ -429,7 +429,7 @@
   "appointment.availabilityNoWorkingHours": "The therapist has no working hours set for this day.",
   "appointment.availabilityFullyBooked": "No free slots on this day.",
   "appointment.availabilityBlocked": "Blocked:",
-  "appointment.clinicClosedTitle": "The clinic is closed at that time",
+  "appointment.clinicClosedTitle": "The clinic is closed at that time.",
   "appointment.clinicClosedBody": "{clinica} is closed from {de} to {ate}, every day. This is not a therapist absence: there is no block to remove. Pick another time.",
   "appointment.availabilityClosed": "Closed:",
   "appointment.availabilityClosedNoSlots": "No free times: the clinic is closed for this part of the day. It is not a therapist absence and there is no block to remove.",
