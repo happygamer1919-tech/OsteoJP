@@ -1131,6 +1131,15 @@ taking a control's visible text away.
 **Recommendation: (A).** Reopen if reception reports the 1024 layout as a
 problem in use rather than in the abstract.
 
+### ANSWERED — owner, 2026-09-10: (A). Leave it.
+
+> "Q-AGENDA-02-1 is ruled: leave it, two rows at 1024, close the card."
+
+Two control rows at 1024 is the shipped and accepted shape. No control loses its
+visible label, and no follow-up is owed. AGENDA-02 (#1242) needs no further work
+on this point; this question is CLOSED and is not to be reopened by a later
+sweep reading the tension in the dispatch as an open gap.
+
 ---
 
 ## Q-SCHED-16-1 — clinic working hours and the CB midday closure need a migration
@@ -1149,9 +1158,12 @@ implies, is `docs/design/MIGRATION-PROPOSAL-clinic-hours.md`.
    is one band, one clinic, every day, permanent; A carries exactly that, adds no
    RLS surface and no join on any read path, and can be superseded by B later
    without a read-path rewrite.
-2. **Does the CB closure apply on Saturday?** A single `midday_closed_*` pair
-   applies to every open day. If Saturday is exempt, Option A is not sufficient
-   and B is required. *No default is safe here, which is why it is a question.*
+2. ~~**Does the CB closure apply on Saturday?**~~ **ANSWERED — owner,
+   2026-09-10:** *"the CB 13:00-14:00 closure applies every day CB is open,
+   including Saturday."* A single `midday_closed_*` pair applies to every open
+   day, which is exactly what was ruled — so **this answer makes Option A
+   sufficient** and removes the one reason B was required. The remaining three
+   questions are unchanged.
 3. **Appointments already inside a closure band.** Proposal, following Q-W5-4:
    they render, they are reported, nothing is cancelled. Confirm.
 4. **"Todas as localizações" on the agenda.** When no clinic is selected, does
