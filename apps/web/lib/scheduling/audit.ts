@@ -7,7 +7,18 @@ export type AppointmentAuditAction =
   | "appointment.update"
   | "appointment.reschedule"
   | "appointment.cancel"
-  | "appointment.hard_delete";
+  | "appointment.hard_delete"
+  /**
+   * B6 — a FINAL state corrected to another final state, through the explicit
+   * "Corrigir estado" door and never through the ordinary Estado control.
+   *
+   * IT IS ITS OWN ACTION RATHER THAN AN `appointment.update`, and that is the
+   * whole reason the correction is a separate path: a lifecycle transition
+   * asserts something happened; a correction asserts the record was wrong.
+   * Sharing one audit action would make those two indistinguishable afterwards,
+   * which is exactly the question a reader of this log will be asking.
+   */
+  | "appointment.estado_correction";
 
 /**
  * THE METADATA CONTRACT IS ENFORCED, AND IT NOW LIVES IN ONE PLACE.
