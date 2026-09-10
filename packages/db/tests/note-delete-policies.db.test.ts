@@ -32,7 +32,7 @@ import { randomUUID } from "node:crypto";
 import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { asRole, claimsFor, connect, live, patientClaims } from "./rls-harness";
+import { asRole, claimsFor, connect, live } from "./rls-harness";
 
 const d = live ? describe : describe.skip;
 
@@ -106,19 +106,33 @@ d("0084: a note is deletable in its own tenant and nowhere else", () => {
     expect(Number(still[0]!.n)).toBe(1);
   });
 
-  it("the `patient` role deletes nothing — a patient must never be able to erase a clinic note", async () => {
-    const { unified, legacy } = await seedNotes();
-    const deleted = await asRole(
-      sql,
-      "patient",
-      patientClaims(tenant, patient),
-      async (tx) => {
-        const a = await tx`delete from appointment_notes where id = ${unified} returning id`;
-        const b = await tx`delete from patient_note_revisions where id = ${legacy} returning id`;
-        return { unified: a.length, legacy: b.length };
-      },
-    );
-    expect(deleted).toEqual({ unified: 0, legacy: 0 });
+  /**
+   * MEASURED, NOT ASSUMED, AND THE FIRST DRAFT OF THIS CASE WAS WRONG.
+   *
+   * It asserted that `patient` and `anon` delete ZERO ROWS, by the same RLS
+   * route the cross-tenant case takes. They do not: neither role holds ANY
+   * grant on either table, so a DELETE raises `permission denied` one layer
+   * BEFORE RLS is consulted. `has_table_privilege('patient',
+   * 'public.appointment_notes','DELETE')` is `f`, and there is no row in
+   * `role_table_grants` for either role on either table.
+   *
+   * That is a STRONGER refusal than the one first written, and the assertion
+   * must say which one is true or it is guarding a mechanism that is not there.
+   * SR-52's family: the privilege is asserted, never the call. Performing the
+   * call would also make this test's meaning depend on how a driver surfaces a
+   * privilege error, which is not the property under test.
+   */
+  it("neither `patient` nor `anon` holds DELETE on either table — refused at the GRANT, before RLS", async () => {
+    const rows = (await sql`
+      select r.rolname,
+             has_table_privilege(r.rolname, t.tbl, 'DELETE') as can_delete
+      from (values ('patient'), ('anon')) as r(rolname),
+           (values ('public.appointment_notes'), ('public.patient_note_revisions')) as t(tbl)
+    `) as { rolname: string; can_delete: boolean }[];
+    expect(rows).toHaveLength(4);
+    for (const r of rows) {
+      expect(r.can_delete, `${r.rolname} must not hold DELETE`).toBe(false);
+    }
   });
 
   it("a principal with NO claims at all deletes nothing", async () => {
