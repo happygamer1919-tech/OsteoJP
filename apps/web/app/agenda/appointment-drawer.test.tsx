@@ -464,19 +464,33 @@ describe("AppointmentDrawer — Marcar novamente (SCHED-15)", () => {
     expect(html).toContain("Marcar novamente");
   });
 
-  it("does NOT offer it on a past CANCELLED appointment — the non-consuming arm", () => {
-    // The one row where this gate and the profile's disagree, on purpose. If
-    // `isPastConsuming` lost its status half, this is the assertion that reddens.
+  /**
+   * INVERTED BY THE 2026-09-10 RULING, and both were deliberate before it.
+   *
+   * The first asserted the one row where this gate and the profile's disagreed
+   * ("on purpose"); the second asserted that copying a visit which has not
+   * happened is Nova marcação's job. The owner ruled that Marcar novamente
+   * renders on EVERY appointment, past and future, whatever the estado, so both
+   * of those arms are now gone from `isPastConsuming` and these two cases now
+   * assert the opposite of what they used to.
+   *
+   * They are kept, inverted, rather than deleted: they are the two rows the old
+   * gate was cut around, so they are exactly the rows worth naming in the new
+   * world.
+   */
+  it("NOW offers it on a past CANCELLED appointment — the old non-consuming arm is gone", () => {
     const html = render({ mode: "edit", appt: appt({ startsAt: past, status: "cancelled" }) });
-    expect(html).not.toContain("Marcar novamente");
+    expect(html).toContain("Marcar novamente");
   });
 
-  it("does NOT offer it on a FUTURE appointment — the past arm", () => {
-    // Copying a visit that has not happened is "book another one", which is what
-    // Nova marcação is for. If `isPastConsuming` lost its instant half, this is
-    // the assertion that reddens.
+  it("NOW offers it on a FUTURE appointment — the old past arm is gone", () => {
     const html = render({ mode: "edit", appt: appt({ startsAt: future, status: "scheduled" }) });
-    expect(html).not.toContain("Marcar novamente");
+    expect(html).toContain("Marcar novamente");
+  });
+
+  it("offers it on a FUTURE CANCELLED appointment — both old arms at once", () => {
+    const html = render({ mode: "edit", appt: appt({ startsAt: future, status: "cancelled" }) });
+    expect(html).toContain("Marcar novamente");
   });
 
   it("does NOT offer it in CREATE mode — there is no source to copy", () => {
