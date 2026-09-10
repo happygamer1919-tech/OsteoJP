@@ -27,12 +27,20 @@ export type BlockSpan = {
   /** UTC instant, ISO 8601. */
   endsAt: string;
   reason: string;
+  /**
+   * SCHED-19 - WHY THIS TIME IS BLOCKED, in the words of whoever blocked it.
+   *
+   * Null is a real and permanent case, not a migration gap: every block written
+   * before SCHED-18 has none, and the band has to read correctly without one.
+   */
+  note: string | null;
 };
 
 /** A block's placement on ONE Lisbon day, in minutes from that day's midnight. */
 export type BlockPlacement = {
   id: string;
   reason: string;
+  note: string | null;
   /** Minutes from Lisbon midnight, clipped to the start of the visible day. */
   startMin: number;
   /** Minutes from Lisbon midnight, clipped to the end of the visible day. */
@@ -90,6 +98,7 @@ export function placeBlocksOnDate(
     placements.push({
       id: b.id,
       reason: b.reason,
+      note: b.note,
       startMin,
       endMin,
       clippedStart: rawStart < DAY_START_MIN,

@@ -16,11 +16,18 @@ import {
 const DAY = "2026-07-20"; // a Monday, summer time (UTC+1)
 const DAY_END = 20 * 60;
 
-const block = (id: string, startsAt: string, endsAt: string, reason = "vacation"): BlockSpan => ({
+const block = (
+  id: string,
+  startsAt: string,
+  endsAt: string,
+  reason = "vacation",
+  note: string | null = null,
+): BlockSpan => ({
   id,
   startsAt,
   endsAt,
   reason,
+  note,
 });
 
 describe("placeBlocksOnDate - geometry", () => {
@@ -154,5 +161,50 @@ describe("isSlotBlocked - the non-bookable rule", () => {
     for (let m = 8 * 60; m < DAY_END; m += 30) {
       expect(isSlotBlocked(m, holiday)).toBe(true);
     }
+  });
+});
+
+/**
+ * SCHED-19 - THE NOTE SURVIVES PLACEMENT.
+ *
+ * The band is rendered from a BlockPlacement, not from the BlockSpan, so the
+ * note has to make it across `placeBlocksOnDate` or the renderer has nothing to
+ * show. That transfer is the only part of the note's journey that is pure
+ * enough to assert here; the rendering itself is covered by the agenda grid
+ * test and by the e2e.
+ *
+ * THE MULTI-DAY CASE IS THE ONE WORTH PINNING. A five-day absence is clipped to
+ * each day it touches, producing a DIFFERENT placement per day off ONE row. The
+ * September outage was exactly that shape, and a note dropped by the clipping
+ * arithmetic would leave the middle days anonymous while the first day
+ * explained itself.
+ */
+describe("SCHED-19 - the note reaches the band", () => {
+  it("carries the note onto the placement", () => {
+    const [p] = placeBlocksOnDate(
+      [block("b1", `${DAY}T10:00:00Z`, `${DAY}T12:00:00Z`, "other", "Formação NESA")],
+      DAY,
+      DAY_END,
+    );
+    expect(p!.note).toBe("Formação NESA");
+  });
+
+  it("carries it onto EVERY day a multi-day block is clipped to", () => {
+    // 2026-07-20 is a Monday; this spans Monday through Wednesday.
+    const span = block("b2", "2026-07-19T23:00:00Z", "2026-07-22T23:00:00Z", "vacation", "Atende em LV");
+    for (const day of ["2026-07-20", "2026-07-21", "2026-07-22"]) {
+      const [p] = placeBlocksOnDate([span], day, DAY_END);
+      expect(p, `no placement on ${day}`).toBeDefined();
+      expect(p!.note, `the note was dropped on ${day}`).toBe("Atende em LV");
+    }
+  });
+
+  it("keeps null null - most stored blocks have no note and always will", () => {
+    const [p] = placeBlocksOnDate(
+      [block("b3", `${DAY}T10:00:00Z`, `${DAY}T11:00:00Z`)],
+      DAY,
+      DAY_END,
+    );
+    expect(p!.note).toBeNull();
   });
 });

@@ -34,6 +34,9 @@ export type BookedInterval = IsoInterval & {
 export type BlockInterval = IsoInterval & {
   blockId: string;
   reason: string;
+  /** SCHED-19. Null for every block written before the note was required, and
+   *  for every block written through a path that does not collect one. */
+  note: string | null;
 };
 
 /**
@@ -80,6 +83,7 @@ export type BlockRow = {
   startsAt: Date;
   endsAt: Date;
   reason: string;
+  note: string | null;
 };
 
 const iso = (i: TimeInterval): IsoInterval => ({
@@ -152,6 +156,7 @@ export function buildDay(
     blocks: blocksForDay.map((r) => ({
       blockId: r.id,
       reason: r.reason,
+      note: r.note,
       start: r.startsAt.toISOString(),
       end: r.endsAt.toISOString(),
     })),

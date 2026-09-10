@@ -23,12 +23,16 @@ function tpl(start: string, end: string): AvailabilityTemplate {
   };
 }
 
-function block(startHhmm: string, endHhmm: string, reason = "other") {
+function block(startHhmm: string, endHhmm: string, reason = "other", note: string | null = null) {
   return {
     id: `blk-${startHhmm}-${endHhmm}`,
     startsAt: lisbonDateTimeToUtc(DATE, startHhmm),
     endsAt: lisbonDateTimeToUtc(DATE, endHhmm),
     reason,
+    // SCHED-19. Defaults to NULL rather than to a string, so every existing
+    // assertion keeps describing the ordinary case: most stored blocks have no
+    // note and always will.
+    note,
   };
 }
 
