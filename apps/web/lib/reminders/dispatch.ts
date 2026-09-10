@@ -24,6 +24,7 @@ import { confirmLinkEnabled, generateConfirmCode } from "./confirm-code";
 import { issueConfirmCode, withdrawConfirmCode } from "./confirm-code-store";
 import { renderReminderSmsBody } from "./sms-body";
 import { sendEmail, sendSms, type SendResult } from "./clients";
+import { recordDispatch } from "./dispatch-ledger";
 import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "@osteojp/notify";
 import { isSmsCapablePT } from "@osteojp/notify";
@@ -477,7 +478,48 @@ async function loadDispatchable(
   return { ok: true, data };
 }
 
+/**
+ * OBS-04 — THE LEDGER WRAPPER, AND WHY IT IS A WRAPPER.
+ *
+ * `dispatchReminder` has TEN return points and every one of them is a fact
+ * worth recording: a suppression is "we deliberately sent nothing, and here is
+ * why", which is the half that would have made 2026-09-02 legible. Threading a
+ * write through ten branches would have missed one, and the one it missed would
+ * be the one that mattered - that is how this pipeline came to have a table
+ * nobody wrote to in the first place.
+ *
+ * So the real function is renamed and this wrapper records whatever it returns.
+ * A NEW RETURN BRANCH CANNOT ESCAPE THE LEDGER, which is the property worth
+ * having and the reason not to do it by hand.
+ *
+ * THE SENT CASE IS ALREADY RECORDED INSIDE, per channel, because only the inner
+ * function knows the provider id, the body length and the segment count. The
+ * wrapper therefore records only the NOT-dispatched outcomes, and
+ * `dispatched: true` falls through untouched.
+ */
 export async function dispatchReminder(
+  tenantId: string,
+  appointmentId: string,
+  offsetId: ReminderOffsetId,
+  channel: Channel,
+): Promise<DispatchOutcome> {
+  const outcome = await dispatchReminderInner(tenantId, appointmentId, offsetId, channel);
+  if (!outcome.dispatched) {
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: channel as "sms" | "email",
+      // The id the send WOULD have gone out under. A suppression is about a
+      // specific message, and a row that cannot say which one is half a record.
+      templateId: `reminder.${offsetId}.${channel}`,
+      outcome: "suppressed",
+      suppressionReason: outcome.reason,
+    });
+  }
+  return outcome;
+}
+
+async function dispatchReminderInner(
   tenantId: string,
   appointmentId: string,
   offsetId: ReminderOffsetId,
@@ -529,15 +571,31 @@ export async function dispatchReminder(
   const channels: SendResult[] = [];
   if (wantEmail && data.patientEmail) {
     const email = renderEmail(offsetId, locale, ctx);
-    channels.push(
-      await sendEmail({
-        to: data.patientEmail,
-        subject: email.subject,
-        body: email.body,
-        templateId: `reminder.${offsetId}.email`,
-        appointmentId,
-      }),
-    );
+    const emailTemplateId = `reminder.${offsetId}.email`;
+    const result = await sendEmail({
+      to: data.patientEmail,
+      subject: email.subject,
+      body: email.body,
+      templateId: emailTemplateId,
+      appointmentId,
+    });
+    // THE 48h EMAIL'S ONLY RECORD. Until now this send produced nothing
+    // anywhere queryable: `sendEmail` returns a SendResult that was pushed onto
+    // an array and returned into an Inngest run output that expires. External
+    // evidence says zero reminder emails have ever arrived while SMS runs, and
+    // NOTHING IN THIS SYSTEM COULD TELL "never attempted" FROM "attempted and
+    // refused by Resend". `sandbox` is what distinguishes them: it is true when
+    // any gate suppressed the send without a network call.
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: "email",
+      templateId: emailTemplateId,
+      outcome: result.sandbox ? "suppressed" : "sent",
+      suppressionReason: result.sandbox ? "sandbox" : null,
+      providerMessageId: result.sandbox ? null : result.id,
+    });
+    channels.push(result);
   }
   if (wantSms && data.patientPhone) {
     // W13-05 DOUBLE GATE, evaluated ONCE, here. `shouldRenderFeeNotice` is the
@@ -648,6 +706,29 @@ export async function dispatchReminder(
         );
       }
     }
+    // LENGTH COMES FROM THE RENDER THAT PRODUCED THIS BODY, so a historical row
+    // says what was actually sent rather than what a re-render would produce.
+    //
+    // `segments` STAYS NULL, DELIBERATELY. 0075 gave the column to a segment
+    // COUNT, and this repository has no segment counter: `SmsBodyResult` carries
+    // `length` and nothing else, and the only other caller that wanted one
+    // (messaging-check.ts) writes `segmentLength: body.length`, which is a
+    // character count wearing a segment name. Storing a character count in a
+    // column called `segments` would be a wrong number that reads as a right
+    // one, and the billing question this table exists to answer would then be
+    // answered wrongly and confidently. NULL means "not counted", which is true.
+    // COST-24h-sms-worst-case-is-three-segments is the card that owes the count.
+    await recordDispatch({
+      tenantId,
+      appointmentId,
+      channel: "sms",
+      templateId: smsTemplateIdFor(offsetId, feeNotice),
+      outcome: sent && !sent.sandbox ? "sent" : "suppressed",
+      suppressionReason: sent && !sent.sandbox ? null : sent ? "sandbox" : "send_refused",
+      bodyLength: rendered.length,
+      segments: null,
+      providerMessageId: sent && !sent.sandbox ? sent.id : null,
+    });
     if (sent) channels.push(sent);
   }
 
