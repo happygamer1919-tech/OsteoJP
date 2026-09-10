@@ -92,6 +92,12 @@ export function TherapistBlocks({
   therapistName,
   blocks,
   labels,
+  /**
+   * SCHED-21: the inspector's Editar link names a block in the URL, and the
+   * card holding that block opens on it. The dialog is where blocks are edited
+   * and stays the only place; this is the deep link into it, not a second one.
+   */
+  openBlockId = null,
   // PL-09 Phase 5: the reception surface (/horarios) reuses this editor but posts
   // to actions that redirect to /horarios instead of /admin/staff. Defaults keep
   // the admin (Equipa) usage byte-identical.
@@ -105,16 +111,21 @@ export function TherapistBlocks({
   therapistName: string;
   blocks: BlockView[];
   labels: BlockLabels;
+  openBlockId?: string | null;
   actions?: {
     create: (fd: FormData) => Promise<void>;
     update: (fd: FormData) => Promise<void>;
     remove: (fd: FormData) => Promise<void>;
   };
 }) {
-  const [open, setOpen] = useState(false);
+  // SCHED-21: the deep-linked block, resolved against THIS card's own list. A
+  // block id that belongs to another therapist finds nothing here and the card
+  // stays shut, which is the right answer rather than an empty editor.
+  const linked = openBlockId ? (blocks.find((b) => b.id === openBlockId) ?? null) : null;
+  const [open, setOpen] = useState(linked !== null);
   const { ref, shown } = useAnimatedDialog(open);
-  const [editing, setEditing] = useState<BlockView | null>(null);
-  const [mode, setMode] = useState<BlockFormMode>("pontual");
+  const [editing, setEditing] = useState<BlockView | null>(linked);
+  const [mode, setMode] = useState<BlockFormMode>(linked?.mode ?? "pontual");
   // PL-22: the lote end condition. Local state because the two inputs it
   // switches between must not both post - a stale "until" beside a count is
   // exactly the kind of ambiguity the server would have to guess about.
