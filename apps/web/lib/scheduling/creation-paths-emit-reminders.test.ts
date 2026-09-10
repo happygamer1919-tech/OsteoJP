@@ -57,6 +57,15 @@ const SKIP_DIRS = new Set([
 /**
  * Drizzle's appointment insert, in both spellings the tree uses
  * (`insert(appointments)` and `insert(schema.appointments)`).
+ *
+ * WHY A RAW-SQL PATTERN IS NOT ALSO MATCHED, AND IT WAS CHECKED RATHER THAN
+ * ASSUMED. A `sql\`insert into appointments ...\`` in a TS source would slip
+ * past this regex, so the tree was grepped for that spelling: there are ZERO in
+ * apps/ and packages/ TypeScript. The only raw-SQL appointment inserts anywhere
+ * are in .mjs SCRIPTS - three perf seeders and one simulation - which are not
+ * application creation paths and cannot run in production. If a raw-SQL insert
+ * is ever added to a TS source, add its pattern here; until then a second regex
+ * would be a rule with nothing to enforce.
  */
 const INSERT_RE = /\.insert\(\s*(?:schema\.)?appointments\s*\)/;
 
