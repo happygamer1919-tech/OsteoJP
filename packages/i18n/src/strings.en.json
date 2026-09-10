@@ -424,6 +424,8 @@
   "appointment.availabilityFreeSlots": "Free slots",
   "appointment.availabilityNoWorkingHours": "The therapist has no working hours set for this day.",
   "appointment.availabilityFullyBooked": "No free slots on this day.",
+  "appointment.availabilityBlocked": "Blocked:",
+  "appointment.availabilityBlockedNoSlots": "No free times: this time is blocked, not taken by appointments. To free it, remove or shorten the block in Bloquear horário.",
   "appointment.availabilityError": "Could not load availability.",
   "errors.forbidden": "You don't have permission for this action.",
   "errors.generic": "Something went wrong. Please try again.",
