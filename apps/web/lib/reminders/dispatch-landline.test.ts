@@ -66,10 +66,29 @@ describe("the reminder path skips a landline", () => {
 
   it("checks capability BEFORE sendSms, which is the point of the ruling", () => {
     // Skipping after the send would log the right thing and still pay the bill.
+    //
+    // THE ANCHOR IS `sendSms({`, NOT `return sendSms(`, AND THE CHANGE IS THE
+    // REASON THIS COMMENT EXISTS. The send moved inside a callback when the
+    // provider_error ledger write was wired in - `return sendRecordingProviderError(..., () => sendSms({...}))`
+    // - so the old literal vanished and this guard went red while the property
+    // it guards was untouched. A test pinned to a line's PUNCTUATION fails on
+    // refactors and passes on regressions; pinning it to the CALL keeps it
+    // asserting the ordering it was written for. Both spellings are accepted so
+    // the guard survives the shape moving back, too.
     const cap = src.indexOf("isSmsCapablePT(");
-    const send = src.indexOf("return sendSms(");
+    const send = src.indexOf("sendSms({");
+    expect(cap).toBeGreaterThan(-1);
     expect(send).toBeGreaterThan(-1);
     expect(cap).toBeLessThan(send);
+  });
+
+  it("the landline skip RETURNS, so nothing downstream can send anyway", () => {
+    // The ordering assertion above is positional, and position alone would not
+    // catch a capability check that logged and fell through. This is the arm
+    // that makes the skip a skip: the landline branch ends in `return null`.
+    const cap = src.indexOf("isSmsCapablePT(");
+    const after = src.slice(cap, cap + 900);
+    expect(after).toContain("return null;");
   });
 
   it("gives the landline skip its OWN reason, not invalid_phone", () => {
