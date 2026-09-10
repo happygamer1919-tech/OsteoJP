@@ -30,6 +30,19 @@ test("W12-28: block a slot from the agenda; it renders as a band + is non-bookab
   // W12-31: block times are 24h TimeFields (select-based), driven via fillTime.
   await fillTime(dialog.getByTestId("block-start"), "09:00");
   await fillTime(dialog.getByTestId("block-end"), "11:00");
+
+  // ---- SCHED-18: THE NOTE IS REQUIRED, ASSERTED BEFORE IT IS SUPPLIED -----
+  // Pressing Bloquear with every OTHER field filled must refuse and say why. If
+  // this passed straight through, the rest of the test would be proving the
+  // happy path over a form that never had the rule.
+  await dialog.getByRole("button", { name: "Bloquear", exact: true }).click();
+  await expect(
+    dialog,
+    "the dialog closed with no note - SCHED-18's rule is not on this form",
+  ).toBeVisible();
+  await expect(dialog).toContainText("Escreva uma nota");
+
+  await dialog.getByTestId("block-note").fill("Formação NESA");
   await dialog.getByRole("button", { name: "Bloquear", exact: true }).click();
   await expect(dialog).toBeHidden({ timeout: 12_000 });
 
