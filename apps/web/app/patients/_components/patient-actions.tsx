@@ -6,6 +6,12 @@ import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
 import { AlertTriangle, ChevronDown } from "lucide-react";
 import { Button } from "@osteojp/ui";
 import {
+  blockingCounts,
+  classLabel,
+  refusal,
+  type HardDeleteCount,
+} from "../../../lib/patients/hard-delete-preflight";
+import {
   hardDeletePatient,
   mergePatients,
   restorePatient,
@@ -47,6 +53,7 @@ export function PatientActions({
   isDeleted,
   canHardDelete = false,
   hardDeleteBlocked = null,
+  hardDeleteCounts = [],
 }: {
   patientId: string;
   isDeleted: boolean;
@@ -54,6 +61,11 @@ export function PatientActions({
   canHardDelete?: boolean;
   /** Server-computed affordance: why hard delete is unavailable, if so. */
   hardDeleteBlocked?: "records" | "references" | null;
+  /**
+   * Per-class counts behind that one word. The clinic could not tell three
+   * marcações from one nota, because `has_references` says both.
+   */
+  hardDeleteCounts?: readonly HardDeleteCount[];
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +73,9 @@ export function PatientActions({
   const [pending, startTransition] = useTransition();
   const [hardDeleteOpen, setHardDeleteOpen] = useState(false);
   const [hardDeletePassword, setHardDeletePassword] = useState("");
+
+  const blockedList = blockingCounts(hardDeleteCounts);
+  const blockedPermanently = refusal(hardDeleteCounts).permanent;
 
   const hardDeleteBlockedText =
     hardDeleteBlocked === "records"
@@ -218,6 +233,30 @@ export function PatientActions({
           </span>
           {hardDeleteBlockedText && (
             <span className="text-xs text-text-secondary">{hardDeleteBlockedText}</span>
+          )}
+          {/* WHAT IS ACTUALLY IN THE WAY, itemised. The sentence above says a
+              delete is refused; this says by what and how much of it, which is
+              the difference between "go and clear the marcações" and "this can
+              never be deleted". Nothing here promises a cascade: until 0084 is
+              applied every class is a blocker and this list is titled as such. */}
+          {blockedList.length > 0 && (
+            <div className="flex flex-col gap-1" data-testid="hard-delete-preflight">
+              <span className="text-xs font-medium text-text-secondary">
+                {s["patients.hardDeleteWhatBlocks"]}
+              </span>
+              <ul className="flex flex-col gap-0.5">
+                {blockedList.map((c) => (
+                  <li key={c.key} className="text-xs tabular-nums text-text-secondary">
+                    {classLabel(c.key)}: {c.count}
+                  </li>
+                ))}
+              </ul>
+              {blockedPermanently && (
+                <span className="text-xs text-text-secondary">
+                  {s["patients.hardDeleteBlockedPermanently"]}
+                </span>
+              )}
+            </div>
           )}
           {hardDeleteOpen && hardDeleteBlocked === null && (
             <form
