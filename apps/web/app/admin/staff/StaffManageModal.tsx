@@ -147,6 +147,8 @@ export function StaffManageModal({
     block: s["admin.workingHours.block"],
     blocksFor: s["admin.workingHours.blocksFor"],
     none: s["admin.workingHours.blocksNone"],
+    noneUpcoming: s["admin.workingHours.blocksNoneUpcoming"],
+    expired: s["admin.workingHours.blocksExpired"],
     addBlock: s["admin.workingHours.addBlock"],
     mode: s["admin.workingHours.blockMode"],
     pontual: s["admin.workingHours.blockPontual"],
