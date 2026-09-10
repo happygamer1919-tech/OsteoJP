@@ -199,9 +199,21 @@ export async function POST(request: NextRequest): Promise<Response> {
         : result.outcome === "cancelled"
           ? [REPLY_ACK_TEMPLATE_IDS.cancelled, REPLY_ACK_CANCELLED]
           : [REPLY_ACK_TEMPLATE_IDS.review, REPLY_ACK_REVIEW];
-    // Suppressed as `template_unapproved` until JP approves these three
-    // bodies. The call is made anyway so the refusal is recorded in the
-    // suppression log rather than the capability being quietly absent.
+    // ================================================================== //
+    // THIS SENDS. IT DID NOT WHEN THE LINE BELOW WAS WRITTEN.
+    // ================================================================== //
+    // The comment here used to read "suppressed as `template_unapproved`
+    // until JP approves these three bodies", and it was true when written.
+    // WF-18 approved all three on 2026-09-01 and notification-registry.ts now
+    // carries `approved: true` on every one of them, so the notify gate lets
+    // them through and a patient receives an SMS.
+    //
+    // IT IS CORRECTED RATHER THAN DELETED because of WHEN somebody reads it:
+    // this is the paragraph in front of anyone deciding whether arming
+    // REMINDERS_INBOUND is safe, and a stale sentence there answers "does
+    // anything go out to patients?" with a confident no. That is the SR-43
+    // shape - a fact that was true once, believed later, and only checkable
+    // by opening something else.
     await sendSms({ to, body: copy[DEFAULT_LOCALE], templateId });
   }
 
