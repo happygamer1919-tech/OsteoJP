@@ -135,9 +135,16 @@ somebody asks for "closed Saturday afternoons too".
 ## 4. Open questions for strategy
 
 1. **Option A or Option B.**
-2. **Does the closure apply on Saturday?** CB's Saturday hours differ; a single
-   `midday_closed_*` pair applies to every open day, including Saturday. If
-   Saturday is exempt, Option A is not sufficient and Option B is required.
+2. ~~**Does the closure apply on Saturday?**~~ **ANSWERED by the owner,
+   2026-09-10:** *"the CB 13:00-14:00 closure applies every day CB is open,
+   including Saturday."*
+
+   **This answer settles question 1 in favour of Option A.** Option B existed
+   only to express a closure that VARIES BY WEEKDAY. A closure applying every day
+   CB is open is exactly the degenerate case Option A already carries, so B's
+   extra table, RLS policy, isolation test and three read-path joins now buy
+   nothing that is wanted. Strategy still rules question 1 formally; the case for
+   B has been removed by the answer rather than argued away.
 3. **What happens to the 14 existing appointments that already sit inside a
    closure band, if any?** The standing rule (Q-W5-4) is that scheduling data is
    never silently destroyed, so the proposal is: they render, they are reported,
