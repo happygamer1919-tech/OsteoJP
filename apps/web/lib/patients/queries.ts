@@ -18,6 +18,7 @@ import {
   patientNoteRevisions,
   patients,
 } from "@osteojp/db";
+import { HARD_DELETE_CLASSES, type HardDeleteCount } from "./hard-delete-preflight";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { viewerLocationScope } from "../auth/viewer-locations";
 import { activePatientsOnly } from "./filters";
@@ -189,6 +190,18 @@ export type PatientHardDeleteBlockers = {
   hasClinicalRecords: boolean;
   /** Other domain rows (appointments, notes, invoices, …) reference the patient. */
   hasOtherReferences: boolean;
+  /**
+   * THE SUM, BROKEN BACK INTO ITS TERMS. One entry per class in
+   * HARD_DELETE_CLASSES order, ZEROS INCLUDED so the shape is the same for
+   * every patient and a caller filters rather than checks for a key.
+   *
+   * The two booleans above are kept and are still derived from the SAME reads,
+   * so no caller has to change and the two answers cannot drift apart. What the
+   * clinic could not get before is exactly this: `has_references` is one word
+   * for ten different situations, and three marcações and one nota are not the
+   * same problem.
+   */
+  counts: HardDeleteCount[];
 };
 
 /**
@@ -225,9 +238,29 @@ export async function getPatientHardDeleteBlockers(
       tx.select({ n: count() }).from(analyticsEvents).where(eq(analyticsEvents.patientId, id)),
       tx.select({ n: count() }).from(patients).where(eq(patients.mergedIntoId, id)),
     ]);
+    // THE ORDER OF `others` IS THE ORDER OF THE SELECTS ABOVE, and the order of
+    // HARD_DELETE_CLASSES is that same order with `clinicalRecords` in front.
+    // Zipped rather than hand-written per class so a reordered read cannot
+    // silently relabel a count - the assertion below is what makes that true
+    // rather than merely intended.
+    const ordered = [records, ...others];
+    if (ordered.length !== HARD_DELETE_CLASSES.length) {
+      // A read was added or removed without touching the class list. Refusing
+      // is the point: a preflight that mislabels a count is worse than none,
+      // because the operator acts on it.
+      throw new Error(
+        `hard-delete preflight: ${ordered.length} reads for ` +
+          `${HARD_DELETE_CLASSES.length} classes - the two lists have drifted`,
+      );
+    }
+    const counts: HardDeleteCount[] = HARD_DELETE_CLASSES.map((key, i) => ({
+      key,
+      count: Number(ordered[i]?.[0]?.n ?? 0),
+    }));
     return {
       hasClinicalRecords: Number(records[0]?.n ?? 0) > 0,
       hasOtherReferences: others.some(([row]) => Number(row?.n ?? 0) > 0),
+      counts,
     };
   });
 }
