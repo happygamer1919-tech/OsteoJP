@@ -520,6 +520,24 @@ function BlockedBand({
   const top = minToPx(placement.startMin);
   const height = minToPx(placement.endMin) - top;
   const showLabel = height >= SLOT_HEIGHT;
+  /**
+   * SCHED-19 - THE NOTE IS THE HEADLINE, "Tempo bloqueado" IS THE CATEGORY.
+   *
+   * A band that says only "Tempo bloqueado" tells the reader what they can
+   * already see: the slots under it are disabled. What they cannot see is WHY,
+   * and why is the thing that decides whether this block is a mistake somebody
+   * should undo. The September outage was five days of anonymous grey band over
+   * a note that read "Atende em LV" - the note existed and no screen showed it.
+   *
+   * HIGHLIGHTED, per the card, and highlighted means a filled chip rather than
+   * merely bolder text: the band is a low-contrast hatch by design, and a note
+   * set in the same secondary grey reads as more hatch.
+   *
+   * A block with NO note keeps exactly the old rendering. That is most of the
+   * existing rows and every block written by a path that does not collect one,
+   * so the absent case is the ordinary case rather than a fallback.
+   */
+  const note = placement.note?.trim();
 
   return (
     <div
@@ -528,8 +546,28 @@ function BlockedBand({
       style={{ top, height }}
     >
       {showLabel && (
-        <span className="block truncate px-2 py-1 text-xs font-medium text-v2-text-secondary">
-          {s["agenda.blockedTime"]}
+        <span className="flex items-baseline gap-1.5 px-2 py-1">
+          {note ? (
+            <>
+              {/* The reason first and emphasised. `title` carries the full text
+                  for a note too long for a short band, since the band cannot
+                  grow and truncation is the only alternative. */}
+              <span
+                data-testid="agenda-blocked-note"
+                title={note}
+                className="min-w-0 truncate rounded bg-v2-surface px-1.5 text-xs font-semibold text-v2-text-primary shadow-sm"
+              >
+                {note}
+              </span>
+              <span className="flex-none truncate text-[11px] text-v2-text-secondary">
+                {s["agenda.blockedTime"]}
+              </span>
+            </>
+          ) : (
+            <span className="block truncate text-xs font-medium text-v2-text-secondary">
+              {s["agenda.blockedTime"]}
+            </span>
+          )}
         </span>
       )}
     </div>

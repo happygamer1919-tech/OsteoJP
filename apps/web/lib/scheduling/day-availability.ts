@@ -143,11 +143,21 @@ function blockOverlapsRange(rangeStart: Date, rangeEnd: Date): SQL {
   return and(lt(timeOff.startsAt, rangeEnd), gt(timeOff.endsAt, rangeStart)) as SQL;
 }
 
+/**
+ * SCHED-19: `note` joins the selection, and it joins it HERE rather than in one
+ * caller's own query. Both block readers compose this object - the agenda band
+ * and the booking availability - and the loop's standing restriction is "reuse
+ * the existing time_off read; do not derive a second, divergent block source".
+ * A note selected for one reader and not the other is precisely that divergence,
+ * and it would show as a band that explains itself on one screen and not on the
+ * next.
+ */
 const blockSelection = {
   id: timeOff.id,
   startsAt: timeOff.startsAt,
   endsAt: timeOff.endsAt,
   reason: timeOff.reason,
+  note: timeOff.note,
 } as const;
 
 /** time_off blocks overlapping the query range (half-open). Therapist-wide, so

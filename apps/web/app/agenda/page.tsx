@@ -162,6 +162,10 @@ export default async function AgendaPage({
     startsAt: b.startsAt.toISOString(),
     endsAt: b.endsAt.toISOString(),
     reason: b.reason,
+    // SCHED-19: the note crosses to the client with the instants. It is the
+    // only thing on a time_off row that records what somebody MEANT, and until
+    // now it stopped at the server.
+    note: b.note,
   }));
 
   return (
