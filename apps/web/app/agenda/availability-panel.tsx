@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { s } from "@/lib/i18n";
 import { getTherapistDayAvailability } from "@/lib/scheduling/actions";
 import { SLOT_MINUTES, formatTimeOfDay } from "@/lib/scheduling/time";
+import { noFreeReason } from "@/lib/scheduling/day-availability-core";
 import type { DayAvailability, IsoInterval } from "@/lib/scheduling/types";
 
 /**
@@ -102,7 +103,12 @@ function AvailabilityBody({
   time: string;
   onPickTime: (hhmm: string) => void;
 }) {
-  if (day.working.length === 0) {
+  // SCHED-20: the three reasons a day offers nothing are computed once, from
+  // the same day this component renders, so the sentence and the intervals
+  // above it can never describe different days.
+  const reason = noFreeReason(day);
+
+  if (reason === "no_working_hours") {
     return (
       <p className="text-sm text-text-secondary">
         {s["appointment.availabilityNoWorkingHours"]}
@@ -123,6 +129,28 @@ function AvailabilityBody({
             <dd className="text-xs text-text-primary">{joinIntervals(day.booked)}</dd>
           </div>
         )}
+        {/* SCHED-20 - THE LINE THAT WAS MISSING.
+            The panel listed working hours and bookings and NOTHING about
+            blocks, so a blocked day read as "eleven hours, one booked, none
+            free" and the reader went looking through the appointment list for
+            an hour that was never the problem. The block is the third thing
+            that consumes a day and it now says so, with the note, because the
+            note is what tells reception whether the block is a mistake. */}
+        {day.blocks.length > 0 && (
+          <div className="flex items-baseline gap-2" data-testid="availability-blocked">
+            <dt className="text-xs font-medium text-text-secondary">
+              {s["appointment.availabilityBlocked"]}
+            </dt>
+            <dd className="flex flex-col gap-0.5 text-xs text-text-primary">
+              {day.blocks.map((b) => (
+                <span key={b.blockId}>
+                  {formatTimeOfDay(new Date(b.start))}-{formatTimeOfDay(new Date(b.end))}
+                  {b.note ? <span className="text-text-secondary"> · {b.note}</span> : null}
+                </span>
+              ))}
+            </dd>
+          </div>
+        )}
       </dl>
 
       {slots.length > 0 ? (
@@ -133,8 +161,17 @@ function AvailabilityBody({
           onChange={onPickTime}
         />
       ) : (
-        <p className="text-sm text-text-secondary">
-          {s["appointment.availabilityFullyBooked"]}
+        // "Sem horarios livres neste dia" NAMES BOOKING AS THE CAUSE, so it may
+        // only appear when booking is the cause. When a block emptied the day
+        // the sentence points at the block and at the tool that undoes it -
+        // which is a different action from moving an appointment.
+        <p
+          className="text-sm text-text-secondary"
+          data-testid={reason === "blocked" ? "availability-blocked-reason" : "availability-no-slots"}
+        >
+          {reason === "blocked"
+            ? s["appointment.availabilityBlockedNoSlots"]
+            : s["appointment.availabilityFullyBooked"]}
         </p>
       )}
     </>
