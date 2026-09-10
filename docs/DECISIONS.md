@@ -3987,7 +3987,8 @@ labelled controls measure ~850px after every reduction that keeps a label; the
 bar is 672px at 1024. The dispatch asked for "at most one row plus the header"
 AND "all controls remain visible and labelled" - at 1024 those are incompatible.
 Delivered: 232px -> 162px at 1024, 222px -> 114px at 1280. Owner decision is
-Q-AGENDA-02-1.
+Q-AGENDA-02-1. **Ruled the same day: (A), leave it.** Two control rows at 1024
+is the accepted shape and Q-AGENDA-02-1 is closed.
 
 **SCHED-16/24: the working day is three unrelated definitions and none of them is
 a clinic.** `DAY_START_HOUR`/`DAY_END_HOUR` (apps/web/lib/scheduling/time.ts:18)
@@ -3997,6 +3998,9 @@ expanded in SQL. Opening hours are not stored anywhere, so there is no fact for
 the three to agree on. The migration is NOT written: the dispatch's own rule is
 "STOP and send the migration proposal to strategy first". Proposal is
 `docs/design/MIGRATION-PROPOSAL-clinic-hours.md`, questions are Q-SCHED-16-1.
+**Ruled the same day: Option A**, with the closure applying every day CB is open,
+Saturday included. Built as migration 0085 in #1264, authored and held until the
+owner applies it. See the clinic-hours entry below.
 
 **A CB midday closure must not be `time_off`, and not only for tidiness.**
 `time_off` is per THERAPIST with no location column, so a clinic closure would be
@@ -4059,3 +4063,36 @@ Every class on the inputs was right. `col-span-2` is most of the fix, and the
 test asserts a WIDTH IN PIXELS rather than a class name - a class assertion
 passes the moment somebody writes the right class in the wrong place, which is
 this defect exactly.
+
+---
+
+## 2026-09-10 - PURPLE, clinic hours: the rulings, and what #1264 carries
+
+**Option A, and the Saturday answer is the reason.** Option B (a
+`location_closures` table with a nullable `weekday`) existed in the proposal only
+to express a closure that varies by weekday. The owner answered that CB's
+13:00-14:00 closure applies every day CB is open, including Saturday. That is
+exactly the case one column pair on `locations` carries, so B's table, RLS
+policy, isolation test and three read-path joins would have bought nothing that
+was asked for. B stays the right build the first time somebody asks for a closure
+that differs by day.
+
+**The other two answers, as stamped.** Appointments already inside the band
+render and are reported, and nothing is cancelled (Q-W5-4). "Todas as
+localizações" shows the union of both clinics' hours and draws no band, because a
+band there is false for LV.
+
+**A ruled proposal is annotated, not rewritten.** Sections 1 to 3 of
+`MIGRATION-PROPOSAL-clinic-hours.md` are the derivation the rulings were taken
+against, so they stay as filed. Its status line, section 4 and a new section 5
+record the outcome and where #1264 departed from the proposal. Same practice as
+`SPEC-forced-booking-outside-hours.md` (#1219).
+
+**#1264 is held, and the record says held.** Nothing about clinic hours is
+applied or merged as of this entry. SCHED-16 and SCHED-24 ship when #1264 merges,
+which waits on the owner applying 0085 after 0083 and 0084.
+
+**Found while reconciling: `cloneAppointment` has no closure check on #1264.**
+Create and reschedule call `checkClinicClosure`; clone calls `checkAvailability`
+only. Recorded in section 5 of the proposal. The fix belongs in #1264 before
+apply.

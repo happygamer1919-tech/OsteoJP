@@ -1,8 +1,19 @@
 # SCHED-16 / SCHED-24 — migration proposal for strategy
 
-**Status: BLOCKED, awaiting strategy. Nothing was written.** The dispatch's own
-rule: "Any schema change: STOP and send the migration proposal to strategy
-first." This is that proposal.
+**Status, 2026-09-10: RULED, BUILT, AND HELD. This is no longer a pending
+proposal.** Option A was ruled on 2026-09-10 and all four questions in section 4
+are answered there. The build is migration 0085 in PR #1264, which is authored
+and HELD: it does not merge until the owner has applied it, and it must not be
+applied before 0083 (PACK-06) and 0084 (INTAKE-01). Section 5 says what #1264
+builds and where it departs from sections 2 and 3.
+
+Sections 1 to 3 are left as filed, on purpose. They are the derivation the
+rulings were taken against, and rewriting them to match the outcome would destroy
+the record of what was known when the decision was made.
+
+*As first filed:* "Status: BLOCKED, awaiting strategy. Nothing was written." The
+dispatch's own rule: "Any schema change: STOP and send the migration proposal to
+strategy first." This is that proposal.
 
 ## 1. Where the agenda grid's end actually comes from (the read half of P2)
 
@@ -132,9 +143,11 @@ somebody asks for "closed Saturday afternoons too".
    label ("Encerrado" vs "Tempo bloqueado"), because one is "the clinic is shut"
    and the other is "this person is away", and reception acts differently on each.
 
-## 4. Open questions for strategy
+## 4. Questions for strategy: all four answered 2026-09-10
 
-1. **Option A or Option B.**
+1. **Option A or Option B.** **RULED 2026-09-10: Option A.** The board records
+   it as a strategy ruling (#1265). The Saturday answer directly below is what
+   removed the case for B.
 2. ~~**Does the closure apply on Saturday?**~~ **ANSWERED by the owner,
    2026-09-10:** *"the CB 13:00-14:00 closure applies every day CB is open,
    including Saturday."*
@@ -149,7 +162,51 @@ somebody asks for "closed Saturday afternoons too".
    closure band, if any?** The standing rule (Q-W5-4) is that scheduling data is
    never silently destroyed, so the proposal is: they render, they are reported,
    nothing is cancelled. Confirm.
+   **ANSWERED 2026-09-10: confirmed.** They render and are reported; nothing is
+   cancelled, hidden or moved. The figure 14 in the question as filed carries no
+   source in this document; treat it as unverified, not as a count.
 4. **"Todas as localizações" on the agenda** — when no location is selected, does
    the grid show the union of both clinics' hours (recommended: yes, or a clinic's
    real working hour is hidden) and does it draw the closure band at all
    (recommended: no, because it is only true of one clinic)?
+   **ANSWERED 2026-09-10: both recommendations taken.** The union of both
+   clinics' hours, and no closure band when no clinic is selected.
+
+## 5. What PR #1264 builds, as authored and held (2026-09-10)
+
+Read off #1264's branch (`db/0085-clinic-hours-cb-closure`, head `240ece80`),
+not off its description. **Nothing in this section is applied or merged.**
+
+**The migration.** `packages/db/migrations/0085_clinic_hours_and_cb_closure.sql`,
+sha256 `568ad2cfde381dc795059b70c09f4f4b6a6a49e2e678fd503c23d4edb0b9ead1`; the
+`supabase/migrations/` mirror is
+`550c800278b82cad54e5f37e5a70be6c558ad642b9f18fb0d3f1392417fba822`. It is the
+common half plus Option A as section 2 wrote them: `opens_at` / `closes_at`
+defaulting to 08:00 / 20:00, `midday_closed_from` / `midday_closed_to` nullable,
+and the four checks under the same names (`locations_open_before_close`,
+`locations_midday_pair`, `locations_midday_order`,
+`locations_midday_inside_hours`).
+
+**Where it departs from sections 2 and 3:**
+
+| Proposal said | #1264 does |
+|---|---|
+| CB and LV set to 20:00 by a data update | No hours update. The defaults already are 08:00-20:00, so the only data write is CB's closure. |
+| "CB gets ('13:00','14:00')" | Seeded inside the migration, matched by name (`name like '%(CB)%'`), idempotent (`and midday_closed_from is null`), no tenant filter, and the file says why. |
+| Staff refusal "in `conflict.ts` as a new conflict kind" | **Not a conflict kind.** `checkClinicClosure` (`apps/web/lib/scheduling/clinic-closure-enforcement.ts`) runs beside `checkAvailability`, outside the `allowConflict` gate, and returns `clinic_closed`. Same intent (*Guardar mesmo assim* cannot reach it), a different place. |
+| Portal: `closureOverlapExists` beside `timeOffOverlapExists`, in `createBooking` and `listOpenSlots` | As proposed, plus the reschedule guard, plus a new API error `clinic_closed` (409) split off `no_slot`, so the patient is not told to refresh a list that will never contain that hour. |
+| Availability: the closure as a third term, separate from `blocks` | As proposed (`closures` on `DayAvailability`), plus a `closed` no-free reason that outranks `blocked`. |
+| Band labelled "Encerrado" | The band reads *Clínica encerrada*. *Encerrado:* is the label in Nova marcação's availability panel. |
+| `blocked-time-core.ts` takes `dayStartMin` instead of importing the constant | **Not taken.** `blocked-time-core.ts` still reads `DAY_START_HOUR`. No effect while every clinic opens at 08:00, which the defaults make true after apply. |
+
+**One gap found while reconciling, NOT fixed here.** `checkClinicClosure` is
+called in `createAppointment` and `rescheduleAppointment`. `cloneAppointment`
+(SCHED-15, the write behind *Marcar novamente* on the agenda, Marcações and the
+patient's appointment list) runs `checkAvailability` and has no closure check on
+#1264's branch, so as authored a *Marcar novamente* into CB's 13:00-14:00 is not
+refused.
+The fix belongs in #1264, before it is applied. This docs PR changes no code.
+
+**What makes it ship.** SCHED-16 and SCHED-24 stay `in_flight` on the board until
+#1264 merges, and #1264 merges only after the owner applies 0085, which waits on
+0083 and 0084.

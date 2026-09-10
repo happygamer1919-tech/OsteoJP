@@ -1144,9 +1144,15 @@ sweep reading the tension in the dispatch as an open gap.
 
 ## Q-SCHED-16-1 — clinic working hours and the CB midday closure need a migration
 
-**Opened** 2026-09-10 (PURPLE, client batch P2). **BLOCKS SCHED-16 and
+**Opened** 2026-09-10 (PURPLE, client batch P2). ~~**BLOCKS SCHED-16 and
 SCHED-24.** Nothing was written; the dispatch's own rule is "Any schema change:
-STOP and send the migration proposal to strategy first."
+STOP and send the migration proposal to strategy first."~~
+
+**CLOSED 2026-09-10. All four decisions are answered below and this question
+blocks nothing.** Option A was ruled. The build is migration 0085 in PR #1264,
+authored and HELD until the owner applies it, and not before 0083 and 0084. What
+#1264 builds, and where it departs from the proposal, is section 5 of
+`docs/design/MIGRATION-PROPOSAL-clinic-hours.md`.
 
 The full proposal, with SQL, the two options and the read-path changes each
 implies, is `docs/design/MIGRATION-PROPOSAL-clinic-hours.md`.
@@ -1158,21 +1164,28 @@ implies, is `docs/design/MIGRATION-PROPOSAL-clinic-hours.md`.
    is one band, one clinic, every day, permanent; A carries exactly that, adds no
    RLS surface and no join on any read path, and can be superseded by B later
    without a read-path rewrite.
+   **RULED 2026-09-10: Option A.** Recorded on the board as a strategy ruling
+   (#1265). Built as 0085 in #1264, held.
 2. ~~**Does the CB closure apply on Saturday?**~~ **ANSWERED — owner,
    2026-09-10:** *"the CB 13:00-14:00 closure applies every day CB is open,
    including Saturday."* A single `midday_closed_*` pair applies to every open
    day, which is exactly what was ruled — so **this answer makes Option A
    sufficient** and removes the one reason B was required. The remaining three
-   questions are unchanged.
+   were answered the same day: 1, 3 and 4 here.
 3. **Appointments already inside a closure band.** Proposal, following Q-W5-4:
    they render, they are reported, nothing is cancelled. Confirm.
+   **ANSWERED 2026-09-10: confirmed.** As authored, #1264 leaves such an
+   appointment rendering inside the band and counted; nothing is cancelled,
+   hidden or moved.
 4. **"Todas as localizações" on the agenda.** When no clinic is selected, does
    the grid show the union of both clinics' hours (recommendation: yes, or a real
    working hour is hidden) and does it draw the closure band at all
    (recommendation: no, because it is only true of one clinic)?
+   **ANSWERED 2026-09-10: both recommendations taken.** The union of both
+   clinics' hours, and no band when no clinic is selected.
 
 **Migration number:** 0085 or later. 0083 is PACK-06, 0084 is reserved for
-INTAKE-01.
+INTAKE-01. **Taken: 0085, by #1264.**
 
 **The read half of P2 is already answered** and needs no decision: the agenda
 grid's window is `DAY_START_HOUR = 8` / `DAY_END_HOUR = 20`, two module constants
