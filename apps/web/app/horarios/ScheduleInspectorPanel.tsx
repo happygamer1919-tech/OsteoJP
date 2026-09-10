@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 
 import { ScheduleInspector } from "./ScheduleInspector";
-import { applyDayByDayScheduleAction } from "./actions";
+import { applyDayByDayScheduleAction, deleteTimeOffBlockAction } from "./actions";
 import { dayEditPlan, isSingleDayWindow, type DayEditDraft } from "@/lib/scheduling/inspector-edit";
 import type { InspectedDay } from "@/lib/scheduling/schedule-inspection";
 
@@ -73,6 +73,43 @@ export function ScheduleInspectorPanel({
     return { ok: res.ok, collisionDates: res.collisionDates, error: res.error };
   };
 
+  /**
+   * SCHED-21 - REMOVING A BLOCK FROM THE ROW THAT SHOWS IT.
+   *
+   * It calls the SAME server action the Bloquear horario modal's Eliminar
+   * button calls. That matters more than the convenience: `deleteTimeOffBlock`
+   * re-checks schedule:manage and the own-location scope inside, and writes the
+   * `time_off.delete` audit row. A second delete path that skipped either would
+   * be a hole opened for a button.
+   *
+   * The action redirects to /horarios, so the inspector re-renders from the
+   * resolver and the row disappears because the BLOCK is gone, not because a
+   * client patched the list.
+   */
+  const onRemoveBlock = (blockId: string) => {
+    const fd = new FormData();
+    fd.set("id", blockId);
+    fd.set("userId", therapistId);
+    void deleteTimeOffBlockAction(fd);
+  };
+
+  /**
+   * SCHED-21 - EDITING GOES TO THE FORM THAT ALREADY EDITS BLOCKS.
+   *
+   * A second editor for one row would be a second opinion about what a block
+   * is - two forms writing time_off, free to disagree about modes and about
+   * what an empty note means. The row instead opens the Bloquear horario dialog
+   * for this therapist with this block already selected, through the URL, so
+   * the state is linkable and survives the refresh the delete above triggers.
+   */
+  const onEditBlock = (blockId: string) => {
+    const params = new URLSearchParams();
+    params.set("t", therapistId);
+    params.set("p", period);
+    params.set("editBlock", blockId);
+    router.push(`/horarios?${params.toString()}#inspetor`);
+  };
+
   return (
     <ScheduleInspector
       days={days}
@@ -83,6 +120,8 @@ export function ScheduleInspectorPanel({
       onTherapistChange={(t) => go({ t })}
       onPeriodChange={(p) => go({ p })}
       onSaveDay={onSaveDay}
+      onRemoveBlock={onRemoveBlock}
+      onEditBlock={onEditBlock}
     />
   );
 }
