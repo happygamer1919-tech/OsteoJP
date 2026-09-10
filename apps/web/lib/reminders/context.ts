@@ -31,3 +31,26 @@ export function withReminderTenantContext<T>(
     fn,
   );
 }
+
+/**
+ * A context with NO TENANT, for the one call that has to run before the tenant
+ * is known: resolving a Twilio MessageSid to the tenant that owns its dispatch
+ * row (0075's `reminder_dispatch_tenant`, SECURITY DEFINER).
+ *
+ * ==========================================================================
+ * NO TENANT CLAIM IS THE POINT, NOT AN OMISSION
+ * ==========================================================================
+ * `public.jwt_tenant_id()` returns NULL without the claim, so EVERY
+ * tenant-scoped policy in the system evaluates FALSE and this transaction can
+ * read nothing at all through RLS. The only thing it can reach is a SECURITY
+ * DEFINER function, which does its own privileged work and, in this case,
+ * consults no tenant.
+ *
+ * That is stronger than passing a placeholder tenant, which would grant real
+ * visibility into whichever tenant the placeholder named. The status callback
+ * arrives unauthenticated from the public internet; the least it should be able
+ * to see, before its signature has bought it anything, is nothing.
+ */
+export function withReminderResolverContext<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
+  return withTenantContext({ user_role: REMINDER_JOB_ROLE } as never, fn);
+}
