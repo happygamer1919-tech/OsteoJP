@@ -23,7 +23,7 @@ import {
 import { confirmLinkEnabled, generateConfirmCode } from "./confirm-code";
 import { issueConfirmCode, withdrawConfirmCode } from "./confirm-code-store";
 import { renderReminderSmsBody } from "./sms-body";
-import { sendEmail, sendSms, type SendResult } from "./clients";
+import { ProviderSendError, sendEmail, sendSms, type SendResult } from "./clients";
 import { recordDispatch } from "./dispatch-ledger";
 import type { Channel } from "@osteojp/notify";
 import { normalizePhonePT } from "@osteojp/notify";
@@ -298,18 +298,89 @@ async function sendPatientSms(args: {
     );
     return null;
   }
-  return sendSms({
-    to,
-    body: args.body,
-    templateId: args.templateId,
-    appointmentId: args.appointmentId,
-  });
+  // A Twilio rejection leaves a `provider_error` row before it propagates, for
+  // the reason in sendRecordingProviderError: the ledger write in the caller
+  // sits after this await and a throw jumps over it. Function declarations
+  // hoist, so the helper below is available here.
+  return sendRecordingProviderError(
+    {
+      tenantId: args.tenantId,
+      appointmentId: args.appointmentId,
+      channel: "sms",
+      templateId: args.templateId,
+    },
+    () =>
+      sendSms({
+        to,
+        body: args.body,
+        templateId: args.templateId,
+        appointmentId: args.appointmentId,
+      }),
+  );
 }
 
 function tenantPhone(settings: unknown): string {
   const s = settings as { contacts?: { phone?: unknown } } | null | undefined;
   const phone = s?.contacts?.phone;
   return typeof phone === "string" ? phone : "";
+}
+
+/* ================================================================== */
+/* Provider rejections — the ledger's third outcome, finally written   */
+/* ================================================================== */
+
+/**
+ * THE HOLE THIS CLOSES. 0075 gave `reminder_dispatches` three outcomes - sent,
+ * suppressed and `provider_error` - and until now the code wrote two. A message
+ * the provider REFUSED produced no row at all, because every ledger write in
+ * this file sits AFTER its `await` and a throw jumps straight over it. The
+ * wrapper on `dispatchReminder` could not save it either: that wrapper records
+ * not-dispatched OUTCOMES, and a throw is not an outcome.
+ *
+ * So the one case an operator most needs to see - "we handed it over and it came
+ * back refused" - was the one case that left nothing behind but a failed Inngest
+ * run, which expires. External evidence said zero reminder emails had ever
+ * arrived; nothing in this system could tell that apart from zero ever ATTEMPTED.
+ * That is the distinction this row exists to make, and it now gets written.
+ *
+ * IT RETHROWS. The run must still fail: Inngest's retry is the delivery
+ * behaviour, and swallowing the error to get a tidy row would trade a real
+ * retry for a record of not retrying. The ledger observes, it does not decide -
+ * the same rule dispatch-ledger.ts states about never throwing INTO the send.
+ */
+async function sendRecordingProviderError(
+  row: { tenantId: string; appointmentId: string; channel: "sms" | "email"; templateId: string },
+  send: () => Promise<SendResult>,
+): Promise<SendResult> {
+  try {
+    return await send();
+  } catch (e) {
+    await recordDispatch({ ...row, outcome: "provider_error", providerErrorCode: providerErrorCode(e) });
+    throw e;
+  }
+}
+
+/**
+ * A bounded, PII-free reason class for `provider_error_code`.
+ *
+ * Two shapes, because the two providers fail differently and neither is ours to
+ * change: our own `ProviderSendError` carries Resend's `error.name`, and a
+ * Twilio SDK error carries a numeric `code` (21211, 30003) on the error object.
+ * Anything else yields NULL rather than a guess - `provider_error` with no code
+ * is an honest row, and a made-up code is not.
+ *
+ * NEVER the provider's message. Both providers put the recipient in theirs.
+ */
+function providerErrorCode(e: unknown): string | null {
+  if (e instanceof ProviderSendError) return e.code;
+  if (typeof e === "object" && e !== null && "code" in e) {
+    const c = (e as { code: unknown }).code;
+    if (typeof c === "number") return String(c);
+    // Bounded: the audit metadata contract refuses a string over 64 chars or
+    // carrying whitespace, and this column answers to the same instinct.
+    if (typeof c === "string" && c.length <= 64 && !/\s/.test(c)) return c;
+  }
+  return null;
 }
 
 /**
@@ -572,13 +643,17 @@ async function dispatchReminderInner(
   if (wantEmail && data.patientEmail) {
     const email = renderEmail(offsetId, locale, ctx);
     const emailTemplateId = `reminder.${offsetId}.email`;
-    const result = await sendEmail({
-      to: data.patientEmail,
-      subject: email.subject,
-      body: email.body,
-      templateId: emailTemplateId,
-      appointmentId,
-    });
+    const result = await sendRecordingProviderError(
+      { tenantId, appointmentId, channel: "email", templateId: emailTemplateId },
+      () =>
+        sendEmail({
+          to: data.patientEmail!,
+          subject: email.subject,
+          body: email.body,
+          templateId: emailTemplateId,
+          appointmentId,
+        }),
+    );
     // THE 48h EMAIL'S ONLY RECORD. Until now this send produced nothing
     // anywhere queryable: `sendEmail` returns a SendResult that was pushed onto
     // an array and returned into an Inngest run output that expires. External
