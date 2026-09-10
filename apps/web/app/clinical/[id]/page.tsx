@@ -10,6 +10,7 @@ import { getLatestTermsAcceptance } from "@/lib/clinical/terms-acceptance";
 import { s, locale } from "@/lib/i18n";
 
 import { Attachments } from "./Attachments";
+import { ImportedRecordPreview } from "./imported-record-preview";
 import { DownloadReportButton } from "./DownloadReportButton";
 import { fieldAnchorId } from "./anchors";
 import { HIDDEN_FIELD_KEYS, sectionLabel } from "./field-display";
@@ -155,7 +156,25 @@ export default async function RecordDetailPage({
               existingTermsAcceptance={existingTermsAcceptance}
             />
           ) : (
-            <p className="text-sm text-text-secondary">—</p>
+            /* B1 — NO TEMPLATE, SO NO FORM. Until now this branch drew a single
+               em-dash, and every IMPORTED Fisiozero registo clínico lands in it:
+               `clinicalRecordValues` never sets `form_template_id`, so
+               `getRecordDetail` returns `template: null` and there is no schema
+               to draw fields from. The content was in `clinical_records.data`
+               the whole time; nothing rendered it.
+
+               The preview is READ-ONLY BY CONSTRUCTION - it takes no action and
+               renders no input - so a `locked` record stays immutable and no
+               edit path is added. The status chip and the version/sign actions
+               that belong to the form are NOT reproduced here for the same
+               reason: `extraActions` carries "Nova versão" and "Assinar", and a
+               record with no schema has no form for either to act on.
+
+               NOT SCOPED TO `locked`. `MigrationClinicalRecord.status` is
+               'draft' | 'locked', so an imported record can be a draft, and a
+               status-gated preview would leave those blank - the same defect
+               with a smaller population. */
+            <ImportedRecordPreview data={record.data} />
           )}
 
           <div className="mt-6">
