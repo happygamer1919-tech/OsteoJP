@@ -202,6 +202,36 @@ function transportConfigured(channel: Channel, templateId?: string): boolean {
   );
 }
 
+/**
+ * A provider REFUSED a message we actually handed over.
+ *
+ * ==========================================================================
+ * WHY IT CARRIES A CODE INSTEAD OF ONLY A SENTENCE
+ * ==========================================================================
+ * `reminder_dispatches.provider_error_code` has existed since 0075 and NOTHING
+ * has ever written it, because the only thing a rejection produced was an Error
+ * whose message had the provider's reason class glued into a string. Parsing a
+ * code back out of a human sentence is a guess, and a wrong guess in that column
+ * is worse than a null.
+ *
+ * The message is unchanged, so every existing assertion on it still holds; the
+ * code is added beside it for the ledger to store.
+ *
+ * PII RULE (#7): the provider's own message is NOT propagated. Resend and Twilio
+ * both put the recipient in theirs ("...to p@example.com is invalid"), and that
+ * string ends up in logs and in run history. `code` is a bounded reason class.
+ */
+export class ProviderSendError extends Error {
+  constructor(
+    readonly channel: SendChannel,
+    readonly code: string | null,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ProviderSendError";
+  }
+}
+
 const providerTransport: Transport = {
   async sendEmail(msg) {
     // Lazy import: only on the live path, never in sandbox/tests.
@@ -213,7 +243,13 @@ const providerTransport: Transport = {
       subject: msg.subject,
       text: msg.body,
     });
-    if (error) throw new Error(`reminders/email: Resend send failed (${error.name})`);
+    if (error) {
+      throw new ProviderSendError(
+        "email",
+        error.name ?? null,
+        `reminders/email: Resend send failed (${error.name})`,
+      );
+    }
     return { id: data?.id ?? "unknown" };
   },
   async sendSms(msg) {
