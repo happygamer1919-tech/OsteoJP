@@ -28,6 +28,7 @@ import {
 } from "@/app/agenda/schedule-again-drawer";
 import { s } from "@/lib/i18n";
 import {
+  correctAppointmentEstadoAction,
   cancelAppointment,
   cloneAppointment,
   rescheduleAppointment,
@@ -38,6 +39,7 @@ import {
   isLegalEstadoTransition,
   legalEstadoTransitions,
 } from "@/lib/scheduling/estado-transitions";
+import { correctionTargets, isLegalEstadoCorrection } from "@/lib/scheduling/estado-correction";
 import { formatCreatedAt, formatTimeOfDay, lisbonDateTimeToUtc, lisbonParts } from "@/lib/scheduling/time";
 import type {
   AgendaAppointment,
@@ -206,7 +208,13 @@ function AppointmentRow({
   const showReschedule = canEdit && editable;
   const showEstado = canEdit && editable && hasLegalEstadoTransition(a.status);
   const showCancel = canCancel && editable;
-  const showManage = showReschedule || showEstado || showCancel;
+  // B6: a FINAL state can be CORRECTED to another final state. Deliberately not
+  // folded into `showEstado`: `editable` is false for every final state, which
+  // is what keeps the correction out of the ordinary Estado control entirely.
+  // `canCancel` is the appointments:delete capability - owner/admin/reception,
+  // never therapist - which is the ruling's "reception and up".
+  const showCorrect = canCancel && correctionTargets(a.status).length > 0;
+  const showManage = showReschedule || showEstado || showCancel || showCorrect;
 
   return (
     <Card>
@@ -281,6 +289,7 @@ function AppointmentRow({
               </Button>
             )}
             {showEstado && <EstadoInline appt={a} />}
+            {showCorrect && <CorrigirEstadoInline appt={a} />}
             {showCancel && (
               <Button type="button" size="sm" variant="destructive" onClick={onCancel}>
                 {s["appointment.cancelAppointment"]}
@@ -364,6 +373,76 @@ function EstadoInline({ appt }: { appt: AgendaAppointment }) {
           {error}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * CORRIGIR ESTADO — the second door, and it is NOT the Estado control.
+ *
+ * It renders only for a FINAL state, and `EstadoInline` renders only while
+ * `isEditable` (scheduled | confirmed), so the two are mutually exclusive by
+ * construction rather than by a flag anybody has to keep in sync. That is what
+ * the ruling means by "never through the normal estado control": on any given
+ * row, exactly one of them exists.
+ *
+ * It posts to `correctAppointmentEstadoAction`, not `updateAppointment`, so the
+ * audit row carries `appointment.estado_correction` and a reader can tell a
+ * correction from a lifecycle event afterwards.
+ */
+function CorrigirEstadoInline({ appt }: { appt: AgendaAppointment }) {
+  const router = useRouter();
+  const toast = useToast();
+  const targets = correctionTargets(appt.status);
+  const [next, setNext] = useState<AppointmentStatusValue>(targets[0]!);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function apply() {
+    // Re-guarded client-side for the same reason EstadoInline is: to refuse
+    // before touching the server. The server re-asserts it regardless.
+    if (!isLegalEstadoCorrection(appt.status, next)) return;
+    setSubmitting(true);
+    const r = await correctAppointmentEstadoAction(appt.id, next);
+    setSubmitting(false);
+    if (r.ok) {
+      toast({ tone: "success", message: s["appointment.correctEstadoDone"] });
+      router.refresh();
+    } else {
+      toast({
+        tone: "error",
+        message: r.error === "forbidden" ? s["errors.forbidden"] : s["errors.generic"],
+      });
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1" data-testid="corrigir-estado">
+      <Field label={s["appointment.correctEstado"]}>
+        <div className="flex items-center gap-2">
+          <Select
+            aria-label={s["appointment.correctEstado"]}
+            value={next}
+            onChange={(e) => setNext(e.target.value as AppointmentStatusValue)}
+          >
+            {targets.map((v) => (
+              <option key={v} value={v}>
+                {s[STATUS_KEY[v]]}
+              </option>
+            ))}
+          </Select>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            loading={submitting}
+            disabled={submitting}
+            onClick={() => void apply()}
+          >
+            {s["appointment.correctEstadoApply"]}
+          </Button>
+        </div>
+      </Field>
+      <p className="text-xs text-text-secondary">{s["appointment.correctEstadoHelp"]}</p>
     </div>
   );
 }
