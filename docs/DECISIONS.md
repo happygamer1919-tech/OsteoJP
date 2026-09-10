@@ -3989,7 +3989,7 @@ AND "all controls remain visible and labelled" - at 1024 those are incompatible.
 Delivered: 232px -> 162px at 1024, 222px -> 114px at 1280. Owner decision is
 Q-AGENDA-02-1.
 
-**SCHED-16/17: the working day is three unrelated definitions and none of them is
+**SCHED-16/24: the working day is three unrelated definitions and none of them is
 a clinic.** `DAY_START_HOUR`/`DAY_END_HOUR` (apps/web/lib/scheduling/time.ts:18)
 bound the agenda grid and nothing else; Nova marcação bounds itself by
 `availability_templates`; the portal bounds itself by the same templates

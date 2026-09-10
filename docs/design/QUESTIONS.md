@@ -1136,7 +1136,7 @@ problem in use rather than in the abstract.
 ## Q-SCHED-16-1 — clinic working hours and the CB midday closure need a migration
 
 **Opened** 2026-09-10 (PURPLE, client batch P2). **BLOCKS SCHED-16 and
-SCHED-17.** Nothing was written; the dispatch's own rule is "Any schema change:
+SCHED-24.** Nothing was written; the dispatch's own rule is "Any schema change:
 STOP and send the migration proposal to strategy first."
 
 The full proposal, with SQL, the two options and the read-path changes each

@@ -1,4 +1,4 @@
-# SCHED-16 / SCHED-17 — migration proposal for strategy
+# SCHED-16 / SCHED-24 — migration proposal for strategy
 
 **Status: BLOCKED, awaiting strategy. Nothing was written.** The dispatch's own
 rule: "Any schema change: STOP and send the migration proposal to strategy
