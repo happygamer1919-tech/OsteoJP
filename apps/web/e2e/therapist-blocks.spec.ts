@@ -341,8 +341,18 @@ test("W5-12: both modes create time_off blocks; pontual excluded from availabili
   const dialogAfter = await openNewAppointment(page, date);
   await dialogAfter.getByLabel(/Terapeuta/i).selectOption({ label: THERAPIST_NAME });
   await dialogAfter.getByLabel(/Localização/i).selectOption({ label: LOCATION_B.name });
-  // The whole working window is blocked, so there are no free slots that day.
-  await expect(dialogAfter.getByText("Sem horários livres neste dia.")).toBeVisible({ timeout: 8_000 });
+  // ---- SCHED-20: THE WHOLE WINDOW IS BLOCKED, AND THE PANEL NOW SAYS SO ----
+  // This assertion used to read "Sem horários livres neste dia." and it was
+  // wrong in the way that mattered: that sentence names BOOKING as the cause,
+  // and nothing here is booked. The block is what took the day, so the panel
+  // names the block and points at the tool that undoes it.
+  await expect(
+    dialogAfter.getByTestId("availability-blocked-reason"),
+    "the panel is still blaming appointments for a day a BLOCK emptied",
+  ).toBeVisible({ timeout: 8_000 });
+  await expect(dialogAfter.getByText("Sem horários livres neste dia.")).toHaveCount(0);
+  // And the block itself is listed, with its window, beside Horário and Ocupado.
+  await expect(dialogAfter.getByTestId("availability-blocked")).toBeVisible();
 
   // --- The overlapped appointment SURVIVES (still on the agenda that day). ---
   await page.goto(`/agenda?view=day&date=${date}`);
